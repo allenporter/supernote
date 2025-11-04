@@ -17,7 +17,6 @@ requires-python = ">=3.12"
 classifiers = []
 dependencies = [
   "colour>=0.1.5",
-  "fusepy>=3.0.1",
   "numpy>=1.19.0",
   "Pillow>=7.2.0",
   "potracer>=0.0.1",
