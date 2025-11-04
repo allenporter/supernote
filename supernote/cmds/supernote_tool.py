@@ -35,7 +35,7 @@ def convert_all(converter, total, file_name, save_func, visibility_overlay):
     basename, extension = os.path.splitext(file_name)
     max_digits = len(str(total))
     for i in range(total):
-        # append page number between filename and extention
+        # append page number between filename and extension
         numbered_filename = basename + "_" + str(i).zfill(max_digits) + extension
         img = converter.convert(i, visibility_overlay)
         save_func(img, numbered_filename)

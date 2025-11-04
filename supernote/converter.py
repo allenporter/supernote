@@ -288,7 +288,7 @@ class SvgConverter:
         self.palette = palette if palette is not None else color.DEFAULT_COLORPALETTE
         self.image_converter = ImageConverter(
             notebook, palette=color.DEFAULT_COLORPALETTE
-        )  # use default pallete
+        )  # use default palette
 
     def convert(self, page_number, visibility_overlay=None):
         """Returns SVG string of the given page.
