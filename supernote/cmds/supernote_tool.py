@@ -21,14 +21,14 @@ import sys
 
 from colour import Color
 
-import supernotelib as sn
-from supernotelib.converter import (
+import supernote as sn
+from supernote.converter import (
     ImageConverter,
     SvgConverter,
     PdfConverter,
     TextConverter,
 )
-from supernotelib.converter import VisibilityOverlay
+from supernote.converter import VisibilityOverlay
 
 
 def convert_all(converter, total, file_name, save_func, visibility_overlay):

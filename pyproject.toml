@@ -31,6 +31,9 @@ Source = "https://github.com/allenporter/supernote"
 [tool.setuptools.packages.find]
 include = ["supernote*"]
 
+[project.entry-points."console_scripts"]
+supernote-tool  = "supernote.cmds.supernote_tool:main"
+
 [tool.mypy]
 exclude = [
   "venv/",
