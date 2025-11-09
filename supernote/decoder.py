@@ -261,9 +261,9 @@ class RattaRleDecoder(BaseDecoder):
     def _adjust_tail_length(self, tail_length, current_length, total_length):
         gap = total_length - current_length
         for i in reversed(range(8)):
-            l = ((tail_length & 0x7F) + 1) << i
-            if l <= gap:
-                return l
+            length = ((tail_length & 0x7F) + 1) << i
+            if length <= gap:
+                return length
         return 0
 
 

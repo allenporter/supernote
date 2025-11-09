@@ -11,13 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-__version__ = "0.6.2"
-
-from . import color
-from . import converter
-
-from .exceptions import *
-from .fileformat import *
-from .manipulator import *
-from .parser import *

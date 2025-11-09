@@ -457,7 +457,7 @@ class PdfConverter:
                             i.get_rect(), renderer.get_scale()
                         )
                         c.textAnnotation(i.get_keyword(), scaled_rect)
-                    except:
+                    except Exception:
                         continue
             if enable_link:
                 pageid = page.get_pageid()
