@@ -16,8 +16,7 @@
 
 import json
 
-from . import exceptions
-
+ParamsBlock = dict[str, str | list[str]]
 
 #### Constants
 
@@ -44,7 +43,7 @@ KEY_LINKS = "__links__"
 class SupernoteMetadata:
     """Represents Supernote file structure."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.__note = {
             KEY_TYPE: None,
             KEY_SIGNATURE: None,
@@ -54,46 +53,46 @@ class SupernoteMetadata:
         }
 
     @property
-    def type(self):
+    def type(self) -> str | None:
         return self.__note[KEY_TYPE]
 
     @type.setter
-    def type(self, value):
+    def type(self, value: str | None):
         self.__note[KEY_TYPE] = value
 
     @property
-    def signature(self):
+    def signature(self) -> str | None:
         return self.__note[KEY_SIGNATURE]
 
     @signature.setter
-    def signature(self, value):
+    def signature(self, value: str | None):
         self.__note[KEY_SIGNATURE] = value
 
     @property
-    def header(self):
+    def header(self) -> dict[str, str] | None:
         return self.__note[KEY_HEADER]
 
     @header.setter
-    def header(self, value):
+    def header(self, value: dict[str, str] | None):
         self.__note[KEY_HEADER] = value
 
     @property
-    def footer(self):
+    def footer(self) -> dict[str, str] | None:
         return self.__note[KEY_FOOTER]
 
     @footer.setter
-    def footer(self, value):
+    def footer(self, value: dict[str, str] | None):
         self.__note[KEY_FOOTER] = value
 
     @property
-    def pages(self):
+    def pages(self) -> list[ParamsBlock] | None:
         return self.__note[KEY_PAGES]
 
     @pages.setter
-    def pages(self, value):
+    def pages(self, value: list[ParamsBlock] | None):
         self.__note[KEY_PAGES] = value
 
-    def get_total_pages(self):
+    def get_total_pages(self) -> int:
         """Returns total page number.
 
         Returns
@@ -103,7 +102,7 @@ class SupernoteMetadata:
         """
         return len(self.__note[KEY_PAGES])
 
-    def is_layer_supported(self, page_number):
+    def is_layer_supported(self, page_number: int) -> bool:
         """Returns true if the page supports layer.
 
         Parameters
@@ -120,7 +119,7 @@ class SupernoteMetadata:
             raise IndexError(f"page number out of range: {page_number}")
         return self.__note[KEY_PAGES][page_number].get(KEY_LAYERS) is not None
 
-    def to_json(self, indent=None):
+    def to_json(self, indent: int = None) -> str:
         """Returns file structure as JSON format string.
 
         Parameters
@@ -137,7 +136,7 @@ class SupernoteMetadata:
 
 
 class Notebook:
-    def __init__(self, metadata):
+    def __init__(self, metadata: SupernoteMetadata) -> None:
         self.metadata = metadata
         self.page_width = PAGE_WIDTH
         self.page_height = PAGE_HEIGHT
@@ -147,56 +146,56 @@ class Notebook:
         self.type = metadata.type
         self.signature = metadata.signature
         self.cover = Cover()
-        self.keywords = []
+        self.keywords: list[Keyword] = []
         has_keywords = metadata.footer.get(KEY_KEYWORDS) is not None
         if has_keywords:
             for k in metadata.footer.get(KEY_KEYWORDS):
                 self.keywords.append(Keyword(k))
-        self.titles = []
+        self.titles: list[Title] = []
         has_titles = metadata.footer.get(KEY_TITLES) is not None
         if has_titles:
             for t in metadata.footer.get(KEY_TITLES):
                 self.titles.append(Title(t))
-        self.links = []
+        self.links: list[Link] = []
         has_links = metadata.footer.get(KEY_LINKS) is not None
         if has_links:
             for l in metadata.footer.get(KEY_LINKS):
                 self.links.append(Link(l))
-        self.pages = []
+        self.pages: list[Page] = []
         total = metadata.get_total_pages()
         for i in range(total):
             self.pages.append(Page(metadata.pages[i]))
 
-    def get_metadata(self):
+    def get_metadata(self) -> SupernoteMetadata:
         return self.metadata
 
-    def get_width(self):
+    def get_width(self) -> int:
         return self.page_width
 
-    def get_height(self):
+    def get_height(self) -> int:
         return self.page_height
 
-    def get_type(self):
+    def get_type(self) -> str | None:
         return self.type
 
-    def get_signature(self):
+    def get_signature(self) -> str | None:
         return self.signature
 
-    def get_total_pages(self):
+    def get_total_pages(self) -> int:
         return len(self.pages)
 
-    def get_page(self, number):
+    def get_page(self, number: int) -> "Page":
         if number < 0 or number >= len(self.pages):
             raise IndexError(f"page number out of range: {number}")
         return self.pages[number]
 
-    def get_cover(self):
+    def get_cover(self) -> "Cover":
         return self.cover
 
-    def get_keywords(self):
+    def get_keywords(self) -> list["Keyword"]:
         return self.keywords
 
-    def get_titles(self):
+    def get_titles(self) -> list["Title"]:
         return self.titles
 
     def get_links(self):
@@ -213,64 +212,64 @@ class Notebook:
 
 
 class Cover:
-    def __init__(self):
-        self.content = None
+    def __init__(self) -> None:
+        self.content: bytes | None = None
 
-    def set_content(self, content):
+    def set_content(self, content: bytes | None):
         self.content = content
 
-    def get_content(self):
+    def get_content(self) -> bytes | None:
         return self.content
 
 
 class Keyword:
-    def __init__(self, keyword_info):
+    def __init__(self, keyword_info: dict[str, str]) -> None:
         self.metadata = keyword_info
-        self.content = None
+        self.content: bytes | None = None
         self.page_number = int(self.metadata["KEYWORDPAGE"]) - 1
 
-    def set_content(self, content):
+    def set_content(self, content: bytes | None):
         self.content = content
 
-    def get_content(self):
+    def get_content(self) -> bytes | None:
         return self.content
 
-    def get_page_number(self):
+    def get_page_number(self) -> int:
         return self.page_number
 
-    def get_position_string(self):
+    def get_position_string(self) -> str:
         (left, top, width, height) = self.metadata["KEYWORDRECTORI"].split(",")
         return f"{int(top):04d}"
 
-    def get_keyword(self):
+    def get_keyword(self) -> str | None:
         return (
             None if self.metadata["KEYWORD"] is None else str(self.metadata["KEYWORD"])
         )
 
-    def get_rect(self):
+    def get_rect(self) -> tuple[int, int, int, int]:
         (left, top, width, height) = self.metadata["KEYWORDRECT"].split(",")
         return (int(left), int(top), int(left) + int(width), int(top) + int(height))
 
 
 class Title:
-    def __init__(self, title_info):
+    def __init__(self, title_info: dict[str, str]) -> None:
         self.metadata = title_info
-        self.content = None
+        self.content: bytes | None = None
         self.page_number = 0
 
-    def set_content(self, content):
+    def set_content(self, content: bytes | None):
         self.content = content
 
-    def get_content(self):
+    def get_content(self) -> bytes | None:
         return self.content
 
-    def set_page_number(self, page_number):
+    def set_page_number(self, page_number: int) -> None:
         self.page_number = page_number
 
-    def get_page_number(self):
+    def get_page_number(self) -> int:
         return self.page_number
 
-    def get_position_string(self):
+    def get_position_string(self) -> str:
         (left, top, width, height) = self.metadata["TITLERECTORI"].split(",")
         return f"{int(top):04d}{int(left):04d}"
 
@@ -283,51 +282,51 @@ class Link:
     DIRECTION_OUT = 0
     DIRECTION_IN = 1
 
-    def __init__(self, link_info):
+    def __init__(self, link_info: dict[str, str]) -> None:
         self.metadata = link_info
-        self.content = None
+        self.content: bytes | None = None
         self.page_number = 0
 
-    def set_content(self, content):
+    def set_content(self, content: bytes | None):
         self.content = content
 
-    def get_content(self):
+    def get_content(self) -> bytes | None:
         return self.content
 
-    def set_page_number(self, page_number):
+    def set_page_number(self, page_number: int) -> None:
         self.page_number = page_number
 
-    def get_page_number(self):
+    def get_page_number(self) -> int:
         return self.page_number
 
-    def get_type(self):
+    def get_type(self) -> int:
         return int(self.metadata["LINKTYPE"])
 
-    def get_inout(self):
+    def get_inout(self) -> int:
         return int(self.metadata["LINKINOUT"])
 
-    def get_position_string(self):
+    def get_position_string(self) -> str:
         (left, top, width, height) = self.metadata["LINKRECT"].split(",")
         return f"{int(top):04d}{int(left):04d}{int(height):04d}{int(width):04d}"
 
-    def get_rect(self):
+    def get_rect(self) -> tuple[int, int, int, int]:
         (left, top, width, height) = self.metadata["LINKRECT"].split(",")
         return (int(left), int(top), int(left) + int(width), int(top) + int(height))
 
-    def get_timestamp(self):
+    def get_timestamp(self) -> str:
         return self.metadata["LINKTIMESTAMP"]
 
-    def get_filepath(self):
+    def get_filepath(self) -> str:
         return self.metadata["LINKFILE"]  # Base64-encoded file path or URL
 
-    def get_fileid(self):
+    def get_fileid(self) -> str | None:
         return (
             None
             if self.metadata["LINKFILEID"] == "none"
             else self.metadata["LINKFILEID"]
         )
 
-    def get_pageid(self):
+    def get_pageid(self) -> str | None:
         return None if self.metadata["PAGEID"] == "none" else self.metadata["PAGEID"]
 
 
@@ -339,25 +338,25 @@ class Page:
     ORIENTATION_VERTICAL = "1000"
     ORIENTATION_HORIZONTAL = "1090"
 
-    def __init__(self, page_info):
+    def __init__(self, page_info: ParamsBlock) -> None:
         self.metadata = page_info
-        self.content = None
+        self.content: bytes | None = None
         self.totalpath = None
         self.recogn_file = None
         self.recogn_text = None
-        self.layers = []
+        self.layers: list[Layer] = []
         layer_supported = page_info.get(KEY_LAYERS) is not None
         if layer_supported:
             for i in range(5):
                 self.layers.append(Layer(self.metadata[KEY_LAYERS][i]))
 
-    def set_content(self, content):
+    def set_content(self, content: bytes) -> None:
         self.content = content
 
-    def get_content(self):
+    def get_content(self) -> bytes | None:
         return self.content
 
-    def is_layer_supported(self):
+    def is_layer_supported(self) -> bool:
         """Returns True if this page supports layer.
 
         Returns

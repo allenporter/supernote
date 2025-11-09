@@ -14,18 +14,20 @@
 
 """Utility classes."""
 
+from typing import Self
+
 from . import fileformat
 
 
 class WorkaroundPageWrapper(fileformat.Page):
     """Workaround for duplicated layer name."""
 
-    def __init__(self, page_info):
+    def __init__(self, page_info: fileformat.ParamsBlock) -> None:
         super().__init__(page_info)
         self._override_layer_name()
 
     @staticmethod
-    def from_page(page):
+    def from_page(page: fileformat.Page) -> Self:
         wrapped_page = WorkaroundPageWrapper(page.metadata)
         # copy contents from the original page object
         wrapped_page.set_content(page.get_content())
@@ -34,7 +36,7 @@ class WorkaroundPageWrapper(fileformat.Page):
             wrapped_page.get_layer(i).set_content(layer.get_content())
         return wrapped_page
 
-    def _override_layer_name(self):
+    def _override_layer_name(self) -> None:
         mainlayer_visited = False
         for layer in self.get_layers():
             name = layer.get_name()

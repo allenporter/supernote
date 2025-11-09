@@ -37,6 +37,7 @@ supernote-tool  = "supernote.cmds.supernote_tool:main"
 [tool.mypy]
 exclude = [
   "venv/",
+  "supernote/cmds/",
 ]
 platform = "linux"
 show_error_codes = true

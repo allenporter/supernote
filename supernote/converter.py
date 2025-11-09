@@ -25,7 +25,6 @@ from io import BytesIO
 from PIL import Image
 
 from reportlab.lib.pagesizes import A4, portrait, landscape
-from reportlab.graphics import renderPDF
 from reportlab.pdfgen import canvas
 
 from . import color
@@ -394,9 +393,7 @@ class PdfConverter:
         self.palette = palette
         self.pagesize = A4
 
-    def convert(
-        self, page_number, enable_link=False, enable_keyword=False
-    ):
+    def convert(self, page_number, enable_link=False, enable_keyword=False):
         """Returns PDF data of the given page.
 
         Parameters
@@ -502,7 +499,7 @@ class PdfConverter:
         )
 
     class ImgPageRenderer:
-        def __init__(self, img, pagesize):
+        def __init__(self, img: Image.Image, pagesize):
             self.img = img
             self.pagesize = pagesize
 
@@ -516,11 +513,11 @@ class PdfConverter:
 
 
 class TextConverter:
-    def __init__(self, notebook, palette=None):
+    def __init__(self, notebook: fileformat.Notebook, palette=None) -> None:
         self.note = notebook
         self.palette = palette
 
-    def convert(self, page_number):
+    def convert(self, page_number: int) -> str | None:
         """Returns text of the given page if available.
 
         Parameters

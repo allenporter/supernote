@@ -28,7 +28,13 @@ from . import exceptions
 class BaseDecoder:
     """Abstract decoder class."""
 
-    def decode(self, data, palette=None, all_blank=False, horizontal=False):
+    def decode(
+        self,
+        data: bytes,
+        palette: color.ColorPalette | None = None,
+        all_blank: bool = False,
+        horizontal: bool = False,
+    ):
         raise NotImplementedError("subclasses must implement decode method")
 
 
@@ -364,7 +370,9 @@ class PngDecoder(BaseDecoder):
 class TextDecoder(BaseDecoder):
     """Decoder for text."""
 
-    def decode(self, data, palette=None, all_blank=False, horizontal=False):
+    def decode(
+        self, data: bytes, palette=None, all_blank=False, horizontal=False
+    ) -> list[str] | None:
         """Extract text from a realtime recognition data.
 
         Parameters

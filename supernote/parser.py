@@ -16,12 +16,27 @@
 
 import os
 import re
+from typing import Protocol
 
 from . import exceptions
 from . import fileformat
 
+ParamsBlock = fileformat.ParamsBlock
 
-def parse_metadata(stream, policy="strict"):
+
+class FileObj(Protocol):
+    """Protocol for file-like object."""
+
+    def seek(self, offset: int, whence: int) -> None:
+        """Seeks to the given offset."""
+        ...
+
+    def read(self, size: int) -> bytes:
+        """Reads bytes from the stream."""
+        ...
+
+
+def parse_metadata(stream: FileObj, policy="strict"):
     """Parses a supernote binary stream and returns metadata object.
 
     Policy:
@@ -62,7 +77,11 @@ def parse_metadata(stream, policy="strict"):
     raise exceptions.UnsupportedFileFormat("unsupported file format")
 
 
-def load(stream, metadata=None, policy="strict"):
+def load(
+    stream: FileObj,
+    metadata: fileformat.SupernoteMetadata | None = None,
+    policy: str = "strict",
+) -> fileformat.Notebook:
     """Creates a Notebook object from the supernote binary stream.
 
      Policy:
@@ -122,7 +141,7 @@ def load(stream, metadata=None, policy="strict"):
             content = _get_content_at_address(stream, addresses[0])
             note.get_page(p).set_content(content)
         else:
-            for l, addr in enumerate(addresses):
+            for _, addr in enumerate(addresses):
                 content = _get_content_at_address(stream, addr)
                 note.get_page(p).get_layer(l).set_content(content)
         # store path data to notebook object
@@ -249,7 +268,9 @@ def _get_bitmap_address(metadata, page_number):
     return addresses
 
 
-def _get_totalpath_address(metadata, page_number):
+def _get_totalpath_address(
+    metadata: fileformat.SupernoteMetadata, page_number: int
+) -> int:
     """Returns total path address of the given page number.
 
     Returns
@@ -298,7 +319,7 @@ def _get_page_number_from_footer_property(footer, prefix):
     keys = filter(lambda k: k.startswith(prefix), footer.keys())
     page_numbers = []
     for k in keys:
-        if type(footer[k]) == list:
+        if type(footer[k]) is list:
             for _ in range(len(footer[k])):
                 page_numbers.append(int(k[6:10]) - 1)
         else:
@@ -315,7 +336,9 @@ class SupernoteParser:
     SN_SIGNATURE_PATTERN = r"SN_FILE_ASA_\d{8}"
     SN_SIGNATURES = ["SN_FILE_ASA_20190529"]
 
-    def parse(self, file_name, policy="strict"):
+    def parse(
+        self, file_name: str, policy: str = "strict"
+    ) -> fileformat.SupernoteMetadata:
         """Parses a Supernote file and returns SupernoteMetadata object.
 
         Policy:
@@ -338,7 +361,9 @@ class SupernoteParser:
             metadata = self.parse_stream(f, policy)
         return metadata
 
-    def parse_stream(self, stream, policy="strict"):
+    def parse_stream(
+        self, stream: FileObj, policy: str = "strict"
+    ) -> fileformat.SupernoteMetadata:
         """Parses a Supernote file stream and returns SupernoteMetadata object.
 
         Policy:
@@ -394,12 +419,12 @@ class SupernoteParser:
         metadata.pages = pages
         return metadata
 
-    def _parse_filetype(self, fobj):
+    def _parse_filetype(self, fobj: FileObj) -> str:
         fobj.seek(0, os.SEEK_SET)
         filetype = fobj.read(4).decode()
         return filetype
 
-    def _find_matching_signature(self, fobj):
+    def _find_matching_signature(self, fobj: FileObj) -> str | None:
         """Reads signature from file object and returns matching signature.
 
         Parameters
@@ -423,7 +448,7 @@ class SupernoteParser:
                 return signature
         return None
 
-    def _check_signature_compatible(self, fobj):
+    def _check_signature_compatible(self, fobj: FileObj) -> bool:
         latest_signature = self.SN_SIGNATURES[-1]
         try:
             fobj.seek(0, os.SEEK_SET)
@@ -436,10 +461,10 @@ class SupernoteParser:
             else:
                 return False
 
-    def _parse_footer_block(self, fobj, address):
+    def _parse_footer_block(self, fobj: FileObj, address: int) -> ParamsBlock:
         return self._parse_metadata_block(fobj, address)
 
-    def _get_header_address(self, footer):
+    def _get_header_address(self, footer: ParamsBlock) -> int:
         """Returns header address.
 
         Parameters
@@ -455,7 +480,7 @@ class SupernoteParser:
         header_address = int(footer.get("FILE_FEATURE"))
         return header_address
 
-    def _get_page_addresses(self, footer):
+    def _get_page_addresses(self, footer: ParamsBlock) -> list[int]:
         """Returns list of page addresses.
 
         Parameters
@@ -468,13 +493,13 @@ class SupernoteParser:
         list of int
             list of page address
         """
-        if type(footer.get("PAGE")) == list:
+        if type(footer.get("PAGE")) is list:
             page_addresses = list(map(lambda a: int(a), footer.get("PAGE")))
         else:
             page_addresses = [int(footer.get("PAGE"))]
         return page_addresses
 
-    def _parse_page_block(self, fobj, address):
+    def _parse_page_block(self, fobj: FileObj, address: int) -> ParamsBlock:
         """Returns parameters in a page block.
 
         Parameters
@@ -491,7 +516,7 @@ class SupernoteParser:
         """
         return self._parse_metadata_block(fobj, address)
 
-    def _parse_metadata_block(self, fobj, address):
+    def _parse_metadata_block(self, fobj: FileObj, address: int) -> ParamsBlock:
         """Converts metadata block into dict of parameters.
 
         Returns empty dict if address equals to 0.
@@ -516,7 +541,7 @@ class SupernoteParser:
         params = self._extract_parameters(contents.decode())
         return params
 
-    def _extract_parameters(self, metadata):
+    def _extract_parameters(self, metadata: str) -> ParamsBlock:
         """Returns dict of parameters extracted from metadata.
 
         metadata is a repetition of key-value style parameter like
@@ -540,7 +565,7 @@ class SupernoteParser:
             value = m[2]
             if params.get(key):
                 # the key is duplicate.
-                if type(params.get(key)) != list:
+                if type(params.get(key)) is not list:
                     # To store duplicate parameters, we transform data structure
                     # from {key: value} to {key: [value1, value2, ...]}
                     first_value = params.pop(key)
@@ -603,7 +628,7 @@ class SupernoteXParser(SupernoteParser):
         keyword_keys = filter(lambda k: k.startswith("KEYWORD_"), footer.keys())
         keyword_addresses = []
         for k in keyword_keys:
-            if type(footer[k]) == list:
+            if type(footer[k]) is list:
                 keyword_addresses.extend(list(map(int, footer[k])))
             else:
                 keyword_addresses.append(int(footer[k]))
@@ -616,7 +641,7 @@ class SupernoteXParser(SupernoteParser):
         title_keys = filter(lambda k: k.startswith("TITLE_"), footer.keys())
         title_addresses = []
         for k in title_keys:
-            if type(footer[k]) == list:
+            if type(footer[k]) is list:
                 title_addresses.extend(list(map(int, footer[k])))
             else:
                 title_addresses.append(int(footer[k]))
@@ -629,7 +654,7 @@ class SupernoteXParser(SupernoteParser):
         link_keys = filter(lambda k: k.startswith("LINK"), footer.keys())
         link_addresses = []
         for k in link_keys:
-            if type(footer[k]) == list:
+            if type(footer[k]) is list:
                 link_addresses.extend(list(map(int, footer[k])))
             else:
                 link_addresses.append(int(footer[k]))
@@ -638,7 +663,7 @@ class SupernoteXParser(SupernoteParser):
     def _parse_link_block(self, fobj, address):
         return self._parse_metadata_block(fobj, address)
 
-    def _get_page_addresses(self, footer):
+    def _get_page_addresses(self, footer: ParamsBlock) -> list[int]:
         """Returns list of page addresses.
 
         Parameters
