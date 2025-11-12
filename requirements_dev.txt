@@ -6,5 +6,5 @@ pdoc==16.0.0
 pip==25.3
 pre-commit==4.4.0
 pytest-cov==7.0.0
-pytest==9.0.0
+pytest==9.0.1
 ruff==0.14.4
