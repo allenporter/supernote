@@ -13,7 +13,7 @@ authors = [
   { name = "jya", email = "jya@wizmy.net" },
   { name = "Allen Porter", email = "allen.porter@gmail.com" }
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 classifiers = []
 dependencies = [
   "colour>=0.1.5",
