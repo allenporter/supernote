@@ -129,6 +129,45 @@ class UserSmsLoginRequest(DataClassJSONMixin):
         serialize_by_alias = True
 
 
+@dataclass
+class UserPreAuthRequest(DataClassJSONMixin):
+    """Request for pre-auth."""
+
+    account: str
+
+
+@dataclass
+class UserPreAuthResponse(BaseResponse):
+    """Response from pre-auth."""
+
+    token: str = ""
+
+
+@dataclass
+class UserSendSmsRequest(DataClassJSONMixin):
+    """Request to send SMS code."""
+
+    telephone: str
+    timestamp: str
+    token: str
+    sign: str
+    nationcode: int = field(
+        metadata=field_options(alias="nationcode"), default=COUNTRY_CODE
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class UserSendSmsResponse(BaseResponse):
+    """Response from send SMS."""
+
+    valid_code_key: str = field(
+        metadata=field_options(alias="validCodeKey"), default=""
+    )
+
+
 @dataclass(kw_only=True)
 class UserSmsLoginResponse(BaseResponse):
     """Response from access token call."""

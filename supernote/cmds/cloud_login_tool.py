@@ -86,6 +86,11 @@ async def async_cloud_login(email: str, password: str, verbose: bool = False) ->
                     print("The server has sent an SMS verification code to your phone.")
                     print()
 
+                    print("Requesting SMS verification code...")
+                    await login_client.request_sms_code(email)
+                    print("SMS code requested successfully.")
+                    print()
+
                     code = input("Enter verification code: ").strip()
                     print()
                     print("Submitting verification code...")
