@@ -1,0 +1,1 @@
+"""Supernote command line tool."""

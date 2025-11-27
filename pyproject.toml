@@ -16,6 +16,7 @@ authors = [
 requires-python = ">=3.13"
 classifiers = []
 dependencies = [
+  # Notebook dependencies
   "colour>=0.1.5",
   "numpy>=1.19.0",
   "Pillow>=7.2.0",
@@ -23,6 +24,10 @@ dependencies = [
   "pypng>=0.0.20",
   "reportlab>=3.6.1",
   "svgwrite>=1.4",
+
+  # Cloud dependencies
+  "aiohttp>=3.13.2",
+  "mashumaro>=3.17",
 ]
 
 [project.urls]

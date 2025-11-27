@@ -7,3 +7,6 @@ pre-commit==4.5.0
 pytest-cov==7.0.0
 pytest==9.0.1
 ruff==0.14.6
+
+aiohttp==3.13.2
+mashumaro==3.17
