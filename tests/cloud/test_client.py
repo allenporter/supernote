@@ -9,13 +9,18 @@ import aiohttp.test_utils
 
 from supernote.cloud.api_model import BaseResponse
 from supernote.cloud.client import Client
-from supernote.cloud.exceptions import ApiException, ForbiddenException, UnauthorizedException
+from supernote.cloud.exceptions import (
+    ApiException,
+    ForbiddenException,
+    UnauthorizedException,
+)
 from supernote.cloud.auth import ConstantAuth
 
 
 @dataclass
 class SimpleResponse(BaseResponse):
     """Simple response for testing."""
+
     data: str = ""
 
 
@@ -80,7 +85,7 @@ async def client_fixture(aiohttp_client: aiohttp.test_utils.TestClient) -> Clien
     app.router.add_post("/malformed-json", handler_malformed_json)
 
     test_client = await aiohttp_client(app)
-    
+
     base_url = str(test_client.make_url(""))
     return Client(test_client.session, host=base_url.rstrip("/"))
 
@@ -96,12 +101,17 @@ async def test_get_json(client: Client):
 
 async def test_post_json(client: Client):
     """Test post_json method."""
+
     @dataclass
     class PostRequest:
         input: str
-        def to_dict(self): return {"input": self.input}
 
-    response = await client.post_json("post-url", SimpleResponse, json={"input": "posted"})
+        def to_dict(self):
+            return {"input": self.input}
+
+    response = await client.post_json(
+        "post-url", SimpleResponse, json={"input": "posted"}
+    )
     assert response.success
     assert response.data == "posted"
 
@@ -135,13 +145,13 @@ async def test_auth_token(aiohttp_client):
     app = web.Application()
     app.router.add_get("/csrf", handler_csrf)
     app.router.add_get("/auth-check", handler_auth_check)
-    
+
     test_client = await aiohttp_client(app)
     base_url = str(test_client.make_url(""))
-    
+
     auth = ConstantAuth("my-token")
     client = Client(test_client.session, host=base_url.rstrip("/"), auth=auth)
-    
+
     response = await client.get_json("auth-check", SimpleResponse)
     assert response.success
     assert response.data == "authorized"

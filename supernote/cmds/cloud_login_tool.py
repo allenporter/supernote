@@ -5,13 +5,12 @@ import asyncio
 import logging
 import sys
 import os
-from pathlib import Path
 
 import aiohttp
 
 from supernote.cloud.client import Client
 from supernote.cloud.login_client import LoginClient
-from supernote.cloud.auth import ConstantAuth, FileCacheAuth
+from supernote.cloud.auth import FileCacheAuth
 from supernote.cloud.cloud_client import SupernoteCloudClient
 from supernote.cloud.exceptions import SupernoteException
 
