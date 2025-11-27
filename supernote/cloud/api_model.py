@@ -6,29 +6,44 @@ from mashumaro import field_options
 from mashumaro.mixins.json import DataClassJSONMixin
 from mashumaro.config import BaseConfig
 
+COUNTRY_CODE = 1
+BROWSER = "Chrome142"
+EQUIPMENT = 1
+LANGUAGE = "en"
+
+
+@dataclass
+class BaseResponse(DataClassJSONMixin):
+    """Base response class."""
+
+    success: bool = True
+    error_code: str = field(metadata=field_options(alias="errorCode"), default="")
+    error_msg: str = field(metadata=field_options(alias="errorMsg"), default="")
+
 
 @dataclass
 class QueryUserRequest(DataClassJSONMixin):
     """Request to query user."""
 
-    country_code: int = field(metadata=field_options(alias="countryCode"))
     account: str
+    country_code: int = field(
+        metadata=field_options(alias="countryCode"), default=COUNTRY_CODE
+    )
 
     class Config(BaseConfig):
         serialize_by_alias = True
 
 
 @dataclass(kw_only=True)
-class QueryUserResponse(DataClassJSONMixin):
+class QueryUserResponse(BaseResponse):
     """Response from query user call."""
 
-    success: bool = True
-    error_code: str = field(metadata=field_options(alias="errorCode"), default="")
-    error_msg: str = field(metadata=field_options(alias="errorMsg"), default="")
     user_id: str = field(metadata=field_options(alias="userId"))
     user_name: str = field(metadata=field_options(alias="userName"))
-    country_code: str = field(metadata=field_options(alias="countryCode"))
     birthday: str = field(metadata=field_options(alias="birthday"))
+    country_code: str = field(
+        metadata=field_options(alias="countryCode"), default=COUNTRY_CODE
+    )
     telephone: str = field(metadata=field_options(alias="telephone"), default="")
     sex: str = ""
     file_server: str = field(metadata=field_options(alias="fileServer"), default="")
@@ -43,7 +58,7 @@ class TokenRequest(DataClassJSONMixin):
 
 
 @dataclass
-class TokenResponse(DataClassJSONMixin):
+class TokenResponse(BaseResponse):
     """Response from token endpoint."""
 
 
@@ -51,45 +66,73 @@ class TokenResponse(DataClassJSONMixin):
 class UserRandomCodeRequest(DataClassJSONMixin):
     """Request to get a random code."""
 
-    country_code: int = field(metadata=field_options(alias="countryCode"))
     account: str
+    country_code: int = field(
+        metadata=field_options(alias="countryCode"), default=COUNTRY_CODE
+    )
 
     class Config(BaseConfig):
         serialize_by_alias = True
 
 
 @dataclass
-class UserRandomCodeResponse(DataClassJSONMixin):
+class UserRandomCodeResponse(BaseResponse):
     """Response from login."""
 
-    random_code: str = field(metadata=field_options(alias="randomCode"))
-    timestamp: str
+    random_code: str = field(metadata=field_options(alias="randomCode"), default="")
+    timestamp: str = ""
 
 
 @dataclass
 class UserLoginRequest(DataClassJSONMixin):
     """Request to login."""
 
-    country_code: int = field(metadata=field_options(alias="countryCode"))
     account: str
     password: str
-    browser: str
-    equipment: int
     login_method: int = field(metadata=field_options(alias="loginMethod"))
     timestamp: str
-    language: str
+    language: str = LANGUAGE
+    country_code: int = field(
+        metadata=field_options(alias="countryCode"), default=COUNTRY_CODE
+    )
+    browser: str = BROWSER
+    equipment: int = EQUIPMENT
 
     class Config(BaseConfig):
         serialize_by_alias = True
 
 
 @dataclass(kw_only=True)
-class UserLoginResponse(DataClassJSONMixin):
+class UserLoginResponse(BaseResponse):
     """Response from access token call."""
 
-    success: bool
-    error_code: str = field(metadata=field_options(alias="errorCode"), default="")
-    error_msg: str = field(metadata=field_options(alias="errorMsg"), default="")
+    token: str
+
+
+@dataclass
+class UserSmsLoginRequest(DataClassJSONMixin):
+    """Request to login via sms."""
+
+    telephone: str
+    timestamp: str
+    valid_code: str = field(metadata=field_options(alias="validCode"))
+    # String like "1-{telephone}_validCode"
+    valid_code_key: str = field(metadata=field_options(alias="validCodeKey"))
+
+    country_code: int = field(
+        metadata=field_options(alias="countryCode"), default=COUNTRY_CODE
+    )
+    browser: str = BROWSER
+    equipment: int = EQUIPMENT
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass(kw_only=True)
+class UserSmsLoginResponse(BaseResponse):
+    """Response from access token call."""
+
     token: str
 
 
@@ -122,12 +165,9 @@ class FileListRequest(DataClassJSONMixin):
 
 
 @dataclass(kw_only=True)
-class FileListResponse(DataClassJSONMixin):
+class FileListResponse(BaseResponse):
     """Response from file list call."""
 
-    success: bool
-    error_code: str = field(metadata=field_options(alias="errorCode"), default="")
-    error_msg: str = field(metadata=field_options(alias="errorMsg"), default="")
     total: int
     size: int
     pages: int
@@ -146,10 +186,7 @@ class GetFileDownloadUrlRequest(DataClassJSONMixin):
 
 
 @dataclass(kw_only=True)
-class GetFileDownloadUrlResponse(DataClassJSONMixin):
+class GetFileDownloadUrlResponse(BaseResponse):
     """Response from file download call."""
 
-    success: bool
-    error_code: str = field(metadata=field_options(alias="errorCode"), default="")
-    error_msg: str = field(metadata=field_options(alias="errorMsg"), default="")
     url: str

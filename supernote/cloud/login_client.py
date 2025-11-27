@@ -11,10 +11,13 @@ from .api_model import (
     UserLoginResponse,
     UserRandomCodeRequest,
     UserRandomCodeResponse,
+    UserSmsLoginRequest,
+    UserSmsLoginResponse,
     TokenRequest,
     TokenResponse,
 )
 from .client import Client
+from .exceptions import ApiException, SmsVerificationRequired
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,6 +54,23 @@ class LoginClient:
         )
         return access_token_response.token
 
+    async def sms_login(self, telephone: str, code: str, timestamp: str) -> str:
+        """Log in via SMS code."""
+        # Always get a fresh CSRF token for the SMS login request
+        await self._client._get_csrf_token()
+
+        payload = UserSmsLoginRequest(
+            telephone=telephone,
+            timestamp=timestamp,
+            valid_code=code,
+            valid_code_key=f"1-{telephone}_validCode",
+        ).to_dict()
+
+        response = await self._client.post_json(
+            "official/user/sms/login", UserSmsLoginResponse, json=payload
+        )
+        return response.token
+
     async def _token(self) -> None:
         """Get a random code."""
         await self._client.post_json(
@@ -61,7 +81,7 @@ class LoginClient:
 
     async def _get_random_code(self, email: str) -> UserRandomCodeResponse:
         """Get a random code."""
-        payload = UserRandomCodeRequest(country_code=1, account=email).to_dict()
+        payload = UserRandomCodeRequest(account=email).to_dict()
         return await self._client.post_json(
             "official/user/query/random/code", UserRandomCodeResponse, json=payload
         )
@@ -71,15 +91,16 @@ class LoginClient:
     ) -> UserLoginResponse:
         """Get an access token."""
         payload = UserLoginRequest(
-            country_code=1,
             account=email,
             password=encoded_password,
-            browser="Chrome107",
-            equipment=1,
             login_method=1,
             timestamp=random_code_timestamp,
-            language="en",
         ).to_dict()
-        return await self._client.post_json(
-            "official/user/account/login/new", UserLoginResponse, json=payload
-        )
+        try:
+            return await self._client.post_json(
+                "official/user/account/login/new", UserLoginResponse, json=payload
+            )
+        except ApiException as err:
+            if "verification code" in str(err):
+                raise SmsVerificationRequired(str(err), random_code_timestamp) from err
+            raise

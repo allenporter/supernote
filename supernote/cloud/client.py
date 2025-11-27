@@ -5,8 +5,8 @@ from typing import Any, Type, TypeVar
 
 import aiohttp
 from aiohttp.client_exceptions import ClientError
-from mashumaro.mixins.json import DataClassJSONMixin
 
+from .api_model import BaseResponse
 from .exceptions import ApiException, UnauthorizedException, ForbiddenException
 from .auth import AbstractAuth
 
@@ -15,14 +15,16 @@ _LOGGER = logging.getLogger(__name__)
 API_URL = "https://cloud.supernote.com/api"
 HEADERS = {
     "Content-Type": "application/json",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+    "Referer": "https://cloud.supernote.com/",
+    "Origin": "https://cloud.supernote.com",
 }
 ACCESS_TOKEN = "x-access-token"
 XSRF_COOKIE = "XSRF-TOKEN"
 XSRF_HEADER = "X-XSRF-TOKEN"
 
 
-_T = TypeVar("_T", bound=DataClassJSONMixin)
+_T = TypeVar("_T", bound=BaseResponse)
 
 
 class Client:
@@ -52,28 +54,28 @@ class Client:
             headers = {
                 **HEADERS,
             }
-        if self._xsrf_token is None:
-            self._xsrf_token = await self._get_csrf_token()
+        # Always get a fresh CSRF token
+        self._xsrf_token = await self._get_csrf_token()
         headers[XSRF_HEADER] = self._xsrf_token
-        cookies = {XSRF_COOKIE: self._xsrf_token}
+
         if self._auth and ACCESS_TOKEN not in headers:
             access_token = await self._auth.async_get_access_token()
             headers[ACCESS_TOKEN] = access_token
         if not (url.startswith("http://") or url.startswith("https://")):
             url = f"{self._host}/{url}"
         _LOGGER.debug(
-            "request[%s]=%s %s %s %s",
+            "request[%s]=%s %s %s",
             method,
             url,
             kwargs.get("params"),
             headers,
-            cookies,
         )
         if method != "get" and "json" in kwargs:
             _LOGGER.debug("request[post json]=%s", kwargs["json"])
-        return await self._websession.request(
-            method, url, **kwargs, headers=headers, cookies=cookies
+        response = await self._websession.request(
+            method, url, **kwargs, headers=headers
         )
+        return response
 
     async def get(self, url: str, **kwargs: Any) -> aiohttp.ClientResponse:
         """Make a get request."""
@@ -97,9 +99,12 @@ class Client:
             raise ApiException("Server returned malformed response") from err
         _LOGGER.debug("response=%s", result)
         try:
-            return data_cls.from_json(result)
+            data_response = data_cls.from_json(result)
         except (LookupError, ValueError) as err:
             raise ApiException(f"Server return malformed response: {result}") from err
+        if not data_response.success:
+            raise ApiException(data_response.error_msg)
+        return data_response
 
     async def post(self, url: str, **kwargs: Any) -> aiohttp.ClientResponse:
         """Make a post request."""
@@ -116,21 +121,30 @@ class Client:
             result = await resp.text()
         except ClientError as err:
             raise ApiException("Server returned malformed response") from err
-        _LOGGER.debug("response=%s", result)
         try:
-            return data_cls.from_json(result)
+            data_response = data_cls.from_json(result)
         except (LookupError, ValueError) as err:
             raise ApiException(f"Server return malformed response: {result}") from err
+        if not data_response.success:
+            raise ApiException(data_response.error_msg)
+        return data_response
 
     async def _get_csrf_token(self) -> str:
         """Get the CSRF token."""
-        _LOGGER.debug("Getting CSRF token")
-        resp = await self._websession.request("get", f"{self._host}/csrf")
+        url = f"{self._host}/csrf"
+        _LOGGER.debug("CSRF request[get]=%s %s", url, HEADERS)
+        resp = await self._websession.request("get", url, headers=HEADERS)
+        try:
+            result = await resp.text()
+        except ClientError as err:
+            raise ApiException("Server returned malformed response") from err
+        _LOGGER.debug("CSRF response=%s", result)
         _LOGGER.debug("CSRF response headers=%s", resp.headers)
         token = resp.headers.get(XSRF_HEADER)
         if token is None:
             raise ApiException("Failed to get CSRF token from header")
         _LOGGER.debug("CSRF token=%s", token)
+        _LOGGER.debug("CSRF response cookies=%s", resp.cookies)
         return token
 
     @classmethod
