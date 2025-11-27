@@ -10,3 +10,4 @@ ruff==0.14.6
 
 aiohttp==3.13.2
 mashumaro==3.17
+pytest-aiohttp==1.1.0
