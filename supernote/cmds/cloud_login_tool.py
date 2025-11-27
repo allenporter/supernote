@@ -4,13 +4,15 @@
 import asyncio
 import logging
 import sys
+import os
+from pathlib import Path
 
 import aiohttp
 
 from supernote.cloud.client import Client
 from supernote.cloud.login_client import LoginClient
+from supernote.cloud.auth import ConstantAuth, FileCacheAuth
 from supernote.cloud.cloud_client import SupernoteCloudClient
-from supernote.cloud.auth import ConstantAuth
 from supernote.cloud.exceptions import SupernoteException
 
 
@@ -109,9 +111,17 @@ async def async_cloud_login(email: str, password: str, verbose: bool = False) ->
             )
             print()
 
+            # Save token to cache
+            cache_path = os.path.expanduser("~/.cache/supernote.pkl")
+            print(f"Saving token to {cache_path}...")
+            auth = FileCacheAuth(cache_path)
+            auth.save_access_token(access_token)
+            print("✓ Token saved!")
+            print()
+
             # Step 2: Test basic functionality
             print("Step 3: Testing basic functionality...")
-            auth = ConstantAuth(access_token)
+            # auth = ConstantAuth(access_token) # No longer needed as we use FileCacheAuth
             authenticated_client = Client(session, auth=auth)
             cloud_client = SupernoteCloudClient(authenticated_client)
 
@@ -182,3 +192,57 @@ def subcommand_cloud_login(args) -> None:
         args: Parsed command line arguments
     """
     asyncio.run(async_cloud_login(args.email, args.password, args.verbose))
+
+
+async def async_cloud_ls(verbose: bool = False) -> None:
+    """List files in Supernote Cloud using cached credentials.
+
+    Args:
+        verbose: Enable verbose logging
+    """
+    setup_logging(verbose)
+
+    cache_path = os.path.expanduser("~/.cache/supernote.pkl")
+    if not os.path.exists(cache_path):
+        print(f"Error: No cached credentials found at {cache_path}")
+        print("Please run 'supernote-tool cloud-login' first.")
+        sys.exit(1)
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            auth = FileCacheAuth(cache_path)
+            client = Client(session, auth=auth)
+            cloud_client = SupernoteCloudClient(client)
+
+            print("Listing files in root directory...")
+            file_list_response = await cloud_client.file_list()
+
+            print(f"Total files: {file_list_response.total}")
+            if file_list_response.file_list:
+                for file in file_list_response.file_list:
+                    folder_marker = "📁" if file.is_folder == "Y" else "📄"
+                    print(f"{folder_marker} {file.file_name} (ID: {file.id})")
+
+        except SupernoteException as err:
+            print(f"Error: {err}")
+            if verbose:
+                import traceback
+
+                traceback.print_exc()
+            sys.exit(1)
+        except Exception as err:
+            print(f"Unexpected error: {err}")
+            if verbose:
+                import traceback
+
+                traceback.print_exc()
+            sys.exit(1)
+
+
+def subcommand_cloud_ls(args) -> None:
+    """Handler for cloud-ls subcommand.
+
+    Args:
+        args: Parsed command line arguments
+    """
+    asyncio.run(async_cloud_ls(args.verbose))

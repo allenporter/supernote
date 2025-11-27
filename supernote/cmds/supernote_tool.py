@@ -29,7 +29,7 @@ from supernote.converter import (
     TextConverter,
 )
 from supernote.converter import VisibilityOverlay
-from supernote.cmds.cloud_login_tool import subcommand_cloud_login
+from supernote.cmds.cloud_login_tool import subcommand_cloud_login, subcommand_cloud_ls
 
 
 def convert_all(converter, total, file_name, save_func, visibility_overlay):
@@ -324,13 +324,18 @@ def main():
     parser_cloud_login.add_argument("email", type=str, help="user email/account")
     parser_cloud_login.add_argument("password", type=str, help="user password")
     parser_cloud_login.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        default=False,
-        help="enable verbose HTTP logging",
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
     )
     parser_cloud_login.set_defaults(handler=subcommand_cloud_login)
+
+    # Cloud ls command
+    cloud_ls_parser = subparsers.add_parser(
+        "cloud-ls", help="List files in Supernote Cloud"
+    )
+    cloud_ls_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    cloud_ls_parser.set_defaults(handler=subcommand_cloud_ls)
 
     args = parser.parse_args()
     if hasattr(args, "handler"):
