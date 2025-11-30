@@ -1,6 +1,6 @@
 # Supernote Notebook Package
 
-This package provides tools for parsing and converting Supernote `.note` files.
+This package provides tools for parsing and converting Supernote `.note` files. It is recommended to use [supernote-tool](https://github.com/jya-dev/supernote-tool) instead unless you are having a similar dependency limitation motivation that led to this fork or if you prefer this API.
 
 ## Usage
 
