@@ -8,6 +8,7 @@ import shutil
 import asyncio
 import urllib.parse
 from pathlib import Path
+from typing import Callable, Awaitable, Any
 from aiohttp import web
 from . import config
 from .models.base import BaseResponse
@@ -64,7 +65,10 @@ def get_dir_size(path: Path) -> int:
 
 
 @web.middleware
-async def trace_middleware(request, handler):
+async def trace_middleware(
+    request: web.Request,
+    handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
+) -> web.StreamResponse:
     # Skip reading body for upload endpoints to avoid consuming the stream
     # which breaks multipart parsing in the handler.
     if "/upload/data/" in request.path:
@@ -115,37 +119,37 @@ async def trace_middleware(request, handler):
     return response
 
 
-async def handle_root(request):
+async def handle_root(request: web.Request) -> web.Response:
     return web.Response(text="Supernote Private Cloud Server")
 
 
-async def handle_query_server(request):
+async def handle_query_server(request: web.Request) -> web.Response:
     # Endpoint: GET /api/file/query/server
     # Purpose: Device checks if the server is a valid Supernote Private Cloud instance.
     return web.json_response(BaseResponse().to_dict())
 
 
-async def handle_equipment_unlink(request):
+async def handle_equipment_unlink(request: web.Request) -> web.Response:
     # Endpoint: POST /api/terminal/equipment/unlink
     # Purpose: Device requests to unlink itself from the account/server.
     # Since this is a private cloud, we can just acknowledge success.
     return web.json_response(BaseResponse().to_dict())
 
 
-async def handle_check_user_exists(request):
+async def handle_check_user_exists(request: web.Request) -> web.Response:
     # Endpoint: POST /api/official/user/check/exists/server
     # Purpose: Check if the user exists on this server.
     # For now, we'll assume any user exists to allow login to proceed.
     return web.json_response(BaseResponse().to_dict())
 
 
-async def handle_query_token(request):
+async def handle_query_token(request: web.Request) -> web.Response:
     # Endpoint: POST /api/user/query/token
     # Purpose: Initial token check (often empty request)
     return web.json_response(BaseResponse().to_dict())
 
 
-async def handle_random_code(request):
+async def handle_random_code(request: web.Request) -> web.Response:
     # Endpoint: POST /api/official/user/query/random/code
     # Purpose: Get challenge for password hashing
     random_code = secrets.token_hex(4)  # 8 chars
@@ -156,7 +160,7 @@ async def handle_random_code(request):
     )
 
 
-async def handle_login(request):
+async def handle_login(request: web.Request) -> web.Response:
     # Endpoint: POST /api/official/user/account/login/new
     # Purpose: Login with hashed password
 
@@ -175,14 +179,14 @@ async def handle_login(request):
     )
 
 
-async def handle_bind_equipment(request):
+async def handle_bind_equipment(request: web.Request) -> web.Response:
     # Endpoint: POST /api/terminal/user/bindEquipment
     # Purpose: Bind the device to the account.
     # We can just acknowledge success.
     return web.json_response(BaseResponse().to_dict())
 
 
-async def handle_user_query(request):
+async def handle_user_query(request: web.Request) -> web.Response:
     # Endpoint: POST /api/user/query
     # Purpose: Get user details.
     user_vo = UserVO(
@@ -205,7 +209,7 @@ async def handle_user_query(request):
     )
 
 
-async def handle_sync_start(request):
+async def handle_sync_start(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/2/files/synchronous/start
     # Purpose: Start a file synchronization session.
     # Response: SynchronousStartLocalVO
@@ -217,14 +221,14 @@ async def handle_sync_start(request):
     )
 
 
-async def handle_sync_end(request):
+async def handle_sync_end(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/2/files/synchronous/end
     # Purpose: End a file synchronization session.
     # Response: SynchronousEndLocalVO (likely just success)
     return web.json_response(BaseResponse().to_dict())
 
 
-async def handle_list_folder(request):
+async def handle_list_folder(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/2/files/list_folder
     # Purpose: List folders for sync selection.
     # Response: ListFolderLocalVO
@@ -243,7 +247,7 @@ async def handle_list_folder(request):
         # Scan directory
         loop = asyncio.get_running_loop()
 
-        def scan():
+        def scan() -> list[FileEntryVO]:
             res = []
             with os.scandir(target_dir) as it:
                 for entry in it:
@@ -288,7 +292,7 @@ async def handle_list_folder(request):
     )
 
 
-async def handle_capacity_query(request):
+async def handle_capacity_query(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/2/users/get_space_usage
     # Purpose: Get storage capacity usage.
     # Response: CapacityLocalVO
@@ -308,7 +312,7 @@ async def handle_capacity_query(request):
     )
 
 
-async def handle_query_by_path(request):
+async def handle_query_by_path(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/3/files/query/by/path_v3
     # Purpose: Check if a file exists by path.
     # Response: FileQueryByPathLocalVO
@@ -321,7 +325,7 @@ async def handle_query_by_path(request):
     entries_vo = None
     if target_path.exists():
         stat = target_path.stat()
-        
+
         loop = asyncio.get_running_loop()
         content_hash = ""
         if not target_path.is_dir():
@@ -347,7 +351,7 @@ async def handle_query_by_path(request):
     )
 
 
-async def handle_query_v3(request):
+async def handle_query_v3(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/3/files/query_v3
     # Purpose: Get file details by ID.
 
@@ -390,7 +394,7 @@ async def handle_query_v3(request):
     )
 
 
-async def handle_csrf(request):
+async def handle_csrf(request: web.Request) -> web.Response:
     # Endpoint: GET /api/csrf
     token = secrets.token_urlsafe(16)
     resp = web.Response(text="CSRF Token")
@@ -398,7 +402,7 @@ async def handle_csrf(request):
     return resp
 
 
-async def handle_upload_apply(request):
+async def handle_upload_apply(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/3/files/upload/apply
     # Purpose: Request to upload a file.
     # Response: FileUploadApplyLocalVO
@@ -429,7 +433,7 @@ async def handle_upload_apply(request):
     )
 
 
-async def handle_upload_data(request):
+async def handle_upload_data(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/upload/data/{filename}
     # Purpose: Receive the actual file content.
 
@@ -477,7 +481,7 @@ async def handle_upload_data(request):
     return web.Response(status=200)
 
 
-async def handle_upload_finish(request):
+async def handle_upload_finish(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/2/files/upload/finish
     # Purpose: Confirm upload completion and move file to final location.
     # Response: FileUploadFinishLocalVO
@@ -533,7 +537,7 @@ async def handle_upload_finish(request):
     )
 
 
-async def handle_download_apply(request):
+async def handle_download_apply(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/3/files/download_v3
     # Purpose: Request a download URL for a file.
 
@@ -555,7 +559,7 @@ async def handle_download_apply(request):
     return web.json_response(DownloadApplyResponse(url=download_url).to_dict())
 
 
-async def handle_download_data(request):
+async def handle_download_data(request: web.Request) -> web.StreamResponse:
     # Endpoint: GET /api/file/download/data
     # Purpose: Download the file.
 
@@ -580,7 +584,7 @@ async def handle_download_data(request):
     return web.FileResponse(target_path)
 
 
-def create_app():
+def create_app() -> web.Application:
     app = web.Application(middlewares=[trace_middleware])
     app.router.add_get("/", handle_root)
     app.router.add_get("/api/file/query/server", handle_query_server)
@@ -618,7 +622,7 @@ def create_app():
     return app
 
 
-def run(args):
+def run(args: Any) -> None:
     logging.basicConfig(level=logging.INFO)
     app = create_app()
     web.run_app(app, host=config.HOST, port=config.PORT)
