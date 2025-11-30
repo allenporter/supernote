@@ -1,7 +1,7 @@
 # Supernote Lite AI Instructions
 
 ## Project Overview
-`supernote-lite` is a Python library for parsing and converting Ratta Supernote `.note` files, and interacting with the Supernote Cloud API. It is a fork of `supernote-tool` with lighter dependencies.
+`supernote-lite` is a Python library for parsing and converting Ratta Supernote `.note` files, interacting with the Supernote Cloud API, and hosting a private Supernote Cloud server. It is a fork of `supernote-tool` with lighter dependencies.
 
 ## Architecture
 - **Core (`supernote/`)**:
@@ -13,6 +13,9 @@
   - `client.py`: Async HTTP client using `aiohttp`.
   - `api_model.py`: Data models using `mashumaro` for JSON serialization.
   - `auth.py`: Authentication strategies (`AbstractAuth`, `FileCacheAuth`).
+- **Server (`supernote/server/`)**:
+  - **Protocol**: Implements the Supernote Cloud protocol (see `supernote/server/ARCHITECTURE.md`).
+  - **Goal**: Provide a self-hosted alternative to the official cloud.
 - **CLI (`supernote/cmds/`)**:
   - `supernote_tool.py`: Main entry point (`supernote-tool`).
 
@@ -33,9 +36,13 @@
 - **Type Hinting**: Use strict type hints. Use `typing.Protocol` for interfaces.
 - **Binary Parsing**: Use `parser.py` patterns for reading binary streams (seek/read).
 - **Logging**: Use `logging.getLogger(__name__)`.
+- **Server Implementation**:
+  - Follow the protocol definitions in `supernote/server/ARCHITECTURE.md`.
+  - Use `mashumaro` for server-side data models (DTOs/VOs) to match the client.
 
 ## Key Files
 - `supernote/parser.py`: Entry point for parsing logic.
 - `supernote/cloud/client.py`: Core API client logic.
 - `supernote/cloud/api_model.py`: API data definitions.
+- `supernote/server/ARCHITECTURE.md`: Documentation of the server protocol and architecture.
 - `pyproject.toml`: Project configuration and dependencies.
