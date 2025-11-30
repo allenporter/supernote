@@ -164,8 +164,6 @@ from supernote.notebook.converter import PngConverter
 ```python
 """Supernote toolkit for parsing, cloud access, and self-hosting."""
 
-__version__ = "0.4.0"
-
 # Core notebook parsing (always available)
 from .notebook import (
     parse_notebook,
@@ -177,7 +175,6 @@ from .notebook import (
 )
 
 __all__ = [
-    "__version__",
     # Notebook
     "parse_notebook",
     "Notebook",
@@ -230,11 +227,11 @@ __all__ = [
 
 from .client import Client
 from .auth import AbstractAuth, ConstantAuth, FileCacheAuth
-from .cloud_client import SupernoteCloudClient
+from .cloud_client import SupernoteClient
 from .login_client import LoginClient
 
 # Convenience alias
-CloudClient = SupernoteCloudClient
+CloudClient = SupernoteClient
 
 __all__ = [
     "Client",
@@ -242,7 +239,7 @@ __all__ = [
     "ConstantAuth",
     "FileCacheAuth",
     "CloudClient",
-    "SupernoteCloudClient",
+    "SupernoteClient",
     "LoginClient",
 ]
 ```

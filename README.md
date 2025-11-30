@@ -5,8 +5,8 @@ All-in-one toolkit for Supernote devices: parse notebooks, self host, and access
 ## Features
 
 - **Notebook Parsing**: Convert `.note` files to PDF, PNG, SVG, or text
-- **Cloud Client**: Interact with Supernote Cloud API
-- **Private Server**: Self-hosted Supernote Cloud replacement
+- **Private Server**: Self-hosted Supernote Private Cloud implementation
+- **Client**: Interact with Supernote service API
 
 ## Installation
 
@@ -14,8 +14,8 @@ All-in-one toolkit for Supernote devices: parse notebooks, self host, and access
 
 # Install specific components
 pip install supernote              # Notebook parsing only
-pip install supernote[cloud]       # + Cloud client
 pip install supernote[server]      # + Private server
+pip install supernote[client]      # + Client
 
 # Full installation (recommended for server users)
 pip install supernote[all]
@@ -37,7 +37,7 @@ uv pip install -e ".[all]"
 ### Parse a Notebook
 
 ```python
-from supernote import parse_notebook
+from supernote.notebook import parse_notebook
 
 notebook = parse_notebook("mynote.note")
 notebook.to_pdf("output.pdf")
@@ -64,9 +64,9 @@ See [Server Documentation](supernote/server/README.md) for details.
 
 ```python
 
-from supernote.cloud import CloudClient
+from supernote.client import SupernoteClient
 
-async with CloudClient.from_credentials(email, password) as client:
+async with SupernoteClient.from_credentials(email, password) as client:
     files = await client.list_files()
 ```
 
@@ -83,15 +83,15 @@ supernote-server serve
 supernote-server user add alice
 
 
-# Cloud operations
-supernote cloud login
-supernote cloud ls
+# Client operations
+supernote client login
+supernote client ls
 ```
 
 ## Development
 
 This package is designed for:
-1. **Server operators** - Self-hosting Supernote Cloud
+1. **Server operators** - Self-hosting Supernote Private Cloud
 2. **Developers** - Integrating Supernote into applications
 3. **Reference** - Understanding Supernote protocols
 

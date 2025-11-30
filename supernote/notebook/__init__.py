@@ -1,4 +1,7 @@
-"""Supernote notebook parsing and conversion."""
+"""Supernote notebook parsing and conversion.
+
+.. include:: ./README.md
+"""
 
 # Copyright (c) 2020 jya
 #
@@ -15,7 +18,16 @@
 # limitations under the License.
 
 from .parser import load_notebook, load, parse_metadata
-from .fileformat import Notebook
+from .fileformat import (
+    Notebook,
+    SupernoteMetadata,
+    Page,
+    Layer,
+    Cover,
+    Keyword,
+    Title,
+    Link,
+)
 from .converter import (
     PngConverter,
     SvgConverter,
@@ -36,6 +48,13 @@ __all__ = [
     "load",
     "parse_metadata",
     "Notebook",
+    "SupernoteMetadata",
+    "Page",
+    "Layer",
+    "Cover",
+    "Keyword",
+    "Title",
+    "Link",
     "PngConverter",
     "SvgConverter",
     "PdfConverter",

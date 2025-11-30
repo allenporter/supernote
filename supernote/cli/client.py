@@ -1,4 +1,4 @@
-"""Cloud CLI commands."""
+"""Client CLI commands."""
 
 import asyncio
 import logging
@@ -7,11 +7,11 @@ import os
 
 import aiohttp
 
-from supernote.cloud.client import Client
-from supernote.cloud.login_client import LoginClient
-from supernote.cloud.auth import FileCacheAuth
-from supernote.cloud.cloud_client import SupernoteCloudClient
-from supernote.cloud.exceptions import SupernoteException
+from supernote.client.client import Client
+from supernote.client.login_client import LoginClient
+from supernote.client.auth import FileCacheAuth
+from supernote.client.cloud_client import SupernoteClient
+from supernote.client.exceptions import SupernoteException
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -71,7 +71,7 @@ async def async_cloud_login(email: str, password: str, verbose: bool = False) ->
                 access_token = await login_client.login(email, password)
             except SupernoteException as err:
                 # Check if it's an SMS verification requirement
-                from supernote.cloud.exceptions import SmsVerificationRequired
+                from supernote.client.exceptions import SmsVerificationRequired
 
                 if isinstance(err, SmsVerificationRequired):
                     print()
@@ -116,7 +116,7 @@ async def async_cloud_login(email: str, password: str, verbose: bool = False) ->
             # Step 2: Test basic functionality
             print("Step 3: Testing basic functionality...")
             authenticated_client = Client(session, auth=auth)
-            cloud_client = SupernoteCloudClient(authenticated_client)
+            cloud_client = SupernoteClient(authenticated_client)
 
             # Test 1: Query user
             print("  Test 1: Querying user information...")
@@ -197,7 +197,7 @@ async def async_cloud_ls(verbose: bool = False) -> None:
         try:
             auth = FileCacheAuth(cache_path)
             client = Client(session, auth=auth)
-            cloud_client = SupernoteCloudClient(client)
+            cloud_client = SupernoteClient(client)
 
             print("Listing files in root directory...")
             file_list_response = await cloud_client.file_list()

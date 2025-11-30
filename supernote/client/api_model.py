@@ -1,4 +1,4 @@
-"""Model classes for the Supernote Cloud API."""
+"""Model classes for the Supernote Service API."""
 
 from dataclasses import dataclass, field
 

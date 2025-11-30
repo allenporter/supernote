@@ -3,20 +3,13 @@
 import argparse
 import sys
 
-import supernote as sn
-from . import notebook, cloud, server
+from . import notebook, client, server
 
 
 def main():
     parser = argparse.ArgumentParser(
         prog="supernote",
-        description="Supernote toolkit for parsing, cloud access, and self-hosting",
-    )
-    parser.add_argument(
-        "--version",
-        help="show version information and exit",
-        action="version",
-        version=f"%(prog)s {sn.__version__}",
+        description="Supernote toolkit for parsing, self hosting, and service access",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
@@ -24,8 +17,8 @@ def main():
     # Notebook commands
     notebook.add_parser(subparsers)
 
-    # Cloud commands
-    cloud.add_parser(subparsers)
+    # Client commands
+    client.add_parser(subparsers)
 
     # Server commands
     server.add_parser(subparsers)
