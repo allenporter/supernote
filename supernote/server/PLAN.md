@@ -36,15 +36,25 @@
     - [ ] `GET /api/file/download/data/{filename}` (Serve File).
 - [ ] Implement Directory Management (Create/Delete folders).
 
-## Phase 4: Persistence & Storage
-- [ ] **File Storage**:
-    - [ ] Create `storage/` directory in workspace.
-    - [ ] Update `handle_upload_data` to save received bytes to `storage/{filename}`.
-    - [ ] Update `handle_upload_finish` to verify file on disk.
-- [ ] **Dynamic Metadata**:
-    - [ ] Update `handle_list_folder` to scan `storage/` and return actual file entries.
-    - [ ] Update `handle_query_by_path` to check `storage/` for file existence.
-    - [ ] Update `handle_capacity_query` to calculate actual disk usage of `storage/`.
+## Phase 4: Persistence & Storage (Completed)
+- [x] Create `storage/` directory structure.
+- [x] Implement `handle_upload_data` to save to `storage/temp/`.
+- [x] Implement `handle_upload_finish` to move from `temp` to `storage/`.
+- [x] Implement `handle_list_folder` to list actual files.
+- [x] Implement `handle_query_by_path` to check file existence.
+- [x] Add test isolation for storage.
+
+## Phase 5: Downloads (Completed)
+- [x] Implement `handle_download_apply` (POST /api/file/3/files/download_v3).
+- [x] Implement `handle_download_data` (GET /api/file/download/data).
+- [x] Update `handle_list_folder` to use relative path as ID.
+- [x] Add test for download flow.
+
+## Phase 6: Refactoring & Architecture (Next)
+- [ ] Refactor `app.py` into multiple files (controllers, services).
+- [ ] Introduce `mashumaro` models for request/response.
+- [ ] Implement proper error handling and logging.
+- [ ] Add proper locking for concurrent access.
 
 ## Phase 5: Downloads (Cloud-to-Device)
 - [ ] **Download Endpoints**:
@@ -57,15 +67,22 @@
     - [ ] Ensure `handle_list_folder` sets `is_downloadable: true` for files.
     - [ ] Handle `content_hash` (MD5) to avoid unnecessary downloads.
 
-## Phase 6: Refactoring & Cleanup
-- [ ] **Separation of Concerns**:
-    - [ ] Create `supernote/server/logic.py` (or `service.py`) for business logic.
-    - [ ] Move VO/DTO construction out of `app.py`.
-    - [ ] Keep `app.py` as a thin HTTP routing layer.
-- [ ] **Configuration**:
-    - [ ] Make storage path configurable via `config.py`.
-- [ ] **Testing**:
-    - [ ] Add tests for file persistence and retrieval.
+## Phase 6: Refactoring & Architecture
+- [ ] **Data Models (Type Safety)**:
+    - [ ] Create `supernote/server/models.py` using `mashumaro.DataClassJSONMixin`.
+    - [ ] Define Request/Response dataclasses mirroring the Java DTOs/VOs (e.g., `ListFolderRequest`, `FileUploadApplyResponse`).
+    - [ ] Replace ad-hoc dictionary responses in `app.py` with typed objects.
+- [ ] **Service Layer (Business Logic)**:
+    - [ ] Create `supernote/server/services/` package.
+    - [ ] Implement `UserService`: Handle authentication, device binding, user profiles.
+    - [ ] Implement `FileService`: Handle file system operations, metadata management.
+    - [ ] Implement `StorageService`: Abstract disk I/O (e.g., `save_file`, `list_dir`, `get_file_stream`).
+- [ ] **Route Separation**:
+    - [ ] Split `app.py` into route modules (e.g., `supernote/server/routes/auth.py`, `supernote/server/routes/file.py`).
+    - [ ] Use `aiohttp.web.RouteTableDef` to organize routes.
+- [ ] **Configuration & Dependency Injection**:
+    - [ ] Refactor `create_app` to accept a `Config` object.
+    - [ ] Inject services into route handlers (avoid global state).
 
 ## Phase 7: Advanced Features
 - [ ] Database integration (SQLite/PostgreSQL) for user/file metadata.
