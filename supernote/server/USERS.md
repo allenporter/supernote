@@ -16,18 +16,18 @@ This file describes how to create and manage user accounts for your private Supe
   Use the CLI tool to add, list, or deactivate users:
 
   ```sh
-  python -m supernote.cmds.user_admin user add alice
+  supernote-server user add alice
   ```
   You will be prompted for a password, which will be securely hashed using SHA256 and stored in `config/users.yaml`.
 
   To list users:
   ```sh
-  python -m supernote.cmds.user_admin user list
+  supernote-server user list
   ```
 
   To deactivate a user:
   ```sh
-  python -m supernote.cmds.user_admin user deactivate alice
+  supernote-server user deactivate alice
   ```
 
   ## Notes

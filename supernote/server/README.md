@@ -10,11 +10,17 @@ This package provides a self-hosted implementation of the Supernote Cloud server
 
 ### Running the Server
 
-You can start the server using the `supernote-tool` CLI:
+You can start the server using the `supernote-server` CLI:
 
 ```bash
-# Default port is 19072
-supernote-tool serve
+# Start the server on port 8080
+supernote-server serve
+```
+
+Or using the main CLI:
+
+```bash
+supernote serve
 ```
 
 To configure the port or host, use environment variables:

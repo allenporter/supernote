@@ -541,3 +541,7 @@ class TextConverter:
         if text_list is None:
             return None
         return " ".join(text_list)
+
+
+# Alias for backward compatibility
+PngConverter = ImageConverter
