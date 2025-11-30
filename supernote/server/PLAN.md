@@ -9,8 +9,17 @@
 
 ## Phase 2: Authentication & Session
 - [ ] Analyze `server_trace.log` from a real device connection.
-- [ ] Implement `GET /api/csrf` (if required).
+- [x] Implement `POST /api/file/query/server` (Server Info/Check).
+- [x] Implement `POST /api/terminal/equipment/unlink` (Unlink Device).
+- [ ] Implement `POST /api/official/user/check/exists/server` (User Exists Check).
+- [ ] Implement `POST /api/user/query/token` (Initial Token Check).
+- [ ] Implement `POST /api/official/user/query/random/code` (Challenge).
+- [x] Implement `POST /api/official/user/account/login/equipment` (Device Login).
+- [x] Implement `POST /api/terminal/user/bindEquipment` (Bind Device).
 - [ ] Implement `POST /api/official/user/account/login/new` (Login).
+    - [ ] Handle password hashing verification.
+    - [ ] Issue JWT tokens.
+- [ ] Implement `GET /api/csrf` (if required).
     - [ ] Handle password hashing verification.
     - [ ] Issue JWT tokens.
 - [ ] Implement `POST /api/user/query` (User Info).
