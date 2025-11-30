@@ -115,7 +115,7 @@ The `supernote` library is a fork and slightly lighter dependency version of [su
 This project is in support of the amazing [Ratta Supernote](https://supernote.com/) product and community. This project aims to be a complementary, unofficial offering that is compatible with the [Private Cloud feature](https://support.supernote.com/Whats-New/setting-up-your-own-supernote-private-cloud-beta), helping to support their open ecosystem, helping to reduce load on their servers etc (e.g. for AI
 powered personal assistant integrations that need to process notebooks, etc)
 
-## Comparison with Official Private Cloud
+### Comparison with Official Private Cloud
 
 Ratta offers an [official Private Cloud solution](https://support.supernote.com/Whats-New/setting-up-your-own-supernote-private-cloud-beta) based on Docker. You
 should generally prefer that solution, unless you are interested in lower level
@@ -142,3 +142,15 @@ Here is how this project compares:
 - You want to run on low-power hardware without Docker overhead.
 - You want to integrate Supernote sync into your own Python applications.
 - You want to customize the server behavior.
+
+### Community Projects
+
+- [github.com/jya-dev/supernote-tool](https://github.com/jya-dev/supernote-tool) - Unofficial python tool for Ratta Supernote for parsing notebook files, which this projects notebook module is based on.
+- [github.com/philips/supernote-typescript](https://github.com/philips/supernote-typescript) - Supernote file-format support in typescript
+- [github.com/julianprester/sncloud](https://github.com/julianprester/sncloud) - Supernote Cloud API for Python
+- [github.com/fharper/awesome-supernote](https://github.com/fharper/awesome-supernote) - A curated list of Supernote resources
+- [github.com/philips/supernote-obsidian-plugin](https://github.com/philips/supernote-obsidian-plugin) - Obsidian plugin for Supernote
+- [github.com/jbchouinard/supernote-sync](https://github.com/jbchouinard/supernote-sync) - Tool to automatically backup files from the Supernote using local WiFi using the Supernote Browse & Access feature
+- [github.com/theburningbush/snbackup](https://github.com/theburningbush/snbackup) - CLI tool for wireless Supernote backups using the Browse & Access feature
+- [github.com/dsummersl/sn2md](https://github.com/dsummersl/sn2md) - Supernote to text/image converter (sn2md)
+- [github.com/calebc42/eink-template-gen](https://github.com/calebc42/eink-template-gen) - Generates pixel-perfect page templates for e-ink devices.
