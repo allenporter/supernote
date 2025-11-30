@@ -7,9 +7,14 @@ from mashumaro.config import BaseConfig, TO_DICT_ADD_OMIT_NONE_FLAG
 @dataclass
 class BaseResponse(DataClassJSONMixin):
     """Base response class."""
+
     success: bool = True
-    error_code: str | None = field(metadata=field_options(alias="errorCode"), default=None)
-    error_msg: str | None = field(metadata=field_options(alias="errorMsg"), default=None)
+    error_code: str | None = field(
+        metadata=field_options(alias="errorCode"), default=None
+    )
+    error_msg: str | None = field(
+        metadata=field_options(alias="errorMsg"), default=None
+    )
 
     class Config(BaseConfig):
         serialize_by_alias = True

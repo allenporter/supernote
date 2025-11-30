@@ -152,9 +152,7 @@ async def handle_random_code(request):
     timestamp = str(int(time.time() * 1000))
 
     return web.json_response(
-        RandomCodeResponse(
-            random_code=random_code, timestamp=timestamp
-        ).to_dict()
+        RandomCodeResponse(random_code=random_code, timestamp=timestamp).to_dict()
     )
 
 
@@ -487,9 +485,7 @@ async def handle_upload_finish(request):
 
     if not temp_path.exists():
         return web.json_response(
-            BaseResponse(
-                success=False, error_msg="Upload not found"
-            ).to_dict(),
+            BaseResponse(success=False, error_msg="Upload not found").to_dict(),
             status=404,
         )
 
@@ -542,9 +538,7 @@ async def handle_download_apply(request):
     target_path = STORAGE_ROOT / file_id
     if not target_path.exists():
         return web.json_response(
-            BaseResponse(
-                success=False, error_msg="File not found"
-            ).to_dict(),
+            BaseResponse(success=False, error_msg="File not found").to_dict(),
             status=404,
         )
 

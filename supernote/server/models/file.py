@@ -7,14 +7,18 @@ from .base import BaseResponse
 
 @dataclass
 class SyncStartResponse(BaseResponse):
-    equipment_no: str | None = field(metadata=field_options(alias="equipmentNo"), default=None)
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
     syn_type: bool = field(metadata=field_options(alias="synType"), default=True)
 
 
 @dataclass
 class ListFolderRequest(DataClassJSONMixin):
     path: str = "/"
-    equipment_no: str | None = field(metadata=field_options(alias="equipmentNo"), default=None)
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -29,10 +33,16 @@ class FileEntryVO(DataClassJSONMixin):
     name: str
     path_display: str = field(metadata=field_options(alias="path_display"))
     parent_path: str = field(metadata=field_options(alias="parent_path"))
-    content_hash: str | None = field(metadata=field_options(alias="content_hash"), default=None)
-    is_downloadable: bool = field(metadata=field_options(alias="is_downloadable"), default=True)
+    content_hash: str | None = field(
+        metadata=field_options(alias="content_hash"), default=None
+    )
+    is_downloadable: bool = field(
+        metadata=field_options(alias="is_downloadable"), default=True
+    )
     size: int = 0
-    last_update_time: int = field(metadata=field_options(alias="lastUpdateTime"), default=0)
+    last_update_time: int = field(
+        metadata=field_options(alias="lastUpdateTime"), default=0
+    )
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -42,7 +52,9 @@ class FileEntryVO(DataClassJSONMixin):
 
 @dataclass
 class ListFolderResponse(BaseResponse):
-    equipment_no: str | None = field(metadata=field_options(alias="equipmentNo"), default=None)
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
     entries: list[FileEntryVO] = field(default_factory=list)
 
 
@@ -59,15 +71,21 @@ class AllocationVO(DataClassJSONMixin):
 
 @dataclass
 class CapacityResponse(BaseResponse):
-    equipment_no: str | None = field(metadata=field_options(alias="equipmentNo"), default=None)
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
     used: int = 0
-    allocation_vo: AllocationVO | None = field(metadata=field_options(alias="allocationVO"), default=None)
+    allocation_vo: AllocationVO | None = field(
+        metadata=field_options(alias="allocationVO"), default=None
+    )
 
 
 @dataclass
 class FileQueryRequest(DataClassJSONMixin):
     path: str
-    equipment_no: str | None = field(metadata=field_options(alias="equipmentNo"), default=None)
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -78,7 +96,9 @@ class FileQueryRequest(DataClassJSONMixin):
 @dataclass
 class FileQueryByIdRequest(DataClassJSONMixin):
     id: str
-    equipment_no: str | None = field(metadata=field_options(alias="equipmentNo"), default=None)
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -88,14 +108,20 @@ class FileQueryByIdRequest(DataClassJSONMixin):
 
 @dataclass
 class FileQueryResponse(BaseResponse):
-    equipment_no: str | None = field(metadata=field_options(alias="equipmentNo"), default=None)
-    entries_vo: FileEntryVO | None = field(metadata=field_options(alias="entriesVO"), default=None)
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
+    entries_vo: FileEntryVO | None = field(
+        metadata=field_options(alias="entriesVO"), default=None
+    )
 
 
 @dataclass
 class UploadApplyRequest(DataClassJSONMixin):
     file_name: str = field(metadata=field_options(alias="fileName"))
-    equipment_no: str | None = field(metadata=field_options(alias="equipmentNo"), default=None)
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -105,13 +131,25 @@ class UploadApplyRequest(DataClassJSONMixin):
 
 @dataclass
 class UploadApplyResponse(BaseResponse):
-    equipment_no: str | None = field(metadata=field_options(alias="equipmentNo"), default=None)
-    bucket_name: str | None = field(metadata=field_options(alias="bucketName"), default=None)
-    inner_name: str | None = field(metadata=field_options(alias="innerName"), default=None)
-    x_amz_date: str | None = field(metadata=field_options(alias="xAmzDate"), default=None)
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
+    bucket_name: str | None = field(
+        metadata=field_options(alias="bucketName"), default=None
+    )
+    inner_name: str | None = field(
+        metadata=field_options(alias="innerName"), default=None
+    )
+    x_amz_date: str | None = field(
+        metadata=field_options(alias="xAmzDate"), default=None
+    )
     authorization: str | None = None
-    full_upload_url: str | None = field(metadata=field_options(alias="fullUploadUrl"), default=None)
-    part_upload_url: str | None = field(metadata=field_options(alias="partUploadUrl"), default=None)
+    full_upload_url: str | None = field(
+        metadata=field_options(alias="fullUploadUrl"), default=None
+    )
+    part_upload_url: str | None = field(
+        metadata=field_options(alias="partUploadUrl"), default=None
+    )
 
 
 @dataclass
@@ -119,7 +157,9 @@ class UploadFinishRequest(DataClassJSONMixin):
     file_name: str = field(metadata=field_options(alias="fileName"))
     path: str
     content_hash: str = field(metadata=field_options(alias="content_hash"))
-    equipment_no: str | None = field(metadata=field_options(alias="equipmentNo"), default=None)
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -129,12 +169,18 @@ class UploadFinishRequest(DataClassJSONMixin):
 
 @dataclass
 class UploadFinishResponse(BaseResponse):
-    equipment_no: str | None = field(metadata=field_options(alias="equipmentNo"), default=None)
-    path_display: str | None = field(metadata=field_options(alias="path_display"), default=None)
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
+    path_display: str | None = field(
+        metadata=field_options(alias="path_display"), default=None
+    )
     id: str | None = None
     size: int = 0
     name: str | None = None
-    content_hash: str | None = field(metadata=field_options(alias="content_hash"), default=None)
+    content_hash: str | None = field(
+        metadata=field_options(alias="content_hash"), default=None
+    )
 
 
 @dataclass
