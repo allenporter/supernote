@@ -1,6 +1,6 @@
 # Supernote Private Cloud Server
 
-This package provides a self-hosted implementation of the Supernote Cloud server.
+This package provides a self-hosted implementation of the Supernote Cloud server. This content is shared between the [documentation](https://allenporter.github.io/supernote-lite/) and github repository at [github.com/allenporter/supernote-lite](https://github.com/allenporter/supernote-lite).
 
 ## Getting Started
 
