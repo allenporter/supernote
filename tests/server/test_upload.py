@@ -25,7 +25,9 @@ def mock_storage(tmp_path: Path):
 
 
 async def test_upload_file(
-    aiohttp_client: AiohttpClient, mock_storage: Path, auth_headers: dict[str, str],
+    aiohttp_client: AiohttpClient,
+    mock_storage: Path,
+    auth_headers: dict[str, str],
 ) -> None:
     client = await aiohttp_client(create_app())
 
