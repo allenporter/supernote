@@ -2,11 +2,8 @@ import argparse
 import os
 import getpass
 import yaml
-import bcrypt
 
-USERS_FILE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "config", "users.yaml"
-)
+from supernote.server.services.user import UserService
 
 
 def load_users(users_file):
@@ -22,38 +19,28 @@ def save_users(data, users_file: str):
 
 
 def list_users(users_file: str):
-    users = load_users(users_file)["users"]
-    for user in users:
+    service = UserService(users_file)
+    for user in service.list_users():
         status = "active" if user.get("is_active", True) else "inactive"
         print(f"{user['username']} ({status})")
 
 
 def add_user(users_file: str, username: str, password: str | None = None):
-    users_data = load_users(users_file)
-    users = users_data["users"]
-    if any(u["username"] == username for u in users):
-        print(f"User '{username}' already exists.")
-        return
+    service = UserService(users_file)
     if password is None:
         password = getpass.getpass(f"Password for {username}: ")
-    password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    users.append(
-        {"username": username, "password_hash": password_hash, "is_active": True}
-    )
-    save_users(users_data, users_file)
-    print(f"User '{username}' created.")
+    if service.add_user(username, password):
+        print(f"User '{username}' created.")
+    else:
+        print(f"User '{username}' already exists.")
 
 
 def deactivate_user(users_file: str, username: str):
-    users_data = load_users(users_file)
-    users = users_data["users"]
-    for user in users:
-        if user["username"] == username:
-            user["is_active"] = False
-            save_users(users_data, users_file)
-            print(f"User '{username}' deactivated.")
-            return
-    print(f"User '{username}' not found.")
+    service = UserService(users_file)
+    if service.deactivate_user(username):
+        print(f"User '{username}' deactivated.")
+    else:
+        print(f"User '{username}' not found.")
 
 
 def add_user_subparser(subparsers: argparse._SubParsersAction) -> None:

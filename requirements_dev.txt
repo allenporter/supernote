@@ -13,5 +13,5 @@ mashumaro==3.17
 pytest-aiohttp==1.1.0
 
 # For user management CLI
-bcrypt>=4.0.0
 pyyaml>=6.0
+jwt==1.4.0

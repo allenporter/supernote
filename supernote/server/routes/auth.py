@@ -4,6 +4,7 @@ from ..models.auth import (
     RandomCodeResponse,
     LoginResponse,
     UserQueryResponse,
+    UserCheckRequest,
 )
 from ..services.user import UserService
 
@@ -23,8 +24,11 @@ async def handle_equipment_unlink(request: web.Request) -> web.Response:
 async def handle_check_user_exists(request: web.Request) -> web.Response:
     # Endpoint: POST /api/official/user/check/exists/server
     # Purpose: Check if the user exists on this server.
+    req_data = await request.json()
+    user_check_req = UserCheckRequest.from_dict(req_data)
+    account = user_check_req.email
     user_service: UserService = request.app["user_service"]
-    if user_service.check_user_exists("unknown"):
+    if user_service.check_user_exists(account):
         return web.json_response(BaseResponse().to_dict())
     else:
         return web.json_response(

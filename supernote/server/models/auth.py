@@ -1,8 +1,23 @@
 from dataclasses import dataclass, field
+
 from mashumaro import field_options
 from mashumaro.mixins.json import DataClassJSONMixin
 from mashumaro.config import BaseConfig, TO_DICT_ADD_OMIT_NONE_FLAG
 from .base import BaseResponse
+
+
+@dataclass
+class UserCheckRequest(DataClassJSONMixin):
+    email: str
+
+    # Not currently using any of these fields, but they exist in the request
+    country_code: str = field(metadata=field_options(alias="countryCode"), default="")
+    telephone: str = ""
+    user_name: str = field(metadata=field_options(alias="userName"), default="")
+    domain: str = ""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
 
 
 @dataclass

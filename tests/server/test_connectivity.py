@@ -1,9 +1,11 @@
 import pytest
+from collections.abc import Generator
 from unittest.mock import patch
 from pathlib import Path
 from typing import Callable, Awaitable
 import hashlib
 import aiohttp
+import yaml
 
 from aiohttp.test_utils import TestClient
 from aiohttp.web import Application
@@ -15,19 +17,39 @@ AiohttpClient = Callable[[Application], Awaitable[TestClient]]
 
 
 @pytest.fixture
-def mock_trace_log(tmp_path: Path) -> str:
+def mock_users_file(tmp_path: Path) -> Generator[str, None, None]:
+    user = {
+        "username": "test@example.com",
+        "password_sha256": hashlib.sha256(b"testpassword").hexdigest(),
+        "is_active": True,
+    }
+    users_file = tmp_path / "users.yaml"
+    with open(users_file, "w") as f:
+        yaml.safe_dump({"users": [user]}, f)
+    yield str(users_file)
+
+
+@pytest.fixture
+def mock_trace_log(tmp_path: Path) -> Generator[str, None, None]:
     log_file = tmp_path / "trace.log"
     with patch("supernote.server.config.TRACE_LOG_FILE", str(log_file)):
         yield str(log_file)
 
 
 @pytest.fixture(autouse=True)
-async def test_server_root(aiohttp_client: AiohttpClient, mock_trace_log: str) -> None:
-    client = await aiohttp_client(create_app())
-    resp = await client.get("/")
-    assert resp.status == 200
-    text = await resp.text()
-    assert "Supernote Private Cloud Server" in text
+async def test_server_root(
+    aiohttp_client: AiohttpClient, mock_trace_log: str, mock_users_file: str
+) -> Generator[None, None, None]:
+    with (
+        patch("supernote.server.config.TRACE_LOG_FILE", mock_trace_log),
+        patch("supernote.server.config.USER_CONFIG_FILE", mock_users_file),
+    ):
+        client = await aiohttp_client(create_app())
+        resp = await client.get("/")
+        assert resp.status == 200
+        text = await resp.text()
+        assert "Supernote Private Cloud Server" in text
+        yield
 
 
 async def test_trace_logging(
