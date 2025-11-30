@@ -15,6 +15,7 @@
   - `auth.py`: Authentication strategies (`AbstractAuth`, `FileCacheAuth`).
 - **Server (`supernote/server/`)**:
   - **Protocol**: Implements the Supernote Cloud protocol (see `supernote/server/ARCHITECTURE.md`).
+  - **Models**: `supernote/server/models/` contains `mashumaro` data models.
   - **Goal**: Provide a self-hosted alternative to the official cloud.
 - **CLI (`supernote/cmds/`)**:
   - `supernote_tool.py`: Main entry point (`supernote-tool`).
@@ -35,7 +36,12 @@
 - **Async/Await**: Use `async`/`await` for all cloud API interactions.
 - **Data Models**: Use `mashumaro`'s `DataClassJSONMixin` for API request/response models.
   - Example: `@dataclass class MyResponse(DataClassJSONMixin): ...`
-- **Type Hinting**: Use strict type hints. Use `typing.Protocol` for interfaces.
+  - Configuration: Use `omit_none=True` and `TO_DICT_ADD_OMIT_NONE_FLAG` to exclude null fields.
+- **Type Hinting**: Use strict type hints with modern Python 3.10+ syntax.
+  - Use `str | None` instead of `Optional[str]`.
+  - Use `list[T]` instead of `List[T]`.
+  - Use `typing.Protocol` for interfaces.
+- **Imports**: Prefer explicit imports from submodules (e.g., `from .models.auth import LoginResponse`) over wildcard or package-level imports.
 - **Binary Parsing**: Use `parser.py` patterns for reading binary streams (seek/read).
 - **Logging**: Use `logging.getLogger(__name__)`.
 - **Server Implementation**:

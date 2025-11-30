@@ -10,6 +10,30 @@ import urllib.parse
 from pathlib import Path
 from aiohttp import web
 from . import config
+from .models.base import BaseResponse
+from .models.auth import (
+    RandomCodeResponse,
+    LoginResponse,
+    UserVO,
+    UserQueryResponse,
+)
+from .models.file import (
+    SyncStartResponse,
+    ListFolderRequest,
+    FileEntryVO,
+    ListFolderResponse,
+    AllocationVO,
+    CapacityResponse,
+    FileQueryRequest,
+    FileQueryByIdRequest,
+    FileQueryResponse,
+    UploadApplyRequest,
+    UploadApplyResponse,
+    UploadFinishRequest,
+    UploadFinishResponse,
+    DownloadApplyRequest,
+    DownloadApplyResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,27 +122,27 @@ async def handle_root(request):
 async def handle_query_server(request):
     # Endpoint: GET /api/file/query/server
     # Purpose: Device checks if the server is a valid Supernote Private Cloud instance.
-    return web.json_response({"success": True})
+    return web.json_response(BaseResponse().to_dict())
 
 
 async def handle_equipment_unlink(request):
     # Endpoint: POST /api/terminal/equipment/unlink
     # Purpose: Device requests to unlink itself from the account/server.
     # Since this is a private cloud, we can just acknowledge success.
-    return web.json_response({"success": True})
+    return web.json_response(BaseResponse().to_dict())
 
 
 async def handle_check_user_exists(request):
     # Endpoint: POST /api/official/user/check/exists/server
     # Purpose: Check if the user exists on this server.
     # For now, we'll assume any user exists to allow login to proceed.
-    return web.json_response({"success": True})
+    return web.json_response(BaseResponse().to_dict())
 
 
 async def handle_query_token(request):
     # Endpoint: POST /api/user/query/token
     # Purpose: Initial token check (often empty request)
-    return web.json_response({"success": True})
+    return web.json_response(BaseResponse().to_dict())
 
 
 async def handle_random_code(request):
@@ -128,7 +152,9 @@ async def handle_random_code(request):
     timestamp = str(int(time.time() * 1000))
 
     return web.json_response(
-        {"success": True, "randomCode": random_code, "timestamp": timestamp}
+        RandomCodeResponse(
+            random_code=random_code, timestamp=timestamp
+        ).to_dict()
     )
 
 
@@ -141,14 +167,13 @@ async def handle_login(request):
     token = f"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.{secrets.token_urlsafe(32)}.{secrets.token_urlsafe(32)}"
 
     return web.json_response(
-        {
-            "success": True,
-            "token": token,
-            "userName": "Supernote User",
-            "isBind": "Y",
-            "isBindEquipment": "Y",
-            "soldOutCount": 0,
-        }
+        LoginResponse(
+            token=token,
+            user_name="Supernote User",
+            is_bind="Y",
+            is_bind_equipment="Y",
+            sold_out_count=0,
+        ).to_dict()
     )
 
 
@@ -156,29 +181,29 @@ async def handle_bind_equipment(request):
     # Endpoint: POST /api/terminal/user/bindEquipment
     # Purpose: Bind the device to the account.
     # We can just acknowledge success.
-    return web.json_response({"success": True})
+    return web.json_response(BaseResponse().to_dict())
 
 
 async def handle_user_query(request):
     # Endpoint: POST /api/user/query
     # Purpose: Get user details.
+    user_vo = UserVO(
+        user_name="Supernote User",
+        email="test@example.com",
+        phone="",
+        country_code="1",
+        total_capacity="25485312",
+        file_server="0",  # 0 for ufile (or local?), 1 for aws
+        avatars_url="",
+        birthday="",
+        sex="",
+    )
     return web.json_response(
-        {
-            "success": True,
-            "user": {
-                "userName": "Supernote User",
-                "email": "test@example.com",
-                "phone": "",
-                "countryCode": "1",
-                "totalCapacity": "25485312",
-                "fileServer": "0",  # 0 for ufile (or local?), 1 for aws
-                "avatarsUrl": "",
-                "birthday": "",
-                "sex": "",
-            },
-            "isUser": True,
-            "equipmentNo": "SN123456",  # Should probably match the request if possible, or be generic
-        }
+        UserQueryResponse(
+            user=user_vo,
+            is_user=True,
+            equipment_no="SN123456",  # Should probably match the request if possible, or be generic
+        ).to_dict()
     )
 
 
@@ -187,11 +212,10 @@ async def handle_sync_start(request):
     # Purpose: Start a file synchronization session.
     # Response: SynchronousStartLocalVO
     return web.json_response(
-        {
-            "success": True,
-            "equipmentNo": "SN123456",  # Should match request
-            "synType": True,  # True for normal sync, False for full re-upload
-        }
+        SyncStartResponse(
+            equipment_no="SN123456",  # Should match request
+            syn_type=True,  # True for normal sync, False for full re-upload
+        ).to_dict()
     )
 
 
@@ -199,7 +223,7 @@ async def handle_sync_end(request):
     # Endpoint: POST /api/file/2/files/synchronous/end
     # Purpose: End a file synchronization session.
     # Response: SynchronousEndLocalVO (likely just success)
-    return web.json_response({"success": True})
+    return web.json_response(BaseResponse().to_dict())
 
 
 async def handle_list_folder(request):
@@ -207,8 +231,8 @@ async def handle_list_folder(request):
     # Purpose: List folders for sync selection.
     # Response: ListFolderLocalVO
 
-    data = await request.json()
-    path_str = data.get("path", "/")
+    req_data = ListFolderRequest.from_dict(await request.json())
+    path_str = req_data.path
 
     # Map "/" to STORAGE_ROOT
     # Map "/Folder" to STORAGE_ROOT/Folder
@@ -241,26 +265,28 @@ async def handle_list_folder(request):
                         content_hash = get_file_md5(Path(entry.path))
 
                     res.append(
-                        {
-                            "tag": "folder" if is_dir else "file",
-                            "id": f"{path_str.rstrip('/')}/{entry.name}".lstrip(
+                        FileEntryVO(
+                            tag="folder" if is_dir else "file",
+                            id=f"{path_str.rstrip('/')}/{entry.name}".lstrip(
                                 "/"
                             ),  # Use relative path as ID
-                            "name": entry.name,
-                            "path_display": f"{path_str.rstrip('/')}/{entry.name}",
-                            "parent_path": path_str,
-                            "content_hash": content_hash,
-                            "is_downloadable": True,
-                            "size": stat.st_size,
-                            "lastUpdateTime": int(stat.st_mtime * 1000),
-                        }
+                            name=entry.name,
+                            path_display=f"{path_str.rstrip('/')}/{entry.name}",
+                            parent_path=path_str,
+                            content_hash=content_hash,
+                            is_downloadable=True,
+                            size=stat.st_size,
+                            last_update_time=int(stat.st_mtime * 1000),
+                        )
                     )
             return res
 
         entries = await loop.run_in_executor(None, scan)
 
     return web.json_response(
-        {"success": True, "equipmentNo": data.get("equipmentNo"), "entries": entries}
+        ListFolderResponse(
+            equipment_no=req_data.equipment_no, entries=entries
+        ).to_dict()
     )
 
 
@@ -273,15 +299,14 @@ async def handle_capacity_query(request):
     used = await loop.run_in_executor(None, get_dir_size, STORAGE_ROOT)
 
     return web.json_response(
-        {
-            "success": True,
-            "equipmentNo": "SN123456",  # Should match request
-            "used": used,
-            "allocationVO": {
-                "tag": "personal",
-                "allocated": 1024 * 1024 * 1024 * 10,  # 10GB total
-            },
-        }
+        CapacityResponse(
+            equipment_no="SN123456",  # Should match request
+            used=used,
+            allocation_vo=AllocationVO(
+                tag="personal",
+                allocated=1024 * 1024 * 1024 * 10,  # 10GB total
+            ),
+        ).to_dict()
     )
 
 
@@ -290,32 +315,31 @@ async def handle_query_by_path(request):
     # Purpose: Check if a file exists by path.
     # Response: FileQueryByPathLocalVO
 
-    data = await request.json()
-    path_str = data.get("path")
+    req_data = FileQueryRequest.from_dict(await request.json())
+    path_str = req_data.path
     rel_path = path_str.lstrip("/")
     target_path = STORAGE_ROOT / rel_path
 
     entries_vo = None
     if target_path.exists():
         stat = target_path.stat()
-        entries_vo = {
-            "tag": "folder" if target_path.is_dir() else "file",
-            "id": rel_path,  # Use relative path as ID
-            "name": target_path.name,
-            "path_display": path_str,
-            "parent_path": str(Path(path_str).parent),
-            "content_hash": "",  # TODO
-            "is_downloadable": True,
-            "size": stat.st_size,
-            "lastUpdateTime": int(stat.st_mtime * 1000),
-        }
+        entries_vo = FileEntryVO(
+            tag="folder" if target_path.is_dir() else "file",
+            id=rel_path,  # Use relative path as ID
+            name=target_path.name,
+            path_display=path_str,
+            parent_path=str(Path(path_str).parent),
+            content_hash="",  # TODO
+            is_downloadable=True,
+            size=stat.st_size,
+            last_update_time=int(stat.st_mtime * 1000),
+        )
 
     return web.json_response(
-        {
-            "success": True,
-            "equipmentNo": data.get("equipmentNo"),
-            "entriesVO": entries_vo,
-        }
+        FileQueryResponse(
+            equipment_no=req_data.equipment_no,
+            entries_vo=entries_vo,
+        ).to_dict()
     )
 
 
@@ -323,8 +347,8 @@ async def handle_query_v3(request):
     # Endpoint: POST /api/file/3/files/query_v3
     # Purpose: Get file details by ID.
 
-    data = await request.json()
-    file_id = data.get("id")
+    req_data = FileQueryByIdRequest.from_dict(await request.json())
+    file_id = req_data.id
 
     # In our implementation, ID is the relative path
     rel_path = file_id
@@ -342,24 +366,23 @@ async def handle_query_v3(request):
         if not target_path.is_dir():
             content_hash = await loop.run_in_executor(None, get_file_md5, target_path)
 
-        entries_vo = {
-            "tag": "folder" if target_path.is_dir() else "file",
-            "id": rel_path,
-            "name": target_path.name,
-            "path_display": path_display,
-            "parent_path": str(Path(path_display).parent),
-            "content_hash": content_hash,
-            "is_downloadable": True,
-            "size": stat.st_size,
-            "lastUpdateTime": int(stat.st_mtime * 1000),
-        }
+        entries_vo = FileEntryVO(
+            tag="folder" if target_path.is_dir() else "file",
+            id=rel_path,
+            name=target_path.name,
+            path_display=path_display,
+            parent_path=str(Path(path_display).parent),
+            content_hash=content_hash,
+            is_downloadable=True,
+            size=stat.st_size,
+            last_update_time=int(stat.st_mtime * 1000),
+        )
 
     return web.json_response(
-        {
-            "success": True,
-            "equipmentNo": data.get("equipmentNo"),
-            "entriesVO": entries_vo,
-        }
+        FileQueryResponse(
+            equipment_no=req_data.equipment_no,
+            entries_vo=entries_vo,
+        ).to_dict()
     )
 
 
@@ -376,8 +399,8 @@ async def handle_upload_apply(request):
     # Purpose: Request to upload a file.
     # Response: FileUploadApplyLocalVO
 
-    data = await request.json()
-    file_name = data.get("fileName")
+    req_data = UploadApplyRequest.from_dict(await request.json())
+    file_name = req_data.file_name
 
     # Construct a URL for the actual upload.
     # In a real implementation, this might be a signed S3 URL or a local endpoint.
@@ -390,16 +413,15 @@ async def handle_upload_apply(request):
     upload_url = f"http://{request.host}/api/file/upload/data/{encoded_name}"
 
     return web.json_response(
-        {
-            "success": True,
-            "equipmentNo": "SN123456",  # Should match request
-            "bucketName": "supernote-local",
-            "innerName": file_name,
-            "xAmzDate": "",
-            "authorization": "",
-            "fullUploadUrl": upload_url,
-            "partUploadUrl": upload_url,  # Assuming simple upload for now
-        }
+        UploadApplyResponse(
+            equipment_no=req_data.equipment_no,
+            bucket_name="supernote-local",
+            inner_name=file_name,
+            x_amz_date="",
+            authorization="",
+            full_upload_url=upload_url,
+            part_upload_url=upload_url,  # Assuming simple upload for now
+        ).to_dict()
     )
 
 
@@ -456,16 +478,19 @@ async def handle_upload_finish(request):
     # Purpose: Confirm upload completion and move file to final location.
     # Response: FileUploadFinishLocalVO
 
-    data = await request.json()
-    filename = data.get("fileName")
-    path_str = data.get("path")  # e.g. "/EXPORT/"
-    content_hash = data.get("content_hash")
+    req_data = UploadFinishRequest.from_dict(await request.json())
+    filename = req_data.file_name
+    path_str = req_data.path  # e.g. "/EXPORT/"
+    content_hash = req_data.content_hash
 
     temp_path = TEMP_ROOT / filename
 
     if not temp_path.exists():
         return web.json_response(
-            {"success": False, "errorMsg": "Upload not found"}, status=404
+            BaseResponse(
+                success=False, error_msg="Upload not found"
+            ).to_dict(),
+            status=404,
         )
 
     loop = asyncio.get_running_loop()
@@ -493,17 +518,16 @@ async def handle_upload_finish(request):
     await loop.run_in_executor(None, move_file)
 
     return web.json_response(
-        {
-            "success": True,
-            "equipmentNo": data.get("equipmentNo"),
-            "path_display": f"{path_str.rstrip('/')}/{filename}",
-            "id": f"{path_str.rstrip('/')}/{filename}".lstrip(
+        UploadFinishResponse(
+            equipment_no=req_data.equipment_no,
+            path_display=f"{path_str.rstrip('/')}/{filename}",
+            id=f"{path_str.rstrip('/')}/{filename}".lstrip(
                 "/"
             ),  # Use relative path as ID
-            "size": dest_path.stat().st_size,
-            "name": filename,
-            "content_hash": calculated_hash,
-        }
+            size=dest_path.stat().st_size,
+            name=filename,
+            content_hash=calculated_hash,
+        ).to_dict()
     )
 
 
@@ -511,21 +535,24 @@ async def handle_download_apply(request):
     # Endpoint: POST /api/file/3/files/download_v3
     # Purpose: Request a download URL for a file.
 
-    data = await request.json()
-    file_id = data.get("id")  # This is the relative path now
+    req_data = DownloadApplyRequest.from_dict(await request.json())
+    file_id = req_data.id  # This is the relative path now
 
     # Verify file exists
     target_path = STORAGE_ROOT / file_id
     if not target_path.exists():
         return web.json_response(
-            {"success": False, "errorMsg": "File not found"}, status=404
+            BaseResponse(
+                success=False, error_msg="File not found"
+            ).to_dict(),
+            status=404,
         )
 
     # Generate URL
     encoded_id = urllib.parse.quote(file_id)
     download_url = f"http://{request.host}/api/file/download/data?path={encoded_id}"
 
-    return web.json_response({"success": True, "url": download_url})
+    return web.json_response(DownloadApplyResponse(url=download_url).to_dict())
 
 
 async def handle_download_data(request):

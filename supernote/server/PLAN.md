@@ -51,10 +51,10 @@
 - [x] Add test for download flow.
 
 ## Phase 6: Refactoring & Architecture (Next)
-- [ ] **Data Models (Type Safety)**:
-    - [ ] Create `supernote/server/models.py` using `mashumaro.DataClassJSONMixin`.
-    - [ ] Define Request/Response dataclasses mirroring the Java DTOs/VOs (e.g., `ListFolderRequest`, `FileUploadApplyResponse`).
-    - [ ] Replace ad-hoc dictionary responses in `app.py` with typed objects.
+- [x] **Data Models (Type Safety)**:
+    - [x] Create `supernote/server/models/` package using `mashumaro.DataClassJSONMixin`.
+    - [x] Define Request/Response dataclasses mirroring the Java DTOs/VOs (e.g., `ListFolderRequest`, `FileUploadApplyResponse`).
+    - [x] Replace ad-hoc dictionary responses in `app.py` with typed objects.
 - [ ] **Service Layer (Business Logic)**:
     - [ ] Create `supernote/server/services/` package.
     - [ ] Implement `UserService`: Handle authentication, device binding, user profiles.
