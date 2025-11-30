@@ -30,6 +30,7 @@ from supernote.converter import (
 )
 from supernote.converter import VisibilityOverlay
 from supernote.cmds.cloud_login_tool import subcommand_cloud_login, subcommand_cloud_ls
+from supernote.server import app as server_app
 
 
 def convert_all(converter, total, file_name, save_func, visibility_overlay):
@@ -336,6 +337,12 @@ def main():
         "-v", "--verbose", action="store_true", help="Enable verbose logging"
     )
     cloud_ls_parser.set_defaults(handler=subcommand_cloud_ls)
+
+    # 'serve' subcommand
+    parser_serve = subparsers.add_parser(
+        "serve", help="Start the Supernote Private Cloud server"
+    )
+    parser_serve.set_defaults(handler=server_app.run)
 
     args = parser.parse_args()
     if hasattr(args, "handler"):

@@ -28,6 +28,8 @@
   ```
 - **Type Checking**: Run `script/run-mypy.sh` to check types.
 - **Testing**: Run `pytest` to execute tests in `tests/`.
+  - **Mocking**: Use `unittest.mock.patch` instead of `monkeypatch`.
+  - **Typing**: Ensure all test functions and fixtures have strict type hints.
 
 ## Coding Conventions
 - **Async/Await**: Use `async`/`await` for all cloud API interactions.
