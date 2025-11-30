@@ -1,6 +1,6 @@
 # Supernote Private Cloud Server
 
-This package provides a self-hosted implementation of the Supernote Cloud server. This content is shared between the [documentation](https://allenporter.github.io/supernote-lite/) and github repository at [github.com/allenporter/supernote-lite](https://github.com/allenporter/supernote-lite).
+This package provides a self-hosted implementation of the Supernote Cloud server.
 
 ## Getting Started
 
@@ -9,11 +9,36 @@ This package provides a self-hosted implementation of the Supernote Cloud server
 - A Supernote device (A5 X, A6 X, Nomad, etc.)
 - A computer running this server (accessible on your local network)
 
-### Creating user accounts
+### Managing User Accounts
 
 You must create a private cloud user account in order to login to the
-device. See [USERS.md](USERS.md) for instructions on managing the local
-user accounts.
+device. 
+
+Use the CLI tool to add, list, or deactivate users:
+
+```sh
+supernote-server user add alice
+```
+
+You will be prompted for a password, which will be securely hashed using SHA256 and stored in `config/users.yaml`.
+
+To list users:
+
+```sh
+supernote-server user list
+```
+
+To deactivate a user:
+
+```sh
+supernote-server user deactivate alice
+```
+
+#### Notes
+
+- Only users listed in this file can log in.
+- Passwords are never stored in plain text—only SHA256 hashes (see PLAN.md for security notes).
+- Set `is_active: false` to disable a user without deleting their entry.
 
 ### Running the Server
 
@@ -23,7 +48,6 @@ You can start the server using the `supernote-server` CLI:
 # Start the server on port 8080
 supernote-server serve
 ```
-
 
 To configure the port or host, use environment variables:
 

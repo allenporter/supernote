@@ -1,6 +1,8 @@
 # supernote
 
-All-in-one toolkit for Supernote devices: parse notebooks, self host, and access services
+All-in-one toolkit for Supernote devices: parse notebooks, self host, and access services.
+
+This content is shared between the [documentation](https://allenporter.github.io/supernote-lite/) and github repository at [github.com/allenporter/supernote-lite](https://github.com/allenporter/supernote-lite).
 
 ## Features
 
