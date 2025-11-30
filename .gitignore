@@ -148,3 +148,5 @@ dmypy.json
 .DS_Store
 data
 storage
+config/
+private/
