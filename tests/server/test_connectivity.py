@@ -22,24 +22,6 @@ def mock_trace_log(tmp_path: Path) -> str:
 
 
 @pytest.fixture(autouse=True)
-def mock_storage(tmp_path: Path):
-    storage_root = tmp_path / "storage"
-    temp_root = tmp_path / "storage" / "temp"
-    storage_root.mkdir(parents=True)
-    temp_root.mkdir(parents=True, exist_ok=True)
-
-    # Create default folders
-    (storage_root / "Note").mkdir()
-    (storage_root / "Document").mkdir()
-    (storage_root / "EXPORT").mkdir()
-
-    with (
-        patch("supernote.server.app.STORAGE_ROOT", storage_root),
-        patch("supernote.server.app.TEMP_ROOT", temp_root),
-    ):
-        yield
-
-
 async def test_server_root(aiohttp_client: AiohttpClient, mock_trace_log: str) -> None:
     client = await aiohttp_client(create_app())
     resp = await client.get("/")
