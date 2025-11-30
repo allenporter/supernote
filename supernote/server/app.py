@@ -70,20 +70,10 @@ async def trace_middleware(
 
 @web.middleware
 async def jwt_auth_middleware(request, handler):
-    # Only require auth for protected endpoints
-    public_paths = [
-        "/",
-        "/api/official/user/check/exists/server",
-        "/api/user/query/token",
-        "/api/official/user/query/random/code",
-        "/api/official/user/account/login/new",
-        "/api/official/user/account/login/equipment",
-        "/api/terminal/equipment/unlink",
-        "/api/terminal/user/bindEquipment",
-        "/api/file/query/server",
-        "/api/csrf",
-    ]
-    if request.path in public_paths:
+    # Check if the matched route handler is public
+    route = request.match_info.route
+    handler_func = getattr(route, "handler", None)
+    if handler_func and getattr(handler_func, "is_public", False):
         return await handler(request)
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):

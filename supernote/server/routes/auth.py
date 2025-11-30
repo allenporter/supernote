@@ -1,17 +1,20 @@
 from aiohttp import web
-from ..models.base import BaseResponse
-from ..models.auth import (
+from supernote.server.models.base import BaseResponse
+from supernote.server.models.auth import (
     RandomCodeResponse,
     LoginResponse,
     UserQueryResponse,
     UserCheckRequest,
 )
-from ..services.user import UserService
+from supernote.server.services.user import UserService
+
+from .decorators import public_route
 
 routes = web.RouteTableDef()
 
 
 @routes.post("/api/terminal/equipment/unlink")
+@public_route
 async def handle_equipment_unlink(request: web.Request) -> web.Response:
     # Endpoint: POST /api/terminal/equipment/unlink
     # Purpose: Device requests to unlink itself from the account/server.
@@ -21,6 +24,7 @@ async def handle_equipment_unlink(request: web.Request) -> web.Response:
 
 
 @routes.post("/api/official/user/check/exists/server")
+@public_route
 async def handle_check_user_exists(request: web.Request) -> web.Response:
     # Endpoint: POST /api/official/user/check/exists/server
     # Purpose: Check if the user exists on this server.
@@ -36,6 +40,7 @@ async def handle_check_user_exists(request: web.Request) -> web.Response:
 
 
 @routes.post("/api/user/query/token")
+@public_route
 async def handle_query_token(request: web.Request) -> web.Response:
     # Endpoint: POST /api/user/query/token
     # Purpose: Initial token check (often empty request)
@@ -43,6 +48,7 @@ async def handle_query_token(request: web.Request) -> web.Response:
 
 
 @routes.post("/api/official/user/query/random/code")
+@public_route
 async def handle_random_code(request: web.Request) -> web.Response:
     # Endpoint: POST /api/official/user/query/random/code
     # Purpose: Get challenge for password hashing
@@ -56,6 +62,7 @@ async def handle_random_code(request: web.Request) -> web.Response:
 
 @routes.post("/api/official/user/account/login/new")
 @routes.post("/api/official/user/account/login/equipment")
+@public_route
 async def handle_login(request: web.Request) -> web.Response:
     # Endpoint: POST /api/official/user/account/login/new
     # Purpose: Login with hashed password
@@ -83,6 +90,7 @@ async def handle_login(request: web.Request) -> web.Response:
 
 
 @routes.post("/api/terminal/user/bindEquipment")
+@public_route
 async def handle_bind_equipment(request: web.Request) -> web.Response:
     # Endpoint: POST /api/terminal/user/bindEquipment
     # Purpose: Bind the device to the account.
