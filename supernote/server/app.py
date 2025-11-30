@@ -68,8 +68,40 @@ async def trace_middleware(
     return response
 
 
+@web.middleware
+async def jwt_auth_middleware(request, handler):
+    # Only require auth for protected endpoints
+    public_paths = [
+        "/",
+        "/api/official/user/check/exists/server",
+        "/api/user/query/token",
+        "/api/official/user/query/random/code",
+        "/api/official/user/account/login/new",
+        "/api/official/user/account/login/equipment",
+        "/api/terminal/equipment/unlink",
+        "/api/terminal/user/bindEquipment",
+        "/api/file/query/server",
+        "/api/csrf",
+    ]
+    if request.path in public_paths:
+        return await handler(request)
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    token = auth_header.split(" ", 1)[1]
+    from supernote.server.services.user import JWT_SECRET, JWT_ALGORITHM
+    import jwt
+
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        request["user"] = payload["sub"]
+    except jwt.InvalidTokenError:
+        return web.json_response({"error": "Invalid token"}, status=401)
+    return await handler(request)
+
+
 def create_app() -> web.Application:
-    app = web.Application(middlewares=[trace_middleware])
+    app = web.Application(middlewares=[trace_middleware, jwt_auth_middleware])
 
     # Initialize services
     storage_root = Path(config.STORAGE_DIR)

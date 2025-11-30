@@ -29,6 +29,19 @@ class RandomCodeResponse(BaseResponse):
 
 
 @dataclass
+class LoginRequest(DataClassJSONMixin):
+    account: str
+    password: str
+    countryCode: str | None = None
+    browser: str | None = None
+    equipment: int | None = None
+    loginMethod: str | None = None
+    language: str | None = None
+    equipmentNo: str | None = None
+    timestamp: str | None = None
+
+
+@dataclass
 class LoginResponse(BaseResponse):
     token: str | None = None
     user_name: str | None = field(

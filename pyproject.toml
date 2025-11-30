@@ -31,7 +31,7 @@ dependencies = [
 
   # Server & user management CLI
   "pyyaml>=6.0",
-  "jwt>=1.4.0",
+  "PyJWT>=2.10.1",
 ]
 
 [project.urls]

@@ -11,7 +11,9 @@ AiohttpClient = Callable[[Application], Awaitable[TestClient]]
 
 @pytest.fixture(autouse=True)
 async def test_download_file_with_spaces(
-    aiohttp_client: AiohttpClient, mock_storage: Path
+    aiohttp_client: AiohttpClient,
+    mock_storage: Path,
+    auth_headers: dict[str, str],
 ) -> None:
     # Create a test file with spaces
     filename = "2023 December.pdf"
@@ -23,7 +25,9 @@ async def test_download_file_with_spaces(
     # 1. Apply for download
     file_id = f"EXPORT/{filename}"
     resp = await client.post(
-        "/api/file/3/files/download_v3", json={"equipmentNo": "SN123", "id": file_id}
+        "/api/file/3/files/download_v3",
+        json={"equipmentNo": "SN123", "id": file_id},
+        headers=auth_headers,
     )
     assert resp.status == 200
     data = await resp.json()
@@ -45,7 +49,9 @@ async def test_download_file_with_spaces(
     path_param = query["path"][0]
 
     resp_download = await client.get(
-        "/api/file/download/data", params={"path": path_param}
+        "/api/file/download/data",
+        params={"path": path_param},
+        headers=auth_headers,
     )
     assert resp_download.status == 200
     content = await resp_download.text()
@@ -53,7 +59,9 @@ async def test_download_file_with_spaces(
 
 
 async def test_download_apply_url_encoding(
-    aiohttp_client: AiohttpClient, mock_storage: Path
+    aiohttp_client: AiohttpClient,
+    mock_storage: Path,
+    auth_headers: dict[str, str],
 ) -> None:
     # Check if the URL returned by download_apply is encoded
     filename = "2023 December.pdf"
@@ -65,7 +73,9 @@ async def test_download_apply_url_encoding(
     client = await aiohttp_client(create_app())
 
     resp = await client.post(
-        "/api/file/3/files/download_v3", json={"equipmentNo": "SN123", "id": file_id}
+        "/api/file/3/files/download_v3",
+        json={"equipmentNo": "SN123", "id": file_id},
+        headers=auth_headers,
     )
     data = await resp.json()
     url = data["url"]

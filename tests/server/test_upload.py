@@ -24,7 +24,9 @@ def mock_storage(tmp_path: Path):
         yield storage_root
 
 
-async def test_upload_file(aiohttp_client: AiohttpClient, mock_storage: Path) -> None:
+async def test_upload_file(
+    aiohttp_client: AiohttpClient, mock_storage: Path, auth_headers: dict[str, str],
+) -> None:
     client = await aiohttp_client(create_app())
 
     filename = "test_upload.note"
@@ -37,7 +39,11 @@ async def test_upload_file(aiohttp_client: AiohttpClient, mock_storage: Path) ->
     # Upload data
     # Note: The endpoint is /api/file/upload/data/{filename}
     # It accepts POST or PUT
-    resp = await client.post(f"/api/file/upload/data/{filename}", data=data)
+    resp = await client.post(
+        f"/api/file/upload/data/{filename}",
+        data=data,
+        headers=auth_headers,
+    )
     assert resp.status == 200
 
     # Verify file exists in temp

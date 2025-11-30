@@ -152,13 +152,15 @@ class UserService:
         token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
         return token
 
-    def get_user_profile(self, account: str) -> UserVO:
+    def get_user_profile(self, account: str) -> UserVO | None:
         """Get user profile."""
         user = self._get_user(account)
+        if not user:
+            return None
         username = user["username"] if user else "Supernote User"
         return UserVO(
             user_name=username,
-            email="",
+            email=username,
             phone="",
             country_code="1",
             total_capacity="25485312",
