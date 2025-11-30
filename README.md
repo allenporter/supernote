@@ -1,4 +1,4 @@
-# supernote-lite
+# supernote
 
 All-in-one toolkit for Supernote devices: parse notebooks, self host, and access services
 
