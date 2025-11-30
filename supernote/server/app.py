@@ -76,7 +76,7 @@ def create_app() -> web.Application:
     temp_root = storage_root / "temp"
     storage_service = StorageService(storage_root, temp_root)
     app["storage_service"] = storage_service
-    app["user_service"] = UserService()
+    app["user_service"] = UserService(config.USER_CONFIG_FILE)
     app["file_service"] = FileService(storage_service)
 
     # Register routes

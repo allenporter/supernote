@@ -7,32 +7,32 @@ This file describes how to create and manage user accounts for your private Supe
 1. **Generate a bcrypt password hash** for the desired password. You can use Python:
 
    ```python
-   import bcrypt
-   password = b"yourpassword"
-   print(bcrypt.hashpw(password, bcrypt.gensalt()).decode())
-   ```
-   Or use the `htpasswd` command-line tool with bcrypt support:
-   ```sh
-   htpasswd -bnBC 12 "" yourpassword | tr -d ':\n'
-   ```
-   (Copy the hash after the colon.)
+  # User Account Management for supernote-lite
 
-2. **Edit `config/users.yaml`** and add a new user entry:
+  This file describes how to create and manage user accounts for your private Supernote server.
 
-   ```yaml
-   users:
-     - username: alice
-       password_hash: "$2b$12$..."
-       is_active: true
-     - username: bob
-       password_hash: "$2b$12$..."
-       is_active: true
-   ```
+  ## Adding Users
 
-3. **Save the file.**
+  Use the CLI tool to add, list, or deactivate users:
 
-## Notes
-- Only users listed in this file can log in.
-- Passwords are never stored in plain text—only bcrypt hashes.
-- Set `is_active: false` to disable a user without deleting their entry.
+  ```sh
+  python -m supernote.cmds.user_admin user add alice
+  ```
+  You will be prompted for a password, which will be securely hashed using SHA256 and stored in `config/users.yaml`.
+
+  To list users:
+  ```sh
+  python -m supernote.cmds.user_admin user list
+  ```
+
+  To deactivate a user:
+  ```sh
+  python -m supernote.cmds.user_admin user deactivate alice
+  ```
+
+  ## Notes
+  - Only users listed in this file can log in.
+  - Passwords are never stored in plain text—only SHA256 hashes (see PLAN.md for security notes).
+  - Set `is_active: false` to disable a user without deleting their entry.
+  - This file is ignored by git for security.
 - This file is ignored by git for security.
