@@ -29,8 +29,7 @@ from .notebook import color
 from .notebook import converter
 
 __all__ = [
-    "__version__",
-    # Notebook
+    "notebook",
     "parse_notebook",
     "load_notebook",
     "load",
@@ -52,16 +51,16 @@ __all__ = [
 
 # Optional: Cloud client
 try:
-    from .cloud import CloudClient, login_client  # noqa: F401
+    from . import cloud  # noqa: F401
 
-    __all__.extend(["CloudClient", "login_client"])
+    __all__.extend(["cloud"])
 except ImportError:
     pass
 
 # Optional: Server
 try:
-    from .server import create_app, run  # noqa: F401
+    from . import server  # noqa: F401
 
-    __all__.extend(["create_app", "run"])
+    __all__.extend(["server"])
 except ImportError:
     pass
