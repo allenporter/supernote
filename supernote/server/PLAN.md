@@ -50,24 +50,24 @@
 - [x] Update `handle_list_folder` to use relative path as ID.
 - [x] Add test for download flow.
 
-## Phase 6: Refactoring & Architecture (Next)
+## Phase 6: Refactoring & Architecture (Completed)
 - [x] **Data Models (Type Safety)**:
     - [x] Create `supernote/server/models/` package using `mashumaro.DataClassJSONMixin`.
     - [x] Define Request/Response dataclasses mirroring the Java DTOs/VOs (e.g., `ListFolderRequest`, `FileUploadApplyResponse`).
     - [x] Replace ad-hoc dictionary responses in `app.py` with typed objects.
-- [ ] **Service Layer (Business Logic)**:
-    - [ ] Create `supernote/server/services/` package.
-    - [ ] Implement `UserService`: Handle authentication, device binding, user profiles.
-    - [ ] Implement `FileService`: Handle file system operations, metadata management.
-    - [ ] Implement `StorageService`: Abstract disk I/O (e.g., `save_file`, `list_dir`, `get_file_stream`).
-- [ ] **Route Separation**:
-    - [ ] Split `app.py` into route modules (e.g., `supernote/server/routes/auth.py`, `supernote/server/routes/file.py`).
-    - [ ] Use `aiohttp.web.RouteTableDef` to organize routes.
-- [ ] **Configuration & Dependency Injection**:
-    - [ ] Refactor `create_app` to accept a `Config` object.
-    - [ ] Inject services into route handlers (avoid global state).
+- [x] **Service Layer (Business Logic)**:
+    - [x] Create `supernote/server/services/` package.
+    - [x] Implement `UserService`: Handle authentication, device binding, user profiles.
+    - [x] Implement `FileService`: Handle file system operations, metadata management.
+    - [x] Implement `StorageService`: Abstract disk I/O (e.g., `save_file`, `list_dir`, `get_file_stream`).
+- [x] **Route Separation**:
+    - [x] Split `app.py` into route modules (e.g., `supernote/server/routes/auth.py`, `supernote/server/routes/file.py`).
+    - [x] Use `aiohttp.web.RouteTableDef` to organize routes.
+- [x] **Configuration & Dependency Injection**:
+    - [x] Refactor `create_app` to accept a `Config` object.
+    - [x] Inject services into route handlers (avoid global state).
 
-## Phase 7: Advanced Features
+## Phase 7: Advanced Features (Next)
 - [ ] Database integration (SQLite/PostgreSQL) for user/file metadata.
 - [ ] Docker containerization.
 - [ ] SSL/TLS support (via reverse proxy instructions).
