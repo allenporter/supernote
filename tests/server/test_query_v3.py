@@ -65,4 +65,4 @@ async def test_query_v3_not_found(aiohttp_client: AiohttpClient) -> None:
     assert resp.status == 200
     data = await resp.json()
     assert data["success"] is True
-    assert data["entriesVO"] is None
+    assert "entriesVO" not in data

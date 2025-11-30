@@ -218,8 +218,8 @@ async def test_query_by_path(aiohttp_client: AiohttpClient) -> None:
     assert resp.status == 200
     data = await resp.json()
     assert data["success"] is True
-    assert "entriesVO" in data
-    assert data["entriesVO"] is None
+    # entriesVO is omitted if None (file not found)
+    assert "entriesVO" not in data
 
 
 async def test_upload_flow(aiohttp_client: AiohttpClient) -> None:
