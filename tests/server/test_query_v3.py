@@ -1,8 +1,10 @@
-import pytest
 from pathlib import Path
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
+
+import pytest
 from aiohttp.test_utils import TestClient
 from aiohttp.web import Application
+
 from supernote.server.app import create_app
 
 AiohttpClient = Callable[[Application], Awaitable[TestClient]]

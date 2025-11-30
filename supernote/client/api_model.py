@@ -3,8 +3,8 @@
 from dataclasses import dataclass, field
 
 from mashumaro import field_options
-from mashumaro.mixins.json import DataClassJSONMixin
 from mashumaro.config import BaseConfig
+from mashumaro.mixins.json import DataClassJSONMixin
 
 COUNTRY_CODE = 1
 BROWSER = "Chrome142"
@@ -42,7 +42,7 @@ class QueryUserResponse(BaseResponse):
     user_name: str = field(metadata=field_options(alias="userName"))
     birthday: str = field(metadata=field_options(alias="birthday"))
     country_code: str = field(
-        metadata=field_options(alias="countryCode"), default=COUNTRY_CODE
+        metadata=field_options(alias="countryCode"), default=str(COUNTRY_CODE)
     )
     telephone: str = field(metadata=field_options(alias="telephone"), default="")
     sex: str = ""

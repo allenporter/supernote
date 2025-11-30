@@ -1,17 +1,18 @@
-import logging
 import json
+import logging
 import time
 from pathlib import Path
-from typing import Callable, Awaitable, Any
+from typing import Any, Awaitable, Callable
+
 from aiohttp import web
 
-from supernote.server.services.user import JWT_SECRET, JWT_ALGORITHM
+from supernote.server.services.user import JWT_ALGORITHM, JWT_SECRET
 
 from . import config
+from .routes import auth, file, system
+from .services.file import FileService
 from .services.storage import StorageService
 from .services.user import UserService
-from .services.file import FileService
-from .routes import system, auth, file
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,10 @@ async def trace_middleware(
 
 
 @web.middleware
-async def jwt_auth_middleware(request, handler):
+async def jwt_auth_middleware(
+    request: web.Request,
+    handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
+) -> web.StreamResponse:
     # Check if the matched route handler is public
     route = request.match_info.route
     handler_func = getattr(route, "handler", None)

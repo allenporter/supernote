@@ -18,8 +18,7 @@ import os
 import re
 from typing import Protocol
 
-from . import exceptions
-from . import fileformat
+from . import exceptions, fileformat
 
 ParamsBlock = fileformat.ParamsBlock
 
@@ -36,7 +35,7 @@ class FileObj(Protocol):
         ...
 
 
-def parse_metadata(stream: FileObj, policy="strict") -> SupernoteMetadata:
+def parse_metadata(stream: FileObj, policy="strict") -> fileformat.SupernoteMetadata:
     """Parses a supernote binary stream and returns metadata object.
 
     Policy:

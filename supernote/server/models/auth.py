@@ -1,8 +1,9 @@
 from dataclasses import dataclass, field
 
 from mashumaro import field_options
+from mashumaro.config import TO_DICT_ADD_OMIT_NONE_FLAG, BaseConfig
 from mashumaro.mixins.json import DataClassJSONMixin
-from mashumaro.config import BaseConfig, TO_DICT_ADD_OMIT_NONE_FLAG
+
 from .base import BaseResponse
 
 
@@ -32,12 +33,18 @@ class RandomCodeResponse(BaseResponse):
 class LoginRequest(DataClassJSONMixin):
     account: str
     password: str
-    countryCode: str | None = None
+    country_code: str | None = field(
+        metadata=field_options(alias="countryCode"), default=None
+    )
     browser: str | None = None
     equipment: int | None = None
-    loginMethod: str | None = None
+    login_method: str | None = field(
+        metadata=field_options(alias="loginMethod"), default=None
+    )
     language: str | None = None
-    equipmentNo: str | None = None
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
     timestamp: str | None = None
 
 
@@ -77,7 +84,7 @@ class UserVO(DataClassJSONMixin):
     class Config(BaseConfig):
         serialize_by_alias = True
         omit_none = True
-        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
 
 
 @dataclass

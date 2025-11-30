@@ -1,11 +1,13 @@
-import secrets
-import time
+import hashlib
 import logging
 import os
-import yaml
-import hashlib
-import jwt
+import secrets
+import time
 from typing import Optional
+
+import jwt
+import yaml
+
 from ..models.auth import UserVO
 
 logger = logging.getLogger(__name__)
@@ -87,7 +89,7 @@ class UserService:
         # Compute sha256(password) and compare
         password_bytes = password.encode()
         hash_hex = hashlib.sha256(password_bytes).hexdigest()
-        return hash_hex == password_sha256
+        return bool(hash_hex == password_sha256)
 
     def verify_login_hash(self, account: str, client_hash: str, timestamp: str) -> bool:
         user = self._get_user(account)

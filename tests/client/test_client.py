@@ -2,19 +2,19 @@
 
 from dataclasses import dataclass
 
+import aiohttp.test_utils
 import pytest
 import pytest_asyncio
 from aiohttp import web
-import aiohttp.test_utils
 
-from supernote.cloud.api_model import BaseResponse
-from supernote.cloud.client import Client
-from supernote.cloud.exceptions import (
+from supernote.client import Client
+from supernote.client.api_model import BaseResponse
+from supernote.client.auth import ConstantAuth
+from supernote.client.exceptions import (
     ApiException,
     ForbiddenException,
     UnauthorizedException,
 )
-from supernote.cloud.auth import ConstantAuth
 
 
 @dataclass
@@ -24,19 +24,19 @@ class SimpleResponse(BaseResponse):
     data: str = ""
 
 
-async def handler_csrf(request: web.Request):
+async def handler_csrf(request: web.Request) -> web.Response:
     """Handle CSRF request."""
     return web.Response(text="ok", headers={"X-XSRF-TOKEN": "test-token"})
 
 
-async def handler_test_url(request: web.Request):
+async def handler_test_url(request: web.Request) -> web.Response:
     """Handle test URL request."""
     if request.headers.get("X-XSRF-TOKEN") != "test-token":
         return web.Response(status=403)
     return web.json_response({"success": True, "data": "value"})
 
 
-async def handler_post_url(request: web.Request):
+async def handler_post_url(request: web.Request) -> web.Response:
     """Handle POST URL request."""
     if request.headers.get("X-XSRF-TOKEN") != "test-token":
         return web.Response(status=403)
@@ -44,29 +44,29 @@ async def handler_post_url(request: web.Request):
     return web.json_response({"success": True, "data": data.get("input")})
 
 
-async def handler_401(request: web.Request):
+async def handler_401(request: web.Request) -> web.Response:
     """Handle 401 request."""
     return web.Response(status=401, text="Unauthorized")
 
 
-async def handler_403(request: web.Request):
+async def handler_403(request: web.Request) -> web.Response:
     """Handle 403 request."""
     return web.Response(status=403, text="Forbidden")
 
 
-async def handler_success_false(request: web.Request):
+async def handler_success_false(request: web.Request) -> web.Response:
     """Handle success=False request."""
     return web.json_response({"success": False, "errorMsg": "Something went wrong"})
 
 
-async def handler_auth_check(request: web.Request):
+async def handler_auth_check(request: web.Request) -> web.Response:
     """Handle auth check request."""
     if request.headers.get("x-access-token") == "my-token":
         return web.json_response({"success": True, "data": "authorized"})
     return web.Response(status=401)
 
 
-async def handler_malformed_json(request: web.Request):
+async def handler_malformed_json(request: web.Request) -> web.Response:
     """Handle malformed JSON response."""
     return web.Response(text="{invalid-json")
 
@@ -84,13 +84,13 @@ async def client_fixture(aiohttp_client: aiohttp.test_utils.TestClient) -> Clien
     app.router.add_get("/auth-check", handler_auth_check)
     app.router.add_post("/malformed-json", handler_malformed_json)
 
-    test_client = await aiohttp_client(app)
+    test_client = await aiohttp_client(app)  # type: ignore[operator]
 
     base_url = str(test_client.make_url(""))
     return Client(test_client.session, host=base_url.rstrip("/"))
 
 
-async def test_get_json(client: Client):
+async def test_get_json(client: Client) -> None:
     """Test get_json method."""
 
     response = await client.get_json("test-url", SimpleResponse)
@@ -99,14 +99,14 @@ async def test_get_json(client: Client):
     assert response.data == "value"
 
 
-async def test_post_json(client: Client):
+async def test_post_json(client: Client) -> None:
     """Test post_json method."""
 
     @dataclass
     class PostRequest:
         input: str
 
-        def to_dict(self):
+        def to_dict(self) -> dict[str, str]:
             return {"input": self.input}
 
     response = await client.post_json(
@@ -116,37 +116,37 @@ async def test_post_json(client: Client):
     assert response.data == "posted"
 
 
-async def test_post_json_malformed(client: Client):
+async def test_post_json_malformed(client: Client) -> None:
     """Test post_json with malformed response."""
     with pytest.raises(ApiException, match="Server return malformed response"):
         await client.post_json("malformed-json", SimpleResponse, json={})
 
 
-async def test_unauthorized(client: Client):
+async def test_unauthorized(client: Client) -> None:
     """Test 401 Unauthorized."""
     with pytest.raises(UnauthorizedException):
         await client.get_json("error-401", SimpleResponse)
 
 
-async def test_forbidden(client: Client):
+async def test_forbidden(client: Client) -> None:
     """Test 403 Forbidden."""
     with pytest.raises(ForbiddenException):
         await client.get_json("error-403", SimpleResponse)
 
 
-async def test_api_exception_success_false(client: Client):
+async def test_api_exception_success_false(client: Client) -> None:
     """Test API returning success=False."""
     with pytest.raises(ApiException, match="Something went wrong"):
         await client.get_json("success-false", SimpleResponse)
 
 
-async def test_auth_token(aiohttp_client):
+async def test_auth_token(aiohttp_client: aiohttp.test_utils.TestClient) -> None:
     """Test authentication token injection."""
     app = web.Application()
     app.router.add_get("/csrf", handler_csrf)
     app.router.add_get("/auth-check", handler_auth_check)
 
-    test_client = await aiohttp_client(app)
+    test_client = await aiohttp_client(app)  # type: ignore[operator]
     base_url = str(test_client.make_url(""))
 
     auth = ConstantAuth("my-token")

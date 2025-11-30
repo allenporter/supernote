@@ -1,9 +1,9 @@
 """Library for authentication."""
 
-from abc import ABC, abstractmethod
 import logging
-import pickle
 import os
+import pickle
+from abc import ABC, abstractmethod
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class FileCacheAuth(AbstractAuth):
     def __init__(self, cache_path: str):
         """Initialize the auth."""
         self._cache_path = cache_path
-        self._access_token = None
+        self._access_token: str | None = None
 
     async def async_get_access_token(self) -> str:
         """Return a valid access token."""

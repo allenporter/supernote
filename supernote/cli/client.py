@@ -2,17 +2,16 @@
 
 import asyncio
 import logging
-import sys
 import os
+import sys
 
 import aiohttp
 
-from supernote.client.client import Client
-from supernote.client.login_client import LoginClient
 from supernote.client.auth import FileCacheAuth
+from supernote.client.client import Client
 from supernote.client.cloud_client import SupernoteClient
 from supernote.client.exceptions import SupernoteException
-
+from supernote.client.login_client import LoginClient
 
 _LOGGER = logging.getLogger(__name__)
 

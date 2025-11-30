@@ -1,24 +1,26 @@
 import asyncio
 import logging
 import urllib.parse
+
 from aiohttp import web
+
 from ..models.base import BaseResponse
 from ..models.file import (
-    SyncStartResponse,
-    ListFolderRequest,
-    ListFolderResponse,
     AllocationVO,
     CapacityResponse,
-    FileQueryRequest,
-    FileQueryByIdRequest,
-    FileQueryResponse,
-    UploadApplyRequest,
-    UploadFinishRequest,
     DownloadApplyRequest,
     DownloadApplyResponse,
+    FileQueryByIdRequest,
+    FileQueryRequest,
+    FileQueryResponse,
+    ListFolderRequest,
+    ListFolderResponse,
+    SyncStartResponse,
+    UploadApplyRequest,
+    UploadFinishRequest,
 )
-from ..services.storage import StorageService
 from ..services.file import FileService
+from ..services.storage import StorageService
 
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
@@ -139,7 +141,9 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
     file_name = req_data.file_name
     file_service: FileService = request.app["file_service"]
 
-    response = file_service.apply_upload(file_name, req_data.equipment_no, request.host)
+    response = file_service.apply_upload(
+        file_name, req_data.equipment_no or "", request.host
+    )
 
     return web.json_response(response.to_dict())
 
@@ -173,9 +177,9 @@ async def handle_upload_data(request: web.Request) -> web.Response:
 
     # Read the first part (which should be the file)
     field = await reader.next()
-    if field.name == "file":
+    if field.name == "file":  # type: ignore[union-attr]
         # Write to temp file using non-blocking I/O
-        total_bytes = await storage_service.save_temp_file(filename, field.read_chunk)
+        total_bytes = await storage_service.save_temp_file(filename, field.read_chunk)  # type: ignore[union-attr]
         logger.info(f"Received upload for {filename}: {total_bytes} bytes")
 
     return web.Response(status=200)
@@ -199,7 +203,7 @@ async def handle_upload_finish(request: web.Request) -> web.Response:
             req_data.file_name,
             req_data.path,
             req_data.content_hash,
-            req_data.equipment_no,
+            req_data.equipment_no or "",
         )
     except FileNotFoundError:
         return web.json_response(

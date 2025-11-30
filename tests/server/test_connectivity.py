@@ -1,19 +1,19 @@
-import pytest
-from collections.abc import Generator
-from unittest.mock import patch
-from pathlib import Path
-from typing import Callable, Awaitable
 import hashlib
-import aiohttp
-import yaml
-import jwt
+from collections.abc import Generator
+from pathlib import Path
+from typing import Awaitable, Callable
+from unittest.mock import patch
 from urllib.parse import urlparse
 
+import aiohttp
+import jwt
+import pytest
+import yaml
 from aiohttp.test_utils import TestClient
 from aiohttp.web import Application
 
-from supernote.server.services.user import JWT_SECRET, JWT_ALGORITHM
 from supernote.server.app import create_app
+from supernote.server.services.user import JWT_ALGORITHM, JWT_SECRET
 
 # Type alias for the aiohttp_client fixture
 AiohttpClient = Callable[[Application], Awaitable[TestClient]]
@@ -47,7 +47,9 @@ def auth_headers_fixture() -> dict[str, str]:
 
 
 @pytest.fixture(autouse=True)
-def patch_server_config(mock_trace_log, mock_users_file):
+def patch_server_config(
+    mock_trace_log: str, mock_users_file: str
+) -> Generator[None, None, None]:
     with (
         patch("supernote.server.config.TRACE_LOG_FILE", mock_trace_log),
         patch("supernote.server.config.USER_CONFIG_FILE", mock_users_file),

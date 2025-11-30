@@ -1,17 +1,20 @@
-import pytest
-from unittest.mock import patch
+from collections.abc import Generator
 from pathlib import Path
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
+from unittest.mock import patch
+
+import pytest
 from aiohttp import FormData
 from aiohttp.test_utils import TestClient
 from aiohttp.web import Application
+
 from supernote.server.app import create_app
 
 AiohttpClient = Callable[[Application], Awaitable[TestClient]]
 
 
 @pytest.fixture(autouse=True)
-def mock_storage(tmp_path: Path):
+def mock_storage(tmp_path: Path) -> Generator[Path, None, None]:
     storage_root = tmp_path / "storage"
     temp_root = tmp_path / "storage" / "temp"
     storage_root.mkdir(parents=True)
