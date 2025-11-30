@@ -67,6 +67,102 @@
     - [x] Refactor `create_app` to accept a `Config` object.
     - [x] Inject services into route handlers (avoid global state).
 
+## Caveats & Technical Debt (Prioritized)
+
+### 1. Authentication & Security (**High**)
+- User authentication is stubbed; all users assumed to exist, password verification not implemented.
+- Random code for login is not stored or validated.
+- JWT tokens are faked, not cryptographically signed or verified.
+    - **Action:** Implement persistent user storage, store/validate random codes, real password hashing, secure JWT.
+
+### 2. Hardcoded Values & Placeholders (**High**)
+- Many endpoints return hardcoded values (e.g., `equipment_no="SN123456"`, `user_name="Supernote User"`).
+    - **Action:** Replace with real data from user/device context.
+
+### 3. File Upload Handling (**Medium-High**)
+- `trace_middleware` may consume the request body, which could break multipart parsing.
+    - **Action:** Refactor middleware and upload handler for robust compatibility and error handling.
+
+### 4. Hash Verification (**Medium**)
+- File upload finish only logs a warning on hash mismatch, does not return error to client.
+    - **Action:** Return error on hash mismatch, consider supporting stronger hashes.
+
+### 5. Directory Traversal & Path Safety (**Medium**)
+- Path safety checks exist but need more tests and stricter validation.
+    - **Action:** Add tests, consider stricter path validation.
+
+### 6. Device & Equipment Binding (**Medium**)
+- Device binding/unlinking is stubbed, not persisted or validated.
+    - **Action:** Implement persistent device binding and validation.
+
+### 7. Error Handling & API Consistency (**Medium**)
+- Some errors are only logged, not returned to the client. API responses may not match official Supernote Cloud.
+    - **Action:** Audit endpoints for error handling and response codes, align with official API.
+
+### 8. Scalability & Concurrency (**Low-Medium**)
+- No locking or concurrency control for uploads.
+    - **Action:** Add file locks or atomic operations for concurrent uploads.
+
+### 9. Logging & Monitoring (**Low**)
+- Logging is basic; no structured logs or monitoring hooks.
+    - **Action:** Add structured logging, request IDs, error monitoring.
+
+---
+
+
+## Major Features to Implement (User Priorities)
+
+The following features are explicitly prioritized for this server:
+
+1. **Folder and File Management**
+    - Full CRUD for folders and files: create, delete, move, copy, rename, and list.
+    - Directory management endpoints (create/delete folders, etc.).
+
+2. **User Accounts (Static Config)**
+    - Real user authentication and login, but user accounts can be static/config-based (not dynamic registration).
+    - Proper password hashing and JWT-based authentication.
+
+3. **Schedule and Tasks (Calendar)**
+    - Full support for schedule/task APIs (create, update, delete, list tasks and groups).
+    - Use the `ical` package as a backend for calendar/task storage and sync.
+
+4. **Security Improvements**
+    - Implement robust authentication, password hashing, and JWT validation.
+    - Add replay/resubmit protection and improve error handling.
+
+5. **Sync/Server Change APIs**
+    - Implement endpoints for device sync and server change tracking (details TBD).
+
+6. **(Optional) PDF/PNG Conversion**
+    - Some note-to-PDF/PNG conversion logic may be implemented for export, but not as a core sync API.
+
+---
+
+The following features exist in the official Supernote Cloud but are **not implemented** or are **intentionally omitted** in this server:
+
+- **Summaries/Annotations:**
+    - All endpoints and logic for summary/annotation CRUD, tags, groups, and summary file upload/download are omitted.
+- **PDF/PNG Conversion:**
+    - Endpoints for note-to-PDF/PNG and PDF-with-mark conversion are not implemented as server APIs. (Some conversion logic may exist for export, but not as a sync API.)
+- **Sharing:**
+    - File sharing endpoints and logic are not implemented.
+- **File Search:**
+    - No endpoints for searching files by label/content.
+- **Cloud/OSS/S3 Integration:**
+    - No endpoints for S3/OSS integration, upload/download URLs, or cloud storage.
+- **Quota/Capacity Management:**
+    - Advanced quota management is not implemented; only basic usage reporting is present.
+- **Feedback/Bug Reporting:**
+    - No endpoints for user feedback, bug reports, or support.
+- **Recycle Bin/File History:**
+    - No endpoints for file recovery, recycle bin, or file versioning/history.
+- **Advanced User Profile Management:**
+    - No endpoints for updating user info, avatar, etc. User accounts are static/config-based, not dynamic.
+- **Other Utilities:**
+    - Any endpoints not explicitly listed in the plan above are not implemented.
+
+---
+
 ## Phase 7: Advanced Features (Next)
 - [ ] Database integration (SQLite/PostgreSQL) for user/file metadata.
 - [ ] Docker containerization.
