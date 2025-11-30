@@ -31,9 +31,9 @@
 - [x] Implement `POST /api/file/3/files/upload/apply` (Upload Request).
 - [x] Implement `PUT /api/file/upload/data/{filename}` (File Data Upload).
 - [x] Implement `POST /api/file/2/files/upload/finish` (Upload Confirmation).
-- [ ] Implement File Download endpoints.
-    - [ ] `POST /api/file/3/files/download_v3` (Get Download URL).
-    - [ ] `GET /api/file/download/data/{filename}` (Serve File).
+- [x] Implement File Download endpoints.
+    - [x] `POST /api/file/3/files/download_v3` (Get Download URL).
+    - [x] `GET /api/file/download/data/{filename}` (Serve File).
 - [ ] Implement Directory Management (Create/Delete folders).
 
 ## Phase 4: Persistence & Storage (Completed)
@@ -51,23 +51,6 @@
 - [x] Add test for download flow.
 
 ## Phase 6: Refactoring & Architecture (Next)
-- [ ] Refactor `app.py` into multiple files (controllers, services).
-- [ ] Introduce `mashumaro` models for request/response.
-- [ ] Implement proper error handling and logging.
-- [ ] Add proper locking for concurrent access.
-
-## Phase 5: Downloads (Cloud-to-Device)
-- [ ] **Download Endpoints**:
-    - [ ] Implement `POST /api/file/3/files/download_v3`:
-        - [ ] Validate file exists.
-        - [ ] Generate download URL (e.g., `/api/file/download/data/{filename}`).
-    - [ ] Implement `GET /api/file/download/data/{filename}`:
-        - [ ] Serve file content from `storage/`.
-- [ ] **Sync Logic**:
-    - [ ] Ensure `handle_list_folder` sets `is_downloadable: true` for files.
-    - [ ] Handle `content_hash` (MD5) to avoid unnecessary downloads.
-
-## Phase 6: Refactoring & Architecture
 - [ ] **Data Models (Type Safety)**:
     - [ ] Create `supernote/server/models.py` using `mashumaro.DataClassJSONMixin`.
     - [ ] Define Request/Response dataclasses mirroring the Java DTOs/VOs (e.g., `ListFolderRequest`, `FileUploadApplyResponse`).
@@ -89,7 +72,7 @@
 - [ ] Docker containerization.
 - [ ] SSL/TLS support (via reverse proxy instructions).
 
-## Phase 5: Modularity & Integration (Home Assistant)
+## Phase 8: Modularity & Integration (Home Assistant)
 - [ ] Refactor to separate business logic from `aiohttp` handlers.
     - Goal: Allow the core logic to be used in other contexts (e.g., Home Assistant custom component).
     - Structure: `supernote.server.core` (logic) vs `supernote.server.http` (web).
