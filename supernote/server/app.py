@@ -321,13 +321,19 @@ async def handle_query_by_path(request):
     entries_vo = None
     if target_path.exists():
         stat = target_path.stat()
+        
+        loop = asyncio.get_running_loop()
+        content_hash = ""
+        if not target_path.is_dir():
+            content_hash = await loop.run_in_executor(None, get_file_md5, target_path)
+
         entries_vo = FileEntryVO(
             tag="folder" if target_path.is_dir() else "file",
             id=rel_path,  # Use relative path as ID
             name=target_path.name,
             path_display=path_str,
             parent_path=str(Path(path_str).parent),
-            content_hash="",  # TODO
+            content_hash=content_hash,
             is_downloadable=True,
             size=stat.st_size,
             last_update_time=int(stat.st_mtime * 1000),
