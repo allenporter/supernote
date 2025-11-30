@@ -4,10 +4,10 @@ requires = ["setuptools>=77.0"]
 
 [project]
 name = "supernote"
-version = "0.3.1"
+version = "0.4.0"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-description = "Unofficial python library for parsing Supernote notebooks"
+description = "All-in-one toolkit for Supernote devices: parse notebooks, self-host services, access services"
 readme = "README.md"
 authors = [
   { name = "jya", email = "jya@wizmy.net" },
@@ -16,7 +16,7 @@ authors = [
 requires-python = ">=3.13"
 classifiers = []
 dependencies = [
-  # Notebook dependencies
+  # Core notebook dependencies (always installed)
   "colour>=0.1.5",
   "numpy>=1.19.0",
   "Pillow>=7.2.0",
@@ -24,15 +24,20 @@ dependencies = [
   "pypng>=0.0.20",
   "reportlab>=3.6.1",
   "svgwrite>=1.4",
+]
 
-  # Cloud dependencies
+[project.optional-dependencies]
+cloud = [
   "aiohttp>=3.13.2",
   "mashumaro>=3.17",
-
-  # Server & user management CLI
+]
+server = [
+  "aiohttp>=3.13.2",
+  "mashumaro>=3.17",
   "pyyaml>=6.0",
   "PyJWT>=2.10.1",
 ]
+all = ["supernote[cloud,server]"]
 
 [project.urls]
 Source = "https://github.com/allenporter/supernote"
@@ -41,7 +46,8 @@ Source = "https://github.com/allenporter/supernote"
 include = ["supernote*"]
 
 [project.entry-points."console_scripts"]
-supernote-tool  = "supernote.cmds.supernote_tool:main"
+supernote = "supernote.cli.main:main"
+supernote-server = "supernote.cli.server:main"
 
 [tool.mypy]
 exclude = [

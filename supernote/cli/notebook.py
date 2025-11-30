@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+"""Notebook CLI commands."""
 
 # Copyright (c) 2020 jya
 #
@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import argparse
 import io
 import os
 import sys
@@ -22,16 +21,13 @@ import sys
 from colour import Color
 
 import supernote as sn
-from supernote.converter import (
+from supernote.notebook.converter import (
     ImageConverter,
     SvgConverter,
     PdfConverter,
     TextConverter,
+    VisibilityOverlay,
 )
-from supernote.converter import VisibilityOverlay
-from supernote.cmds.cloud_login_tool import subcommand_cloud_login, subcommand_cloud_ls
-from supernote.cmds import user_admin
-from supernote.server import app as server_app
 
 
 def convert_all(converter, total, file_name, save_func, visibility_overlay):
@@ -208,21 +204,7 @@ def parse_color(color_string):
     return (black, darkgray, gray, white)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        prog="supernote-tool", description="Unofficial python tool for Ratta Supernote"
-    )
-    parser.add_argument(
-        "--version",
-        help="show version information and exit",
-        action="version",
-        version=f"%(prog)s {sn.__version__}",
-    )
-    subparsers = parser.add_subparsers()
-
-    # User management: user subcommands (delegated to user_admin)
-    user_admin.add_user_subparser(subparsers)
-
+def add_parser(subparsers):
     # 'analyze' subcommand
     parser_analyze = subparsers.add_parser("analyze", help="analyze note file")
     parser_analyze.add_argument("input", type=str, help="input note file")
@@ -232,7 +214,7 @@ def main():
         default="strict",
         help="select parser policy",
     )
-    parser_analyze.set_defaults(handler=subcommand_analyze)
+    parser_analyze.set_defaults(func=subcommand_analyze)
 
     # 'convert' subcommand
     parser_convert = subparsers.add_parser("convert", help="image conversion")
@@ -290,7 +272,7 @@ def main():
         default="strict",
         help="select parser policy",
     )
-    parser_convert.set_defaults(handler=subcommand_convert)
+    parser_convert.set_defaults(func=subcommand_convert)
 
     # 'merge' subcommand
     description = """
@@ -305,7 +287,7 @@ def main():
     )
     parser_merge.add_argument("input", type=str, nargs="+", help="input note files")
     parser_merge.add_argument("output", type=str, help="output note file")
-    parser_merge.set_defaults(handler=subcommand_merge)
+    parser_merge.set_defaults(func=subcommand_merge)
 
     # 'reconstruct' subcommand
     description = """
@@ -320,40 +302,4 @@ def main():
     )
     parser_reconstruct.add_argument("input", type=str, help="input note file")
     parser_reconstruct.add_argument("output", type=str, help="output note file")
-    parser_reconstruct.set_defaults(handler=subcommand_reconstruct)
-
-    # 'cloud-login' subcommand
-    parser_cloud_login = subparsers.add_parser(
-        "cloud-login", help="debug Supernote Cloud login flow"
-    )
-    parser_cloud_login.add_argument("email", type=str, help="user email/account")
-    parser_cloud_login.add_argument("password", type=str, help="user password")
-    parser_cloud_login.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose logging"
-    )
-    parser_cloud_login.set_defaults(handler=subcommand_cloud_login)
-
-    # Cloud ls command
-    cloud_ls_parser = subparsers.add_parser(
-        "cloud-ls", help="List files in Supernote Cloud"
-    )
-    cloud_ls_parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose logging"
-    )
-    cloud_ls_parser.set_defaults(handler=subcommand_cloud_ls)
-
-    # 'serve' subcommand
-    parser_serve = subparsers.add_parser(
-        "serve", help="Start the Supernote Private Cloud server"
-    )
-    parser_serve.set_defaults(handler=server_app.run)
-
-    args = parser.parse_args()
-    if hasattr(args, "handler"):
-        args.handler(args)
-    else:
-        parser.print_help()
-
-
-if __name__ == "__main__":
-    main()
+    parser_reconstruct.set_defaults(func=subcommand_reconstruct)

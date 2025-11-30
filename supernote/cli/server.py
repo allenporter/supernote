@@ -1,9 +1,12 @@
+"""Server CLI commands."""
+
 import argparse
 import os
 import getpass
 import yaml
 
 from supernote.server.services.user import UserService
+from supernote.server import app as server_app
 
 
 def load_users(users_file):
@@ -43,7 +46,14 @@ def deactivate_user(users_file: str, username: str):
         print(f"User '{username}' not found.")
 
 
-def add_user_subparser(subparsers: argparse._SubParsersAction) -> None:
+def add_parser(subparsers):
+    # 'serve' subcommand
+    parser_serve = subparsers.add_parser(
+        "serve", help="Start the Supernote Private Cloud server"
+    )
+    parser_serve.set_defaults(func=server_app.run)
+
+    # User management
     parser_user = subparsers.add_parser("user", help="User management commands")
     parser_user.add_argument(
         "--users-file",
@@ -57,7 +67,7 @@ def add_user_subparser(subparsers: argparse._SubParsersAction) -> None:
     parser_user_list = user_subparsers.add_parser(
         "list", help="List all users in users.yaml"
     )
-    parser_user_list.set_defaults(handler=lambda args: list_users(args.users_file))
+    parser_user_list.set_defaults(func=lambda args: list_users(args.users_file))
 
     # user add
     parser_user_add = user_subparsers.add_parser(
@@ -68,7 +78,7 @@ def add_user_subparser(subparsers: argparse._SubParsersAction) -> None:
         "--password", type=str, help="Password (if omitted, prompt interactively)"
     )
     parser_user_add.set_defaults(
-        handler=lambda args: add_user(args.users_file, args.username, args.password)
+        func=lambda args: add_user(args.users_file, args.username, args.password)
     )
 
     # user deactivate
@@ -79,5 +89,20 @@ def add_user_subparser(subparsers: argparse._SubParsersAction) -> None:
         "username", type=str, help="Username to deactivate"
     )
     parser_user_deactivate.set_defaults(
-        handler=lambda args: deactivate_user(args.users_file, args.username)
+        func=lambda args: deactivate_user(args.users_file, args.username)
     )
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Supernote Server CLI")
+    subparsers = parser.add_subparsers(dest="command")
+    add_parser(subparsers)
+    args = parser.parse_args()
+    if hasattr(args, "func"):
+        args.func(args)
+    else:
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()

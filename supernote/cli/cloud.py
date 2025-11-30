@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""Cloud login debugging tool for Supernote Cloud."""
+"""Cloud CLI commands."""
 
 import asyncio
 import logging
@@ -72,10 +71,6 @@ async def async_cloud_login(email: str, password: str, verbose: bool = False) ->
                 access_token = await login_client.login(email, password)
             except SupernoteException as err:
                 # Check if it's an SMS verification requirement
-                # We do this by checking the exception type, but since we just added it
-                # we need to make sure we import it.
-                # For now, let's assume if the message contains "verification code" it is one.
-                # But better to use the type.
                 from supernote.cloud.exceptions import SmsVerificationRequired
 
                 if isinstance(err, SmsVerificationRequired):
@@ -120,7 +115,6 @@ async def async_cloud_login(email: str, password: str, verbose: bool = False) ->
 
             # Step 2: Test basic functionality
             print("Step 3: Testing basic functionality...")
-            # auth = ConstantAuth(access_token) # No longer needed as we use FileCacheAuth
             authenticated_client = Client(session, auth=auth)
             cloud_client = SupernoteCloudClient(authenticated_client)
 
@@ -185,26 +179,18 @@ async def async_cloud_login(email: str, password: str, verbose: bool = False) ->
 
 
 def subcommand_cloud_login(args) -> None:
-    """Handler for cloud-login subcommand.
-
-    Args:
-        args: Parsed command line arguments
-    """
+    """Handler for cloud-login subcommand."""
     asyncio.run(async_cloud_login(args.email, args.password, args.verbose))
 
 
 async def async_cloud_ls(verbose: bool = False) -> None:
-    """List files in Supernote Cloud using cached credentials.
-
-    Args:
-        verbose: Enable verbose logging
-    """
+    """List files in Supernote Cloud using cached credentials."""
     setup_logging(verbose)
 
     cache_path = os.path.expanduser("~/.cache/supernote.pkl")
     if not os.path.exists(cache_path):
         print(f"Error: No cached credentials found at {cache_path}")
-        print("Please run 'supernote-tool cloud-login' first.")
+        print("Please run 'supernote cloud login' first.")
         sys.exit(1)
 
     async with aiohttp.ClientSession() as session:
@@ -239,9 +225,27 @@ async def async_cloud_ls(verbose: bool = False) -> None:
 
 
 def subcommand_cloud_ls(args) -> None:
-    """Handler for cloud-ls subcommand.
-
-    Args:
-        args: Parsed command line arguments
-    """
+    """Handler for cloud-ls subcommand."""
     asyncio.run(async_cloud_ls(args.verbose))
+
+
+def add_parser(subparsers):
+    # 'cloud-login' subcommand
+    parser_cloud_login = subparsers.add_parser(
+        "cloud-login", help="debug Supernote Cloud login flow"
+    )
+    parser_cloud_login.add_argument("email", type=str, help="user email/account")
+    parser_cloud_login.add_argument("password", type=str, help="user password")
+    parser_cloud_login.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    parser_cloud_login.set_defaults(func=subcommand_cloud_login)
+
+    # Cloud ls command
+    cloud_ls_parser = subparsers.add_parser(
+        "cloud-ls", help="List files in Supernote Cloud"
+    )
+    cloud_ls_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    cloud_ls_parser.set_defaults(func=subcommand_cloud_ls)
