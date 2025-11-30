@@ -1,5 +1,4 @@
-"""Supernote notebook parsing and conversion.
-
+"""
 .. include:: ./README.md
 """
 

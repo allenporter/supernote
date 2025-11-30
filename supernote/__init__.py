@@ -1,5 +1,4 @@
-"""Supernote toolkit for parsing, self-hosting, and client access.
-
+"""
 .. include:: ../README.md
 """
 
