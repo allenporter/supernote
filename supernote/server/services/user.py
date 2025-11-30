@@ -10,6 +10,7 @@ from ..models.auth import UserVO
 
 logger = logging.getLogger(__name__)
 
+# TODO: This should be generated on first startup and stored somewhere secure
 JWT_SECRET = os.environ.get("SUPERNOTE_JWT_SECRET", "supernote-secret-key")
 JWT_ALGORITHM = "HS256"
 

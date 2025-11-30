@@ -4,6 +4,9 @@ import time
 from pathlib import Path
 from typing import Callable, Awaitable, Any
 from aiohttp import web
+
+from supernote.server.services.user import JWT_SECRET, JWT_ALGORITHM
+
 from . import config
 from .services.storage import StorageService
 from .services.user import UserService
@@ -79,7 +82,6 @@ async def jwt_auth_middleware(request, handler):
     if not auth_header or not auth_header.startswith("Bearer "):
         return web.json_response({"error": "Unauthorized"}, status=401)
     token = auth_header.split(" ", 1)[1]
-    from supernote.server.services.user import JWT_SECRET, JWT_ALGORITHM
     import jwt
 
     try:
