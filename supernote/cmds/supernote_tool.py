@@ -30,6 +30,7 @@ from supernote.converter import (
 )
 from supernote.converter import VisibilityOverlay
 from supernote.cmds.cloud_login_tool import subcommand_cloud_login, subcommand_cloud_ls
+from supernote.cmds import user_admin
 from supernote.server import app as server_app
 
 
@@ -218,6 +219,9 @@ def main():
         version=f"%(prog)s {sn.__version__}",
     )
     subparsers = parser.add_subparsers()
+
+    # User management: user subcommands (delegated to user_admin)
+    user_admin.add_user_subparser(subparsers)
 
     # 'analyze' subcommand
     parser_analyze = subparsers.add_parser("analyze", help="analyze note file")

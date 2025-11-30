@@ -28,6 +28,10 @@ dependencies = [
   # Cloud dependencies
   "aiohttp>=3.13.2",
   "mashumaro>=3.17",
+
+  # User management CLI
+  "bcrypt>=4.0.0",
+  "pyyaml>=6.0",
 ]
 
 [project.urls]
