@@ -36,7 +36,7 @@ class FileObj(Protocol):
         ...
 
 
-def parse_metadata(stream: FileObj, policy="strict"):
+def parse_metadata(stream: FileObj, policy="strict") -> SupernoteMetadata:
     """Parses a supernote binary stream and returns metadata object.
 
     Policy:
