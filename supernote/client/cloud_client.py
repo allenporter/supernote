@@ -1,19 +1,21 @@
 """Library for accessing backups in Supenote Cloud."""
 
 from contextlib import asynccontextmanager
+from typing import AsyncGenerator, Self
+
 import aiohttp
 
 from .api_model import (
+    FileListRequest,
     FileListResponse,
     GetFileDownloadUrlRequest,
     GetFileDownloadUrlResponse,
-    FileListRequest,
-    QueryUserResponse,
     QueryUserRequest,
+    QueryUserResponse,
 )
+from .auth import ConstantAuth
 from .client import Client
 from .login_client import LoginClient
-from .auth import ConstantAuth
 
 
 class SupernoteClient:
@@ -54,7 +56,9 @@ class SupernoteClient:
 
     @classmethod
     @asynccontextmanager
-    async def from_credentials(cls, email: str, password: str):
+    async def from_credentials(
+        cls, email: str, password: str
+    ) -> AsyncGenerator[Self, None]:
         """Create a client from credentials."""
         async with aiohttp.ClientSession() as session:
             # Temporary client for login

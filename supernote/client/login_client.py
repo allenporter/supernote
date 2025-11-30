@@ -7,18 +7,18 @@ from typing import TypeVar
 from mashumaro.mixins.json import DataClassJSONMixin
 
 from .api_model import (
-    UserLoginRequest,
-    UserLoginResponse,
-    UserRandomCodeRequest,
-    UserRandomCodeResponse,
-    UserSmsLoginRequest,
-    UserSmsLoginResponse,
-    UserPreAuthRequest,
-    UserPreAuthResponse,
-    UserSendSmsRequest,
-    UserSendSmsResponse,
     TokenRequest,
     TokenResponse,
+    UserLoginRequest,
+    UserLoginResponse,
+    UserPreAuthRequest,
+    UserPreAuthResponse,
+    UserRandomCodeRequest,
+    UserRandomCodeResponse,
+    UserSendSmsRequest,
+    UserSendSmsResponse,
+    UserSmsLoginRequest,
+    UserSmsLoginResponse,
 )
 from .client import Client
 from .exceptions import ApiException, SmsVerificationRequired

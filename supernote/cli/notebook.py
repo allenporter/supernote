@@ -23,8 +23,8 @@ from colour import Color
 import supernote as sn
 from supernote.notebook.converter import (
     ImageConverter,
-    SvgConverter,
     PdfConverter,
+    SvgConverter,
     TextConverter,
     VisibilityOverlay,
 )

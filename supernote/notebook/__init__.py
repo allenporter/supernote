@@ -16,27 +16,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .parser import load_notebook, load, parse_metadata
-from .fileformat import (
-    Notebook,
-    SupernoteMetadata,
-    Page,
-    Layer,
-    Cover,
-    Keyword,
-    Title,
-    Link,
-)
+from .color import MODE_RGB, ColorPalette
 from .converter import (
+    ImageConverter,
+    PdfConverter,
     PngConverter,
     SvgConverter,
-    PdfConverter,
     TextConverter,
-    ImageConverter,
     VisibilityOverlay,
 )
-from .color import ColorPalette, MODE_RGB
-from .manipulator import reconstruct, merge
+from .fileformat import (
+    Cover,
+    Keyword,
+    Layer,
+    Link,
+    Notebook,
+    Page,
+    SupernoteMetadata,
+    Title,
+)
+from .manipulator import merge, reconstruct
+from .parser import load, load_notebook, parse_metadata
 
 # Alias for convenience
 parse_notebook = load_notebook

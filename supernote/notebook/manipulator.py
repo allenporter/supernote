@@ -17,10 +17,7 @@
 import io
 import re
 
-from . import exceptions
-from . import fileformat
-from . import parser
-from . import utils
+from . import exceptions, fileformat, parser, utils
 
 
 class NotebookBuilder:

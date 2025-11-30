@@ -1,7 +1,8 @@
 import logging
 import urllib.parse
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
+
 from ..models.file import FileEntryVO, UploadApplyResponse, UploadFinishResponse
 from .storage import StorageService
 

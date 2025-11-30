@@ -1,7 +1,9 @@
 from dataclasses import dataclass, field
+
 from mashumaro import field_options
+from mashumaro.config import TO_DICT_ADD_OMIT_NONE_FLAG, BaseConfig
 from mashumaro.mixins.json import DataClassJSONMixin
-from mashumaro.config import BaseConfig, TO_DICT_ADD_OMIT_NONE_FLAG
+
 from .base import BaseResponse
 
 
@@ -23,7 +25,7 @@ class ListFolderRequest(DataClassJSONMixin):
     class Config(BaseConfig):
         serialize_by_alias = True
         omit_none = True
-        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
 
 
 @dataclass
@@ -47,7 +49,7 @@ class FileEntryVO(DataClassJSONMixin):
     class Config(BaseConfig):
         serialize_by_alias = True
         omit_none = True
-        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
 
 
 @dataclass
@@ -66,7 +68,7 @@ class AllocationVO(DataClassJSONMixin):
     class Config(BaseConfig):
         serialize_by_alias = True
         omit_none = True
-        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
 
 
 @dataclass
@@ -90,7 +92,7 @@ class FileQueryRequest(DataClassJSONMixin):
     class Config(BaseConfig):
         serialize_by_alias = True
         omit_none = True
-        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
 
 
 @dataclass
@@ -103,7 +105,7 @@ class FileQueryByIdRequest(DataClassJSONMixin):
     class Config(BaseConfig):
         serialize_by_alias = True
         omit_none = True
-        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
 
 
 @dataclass
@@ -126,7 +128,7 @@ class UploadApplyRequest(DataClassJSONMixin):
     class Config(BaseConfig):
         serialize_by_alias = True
         omit_none = True
-        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
 
 
 @dataclass
@@ -164,7 +166,7 @@ class UploadFinishRequest(DataClassJSONMixin):
     class Config(BaseConfig):
         serialize_by_alias = True
         omit_none = True
-        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
 
 
 @dataclass
@@ -190,7 +192,7 @@ class DownloadApplyRequest(DataClassJSONMixin):
     class Config(BaseConfig):
         serialize_by_alias = True
         omit_none = True
-        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
 
 
 @dataclass

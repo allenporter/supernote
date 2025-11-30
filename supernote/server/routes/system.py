@@ -1,4 +1,5 @@
 import secrets
+
 from aiohttp import web
 
 from supernote.server.models.base import BaseResponse

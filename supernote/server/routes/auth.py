@@ -1,11 +1,12 @@
 from aiohttp import web
-from supernote.server.models.base import BaseResponse
+
 from supernote.server.models.auth import (
-    RandomCodeResponse,
     LoginResponse,
-    UserQueryResponse,
+    RandomCodeResponse,
     UserCheckRequest,
+    UserQueryResponse,
 )
+from supernote.server.models.base import BaseResponse
 from supernote.server.services.user import UserService
 
 from .decorators import public_route
@@ -75,8 +76,8 @@ async def handle_login(request: web.Request) -> web.Response:
     token = user_service.login(
         account=login_req.account,
         password_hash=login_req.password,
-        timestamp=login_req.timestamp,
-        equipment_no=login_req.equipmentNo,
+        timestamp=login_req.timestamp or "",
+        equipment_no=login_req.equipment_no or "'",
     )
     return web.json_response(
         LoginResponse(

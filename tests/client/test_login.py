@@ -1,12 +1,15 @@
 """Tests for the login flow."""
 
 import hashlib
+from typing import Awaitable, Callable
 
+import aiohttp
+import aiohttp.test_utils
+import pytest
 from aiohttp import web
-import pytest_asyncio
 
-from supernote.cloud.client import Client
-from supernote.cloud.api_model import UserRandomCodeResponse, UserLoginResponse
+from supernote.client import Client
+from supernote.client.api_model import UserLoginResponse, UserRandomCodeResponse
 
 
 # Mock SHA-256 implementation matching the JS one
@@ -14,7 +17,7 @@ def sha256(data: str) -> str:
     return hashlib.sha256(data.encode()).hexdigest()
 
 
-async def handler_random_code(request: web.Request):
+async def handler_random_code(request: web.Request) -> web.Response:
     """Handle random code request."""
     data = await request.json()
     if "account" not in data or "countryCode" not in data:
@@ -24,7 +27,7 @@ async def handler_random_code(request: web.Request):
     )
 
 
-async def handler_login_new(request: web.Request):
+async def handler_login_new(request: web.Request) -> web.Response:
     """Handle new login request."""
     data = await request.json()
     # Verify password hash logic: SHA256(password + randomCode)
@@ -36,13 +39,17 @@ async def handler_login_new(request: web.Request):
     return web.json_response({"success": False, "errorMsg": "Invalid password"})
 
 
-async def handler_csrf(request: web.Request):
+async def handler_csrf(request: web.Request) -> web.Response:
     """Handle CSRF request."""
     return web.Response(text="ok", headers={"X-XSRF-TOKEN": "test-token"})
 
 
-@pytest_asyncio.fixture(name="login_client")
-async def client_fixture(aiohttp_client):
+@pytest.fixture(name="client")
+async def client_fixture(
+    aiohttp_client: Callable[
+        [web.Application], Awaitable[aiohttp.test_utils.TestClient]
+    ],
+) -> Client:
     app = web.Application()
     app.router.add_get("/csrf", handler_csrf)
     app.router.add_post("/official/user/query/random/code", handler_random_code)
@@ -53,10 +60,10 @@ async def client_fixture(aiohttp_client):
     return Client(test_client.session, host=base_url.rstrip("/"))
 
 
-async def test_login_flow(login_client):
+async def test_login_flow(client: Client) -> None:
     """Test the full login flow."""
     # Step 1: Get random code
-    code_resp = await login_client.post_json(
+    code_resp = await client.post_json(
         "official/user/query/random/code",
         UserRandomCodeResponse,
         json={"account": "test@example.com", "countryCode": 1},
@@ -69,7 +76,7 @@ async def test_login_flow(login_client):
     password_hash = sha256(password + code_resp.random_code)
 
     # Step 3: Login
-    login_resp = await login_client.post_json(
+    login_resp = await client.post_json(
         "official/user/account/login/new",
         UserLoginResponse,
         json={

@@ -1,12 +1,13 @@
 """Server CLI commands."""
 
 import argparse
-import os
 import getpass
+import os
+
 import yaml
 
-from supernote.server.services.user import UserService
 from supernote.server import app as server_app
+from supernote.server.services.user import UserService
 
 
 def load_users(users_file):

@@ -1,14 +1,17 @@
-import pytest
-from unittest.mock import patch
-from pathlib import Path
 import hashlib
-import yaml
+from pathlib import Path
+from typing import Generator
+from unittest.mock import patch
+
 import jwt
-from supernote.server.services.user import JWT_SECRET, JWT_ALGORITHM
+import pytest
+import yaml
+
+from supernote.server.services.user import JWT_ALGORITHM, JWT_SECRET
 
 
 @pytest.fixture(autouse=True)
-def mock_storage(tmp_path: Path):
+def mock_storage(tmp_path: Path) -> Generator[Path, None, None]:
     storage_root = tmp_path / "storage"
     temp_root = tmp_path / "storage" / "temp"
     storage_root.mkdir(parents=True)
@@ -27,7 +30,7 @@ def mock_storage(tmp_path: Path):
 
 
 @pytest.fixture
-def mock_users_file(tmp_path: Path):
+def mock_users_file(tmp_path: Path) -> Generator[str, None, None]:
     user = {
         "username": "test@example.com",
         "password_sha256": hashlib.sha256(b"testpassword").hexdigest(),
@@ -40,20 +43,22 @@ def mock_users_file(tmp_path: Path):
 
 
 @pytest.fixture
-def mock_trace_log(tmp_path: Path):
+def mock_trace_log(tmp_path: Path) -> Generator[str, None, None]:
     log_file = tmp_path / "trace.log"
     with patch("supernote.server.config.TRACE_LOG_FILE", str(log_file)):
         yield str(log_file)
 
 
 @pytest.fixture(name="auth_headers")
-def auth_headers_fixture():
+def auth_headers_fixture() -> dict[str, str]:
     token = jwt.encode({"sub": "test@example.com"}, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture
-def patch_server_config(mock_trace_log, mock_users_file):
+def patch_server_config(
+    mock_trace_log: str, mock_users_file: str
+) -> Generator[None, None, None]:
     with (
         patch("supernote.server.config.TRACE_LOG_FILE", mock_trace_log),
         patch("supernote.server.config.USER_CONFIG_FILE", mock_users_file),

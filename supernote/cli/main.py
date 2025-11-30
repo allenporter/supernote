@@ -3,7 +3,7 @@
 import argparse
 import sys
 
-from . import notebook, client, server
+from . import client, notebook, server
 
 
 def main():

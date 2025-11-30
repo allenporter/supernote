@@ -16,22 +16,17 @@
 
 import base64
 import json
-import potrace
-import svgwrite
-
 from enum import Enum, auto
 from io import BytesIO
 
+import potrace
+import svgwrite
 from PIL import Image
-
-from reportlab.lib.pagesizes import A4, portrait, landscape
+from reportlab.lib.pagesizes import A4, landscape, portrait
 from reportlab.pdfgen import canvas
 
-from . import color
+from . import color, exceptions, fileformat, utils
 from . import decoder as Decoder
-from . import exceptions
-from . import fileformat
-from . import utils
 
 
 class VisibilityOverlay(Enum):

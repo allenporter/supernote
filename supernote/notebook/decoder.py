@@ -16,13 +16,13 @@
 
 import base64
 import json
-import numpy as np
-import png
 import queue
 import zlib
 
-from . import color
-from . import exceptions
+import numpy as np
+import png
+
+from . import color, exceptions
 
 
 class BaseDecoder:
