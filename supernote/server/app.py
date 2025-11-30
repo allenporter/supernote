@@ -10,6 +10,11 @@ logger = logging.getLogger(__name__)
 
 @web.middleware
 async def trace_middleware(request, handler):
+    # Skip reading body for upload endpoints to avoid consuming the stream
+    # which breaks multipart parsing in the handler.
+    if "/upload/data/" in request.path:
+        return await handler(request)
+
     # Read body if present
     body_bytes = None
     if request.can_read_body:
@@ -23,6 +28,9 @@ async def trace_middleware(request, handler):
     if body_bytes:
         try:
             body_str = body_bytes.decode("utf-8", errors="replace")
+            # Truncate body if it's too long (e.g. > 1KB)
+            if len(body_str) > 1024:
+                body_str = body_str[:1024] + "... (truncated)"
         except Exception:
             body_str = "<binary data>"
 
@@ -118,12 +126,223 @@ async def handle_bind_equipment(request):
     return web.json_response({"success": True})
 
 
+async def handle_user_query(request):
+    # Endpoint: POST /api/user/query
+    # Purpose: Get user details.
+    return web.json_response({
+        "success": True,
+        "user": {
+            "userName": "Supernote User",
+            "email": "test@example.com",
+            "phone": "",
+            "countryCode": "1",
+            "totalCapacity": "25485312",
+            "fileServer": "0",  # 0 for ufile (or local?), 1 for aws
+            "avatarsUrl": "",
+            "birthday": "",
+            "sex": "",
+        },
+        "isUser": True,
+        "equipmentNo": "SN123456" # Should probably match the request if possible, or be generic
+    })
+
+
+async def handle_sync_start(request):
+    # Endpoint: POST /api/file/2/files/synchronous/start
+    # Purpose: Start a file synchronization session.
+    # Response: SynchronousStartLocalVO
+    return web.json_response({
+        "success": True,
+        "equipmentNo": "SN123456", # Should match request
+        "synType": True # True for normal sync, False for full re-upload
+    })
+
+
+async def handle_sync_end(request):
+    # Endpoint: POST /api/file/2/files/synchronous/end
+    # Purpose: End a file synchronization session.
+    # Response: SynchronousEndLocalVO (likely just success)
+    return web.json_response({"success": True})
+
+
+async def handle_list_folder(request):
+    # Endpoint: POST /api/file/2/files/list_folder
+    # Purpose: List folders for sync selection.
+    # Response: ListFolderLocalVO
+    
+    # We'll return a few dummy folders so the user can select them.
+    # In a real implementation, this would list directories from the storage.
+    
+    current_time = int(time.time() * 1000)
+    
+    entries = [
+        {
+            "tag": "folder",
+            "id": "1",
+            "name": "Document",
+            "path_display": "/Document",
+            "parent_path": "/",
+            "content_hash": "",
+            "is_downloadable": True,
+            "size": 0,
+            "lastUpdateTime": current_time
+        },
+        {
+            "tag": "folder",
+            "id": "2",
+            "name": "Note",
+            "path_display": "/Note",
+            "parent_path": "/",
+            "content_hash": "",
+            "is_downloadable": True,
+            "size": 0,
+            "lastUpdateTime": current_time
+        },
+        {
+            "tag": "folder",
+            "id": "3",
+            "name": "Export",
+            "path_display": "/Export",
+            "parent_path": "/",
+            "content_hash": "",
+            "is_downloadable": True,
+            "size": 0,
+            "lastUpdateTime": current_time
+        }
+    ]
+    
+    return web.json_response({
+        "success": True,
+        "equipmentNo": "SN123456", # Should match request
+        "entries": entries
+    })
+
+
+async def handle_capacity_query(request):
+    # Endpoint: POST /api/file/2/users/get_space_usage
+    # Purpose: Get storage capacity usage.
+    # Response: CapacityLocalVO
+    
+    return web.json_response({
+        "success": True,
+        "equipmentNo": "SN123456", # Should match request
+        "used": 1024 * 1024 * 100, # 100MB used
+        "allocationVO": {
+            "tag": "personal",
+            "allocated": 1024 * 1024 * 1024 * 10 # 10GB total
+        }
+    })
+
+
+async def handle_query_by_path(request):
+    # Endpoint: POST /api/file/3/files/query/by/path_v3
+    # Purpose: Check if a file exists by path.
+    # Response: FileQueryByPathLocalVO
+    
+    # For now, we always say the file doesn't exist (entriesVO=None)
+    # This should trigger the device to upload the file.
+    
+    return web.json_response({
+        "success": True,
+        "equipmentNo": "SN123456", # Should match request
+        "entriesVO": None
+    })
+
+
 async def handle_csrf(request):
     # Endpoint: GET /api/csrf
     token = secrets.token_urlsafe(16)
     resp = web.Response(text="CSRF Token")
     resp.headers["X-XSRF-TOKEN"] = token
     return resp
+
+
+async def handle_upload_apply(request):
+    # Endpoint: POST /api/file/3/files/upload/apply
+    # Purpose: Request to upload a file.
+    # Response: FileUploadApplyLocalVO
+    
+    data = await request.json()
+    file_name = data.get("fileName")
+    
+    # Construct a URL for the actual upload.
+    # In a real implementation, this might be a signed S3 URL or a local endpoint.
+    # For this private cloud, we'll point to a local upload endpoint we'll create.
+    
+    # We need to handle the actual file upload at this URL.
+    # Let's define /api/file/upload/data/{filename}
+    
+    upload_url = f"http://{request.host}/api/file/upload/data/{file_name}"
+    
+    return web.json_response({
+        "success": True,
+        "equipmentNo": "SN123456", # Should match request
+        "bucketName": "supernote-local",
+        "innerName": file_name,
+        "xAmzDate": "",
+        "authorization": "",
+        "fullUploadUrl": upload_url,
+        "partUploadUrl": upload_url # Assuming simple upload for now
+    })
+
+
+async def handle_upload_data(request):
+    # Endpoint: POST /api/file/upload/data/{filename}
+    # Purpose: Receive the actual file content.
+    
+    filename = request.match_info['filename']
+    
+    # The device sends multipart/form-data
+    # Note: trace_middleware might have consumed the body already if we are not careful.
+    # But trace_middleware uses request.read() which caches the body, so it should be fine?
+    # Actually, request.read() reads the whole body into memory.
+    # request.multipart() expects to read from the stream.
+    # If the body is already read, we might need to handle it differently.
+    
+    if request._read_bytes:
+        # Body already read by middleware
+        # We need to reconstruct a multipart reader or just parse it manually if possible.
+        # However, aiohttp's multipart reader expects a stream.
+        # Since we are in a "lite" server, maybe we can just skip the middleware for this route
+        # or make the middleware smarter.
+        # For now, let's try to use the standard multipart reader which might fail if stream is consumed.
+        pass
+
+    reader = await request.multipart()
+    
+    # Read the first part (which should be the file)
+    field = await reader.next()
+    if field.name == 'file':
+        # In a real implementation, we would save this file to disk.
+        # For now, we'll just read the bytes and discard them (or maybe log size).
+        size = 0
+        while True:
+            chunk = await field.read_chunk()
+            if not chunk:
+                break
+            size += len(chunk)
+        
+        logger.info(f"Received upload for {filename}: {size} bytes")
+    
+    return web.Response(status=200)
+
+
+async def handle_upload_finish(request):
+    # Endpoint: POST /api/file/2/files/upload/finish
+    # Purpose: Confirm upload completion.
+    # Response: FileUploadFinishLocalVO
+    
+    data = await request.json()
+    
+    return web.json_response({
+        "success": True,
+        "equipmentNo": data.get("equipmentNo"),
+        "path_display": data.get("path") + data.get("fileName"),
+        "id": "12345", # Dummy ID
+        "size": int(data.get("size", 0)),
+        "name": data.get("fileName"),
+        "content_hash": data.get("content_hash")
+    })
 
 
 def create_app():
@@ -138,6 +357,17 @@ def create_app():
     app.router.add_post("/api/official/user/account/login/new", handle_login)
     app.router.add_post("/api/official/user/account/login/equipment", handle_login)
     app.router.add_post("/api/terminal/user/bindEquipment", handle_bind_equipment)
+    app.router.add_post("/api/user/query", handle_user_query)
+    app.router.add_post("/api/file/2/files/synchronous/start", handle_sync_start)
+    app.router.add_post("/api/file/2/files/synchronous/end", handle_sync_end)
+    app.router.add_post("/api/file/2/files/list_folder", handle_list_folder)
+    app.router.add_post("/api/file/3/files/list_folder_v3", handle_list_folder)
+    app.router.add_post("/api/file/2/users/get_space_usage", handle_capacity_query)
+    app.router.add_post("/api/file/3/files/query/by/path_v3", handle_query_by_path)
+    app.router.add_post("/api/file/3/files/upload/apply", handle_upload_apply)
+    app.router.add_post("/api/file/2/files/upload/finish", handle_upload_finish)
+    app.router.add_put("/api/file/upload/data/{filename}", handle_upload_data)
+    app.router.add_post("/api/file/upload/data/{filename}", handle_upload_data) # Support POST just in case
     
     # Add a catch-all route to log everything
     app.router.add_route("*", "/{tail:.*}", handle_root)

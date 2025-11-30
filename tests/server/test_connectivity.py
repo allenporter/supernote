@@ -118,3 +118,121 @@ async def test_bind_equipment(aiohttp_client: AiohttpClient) -> None:
     assert resp.status == 200
     data = await resp.json()
     assert data == {"success": True}
+
+
+async def test_user_query(aiohttp_client: AiohttpClient) -> None:
+    client = await aiohttp_client(create_app())
+    resp = await client.post("/api/user/query")
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["success"] is True
+    assert "user" in data
+    assert data["user"]["userName"] == "Supernote User"
+
+
+async def test_sync_start(aiohttp_client: AiohttpClient) -> None:
+    client = await aiohttp_client(create_app())
+    resp = await client.post("/api/file/2/files/synchronous/start", json={
+        "equipmentNo": "SN123456"
+    })
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["success"] is True
+    assert "synType" in data
+
+
+async def test_sync_end(aiohttp_client: AiohttpClient) -> None:
+    client = await aiohttp_client(create_app())
+    resp = await client.post("/api/file/2/files/synchronous/end", json={
+        "equipmentNo": "SN123456",
+        "flag": "N"
+    })
+    assert resp.status == 200
+    data = await resp.json()
+    assert data == {"success": True}
+
+
+async def test_list_folder(aiohttp_client: AiohttpClient) -> None:
+    client = await aiohttp_client(create_app())
+    resp = await client.post("/api/file/2/files/list_folder", json={
+        "equipmentNo": "SN123456",
+        "path": "/",
+        "recursive": False
+    })
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["success"] is True
+    assert "entries" in data
+    assert len(data["entries"]) > 0
+    assert data["entries"][0]["tag"] == "folder"
+
+
+async def test_capacity_query(aiohttp_client: AiohttpClient) -> None:
+    client = await aiohttp_client(create_app())
+    resp = await client.post("/api/file/2/users/get_space_usage", json={
+        "equipmentNo": "SN123456",
+        "version": "202407"
+    })
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["success"] is True
+    assert "used" in data
+    assert "allocationVO" in data
+    assert data["allocationVO"]["allocated"] > 0
+
+
+async def test_query_by_path(aiohttp_client: AiohttpClient) -> None:
+    client = await aiohttp_client(create_app())
+    resp = await client.post("/api/file/3/files/query/by/path_v3", json={
+        "equipmentNo": "SN123456",
+        "path": "/EXPORT/test.note"
+    })
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["success"] is True
+    assert "entriesVO" in data
+    assert data["entriesVO"] is None
+
+
+async def test_upload_flow(aiohttp_client: AiohttpClient) -> None:
+    client = await aiohttp_client(create_app())
+    
+    # 1. Apply for upload
+    resp = await client.post("/api/file/3/files/upload/apply", json={
+        "equipmentNo": "SN123456",
+        "path": "/EXPORT/test.note",
+        "fileName": "test.note",
+        "size": "1024"
+    })
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["success"] is True
+    assert "fullUploadUrl" in data
+    upload_url = data["fullUploadUrl"]
+    
+    # 2. Perform upload (using the returned URL)
+    from urllib.parse import urlparse
+    parsed_url = urlparse(upload_url)
+    upload_path = parsed_url.path
+    
+    # Use multipart upload
+    from aiohttp import FormData
+    data = FormData()
+    data.add_field('file', b'test content', filename='test.note')
+    
+    resp = await client.post(upload_path, data=data)
+    assert resp.status == 200
+    
+    # 3. Finish upload
+    resp = await client.post("/api/file/2/files/upload/finish", json={
+        "equipmentNo": "SN123456",
+        "path": "/EXPORT/",
+        "fileName": "test.note",
+        "innerName": "test.note",
+        "size": "12",
+        "content_hash": "hash"
+    })
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["success"] is True
+    assert data["name"] == "test.note"
