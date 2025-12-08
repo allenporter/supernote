@@ -8,6 +8,10 @@ from ..models.base import BaseResponse
 from ..models.file import (
     AllocationVO,
     CapacityResponse,
+    CreateDirectoryRequest,
+    DeleteRequest,
+    FileCopyRequest,
+    FileMoveRequest,
     DownloadApplyRequest,
     DownloadApplyResponse,
     FileQueryByIdRequest,
@@ -258,3 +262,70 @@ async def handle_download_data(request: web.Request) -> web.StreamResponse:
         return web.Response(status=404, text="File not found")
 
     return web.FileResponse(target_path)
+
+
+@routes.post("/api/file/2/files/create_folder_v2")
+async def handle_create_folder(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/2/files/create_folder_v2
+    # Purpose: Create a new folder.
+
+    req_data = CreateDirectoryRequest.from_dict(await request.json())
+    file_service: FileService = request.app["file_service"]
+
+    response = file_service.create_directory(
+        req_data.path, req_data.equipment_no or "SN123456"
+    )
+
+    return web.json_response(response.to_dict())
+
+
+@routes.post("/api/file/3/files/delete_folder_v3")
+async def handle_delete_folder(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/3/files/delete_folder_v3
+    # Purpose: Delete a file or folder.
+
+    req_data = DeleteRequest.from_dict(await request.json())
+    file_service: FileService = request.app["file_service"]
+
+    # Request has 'id' (int) now
+    response = file_service.delete_item(
+        req_data.id, req_data.equipment_no or "SN123456"
+    )
+
+    return web.json_response(response.to_dict())
+
+
+@routes.post("/api/file/3/files/move_v3")
+async def handle_move_file(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/3/files/move_v3
+    # Purpose: Move a file or folder.
+
+    req_data = FileMoveRequest.from_dict(await request.json())
+    file_service: FileService = request.app["file_service"]
+
+    response = file_service.move_item(
+        req_data.id, 
+        req_data.to_path, 
+        req_data.autorename,
+        req_data.equipment_no or "SN123456"
+    )
+
+    return web.json_response(response.to_dict())
+
+
+@routes.post("/api/file/3/files/copy_v3")
+async def handle_copy_file(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/3/files/copy_v3
+    # Purpose: Copy a file or folder.
+
+    req_data = FileCopyRequest.from_dict(await request.json())
+    file_service: FileService = request.app["file_service"]
+
+    response = file_service.copy_item(
+        req_data.id,
+        req_data.to_path,
+        req_data.autorename,
+        req_data.equipment_no or "SN123456"
+    )
+
+    return web.json_response(response.to_dict())
