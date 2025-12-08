@@ -17,6 +17,8 @@ from ..models.file import (
     FileQueryByIdRequest,
     FileQueryRequest,
     FileQueryResponse,
+    FileSearchRequest,
+    FileSearchResponse,
     ListFolderRequest,
     ListFolderResponse,
     RecycleFileListRequest,
@@ -386,5 +388,20 @@ async def handle_recycle_clear(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
 
     response = file_service.clear_recycle()
+
+    return web.json_response(response.to_dict())
+
+
+@routes.post("/api/file/label/list/search")
+async def handle_file_search(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/label/list/search
+    # Purpose: Search for files by keyword.
+
+    req_data = FileSearchRequest.from_dict(await request.json())
+    file_service: FileService = request.app["file_service"]
+
+    results = file_service.search_files(req_data.keyword)
+
+    response = FileSearchResponse(entries=results)
 
     return web.json_response(response.to_dict())

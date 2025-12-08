@@ -11,6 +11,7 @@ from ..models.file import (
     FileEntryVO,
     FileMoveResponse,
     RecycleFileListResponse,
+    RecycleFileVO,
     UploadApplyResponse,
     UploadFinishResponse,
 )
@@ -226,7 +227,6 @@ class FileService:
         self, order: str, sequence: str, page_no: int, page_size: int
     ) -> RecycleFileListResponse:
         """List files in recycle bin."""
-        from ..models.file import RecycleFileVO
 
         items = self.storage_service.list_trash()
 
@@ -301,3 +301,69 @@ class FileService:
         """Empty the recycle bin."""
         self.storage_service.empty_trash()
         return BaseResponse()
+
+    def search_files(self, keyword: str) -> list[FileEntryVO]:
+        """Search for files matching the keyword.
+
+        Args:
+            keyword: Search keyword (case-insensitive)
+
+        Returns:
+            List of matching FileEntryVO objects
+        """
+
+        results = []
+        keyword_lower = keyword.lower()
+
+        # Walk the entire storage directory
+        for root_path in self.storage_service.storage_root.rglob("*"):
+            # Skip hidden files/dirs and temp
+            if any(part.startswith(".") for part in root_path.parts):
+                continue
+            if "temp" in root_path.parts:
+                continue
+
+            # Check if filename matches keyword
+            if keyword_lower in root_path.name.lower():
+                # Get relative path
+                try:
+                    rel_path = str(
+                        root_path.relative_to(self.storage_service.storage_root)
+                    )
+                except ValueError:
+                    continue
+
+                # Generate ID
+                file_id = str(self.storage_service.get_id_from_path(rel_path))
+
+                # Determine tag (folder or file)
+                tag = "folder" if root_path.is_dir() else "file"
+
+                # Get size
+                size = 0
+                if root_path.is_file():
+                    size = root_path.stat().st_size
+
+                # Get modification time
+                mod_time = int(root_path.stat().st_mtime * 1000)  # milliseconds
+
+                # Get parent path
+                parent_path = (
+                    str(Path(rel_path).parent)
+                    if Path(rel_path).parent != Path(".")
+                    else "/"
+                )
+
+                results.append(
+                    FileEntryVO(
+                        tag=tag,
+                        id=file_id,
+                        name=root_path.name,
+                        path_display=f"/{rel_path}",
+                        parent_path=parent_path,
+                        size=size,
+                        last_update_time=mod_time,
+                    )
+                )
+
+        return results

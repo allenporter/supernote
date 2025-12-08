@@ -330,3 +330,21 @@ class RecycleFileRequest(DataClassJSONMixin):
         serialize_by_alias = True
         omit_none = True
         code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
+
+
+@dataclass
+class FileSearchRequest(DataClassJSONMixin):
+    keyword: str
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+        omit_none = True
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
+
+
+@dataclass
+class FileSearchResponse(BaseResponse):
+    entries: list[FileEntryVO] = field(default_factory=list)
