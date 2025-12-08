@@ -20,13 +20,21 @@ import sys
 
 from colour import Color
 
-import supernote as sn
+from supernote.notebook import (
+    load,
+    load_notebook,
+    merge,
+    parse_metadata,
+    reconstruct,
+)
+from supernote.notebook.color import ColorPalette, MODE_RGB
 from supernote.notebook.converter import (
     ImageConverter,
     PdfConverter,
     SvgConverter,
     TextConverter,
     VisibilityOverlay,
+    build_visibility_overlay,
 )
 
 
@@ -59,7 +67,7 @@ def convert_to_png(args, notebook, palette):
         if args.exclude_background
         else VisibilityOverlay.DEFAULT
     )
-    vo = sn.converter.build_visibility_overlay(background=bg_visibility)
+    vo = build_visibility_overlay(background=bg_visibility)
 
     def save(img, file_name):
         img.save(file_name, format="PNG")
@@ -79,7 +87,7 @@ def convert_to_svg(args, notebook, palette):
         if args.exclude_background
         else VisibilityOverlay.DEFAULT
     )
-    vo = sn.converter.build_visibility_overlay(background=bg_visibility)
+    vo = build_visibility_overlay(background=bg_visibility)
 
     def save(svg, file_name):
         if svg is not None:
@@ -141,7 +149,7 @@ def convert_to_txt(args, notebook, palette):
 
 
 def subcommand_convert(args):
-    notebook = sn.load_notebook(args.input, policy=args.policy)
+    notebook = load_notebook(args.input, policy=args.policy)
     palette = None
     if args.color:
         try:
@@ -149,7 +157,7 @@ def subcommand_convert(args):
         except ValueError as e:
             print(e, file=sys.stderr)
             sys.exit(1)
-        palette = sn.color.ColorPalette(sn.color.MODE_RGB, colors)
+        palette = ColorPalette(MODE_RGB, colors)
     if args.type == "png":
         convert_to_png(args, notebook, palette)
     elif args.type == "svg":
@@ -163,15 +171,15 @@ def subcommand_convert(args):
 def subcommand_analyze(args):
     # show all metadata as JSON
     with open(args.input, "rb") as f:
-        metadata = sn.parse_metadata(f, policy=args.policy)
+        metadata = parse_metadata(f, policy=args.policy)
     print(metadata.to_json(indent=2))
 
 
 def subcommand_merge(args):
     num_input = len(args.input)
     if num_input == 1:  # reconstruct a note file
-        notebook = sn.load_notebook(args.input[0])
-        reconstructed_binary = sn.reconstruct(notebook)
+        notebook = load_notebook(args.input[0])
+        reconstructed_binary = reconstruct(notebook)
         with open(args.output, "wb") as f:
             f.write(reconstructed_binary)
     else:  # merge multiple note files
@@ -179,16 +187,16 @@ def subcommand_merge(args):
             merged_binary = f.read()
         for i in range(1, num_input):
             stream = io.BytesIO(merged_binary)
-            merged_notebook = sn.load(stream)
-            next_notebook = sn.load_notebook(args.input[i])
-            merged_binary = sn.merge(merged_notebook, next_notebook)
+            merged_notebook = load(stream)
+            next_notebook = load_notebook(args.input[i])
+            merged_binary = merge(merged_notebook, next_notebook)
         with open(args.output, "wb") as f:
             f.write(merged_binary)
 
 
 def subcommand_reconstruct(args):
-    notebook = sn.load_notebook(args.input)
-    reconstructed_binary = sn.reconstruct(notebook)
+    notebook = load_notebook(args.input)
+    reconstructed_binary = reconstruct(notebook)
     with open(args.output, "wb") as f:
         f.write(reconstructed_binary)
 
