@@ -172,8 +172,8 @@ async def test_auth_flow(aiohttp_client: AiohttpClient) -> None:
     data_token = data["token"]
     del data["token"]
     assert data == {
-        "isBind": "Y",
-        "isBindEquipment": "Y",
+        "isBind": "N",
+        "isBindEquipment": "N",
         "soldOutCount": 0,
         "success": True,
         "userName": TEST_USERNAME,

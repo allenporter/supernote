@@ -8,7 +8,7 @@ from typing import Optional
 import jwt
 import yaml
 
-from ..models.auth import UserVO
+from ..models.auth import LoginResult, UserVO
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,11 @@ def _load_users(users_file: str) -> list[dict]:
     with open(users_file, "r") as f:
         data = yaml.safe_load(f) or {"users": []}
         return data.get("users") or []
+
+
+def _save_users(users_file: str, users: list[dict]) -> None:
+    with open(users_file, "w") as f:
+        yaml.safe_dump({"users": users}, f, default_flow_style=False)
 
 
 class UserService:
@@ -45,18 +50,18 @@ class UserService:
                 "username": username,
                 "password_md5": password_md5,
                 "is_active": True,
+                "devices": [],  # List of bound equipment numbers
+                "profile": {},  # User profile data
             }
         )
-        with open(self._users_file, "w") as f:
-            yaml.safe_dump({"users": self._users}, f, default_flow_style=False)
+        _save_users(self._users_file, self._users)
         return True
 
     def deactivate_user(self, username: str) -> bool:
         for user in self._users:
             if user["username"] == username:
                 user["is_active"] = False
-                with open(self._users_file, "w") as f:
-                    yaml.safe_dump({"users": self._users}, f, default_flow_style=False)
+                _save_users(self._users_file, self._users)
                 return True
         return False
 
@@ -119,8 +124,8 @@ class UserService:
         password_hash: str,
         timestamp: str,
         equipment_no: Optional[str] = None,
-    ) -> str | None:
-        """Login user and return a token.
+    ) -> LoginResult | None:
+        """Login user and return token and status info.
 
         Args:
           account: User account (email/phone)
@@ -129,7 +134,7 @@ class UserService:
           equipment_no: Equipment number (optional)
 
         Returns:
-          JWT token if login is successful, None otherwise.
+          LoginResult if login is successful, None otherwise.
         """
         user = self._get_user(account)
         if not user or not user.get("is_active", True):
@@ -147,39 +152,77 @@ class UserService:
         if not self.verify_login_hash(account, password_hash, timestamp):
             logger.warning("Login failed: invalid password hash for %s", account)
             return None
-        # For now, skip hash verification (see verify_login_hash)
+
+        # Check binding status
+        bound_devices = user.get("devices", [])
+        is_bind = "Y" if bound_devices else "N"
+        is_bind_equipment = "N"
+        if equipment_no and equipment_no in bound_devices:
+            is_bind_equipment = "Y"
+
         payload = {
             "sub": account,
             "equipment_no": equipment_no or "",
             "iat": int(time.time()),
         }
         token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-        return token
+
+        return LoginResult(
+            token=token,
+            is_bind=is_bind,
+            is_bind_equipment=is_bind_equipment,
+        )
 
     def get_user_profile(self, account: str) -> UserVO | None:
         """Get user profile."""
         user = self._get_user(account)
         if not user:
             return None
-        username = user["username"] if user else "Supernote User"
+
+        # Default profile values
+        username = user["username"]
+        profile = user.get("profile", {})
+
         return UserVO(
-            user_name=username,
-            email=username,
-            phone="",
-            country_code="1",
-            total_capacity="25485312",
-            file_server="0",  # 0 for ufile (or local?), 1 for aws
-            avatars_url="",
-            birthday="",
-            sex="",
+            user_name=profile.get("user_name", username),
+            email=profile.get("email", username),
+            phone=profile.get("phone", ""),
+            country_code=profile.get("country_code", "1"),
+            total_capacity=profile.get("total_capacity", "25485312"),
+            file_server=profile.get("file_server", "0"),
+            avatars_url=profile.get("avatars_url", ""),
+            birthday=profile.get("birthday", ""),
+            sex=profile.get("sex", ""),
         )
 
     def bind_equipment(self, account: str, equipment_no: str) -> bool:
         """Bind a device to the user account."""
         logger.info("Binding equipment %s to user %s", equipment_no, account)
+        user = self._get_user(account)
+        if not user:
+            logger.warning("User not found for binding: %s", account)
+            return False
+
+        devices = user.get("devices", [])
+        if equipment_no not in devices:
+            devices.append(equipment_no)
+            user["devices"] = devices
+            _save_users(self._users_file, self._users)
+
         return True
 
     def unlink_equipment(self, equipment_no: str) -> bool:
-        """Unlink a device."""
+        """Unlink a device from all users (or specifically one if we knew context)."""
         logger.info("Unlinking equipment %s", equipment_no)
+        found = False
+        for user in self._users:
+            devices = user.get("devices", [])
+            if equipment_no in devices:
+                devices.remove(equipment_no)
+                user["devices"] = devices
+                found = True
+
+        if found:
+            _save_users(self._users_file, self._users)
+
         return True

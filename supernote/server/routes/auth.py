@@ -1,14 +1,17 @@
 from aiohttp import web
+from mashumaro.exceptions import MissingField
 
 from supernote.server.models.auth import (
+    BindEquipmentRequest,
     LoginRequest,
     LoginResponse,
     RandomCodeRequest,
     RandomCodeResponse,
+    UnlinkRequest,
     UserCheckRequest,
     UserQueryResponse,
 )
-from supernote.server.models.base import BaseResponse
+from supernote.server.models.base import BaseResponse, create_error_response
 from supernote.server.services.user import UserService
 
 from .decorators import public_route
@@ -21,8 +24,17 @@ routes = web.RouteTableDef()
 async def handle_equipment_unlink(request: web.Request) -> web.Response:
     # Endpoint: POST /api/terminal/equipment/unlink
     # Purpose: Device requests to unlink itself from the account/server.
+    req_data = await request.json()
+    try:
+        unlink_req = UnlinkRequest.from_dict(req_data)
+    except (MissingField, ValueError):
+        return web.json_response(
+            create_error_response("Invalid request format").to_dict(),
+            status=400,
+        )
+
     user_service: UserService = request.app["user_service"]
-    user_service.unlink_equipment("unknown")
+    user_service.unlink_equipment(unlink_req.equipment_no)
     return web.json_response(BaseResponse().to_dict())
 
 
@@ -37,9 +49,7 @@ async def handle_check_user_exists(request: web.Request) -> web.Response:
     if user_service.check_user_exists(user_check_req.email):
         return web.json_response(BaseResponse().to_dict())
     else:
-        return web.json_response(
-            BaseResponse(success=False, error_msg="User not found").to_dict()
-        )
+        return web.json_response(create_error_response("User not found").to_dict())
 
 
 @routes.post("/api/user/query/token")
@@ -75,23 +85,24 @@ async def handle_login(request: web.Request) -> web.Response:
     req_data = await request.json()
 
     login_req = LoginRequest.from_dict(req_data)
-    token = user_service.login(
+    result = user_service.login(
         account=login_req.account,
         password_hash=login_req.password,
         timestamp=login_req.timestamp or "",
-        equipment_no=login_req.equipment_no or "'",
+        equipment_no=login_req.equipment_no,
     )
-    if not token:
+    if not result:
         return web.json_response(
-            BaseResponse(success=False, error_msg="Invalid credentials").to_dict(),
+            create_error_response("Invalid credentials").to_dict(),
             status=401,
         )
+
     return web.json_response(
         LoginResponse(
-            token=token,
-            user_name=login_req.account,
-            is_bind="Y",
-            is_bind_equipment="Y",
+            token=result.token,
+            user_name=login_req.account,  # Or fetch real name if needed
+            is_bind=result.is_bind,
+            is_bind_equipment=result.is_bind_equipment,
             sold_out_count=0,
         ).to_dict()
     )
@@ -102,8 +113,16 @@ async def handle_login(request: web.Request) -> web.Response:
 async def handle_bind_equipment(request: web.Request) -> web.Response:
     # Endpoint: POST /api/terminal/user/bindEquipment
     # Purpose: Bind the device to the account.
+    req_data = await request.json()
+    try:
+        bind_req = BindEquipmentRequest.from_dict(req_data)
+    except (MissingField, ValueError):
+        return web.json_response(
+            create_error_response("Missing data").to_dict(), status=400
+        )
+
     user_service: UserService = request.app["user_service"]
-    user_service.bind_equipment("unknown", "unknown")
+    user_service.bind_equipment(bind_req.account, bind_req.equipment_no)
     return web.json_response(BaseResponse().to_dict())
 
 
@@ -115,19 +134,22 @@ async def handle_user_query(request: web.Request) -> web.Response:
     account = request.get("user")
     if not account:
         return web.json_response(
-            BaseResponse(success=False, error_msg="Unauthorized").to_dict(), status=401
+            create_error_response("Unauthorized").to_dict(), status=401
         )
     user_vo = user_service.get_user_profile(account)
     if not user_vo:
         return web.json_response(
-            BaseResponse(success=False, error_msg="User not found").to_dict(),
+            create_error_response("User not found").to_dict(),
             status=404,
         )
-    # Ensure user_name reflects the actual account
+
     return web.json_response(
         UserQueryResponse(
             user=user_vo,
             is_user=True,
-            equipment_no="SN123456",
+            # We don't necessarily know which equipment is asking, so we might omit or use a default
+            # But technically valid responses often include it. Let's see if we can get it from context.
+            # For now, omit or leave None as per VO.
+            equipment_no=None,
         ).to_dict()
     )

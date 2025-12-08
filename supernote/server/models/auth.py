@@ -8,6 +8,26 @@ from .base import BaseResponse
 
 
 @dataclass
+class BindEquipmentRequest(DataClassJSONMixin):
+    account: str
+    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
+    flag: str | None = None
+    name: str | None = None
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class UnlinkRequest(DataClassJSONMixin):
+    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
+    version: str | None = None
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
 class UserCheckRequest(DataClassJSONMixin):
     email: str
 
@@ -73,6 +93,15 @@ class LoginResponse(BaseResponse):
         metadata=field_options(alias="isBindEquipment"), default="N"
     )
     sold_out_count: int = field(metadata=field_options(alias="soldOutCount"), default=0)
+
+
+@dataclass
+class LoginResult(DataClassJSONMixin):
+    """Login result object which is returned by the User Service."""
+
+    token: str
+    is_bind: str
+    is_bind_equipment: str
 
 
 @dataclass
