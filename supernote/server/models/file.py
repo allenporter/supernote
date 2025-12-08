@@ -198,3 +198,88 @@ class DownloadApplyRequest(DataClassJSONMixin):
 @dataclass
 class DownloadApplyResponse(BaseResponse):
     url: str | None = None
+
+
+@dataclass
+class CreateDirectoryRequest(DataClassJSONMixin):
+    path: str
+    autorename: bool = False
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+        omit_none = True
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
+
+
+@dataclass
+class CreateDirectoryResponse(BaseResponse):
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
+
+
+@dataclass
+class DeleteRequest(DataClassJSONMixin):
+    id: int
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+        omit_none = True
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
+
+
+@dataclass
+class DeleteResponse(BaseResponse):
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
+
+
+@dataclass
+class FileMoveRequest(DataClassJSONMixin):
+    id: int
+    to_path: str = field(metadata=field_options(alias="to_path"))
+    autorename: bool = False
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+        omit_none = True
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
+
+
+@dataclass
+class FileMoveResponse(BaseResponse):
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
+
+
+@dataclass
+class FileCopyRequest(DataClassJSONMixin):
+    id: int
+    to_path: str = field(metadata=field_options(alias="to_path"))
+    autorename: bool = False
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+        omit_none = True
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
+
+
+@dataclass
+class FileCopyResponse(BaseResponse):
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )

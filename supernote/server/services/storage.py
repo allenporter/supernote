@@ -117,3 +117,123 @@ class StorageService:
             await loop.run_in_executor(None, f.close)
 
         return total_bytes
+
+    def create_directory(self, rel_path: str) -> Path:
+        """Create a directory in storage."""
+        target_path = self.resolve_path(rel_path)
+        if not self.is_safe_path(target_path):
+            raise ValueError("Invalid path")
+        target_path.mkdir(parents=True, exist_ok=True)
+        return target_path
+
+    def delete_path(self, rel_path: str) -> None:
+        """Delete a file or directory in storage."""
+        target_path = self.resolve_path(rel_path)
+        if not self.is_safe_path(target_path):
+            raise ValueError("Invalid path")
+
+        if not target_path.exists():
+            return  # Idempotent
+
+        if target_path.is_dir():
+            shutil.rmtree(target_path)
+        else:
+            target_path.unlink()
+
+    def get_id_from_path(self, rel_path: str) -> int:
+        """Generate a stable 64-bit ID from a relative path."""
+        clean_path = rel_path.strip("/")
+        # Use first 16 chars of MD5 (64 bits)
+        md5_hash = hashlib.md5(clean_path.encode("utf-8")).hexdigest()
+        return int(md5_hash[:16], 16)
+
+    def get_path_from_id(self, file_id: int) -> str | None:
+        """Find relative path from ID by scanning storage."""
+        # Simple BFS scan
+        queue = [Path(".")]
+        while queue:
+            current_rel_dir = queue.pop(0)
+            # Avoid traversing up
+            if ".." in str(current_rel_dir):
+                continue
+                
+            target_dir = self.storage_root / current_rel_dir
+            if current_rel_dir == Path("."):
+                target_dir = self.storage_root
+
+            if not target_dir.exists() or not target_dir.is_dir():
+                continue
+
+            try:
+                with os.scandir(target_dir) as it:
+                    for entry in it:
+                        if entry.name == "temp" and target_dir == self.storage_root:
+                            continue
+                        if entry.name.startswith("."):
+                            continue
+                        
+                        # Construct relative path string
+                        if current_rel_dir == Path("."):
+                            entry_rel_path = entry.name
+                        else:
+                            entry_rel_path = str(current_rel_dir / entry.name)
+
+                        # Check ID
+                        if self.get_id_from_path(entry_rel_path) == file_id:
+                            return entry_rel_path
+                        
+                        if entry.is_dir():
+                            # Enqueue directory for recursion
+                            if current_rel_dir == Path("."):
+                                queue.append(Path(entry.name))
+                            else:
+                                queue.append(current_rel_dir / entry.name)
+            except OSError:
+                continue
+                
+        return None
+
+    def move_path(self, rel_src: str, rel_dest: str) -> None:
+        """Move a file or directory.
+        
+        Args:
+            rel_src: Relative source path.
+            rel_dest: Relative destination path (full path including name).
+        """
+        src_path = self.resolve_path(rel_src)
+        dest_path = self.resolve_path(rel_dest)
+
+        if not self.is_safe_path(src_path) or not self.is_safe_path(dest_path):
+            raise ValueError("Invalid path")
+
+        if not src_path.exists():
+            raise FileNotFoundError(f"Source {rel_src} not found")
+
+        # Ensure parent exists
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+        shutil.move(str(src_path), str(dest_path))
+
+    def copy_path(self, rel_src: str, rel_dest: str) -> None:
+        """Copy a file or directory.
+
+        Args:
+            rel_src: Relative source path.
+            rel_dest: Relative destination path (full path including name).
+        """
+        src_path = self.resolve_path(rel_src)
+        dest_path = self.resolve_path(rel_dest)
+
+        if not self.is_safe_path(src_path) or not self.is_safe_path(dest_path):
+            raise ValueError("Invalid path")
+
+        if not src_path.exists():
+            raise FileNotFoundError(f"Source {rel_src} not found")
+
+        # Ensure parent exists
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if src_path.is_dir():
+            shutil.copytree(str(src_path), str(dest_path))
+        else:
+            shutil.copy2(str(src_path), str(dest_path))
