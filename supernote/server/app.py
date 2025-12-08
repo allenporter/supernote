@@ -83,21 +83,22 @@ async def jwt_auth_middleware(
     handler_func = getattr(route, "handler", None)
     if handler_func and getattr(handler_func, "is_public", False):
         return await handler(request)
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
+
+    # Check for x-access-token header (Supernote device) or Authorization Bearer (tests)
+    if not (token := request.headers.get("x-access-token")):
         return web.json_response(
             create_error_response("Unauthorized").to_dict(), status=401
         )
-    token = auth_header.split(" ", 1)[1]
+
     import jwt
 
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        request["user"] = payload["sub"]
     except jwt.InvalidTokenError:
         return web.json_response(
             create_error_response("Invalid token").to_dict(), status=401
         )
+    request["user"] = payload["sub"]
     return await handler(request)
 
 
@@ -123,6 +124,6 @@ def create_app() -> web.Application:
 
 
 def run(args: Any) -> None:
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
     app = create_app()
     web.run_app(app, host=config.HOST, port=config.PORT)

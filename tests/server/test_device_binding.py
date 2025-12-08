@@ -58,7 +58,7 @@ def _get_auth_header(client: TestClient) -> dict[str, str]:
     # So we'll rely on the login flow or use a helper if we exposed the secret
     # But actually, the tests usually mock the secret or use the one from user.py
     token = jwt.encode({"sub": TEST_USERNAME}, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    return {"Authorization": f"Bearer {token}"}
+    return {"x-access-token": token}
 
 
 async def _login(client: TestClient, equipment_no: str) -> Any:

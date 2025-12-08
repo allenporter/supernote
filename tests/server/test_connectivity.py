@@ -58,7 +58,7 @@ def mock_trace_log(tmp_path: Path) -> Generator[str, None, None]:
 def auth_headers_fixture() -> dict[str, str]:
     # Generate a fake JWT token for test@example.com
     token = jwt.encode({"sub": TEST_USERNAME}, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    return {"Authorization": f"Bearer {token}"}
+    return {"x-access-token": token}
 
 
 @pytest.fixture(autouse=True)
@@ -181,9 +181,7 @@ async def test_auth_flow(aiohttp_client: AiohttpClient) -> None:
 
     # 5. Verify Token Works
     token = data_token
-    resp = await client.post(
-        "/api/user/query", headers={"Authorization": f"Bearer {token}"}
-    )
+    resp = await client.post("/api/user/query", headers={"x-access-token": token})
     assert resp.status == 200
     data = await resp.json()
     assert data["success"] is True
@@ -191,7 +189,7 @@ async def test_auth_flow(aiohttp_client: AiohttpClient) -> None:
 
     # Verify an invalid token does not work
     resp = await client.post(
-        "/api/user/query", headers={"Authorization": "Bearer invalid_token"}
+        "/api/user/query", headers={"x-access-token": "invalid_token"}
     )
     assert resp.status == 401
     data = await resp.json()

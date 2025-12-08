@@ -44,7 +44,7 @@ def mock_trace_log(tmp_path: Path) -> Generator[str, None, None]:
 def auth_headers_fixture() -> dict[str, str]:
     # Generate a fake JWT token for test@example.com
     token = jwt.encode({"sub": TEST_USERNAME}, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    return {"Authorization": f"Bearer {token}"}
+    return {"x-access-token": token}
 
 
 @pytest.fixture(autouse=True)
@@ -64,7 +64,7 @@ async def test_move_file(
     aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
 ) -> None:
     client = await aiohttp_client(create_app())
-    
+
     # 1. Create file via upload (mocked flow or just assume pre-existence logic via helper)
     # Actually, let's create a folder first to move things into
     await client.post(
@@ -77,14 +77,14 @@ async def test_move_file(
         json={"equipmentNo": "SN123456", "path": "/DestFolder"},
         headers=auth_headers,
     )
-    
+
     # Create subfolder to move
     await client.post(
         "/api/file/2/files/create_folder_v2",
         json={"equipmentNo": "SN123456", "path": "/SourceFolder/ToMove"},
         headers=auth_headers,
     )
-    
+
     # Get ID of /SourceFolder/ToMove
     resp = await client.post(
         "/api/file/2/files/list_folder",
@@ -94,7 +94,7 @@ async def test_move_file(
     data = await resp.json()
     entry = next(e for e in data["entries"] if e["name"] == "ToMove")
     item_id = int(entry["id"])
-    
+
     # Move /SourceFolder/ToMove -> /DestFolder/ToMove
     resp = await client.post(
         "/api/file/3/files/move_v3",
@@ -102,14 +102,14 @@ async def test_move_file(
             "equipmentNo": "SN123456",
             "id": item_id,
             "to_path": "/DestFolder",
-            "autorename": False
+            "autorename": False,
         },
         headers=auth_headers,
     )
     assert resp.status == 200
     data = await resp.json()
     assert data["success"] is True
-    
+
     # Verify in DestFolder
     resp = await client.post(
         "/api/file/2/files/list_folder",
@@ -118,7 +118,7 @@ async def test_move_file(
     )
     data = await resp.json()
     assert any(e["name"] == "ToMove" for e in data["entries"])
-    
+
     # Verify NOT in SourceFolder
     resp = await client.post(
         "/api/file/2/files/list_folder",
@@ -133,21 +133,21 @@ async def test_copy_file_autorename(
     aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
 ) -> None:
     client = await aiohttp_client(create_app())
-    
+
     # Create Folder
     await client.post(
         "/api/file/2/files/create_folder_v2",
         json={"equipmentNo": "SN123456", "path": "/CopySource"},
         headers=auth_headers,
     )
-    
+
     # Create Item
     await client.post(
         "/api/file/2/files/create_folder_v2",
         json={"equipmentNo": "SN123456", "path": "/CopySource/Item"},
         headers=auth_headers,
     )
-    
+
     # Get ID
     resp = await client.post(
         "/api/file/2/files/list_folder",
@@ -157,7 +157,7 @@ async def test_copy_file_autorename(
     data = await resp.json()
     entry = next(e for e in data["entries"] if e["name"] == "Item")
     item_id = int(entry["id"])
-    
+
     # Copy to same folder (requires autorename)
     resp = await client.post(
         "/api/file/3/files/copy_v3",
@@ -165,12 +165,12 @@ async def test_copy_file_autorename(
             "equipmentNo": "SN123456",
             "id": item_id,
             "to_path": "/CopySource",
-            "autorename": True
+            "autorename": True,
         },
         headers=auth_headers,
     )
     assert resp.status == 200
-    
+
     # Verify both exist
     resp = await client.post(
         "/api/file/2/files/list_folder",
