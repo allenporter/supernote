@@ -46,7 +46,7 @@ def mock_trace_log(tmp_path: Path) -> Generator[str, None, None]:
 def auth_headers_fixture() -> dict[str, str]:
     # Generate a fake JWT token for test@example.com
     token = jwt.encode({"sub": TEST_USERNAME}, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    return {"Authorization": f"Bearer {token}"}
+    return {"x-access-token": token}
 
 
 @pytest.fixture(autouse=True)

@@ -52,7 +52,7 @@ def mock_trace_log(tmp_path: Path) -> Generator[str, None, None]:
 @pytest.fixture(name="auth_headers")
 def auth_headers_fixture() -> dict[str, str]:
     token = jwt.encode({"sub": "test@example.com"}, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    return {"Authorization": f"Bearer {token}"}
+    return {"x-access-token": token}
 
 
 @pytest.fixture
