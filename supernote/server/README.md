@@ -12,7 +12,7 @@ This package provides a self-hosted implementation of the Supernote Cloud server
 ### Managing User Accounts
 
 You must create a private cloud user account in order to login to the
-device. 
+device.
 
 Use the CLI tool to add, list, or deactivate users:
 
@@ -85,3 +85,5 @@ The server is built using `aiohttp`.
 -   **Entry Point**: `supernote/server/app.py`
 -   **Configuration**: `supernote/server/config.py`
 -   **Tests**: `tests/server/`
+
+For coding standards and contribution guidelines, see [CONTRIBUTING.md](docs/CONTRIBUTING.md).
