@@ -22,6 +22,20 @@ class UserCheckRequest(DataClassJSONMixin):
 
 
 @dataclass
+class RandomCodeRequest(DataClassJSONMixin):
+    account: str
+    version: str | None = None
+    country_code: str | None = field(
+        metadata=field_options(alias="countryCode"), default=None
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+        omit_none = True
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
+
+
+@dataclass
 class RandomCodeResponse(BaseResponse):
     random_code: str | None = field(
         metadata=field_options(alias="randomCode"), default=None

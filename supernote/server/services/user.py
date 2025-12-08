@@ -39,11 +39,11 @@ class UserService:
     def add_user(self, username: str, password: str) -> bool:
         if any(u["username"] == username for u in self._users):
             return False
-        password_sha256 = hashlib.sha256(password.encode()).hexdigest()
+        password_md5 = hashlib.md5(password.encode()).hexdigest()
         self._users.append(
             {
                 "username": username,
-                "password_sha256": password_sha256,
+                "password_md5": password_md5,
                 "is_active": True,
             }
         )
@@ -82,14 +82,13 @@ class UserService:
         if not user or not user.get("is_active", True):
             logger.info("User not found or inactive: %s", account)
             return False
-        password_sha256 = user.get("password_sha256")
-        if not password_sha256:
-            logger.info("SHA256 password hash not found for user: %s", account)
+        if (password_md5 := user.get("password_md5")) is None:
+            logger.info("MD5 password hash not found for user: %s", account)
             return False
-        # Compute sha256(password) and compare
+        # Compute md5(password) and compare
         password_bytes = password.encode()
-        hash_hex = hashlib.sha256(password_bytes).hexdigest()
-        return bool(hash_hex == password_sha256)
+        hash_hex = hashlib.md5(password_bytes).hexdigest()
+        return bool(hash_hex == password_md5)
 
     def verify_login_hash(self, account: str, client_hash: str, timestamp: str) -> bool:
         user = self._get_user(account)
@@ -103,12 +102,11 @@ class UserService:
             )
             return False
         random_code = code_tuple[0]
-        password_sha256 = user.get("password_sha256")
-        if not password_sha256:
-            logger.info("SHA256 password hash not found for user: %s", account)
+        if (password_md5 := user.get("password_md5")) is None:
+            logger.info("MD5 password hash not found for user: %s", account)
             return False
-        # Compute expected hash: sha256(password_sha256 + random_code + timestamp)
-        concat = password_sha256 + random_code + timestamp
+        # Compute expected hash: sha256(password_md5 + random_code + timestamp)
+        concat = password_md5 + random_code
         expected_hash = hashlib.sha256(concat.encode()).hexdigest()
         if expected_hash == client_hash:
             return True
@@ -145,6 +143,9 @@ class UserService:
                 "Login failed: random code missing or timestamp mismatch for %s",
                 account,
             )
+            return None
+        if not self.verify_login_hash(account, password_hash, timestamp):
+            logger.warning("Login failed: invalid password hash for %s", account)
             return None
         # For now, skip hash verification (see verify_login_hash)
         payload = {
