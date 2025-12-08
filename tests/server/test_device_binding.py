@@ -1,22 +1,17 @@
 import hashlib
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Generator
+from typing import Any, Generator
 from unittest.mock import patch
 
 import jwt
 import pytest
 import yaml
 from aiohttp.test_utils import TestClient
-from aiohttp.web import Application
 
 from supernote.server.app import create_app
 from supernote.server.services.user import JWT_ALGORITHM, JWT_SECRET
 
-# Type alias for the aiohttp_client fixture
-AiohttpClient = Callable[[Application], Awaitable[TestClient]]
-
-TEST_USERNAME = "test@example.com"
-TEST_PASSWORD = "testpassword"
+from .fixtures import TEST_PASSWORD, TEST_USERNAME, AiohttpClient
 
 
 @pytest.fixture
