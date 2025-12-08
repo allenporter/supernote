@@ -21,6 +21,7 @@ from ..models.file import (
     ListFolderResponse,
     RecycleFileListRequest,
     RecycleFileRequest,
+    SyncStartRequest,
     SyncStartResponse,
     UploadApplyRequest,
     UploadFinishRequest,
@@ -37,9 +38,10 @@ async def handle_sync_start(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/2/files/synchronous/start
     # Purpose: Start a file synchronization session.
     # Response: SynchronousStartLocalVO
+    req_data = SyncStartRequest.from_dict(await request.json())
     return web.json_response(
         SyncStartResponse(
-            equipment_no="SN123456",  # Should match request
+            equipment_no=req_data.equipment_no,
             syn_type=True,  # True for normal sync, False for full re-upload
         ).to_dict()
     )
@@ -49,7 +51,7 @@ async def handle_sync_start(request: web.Request) -> web.Response:
 async def handle_sync_end(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/2/files/synchronous/end
     # Purpose: End a file synchronization session.
-    # Response: SynchronousEndLocalVO (likely just success)
+    SyncStartRequest.from_dict(await request.json())
     return web.json_response(BaseResponse().to_dict())
 
 
