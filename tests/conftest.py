@@ -1,17 +1,23 @@
-import hashlib
+"""Root conftest for all tests."""
+
 from pathlib import Path
-from typing import Generator
+from typing import Awaitable, Callable, Generator
 from unittest.mock import patch
 
-import jwt
 import pytest
-import yaml
+from aiohttp.test_utils import TestClient
+from aiohttp.web import Application
 
-from supernote.server.services.user import JWT_ALGORITHM, JWT_SECRET
+# Register server test fixtures as a plugin
+pytest_plugins = ["tests.server.fixtures"]
+
+# Type alias for the aiohttp_client fixture - shared across all tests
+AiohttpClient = Callable[[Application], Awaitable[TestClient]]
 
 
 @pytest.fixture(autouse=True)
 def mock_storage(tmp_path: Path) -> Generator[Path, None, None]:
+    """Mock storage directory for all tests."""
     storage_root = tmp_path / "storage"
     temp_root = tmp_path / "storage" / "temp"
     storage_root.mkdir(parents=True)
@@ -27,40 +33,3 @@ def mock_storage(tmp_path: Path) -> Generator[Path, None, None]:
         patch("supernote.server.config.TRACE_LOG_FILE", str(tmp_path / "trace.log")),
     ):
         yield storage_root
-
-
-@pytest.fixture
-def mock_users_file(tmp_path: Path) -> Generator[str, None, None]:
-    user = {
-        "username": "test@example.com",
-        "password_sha256": hashlib.sha256(b"testpassword").hexdigest(),
-        "is_active": True,
-    }
-    users_file = tmp_path / "users.yaml"
-    with open(users_file, "w") as f:
-        yaml.safe_dump({"users": [user]}, f)
-    yield str(users_file)
-
-
-@pytest.fixture
-def mock_trace_log(tmp_path: Path) -> Generator[str, None, None]:
-    log_file = tmp_path / "trace.log"
-    with patch("supernote.server.config.TRACE_LOG_FILE", str(log_file)):
-        yield str(log_file)
-
-
-@pytest.fixture(name="auth_headers")
-def auth_headers_fixture() -> dict[str, str]:
-    token = jwt.encode({"sub": "test@example.com"}, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    return {"x-access-token": token}
-
-
-@pytest.fixture
-def patch_server_config(
-    mock_trace_log: str, mock_users_file: str
-) -> Generator[None, None, None]:
-    with (
-        patch("supernote.server.config.TRACE_LOG_FILE", mock_trace_log),
-        patch("supernote.server.config.USER_CONFIG_FILE", mock_users_file),
-    ):
-        yield

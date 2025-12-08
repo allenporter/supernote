@@ -287,6 +287,7 @@ class StorageService:
         items = []
 
         for entry in trash_dir.iterdir():
+            logger.info(entry.name)
             if entry.name.startswith("."):
                 continue
             # Extract timestamp from filename
