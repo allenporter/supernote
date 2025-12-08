@@ -18,12 +18,27 @@ from supernote.server.services.user import JWT_ALGORITHM, JWT_SECRET
 # Type alias for the aiohttp_client fixture
 AiohttpClient = Callable[[Application], Awaitable[TestClient]]
 
+TEST_USERNAME = "test@example.com"
+TEST_PASSWORD = "testpassword"
+
+
+def _sha256_s(s: str) -> str:
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()
+
+
+def _md5_s(s: str) -> str:
+    return hashlib.md5(s.encode("utf-8")).hexdigest()
+
+
+def _encode_password(password: str, rc: str) -> str:
+    return _sha256_s(_md5_s(password) + rc)
+
 
 @pytest.fixture
 def mock_users_file(tmp_path: Path) -> Generator[str, None, None]:
     user = {
-        "username": "test@example.com",
-        "password_sha256": hashlib.sha256(b"testpassword").hexdigest(),
+        "username": TEST_USERNAME,
+        "password_md5": hashlib.md5(TEST_PASSWORD.encode("utf-8")).hexdigest(),
         "is_active": True,
     }
     users_file = tmp_path / "users.yaml"
@@ -42,7 +57,7 @@ def mock_trace_log(tmp_path: Path) -> Generator[str, None, None]:
 @pytest.fixture(name="auth_headers")
 def auth_headers_fixture() -> dict[str, str]:
     # Generate a fake JWT token for test@example.com
-    token = jwt.encode({"sub": "test@example.com"}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    token = jwt.encode({"sub": TEST_USERNAME}, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -93,7 +108,7 @@ async def test_check_user_exists(aiohttp_client: AiohttpClient) -> None:
     client = await aiohttp_client(create_app())
     resp = await client.post(
         "/api/official/user/check/exists/server",
-        json={"email": "test@example.com", "version": "202407"},
+        json={"email": TEST_USERNAME, "version": "202407"},
     )
     assert resp.status == 200
     data = await resp.json()
@@ -116,33 +131,72 @@ async def test_auth_flow(aiohttp_client: AiohttpClient) -> None:
 
     # 3. Random Code
     resp = await client.post(
-        "/api/official/user/query/random/code", json={"account": "test@example.com"}
+        "/api/official/user/query/random/code", json={"account": TEST_USERNAME}
     )
     assert resp.status == 200
     data = await resp.json()
     assert data["success"] is True
-    assert "randomCode" in data
+    code = data["randomCode"]
     assert "timestamp" in data
+    timestamp = data["timestamp"]
 
     # 4. Login (Equipment)
+    # Verify an incorrect password is not allowed
     resp = await client.post(
         "/api/official/user/account/login/equipment",
         json={
-            "account": "test@example.com",
-            "password": "hashed_password",
-            "timestamp": data["timestamp"],
+            "account": TEST_USERNAME,
+            "password": "foo",
+            "timestamp": timestamp,
+            "equipmentNo": "SN123456",
+        },
+    )
+    assert resp.status == 401
+    data = await resp.json()
+    assert data == {"success": False, "errorMsg": "Invalid credentials"}
+
+    # Try a correct password
+    password = _encode_password(TEST_PASSWORD, code)
+    resp = await client.post(
+        "/api/official/user/account/login/equipment",
+        json={
+            "account": TEST_USERNAME,
+            "password": password,
+            "timestamp": timestamp,
             "equipmentNo": "SN123456",
         },
     )
     assert resp.status == 200
     data = await resp.json()
+    assert "token" in data
+    data_token = data["token"]
+    del data["token"]
     assert data == {
         "isBind": "Y",
         "isBindEquipment": "Y",
         "soldOutCount": 0,
         "success": True,
-        "userName": "test@example.com",
+        "userName": TEST_USERNAME,
     }
+
+    # 5. Verify Token Works
+    token = data_token
+    resp = await client.post(
+        "/api/user/query", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["success"] is True
+    assert data["user"]["userName"] == TEST_USERNAME
+
+    # Verify an invalid token does not work
+    resp = await client.post(
+        "/api/user/query", headers={"Authorization": "Bearer invalid_token"}
+    )
+    assert resp.status == 401
+    data = await resp.json()
+    assert data["success"] is False
+    assert data["errorMsg"] == "Invalid token"
 
 
 async def test_bind_equipment(aiohttp_client: AiohttpClient) -> None:
@@ -150,7 +204,7 @@ async def test_bind_equipment(aiohttp_client: AiohttpClient) -> None:
     resp = await client.post(
         "/api/terminal/user/bindEquipment",
         json={
-            "account": "test@example.com",
+            "account": TEST_USERNAME,
             "equipmentNo": "SN123456",
             "flag": "1",
             "name": "Supernote A6 X2 Nomad",
@@ -170,7 +224,7 @@ async def test_user_query(
     data = await resp.json()
     assert data["success"] is True
     assert "user" in data
-    assert data["user"]["userName"] in ("test@example.com", "Supernote User")
+    assert data["user"]["userName"] == TEST_USERNAME
 
 
 async def test_sync_start(

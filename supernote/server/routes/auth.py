@@ -1,7 +1,9 @@
 from aiohttp import web
 
 from supernote.server.models.auth import (
+    LoginRequest,
     LoginResponse,
+    RandomCodeRequest,
     RandomCodeResponse,
     UserCheckRequest,
     UserQueryResponse,
@@ -53,9 +55,10 @@ async def handle_query_token(request: web.Request) -> web.Response:
 async def handle_random_code(request: web.Request) -> web.Response:
     # Endpoint: POST /api/official/user/query/random/code
     # Purpose: Get challenge for password hashing
+    req_data = await request.json()
+    code_req = RandomCodeRequest.from_dict(req_data)
     user_service: UserService = request.app["user_service"]
-    random_code, timestamp = user_service.generate_random_code("unknown")
-
+    random_code, timestamp = user_service.generate_random_code(code_req.account)
     return web.json_response(
         RandomCodeResponse(random_code=random_code, timestamp=timestamp).to_dict()
     )
@@ -70,7 +73,6 @@ async def handle_login(request: web.Request) -> web.Response:
     user_service: UserService = request.app["user_service"]
 
     req_data = await request.json()
-    from ..models.auth import LoginRequest
 
     login_req = LoginRequest.from_dict(req_data)
     token = user_service.login(
@@ -79,6 +81,11 @@ async def handle_login(request: web.Request) -> web.Response:
         timestamp=login_req.timestamp or "",
         equipment_no=login_req.equipment_no or "'",
     )
+    if not token:
+        return web.json_response(
+            BaseResponse(success=False, error_msg="Invalid credentials").to_dict(),
+            status=401,
+        )
     return web.json_response(
         LoginResponse(
             token=token,

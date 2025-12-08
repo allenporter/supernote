@@ -9,6 +9,7 @@ from aiohttp import web
 from supernote.server.services.user import JWT_ALGORITHM, JWT_SECRET
 
 from . import config
+from .models.base import create_error_response
 from .routes import auth, file, system
 from .services.file import FileService
 from .services.storage import StorageService
@@ -84,7 +85,9 @@ async def jwt_auth_middleware(
         return await handler(request)
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
-        return web.json_response({"error": "Unauthorized"}, status=401)
+        return web.json_response(
+            create_error_response("Unauthorized").to_dict(), status=401
+        )
     token = auth_header.split(" ", 1)[1]
     import jwt
 
@@ -92,7 +95,9 @@ async def jwt_auth_middleware(
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         request["user"] = payload["sub"]
     except jwt.InvalidTokenError:
-        return web.json_response({"error": "Invalid token"}, status=401)
+        return web.json_response(
+            create_error_response("Invalid token").to_dict(), status=401
+        )
     return await handler(request)
 
 
