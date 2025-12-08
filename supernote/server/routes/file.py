@@ -10,15 +10,17 @@ from ..models.file import (
     CapacityResponse,
     CreateDirectoryRequest,
     DeleteRequest,
-    FileCopyRequest,
-    FileMoveRequest,
     DownloadApplyRequest,
     DownloadApplyResponse,
+    FileCopyRequest,
+    FileMoveRequest,
     FileQueryByIdRequest,
     FileQueryRequest,
     FileQueryResponse,
     ListFolderRequest,
     ListFolderResponse,
+    RecycleFileListRequest,
+    RecycleFileRequest,
     SyncStartResponse,
     UploadApplyRequest,
     UploadFinishRequest,
@@ -273,7 +275,8 @@ async def handle_create_folder(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
 
     response = file_service.create_directory(
-        req_data.path, req_data.equipment_no or "SN123456"
+        req_data.path,
+        req_data.equipment_no,
     )
 
     return web.json_response(response.to_dict())
@@ -289,7 +292,8 @@ async def handle_delete_folder(request: web.Request) -> web.Response:
 
     # Request has 'id' (int) now
     response = file_service.delete_item(
-        req_data.id, req_data.equipment_no or "SN123456"
+        req_data.id,
+        req_data.equipment_no,
     )
 
     return web.json_response(response.to_dict())
@@ -304,10 +308,10 @@ async def handle_move_file(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
 
     response = file_service.move_item(
-        req_data.id, 
-        req_data.to_path, 
+        req_data.id,
+        req_data.to_path,
         req_data.autorename,
-        req_data.equipment_no or "SN123456"
+        req_data.equipment_no,
     )
 
     return web.json_response(response.to_dict())
@@ -325,7 +329,60 @@ async def handle_copy_file(request: web.Request) -> web.Response:
         req_data.id,
         req_data.to_path,
         req_data.autorename,
-        req_data.equipment_no or "SN123456"
+        req_data.equipment_no,
     )
+
+    return web.json_response(response.to_dict())
+
+
+@routes.post("/api/file/recycle/list/query")
+async def handle_recycle_list(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/recycle/list/query
+    # Purpose: List files in recycle bin.
+
+    req_data = RecycleFileListRequest.from_dict(await request.json())
+    file_service: FileService = request.app["file_service"]
+
+    response = file_service.list_recycle(
+        req_data.order, req_data.sequence, req_data.page_no, req_data.page_size
+    )
+
+    return web.json_response(response.to_dict())
+
+
+@routes.post("/api/file/recycle/delete")
+async def handle_recycle_delete(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/recycle/delete
+    # Purpose: Permanently delete items from recycle bin.
+
+    req_data = RecycleFileRequest.from_dict(await request.json())
+    file_service: FileService = request.app["file_service"]
+
+    response = file_service.delete_from_recycle(req_data.id_list)
+
+    return web.json_response(response.to_dict())
+
+
+@routes.post("/api/file/recycle/revert")
+async def handle_recycle_revert(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/recycle/revert
+    # Purpose: Restore items from recycle bin.
+
+    req_data = RecycleFileRequest.from_dict(await request.json())
+    file_service: FileService = request.app["file_service"]
+
+    response = file_service.revert_from_recycle(req_data.id_list)
+
+    return web.json_response(response.to_dict())
+
+
+@routes.post("/api/file/recycle/clear")
+async def handle_recycle_clear(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/recycle/clear
+    # Purpose: Empty the recycle bin.
+
+    file_service: FileService = request.app["file_service"]
+
+    response = file_service.clear_recycle()
 
     return web.json_response(response.to_dict())

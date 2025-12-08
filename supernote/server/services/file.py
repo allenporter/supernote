@@ -3,12 +3,14 @@ import urllib.parse
 from pathlib import Path
 from typing import List, Optional
 
+from ..models.base import BaseResponse
 from ..models.file import (
     CreateDirectoryResponse,
     DeleteResponse,
     FileCopyResponse,
-    FileMoveResponse,
     FileEntryVO,
+    FileMoveResponse,
+    RecycleFileListResponse,
     UploadApplyResponse,
     UploadFinishResponse,
 )
@@ -40,7 +42,7 @@ class FileService:
                     entry_rel_path = f"{rel_path}/{entry.name}".strip("/")
                 else:
                     entry_rel_path = f"{rel_path}/{entry.name}".strip("/")
-                
+
                 file_id = str(self.storage_service.get_id_from_path(entry_rel_path))
 
                 entries.append(
@@ -148,6 +150,14 @@ class FileService:
         self.storage_service.create_directory(rel_path)
         return CreateDirectoryResponse(equipment_no=equipment_no)
 
+    def delete_item(self, id: int, equipment_no: str) -> DeleteResponse:
+        """Delete a file or directory (soft delete to recycle bin)."""
+        rel_path = self.storage_service.get_path_from_id(id)
+        if rel_path:
+            self.storage_service.soft_delete(rel_path)
+        else:
+            logger.warning(f"Delete requested for unknown ID: {id}")
+
         return DeleteResponse(equipment_no=equipment_no)
 
     def _get_unique_path(self, rel_path: str) -> str:
@@ -181,13 +191,13 @@ class FileService:
         # to_path is the target directory
         clean_to_path = to_path.strip("/")
         if clean_to_path:
-             rel_dest_path = f"{clean_to_path}/{src_name}"
+            rel_dest_path = f"{clean_to_path}/{src_name}"
         else:
-             rel_dest_path = src_name
+            rel_dest_path = src_name
 
         if autorename:
             rel_dest_path = self._get_unique_path(rel_dest_path)
-        
+
         self.storage_service.move_path(rel_src_path, rel_dest_path)
         return FileMoveResponse(equipment_no=equipment_no)
 
@@ -202,12 +212,92 @@ class FileService:
         src_name = Path(rel_src_path).name
         clean_to_path = to_path.strip("/")
         if clean_to_path:
-             rel_dest_path = f"{clean_to_path}/{src_name}"
+            rel_dest_path = f"{clean_to_path}/{src_name}"
         else:
-             rel_dest_path = src_name
+            rel_dest_path = src_name
 
         if autorename:
             rel_dest_path = self._get_unique_path(rel_dest_path)
 
         self.storage_service.copy_path(rel_src_path, rel_dest_path)
         return FileCopyResponse(equipment_no=equipment_no)
+
+    def list_recycle(
+        self, order: str, sequence: str, page_no: int, page_size: int
+    ) -> RecycleFileListResponse:
+        """List files in recycle bin."""
+        from ..models.file import RecycleFileVO
+
+        items = self.storage_service.list_trash()
+
+        # Convert to RecycleFileVO
+        recycle_files = []
+        for trash_path, timestamp in items:
+            # Extract original name from trash name (timestamp_originalname)
+            original_name = "_".join(trash_path.name.split("_")[1:])
+            is_folder = "Y" if trash_path.is_dir() else "N"
+            size = 0
+            if trash_path.is_file():
+                size = trash_path.stat().st_size
+
+            # Generate ID from trash path
+            trash_rel_path = f".trash/{trash_path.name}"
+            file_id = str(self.storage_service.get_id_from_path(trash_rel_path))
+
+            recycle_files.append(
+                RecycleFileVO(
+                    file_id=file_id,
+                    is_folder=is_folder,
+                    file_name=original_name,
+                    size=size,
+                    update_time=timestamp,
+                )
+            )
+
+        # Sort
+        if order == "filename":
+            recycle_files.sort(key=lambda x: x.file_name, reverse=(sequence == "desc"))
+        elif order == "size":
+            recycle_files.sort(key=lambda x: x.size, reverse=(sequence == "desc"))
+        else:  # time
+            recycle_files.sort(
+                key=lambda x: x.update_time, reverse=(sequence == "desc")
+            )
+
+        # Paginate
+        total = len(recycle_files)
+        start = (page_no - 1) * page_size
+        end = start + page_size
+        page_items = recycle_files[start:end]
+
+        return RecycleFileListResponse(total=total, recycle_file_vo_list=page_items)
+
+    def delete_from_recycle(self, id_list: list[int]) -> BaseResponse:
+        """Permanently delete items from recycle bin."""
+        for file_id in id_list:
+            # Find trash path by ID
+            trash_rel_path = self.storage_service.get_path_from_id(file_id)
+            if trash_rel_path and trash_rel_path.startswith(".trash/"):
+                self.storage_service.delete_from_trash(trash_rel_path)
+
+        return BaseResponse()
+
+    def revert_from_recycle(self, id_list: list[int]) -> BaseResponse:
+        """Restore items from recycle bin."""
+        for file_id in id_list:
+            # Find trash path by ID
+            trash_rel_path = self.storage_service.get_path_from_id(file_id)
+            if trash_rel_path and trash_rel_path.startswith(".trash/"):
+                # Extract original name from trash name
+                trash_name = Path(trash_rel_path).name
+                original_name = "_".join(trash_name.split("_")[1:])
+
+                # Restore to root for now (could be enhanced to remember original location)
+                self.storage_service.restore_from_trash(trash_rel_path, original_name)
+
+        return BaseResponse()
+
+    def clear_recycle(self) -> BaseResponse:
+        """Empty the recycle bin."""
+        self.storage_service.empty_trash()
+        return BaseResponse()
