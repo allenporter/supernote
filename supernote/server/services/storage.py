@@ -156,7 +156,7 @@ class StorageService:
             # Avoid traversing up
             if ".." in str(current_rel_dir):
                 continue
-                
+
             target_dir = self.storage_root / current_rel_dir
             if current_rel_dir == Path("."):
                 target_dir = self.storage_root
@@ -169,9 +169,10 @@ class StorageService:
                     for entry in it:
                         if entry.name == "temp" and target_dir == self.storage_root:
                             continue
-                        if entry.name.startswith("."):
+                        # Skip hidden files/dirs except .trash
+                        if entry.name.startswith(".") and entry.name != ".trash":
                             continue
-                        
+
                         # Construct relative path string
                         if current_rel_dir == Path("."):
                             entry_rel_path = entry.name
@@ -181,7 +182,7 @@ class StorageService:
                         # Check ID
                         if self.get_id_from_path(entry_rel_path) == file_id:
                             return entry_rel_path
-                        
+
                         if entry.is_dir():
                             # Enqueue directory for recursion
                             if current_rel_dir == Path("."):
@@ -190,12 +191,12 @@ class StorageService:
                                 queue.append(current_rel_dir / entry.name)
             except OSError:
                 continue
-                
+
         return None
 
     def move_path(self, rel_src: str, rel_dest: str) -> None:
         """Move a file or directory.
-        
+
         Args:
             rel_src: Relative source path.
             rel_dest: Relative destination path (full path including name).
@@ -237,3 +238,112 @@ class StorageService:
             shutil.copytree(str(src_path), str(dest_path))
         else:
             shutil.copy2(str(src_path), str(dest_path))
+
+    def get_trash_dir(self) -> Path:
+        """Get the trash directory path."""
+        return self.storage_root / ".trash"
+
+    def ensure_trash_dir(self) -> None:
+        """Ensure trash directory exists."""
+        trash_dir = self.get_trash_dir()
+        trash_dir.mkdir(parents=True, exist_ok=True)
+
+    def soft_delete(self, rel_path: str) -> tuple[str, int]:
+        """Move file/folder to trash.
+
+        Returns:
+            Tuple of (trash_rel_path, timestamp)
+        """
+        src_path = self.resolve_path(rel_path)
+        if not self.is_safe_path(src_path):
+            raise ValueError("Invalid path")
+
+        if not src_path.exists():
+            raise FileNotFoundError(f"Path {rel_path} not found")
+
+        self.ensure_trash_dir()
+
+        # Create unique trash name with timestamp
+        import time
+
+        timestamp = int(time.time() * 1000)  # milliseconds
+        name = src_path.name
+        trash_name = f"{timestamp}_{name}"
+        trash_path = self.get_trash_dir() / trash_name
+
+        # Move to trash
+        shutil.move(str(src_path), str(trash_path))
+
+        return f".trash/{trash_name}", timestamp
+
+    def list_trash(self) -> list[tuple[Path, int]]:
+        """List all items in trash.
+
+        Returns:
+            List of (trash_path, timestamp) tuples
+        """
+        self.ensure_trash_dir()
+        trash_dir = self.get_trash_dir()
+        items = []
+
+        for entry in trash_dir.iterdir():
+            if entry.name.startswith("."):
+                continue
+            # Extract timestamp from filename
+            try:
+                timestamp_str = entry.name.split("_", 1)[0]
+                timestamp = int(timestamp_str)
+                items.append((entry, timestamp))
+            except (ValueError, IndexError):
+                # Skip malformed entries
+                continue
+
+        return items
+
+    def restore_from_trash(self, trash_rel_path: str, original_rel_path: str) -> None:
+        """Restore file/folder from trash to original location.
+
+        Args:
+            trash_rel_path: Relative path in trash (e.g., ".trash/123456_file.txt")
+            original_rel_path: Original relative path to restore to
+        """
+        trash_path = self.storage_root / trash_rel_path
+        if not trash_path.exists():
+            raise FileNotFoundError(f"Trash item {trash_rel_path} not found")
+
+        dest_path = self.resolve_path(original_rel_path)
+        if not self.is_safe_path(dest_path):
+            raise ValueError("Invalid destination path")
+
+        # Ensure parent directory exists
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Move back from trash
+        shutil.move(str(trash_path), str(dest_path))
+
+    def delete_from_trash(self, trash_rel_path: str) -> None:
+        """Permanently delete item from trash.
+
+        Args:
+            trash_rel_path: Relative path in trash (e.g., ".trash/123456_file.txt")
+        """
+        trash_path = self.storage_root / trash_rel_path
+        if not trash_path.exists():
+            return  # Idempotent
+
+        if trash_path.is_dir():
+            shutil.rmtree(trash_path)
+        else:
+            trash_path.unlink()
+
+    def empty_trash(self) -> None:
+        """Delete all items in trash."""
+        trash_dir = self.get_trash_dir()
+        if trash_dir.exists():
+            for entry in trash_dir.iterdir():
+                if entry.name.startswith("."):
+                    continue
+                if entry.is_dir():
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink()

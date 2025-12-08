@@ -203,10 +203,8 @@ class DownloadApplyResponse(BaseResponse):
 @dataclass
 class CreateDirectoryRequest(DataClassJSONMixin):
     path: str
+    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
     autorename: bool = False
-    equipment_no: str | None = field(
-        metadata=field_options(alias="equipmentNo"), default=None
-    )
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -224,9 +222,7 @@ class CreateDirectoryResponse(BaseResponse):
 @dataclass
 class DeleteRequest(DataClassJSONMixin):
     id: int
-    equipment_no: str | None = field(
-        metadata=field_options(alias="equipmentNo"), default=None
-    )
+    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -245,10 +241,8 @@ class DeleteResponse(BaseResponse):
 class FileMoveRequest(DataClassJSONMixin):
     id: int
     to_path: str = field(metadata=field_options(alias="to_path"))
+    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
     autorename: bool = False
-    equipment_no: str | None = field(
-        metadata=field_options(alias="equipmentNo"), default=None
-    )
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -267,10 +261,8 @@ class FileMoveResponse(BaseResponse):
 class FileCopyRequest(DataClassJSONMixin):
     id: int
     to_path: str = field(metadata=field_options(alias="to_path"))
+    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
     autorename: bool = False
-    equipment_no: str | None = field(
-        metadata=field_options(alias="equipmentNo"), default=None
-    )
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -283,3 +275,48 @@ class FileCopyResponse(BaseResponse):
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
     )
+
+
+@dataclass
+class RecycleFileVO(DataClassJSONMixin):
+    file_id: str = field(metadata=field_options(alias="fileId"))
+    is_folder: str = field(metadata=field_options(alias="isFolder"))
+    file_name: str = field(metadata=field_options(alias="fileName"))
+    size: int = 0
+    update_time: int = field(metadata=field_options(alias="updateTime"), default=0)
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+        omit_none = True
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
+
+
+@dataclass
+class RecycleFileListRequest(DataClassJSONMixin):
+    order: str = "time"  # filename, time, size
+    sequence: str = "desc"  # asc or desc
+    page_no: int = field(metadata=field_options(alias="pageNo"), default=1)
+    page_size: int = field(metadata=field_options(alias="pageSize"), default=20)
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+        omit_none = True
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
+
+
+@dataclass
+class RecycleFileListResponse(BaseResponse):
+    total: int = 0
+    recycle_file_vo_list: list[RecycleFileVO] = field(
+        metadata=field_options(alias="recycleFileVOList"), default_factory=list
+    )
+
+
+@dataclass
+class RecycleFileRequest(DataClassJSONMixin):
+    id_list: list[int] = field(metadata=field_options(alias="idList"))
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+        omit_none = True
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]

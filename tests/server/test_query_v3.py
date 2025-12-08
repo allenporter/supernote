@@ -32,7 +32,7 @@ async def test_query_v3_success(
     assert resp.status == 200
     data = await resp.json()
     assert data["success"] is True
-    assert data["entriesVO"]["id"] == "Note/test.note"
+    assert data["entriesVO"]["id"] == "17171877091523463945"
     assert data["entriesVO"]["name"] == "test.note"
     assert data["entriesVO"]["path_display"] == "/Note/test.note"
     # MD5 of "content" is 9a0364b9e99bb480dd25e1f0284c8555
