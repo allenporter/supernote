@@ -57,6 +57,22 @@ export SUPERNOTE_HOST=0.0.0.0
 supernote-server serve
 ```
 
+#### Security Configuration
+
+For production deployments, configure JWT authentication:
+
+```bash
+# Generate a secure random secret (recommended)
+export SUPERNOTE_JWT_SECRET=$(openssl rand -hex 32)
+
+# Configure token expiration (default: 24 hours)
+export SUPERNOTE_JWT_EXPIRATION_HOURS=24
+
+supernote-server serve
+```
+
+**Important**: Always set a unique `SUPERNOTE_JWT_SECRET` in production to prevent unauthorized access.
+
 ### Connecting Your Device
 
 1.  Review the [official Private Cloud setup guide](https://support.supernote.com/Whats-New/setting-up-your-own-supernote-private-cloud-beta) for your firmware version or other pre-requisites. This guide assumes you are familiar

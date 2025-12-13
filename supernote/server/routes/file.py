@@ -84,13 +84,16 @@ async def handle_capacity_query(request: web.Request) -> web.Response:
     # Purpose: Get storage capacity usage.
     # Response: CapacityLocalVO
 
+    req_data = await request.json()
+    equipment_no = req_data.get("equipmentNo", "")
+    
     storage_service: StorageService = request.app["storage_service"]
     loop = asyncio.get_running_loop()
     used = await loop.run_in_executor(None, storage_service.get_storage_usage)
 
     return web.json_response(
         CapacityResponse(
-            equipment_no="SN123456",  # Should match request
+            equipment_no=equipment_no,
             used=used,
             allocation_vo=AllocationVO(
                 tag="personal",

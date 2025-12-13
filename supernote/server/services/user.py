@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 # TODO: This should be generated on first startup and stored somewhere secure
 JWT_SECRET = os.environ.get("SUPERNOTE_JWT_SECRET", "supernote-secret-key")
 JWT_ALGORITHM = "HS256"
+JWT_EXPIRATION_HOURS = int(os.environ.get("SUPERNOTE_JWT_EXPIRATION_HOURS", "24"))
 
 
 def _load_users(users_file: str) -> list[dict]:
@@ -164,6 +165,7 @@ class UserService:
             "sub": account,
             "equipment_no": equipment_no or "",
             "iat": int(time.time()),
+            "exp": int(time.time()) + (JWT_EXPIRATION_HOURS * 3600),
         }
         token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
