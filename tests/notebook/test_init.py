@@ -1,13 +1,16 @@
 from pathlib import Path
-from supernote.notebook import parse_metadata
+
+from supernote.notebook import SupernoteMetadata, parse_metadata
 
 TESTDATA = Path("tests/testdata")
 NOTEBOOK_FILE = TESTDATA / "20251207_221454.note"
 
+
 def test_parse_metadata() -> None:
     with NOTEBOOK_FILE.open("rb") as fd:
-        notebook = parse_metadata(fd)
+        notebook: SupernoteMetadata = parse_metadata(fd)  # type: ignore[arg-type]
     data = notebook.header
+    assert data
     assert data["FILE_TYPE"] == "NOTE"
     assert data["APPLY_EQUIPMENT"] == "N6"
     assert data["FILE_ID"] == "F202512072214597017338I6OJBpDccy1"
