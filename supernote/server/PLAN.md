@@ -69,15 +69,17 @@
 
 ## Caveats & Technical Debt (Prioritized)
 
-### 1. Authentication & Security (**High**)
-- User authentication is stubbed; all users assumed to exist, password verification not implemented.
-- Random code for login is not stored or validated.
-- JWT tokens are faked, not cryptographically signed or verified.
-    - **Action:** Implement persistent user storage, store/validate random codes, real password hashing, secure JWT.
+### 1. Authentication & Security (**Completed**)
+- [x] User authentication implemented with config-based user storage.
+- [x] Random code generation and validation implemented.
+- [x] JWT tokens properly signed and verified with HS256.
+- [x] Token expiration implemented (configurable, default 24 hours).
+    - **Status:** Production-ready authentication system.
 
-### 2. Hardcoded Values & Placeholders (**High**)
-- Many endpoints return hardcoded values (e.g., `equipment_no="SN123456"`, `user_name="Supernote User"`).
-    - **Action:** Replace with real data from user/device context.
+### 2. Hardcoded Values & Placeholders (**Completed**)
+- [x] All hardcoded equipment_no values replaced with request data.
+- [x] User names derived from actual user accounts.
+    - **Status:** All critical hardcoded values removed.
 
 ### 3. File Upload Handling (**Medium-High**)
 - `trace_middleware` may consume the request body, which could break multipart parsing.
