@@ -27,7 +27,7 @@ from supernote.notebook import (
     parse_metadata,
     reconstruct,
 )
-from supernote.notebook.color import ColorPalette, MODE_RGB
+from supernote.notebook.color import MODE_RGB, ColorPalette
 from supernote.notebook.converter import (
     ImageConverter,
     PdfConverter,
