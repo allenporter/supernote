@@ -59,6 +59,23 @@ supernote-server user add alice
 supernote-server serve
 ```
 
+### Run with Docker
+
+```bash
+# Build image
+docker build -t supernote-server .
+
+# Create user
+mkdir config
+docker run --rm -it -v $(pwd)/config:/config supernote-server supernote-server user add alice
+
+# Run server
+docker run -d -p 8080:8080 \
+  -v $(pwd)/config:/config \
+  -v $(pwd)/storage:/data \
+  supernote-server
+```
+
 See [Server Documentation](supernote/server/README.md) for details.
 
 

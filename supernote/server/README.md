@@ -73,6 +73,34 @@ supernote-server serve
 
 **Important**: Always set a unique `SUPERNOTE_JWT_SECRET` in production to prevent unauthorized access.
 
+### Running with Docker
+
+You can run the server using Docker.
+
+1.  **Build the image**:
+    ```bash
+    docker build -t supernote-server .
+    ```
+
+2.  **Create configuration**:
+    Create a `config` directory and generate the initial user configuration.
+    ```bash
+    mkdir config
+    docker run --rm -it -v $(pwd)/config:/config supernote-server supernote-server user add alice
+    ```
+
+3.  **Run the container**:
+    Mount the `config` and `storage` directories to persist data.
+    ```bash
+    docker run -d \
+      -p 8080:8080 \
+      -v $(pwd)/config:/config \
+      -v $(pwd)/storage:/data \
+      -e SUPERNOTE_JWT_SECRET=$(openssl rand -hex 32) \
+      --name supernote-server \
+      supernote-server
+    ```
+
 ### Connecting Your Device
 
 1.  Review the [official Private Cloud setup guide](https://support.supernote.com/Whats-New/setting-up-your-own-supernote-private-cloud-beta) for your firmware version or other pre-requisites. This guide assumes you are familiar
