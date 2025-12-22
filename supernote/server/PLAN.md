@@ -18,8 +18,8 @@
 - [x] Implement `POST /api/terminal/user/bindEquipment` (Bind Device).
 - [x] Implement `POST /api/user/query` (User Info).
 - [x] Implement `POST /api/official/user/account/login/new` (Login).
-    - [ ] Handle password hashing verification.
-    - [ ] Issue JWT tokens.
+    - [x] Handle password hashing verification.
+    - [x] Issue JWT tokens.
 - [x] Implement `GET /api/csrf` (if required).
 
 ## Phase 3: File Synchronization

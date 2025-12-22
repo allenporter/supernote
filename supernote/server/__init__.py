@@ -3,10 +3,10 @@
 """
 
 from .app import create_app, run
-from .config import Config
+from .config import ServerConfig
 
 __all__ = [
     "create_app",
     "run",
-    "Config",
+    "ServerConfig",
 ]

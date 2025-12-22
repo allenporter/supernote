@@ -1,6 +1,5 @@
 from supernote.server.app import create_app
-
-from .fixtures import AiohttpClient
+from tests.conftest import AiohttpClient
 
 
 async def test_soft_delete_to_recycle(

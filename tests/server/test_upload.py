@@ -1,9 +1,6 @@
-from collections.abc import Generator
 from pathlib import Path
 from typing import Awaitable, Callable
-from unittest.mock import patch
 
-import pytest
 from aiohttp import FormData
 from aiohttp.test_utils import TestClient
 from aiohttp.web import Application
@@ -11,20 +8,6 @@ from aiohttp.web import Application
 from supernote.server.app import create_app
 
 AiohttpClient = Callable[[Application], Awaitable[TestClient]]
-
-
-@pytest.fixture(autouse=True)
-def mock_storage(tmp_path: Path) -> Generator[Path, None, None]:
-    storage_root = tmp_path / "storage"
-    temp_root = tmp_path / "storage" / "temp"
-    storage_root.mkdir(parents=True)
-    temp_root.mkdir(parents=True, exist_ok=True)
-
-    with (
-        patch("supernote.server.config.STORAGE_DIR", str(storage_root)),
-        patch("supernote.server.config.TRACE_LOG_FILE", str(tmp_path / "trace.log")),
-    ):
-        yield storage_root
 
 
 async def test_upload_file(

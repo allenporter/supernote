@@ -1,8 +1,7 @@
 """Tests for file search functionality."""
 
 from supernote.server.app import create_app
-
-from .fixtures import AiohttpClient
+from tests.conftest import AiohttpClient
 
 
 async def test_search_by_filename(
