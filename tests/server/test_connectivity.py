@@ -8,8 +8,7 @@ import pytest
 import yaml
 
 from supernote.server.app import create_app
-
-from .fixtures import TEST_PASSWORD, TEST_USERNAME, AiohttpClient
+from tests.conftest import TEST_PASSWORD, TEST_USERNAME, AiohttpClient
 
 
 def _sha256_s(s: str) -> str:

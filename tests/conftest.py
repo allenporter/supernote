@@ -2,14 +2,17 @@
 
 from pathlib import Path
 from typing import Awaitable, Callable, Generator
-from unittest.mock import patch
 
 import pytest
 from aiohttp.test_utils import TestClient
 from aiohttp.web import Application
 
 # Register server test fixtures as a plugin
-pytest_plugins = ["tests.server.fixtures"]
+# pytest_plugins = ["tests.server.fixtures"]
+
+# Shared test constants
+TEST_USERNAME = "test@example.com"
+TEST_PASSWORD = "testpassword"
 
 # Type alias for the aiohttp_client fixture - shared across all tests
 AiohttpClient = Callable[[Application], Awaitable[TestClient]]
@@ -28,8 +31,4 @@ def mock_storage(tmp_path: Path) -> Generator[Path, None, None]:
     (storage_root / "Document").mkdir()
     (storage_root / "EXPORT").mkdir()
 
-    with (
-        patch("supernote.server.config.STORAGE_DIR", str(storage_root)),
-        patch("supernote.server.config.TRACE_LOG_FILE", str(tmp_path / "trace.log")),
-    ):
-        yield storage_root
+    yield storage_root

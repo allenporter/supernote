@@ -1,59 +1,10 @@
 import hashlib
-from pathlib import Path
-from typing import Any, Generator
-from unittest.mock import patch
+from typing import Any
 
-import jwt
-import pytest
-import yaml
 from aiohttp.test_utils import TestClient
 
 from supernote.server.app import create_app
-from supernote.server.services.user import JWT_ALGORITHM, JWT_SECRET
-
-from .fixtures import TEST_PASSWORD, TEST_USERNAME, AiohttpClient
-
-
-@pytest.fixture
-def mock_users_file(tmp_path: Path) -> Generator[str, None, None]:
-    user = {
-        "username": TEST_USERNAME,
-        "password_md5": hashlib.md5(TEST_PASSWORD.encode("utf-8")).hexdigest(),
-        "is_active": True,
-        # Initially empty devices
-        "devices": [],
-        "profile": {"user_name": "Test User"},
-    }
-    users_file = tmp_path / "users.yaml"
-    with open(users_file, "w") as f:
-        yaml.safe_dump({"users": [user]}, f)
-    yield str(users_file)
-
-
-@pytest.fixture
-def mock_trace_log(tmp_path: Path) -> Generator[str, None, None]:
-    log_file = tmp_path / "trace.log"
-    with patch("supernote.server.config.TRACE_LOG_FILE", str(log_file)):
-        yield str(log_file)
-
-
-@pytest.fixture(autouse=True)
-def patch_server_config(
-    mock_trace_log: str, mock_users_file: str
-) -> Generator[None, None, None]:
-    with (
-        patch("supernote.server.config.TRACE_LOG_FILE", mock_trace_log),
-        patch("supernote.server.config.USER_CONFIG_FILE", mock_users_file),
-    ):
-        yield
-
-
-def _get_auth_header(client: TestClient) -> dict[str, str]:
-    # We can't generate a token easily without login because we need dynamic secrets
-    # So we'll rely on the login flow or use a helper if we exposed the secret
-    # But actually, the tests usually mock the secret or use the one from user.py
-    token = jwt.encode({"sub": TEST_USERNAME}, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    return {"x-access-token": token}
+from tests.conftest import TEST_PASSWORD, TEST_USERNAME, AiohttpClient
 
 
 async def _login(client: TestClient, equipment_no: str) -> Any:
@@ -127,14 +78,13 @@ async def test_device_binding_lifecycle(aiohttp_client: AiohttpClient) -> None:
     assert data["isBindEquipment"] == "N"
 
 
-async def test_user_profile_persistence(aiohttp_client: AiohttpClient) -> None:
+async def test_user_profile_persistence(
+    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
+) -> None:
     client = await aiohttp_client(create_app())
 
-    # Authenticate
-    headers = _get_auth_header(client)
-
     # Query Profile
-    resp = await client.post("/api/user/query", headers=headers, json={})
+    resp = await client.post("/api/user/query", headers=auth_headers, json={})
     # Note: user/query uses header token, doesn't strictly need body if using middleware correctly?
     # but the handler does `account = request.get("user")` which comes from middleware.
 

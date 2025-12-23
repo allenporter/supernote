@@ -1,73 +1,59 @@
 import hashlib
 import logging
-import os
 import secrets
 import time
 from typing import Optional
 
 import jwt
-import yaml
 
+from ..config import AuthConfig, UserEntry, UsersConfig
 from ..models.auth import LoginResult, UserVO
 
 logger = logging.getLogger(__name__)
 
-# TODO: This should be generated on first startup and stored somewhere secure
-JWT_SECRET = os.environ.get("SUPERNOTE_JWT_SECRET", "supernote-secret-key")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_HOURS = int(os.environ.get("SUPERNOTE_JWT_EXPIRATION_HOURS", "24"))
-
-
-def _load_users(users_file: str) -> list[dict]:
-    if not os.path.exists(users_file):
-        return []
-    with open(users_file, "r") as f:
-        data = yaml.safe_load(f) or {"users": []}
-        return data.get("users") or []
-
-
-def _save_users(users_file: str, users: list[dict]) -> None:
-    with open(users_file, "w") as f:
-        yaml.safe_dump({"users": users}, f, default_flow_style=False)
 
 
 class UserService:
-    def __init__(self, users_file: str):
-        self._users_file = users_file
-        self._users = _load_users(users_file)
+    def __init__(self, config: AuthConfig):
+        self._config = config
+        self._users_config = UsersConfig.load(config.users_file)
         self._random_codes: dict[
             str, tuple[str, str]
         ] = {}  # account -> (code, timestamp)
 
-    def list_users(self) -> list[dict]:
+    @property
+    def _users(self) -> list[UserEntry]:
+        return self._users_config.users
+
+    def list_users(self) -> list[UserEntry]:
         return list(self._users)
 
     def add_user(self, username: str, password: str) -> bool:
-        if any(u["username"] == username for u in self._users):
+        if any(u.username == username for u in self._users):
             return False
         password_md5 = hashlib.md5(password.encode()).hexdigest()
-        self._users.append(
-            {
-                "username": username,
-                "password_md5": password_md5,
-                "is_active": True,
-                "devices": [],  # List of bound equipment numbers
-                "profile": {},  # User profile data
-            }
+        new_user = UserEntry(
+            username=username,
+            password_md5=password_md5,
+            is_active=True,
+            devices=[],
+            profile={},
         )
-        _save_users(self._users_file, self._users)
+        self._users.append(new_user)
+        self._users_config.save(self._config.users_file)
         return True
 
     def deactivate_user(self, username: str) -> bool:
         for user in self._users:
-            if user["username"] == username:
-                user["is_active"] = False
-                _save_users(self._users_file, self._users)
+            if user.username == username:
+                user.is_active = False
+                self._users_config.save(self._config.users_file)
                 return True
         return False
 
     def check_user_exists(self, account: str) -> bool:
-        return any(u["username"] == account for u in self._users)
+        return any(u.username == account for u in self._users)
 
     def generate_random_code(self, account: str) -> tuple[str, str]:
         """Generate a random code for login challenge."""
@@ -77,30 +63,31 @@ class UserService:
         self._random_codes[account] = (random_code, timestamp)
         return random_code, timestamp
 
-    def _get_user(self, account: str) -> dict | None:
+    def _get_user(self, account: str) -> UserEntry | None:
         for user in self._users:
-            if user["username"] == account:
+            if user.username == account:
                 return user
         return None
 
     def verify_password(self, account: str, password: str) -> bool:
         user = self._get_user(account)
-        if not user or not user.get("is_active", True):
+        if not user or not user.is_active:
             logger.info("User not found or inactive: %s", account)
             return False
-        if (password_md5 := user.get("password_md5")) is None:
+        if not user.password_md5:
             logger.info("MD5 password hash not found for user: %s", account)
             return False
         # Compute md5(password) and compare
         password_bytes = password.encode()
         hash_hex = hashlib.md5(password_bytes).hexdigest()
-        return bool(hash_hex == password_md5)
+        return bool(hash_hex == user.password_md5)
 
     def verify_login_hash(self, account: str, client_hash: str, timestamp: str) -> bool:
         user = self._get_user(account)
-        if not user or not user.get("is_active", True):
+        if not user or not user.is_active:
             logger.info("User not found or inactive: %s", account)
             return False
+
         code_tuple = self._random_codes.get(account)
         if not code_tuple or code_tuple[1] != timestamp:
             logger.warning(
@@ -108,12 +95,15 @@ class UserService:
             )
             return False
         random_code = code_tuple[0]
-        if (password_md5 := user.get("password_md5")) is None:
+
+        if not user.password_md5:
             logger.info("MD5 password hash not found for user: %s", account)
             return False
-        # Compute expected hash: sha256(password_md5 + random_code + timestamp)
-        concat = password_md5 + random_code
+
+        # Compute expected hash: sha256(password_md5 + random_code)
+        concat = user.password_md5 + random_code
         expected_hash = hashlib.sha256(concat.encode()).hexdigest()
+
         if expected_hash == client_hash:
             return True
         logger.info("Login hash mismatch for user: %s", account)
@@ -138,7 +128,7 @@ class UserService:
           LoginResult if login is successful, None otherwise.
         """
         user = self._get_user(account)
-        if not user or not user.get("is_active", True):
+        if not user or not user.is_active:
             # TODO: Raise exceptions so we can return a useful error message
             # to the web APIs.
             logger.warning("Login failed: user not found or inactive: %s", account)
@@ -155,7 +145,7 @@ class UserService:
             return None
 
         # Check binding status
-        bound_devices = user.get("devices", [])
+        bound_devices = user.devices
         is_bind = "Y" if bound_devices else "N"
         is_bind_equipment = "N"
         if equipment_no and equipment_no in bound_devices:
@@ -165,9 +155,9 @@ class UserService:
             "sub": account,
             "equipment_no": equipment_no or "",
             "iat": int(time.time()),
-            "exp": int(time.time()) + (JWT_EXPIRATION_HOURS * 3600),
+            "exp": int(time.time()) + (self._config.expiration_hours * 3600),
         }
-        token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+        token = jwt.encode(payload, self._config.secret_key, algorithm=JWT_ALGORITHM)
 
         return LoginResult(
             token=token,
@@ -182,17 +172,17 @@ class UserService:
             return None
 
         # Default profile values
-        username = user["username"]
-        profile = user.get("profile", {})
+        username = user.username
+        profile = user.profile
 
         return UserVO(
             user_name=profile.get("user_name", username),
-            email=profile.get("email", username),
-            phone=profile.get("phone", ""),
+            email=user.email or profile.get("email", username),
+            phone=user.mobile or profile.get("phone", ""),
             country_code=profile.get("country_code", "1"),
             total_capacity=profile.get("total_capacity", "25485312"),
             file_server=profile.get("file_server", "0"),
-            avatars_url=profile.get("avatars_url", ""),
+            avatars_url=user.avatar or profile.get("avatars_url", ""),
             birthday=profile.get("birthday", ""),
             sex=profile.get("sex", ""),
         )
@@ -205,11 +195,9 @@ class UserService:
             logger.warning("User not found for binding: %s", account)
             return False
 
-        devices = user.get("devices", [])
-        if equipment_no not in devices:
-            devices.append(equipment_no)
-            user["devices"] = devices
-            _save_users(self._users_file, self._users)
+        if equipment_no not in user.devices:
+            user.devices.append(equipment_no)
+            self._users_config.save(self._config.users_file)
 
         return True
 
@@ -218,13 +206,11 @@ class UserService:
         logger.info("Unlinking equipment %s", equipment_no)
         found = False
         for user in self._users:
-            devices = user.get("devices", [])
-            if equipment_no in devices:
-                devices.remove(equipment_no)
-                user["devices"] = devices
+            if equipment_no in user.devices:
+                user.devices.remove(equipment_no)
                 found = True
 
         if found:
-            _save_users(self._users_file, self._users)
+            self._users_config.save(self._config.users_file)
 
         return True

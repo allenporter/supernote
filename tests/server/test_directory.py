@@ -2,8 +2,7 @@ from pathlib import Path
 
 from supernote.server.app import create_app
 from supernote.server.services.storage import StorageService
-
-from .fixtures import AiohttpClient
+from tests.conftest import AiohttpClient
 
 
 def test_id_generation(tmp_path: Path) -> None:

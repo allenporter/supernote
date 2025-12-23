@@ -6,9 +6,9 @@ from typing import Any, Awaitable, Callable
 
 from aiohttp import web
 
-from supernote.server.services.user import JWT_ALGORITHM, JWT_SECRET
+from supernote.server.services.user import JWT_ALGORITHM
 
-from . import config
+from .config import ServerConfig
 from .models.base import create_error_response
 from .routes import auth, file, system
 from .services.file import FileService
@@ -56,8 +56,11 @@ async def trace_middleware(
         "body": body_str,
     }
 
+    # Get config from app
+    server_config: ServerConfig = request.app["config"]
+
     try:
-        with open(config.TRACE_LOG_FILE, "a") as f:
+        with open(server_config.trace_log_file, "a") as f:
             f.write(json.dumps(log_entry) + "\n")
             f.flush()
     except Exception as e:
@@ -92,8 +95,12 @@ async def jwt_auth_middleware(
 
     import jwt
 
+    server_config: ServerConfig = request.app["config"]
+
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(
+            token, server_config.auth.secret_key, algorithms=[JWT_ALGORITHM]
+        )
     except jwt.InvalidTokenError:
         return web.json_response(
             create_error_response("Invalid token").to_dict(), status=401
@@ -102,15 +109,19 @@ async def jwt_auth_middleware(
     return await handler(request)
 
 
-def create_app() -> web.Application:
+def create_app(config: ServerConfig | None = None) -> web.Application:
+    if config is None:
+        config = ServerConfig.load()
+
     app = web.Application(middlewares=[trace_middleware, jwt_auth_middleware])
+    app["config"] = config
 
     # Initialize services
-    storage_root = Path(config.STORAGE_DIR)
+    storage_root = Path(config.storage_dir)
     temp_root = storage_root / "temp"
     storage_service = StorageService(storage_root, temp_root)
     app["storage_service"] = storage_service
-    app["user_service"] = UserService(config.USER_CONFIG_FILE)
+    app["user_service"] = UserService(config.auth)
     app["file_service"] = FileService(storage_service)
 
     # Register routes
@@ -125,5 +136,7 @@ def create_app() -> web.Application:
 
 def run(args: Any) -> None:
     logging.basicConfig(level=logging.DEBUG)
-    app = create_app()
-    web.run_app(app, host=config.HOST, port=config.PORT)
+    config_dir = getattr(args, "config_dir", None)
+    config = ServerConfig.load(config_dir)
+    app = create_app(config)
+    web.run_app(app, host=config.host, port=config.port)

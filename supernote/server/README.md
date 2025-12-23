@@ -40,6 +40,20 @@ supernote-server user deactivate alice
 - Passwords are never stored in plain text—only SHA256 hashes (see PLAN.md for security notes).
 - Set `is_active: false` to disable a user without deleting their entry.
 
+### Configuration
+
+The server is configured via `config/config.yaml`. You can specify a different configuration directory using the `SUPERNOTE_CONFIG_DIR` environment variable or the `--config-dir` CLI argument.
+
+Example `config.yaml`:
+```yaml
+host: 0.0.0.0
+port: 8080
+storage_dir: storage
+auth:
+  secret_key: "your-secret-key"
+  users_file: users.yaml
+```
+
 ### Running the Server
 
 You can start the server using the `supernote-server` CLI:
@@ -49,7 +63,7 @@ You can start the server using the `supernote-server` CLI:
 supernote-server serve
 ```
 
-To configure the port or host, use environment variables:
+To configure the port or host, you can use environment variables (which override `config.yaml`):
 
 ```bash
 export SUPERNOTE_PORT=8080
@@ -64,9 +78,6 @@ For production deployments, configure JWT authentication:
 ```bash
 # Generate a secure random secret (recommended)
 export SUPERNOTE_JWT_SECRET=$(openssl rand -hex 32)
-
-# Configure token expiration (default: 24 hours)
-export SUPERNOTE_JWT_EXPIRATION_HOURS=24
 
 supernote-server serve
 ```
