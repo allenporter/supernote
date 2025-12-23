@@ -1,4 +1,5 @@
 import os
+from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,7 +10,7 @@ from supernote.server.config import ServerConfig, UserEntry, UsersConfig
 
 
 @pytest.fixture(autouse=True)
-def patch_server_config():
+def patch_server_config() -> Generator[None, None, None]:
     """Override the autouse fixture from conftest.py to do nothing.
 
     This ensures that ServerConfig.load() runs the real logic instead of returning a mock.
@@ -64,15 +65,15 @@ def test_server_config_load_from_file(tmp_path: Path) -> None:
 def test_server_config_env_var_override(tmp_path: Path) -> None:
     """Test that environment variables override config file for secrets."""
     config_dir = tmp_path / "config"
-    
+
     with patch.dict(os.environ, {"SUPERNOTE_JWT_SECRET": "env-secret"}):
         config = ServerConfig.load(config_dir)
         assert config.auth.secret_key == "env-secret"
-        
+
         # Should save default config (empty secret) to file because file didn't exist
         config_file = config_dir / "config.yaml"
         assert config_file.exists()
-        
+
         with open(config_file) as f:
             data = yaml.safe_load(f)
             # The saved secret should be empty because we didn't generate one

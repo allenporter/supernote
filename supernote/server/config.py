@@ -75,9 +75,8 @@ class ServerConfig(DataClassDictMixin):
         config_file = config_dir_path / "config.yaml"
 
         # 2. Load from YAML if exists
-        file_data = {}
-        file_exists = config_file.exists()
-        if file_exists:
+        file_data: dict[str, Any] = {}
+        if file_exists := config_file.exists():
             try:
                 with open(config_file, "r") as f:
                     file_data = yaml.safe_load(f) or {}
@@ -144,16 +143,16 @@ class ServerConfig(DataClassDictMixin):
         # 6. Apply env var override (runtime only, not saved)
         if env_secret:
             config.auth.secret_key = env_secret
-        
+
         if os.getenv("SUPERNOTE_HOST"):
             config.host = os.getenv("SUPERNOTE_HOST", config.host)
-        
+
         if os.getenv("SUPERNOTE_PORT"):
             try:
                 config.port = int(os.getenv("SUPERNOTE_PORT", str(config.port)))
             except ValueError:
                 pass
-                
+
         if os.getenv("SUPERNOTE_STORAGE_DIR"):
             config.storage_dir = os.getenv("SUPERNOTE_STORAGE_DIR", config.storage_dir)
 
