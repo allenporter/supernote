@@ -123,6 +123,7 @@ def create_app(config: ServerConfig | None = None) -> web.Application:
     app["storage_service"] = storage_service
     app["user_service"] = UserService(config.auth)
     app["file_service"] = FileService(storage_service)
+    app["sync_locks"] = {}  # user -> (equipment_no, expiry_time)
 
     # Register routes
     app.add_routes(system.routes)

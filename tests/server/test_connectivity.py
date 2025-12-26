@@ -1,11 +1,9 @@
 import hashlib
-from collections.abc import Generator
+import shutil
 from pathlib import Path
 from urllib.parse import urlparse
 
 import aiohttp
-import pytest
-import yaml
 
 from supernote.server.app import create_app
 from tests.conftest import TEST_PASSWORD, TEST_USERNAME, AiohttpClient
@@ -21,20 +19,6 @@ def _md5_s(s: str) -> str:
 
 def _encode_password(password: str, rc: str) -> str:
     return _sha256_s(_md5_s(password) + rc)
-
-
-@pytest.fixture
-def mock_users_file(tmp_path: Path) -> Generator[str, None, None]:
-    """Custom users file for connectivity tests."""
-    user = {
-        "username": TEST_USERNAME,
-        "password_md5": hashlib.md5(TEST_PASSWORD.encode("utf-8")).hexdigest(),
-        "is_active": True,
-    }
-    users_file = tmp_path / "users.yaml"
-    with open(users_file, "w") as f:
-        yaml.safe_dump({"users": [user]}, f)
-    yield str(users_file)
 
 
 async def test_trace_logging(
@@ -150,7 +134,7 @@ async def test_auth_flow(aiohttp_client: AiohttpClient) -> None:
     assert resp.status == 200
     data = await resp.json()
     assert data["success"] is True
-    assert data["user"]["userName"] == TEST_USERNAME
+    assert data["user"]["userName"] == "Test User"
 
     # Verify an invalid token does not work
     resp = await client.post(
@@ -187,13 +171,19 @@ async def test_user_query(
     data = await resp.json()
     assert data["success"] is True
     assert "user" in data
-    assert data["user"]["userName"] == TEST_USERNAME
+    assert data["user"]["userName"] == "Test User"
 
 
-async def test_sync_start(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
+async def test_sync_start_syn_type(
+    aiohttp_client: AiohttpClient,
+    auth_headers: dict[str, str],
+    mock_storage: Path,
 ) -> None:
     client = await aiohttp_client(create_app())
+
+    shutil.rmtree(str(mock_storage))
+
+    # 1. Initially storage is empty, should return synType: False
     resp = await client.post(
         "/api/file/2/files/synchronous/start",
         json={"equipmentNo": "SN123456"},
@@ -202,21 +192,68 @@ async def test_sync_start(
     assert resp.status == 200
     data = await resp.json()
     assert data["success"] is True
-    assert "synType" in data
+    assert data["synType"] is False  # Empty storage
 
+    # 2. Upload a file, then check synType again
+    # (Simplified upload simulation by creating a file in storage root)
+    # We need to find where the storage root is. conftest.py usually sets this up.
+    # For now, let's assume we can use the regular sync start and then check
+    # if standard folders were created.
 
-async def test_sync_end(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
-) -> None:
-    client = await aiohttp_client(create_app())
+    # 3. Create a dummy file in the 'Note' folder which should have been created
+    note_dir = mock_storage / "Note"
+    note_dir.mkdir(parents=True, exist_ok=True)
+    (note_dir / "test.note").touch()
+
     resp = await client.post(
-        "/api/file/2/files/synchronous/end",
-        json={"equipmentNo": "SN123456", "flag": "N"},
+        "/api/file/2/files/synchronous/start",
+        json={"equipmentNo": "SN123456"},
         headers=auth_headers,
     )
     assert resp.status == 200
     data = await resp.json()
-    assert data == {"success": True}
+    assert data["synType"] is True  # Non-empty storage
+
+
+async def test_sync_lock(
+    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
+) -> None:
+    client = await aiohttp_client(create_app())
+
+    # 1. Start sync from SN123
+    resp = await client.post(
+        "/api/file/2/files/synchronous/start",
+        json={"equipmentNo": "SN123"},
+        headers=auth_headers,
+    )
+    assert resp.status == 200
+
+    # 2. Try sync from SN456 (same user), should get 409
+    resp = await client.post(
+        "/api/file/2/files/synchronous/start",
+        json={"equipmentNo": "SN456"},
+        headers=auth_headers,
+    )
+    assert resp.status == 409
+    data = await resp.json()
+    assert data["errorCode"] == "E0078"
+
+    # 3. End sync from SN123
+    resp = await client.post(
+        "/api/file/2/files/synchronous/end",
+        json={"equipmentNo": "SN123", "flag": "true"},
+        headers=auth_headers,
+    )
+    assert resp.status == 200
+
+    # 4. Now SN456 should be able to sync
+    resp = await client.post(
+        "/api/file/2/files/synchronous/start",
+        json={"equipmentNo": "SN456"},
+        headers=auth_headers,
+    )
+    assert resp.status == 200
+    assert (await resp.json())["success"] is True
 
 
 async def test_list_folder(

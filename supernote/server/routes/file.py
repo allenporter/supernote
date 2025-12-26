@@ -1,10 +1,11 @@
 import asyncio
 import logging
+import time
 import urllib.parse
 
 from aiohttp import web
 
-from ..models.base import BaseResponse
+from ..models.base import BaseResponse, create_error_response
 from ..models.file import (
     AllocationVO,
     CapacityResponse,
@@ -23,6 +24,7 @@ from ..models.file import (
     ListFolderResponse,
     RecycleFileListRequest,
     RecycleFileRequest,
+    SyncEndRequest,
     SyncStartRequest,
     SyncStartResponse,
     UploadApplyRequest,
@@ -35,16 +37,44 @@ logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
 
 
+SYNC_LOCK_TIMEOUT = 300  # 5 minutes
+
+
 @routes.post("/api/file/2/files/synchronous/start")
 async def handle_sync_start(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/2/files/synchronous/start
     # Purpose: Start a file synchronization session.
     # Response: SynchronousStartLocalVO
     req_data = SyncStartRequest.from_dict(await request.json())
+    user_email = request.get("user")
+    sync_locks = request.app["sync_locks"]
+    storage_service: StorageService = request.app["storage_service"]
+
+    loop = asyncio.get_running_loop()
+    is_empty = await loop.run_in_executor(None, storage_service.is_empty)
+
+    now = time.time()
+    if user_email and user_email in sync_locks:
+        owner_eq, expiry = sync_locks[user_email]
+        if now < expiry and owner_eq != req_data.equipment_no:
+            logger.info(
+                f"Sync conflict: user {user_email} already syncing from {owner_eq}"
+            )
+            return web.json_response(
+                create_error_response(
+                    error_msg="Another device is synchronizing",
+                    error_code="E0078",
+                ).to_dict(),
+                status=409,
+            )
+
+    if user_email:
+        sync_locks[user_email] = (req_data.equipment_no, now + SYNC_LOCK_TIMEOUT)
+
     return web.json_response(
         SyncStartResponse(
             equipment_no=req_data.equipment_no,
-            syn_type=True,  # True for normal sync, False for full re-upload
+            syn_type=not is_empty,
         ).to_dict()
     )
 
@@ -53,8 +83,17 @@ async def handle_sync_start(request: web.Request) -> web.Response:
 async def handle_sync_end(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/2/files/synchronous/end
     # Purpose: End a file synchronization session.
-    SyncStartRequest.from_dict(await request.json())
-    return web.json_response(BaseResponse().to_dict())
+    req_data = SyncEndRequest.from_dict(await request.json())
+    user_email = request.get("user")
+
+    # Release lock
+    sync_locks = request.app["sync_locks"]
+    if user_email and user_email in sync_locks:
+        owner_eq, _ = sync_locks[user_email]
+        if owner_eq == req_data.equipment_no:
+            del sync_locks[user_email]
+
+    return web.json_response(BaseResponse(success=True).to_dict())
 
 
 @routes.post("/api/file/2/files/list_folder")
@@ -86,7 +125,7 @@ async def handle_capacity_query(request: web.Request) -> web.Response:
 
     req_data = await request.json()
     equipment_no = req_data.get("equipmentNo", "")
-    
+
     storage_service: StorageService = request.app["storage_service"]
     loop = asyncio.get_running_loop()
     used = await loop.run_in_executor(None, storage_service.get_storage_usage)

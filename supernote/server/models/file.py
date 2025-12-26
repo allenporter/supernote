@@ -26,6 +26,17 @@ class SyncStartRequest(DataClassJSONMixin):
 
 
 @dataclass
+class SyncEndRequest(DataClassJSONMixin):
+    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
+    flag: str | None = None  # "true" or "false"
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+        omit_none = True
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
+
+
+@dataclass
 class ListFolderRequest(DataClassJSONMixin):
     path: str = "/"
     equipment_no: str | None = field(

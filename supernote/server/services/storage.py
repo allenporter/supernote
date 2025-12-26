@@ -70,6 +70,12 @@ class StorageService:
                         continue
                     yield entry
 
+    def is_empty(self) -> bool:
+        """Check if the storage root is empty (excluding internal items)."""
+        for entry in self.list_directory("/"):
+            return False
+        return True
+
     def move_temp_to_storage(self, filename: str, rel_dest_path: str) -> Path:
         """Move a file from temp to storage."""
         temp_path = self.resolve_temp_path(filename)
