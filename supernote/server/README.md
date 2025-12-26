@@ -12,26 +12,20 @@ This package provides a self-hosted implementation of the Supernote Cloud server
 ### Managing User Accounts
 
 You must create a private cloud user account in order to login to the
-device.
+device. The CLI tool acts as a **generator** for these accounts.
 
-Use the CLI tool to add, list, or deactivate users:
+To generate a user entry (outputs YAML to stdout):
 
 ```sh
-supernote-server user add alice
+supernote-server user add alice >> config/users.yaml
 ```
 
-You will be prompted for a password, which will be securely hashed using SHA256 and stored in `config/users.yaml`.
+You will be prompted for a password, which will be securely hashed and output as part of a YAML snippet.
 
-To list users:
+To list users currently in your `users.yaml`:
 
 ```sh
 supernote-server user list
-```
-
-To deactivate a user:
-
-```sh
-supernote-server user deactivate alice
 ```
 
 #### Notes
@@ -90,14 +84,18 @@ You can run the server using Docker.
 
 1.  **Build the image**:
     ```bash
+    ```bash
     docker build -t supernote-server .
     ```
 
 2.  **Create configuration**:
-    Create a `config` directory and generate the initial user configuration.
+    Create a `config` directory and generate the initial configuration.
     ```bash
     mkdir config
-    docker run --rm -it -v $(pwd)/config:/config supernote-server supernote-server user add alice
+    # Generate default config
+    docker run --rm supernote-server supernote-server config init > config/config.yaml
+    # Generate user entry
+    docker run --rm -it supernote-server supernote-server user add alice >> config/users.yaml
     ```
 
 3.  **Run the container**:
@@ -107,7 +105,6 @@ You can run the server using Docker.
       -p 8080:8080 \
       -v $(pwd)/config:/config \
       -v $(pwd)/storage:/data \
-      -e SUPERNOTE_JWT_SECRET=$(openssl rand -hex 32) \
       --name supernote-server \
       supernote-server
     ```

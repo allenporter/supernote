@@ -52,8 +52,11 @@ limitation. All credit goes to the original authors of [supernote-tool](https://
 ### Run Private Server
 
 ```bash
-# Configure users (you will be prompted for a password)
-supernote-server user add alice
+# Generate configuration
+supernote-server config init > config.yaml
+
+# Generate users (outputs YAML, append to users.yaml)
+supernote-server user add alice >> users.yaml
 
 # Start server
 supernote-server serve
@@ -65,9 +68,10 @@ supernote-server serve
 # Build image
 docker build -t supernote-server .
 
-# Create user
+# Generate initial configuration
 mkdir config
-docker run --rm -it -v $(pwd)/config:/config supernote-server supernote-server user add alice
+docker run --rm supernote-server supernote-server config init > config/config.yaml
+docker run --rm -it supernote-server supernote-server user add alice >> config/users.yaml
 
 # Run server
 docker run -d -p 8080:8080 \

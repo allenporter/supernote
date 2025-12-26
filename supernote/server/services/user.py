@@ -29,26 +29,35 @@ class UserService:
     def list_users(self) -> list[UserEntry]:
         return list(self._users)
 
-    def add_user(self, username: str, password: str) -> bool:
-        if any(u.username == username for u in self._users):
-            return False
+    @staticmethod
+    def create_user_entry(username: str, password: str) -> UserEntry:
+        """Create a new UserEntry with hashed password."""
         password_md5 = hashlib.md5(password.encode()).hexdigest()
-        new_user = UserEntry(
+        return UserEntry(
             username=username,
             password_md5=password_md5,
             is_active=True,
             devices=[],
             profile={},
         )
+
+    def add_user(self, username: str, password: str) -> bool:
+        """Add a new user to the in-memory config. Does NOT save to disk."""
+        if any(u.username == username for u in self._users):
+            return False
+        new_user = self.create_user_entry(username, password)
         self._users.append(new_user)
-        self._users_config.save(self._config.users_file)
         return True
 
+    def save(self) -> None:
+        """Save the current users configuration to disk."""
+        self._users_config.save(self._config.users_file)
+
     def deactivate_user(self, username: str) -> bool:
+        """Deactivate a user in-memory. Does NOT save to disk."""
         for user in self._users:
             if user.username == username:
                 user.is_active = False
-                self._users_config.save(self._config.users_file)
                 return True
         return False
 

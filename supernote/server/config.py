@@ -92,9 +92,9 @@ class ServerConfig(DataClassDictMixin):
             )
             config = cls()
 
-        # Resolve users_file relative to config_dir if not absolute
+        # Resolve users_file relative to config_dir if it's just a filename (not already a path)
         users_path = Path(config.auth.users_file)
-        if not users_path.is_absolute():
+        if not users_path.is_absolute() and len(users_path.parts) == 1:
             config.auth.users_file = str(config_dir_path / users_path)
 
         # 4. Generate secret if missing AND not provided by env var
