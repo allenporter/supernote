@@ -30,60 +30,66 @@ class StorageService:
     def get_dir_size(self, path: Path) -> int:
         """Calculate total size of a directory."""
         total = 0
+        if not path.exists():
+            return 0
         for p in path.rglob("*"):
             if p.is_file():
                 total += p.stat().st_size
         return total
 
-    def get_storage_usage(self) -> int:
-        """Get total storage usage."""
-        return self.get_dir_size(self.storage_root)
+    def get_storage_usage(self, user: str) -> int:
+        """Get total storage usage for a specific user."""
+        return self.get_dir_size(self.storage_root / user)
 
-    def resolve_path(self, rel_path: str) -> Path:
-        """Resolve a relative path to an absolute path in storage."""
+    def resolve_path(self, user: str, rel_path: str) -> Path:
+        """Resolve a relative path to an absolute path in user's storage."""
         # Remove leading slash to make it relative
         clean_rel_path = rel_path.lstrip("/")
-        return self.storage_root / clean_rel_path
+        return self.storage_root / user / clean_rel_path
 
-    def resolve_temp_path(self, filename: str) -> Path:
-        """Resolve a filename to an absolute path in temp storage."""
-        return self.temp_root / filename
+    def resolve_temp_path(self, user: str, filename: str) -> Path:
+        """Resolve a filename to an absolute path in user's temp storage."""
+        return self.temp_root / user / filename
 
-    def is_safe_path(self, path: Path) -> bool:
-        """Check if path is within storage root to prevent traversal."""
+    def is_safe_path(self, user: str, path: Path) -> bool:
+        """Check if path is within user's storage root to prevent traversal."""
         try:
             resolved_path = path.resolve()
-            storage_root_abs = self.storage_root.resolve()
-            return str(resolved_path).startswith(str(storage_root_abs))
+            user_root_abs = (self.storage_root / user).resolve()
+            return str(resolved_path).startswith(str(user_root_abs))
         except Exception:
             return False
 
-    def list_directory(self, rel_path: str) -> Generator[os.DirEntry, None, None]:
-        """List contents of a directory."""
-        target_dir = self.resolve_path(rel_path)
+    def list_directory(
+        self, user: str, rel_path: str
+    ) -> Generator[os.DirEntry, None, None]:
+        """List contents of a directory for a specific user."""
+        target_dir = self.resolve_path(user, rel_path)
         if target_dir.exists() and target_dir.is_dir():
             with os.scandir(target_dir) as it:
                 for entry in it:
-                    if entry.name == "temp" and target_dir == self.storage_root:
+                    if entry.name == "temp":
                         continue
                     if entry.name.startswith("."):
                         continue
                     yield entry
 
-    def is_empty(self) -> bool:
-        """Check if the storage root is empty (excluding internal items)."""
-        for entry in self.list_directory("/"):
+    def is_empty(self, user: str) -> bool:
+        """Check if the user's storage root is empty (excluding internal items)."""
+        for _ in self.list_directory(user, "/"):
             return False
         return True
 
-    def move_temp_to_storage(self, filename: str, rel_dest_path: str) -> Path:
-        """Move a file from temp to storage."""
-        temp_path = self.resolve_temp_path(filename)
-        dest_dir = self.resolve_path(rel_dest_path)
+    def move_temp_to_storage(
+        self, user: str, filename: str, rel_dest_path: str
+    ) -> Path:
+        """Move a file from user's temp to user's storage."""
+        temp_path = self.resolve_temp_path(user, filename)
+        dest_dir = self.resolve_path(user, rel_dest_path)
         dest_path = dest_dir / filename
 
         if not temp_path.exists():
-            raise FileNotFoundError(f"Temp file {filename} not found")
+            raise FileNotFoundError(f"Temp file {filename} not found for user {user}")
 
         dest_dir.mkdir(parents=True, exist_ok=True)
         shutil.move(str(temp_path), str(dest_path))
@@ -94,19 +100,12 @@ class StorageService:
         f.write(chunk)
 
     async def save_temp_file(
-        self, filename: str, chunk_reader: Callable[[], Awaitable[bytes]]
+        self, user: str, filename: str, chunk_reader: Callable[[], Awaitable[bytes]]
     ) -> int:
-        """Save data from an async chunk reader to a temp file.
+        """Save data from an async chunk reader to a user's temp file."""
+        temp_path = self.resolve_temp_path(user, filename)
+        temp_path.parent.mkdir(parents=True, exist_ok=True)
 
-        Args:
-            filename: Name of the temp file.
-            chunk_reader: A callable that returns an awaitable bytes object (chunk).
-                          Should return empty bytes b'' on EOF.
-
-        Returns:
-            Total bytes written.
-        """
-        temp_path = self.resolve_temp_path(filename)
         loop = asyncio.get_running_loop()
 
         # Open file in executor to avoid blocking the event loop
@@ -124,18 +123,18 @@ class StorageService:
 
         return total_bytes
 
-    def create_directory(self, rel_path: str) -> Path:
-        """Create a directory in storage."""
-        target_path = self.resolve_path(rel_path)
-        if not self.is_safe_path(target_path):
+    def create_directory(self, user: str, rel_path: str) -> Path:
+        """Create a directory in user's storage."""
+        target_path = self.resolve_path(user, rel_path)
+        if not self.is_safe_path(user, target_path):
             raise ValueError("Invalid path")
         target_path.mkdir(parents=True, exist_ok=True)
         return target_path
 
-    def delete_path(self, rel_path: str) -> None:
-        """Delete a file or directory in storage."""
-        target_path = self.resolve_path(rel_path)
-        if not self.is_safe_path(target_path):
+    def delete_path(self, user: str, rel_path: str) -> None:
+        """Delete a file or directory in user's storage."""
+        target_path = self.resolve_path(user, rel_path)
+        if not self.is_safe_path(user, target_path):
             raise ValueError("Invalid path")
 
         if not target_path.exists():
@@ -149,23 +148,25 @@ class StorageService:
     def get_id_from_path(self, rel_path: str) -> int:
         """Generate a stable 64-bit ID from a relative path."""
         clean_path = rel_path.strip("/")
-        # Use first 16 chars of MD5 (64 bits)
         md5_hash = hashlib.md5(clean_path.encode("utf-8")).hexdigest()
         return int(md5_hash[:16], 16)
 
-    def get_path_from_id(self, file_id: int) -> str | None:
-        """Find relative path from ID by scanning storage."""
-        # Simple BFS scan
+    def get_path_from_id(self, user: str, file_id: int) -> str | None:
+        """Find relative path from ID by scanning user's storage."""
+        user_root = self.storage_root / user
+        if not user_root.exists():
+            return None
+
+        # Simple BFS scan within user root
         queue = [Path(".")]
         while queue:
             current_rel_dir = queue.pop(0)
-            # Avoid traversing up
             if ".." in str(current_rel_dir):
                 continue
 
-            target_dir = self.storage_root / current_rel_dir
+            target_dir = user_root / current_rel_dir
             if current_rel_dir == Path("."):
-                target_dir = self.storage_root
+                target_dir = user_root
 
             if not target_dir.exists() or not target_dir.is_dir():
                 continue
@@ -173,24 +174,20 @@ class StorageService:
             try:
                 with os.scandir(target_dir) as it:
                     for entry in it:
-                        if entry.name == "temp" and target_dir == self.storage_root:
+                        if entry.name == "temp":
                             continue
-                        # Skip hidden files/dirs except .trash
                         if entry.name.startswith(".") and entry.name != ".trash":
                             continue
 
-                        # Construct relative path string
                         if current_rel_dir == Path("."):
                             entry_rel_path = entry.name
                         else:
                             entry_rel_path = str(current_rel_dir / entry.name)
 
-                        # Check ID
                         if self.get_id_from_path(entry_rel_path) == file_id:
                             return entry_rel_path
 
                         if entry.is_dir():
-                            # Enqueue directory for recursion
                             if current_rel_dir == Path("."):
                                 queue.append(Path(entry.name))
                             else:
@@ -200,44 +197,35 @@ class StorageService:
 
         return None
 
-    def move_path(self, rel_src: str, rel_dest: str) -> None:
-        """Move a file or directory.
+    def move_path(self, user: str, rel_src: str, rel_dest: str) -> None:
+        """Move a file or directory within user's storage."""
+        src_path = self.resolve_path(user, rel_src)
+        dest_path = self.resolve_path(user, rel_dest)
 
-        Args:
-            rel_src: Relative source path.
-            rel_dest: Relative destination path (full path including name).
-        """
-        src_path = self.resolve_path(rel_src)
-        dest_path = self.resolve_path(rel_dest)
-
-        if not self.is_safe_path(src_path) or not self.is_safe_path(dest_path):
+        if not self.is_safe_path(user, src_path) or not self.is_safe_path(
+            user, dest_path
+        ):
             raise ValueError("Invalid path")
 
         if not src_path.exists():
             raise FileNotFoundError(f"Source {rel_src} not found")
 
-        # Ensure parent exists
         dest_path.parent.mkdir(parents=True, exist_ok=True)
-
         shutil.move(str(src_path), str(dest_path))
 
-    def copy_path(self, rel_src: str, rel_dest: str) -> None:
-        """Copy a file or directory.
+    def copy_path(self, user: str, rel_src: str, rel_dest: str) -> None:
+        """Copy a file or directory within user's storage."""
+        src_path = self.resolve_path(user, rel_src)
+        dest_path = self.resolve_path(user, rel_dest)
 
-        Args:
-            rel_src: Relative source path.
-            rel_dest: Relative destination path (full path including name).
-        """
-        src_path = self.resolve_path(rel_src)
-        dest_path = self.resolve_path(rel_dest)
-
-        if not self.is_safe_path(src_path) or not self.is_safe_path(dest_path):
+        if not self.is_safe_path(user, src_path) or not self.is_safe_path(
+            user, dest_path
+        ):
             raise ValueError("Invalid path")
 
         if not src_path.exists():
             raise FileNotFoundError(f"Source {rel_src} not found")
 
-        # Ensure parent exists
         dest_path.parent.mkdir(parents=True, exist_ok=True)
 
         if src_path.is_dir():
@@ -245,107 +233,82 @@ class StorageService:
         else:
             shutil.copy2(str(src_path), str(dest_path))
 
-    def get_trash_dir(self) -> Path:
-        """Get the trash directory path."""
-        return self.storage_root / ".trash"
+    def get_trash_dir(self, user: str) -> Path:
+        """Get the trash directory path for a user."""
+        return self.storage_root / user / ".trash"
 
-    def ensure_trash_dir(self) -> None:
-        """Ensure trash directory exists."""
-        trash_dir = self.get_trash_dir()
+    def ensure_trash_dir(self, user: str) -> None:
+        """Ensure trash directory exists for a user."""
+        trash_dir = self.get_trash_dir(user)
         trash_dir.mkdir(parents=True, exist_ok=True)
 
-    def soft_delete(self, rel_path: str) -> tuple[str, int]:
-        """Move file/folder to trash.
-
-        Returns:
-            Tuple of (trash_rel_path, timestamp)
-        """
-        src_path = self.resolve_path(rel_path)
-        if not self.is_safe_path(src_path):
+    def soft_delete(self, user: str, rel_path: str) -> tuple[str, int]:
+        """Move file/folder to user's trash."""
+        src_path = self.resolve_path(user, rel_path)
+        if not self.is_safe_path(user, src_path):
             raise ValueError("Invalid path")
 
         if not src_path.exists():
             raise FileNotFoundError(f"Path {rel_path} not found")
 
-        self.ensure_trash_dir()
+        self.ensure_trash_dir(user)
 
-        # Create unique trash name with timestamp
         import time
 
-        timestamp = int(time.time() * 1000)  # milliseconds
+        timestamp = int(time.time() * 1000)
         name = src_path.name
         trash_name = f"{timestamp}_{name}"
-        trash_path = self.get_trash_dir() / trash_name
+        trash_path = self.get_trash_dir(user) / trash_name
 
-        # Move to trash
         shutil.move(str(src_path), str(trash_path))
-
         return f".trash/{trash_name}", timestamp
 
-    def list_trash(self) -> list[tuple[Path, int]]:
-        """List all items in trash.
-
-        Returns:
-            List of (trash_path, timestamp) tuples
-        """
-        self.ensure_trash_dir()
-        trash_dir = self.get_trash_dir()
+    def list_trash(self, user: str) -> list[tuple[Path, int]]:
+        """List all items in user's trash."""
+        self.ensure_trash_dir(user)
+        trash_dir = self.get_trash_dir(user)
         items = []
 
         for entry in trash_dir.iterdir():
-            logger.info(entry.name)
             if entry.name.startswith("."):
                 continue
-            # Extract timestamp from filename
             try:
                 timestamp_str = entry.name.split("_", 1)[0]
                 timestamp = int(timestamp_str)
                 items.append((entry, timestamp))
             except (ValueError, IndexError):
-                # Skip malformed entries
                 continue
-
         return items
 
-    def restore_from_trash(self, trash_rel_path: str, original_rel_path: str) -> None:
-        """Restore file/folder from trash to original location.
-
-        Args:
-            trash_rel_path: Relative path in trash (e.g., ".trash/123456_file.txt")
-            original_rel_path: Original relative path to restore to
-        """
-        trash_path = self.storage_root / trash_rel_path
+    def restore_from_trash(
+        self, user: str, trash_rel_path: str, original_rel_path: str
+    ) -> None:
+        """Restore file/folder from user's trash."""
+        trash_path = (self.storage_root / user) / trash_rel_path
         if not trash_path.exists():
             raise FileNotFoundError(f"Trash item {trash_rel_path} not found")
 
-        dest_path = self.resolve_path(original_rel_path)
-        if not self.is_safe_path(dest_path):
+        dest_path = self.resolve_path(user, original_rel_path)
+        if not self.is_safe_path(user, dest_path):
             raise ValueError("Invalid destination path")
 
-        # Ensure parent directory exists
         dest_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Move back from trash
         shutil.move(str(trash_path), str(dest_path))
 
-    def delete_from_trash(self, trash_rel_path: str) -> None:
-        """Permanently delete item from trash.
-
-        Args:
-            trash_rel_path: Relative path in trash (e.g., ".trash/123456_file.txt")
-        """
-        trash_path = self.storage_root / trash_rel_path
+    def delete_from_trash(self, user: str, trash_rel_path: str) -> None:
+        """Permanently delete item from user's trash."""
+        trash_path = (self.storage_root / user) / trash_rel_path
         if not trash_path.exists():
-            return  # Idempotent
+            return
 
         if trash_path.is_dir():
             shutil.rmtree(trash_path)
         else:
             trash_path.unlink()
 
-    def empty_trash(self) -> None:
-        """Delete all items in trash."""
-        trash_dir = self.get_trash_dir()
+    def empty_trash(self, user: str) -> None:
+        """Delete all items in user's trash."""
+        trash_dir = self.get_trash_dir(user)
         if trash_dir.exists():
             for entry in trash_dir.iterdir():
                 if entry.name.startswith("."):

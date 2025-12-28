@@ -24,13 +24,13 @@ class FileService:
     def __init__(self, storage_service: StorageService):
         self.storage_service = storage_service
 
-    def list_folder(self, path_str: str) -> List[FileEntryVO]:
-        """List files in a folder."""
+    def list_folder(self, user: str, path_str: str) -> List[FileEntryVO]:
+        """List files in a folder for a specific user."""
         rel_path = path_str.lstrip("/")
         entries = []
 
         try:
-            for entry in self.storage_service.list_directory(rel_path):
+            for entry in self.storage_service.list_directory(user, rel_path):
                 is_dir = entry.is_dir()
                 stat = entry.stat()
 
@@ -39,11 +39,7 @@ class FileService:
                     content_hash = self.storage_service.get_file_md5(Path(entry.path))
 
                 # ID generation
-                if is_dir:
-                    entry_rel_path = f"{rel_path}/{entry.name}".strip("/")
-                else:
-                    entry_rel_path = f"{rel_path}/{entry.name}".strip("/")
-
+                entry_rel_path = f"{rel_path}/{entry.name}".strip("/")
                 file_id = str(self.storage_service.get_id_from_path(entry_rel_path))
 
                 entries.append(
@@ -64,10 +60,10 @@ class FileService:
 
         return entries
 
-    def get_file_info(self, path_str: str) -> Optional[FileEntryVO]:
-        """Get file info by path."""
+    def get_file_info(self, user: str, path_str: str) -> Optional[FileEntryVO]:
+        """Get file info by path for a specific user."""
         rel_path = path_str.lstrip("/")
-        target_path = self.storage_service.resolve_path(rel_path)
+        target_path = self.storage_service.resolve_path(user, rel_path)
 
         if not target_path.exists():
             return None
@@ -77,8 +73,6 @@ class FileService:
         if not target_path.is_dir():
             content_hash = self.storage_service.get_file_md5(target_path)
 
-        # Reconstruct display path if needed, but here we assume path_str is the display path
-        # unless it's an ID (relative path)
         path_display = path_str
         if not path_str.startswith("/"):
             path_display = "/" + path_str
@@ -98,9 +92,12 @@ class FileService:
         )
 
     def apply_upload(
-        self, file_name: str, equipment_no: str, host: str
+        self, user: str, file_name: str, equipment_no: str, host: str
     ) -> UploadApplyResponse:
-        """Apply for upload."""
+        """Apply for upload by a specific user."""
+        # Note: Ideally, the upload URL should also contain user context if it's handled by a separate request
+        # But handle_upload_data currently might need to extract user from JWT or filename.
+        # Since we use filename in the URL, and handle_upload_data will extract user from request["user"].
         encoded_name = urllib.parse.quote(file_name)
         upload_url = f"http://{host}/api/file/upload/data/{encoded_name}"
 
@@ -115,14 +112,19 @@ class FileService:
         )
 
     def finish_upload(
-        self, filename: str, path_str: str, content_hash: str, equipment_no: str
+        self,
+        user: str,
+        filename: str,
+        path_str: str,
+        content_hash: str,
+        equipment_no: str,
     ) -> UploadFinishResponse:
-        """Finish upload."""
+        """Finish upload for a specific user."""
         rel_path = path_str.lstrip("/")
-        temp_path = self.storage_service.resolve_temp_path(filename)
+        temp_path = self.storage_service.resolve_temp_path(user, filename)
 
         if not temp_path.exists():
-            raise FileNotFoundError("Upload not found")
+            raise FileNotFoundError(f"Upload not found for user {user}")
 
         # Verify MD5
         calculated_hash = self.storage_service.get_file_md5(temp_path)
@@ -131,7 +133,7 @@ class FileService:
                 f"Hash mismatch for {filename}: expected {content_hash}, got {calculated_hash}"
             )
 
-        dest_path = self.storage_service.move_temp_to_storage(filename, rel_path)
+        dest_path = self.storage_service.move_temp_to_storage(user, filename, rel_path)
 
         final_rel_path = f"{path_str.rstrip('/')}/{filename}".lstrip("/")
         file_id = str(self.storage_service.get_id_from_path(final_rel_path))
@@ -145,25 +147,27 @@ class FileService:
             content_hash=calculated_hash,
         )
 
-    def create_directory(self, path: str, equipment_no: str) -> CreateDirectoryResponse:
-        """Create a directory."""
+    def create_directory(
+        self, user: str, path: str, equipment_no: str
+    ) -> CreateDirectoryResponse:
+        """Create a directory for a specific user."""
         rel_path = path.lstrip("/")
-        self.storage_service.create_directory(rel_path)
+        self.storage_service.create_directory(user, rel_path)
         return CreateDirectoryResponse(equipment_no=equipment_no)
 
-    def delete_item(self, id: int, equipment_no: str) -> DeleteResponse:
-        """Delete a file or directory (soft delete to recycle bin)."""
-        rel_path = self.storage_service.get_path_from_id(id)
+    def delete_item(self, user: str, id: int, equipment_no: str) -> DeleteResponse:
+        """Delete a file or directory for a specific user."""
+        rel_path = self.storage_service.get_path_from_id(user, id)
         if rel_path:
-            self.storage_service.soft_delete(rel_path)
+            self.storage_service.soft_delete(user, rel_path)
         else:
-            logger.warning(f"Delete requested for unknown ID: {id}")
+            logger.warning(f"Delete requested for unknown ID: {id} for user {user}")
 
         return DeleteResponse(equipment_no=equipment_no)
 
-    def _get_unique_path(self, rel_path: str) -> str:
-        """Generate a unique path if the destination exists."""
-        dest_path = self.storage_service.resolve_path(rel_path)
+    def _get_unique_path(self, user: str, rel_path: str) -> str:
+        """Generate a unique path if the destination exists for a user."""
+        dest_path = self.storage_service.resolve_path(user, rel_path)
         if not dest_path.exists():
             return rel_path
 
@@ -176,20 +180,19 @@ class FileService:
         while True:
             new_name = f"{stem}({counter}){suffix}"
             new_rel_path = str(parent / new_name) if parent != Path(".") else new_name
-            if not self.storage_service.resolve_path(new_rel_path).exists():
+            if not self.storage_service.resolve_path(user, new_rel_path).exists():
                 return new_rel_path
             counter += 1
 
     def move_item(
-        self, id: int, to_path: str, autorename: bool, equipment_no: str
+        self, user: str, id: int, to_path: str, autorename: bool, equipment_no: str
     ) -> FileMoveResponse:
-        """Move a file or directory."""
-        rel_src_path = self.storage_service.get_path_from_id(id)
+        """Move a file or directory for a specific user."""
+        rel_src_path = self.storage_service.get_path_from_id(user, id)
         if not rel_src_path:
             raise FileNotFoundError("Source not found")
 
         src_name = Path(rel_src_path).name
-        # to_path is the target directory
         clean_to_path = to_path.strip("/")
         if clean_to_path:
             rel_dest_path = f"{clean_to_path}/{src_name}"
@@ -197,16 +200,16 @@ class FileService:
             rel_dest_path = src_name
 
         if autorename:
-            rel_dest_path = self._get_unique_path(rel_dest_path)
+            rel_dest_path = self._get_unique_path(user, rel_dest_path)
 
-        self.storage_service.move_path(rel_src_path, rel_dest_path)
+        self.storage_service.move_path(user, rel_src_path, rel_dest_path)
         return FileMoveResponse(equipment_no=equipment_no)
 
     def copy_item(
-        self, id: int, to_path: str, autorename: bool, equipment_no: str
+        self, user: str, id: int, to_path: str, autorename: bool, equipment_no: str
     ) -> FileCopyResponse:
-        """Copy a file or directory."""
-        rel_src_path = self.storage_service.get_path_from_id(id)
+        """Copy a file or directory for a specific user."""
+        rel_src_path = self.storage_service.get_path_from_id(user, id)
         if not rel_src_path:
             raise FileNotFoundError("Source not found")
 
@@ -218,29 +221,25 @@ class FileService:
             rel_dest_path = src_name
 
         if autorename:
-            rel_dest_path = self._get_unique_path(rel_dest_path)
+            rel_dest_path = self._get_unique_path(user, rel_dest_path)
 
-        self.storage_service.copy_path(rel_src_path, rel_dest_path)
+        self.storage_service.copy_path(user, rel_src_path, rel_dest_path)
         return FileCopyResponse(equipment_no=equipment_no)
 
     def list_recycle(
-        self, order: str, sequence: str, page_no: int, page_size: int
+        self, user: str, order: str, sequence: str, page_no: int, page_size: int
     ) -> RecycleFileListResponse:
-        """List files in recycle bin."""
+        """List files in recycle bin for a specific user."""
+        items = self.storage_service.list_trash(user)
 
-        items = self.storage_service.list_trash()
-
-        # Convert to RecycleFileVO
         recycle_files = []
         for trash_path, timestamp in items:
-            # Extract original name from trash name (timestamp_originalname)
             original_name = "_".join(trash_path.name.split("_")[1:])
             is_folder = "Y" if trash_path.is_dir() else "N"
             size = 0
             if trash_path.is_file():
                 size = trash_path.stat().st_size
 
-            # Generate ID from trash path
             trash_rel_path = f".trash/{trash_path.name}"
             file_id = str(self.storage_service.get_id_from_path(trash_rel_path))
 
@@ -272,82 +271,59 @@ class FileService:
 
         return RecycleFileListResponse(total=total, recycle_file_vo_list=page_items)
 
-    def delete_from_recycle(self, id_list: list[int]) -> BaseResponse:
-        """Permanently delete items from recycle bin."""
+    def delete_from_recycle(self, user: str, id_list: list[int]) -> BaseResponse:
+        """Permanently delete items from recycle bin for a specific user."""
         for file_id in id_list:
-            # Find trash path by ID
-            trash_rel_path = self.storage_service.get_path_from_id(file_id)
+            trash_rel_path = self.storage_service.get_path_from_id(user, file_id)
             if trash_rel_path and trash_rel_path.startswith(".trash/"):
-                self.storage_service.delete_from_trash(trash_rel_path)
+                self.storage_service.delete_from_trash(user, trash_rel_path)
 
         return BaseResponse()
 
-    def revert_from_recycle(self, id_list: list[int]) -> BaseResponse:
-        """Restore items from recycle bin."""
+    def revert_from_recycle(self, user: str, id_list: list[int]) -> BaseResponse:
+        """Restore items from recycle bin for a specific user."""
         for file_id in id_list:
-            # Find trash path by ID
-            trash_rel_path = self.storage_service.get_path_from_id(file_id)
+            trash_rel_path = self.storage_service.get_path_from_id(user, file_id)
             if trash_rel_path and trash_rel_path.startswith(".trash/"):
-                # Extract original name from trash name
                 trash_name = Path(trash_rel_path).name
                 original_name = "_".join(trash_name.split("_")[1:])
-
-                # Restore to root for now (could be enhanced to remember original location)
-                self.storage_service.restore_from_trash(trash_rel_path, original_name)
+                self.storage_service.restore_from_trash(
+                    user, trash_rel_path, original_name
+                )
 
         return BaseResponse()
 
-    def clear_recycle(self) -> BaseResponse:
-        """Empty the recycle bin."""
-        self.storage_service.empty_trash()
+    def clear_recycle(self, user: str) -> BaseResponse:
+        """Empty the recycle bin for a specific user."""
+        self.storage_service.empty_trash(user)
         return BaseResponse()
 
-    def search_files(self, keyword: str) -> list[FileEntryVO]:
-        """Search for files matching the keyword.
-
-        Args:
-            keyword: Search keyword (case-insensitive)
-
-        Returns:
-            List of matching FileEntryVO objects
-        """
-
+    def search_files(self, user: str, keyword: str) -> list[FileEntryVO]:
+        """Search for files matching the keyword in user's storage."""
         results = []
         keyword_lower = keyword.lower()
+        user_root = self.storage_service.storage_root / user
 
-        # Walk the entire storage directory
-        for root_path in self.storage_service.storage_root.rglob("*"):
-            # Skip hidden files/dirs and temp
+        if not user_root.exists():
+            return []
+
+        # Walk only the user's storage directory
+        for root_path in user_root.rglob("*"):
             if any(part.startswith(".") for part in root_path.parts):
                 continue
             if "temp" in root_path.parts:
                 continue
 
-            # Check if filename matches keyword
             if keyword_lower in root_path.name.lower():
-                # Get relative path
                 try:
-                    rel_path = str(
-                        root_path.relative_to(self.storage_service.storage_root)
-                    )
+                    rel_path = str(root_path.relative_to(user_root))
                 except ValueError:
                     continue
 
-                # Generate ID
                 file_id = str(self.storage_service.get_id_from_path(rel_path))
-
-                # Determine tag (folder or file)
                 tag = "folder" if root_path.is_dir() else "file"
-
-                # Get size
-                size = 0
-                if root_path.is_file():
-                    size = root_path.stat().st_size
-
-                # Get modification time
-                mod_time = int(root_path.stat().st_mtime * 1000)  # milliseconds
-
-                # Get parent path
+                size = root_path.stat().st_size if root_path.is_file() else 0
+                mod_time = int(root_path.stat().st_mtime * 1000)
                 parent_path = (
                     str(Path(rel_path).parent)
                     if Path(rel_path).parent != Path(".")
@@ -360,7 +336,9 @@ class FileService:
                         id=file_id,
                         name=root_path.name,
                         path_display=f"/{rel_path}",
-                        parent_path=parent_path,
+                        parent_path=parent_path
+                        if parent_path.startswith("/")
+                        else "/" + parent_path,
                         size=size,
                         last_update_time=mod_time,
                     )

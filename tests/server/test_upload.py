@@ -6,6 +6,7 @@ from aiohttp.test_utils import TestClient
 from aiohttp.web import Application
 
 from supernote.server.app import create_app
+from tests.conftest import TEST_USERNAME
 
 AiohttpClient = Callable[[Application], Awaitable[TestClient]]
 
@@ -35,6 +36,6 @@ async def test_upload_file(
     assert resp.status == 200
 
     # Verify file exists in temp
-    temp_file = mock_storage / "temp" / filename
+    temp_file = mock_storage / "temp" / TEST_USERNAME / filename
     assert temp_file.exists()
     assert temp_file.read_bytes() == file_content

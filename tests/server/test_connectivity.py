@@ -201,7 +201,8 @@ async def test_sync_start_syn_type(
     # if standard folders were created.
 
     # 3. Create a dummy file in the 'Note' folder which should have been created
-    note_dir = mock_storage / "Note"
+    user_root = mock_storage / TEST_USERNAME
+    note_dir = user_root / "Note"
     note_dir.mkdir(parents=True, exist_ok=True)
     (note_dir / "test.note").touch()
 
