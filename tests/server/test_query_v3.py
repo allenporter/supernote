@@ -1,23 +1,22 @@
 from pathlib import Path
 from typing import Awaitable, Callable
 
-import pytest
 from aiohttp.test_utils import TestClient
 from aiohttp.web import Application
 
 from supernote.server.app import create_app
+from tests.conftest import TEST_USERNAME
 
 AiohttpClient = Callable[[Application], Awaitable[TestClient]]
 
 
-@pytest.fixture(autouse=True)
 async def test_query_v3_success(
     aiohttp_client: AiohttpClient,
     mock_storage: Path,
     auth_headers: dict[str, str],
 ) -> None:
     # Create a test file
-    test_file = mock_storage / "Note" / "test.note"
+    test_file = mock_storage / TEST_USERNAME / "Note" / "test.note"
     test_file.write_text("content")
 
     client = await aiohttp_client(create_app())

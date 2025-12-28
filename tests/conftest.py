@@ -22,13 +22,17 @@ AiohttpClient = Callable[[Application], Awaitable[TestClient]]
 def mock_storage(tmp_path: Path) -> Generator[Path, None, None]:
     """Mock storage directory for all tests."""
     storage_root = tmp_path / "storage"
-    temp_root = tmp_path / "storage" / "temp"
-    storage_root.mkdir(parents=True)
-    temp_root.mkdir(parents=True, exist_ok=True)
+    # Ensure roots exist
+    storage_root.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "temp").mkdir(parents=True, exist_ok=True)
 
-    # Create default folders
-    (storage_root / "Note").mkdir()
-    (storage_root / "Document").mkdir()
-    (storage_root / "EXPORT").mkdir()
+    # Create default folders for the test user
+    from tests.conftest import TEST_USERNAME
+
+    user_root = storage_root / TEST_USERNAME
+    user_root.mkdir(parents=True, exist_ok=True)
+    (user_root / "Note").mkdir(exist_ok=True)
+    (user_root / "Document").mkdir(exist_ok=True)
+    (user_root / "EXPORT").mkdir(exist_ok=True)
 
     yield storage_root

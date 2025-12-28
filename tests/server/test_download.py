@@ -2,16 +2,15 @@ import urllib.parse
 from pathlib import Path
 from typing import Awaitable, Callable
 
-import pytest
 from aiohttp.test_utils import TestClient
 from aiohttp.web import Application
 
 from supernote.server.app import create_app
+from tests.conftest import TEST_USERNAME
 
 AiohttpClient = Callable[[Application], Awaitable[TestClient]]
 
 
-@pytest.fixture(autouse=True)
 async def test_download_file_with_spaces(
     aiohttp_client: AiohttpClient,
     mock_storage: Path,
@@ -19,7 +18,7 @@ async def test_download_file_with_spaces(
 ) -> None:
     # Create a test file with spaces
     filename = "2023 December.pdf"
-    test_file = mock_storage / "EXPORT" / filename
+    test_file = mock_storage / TEST_USERNAME / "EXPORT" / filename
     test_file.write_text("pdf content")
 
     client = await aiohttp_client(create_app())
@@ -36,16 +35,7 @@ async def test_download_file_with_spaces(
     assert data["success"] is True
     download_url = data["url"]
 
-    # Check if URL is properly encoded in the response?
-    # The current implementation does NOT encode it.
-    # download_url will be http://.../api/file/download/data?path=EXPORT/2023 December.pdf
-
     # 2. Download the file
-    # We need to extract the path from the URL returned.
-    # If the client uses the URL as is, it might be an issue if it's not encoded.
-
-    # Let's simulate what the client might do.
-    # If the client takes the URL literally:
     parsed = urllib.parse.urlparse(download_url)
     query = urllib.parse.parse_qs(parsed.query)
     path_param = query["path"][0]
@@ -70,7 +60,7 @@ async def test_download_apply_url_encoding(
     file_id = f"EXPORT/{filename}"
 
     # Create the file so it exists
-    (mock_storage / "EXPORT" / filename).write_text("content")
+    (mock_storage / TEST_USERNAME / "EXPORT" / filename).write_text("content")
 
     client = await aiohttp_client(create_app())
 
@@ -83,5 +73,4 @@ async def test_download_apply_url_encoding(
     url = data["url"]
 
     # We expect the URL to be encoded so it's valid
-    # e.g. ...?path=EXPORT%2F2023%20December.pdf
     assert "2023%20December.pdf" in url
