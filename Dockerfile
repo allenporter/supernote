@@ -9,7 +9,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     SUPERNOTE_PORT=8080
 
 # Create a non-root user
-RUN groupadd -r supernote && useradd -r -g supernote supernote
+RUN groupadd -g 1000 -r supernote && useradd -u 1000 -r -g supernote supernote
 
 # Set working directory and copy project files
 WORKDIR /app
