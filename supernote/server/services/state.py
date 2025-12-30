@@ -1,9 +1,11 @@
+import json
 import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, cast
 
+from mashumaro.config import TO_DICT_ADD_OMIT_NONE_FLAG, BaseConfig
 from mashumaro.mixins.json import DataClassJSONMixin
 
 logger = logging.getLogger(__name__)
@@ -29,6 +31,11 @@ class SystemState(DataClassJSONMixin):
     users: Dict[str, UserState] = field(default_factory=dict)
     sessions: Dict[str, SessionState] = field(default_factory=dict)
 
+    class Config(BaseConfig):
+        serialize_by_alias = True
+        omit_none = True
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
+
 
 class StateService:
     def __init__(self, state_file: Path) -> None:
@@ -49,7 +56,14 @@ class StateService:
         try:
             self.state_file.parent.mkdir(parents=True, exist_ok=True)
             with open(self.state_file, "w") as f:
-                f.write(cast(str, self._state.to_json()))
+                f.write(
+                    cast(
+                        str,
+                        self._state.to_json(
+                            lambda x: json.dumps(x, indent=4), omit_none=True
+                        ),
+                    )
+                )
         except Exception as e:
             logger.error(f"Failed to save state file {self.state_file}: {e}")
 
