@@ -4,6 +4,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import aiohttp
+from aiohttp import FormData
 
 from supernote.server.app import create_app
 from supernote.server.services.storage import StorageService
@@ -335,8 +336,6 @@ async def test_upload_flow(
     upload_path = parsed_url.path
 
     # Use multipart upload
-    from aiohttp import FormData
-
     data = FormData()
     data.add_field("file", b"test content", filename="test.note")
 
