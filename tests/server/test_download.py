@@ -1,25 +1,23 @@
 import urllib.parse
-from pathlib import Path
 from typing import Awaitable, Callable
 
 from aiohttp.test_utils import TestClient
 from aiohttp.web import Application
 
 from supernote.server.app import create_app
-from tests.conftest import TEST_USERNAME
+from tests.conftest import TEST_USERNAME, UserStorageHelper
 
 AiohttpClient = Callable[[Application], Awaitable[TestClient]]
 
 
 async def test_download_file_with_spaces(
     aiohttp_client: AiohttpClient,
-    mock_storage: Path,
+    user_storage: UserStorageHelper,
     auth_headers: dict[str, str],
 ) -> None:
     # Create a test file with spaces
     filename = "2023 December.pdf"
-    test_file = mock_storage / TEST_USERNAME / "EXPORT" / filename
-    test_file.write_text("pdf content")
+    user_storage.create_file(TEST_USERNAME, f"EXPORT/{filename}", content="pdf content")
 
     client = await aiohttp_client(create_app())
 
@@ -52,7 +50,7 @@ async def test_download_file_with_spaces(
 
 async def test_download_apply_url_encoding(
     aiohttp_client: AiohttpClient,
-    mock_storage: Path,
+    user_storage: UserStorageHelper,
     auth_headers: dict[str, str],
 ) -> None:
     # Check if the URL returned by download_apply is encoded
@@ -60,7 +58,7 @@ async def test_download_apply_url_encoding(
     file_id = f"EXPORT/{filename}"
 
     # Create the file so it exists
-    (mock_storage / TEST_USERNAME / "EXPORT" / filename).write_text("content")
+    user_storage.create_file(TEST_USERNAME, f"EXPORT/{filename}", content="content")
 
     client = await aiohttp_client(create_app())
 

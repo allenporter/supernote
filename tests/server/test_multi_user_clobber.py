@@ -6,7 +6,7 @@ import pytest
 from aiohttp import FormData
 
 from supernote.server.app import create_app
-from supernote.server.config import AuthConfig, ServerConfig
+from supernote.server.config import AuthConfig, ServerConfig, UserEntry
 from supernote.server.services.user import JWT_ALGORITHM
 from tests.conftest import TEST_PASSWORD, AiohttpClient
 
@@ -15,41 +15,35 @@ USER_B = "user_b@example.com"
 
 
 @pytest.fixture
-def multi_user_config(
-    tmp_path: Path, mock_storage: Path, mock_trace_log: str
-) -> ServerConfig:
-    users_file = tmp_path / "multi_users.yaml"
-    import yaml
-
+def multi_user_config(mock_storage: Path, mock_trace_log: str) -> ServerConfig:
     users = [
-        {
-            "username": USER_A,
-            "password_md5": hashlib.md5(TEST_PASSWORD.encode("utf-8")).hexdigest(),
-            "is_active": True,
-            "profile": {"user_name": "User A"},
-        },
-        {
-            "username": USER_B,
-            "password_md5": hashlib.md5(TEST_PASSWORD.encode("utf-8")).hexdigest(),
-            "is_active": True,
-            "profile": {"user_name": "User B"},
-        },
+        UserEntry(
+            username=USER_A,
+            password_md5=hashlib.md5(TEST_PASSWORD.encode("utf-8")).hexdigest(),
+            is_active=True,
+            display_name="User A",
+        ),
+        UserEntry(
+            username=USER_B,
+            password_md5=hashlib.md5(TEST_PASSWORD.encode("utf-8")).hexdigest(),
+            is_active=True,
+            display_name="User B",
+        ),
     ]
-    with open(users_file, "w") as f:
-        yaml.safe_dump({"users": users}, f)
 
     return ServerConfig(
         trace_log_file=mock_trace_log,
         storage_dir=str(mock_storage),
         auth=AuthConfig(
-            users_file=str(users_file),
+            users=users,
             secret_key="test-secret-key",
         ),
     )
 
 
-def get_auth_headers(user: str, secret: str) -> dict[str, str]:
+def register_session(app, user: str, secret: str) -> dict[str, str]:  # type: ignore[no-untyped-def]
     token = jwt.encode({"sub": user}, secret, algorithm=JWT_ALGORITHM)
+    app["state_service"].create_session(token, user)
     return {"x-access-token": token}
 
 
@@ -59,8 +53,8 @@ async def test_multi_user_clobber(
     app = create_app(multi_user_config)
     client = await aiohttp_client(app)
 
-    headers_a = get_auth_headers(USER_A, multi_user_config.auth.secret_key)
-    headers_b = get_auth_headers(USER_B, multi_user_config.auth.secret_key)
+    headers_a = register_session(app, USER_A, multi_user_config.auth.secret_key)
+    headers_b = register_session(app, USER_B, multi_user_config.auth.secret_key)
 
     # 1. User A uploads a file
     filename = "shared.note"

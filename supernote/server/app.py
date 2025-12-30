@@ -6,12 +6,11 @@ from typing import Any, Awaitable, Callable
 
 from aiohttp import web
 
-from supernote.server.services.user import JWT_ALGORITHM
-
 from .config import ServerConfig
 from .models.base import create_error_response
 from .routes import auth, file, system
 from .services.file import FileService
+from .services.state import StateService
 from .services.storage import StorageService
 from .services.user import UserService
 
@@ -87,29 +86,27 @@ async def jwt_auth_middleware(
     if handler_func and getattr(handler_func, "is_public", False):
         return await handler(request)
 
-    # Check for x-access-token header (Supernote device) or Authorization Bearer (tests)
+    # Check for x-access-token header
     if not (token := request.headers.get("x-access-token")):
         return web.json_response(
             create_error_response("Unauthorized").to_dict(), status=401
         )
 
-    import jwt
-
-    server_config: ServerConfig = request.app["config"]
-
-    try:
-        payload = jwt.decode(
-            token, server_config.auth.secret_key, algorithms=[JWT_ALGORITHM]
-        )
-    except jwt.InvalidTokenError:
+    user_service: UserService = request.app["user_service"]
+    user = user_service.verify_token(token)
+    if not user:
         return web.json_response(
             create_error_response("Invalid token").to_dict(), status=401
         )
-    request["user"] = payload["sub"]
+
+    request["user"] = user
     return await handler(request)
 
 
-def create_app(config: ServerConfig | None = None) -> web.Application:
+def create_app(
+    config: ServerConfig | None = None,
+    state_service: StateService | None = None,
+) -> web.Application:
     if config is None:
         config = ServerConfig.load()
 
@@ -118,10 +115,13 @@ def create_app(config: ServerConfig | None = None) -> web.Application:
 
     # Initialize services
     storage_root = Path(config.storage_dir)
-    temp_root = storage_root / "temp"
-    storage_service = StorageService(storage_root, temp_root)
+    storage_service = StorageService(storage_root)
+    if state_service is None:
+        state_service = StateService(storage_service.system_dir / "state.json")
+
     app["storage_service"] = storage_service
-    app["user_service"] = UserService(config.auth)
+    app["state_service"] = state_service
+    app["user_service"] = UserService(config.auth, state_service)
     app["file_service"] = FileService(storage_service)
     app["sync_locks"] = {}  # user -> (equipment_no, expiry_time)
 

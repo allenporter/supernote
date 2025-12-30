@@ -4,9 +4,16 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import aiohttp
+from aiohttp import FormData
 
 from supernote.server.app import create_app
-from tests.conftest import TEST_PASSWORD, TEST_USERNAME, AiohttpClient
+from supernote.server.services.storage import StorageService
+from tests.conftest import (
+    TEST_PASSWORD,
+    TEST_USERNAME,
+    AiohttpClient,
+    UserStorageHelper,
+)
 
 
 def _sha256_s(s: str) -> str:
@@ -177,11 +184,15 @@ async def test_user_query(
 async def test_sync_start_syn_type(
     aiohttp_client: AiohttpClient,
     auth_headers: dict[str, str],
-    mock_storage: Path,
+    storage_service: StorageService,
+    user_storage: UserStorageHelper,
 ) -> None:
     client = await aiohttp_client(create_app())
 
-    shutil.rmtree(str(mock_storage))
+    # Clear storage root for test
+    if storage_service.root_dir.exists():
+        shutil.rmtree(str(storage_service.root_dir))
+    storage_service._ensure_directories()
 
     # 1. Initially storage is empty, should return synType: False
     resp = await client.post(
@@ -194,17 +205,8 @@ async def test_sync_start_syn_type(
     assert data["success"] is True
     assert data["synType"] is False  # Empty storage
 
-    # 2. Upload a file, then check synType again
-    # (Simplified upload simulation by creating a file in storage root)
-    # We need to find where the storage root is. conftest.py usually sets this up.
-    # For now, let's assume we can use the regular sync start and then check
-    # if standard folders were created.
-
-    # 3. Create a dummy file in the 'Note' folder which should have been created
-    user_root = mock_storage / TEST_USERNAME
-    note_dir = user_root / "Note"
-    note_dir.mkdir(parents=True, exist_ok=True)
-    (note_dir / "test.note").touch()
+    # 2. Add a dummy file
+    user_storage.create_file(TEST_USERNAME, "Note/test.note")
 
     resp = await client.post(
         "/api/file/2/files/synchronous/start",
@@ -334,8 +336,6 @@ async def test_upload_flow(
     upload_path = parsed_url.path
 
     # Use multipart upload
-    from aiohttp import FormData
-
     data = FormData()
     data.add_field("file", b"test content", filename="test.note")
 

@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Awaitable, Callable
 
 from aiohttp import FormData
@@ -6,6 +5,7 @@ from aiohttp.test_utils import TestClient
 from aiohttp.web import Application
 
 from supernote.server.app import create_app
+from supernote.server.services.storage import StorageService
 from tests.conftest import TEST_USERNAME
 
 AiohttpClient = Callable[[Application], Awaitable[TestClient]]
@@ -13,7 +13,7 @@ AiohttpClient = Callable[[Application], Awaitable[TestClient]]
 
 async def test_upload_file(
     aiohttp_client: AiohttpClient,
-    mock_storage: Path,
+    storage_service: StorageService,
     auth_headers: dict[str, str],
 ) -> None:
     client = await aiohttp_client(create_app())
@@ -36,6 +36,6 @@ async def test_upload_file(
     assert resp.status == 200
 
     # Verify file exists in temp
-    temp_file = mock_storage / "temp" / TEST_USERNAME / filename
+    temp_file = storage_service.resolve_temp_path(TEST_USERNAME, filename)
     assert temp_file.exists()
     assert temp_file.read_bytes() == file_content

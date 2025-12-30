@@ -1,7 +1,7 @@
 import logging
 import urllib.parse
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from ..models.base import BaseResponse
 from ..models.file import (
@@ -60,7 +60,7 @@ class FileService:
 
         return entries
 
-    def get_file_info(self, user: str, path_str: str) -> Optional[FileEntryVO]:
+    def get_file_info(self, user: str, path_str: str) -> FileEntryVO | None:
         """Get file info by path for a specific user."""
         rel_path = path_str.lstrip("/")
         target_path = self.storage_service.resolve_path(user, rel_path)
@@ -302,7 +302,7 @@ class FileService:
         """Search for files matching the keyword in user's storage."""
         results = []
         keyword_lower = keyword.lower()
-        user_root = self.storage_service.storage_root / user
+        user_root = self.storage_service.users_dir / user
 
         if not user_root.exists():
             return []

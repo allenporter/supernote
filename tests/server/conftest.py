@@ -10,27 +10,11 @@ from unittest.mock import patch
 
 import jwt
 import pytest
-import yaml
 
-from supernote.server.config import AuthConfig, ServerConfig
+from supernote.server.config import AuthConfig, ServerConfig, UserEntry
+from supernote.server.services.state import StateService
 from supernote.server.services.user import JWT_ALGORITHM
 from tests.conftest import TEST_PASSWORD, TEST_USERNAME
-
-
-@pytest.fixture
-def mock_users_file(tmp_path: Path) -> Generator[str, None, None]:
-    """Create a temporary users.yaml file for testing."""
-    user = {
-        "username": TEST_USERNAME,
-        "password_md5": hashlib.md5(TEST_PASSWORD.encode("utf-8")).hexdigest(),
-        "is_active": True,
-        "devices": [],
-        "profile": {"user_name": "Test User"},
-    }
-    users_file = tmp_path / "users.yaml"
-    with open(users_file, "w") as f:
-        yaml.safe_dump({"users": [user]}, f)
-    yield str(users_file)
 
 
 @pytest.fixture
@@ -41,15 +25,20 @@ def mock_trace_log(tmp_path: Path) -> Generator[str, None, None]:
 
 
 @pytest.fixture
-def server_config(
-    mock_trace_log: str, mock_users_file: str, mock_storage: Path
-) -> ServerConfig:
+def server_config(mock_trace_log: str, mock_storage: Path) -> ServerConfig:
     """Create a ServerConfig object for testing."""
+    test_user = UserEntry(
+        username=TEST_USERNAME,
+        password_md5=hashlib.md5(TEST_PASSWORD.encode("utf-8")).hexdigest(),
+        is_active=True,
+        display_name="Test User",
+    )
+
     return ServerConfig(
         trace_log_file=mock_trace_log,
         storage_dir=str(mock_storage),
         auth=AuthConfig(
-            users_file=mock_users_file,
+            users=[test_user],
             secret_key="test-secret-key",
         ),
     )
@@ -63,8 +52,11 @@ def patch_server_config(server_config: ServerConfig) -> Generator[None, None, No
 
 
 @pytest.fixture(name="auth_headers")
-def auth_headers_fixture(server_config: ServerConfig) -> dict[str, str]:
-    """Generate auth headers with a valid JWT token."""
+def auth_headers_fixture(
+    server_config: ServerConfig, state_service: StateService
+) -> dict[str, str]:
+    """Generate auth headers and persist session in state."""
     secret = server_config.auth.secret_key
     token = jwt.encode({"sub": TEST_USERNAME}, secret, algorithm=JWT_ALGORITHM)
+    state_service.create_session(token, TEST_USERNAME)
     return {"x-access-token": token}

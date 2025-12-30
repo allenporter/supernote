@@ -7,8 +7,8 @@ import pytest
 from aiohttp.test_utils import TestClient
 from aiohttp.web import Application
 
-# Register server test fixtures as a plugin
-# pytest_plugins = ["tests.server.fixtures"]
+from supernote.server.services.state import StateService
+from supernote.server.services.storage import StorageService
 
 # Shared test constants
 TEST_USERNAME = "test@example.com"
@@ -18,21 +18,48 @@ TEST_PASSWORD = "testpassword"
 AiohttpClient = Callable[[Application], Awaitable[TestClient]]
 
 
-@pytest.fixture(autouse=True)
-def mock_storage(tmp_path: Path) -> Generator[Path, None, None]:
-    """Mock storage directory for all tests."""
+class UserStorageHelper:
+    def __init__(self, storage_service: StorageService):
+        self.storage_service = storage_service
+
+    def create_file(self, user: str, rel_path: str, content: str = "content") -> Path:
+        path = self.storage_service.resolve_path(user, rel_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+        return path
+
+    def create_directory(self, user: str, rel_path: str) -> Path:
+        path = self.storage_service.resolve_path(user, rel_path)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+
+@pytest.fixture
+def storage_service(tmp_path: Path) -> StorageService:
+    """Provides a StorageService instance for testing."""
     storage_root = tmp_path / "storage"
-    # Ensure roots exist
-    storage_root.mkdir(parents=True, exist_ok=True)
-    (tmp_path / "temp").mkdir(parents=True, exist_ok=True)
+    return StorageService(storage_root)
 
+
+@pytest.fixture
+def state_service(storage_service: StorageService) -> StateService:
+    """Provides a StateService instance for testing."""
+    return StateService(storage_service.system_dir / "state.json")
+
+
+@pytest.fixture
+def user_storage(storage_service: StorageService) -> UserStorageHelper:
+    """Fixture to easily create test files/folders for users."""
+    return UserStorageHelper(storage_service)
+
+
+@pytest.fixture(autouse=True)
+def mock_storage(storage_service: StorageService) -> Generator[Path, None, None]:
+    """Mock storage setup for all tests."""
     # Create default folders for the test user
-    from tests.conftest import TEST_USERNAME
+    helper = UserStorageHelper(storage_service)
+    helper.create_directory(TEST_USERNAME, "Note")
+    helper.create_directory(TEST_USERNAME, "Document")
+    helper.create_directory(TEST_USERNAME, "EXPORT")
 
-    user_root = storage_root / TEST_USERNAME
-    user_root.mkdir(parents=True, exist_ok=True)
-    (user_root / "Note").mkdir(exist_ok=True)
-    (user_root / "Document").mkdir(exist_ok=True)
-    (user_root / "EXPORT").mkdir(exist_ok=True)
-
-    yield storage_root
+    yield storage_service.root_dir
