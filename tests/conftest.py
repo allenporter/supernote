@@ -7,6 +7,7 @@ import pytest
 from aiohttp.test_utils import TestClient
 from aiohttp.web import Application
 
+from supernote.server.services.state import StateService
 from supernote.server.services.storage import StorageService
 
 # Shared test constants
@@ -38,6 +39,12 @@ def storage_service(tmp_path: Path) -> StorageService:
     """Provides a StorageService instance for testing."""
     storage_root = tmp_path / "storage"
     return StorageService(storage_root)
+
+
+@pytest.fixture
+def state_service(storage_service: StorageService) -> StateService:
+    """Provides a StateService instance for testing."""
+    return StateService(storage_service.system_dir / "state.json")
 
 
 @pytest.fixture
