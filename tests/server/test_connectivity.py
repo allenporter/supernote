@@ -142,6 +142,7 @@ async def test_auth_flow(aiohttp_client: AiohttpClient) -> None:
     data = await resp.json()
     assert data["success"] is True
     assert data["user"]["userName"] == "Test User"
+    assert data["equipmentNo"] == "SN123456"
 
     # Verify an invalid token does not work
     resp = await client.post(
@@ -151,6 +152,7 @@ async def test_auth_flow(aiohttp_client: AiohttpClient) -> None:
     data = await resp.json()
     assert data["success"] is False
     assert data["errorMsg"] == "Invalid token"
+    assert "equipmentNo" not in data
 
 
 async def test_bind_equipment(aiohttp_client: AiohttpClient) -> None:

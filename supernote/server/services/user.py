@@ -8,7 +8,7 @@ import jwt
 
 from ..config import AuthConfig, UserEntry
 from ..models.auth import LoginResult, UserVO
-from .state import StateService
+from .state import SessionState, StateService
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +107,7 @@ class UserService:
             is_bind_equipment=is_bind_equipment,
         )
 
-    def verify_token(self, token: str) -> str | None:
+    def verify_token(self, token: str) -> SessionState | None:
         """Verify token against persisted sessions and JWT signature."""
         try:
             # 1. Check if session exists in memory/state
@@ -120,7 +120,11 @@ class UserService:
             payload = jwt.decode(
                 token, self._config.secret_key, algorithms=[JWT_ALGORITHM]
             )
-            return cast(str, payload.get("sub"))
+            # Ensure the token subject matches the session username
+            if payload.get("sub") != session.username:
+                logger.warning("Token sub mismatch: %s != %s", payload.get("sub"), session.username)
+                return None
+            return session
         except jwt.PyJWTError as e:
             logger.warning("Token verification failed: %s", e)
             return None

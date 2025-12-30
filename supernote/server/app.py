@@ -103,13 +103,14 @@ async def jwt_auth_middleware(
         )
 
     user_service: UserService = request.app["user_service"]
-    user = await asyncio.to_thread(user_service.verify_token, token)
-    if not user:
+    session = await asyncio.to_thread(user_service.verify_token, token)
+    if not session:
         return web.json_response(
             create_error_response("Invalid token").to_dict(), status=401
         )
 
-    request["user"] = user
+    request["user"] = session.username
+    request["equipment_no"] = session.equipment_no
     return await handler(request)
 
 
