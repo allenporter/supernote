@@ -10,14 +10,18 @@ logger = logging.getLogger(__name__)
 
 
 class StorageService:
-    def __init__(self, storage_root: Path, temp_root: Path):
-        self.storage_root = storage_root
-        self.temp_root = temp_root
+    def __init__(self, root_dir: Path):
+        self.root_dir = root_dir
+        self.users_dir = root_dir / "users"
+        self.temp_dir = root_dir / "temp"
+        self.system_dir = root_dir / "system"
         self._ensure_directories()
 
     def _ensure_directories(self) -> None:
-        self.storage_root.mkdir(parents=True, exist_ok=True)
-        self.temp_root.mkdir(parents=True, exist_ok=True)
+        self.root_dir.mkdir(parents=True, exist_ok=True)
+        self.users_dir.mkdir(parents=True, exist_ok=True)
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self.system_dir.mkdir(parents=True, exist_ok=True)
 
     def get_file_md5(self, path: Path) -> str:
         """Calculate MD5 of a file."""
@@ -39,23 +43,23 @@ class StorageService:
 
     def get_storage_usage(self, user: str) -> int:
         """Get total storage usage for a specific user."""
-        return self.get_dir_size(self.storage_root / user)
+        return self.get_dir_size(self.users_dir / user)
 
     def resolve_path(self, user: str, rel_path: str) -> Path:
         """Resolve a relative path to an absolute path in user's storage."""
         # Remove leading slash to make it relative
         clean_rel_path = rel_path.lstrip("/")
-        return self.storage_root / user / clean_rel_path
+        return self.users_dir / user / clean_rel_path
 
     def resolve_temp_path(self, user: str, filename: str) -> Path:
         """Resolve a filename to an absolute path in user's temp storage."""
-        return self.temp_root / user / filename
+        return self.temp_dir / user / filename
 
     def is_safe_path(self, user: str, path: Path) -> bool:
         """Check if path is within user's storage root to prevent traversal."""
         try:
             resolved_path = path.resolve()
-            user_root_abs = (self.storage_root / user).resolve()
+            user_root_abs = (self.users_dir / user).resolve()
             return str(resolved_path).startswith(str(user_root_abs))
         except Exception:
             return False
@@ -153,7 +157,7 @@ class StorageService:
 
     def get_path_from_id(self, user: str, file_id: int) -> str | None:
         """Find relative path from ID by scanning user's storage."""
-        user_root = self.storage_root / user
+        user_root = self.users_dir / user
         if not user_root.exists():
             return None
 
@@ -235,7 +239,7 @@ class StorageService:
 
     def get_trash_dir(self, user: str) -> Path:
         """Get the trash directory path for a user."""
-        return self.storage_root / user / ".trash"
+        return self.users_dir / user / ".trash"
 
     def ensure_trash_dir(self, user: str) -> None:
         """Ensure trash directory exists for a user."""
@@ -284,7 +288,7 @@ class StorageService:
         self, user: str, trash_rel_path: str, original_rel_path: str
     ) -> None:
         """Restore file/folder from user's trash."""
-        trash_path = (self.storage_root / user) / trash_rel_path
+        trash_path = (self.users_dir / user) / trash_rel_path
         if not trash_path.exists():
             raise FileNotFoundError(f"Trash item {trash_rel_path} not found")
 
@@ -297,7 +301,7 @@ class StorageService:
 
     def delete_from_trash(self, user: str, trash_rel_path: str) -> None:
         """Permanently delete item from user's trash."""
-        trash_path = (self.storage_root / user) / trash_rel_path
+        trash_path = (self.users_dir / user) / trash_rel_path
         if not trash_path.exists():
             return
 
