@@ -1,3 +1,4 @@
+import asyncio
 from aiohttp import web
 from mashumaro.exceptions import MissingField
 
@@ -34,7 +35,7 @@ async def handle_equipment_unlink(request: web.Request) -> web.Response:
         )
 
     user_service: UserService = request.app["user_service"]
-    user_service.unlink_equipment(unlink_req.equipment_no)
+    await asyncio.to_thread(user_service.unlink_equipment, unlink_req.equipment_no)
     return web.json_response(BaseResponse().to_dict())
 
 
@@ -46,7 +47,7 @@ async def handle_check_user_exists(request: web.Request) -> web.Response:
     req_data = await request.json()
     user_check_req = UserCheckRequest.from_dict(req_data)
     user_service: UserService = request.app["user_service"]
-    if user_service.check_user_exists(user_check_req.email):
+    if await asyncio.to_thread(user_service.check_user_exists, user_check_req.email):
         return web.json_response(BaseResponse().to_dict())
     else:
         return web.json_response(create_error_response("User not found").to_dict())
@@ -68,7 +69,9 @@ async def handle_random_code(request: web.Request) -> web.Response:
     req_data = await request.json()
     code_req = RandomCodeRequest.from_dict(req_data)
     user_service: UserService = request.app["user_service"]
-    random_code, timestamp = user_service.generate_random_code(code_req.account)
+    random_code, timestamp = await asyncio.to_thread(
+        user_service.generate_random_code, code_req.account
+    )
     return web.json_response(
         RandomCodeResponse(random_code=random_code, timestamp=timestamp).to_dict()
     )
@@ -85,7 +88,8 @@ async def handle_login(request: web.Request) -> web.Response:
     req_data = await request.json()
 
     login_req = LoginRequest.from_dict(req_data)
-    result = user_service.login(
+    result = await asyncio.to_thread(
+        user_service.login,
         account=login_req.account,
         password_hash=login_req.password,
         timestamp=login_req.timestamp or "",
@@ -122,7 +126,9 @@ async def handle_bind_equipment(request: web.Request) -> web.Response:
         )
 
     user_service: UserService = request.app["user_service"]
-    user_service.bind_equipment(bind_req.account, bind_req.equipment_no)
+    await asyncio.to_thread(
+        user_service.bind_equipment, bind_req.account, bind_req.equipment_no
+    )
     return web.json_response(BaseResponse().to_dict())
 
 
@@ -136,7 +142,7 @@ async def handle_user_query(request: web.Request) -> web.Response:
         return web.json_response(
             create_error_response("Unauthorized").to_dict(), status=401
         )
-    user_vo = user_service.get_user_profile(account)
+    user_vo = await asyncio.to_thread(user_service.get_user_profile, account)
     if not user_vo:
         return web.json_response(
             create_error_response("User not found").to_dict(),

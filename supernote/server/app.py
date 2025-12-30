@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import time
@@ -63,10 +64,14 @@ async def trace_middleware(
     trace_log_path = Path(server_config.trace_log_file)
 
     try:
-        trace_log_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(trace_log_path, "a") as f:
-            f.write(json.dumps(log_entry) + "\n")
-            f.flush()
+
+        def write_trace() -> None:
+            trace_log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(trace_log_path, "a") as f:
+                f.write(json.dumps(log_entry) + "\n")
+                f.flush()
+
+        await asyncio.to_thread(write_trace)
     except Exception as e:
         logger.error(f"Failed to write to trace log at {trace_log_path}: {e}")
 
@@ -98,7 +103,7 @@ async def jwt_auth_middleware(
         )
 
     user_service: UserService = request.app["user_service"]
-    user = user_service.verify_token(token)
+    user = await asyncio.to_thread(user_service.verify_token, token)
     if not user:
         return web.json_response(
             create_error_response("Invalid token").to_dict(), status=401

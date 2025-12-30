@@ -50,8 +50,7 @@ async def handle_sync_start(request: web.Request) -> web.Response:
     sync_locks = request.app["sync_locks"]
     storage_service: StorageService = request.app["storage_service"]
 
-    loop = asyncio.get_running_loop()
-    is_empty = await loop.run_in_executor(None, storage_service.is_empty, user_email)
+    is_empty = await asyncio.to_thread(storage_service.is_empty, user_email)
 
     now = time.time()
     if user_email in sync_locks:
@@ -107,10 +106,7 @@ async def handle_list_folder(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    loop = asyncio.get_running_loop()
-    entries = await loop.run_in_executor(
-        None, file_service.list_folder, user_email, path_str
-    )
+    entries = await asyncio.to_thread(file_service.list_folder, user_email, path_str)
 
     return web.json_response(
         ListFolderResponse(
@@ -130,10 +126,7 @@ async def handle_capacity_query(request: web.Request) -> web.Response:
     user_email = request["user"]
 
     storage_service: StorageService = request.app["storage_service"]
-    loop = asyncio.get_running_loop()
-    used = await loop.run_in_executor(
-        None, storage_service.get_storage_usage, user_email
-    )
+    used = await asyncio.to_thread(storage_service.get_storage_usage, user_email)
 
     return web.json_response(
         CapacityResponse(
@@ -158,9 +151,8 @@ async def handle_query_by_path(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    loop = asyncio.get_running_loop()
-    entries_vo = await loop.run_in_executor(
-        None, file_service.get_file_info, user_email, path_str
+    entries_vo = await asyncio.to_thread(
+        file_service.get_file_info, user_email, path_str
     )
 
     return web.json_response(
@@ -181,9 +173,8 @@ async def handle_query_v3(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    loop = asyncio.get_running_loop()
-    entries_vo = await loop.run_in_executor(
-        None, file_service.get_file_info, user_email, file_id
+    entries_vo = await asyncio.to_thread(
+        file_service.get_file_info, user_email, file_id
     )
 
     return web.json_response(
@@ -205,8 +196,12 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = file_service.apply_upload(
-        user_email, file_name, req_data.equipment_no or "", request.host
+    response = await asyncio.to_thread(
+        file_service.apply_upload,
+        user_email,
+        file_name,
+        req_data.equipment_no or "",
+        request.host,
     )
 
     return web.json_response(response.to_dict())
@@ -253,11 +248,8 @@ async def handle_upload_finish(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    loop = asyncio.get_running_loop()
-
     try:
-        response = await loop.run_in_executor(
-            None,
+        response = await asyncio.to_thread(
             file_service.finish_upload,
             user_email,
             req_data.file_name,
@@ -331,7 +323,8 @@ async def handle_create_folder(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = file_service.create_directory(
+    response = await asyncio.to_thread(
+        file_service.create_directory,
         user_email,
         req_data.path,
         req_data.equipment_no,
@@ -350,7 +343,8 @@ async def handle_delete_folder(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
 
     # Request has 'id' (int) now
-    response = file_service.delete_item(
+    response = await asyncio.to_thread(
+        file_service.delete_item,
         user_email,
         req_data.id,
         req_data.equipment_no,
@@ -368,7 +362,8 @@ async def handle_move_file(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = file_service.move_item(
+    response = await asyncio.to_thread(
+        file_service.move_item,
         user_email,
         req_data.id,
         req_data.to_path,
@@ -388,7 +383,8 @@ async def handle_copy_file(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = file_service.copy_item(
+    response = await asyncio.to_thread(
+        file_service.copy_item,
         user_email,
         req_data.id,
         req_data.to_path,
@@ -408,7 +404,8 @@ async def handle_recycle_list(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = file_service.list_recycle(
+    response = await asyncio.to_thread(
+        file_service.list_recycle,
         user_email,
         req_data.order,
         req_data.sequence,
@@ -428,7 +425,9 @@ async def handle_recycle_delete(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = file_service.delete_from_recycle(user_email, req_data.id_list)
+    response = await asyncio.to_thread(
+        file_service.delete_from_recycle, user_email, req_data.id_list
+    )
 
     return web.json_response(response.to_dict())
 
@@ -442,7 +441,9 @@ async def handle_recycle_revert(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = file_service.revert_from_recycle(user_email, req_data.id_list)
+    response = await asyncio.to_thread(
+        file_service.revert_from_recycle, user_email, req_data.id_list
+    )
 
     return web.json_response(response.to_dict())
 
@@ -455,7 +456,7 @@ async def handle_recycle_clear(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = file_service.clear_recycle(user_email)
+    response = await asyncio.to_thread(file_service.clear_recycle, user_email)
 
     return web.json_response(response.to_dict())
 
@@ -469,7 +470,9 @@ async def handle_file_search(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    results = file_service.search_files(user_email, req_data.keyword)
+    results = await asyncio.to_thread(
+        file_service.search_files, user_email, req_data.keyword
+    )
 
     response = FileSearchResponse(entries=results)
 
