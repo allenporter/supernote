@@ -153,9 +153,6 @@ async def handle_user_query(request: web.Request) -> web.Response:
         UserQueryResponse(
             user=user_vo,
             is_user=True,
-            # We don't necessarily know which equipment is asking, so we might omit or use a default
-            # But technically valid responses often include it. Let's see if we can get it from context.
-            # For now, omit or leave None as per VO.
-            equipment_no=None,
+            equipment_no=request.get("equipment_no"),
         ).to_dict()
     )
