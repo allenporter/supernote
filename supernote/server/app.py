@@ -57,13 +57,18 @@ async def trace_middleware(
 
     # Get config from app
     server_config: ServerConfig = request.app["config"]
+    if not server_config.trace_log_file:
+        return await handler(request)
+
+    trace_log_path = Path(server_config.trace_log_file)
 
     try:
-        with open(server_config.trace_log_file, "a") as f:
+        trace_log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(trace_log_path, "a") as f:
             f.write(json.dumps(log_entry) + "\n")
             f.flush()
     except Exception as e:
-        logger.error(f"Failed to write to trace log: {e}")
+        logger.error(f"Failed to write to trace log at {trace_log_path}: {e}")
 
     logger.info(
         f"Trace: {request.method} {request.path} (Body: {len(body_bytes) if body_bytes else 0} bytes)"
@@ -124,6 +129,10 @@ def create_app(
     app["user_service"] = UserService(config.auth, state_service)
     app["file_service"] = FileService(storage_service)
     app["sync_locks"] = {}  # user -> (equipment_no, expiry_time)
+
+    # Resolve trace log path if not set
+    if not config.trace_log_file:
+        config.trace_log_file = str(storage_service.system_dir / "trace.log")
 
     # Register routes
     app.add_routes(system.routes)

@@ -2,25 +2,17 @@
 
 import argparse
 import getpass
+import hashlib
 import secrets
 
-import yaml
-
 from supernote.server import app as server_app
-from supernote.server.config import AuthConfig, ServerConfig, UsersConfig
-from supernote.server.services.user import UserService
-
-
-def get_auth_config(config_dir: str | None) -> AuthConfig:
-    # Load base config
-    server_config = ServerConfig.load(config_dir)
-    return server_config.auth
+from supernote.server.config import ServerConfig, UserEntry
 
 
 def list_users(config_dir: str | None):
-    config = get_auth_config(config_dir)
-    service = UserService(config)
-    for user in service.list_users():
+    # Load base config
+    server_config = ServerConfig.load(config_dir)
+    for user in server_config.auth.users:
         status = "active" if user.is_active else "inactive"
         print(f"{user.username} ({status})")
 
@@ -30,13 +22,17 @@ def add_user(username: str, password: str | None = None):
         password = getpass.getpass(f"Password for {username}: ")
 
     # Generate the YAML snippet for a single user
-    user_entry = UserService.create_user_entry(username, password)
-    users_config = UsersConfig(users=[user_entry])
+    password_md5 = hashlib.md5(password.encode()).hexdigest()
+    user_entry = UserEntry(
+        username=username,
+        password_md5=password_md5,
+        display_name=username,
+    )
 
     # Print YAML to stdout
     print("# Generated Supernote User Entry")
-    print("# Append this to your users.yaml file.")
-    print(yaml.safe_dump(users_config.to_dict(), default_flow_style=False))
+    print("# Add this entry to the 'users' list in your config.yaml file.")
+    print("- " + user_entry.to_yaml(omit_none=True).strip().replace("\n", "\n  "))
 
 
 def config_init():
@@ -44,10 +40,20 @@ def config_init():
     secret = secrets.token_hex(32)
     config = ServerConfig()
     config.auth.secret_key = secret
+    config.trace_log_file = None  # Use system storage default
+
+    # Add a sample user entry to the output
+    sample_user = UserEntry(
+        username="user@example.com",
+        password_md5=hashlib.md5(b"password").hexdigest(),
+        display_name="Sample User",
+    )
+    config.auth.users = [sample_user]
 
     print("# Generated Supernote Server Configuration")
     print("# Save this as config.yaml.")
-    print(yaml.safe_dump(config.to_dict(), default_flow_style=False))
+    print("# You should change the sample user entry below.")
+    print(config.to_yaml(omit_none=True))
 
 
 def generate_secret():
