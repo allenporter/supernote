@@ -6,7 +6,7 @@ from tests.conftest import AiohttpClient
 
 
 def test_id_generation(tmp_path: Path) -> None:
-    service = StorageService(tmp_path / "storage", tmp_path / "temp")
+    service = StorageService(tmp_path / "storage")
     user = "testuser"
 
     path1 = "EXPORT/test.note"
@@ -20,8 +20,8 @@ def test_id_generation(tmp_path: Path) -> None:
     assert service.get_id_from_path(path2) != id1
 
     # Test path resolution (requires file to exist)
-    (service.storage_root / user / "EXPORT").mkdir(parents=True, exist_ok=True)
-    (service.storage_root / user / "EXPORT" / "test.note").touch()
+    (service.users_dir / user / "EXPORT").mkdir(parents=True, exist_ok=True)
+    (service.users_dir / user / "EXPORT" / "test.note").touch()
 
     resolved_path = service.get_path_from_id(user, id1)
     assert resolved_path == path1

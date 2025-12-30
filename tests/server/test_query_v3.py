@@ -16,7 +16,7 @@ async def test_query_v3_success(
     auth_headers: dict[str, str],
 ) -> None:
     # Create a test file
-    test_file = mock_storage / TEST_USERNAME / "Note" / "test.note"
+    test_file = mock_storage / "users" / TEST_USERNAME / "Note" / "test.note"
     test_file.write_text("content")
 
     client = await aiohttp_client(create_app())

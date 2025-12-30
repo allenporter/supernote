@@ -302,7 +302,7 @@ class FileService:
         """Search for files matching the keyword in user's storage."""
         results = []
         keyword_lower = keyword.lower()
-        user_root = self.storage_service.storage_root / user
+        user_root = self.storage_service.users_dir / user
 
         if not user_root.exists():
             return []

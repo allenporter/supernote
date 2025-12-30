@@ -18,7 +18,7 @@ async def test_download_file_with_spaces(
 ) -> None:
     # Create a test file with spaces
     filename = "2023 December.pdf"
-    test_file = mock_storage / TEST_USERNAME / "EXPORT" / filename
+    test_file = mock_storage / "users" / TEST_USERNAME / "EXPORT" / filename
     test_file.write_text("pdf content")
 
     client = await aiohttp_client(create_app())
@@ -60,7 +60,7 @@ async def test_download_apply_url_encoding(
     file_id = f"EXPORT/{filename}"
 
     # Create the file so it exists
-    (mock_storage / TEST_USERNAME / "EXPORT" / filename).write_text("content")
+    (mock_storage / "users" / TEST_USERNAME / "EXPORT" / filename).write_text("content")
 
     client = await aiohttp_client(create_app())
 

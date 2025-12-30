@@ -29,7 +29,7 @@ def mock_storage(tmp_path: Path) -> Generator[Path, None, None]:
     # Create default folders for the test user
     from tests.conftest import TEST_USERNAME
 
-    user_root = storage_root / TEST_USERNAME
+    user_root = storage_root / "users" / TEST_USERNAME
     user_root.mkdir(parents=True, exist_ok=True)
     (user_root / "Note").mkdir(exist_ok=True)
     (user_root / "Document").mkdir(exist_ok=True)

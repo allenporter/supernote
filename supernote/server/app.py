@@ -118,8 +118,7 @@ def create_app(config: ServerConfig | None = None) -> web.Application:
 
     # Initialize services
     storage_root = Path(config.storage_dir)
-    temp_root = storage_root / "temp"
-    storage_service = StorageService(storage_root, temp_root)
+    storage_service = StorageService(storage_root)
     app["storage_service"] = storage_service
     app["user_service"] = UserService(config.auth)
     app["file_service"] = FileService(storage_service)
