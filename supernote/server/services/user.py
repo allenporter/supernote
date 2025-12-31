@@ -2,7 +2,7 @@ import hashlib
 import logging
 import secrets
 import time
-from typing import Optional, cast
+from typing import Optional
 
 import jwt
 
@@ -122,7 +122,9 @@ class UserService:
             )
             # Ensure the token subject matches the session username
             if payload.get("sub") != session.username:
-                logger.warning("Token sub mismatch: %s != %s", payload.get("sub"), session.username)
+                logger.warning(
+                    "Token sub mismatch: %s != %s", payload.get("sub"), session.username
+                )
                 return None
             return session
         except jwt.PyJWTError as e:

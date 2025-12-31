@@ -3,8 +3,9 @@ import hashlib
 import logging
 import os
 import shutil
+from collections.abc import Awaitable, Callable, Generator, Iterator
 from pathlib import Path
-from typing import IO, Awaitable, Callable, Generator
+from typing import IO
 
 logger = logging.getLogger(__name__)
 
@@ -66,15 +67,15 @@ class StorageService:
 
     def list_directory(
         self, user: str, rel_path: str, recursive: bool = False
-    ) -> Generator[os.DirEntry, None, None]:
+    ) -> Generator[Path, None, None]:
         """List contents of a directory for a specific user."""
         target_dir = self.resolve_path(user, rel_path)
         if target_dir.exists() and target_dir.is_dir():
-            entries: Generator[os.DirEntry, None, None]
+            entries: Iterator[Path]
             if recursive:
                 entries = target_dir.rglob("*")
             else:
-                entries = target_dir.iterdir()
+                entries = target_dir.glob("*")
             for entry in entries:
                 if entry.name.startswith("."):
                     continue
