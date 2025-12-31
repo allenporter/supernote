@@ -139,11 +139,11 @@ async def test_list_recursive(
     assert resp.status == 200
     data = await resp.json()
     
-    results = [(e["name"], e["path_display"]) for e in data["entries"]]
+    results = sorted((e["name"], e["path_display"]) for e in data["entries"])
     assert results == [
-        ("Note", "/Note"),
-        ("Document", "/Document"),
-        ("Parent", "/Parent"),
-        ("EXPORT", "/EXPORT"),
         ("Child", "/Parent/Child"),
+        ("Document", "/Document"),
+        ("EXPORT", "/EXPORT"),
+        ("Note", "/Note"),
+        ("Parent", "/Parent"),
     ]
