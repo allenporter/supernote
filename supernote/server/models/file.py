@@ -42,6 +42,7 @@ class ListFolderRequest(DataClassJSONMixin):
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
     )
+    recursive: bool = False
 
     class Config(BaseConfig):
         serialize_by_alias = True

@@ -57,14 +57,14 @@ async def test_delete_folder(
 ) -> None:
     client = await aiohttp_client(create_app())
 
-    # 1. Create folder
+    # Create folder
     await client.post(
         "/api/file/2/files/create_folder_v2",
         json={"equipmentNo": "SN123456", "path": "/DeleteMe"},
         headers=auth_headers,
     )
 
-    # 2. Get ID via list
+    # Get ID via list
     resp = await client.post(
         "/api/file/2/files/list_folder",
         json={"equipmentNo": "SN123456", "path": "/"},
@@ -74,7 +74,7 @@ async def test_delete_folder(
     entry = next(e for e in data["entries"] if e["name"] == "DeleteMe")
     folder_id = int(entry["id"])
 
-    # 3. Delete
+    # Delete
     resp = await client.post(
         "/api/file/3/files/delete_folder_v3",
         json={"equipmentNo": "SN123456", "id": folder_id},
@@ -84,7 +84,7 @@ async def test_delete_folder(
     data = await resp.json()
     assert data["success"] is True
 
-    # 4. Verify gone
+    # Verify gone
     resp = await client.post(
         "/api/file/2/files/list_folder",
         json={"equipmentNo": "SN123456", "path": "/"},
@@ -92,3 +92,58 @@ async def test_delete_folder(
     )
     data = await resp.json()
     assert not any(e["name"] == "DeleteMe" for e in data["entries"])
+
+
+async def test_list_recursive(
+    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
+) -> None:
+    client = await aiohttp_client(create_app())
+
+    # Create /Parent
+    await client.post(
+        "/api/file/2/files/create_folder_v2",
+        json={"equipmentNo": "SN123456", "path": "/Parent"},
+        headers=auth_headers,
+    )
+
+    # Create /Parent/Child
+    await client.post(
+        "/api/file/2/files/create_folder_v2",
+        json={"equipmentNo": "SN123456", "path": "/Parent/Child"},
+        headers=auth_headers,
+    )
+
+    # List non-recursive from root
+    resp = await client.post(
+        "/api/file/2/files/list_folder",
+        json={"equipmentNo": "SN123456", "path": "/", "recursive": False},
+        headers=auth_headers,
+    )
+    assert resp.status == 200
+    data = await resp.json()
+
+    results = [(e["name"], e["path_display"]) for e in data["entries"]]
+    assert results == [
+        ("Note", "/Note"),
+        ("Document", "/Document"),
+        ("Parent", "/Parent"),
+        ("EXPORT", "/EXPORT")
+    ]
+
+    # List recursive from root
+    resp = await client.post(
+        "/api/file/2/files/list_folder",
+        json={"equipmentNo": "SN123456", "path": "/", "recursive": True},
+        headers=auth_headers,
+    )
+    assert resp.status == 200
+    data = await resp.json()
+    
+    results = [(e["name"], e["path_display"]) for e in data["entries"]]
+    assert results == [
+        ("Note", "/Note"),
+        ("Document", "/Document"),
+        ("Parent", "/Parent"),
+        ("EXPORT", "/EXPORT"),
+        ("Child", "/Parent/Child"),
+    ]

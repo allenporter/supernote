@@ -65,18 +65,20 @@ class StorageService:
             return False
 
     def list_directory(
-        self, user: str, rel_path: str
+        self, user: str, rel_path: str, recursive: bool = False
     ) -> Generator[os.DirEntry, None, None]:
         """List contents of a directory for a specific user."""
         target_dir = self.resolve_path(user, rel_path)
         if target_dir.exists() and target_dir.is_dir():
-            with os.scandir(target_dir) as it:
-                for entry in it:
-                    if entry.name == "temp":
-                        continue
-                    if entry.name.startswith("."):
-                        continue
-                    yield entry
+            entries: Generator[os.DirEntry, None, None]
+            if recursive:
+                entries = target_dir.rglob("*")
+            else:
+                entries = target_dir.iterdir()
+            for entry in entries:
+                if entry.name.startswith("."):
+                    continue
+                yield entry
 
     def is_empty(self, user: str) -> bool:
         """Check if the user's storage root is empty (excluding internal items)."""

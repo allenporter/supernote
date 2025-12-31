@@ -24,31 +24,46 @@ class FileService:
     def __init__(self, storage_service: StorageService):
         self.storage_service = storage_service
 
-    def list_folder(self, user: str, path_str: str) -> List[FileEntryVO]:
+    def list_folder(
+        self, user: str, path_str: str, recursive: bool = False
+    ) -> List[FileEntryVO]:
         """List files in a folder for a specific user."""
         rel_path = path_str.lstrip("/")
         entries = []
 
+        target_dir = self.storage_service.resolve_path(user, rel_path)
+        # Needed for relative path calculation in recursive mode
+        user_root = self.storage_service.resolve_path(user, "")
+
         try:
-            for entry in self.storage_service.list_directory(user, rel_path):
+            for entry in self.storage_service.list_directory(user, rel_path, recursive):
                 is_dir = entry.is_dir()
                 stat = entry.stat()
+                # Path relative to the *listing root* (e.g. "sub/file.txt" if listing "root")
+                sub_rel = entry.relative_to(target_dir)
+                full_rel_path = entry.relative_to(user_root).as_posix()
 
                 content_hash = ""
                 if not is_dir:
-                    content_hash = self.storage_service.get_file_md5(Path(entry.path))
+                    content_hash = self.storage_service.get_file_md5(entry)
 
-                # ID generation
-                entry_rel_path = f"{rel_path}/{entry.name}".strip("/")
-                file_id = str(self.storage_service.get_id_from_path(entry_rel_path))
+                # ID generation uses path relative to user root
+                file_id = str(self.storage_service.get_id_from_path(full_rel_path))
+
+                # path_display: Full path including requested root (e.g. /NOTE/sub/file.txt)
+                clean_root = path_str.rstrip("/")
+                path_display = f"{clean_root}/{sub_rel.as_posix()}"
+
+                # parent_path: e.g. /NOTE/sub
+                parent_path = Path(path_display).parent.as_posix()
 
                 entries.append(
                     FileEntryVO(
                         tag="folder" if is_dir else "file",
                         id=file_id,
                         name=entry.name,
-                        path_display=f"{path_str.rstrip('/')}/{entry.name}",
-                        parent_path=path_str,
+                        path_display=path_display,
+                        parent_path=parent_path,
                         content_hash=content_hash,
                         is_downloadable=True,
                         size=stat.st_size,
@@ -129,8 +144,14 @@ class FileService:
         # Verify MD5
         calculated_hash = self.storage_service.get_file_md5(temp_path)
         if calculated_hash != content_hash:
-            logger.warning(
+            logger.error(
                 f"Hash mismatch for {filename}: expected {content_hash}, got {calculated_hash}"
+            )
+            # Preserve the bad temp file for investigation. In the future we should
+            # wipe this.
+            # temp_path.unlink()
+            raise ValueError(
+                f"Hash mismatch: expected {content_hash}, got {calculated_hash}"
             )
 
         dest_path = self.storage_service.move_temp_to_storage(user, filename, rel_path)
