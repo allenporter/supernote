@@ -68,8 +68,10 @@ FileUploadApplyLocalVO:
           type: string
         bucketName:
           type: string
+          description: "In private clouds, typically 'supernote'"
         innerName:
           type: string
+          description: "Obfuscated storage filename: {UUID}-{tail}.{ext} where tail is derived from the the client equipmentNo"
         xAmzDate:
           type: string
         authorization:
@@ -119,6 +121,7 @@ UploadFileVO:
       properties:
         innerName:
           type: string
+          description: "Obfuscated storage filename: {UUID}-{tail}.{ext}"
         md5:
           type: string
 

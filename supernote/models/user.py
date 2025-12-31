@@ -15,7 +15,7 @@ from mashumaro import field_options
 from mashumaro.config import BaseConfig
 from mashumaro.mixins.json import DataClassJSONMixin
 
-from .base import BaseResponse, BooleanEnum
+from .base import BaseEnum, BaseResponse
 
 DEFAULT_COUNTRY_CODE = 1
 
@@ -141,6 +141,14 @@ class UpdateUserNameDTO(DataClassJSONMixin):
         serialize_by_alias = True
 
 
+class IsNormalUser(str, BaseEnum):
+    """User status."""
+
+    NORMAL = "Y"
+    FROZEN = "N"
+    ADMIN = "A"
+
+
 @dataclass
 class UserVO(DataClassJSONMixin):
     """Data object describing user information."""
@@ -197,15 +205,15 @@ class UserVO(DataClassJSONMixin):
     )
     """User creation time."""
 
-    is_normal: BooleanEnum | None = field(
-        metadata=field_options(alias="isNormal"), default=None
+    is_normal: IsNormalUser | None = field(
+        metadata=field_options(alias="isNormal"), default=IsNormalUser.NORMAL
     )
-    """Whether the user is normal."""
+    """User status."""
 
     file_server: str | None = field(
         metadata=field_options(alias="fileServer"), default=None
     )
-    """Assigned file server URL."""
+    """Storage provider code ('0': ufile, '1': aws) or private cloud URL."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -270,7 +278,7 @@ class UserInfo(DataClassJSONMixin):
     file_server: str | None = field(
         metadata=field_options(alias="fileServer"), default=None
     )
-    """Assigned file server URL."""
+    """Storage provider code ('0': ufile, '1': aws) or private cloud URL."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -362,10 +370,10 @@ class UserQueryByIdVO(BaseResponse):
     )
     """Assigned file server URL."""
 
-    is_normal: str | None = field(
+    is_normal: IsNormalUser | None = field(
         metadata=field_options(alias="isNormal"), default=None
     )
-    """Whether the user is normal."""
+    """User status."""
 
 
 @dataclass
@@ -393,10 +401,10 @@ class UserDTO(DataClassJSONMixin):
     email: str | None = None
     """Email address."""
 
-    is_normal: str | None = field(
+    is_normal: IsNormalUser | None = field(
         metadata=field_options(alias="isNormal"), default=None
     )
-    """Whether the user is normal."""
+    """User status."""
 
     create_time_start: str | None = field(
         metadata=field_options(alias="createTimeStart"), default=None

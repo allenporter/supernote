@@ -4,7 +4,7 @@ LoginDTO:
   properties:
     password:
       type: string
-      description: Password (SHA-256 encrypted using random code)
+      description: "Hashed password. Schema: SHA256(MD5(plain) + randomCode) or MD5(MD5(plain) + random)."
     countryCode:
       type: string
       description: Country code
@@ -16,18 +16,18 @@ LoginDTO:
       description: Browser name (user agent info)
     equipment:
       type: integer
-      description: "Device Type: 1=Web, 2=App, 3=Terminal, 4=UserPlatform"
+      description: "Device Type: 1 (Web), 2 (App), 3 (Terminal/Device), 4 (Platform)"
       enum: [1, 2, 3, 4]
     loginMethod:
       type: string
-      description: "Login Method: 1=Mobile, 2=Email, 3=WeChat"
+      description: "Login Method: '1' (Phone/Account), '2' (Email), '3' (WeChat)"
       enum: ["1", "2", "3"]
     language:
       type: string
       description: Language code
     equipmentNo:
       type: string
-      description: Device serial number (Required for Terminal login)
+      description: Device serial number (SN12345678) or other client identifier (WEB)
     timestamp:
       type: integer
       format: int64
@@ -85,7 +85,7 @@ SmsLoginDTO:
       description: SMS/Email verification code
     validCodeKey:
       type: string
-      description: Session key for validation code
+      description: "Redis session key for the code (e.g., '{email}_validCode')."
     devices:
       type: string
       description: "OS Type: WINDOWS, MACOS, LINUX, ANDROID, IOS"
@@ -113,7 +113,7 @@ RandomCodeVO:
       properties:
         randomCode:
           type: string
-          description: Random code sequence for password encryption
+          description: "Server-side nonce (salt) used for password hashing."
         timestamp:
           type: integer
           format: int64
