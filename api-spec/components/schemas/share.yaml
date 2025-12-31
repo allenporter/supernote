@@ -1,0 +1,11 @@
+ShareRecordDTO:
+  type: object
+  required:
+    - fileId
+    - shareWay
+  properties:
+    fileId:
+      type: string
+    shareWay:
+      type: string
+      description: "0:pdf; 1:png"

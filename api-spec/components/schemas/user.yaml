@@ -1,0 +1,182 @@
+UserCheckDTO:
+  type: object
+  properties:
+    countryCode:
+      type: string
+    telephone:
+      type: string
+    email:
+      type: string
+    userName:
+      type: string
+    domain:
+      type: string
+
+UserCheckVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        isExist:
+          type: string
+          description: Check result (Y/N or error code)
+        server:
+          type: string
+          description: The server where the user is located
+
+UserQueryDTO:
+  type: object
+  properties:
+    countryCode:
+      type: string
+    value:
+      type: string
+      description: Search query
+    token:
+      type: string
+    equipmentNo:
+      type: string
+
+UserUpdateDTO:
+  type: object
+  properties:
+    sex:
+      type: string
+    birthday:
+      type: string
+      description: "Format: YYYY-MM-DD"
+    personalSign:
+      type: string
+    hobby:
+      type: string
+    address:
+      type: string
+    job:
+      type: string
+    education:
+      type: string
+
+UpdateUserNameDTO:
+  type: object
+  properties:
+    userName:
+      type: string
+      description: New nickname
+  required:
+    - userName
+
+UserVO:
+  type: object
+  properties:
+    userId:
+      type: string
+    userName:
+      type: string
+    countryCode:
+      type: string
+    telephone:
+      type: string
+    email:
+      type: string
+    sex:
+      type: string
+    birthday:
+      type: string
+    personalSign:
+      type: string
+    hobby:
+      type: string
+    education:
+      type: string
+    job:
+      type: string
+    address:
+      type: string
+    createTime:
+      type: string
+      format: date-time
+    isNormal:
+      type: string
+      enum: ["Y", "N"]
+    fileServer:
+      type: string
+      description: Assigned file server URL
+
+UserQueryVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        account:
+          type: string
+        user:
+          $ref: "#/UserVO"
+
+UserQueryByIdVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        user:
+          $ref: "#/UserVO"
+
+UserDTO:
+  type: object
+  properties:
+    userName:
+      type: string
+    telephone:
+      type: string
+    email:
+      type: string
+    isNormal:
+      type: string
+    createTimeStart:
+      type: string
+    createTimeEnd:
+      type: string
+    fileServer:
+      type: string
+    pageNo:
+      type: string
+    pageSize:
+      type: string
+  required:
+    - pageNo
+    - pageSize
+
+FreezeOrUnfreezeUserDTO:
+  type: object
+  properties:
+    userId:
+      type: string
+    flag:
+      type: string
+      description: "Y: Freeze, N: Unfreeze"
+      enum: ["Y", "N"]
+  required:
+    - userId
+    - flag
+
+UserInfoDTO:
+  type: object
+  properties:
+    countryCode:
+      type: string
+    telephone:
+      type: string
+    email:
+      type: string
+
+UserInfoVo:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        userId:
+          type: integer
+          format: int64

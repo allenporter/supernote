@@ -1,0 +1,464 @@
+# Domain Objects Transformed into Reusable Components
+
+SummaryItem:
+  type: object
+  properties:
+    id:
+      type: integer
+      format: int64
+    fileId:
+      type: integer
+      format: int64
+    name:
+      type: string
+    userId:
+      type: integer
+      format: int64
+    uniqueIdentifier:
+      type: string
+    parentUniqueIdentifier:
+      type: string
+    content:
+      type: string
+    sourcePath:
+      type: string
+    dataSource:
+      type: string
+    sourceType:
+      type: integer
+      format: int32
+    isSummaryGroup:
+      type: string
+    description:
+      type: string
+    tags:
+      type: string
+    md5Hash:
+      type: string
+    metadata:
+      type: string
+      description: JSON string
+    commentStr:
+      type: string
+    commentHandwriteName:
+      type: string
+    handwriteInnerName:
+      type: string
+    handwriteMD5:
+      type: string
+    creationTime:
+      type: integer
+      format: int64
+    lastModifiedTime:
+      type: integer
+      format: int64
+    isDeleted:
+      type: string
+    createTime:
+      type: integer
+      format: int64
+    updateTime:
+      type: integer
+      format: int64
+    author:
+      type: string
+
+SummaryTagItem:
+  type: object
+  properties:
+    id:
+      type: integer
+      format: int64
+    name:
+      type: string
+    userId:
+      type: integer
+      format: int64
+    uniqueIdentifier:
+      type: string
+    createdAt:
+      type: integer
+      format: int64
+
+SummaryInfoItem:
+  type: object
+  properties:
+    id:
+      type: integer
+      format: int64
+    userId:
+      type: integer
+      format: int64
+    md5Hash:
+      type: string
+    handwriteMd5:
+      type: string
+    commentHandwriteName:
+      type: string
+    lastModifiedTime:
+      type: integer
+      format: int64
+    metadataMap:
+      type: object
+      additionalProperties:
+        type: string
+
+# DTOs
+AddSummaryTagDTO:
+  type: object
+  required:
+    - name
+  properties:
+    name:
+      type: string
+
+UpdateSummaryTagDTO:
+  type: object
+  required:
+    - id
+    - name
+  properties:
+    id:
+      type: integer
+      format: int64
+    name:
+      type: string
+
+DeleteSummaryTagDTO:
+  type: object
+  required:
+    - id
+  properties:
+    id:
+      type: integer
+      format: int64
+
+AddSummaryGroupDTO:
+  type: object
+  required:
+    - uniqueIdentifier
+    - name
+    - md5Hash
+  properties:
+    uniqueIdentifier:
+      type: string
+    name:
+      type: string
+    description:
+      type: string
+    md5Hash:
+      type: string
+    creationTime:
+      type: integer
+      format: int64
+    lastModifiedTime:
+      type: integer
+      format: int64
+
+UpdateSummaryGroupDTO:
+  type: object
+  required:
+    - id
+    - md5Hash
+  properties:
+    id:
+      type: integer
+      format: int64
+    uniqueIdentifier:
+      type: string
+    name:
+      type: string
+    description:
+      type: string
+    metadata:
+      type: string
+    commentStr:
+      type: string
+    commentHandwriteName:
+      type: string
+    handwriteInnerName:
+      type: string
+    md5Hash:
+      type: string
+    lastModifiedTime:
+      type: integer
+      format: int64
+
+DeleteSummaryGroupDTO:
+  type: object
+  required:
+    - id
+  properties:
+    id:
+      type: integer
+      format: int64
+
+QuerySummaryGroupDTO:
+  type: object
+  properties:
+    page:
+      type: integer
+      format: int32
+    size:
+      type: integer
+      format: int32
+
+AddSummaryDTO:
+  type: object
+  properties:
+    uniqueIdentifier:
+      type: string
+    fileId:
+      type: integer
+      format: int64
+    parentUniqueIdentifier:
+      type: string
+    content:
+      type: string
+    dataSource:
+      type: string
+    sourcePath:
+      type: string
+    sourceType:
+      type: integer
+      format: int32
+    tags:
+      type: string
+    md5Hash:
+      type: string
+    metadata:
+      type: string
+    commentStr:
+      type: string
+    commentHandwriteName:
+      type: string
+    handwriteInnerName:
+      type: string
+    handwriteMD5:
+      type: string
+    creationTime:
+      type: integer
+      format: int64
+    lastModifiedTime:
+      type: integer
+      format: int64
+    author:
+      type: string
+
+UpdateSummaryDTO:
+  type: object
+  required:
+    - id
+  properties:
+    id:
+      type: integer
+      format: int64
+    parentUniqueIdentifier:
+      type: string
+    content:
+      type: string
+    sourcePath:
+      type: string
+    dataSource:
+      type: string
+    sourceType:
+      type: integer
+      format: int32
+    tags:
+      type: string
+    md5Hash:
+      type: string
+    metadata:
+      type: string
+    commentStr:
+      type: string
+    commentHandwriteName:
+      type: string
+    handwriteInnerName:
+      type: string
+    handwriteMD5:
+      type: string
+    lastModifiedTime:
+      type: integer
+      format: int64
+    author:
+      type: string
+
+DeleteSummaryDTO:
+  type: object
+  required:
+    - id
+  properties:
+    id:
+      type: integer
+      format: int64
+
+QuerySummaryDTO:
+  type: object
+  properties:
+    page:
+      type: integer
+      format: int32
+    size:
+      type: integer
+      format: int32
+    parentUniqueIdentifier:
+      type: string
+    ids:
+      type: array
+      items:
+        type: integer
+        format: int64
+
+DownloadSummaryDTO:
+  type: object
+  required:
+    - id
+  properties:
+    id:
+      type: integer
+      format: int64
+
+UploadSummaryApplyDTO:
+  type: object
+  required:
+    - fileName
+  properties:
+    fileName:
+      type: string
+    equipmentNo:
+      type: string
+
+# VOs
+AddSummaryTagVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+
+QuerySummaryTagVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        summaryTagDOList:
+          type: array
+          items:
+            $ref: "#/SummaryTagItem"
+
+AddSummaryGroupVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+
+QuerySummaryGroupVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        totalRecords:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        currentPage:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        summaryDOList:
+          type: array
+          items:
+            $ref: "#/SummaryItem"
+
+AddSummaryVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+
+QuerySummaryByIdVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        summaryDOList:
+          type: array
+          items:
+            $ref: "#/SummaryItem"
+
+QuerySummaryMD5HashVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        totalRecords:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        currentPage:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        summaryInfoVOList:
+          type: array
+          items:
+            $ref: "#/SummaryInfoItem"
+
+QuerySummaryVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        totalRecords:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        currentPage:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        summaryDOList:
+          type: array
+          items:
+            $ref: "#/SummaryItem"
+
+DownloadSummaryVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        url:
+          type: string
+
+UploadSummaryApplyVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        fullUploadUrl:
+          type: string
+        partUploadUrl:
+          type: string
+        innerName:
+          type: string

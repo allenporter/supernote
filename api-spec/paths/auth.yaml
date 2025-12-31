@@ -1,0 +1,105 @@
+loginNew:
+  post:
+    tags:
+      - Authentication
+    summary: Account Login (New)
+    operationId: loginNew
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/auth.yaml#/LoginDTO"
+    responses:
+      "200":
+        description: Successful login
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/auth.yaml#/LoginVO"
+
+loginEquipment:
+  post:
+    tags:
+      - Authentication
+    summary: Device Login
+    operationId: loginEquipment
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/auth.yaml#/LoginDTO"
+    responses:
+      "200":
+        description: Successful login
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/auth.yaml#/LoginVO"
+
+smsLogin:
+  post:
+    tags:
+      - Authentication
+    summary: SMS Login
+    operationId: smsLogin
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/auth.yaml#/SmsLoginDTO"
+    responses:
+      "200":
+        description: Successful login
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/auth.yaml#/SmsLoginVO"
+
+logout:
+  post:
+    tags:
+      - Authentication
+    summary: Logout and Invalidate Token
+    operationId: logout
+    security:
+      - accessToken: []
+    responses:
+      "200":
+        description: Successful logout
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+queryToken:
+  post:
+    tags:
+      - Authentication
+    summary: Validate and Query Token
+    operationId: queryToken
+    responses:
+      "200":
+        description: Token info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/auth.yaml#/QueryTokenVO"
+
+randomCode:
+  post:
+    tags:
+      - Authentication
+    summary: Get Random Code for Password Encryption
+    operationId: randomCode
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/auth.yaml#/RandomCodeDTO"
+    responses:
+      "200":
+        description: Random Code
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/auth.yaml#/RandomCodeVO"

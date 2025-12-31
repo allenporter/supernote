@@ -1,0 +1,330 @@
+addSummaryTag:
+  post:
+    tags:
+      - Summary
+    summary: Add Summary Tag
+    operationId: addSummaryTag
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/summary.yaml#/AddSummaryTagDTO"
+    responses:
+      "200":
+        description: Created tag info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/summary.yaml#/AddSummaryTagVO"
+
+updateSummaryTag:
+  put:
+    tags:
+      - Summary
+    summary: Update Summary Tag
+    operationId: updateSummaryTag
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/summary.yaml#/UpdateSummaryTagDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+deleteSummaryTag:
+  delete:
+    tags:
+      - Summary
+    summary: Delete Summary Tag
+    operationId: deleteSummaryTag
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/summary.yaml#/DeleteSummaryTagDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+querySummaryTag:
+  get:
+    tags:
+      - Summary
+    summary: Query All Summary Tags
+    operationId: querySummaryTag
+    security:
+      - accessToken: []
+    responses:
+      "200":
+        description: List of tags
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/summary.yaml#/QuerySummaryTagVO"
+
+addSummaryGroup:
+  post:
+    tags:
+      - Summary
+    summary: Add Summary Group
+    operationId: addSummaryGroup
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/summary.yaml#/AddSummaryGroupDTO"
+    responses:
+      "200":
+        description: Created group info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/summary.yaml#/AddSummaryGroupVO"
+
+updateSummaryGroup:
+  put:
+    tags:
+      - Summary
+    summary: Update Summary Group
+    operationId: updateSummaryGroup
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/summary.yaml#/UpdateSummaryGroupDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+deleteSummaryGroup:
+  delete:
+    tags:
+      - Summary
+    summary: Delete Summary Group
+    operationId: deleteSummaryGroup
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/summary.yaml#/DeleteSummaryGroupDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+querySummaryGroup:
+  post:
+    tags:
+      - Summary
+    summary: Query Summary Groups
+    operationId: querySummaryGroup
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/summary.yaml#/QuerySummaryGroupDTO"
+    responses:
+      "200":
+        description: Groups result
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/summary.yaml#/QuerySummaryGroupVO"
+
+addSummary:
+  post:
+    tags:
+      - Summary
+    summary: Add Summary
+    operationId: addSummary
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/summary.yaml#/AddSummaryDTO"
+    responses:
+      "200":
+        description: Created summary info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/summary.yaml#/AddSummaryVO"
+
+updateSummary:
+  put:
+    tags:
+      - Summary
+    summary: Update Summary
+    operationId: updateSummary
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/summary.yaml#/UpdateSummaryDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+deleteSummary:
+  delete:
+    tags:
+      - Summary
+    summary: Delete Summary
+    operationId: deleteSummary
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/summary.yaml#/DeleteSummaryDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+querySummaryById:
+  post:
+    tags:
+      - Summary
+    summary: Query Summary By ID
+    operationId: querySummaryById
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/summary.yaml#/QuerySummaryDTO"
+    responses:
+      "200":
+        description: Summary details
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/summary.yaml#/QuerySummaryByIdVO"
+
+querySummaryMD5Hash:
+  post:
+    tags:
+      - Summary
+    summary: Query Summary MD5 Hash
+    operationId: querySummaryMD5Hash
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/summary.yaml#/QuerySummaryDTO"
+    responses:
+      "200":
+        description: Summary MD5 info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/summary.yaml#/QuerySummaryMD5HashVO"
+
+querySummary:
+  post:
+    tags:
+      - Summary
+    summary: Query Summaries
+    operationId: querySummary
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/summary.yaml#/QuerySummaryDTO"
+    responses:
+      "200":
+        description: Summary list
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/summary.yaml#/QuerySummaryVO"
+
+downloadSummary:
+  post:
+    tags:
+      - Summary
+    summary: Download Summary File
+    operationId: downloadSummary
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/summary.yaml#/DownloadSummaryDTO"
+    responses:
+      "200":
+        description: Download URL
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/summary.yaml#/DownloadSummaryVO"
+
+uploadApplySummary:
+  post:
+    tags:
+      - Summary
+    summary: Apply for Summary Upload
+    operationId: uploadApplySummary
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/summary.yaml#/UploadSummaryApplyDTO"
+    responses:
+      "200":
+        description: Upload URLs
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/summary.yaml#/UploadSummaryApplyVO"

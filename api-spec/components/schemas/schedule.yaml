@@ -1,0 +1,480 @@
+ScheduleTaskGroupItem:
+  type: object
+  properties:
+    taskListId:
+      type: string
+    userId:
+      type: integer
+      format: int64
+    title:
+      type: string
+    lastModified:
+      type: integer
+      format: int64
+    isDeleted:
+      type: string
+    createTime:
+      type: integer
+      format: int64
+
+ScheduleRecurTaskItem:
+  type: object
+  properties:
+    taskId:
+      type: string
+    recurrenceId:
+      type: string
+    taskListId:
+      type: string
+    userId:
+      type: integer
+      format: int64
+    lastModified:
+      type: integer
+      format: int64
+    dueTime:
+      type: integer
+      format: int64
+    completedTime:
+      type: integer
+      format: int64
+    status:
+      type: string
+    isDeleted:
+      type: string
+    sort:
+      type: integer
+    sortCompleted:
+      type: integer
+    planerSort:
+      type: integer
+    allSort:
+      type: integer
+    allSortCompleted:
+      type: integer
+    sortTime:
+      type: integer
+      format: int64
+    planerSortTime:
+      type: integer
+      format: int64
+    allSortTime:
+      type: integer
+      format: int64
+
+ScheduleTaskInfo:
+  type: object
+  properties:
+    taskId:
+      type: string
+    taskListId:
+      type: string
+    title:
+      type: string
+    detail:
+      type: string
+    lastModified:
+      type: integer
+      format: int64
+    recurrence:
+      type: string
+    isReminderOn:
+      type: string
+    status:
+      type: string
+    importance:
+      type: string
+    dueTime:
+      type: integer
+      format: int64
+    completedTime:
+      type: integer
+      format: int64
+    links:
+      type: string
+    isDeleted:
+      type: string
+    sort:
+      type: integer
+    sortCompleted:
+      type: integer
+    planerSort:
+      type: integer
+    allSort:
+      type: integer
+    allSortCompleted:
+      type: integer
+    sortTime:
+      type: integer
+      format: int64
+    planerSortTime:
+      type: integer
+      format: int64
+    allSortTime:
+      type: integer
+      format: int64
+    scheduleRecurTask:
+      type: array
+      items:
+        $ref: "#/ScheduleRecurTaskItem"
+
+AddScheduleTaskGroupDTO:
+  type: object
+  required:
+    - title
+  properties:
+    taskListId:
+      type: string
+    title:
+      type: string
+    lastModified:
+      type: integer
+      format: int64
+    createTime:
+      type: integer
+      format: int64
+
+UpdateScheduleTaskGroupDTO:
+  type: object
+  required:
+    - taskListId
+    - title
+  properties:
+    taskListId:
+      type: string
+    title:
+      type: string
+    lastModified:
+      type: integer
+      format: int64
+
+ClearScheduleTaskGroupDTO:
+  type: object
+  required:
+    - taskListId
+    - lastModified
+  properties:
+    taskListId:
+      type: string
+    lastModified:
+      type: integer
+      format: int64
+
+ScheduleTaskGroupDTO:
+  type: object
+  properties:
+    maxResults:
+      type: string
+    pageToken:
+      type: string
+
+AddScheduleTaskDTO:
+  type: object
+  required:
+    - title
+  properties:
+    taskId:
+      type: string
+    taskListId:
+      type: string
+    recurrenceId:
+      type: string
+    title:
+      type: string
+    detail:
+      type: string
+    lastModified:
+      type: integer
+      format: int64
+    recurrence:
+      type: string
+    isReminderOn:
+      type: string
+    status:
+      type: string
+    importance:
+      type: string
+    dueTime:
+      type: integer
+      format: int64
+    completedTime:
+      type: integer
+      format: int64
+    links:
+      type: string
+    isDeleted:
+      type: string
+    sort:
+      type: integer
+    sortCompleted:
+      type: integer
+    planerSort:
+      type: integer
+    allSort:
+      type: integer
+    allSortCompleted:
+      type: integer
+    sortTime:
+      type: integer
+      format: int64
+    planerSortTime:
+      type: integer
+      format: int64
+    allSortTime:
+      type: integer
+      format: int64
+
+UpdateScheduleTaskDTO:
+  type: object
+  required:
+    - taskId
+    - title
+    - lastModified
+  properties:
+    taskId:
+      type: string
+    taskListId:
+      type: string
+    recurrenceId:
+      type: string
+    title:
+      type: string
+    detail:
+      type: string
+    lastModified:
+      type: integer
+      format: int64
+    recurrence:
+      type: string
+    isReminderOn:
+      type: string
+    status:
+      type: string
+    importance:
+      type: string
+    dueTime:
+      type: integer
+      format: int64
+    completedTime:
+      type: integer
+      format: int64
+    links:
+      type: string
+    isDeleted:
+      type: string
+    sort:
+      type: integer
+    sortCompleted:
+      type: integer
+    planerSort:
+      type: integer
+    allSort:
+      type: integer
+    allSortCompleted:
+      type: integer
+    sortTime:
+      type: integer
+      format: int64
+    planerSortTime:
+      type: integer
+      format: int64
+    allSortTime:
+      type: integer
+      format: int64
+
+UpdateScheduleTaskListDTO:
+  type: object
+  properties:
+    taskListId:
+      type: string
+    updateScheduleTaskList:
+      type: array
+      items:
+        $ref: "#/UpdateScheduleTaskDTO"
+
+ScheduleTaskDTO:
+  type: object
+  properties:
+    maxResults:
+      type: string
+    nextPageTokens:
+      type: string
+    nextSyncToken:
+      type: integer
+      format: int64
+
+ScheduleSortDTO:
+  type: object
+  properties:
+    taskListId:
+      type: string
+    title:
+      type: string
+    lastModify:
+      type: integer
+      format: int64
+    content:
+      type: string
+
+GetScheduleSortDTO:
+  type: object
+  properties:
+    nextIndexNumber:
+      type: integer
+
+AddScheduleTaskGroupVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        taskListId:
+          type: string
+
+GetScheduleTaskGroupVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        taskListId:
+          type: string
+        userId:
+          type: integer
+          format: int64
+        title:
+          type: string
+        lastModified:
+          type: integer
+          format: int64
+        isDeleted:
+          type: string
+        createTime:
+          type: integer
+          format: int64
+
+ScheduleTaskGroupVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        pageToken:
+          type: string
+        scheduleTaskGroup:
+          type: array
+          items:
+            $ref: "#/ScheduleTaskGroupItem"
+
+AddScheduleTaskVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        taskId:
+          type: string
+
+UpdateScheduleTaskVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        taskId:
+          type: string
+
+ScheduleTaskVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        taskId:
+          type: integer
+          format: int64
+        taskListId:
+          type: integer
+          format: int64
+        title:
+          type: string
+        detail:
+          type: string
+        lastModified:
+          type: integer
+          format: int64
+        recurrence:
+          type: string
+        isReminderOn:
+          type: string
+        status:
+          type: string
+        importance:
+          type: string
+        dueTime:
+          type: integer
+          format: int64
+        completedTime:
+          type: integer
+          format: int64
+        links:
+          type: string
+        isDeleted:
+          type: string
+        sort:
+          type: integer
+        sortCompleted:
+          type: integer
+        planerSort:
+          type: integer
+        allSort:
+          type: integer
+        allSortCompleted:
+          type: integer
+        sortTime:
+          type: integer
+          format: int64
+        planerSortTime:
+          type: integer
+          format: int64
+        allSortTime:
+          type: integer
+          format: int64
+        scheduleRecurTask:
+          type: array
+          items:
+            $ref: "#/ScheduleRecurTaskItem"
+
+ScheduleTaskAllVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        nextPageToken:
+          type: string
+        nextSyncToken:
+          type: integer
+          format: int64
+        scheduleTask:
+          type: array
+          items:
+            $ref: "#/ScheduleTaskInfo"
+
+GetScheduleSortVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        taskListId:
+          type: string
+        title:
+          type: string
+        lastModify:
+          type: integer
+          format: int64
+        content:
+          type: string
+        nextIndexNumber:
+          type: integer
