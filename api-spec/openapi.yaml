@@ -1,0 +1,258 @@
+---
+openapi: 3.0.0
+info:
+  title: Supernote Server API
+  description: API for Supernote Cloud and Device Synchronization.
+  version: 1.0.0
+servers:
+  - url: https://cloud.supernote.com
+    description: Production Server
+  - url: http://localhost:8080
+    description: Local Development Server
+paths:
+  # Authentication
+  /api/official/user/account/login/new:
+    $ref: "./paths/auth.yaml#/loginNew"
+  /api/official/user/account/login/equipment:
+    $ref: "./paths/auth.yaml#/loginEquipment"
+  /api/user/sms/login:
+    $ref: "./paths/auth.yaml#/smsLogin"
+  /api/user/logout:
+    $ref: "./paths/auth.yaml#/logout"
+  /api/user/query/token:
+    $ref: "./paths/auth.yaml#/queryToken"
+  /api/official/user/query/random/code:
+    $ref: "./paths/auth.yaml#/randomCode"
+
+  # User Profile
+  /api/user/check/exists:
+    $ref: "./paths/user.yaml#/checkExists"
+  /api/official/user/check/exists/server:
+    $ref: "./paths/user.yaml#/checkExistsServer"
+  /api/user/query:
+    $ref: "./paths/user.yaml#/queryUserById"
+  /api/user/query/info:
+    $ref: "./paths/user.yaml#/queryUserInfo"
+  /api/user/update:
+    $ref: "./paths/user.yaml#/updateUser"
+  /api/user/update/name:
+    $ref: "./paths/user.yaml#/updateUserName"
+  /api/user/query/all:
+    $ref: "./paths/user.yaml#/queryAllUsers"
+  /api/user/freeze:
+    $ref: "./paths/user.yaml#/freezeUser"
+  /api/user/query/one:
+    $ref: "./paths/user.yaml#/queryOneUser"
+  /api/user/query/user/{userId}:
+    $ref: "./paths/user.yaml#/queryUserByPathId"
+
+  # File System - Web
+  /api/file/list/query:
+    $ref: "./paths/files-web.yaml#/queryFileList"
+  /api/file/folder/list/query:
+    $ref: "./paths/files-web.yaml#/queryFolderList"
+  /api/file/capacity/query:
+    $ref: "./paths/files-web.yaml#/queryCapacity"
+  /api/file/delete:
+    $ref: "./paths/files-web.yaml#/deleteFile"
+  /api/file/folder/add:
+    $ref: "./paths/files-web.yaml#/addFolder"
+  /api/file/move:
+    $ref: "./paths/files-web.yaml#/moveFile"
+  /api/file/copy:
+    $ref: "./paths/files-web.yaml#/copyFile"
+  /api/file/rename:
+    $ref: "./paths/files-web.yaml#/renameFile"
+  /api/file/list/search:
+    $ref: "./paths/files-web.yaml#/searchFile"
+  /api/file/recycle/list/query:
+    $ref: "./paths/files-web.yaml#/queryRecycleList"
+  /api/file/recycle/clear:
+    $ref: "./paths/files-web.yaml#/clearRecycle"
+  /api/file/recycle/delete:
+    $ref: "./paths/files-web.yaml#/deleteRecycle"
+  /api/file/recycle/revert:
+    $ref: "./paths/files-web.yaml#/revertRecycle"
+  /api/file/download/url:
+    $ref: "./paths/files-web.yaml#/getDownloadUrl"
+  /api/file/path/query:
+    $ref: "./paths/files-web.yaml#/queryFilePath"
+  /api/file/upload/apply:
+    $ref: "./paths/files-web.yaml#/uploadApply"
+  /api/file/upload/finish:
+    $ref: "./paths/files-web.yaml#/uploadFinish"
+
+  # File System - Device
+  /api/file/2/files/synchronous/start:
+    $ref: "./paths/files-device.yaml#/syncStart"
+  /api/file/2/files/synchronous/end:
+    $ref: "./paths/files-device.yaml#/syncEnd"
+  /api/file/2/files/create_folder_v2:
+    $ref: "./paths/files-device.yaml#/createFolderV2"
+  /api/file/2/files/list_folder:
+    $ref: "./paths/files-device.yaml#/listFolder"
+  /api/file/3/files/list_folder_v3:
+    $ref: "./paths/files-device.yaml#/listFolderV3"
+  /api/file/3/files/delete_folder_v3:
+    $ref: "./paths/files-device.yaml#/deleteFolderV3"
+  /api/file/3/files/upload/apply:
+    $ref: "./paths/files-device.yaml#/uploadApplyV3"
+  /api/file/2/files/upload/finish:
+    $ref: "./paths/files-device.yaml#/uploadFinishV2"
+  /api/file/3/files/download_v3:
+    $ref: "./paths/files-device.yaml#/downloadV3"
+  /api/file/3/files/query_v3:
+    $ref: "./paths/files-device.yaml#/queryV3"
+  /api/file/3/files/query/by/path_v3:
+    $ref: "./paths/files-device.yaml#/queryByPathV3"
+  /api/file/3/files/move_v3:
+    $ref: "./paths/files-device.yaml#/moveV3"
+  /api/file/3/files/copy_v3:
+    $ref: "./paths/files-device.yaml#/copyV3"
+  /api/file/2/users/get_space_usage:
+    $ref: "./paths/files-device.yaml#/getSpaceUsage"
+  /api/file/note/to/pdf:
+    $ref: "./paths/files-device.yaml#/noteToPdf"
+  /api/file/note/to/png:
+    $ref: "./paths/files-device.yaml#/noteToPng"
+  /api/file/pdfwithmark/to/pdf:
+    $ref: "./paths/files-device.yaml#/pdfWithMarkToPdf"
+  /api/file/query/server:
+    $ref: "./paths/files-device.yaml#/queryServer"
+
+  # Schedule
+  /api/file/schedule/group:
+    $ref: "./paths/schedule.yaml#/scheduleGroup"
+  /api/file/schedule/group/{taskListId}:
+    $ref: "./paths/schedule.yaml#/scheduleGroupWithId"
+  /api/file/schedule/group/clear:
+    $ref: "./paths/schedule.yaml#/clearScheduleGroup"
+  /api/file/schedule/group/all:
+    $ref: "./paths/schedule.yaml#/getAllScheduleGroups"
+  /api/file/schedule/task:
+    $ref: "./paths/schedule.yaml#/scheduleTask"
+  /api/file/schedule/task/list:
+    $ref: "./paths/schedule.yaml#/updateScheduleTaskList"
+  /api/file/schedule/task/{taskId}:
+    $ref: "./paths/schedule.yaml#/scheduleTaskWithId"
+  /api/file/schedule/task/all:
+    $ref: "./paths/schedule.yaml#/getAllScheduleTasks"
+  /api/file/schedule/sort:
+    $ref: "./paths/schedule.yaml#/scheduleSort"
+  /api/file/schedule/sort/{taskListId}:
+    $ref: "./paths/schedule.yaml#/deleteScheduleSort"
+  /api/file/query/schedule/sort:
+    $ref: "./paths/schedule.yaml#/getScheduleSort"
+
+  # Summary
+  /api/file/add/summary/tag:
+    $ref: "./paths/summary.yaml#/addSummaryTag"
+  /api/file/update/summary/tag:
+    $ref: "./paths/summary.yaml#/updateSummaryTag"
+  /api/file/delete/summary/tag:
+    $ref: "./paths/summary.yaml#/deleteSummaryTag"
+  /api/file/query/summary/tag:
+    $ref: "./paths/summary.yaml#/querySummaryTag"
+
+  /api/file/add/summary/group:
+    $ref: "./paths/summary.yaml#/addSummaryGroup"
+  /api/file/update/summary/group:
+    $ref: "./paths/summary.yaml#/updateSummaryGroup"
+  /api/file/delete/summary/group:
+    $ref: "./paths/summary.yaml#/deleteSummaryGroup"
+  /api/file/query/summary/group:
+    $ref: "./paths/summary.yaml#/querySummaryGroup"
+
+  /api/file/add/summary:
+    $ref: "./paths/summary.yaml#/addSummary"
+  /api/file/update/summary:
+    $ref: "./paths/summary.yaml#/updateSummary"
+  /api/file/delete/summary:
+    $ref: "./paths/summary.yaml#/deleteSummary"
+  /api/file/query/summary/id:
+    $ref: "./paths/summary.yaml#/querySummaryById"
+  /api/file/query/summary/hash:
+    $ref: "./paths/summary.yaml#/querySummaryMD5Hash"
+  /api/file/query/summary:
+    $ref: "./paths/summary.yaml#/querySummary"
+  /api/file/download/summary:
+    $ref: "./paths/summary.yaml#/downloadSummary"
+  /api/file/upload/apply/summary:
+    $ref: "./paths/summary.yaml#/uploadApplySummary"
+
+  # Share
+  /api/file/share/record/add:
+    $ref: "./paths/share.yaml#/addShareRecord"
+
+  # Equipment
+  /api/terminal/user/activateEquipment:
+    $ref: "./paths/equipment.yaml#/activateEquipment"
+  /api/terminal/user/bindEquipment:
+    $ref: "./paths/equipment.yaml#/bindEquipment"
+  /api/terminal/equipment/unlink:
+    $ref: "./paths/equipment.yaml#/unbindEquipment"
+  /api/equipment/bind/status:
+    $ref: "./paths/equipment.yaml#/bindStatus"
+  /api/equipment/query/user/equipment/deleteApi:
+    $ref: "./paths/equipment.yaml#/queryUserEquipment_deleteApi"
+  /api/equipment/query/by/equipmentno:
+    $ref: "./paths/equipment.yaml#/queryUserEquipmentByNo"
+  /api/equipment/manual/deleteApi:
+    $ref: "./paths/equipment.yaml#/queryEquipmentManual_deleteApi"
+  /api/equipment/query/{equipmentNo}/deleteApi:
+    $ref: "./paths/equipment.yaml#/queryEquipmentByNo_deleteApi"
+  /api/equipment/query/by/{userId}:
+    $ref: "./paths/equipment.yaml#/queryUserEquipmentByUserId"
+  /api/equipment/delete/{equipmentNumber}/deleteApi:
+    $ref: "./paths/equipment.yaml#/deleteByEquipmentNumber_deleteApi"
+
+  # System (Email)
+  /api/save/email/config:
+    $ref: "./paths/system.yaml#/saveEmailConfig"
+  /api/send/email/test:
+    $ref: "./paths/system.yaml#/testEmailSettings"
+  /api/query/email/config:
+    $ref: "./paths/system.yaml#/queryEmailServer"
+  /api/query/email/publickey:
+    $ref: "./paths/system.yaml#/queryEmailPublicKey"
+
+  # System (OSS Local)
+  /api/oss/generate/upload/url:
+    $ref: "./paths/system.yaml#/generateUploadUrl"
+  /api/oss/upload:
+    $ref: "./paths/system.yaml#/uploadFile"
+  /api/oss/upload/part:
+    $ref: "./paths/system.yaml#/uploadPart"
+  /api/oss/generate/download/url:
+    $ref: "./paths/system.yaml#/generateDownloadUrl"
+  /api/oss/download:
+    $ref: "./paths/system.yaml#/downloadFile"
+
+  # System (Dictionary & Reference)
+  /api/system/base/dictionary/deleteApi:
+    $ref: "./paths/system.yaml#/dictionaryResource"
+  /api/system/base/dictionary/{id}/deleteApi:
+    $ref: "./paths/system.yaml#/queryDictionaryById_deleteApi"
+  /api/system/base/dictionary/param/deleteApi:
+    $ref: "./paths/system.yaml#/queryDictionaryByNameAndValue_deleteApi"
+  /api/system/base/dictionary/by/{name}/deleteApi:
+    $ref: "./paths/system.yaml#/queryDictionaryByName_deleteApi"
+  /api/system/base/reference/deleteApi:
+    $ref: "./paths/system.yaml#/queryRef_deleteApi"
+  /api/system/base/reference/{id}/deleteApi:
+    $ref: "./paths/system.yaml#/queryRefById_deleteApi"
+  /api/system/base/reference/param:
+    $ref: "./paths/system.yaml#/queryReferenceByParam"
+  /api/official/system/base/param:
+    $ref: "./paths/system.yaml#/getReference"
+components:
+  securitySchemes:
+    accessToken:
+      type: apiKey
+      in: header
+      name: x-access-token
+  schemas:
+    BaseVO:
+      $ref: "./components/schemas/common.yaml#/BaseVO"
+    CommonListVO:
+      $ref: "./components/schemas/common.yaml#/CommonListVO"

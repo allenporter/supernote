@@ -1,0 +1,486 @@
+# Email Server Endpoints
+---
+saveEmailConfig:
+  post:
+    tags:
+      - System
+      - Email
+    summary: Save Email Config
+    operationId: saveEmailConfig
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/system.yaml#/EmailServerDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+testEmailSettings:
+  post:
+    tags:
+      - System
+      - Email
+    summary: Test Email Settings
+    operationId: testEmailSettings
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/system.yaml#/EmailServerDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+queryEmailServer:
+  get:
+    tags:
+      - System
+      - Email
+    summary: Get Email Server Config
+    operationId: queryEmailServer
+    security:
+      - accessToken: []
+    responses:
+      "200":
+        description: Email Server Config
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/system.yaml#/EmailServerVO"
+
+queryEmailPublicKey:
+  get:
+    tags:
+      - System
+      - Email
+    summary: Get Email Public Key
+    operationId: queryEmailPublicKey
+    security:
+      - accessToken: []
+    responses:
+      "200":
+        description: Public Key
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/system.yaml#/EmailPublicKeyVO"
+
+# OSS Local Endpoints
+generateUploadUrl:
+  post:
+    tags:
+      - System
+      - OSS
+    summary: Generate Upload URL
+    operationId: generateUploadUrl
+    parameters:
+      - name: filePath
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: fileName
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: fileSize
+        in: query
+        schema:
+          type: integer
+          format: int64
+      - name: ip
+        in: query
+        schema:
+          type: string
+    responses:
+      "200":
+        description: Upload URL Info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/system.yaml#/FileUploadApplyLocalVO"
+
+uploadFile:
+  post:
+    tags:
+      - System
+      - OSS
+    summary: Upload File
+    operationId: uploadFile
+    parameters:
+      - name: signature
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: timestamp
+        in: query
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: nonce
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: path
+        in: query
+        required: true
+        schema:
+          type: string
+    requestBody:
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            properties:
+              file:
+                type: string
+                format: binary
+    responses:
+      "200":
+        description: Upload Result
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/system.yaml#/UploadFileVO"
+
+uploadPart:
+  post:
+    tags:
+      - System
+      - OSS
+    summary: Upload Part
+    operationId: uploadPart
+    parameters:
+      - name: signature
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: timestamp
+        in: query
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: nonce
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: path
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: partNumber
+        in: query
+        required: true
+        schema:
+          type: integer
+      - name: totalChunks
+        in: query
+        required: true
+        schema:
+          type: integer
+      - name: uploadId
+        in: query
+        required: true
+        schema:
+          type: string
+    requestBody:
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            properties:
+              file:
+                type: string
+                format: binary
+    responses:
+      "200":
+        description: Chunk Upload Result
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/system.yaml#/FileChunkVO"
+
+generateDownloadUrl:
+  post:
+    tags:
+      - System
+      - OSS
+    summary: Generate Download URL
+    operationId: generateDownloadUrl
+    parameters:
+      - name: filePath
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: fileName
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: pathId
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: ip
+        in: query
+        schema:
+          type: string
+    responses:
+      "200":
+        description: Download URL Info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/system.yaml#/FileDownloadApplyVO"
+
+downloadFile:
+  get:
+    tags:
+      - System
+      - OSS
+    summary: Download File
+    operationId: downloadFile
+    parameters:
+      - name: path
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: signature
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: timestamp
+        in: query
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: nonce
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: pathId
+        in: query
+        required: true
+        schema:
+          type: string
+    responses:
+      "200":
+        description: File Content
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+
+# Dictionary/Reference Endpoints
+# Merged Path Item
+dictionaryResource:
+  get:
+    tags:
+      - System
+      - Dictionary
+    summary: Query Dictionary Resource Types
+    operationId: allResourceType_deleteApi
+    parameters:
+      - name: name
+        in: query
+        schema:
+          type: string
+      - name: language
+        in: query
+        schema:
+          type: string
+    responses:
+      "200":
+        description: List of dictionary types
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "../components/schemas/system.yaml#/DictionarysVO"
+  post:
+    tags:
+      - System
+      - Dictionary
+    summary: Query Dictionary Vague
+    operationId: query_deleteApi
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/system.yaml#/DictionaryVagueDTO"
+    responses:
+      "200":
+        description: Dictionary List
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/CommonListVO"
+
+queryDictionaryById_deleteApi:
+  get:
+    tags:
+      - System
+      - Dictionary
+    summary: Query Dictionary By ID
+    operationId: queryDictionaryById_deleteApi
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    responses:
+      "200":
+        description: Dictionary Info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/system.yaml#/DictionaryVO"
+
+queryDictionaryByNameAndValue_deleteApi:
+  post:
+    tags:
+      - System
+      - Dictionary
+    summary: Query Dictionary By Name/Value
+    operationId: queryDictionaryByNameAndValue_deleteApi
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/system.yaml#/DictionaryQueryDTO"
+    responses:
+      "200":
+        description: Dictionary List
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/system.yaml#/DictionaryListVO"
+
+queryDictionaryByName_deleteApi:
+  get:
+    tags:
+      - System
+      - Dictionary
+    summary: Query Dictionary By Name
+    operationId: queryDictionaryByName_deleteApi
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    responses:
+      "200":
+        description: Dictionary Info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/system.yaml#/DictionaryByNameVO"
+
+queryRef_deleteApi:
+  post:
+    tags:
+      - System
+      - Reference
+    summary: Query Reference
+    operationId: queryRef_deleteApi
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/system.yaml#/ReferenceVaguaDTO"
+    responses:
+      "200":
+        description: Reference List
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/CommonListVO"
+
+queryRefById_deleteApi:
+  get:
+    tags:
+      - System
+      - Reference
+    summary: Query Reference By ID
+    operationId: queryRefById_deleteApi
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    responses:
+      "200":
+        description: Reference Info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/system.yaml#/ReferenceVO"
+
+queryReferenceByParam:
+  post:
+    tags:
+      - System
+      - Reference
+    summary: Query Reference By Param
+    operationId: queryReferenceByParam
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/system.yaml#/ReferenceQueryDTO"
+    responses:
+      "200":
+        description: Reference List
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/system.yaml#/ReferenceListVO"
+
+getReference:
+  post:
+    tags:
+      - System
+      - Reference
+    summary: Get System Params
+    operationId: getReference
+    responses:
+      "200":
+        description: System Params
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/system.yaml#/ReferenceRespVO"

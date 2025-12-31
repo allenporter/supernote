@@ -1,0 +1,199 @@
+---
+activateEquipment:
+  post:
+    tags:
+      - Equipment
+    summary: Activate Equipment
+    operationId: activateEquipment
+    security: {}
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/equipment.yaml#/ActivateEquipmentDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+bindEquipment:
+  post:
+    tags:
+      - Equipment
+    summary: Bind Equipment
+    operationId: bindEquipment
+    security: {}
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/equipment.yaml#/BindEquipmentDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+unbindEquipment:
+  post:
+    tags:
+      - Equipment
+    summary: Unbind Equipment
+    operationId: unbindEquipment
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/equipment.yaml#/UnbindEquipmentDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+bindStatus:
+  post:
+    tags:
+      - Equipment
+    summary: Check Bind Status
+    operationId: bindStatus
+    security:
+      - accessToken: []
+    responses:
+      "200":
+        description: Bind Status
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/equipment.yaml#/BindStatusVO"
+
+queryUserEquipment_deleteApi:
+  post:
+    tags:
+      - Equipment
+    summary: Query User Equipment (Delete API)
+    operationId: queryUserEquipment_deleteApi
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/equipment.yaml#/QueryEquipmentDTO"
+    responses:
+      "200":
+        description: Equipment List
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/CommonListVO"
+
+queryUserEquipmentByNo:
+  post:
+    tags:
+      - Equipment
+    summary: Query Equipment By Number
+    operationId: queryUserEquipmentByNo
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/equipment.yaml#/UserEquipmentDTO"
+    responses:
+      "200":
+        description: User Equipment
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/equipment.yaml#/UserEquipmentVO"
+
+queryEquipmentManual_deleteApi:
+  post:
+    tags:
+      - Equipment
+    summary: Query Equipment Manual (Delete API)
+    operationId: queryEquipmentManual_deleteApi
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/equipment.yaml#/EquipmentManualDTO"
+    responses:
+      "200":
+        description: Manual
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/equipment.yaml#/EquipmentManualVO"
+
+queryEquipmentByNo_deleteApi:
+  get:
+    tags:
+      - Equipment
+    summary: Query Equipment By Number (Internal)
+    operationId: queryEquipmentByNo_deleteApi
+    parameters:
+      - name: equipmentNo
+        in: path
+        required: true
+        schema:
+          type: string
+    responses:
+      "200":
+        description: Equipment Info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/equipment.yaml#/EquipmentVO"
+
+queryUserEquipmentByUserId:
+  get:
+    tags:
+      - Equipment
+    summary: Query Equipment By User ID
+    operationId: queryUserEquipmentByUserId
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    responses:
+      "200":
+        description: User Equipment List
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/equipment.yaml#/UserEquipmentListVO"
+
+deleteByEquipmentNumber_deleteApi:
+  delete:
+    tags:
+      - Equipment
+    summary: Delete Equipment By Number
+    operationId: deleteByEquipmentNumber_deleteApi
+    parameters:
+      - name: equipmentNumber
+        in: path
+        required: true
+        schema:
+          type: string
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
