@@ -244,7 +244,8 @@ paths:
   /api/system/base/reference/param:
     $ref: "./paths/system.yaml#/queryReferenceByParam"
   /api/official/system/base/param:
-    $ref: "./paths/system.yaml#/getReference"components:
+    $ref: "./paths/system.yaml#/getReference"
+components:
   securitySchemes:
     accessToken:
       type: apiKey
