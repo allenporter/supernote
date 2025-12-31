@@ -211,11 +211,16 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
 @routes.put("/api/file/upload/data/{filename}")
 async def handle_upload_data(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/upload/data/{filename}
-    # Purpose: Receive the actual file content.
+    # Purpose: Receive the actual file content (supports chunked uploads).
 
     filename = request.match_info["filename"]
     user_email = request["user"]
     storage_service: StorageService = request.app["storage_service"]
+
+    # Check for chunked upload parameters
+    upload_id = request.query.get("uploadId")
+    total_chunks_str = request.query.get("totalChunks")
+    part_number_str = request.query.get("partNumber")
 
     # The device sends multipart/form-data
     if request._read_bytes:
@@ -227,13 +232,45 @@ async def handle_upload_data(request: web.Request) -> web.Response:
     # Read the first part (which should be the file)
     field = await reader.next()
     if isinstance(field, BodyPartReader) and field.name == "file":
-        # Write to temp file using non-blocking I/O
-        total_bytes = await storage_service.save_temp_file(
-            user_email, filename, field.read_chunk
-        )
-        logger.info(
-            f"Received upload for {filename} (user: {user_email}): {total_bytes} bytes"
-        )
+        # Check if this is a chunked upload
+        if upload_id and total_chunks_str and part_number_str:
+            total_chunks = int(total_chunks_str)
+            part_number = int(part_number_str)
+
+            # Save this chunk
+            total_bytes = await storage_service.save_chunk_file(
+                user_email, upload_id, filename, part_number, field.read_chunk
+            )
+            logger.info(
+                f"Received chunk {part_number}/{total_chunks} for {filename} "
+                f"(user: {user_email}, uploadId: {upload_id}): {total_bytes} bytes"
+            )
+
+            # If this is the last chunk, merge all chunks
+            if part_number == total_chunks:
+                logger.info(
+                    f"Received final chunk for {filename}, merging {total_chunks} chunks"
+                )
+                await asyncio.to_thread(
+                    storage_service.merge_chunks,
+                    user_email,
+                    upload_id,
+                    filename,
+                    total_chunks,
+                )
+                # Clean up chunk files
+                await asyncio.to_thread(
+                    storage_service.cleanup_chunks, user_email, upload_id
+                )
+                logger.info(f"Successfully merged and cleaned up chunks for {filename}")
+        else:
+            # Non-chunked upload
+            total_bytes = await storage_service.save_temp_file(
+                user_email, filename, field.read_chunk
+            )
+            logger.info(
+                f"Received upload for {filename} (user: {user_email}): {total_bytes} bytes"
+            )
 
     return web.Response(status=200)
 
