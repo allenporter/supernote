@@ -12,7 +12,6 @@ The following endpoints are supported:
 """
 
 from dataclasses import dataclass, field
-from enum import Enum
 
 from mashumaro import field_options
 from mashumaro.config import BaseConfig
@@ -34,12 +33,12 @@ class Equipment(BaseEnum):
     USER_PLATFORM = 4
 
 
-class LoginMethod(Enum):
+class LoginMethod(str, BaseEnum):
     """Method for logging in to account."""
 
-    PHONE = 1
-    EMAIL = 2
-    WECHAT = 3
+    PHONE = "1"
+    EMAIL = "2"
+    WECHAT = "3"
 
 
 @dataclass
@@ -55,7 +54,7 @@ class LoginDTO(DataClassJSONMixin):
     """User account (email, username, phone number etc)."""
 
     password: str
-    """Password (SHA-256 encrypted using random code)."""
+    """Hashed password. Schema: SHA256(MD5(pwd) + randomCode)) or MD5(pwd + randomCode)."""
 
     timestamp: str
     """Client timestamp."""
@@ -80,7 +79,7 @@ class LoginDTO(DataClassJSONMixin):
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
     )
-    """Device serial number (Required for Terminal login)."""
+    """Device serial number (SN12345678) or other client identifier (WEB)."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -138,6 +137,7 @@ class RandomCodeVO(BaseResponse):
     """Response from random code endpoint."""
 
     random_code: str = field(metadata=field_options(alias="randomCode"), default="")
+    """Server-side nonce (salt) used for password hashing."""
     timestamp: str = ""
 
 
@@ -177,7 +177,7 @@ class SmsLoginDTO(DataClassJSONMixin):
     """SMS/Email verification code."""
 
     valid_code_key: str = field(metadata=field_options(alias="validCodeKey"))
-    """Session key for validation code."""
+    """Redis session key for the code (e.g., '{email}_validCode')."""
 
     country_code: int = field(
         metadata=field_options(alias="countryCode"), default=COUNTRY_CODE
@@ -199,7 +199,7 @@ class SmsLoginDTO(DataClassJSONMixin):
     """Device type."""
 
     devices: OSType | None = OSType.WINDOWS
-    """OS Type."""
+    """OS Type: WINDOWS, MACOS, LINUX, ANDROID, IOS."""
 
     class Config(BaseConfig):
         serialize_by_alias = True

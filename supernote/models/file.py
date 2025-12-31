@@ -1,13 +1,14 @@
 """File related API data models mirroring OpenAPI Spec."""
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import List
 
 from mashumaro import field_options
 from mashumaro.config import BaseConfig
 from mashumaro.mixins.json import DataClassJSONMixin
 
-from .base import BaseEnum, BaseResponse
+from .base import BaseEnum, BaseResponse, BooleanEnum
 
 
 class FileSortOrder(str, BaseEnum):
@@ -48,9 +49,24 @@ class UserFileVO(DataClassJSONMixin):
     file_name: str = field(metadata=field_options(alias="fileName"))
     size: int
     md5: str
-    is_folder: str = field(metadata=field_options(alias="isFolder"))  # "Y", "N"
-    create_time: str = field(metadata=field_options(alias="createTime"))  # ISO 8601
-    update_time: str = field(metadata=field_options(alias="updateTime"))  # ISO 8601
+    inner_name: str | None = field(
+        metadata=field_options(alias="innerName"), default=None
+    )
+    """Obfuscated storage key. Formula: {UUID}-{tail}.{ext} where tail is SN last 3 digits."""
+
+    is_folder: BooleanEnum = field(
+        metadata=field_options(alias="isFolder"), default=BooleanEnum.NO
+    )
+
+    create_time: datetime | None = field(
+        metadata=field_options(alias="createTime"), default=None
+    )
+    """The creation time of the file. ISO 8601."""
+
+    update_time: datetime | None = field(
+        metadata=field_options(alias="updateTime"), default=None
+    )
+    """The last update time of the file. ISO 8601."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -87,7 +103,7 @@ class FolderVO(DataClassJSONMixin):
     id: str
     directory_id: str = field(metadata=field_options(alias="directoryId"))
     file_name: str = field(metadata=field_options(alias="fileName"))
-    empty: str = "N"  # Y/N
+    empty: BooleanEnum = field(metadata=field_options(alias="empty"))
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -284,12 +300,19 @@ class RecycleFileDTO(DataClassJSONMixin):
         serialize_by_alias = True
 
 
+class DownloadType(str, BaseEnum):
+    """Download type."""
+
+    DOWNLOAD = "0"
+    SHARE = "1"
+
+
 @dataclass
 class FileDownloadDTO(DataClassJSONMixin):
     """Request model for getting a file download URL."""
 
     id: int
-    type: str = "0"  # "0": Download, "1": Share
+    type: DownloadType = DownloadType.DOWNLOAD
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -359,6 +382,13 @@ class FileUploadApplyLocalVO(BaseResponse):
     )
 
 
+class UploadType(str, BaseEnum):
+    """Upload type."""
+
+    APP = "1"
+    CLOUD = "2"
+
+
 @dataclass
 class FileUploadFinishDTO(DataClassJSONMixin):
     """Request model for completing a file upload (Cloud)."""
@@ -368,7 +398,7 @@ class FileUploadFinishDTO(DataClassJSONMixin):
     file_name: str = field(metadata=field_options(alias="fileName"))
     md5: str
     inner_name: str = field(metadata=field_options(alias="innerName"))
-    type: str = "2"  # "1": App, "2": Cloud
+    type: UploadType = UploadType.CLOUD
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -395,6 +425,7 @@ class SynchronousStartLocalVO(BaseResponse):
         metadata=field_options(alias="equipmentNo"), default=None
     )
     syn_type: bool = field(metadata=field_options(alias="synType"), default=True)
+    """True: normal sync, false: full re-upload."""
 
 
 @dataclass
@@ -402,7 +433,8 @@ class SynchronousEndLocalDTO(DataClassJSONMixin):
     """Request model for ending device synchronization."""
 
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
-    flag: str | None = None  # "true" / "false"
+    flag: str | None = None
+    """Synchronization success flag typically a string "true" or "false"."""
 
     class Config(BaseConfig):
         serialize_by_alias = True

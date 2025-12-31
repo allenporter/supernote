@@ -38,6 +38,9 @@ UserFileVO:
       format: int64
     md5:
       type: string
+    innerName:
+      type: string
+      description: "Obfuscated storage key. Formula: {UUID}-{tail}.{ext} where tail is SN last 3 digits."
     isFolder:
       type: string
       enum: ["Y", "N"]

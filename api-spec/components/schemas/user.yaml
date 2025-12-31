@@ -103,10 +103,11 @@ UserVO:
       format: date-time
     isNormal:
       type: string
-      enum: ["Y", "N"]
+      description: "User status: 'Y' (Normal), 'N' (Frozen), 'A' (Admin)"
+      enum: ["Y", "N", "A"]
     fileServer:
       type: string
-      description: Assigned file server URL
+      description: "Storage provider code ('0': ufile, '1': aws) or private cloud URL"
 
 UserQueryVO:
   type: object
@@ -160,6 +161,7 @@ UserQueryByIdVO:
           type: string
         isNormal:
           type: string
+          description: "User status: 'Y' (Normal), 'N' (Frozen), 'A' (Admin)"
 
 UserDTO:
   type: object
@@ -172,6 +174,7 @@ UserDTO:
       type: string
     isNormal:
       type: string
+      description: "User status: 'Y' (Normal), 'N' (Frozen), 'A' (Admin)"
     createTimeStart:
       type: string
     createTimeEnd:
@@ -243,3 +246,4 @@ UserInfo:
       type: string
     fileServer:
       type: string
+      description: "Storage provider code ('0': ufile, '1': aws) or private cloud URL"
