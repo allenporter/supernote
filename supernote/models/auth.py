@@ -57,7 +57,7 @@ class LoginDTO(DataClassJSONMixin):
     """Hashed password. Schema: SHA256(MD5(pwd) + randomCode)) or MD5(pwd + randomCode)."""
 
     timestamp: str
-    """Client timestamp."""
+    """Client timestamp in milliseconds."""
 
     login_method: LoginMethod = field(metadata=field_options(alias="loginMethod"))
     """Login method."""
@@ -138,7 +138,9 @@ class RandomCodeVO(BaseResponse):
 
     random_code: str = field(metadata=field_options(alias="randomCode"), default="")
     """Server-side nonce (salt) used for password hashing."""
+
     timestamp: str = ""
+    """Client timestamp in milliseconds."""
 
 
 @dataclass
@@ -187,7 +189,7 @@ class SmsLoginDTO(DataClassJSONMixin):
     """User phone number."""
 
     timestamp: str | None = None
-    """Client timestamp."""
+    """Client timestamp in milliseconds."""
 
     email: str | None = None
     """User email."""
@@ -239,13 +241,24 @@ class SendSmsDTO(DataClassJSONMixin):
     """
 
     telephone: str
+    """User phone number."""
+
     timestamp: str
+    """Client timestamp in milliseconds."""
+
     token: str
+    """JWT Access Token."""
+
     sign: str
+    """JWT Signature."""
+
     extend: str | None = None
+    """JWT Extension."""
+
     nationcode: int = field(
         metadata=field_options(alias="nationcode"), default=COUNTRY_CODE
     )
+    """Country code."""
 
     class Config(BaseConfig):
         serialize_by_alias = True

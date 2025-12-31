@@ -1,0 +1,130 @@
+[
+  {
+    "method": "POST",
+    "path": "/api/terminal/equipment/unlink",
+    "body": {
+      "equipmentNo": "test-equipment-no",
+      "version": "202407"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/official/user/check/exists/server",
+    "body": {
+      "email": "test-email",
+      "version": "202407"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/official/user/query/random/code",
+    "body": {
+      "account": "test-account",
+      "version": "202407"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/official/user/account/login/equipment",
+    "body": {
+      "account": "test-account",
+      "equipment": 3,
+      "equipmentNo": "test-equipment-no",
+      "loginMethod": "2",
+      "password": "test-password",
+      "timestamp": 1767146060898,
+      "version": "202407"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/terminal/user/bindEquipment",
+    "body": {
+      "account": "test-account",
+      "equipmentNo": "test-equipment-no",
+      "flag": "1",
+      "label": [
+        "DOCUMENT/Document",
+        "NOTE/Note",
+        "NOTE/MyStyle",
+        "EXPORT",
+        "SCREENSHOT",
+        "INBOX"
+      ],
+      "name": "Supernote A6 X2 Nomad",
+      "totalCapacity": "21481994",
+      "version": "202407"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/file/2/files/synchronous/start",
+    "body": {
+      "equipmentNo": "test-equipment-no"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/file/2/files/list_folder",
+    "body": {
+      "path": "/",
+      "recursive": true,
+      "equipmentNo": "test-equipment-no"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/file/3/files/query/by/path_v3",
+    "body": {
+      "path": "/NOTE/Note/test_note_folder",
+      "equipmentNo": "test-equipment-no"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/file/3/files/upload/apply",
+    "body": {
+      "path": "/INBOX/test_document.pdf",
+      "fileName": "test_document.pdf",
+      "equipmentNo": "test-equipment-no",
+      "size": 2935993
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/file/2/files/upload/finish",
+    "body": {
+      "content_hash": "some-content-hash",
+      "equipmentNo": "test-equipment-no",
+      "fileName": "test_document.pdf",
+      "innerName": "test_document.pdf",
+      "path": "/INBOX/",
+      "size": "2935993"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/file/2/files/create_folder_v2",
+    "body": {
+      "autorename": false,
+      "path": "/NOTE/Note/test_note_folder",
+      "equipmentNo": "test-equipment-no"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/file/2/files/synchronous/end",
+    "body": {
+      "equipmentNo": "test-equipment-no",
+      "flag": "N"
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/file/3/files/query_v3",
+    "body": {
+      "equipmentNo": "test-equipment-no",
+      "id": "7655816004510727396"
+    }
+  }
+]
