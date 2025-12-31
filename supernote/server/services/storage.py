@@ -127,6 +127,92 @@ class StorageService:
 
         return total_bytes
 
+    def get_chunk_path(
+        self, user: str, upload_id: str, filename: str, part_number: int
+    ) -> Path:
+        """Get the path for a specific chunk file."""
+        chunk_filename = f"{filename}_chunk_{part_number}"
+        return self.temp_dir / user / upload_id / chunk_filename
+
+    async def save_chunk_file(
+        self,
+        user: str,
+        upload_id: str,
+        filename: str,
+        part_number: int,
+        chunk_reader: Callable[[], Awaitable[bytes]],
+    ) -> int:
+        """Save a single chunk to a separate file."""
+        chunk_path = self.get_chunk_path(user, upload_id, filename, part_number)
+        chunk_path.parent.mkdir(parents=True, exist_ok=True)
+
+        loop = asyncio.get_running_loop()
+
+        # Open file in executor to avoid blocking the event loop
+        f = await loop.run_in_executor(None, open, chunk_path, "wb")
+        total_bytes = 0
+        try:
+            while True:
+                chunk = await chunk_reader()
+                if not chunk:
+                    break
+                await loop.run_in_executor(None, f.write, chunk)
+                total_bytes += len(chunk)
+        finally:
+            await loop.run_in_executor(None, f.close)
+
+        logger.info(
+            f"Saved chunk {part_number} for {filename} (user: {user}): {total_bytes} bytes"
+        )
+        return total_bytes
+
+    def merge_chunks(
+        self, user: str, upload_id: str, filename: str, total_chunks: int
+    ) -> Path:
+        """Merge all chunks into the final temp file."""
+        temp_path = self.resolve_temp_path(user, filename)
+        temp_path.parent.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"Merging {total_chunks} chunks for {filename} (user: {user})")
+
+        # Open the final file for writing
+        with open(temp_path, "wb") as output_file:
+            # Read and write each chunk in order
+            for part_number in range(1, total_chunks + 1):
+                chunk_path = self.get_chunk_path(user, upload_id, filename, part_number)
+                if not chunk_path.exists():
+                    raise FileNotFoundError(
+                        f"Chunk {part_number} not found for {filename}"
+                    )
+
+                with open(chunk_path, "rb") as chunk_file:
+                    # Copy chunk to output file
+                    while True:
+                        data = chunk_file.read(8192)
+                        if not data:
+                            break
+                        output_file.write(data)
+
+                logger.debug(
+                    f"Merged chunk {part_number}/{total_chunks} for {filename}"
+                )
+
+        logger.info(f"Successfully merged all chunks for {filename}")
+        return temp_path
+
+    def cleanup_chunks(self, user: str, upload_id: str) -> None:
+        """Remove the upload directory and all its chunk files."""
+        upload_dir = self.temp_dir / user / upload_id
+        if not upload_dir.exists():
+            return
+
+        # Delete the entire upload directory
+        try:
+            shutil.rmtree(upload_dir)
+            logger.debug(f"Deleted upload directory: {upload_id}")
+        except OSError as e:
+            logger.warning(f"Failed to delete upload directory {upload_id}: {e}")
+
     def create_directory(self, user: str, rel_path: str) -> Path:
         """Create a directory in user's storage."""
         target_path = self.resolve_path(user, rel_path)
