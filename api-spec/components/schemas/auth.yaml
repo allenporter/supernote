@@ -1,0 +1,139 @@
+---
+LoginDTO:
+  type: object
+  properties:
+    password:
+      type: string
+      description: Password (SHA-256 encrypted using random code)
+    countryCode:
+      type: string
+      description: Country code
+    account:
+      type: string
+      description: User email or phone number
+    browser:
+      type: string
+      description: Browser name (user agent info)
+    equipment:
+      type: integer
+      description: "Device Type: 1=Web, 2=App, 3=Terminal, 4=UserPlatform"
+      enum: [1, 2, 3, 4]
+    loginMethod:
+      type: string
+      description: "Login Method: 1=Mobile, 2=Email, 3=WeChat"
+      enum: ["1", "2", "3"]
+    language:
+      type: string
+      description: Language code
+    equipmentNo:
+      type: string
+      description: Device serial number (Required for Terminal login)
+    timestamp:
+      type: integer
+      format: int64
+      description: Client timestamp
+  required:
+    - password
+    - account
+    - equipment
+    - loginMethod
+
+LoginVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        token:
+          type: string
+          description: JWT Access Token
+        counts:
+          type: string
+          description: Error count
+        userName:
+          type: string
+          description: User nickname
+        avatarsUrl:
+          type: string
+          description: Avatar URL
+        lastUpdateTime:
+          type: string
+          format: date-time
+        isBind:
+          type: string
+          enum: ["Y", "N"]
+          description: Is account bound
+        isBindEquipment:
+          type: string
+          enum: ["Y", "N"]
+          description: Is device bound (Terminal only)
+        soldOutCount:
+          type: integer
+          description: Logout count
+
+SmsLoginDTO:
+  type: object
+  properties:
+    email:
+      type: string
+    browser:
+      type: string
+    equipment:
+      type: integer
+    validCode:
+      type: string
+      description: SMS/Email verification code
+    validCodeKey:
+      type: string
+      description: Session key for validation code
+    devices:
+      type: string
+      description: "OS Type: WINDOWS, MACOS, LINUX, ANDROID, IOS"
+  required:
+    - equipment
+    - validCode
+    - validCodeKey
+
+RandomCodeDTO:
+  type: object
+  properties:
+    account:
+      type: string
+      description: User account
+    countryCode:
+      type: string
+  required:
+    - account
+
+RandomCodeVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        randomCode:
+          type: string
+          description: Random code sequence for password encryption
+        timestamp:
+          type: integer
+          format: int64
+
+QueryTokenVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        token:
+          type: string
+          description: The valid token string
+
+SmsLoginVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        token:
+          type: string
+          description: JWT Access Token

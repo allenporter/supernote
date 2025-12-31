@@ -1,0 +1,36 @@
+---
+BaseVO:
+  type: object
+  properties:
+    success:
+      type: boolean
+      description: Request success status
+    errorCode:
+      type: string
+      description: Response code (e.g., '0000' for success)
+    errorMsg:
+      type: string
+      description: Response message or error description
+  required:
+    - success
+
+CommonListVO:
+  type: object
+  allOf:
+    - $ref: "#/BaseVO"
+    - type: object
+      properties:
+        total:
+          type: integer
+          format: int64
+          description: Total count of items
+        pages:
+          type: integer
+          description: Total pages
+        size:
+          type: integer
+          description: Current page size
+        voList:
+          type: array
+          items:
+            type: object

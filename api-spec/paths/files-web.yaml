@@ -1,0 +1,347 @@
+---
+queryFileList:
+  post:
+    tags:
+      - File - Web
+    summary: Query File List in Directory
+    operationId: queryFileList
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FileListQueryDTO"
+    responses:
+      "200":
+        description: List of files
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/FileListQueryVO"
+
+queryFolderList:
+  post:
+    tags:
+      - File - Web
+    summary: Query Folder List
+    operationId: queryFolderList
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FolderListQueryDTO"
+    responses:
+      "200":
+        description: List of folders
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/FolderListQueryVO"
+
+queryCapacity:
+  post:
+    tags:
+      - File - Web
+    summary: Query Cloud Storage Capacity
+    operationId: queryCapacity
+    security:
+      - accessToken: []
+    responses:
+      "200":
+        description: Capacity info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/CapacityVO"
+
+deleteFile:
+  post:
+    tags:
+      - File - Web
+    summary: Delete File or Folder
+    operationId: deleteFile
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FileDeleteDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+addFolder:
+  post:
+    tags:
+      - File - Web
+    summary: Create New Folder
+    operationId: addFolder
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FolderAddDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+moveFile:
+  post:
+    tags:
+      - File - Web
+    summary: Move File or Folder
+    operationId: moveFile
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FileMoveAndCopyDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+copyFile:
+  post:
+    tags:
+      - File - Web
+    summary: Copy File or Folder
+    operationId: copyFile
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FileMoveAndCopyDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+renameFile:
+  post:
+    tags:
+      - File - Web
+    summary: Rename File or Folder
+    operationId: renameFile
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FileReNameDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+searchFile:
+  post:
+    tags:
+      - File - Web
+    summary: Search File or Folder
+    operationId: searchFile
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FileListSearchDTO"
+    responses:
+      "200":
+        description: Search results
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/FileListSearchVO"
+
+queryRecycleList:
+  post:
+    tags:
+      - File - Web
+    summary: Query Recycle Bin Files
+    operationId: queryRecycleList
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/RecycleFileListDTO"
+    responses:
+      "200":
+        description: Recycle bin list
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/RecycleFileListVO"
+
+clearRecycle:
+  post:
+    tags:
+      - File - Web
+    summary: Clear Recycle Bin
+    operationId: clearRecycle
+    security:
+      - accessToken: []
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+deleteRecycle:
+  post:
+    tags:
+      - File - Web
+    summary: Permanently Delete from Recycle Bin
+    operationId: deleteRecycle
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/RecycleFileDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+revertRecycle:
+  post:
+    tags:
+      - File - Web
+    summary: Revert from Recycle Bin
+    operationId: revertRecycle
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/RecycleFileDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+getDownloadUrl:
+  post:
+    tags:
+      - File - Web
+    summary: Get File Download URL
+    operationId: getDownloadUrl
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FileDownloadDTO"
+    responses:
+      "200":
+        description: Download URL
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/FileDownloadUrlVO"
+
+queryFilePath:
+  post:
+    tags:
+      - File - Web
+    summary: Query File Path
+    operationId: queryFilePath
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FilePathQueryDTO"
+    responses:
+      "200":
+        description: File path info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/FilePathQueryVO"
+
+uploadApply:
+  post:
+    tags:
+      - File - Web
+    summary: Apply for File Upload
+    operationId: uploadApply
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FileUploadApplyDTO"
+    responses:
+      "200":
+        description: Upload parameters
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/FileUploadApplyLocalVO"
+
+uploadFinish:
+  post:
+    tags:
+      - File - Web
+    summary: Finish File Upload
+    operationId: uploadFinish
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FileUploadFinishDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"

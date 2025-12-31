@@ -1,0 +1,195 @@
+---
+checkExists:
+  post:
+    tags:
+      - User
+    summary: Check User Exists
+    operationId: checkUserExists
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/user.yaml#/UserCheckDTO"
+    responses:
+      "200":
+        description: Check result
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+checkExistsServer:
+  post:
+    tags:
+      - User
+    summary: Check User Exists (Server Aware)
+    operationId: checkUserExistsServer
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/user.yaml#/UserCheckDTO"
+    responses:
+      "200":
+        description: User server info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/user.yaml#/UserCheckVO"
+
+queryUserById:
+  post:
+    tags:
+      - User
+    summary: Query User (Current)
+    operationId: queryUserById
+    security:
+      - accessToken: []
+    responses:
+      "200":
+        description: User profile info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/user.yaml#/UserQueryByIdVO"
+
+queryUserInfo:
+  post:
+    tags:
+      - User
+    summary: Query User Info (Terminal Compatible)
+    operationId: queryUserInfo
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/user.yaml#/UserQueryDTO"
+    responses:
+      "200":
+        description: User info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/user.yaml#/UserQueryVO"
+
+updateUser:
+  post:
+    tags:
+      - User
+    summary: Update User Profile
+    operationId: updateUser
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/user.yaml#/UserUpdateDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+updateUserName:
+  post:
+    tags:
+      - User
+    summary: Update Nickname
+    operationId: updateUserName
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/user.yaml#/UpdateUserNameDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+queryAllUsers:
+  post:
+    tags:
+      - User
+    summary: Query All Users
+    operationId: queryAllUsers
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/user.yaml#/UserDTO"
+    responses:
+      "200":
+        description: List of users
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/CommonListVO"
+
+freezeUser:
+  put:
+    tags:
+      - User
+    summary: Freeze/Unfreeze User
+    operationId: freezeUser
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/user.yaml#/FreezeOrUnfreezeUserDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+queryOneUser:
+  post:
+    tags:
+      - User
+    summary: Query Single User
+    operationId: queryOneUser
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/user.yaml#/UserInfoDTO"
+    responses:
+      "200":
+        description: User basic info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/user.yaml#/UserInfoVo"
+
+queryUserByPathId:
+  get:
+    tags:
+      - User
+    summary: Query User by ID (Path Param)
+    operationId: queryUserByPathId
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    responses:
+      "200":
+        description: User profile
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/user.yaml#/UserQueryByIdVO"

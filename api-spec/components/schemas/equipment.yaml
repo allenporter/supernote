@@ -1,0 +1,200 @@
+# Equipment Schemas
+---
+ActivateEquipmentDTO:
+  type: object
+  required:
+    - equipmentNo
+  properties:
+    equipmentNo:
+      type: string
+      description: 设备号
+
+BindEquipmentDTO:
+  type: object
+  required:
+    - equipmentNo
+    - account
+    - name
+    - totalCapacity
+    - label
+  properties:
+    equipmentNo:
+      type: string
+      description: 设备号
+    account:
+      type: string
+      description: 账号
+    countryCode:
+      type: string
+      description: 国家码
+    name:
+      type: string
+      description: 设备名称
+    totalCapacity:
+      type: string
+      description: 设备总容量
+    flag:
+      type: string
+      description: 标识（固定值：1）
+    label:
+      type: array
+      items:
+        type: string
+      description: 标签页
+
+UnbindEquipmentDTO:
+  type: object
+  required:
+    - equipmentNo
+  properties:
+    equipmentNo:
+      type: string
+      description: 设备号
+
+QueryEquipmentDTO:
+  type: object
+  required:
+    - pageNo
+    - pageSize
+  properties:
+    pageNo:
+      type: string
+      description: 页码
+    pageSize:
+      type: string
+      description: 每页显示的个数
+    equipmentNumber:
+      type: string
+      description: 设备号
+    firmwareVersion:
+      type: string
+      description: 固件版本号
+    countryCode:
+      type: string
+      description: 国家码
+    telephone:
+      type: string
+      description: 手机号
+    email:
+      type: string
+      description: 邮箱
+
+UserEquipmentDTO:
+  type: object
+  required:
+    - equipmentNo
+  properties:
+    equipmentNo:
+      type: string
+      description: 设备号
+
+EquipmentManualDTO:
+  type: object
+  required:
+    - equipmentNo
+    - language
+    - logicVersion
+  properties:
+    equipmentNo:
+      type: string
+      description: 设备号
+    language:
+      type: string
+      description: 语言-JP、CN、HK、EN
+    logicVersion:
+      type: string
+      description: 逻辑版本号
+
+BindStatusVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        bindStatus:
+          type: boolean
+          description: "绑定状态(true:绑定；false:未绑定)"
+
+EquipmentManualVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        equipmentNo:
+          type: string
+        url:
+          type: string
+        md5:
+          type: string
+        fileName:
+          type: string
+        version:
+          type: string
+
+EquipmentVO:
+  type: object
+  properties:
+    equipmentNumber:
+      type: string
+    firmwareVersion:
+      type: string
+    updateStatus:
+      type: string
+    remark:
+      type: string
+
+UserEquipmentVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        equipmentNumber:
+          type: string
+        userId:
+          type: integer
+          format: int64
+        name:
+          type: string
+        status:
+          type: string
+
+UserEquipmentListVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        equipmentVOList:
+          type: array
+          items:
+            $ref: "#/UserEquipmentVO"
+
+QueryEquipmentVO:
+  type: object
+  properties:
+    userId:
+      type: string
+    equipmentNumber:
+      type: string
+    name:
+      type: string
+    firmwareVersion:
+      type: string
+    createTime:
+      type: integer
+      format: int64
+    activateTime:
+      type: integer
+      format: int64
+    countryCode:
+      type: string
+    telephone:
+      type: string
+    email:
+      type: string
+    status:
+      type: string
+    updateStatus:
+      type: string
+    remark:
+      type: string
+    fileServer:
+      type: string

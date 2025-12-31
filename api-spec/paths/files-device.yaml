@@ -1,0 +1,371 @@
+---
+syncStart:
+  post:
+    tags:
+      - File - Device
+    summary: Start Synchronization (NAS)
+    operationId: syncStart
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/SynchronousStartLocalDTO"
+    responses:
+      "200":
+        description: Sync start info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/SynchronousStartLocalVO"
+
+syncEnd:
+  post:
+    tags:
+      - File - Device
+    summary: End Synchronization (NAS)
+    operationId: syncEnd
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/SynchronousEndLocalDTO"
+    responses:
+      "200":
+        description: Sync end info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/SynchronousEndLocalVO"
+
+createFolderV2:
+  post:
+    tags:
+      - File - Device
+    summary: Create Folder (NAS)
+    operationId: createFolderV2
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/CreateFolderLocalDTO"
+    responses:
+      "200":
+        description: Created folder info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/CreateFolderLocalVO"
+
+listFolder:
+  post:
+    tags:
+      - File - Device
+    summary: List Folder (Dropbox version)
+    operationId: listFolder
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/ListFolderV2DTO"
+    responses:
+      "200":
+        description: Folder list
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/ListFolderLocalVO"
+
+listFolderV3:
+  post:
+    tags:
+      - File - Device
+    summary: List Folder (NAS version)
+    operationId: listFolderV3
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/ListFolderLocalDTO"
+    responses:
+      "200":
+        description: Folder list
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/ListFolderLocalVO"
+
+deleteFolderV3:
+  post:
+    tags:
+      - File - Device
+    summary: Delete File or Folder (NAS)
+    operationId: deleteFolderV3
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/DeleteFolderLocalDTO"
+    responses:
+      "200":
+        description: Deleted folder info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/DeleteFolderLocalVO"
+
+uploadApplyV3:
+  post:
+    tags:
+      - File - Device
+    summary: Apply for Upload (NAS)
+    operationId: uploadApplyV3
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FileUploadApplyLocalDTO"
+    responses:
+      "200":
+        description: Upload parameters
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/FileUploadApplyLocalVO"
+
+uploadFinishV2:
+  post:
+    tags:
+      - File - Device
+    summary: Finish Upload (NAS)
+    operationId: uploadFinishV2
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FileUploadFinishLocalDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/FileUploadFinishLocalVO"
+
+downloadV3:
+  post:
+    tags:
+      - File - Device
+    summary: Get Download URL (NAS)
+    operationId: downloadV3
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FileDownloadLocalDTO"
+    responses:
+      "200":
+        description: Download URL
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/FileDownloadLocalVO"
+
+queryV3:
+  post:
+    tags:
+      - File - Device
+    summary: Query File by ID (NAS)
+    operationId: queryV3
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FileQueryLocalDTO"
+    responses:
+      "200":
+        description: File info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/FileQueryLocalVO"
+
+queryByPathV3:
+  post:
+    tags:
+      - File - Device
+    summary: Query File by Path (NAS)
+    operationId: queryByPathV3
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FileQueryByPathLocalDTO"
+    responses:
+      "200":
+        description: File info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/FileQueryByPathLocalVO"
+
+moveV3:
+  post:
+    tags:
+      - File - Device
+    summary: Move File (NAS)
+    operationId: moveV3
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FileMoveLocalDTO"
+    responses:
+      "200":
+        description: Moved file info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/FileMoveLocalVO"
+
+copyV3:
+  post:
+    tags:
+      - File - Device
+    summary: Copy File (NAS)
+    operationId: copyV3
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FileCopyLocalDTO"
+    responses:
+      "200":
+        description: Copied file info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/FileCopyLocalVO"
+
+getSpaceUsage:
+  post:
+    tags:
+      - File - Device
+    summary: Get Space Usage (NAS)
+    operationId: getSpaceUsage
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/CapacityLocalDTO"
+    responses:
+      "200":
+        description: Capacity info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/CapacityLocalVO"
+
+noteToPdf:
+  post:
+    tags:
+      - File - Device
+    summary: Convert Note to PDF
+    operationId: noteToPdf
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/PdfDTO"
+    responses:
+      "200":
+        description: PDF download URL
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/PdfVO"
+
+noteToPng:
+  post:
+    tags:
+      - File - Device
+    summary: Convert Note to PNG
+    operationId: noteToPng
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/PngDTO"
+    responses:
+      "200":
+        description: PNG download URLs
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/PngVO"
+
+pdfWithMarkToPdf:
+  post:
+    tags:
+      - File - Device
+    summary: Convert PDF with Marks to PDF
+    operationId: pdfWithMarkToPdf
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/PdfDTO"
+    responses:
+      "200":
+        description: PDF download URL
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/PdfVO"
+
+queryServer:
+  get:
+    tags:
+      - File - Device
+    summary: Check Server Connectivity
+    operationId: queryServer
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"

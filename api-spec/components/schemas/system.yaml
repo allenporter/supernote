@@ -1,0 +1,291 @@
+# Email Server Schemas
+---
+EmailServerDTO:
+  type: object
+  required:
+    - smtpServer
+    - port
+    - username
+    - password
+    - encryption
+  properties:
+    smtpServer:
+      type: string
+      description: Server Address
+    port:
+      type: string
+      description: Server Port
+    username:
+      type: string
+    password:
+      type: string
+    encryption:
+      type: string
+      description: SSL/TLS
+    testEmail:
+      type: string
+    language:
+      type: string
+
+EmailServerVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        smtpServer:
+          type: string
+        port:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+        encryption:
+          type: string
+        flag:
+          type: string
+          description: "N: Disabled, Y: Enabled"
+        testEmail:
+          type: string
+        adminEmail:
+          type: string
+
+EmailPublicKeyVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        publicKey:
+          type: string
+
+# OSS (Local Object Storage) Schemas
+FileUploadApplyLocalVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        equipmentNo:
+          type: string
+        bucketName:
+          type: string
+        innerName:
+          type: string
+        xAmzDate:
+          type: string
+        authorization:
+          type: string
+        fullUploadUrl:
+          type: string
+        partUploadUrl:
+          type: string
+
+FileChunkVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        uploadId:
+          type: string
+        partNumber:
+          type: integer
+          format: int32
+        totalChunks:
+          type: integer
+          format: int32
+        chunkMd5:
+          type: string
+        status:
+          type: string
+
+FileDownloadApplyVO:
+  type: object
+  properties:
+    url:
+      type: string
+    signature:
+      type: string
+    timestamp:
+      type: integer
+      format: int64
+    nonce:
+      type: string
+    pathId:
+      type: string
+
+UploadFileVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        innerName:
+          type: string
+        md5:
+          type: string
+
+# Dictionary Schemas
+DictionaryQueryDTO:
+  type: object
+  properties:
+    name:
+      type: string
+      description: 业务码
+    value:
+      type: string
+      description: 编码
+
+DictionaryVagueDTO:
+  allOf:
+    - $ref: "#/PageDTO"
+    - type: object
+      properties:
+        name:
+          type: string
+          description: 数据字典名称
+        valueMeaning:
+          type: string
+          description: 数据含义
+
+DictionaryVO:
+  type: object
+  properties:
+    id:
+      type: integer
+      format: int64
+    name:
+      type: string
+    value:
+      type: string
+    valueCn:
+      type: string
+    valueEn:
+      type: string
+    valueJa:
+      type: string
+    opUser:
+      type: string
+    opTime:
+      type: integer
+      format: int64
+    remark:
+      type: string
+
+DictionaryListVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        dictionaryVOList:
+          type: array
+          items:
+            $ref: "#/DictionarysVO"
+
+DictionaryByNameVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        dictionaryVOList:
+          type: array
+          items:
+            $ref: "#/DictionaryVO"
+
+DictionarysVO:
+  description: Helper VO for dictionary lists if needed, placeholder strictly
+  type: object
+  additionalProperties: true
+
+# Reference Schemas
+ReferenceQueryDTO:
+  type: object
+  required:
+    - name
+  properties:
+    serial:
+      type: string
+      description: 编码
+    name:
+      type: string
+      description: 业务码
+
+ReferenceVaguaDTO:
+  allOf:
+    - $ref: "#/PageDTO"
+    - type: object
+      properties:
+        name:
+          type: string
+          description: 业务码
+
+ReferenceVO:
+  type: object
+  properties:
+    id:
+      type: integer
+      format: int64
+    serial:
+      type: string
+    name:
+      type: string
+    value:
+      type: string
+    valueCn:
+      type: string
+    opUser:
+      type: string
+    opTime:
+      type: integer
+      format: int64
+    remark:
+      type: string
+
+ReferenceListVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        referenceVOList:
+          type: array
+          items:
+            $ref: "#/ReferenceVO"
+
+ReferenceRespVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        paramList:
+          type: array
+          items:
+            $ref: "#/ReferenceInfoVO"
+        random:
+          type: string
+
+ReferenceInfoVO:
+  type: object
+  properties:
+    serial:
+      type: string
+    name:
+      type: string
+    value:
+      type: string
+
+# Common Schemas for System
+PageDTO:
+  type: object
+  required:
+    - pageNo
+    - pageSize
+  properties:
+    pageNo:
+      type: integer
+      format: int32
+      default: 1
+    pageSize:
+      type: integer
+      format: int32
+      default: 10
+    sortField:
+      type: string
+    sortRules:
+      type: string
