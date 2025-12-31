@@ -1,13 +1,14 @@
+---
 BaseVO:
   type: object
   properties:
     success:
       type: boolean
       description: Request success status
-    returnCode:
+    errorCode:
       type: string
       description: Response code (e.g., '0000' for success)
-    message:
+    errorMsg:
       type: string
       description: Response message or error description
   required:
@@ -21,17 +22,15 @@ CommonListVO:
       properties:
         total:
           type: integer
+          format: int64
           description: Total count of items
         pages:
           type: integer
           description: Total pages
-        pageNum:
+        size:
           type: integer
-          description: Current page number
-        pageSize:
-          type: integer
-          description: Items per page
-        list:
+          description: Current page size
+        voList:
           type: array
           items:
             type: object

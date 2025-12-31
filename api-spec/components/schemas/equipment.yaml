@@ -1,5 +1,5 @@
 # Equipment Schemas
-
+---
 ActivateEquipmentDTO:
   type: object
   required:

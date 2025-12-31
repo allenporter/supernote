@@ -1,3 +1,4 @@
+---
 LoginDTO:
   type: object
   properties:

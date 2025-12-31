@@ -1,3 +1,4 @@
+---
 UserCheckDTO:
   type: object
   properties:

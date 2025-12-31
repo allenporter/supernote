@@ -1,3 +1,4 @@
+---
 ShareRecordDTO:
   type: object
   required:

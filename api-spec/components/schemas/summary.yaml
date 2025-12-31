@@ -1,5 +1,5 @@
 # Domain Objects Transformed into Reusable Components
-
+---
 SummaryItem:
   type: object
   properties:

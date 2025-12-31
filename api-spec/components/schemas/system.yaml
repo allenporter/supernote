@@ -1,4 +1,5 @@
 # Email Server Schemas
+---
 EmailServerDTO:
   type: object
   required:
