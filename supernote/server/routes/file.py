@@ -107,7 +107,10 @@ async def handle_list_folder(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
 
     entries = await asyncio.to_thread(
-        file_service.list_folder, user_email, path_str, req_data.recursive,
+        file_service.list_folder,
+        user_email,
+        path_str,
+        req_data.recursive,
     )
 
     return web.json_response(
@@ -303,7 +306,9 @@ async def handle_upload_finish(request: web.Request) -> web.Response:
         )
     except ValueError:
         return web.json_response(
-            BaseResponse(success=False, error_msg="Failure processing upload e.g. hash mismatch").to_dict(),
+            BaseResponse(
+                success=False, error_msg="Failure processing upload e.g. hash mismatch"
+            ).to_dict(),
             status=400,
         )
 
