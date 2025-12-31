@@ -1,4 +1,5 @@
 # Email Server Endpoints
+---
 saveEmailConfig:
   post:
     tags:
