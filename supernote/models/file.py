@@ -1,6 +1,5 @@
 """File related API data models mirroring OpenAPI Spec."""
 
-from enum import Enum
 from dataclasses import dataclass, field
 from typing import List
 
@@ -8,11 +7,12 @@ from mashumaro import field_options
 from mashumaro.config import BaseConfig
 from mashumaro.mixins.json import DataClassJSONMixin
 
-from .base import BaseResponse, BaseEnum
+from .base import BaseEnum, BaseResponse
 
 
 class FileSortOrder(str, BaseEnum):
     """Sort order for file listing."""
+
     FILENAME = "filename"
     TIME = "time"
     SIZE = "size"
@@ -20,6 +20,7 @@ class FileSortOrder(str, BaseEnum):
 
 class FileSortSequence(str, BaseEnum):
     """Sort sequence for file listing."""
+
     ASC = "asc"
     DESC = "desc"
 
@@ -27,6 +28,7 @@ class FileSortSequence(str, BaseEnum):
 @dataclass
 class FileListQueryDTO(DataClassJSONMixin):
     """Request model for querying a list of files in a directory (ID-based)."""
+
     directory_id: int = field(metadata=field_options(alias="directoryId"))
     order: FileSortOrder = FileSortOrder.TIME
     sequence: FileSortSequence = FileSortSequence.DESC
@@ -40,6 +42,7 @@ class FileListQueryDTO(DataClassJSONMixin):
 @dataclass
 class UserFileVO(DataClassJSONMixin):
     """Object representing a file or folder in the Cloud API."""
+
     id: str
     directory_id: str = field(metadata=field_options(alias="directoryId"))
     file_name: str = field(metadata=field_options(alias="fileName"))
@@ -56,6 +59,7 @@ class UserFileVO(DataClassJSONMixin):
 @dataclass
 class FileListQueryVO(BaseResponse):
     """Response model containing a paginated list of files."""
+
     total: int = 0
     pages: int = 0
     page_num: int = field(metadata=field_options(alias="pageNum"), default=0)
@@ -68,6 +72,7 @@ class FileListQueryVO(BaseResponse):
 @dataclass
 class FolderListQueryDTO(DataClassJSONMixin):
     """Request model for listing details of specific folders by ID."""
+
     directory_id: int = field(metadata=field_options(alias="directoryId"))
     id_list: List[int] = field(metadata=field_options(alias="idList"))
 
@@ -78,6 +83,7 @@ class FolderListQueryDTO(DataClassJSONMixin):
 @dataclass
 class FolderVO(DataClassJSONMixin):
     """Object representing a folder."""
+
     id: str
     directory_id: str = field(metadata=field_options(alias="directoryId"))
     file_name: str = field(metadata=field_options(alias="fileName"))
@@ -90,6 +96,7 @@ class FolderVO(DataClassJSONMixin):
 @dataclass
 class FolderListQueryVO(BaseResponse):
     """Response model containing a list of folders."""
+
     folder_vo_list: List[FolderVO] = field(
         metadata=field_options(alias="folderVOList"), default_factory=list
     )
@@ -98,6 +105,7 @@ class FolderListQueryVO(BaseResponse):
 @dataclass
 class AllocationVO(DataClassJSONMixin):
     """Object representing storage allocation stats."""
+
     tag: str = "personal"
     allocated: int = 0  # int64
 
@@ -108,13 +116,17 @@ class AllocationVO(DataClassJSONMixin):
 @dataclass
 class CapacityVO(BaseResponse):
     """Response model for cloud storage capacity query."""
+
     used_capacity: int = field(metadata=field_options(alias="usedCapacity"), default=0)
-    total_capacity: int = field(metadata=field_options(alias="totalCapacity"), default=0)
+    total_capacity: int = field(
+        metadata=field_options(alias="totalCapacity"), default=0
+    )
 
 
 @dataclass
 class CapacityLocalVO(BaseResponse):
     """Response model for device storage capacity query (replaces legacy)."""
+
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
     )
@@ -127,6 +139,7 @@ class CapacityLocalVO(BaseResponse):
 @dataclass
 class CapacityLocalDTO(DataClassJSONMixin):
     """Request model for device storage capacity query."""
+
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
 
     class Config(BaseConfig):
@@ -136,6 +149,7 @@ class CapacityLocalDTO(DataClassJSONMixin):
 @dataclass
 class FileDeleteDTO(DataClassJSONMixin):
     """Request model for deleting files."""
+
     id_list: List[int] = field(metadata=field_options(alias="idList"))
     directory_id: int = field(metadata=field_options(alias="directoryId"))
     equipment_no: str | None = field(
@@ -149,6 +163,7 @@ class FileDeleteDTO(DataClassJSONMixin):
 @dataclass
 class FolderAddDTO(DataClassJSONMixin):
     """Request model for creating a new folder."""
+
     file_name: str = field(metadata=field_options(alias="fileName"))
     directory_id: int = field(metadata=field_options(alias="directoryId"))
 
@@ -159,6 +174,7 @@ class FolderAddDTO(DataClassJSONMixin):
 @dataclass
 class FileMoveAndCopyDTO(DataClassJSONMixin):
     """Request model for moving or copying files."""
+
     id_list: List[int] = field(metadata=field_options(alias="idList"))
     directory_id: int = field(metadata=field_options(alias="directoryId"))
     go_directory_id: int = field(metadata=field_options(alias="goDirectoryId"))
@@ -170,6 +186,7 @@ class FileMoveAndCopyDTO(DataClassJSONMixin):
 @dataclass
 class FileReNameDTO(DataClassJSONMixin):
     """Request model for renaming a file."""
+
     id: int
     new_name: str = field(metadata=field_options(alias="newName"))
 
@@ -180,6 +197,7 @@ class FileReNameDTO(DataClassJSONMixin):
 @dataclass
 class FileListSearchDTO(DataClassJSONMixin):
     """Request model for searching files."""
+
     file_name: str = field(metadata=field_options(alias="fileName"))
     order: FileSortOrder = FileSortOrder.TIME
     sequence: FileSortSequence = FileSortSequence.DESC
@@ -193,10 +211,13 @@ class FileListSearchDTO(DataClassJSONMixin):
 @dataclass
 class UserFileSearchVO(DataClassJSONMixin):
     """Object representing a file in search results."""
+
     id: str
     directory_id: str = field(metadata=field_options(alias="directoryId"))
     file_name: str = field(metadata=field_options(alias="fileName"))
-    directory_name: str = field(metadata=field_options(alias="directoryName"), default="")
+    directory_name: str = field(
+        metadata=field_options(alias="directoryName"), default=""
+    )
     size: int = 0
     md5: str = ""
     is_folder: str = field(metadata=field_options(alias="isFolder"), default="N")
@@ -209,6 +230,7 @@ class UserFileSearchVO(DataClassJSONMixin):
 @dataclass
 class FileListSearchVO(BaseResponse):
     """Response model containing search results."""
+
     total: int = 0
     user_file_search_vo_list: List[UserFileSearchVO] = field(
         metadata=field_options(alias="userFileSearchVOList"), default_factory=list
@@ -218,6 +240,7 @@ class FileListSearchVO(BaseResponse):
 @dataclass
 class RecycleFileListDTO(DataClassJSONMixin):
     """Request model for listing files in the recycle bin."""
+
     order: FileSortOrder = FileSortOrder.TIME
     sequence: FileSortSequence = FileSortSequence.DESC
     page_no: int = field(metadata=field_options(alias="pageNo"), default=1)
@@ -230,6 +253,7 @@ class RecycleFileListDTO(DataClassJSONMixin):
 @dataclass
 class RecycleFileVO(DataClassJSONMixin):
     """Object representing a file in the recycle bin."""
+
     file_id: str = field(metadata=field_options(alias="fileId"))
     is_folder: str = field(metadata=field_options(alias="isFolder"))
     file_name: str = field(metadata=field_options(alias="fileName"))
@@ -243,6 +267,7 @@ class RecycleFileVO(DataClassJSONMixin):
 @dataclass
 class RecycleFileListVO(BaseResponse):
     """Response model containing recycle bin items."""
+
     total: int = 0
     recycle_file_vo_list: List[RecycleFileVO] = field(
         metadata=field_options(alias="recycleFileVOList"), default_factory=list
@@ -252,6 +277,7 @@ class RecycleFileListVO(BaseResponse):
 @dataclass
 class RecycleFileDTO(DataClassJSONMixin):
     """Request model for operating on recycled files."""
+
     id_list: List[int] = field(metadata=field_options(alias="idList"))
 
     class Config(BaseConfig):
@@ -261,6 +287,7 @@ class RecycleFileDTO(DataClassJSONMixin):
 @dataclass
 class FileDownloadDTO(DataClassJSONMixin):
     """Request model for getting a file download URL."""
+
     id: int
     type: str = "0"  # "0": Download, "1": Share
 
@@ -271,6 +298,7 @@ class FileDownloadDTO(DataClassJSONMixin):
 @dataclass
 class FileDownloadUrlVO(BaseResponse):
     """Response model containing a download URL."""
+
     url: str = ""
     md5: str = ""
 
@@ -278,6 +306,7 @@ class FileDownloadUrlVO(BaseResponse):
 @dataclass
 class FilePathQueryDTO(DataClassJSONMixin):
     """Request model for querying file path info."""
+
     id: int
 
     class Config(BaseConfig):
@@ -287,6 +316,7 @@ class FilePathQueryDTO(DataClassJSONMixin):
 @dataclass
 class FilePathQueryVO(BaseResponse):
     """Response model containing file path info."""
+
     path: str = ""
     id_path: str = field(metadata=field_options(alias="idPath"), default="")
 
@@ -294,6 +324,7 @@ class FilePathQueryVO(BaseResponse):
 @dataclass
 class FileUploadApplyDTO(DataClassJSONMixin):
     """Request model for initiating a file upload (Cloud)."""
+
     directory_id: int = field(metadata=field_options(alias="directoryId"))
     size: int
     file_name: str = field(metadata=field_options(alias="fileName"))
@@ -306,6 +337,7 @@ class FileUploadApplyDTO(DataClassJSONMixin):
 @dataclass
 class FileUploadApplyLocalVO(BaseResponse):
     """Response model containing upload credentials/URLs."""
+
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
     )
@@ -330,6 +362,7 @@ class FileUploadApplyLocalVO(BaseResponse):
 @dataclass
 class FileUploadFinishDTO(DataClassJSONMixin):
     """Request model for completing a file upload (Cloud)."""
+
     directory_id: int = field(metadata=field_options(alias="directoryId"))
     file_size: int = field(metadata=field_options(alias="fileSize"))
     file_name: str = field(metadata=field_options(alias="fileName"))
@@ -347,6 +380,7 @@ class FileUploadFinishDTO(DataClassJSONMixin):
 @dataclass
 class SynchronousStartLocalDTO(DataClassJSONMixin):
     """Request model for starting device synchronization."""
+
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
 
     class Config(BaseConfig):
@@ -356,6 +390,7 @@ class SynchronousStartLocalDTO(DataClassJSONMixin):
 @dataclass
 class SynchronousStartLocalVO(BaseResponse):
     """Response model for sync start acknowledgement."""
+
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
     )
@@ -365,6 +400,7 @@ class SynchronousStartLocalVO(BaseResponse):
 @dataclass
 class SynchronousEndLocalDTO(DataClassJSONMixin):
     """Request model for ending device synchronization."""
+
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
     flag: str | None = None  # "true" / "false"
 
@@ -375,6 +411,7 @@ class SynchronousEndLocalDTO(DataClassJSONMixin):
 @dataclass
 class SynchronousEndLocalVO(BaseResponse):
     """Response model for sync end acknowledgement."""
+
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
     )
@@ -383,6 +420,7 @@ class SynchronousEndLocalVO(BaseResponse):
 @dataclass
 class CreateFolderLocalDTO(DataClassJSONMixin):
     """Request model for creating a folder (Device/Path-based)."""
+
     path: str
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
     autorename: bool = False
@@ -394,6 +432,7 @@ class CreateFolderLocalDTO(DataClassJSONMixin):
 @dataclass
 class MetadataVO(DataClassJSONMixin):
     """Object representing basic file metadata."""
+
     name: str
     tag: str = ""
     id: str = ""
@@ -406,6 +445,7 @@ class MetadataVO(DataClassJSONMixin):
 @dataclass
 class CreateFolderLocalVO(BaseResponse):
     """Response model for folder creation."""
+
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
     )
@@ -415,6 +455,7 @@ class CreateFolderLocalVO(BaseResponse):
 @dataclass
 class ListFolderV2DTO(DataClassJSONMixin):
     """Request model for listing folder contents (V2)."""
+
     path: str
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
     recursive: bool = False
@@ -426,6 +467,7 @@ class ListFolderV2DTO(DataClassJSONMixin):
 @dataclass
 class ListFolderLocalDTO(DataClassJSONMixin):
     """Request model for listing folder contents (Device/V3)."""
+
     id: int  # Device uses ID for listing in v3?
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
     recursive: bool = False
@@ -437,14 +479,21 @@ class ListFolderLocalDTO(DataClassJSONMixin):
 @dataclass
 class EntriesVO(DataClassJSONMixin):
     """Object representing a file entry (Device)."""
+
     id: str
     name: str
     tag: str = ""
     path_display: str = field(metadata=field_options(alias="path_display"), default="")
-    content_hash: str | None = field(metadata=field_options(alias="content_hash"), default=None)
-    is_downloadable: bool = field(metadata=field_options(alias="is_downloadable"), default=True)
+    content_hash: str | None = field(
+        metadata=field_options(alias="content_hash"), default=None
+    )
+    is_downloadable: bool = field(
+        metadata=field_options(alias="is_downloadable"), default=True
+    )
     size: int = 0
-    last_update_time: int = field(metadata=field_options(alias="lastUpdateTime"), default=0)
+    last_update_time: int = field(
+        metadata=field_options(alias="lastUpdateTime"), default=0
+    )
     parent_path: str = field(metadata=field_options(alias="parent_path"), default="")
 
     class Config(BaseConfig):
@@ -454,6 +503,7 @@ class EntriesVO(DataClassJSONMixin):
 @dataclass
 class ListFolderLocalVO(BaseResponse):
     """Response model containing list of file entries (Device)."""
+
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
     )
@@ -463,6 +513,7 @@ class ListFolderLocalVO(BaseResponse):
 @dataclass
 class DeleteFolderLocalDTO(DataClassJSONMixin):
     """Request model for deleting a folder (Device)."""
+
     id: int
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
 
@@ -473,6 +524,7 @@ class DeleteFolderLocalDTO(DataClassJSONMixin):
 @dataclass
 class DeleteFolderLocalVO(BaseResponse):
     """Response model for folder deletion."""
+
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
     )
@@ -482,11 +534,12 @@ class DeleteFolderLocalVO(BaseResponse):
 @dataclass
 class FileUploadApplyLocalDTO(DataClassJSONMixin):
     """Request model for initiating a file upload (Device/Path-based)."""
+
     path: str
     file_name: str = field(metadata=field_options(alias="fileName"))
     size: str  # Note: Spec says string
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
-    
+
     # Not strictly in spec but often needed or legacy
     md5: str | None = field(metadata=field_options(alias="fileMd5"), default=None)
 
@@ -497,12 +550,15 @@ class FileUploadApplyLocalDTO(DataClassJSONMixin):
 @dataclass
 class FileUploadFinishLocalDTO(DataClassJSONMixin):
     """Request model for completing a file upload (Device/Path-based)."""
+
     path: str
     file_name: str = field(metadata=field_options(alias="fileName"))
     content_hash: str = field(metadata=field_options(alias="content_hash"))
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
     size: str | None = None  # Spec says string
-    inner_name: str | None = field(metadata=field_options(alias="innerName"), default=None)
+    inner_name: str | None = field(
+        metadata=field_options(alias="innerName"), default=None
+    )
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -511,6 +567,7 @@ class FileUploadFinishLocalDTO(DataClassJSONMixin):
 @dataclass
 class FileDownloadLocalDTO(DataClassJSONMixin):
     """Request model for file download (Device)."""
+
     id: int | str  # Spec says int, usage implies str (path) sometimes? Spec says int64.
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
 
@@ -521,6 +578,7 @@ class FileDownloadLocalDTO(DataClassJSONMixin):
 @dataclass
 class FileDownloadLocalVO(BaseResponse):
     """Response model containing file download info (Device)."""
+
     url: str = ""
     id: str = ""
     name: str = ""
@@ -529,13 +587,16 @@ class FileDownloadLocalVO(BaseResponse):
     )
     path_display: str = field(metadata=field_options(alias="path_display"), default="")
     content_hash: str = field(metadata=field_options(alias="content_hash"), default="")
-    is_downloadable: bool = field(metadata=field_options(alias="is_downloadable"), default=True)
+    is_downloadable: bool = field(
+        metadata=field_options(alias="is_downloadable"), default=True
+    )
     size: int = 0
 
 
 @dataclass
 class FileQueryLocalDTO(DataClassJSONMixin):
     """Request model for querying file info (Device)."""
+
     id: str
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
 
@@ -546,15 +607,19 @@ class FileQueryLocalDTO(DataClassJSONMixin):
 @dataclass
 class FileQueryLocalVO(BaseResponse):
     """Response model containing file info (Device)."""
+
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
     )
-    entries_vo: EntriesVO | None = field(metadata=field_options(alias="entriesVO"), default=None)
+    entries_vo: EntriesVO | None = field(
+        metadata=field_options(alias="entriesVO"), default=None
+    )
 
 
 @dataclass
 class FileQueryByPathLocalDTO(DataClassJSONMixin):
     """Request model for querying file info by path (Device)."""
+
     path: str
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
 
@@ -565,15 +630,19 @@ class FileQueryByPathLocalDTO(DataClassJSONMixin):
 @dataclass
 class FileQueryByPathLocalVO(BaseResponse):
     """Response model containing file info by path (Device)."""
+
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
     )
-    entries_vo: EntriesVO | None = field(metadata=field_options(alias="entriesVO"), default=None)
+    entries_vo: EntriesVO | None = field(
+        metadata=field_options(alias="entriesVO"), default=None
+    )
 
 
 @dataclass
 class FileMoveLocalDTO(DataClassJSONMixin):
     """Request model for moving a file (Device)."""
+
     id: int
     to_path: str = field(metadata=field_options(alias="to_path"))
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
@@ -586,15 +655,19 @@ class FileMoveLocalDTO(DataClassJSONMixin):
 @dataclass
 class FileMoveLocalVO(BaseResponse):
     """Response model for file move operation (Device)."""
+
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
     )
-    entries_vo: EntriesVO | None = field(metadata=field_options(alias="entriesVO"), default=None)
+    entries_vo: EntriesVO | None = field(
+        metadata=field_options(alias="entriesVO"), default=None
+    )
 
 
 @dataclass
 class FileCopyLocalDTO(DataClassJSONMixin):
     """Request model for copying a file (Device)."""
+
     id: int
     to_path: str = field(metadata=field_options(alias="to_path"))
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
@@ -607,7 +680,10 @@ class FileCopyLocalDTO(DataClassJSONMixin):
 @dataclass
 class FileCopyLocalVO(BaseResponse):
     """Response model for file copy operation (Device)."""
+
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
     )
-    entries_vo: EntriesVO | None = field(metadata=field_options(alias="entriesVO"), default=None)
+    entries_vo: EntriesVO | None = field(
+        metadata=field_options(alias="entriesVO"), default=None
+    )
