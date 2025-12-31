@@ -127,7 +127,7 @@ async def test_list_recursive(
         ("Note", "/Note"),
         ("Document", "/Document"),
         ("Parent", "/Parent"),
-        ("EXPORT", "/EXPORT")
+        ("EXPORT", "/EXPORT"),
     ]
 
     # List recursive from root
@@ -138,7 +138,7 @@ async def test_list_recursive(
     )
     assert resp.status == 200
     data = await resp.json()
-    
+
     results = sorted((e["name"], e["path_display"]) for e in data["entries"])
     assert results == [
         ("Child", "/Parent/Child"),
