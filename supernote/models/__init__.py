@@ -1,4 +1,6 @@
-"""API Models for Supernote (Private) Cloud Server."""
+"""
+.. include:: ./README.md
+"""
 
 __all__ = [
     "auth",

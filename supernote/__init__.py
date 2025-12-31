@@ -6,7 +6,7 @@
 from . import notebook
 
 __all__ = [
-    "notebook",
+    "models",
 ]
 
 # Optional: Client library
@@ -24,3 +24,5 @@ try:
     __all__.extend(["server"])
 except ImportError:
     pass
+
+__all__.extend(["notebook"])
