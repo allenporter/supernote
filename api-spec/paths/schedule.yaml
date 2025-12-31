@@ -1,0 +1,330 @@
+scheduleGroup:
+  post:
+    tags:
+      - Schedule
+    summary: Add Schedule Group
+    operationId: addScheduleGroup
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/schedule.yaml#/AddScheduleTaskGroupDTO"
+    responses:
+      "200":
+        description: Created group info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/schedule.yaml#/AddScheduleTaskGroupVO"
+  put:
+    tags:
+      - Schedule
+    summary: Update Schedule Group
+    operationId: updateScheduleGroup
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/schedule.yaml#/UpdateScheduleTaskGroupDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+scheduleGroupWithId:
+  delete:
+    tags:
+      - Schedule
+    summary: Delete Schedule Group
+    operationId: deleteScheduleGroup
+    security:
+      - accessToken: []
+    parameters:
+      - name: taskListId
+        in: path
+        required: true
+        schema:
+          type: string
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+  get:
+    tags:
+      - Schedule
+    summary: Get Schedule Group
+    operationId: getScheduleGroup
+    security:
+      - accessToken: []
+    parameters:
+      - name: taskListId
+        in: path
+        required: true
+        schema:
+          type: string
+    responses:
+      "200":
+        description: Group info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/schedule.yaml#/GetScheduleTaskGroupVO"
+
+clearScheduleGroup:
+  post:
+    tags:
+      - Schedule
+    summary: Clear Schedule Group
+    operationId: clearScheduleGroup
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/schedule.yaml#/ClearScheduleTaskGroupDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+getAllScheduleGroups:
+  post:
+    tags:
+      - Schedule
+    summary: Get All Schedule Groups
+    operationId: getAllScheduleGroups
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/schedule.yaml#/ScheduleTaskGroupDTO"
+    responses:
+      "200":
+        description: List of groups
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/schedule.yaml#/ScheduleTaskGroupVO"
+
+scheduleTask:
+  post:
+    tags:
+      - Schedule
+    summary: Add Schedule Task
+    operationId: addScheduleTask
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/schedule.yaml#/AddScheduleTaskDTO"
+    responses:
+      "200":
+        description: Created task info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/schedule.yaml#/AddScheduleTaskVO"
+  put:
+    tags:
+      - Schedule
+    summary: Update Schedule Task
+    operationId: updateScheduleTask
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/schedule.yaml#/UpdateScheduleTaskDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/schedule.yaml#/UpdateScheduleTaskVO"
+
+updateScheduleTaskList:
+  put:
+    tags:
+      - Schedule
+    summary: Batch Update Schedule Tasks
+    operationId: updateScheduleTaskList
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/schedule.yaml#/UpdateScheduleTaskListDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+scheduleTaskWithId:
+  delete:
+    tags:
+      - Schedule
+    summary: Delete Schedule Task
+    operationId: deleteScheduleTask
+    security:
+      - accessToken: []
+    parameters:
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: string
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+  get:
+    tags:
+      - Schedule
+    summary: Get Schedule Task
+    operationId: getScheduleTask
+    security:
+      - accessToken: []
+    parameters:
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: string
+    responses:
+      "200":
+        description: Task info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/schedule.yaml#/ScheduleTaskVO"
+
+getAllScheduleTasks:
+  post:
+    tags:
+      - Schedule
+    summary: Get All Schedule Tasks
+    operationId: getAllScheduleTasks
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/schedule.yaml#/ScheduleTaskDTO"
+    responses:
+      "200":
+        description: List of tasks
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/schedule.yaml#/ScheduleTaskAllVO"
+
+scheduleSort:
+  post:
+    tags:
+      - Schedule
+    summary: Add Schedule Sort
+    operationId: addScheduleSort
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/schedule.yaml#/ScheduleSortDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+  put:
+    tags:
+      - Schedule
+    summary: Update Schedule Sort
+    operationId: updateScheduleSort
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/schedule.yaml#/ScheduleSortDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+deleteScheduleSort:
+  delete:
+    tags:
+      - Schedule
+    summary: Delete Schedule Sort
+    operationId: deleteScheduleSort
+    security:
+      - accessToken: []
+    parameters:
+      - name: taskListId
+        in: path
+        required: true
+        schema:
+          type: string
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+getScheduleSort:
+  post:
+    tags:
+      - Schedule
+    summary: Get Schedule Sort
+    operationId: getScheduleSort
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/schedule.yaml#/GetScheduleSortDTO"
+    responses:
+      "200":
+        description: Sort info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/schedule.yaml#/GetScheduleSortVO"

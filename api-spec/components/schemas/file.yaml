@@ -1,0 +1,784 @@
+FileListQueryDTO:
+  type: object
+  properties:
+    directoryId:
+      type: integer
+      format: int64
+    order:
+      type: string
+      description: "Sort by: filename, time, size"
+    sequence:
+      type: string
+      description: "asc or desc"
+    pageNo:
+      type: integer
+      format: int32
+    pageSize:
+      type: integer
+      format: int32
+  required:
+    - directoryId
+    - order
+    - sequence
+    - pageNo
+    - pageSize
+
+UserFileVO:
+  type: object
+  properties:
+    id:
+      type: string
+    directoryId:
+      type: string
+    fileName:
+      type: string
+    size:
+      type: integer
+      format: int64
+    md5:
+      type: string
+    isFolder:
+      type: string
+      enum: ["Y", "N"]
+    createTime:
+      type: string
+      format: date-time
+    updateTime:
+      type: string
+      format: date-time
+
+FileListQueryVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        total:
+          type: integer
+          format: int64
+        userFileVOList:
+          type: array
+          items:
+            $ref: "#/UserFileVO"
+
+FolderListQueryDTO:
+  type: object
+  properties:
+    directoryId:
+      type: integer
+      format: int64
+    idList:
+      type: array
+      items:
+        type: integer
+        format: int64
+  required:
+    - directoryId
+    - idList
+
+FolderVO:
+  type: object
+  properties:
+    id:
+      type: string
+    directoryId:
+      type: string
+    fileName:
+      type: string
+    empty:
+      type: string
+      description: "Y: Empty, N: Not Empty"
+
+FolderListQueryVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        folderVOList:
+          type: array
+          items:
+            $ref: "#/FolderVO"
+
+CapacityVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        usedCapacity:
+          type: integer
+          format: int64
+        totalCapacity:
+          type: integer
+          format: int64
+
+FileDeleteDTO:
+  type: object
+  properties:
+    equipmentNo:
+      type: string
+    idList:
+      type: array
+      items:
+        type: integer
+        format: int64
+    directoryId:
+      type: integer
+      format: int64
+  required:
+    - idList
+    - directoryId
+
+FolderAddDTO:
+  type: object
+  properties:
+    fileName:
+      type: string
+    directoryId:
+      type: integer
+      format: int64
+  required:
+    - fileName
+    - directoryId
+
+FileMoveAndCopyDTO:
+  type: object
+  properties:
+    idList:
+      type: array
+      items:
+        type: integer
+        format: int64
+    directoryId:
+      type: integer
+      format: int64
+    goDirectoryId:
+      type: integer
+      format: int64
+  required:
+    - idList
+    - directoryId
+    - goDirectoryId
+
+FileReNameDTO:
+  type: object
+  properties:
+    id:
+      type: integer
+      format: int64
+    newName:
+      type: string
+  required:
+    - id
+    - newName
+
+FileListSearchDTO:
+  type: object
+  properties:
+    fileName:
+      type: string
+    order:
+      type: string
+    sequence:
+      type: string
+    pageNo:
+      type: integer
+    pageSize:
+      type: integer
+  required:
+    - fileName
+    - order
+    - sequence
+    - pageNo
+    - pageSize
+
+UserFileSearchVO:
+  type: object
+  properties:
+    id:
+      type: string
+    directoryId:
+      type: string
+    fileName:
+      type: string
+    directoryName:
+      type: string
+    size:
+      type: integer
+      format: int64
+    md5:
+      type: string
+    isFolder:
+      type: string
+    updateTime:
+      type: string
+      format: date-time
+
+FileListSearchVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        total:
+          type: integer
+          format: int64
+        userFileSearchVOList:
+          type: array
+          items:
+            $ref: "#/UserFileSearchVO"
+
+RecycleFileListDTO:
+  type: object
+  properties:
+    order:
+      type: string
+    sequence:
+      type: string
+    pageNo:
+      type: integer
+    pageSize:
+      type: integer
+  required:
+    - order
+    - sequence
+    - pageNo
+    - pageSize
+
+RecycleFileVO:
+  type: object
+  properties:
+    fileId:
+      type: string
+    isFolder:
+      type: string
+    fileName:
+      type: string
+    size:
+      type: integer
+      format: int64
+    updateTime:
+      type: string
+      format: date-time
+
+RecycleFileListVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        total:
+          type: integer
+          format: int64
+        recycleFileVOList:
+          type: array
+          items:
+            $ref: "#/RecycleFileVO"
+
+RecycleFileDTO:
+  type: object
+  properties:
+    idList:
+      type: array
+      items:
+        type: integer
+        format: int64
+  required:
+    - idList
+
+FileDownloadDTO:
+  type: object
+  properties:
+    id:
+      type: integer
+      format: int64
+    type:
+      type: string
+      description: "0: Download, 1: Share"
+  required:
+    - id
+    - type
+
+FileDownloadUrlVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        url:
+          type: string
+        md5:
+          type: string
+
+FilePathQueryDTO:
+  type: object
+  properties:
+    id:
+      type: integer
+      format: int64
+  required:
+    - id
+
+FilePathQueryVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        path:
+          type: string
+        idPath:
+          type: string
+
+FileUploadApplyDTO:
+  type: object
+  properties:
+    directoryId:
+      type: integer
+      format: int64
+    size:
+      type: integer
+      format: int64
+    fileName:
+      type: string
+    md5:
+      type: string
+  required:
+    - directoryId
+    - size
+    - fileName
+    - md5
+
+FileUploadApplyLocalVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        equipmentNo:
+          type: string
+        bucketName:
+          type: string
+        innerName:
+          type: string
+        xAmzDate:
+          type: string
+        authorization:
+          type: string
+        fullUploadUrl:
+          type: string
+        partUploadUrl:
+          type: string
+
+FileUploadFinishDTO:
+  type: object
+  properties:
+    type:
+      type: string
+      description: "1: App, 2: Cloud"
+    directoryId:
+      type: integer
+      format: int64
+    fileSize:
+      type: integer
+      format: int64
+    fileName:
+      type: string
+    md5:
+      type: string
+    innerName:
+      type: string
+  required:
+    - directoryId
+    - fileSize
+    - fileName
+    - md5
+    - innerName
+
+SynchronousStartLocalDTO:
+  type: object
+  properties:
+    equipmentNo:
+      type: string
+
+SynchronousEndLocalDTO:
+  type: object
+  properties:
+    equipmentNo:
+      type: string
+    flag:
+      type: string
+      description: "Synchronization success flag"
+
+CreateFolderLocalDTO:
+  type: object
+  properties:
+    equipmentNo:
+      type: string
+    path:
+      type: string
+    autorename:
+      type: boolean
+
+ListFolderV2DTO:
+  type: object
+  properties:
+    equipmentNo:
+      type: string
+    path:
+      type: string
+    recursive:
+      type: boolean
+
+ListFolderLocalDTO:
+  type: object
+  properties:
+    equipmentNo:
+      type: string
+    id:
+      type: integer
+      format: int64
+    recursive:
+      type: boolean
+
+DeleteFolderLocalDTO:
+  type: object
+  properties:
+    equipmentNo:
+      type: string
+    id:
+      type: integer
+      format: int64
+  required:
+    - id
+
+FileUploadApplyLocalDTO:
+  type: object
+  properties:
+    equipmentNo:
+      type: string
+    path:
+      type: string
+    fileName:
+      type: string
+    size:
+      type: string
+
+FileUploadFinishLocalDTO:
+  type: object
+  properties:
+    equipmentNo:
+      type: string
+    path:
+      type: string
+    size:
+      type: string
+    fileName:
+      type: string
+    content_hash:
+      type: string
+    innerName:
+      type: string
+  required:
+    - fileName
+    - content_hash
+    - innerName
+
+FileDownloadLocalDTO:
+  type: object
+  properties:
+    equipmentNo:
+      type: string
+    id:
+      type: integer
+      format: int64
+  required:
+    - id
+
+FileQueryLocalDTO:
+  type: object
+  properties:
+    equipmentNo:
+      type: string
+    id:
+      type: string
+
+FileQueryByPathLocalDTO:
+  type: object
+  properties:
+    equipmentNo:
+      type: string
+    path:
+      type: string
+
+FileMoveLocalDTO:
+  type: object
+  properties:
+    equipmentNo:
+      type: string
+    autorename:
+      type: boolean
+    id:
+      type: integer
+      format: int64
+    to_path:
+      type: string
+  required:
+    - id
+
+FileCopyLocalDTO:
+  type: object
+  properties:
+    equipmentNo:
+      type: string
+    id:
+      type: integer
+      format: int64
+    autorename:
+      type: boolean
+    to_path:
+      type: string
+  required:
+    - id
+    - to_path
+
+CapacityLocalDTO:
+  type: object
+  properties:
+    equipmentNo:
+      type: string
+
+MetadataVO:
+  type: object
+  properties:
+    tag:
+      type: string
+    id:
+      type: string
+    name:
+      type: string
+    path_display:
+      type: string
+
+EntriesVO:
+  type: object
+  properties:
+    tag:
+      type: string
+    id:
+      type: string
+    name:
+      type: string
+    path_display:
+      type: string
+    content_hash:
+      type: string
+    is_downloadable:
+      type: boolean
+    size:
+      type: integer
+      format: int64
+    lastUpdateTime:
+      type: integer
+      format: int64
+    parent_path:
+      type: string
+
+AllocationVO:
+  type: object
+  properties:
+    tag:
+      type: string
+    allocated:
+      type: integer
+      format: int64
+
+SynchronousStartLocalVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        equipmentNo:
+          type: string
+        synType:
+          type: boolean
+          description: "true: normal sync, false: full re-upload"
+
+SynchronousEndLocalVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        equipmentNo:
+          type: string
+
+CreateFolderLocalVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        equipmentNo:
+          type: string
+        metadata:
+          $ref: "#/MetadataVO"
+
+ListFolderLocalVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        equipmentNo:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: "#/EntriesVO"
+
+DeleteFolderLocalVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        equipmentNo:
+          type: string
+        metadata:
+          $ref: "#/MetadataVO"
+
+FileDownloadLocalVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        equipmentNo:
+          type: string
+        id:
+          type: string
+        url:
+          type: string
+        name:
+          type: string
+        path_display:
+          type: string
+        content_hash:
+          type: string
+        size:
+          type: integer
+          format: int64
+        is_downloadable:
+          type: boolean
+
+FileQueryLocalVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        equipmentNo:
+          type: string
+        entriesVO:
+          $ref: "#/EntriesVO"
+
+FileQueryByPathLocalVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        equipmentNo:
+          type: string
+        entriesVO:
+          $ref: "#/EntriesVO"
+
+FileMoveLocalVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        equipmentNo:
+          type: string
+        entriesVO:
+          $ref: "#/EntriesVO"
+
+FileCopyLocalVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        equipmentNo:
+          type: string
+        entriesVO:
+          $ref: "#/EntriesVO"
+
+CapacityLocalVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        used:
+          type: integer
+          format: int64
+        allocationVO:
+          $ref: "#/AllocationVO"
+        equipmentNo:
+          type: string
+
+PdfDTO:
+  type: object
+  properties:
+    id:
+      type: integer
+      format: int64
+    pageNoList:
+      type: array
+      items:
+        type: integer
+  required:
+    - id
+
+PngDTO:
+  type: object
+  properties:
+    id:
+      type: integer
+      format: int64
+  required:
+    - id
+
+PdfVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        url:
+          type: string
+
+PngPageVO:
+  type: object
+  properties:
+    pageNo:
+      type: integer
+      format: int32
+    url:
+      type: string
+
+PngVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        pngPageVOList:
+          type: array
+          items:
+            $ref: "#/PngPageVO"

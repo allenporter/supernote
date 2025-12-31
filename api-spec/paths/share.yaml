@@ -1,0 +1,20 @@
+addShareRecord:
+  post:
+    tags:
+      - Share
+    summary: Add Share Record
+    operationId: addShareRecord
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/share.yaml#/ShareRecordDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
