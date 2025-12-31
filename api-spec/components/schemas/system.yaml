@@ -174,18 +174,20 @@ DictionaryListVO:
     - $ref: "common.yaml#/BaseVO"
     - type: object
       properties:
-        list:
+        dictionaryVOList:
           type: array
           items:
-            $ref: "#/DictionaryVO"
+            $ref: "#/DictionarysVO"
 
 DictionaryByNameVO:
   allOf:
     - $ref: "common.yaml#/BaseVO"
     - type: object
       properties:
-        data:
-          $ref: "#/DictionaryVO"
+        dictionaryVOList:
+          type: array
+          items:
+            $ref: "#/DictionaryVO"
 
 DictionarysVO:
   description: Helper VO for dictionary lists if needed, placeholder strictly
@@ -241,7 +243,7 @@ ReferenceListVO:
     - $ref: "common.yaml#/BaseVO"
     - type: object
       properties:
-        list:
+        referenceVOList:
           type: array
           items:
             $ref: "#/ReferenceVO"
@@ -251,12 +253,29 @@ ReferenceRespVO:
     - $ref: "common.yaml#/BaseVO"
     - type: object
       properties:
-        data:
-          $ref: "#/ReferenceVO"
+        paramList:
+          type: array
+          items:
+            $ref: "#/ReferenceInfoVO"
+        random:
+          type: string
+
+ReferenceInfoVO:
+  type: object
+  properties:
+    serial:
+      type: string
+    name:
+      type: string
+    value:
+      type: string
 
 # Common Schemas for System
 PageDTO:
   type: object
+  required:
+    - pageNo
+    - pageSize
   properties:
     pageNo:
       type: integer
@@ -266,3 +285,7 @@ PageDTO:
       type: integer
       format: int32
       default: 10
+    sortField:
+      type: string
+    sortRules:
+      type: string
