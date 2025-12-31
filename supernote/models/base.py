@@ -1,8 +1,8 @@
-"""Module for API base classes.""" 
+"""Module for API base classes."""
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Self
+from typing import Any, Self
 
 from mashumaro import field_options
 from mashumaro.config import BaseConfig
@@ -47,3 +47,33 @@ class BaseEnum(Enum):
             if member.value == value:
                 return member
         raise ValueError(f"Invalid {cls.__name__} value: {value}")
+
+
+class BooleanEnum(str, BaseEnum):
+    """Boolean enum."""
+
+    YES = "Y"
+    NO = "N"
+
+
+@dataclass
+class CommonList(BaseResponse):
+    """Common list response class."""
+
+    total: int = 0
+    """Total count of items."""
+
+    pages: int = 0
+    """Total pages."""
+
+    size: int = field(metadata=field_options(alias="size"), default=20)
+    """Current page size."""
+
+    vo_list: list[Any] = field(
+        metadata=field_options(alias="voList"), default_factory=list
+    )
+    """List of items."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+        omit_none = True

@@ -23,29 +23,6 @@ def get_ref_name(ref: str) -> str | None:
     return ref.split("/")[-1]
 
 
-def resolve_ref(
-    ref: str, current_file: pathlib.Path
-) -> tuple[pathlib.Path, str | None]:
-    if not ref:
-        return None, None
-
-    if "#" in ref:
-        file_part, fragment = ref.split("#")
-    else:
-        file_part = ref
-        fragment = None
-
-    if file_part:
-        if current_file:
-            new_file = (current_file.parent / file_part).resolve()
-        else:
-            new_file = (SPEC_PATH / file_part).resolve()
-    else:
-        new_file = current_file
-
-    return new_file, fragment
-
-
 def get_schema_from_content(content: dict[str, Any]) -> str | None:
     if not content:
         return None
@@ -65,7 +42,7 @@ def main() -> None:
     openapi_content = OPENAPI_API_PATH.read_text()
     openapi_dict = yaml.safe_load(openapi_content)
 
-    results = {}  # tag -> list of items
+    results: dict[str, list[dict[str, Any]]] = {}  # tag -> list of items
 
     for path, path_item in openapi_dict.get("paths", {}).items():
         ref = path_item.get("$ref")

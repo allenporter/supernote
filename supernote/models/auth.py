@@ -1,4 +1,15 @@
-"""Module for authentication API models."""
+"""Module for authentication API data models.
+
+The following endpoints are supported:
+- /official/user/account/login/equipment
+- /official/user/account/login/new
+- /official/user/query/random/code
+- /official/user/sms/login
+- /user/sms/validcode/send
+- /user/query/token
+- /user/validcode/pre-auth
+- /user/logout (empty body)
+"""
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -32,8 +43,13 @@ class LoginMethod(Enum):
 
 
 @dataclass
-class UserLoginRequest(DataClassJSONMixin):
-    """Request to login."""
+class LoginDTO(DataClassJSONMixin):
+    """Request to login.
+
+    This is used by the following POST endpoints:
+        /official/user/account/login/equipment
+        /official/user/account/login/new
+    """
 
     account: str
     """User account (email, username, phone number etc)."""
@@ -71,8 +87,8 @@ class UserLoginRequest(DataClassJSONMixin):
 
 
 @dataclass(kw_only=True)
-class UserLoginResponse(BaseResponse):
-    """Response from access token call."""
+class LoginVO(BaseResponse):
+    """Response from login endpoints."""
 
     token: str
     """JWT Access Token."""
@@ -95,8 +111,12 @@ class UserLoginResponse(BaseResponse):
 
 
 @dataclass
-class UserRandomCodeRequest(DataClassJSONMixin):
-    """Request to get a random code."""
+class RandomCodeDTO(DataClassJSONMixin):
+    """Request to get a random code.
+
+    This is used by the following POST endpoint:
+        /official/user/query/random/code
+    """
 
     account: str
     """User account (email, username, phone number etc)."""
@@ -113,77 +133,45 @@ class UserRandomCodeRequest(DataClassJSONMixin):
         serialize_by_alias = True
 
 
-@dataclass
-class UserRandomCodeResponse(BaseResponse):
-    """Response from login."""
+@dataclass(kw_only=True)
+class RandomCodeVO(BaseResponse):
+    """Response from random code endpoint."""
 
     random_code: str = field(metadata=field_options(alias="randomCode"), default="")
     timestamp: str = ""
 
 
 @dataclass
-class TokenRequest(DataClassJSONMixin):
-    """Request to token endpoint."""
+class QueryTokenDTO(DataClassJSONMixin):
+    """Request to token endpoint.
 
-    class Config(BaseConfig):
-        serialize_by_alias = True
-
-
-@dataclass
-class TokenResponse(BaseResponse):
-    """Response from token endpoint."""
-
-
-@dataclass
-class QueryUserRequest(DataClassJSONMixin):
-    """Request to query user."""
-
-    account: str
-    country_code: int = field(
-        metadata=field_options(alias="countryCode"), default=COUNTRY_CODE
-    )
-
-    class Config(BaseConfig):
-        serialize_by_alias = True
+    This is used by the following POST endpoint:
+        /user/query/token
+    """
 
 
 @dataclass(kw_only=True)
-class QueryUserResponse(BaseResponse):
-    """Response from query user call."""
+class QueryTokenVO(BaseResponse):
+    """Response from token endpoint."""
 
-    user_id: str = field(metadata=field_options(alias="userId"))
-    """User ID."""
 
-    user_name: str = field(metadata=field_options(alias="userName"))
-    """User nickname."""
+class OSType(str, BaseEnum):
+    """OS Type."""
 
-    birthday: str = field(metadata=field_options(alias="birthday"))
-    """User birthday."""
-
-    country_code: str = field(
-        metadata=field_options(alias="countryCode"), default=str(COUNTRY_CODE)
-    )
-    """Country code."""
-
-    telephone: str = field(metadata=field_options(alias="telephone"), default="")
-    """User phone number."""
-
-    sex: str = ""
-    """User sex."""
-
-    file_server: str = field(metadata=field_options(alias="fileServer"), default="")
-    """User assigned file server url."""
+    WINDOWS = "WINDOWS"
+    MACOS = "MACOS"
+    LINUX = "LINUX"
+    ANDROID = "ANDROID"
+    IOS = "IOS"
 
 
 @dataclass
-class UserSmsLoginRequest(DataClassJSONMixin):
-    """Request to login via sms."""
+class SmsLoginDTO(DataClassJSONMixin):
+    """Request to login via sms.
 
-    telephone: str
-    """User phone number."""
-
-    timestamp: str
-    """Client timestamp."""
+    This is used by the following POST endpoint:
+        /user/sms/login
+    """
 
     valid_code: str = field(metadata=field_options(alias="validCode"))
     """SMS/Email verification code."""
@@ -195,18 +183,30 @@ class UserSmsLoginRequest(DataClassJSONMixin):
         metadata=field_options(alias="countryCode"), default=COUNTRY_CODE
     )
 
+    telephone: str | None = None
+    """User phone number."""
+
+    timestamp: str | None = None
+    """Client timestamp."""
+
+    email: str | None = None
+    """User email."""
+
     browser: str = BROWSER
     """Browser name (user agent info)."""
 
     equipment: Equipment = Equipment.WEB
     """Device type."""
 
+    devices: OSType | None = OSType.WINDOWS
+    """OS Type."""
+
     class Config(BaseConfig):
         serialize_by_alias = True
 
 
 @dataclass(kw_only=True)
-class UserSmsLoginResponse(BaseResponse):
+class SmsLoginVO(BaseResponse):
     """Response from access token call."""
 
     token: str
@@ -214,7 +214,11 @@ class UserSmsLoginResponse(BaseResponse):
 
 @dataclass
 class UserPreAuthRequest(DataClassJSONMixin):
-    """Request for pre-auth."""
+    """Request for pre-auth.
+
+    This is used by the following POST endpoint:
+        /user/validcode/pre-auth
+    """
 
     account: str
 
@@ -227,13 +231,18 @@ class UserPreAuthResponse(BaseResponse):
 
 
 @dataclass
-class UserSendSmsRequest(DataClassJSONMixin):
-    """Request to send SMS code."""
+class SendSmsDTO(DataClassJSONMixin):
+    """Request to send SMS code.
+
+    This is used by the following POST endpoint:
+        /user/sms/validcode/send
+    """
 
     telephone: str
     timestamp: str
     token: str
     sign: str
+    extend: str | None = None
     nationcode: int = field(
         metadata=field_options(alias="nationcode"), default=COUNTRY_CODE
     )
@@ -243,7 +252,7 @@ class UserSendSmsRequest(DataClassJSONMixin):
 
 
 @dataclass
-class UserSendSmsResponse(BaseResponse):
+class SendSmsVO(BaseResponse):
     """Response from send SMS."""
 
     valid_code_key: str = field(

@@ -14,17 +14,19 @@ UserCheckDTO:
       type: string
 
 UserCheckVO:
-  type: object
   allOf:
     - $ref: "common.yaml#/BaseVO"
     - type: object
       properties:
-        isExist:
+        dms:
           type: string
-          description: Check result (Y/N or error code)
-        server:
+          description: Data Management System (regional server center identifier, e.g., "ALL", "CN", "US")
+        userId:
+          type: integer
+          format: int64
+        uniqueMachineId:
           type: string
-          description: The server where the user is located
+          description: Server-side generated unique identifier for the machine instance
 
 UserQueryDTO:
   type: object
@@ -80,6 +82,8 @@ UserVO:
       type: string
     email:
       type: string
+    wechatNo:
+      type: string
     sex:
       type: string
     birthday:
@@ -110,10 +114,12 @@ UserQueryVO:
     - $ref: "common.yaml#/BaseVO"
     - type: object
       properties:
-        account:
-          type: string
         user:
-          $ref: "#/UserVO"
+          $ref: "#/UserInfo"
+        isUser:
+          type: boolean
+        equipmentNo:
+          type: string
 
 UserQueryByIdVO:
   type: object
@@ -121,8 +127,39 @@ UserQueryByIdVO:
     - $ref: "common.yaml#/BaseVO"
     - type: object
       properties:
-        user:
-          $ref: "#/UserVO"
+        userId:
+          type: integer
+          format: int64
+        userName:
+          type: string
+        countryCode:
+          type: string
+        telephone:
+          type: string
+        email:
+          type: string
+        sex:
+          type: string
+        birthday:
+          type: string
+        personalSign:
+          type: string
+        hobby:
+          type: string
+        education:
+          type: string
+        job:
+          type: string
+        address:
+          type: string
+        avatarsUrl:
+          type: string
+        totalCapacity:
+          type: string
+        fileServer:
+          type: string
+        isNormal:
+          type: string
 
 UserDTO:
   type: object
@@ -172,12 +209,37 @@ UserInfoDTO:
     email:
       type: string
 
-UserInfoVo:
+UserInfo:
   type: object
-  allOf:
-    - $ref: "common.yaml#/BaseVO"
-    - type: object
-      properties:
-        userId:
-          type: integer
-          format: int64
+  properties:
+    userId:
+      type: integer
+      format: int64
+    userName:
+      type: string
+    countryCode:
+      type: string
+    phone:
+      type: string
+    email:
+      type: string
+    sex:
+      type: string
+    birthday:
+      type: string
+    personalSign:
+      type: string
+    hobby:
+      type: string
+    education:
+      type: string
+    job:
+      type: string
+    address:
+      type: string
+    avatarsUrl:
+      type: string
+    totalCapacity:
+      type: string
+    fileServer:
+      type: string
