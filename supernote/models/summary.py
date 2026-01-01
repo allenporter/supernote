@@ -20,7 +20,7 @@ The following endpoints are supported:
 """
 
 from dataclasses import dataclass, field
-from typing import List, Dict
+from typing import Dict, List
 
 from mashumaro import field_options
 from mashumaro.config import BaseConfig
