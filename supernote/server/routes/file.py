@@ -329,14 +329,6 @@ async def handle_download_apply(request: web.Request) -> web.Response:
     # TODO: Re-evaluate if this is the url path we should use or we should go with
     # a different approach. we don't care about backwards compatibility with anything
     # and can be free to make breaking changes.
-    # We pass the ID (or path) provided, or better: use the resolved ID if available?
-    # Existing client expects "path=" query param to match what it sent?
-    # Or we can send the ID back. Let's send what was requested to be safe for now,
-    # OR send the stable ID if we want to move to IDs.
-    # The ID passed to apply is usually what's used.
-    # Let's stick to the input ID/path for the URL parameter to minimize client confusion,
-    # BUT handle_download_data must be able to resolve it.
-
     encoded_id = urllib.parse.quote(file_id)
     download_url = f"http://{request.host}/api/file/download/data?path={encoded_id}"
 
