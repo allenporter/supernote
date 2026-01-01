@@ -257,7 +257,7 @@ class FileReNameDTO(DataClassJSONMixin):
 @dataclass
 class FileListSearchDTO(DataClassJSONMixin):
     """Request model for searching files.
-    
+
     This is used by the following POST endpoint:
         /api/file/list/search
     """
@@ -460,6 +460,8 @@ class FileUploadApplyLocalVO(BaseResponse):
     inner_name: str | None = field(
         metadata=field_options(alias="innerName"), default=None
     )
+    """Obfuscated storage key. Formula: {UUID}-{tail}.{ext} where tail is SN last 3 digits."""
+
     x_amz_date: str | None = field(
         metadata=field_options(alias="xAmzDate"), default=None
     )
@@ -492,10 +494,13 @@ class FileUploadFinishDTO(DataClassJSONMixin):
     file_name: str = field(metadata=field_options(alias="fileName"))
     md5: str
     inner_name: str = field(metadata=field_options(alias="innerName"))
+    """Obfuscated storage key. Formula: {UUID}-{tail}.{ext} where tail is SN last 3 digits."""
+
     type: UploadType = UploadType.CLOUD
 
     class Config(BaseConfig):
         serialize_by_alias = True
+
 
 # --- Device / Legacy Models (Local DTOs) ---
 

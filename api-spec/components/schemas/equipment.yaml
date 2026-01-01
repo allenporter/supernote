@@ -192,9 +192,12 @@ QueryEquipmentVO:
       type: string
     status:
       type: string
+      description: "Device status (e.g., Y: Active, N: Inactive)"
     updateStatus:
       type: string
+      description: "Firmware update status"
     remark:
       type: string
+      description: "Remark or note"
     fileServer:
       type: string

@@ -156,21 +156,29 @@ DictionaryVO:
       format: int64
     name:
       type: string
+      description: "Dictionary Category Name"
     value:
       type: string
+      description: "Dictionary Key/Code"
     valueCn:
       type: string
+      description: "Chinese Display Value"
     valueEn:
       type: string
+      description: "English Display Value"
     valueJa:
       type: string
+      description: "Japanese Display Value"
     opUser:
       type: string
+      description: "Last Modified By (Admin Username)"
     opTime:
       type: integer
       format: int64
+      description: "Last Modified Timestamp"
     remark:
       type: string
+      description: "Comments/Notes"
 
 DictionaryListVO:
   allOf:
@@ -227,17 +235,23 @@ ReferenceVO:
       format: int64
     serial:
       type: string
+      description: "Reference Serial Number / Key"
     name:
       type: string
+      description: "Reference Category Name"
     value:
       type: string
+      description: "Reference Value"
     valueCn:
       type: string
+      description: "Description (CN)"
     opUser:
       type: string
+      description: "Last Modified By (Admin Username)"
     opTime:
       type: integer
       format: int64
+      description: "Last Modified Timestamp"
     remark:
       type: string
 

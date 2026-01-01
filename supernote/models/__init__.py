@@ -8,5 +8,6 @@ __all__ = [
     "user",
     "equipment",
     "schedule",
+    "system",
     "base",
 ]

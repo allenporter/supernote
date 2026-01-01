@@ -164,6 +164,8 @@ class UploadApplyResponse(BaseResponse):
     inner_name: str | None = field(
         metadata=field_options(alias="innerName"), default=None
     )
+    """Obfuscated storage key. Formula: {UUID}-{tail}.{ext} where tail is SN last 3 digits."""
+
     x_amz_date: str | None = field(
         metadata=field_options(alias="xAmzDate"), default=None
     )
