@@ -1,19 +1,18 @@
 """Tests for new File models."""
 
 from supernote.models.file import (
-    FolderFileAddDTO,
-    TerminalFileUploadApplyDTO,
-    TerminalFileUploadFinishDTO,
+    EntriesVO,
+    FileQueryByPathV2DTO,
     FileQueryV2DTO,
     FileQueryV2VO,
-    FileQueryByPathV2DTO,
-    FileQueryByPathV2VO,
+    FolderFileAddDTO,
     PdfDTO,
     PdfVO,
     PngDTO,
     PngPageVO,
     PngVO,
-    EntriesVO,
+    TerminalFileUploadApplyDTO,
+    TerminalFileUploadFinishDTO,
 )
 
 
