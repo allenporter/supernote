@@ -8,7 +8,7 @@ import pytest
 from aiohttp import web
 
 from supernote.client import Client
-from supernote.client.api_model import FileListResponse, GetFileDownloadUrlResponse
+from supernote.client.api_model import FileListResponse
 from supernote.client.cloud_client import SupernoteClient
 
 

@@ -1,5 +1,7 @@
 from datetime import datetime
-from supernote.models.file import UserFileVO, BooleanEnum
+
+from supernote.models.file import BooleanEnum, UserFileVO
+
 
 def test_user_file_vo_datetime_parsing() -> None:
     json_data = """

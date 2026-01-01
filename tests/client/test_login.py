@@ -1,7 +1,6 @@
 """Tests for the login flow."""
 
 import hashlib
-from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
 import aiohttp

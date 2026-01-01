@@ -3,7 +3,7 @@
 """
 
 # Core notebook parsing (always available)
-from . import notebook
+from . import notebook  # noqa: F401
 
 __all__ = [
     "models",
