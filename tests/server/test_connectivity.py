@@ -4,9 +4,13 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import aiohttp
+import pytest
 from aiohttp import FormData
 from aiohttp.test_utils import TestClient
 
+from supernote.client.client import Client
+from supernote.client.exceptions import UnauthorizedException
+from supernote.client.login_client import LoginClient
 from supernote.server.services.storage import StorageService
 from tests.conftest import (
     TEST_PASSWORD,
@@ -15,16 +19,11 @@ from tests.conftest import (
 )
 
 
-def _sha256_s(s: str) -> str:
-    return hashlib.sha256(s.encode("utf-8")).hexdigest()
-
-
-def _md5_s(s: str) -> str:
-    return hashlib.md5(s.encode("utf-8")).hexdigest()
-
-
-def _encode_password(password: str, rc: str) -> str:
-    return _sha256_s(_md5_s(password) + rc)
+@pytest.fixture(name="login_client")
+async def supernote_login_client_fixture(client: TestClient) -> LoginClient:
+    base_url = str(client.make_url("/"))
+    real_client = Client(client.session, host=base_url)
+    return LoginClient(real_client)
 
 
 async def test_trace_logging(client: TestClient, mock_trace_log: str) -> None:
@@ -64,70 +63,20 @@ async def test_check_user_exists(client: TestClient) -> None:
     assert data == {"success": True}
 
 
-async def test_auth_flow(client: TestClient) -> None:
-    # 1. CSRF
-    resp = await client.get("/api/csrf")
-    assert resp.status == 200
-    assert "X-XSRF-TOKEN" in resp.headers
-
-    # 2. Query Token
-    resp = await client.post("/api/user/query/token")
-    assert resp.status == 200
-    data = await resp.json()
-    assert data["success"] is True
-
-    # 3. Random Code
-    resp = await client.post(
-        "/api/official/user/query/random/code", json={"account": TEST_USERNAME}
+async def test_login_flow(client: TestClient, login_client: LoginClient) -> None:
+    """Test login flow."""
+    login_result = await login_client.login_equipment(
+        TEST_USERNAME, TEST_PASSWORD, "SN123456"
     )
-    assert resp.status == 200
-    data = await resp.json()
-    assert data["success"] is True
-    code = data["randomCode"]
-    assert "timestamp" in data
-    timestamp = data["timestamp"]
 
-    # 4. Login (Equipment)
-    # Verify an incorrect password is not allowed
-    resp = await client.post(
-        "/api/official/user/account/login/equipment",
-        json={
-            "account": TEST_USERNAME,
-            "password": "foo",
-            "timestamp": timestamp,
-            "equipmentNo": "SN123456",
-        },
-    )
-    assert resp.status == 401
-    data = await resp.json()
-    assert data == {"success": False, "errorMsg": "Invalid credentials"}
-
-    # Try a correct password
-    password = _encode_password(TEST_PASSWORD, code)
-    resp = await client.post(
-        "/api/official/user/account/login/equipment",
-        json={
-            "account": TEST_USERNAME,
-            "password": password,
-            "timestamp": timestamp,
-            "equipmentNo": "SN123456",
-        },
-    )
-    assert resp.status == 200
-    data = await resp.json()
-    assert "token" in data
-    data_token = data["token"]
-    del data["token"]
-    assert data == {
-        "isBind": "N",
-        "isBindEquipment": "N",
-        "soldOutCount": 0,
-        "success": True,
-        "userName": TEST_USERNAME,
-    }
+    assert login_result.success
+    assert len(login_result.token) > 10
+    assert login_result.is_bind == "N"
+    assert login_result.is_bind_equipment == "N"
+    assert login_result.user_name == TEST_USERNAME
 
     # 5. Verify Token Works
-    token = data_token
+    token = login_result.token
     resp = await client.post("/api/user/query", headers={"x-access-token": token})
     assert resp.status == 200
     data = await resp.json()
@@ -144,6 +93,19 @@ async def test_auth_flow(client: TestClient) -> None:
     assert data["success"] is False
     assert data["errorMsg"] == "Invalid token"
     assert "equipmentNo" not in data
+
+
+async def test_invalid_password(client: TestClient) -> None:
+    """Test login with an invalid password"""
+    base_url = str(client.make_url("/"))
+    # Initialize client with empty host to interact with TestClient server
+    real_client = Client(client.session, host=base_url)
+    login_client = LoginClient(real_client)
+
+    with pytest.raises(UnauthorizedException):
+        await login_client.login_equipment(
+            TEST_USERNAME, "incorrect-password", "SN123456"
+        )
 
 
 async def test_bind_equipment(client: TestClient) -> None:
