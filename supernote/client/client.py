@@ -6,7 +6,7 @@ from typing import Any, Type, TypeVar
 import aiohttp
 from aiohttp.client_exceptions import ClientError
 
-from .api_model import BaseResponse
+from supernote.models.base import BaseResponse
 from .auth import AbstractAuth
 from .exceptions import ApiException, ForbiddenException, UnauthorizedException
 

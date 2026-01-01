@@ -5,14 +5,13 @@ from typing import AsyncGenerator, Self
 
 import aiohttp
 
-from .api_model import (
-    FileListRequest,
-    FileListResponse,
-    GetFileDownloadUrlRequest,
-    GetFileDownloadUrlResponse,
-    QueryUserRequest,
-    QueryUserResponse,
+from supernote.models.file import (
+    FileDownloadDTO,
+    FileDownloadUrlVO,
+    FileListQueryDTO,
+    FileListQueryVO,
 )
+from supernote.models.user import UserQueryByIdVO
 from .auth import ConstantAuth
 from .client import Client
 from .login_client import LoginClient
@@ -25,16 +24,13 @@ class SupernoteClient:
         """Initialize the client."""
         self._client = client
 
-    async def query_user(self, account: str) -> QueryUserResponse:
+    async def query_user(self) -> UserQueryByIdVO:
         """Query the user."""
-        payload = QueryUserRequest(country_code=1, account=account).to_dict()
-        return await self._client.post_json(
-            "/api/user/query", QueryUserResponse, json=payload
-        )
+        return await self._client.post_json("/api/user/query", UserQueryByIdVO)
 
-    async def file_list(self, directory_id: int = 0) -> FileListResponse:
+    async def file_list(self, directory_id: int = 0) -> FileListQueryVO:
         """Return a list of files."""
-        payload = FileListRequest(
+        payload = FileListQueryDTO(
             directory_id=directory_id,
             page_no=1,
             page_size=100,
@@ -42,14 +38,14 @@ class SupernoteClient:
             sequence="desc",
         ).to_dict()
         return await self._client.post_json(
-            "/api/file/list/query", FileListResponse, json=payload
+            "/api/file/list/query", FileListQueryVO, json=payload
         )
 
     async def file_download(self, file_id: int) -> bytes:
         """Download a file."""
-        payload = GetFileDownloadUrlRequest(file_id=file_id, file_type=0).to_dict()
+        payload = FileDownloadDTO(id=file_id, type=DownloadType.DOWNLOAD).to_dict()
         download_url_response = await self._client.post_json(
-            "/api/file/download/url", GetFileDownloadUrlResponse, json=payload
+            "/api/file/download/url", FileDownloadUrlVO, json=payload
         )
         response = await self._client.get(download_url_response.url)
         return await response.read()

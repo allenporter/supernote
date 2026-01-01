@@ -6,19 +6,20 @@ from typing import TypeVar
 
 from mashumaro.mixins.json import DataClassJSONMixin
 
-from .api_model import (
-    TokenRequest,
-    TokenResponse,
-    UserLoginRequest,
-    UserLoginResponse,
+from supernote.models.auth import (
+    LoginDTO,
+    LoginMethod,
+    LoginVO,
+    QueryTokenDTO,
+    QueryTokenVO,
+    RandomCodeDTO,
+    RandomCodeVO,
+    SendSmsDTO,
+    SendSmsVO,
+    SmsLoginDTO,
+    SmsLoginVO,
     UserPreAuthRequest,
     UserPreAuthResponse,
-    UserRandomCodeRequest,
-    UserRandomCodeResponse,
-    UserSendSmsRequest,
-    UserSendSmsResponse,
-    UserSmsLoginRequest,
-    UserSmsLoginResponse,
 )
 from .client import Client
 from .exceptions import ApiException, SmsVerificationRequired
@@ -82,7 +83,7 @@ class LoginClient:
         # Always get a fresh CSRF token for the SMS login request
         await self._client._get_csrf_token()
 
-        payload = UserSmsLoginRequest(
+        payload = SmsLoginDTO(
             telephone=telephone,
             timestamp=timestamp,
             valid_code=code,
@@ -90,7 +91,7 @@ class LoginClient:
         ).to_dict()
 
         response = await self._client.post_json(
-            "/api/official/user/sms/login", UserSmsLoginResponse, json=payload
+            "/api/official/user/sms/login", SmsLoginVO, json=payload
         )
         return response.token
 
@@ -127,7 +128,7 @@ class LoginClient:
         random_code_resp = await self._get_random_code(telephone)
         timestamp = random_code_resp.timestamp
 
-        sms_payload = UserSendSmsRequest(
+        sms_payload = SendSmsDTO(
             telephone=telephone,
             timestamp=timestamp,
             token=token,
@@ -136,37 +137,37 @@ class LoginClient:
         ).to_dict()
 
         await self._client.post_json(
-            "/api/user/sms/validcode/send", UserSendSmsResponse, json=sms_payload
+            "/api/user/sms/validcode/send", SendSmsVO, json=sms_payload
         )
 
     async def _token(self) -> None:
         """Get a random code."""
         await self._client.post_json(
-            "/api/user/query/token",
-            TokenResponse,
-            json=TokenRequest().to_dict(),
+            "/api/user/query/token", TokenResponse, json=TokenRequest().to_dict()
+            QueryTokenVO,
+            json=QueryTokenDTO().to_dict(),
         )
 
-    async def _get_random_code(self, email: str) -> UserRandomCodeResponse:
+    async def _get_random_code(self, email: str) -> RandomCodeVO:
         """Get a random code."""
-        payload = UserRandomCodeRequest(account=email).to_dict()
+        payload = RandomCodeDTO(account=email).to_dict()
         return await self._client.post_json(
-            "/api/official/user/query/random/code", UserRandomCodeResponse, json=payload
+            "/api/official/user/query/random/code", RandomCodeVO, json=payload
         )
 
     async def _get_access_token(
         self, email: str, encoded_password: str, random_code_timestamp: str
-    ) -> UserLoginResponse:
+    ) -> LoginVO:
         """Get an access token."""
-        payload = UserLoginRequest(
+        payload = LoginDTO(
             account=email,
             password=encoded_password,
-            login_method=1,
+            login_method=LoginMethod.PHONE if email.isdigit() else LoginMethod.EMAIL,
             timestamp=random_code_timestamp,
         ).to_dict()
         try:
             return await self._client.post_json(
-                "/api/official/user/account/login/new", UserLoginResponse, json=payload
+                "/api/official/user/account/login/new", LoginVO, json=payload
             )
         except ApiException as err:
             if "verification code" in str(err):

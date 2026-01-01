@@ -30,7 +30,7 @@ async def handler_random_code(request: web.Request) -> web.Response:
 async def handler_login_new(request: web.Request) -> web.Response:
     """Handle new login request."""
     data = await request.json()
-    # Verify password hash logic: SHA256(password + randomCode)
+    # Verify password hash logic: SHA256(md5(password) + randomCode)
     # Assume password is "password" and randomCode is "123456"
     expected_hash = sha256("password" + "123456")
 
