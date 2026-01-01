@@ -5,6 +5,12 @@ import sys
 
 from . import client, notebook, server
 
+SUBPARSERS = [
+    notebook,
+    client,
+    server,
+]
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -13,23 +19,15 @@ def main():
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
-
-    # Notebook commands
-    notebook.add_parser(subparsers)
-
-    # Client commands
-    client.add_parser(subparsers)
-
-    # Server commands
-    server.add_parser(subparsers)
+    for subparser in SUBPARSERS:
+        subparser.add_parser(subparsers)
 
     args = parser.parse_args()
-
     if args.command is None:
         parser.print_help()
         sys.exit(1)
 
-    # Dispatch to appropriate handler
+    # Dispatch
     if hasattr(args, "func"):
         args.func(args)
     else:
