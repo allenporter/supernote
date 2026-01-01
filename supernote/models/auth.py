@@ -271,3 +271,39 @@ class SendSmsVO(BaseResponse):
     valid_code_key: str = field(
         metadata=field_options(alias="validCodeKey"), default=""
     )
+
+
+@dataclass
+class EmailDTO(DataClassJSONMixin):
+    """Request to send email code.
+
+    Used by:
+        /api/user/mail/validcode (POST)
+    """
+
+    email: str
+    """User email."""
+
+    language: str | None = None
+    """Language code."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class ValidCodeDTO(DataClassJSONMixin):
+    """Request to check validation code.
+
+    Used by:
+        /api/user/check/validcode (POST)
+    """
+
+    valid_code_key: str = field(metadata=field_options(alias="validCodeKey"))
+    """Key for the validation code."""
+
+    valid_code: str = field(metadata=field_options(alias="validCode"))
+    """The validation code."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
