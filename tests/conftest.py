@@ -1,5 +1,6 @@
 """Root conftest for all tests."""
 
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Awaitable, Callable, Generator
 
@@ -7,8 +8,25 @@ import pytest
 from aiohttp.test_utils import TestClient
 from aiohttp.web import Application
 
+from supernote.server.db.session import sessionmanager
 from supernote.server.services.state import StateService
 from supernote.server.services.storage import StorageService
+
+pytest_plugins = [
+    "tests.plugins.db_fixtures",
+]
+
+
+@pytest.fixture(scope="session", autouse=True)
+async def shutdown_db_session() -> AsyncGenerator[None, None]:
+    yield
+
+    # Close the global sessionmanager if it was initialized
+    try:
+        await sessionmanager.close()
+    except Exception:
+        pass
+
 
 # Shared test constants
 TEST_USERNAME = "test@example.com"
