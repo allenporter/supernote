@@ -44,14 +44,14 @@ MODEL_REGISTRY: Dict[str, Type] = {
 }
 
 
-def load_requests():
+def load_requests() -> list[dict[str, str]]:
     """Load requests from the generated JSON file."""
     with EXTRACTED_REQUESTS_PATH.open("r") as f:
         return json.load(f)
 
 
 @pytest.mark.parametrize("request_entry", load_requests(), ids=lambda x: x["path"])
-def test_log_request_model(request_entry):
+def test_log_request_model(request_entry: dict[str, str]) -> None:
     """Test request parsing."""
 
     path = request_entry["path"]

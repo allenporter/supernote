@@ -6,12 +6,16 @@ from typing import AsyncGenerator, Self
 import aiohttp
 
 from supernote.models.file import (
+    DownloadType,
     FileDownloadDTO,
     FileDownloadUrlVO,
     FileListQueryDTO,
     FileListQueryVO,
+    FileSortOrder,
+    FileSortSequence,
 )
 from supernote.models.user import UserQueryByIdVO
+
 from .auth import ConstantAuth
 from .client import Client
 from .login_client import LoginClient
@@ -34,8 +38,8 @@ class SupernoteClient:
             directory_id=directory_id,
             page_no=1,
             page_size=100,
-            order="time",
-            sequence="desc",
+            order=FileSortOrder.TIME,
+            sequence=FileSortSequence.DESC,
         ).to_dict()
         return await self._client.post_json(
             "/api/file/list/query", FileListQueryVO, json=payload
