@@ -9,7 +9,7 @@ import pytest
 from aiohttp import web
 
 from supernote.client import Client
-from supernote.client.api_model import UserLoginResponse, UserRandomCodeResponse
+from supernote.models.auth import LoginVO, RandomCodeVO
 
 
 # Mock SHA-256 implementation matching the JS one
@@ -65,7 +65,7 @@ async def test_login_flow(client: Client) -> None:
     # Step 1: Get random code
     code_resp = await client.post_json(
         "/api/official/user/query/random/code",
-        UserRandomCodeResponse,
+        RandomCodeVO,
         json={"account": "test@example.com", "countryCode": 1},
     )
     assert code_resp.success
@@ -78,7 +78,7 @@ async def test_login_flow(client: Client) -> None:
     # Step 3: Login
     login_resp = await client.post_json(
         "/api/official/user/account/login/new",
-        UserLoginResponse,
+        LoginVO,
         json={
             "account": "test@example.com",
             "password": password_hash,

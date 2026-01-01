@@ -47,7 +47,7 @@ MODEL_REGISTRY: Dict[str, Type] = {
 def load_requests() -> list[dict[str, str]]:
     """Load requests from the generated JSON file."""
     with EXTRACTED_REQUESTS_PATH.open("r") as f:
-        return json.load(f)
+        return json.load(f)  # type: ignore
 
 
 @pytest.mark.parametrize("request_entry", load_requests(), ids=lambda x: x["path"])
