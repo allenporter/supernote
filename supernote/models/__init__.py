@@ -9,5 +9,6 @@ __all__ = [
     "equipment",
     "schedule",
     "system",
+    "summary",
     "base",
 ]
