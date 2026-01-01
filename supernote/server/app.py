@@ -10,6 +10,7 @@ from aiohttp import web
 from .config import ServerConfig
 from .models.base import create_error_response
 from .routes import auth, file, system
+from .services.blob import LocalBlobStorage
 from .services.coordination import LocalCoordinationService
 from .services.file import FileService
 from .services.state import StateService
@@ -127,7 +128,8 @@ def create_app(
 
     # Initialize services
     storage_root = Path(config.storage_dir)
-    storage_service = StorageService(storage_root)
+    blob_storage = LocalBlobStorage(storage_root)
+    storage_service = StorageService(storage_root, blob_storage)
     if state_service is None:
         state_service = StateService(storage_service.system_dir / "state.json")
 

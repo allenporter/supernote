@@ -256,8 +256,7 @@ async def handle_upload_data(request: web.Request) -> web.Response:
                 logger.info(
                     f"Received final chunk for {filename}, merging {total_chunks} chunks"
                 )
-                await asyncio.to_thread(
-                    storage_service.merge_chunks,
+                await storage_service.merge_chunks(
                     user_email,
                     upload_id,
                     filename,
