@@ -5,8 +5,11 @@ import time
 from typing import Optional
 
 import jwt
+from sqlalchemy import select
 
 from ..config import AuthConfig, UserEntry
+from ..db.models.user import UserDO
+from ..db.session import DatabaseSessionManager
 from ..models.auth import LoginResult, UserVO
 from .coordination import CoordinationService
 from .state import SessionState, StateService
@@ -24,11 +27,13 @@ class UserService:
         config: AuthConfig,
         state_service: StateService,
         coordination_service: CoordinationService,
+        session_manager: DatabaseSessionManager,
     ) -> None:
         """Initialize the user service."""
         self._config = config
         self._state_service = state_service
         self._coordination_service = coordination_service
+        self._session_manager = session_manager
 
     @property
     def _users(self) -> list[UserEntry]:
@@ -58,6 +63,40 @@ class UserService:
             if user.username == account:
                 return user
         return None
+
+    async def get_user_id(self, account: str) -> int:
+        """Get a stable integer ID for a username using the database.
+
+        If the user exists in config but not DB, create them in DB.
+        """
+        async with self._session_manager.session() as session:
+            # Try to find user
+            stmt = select(UserDO).where(UserDO.username == account)
+            result = await session.execute(stmt)
+            user_do = result.scalar_one_or_none()
+
+            if user_do:
+                return user_do.id
+
+            # If not found, create if valid in config
+            if self.check_user_exists(account):
+                # Retrieve details from config to populate DB (optional)
+                config_user = self._get_user(account)
+                email = config_user.email if config_user else None
+
+                new_user = UserDO(username=account, email=email)
+                session.add(new_user)
+                await session.commit()
+                await session.refresh(new_user)
+                return new_user.id
+
+            # If not in config either?
+            # Logic: If we are asking for ID, presumably the caller thinks they exist?
+            # Or we return -1? Or raise?
+            # Existing logic was just hash.
+            # If invalid user, hash would still return valid int.
+            # But VFS relies on valid user.
+            raise ValueError(f"User {account} not found")
 
     def verify_password(self, account: str, password: str) -> bool:
         user = self._get_user(account)

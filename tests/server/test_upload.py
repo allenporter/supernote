@@ -4,7 +4,7 @@ from aiohttp import FormData
 from aiohttp.test_utils import TestClient
 
 from supernote.server.services.storage import StorageService
-from tests.conftest import TEST_USERNAME
+from tests.server.conftest import TEST_USERNAME
 
 
 async def test_upload_file(

@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable
 from aiohttp import web
 
 from .config import ServerConfig
+from .db.session import DatabaseSessionManager
 from .models.base import create_error_response
 from .routes import auth, file, system
 from .services.blob import LocalBlobStorage
@@ -116,13 +117,14 @@ async def jwt_auth_middleware(
     return await handler(request)
 
 
+def create_db_session_manager(db_url: str) -> DatabaseSessionManager:
+    return DatabaseSessionManager(db_url)
+
+
 def create_app(
-    config: ServerConfig | None = None,
+    config: ServerConfig,
     state_service: StateService | None = None,
 ) -> web.Application:
-    if config is None:
-        config = ServerConfig.load()
-
     app = web.Application(middlewares=[trace_middleware, jwt_auth_middleware])
     app["config"] = config
 
@@ -133,13 +135,18 @@ def create_app(
     if state_service is None:
         state_service = StateService(storage_service.system_dir / "state.json")
 
+    session_manager = create_db_session_manager(config.db_url)
     coordination_service = LocalCoordinationService()
 
     app["storage_service"] = storage_service
     app["state_service"] = state_service
     app["coordination_service"] = coordination_service
-    app["user_service"] = UserService(config.auth, state_service, coordination_service)
-    app["file_service"] = FileService(storage_service)
+    app["user_service"] = UserService(
+        config.auth, state_service, coordination_service, session_manager
+    )
+    app["file_service"] = FileService(
+        storage_service, app["user_service"], session_manager
+    )
     app["sync_locks"] = {}  # user -> (equipment_no, expiry_time)
 
     # Resolve trace log path if not set
@@ -153,6 +160,12 @@ def create_app(
 
     # Add a catch-all route to log everything (must be last)
     app.router.add_route("*", "/{tail:.*}", system.handle_root)
+
+    async def on_shutdown_handler(app: web.Application) -> None:
+        await session_manager.close()
+
+    app.on_shutdown.append(on_shutdown_handler)
+
     return app
 
 

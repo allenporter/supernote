@@ -12,7 +12,7 @@ from supernote.client.client import Client
 from supernote.client.exceptions import UnauthorizedException
 from supernote.client.login_client import LoginClient
 from supernote.server.services.storage import StorageService
-from tests.conftest import (
+from tests.server.conftest import (
     TEST_PASSWORD,
     TEST_USERNAME,
     UserStorageHelper,
@@ -155,7 +155,7 @@ async def test_sync_start_syn_type(
     assert data["synType"] is False  # Empty storage
 
     # 2. Add a dummy file
-    user_storage.create_file(TEST_USERNAME, "Note/test.note")
+    await user_storage.create_file(TEST_USERNAME, "Note/test.note")
 
     resp = await client.post(
         "/api/file/2/files/synchronous/start",
@@ -295,11 +295,11 @@ async def test_upload_flow(client: TestClient, auth_headers: dict[str, str]) -> 
 
 
 async def test_download_flow(client: TestClient, auth_headers: dict[str, str]) -> None:
-    # 1. Upload a file first
+    # Upload a file first
     file_content = b"Hello Download"
     file_hash = hashlib.md5(file_content).hexdigest()
 
-    # Apply
+    # Apply for upload
     await client.post(
         "/api/file/3/files/upload/apply",
         json={
@@ -331,7 +331,7 @@ async def test_download_flow(client: TestClient, auth_headers: dict[str, str]) -
         headers=auth_headers,
     )
 
-    # 2. Request Download
+    # Request Download URL
     resp = await client.post(
         "/api/file/3/files/download_v3",
         json={"equipmentNo": "SN123456", "id": "EXPORT/download_test.note"},
@@ -343,7 +343,7 @@ async def test_download_flow(client: TestClient, auth_headers: dict[str, str]) -
     download_url = data["url"]
     assert "path=EXPORT/download_test.note" in download_url
 
-    # 3. Download Data
+    # Download Data
     # Extract path from URL
     path_param = download_url.split("path=")[1]
     resp = await client.get(

@@ -11,9 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class VirtualFileSystem:
-    """
-    Core implementation of the Database-Driven Virtual Filesystem.
-    """
+    """Core implementation of the Database-Driven Virtual Filesystem."""
 
     def __init__(self, db_session: AsyncSession):
         self.db = db_session
@@ -33,17 +31,20 @@ class VirtualFileSystem:
         result = await self.db.execute(stmt)
         existing = result.scalar_one_or_none()
         if existing:
-            return existing  # Or raise error?
+            # TODO: Determine what the API semantic are and if we should
+            # raise an error or not. This requires auditing the client code
+            # and callers. (could add exist_ok param etc)
+            return existing
 
-        now = int(time.time() * 1000)  # ms
+        now_ms = int(time.time() * 1000)
         new_dir = UserFileDO(
             user_id=user_id,
             directory_id=parent_id,
             file_name=name,
             is_folder="Y",
             size=0,
-            create_time=now,
-            update_time=now,
+            create_time=now_ms,
+            update_time=now_ms,
             is_active="Y",
         )
         self.db.add(new_dir)
@@ -51,8 +52,8 @@ class VirtualFileSystem:
         await self.db.refresh(new_dir)
         return new_dir
 
-    async def list_directory(self, user_id: int, parent_id: int) -> List[UserFileDO]:
-        """List active files/folders in a directory."""
+    async def list_directory(self, user_id: int, parent_id: int) -> list[UserFileDO]:
+        """List immediate children of a directory."""
         stmt = select(UserFileDO).where(
             UserFileDO.user_id == user_id,
             UserFileDO.directory_id == parent_id,
@@ -61,11 +62,35 @@ class VirtualFileSystem:
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_recursive(
+        self, user_id: int, parent_id: int, base_path: str = ""
+    ) -> list[tuple[UserFileDO, str]]:
+        """List all descendants of a directory recursively.
+
+        Returns a list of tuples: (node, relative_path_from_parent).
+        """
+        results: list[tuple[UserFileDO, str]] = []
+
+        children = await self.list_directory(user_id, parent_id)
+        for child in children:
+            child_rel_path = (
+                f"{base_path}/{child.file_name}" if base_path else child.file_name
+            )
+            results.append((child, child_rel_path))
+
+            if child.is_folder == "Y":
+                sub_results = await self.list_recursive(
+                    user_id, child.id, child_rel_path
+                )
+                results.extend(sub_results)
+
+        return results
+
     async def create_file(
         self, user_id: int, parent_id: int, name: str, size: int, md5: str
     ) -> UserFileDO:
         """Create a file entry (assuming content is handled elsewhere/CAS)."""
-        now = int(time.time() * 1000)
+        now_ms = int(time.time() * 1000)
 
         # Check quota (TODO: Implement Capacity check)
 
@@ -76,8 +101,8 @@ class VirtualFileSystem:
             is_folder="N",
             size=size,
             md5=md5,
-            create_time=now,
-            update_time=now,
+            create_time=now_ms,
+            update_time=now_ms,
             is_active="Y",
         )
         self.db.add(new_file)
@@ -106,15 +131,195 @@ class VirtualFileSystem:
         node.is_active = "N"
 
         # Create recycle bin entry
+        now_ms = int(time.time() * 1000)
         recycle = RecycleFileDO(
             user_id=user_id,
             file_id=node.id,
             file_name=node.file_name,
             size=node.size,
             is_folder=node.is_folder,
-            delete_time=int(time.time() * 1000),
+            delete_time=now_ms,
         )
         self.db.add(recycle)
 
         await self.db.commit()
         return True
+
+    async def resolve_path(self, user_id: int, path: str) -> UserFileDO | None:
+        """Resolve a posix-style path to a file node."""
+        parts = [p for p in path.strip("/").split("/") if p]
+        if not parts:
+            # Root? We don't have a root node in DB usually (directory_id=0 implies root children)
+            # Retuning None might be ambiguous if we expected a node.
+            # But technically root doesn't exist as a UserFileDO record.
+            return None
+
+        current_dir_id = 0
+        current_node = None
+
+        for part in parts:
+            stmt = select(UserFileDO).where(
+                UserFileDO.user_id == user_id,
+                UserFileDO.directory_id == current_dir_id,
+                UserFileDO.file_name == part,
+                UserFileDO.is_active == "Y",
+            )
+            result = await self.db.execute(stmt)
+            if (node := result.scalar_one_or_none()) is None:
+                return None
+
+            current_node = node
+            if node.is_folder == "Y":
+                current_dir_id = node.id
+
+        return current_node
+
+    async def ensure_directory_path(self, user_id: int, path: str) -> int:
+        """Ensure a directory path exists, creating if necessary. Returns the final directory ID."""
+        parts = [p for p in path.strip("/").split("/") if p]
+        current_dir_id = 0
+
+        for part in parts:
+            stmt = select(UserFileDO).where(
+                UserFileDO.user_id == user_id,
+                UserFileDO.directory_id == current_dir_id,
+                UserFileDO.file_name == part,
+                UserFileDO.is_active == "Y",
+            )
+            result = await self.db.execute(stmt)
+            if node := result.scalar_one_or_none():
+                if node.is_folder != "Y":
+                    raise NotADirectoryError(f"{part} is a file")
+                current_dir_id = node.id
+            else:
+                # Note: This could likely be made more efficient creating multiple
+                # directories in a single transaction.
+                new_dir = await self.create_directory(user_id, current_dir_id, part)
+                current_dir_id = new_dir.id
+
+        return current_dir_id
+
+    async def move_node(
+        self, user_id: int, node_id: int, new_parent_id: int, new_name: str
+    ) -> bool:
+        """Move a node to a new directory."""
+        node = await self.get_node_by_id(user_id, node_id)
+        if not node:
+            return False
+
+        # TODO: We should check for name collisions in the new directory
+        # and decide how to handle this (e.g. fail, overwrite, or auto rename)
+        node.directory_id = new_parent_id
+        node.file_name = new_name
+        node.update_time = int(time.time() * 1000)
+
+        await self.db.commit()
+        return True
+
+    async def copy_node(
+        self, user_id: int, source_node_id: int, new_parent_id: int, new_name: str
+    ) -> Optional[UserFileDO]:
+        """Copy a node."""
+        node = await self.get_node_by_id(user_id, source_node_id)
+        if not node:
+            return None
+
+        # TODO: We should check for name collisions in the new directory
+        # and decide how to handle this (e.g. fail, overwrite, or auto rename)
+
+        now_ms = int(time.time() * 1000)
+
+        # TODO: Do we need to handle recursive copy or should it get handled
+        # automatically by the VFS? Presumably this doesn't work as is.
+        # Let's add tests for that case and ensure it works.
+        # For now we just copy the file.
+
+        new_node = UserFileDO(
+            user_id=user_id,
+            directory_id=new_parent_id,
+            file_name=new_name,
+            is_folder=node.is_folder,
+            size=node.size,
+            md5=node.md5,
+            create_time=now_ms,
+            update_time=now_ms,
+            is_active="Y",
+        )
+        self.db.add(new_node)
+        await self.db.commit()
+        await self.db.refresh(new_node)
+        return new_node
+
+    async def list_recycle(self, user_id: int) -> List[RecycleFileDO]:
+        """List files in recycle bin."""
+        stmt = select(RecycleFileDO).where(RecycleFileDO.user_id == user_id)
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def restore_node(self, user_id: int, recycle_id: int) -> bool:
+        """Restore a file from recycle bin."""
+        stmt = select(RecycleFileDO).where(
+            RecycleFileDO.user_id == user_id, RecycleFileDO.id == recycle_id
+        )
+        result = await self.db.execute(stmt)
+        if (recycle_entry := result.scalar_one_or_none()) is None:
+            return False
+
+        # Get original node
+        node_stmt = select(UserFileDO).where(
+            UserFileDO.user_id == user_id, UserFileDO.id == recycle_entry.file_id
+        )
+        node_result = await self.db.execute(node_stmt)
+        if node := node_result.scalar_one_or_none():
+            node.is_active = "Y"
+            # TODO: Lets add common functions for getting the current now_ms so we can
+            # fake out update time in tests etc.
+            node.update_time = int(time.time() * 1000)
+
+        await self.db.delete(recycle_entry)
+        await self.db.commit()
+        return True
+
+    async def purge_recycle(
+        self, user_id: int, recycle_ids: List[int] | None = None
+    ) -> None:
+        """Permanently delete items from recycle bin."""
+        from sqlalchemy import delete
+
+        stmt = delete(RecycleFileDO).where(RecycleFileDO.user_id == user_id)
+        if recycle_ids:
+            stmt = stmt.where(RecycleFileDO.id.in_(recycle_ids))
+
+        await self.db.execute(stmt)
+        # TODO: Also delete UserFileDO? For now, VFS "active='N'" nodes remain.
+        await self.db.commit()
+
+    async def search_files(self, user_id: int, keyword: str) -> List[UserFileDO]:
+        """Search for active files/folders by keyword (case-insensitive)."""
+        stmt = select(UserFileDO).where(
+            UserFileDO.user_id == user_id,
+            UserFileDO.is_active == "Y",
+            UserFileDO.file_name.ilike(f"%{keyword}%"),
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def _check_exists(
+        self,
+        user_id: int,
+        parent_id: int,
+        name: str,
+        is_folder: str,
+    ) -> bool:
+        """Check if a node exists with the given name in the parent directory."""
+        stmt = select(UserFileDO).where(
+            UserFileDO.user_id == user_id,
+            UserFileDO.directory_id == parent_id,
+            UserFileDO.file_name == name,
+            UserFileDO.is_active == "Y",
+        )
+        if is_folder is not None:
+            stmt = stmt.where(UserFileDO.is_folder == is_folder)
+
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none() is not None
