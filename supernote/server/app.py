@@ -10,7 +10,7 @@ from aiohttp import web
 from .config import ServerConfig
 from .db.session import DatabaseSessionManager
 from .models.base import create_error_response
-from .routes import auth, file, system
+from .routes import auth, file, schedule, system
 from .services.blob import LocalBlobStorage
 from .services.coordination import LocalCoordinationService
 from .services.file import FileService
@@ -139,6 +139,7 @@ def create_app(
     session_manager = create_db_session_manager(config.db_url)
     coordination_service = LocalCoordinationService()
 
+    app["session_manager"] = session_manager
     app["storage_service"] = storage_service
     app["state_service"] = state_service
     app["coordination_service"] = coordination_service
@@ -159,6 +160,7 @@ def create_app(
     app.add_routes(system.routes)
     app.add_routes(auth.routes)
     app.add_routes(file.routes)
+    app.add_routes(schedule.routes)
 
     # Add a catch-all route to log everything (must be last)
     app.router.add_route("*", "/{tail:.*}", system.handle_root)
