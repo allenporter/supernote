@@ -8,7 +8,7 @@ This content is shared between the [documentation](https://allenporter.github.io
 
 - **Notebook Parsing**: Convert `.note` files to PDF, PNG, SVG, or text
 - **Private Server**: Self-hosted Supernote Private Cloud implementation
-- **Client**: Interact with Supernote service API
+- **Client**: Interact with Supernote (Private) Cloud API
 
 ## Installation
 
@@ -31,7 +31,6 @@ Install in a virtual environment:
 uv venv --python=3.14
 source .venv/bin/activate
 uv pip install -r requirements_dev.txt
-uv pip install -e ".[all]"
 ```
 
 ## Quick Start
@@ -80,7 +79,7 @@ docker run -d -p 8080:8080 \
   supernote-server
 ```
 
-See [Server Documentation](supernote/server/README.md) for details.
+See [Server Documentation](https://github.com/allenporter/supernote-lite/blob/main/supernote/server/README.mdd) for details.
 
 
 ### Access Supernote Services
@@ -118,7 +117,7 @@ This package is designed for:
 2. **Developers** - Integrating Supernote into applications
 3. **Reference** - Understanding Supernote protocols
 
-See [ARCHITECTURE.md](supernote/server/ARCHITECTURE.md) for protocol details.
+See [ARCHITECTURE.md](https://github.com/allenporter/supernote-lite/blob/main/supernote/server/ARCHITECTURE.md) for protocol details.
 
 ### Setup
 
