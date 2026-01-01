@@ -3,20 +3,33 @@ import hashlib
 import logging
 import os
 import shutil
-from collections.abc import Awaitable, Callable, Generator, Iterator
+from collections.abc import AsyncGenerator, Awaitable, Callable, Generator, Iterator
 from pathlib import Path
 from typing import IO
+
+import aiofiles
+
+from .blob import BlobStorage, LocalBlobStorage
 
 logger = logging.getLogger(__name__)
 
 
 class StorageService:
-    def __init__(self, root_dir: Path):
+    def __init__(self, root_dir: Path, blob_storage: BlobStorage | None = None):
         self.root_dir = root_dir
         self.users_dir = root_dir / "users"
         self.temp_dir = root_dir / "temp"
         self.system_dir = root_dir / "system"
         self._ensure_directories()
+        self.blob_storage = blob_storage or LocalBlobStorage(root_dir)
+
+    async def write_blob(self, data: bytes) -> str:
+        """Write bytes to blob storage."""
+        return await self.blob_storage.write_blob(data)
+
+    async def read_blob(self, md5: str) -> bytes:
+        """Read bytes from blob storage."""
+        return await self.blob_storage.read_blob(md5)
 
     def _ensure_directories(self) -> None:
         self.root_dir.mkdir(parents=True, exist_ok=True)
@@ -169,18 +182,20 @@ class StorageService:
         )
         return total_bytes
 
-    def merge_chunks(
+    async def merge_chunks(
         self, user: str, upload_id: str, filename: str, total_chunks: int
-    ) -> Path:
-        """Merge all chunks into the final temp file."""
+    ) -> tuple[str, Path]:
+        """Merge all chunks into the final temp file AND/OR BlobStorage.
+
+        Returns (md5, temp_path).
+        """
         temp_path = self.resolve_temp_path(user, filename)
         temp_path.parent.mkdir(parents=True, exist_ok=True)
 
         logger.info(f"Merging {total_chunks} chunks for {filename} (user: {user})")
 
-        # Open the final file for writing
-        with open(temp_path, "wb") as output_file:
-            # Read and write each chunk in order
+        # Generator to yield bytes from chunks sequentially
+        async def chunk_stream() -> AsyncGenerator[bytes, None]:
             for part_number in range(1, total_chunks + 1):
                 chunk_path = self.get_chunk_path(user, upload_id, filename, part_number)
                 if not chunk_path.exists():
@@ -188,20 +203,31 @@ class StorageService:
                         f"Chunk {part_number} not found for {filename}"
                     )
 
+                # Yield from file
+                async with aiofiles.open(chunk_path, "rb") as f:
+                    while True:
+                        data = await f.read(8192)
+                        if not data:
+                            break
+                        yield data
+
+        md5 = await self.blob_storage.write_stream(chunk_stream())
+
+        # The below code writes to a temp file for legacy compatibility, but
+        # this can be removed in the future when we complete the work to
+        # update our virtual file system to use blobs.
+        with open(temp_path, "wb") as output_file:
+            for part_number in range(1, total_chunks + 1):
+                chunk_path = self.get_chunk_path(user, upload_id, filename, part_number)
                 with open(chunk_path, "rb") as chunk_file:
-                    # Copy chunk to output file
                     while True:
                         data = chunk_file.read(8192)
                         if not data:
                             break
                         output_file.write(data)
 
-                logger.debug(
-                    f"Merged chunk {part_number}/{total_chunks} for {filename}"
-                )
-
-        logger.info(f"Successfully merged all chunks for {filename}")
-        return temp_path
+        logger.info(f"Successfully merged all chunks for {filename}. MD5: {md5}")
+        return md5, temp_path
 
     def cleanup_chunks(self, user: str, upload_id: str) -> None:
         """Remove the upload directory and all its chunk files."""

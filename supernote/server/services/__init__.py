@@ -1,3 +1,15 @@
-from .storage import StorageService
+"""Services for handling storage and file operations.
 
-__all__ = ["StorageService"]
+This package contains many submodules for handling many
+operations provided by the server.
+"""
+
+__all__ = [
+    "blob",
+    "coordination",
+    "file",
+    "state",
+    "storage",
+    "user",
+    "vfs",
+]
