@@ -11,16 +11,10 @@ repos:
     rev: v0.14.10
     hooks:
       - id: ruff-check
-        types_or:
-          - python
-          - pyi
         args:
           - --fix
           - --exit-non-zero-on-fix
       - id: ruff-format
-        types_or:
-          - python
-          - pyi
   - repo: local
     hooks:
       - id: mypy
