@@ -1,11 +1,11 @@
 """Data models for user related API calls.
 
 The following endpoints are supported:
-- /official/user/check/exists/server (POST)
-- /user/check/exists (POST)
-- /user/query/info (POST)
-- /user/update (POST)
-- /user/update/name (POST)
+- /api/official/user/check/exists/server (POST)
+- /api/user/check/exists (POST)
+- /api/user/query/info (POST)
+- /api/user/update (POST)
+- /api/user/update/name (POST)
 
 """
 
@@ -25,8 +25,8 @@ class UserCheckDTO(DataClassJSONMixin):
     """Request to check if user exists.
 
     Used by:
-        /official/user/check/exists/server (POST)
-        /user/check/exists (POST)
+        /api/official/user/check/exists/server (POST)
+        /api/user/check/exists (POST)
     """
 
     country_code: str | None = field(
@@ -48,7 +48,7 @@ class UserCheckVO(BaseResponse):
     """Response for user check.
 
     Used by:
-        /official/user/check/exists/server (POST)
+        /api/official/user/check/exists/server (POST)
     """
 
     dms: str | None = None
@@ -68,7 +68,7 @@ class UserQueryDTO(DataClassJSONMixin):
     """Request to query user.
 
     Used by:
-        /user/query/info (POST)
+        /api/user/query/info (POST)
     """
 
     country_code: str | None = field(
@@ -96,7 +96,7 @@ class UserUpdateDTO(DataClassJSONMixin):
     """Request to update user info.
 
     Used by:
-        /user/update (POST)
+        /api/user/update (POST)
     """
 
     sex: str | None = None
@@ -131,7 +131,7 @@ class UpdateUserNameDTO(DataClassJSONMixin):
     """Request to update user name.
 
     Used by:
-        /user/update/name (POST)
+        /api/user/update/name (POST)
     """
 
     user_name: str = field(metadata=field_options(alias="userName"))
@@ -289,7 +289,7 @@ class UserQueryVO(BaseResponse):
     """Response for user query info.
 
     Used by:
-        /user/query/info (POST)
+        /api/user/query/info (POST)
     """
 
     user: UserInfo | None = None
@@ -309,8 +309,8 @@ class UserQueryByIdVO(BaseResponse):
     """Response for user query by ID.
 
     Used by:
-        /user/query (POST)
-        /user/query/user/{userId} (GET)
+        /api/user/query (POST)
+        /api/user/query/user/{userId} (GET)
     """
 
     user_id: int | None = field(metadata=field_options(alias="userId"), default=None)
@@ -381,7 +381,7 @@ class UserDTO(DataClassJSONMixin):
     """Request for querying all users.
 
     Used by:
-        /user/query/all (POST)
+        /api/user/query/all (POST)
     """
 
     page_no: str = field(metadata=field_options(alias="pageNo"))
@@ -430,7 +430,7 @@ class FreezeOrUnfreezeUserDTO(DataClassJSONMixin):
     """Request to freeze or unfreeze user.
 
     Used by:
-        /user/freeze (PUT)
+        /api/user/freeze (PUT)
     """
 
     user_id: str = field(metadata=field_options(alias="userId"))
@@ -448,7 +448,7 @@ class UserInfoDTO(DataClassJSONMixin):
     """Request for user info.
 
     Used by:
-        /user/query/one (POST)
+        /api/user/query/one (POST)
     """
 
     country_code: str | None = field(
