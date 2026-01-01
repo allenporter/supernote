@@ -16,9 +16,7 @@ class ScheduleService:
         """Initialize the schedule service."""
         self.session_manager = session_manager
 
-    # -------------------------------------------------------------------------
     # Task Group Operations
-    # -------------------------------------------------------------------------
 
     async def create_group(self, user_id: int, title: str) -> ScheduleTaskGroupDO:
         """Create a new task group."""
@@ -57,9 +55,7 @@ class ScheduleService:
             await session.commit()
             return bool(result.rowcount > 0)  # type: ignore[attr-defined]
 
-    # -------------------------------------------------------------------------
     # Task Operations
-    # -------------------------------------------------------------------------
 
     async def create_task(
         self,
