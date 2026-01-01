@@ -1,323 +1,368 @@
 
 Authentication
-/official/user/account/login/equipment (POST):
+/api/base/pic/code (GET):
+/api/official/user/account/login/equipment (POST):
   Request: LoginDTO
   Response: LoginVO
-/official/user/account/login/new (POST):
+/api/official/user/account/login/new (POST):
   Request: LoginDTO
   Response: LoginVO
-/official/user/query/random/code (POST):
+/api/official/user/query/random/code (POST):
   Request: RandomCodeDTO
   Response: RandomCodeVO
-/user/logout (POST):
+/api/user/check/validcode (POST):
+  Request: ValidCodeDTO
   Response: BaseVO
-/user/query/token (POST):
+/api/user/logout (POST):
+  Response: BaseVO
+/api/user/mail/validcode (POST):
+  Request: EmailDTO
+  Response: EmailVO
+/api/user/query/token (POST):
   Response: QueryTokenVO
-/user/sms/login (POST):
+/api/user/sms/login (POST):
   Request: SmsLoginDTO
   Response: SmsLoginVO
 
 Equipment
-/equipment/bind/status (POST):
+/api/equipment/bind/status (POST):
   Response: BindStatusVO
-/equipment/delete/{equipmentNumber}/deleteApi (DELETE):
+/api/equipment/delete/{equipmentNumber}/deleteApi (DELETE):
   Response: BaseVO
-/equipment/manual/deleteApi (POST):
+/api/equipment/manual/deleteApi (POST):
   Request: EquipmentManualDTO
   Response: EquipmentManualVO
-/equipment/query/by/equipmentno (POST):
+/api/equipment/query/by/equipmentno (POST):
   Request: UserEquipmentDTO
   Response: UserEquipmentVO
-/equipment/query/by/{userId} (GET):
+/api/equipment/query/by/{userId} (GET):
   Response: UserEquipmentListVO
-/equipment/query/user/equipment/deleteApi (POST):
+/api/equipment/query/user/equipment/deleteApi (POST):
   Request: QueryEquipmentDTO
   Response: CommonListVO
-/equipment/query/{equipmentNo}/deleteApi (GET):
+/api/equipment/query/{equipmentNo}/deleteApi (GET):
   Response: EquipmentVO
-/terminal/equipment/unlink (POST):
+/api/terminal/equipment/unlink (POST):
   Request: UnbindEquipmentDTO
   Response: BaseVO
-/terminal/user/activateEquipment (POST):
+/api/terminal/user/activateEquipment (POST):
   Request: ActivateEquipmentDTO
   Response: BaseVO
-/terminal/user/bindEquipment (POST):
+/api/terminal/user/bindEquipment (POST):
   Request: BindEquipmentDTO
   Response: BaseVO
 
 File - Device
-/file/2/files/create_folder_v2 (POST):
+/api/file/2/files/create_folder_v2 (POST):
   Request: CreateFolderLocalDTO
   Response: CreateFolderLocalVO
-/file/2/files/list_folder (POST):
+/api/file/2/files/list_folder (POST):
   Request: ListFolderV2DTO
   Response: ListFolderLocalVO
-/file/2/files/synchronous/end (POST):
+/api/file/2/files/synchronous/end (POST):
   Request: SynchronousEndLocalDTO
   Response: SynchronousEndLocalVO
-/file/2/files/synchronous/start (POST):
+/api/file/2/files/synchronous/start (POST):
   Request: SynchronousStartLocalDTO
   Response: SynchronousStartLocalVO
-/file/2/files/upload/finish (POST):
+/api/file/2/files/upload/finish (POST):
   Request: FileUploadFinishLocalDTO
   Response: FileUploadFinishLocalVO
-/file/2/users/get_space_usage (POST):
+/api/file/2/users/get_space_usage (POST):
   Request: CapacityLocalDTO
   Response: CapacityLocalVO
-/file/3/files/copy_v3 (POST):
+/api/file/3/files/copy_v3 (POST):
   Request: FileCopyLocalDTO
   Response: FileCopyLocalVO
-/file/3/files/delete_folder_v3 (POST):
+/api/file/3/files/delete_folder_v3 (POST):
   Request: DeleteFolderLocalDTO
   Response: DeleteFolderLocalVO
-/file/3/files/download_v3 (POST):
+/api/file/3/files/download_v3 (POST):
   Request: FileDownloadLocalDTO
   Response: FileDownloadLocalVO
-/file/3/files/list_folder_v3 (POST):
+/api/file/3/files/list_folder_v3 (POST):
   Request: ListFolderLocalDTO
   Response: ListFolderLocalVO
-/file/3/files/move_v3 (POST):
+/api/file/3/files/move_v3 (POST):
   Request: FileMoveLocalDTO
   Response: FileMoveLocalVO
-/file/3/files/query/by/path_v3 (POST):
+/api/file/3/files/query/by/path_v3 (POST):
   Request: FileQueryByPathLocalDTO
   Response: FileQueryByPathLocalVO
-/file/3/files/query_v3 (POST):
+/api/file/3/files/query_v3 (POST):
   Request: FileQueryLocalDTO
   Response: FileQueryLocalVO
-/file/3/files/upload/apply (POST):
+/api/file/3/files/upload/apply (POST):
   Request: FileUploadApplyLocalDTO
   Response: FileUploadApplyLocalVO
-/file/note/to/pdf (POST):
+/api/file/note/to/pdf (POST):
   Request: PdfDTO
   Response: PdfVO
-/file/note/to/png (POST):
+/api/file/note/to/png (POST):
   Request: PngDTO
   Response: PngVO
-/file/pdfwithmark/to/pdf (POST):
+/api/file/pdfwithmark/to/pdf (POST):
   Request: PdfDTO
   Response: PdfVO
-/file/query/server (GET):
+/api/file/query/server (GET):
+  Response: BaseVO
+
+File - Terminal
+/api/file/terminal/upload/apply (POST):
+  Request: TerminalFileUploadApplyDTO
+  Response: FileUploadApplyLocalVO
+/api/file/terminal/upload/finish (POST):
+  Request: TerminalFileUploadFinishDTO
   Response: BaseVO
 
 File - Web
-/file/capacity/query (POST):
+/api/file/2/files (POST):
+  Request: FileQueryByPathV2DTO
+  Response: FileQueryByPathV2VO
+/api/file/2/files/query/deleteApi (POST):
+  Request: FileQueryV2DTO
+  Response: FileQueryV2VO
+/api/file/add/folder/file/deleteApi (POST):
+  Request: FolderFileAddDTO
+  Response: BaseVO
+/api/file/capacity/query (POST):
   Response: CapacityVO
-/file/copy (POST):
+/api/file/copy (POST):
   Request: FileMoveAndCopyDTO
   Response: BaseVO
-/file/delete (POST):
+/api/file/delete (POST):
   Request: FileDeleteDTO
   Response: BaseVO
-/file/download/url (POST):
+/api/file/download/url (POST):
   Request: FileDownloadDTO
   Response: FileDownloadUrlVO
-/file/folder/add (POST):
+/api/file/folder/add (POST):
   Request: FolderAddDTO
   Response: BaseVO
-/file/folder/list/query (POST):
+/api/file/folder/list/query (POST):
   Request: FolderListQueryDTO
   Response: FolderListQueryVO
-/file/list/query (POST):
+/api/file/label/list/search (POST):
+  Request: FileLabelSearchDTO
+  Response: FileLabelSearchVO
+/api/file/list/query (POST):
   Request: FileListQueryDTO
   Response: FileListQueryVO
-/file/list/search (POST):
+/api/file/list/search (POST):
   Request: FileListSearchDTO
   Response: FileListSearchVO
-/file/move (POST):
+/api/file/move (POST):
   Request: FileMoveAndCopyDTO
   Response: BaseVO
-/file/path/query (POST):
+/api/file/path/query (POST):
   Request: FilePathQueryDTO
   Response: FilePathQueryVO
-/file/recycle/clear (POST):
+/api/file/recycle/clear (POST):
   Response: BaseVO
-/file/recycle/delete (POST):
+/api/file/recycle/delete (POST):
   Request: RecycleFileDTO
   Response: BaseVO
-/file/recycle/list/query (POST):
+/api/file/recycle/list/query (POST):
   Request: RecycleFileListDTO
   Response: RecycleFileListVO
-/file/recycle/revert (POST):
+/api/file/recycle/revert (POST):
   Request: RecycleFileDTO
   Response: BaseVO
-/file/rename (POST):
+/api/file/rename (POST):
   Request: FileReNameDTO
   Response: BaseVO
-/file/upload/apply (POST):
+/api/file/upload/apply (POST):
   Request: FileUploadApplyDTO
   Response: FileUploadApplyLocalVO
-/file/upload/finish (POST):
+/api/file/upload/finish (POST):
   Request: FileUploadFinishDTO
   Response: BaseVO
 
 Schedule
-/file/query/schedule/sort (POST):
+/api/file/query/schedule/sort (POST):
   Request: GetScheduleSortDTO
   Response: GetScheduleSortVO
-/file/schedule/group (POST):
+/api/file/schedule/group (POST):
   Request: AddScheduleTaskGroupDTO
   Response: AddScheduleTaskGroupVO
-/file/schedule/group (PUT):
+/api/file/schedule/group (PUT):
   Request: UpdateScheduleTaskGroupDTO
   Response: BaseVO
-/file/schedule/group/all (POST):
+/api/file/schedule/group/all (POST):
   Request: ScheduleTaskGroupDTO
   Response: ScheduleTaskGroupVO
-/file/schedule/group/clear (POST):
+/api/file/schedule/group/clear (POST):
   Request: ClearScheduleTaskGroupDTO
   Response: BaseVO
-/file/schedule/group/{taskListId} (DELETE):
+/api/file/schedule/group/{taskListId} (DELETE):
   Response: BaseVO
-/file/schedule/group/{taskListId} (GET):
+/api/file/schedule/group/{taskListId} (GET):
   Response: GetScheduleTaskGroupVO
-/file/schedule/sort (POST):
+/api/file/schedule/sort (POST):
   Request: ScheduleSortDTO
   Response: BaseVO
-/file/schedule/sort (PUT):
+/api/file/schedule/sort (PUT):
   Request: ScheduleSortDTO
   Response: BaseVO
-/file/schedule/sort/{taskListId} (DELETE):
+/api/file/schedule/sort/{taskListId} (DELETE):
   Response: BaseVO
-/file/schedule/task (POST):
+/api/file/schedule/task (POST):
   Request: AddScheduleTaskDTO
   Response: AddScheduleTaskVO
-/file/schedule/task (PUT):
+/api/file/schedule/task (PUT):
   Request: UpdateScheduleTaskDTO
   Response: UpdateScheduleTaskVO
-/file/schedule/task/all (POST):
+/api/file/schedule/task/all (POST):
   Request: ScheduleTaskDTO
   Response: ScheduleTaskAllVO
-/file/schedule/task/list (PUT):
+/api/file/schedule/task/list (PUT):
   Request: UpdateScheduleTaskListDTO
   Response: BaseVO
-/file/schedule/task/{taskId} (DELETE):
+/api/file/schedule/task/{taskId} (DELETE):
   Response: BaseVO
-/file/schedule/task/{taskId} (GET):
+/api/file/schedule/task/{taskId} (GET):
   Response: ScheduleTaskVO
 
 Share
-/file/share/record/add (POST):
+/api/file/share/record/add (POST):
   Request: ShareRecordDTO
   Response: BaseVO
 
 Summary
-/file/add/summary (POST):
+/api/file/add/summary (POST):
   Request: AddSummaryDTO
   Response: AddSummaryVO
-/file/add/summary/group (POST):
+/api/file/add/summary/group (POST):
   Request: AddSummaryGroupDTO
   Response: AddSummaryGroupVO
-/file/add/summary/tag (POST):
+/api/file/add/summary/tag (POST):
   Request: AddSummaryTagDTO
   Response: AddSummaryTagVO
-/file/delete/summary (DELETE):
+/api/file/delete/summary (DELETE):
   Request: DeleteSummaryDTO
   Response: BaseVO
-/file/delete/summary/group (DELETE):
+/api/file/delete/summary/group (DELETE):
   Request: DeleteSummaryGroupDTO
   Response: BaseVO
-/file/delete/summary/tag (DELETE):
+/api/file/delete/summary/tag (DELETE):
   Request: DeleteSummaryTagDTO
   Response: BaseVO
-/file/download/summary (POST):
+/api/file/download/summary (POST):
   Request: DownloadSummaryDTO
   Response: DownloadSummaryVO
-/file/query/summary (POST):
+/api/file/query/summary (POST):
   Request: QuerySummaryDTO
   Response: QuerySummaryVO
-/file/query/summary/group (POST):
+/api/file/query/summary/group (POST):
   Request: QuerySummaryGroupDTO
   Response: QuerySummaryGroupVO
-/file/query/summary/hash (POST):
+/api/file/query/summary/hash (POST):
   Request: QuerySummaryDTO
   Response: QuerySummaryMD5HashVO
-/file/query/summary/id (POST):
+/api/file/query/summary/id (POST):
   Request: QuerySummaryDTO
   Response: QuerySummaryByIdVO
-/file/query/summary/tag (GET):
+/api/file/query/summary/tag (GET):
   Response: QuerySummaryTagVO
-/file/update/summary (PUT):
+/api/file/update/summary (PUT):
   Request: UpdateSummaryDTO
   Response: BaseVO
-/file/update/summary/group (PUT):
+/api/file/update/summary/group (PUT):
   Request: UpdateSummaryGroupDTO
   Response: BaseVO
-/file/update/summary/tag (PUT):
+/api/file/update/summary/tag (PUT):
   Request: UpdateSummaryTagDTO
   Response: BaseVO
-/file/upload/apply/summary (POST):
+/api/file/upload/apply/summary (POST):
   Request: UploadSummaryApplyDTO
   Response: UploadSummaryApplyVO
 
 System
-/official/system/base/param (POST):
+/api/official/system/base/param (POST):
   Response: ReferenceRespVO
-/oss/download (GET):
-/oss/generate/download/url (POST):
+/api/oss/download (GET):
+/api/oss/generate/download/url (POST):
   Response: FileDownloadApplyVO
-/oss/generate/upload/url (POST):
+/api/oss/generate/upload/url (POST):
   Response: FileUploadApplyLocalVO
-/oss/upload (POST):
+/api/oss/upload (POST):
   Response: UploadFileVO
-/oss/upload/part (POST):
+/api/oss/upload/part (POST):
   Response: FileChunkVO
-/query/email/config (GET):
+/api/query/email/config (GET):
   Response: EmailServerVO
-/query/email/publickey (GET):
+/api/query/email/publickey (GET):
   Response: EmailPublicKeyVO
-/save/email/config (POST):
+/api/save/email/config (POST):
   Request: EmailServerDTO
   Response: BaseVO
-/send/email/test (POST):
+/api/send/email/test (POST):
   Request: EmailServerDTO
   Response: BaseVO
-/system/base/dictionary/by/{name}/deleteApi (GET):
+/api/system/base/dictionary/by/{name}/deleteApi (GET):
   Response: DictionaryByNameVO
-/system/base/dictionary/deleteApi (GET):
-/system/base/dictionary/deleteApi (POST):
+/api/system/base/dictionary/deleteApi (GET):
+/api/system/base/dictionary/deleteApi (POST):
   Request: DictionaryVagueDTO
   Response: CommonListVO
-/system/base/dictionary/param/deleteApi (POST):
+/api/system/base/dictionary/param/deleteApi (POST):
   Request: DictionaryQueryDTO
   Response: DictionaryListVO
-/system/base/dictionary/{id}/deleteApi (GET):
+/api/system/base/dictionary/{id}/deleteApi (GET):
   Response: DictionaryVO
-/system/base/reference/deleteApi (POST):
+/api/system/base/reference/deleteApi (POST):
   Request: ReferenceVaguaDTO
   Response: CommonListVO
-/system/base/reference/param (POST):
+/api/system/base/reference/param (POST):
   Request: ReferenceQueryDTO
   Response: ReferenceListVO
-/system/base/reference/{id}/deleteApi (GET):
+/api/system/base/reference/{id}/deleteApi (GET):
   Response: ReferenceVO
 
 User
-/official/user/check/exists/server (POST):
+/api/official/user/check/exists/server (POST):
   Request: UserCheckDTO
   Response: UserCheckVO
-/user/check/exists (POST):
+/api/official/user/retrieve/password (POST):
+  Request: RetrievePasswordDTO
+  Response: BaseVO
+/api/user/account/clear (POST):
+  Response: BaseVO
+/api/user/check/exists (POST):
   Request: UserCheckDTO
   Response: BaseVO
-/user/freeze (PUT):
+/api/user/email (PUT):
+  Request: UpdateEmailDTO
+  Response: BaseVO
+/api/user/freeze (PUT):
   Request: FreezeOrUnfreezeUserDTO
   Response: BaseVO
-/user/query (POST):
+/api/user/password (PUT):
+  Request: UpdatePasswordDTO
+  Response: BaseVO
+/api/user/query (POST):
   Response: UserQueryByIdVO
-/user/query/all (POST):
+/api/user/query/all (POST):
   Request: UserDTO
   Response: CommonListVO
-/user/query/info (POST):
+/api/user/query/info (POST):
   Request: UserQueryDTO
   Response: UserQueryVO
-/user/query/one (POST):
+/api/user/query/loginRecord (POST):
+  Request: LoginRecordDTO
+/api/user/query/one (POST):
   Request: UserInfoDTO
   Response: UserInfoVo
-/user/query/user/{userId} (GET):
+/api/user/query/sensitive/record (POST):
+  Request: SensitiveOperDTO
+/api/user/query/user/{userId} (GET):
   Response: UserQueryByIdVO
-/user/update (POST):
+/api/user/register (POST):
+  Request: UserRegisterDTO
+  Response: BaseVO
+/api/user/update (POST):
   Request: UserUpdateDTO
   Response: BaseVO
-/user/update/name (POST):
+/api/user/update/name (POST):
   Request: UpdateUserNameDTO
   Response: BaseVO
