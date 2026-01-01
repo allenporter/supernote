@@ -1,7 +1,7 @@
 # API Data Model for Supernote (Private) Cloud Server.
 
 This module describes the data models used by the Supernote Private Cloud API. These
-models serve as a refernece for both client and server implementations looking
+models serve as a reference for both client and server implementations looking
 to interoperate with the Supernote Private Cloud API. While this may also work
 with the Supernote hosted cloud public API, it is not intended to be used there
 to not put load on Supernote API servers.
