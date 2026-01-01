@@ -51,7 +51,7 @@ class LocalCoordinationService(CoordinationService):
         self._store: dict[str, tuple[str, float]] = {}  # key -> (value, expiry_ts)
         self._global_lock = asyncio.Lock()
 
-    def _cleanup(self):
+    def _cleanup(self) -> None:
         """Lazy cleanup of expired keys. Callers must hold lock."""
         now = time.time()
         keys_to_delete = [k for k, v in self._store.items() if v[1] < now]

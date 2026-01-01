@@ -53,13 +53,13 @@ def patch_server_config(server_config: ServerConfig) -> Generator[None, None, No
 
 
 @pytest.fixture
-def coordination_service():
+def coordination_service() -> LocalCoordinationService:
     """Shared coordination service for tests."""
     return LocalCoordinationService()
 
 
 @pytest.fixture(autouse=True)
-def patch_coordination_service(coordination_service: LocalCoordinationService):
+def patch_coordination_service(coordination_service: LocalCoordinationService) -> Generator[None, None, None]:
     """Ensure the app uses our test coordination service instance."""
     with patch(
         "supernote.server.app.LocalCoordinationService",

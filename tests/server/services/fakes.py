@@ -7,7 +7,7 @@ class FakeCoordinationService(LocalCoordinationService):
     Currently identical to LocalCoordinationService since Local is already in-memory.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Create a fake coordination service."""
         super().__init__()
         # Ensure we have our own store/lock if we aren't careful,
