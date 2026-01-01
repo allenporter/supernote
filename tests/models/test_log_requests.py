@@ -23,7 +23,7 @@ from supernote.models.user import (
     UserCheckDTO,
 )
 
-EXTRACTED_REQUESTS_PATH = pathlib.Path("tests/model/testdata/extracted_requests.json")
+EXTRACTED_REQUESTS_PATH = pathlib.Path("tests/models/testdata/extracted_requests.json")
 
 # Registry mapping URL paths to Model classes
 MODEL_REGISTRY: Dict[str, Type] = {
