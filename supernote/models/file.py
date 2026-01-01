@@ -1,7 +1,6 @@
 """File related API data models mirroring OpenAPI Spec."""
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import List
 
 from mashumaro import field_options

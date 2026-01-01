@@ -7,6 +7,7 @@ import aiohttp
 from aiohttp.client_exceptions import ClientError
 
 from supernote.models.base import BaseResponse
+
 from .auth import AbstractAuth
 from .exceptions import ApiException, ForbiddenException, UnauthorizedException
 

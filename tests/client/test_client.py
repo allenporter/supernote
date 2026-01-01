@@ -8,13 +8,13 @@ import pytest_asyncio
 from aiohttp import web
 
 from supernote.client import Client
-from supernote.models.base import BaseResponse
 from supernote.client.auth import ConstantAuth
 from supernote.client.exceptions import (
     ApiException,
     ForbiddenException,
     UnauthorizedException,
 )
+from supernote.models.base import BaseResponse
 
 
 @dataclass
