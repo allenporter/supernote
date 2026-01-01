@@ -10,6 +10,7 @@ from aiohttp import web
 from .config import ServerConfig
 from .models.base import create_error_response
 from .routes import auth, file, system
+from .services.coordination import LocalCoordinationService
 from .services.file import FileService
 from .services.state import StateService
 from .services.storage import StorageService
@@ -103,7 +104,7 @@ async def jwt_auth_middleware(
         )
 
     user_service: UserService = request.app["user_service"]
-    session = await asyncio.to_thread(user_service.verify_token, token)
+    session = await user_service.verify_token(token)
     if not session:
         return web.json_response(
             create_error_response("Invalid token").to_dict(), status=401
@@ -130,9 +131,12 @@ def create_app(
     if state_service is None:
         state_service = StateService(storage_service.system_dir / "state.json")
 
+    coordination_service = LocalCoordinationService()
+
     app["storage_service"] = storage_service
     app["state_service"] = state_service
-    app["user_service"] = UserService(config.auth, state_service)
+    app["coordination_service"] = coordination_service
+    app["user_service"] = UserService(config.auth, state_service, coordination_service)
     app["file_service"] = FileService(storage_service)
     app["sync_locks"] = {}  # user -> (equipment_no, expiry_time)
 

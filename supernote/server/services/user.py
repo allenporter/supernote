@@ -8,6 +8,7 @@ import jwt
 
 from ..config import AuthConfig, UserEntry
 from ..models.auth import LoginResult, UserVO
+from .coordination import CoordinationService
 from .state import SessionState, StateService
 
 logger = logging.getLogger(__name__)
@@ -16,12 +17,18 @@ JWT_ALGORITHM = "HS256"
 
 
 class UserService:
-    def __init__(self, config: AuthConfig, state_service: StateService):
+    """User service for authentication and authorization."""
+
+    def __init__(
+        self,
+        config: AuthConfig,
+        state_service: StateService,
+        coordination_service: CoordinationService,
+    ) -> None:
+        """Initialize the user service."""
         self._config = config
         self._state_service = state_service
-        self._random_codes: dict[
-            str, tuple[str, str]
-        ] = {}  # account -> (code, timestamp)
+        self._coordination_service = coordination_service
 
     @property
     def _users(self) -> list[UserEntry]:
@@ -33,11 +40,17 @@ class UserService:
     def check_user_exists(self, account: str) -> bool:
         return any(u.username == account for u in self._users)
 
-    def generate_random_code(self, account: str) -> tuple[str, str]:
+    async def generate_random_code(self, account: str) -> tuple[str, str]:
         """Generate a random code for login challenge."""
         random_code = secrets.token_hex(4)  # 8 chars
         timestamp = str(int(time.time() * 1000))
-        self._random_codes[account] = (random_code, timestamp)
+
+        # Store in coordination service with short TTL (e.g. 5 mins)
+        value = f"{random_code}|{timestamp}"
+        await self._coordination_service.set_value(
+            f"challenge:{account}", value, ttl=300
+        )
+
         return random_code, timestamp
 
     def _get_user(self, account: str) -> UserEntry | None:
@@ -53,22 +66,29 @@ class UserService:
         hash_hex = hashlib.md5(password.encode()).hexdigest()
         return bool(hash_hex == user.password_md5)
 
-    def verify_login_hash(self, account: str, client_hash: str, timestamp: str) -> bool:
+    async def verify_login_hash(
+        self, account: str, client_hash: str, timestamp: str
+    ) -> bool:
         user = self._get_user(account)
         if not user or not user.is_active:
             return False
 
-        code_tuple = self._random_codes.get(account)
-        if not code_tuple or code_tuple[1] != timestamp:
+        stored_value = await self._coordination_service.get_value(
+            f"challenge:{account}"
+        )
+        if not stored_value:
             return False
 
-        random_code = code_tuple[0]
+        random_code, stored_timestamp = stored_value.split("|")
+        if stored_timestamp != timestamp:
+            return False
+
         concat = user.password_md5 + random_code
         expected_hash = hashlib.sha256(concat.encode()).hexdigest()
 
         return expected_hash == client_hash
 
-    def login(
+    async def login(
         self,
         account: str,
         password_hash: str,
@@ -79,10 +99,11 @@ class UserService:
         if not user or not user.is_active:
             return None
 
-        if not self.verify_login_hash(account, password_hash, timestamp):
+        if not await self.verify_login_hash(account, password_hash, timestamp):
             return None
 
         # Check binding status from StateService
+        # StateService access is sync (local file/memory), assuming it stays that way for binding.
         user_state = self._state_service.get_user_state(account)
         bound_devices = user_state.devices
         is_bind = "Y" if bound_devices else "N"
@@ -98,8 +119,20 @@ class UserService:
         }
         token = jwt.encode(payload, self._config.secret_key, algorithm=JWT_ALGORITHM)
 
-        # Persist session in StateService
-        self._state_service.create_session(token, account, equipment_no)
+        # Persist session in CoordinationService
+        # Key: session:{token}, Value: JSON or simple string.
+        # Storing username|equipment_no for simple reconstruction
+        session_val = f"{account}|{equipment_no or ''}"
+        ttl = self._config.expiration_hours * 3600
+        await self._coordination_service.set_value(
+            f"session:{token}", session_val, ttl=ttl
+        )
+
+        # Also populate StateService for legacy compatibility/persistence?
+        # The roadmap implies moving AWAY from StateService for tokens.
+        # But if we want to support "list sessions" later, we might need a set or something.
+        # For now, strictly following roadmap "Refactor AuthService to use CoordinationService".
+        # self._state_service.create_session(token, account, equipment_no)
 
         return LoginResult(
             token=token,
@@ -107,26 +140,42 @@ class UserService:
             is_bind_equipment=is_bind_equipment,
         )
 
-    def verify_token(self, token: str) -> SessionState | None:
+    async def verify_token(self, token: str) -> SessionState | None:
         """Verify token against persisted sessions and JWT signature."""
         try:
-            # 1. Check if session exists in memory/state
-            session = self._state_service.get_session(token)
-            if not session:
-                logger.warning("Session not found in state: %s", token[:10])
+            # 1. Check if session exists in CoordinationService
+            session_val = await self._coordination_service.get_value(f"session:{token}")
+
+            # Fallback to StateService during migration?
+            # session = self._state_service.get_session(token)
+
+            if not session_val:
+                logger.warning(
+                    "Session not found in coordination service: %s", token[:10]
+                )
                 return None
+
+            session_val_parts = session_val.split("|")
+            username = session_val_parts[0]
+            equipment_no = session_val_parts[1] if len(session_val_parts) > 1 else None
 
             # 2. Decode and verify JWT
             payload = jwt.decode(
                 token, self._config.secret_key, algorithms=[JWT_ALGORITHM]
             )
             # Ensure the token subject matches the session username
-            if payload.get("sub") != session.username:
+            if payload.get("sub") != username:
                 logger.warning(
-                    "Token sub mismatch: %s != %s", payload.get("sub"), session.username
+                    "Token sub mismatch: %s != %s", payload.get("sub"), username
                 )
                 return None
-            return session
+
+            # Return SessionState object (constructing it on the fly)
+            return SessionState(
+                token=token,
+                username=username,
+                equipment_no=equipment_no,
+            )
         except jwt.PyJWTError as e:
             logger.warning("Token verification failed: %s", e)
             return None

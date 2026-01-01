@@ -51,12 +51,40 @@ def patch_server_config(server_config: ServerConfig) -> Generator[None, None, No
         yield
 
 
+from supernote.server.services.coordination import LocalCoordinationService
+
+
+@pytest.fixture
+def coordination_service():
+    """Shared coordination service for tests."""
+    return LocalCoordinationService()
+
+
+@pytest.fixture(autouse=True)
+def patch_coordination_service(coordination_service: LocalCoordinationService):
+    """Ensure the app uses our test coordination service instance."""
+    with patch(
+        "supernote.server.app.LocalCoordinationService",
+        return_value=coordination_service,
+    ):
+        yield
+
+
 @pytest.fixture(name="auth_headers")
-def auth_headers_fixture(
-    server_config: ServerConfig, state_service: StateService
+async def auth_headers_fixture(
+    server_config: ServerConfig,
+    state_service: StateService,
+    coordination_service: LocalCoordinationService,
 ) -> dict[str, str]:
     """Generate auth headers and persist session in state."""
     secret = server_config.auth.secret_key
     token = jwt.encode({"sub": TEST_USERNAME}, secret, algorithm=JWT_ALGORITHM)
+
+    # Write to StateService (Legacy)
     state_service.create_session(token, TEST_USERNAME)
+
+    # Write to CoordinationService (New)
+    session_val = f"{TEST_USERNAME}|"
+    await coordination_service.set_value(f"session:{token}", session_val, ttl=3600)
+
     return {"x-access-token": token}
