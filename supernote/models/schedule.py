@@ -20,7 +20,7 @@ from mashumaro import field_options
 from mashumaro.config import BaseConfig
 from mashumaro.mixins.json import DataClassJSONMixin
 
-from .base import BaseResponse
+from .base import BaseResponse, BooleanEnum
 
 
 @dataclass
@@ -35,12 +35,15 @@ class ScheduleTaskGroupItem(DataClassJSONMixin):
     last_modified: int | None = field(
         metadata=field_options(alias="lastModified"), default=None
     )
-    is_deleted: str | None = field(
+    """Timestamp in milliseconds"""
+
+    is_deleted: BooleanEnum | None = field(
         metadata=field_options(alias="isDeleted"), default=None
     )
     create_time: int | None = field(
         metadata=field_options(alias="createTime"), default=None
     )
+    """Timestamp in milliseconds"""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -61,15 +64,25 @@ class ScheduleRecurTaskItem(DataClassJSONMixin):
     last_modified: int | None = field(
         metadata=field_options(alias="lastModified"), default=None
     )
+    """Timestamp in milliseconds"""
+
     due_time: int | None = field(metadata=field_options(alias="dueTime"), default=None)
+    """Timestamp in milliseconds"""
+
     completed_time: int | None = field(
         metadata=field_options(alias="completedTime"), default=None
     )
+    """Timestamp in milliseconds"""
+
     status: str | None = None
-    is_deleted: str | None = field(
+    """Task status string either 'needsAction' or 'completed'"""
+
+    is_deleted: BooleanEnum | None = field(
         metadata=field_options(alias="isDeleted"), default=None
     )
     sort: int | None = None
+    """Sort order index"""
+
     sort_completed: int | None = field(
         metadata=field_options(alias="sortCompleted"), default=None
     )
@@ -107,21 +120,36 @@ class ScheduleTaskInfo(DataClassJSONMixin):
     last_modified: int | None = field(
         metadata=field_options(alias="lastModified"), default=None
     )
+    """Timestamp in milliseconds"""
+
     recurrence: str | None = None
-    is_reminder_on: str | None = field(
+    is_reminder_on: BooleanEnum | None = field(
         metadata=field_options(alias="isReminderOn"), default=None
     )
+    """Whether the reminder is enabled. 'Y' for yes, 'N' for no."""
+
     status: str | None = None
+    """Task status string"""
+
     importance: str | None = None
+    """Task importance level"""
+
     due_time: int | None = field(metadata=field_options(alias="dueTime"), default=None)
+    """Timestamp in milliseconds"""
+
     completed_time: int | None = field(
         metadata=field_options(alias="completedTime"), default=None
     )
+    """Timestamp in milliseconds"""
+
     links: str | None = None
-    is_deleted: str | None = field(
+    """Base64 encoded json description of a link to a document with fields 'appName', 'fileId', 'path', "page', 'pageId'"""
+
+    is_deleted: BooleanEnum | None = field(
         metadata=field_options(alias="isDeleted"), default=None
     )
     sort: int | None = None
+    """Sort order index"""
     sort_completed: int | None = field(
         metadata=field_options(alias="sortCompleted"), default=None
     )
@@ -164,9 +192,12 @@ class AddScheduleTaskGroupDTO(DataClassJSONMixin):
     last_modified: int | None = field(
         metadata=field_options(alias="lastModified"), default=None
     )
+    """Timestamp in milliseconds"""
+
     create_time: int | None = field(
         metadata=field_options(alias="createTime"), default=None
     )
+    """Timestamp in milliseconds"""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -244,21 +275,34 @@ class AddScheduleTaskDTO(DataClassJSONMixin):
     last_modified: int | None = field(
         metadata=field_options(alias="lastModified"), default=None
     )
+    """Timestamp in milliseconds"""
+
     recurrence: str | None = None
-    is_reminder_on: str | None = field(
+    is_reminder_on: BooleanEnum | None = field(
         metadata=field_options(alias="isReminderOn"), default=None
     )
+    """Whether the reminder is enabled. 'Y' for yes, 'N' for no."""
+
     status: str | None = None
+    """Task status string"""
+
     importance: str | None = None
+    """Task importance level"""
+
     due_time: int | None = field(metadata=field_options(alias="dueTime"), default=None)
+    """Timestamp in milliseconds"""
+
     completed_time: int | None = field(
         metadata=field_options(alias="completedTime"), default=None
     )
+    """Timestamp in milliseconds"""
+
     links: str | None = None
-    is_deleted: str | None = field(
+    is_deleted: BooleanEnum | None = field(
         metadata=field_options(alias="isDeleted"), default=None
     )
     sort: int | None = None
+    """Sort order index"""
     sort_completed: int | None = field(
         metadata=field_options(alias="sortCompleted"), default=None
     )
@@ -294,6 +338,7 @@ class UpdateScheduleTaskDTO(DataClassJSONMixin):
     task_id: str = field(metadata=field_options(alias="taskId"))
     title: str
     last_modified: int = field(metadata=field_options(alias="lastModified"))
+    """Timestamp in milliseconds"""
 
     task_list_id: str | None = field(
         metadata=field_options(alias="taskListId"), default=None
@@ -303,20 +348,31 @@ class UpdateScheduleTaskDTO(DataClassJSONMixin):
     )
     detail: str | None = None
     recurrence: str | None = None
-    is_reminder_on: str | None = field(
+    is_reminder_on: BooleanEnum | None = field(
         metadata=field_options(alias="isReminderOn"), default=None
     )
+    """Whether the reminder is enabled. 'Y' for yes, 'N' for no."""
+
     status: str | None = None
+    """Task status string"""
+
     importance: str | None = None
+    """Task importance level"""
+
     due_time: int | None = field(metadata=field_options(alias="dueTime"), default=None)
+    """Timestamp in milliseconds"""
+
     completed_time: int | None = field(
         metadata=field_options(alias="completedTime"), default=None
     )
+    """Timestamp in milliseconds"""
+
     links: str | None = None
-    is_deleted: str | None = field(
+    is_deleted: BooleanEnum | None = field(
         metadata=field_options(alias="isDeleted"), default=None
     )
     sort: int | None = None
+    """Sort order index"""
     sort_completed: int | None = field(
         metadata=field_options(alias="sortCompleted"), default=None
     )
@@ -398,6 +454,7 @@ class ScheduleSortDTO(DataClassJSONMixin):
     last_modify: int | None = field(
         metadata=field_options(alias="lastModify"), default=None
     )
+    """Timestamp in milliseconds"""
     content: str | None = None
 
     class Config(BaseConfig):
@@ -449,12 +506,15 @@ class GetScheduleTaskGroupVO(BaseResponse):
     last_modified: int | None = field(
         metadata=field_options(alias="lastModified"), default=None
     )
-    is_deleted: str | None = field(
+    """Timestamp in milliseconds"""
+
+    is_deleted: BooleanEnum | None = field(
         metadata=field_options(alias="isDeleted"), default=None
     )
     create_time: int | None = field(
         metadata=field_options(alias="createTime"), default=None
     )
+    """Timestamp in milliseconds"""
 
 
 @dataclass(kw_only=True)
@@ -512,21 +572,34 @@ class ScheduleTaskVO(BaseResponse):
     last_modified: int | None = field(
         metadata=field_options(alias="lastModified"), default=None
     )
+    """Timestamp in milliseconds"""
+
     recurrence: str | None = None
-    is_reminder_on: str | None = field(
+    is_reminder_on: BooleanEnum | None = field(
         metadata=field_options(alias="isReminderOn"), default=None
     )
+    """Whether the reminder is enabled. 'Y' for yes, 'N' for no."""
+
     status: str | None = None
+    """Task status string"""
+
     importance: str | None = None
+    """Task importance level"""
+
     due_time: int | None = field(metadata=field_options(alias="dueTime"), default=None)
+    """Timestamp in milliseconds"""
+
     completed_time: int | None = field(
         metadata=field_options(alias="completedTime"), default=None
     )
+    """Timestamp in milliseconds"""
+
     links: str | None = None
-    is_deleted: str | None = field(
+    is_deleted: BooleanEnum | None = field(
         metadata=field_options(alias="isDeleted"), default=None
     )
     sort: int | None = None
+    """Sort order index"""
     sort_completed: int | None = field(
         metadata=field_options(alias="sortCompleted"), default=None
     )
