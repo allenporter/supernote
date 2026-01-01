@@ -90,7 +90,7 @@ class LoginClient:
         ).to_dict()
 
         response = await self._client.post_json(
-            "official/user/sms/login", UserSmsLoginResponse, json=payload
+            "/api/official/user/sms/login", UserSmsLoginResponse, json=payload
         )
         return response.token
 
@@ -106,7 +106,7 @@ class LoginClient:
         await self._client._get_csrf_token()
 
         pre_auth_response = await self._client.post_json(
-            "user/validcode/pre-auth", UserPreAuthResponse, json=pre_auth_payload
+            "/api/user/validcode/pre-auth", UserPreAuthResponse, json=pre_auth_payload
         )
 
         token = pre_auth_response.token
@@ -136,13 +136,13 @@ class LoginClient:
         ).to_dict()
 
         await self._client.post_json(
-            "user/sms/validcode/send", UserSendSmsResponse, json=sms_payload
+            "/api/user/sms/validcode/send", UserSendSmsResponse, json=sms_payload
         )
 
     async def _token(self) -> None:
         """Get a random code."""
         await self._client.post_json(
-            "user/query/token",
+            "/api/user/query/token",
             TokenResponse,
             json=TokenRequest().to_dict(),
         )
@@ -151,7 +151,7 @@ class LoginClient:
         """Get a random code."""
         payload = UserRandomCodeRequest(account=email).to_dict()
         return await self._client.post_json(
-            "official/user/query/random/code", UserRandomCodeResponse, json=payload
+            "/api/official/user/query/random/code", UserRandomCodeResponse, json=payload
         )
 
     async def _get_access_token(
@@ -166,7 +166,7 @@ class LoginClient:
         ).to_dict()
         try:
             return await self._client.post_json(
-                "official/user/account/login/new", UserLoginResponse, json=payload
+                "/api/official/user/account/login/new", UserLoginResponse, json=payload
             )
         except ApiException as err:
             if "verification code" in str(err):
