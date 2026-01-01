@@ -21,6 +21,7 @@ from supernote.models.auth import (
     UserPreAuthRequest,
     UserPreAuthResponse,
 )
+
 from .client import Client
 from .exceptions import ApiException, SmsVerificationRequired
 
@@ -143,9 +144,7 @@ class LoginClient:
     async def _token(self) -> None:
         """Get a random code."""
         await self._client.post_json(
-            "/api/user/query/token", TokenResponse, json=TokenRequest().to_dict()
-            QueryTokenVO,
-            json=QueryTokenDTO().to_dict(),
+            "/api/user/query/token", QueryTokenVO, json=QueryTokenDTO().to_dict()
         )
 
     async def _get_random_code(self, email: str) -> RandomCodeVO:
