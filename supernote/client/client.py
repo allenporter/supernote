@@ -29,6 +29,7 @@ ACCESS_TOKEN = "x-access-token"
 XSRF_COOKIE = "XSRF-TOKEN"
 XSRF_HEADER = "X-XSRF-TOKEN"
 
+
 def _create_headers(host: str | None = None) -> dict[str, Any]:
     headers = {
         **HEADERS,
@@ -54,6 +55,16 @@ class Client:
         self._auth = auth
         self._xsrf_token: str | None = None
 
+    def _url(self, url: str) -> str:
+        if not (url.startswith("http://") or url.startswith("https://")):
+            if self._host.endswith("/"):
+                if url.startswith("/"):
+                    url = url[1:]
+            elif not url.startswith("/"):
+                url = f"/{url}"
+            url = f"{self._host}{url}"
+        return url
+
     async def request(
         self,
         method: str,
@@ -71,10 +82,7 @@ class Client:
         if self._auth and ACCESS_TOKEN not in headers:
             access_token = await self._auth.async_get_access_token()
             headers[ACCESS_TOKEN] = access_token
-        if not (url.startswith("http://") or url.startswith("https://")):
-            if not url.startswith("/"):
-                url = f"/{url}"
-            url = f"{self._host}{url}"
+        url = self._url(url)
         _LOGGER.debug(
             "request[%s]=%s %s %s",
             method,
@@ -136,14 +144,16 @@ class Client:
         try:
             data_response = data_cls.from_json(result)
         except (LookupError, ValueError) as err:
-            raise ApiException(f"Server return malformed response type {data_cls.__name__}: {result}") from err
+            raise ApiException(
+                f"Server return malformed response type {data_cls.__name__}: {result}"
+            ) from err
         if not data_response.success:
             raise ApiException(data_response.error_msg)
         return data_response
 
     async def _get_csrf_token(self) -> str:
         """Get the CSRF token."""
-        url = f"{self._host}/api/csrf"
+        url = self._url("/api/csrf")
         _LOGGER.debug("CSRF request[get]=%s %s", url, HEADERS)
         resp = await self._websession.request("get", url, headers=HEADERS)
         try:

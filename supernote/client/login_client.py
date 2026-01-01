@@ -79,6 +79,26 @@ class LoginClient:
         )
         return access_token_response.token
 
+    async def login_equipment(
+        self, email: str, password: str, equipment_no: str
+    ) -> LoginVO:
+        """Log in via equipment endpoint and return full login response."""
+        await self._token()
+        random_code_response = await self._get_random_code(email)
+        encoded_password = _encode_password(password, random_code_response.random_code)
+
+        payload = LoginDTO(
+            account=email,
+            password=encoded_password,
+            login_method=LoginMethod.PHONE if email.isdigit() else LoginMethod.EMAIL,
+            timestamp=random_code_response.timestamp,
+            equipment_no=equipment_no,
+        ).to_dict()
+
+        return await self._client.post_json(
+            "/api/official/user/account/login/equipment", LoginVO, json=payload
+        )
+
     async def sms_login(self, telephone: str, code: str, timestamp: str) -> str:
         """Log in via SMS code."""
         # Always get a fresh CSRF token for the SMS login request
