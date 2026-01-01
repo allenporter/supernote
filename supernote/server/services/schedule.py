@@ -8,6 +8,8 @@ from supernote.server.db.session import DatabaseSessionManager
 
 logger = logging.getLogger(__name__)
 
+MAX_TITLE_LENGTH = 255
+MAX_DETAIL_LENGTH = 1 * 1024 * 1024  # 1MB
 
 class ScheduleService:
     """Schedule service."""
@@ -20,6 +22,8 @@ class ScheduleService:
 
     async def create_group(self, user_id: int, title: str) -> ScheduleTaskGroupDO:
         """Create a new task group."""
+        if len(title) > MAX_TITLE_LENGTH:
+            raise ValueError("Title is too long")
         async with self.session_manager.session() as session:
             group = ScheduleTaskGroupDO(user_id=user_id, title=title)
             session.add(group)
@@ -70,6 +74,10 @@ class ScheduleService:
         is_reminder_on: bool = False,
     ) -> ScheduleTaskDO:
         """Create a new task."""
+        if len(title) > MAX_TITLE_LENGTH:
+            raise ValueError("Title is too long")
+        if len(detail) > MAX_DETAIL_LENGTH:
+            raise ValueError("Detail is too long")
         async with self.session_manager.session() as session:
             task = ScheduleTaskDO(
                 user_id=user_id,
