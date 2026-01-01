@@ -14,6 +14,7 @@ from .routes import auth, file, system
 from .services.blob import LocalBlobStorage
 from .services.coordination import LocalCoordinationService
 from .services.file import FileService
+from .services.schedule import ScheduleService
 from .services.state import StateService
 from .services.storage import StorageService
 from .services.user import UserService
@@ -147,6 +148,7 @@ def create_app(
     app["file_service"] = FileService(
         storage_service, app["user_service"], session_manager
     )
+    app["schedule_service"] = ScheduleService(session_manager)
     app["sync_locks"] = {}  # user -> (equipment_no, expiry_time)
 
     # Resolve trace log path if not set
