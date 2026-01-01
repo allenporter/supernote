@@ -12,12 +12,11 @@ async def test_download_file_with_spaces(
 ) -> None:
     # Create a test file with spaces
     filename = "2023 December.pdf"
-    filename = "2023 December.pdf"
     await user_storage.create_file(
         TEST_USERNAME, f"EXPORT/{filename}", content="pdf content"
     )
 
-    # 1. Apply for download
+    # Obtain a download URL
     file_id = f"EXPORT/{filename}"
     resp = await client.post(
         "/api/file/3/files/download_v3",
@@ -29,7 +28,7 @@ async def test_download_file_with_spaces(
     assert data["success"] is True
     download_url = data["url"]
 
-    # 2. Download the file
+    # Download the file
     parsed = urllib.parse.urlparse(download_url)
     query = urllib.parse.parse_qs(parsed.query)
     path_param = query["path"][0]

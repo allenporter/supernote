@@ -326,7 +326,9 @@ async def handle_download_apply(request: web.Request) -> web.Response:
             status=404,
         )
 
-    # Generate URL
+    # TODO: Re-evaluate if this is the url path we should use or we should go with
+    # a different approach. we don't care about backwards compatibility with anything
+    # and can be free to make breaking changes.
     # We pass the ID (or path) provided, or better: use the resolved ID if available?
     # Existing client expects "path=" query param to match what it sent?
     # Or we can send the ID back. Let's send what was requested to be safe for now,
@@ -354,7 +356,7 @@ async def handle_download_data(request: web.Request) -> web.StreamResponse:
     file_service: FileService = request.app["file_service"]
     storage_service: StorageService = request.app["storage_service"]
 
-    # 1. Resolve file metadata via VFS
+    # Resolve file metadata via VFS
     info = await file_service.get_file_info(user_email, path_str)
     if not info:
         return web.Response(status=404, text="File not found")
@@ -368,30 +370,29 @@ async def handle_download_data(request: web.Request) -> web.StreamResponse:
         # If size > 0 and no hash, it's an error in VFS migration?
         # Let's try to fallback to physical file if hash missing (migration compat).
         # Resolve physical path
+        # TODO: Remove this when we no longer need backwards compatibility.
         target_path = storage_service.resolve_path(user_email, path_str)
         if target_path.exists() and target_path.is_file():
             return web.FileResponse(target_path)
         return web.Response(status=404, text="File content not found")
 
-    # 2. Check existence in BlobStorage
+    # Verify the content exists in BlobStorage
     if not await storage_service.blob_storage.exists(content_hash):
         # Fallback to physical path? (Hybrid mode)
         target_path = storage_service.resolve_path(user_email, path_str)
         if target_path.exists() and target_path.is_file():
             return web.FileResponse(target_path)
 
+        logger.error(
+            "Unexpected: File %s / %s exists in VFS but not found in BlobStorage for content hash: %s",
+            info.id,
+            info.name,
+            content_hash,
+        )
         return web.Response(status=404, text="Blob not found")
 
-    # 3. Stream from BlobStorage
-    # FileResponse expects a path. LocalBlobStorage stores as file.
-    # We can get the path from BlobStorage if it exposes it.
-    # LocalBlobStorage does.
+    # Stream the content directly form blob storage
     blob_path = storage_service.blob_storage.get_blob_path(content_hash)
-
-    # Return file response with correct filename
-    # We want "Content-Disposition: attachment; filename=..."
-    # file_service.get_file_info returning info.name is useful here.
-
     return web.FileResponse(
         blob_path,
         headers={"Content-Disposition": f'attachment; filename="{info.name}"'},
