@@ -8,12 +8,12 @@ import pytest
 from aiohttp import web
 
 from supernote.client import Client
-from supernote.client.api_model import FileListResponse
 from supernote.client.cloud_client import SupernoteClient
+from supernote.models.file import FileListQueryVO
 
 
 @dataclass
-class SimpleResponse(FileListResponse):
+class SimpleResponse(FileListQueryVO):
     """Simple response for testing."""
 
     data: dict = field(default_factory=dict)
@@ -89,8 +89,8 @@ async def test_file_list(client: SupernoteClient) -> None:
     response = await client.file_list(directory_id=0)
     assert response.success
     assert response.total == 2
-    assert len(response.file_list) == 2
-    assert response.file_list[0].file_name == "file1.note"
+    assert len(response.user_file_vo_list) == 2
+    assert response.user_file_vo_list[0].file_name == "file1.note"
 
 
 @pytest.fixture(name="client_with_relative_download")

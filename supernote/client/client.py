@@ -6,7 +6,8 @@ from typing import Any, Type, TypeVar
 import aiohttp
 from aiohttp.client_exceptions import ClientError
 
-from .api_model import BaseResponse
+from supernote.models.base import BaseResponse
+
 from .auth import AbstractAuth
 from .exceptions import ApiException, ForbiddenException, UnauthorizedException
 
@@ -135,7 +136,7 @@ class Client:
         try:
             data_response = data_cls.from_json(result)
         except (LookupError, ValueError) as err:
-            raise ApiException(f"Server return malformed response: {result}") from err
+            raise ApiException(f"Server return malformed response type {data_cls.__name__}: {result}") from err
         if not data_response.success:
             raise ApiException(data_response.error_msg)
         return data_response

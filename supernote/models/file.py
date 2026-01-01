@@ -1,7 +1,6 @@
 """File related API data models mirroring OpenAPI Spec."""
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import List
 
 from mashumaro import field_options
@@ -47,8 +46,8 @@ class UserFileVO(DataClassJSONMixin):
     id: str
     directory_id: str = field(metadata=field_options(alias="directoryId"))
     file_name: str = field(metadata=field_options(alias="fileName"))
-    size: int
-    md5: str
+    size: int | None = None
+    md5: str | None = None
     inner_name: str | None = field(
         metadata=field_options(alias="innerName"), default=None
     )
@@ -58,15 +57,15 @@ class UserFileVO(DataClassJSONMixin):
         metadata=field_options(alias="isFolder"), default=BooleanEnum.NO
     )
 
-    create_time: datetime | None = field(
+    create_time: int | None = field(
         metadata=field_options(alias="createTime"), default=None
     )
-    """The creation time of the file. ISO 8601."""
+    """The creation time of the file in milliseconds since epoch."""
 
-    update_time: datetime | None = field(
+    update_time: int | None = field(
         metadata=field_options(alias="updateTime"), default=None
     )
-    """The last update time of the file. ISO 8601."""
+    """The last update time of the file in milliseconds since epoch."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
