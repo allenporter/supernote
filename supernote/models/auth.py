@@ -1,14 +1,14 @@
 """Module for authentication API data models.
 
 The following endpoints are supported:
-- /official/user/account/login/equipment
-- /official/user/account/login/new
-- /official/user/query/random/code
-- /official/user/sms/login
-- /user/sms/validcode/send
-- /user/query/token
-- /user/validcode/pre-auth
-- /user/logout (empty body)
+- /api/official/user/account/login/equipment
+- /api/official/user/account/login/new
+- /api/official/user/query/random/code
+- /api/official/user/sms/login
+- /api/user/sms/validcode/send
+- /api/user/query/token
+- /api/user/validcode/pre-auth
+- /api/user/logout (empty body)
 """
 
 from dataclasses import dataclass, field
@@ -46,8 +46,8 @@ class LoginDTO(DataClassJSONMixin):
     """Request to login.
 
     This is used by the following POST endpoints:
-        /official/user/account/login/equipment
-        /official/user/account/login/new
+        /api/official/user/account/login/equipment
+        /api/official/user/account/login/new
     """
 
     account: str
@@ -114,7 +114,7 @@ class RandomCodeDTO(DataClassJSONMixin):
     """Request to get a random code.
 
     This is used by the following POST endpoint:
-        /official/user/query/random/code
+        /api/official/user/query/random/code
     """
 
     account: str
@@ -148,7 +148,7 @@ class QueryTokenDTO(DataClassJSONMixin):
     """Request to token endpoint.
 
     This is used by the following POST endpoint:
-        /user/query/token
+        /api/user/query/token
     """
 
 
@@ -172,7 +172,7 @@ class SmsLoginDTO(DataClassJSONMixin):
     """Request to login via sms.
 
     This is used by the following POST endpoint:
-        /user/sms/login
+        /api/user/sms/login
     """
 
     valid_code: str = field(metadata=field_options(alias="validCode"))
@@ -219,7 +219,7 @@ class UserPreAuthRequest(DataClassJSONMixin):
     """Request for pre-auth.
 
     This is used by the following POST endpoint:
-        /user/validcode/pre-auth
+        /api/user/validcode/pre-auth
     """
 
     account: str
@@ -237,7 +237,7 @@ class SendSmsDTO(DataClassJSONMixin):
     """Request to send SMS code.
 
     This is used by the following POST endpoint:
-        /user/sms/validcode/send
+        /api/user/sms/validcode/send
     """
 
     telephone: str
