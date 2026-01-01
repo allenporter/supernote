@@ -2,10 +2,10 @@
 
 from dataclasses import dataclass, field
 
-import aiohttp.test_utils
 import pytest
 import pytest_asyncio
 from aiohttp import web
+from pytest_aiohttp import AiohttpClient
 
 from supernote.client import Client
 from supernote.client.auth import ConstantAuth
@@ -72,7 +72,7 @@ async def handler_malformed_json(request: web.Request) -> web.Response:
 
 
 @pytest_asyncio.fixture(name="client")
-async def client_fixture(aiohttp_client: aiohttp.test_utils.TestClient) -> Client:
+async def client_fixture(aiohttp_client: AiohttpClient) -> Client:
     """Fixture for Client instance."""
     app = web.Application()
     app.router.add_get("/api/csrf", handler_csrf)
@@ -84,10 +84,9 @@ async def client_fixture(aiohttp_client: aiohttp.test_utils.TestClient) -> Clien
     app.router.add_get("/auth-check", handler_auth_check)
     app.router.add_post("/malformed-json", handler_malformed_json)
 
-    test_client = await aiohttp_client(app)  # type: ignore[operator]
-
+    test_client = await aiohttp_client(app)
     base_url = str(test_client.make_url(""))
-    return Client(test_client.session, host=base_url.rstrip("/"))
+    return Client(test_client.session, host=base_url)
 
 
 async def test_get_json(client: Client) -> None:
@@ -140,26 +139,24 @@ async def test_api_exception_success_false(client: Client) -> None:
         await client.get_json("success-false", SimpleResponse)
 
 
-async def test_auth_token(aiohttp_client: aiohttp.test_utils.TestClient) -> None:
+async def test_auth_token(aiohttp_client: AiohttpClient) -> None:
     """Test authentication token injection."""
     app = web.Application()
     app.router.add_get("/api/csrf", handler_csrf)
     app.router.add_get("/auth-check", handler_auth_check)
 
-    test_client = await aiohttp_client(app)  # type: ignore[operator]
+    test_client = await aiohttp_client(app)
     base_url = str(test_client.make_url(""))
 
     auth = ConstantAuth("my-token")
-    client = Client(test_client.session, host=base_url.rstrip("/"), auth=auth)
+    client = Client(test_client.session, host=base_url, auth=auth)
 
     response = await client.get_json("/auth-check", SimpleResponse)
     assert response.success
     assert response.data == "authorized"
 
 
-async def test_headers_with_referrer(
-    aiohttp_client: aiohttp.test_utils.TestClient,
-) -> None:
+async def test_headers_with_referrer(aiohttp_client: AiohttpClient) -> None:
     """Test that headers include referrer given a host."""
 
     @dataclass
@@ -182,7 +179,7 @@ async def test_headers_with_referrer(
     app.router.add_get("/api/csrf", handler_csrf)
     app.router.add_get("/headers", handler_headers)
 
-    test_client = await aiohttp_client(app)  # type: ignore[operator]
+    test_client = await aiohttp_client(app)
     base_url = str(test_client.make_url(""))
 
     client = Client(test_client.session, host=base_url)
@@ -190,5 +187,5 @@ async def test_headers_with_referrer(
     response = await client.get_json("headers", HeadersResponse)
     assert response.success
     headers = response.data
-    assert headers.get("Referer") == base_url.rstrip("/")
-    assert headers.get("Origin") == base_url.rstrip("/")
+    assert headers.get("Referer") == base_url
+    assert headers.get("Origin") == base_url

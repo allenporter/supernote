@@ -10,7 +10,10 @@ from unittest.mock import patch
 
 import jwt
 import pytest
+from aiohttp.test_utils import TestClient
+from pytest_aiohttp import AiohttpClient
 
+from supernote.server.app import create_app
 from supernote.server.config import AuthConfig, ServerConfig, UserEntry
 from supernote.server.services.coordination import LocalCoordinationService
 from supernote.server.services.state import StateService
@@ -59,7 +62,9 @@ def coordination_service() -> LocalCoordinationService:
 
 
 @pytest.fixture(autouse=True)
-def patch_coordination_service(coordination_service: LocalCoordinationService) -> Generator[None, None, None]:
+def patch_coordination_service(
+    coordination_service: LocalCoordinationService,
+) -> Generator[None, None, None]:
     """Ensure the app uses our test coordination service instance."""
     with patch(
         "supernote.server.app.LocalCoordinationService",
@@ -86,3 +91,10 @@ async def auth_headers_fixture(
     await coordination_service.set_value(f"session:{token}", session_val, ttl=3600)
 
     return {"x-access-token": token}
+
+
+@pytest.fixture(name="client")
+async def client_fixture(aiohttp_client: AiohttpClient) -> TestClient:
+    """Create a test client for server tests."""
+    app = create_app()
+    return await aiohttp_client(app)

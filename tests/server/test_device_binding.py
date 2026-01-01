@@ -3,8 +3,7 @@ from typing import Any
 
 from aiohttp.test_utils import TestClient
 
-from supernote.server.app import create_app
-from tests.conftest import TEST_PASSWORD, TEST_USERNAME, AiohttpClient
+from tests.conftest import TEST_PASSWORD, TEST_USERNAME
 
 
 async def _login(client: TestClient, equipment_no: str) -> Any:
@@ -33,8 +32,7 @@ async def _login(client: TestClient, equipment_no: str) -> Any:
     return await resp.json()
 
 
-async def test_device_binding_lifecycle(aiohttp_client: AiohttpClient) -> None:
-    client = await aiohttp_client(create_app())
+async def test_device_binding_lifecycle(client: TestClient) -> None:
     equipment_a = "SN-A"
 
     # 1. Login WITHOUT binding
@@ -79,10 +77,8 @@ async def test_device_binding_lifecycle(aiohttp_client: AiohttpClient) -> None:
 
 
 async def test_user_profile_persistence(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
+    client: TestClient, auth_headers: dict[str, str]
 ) -> None:
-    client = await aiohttp_client(create_app())
-
     # Query Profile
     resp = await client.post("/api/user/query", headers=auth_headers, json={})
     # Note: user/query uses header token, doesn't strictly need body if using middleware correctly?

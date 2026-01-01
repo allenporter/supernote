@@ -4,22 +4,19 @@ from typing import Awaitable, Callable
 from aiohttp.test_utils import TestClient
 from aiohttp.web import Application
 
-from supernote.server.app import create_app
 from tests.conftest import TEST_USERNAME, UserStorageHelper
 
 AiohttpClient = Callable[[Application], Awaitable[TestClient]]
 
 
 async def test_download_file_with_spaces(
-    aiohttp_client: AiohttpClient,
+    client: TestClient,
     user_storage: UserStorageHelper,
     auth_headers: dict[str, str],
 ) -> None:
     # Create a test file with spaces
     filename = "2023 December.pdf"
     user_storage.create_file(TEST_USERNAME, f"EXPORT/{filename}", content="pdf content")
-
-    client = await aiohttp_client(create_app())
 
     # 1. Apply for download
     file_id = f"EXPORT/{filename}"
@@ -49,7 +46,7 @@ async def test_download_file_with_spaces(
 
 
 async def test_download_apply_url_encoding(
-    aiohttp_client: AiohttpClient,
+    client: TestClient,
     user_storage: UserStorageHelper,
     auth_headers: dict[str, str],
 ) -> None:
@@ -59,8 +56,6 @@ async def test_download_apply_url_encoding(
 
     # Create the file so it exists
     user_storage.create_file(TEST_USERNAME, f"EXPORT/{filename}", content="content")
-
-    client = await aiohttp_client(create_app())
 
     resp = await client.post(
         "/api/file/3/files/download_v3",

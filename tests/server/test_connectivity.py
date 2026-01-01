@@ -5,13 +5,12 @@ from urllib.parse import urlparse
 
 import aiohttp
 from aiohttp import FormData
+from aiohttp.test_utils import TestClient
 
-from supernote.server.app import create_app
 from supernote.server.services.storage import StorageService
 from tests.conftest import (
     TEST_PASSWORD,
     TEST_USERNAME,
-    AiohttpClient,
     UserStorageHelper,
 )
 
@@ -28,10 +27,7 @@ def _encode_password(password: str, rc: str) -> str:
     return _sha256_s(_md5_s(password) + rc)
 
 
-async def test_trace_logging(
-    aiohttp_client: AiohttpClient, mock_trace_log: str
-) -> None:
-    client = await aiohttp_client(create_app())
+async def test_trace_logging(client: TestClient, mock_trace_log: str) -> None:
     await client.get("/some/random/path")
 
     log_file = Path(mock_trace_log)
@@ -41,16 +37,14 @@ async def test_trace_logging(
     assert "GET" in content
 
 
-async def test_query_server(aiohttp_client: AiohttpClient) -> None:
-    client = await aiohttp_client(create_app())
+async def test_query_server(client: TestClient) -> None:
     resp = await client.get("/api/file/query/server")
     assert resp.status == 200
     data = await resp.json()
     assert data == {"success": True}
 
 
-async def test_equipment_unlink(aiohttp_client: AiohttpClient) -> None:
-    client = await aiohttp_client(create_app())
+async def test_equipment_unlink(client: TestClient) -> None:
     resp = await client.post(
         "/api/terminal/equipment/unlink",
         json={"equipmentNo": "SN123456", "version": "202407"},
@@ -60,8 +54,7 @@ async def test_equipment_unlink(aiohttp_client: AiohttpClient) -> None:
     assert data == {"success": True}
 
 
-async def test_check_user_exists(aiohttp_client: AiohttpClient) -> None:
-    client = await aiohttp_client(create_app())
+async def test_check_user_exists(client: TestClient) -> None:
     resp = await client.post(
         "/api/official/user/check/exists/server",
         json={"email": TEST_USERNAME, "version": "202407"},
@@ -71,9 +64,7 @@ async def test_check_user_exists(aiohttp_client: AiohttpClient) -> None:
     assert data == {"success": True}
 
 
-async def test_auth_flow(aiohttp_client: AiohttpClient) -> None:
-    client = await aiohttp_client(create_app())
-
+async def test_auth_flow(client: TestClient) -> None:
     # 1. CSRF
     resp = await client.get("/api/csrf")
     assert resp.status == 200
@@ -155,8 +146,7 @@ async def test_auth_flow(aiohttp_client: AiohttpClient) -> None:
     assert "equipmentNo" not in data
 
 
-async def test_bind_equipment(aiohttp_client: AiohttpClient) -> None:
-    client = await aiohttp_client(create_app())
+async def test_bind_equipment(client: TestClient) -> None:
     resp = await client.post(
         "/api/terminal/user/bindEquipment",
         json={
@@ -171,10 +161,7 @@ async def test_bind_equipment(aiohttp_client: AiohttpClient) -> None:
     assert data == {"success": True}
 
 
-async def test_user_query(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
-) -> None:
-    client = await aiohttp_client(create_app())
+async def test_user_query(client: TestClient, auth_headers: dict[str, str]) -> None:
     resp = await client.post("/api/user/query", headers=auth_headers)
     assert resp.status == 200
     data = await resp.json()
@@ -184,13 +171,11 @@ async def test_user_query(
 
 
 async def test_sync_start_syn_type(
-    aiohttp_client: AiohttpClient,
+    client: TestClient,
     auth_headers: dict[str, str],
     storage_service: StorageService,
     user_storage: UserStorageHelper,
 ) -> None:
-    client = await aiohttp_client(create_app())
-
     # Clear storage root for test
     if storage_service.root_dir.exists():
         shutil.rmtree(str(storage_service.root_dir))
@@ -220,11 +205,7 @@ async def test_sync_start_syn_type(
     assert data["synType"] is True  # Non-empty storage
 
 
-async def test_sync_lock(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
-) -> None:
-    client = await aiohttp_client(create_app())
-
+async def test_sync_lock(client: TestClient, auth_headers: dict[str, str]) -> None:
     # 1. Start sync from SN123
     resp = await client.post(
         "/api/file/2/files/synchronous/start",
@@ -261,10 +242,7 @@ async def test_sync_lock(
     assert (await resp.json())["success"] is True
 
 
-async def test_list_folder(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
-) -> None:
-    client = await aiohttp_client(create_app())
+async def test_list_folder(client: TestClient, auth_headers: dict[str, str]) -> None:
     resp = await client.post(
         "/api/file/2/files/list_folder",
         json={"equipmentNo": "SN123456", "path": "/", "recursive": False},
@@ -278,10 +256,7 @@ async def test_list_folder(
     assert data["entries"][0]["tag"] == "folder"
 
 
-async def test_capacity_query(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
-) -> None:
-    client = await aiohttp_client(create_app())
+async def test_capacity_query(client: TestClient, auth_headers: dict[str, str]) -> None:
     resp = await client.post(
         "/api/file/2/users/get_space_usage",
         json={"equipmentNo": "SN123456", "version": "202407"},
@@ -295,10 +270,7 @@ async def test_capacity_query(
     assert data["allocationVO"]["allocated"] > 0
 
 
-async def test_query_by_path(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
-) -> None:
-    client = await aiohttp_client(create_app())
+async def test_query_by_path(client: TestClient, auth_headers: dict[str, str]) -> None:
     resp = await client.post(
         "/api/file/3/files/query/by/path_v3",
         json={"equipmentNo": "SN123456", "path": "/EXPORT/test.note"},
@@ -311,11 +283,7 @@ async def test_query_by_path(
     assert "entriesVO" not in data
 
 
-async def test_upload_flow(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
-) -> None:
-    client = await aiohttp_client(create_app())
-
+async def test_upload_flow(client: TestClient, auth_headers: dict[str, str]) -> None:
     # 1. Apply for upload
     resp = await client.post(
         "/api/file/3/files/upload/apply",
@@ -364,11 +332,7 @@ async def test_upload_flow(
     assert data["success"] is True
 
 
-async def test_download_flow(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
-) -> None:
-    client = await aiohttp_client(create_app())
-
+async def test_download_flow(client: TestClient, auth_headers: dict[str, str]) -> None:
     # 1. Upload a file first
     file_content = b"Hello Download"
     file_hash = hashlib.md5(file_content).hexdigest()

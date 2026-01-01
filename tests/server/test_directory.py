@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from supernote.server.app import create_app
+from aiohttp.test_utils import TestClient
+
 from supernote.server.services.storage import StorageService
-from tests.conftest import AiohttpClient
 
 
 def test_id_generation(tmp_path: Path) -> None:
@@ -28,10 +28,8 @@ def test_id_generation(tmp_path: Path) -> None:
 
 
 async def test_create_directory(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str], tmp_path: Path
+    client: TestClient, auth_headers: dict[str, str], tmp_path: Path
 ) -> None:
-    client = await aiohttp_client(create_app())
-
     # Create folder
     resp = await client.post(
         "/api/file/2/files/create_folder_v2",
@@ -52,11 +50,7 @@ async def test_create_directory(
     assert any(e["name"] == "NewFolder" for e in data["entries"])
 
 
-async def test_delete_folder(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
-) -> None:
-    client = await aiohttp_client(create_app())
-
+async def test_delete_folder(client: TestClient, auth_headers: dict[str, str]) -> None:
     # Create folder
     await client.post(
         "/api/file/2/files/create_folder_v2",
@@ -94,11 +88,7 @@ async def test_delete_folder(
     assert not any(e["name"] == "DeleteMe" for e in data["entries"])
 
 
-async def test_list_recursive(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
-) -> None:
-    client = await aiohttp_client(create_app())
-
+async def test_list_recursive(client: TestClient, auth_headers: dict[str, str]) -> None:
     # Create /Parent
     await client.post(
         "/api/file/2/files/create_folder_v2",

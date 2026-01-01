@@ -1,12 +1,9 @@
-from supernote.server.app import create_app
-from tests.conftest import AiohttpClient
+from aiohttp.test_utils import TestClient
 
 
 async def test_soft_delete_to_recycle(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
+    client: TestClient, auth_headers: dict[str, str]
 ) -> None:
-    client = await aiohttp_client(create_app())
-
     # Create a folder
     await client.post(
         "/api/file/2/files/create_folder_v2",
@@ -54,11 +51,7 @@ async def test_soft_delete_to_recycle(
     assert data["recycleFileVOList"][0]["isFolder"] == "Y"
 
 
-async def test_recycle_revert(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
-) -> None:
-    client = await aiohttp_client(create_app())
-
+async def test_recycle_revert(client: TestClient, auth_headers: dict[str, str]) -> None:
     # Create and delete a folder
     await client.post(
         "/api/file/2/files/create_folder_v2",
@@ -118,10 +111,8 @@ async def test_recycle_revert(
 
 
 async def test_recycle_permanent_delete(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
+    client: TestClient, auth_headers: dict[str, str]
 ) -> None:
-    client = await aiohttp_client(create_app())
-
     # Create and delete a folder
     await client.post(
         "/api/file/2/files/create_folder_v2",
@@ -171,11 +162,7 @@ async def test_recycle_permanent_delete(
     assert data["total"] == 0
 
 
-async def test_recycle_clear(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
-) -> None:
-    client = await aiohttp_client(create_app())
-
+async def test_recycle_clear(client: TestClient, auth_headers: dict[str, str]) -> None:
     # Default folders
     resp = await client.post(
         "/api/file/2/files/list_folder",

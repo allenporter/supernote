@@ -1,14 +1,12 @@
 """Tests for file search functionality."""
 
-from supernote.server.app import create_app
-from tests.conftest import AiohttpClient
+from aiohttp.test_utils import TestClient
 
 
 async def test_search_by_filename(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
+    client: TestClient, auth_headers: dict[str, str]
 ) -> None:
     """Test searching for files by filename."""
-    client = await aiohttp_client(create_app())
 
     # Create some test folders and files
     await client.post(
@@ -42,10 +40,9 @@ async def test_search_by_filename(
 
 
 async def test_search_case_insensitive(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
+    client: TestClient, auth_headers: dict[str, str]
 ) -> None:
     """Test that search is case-insensitive."""
-    client = await aiohttp_client(create_app())
 
     # Create folder
     await client.post(
@@ -67,10 +64,9 @@ async def test_search_case_insensitive(
 
 
 async def test_search_partial_match(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
+    client: TestClient, auth_headers: dict[str, str]
 ) -> None:
     """Test that search matches partial filenames."""
-    client = await aiohttp_client(create_app())
 
     # Create folders
     await client.post(
@@ -103,10 +99,9 @@ async def test_search_partial_match(
 
 
 async def test_search_no_results(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
+    client: TestClient, auth_headers: dict[str, str]
 ) -> None:
     """Test search with no matching results."""
-    client = await aiohttp_client(create_app())
 
     # Create folder
     await client.post(

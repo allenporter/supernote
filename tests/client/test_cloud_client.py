@@ -1,11 +1,10 @@
 """Tests for the cloud client."""
 
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable
 
-import aiohttp.test_utils
 import pytest
 from aiohttp import web
+from pytest_aiohttp import AiohttpClient
 
 from supernote.client import Client
 from supernote.client.cloud_client import SupernoteClient
@@ -68,11 +67,7 @@ async def handler_download_content(request: web.Request) -> web.Response:
 
 
 @pytest.fixture(name="client")
-async def client_fixture(
-    aiohttp_client: Callable[
-        [web.Application], Awaitable[aiohttp.test_utils.TestClient]
-    ],
-) -> SupernoteClient:
+async def client_fixture(aiohttp_client: AiohttpClient) -> SupernoteClient:
     """Fixture for SupernoteClient instance."""
     app = web.Application()
     app.router.add_get("/api/csrf", handler_csrf)
@@ -95,9 +90,7 @@ async def test_file_list(client: SupernoteClient) -> None:
 
 @pytest.fixture(name="client_with_relative_download")
 async def client_relative_download_fixture(
-    aiohttp_client: Callable[
-        [web.Application], Awaitable[aiohttp.test_utils.TestClient]
-    ],
+    aiohttp_client: AiohttpClient,
 ) -> SupernoteClient:
     """Fixture for SupernoteClient instance with relative download URL."""
 

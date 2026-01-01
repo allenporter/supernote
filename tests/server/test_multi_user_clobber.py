@@ -4,6 +4,7 @@ from pathlib import Path
 import jwt
 import pytest
 from aiohttp import FormData
+from aiohttp.web import Application
 
 from supernote.server.app import create_app
 from supernote.server.config import AuthConfig, ServerConfig, UserEntry
@@ -16,6 +17,7 @@ USER_B = "user_b@example.com"
 
 @pytest.fixture
 def multi_user_config(mock_storage: Path, mock_trace_log: str) -> ServerConfig:
+    """Create a test config with multiple users."""
     users = [
         UserEntry(
             username=USER_A,
@@ -41,7 +43,8 @@ def multi_user_config(mock_storage: Path, mock_trace_log: str) -> ServerConfig:
     )
 
 
-async def register_session(app, user: str, secret: str) -> dict[str, str]:  # type: ignore[no-untyped-def]
+async def register_session(app: Application, user: str, secret: str) -> dict[str, str]:
+    """Register a session for a user."""
     token = jwt.encode({"sub": user}, secret, algorithm=JWT_ALGORITHM)
     app["state_service"].create_session(token, user)
 

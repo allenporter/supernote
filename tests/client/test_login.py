@@ -7,6 +7,7 @@ import aiohttp
 import aiohttp.test_utils
 import pytest
 from aiohttp import web
+from pytest_aiohttp import AiohttpClient
 
 from supernote.client import Client
 from supernote.models.auth import LoginVO, RandomCodeVO
@@ -45,11 +46,7 @@ async def handler_csrf(request: web.Request) -> web.Response:
 
 
 @pytest.fixture(name="client")
-async def client_fixture(
-    aiohttp_client: Callable[
-        [web.Application], Awaitable[aiohttp.test_utils.TestClient]
-    ],
-) -> Client:
+async def client_fixture(aiohttp_client: AiohttpClient) -> Client:
     app = web.Application()
     app.router.add_get("/api/csrf", handler_csrf)
     app.router.add_post("/api/official/user/query/random/code", handler_random_code)
@@ -57,7 +54,7 @@ async def client_fixture(
 
     test_client = await aiohttp_client(app)
     base_url = str(test_client.make_url(""))
-    return Client(test_client.session, host=base_url.rstrip("/"))
+    return Client(test_client.session, host=base_url)
 
 
 async def test_login_flow(client: Client) -> None:
@@ -124,11 +121,10 @@ async def test_login_headers(
 
     # Call the endpoint
     response = await client.post(
-        "/api/official/user/account/login/new",
-        json={"some": "payload"}
+        "/api/official/user/account/login/new", json={"some": "payload"}
     )
     data = await response.json()
-    
+
     headers = data["data"]
     assert headers.get("Referer") == base_url.rstrip("/")
     assert headers.get("Origin") == base_url.rstrip("/")

@@ -1,24 +1,17 @@
 import hashlib
-from typing import Awaitable, Callable
 
 from aiohttp import FormData
 from aiohttp.test_utils import TestClient
-from aiohttp.web import Application
 
-from supernote.server.app import create_app
 from supernote.server.services.storage import StorageService
 from tests.conftest import TEST_USERNAME
 
-AiohttpClient = Callable[[Application], Awaitable[TestClient]]
-
 
 async def test_upload_file(
-    aiohttp_client: AiohttpClient,
+    client: TestClient,
     storage_service: StorageService,
     auth_headers: dict[str, str],
 ) -> None:
-    client = await aiohttp_client(create_app())
-
     filename = "test_upload.note"
     file_content = b"some binary content"
 
@@ -43,12 +36,11 @@ async def test_upload_file(
 
 
 async def test_chunked_upload(
-    aiohttp_client: AiohttpClient,
+    client: TestClient,
     storage_service: StorageService,
     auth_headers: dict[str, str],
 ) -> None:
     """Test uploading a file in multiple chunks."""
-    client = await aiohttp_client(create_app())
 
     filename = "chunked_test.note"
     # Create content that will be split into 2 chunks

@@ -1,12 +1,7 @@
-from supernote.server.app import create_app
-from tests.conftest import AiohttpClient
+from aiohttp.test_utils import TestClient
 
 
-async def test_move_file(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
-) -> None:
-    client = await aiohttp_client(create_app())
-
+async def test_move_file(client: TestClient, auth_headers: dict[str, str]) -> None:
     # 1. Create file via upload (mocked flow or just assume pre-existence logic via helper)
     # Actually, let's create a folder first to move things into
     await client.post(
@@ -72,10 +67,8 @@ async def test_move_file(
 
 
 async def test_copy_file_autorename(
-    aiohttp_client: AiohttpClient, auth_headers: dict[str, str]
+    client: TestClient, auth_headers: dict[str, str]
 ) -> None:
-    client = await aiohttp_client(create_app())
-
     # Create Folder
     await client.post(
         "/api/file/2/files/create_folder_v2",
