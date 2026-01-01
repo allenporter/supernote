@@ -135,7 +135,7 @@ class Client:
         try:
             data_response = data_cls.from_json(result)
         except (LookupError, ValueError) as err:
-            raise ApiException(f"Server return malformed response: {result}") from err
+            raise ApiException(f"Server return malformed response type {data_cls.__name__}: {result}") from err
         if not data_response.success:
             raise ApiException(data_response.error_msg)
         return data_response
