@@ -1,9 +1,8 @@
 import hashlib
-import logging
+import secrets
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import AsyncGenerator
-import secrets
 
 import aiofiles
 
@@ -113,7 +112,7 @@ class LocalBlobStorage(BlobStorage):
         if not path.exists():
             raise FileNotFoundError(f"Blob {md5} not found")
         async with aiofiles.open(path, "rb") as f:
-            return await f.read()
+            return await f.read()  # type: ignore[no-any-return]
 
     def get_blob_path(self, md5: str) -> Path:
         """Get physical path to the blob."""

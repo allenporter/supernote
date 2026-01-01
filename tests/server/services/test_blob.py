@@ -1,4 +1,6 @@
+
 import hashlib
+from collections.abc import AsyncGenerator
 from pathlib import Path
 
 import pytest
@@ -7,7 +9,7 @@ from supernote.server.services.blob import LocalBlobStorage
 
 
 @pytest.mark.asyncio
-async def test_write_read_blob(tmp_path: Path):
+async def test_write_read_blob(tmp_path: Path) -> None:
     storage = LocalBlobStorage(tmp_path)
     
     content = b"Hello World"
@@ -31,11 +33,11 @@ async def test_write_read_blob(tmp_path: Path):
     assert await storage.exists("invalid_md5") is False
 
 @pytest.mark.asyncio
-async def test_write_stream_blob(tmp_path: Path):
+async def test_write_stream_blob(tmp_path: Path) -> None:
     storage = LocalBlobStorage(tmp_path)
     
     # Create a stream generator
-    async def data_stream():
+    async def data_stream() -> AsyncGenerator[bytes, None]:
         yield b"Part1"
         yield b"Part2"
         
@@ -51,7 +53,7 @@ async def test_write_stream_blob(tmp_path: Path):
     assert read_content == full_content
 
 @pytest.mark.asyncio
-async def test_deduplication(tmp_path: Path):
+async def test_deduplication(tmp_path: Path) -> None:
     storage = LocalBlobStorage(tmp_path)
     content = b"Duplicate Content"
     
