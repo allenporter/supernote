@@ -464,3 +464,175 @@ class UserInfoDTO(DataClassJSONMixin):
 
     class Config(BaseConfig):
         serialize_by_alias = True
+
+
+@dataclass
+class UserRegisterDTO(DataClassJSONMixin):
+    """Request to register a new user.
+
+    Used by:
+        /api/user/register (POST)
+    """
+
+    email: str
+    """Email address."""
+
+    password: str
+    """Password."""
+
+    user_name: str | None = field(
+        metadata=field_options(alias="userName"), default=None
+    )
+    """User nickname."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class RetrievePasswordDTO(DataClassJSONMixin):
+    """Request to retrieve password.
+
+    Used by:
+        /api/official/user/retrieve/password (POST)
+    """
+
+    password: str
+    """New password."""
+
+    telephone: str | None = None
+    """Telephone number."""
+
+    email: str | None = None
+    """Email address."""
+
+    country_code: str | None = field(
+        metadata=field_options(alias="countryCode"), default=None
+    )
+    """Country code."""
+
+    version: str | None = None
+    """Version."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class UpdatePasswordDTO(DataClassJSONMixin):
+    """Request to update password.
+
+    Used by:
+        /api/user/password (PUT)
+    """
+
+    password: str
+    """New password."""
+
+    version: str | None = None
+    """Version."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class UpdateEmailDTO(DataClassJSONMixin):
+    """Request to update email.
+
+    Used by:
+        /api/user/email (PUT)
+    """
+
+    email: str
+    """New email address."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class LoginRecordDTO(DataClassJSONMixin):
+    """Request to query login records.
+
+    Used by:
+        /api/user/query/loginRecord (POST)
+    """
+
+    page_no: str = field(metadata=field_options(alias="pageNo"))
+    """Page number."""
+
+    page_size: str = field(metadata=field_options(alias="pageSize"))
+    """Page size."""
+
+    telephone: str | None = None
+    """Telephone number."""
+
+    email: str | None = None
+    """Email address."""
+    login_method: str | None = field(
+        metadata=field_options(alias="loginMethod"), default=None
+    )
+    """1: Phone, 2: Email, 3: WeChat"""
+
+    equipment: str | None = None
+    """1: Web, 2: App, 3: Terminal, 4: Platform"""
+
+    create_time_start: str | None = field(
+        metadata=field_options(alias="createTimeStart"), default=None
+    )
+    """Start time."""
+
+    create_time_end: str | None = field(
+        metadata=field_options(alias="createTimeEnd"), default=None
+    )
+    """End time."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class LoginRecordVO(DataClassJSONMixin):
+    """Login record response item."""
+
+    user_id: str | None = field(metadata=field_options(alias="userId"), default=None)
+    """User ID."""
+
+    user_name: str | None = field(
+        metadata=field_options(alias="userName"), default=None
+    )
+    """User nickname."""
+
+    create_time: str | None = field(
+        metadata=field_options(alias="createTime"), default=None
+    )
+    """Creation time."""
+
+    telephone: str | None = None
+    """Telephone number."""
+
+    email: str | None = None
+    """Email address."""
+
+    wechat_no: str | None = field(
+        metadata=field_options(alias="wechatNo"), default=None
+    )
+    """WeChat number."""
+
+    browser: str | None = None
+    """Browser info."""
+
+    equipment: str | None = None
+    """Equipment info."""
+
+    ip: str | None = None
+    """IP address."""
+
+    login_method: str | None = field(
+        metadata=field_options(alias="loginMethod"), default=None
+    )
+    """Login method."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
