@@ -345,3 +345,129 @@ uploadFinish:
           application/json:
             schema:
               $ref: "../components/schemas/common.yaml#/BaseVO"
+
+addFolderFile_deleteApi:
+  post:
+    tags:
+      - File - Web
+    summary: Add Folder/File (Delete API)
+    operationId: addFolderFile_deleteApi
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FolderFileAddDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+queryFileV2_deleteApi:
+  post:
+    tags:
+      - File - Web
+    summary: Query File V2 (Delete API)
+    operationId: queryFileV2_deleteApi
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FileQueryV2DTO"
+    responses:
+      "200":
+        description: File Info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/FileQueryV2VO"
+
+queryFileByPathV2:
+  post:
+    tags:
+      - File - Web
+    summary: Query File by Path V2
+    operationId: queryFileByPathV2
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FileQueryByPathV2DTO"
+    responses:
+      "200":
+        description: File Info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/FileQueryByPathV2VO"
+
+searchFileLabel:
+  post:
+    tags:
+      - File - Web
+    summary: Search File by Label
+    operationId: searchFileLabel
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/FileLabelSearchDTO"
+    responses:
+      "200":
+        description: Search Results
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/FileLabelSearchVO"
+
+terminalUploadApply:
+  post:
+    tags:
+      - File - Terminal
+    summary: Terminal Upload Apply
+    operationId: terminalUploadApply
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/TerminalFileUploadApplyDTO"
+    responses:
+      "200":
+        description: Upload Info
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/file.yaml#/FileUploadApplyLocalVO"
+
+terminalUploadFinish:
+  post:
+    tags:
+      - File - Terminal
+    summary: Terminal Upload Finish
+    operationId: terminalUploadFinish
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/file.yaml#/TerminalFileUploadFinishDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"

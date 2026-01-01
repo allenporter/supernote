@@ -786,3 +786,139 @@ PngVO:
           type: array
           items:
             $ref: "#/PngPageVO"
+
+FolderFileAddDTO:
+  type: object
+  properties:
+    fileName:
+      type: string
+      description: The name of the file or folder to be added (allows renaming).
+    fileId:
+      type: integer
+      format: int64
+      description: The ID of the file or folder to be added.
+    directoryId:
+      type: integer
+      format: int64
+      description: Represents the source directory ID where the file or folder currently exists.
+    goDirectoryId:
+      type: integer
+      format: int64
+      description: Represents the destination directory ID where the file or folder will be moved to.
+    isFolder:
+      type: string
+      description: "Y: Folder, N: File"
+  required:
+    - fileName
+    - fileId
+    - directoryId
+    - goDirectoryId
+    - isFolder
+
+TerminalFileUploadApplyDTO:
+  type: object
+  properties:
+    equipmentNo:
+      type: string
+    filePath:
+      type: string
+    fileSize:
+      type: string
+    fileName:
+      type: string
+    md5:
+      type: string
+  required:
+    - fileSize
+    - fileName
+    - md5
+
+TerminalFileUploadFinishDTO:
+  type: object
+  properties:
+    equipmentNo:
+      type: string
+    filePath:
+      type: string
+    fileSize:
+      type: string
+    fileName:
+      type: string
+    md5:
+      type: string
+    innerName:
+      type: string
+    modifyTime:
+      type: string
+    uploadTime:
+      type: string
+  required:
+    - fileSize
+    - fileName
+    - md5
+    - innerName
+    - modifyTime
+    - uploadTime
+
+FileQueryV2DTO:
+  type: object
+  properties:
+    equipmentNo:
+      type: string
+    id:
+      type: string
+
+FileQueryV2VO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        equipmentNo:
+          type: string
+        entriesVO:
+          $ref: "#/EntriesVO"
+
+FileQueryByPathV2DTO:
+  type: object
+  properties:
+    equipmentNo:
+      type: string
+    fileName:
+      type: string
+    path:
+      type: string
+
+FileQueryByPathV2VO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        equipmentNo:
+          type: string
+        entriesVO:
+          $ref: "#/EntriesVO"
+
+FileLabelSearchDTO:
+  type: object
+  properties:
+    fileName:
+      type: string
+    directoryId:
+      type: integer
+      format: int64
+  required:
+    - fileName
+    - directoryId
+
+FileLabelSearchVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        userFileSearchVOList:
+          type: array
+          items:
+            $ref: "#/UserFileSearchVO"

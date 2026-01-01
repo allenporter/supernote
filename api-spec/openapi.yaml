@@ -23,6 +23,12 @@ paths:
     $ref: "./paths/auth.yaml#/queryToken"
   /api/official/user/query/random/code:
     $ref: "./paths/auth.yaml#/randomCode"
+  /api/user/mail/validcode:
+    $ref: "./paths/auth.yaml#/sendEmailValidCode"
+  /api/user/check/validcode:
+    $ref: "./paths/auth.yaml#/checkValidCode"
+  /api/base/pic/code:
+    $ref: "./paths/auth.yaml#/getPicCode"
 
   # User Profile
   /api/user/check/exists:
@@ -45,6 +51,21 @@ paths:
     $ref: "./paths/user.yaml#/queryOneUser"
   /api/user/query/user/{userId}:
     $ref: "./paths/user.yaml#/queryUserByPathId"
+  /api/user/register:
+    $ref: "./paths/user.yaml#/userRegister"
+  /api/user/account/clear:
+    $ref: "./paths/user.yaml#/accountClear"
+  /api/official/user/retrieve/password:
+    $ref: "./paths/user.yaml#/retrievePassword"
+  /api/user/password:
+    $ref: "./paths/user.yaml#/updatePassword"
+  /api/user/email:
+    $ref: "./paths/user.yaml#/updateEmail"
+
+  /api/user/query/loginRecord:
+    $ref: "./paths/user.yaml#/queryLoginRecord"
+  /api/user/query/sensitive/record:
+    $ref: "./paths/user.yaml#/querySensitiveRecord"
 
   # File System - Web
   /api/file/list/query:
@@ -81,6 +102,18 @@ paths:
     $ref: "./paths/files-web.yaml#/uploadApply"
   /api/file/upload/finish:
     $ref: "./paths/files-web.yaml#/uploadFinish"
+  /api/file/add/folder/file/deleteApi:
+    $ref: "./paths/files-web.yaml#/addFolderFile_deleteApi"
+  /api/file/2/files/query/deleteApi:
+    $ref: "./paths/files-web.yaml#/queryFileV2_deleteApi"
+  /api/file/2/files:
+    $ref: "./paths/files-web.yaml#/queryFileByPathV2"
+  /api/file/label/list/search:
+    $ref: "./paths/files-web.yaml#/searchFileLabel"
+  /api/file/terminal/upload/apply:
+    $ref: "./paths/files-web.yaml#/terminalUploadApply"
+  /api/file/terminal/upload/finish:
+    $ref: "./paths/files-web.yaml#/terminalUploadFinish"
 
   # File System - Device
   /api/file/2/files/synchronous/start:

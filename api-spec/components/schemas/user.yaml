@@ -247,3 +247,100 @@ UserInfo:
     fileServer:
       type: string
       description: "Storage provider code ('0': ufile, '1': aws) or private cloud URL"
+
+UserRegisterDTO:
+  type: object
+  properties:
+    email:
+      type: string
+    password:
+      type: string
+    userName:
+      type: string
+  required:
+    - email
+    - password
+
+RetrievePasswordDTO:
+  type: object
+  properties:
+    telephone:
+      type: string
+    email:
+      type: string
+    countryCode:
+      type: string
+    password:
+      type: string
+    version:
+      type: string
+  required:
+    - password
+
+UpdatePasswordDTO:
+  type: object
+  properties:
+    password:
+      type: string
+    version:
+      type: string
+  required:
+    - password
+
+UpdateEmailDTO:
+  type: object
+  properties:
+    email:
+      type: string
+  required:
+    - email
+
+LoginRecordDTO:
+  type: object
+  properties:
+    telephone:
+      type: string
+    email:
+      type: string
+    loginMethod:
+      type: string
+      description: "1: Phone, 2: Email, 3: WeChat"
+    equipment:
+      type: string
+      description: "1: Web, 2: App, 3: Terminal, 4: Platform"
+    createTimeStart:
+      type: string
+    createTimeEnd:
+      type: string
+    pageNo:
+      type: string
+    pageSize:
+      type: string
+  required:
+    - pageNo
+    - pageSize
+
+LoginRecordVO:
+  type: object
+  properties:
+    userId:
+      type: string
+    userName:
+      type: string
+    createTime:
+      type: string
+      format: date-time
+    telephone:
+      type: string
+    email:
+      type: string
+    wechatNo:
+      type: string
+    browser:
+      type: string
+    equipment:
+      type: string
+    ip:
+      type: string
+    loginMethod:
+      type: string

@@ -193,3 +193,155 @@ queryUserByPathId:
           application/json:
             schema:
               $ref: "../components/schemas/user.yaml#/UserQueryByIdVO"
+
+userRegister:
+  post:
+    tags:
+      - User
+    summary: User Registration
+    operationId: userRegister
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/user.yaml#/UserRegisterDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+accountClear:
+  post:
+    tags:
+      - User
+    summary: Delete Account
+    operationId: accountClear
+    security:
+      - accessToken: []
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+retrievePassword:
+  post:
+    tags:
+      - User
+    summary: Retrieve Password
+    operationId: retrievePassword
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/user.yaml#/RetrievePasswordDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+updatePassword:
+  put:
+    tags:
+      - User
+    summary: Change Password
+    operationId: updatePassword
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/user.yaml#/UpdatePasswordDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+updateEmail:
+  put:
+    tags:
+      - User
+    summary: Update Email
+    operationId: updateEmail
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/user.yaml#/UpdateEmailDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+querySensitiveRecord:
+  post:
+    tags:
+      - User
+    summary: Query Sensitive Operation Records
+    operationId: querySensitiveRecord
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/user.yaml#/SensitiveOperDTO"
+    responses:
+      "200":
+        description: Record list
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "common.yaml#/BaseVO"
+                - type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        $ref: "../components/schemas/user.yaml#/SensitiveOperVO"
+
+queryLoginRecord:
+  post:
+    tags:
+      - User
+    summary: Query Login History
+    operationId: queryLoginRecord
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/user.yaml#/LoginRecordDTO"
+    responses:
+      "200":
+        description: Login history list
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "common.yaml#/CommonListVO"
+                - type: object
+                  properties:
+                    list:
+                      type: array
+                      items:
+                        $ref: "../components/schemas/user.yaml#/LoginRecordVO"

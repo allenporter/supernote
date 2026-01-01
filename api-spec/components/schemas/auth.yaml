@@ -137,3 +137,26 @@ SmsLoginVO:
         token:
           type: string
           description: JWT Access Token
+
+EmailDTO:
+  type: object
+  properties:
+    email:
+      type: string
+    language:
+      type: string
+  required:
+    - email
+
+ValidCodeDTO:
+  type: object
+  properties:
+    validCodeKey:
+      type: string
+      description: Key for the validation code
+    validCode:
+      type: string
+      description: The validation code
+  required:
+    - validCodeKey
+    - validCode

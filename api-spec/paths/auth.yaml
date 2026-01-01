@@ -104,3 +104,56 @@ randomCode:
           application/json:
             schema:
               $ref: "../components/schemas/auth.yaml#/RandomCodeVO"
+
+sendEmailValidCode:
+  post:
+    tags:
+      - Authentication
+    summary: Send Email Validation Code
+    operationId: sendEmailValidCode
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/auth.yaml#/EmailDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/auth.yaml#/EmailVO"
+
+checkValidCode:
+  post:
+    tags:
+      - Authentication
+    summary: Verify Validation Code
+    operationId: checkValidCode
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/auth.yaml#/ValidCodeDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+getPicCode:
+  get:
+    tags:
+      - Authentication
+    summary: Get Graphic Verification Code
+    operationId: getPicCode
+    responses:
+      "200":
+        description: Image Stream
+        content:
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
