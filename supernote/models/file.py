@@ -27,7 +27,11 @@ class FileSortSequence(str, BaseEnum):
 
 @dataclass
 class FileListQueryDTO(DataClassJSONMixin):
-    """Request model for querying a list of files in a directory (ID-based)."""
+    """Request model for querying a list of files in a directory (ID-based).
+
+    This is used by the following POST endpoint:
+        /api/file/list/query
+    """
 
     directory_id: int = field(metadata=field_options(alias="directoryId"))
     order: FileSortOrder = FileSortOrder.TIME
@@ -73,7 +77,11 @@ class UserFileVO(DataClassJSONMixin):
 
 @dataclass
 class FileListQueryVO(BaseResponse):
-    """Response model containing a paginated list of files."""
+    """Response model containing a paginated list of files.
+
+    This is used by the following POST endpoint:
+        /api/file/list/query
+    """
 
     total: int = 0
     pages: int = 0
@@ -86,7 +94,11 @@ class FileListQueryVO(BaseResponse):
 
 @dataclass
 class FolderListQueryDTO(DataClassJSONMixin):
-    """Request model for listing details of specific folders by ID."""
+    """Request model for listing details of specific folders by ID.
+
+    This is used by the following POST endpoint:
+        /api/file/folder/list/query
+    """
 
     directory_id: int = field(metadata=field_options(alias="directoryId"))
     id_list: List[int] = field(metadata=field_options(alias="idList"))
@@ -110,7 +122,11 @@ class FolderVO(DataClassJSONMixin):
 
 @dataclass
 class FolderListQueryVO(BaseResponse):
-    """Response model containing a list of folders."""
+    """Response model containing a list of folders.
+
+    This is used by the following POST endpoint:
+        /api/file/folder/list/query
+    """
 
     folder_vo_list: List[FolderVO] = field(
         metadata=field_options(alias="folderVOList"), default_factory=list
@@ -130,7 +146,11 @@ class AllocationVO(DataClassJSONMixin):
 
 @dataclass
 class CapacityVO(BaseResponse):
-    """Response model for cloud storage capacity query."""
+    """Response model for cloud storage capacity query.
+
+    This is used by the following POST endpoint:
+        /api/file/capacity/query
+    """
 
     used_capacity: int = field(metadata=field_options(alias="usedCapacity"), default=0)
     total_capacity: int = field(
@@ -140,7 +160,11 @@ class CapacityVO(BaseResponse):
 
 @dataclass
 class CapacityLocalVO(BaseResponse):
-    """Response model for device storage capacity query (replaces legacy)."""
+    """Response model for device storage capacity query (replaces legacy).
+
+    This is used by the following POST endpoint:
+        /api/file/2/users/get_space_usage
+    """
 
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
@@ -153,7 +177,11 @@ class CapacityLocalVO(BaseResponse):
 
 @dataclass
 class CapacityLocalDTO(DataClassJSONMixin):
-    """Request model for device storage capacity query."""
+    """Request model for device storage capacity query.
+
+    This is used by the following POST endpoint:
+        /api/file/2/users/get_space_usage
+    """
 
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
 
@@ -163,7 +191,11 @@ class CapacityLocalDTO(DataClassJSONMixin):
 
 @dataclass
 class FileDeleteDTO(DataClassJSONMixin):
-    """Request model for deleting files."""
+    """Request model for deleting files.
+
+    This is used by the following POST endpoint:
+        /api/file/delete
+    """
 
     id_list: List[int] = field(metadata=field_options(alias="idList"))
     directory_id: int = field(metadata=field_options(alias="directoryId"))
@@ -177,7 +209,11 @@ class FileDeleteDTO(DataClassJSONMixin):
 
 @dataclass
 class FolderAddDTO(DataClassJSONMixin):
-    """Request model for creating a new folder."""
+    """Request model for creating a new folder.
+
+    This is used by the following POST endpoint:
+        /api/file/folder/add
+    """
 
     file_name: str = field(metadata=field_options(alias="fileName"))
     directory_id: int = field(metadata=field_options(alias="directoryId"))
@@ -188,7 +224,12 @@ class FolderAddDTO(DataClassJSONMixin):
 
 @dataclass
 class FileMoveAndCopyDTO(DataClassJSONMixin):
-    """Request model for moving or copying files."""
+    """Request model for moving or copying files.
+
+    This is used by the following POST endpoint:
+        /api/file/move
+        /api/file/copy
+    """
 
     id_list: List[int] = field(metadata=field_options(alias="idList"))
     directory_id: int = field(metadata=field_options(alias="directoryId"))
@@ -200,7 +241,11 @@ class FileMoveAndCopyDTO(DataClassJSONMixin):
 
 @dataclass
 class FileReNameDTO(DataClassJSONMixin):
-    """Request model for renaming a file."""
+    """Request model for renaming a file.
+
+    This is used by the following POST endpoint:
+        /api/file/rename
+    """
 
     id: int
     new_name: str = field(metadata=field_options(alias="newName"))
@@ -211,7 +256,11 @@ class FileReNameDTO(DataClassJSONMixin):
 
 @dataclass
 class FileListSearchDTO(DataClassJSONMixin):
-    """Request model for searching files."""
+    """Request model for searching files.
+    
+    This is used by the following POST endpoint:
+        /api/file/list/search
+    """
 
     file_name: str = field(metadata=field_options(alias="fileName"))
     order: FileSortOrder = FileSortOrder.TIME
@@ -244,7 +293,11 @@ class UserFileSearchVO(DataClassJSONMixin):
 
 @dataclass
 class FileListSearchVO(BaseResponse):
-    """Response model containing search results."""
+    """Response model containing search results.
+
+    This is used by the following POST endpoint:
+        /api/file/list/search
+    """
 
     total: int = 0
     user_file_search_vo_list: List[UserFileSearchVO] = field(
@@ -254,7 +307,11 @@ class FileListSearchVO(BaseResponse):
 
 @dataclass
 class RecycleFileListDTO(DataClassJSONMixin):
-    """Request model for listing files in the recycle bin."""
+    """Request model for listing files in the recycle bin.
+
+    This is used by the following POST endpoint:
+        /api/file/recycle/list/query
+    """
 
     order: FileSortOrder = FileSortOrder.TIME
     sequence: FileSortSequence = FileSortSequence.DESC
@@ -281,7 +338,11 @@ class RecycleFileVO(DataClassJSONMixin):
 
 @dataclass
 class RecycleFileListVO(BaseResponse):
-    """Response model containing recycle bin items."""
+    """Response model containing recycle bin items.
+
+    This is used by the following POST endpoint:
+        /api/file/recycle/list/query
+    """
 
     total: int = 0
     recycle_file_vo_list: List[RecycleFileVO] = field(
@@ -291,7 +352,12 @@ class RecycleFileListVO(BaseResponse):
 
 @dataclass
 class RecycleFileDTO(DataClassJSONMixin):
-    """Request model for operating on recycled files."""
+    """Request model for operating on recycled files.
+
+    This is used by the following POST endpoint:
+        /api/file/recycle/delete
+        /api/file/recycle/revert
+    """
 
     id_list: List[int] = field(metadata=field_options(alias="idList"))
 
@@ -308,7 +374,11 @@ class DownloadType(str, BaseEnum):
 
 @dataclass
 class FileDownloadDTO(DataClassJSONMixin):
-    """Request model for getting a file download URL."""
+    """Request model for getting a file download URL.
+
+    This is used by the following POST endpoint:
+        /api/file/download/url
+    """
 
     id: int
     type: DownloadType = DownloadType.DOWNLOAD
@@ -319,7 +389,11 @@ class FileDownloadDTO(DataClassJSONMixin):
 
 @dataclass
 class FileDownloadUrlVO(BaseResponse):
-    """Response model containing a download URL."""
+    """Response model containing a download URL.
+
+    This is used by the following POST endpoint:
+        /api/file/download/url
+    """
 
     url: str = ""
     md5: str = ""
@@ -327,7 +401,11 @@ class FileDownloadUrlVO(BaseResponse):
 
 @dataclass
 class FilePathQueryDTO(DataClassJSONMixin):
-    """Request model for querying file path info."""
+    """Request model for querying file path info.
+
+    This is used by the following POST endpoint:
+        /api/file/path/query
+    """
 
     id: int
 
@@ -337,7 +415,11 @@ class FilePathQueryDTO(DataClassJSONMixin):
 
 @dataclass
 class FilePathQueryVO(BaseResponse):
-    """Response model containing file path info."""
+    """Response model containing file path info.
+
+    This is used by the following POST endpoint:
+        /api/file/path/query
+    """
 
     path: str = ""
     id_path: str = field(metadata=field_options(alias="idPath"), default="")
@@ -345,7 +427,11 @@ class FilePathQueryVO(BaseResponse):
 
 @dataclass
 class FileUploadApplyDTO(DataClassJSONMixin):
-    """Request model for initiating a file upload (Cloud)."""
+    """Request model for initiating a file upload (Cloud).
+
+    This is used by the following POST endpoint:
+        /api/file/upload/apply
+    """
 
     directory_id: int = field(metadata=field_options(alias="directoryId"))
     size: int
@@ -358,7 +444,12 @@ class FileUploadApplyDTO(DataClassJSONMixin):
 
 @dataclass
 class FileUploadApplyLocalVO(BaseResponse):
-    """Response model containing upload credentials/URLs."""
+    """Response model containing upload credentials/URLs.
+
+    This is used by the following POST endpoint:
+        /api/file/upload/apply
+        /api/file/terminal/upload/apply
+    """
 
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
@@ -390,7 +481,11 @@ class UploadType(str, BaseEnum):
 
 @dataclass
 class FileUploadFinishDTO(DataClassJSONMixin):
-    """Request model for completing a file upload (Cloud)."""
+    """Request model for completing a file upload (Cloud).
+
+    This is used by the following POST endpoint:
+        /api/file/upload/finish
+    """
 
     directory_id: int = field(metadata=field_options(alias="directoryId"))
     file_size: int = field(metadata=field_options(alias="fileSize"))
@@ -402,13 +497,16 @@ class FileUploadFinishDTO(DataClassJSONMixin):
     class Config(BaseConfig):
         serialize_by_alias = True
 
-
 # --- Device / Legacy Models (Local DTOs) ---
 
 
 @dataclass
 class SynchronousStartLocalDTO(DataClassJSONMixin):
-    """Request model for starting device synchronization."""
+    """Request model for starting device synchronization.
+
+    This is used by the following POST endpoint:
+        /api/file/2/files/synchronous/start
+    """
 
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
 
@@ -418,7 +516,11 @@ class SynchronousStartLocalDTO(DataClassJSONMixin):
 
 @dataclass
 class SynchronousStartLocalVO(BaseResponse):
-    """Response model for sync start acknowledgement."""
+    """Response model for sync start acknowledgement.
+
+    This is used by the following POST endpoint:
+        /api/file/2/files/synchronous/start
+    """
 
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
@@ -429,7 +531,11 @@ class SynchronousStartLocalVO(BaseResponse):
 
 @dataclass
 class SynchronousEndLocalDTO(DataClassJSONMixin):
-    """Request model for ending device synchronization."""
+    """Request model for ending device synchronization.
+
+    This is used by the following POST endpoint:
+        /api/file/2/files/synchronous/end
+    """
 
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
     flag: str | None = None
@@ -441,7 +547,11 @@ class SynchronousEndLocalDTO(DataClassJSONMixin):
 
 @dataclass
 class SynchronousEndLocalVO(BaseResponse):
-    """Response model for sync end acknowledgement."""
+    """Response model for sync end acknowledgement.
+
+    This is used by the following POST endpoint:
+        /api/file/2/files/synchronous/end
+    """
 
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
@@ -450,7 +560,11 @@ class SynchronousEndLocalVO(BaseResponse):
 
 @dataclass
 class CreateFolderLocalDTO(DataClassJSONMixin):
-    """Request model for creating a folder (Device/Path-based)."""
+    """Request model for creating a folder (Device/Path-based).
+
+    This is used by the following POST endpoint:
+        /api/file/2/files/create_folder_v2
+    """
 
     path: str
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
@@ -475,7 +589,11 @@ class MetadataVO(DataClassJSONMixin):
 
 @dataclass
 class CreateFolderLocalVO(BaseResponse):
-    """Response model for folder creation."""
+    """Response model for folder creation.
+
+    This is used by the following POST endpoint:
+        /api/file/2/files/create_folder_v2
+    """
 
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
@@ -485,7 +603,11 @@ class CreateFolderLocalVO(BaseResponse):
 
 @dataclass
 class ListFolderV2DTO(DataClassJSONMixin):
-    """Request model for listing folder contents (V2)."""
+    """Request model for listing folder contents (V2).
+
+    This is used by the following POST endpoint:
+        /api/file/2/files/list_folder
+    """
 
     path: str
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
@@ -497,7 +619,11 @@ class ListFolderV2DTO(DataClassJSONMixin):
 
 @dataclass
 class ListFolderLocalDTO(DataClassJSONMixin):
-    """Request model for listing folder contents (Device/V3)."""
+    """Request model for listing folder contents (Device/V3).
+
+    This is used by the following POST endpoint:
+        /api/file/3/files/list_folder_v3
+    """
 
     id: int  # Device uses ID for listing in v3?
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
@@ -533,7 +659,12 @@ class EntriesVO(DataClassJSONMixin):
 
 @dataclass
 class ListFolderLocalVO(BaseResponse):
-    """Response model containing list of file entries (Device)."""
+    """Response model containing list of file entries (Device).
+
+    This is used by the following POST endpoint:
+        /api/file/2/files/list_folder
+        /api/file/3/files/list_folder_v3
+    """
 
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
@@ -543,7 +674,11 @@ class ListFolderLocalVO(BaseResponse):
 
 @dataclass
 class DeleteFolderLocalDTO(DataClassJSONMixin):
-    """Request model for deleting a folder (Device)."""
+    """Request model for deleting a folder (Device).
+
+    This is used by the following POST endpoint:
+        /api/file/3/files/delete_folder_v3
+    """
 
     id: int
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
@@ -554,7 +689,11 @@ class DeleteFolderLocalDTO(DataClassJSONMixin):
 
 @dataclass
 class DeleteFolderLocalVO(BaseResponse):
-    """Response model for folder deletion."""
+    """Response model for folder deletion.
+
+    This is used by the following POST endpoint:
+        /api/file/3/files/delete_folder_v3
+    """
 
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
@@ -564,7 +703,11 @@ class DeleteFolderLocalVO(BaseResponse):
 
 @dataclass
 class FileUploadApplyLocalDTO(DataClassJSONMixin):
-    """Request model for initiating a file upload (Device/Path-based)."""
+    """Request model for initiating a file upload (Device/Path-based).
+
+    This is used by the following POST endpoint:
+        /api/file/3/files/upload/apply
+    """
 
     path: str
     file_name: str = field(metadata=field_options(alias="fileName"))
@@ -580,7 +723,11 @@ class FileUploadApplyLocalDTO(DataClassJSONMixin):
 
 @dataclass
 class FileUploadFinishLocalDTO(DataClassJSONMixin):
-    """Request model for completing a file upload (Device/Path-based)."""
+    """Request model for completing a file upload (Device/Path-based).
+
+    This is used by the following POST endpoint:
+        /api/file/2/files/upload/finish
+    """
 
     path: str
     file_name: str = field(metadata=field_options(alias="fileName"))
@@ -597,7 +744,11 @@ class FileUploadFinishLocalDTO(DataClassJSONMixin):
 
 @dataclass
 class FileDownloadLocalDTO(DataClassJSONMixin):
-    """Request model for file download (Device)."""
+    """Request model for file download (Device).
+
+    This is used by the following POST endpoint:
+        /api/file/3/files/download_v3
+    """
 
     id: int | str  # Spec says int, usage implies str (path) sometimes? Spec says int64.
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
@@ -608,7 +759,11 @@ class FileDownloadLocalDTO(DataClassJSONMixin):
 
 @dataclass
 class FileDownloadLocalVO(BaseResponse):
-    """Response model containing file download info (Device)."""
+    """Response model containing file download info (Device).
+
+    This is used by the following POST endpoint:
+        /api/file/3/files/download_v3
+    """
 
     url: str = ""
     id: str = ""
@@ -626,7 +781,11 @@ class FileDownloadLocalVO(BaseResponse):
 
 @dataclass
 class FileQueryLocalDTO(DataClassJSONMixin):
-    """Request model for querying file info (Device)."""
+    """Request model for querying file info (Device).
+
+    This is used by the following POST endpoint:
+        /api/file/3/files/query_v3
+    """
 
     id: str
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
@@ -637,7 +796,11 @@ class FileQueryLocalDTO(DataClassJSONMixin):
 
 @dataclass
 class FileQueryLocalVO(BaseResponse):
-    """Response model containing file info (Device)."""
+    """Response model containing file info (Device).
+
+    This is used by the following POST endpoint:
+        /api/file/3/files/query_v3
+    """
 
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
@@ -649,7 +812,11 @@ class FileQueryLocalVO(BaseResponse):
 
 @dataclass
 class FileQueryByPathLocalDTO(DataClassJSONMixin):
-    """Request model for querying file info by path (Device)."""
+    """Request model for querying file info by path (Device).
+
+    This is used by the following POST endpoint:
+        /api/file/3/files/query/by/path_v3
+    """
 
     path: str
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
@@ -660,7 +827,11 @@ class FileQueryByPathLocalDTO(DataClassJSONMixin):
 
 @dataclass
 class FileQueryByPathLocalVO(BaseResponse):
-    """Response model containing file info by path (Device)."""
+    """Response model containing file info by path (Device).
+
+    This is used by the following POST endpoint:
+        /api/file/3/files/query/by/path_v3
+    """
 
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
@@ -672,7 +843,11 @@ class FileQueryByPathLocalVO(BaseResponse):
 
 @dataclass
 class FileMoveLocalDTO(DataClassJSONMixin):
-    """Request model for moving a file (Device)."""
+    """Request model for moving a file (Device).
+
+    This is used by the following POST endpoint:
+        /api/file/3/files/move_v3
+    """
 
     id: int
     to_path: str = field(metadata=field_options(alias="to_path"))
@@ -685,7 +860,11 @@ class FileMoveLocalDTO(DataClassJSONMixin):
 
 @dataclass
 class FileMoveLocalVO(BaseResponse):
-    """Response model for file move operation (Device)."""
+    """Response model for file move operation (Device).
+
+    This is used by the following POST endpoint:
+        /api/file/3/files/move_v3
+    """
 
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
@@ -697,7 +876,11 @@ class FileMoveLocalVO(BaseResponse):
 
 @dataclass
 class FileCopyLocalDTO(DataClassJSONMixin):
-    """Request model for copying a file (Device)."""
+    """Request model for copying a file (Device).
+
+    This is used by the following POST endpoint:
+        /api/file/3/files/copy_v3
+    """
 
     id: int
     to_path: str = field(metadata=field_options(alias="to_path"))
@@ -710,7 +893,11 @@ class FileCopyLocalDTO(DataClassJSONMixin):
 
 @dataclass
 class FileCopyLocalVO(BaseResponse):
-    """Response model for file copy operation (Device)."""
+    """Response model for file copy operation (Device).
+
+    This is used by the following POST endpoint:
+        /api/file/3/files/copy_v3
+    """
 
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
