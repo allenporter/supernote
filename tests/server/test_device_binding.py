@@ -3,7 +3,7 @@ from typing import Any
 
 from aiohttp.test_utils import TestClient
 
-from tests.conftest import TEST_PASSWORD, TEST_USERNAME
+from tests.server.conftest import TEST_PASSWORD, TEST_USERNAME
 
 
 async def _login(client: TestClient, equipment_no: str) -> Any:

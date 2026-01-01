@@ -12,7 +12,7 @@ from supernote.client.client import Client
 from supernote.client.exceptions import UnauthorizedException
 from supernote.client.login_client import LoginClient
 from supernote.server.services.storage import StorageService
-from tests.conftest import (
+from tests.server.conftest import (
     TEST_PASSWORD,
     TEST_USERNAME,
     UserStorageHelper,
@@ -155,7 +155,7 @@ async def test_sync_start_syn_type(
     assert data["synType"] is False  # Empty storage
 
     # 2. Add a dummy file
-    user_storage.create_file(TEST_USERNAME, "Note/test.note")
+    await user_storage.create_file(TEST_USERNAME, "Note/test.note")
 
     resp = await client.post(
         "/api/file/2/files/synchronous/start",

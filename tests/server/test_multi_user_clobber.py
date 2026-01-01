@@ -9,7 +9,7 @@ from aiohttp.web import Application
 from supernote.server.app import create_app
 from supernote.server.config import AuthConfig, ServerConfig, UserEntry
 from supernote.server.services.user import JWT_ALGORITHM
-from tests.conftest import TEST_PASSWORD, AiohttpClient
+from tests.server.conftest import TEST_PASSWORD, AiohttpClient
 
 USER_A = "user_a@example.com"
 USER_B = "user_b@example.com"
@@ -92,6 +92,16 @@ async def test_multi_user_clobber(
     )
     assert resp.status == 200
 
+    # User A list files should see their file
+    resp = await client.post(
+        "/api/file/2/files/list_folder",
+        json={"path": "/", "equipmentNo": "EQ001"},
+        headers=headers_a,
+    )
+    assert resp.status == 200
+    data = await resp.json()
+    assert [e["name"] for e in data["entries"]] == ["shared.note"]
+
     # 2. User B list files - SHOULD NOT see User A's file
     resp = await client.post(
         "/api/file/2/files/list_folder",
@@ -135,6 +145,8 @@ async def test_multi_user_clobber(
     )
     assert resp.status == 200
     data = await resp.json()
+    assert data["success"]
+    assert data.get("entriesVO")
     assert data["entriesVO"]["content_hash"] == hash_a, (
         "User A's file should NOT be clobbered by User B"
     )
@@ -147,6 +159,8 @@ async def test_multi_user_clobber(
     )
     assert resp.status == 200
     data = await resp.json()
+    assert data["success"]
+    assert data.get("entriesVO")
     assert data["entriesVO"]["content_hash"] == hash_b, (
         "User B should have their own file content"
     )

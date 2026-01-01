@@ -106,8 +106,7 @@ async def handle_list_folder(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    entries = await asyncio.to_thread(
-        file_service.list_folder,
+    entries = await file_service.list_folder(
         user_email,
         path_str,
         req_data.recursive,
@@ -156,9 +155,7 @@ async def handle_query_by_path(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    entries_vo = await asyncio.to_thread(
-        file_service.get_file_info, user_email, path_str
-    )
+    entries_vo = await file_service.get_file_info(user_email, path_str)
 
     return web.json_response(
         FileQueryResponse(
@@ -178,9 +175,7 @@ async def handle_query_v3(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    entries_vo = await asyncio.to_thread(
-        file_service.get_file_info, user_email, file_id
-    )
+    entries_vo = await file_service.get_file_info(user_email, file_id)
 
     return web.json_response(
         FileQueryResponse(
@@ -290,8 +285,7 @@ async def handle_upload_finish(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
 
     try:
-        response = await asyncio.to_thread(
-            file_service.finish_upload,
+        response = await file_service.finish_upload(
             user_email,
             req_data.file_name,
             req_data.path,
@@ -320,19 +314,27 @@ async def handle_download_apply(request: web.Request) -> web.Response:
     # Purpose: Request a download URL for a file.
 
     req_data = DownloadApplyRequest.from_dict(await request.json())
-    file_id = req_data.id  # This is the relative path now
+    file_id = req_data.id  # This is the relative path or ID
     user_email = request["user"]
-    storage_service: StorageService = request.app["storage_service"]
+    file_service: FileService = request.app["file_service"]
 
-    # Verify file exists
-    target_path = storage_service.resolve_path(user_email, file_id)
-    if not target_path.exists():
+    # Verify file exists using VFS
+    info = await file_service.get_file_info(user_email, file_id)
+    if not info:
         return web.json_response(
             BaseResponse(success=False, error_msg="File not found").to_dict(),
             status=404,
         )
 
     # Generate URL
+    # We pass the ID (or path) provided, or better: use the resolved ID if available?
+    # Existing client expects "path=" query param to match what it sent?
+    # Or we can send the ID back. Let's send what was requested to be safe for now,
+    # OR send the stable ID if we want to move to IDs.
+    # The ID passed to apply is usually what's used.
+    # Let's stick to the input ID/path for the URL parameter to minimize client confusion,
+    # BUT handle_download_data must be able to resolve it.
+
     encoded_id = urllib.parse.quote(file_id)
     download_url = f"http://{request.host}/api/file/download/data?path={encoded_id}"
 
@@ -349,17 +351,51 @@ async def handle_download_data(request: web.Request) -> web.StreamResponse:
         return web.Response(status=400, text="Missing path")
 
     user_email = request["user"]
+    file_service: FileService = request.app["file_service"]
     storage_service: StorageService = request.app["storage_service"]
-    target_path = storage_service.resolve_path(user_email, path_str)
 
-    # Security check: prevent directory traversal
-    if not storage_service.is_safe_path(user_email, target_path):
-        return web.Response(status=403, text="Access denied")
-
-    if not target_path.exists():
+    # 1. Resolve file metadata via VFS
+    info = await file_service.get_file_info(user_email, path_str)
+    if not info:
         return web.Response(status=404, text="File not found")
 
-    return web.FileResponse(target_path)
+    if not info.is_downloadable or info.tag == "folder":
+        return web.Response(status=400, text="Not a file")
+
+    content_hash = info.content_hash
+    if not content_hash:
+        # Legacy fallback? Or empty file?
+        # If size > 0 and no hash, it's an error in VFS migration?
+        # Let's try to fallback to physical file if hash missing (migration compat).
+        # Resolve physical path
+        target_path = storage_service.resolve_path(user_email, path_str)
+        if target_path.exists() and target_path.is_file():
+            return web.FileResponse(target_path)
+        return web.Response(status=404, text="File content not found")
+
+    # 2. Check existence in BlobStorage
+    if not await storage_service.blob_storage.exists(content_hash):
+        # Fallback to physical path? (Hybrid mode)
+        target_path = storage_service.resolve_path(user_email, path_str)
+        if target_path.exists() and target_path.is_file():
+            return web.FileResponse(target_path)
+
+        return web.Response(status=404, text="Blob not found")
+
+    # 3. Stream from BlobStorage
+    # FileResponse expects a path. LocalBlobStorage stores as file.
+    # We can get the path from BlobStorage if it exposes it.
+    # LocalBlobStorage does.
+    blob_path = storage_service.blob_storage.get_blob_path(content_hash)
+
+    # Return file response with correct filename
+    # We want "Content-Disposition: attachment; filename=..."
+    # file_service.get_file_info returning info.name is useful here.
+
+    return web.FileResponse(
+        blob_path,
+        headers={"Content-Disposition": f'attachment; filename="{info.name}"'},
+    )
 
 
 @routes.post("/api/file/2/files/create_folder_v2")
@@ -371,8 +407,7 @@ async def handle_create_folder(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await asyncio.to_thread(
-        file_service.create_directory,
+    response = await file_service.create_directory(
         user_email,
         req_data.path,
         req_data.equipment_no,
@@ -391,8 +426,7 @@ async def handle_delete_folder(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
 
     # Request has 'id' (int) now
-    response = await asyncio.to_thread(
-        file_service.delete_item,
+    response = await file_service.delete_item(
         user_email,
         req_data.id,
         req_data.equipment_no,
@@ -410,8 +444,7 @@ async def handle_move_file(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await asyncio.to_thread(
-        file_service.move_item,
+    response = await file_service.move_item(
         user_email,
         req_data.id,
         req_data.to_path,
@@ -431,8 +464,7 @@ async def handle_copy_file(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await asyncio.to_thread(
-        file_service.copy_item,
+    response = await file_service.copy_item(
         user_email,
         req_data.id,
         req_data.to_path,
@@ -452,8 +484,7 @@ async def handle_recycle_list(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await asyncio.to_thread(
-        file_service.list_recycle,
+    response = await file_service.list_recycle(
         user_email,
         req_data.order,
         req_data.sequence,
@@ -473,9 +504,7 @@ async def handle_recycle_delete(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await asyncio.to_thread(
-        file_service.delete_from_recycle, user_email, req_data.id_list
-    )
+    response = await file_service.delete_from_recycle(user_email, req_data.id_list)
 
     return web.json_response(response.to_dict())
 
@@ -489,9 +518,7 @@ async def handle_recycle_revert(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await asyncio.to_thread(
-        file_service.revert_from_recycle, user_email, req_data.id_list
-    )
+    response = await file_service.revert_from_recycle(user_email, req_data.id_list)
 
     return web.json_response(response.to_dict())
 
@@ -504,7 +531,7 @@ async def handle_recycle_clear(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await asyncio.to_thread(file_service.clear_recycle, user_email)
+    response = await file_service.clear_recycle(user_email)
 
     return web.json_response(response.to_dict())
 
@@ -518,9 +545,7 @@ async def handle_file_search(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    results = await asyncio.to_thread(
-        file_service.search_files, user_email, req_data.keyword
-    )
+    results = await file_service.search_files(user_email, req_data.keyword)
 
     response = FileSearchResponse(entries=results)
 
