@@ -10,11 +10,13 @@ ScheduleTaskGroupItem:
     title:
       type: string
     lastModified:
+      description: Timestamp in milliseconds
       type: integer
       format: int64
     isDeleted:
       type: string
     createTime:
+      description: Timestamp in milliseconds
       type: integer
       format: int64
 
@@ -31,19 +33,24 @@ ScheduleRecurTaskItem:
       type: integer
       format: int64
     lastModified:
+      description: Timestamp in milliseconds
       type: integer
       format: int64
     dueTime:
+      description: Timestamp in milliseconds
       type: integer
       format: int64
     completedTime:
+      description: Timestamp in milliseconds
       type: integer
       format: int64
     status:
+      description: Task status string either 'needsAction' or 'completed'
       type: string
     isDeleted:
       type: string
     sort:
+      description: Sort order index
       type: integer
     sortCompleted:
       type: integer
@@ -75,27 +82,35 @@ ScheduleTaskInfo:
     detail:
       type: string
     lastModified:
+      description: Timestamp in milliseconds
       type: integer
       format: int64
     recurrence:
       type: string
     isReminderOn:
+      description: "Whether the reminder is enabled. 'Y' for yes, 'N' for no."
       type: string
     status:
+      description: Task status string
       type: string
     importance:
+      description: Task importance level
       type: string
     dueTime:
+      description: Timestamp in milliseconds
       type: integer
       format: int64
     completedTime:
+      description: Timestamp in milliseconds
       type: integer
       format: int64
     links:
       type: string
+      description: Base64 encoded json description of a link to a document with fields 'appName', 'fileId', 'path', "page', 'pageId'
     isDeleted:
       type: string
     sort:
+      description: Sort order index
       type: integer
     sortCompleted:
       type: integer
@@ -129,9 +144,11 @@ AddScheduleTaskGroupDTO:
     title:
       type: string
     lastModified:
+      description: Timestamp in milliseconds
       type: integer
       format: int64
     createTime:
+      description: Timestamp in milliseconds
       type: integer
       format: int64
 
@@ -146,6 +163,7 @@ UpdateScheduleTaskGroupDTO:
     title:
       type: string
     lastModified:
+      description: Timestamp in milliseconds
       type: integer
       format: int64
 
@@ -158,6 +176,7 @@ ClearScheduleTaskGroupDTO:
     taskListId:
       type: string
     lastModified:
+      description: Timestamp in milliseconds
       type: integer
       format: int64
 
@@ -185,20 +204,26 @@ AddScheduleTaskDTO:
     detail:
       type: string
     lastModified:
+      description: Timestamp in milliseconds
       type: integer
       format: int64
     recurrence:
       type: string
     isReminderOn:
+      description: "Whether the reminder is enabled. 'Y' for yes, 'N' for no."
       type: string
     status:
+      description: Task status string
       type: string
     importance:
+      description: Task importance level
       type: string
     dueTime:
+      description: Timestamp in milliseconds
       type: integer
       format: int64
     completedTime:
+      description: Timestamp in milliseconds
       type: integer
       format: int64
     links:
@@ -206,6 +231,7 @@ AddScheduleTaskDTO:
     isDeleted:
       type: string
     sort:
+      description: Sort order index
       type: integer
     sortCompleted:
       type: integer
@@ -243,20 +269,26 @@ UpdateScheduleTaskDTO:
     detail:
       type: string
     lastModified:
+      description: Timestamp in milliseconds
       type: integer
       format: int64
     recurrence:
       type: string
     isReminderOn:
+      description: "Whether the reminder is enabled. 'Y' for yes, 'N' for no."
       type: string
     status:
+      description: Task status string
       type: string
     importance:
+      description: Task importance level
       type: string
     dueTime:
+      description: Timestamp in milliseconds
       type: integer
       format: int64
     completedTime:
+      description: Timestamp in milliseconds
       type: integer
       format: int64
     links:
@@ -264,6 +296,7 @@ UpdateScheduleTaskDTO:
     isDeleted:
       type: string
     sort:
+      description: Sort order index
       type: integer
     sortCompleted:
       type: integer
@@ -312,6 +345,7 @@ ScheduleSortDTO:
     title:
       type: string
     lastModify:
+      description: Timestamp in milliseconds
       type: integer
       format: int64
     content:
@@ -346,11 +380,13 @@ GetScheduleTaskGroupVO:
         title:
           type: string
         lastModified:
+          description: Timestamp in milliseconds
           type: integer
           format: int64
         isDeleted:
           type: string
         createTime:
+          description: Timestamp in milliseconds
           type: integer
           format: int64
 
@@ -402,20 +438,26 @@ ScheduleTaskVO:
         detail:
           type: string
         lastModified:
+          description: Timestamp in milliseconds
           type: integer
           format: int64
         recurrence:
           type: string
         isReminderOn:
+          description: "Whether the reminder is enabled. 'Y' for yes, 'N' for no."
           type: string
         status:
+          description: Task status string
           type: string
         importance:
+          description: Task importance level
           type: string
         dueTime:
+          description: Timestamp in milliseconds
           type: integer
           format: int64
         completedTime:
+          description: Timestamp in milliseconds
           type: integer
           format: int64
         links:
@@ -423,6 +465,7 @@ ScheduleTaskVO:
         isDeleted:
           type: string
         sort:
+          description: Sort order index
           type: integer
         sortCompleted:
           type: integer
@@ -473,6 +516,7 @@ GetScheduleSortVO:
         title:
           type: string
         lastModify:
+          description: Timestamp in milliseconds
           type: integer
           format: int64
         content:
