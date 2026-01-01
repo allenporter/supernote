@@ -21,7 +21,7 @@ async def test_group_crud(schedule_service: ScheduleService) -> None:
 
     # List
     groups = await schedule_service.list_groups(user_id)
-    assert len(groups) >= 1
+    assert len(groups) == 1
     assert any(g.task_list_id == group.task_list_id for g in groups)
 
     # Delete
@@ -32,7 +32,40 @@ async def test_group_crud(schedule_service: ScheduleService) -> None:
     assert not any(g.task_list_id == group.task_list_id for g in groups_after)
 
 
+async def test_group_names_are_not_unique(schedule_service: ScheduleService) -> None:
+    """Test that group names are not unique."""
+    user_id = 999
+
+    # Create two groups with the same name
+    group1 = await schedule_service.create_group(user_id, "Work")
+    assert group1.task_list_id is not None
+    assert group1.title == "Work"
+    assert group1.user_id == user_id
+
+    group2 = await schedule_service.create_group(user_id, "Work")
+    assert group2.task_list_id is not None
+    assert group2.title == "Work"
+    assert group2.user_id == user_id
+
+    # Each group should be unique
+    groups = await schedule_service.list_groups(user_id)
+    assert len(groups) == 2
+    assert [g.title for g in groups] == ["Work", "Work"]
+
+    assert group1.task_list_id != group2.task_list_id
+
+    # Delete the first group
+    deleted = await schedule_service.delete_group(user_id, group1.task_list_id)
+    assert deleted
+
+    # List groups again
+    groups = await schedule_service.list_groups(user_id)
+    assert len(groups) == 1
+    assert groups[0].task_list_id == group2.task_list_id
+
+
 async def test_task_crud(schedule_service: ScheduleService) -> None:
+    """Test task level operations."""
     user_id = 888
     group = await schedule_service.create_group(user_id, "Inbox")
 
