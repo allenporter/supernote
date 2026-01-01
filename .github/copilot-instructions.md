@@ -9,9 +9,12 @@
   - `fileformat.py`: Defines file structure constants and metadata classes.
   - `converter.py`: Converts parsed data to PNG, SVG, PDF, TXT.
   - `decoder.py`: Decodes binary layer data.
+- **API Models (`supernote/models/`)**:
+  - This directory contains data objects models using `mashumaro` for JSON serialization.
 - **Cloud (`supernote/cloud/`)**:
   - `client.py`: Async HTTP client using `aiohttp`.
-  - `api_model.py`: Data models using `mashumaro` for JSON serialization.
+  - `login_client.py`: Higher level login client using `aiohttp`.
+  - `cloud_client.py`: Higher level cloud client using `aiohttp`.
   - `auth.py`: Authentication strategies (`AbstractAuth`, `FileCacheAuth`).
 - **Server (`supernote/server/`)**:
   - **Protocol**: Implements the Supernote Cloud protocol (see `supernote/server/ARCHITECTURE.md`).
