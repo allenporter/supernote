@@ -12,19 +12,30 @@ from .exceptions import ApiException, ForbiddenException, UnauthorizedException
 
 _LOGGER = logging.getLogger(__name__)
 
-API_URL = "https://cloud.supernote.com/api"
+__all__ = [
+    "Client",
+]
+
+
+_T = TypeVar("_T", bound=BaseResponse)
+
+CLOUD_API_URL = "https://cloud.supernote.com"
 HEADERS = {
     "Content-Type": "application/json",
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
-    "Referer": "https://cloud.supernote.com/",
-    "Origin": "https://cloud.supernote.com",
 }
 ACCESS_TOKEN = "x-access-token"
 XSRF_COOKIE = "XSRF-TOKEN"
 XSRF_HEADER = "X-XSRF-TOKEN"
 
-
-_T = TypeVar("_T", bound=BaseResponse)
+def _create_headers(host: str | None = None) -> dict[str, Any]:
+    headers = {
+        **HEADERS,
+    }
+    if host:
+        headers["Referer"] = host
+        headers["Origin"] = host
+    return headers
 
 
 class Client:
@@ -38,7 +49,7 @@ class Client:
     ):
         """Initialize the auth."""
         self._websession = websession
-        self._host = host or API_URL
+        self._host = host or CLOUD_API_URL
         self._auth = auth
         self._xsrf_token: str | None = None
 
@@ -51,9 +62,7 @@ class Client:
     ) -> aiohttp.ClientResponse:
         """Make a request."""
         if headers is None:
-            headers = {
-                **HEADERS,
-            }
+            headers = _create_headers(self._host)
         # Always get a fresh CSRF token
         self._xsrf_token = await self._get_csrf_token()
         headers[XSRF_HEADER] = self._xsrf_token
@@ -62,7 +71,9 @@ class Client:
             access_token = await self._auth.async_get_access_token()
             headers[ACCESS_TOKEN] = access_token
         if not (url.startswith("http://") or url.startswith("https://")):
-            url = f"{self._host}/{url}"
+            if not url.startswith("/"):
+                url = f"/{url}"
+            url = f"{self._host}{url}"
         _LOGGER.debug(
             "request[%s]=%s %s %s",
             method,
@@ -131,7 +142,7 @@ class Client:
 
     async def _get_csrf_token(self) -> str:
         """Get the CSRF token."""
-        url = f"{self._host}/csrf"
+        url = f"{self._host}/api/csrf"
         _LOGGER.debug("CSRF request[get]=%s %s", url, HEADERS)
         resp = await self._websession.request("get", url, headers=HEADERS)
         try:

@@ -1,6 +1,6 @@
 """Tests for the client library."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import aiohttp.test_utils
 import pytest
@@ -75,7 +75,7 @@ async def handler_malformed_json(request: web.Request) -> web.Response:
 async def client_fixture(aiohttp_client: aiohttp.test_utils.TestClient) -> Client:
     """Fixture for Client instance."""
     app = web.Application()
-    app.router.add_get("/csrf", handler_csrf)
+    app.router.add_get("/api/csrf", handler_csrf)
     app.router.add_get("/test-url", handler_test_url)
     app.router.add_post("/post-url", handler_post_url)
     app.router.add_get("/error-401", handler_401)
@@ -143,7 +143,7 @@ async def test_api_exception_success_false(client: Client) -> None:
 async def test_auth_token(aiohttp_client: aiohttp.test_utils.TestClient) -> None:
     """Test authentication token injection."""
     app = web.Application()
-    app.router.add_get("/csrf", handler_csrf)
+    app.router.add_get("/api/csrf", handler_csrf)
     app.router.add_get("/auth-check", handler_auth_check)
 
     test_client = await aiohttp_client(app)  # type: ignore[operator]
@@ -152,6 +152,43 @@ async def test_auth_token(aiohttp_client: aiohttp.test_utils.TestClient) -> None
     auth = ConstantAuth("my-token")
     client = Client(test_client.session, host=base_url.rstrip("/"), auth=auth)
 
-    response = await client.get_json("auth-check", SimpleResponse)
+    response = await client.get_json("/auth-check", SimpleResponse)
     assert response.success
     assert response.data == "authorized"
+
+
+async def test_headers_with_referrer(
+    aiohttp_client: aiohttp.test_utils.TestClient,
+) -> None:
+    """Test that headers include referrer given a host."""
+
+    @dataclass
+    class HeadersResponse(BaseResponse):
+        data: dict[str, str] = field(default_factory=dict)
+
+    async def handler_headers(request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "success": True,
+                "data": dict(request.headers),
+            }
+        )
+
+    # Local CSRF handler to return token in headers as expected by Client
+    async def handler_csrf(request: web.Request) -> web.Response:
+        return web.Response(text="ok", headers={"X-XSRF-TOKEN": "test-token"})
+
+    app = web.Application()
+    app.router.add_get("/api/csrf", handler_csrf)
+    app.router.add_get("/headers", handler_headers)
+
+    test_client = await aiohttp_client(app)  # type: ignore[operator]
+    base_url = str(test_client.make_url(""))
+
+    client = Client(test_client.session, host=base_url)
+
+    response = await client.get_json("headers", HeadersResponse)
+    assert response.success
+    headers = response.data
+    assert headers.get("Referer") == base_url.rstrip("/")
+    assert headers.get("Origin") == base_url.rstrip("/")

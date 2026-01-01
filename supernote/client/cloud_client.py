@@ -29,7 +29,7 @@ class SupernoteClient:
         """Query the user."""
         payload = QueryUserRequest(country_code=1, account=account).to_dict()
         return await self._client.post_json(
-            "user/query", QueryUserResponse, json=payload
+            "/api/user/query", QueryUserResponse, json=payload
         )
 
     async def file_list(self, directory_id: int = 0) -> FileListResponse:
@@ -42,14 +42,14 @@ class SupernoteClient:
             sequence="desc",
         ).to_dict()
         return await self._client.post_json(
-            "file/list/query", FileListResponse, json=payload
+            "/api/file/list/query", FileListResponse, json=payload
         )
 
     async def file_download(self, file_id: int) -> bytes:
         """Download a file."""
         payload = GetFileDownloadUrlRequest(file_id=file_id, file_type=0).to_dict()
         download_url_response = await self._client.post_json(
-            "file/download/url", GetFileDownloadUrlResponse, json=payload
+            "/api/file/download/url", GetFileDownloadUrlResponse, json=payload
         )
         response = await self._client.get(download_url_response.url)
         return await response.read()

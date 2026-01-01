@@ -1,6 +1,7 @@
 """Tests for the login flow."""
 
 import hashlib
+from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
 import aiohttp
@@ -51,9 +52,9 @@ async def client_fixture(
     ],
 ) -> Client:
     app = web.Application()
-    app.router.add_get("/csrf", handler_csrf)
-    app.router.add_post("/official/user/query/random/code", handler_random_code)
-    app.router.add_post("/official/user/account/login/new", handler_login_new)
+    app.router.add_get("/api/csrf", handler_csrf)
+    app.router.add_post("/api/official/user/query/random/code", handler_random_code)
+    app.router.add_post("/api/official/user/account/login/new", handler_login_new)
 
     test_client = await aiohttp_client(app)
     base_url = str(test_client.make_url(""))
@@ -64,7 +65,7 @@ async def test_login_flow(client: Client) -> None:
     """Test the full login flow."""
     # Step 1: Get random code
     code_resp = await client.post_json(
-        "official/user/query/random/code",
+        "/api/official/user/query/random/code",
         UserRandomCodeResponse,
         json={"account": "test@example.com", "countryCode": 1},
     )
@@ -77,7 +78,7 @@ async def test_login_flow(client: Client) -> None:
 
     # Step 3: Login
     login_resp = await client.post_json(
-        "official/user/account/login/new",
+        "/api/official/user/account/login/new",
         UserLoginResponse,
         json={
             "account": "test@example.com",
@@ -92,3 +93,43 @@ async def test_login_flow(client: Client) -> None:
     )
     assert login_resp.success
     assert login_resp.token == "new-access-token"
+
+
+async def test_login_headers(
+    aiohttp_client: Callable[
+        [web.Application], Awaitable[aiohttp.test_utils.TestClient]
+    ],
+) -> None:
+    """Test login headers."""
+
+    async def handler_headers(request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "success": True,
+                "data": dict(request.headers),
+            }
+        )
+
+    # Simplified CSRF handler
+    async def handler_csrf(request: web.Request) -> web.Response:
+        return web.Response(text="ok", headers={"X-XSRF-TOKEN": "test-token"})
+
+    app = web.Application()
+    app.router.add_get("/api/csrf", handler_csrf)
+    # We hijack the login endpoint path to check headers
+    app.router.add_post("/api/official/user/account/login/new", handler_headers)
+
+    test_client = await aiohttp_client(app)
+    base_url = str(test_client.make_url(""))
+    client = Client(test_client.session, host=base_url.rstrip("/"))
+
+    # Call the endpoint
+    response = await client.post(
+        "/api/official/user/account/login/new",
+        json={"some": "payload"}
+    )
+    data = await response.json()
+    
+    headers = data["data"]
+    assert headers.get("Referer") == base_url.rstrip("/")
+    assert headers.get("Origin") == base_url.rstrip("/")
