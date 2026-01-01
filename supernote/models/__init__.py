@@ -6,5 +6,6 @@ __all__ = [
     "auth",
     "file",
     "user",
+    "equipment",
     "base",
 ]
