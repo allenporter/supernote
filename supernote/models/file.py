@@ -800,6 +800,216 @@ class FileQueryLocalDTO(DataClassJSONMixin):
 
 
 @dataclass
+class FolderFileAddDTO(DataClassJSONMixin):
+    """Request model for adding a folder or file.
+
+    Used by:
+        /api/file/add/folder/file (POST)
+    """
+
+    file_name: str = field(metadata=field_options(alias="fileName"))
+    """The name of the file or folder to be added (allows renaming)."""
+
+    file_id: int = field(metadata=field_options(alias="fileId"))
+    """The ID of the file or folder to be added."""
+
+    directory_id: int = field(metadata=field_options(alias="directoryId"))
+    """Represents the source directory ID where the file or folder currently exists."""
+
+    go_directory_id: int = field(metadata=field_options(alias="goDirectoryId"))
+    """Represents the destination directory ID where the file or folder will be moved to."""
+
+    is_folder: str = field(metadata=field_options(alias="isFolder"))
+    """Y: Folder, N: File"""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class TerminalFileUploadApplyDTO(DataClassJSONMixin):
+    """Request model for initiating a terminal file upload.
+
+    Used by:
+        /api/file/terminal/upload/apply (POST)
+    """
+
+    file_size: str = field(metadata=field_options(alias="fileSize"))
+    file_name: str = field(metadata=field_options(alias="fileName"))
+    md5: str
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
+    file_path: str | None = field(
+        metadata=field_options(alias="filePath"), default=None
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class TerminalFileUploadFinishDTO(DataClassJSONMixin):
+    """Request model for completing a terminal file upload.
+
+    Used by:
+        /api/file/terminal/upload/finish (POST)
+    """
+
+    file_size: str = field(metadata=field_options(alias="fileSize"))
+    file_name: str = field(metadata=field_options(alias="fileName"))
+    md5: str
+    inner_name: str = field(metadata=field_options(alias="innerName"))
+    modify_time: str = field(metadata=field_options(alias="modifyTime"))
+    upload_time: str = field(metadata=field_options(alias="uploadTime"))
+
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
+    file_path: str | None = field(
+        metadata=field_options(alias="filePath"), default=None
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class FileQueryV2DTO(DataClassJSONMixin):
+    """Request model for querying file info V2.
+
+    Used by:
+        /api/file/2/files (POST)
+    """
+
+    id: str
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass(kw_only=True)
+class FileQueryV2VO(BaseResponse):
+    """Response model for file query V2.
+
+    Used by:
+        /api/file/2/files (POST)
+    """
+
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
+    entries_vo: EntriesVO | None = field(
+        metadata=field_options(alias="entriesVO"), default=None
+    )
+
+
+@dataclass
+class FileQueryByPathV2DTO(DataClassJSONMixin):
+    """Request model for querying file by path V2.
+
+    Used by:
+        /api/file/2/files/query_by_path
+    """
+
+    file_name: str | None = field(
+        metadata=field_options(alias="fileName"), default=None
+    )
+    path: str | None = None
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass(kw_only=True)
+class FileQueryByPathV2VO(BaseResponse):
+    """Response model for file query by path V2.
+
+    Used by:
+        /api/file/2/files/query_by_path
+    """
+
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
+    entries_vo: EntriesVO | None = field(
+        metadata=field_options(alias="entriesVO"), default=None
+    )
+
+
+@dataclass
+class PdfDTO(DataClassJSONMixin):
+    """Request model to convert note to PDF.
+
+    Used by:
+        /api/file/note/to/pdf (POST)
+    """
+
+    id: int
+    page_no_list: List[int] | None = field(
+        metadata=field_options(alias="pageNoList"), default=None
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class PdfVO(BaseResponse):
+    """Response model for PDF conversion.
+
+    Used by:
+        /api/file/note/to/pdf (POST)
+    """
+
+    url: str | None = None
+
+
+@dataclass
+class PngDTO(DataClassJSONMixin):
+    """Request model to convert note to PNG.
+
+    Used by:
+        /api/file/note/to/png (POST)
+    """
+
+    id: int
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class PngPageVO(DataClassJSONMixin):
+    """Object representing a PNG page."""
+
+    page_no: int | None = field(metadata=field_options(alias="pageNo"), default=None)
+    url: str | None = None
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class PngVO(BaseResponse):
+    """Response model for PNG conversion.
+
+    Used by:
+        /api/file/note/to/png (POST)
+    """
+
+    png_page_vo_list: List[PngPageVO] | None = field(
+        metadata=field_options(alias="pngPageVOList"), default=None
+    )
+
+
+@dataclass
 class FileQueryLocalVO(BaseResponse):
     """Response model containing file info (Device).
 
