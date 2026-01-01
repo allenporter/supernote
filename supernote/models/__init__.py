@@ -7,5 +7,6 @@ __all__ = [
     "file",
     "user",
     "equipment",
+    "schedule",
     "base",
 ]
