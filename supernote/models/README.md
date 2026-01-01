@@ -11,6 +11,9 @@ responsibilities to have a common mental model for how the system works.
 
 ## 1. Authentication & User Management
 
+See `supernote.models.auth` and `supernote.models.user` for more information
+on the data models related to these API endpoints.
+
 ### Login & Logout
 
 The LoginController is the main controller for handling user login and logout requests.
@@ -69,6 +72,8 @@ The AccountController is the main controller for handling account settings reque
 ---
 
 ## 2. File Management (Web & General)
+
+See `supernote.models.file` for more information on the data models related to these API endpoints.
 
 ### Web File Operations
 
