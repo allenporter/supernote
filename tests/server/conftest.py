@@ -12,6 +12,7 @@ import jwt
 import pytest
 
 from supernote.server.config import AuthConfig, ServerConfig, UserEntry
+from supernote.server.services.coordination import LocalCoordinationService
 from supernote.server.services.state import StateService
 from supernote.server.services.user import JWT_ALGORITHM
 from tests.conftest import TEST_PASSWORD, TEST_USERNAME
@@ -49,9 +50,6 @@ def patch_server_config(server_config: ServerConfig) -> Generator[None, None, No
     """Automatically patch server config for all server tests."""
     with patch("supernote.server.config.ServerConfig.load", return_value=server_config):
         yield
-
-
-from supernote.server.services.coordination import LocalCoordinationService
 
 
 @pytest.fixture
