@@ -55,6 +55,10 @@ class BooleanEnum(str, BaseEnum):
     YES = "Y"
     NO = "N"
 
+    @classmethod
+    def of(cls, value: bool) -> Self:
+        return cls.YES if value else cls.NO
+
 
 @dataclass
 class CommonList(BaseResponse):
