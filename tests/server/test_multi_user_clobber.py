@@ -41,9 +41,16 @@ def multi_user_config(mock_storage: Path, mock_trace_log: str) -> ServerConfig:
     )
 
 
-def register_session(app, user: str, secret: str) -> dict[str, str]:  # type: ignore[no-untyped-def]
+async def register_session(app, user: str, secret: str) -> dict[str, str]:  # type: ignore[no-untyped-def]
     token = jwt.encode({"sub": user}, secret, algorithm=JWT_ALGORITHM)
     app["state_service"].create_session(token, user)
+
+    # Also seed CoordinationService
+    session_val = f"{user}|"
+    await app["coordination_service"].set_value(
+        f"session:{token}", session_val, ttl=3600
+    )
+
     return {"x-access-token": token}
 
 
@@ -53,8 +60,8 @@ async def test_multi_user_clobber(
     app = create_app(multi_user_config)
     client = await aiohttp_client(app)
 
-    headers_a = register_session(app, USER_A, multi_user_config.auth.secret_key)
-    headers_b = register_session(app, USER_B, multi_user_config.auth.secret_key)
+    headers_a = await register_session(app, USER_A, multi_user_config.auth.secret_key)
+    headers_b = await register_session(app, USER_B, multi_user_config.auth.secret_key)
 
     # 1. User A uploads a file
     filename = "shared.note"

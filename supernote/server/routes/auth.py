@@ -70,9 +70,7 @@ async def handle_random_code(request: web.Request) -> web.Response:
     req_data = await request.json()
     code_req = RandomCodeRequest.from_dict(req_data)
     user_service: UserService = request.app["user_service"]
-    random_code, timestamp = await asyncio.to_thread(
-        user_service.generate_random_code, code_req.account
-    )
+    random_code, timestamp = await user_service.generate_random_code(code_req.account)
     return web.json_response(
         RandomCodeResponse(random_code=random_code, timestamp=timestamp).to_dict()
     )
@@ -89,8 +87,7 @@ async def handle_login(request: web.Request) -> web.Response:
     req_data = await request.json()
 
     login_req = LoginRequest.from_dict(req_data)
-    result = await asyncio.to_thread(
-        user_service.login,
+    result = await user_service.login(
         account=login_req.account,
         password_hash=login_req.password,
         timestamp=login_req.timestamp or "",

@@ -37,6 +37,10 @@ server = [
   "mashumaro>=3.17",
   "pyyaml>=6.0",
   "PyJWT>=2.10.1",
+  "SQLAlchemy[asyncio]>=2.0.0",
+  "alembic>=1.13.0",
+  "aiosqlite>=0.19.0",
+  "aiofiles>=25.1.0",
 ]
 all = ["supernote[client,server]"]
 
