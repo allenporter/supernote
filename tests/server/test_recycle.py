@@ -15,7 +15,7 @@ async def test_soft_delete_to_recycle(
     item_id = int(entry.id)
 
     # Delete (soft delete to recycle bin)
-    await file_client.delete_folder(folder_id=item_id, equipment_no="SN123456")
+    await file_client.delete(id=item_id, equipment_no="SN123456")
 
     # Verify not in main folder
     list_folder_result = await file_client.list_folder(
@@ -45,7 +45,7 @@ async def test_recycle_revert(
     entry = next(e for e in list_folder_result.entries if e.name == "ToRestore")
     item_id = int(entry.id)
 
-    await file_client.delete_folder(folder_id=item_id, equipment_no="SN123456")
+    await file_client.delete(id=item_id, equipment_no="SN123456")
 
     # Get recycle bin item ID
     recycle_list_result = await file_client.recycle_list(page_no=1, page_size=20)
@@ -80,7 +80,7 @@ async def test_recycle_permanent_delete(
     entry = next(e for e in list_folder_result.entries if e.name == "ToDelete")
     item_id = int(entry.id)
 
-    await file_client.delete_folder(folder_id=item_id, equipment_no="SN123456")
+    await file_client.delete(id=item_id, equipment_no="SN123456")
 
     # Get recycle bin item ID
     recycle_list_result = await file_client.recycle_list(page_no=1, page_size=20)
@@ -119,9 +119,7 @@ async def test_recycle_clear(
     assert len(list_folder_result.entries) == 6
 
     for entry in list_folder_result.entries:
-        await file_client.delete_folder(
-            folder_id=int(entry.id), equipment_no="SN123456"
-        )
+        await file_client.delete(id=int(entry.id), equipment_no="SN123456")
 
     # Verify 6 items in recycle bin
     recycle_list_result = await file_client.recycle_list(page_no=1, page_size=20)

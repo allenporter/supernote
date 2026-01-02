@@ -8,6 +8,7 @@ from supernote.client import Client
 from supernote.client.auth import ConstantAuth
 from supernote.client.file import FileClient
 from supernote.server.config import ServerConfig
+from supernote.server.services.blob import BlobStorage
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import JWT_ALGORITHM
 
@@ -36,9 +37,79 @@ async def register_session(
     return {"x-access-token": token}
 
 
-# TODO: Add another test here for users uploading content with the same hash and
-# verifying there is no interference at the blob storage level when content
-# is deleted, modified, etc.
+async def test_multi_user_content_with_same_hash(
+    client: TestClient,
+    coordination_service: CoordinationService,
+    server_config: ServerConfig,
+    blob_storage: BlobStorage,
+    create_test_user: None,
+) -> None:
+    """Test that users uploading same content (same hash) share blob but don't clobber."""
+    # Setup Users
+    headers_a = await register_session(
+        coordination_service, USER_A, server_config.auth.secret_key
+    )
+    token_a = headers_a["x-access-token"]
+
+    headers_b = await register_session(
+        coordination_service, USER_B, server_config.auth.secret_key
+    )
+    token_b = headers_b["x-access-token"]
+
+    base_url = str(client.make_url(""))
+
+    client_a = Client(client.session, auth=ConstantAuth(token_a), host=base_url)
+    file_client_a = FileClient(client_a)
+
+    client_b = Client(client.session, auth=ConstantAuth(token_b), host=base_url)
+    file_client_b = FileClient(client_b)
+
+    # Common Content
+    common_content = b"Shared Content Block"
+    common_hash = hashlib.md5(common_content).hexdigest()
+
+    # User A uploads
+    await file_client_a.upload_content(
+        path="/doc_a.txt",
+        content=common_content,
+        equipment_no="EQ001",
+    )
+
+    # User B uploads SAME content
+    await file_client_b.upload_content(
+        path="/doc_b.txt",
+        content=common_content,
+        equipment_no="EQ002",
+    )
+
+    # Verify Blob Exists
+    assert await blob_storage.exists(common_hash)
+
+    # User A Deletes their file
+    # Get ID first
+    info_a = await file_client_a.query_by_path(path="/doc_a.txt", equipment_no="EQ001")
+    assert info_a.entries_vo
+    file_id_a = info_a.entries_vo.id
+
+    await file_client_a.delete(id=int(file_id_a), equipment_no="EQ001")
+
+    # Verify Blob STILL Exists (User B still has it)
+    # Note: Our current simple implementation might NOT ref-count blobs,
+    # but it definitively should NOT delete the blob if another user has it.
+    # Actually, the current deletion logic (in FileService/VFS) usually just marks VFS node as valid='N' (recycle bin)
+    # or deletes the node. It generally does NOT delete the physical blob immediately unless a GC runs.
+    # However, IF it did attempt to delete the blob, we want to ensure it doesn't break User B.
+
+    assert await blob_storage.exists(common_hash), (
+        "Blob should persist after User A delete"
+    )
+
+    # User B should still be able to download/read
+    # We can check by downloading or just ensuring existence is enough for now logic-wise.
+    downloaded_b = await file_client_b.download_content(
+        path="/doc_b.txt", equipment_no="EQ002"
+    )
+    assert downloaded_b == common_content
 
 
 async def test_multi_user_content_with_same_paths(
