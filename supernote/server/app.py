@@ -122,20 +122,20 @@ def create_db_session_manager(db_url: str) -> DatabaseSessionManager:
     return DatabaseSessionManager(db_url)
 
 
-def create_app(
-    config: ServerConfig,
-    state_service: StateService | None = None,
-) -> web.Application:
+def create_coordination_service() -> LocalCoordinationService:
+    return LocalCoordinationService()
+
+
+def create_app(config: ServerConfig) -> web.Application:
     app = web.Application(middlewares=[trace_middleware, jwt_auth_middleware])
     app["config"] = config
 
     # Initialize services
     blob_storage = LocalBlobStorage(config.storage_root)
-    if state_service is None:
-        state_service = StateService(config.storage_root / "system" / "state.json")
+    state_service = StateService(config.storage_root / "system" / "state.json")
 
     session_manager = create_db_session_manager(config.db_url)
-    coordination_service = LocalCoordinationService()
+    coordination_service = create_coordination_service()
 
     app["session_manager"] = session_manager
     app["state_service"] = state_service

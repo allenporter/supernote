@@ -322,10 +322,10 @@ async def handle_upload_finish(request: web.Request) -> web.Response:
             BaseResponse(success=False, error_msg="Upload not found").to_dict(),
             status=404,
         )
-    except ValueError:
+    except ValueError as err:
         return web.json_response(
             BaseResponse(
-                success=False, error_msg="Failure processing upload e.g. hash mismatch"
+                success=False, error_msg=f"Failure processing upload: {err}"
             ).to_dict(),
             status=400,
         )
@@ -407,11 +407,23 @@ async def handle_download_data(request: web.Request) -> web.StreamResponse:
         return web.Response(status=404, text="Blob not found")
 
     # Stream the content directly form blob storage
-    blob_path = file_service.blob_storage.get_blob_path(content_hash)
-    return web.FileResponse(
-        blob_path,
-        headers={"Content-Disposition": f'attachment; filename="{info.name}"'},
+    # Stream the content directly form blob storage
+    response = web.StreamResponse(
+        headers={"Content-Disposition": f'attachment; filename="{info.name}"'}
     )
+    await response.prepare(request)
+
+    try:
+        async with file_service.blob_storage.open_blob(content_hash) as f:
+            while True:
+                chunk = await f.read(8192)
+                if not chunk:
+                    break
+                await response.write(chunk)
+    except FileNotFoundError:
+        return web.Response(status=404, text="Blob not found")
+
+    return response
 
 
 @routes.post("/api/file/2/files/create_folder_v2")

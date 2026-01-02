@@ -13,6 +13,7 @@ from supernote.client.client import Client
 from supernote.client.exceptions import UnauthorizedException
 from supernote.client.login_client import LoginClient
 from supernote.server.db.models.file import UserFileDO
+from supernote.server.db.session import DatabaseSessionManager
 from tests.server.conftest import (
     TEST_PASSWORD,
     TEST_USERNAME,
@@ -139,6 +140,7 @@ async def test_sync_start_syn_type(
     auth_headers: dict[str, str],
     storage_root: Path,
     user_storage: UserStorageHelper,
+    session_manager: DatabaseSessionManager,
 ) -> None:
     # Clear storage root for test
     if storage_root.exists():
@@ -146,7 +148,7 @@ async def test_sync_start_syn_type(
     storage_root.mkdir(parents=True, exist_ok=True)
 
     # Clear VFS state for this user
-    async with user_storage.session_manager.session() as session:
+    async with session_manager.session() as session:
         # Delete all nodes for simplicity. In a real shared DB this would be bad,
         # but here we are in a test environment with a shared in-memory DB.
         # Ideally we filter by user_id but we need to resolve it first.
