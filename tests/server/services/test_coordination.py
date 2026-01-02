@@ -1,16 +1,19 @@
 import asyncio
 
+import freezegun
+
 from tests.server.services.fakes import FakeCoordinationService
 
 
 async def test_key_expiry() -> None:
-    service = FakeCoordinationService()
-    await service.set_value("foo", "bar", ttl=1)
+    with freezegun.freeze_time("2024-01-01 12:00:00") as frozen_time:
+        service = FakeCoordinationService()
+        await service.set_value("foo", "bar", ttl=1)
 
-    assert await service.get_value("foo") == "bar"
+        assert await service.get_value("foo") == "bar"
 
-    await asyncio.sleep(1.1)
-    assert await service.get_value("foo") is None
+        frozen_time.tick(1.1)
+        assert await service.get_value("foo") is None
 
 
 async def test_locks() -> None:
