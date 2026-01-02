@@ -3,9 +3,11 @@ from pathlib import Path
 
 import jwt
 import pytest
-from aiohttp import FormData
+from aiohttp.test_utils import TestClient
 
 from supernote.client import Client
+from supernote.client.auth import ConstantAuth
+from supernote.client.file import FileClient
 from supernote.server.config import AuthConfig, ServerConfig, UserEntry
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import JWT_ALGORITHM
@@ -59,113 +61,80 @@ async def register_session(
     return {"x-access-token": token}
 
 
-async def test_multi_user_clobber(
-    client: Client,
+# TODO: Add another test here for users uploading content with the same hash and
+# verifying there is no interference at the blob storage level when content
+# is deleted, modified, etc.
+
+
+async def test_multi_user_content_with_same_paths(
+    client: TestClient,
     coordination_service: CoordinationService,
     server_config: ServerConfig,
 ) -> None:
+    """Test that users can upload distrinct content with the same path."""
+    # Setup Users
     headers_a = await register_session(
         coordination_service, USER_A, server_config.auth.secret_key
     )
+    token_a = headers_a["x-access-token"]
+
     headers_b = await register_session(
         coordination_service, USER_B, server_config.auth.secret_key
     )
+    token_b = headers_b["x-access-token"]
 
-    # 1. User A uploads a file
+    base_url = str(client.make_url(""))
+
+    client_a = Client(client.session, auth=ConstantAuth(token_a), host=base_url)
+    file_client_a = FileClient(client_a)
+
+    client_b = Client(client.session, auth=ConstantAuth(token_b), host=base_url)
+    file_client_b = FileClient(client_b)
+
+    # User A uploads a file
     filename = "shared.note"
     content_a = b"User A content"
     hash_a = hashlib.md5(content_a).hexdigest()
 
-    # Upload data for User A
-    data_a = FormData()
-    data_a.add_field("file", content_a, filename=filename)
-    resp = await client.post(
-        f"/api/file/upload/data/{filename}", data=data_a, headers=headers_a
+    await file_client_a.upload_content(
+        path=f"/{filename}",
+        content=content_a,
+        equipment_no="EQ001",
     )
-    assert resp.status == 200
-
-    # Finish upload for User A
-    resp = await client.post(
-        "/api/file/2/files/upload/finish",
-        json={
-            "equipmentNo": "EQ001",
-            "fileName": filename,
-            "path": "/",
-            "content_hash": hash_a,
-        },
-        headers=headers_a,
-    )
-    assert resp.status == 200
 
     # User A list files should see their file
-    resp = await client.post(
-        "/api/file/2/files/list_folder",
-        json={"path": "/", "equipmentNo": "EQ001"},
-        headers=headers_a,
-    )
-    assert resp.status == 200
-    data = await resp.json()
-    assert [e["name"] for e in data["entries"]] == ["shared.note"]
+    entries_a = await file_client_a.list_folder(path="/", equipment_no="EQ001")
+    assert [e.name for e in entries_a.entries] == ["shared.note"]
 
-    # 2. User B list files - SHOULD NOT see User A's file
-    resp = await client.post(
-        "/api/file/2/files/list_folder",
-        json={"path": "/", "equipmentNo": "EQ002"},
-        headers=headers_b,
-    )
-    assert resp.status == 200
-    data = await resp.json()
-    assert not any(e["name"] == filename for e in data["entries"]), (
-        "User B should not see User A's file"
-    )
+    # User B list files should NOT see User A's file
+    entries_b = await file_client_b.list_folder(path="/", equipment_no="EQ002")
+    assert [e.name for e in entries_b.entries] == []
 
-    # 3. User B uploads a file with the same name
+    # User B uploads a file with the same name
     content_b = b"Content from User B"
     hash_b = hashlib.md5(content_b).hexdigest()
 
-    form_b = FormData()
-    form_b.add_field("file", content_b, filename=filename)
-    resp = await client.post(
-        f"/api/file/upload/data/{filename}", data=form_b, headers=headers_b
+    await file_client_b.upload_content(
+        path=f"/{filename}",
+        content=content_b,
+        equipment_no="EQ002",
     )
-    assert resp.status == 200
-
-    resp = await client.post(
-        "/api/file/2/files/upload/finish",
-        json={
-            "equipmentNo": "EQ002",
-            "fileName": filename,
-            "path": "/",
-            "content_hash": hash_b,
-        },
-        headers=headers_b,
-    )
-    assert resp.status == 200
 
     # 4. User A queries their file - SHOULD STILL HAVE THEIR CONTENT
-    resp = await client.post(
-        "/api/file/3/files/query/by/path_v3",
-        json={"path": f"/{filename}", "equipmentNo": "EQ001"},
-        headers=headers_a,
+    # explicit query call wrapper doesn't verify hash automatically, we check return
+    info_a = await file_client_a.query_by_path(
+        path=f"/{filename}", equipment_no="EQ001"
     )
-    assert resp.status == 200
-    data = await resp.json()
-    assert data["success"]
-    assert data.get("entriesVO")
-    assert data["entriesVO"]["content_hash"] == hash_a, (
+    assert info_a.entries_vo
+    assert info_a.entries_vo.content_hash == hash_a, (
         "User A's file should NOT be clobbered by User B"
     )
 
     # 5. User B queries their file - SHOULD HAVE THEIR CONTENT
-    resp = await client.post(
-        "/api/file/3/files/query/by/path_v3",
-        json={"path": f"/{filename}", "equipmentNo": "EQ002"},
-        headers=headers_b,
+    info_b = await file_client_b.query_by_path(
+        path=f"/{filename}", equipment_no="EQ002"
     )
-    assert resp.status == 200
-    data = await resp.json()
-    assert data["success"]
-    assert data.get("entriesVO")
-    assert data["entriesVO"]["content_hash"] == hash_b, (
+    assert info_b.entries_vo
+    assert info_b.entries_vo.content_hash == hash_b, (
         "User B should have their own file content"
     )

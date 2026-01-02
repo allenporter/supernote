@@ -2,7 +2,6 @@ import asyncio
 import hashlib
 import logging
 import shutil
-import urllib.parse
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from pathlib import Path
 
@@ -15,7 +14,6 @@ from supernote.models.file import (
     EntriesVO,
     FileCopyLocalVO,
     FileMoveLocalVO,
-    FileUploadApplyLocalVO,
     FileUploadFinishLocalVO,
     RecycleFileListVO,
     RecycleFileVO,
@@ -259,25 +257,7 @@ class FileService:
                 last_update_time=node.update_time,
             )
 
-    def apply_upload(
-        self, user: str, file_name: str, equipment_no: str, host: str
-    ) -> FileUploadApplyLocalVO:
-        """Apply for upload by a specific user."""
-        # Note: Ideally, the upload URL should also contain user context if it's handled by a separate request
-        # But handle_upload_data currently might need to extract user from JWT or filename.
-        # Since we use filename in the URL, and handle_upload_data will extract user from request["user"].
-        encoded_name = urllib.parse.quote(file_name)
-        upload_url = f"http://{host}/api/file/upload/data/{encoded_name}"
 
-        return FileUploadApplyLocalVO(
-            equipment_no=equipment_no,
-            bucket_name="supernote-local",
-            inner_name=file_name,
-            x_amz_date="",
-            authorization="",
-            full_upload_url=upload_url,
-            part_upload_url=upload_url,
-        )
 
     async def finish_upload(
         self,

@@ -34,7 +34,6 @@ import logging
 import time
 import urllib.parse
 import uuid
-from dataclasses import dataclass
 
 import jwt
 
@@ -109,22 +108,20 @@ class UrlSigner:
         if not (signatures := query_params.get("signature")):
             logger.info("No signature found in URL: %s", signed_url)
             return False
-        
+
         signature = signatures[0]
         try:
             payload = jwt.decode(
-                signature, 
-                self.secret_key, 
-                algorithms=[self.algorithm]
+                signature, self.secret_key, algorithms=[self.algorithm]
             )
         except jwt.ExpiredSignatureError:
             logger.info("Signature expired: %s", signed_url)
             return False
-        except jwt.InvalidTokenError as e:
+        except jwt.InvalidTokenError:
             logger.info("Invalid signature: %s", signed_url)
             return False
-        
-        # We reconstruct the URL *without* the signature param to compare 
+
+        # We reconstruct the URL *without* the signature param to compare
         # against what was signed (payload['path']).
         if not (expected_path := payload.get("path")):
             logger.info("No path found in payload: %s", payload)
@@ -132,9 +129,9 @@ class UrlSigner:
 
         if not signed_url.startswith(expected_path):
             logger.info(
-                "Signed path mismatch: signed path '%s' is not prefix of request '%s'", 
-                expected_path, 
-                signed_url
+                "Signed path mismatch: signed path '%s' is not prefix of request '%s'",
+                expected_path,
+                signed_url,
             )
             return False
 

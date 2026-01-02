@@ -1,9 +1,8 @@
 import datetime
-import urllib.parse
 
 import freezegun
-import jwt
 import pytest
+
 from supernote.server.utils.url_signer import UrlSigner
 
 
@@ -17,7 +16,7 @@ def test_sign_and_verify(signer: UrlSigner) -> None:
     """Test that signing and verification work."""
     path = "/test/path"
     signed_url = signer.sign(path)
-    
+
     # Verify using full URL
     assert signer.verify(signed_url) is True
 
@@ -33,10 +32,10 @@ def test_verify_failure_tampered_url(signer: UrlSigner) -> None:
     """Test that verification fails for tampered URLs."""
     path = "/original"
     signed_url = signer.sign(path)
-    
+
     # Tamper with the path part of the URL (e.g. user changes /original to /hacked)
     tampered_url = signed_url.replace("/original", "/hacked")
-    
+
     assert signer.verify(tampered_url) is False
 
 
@@ -51,10 +50,10 @@ def test_verify_failure_expired(signer: UrlSigner) -> None:
     with freezegun.freeze_time(initial_time) as frozen_time:
         path = "/expired"
         signed_url = signer.sign(path, expiration=datetime.timedelta(minutes=7))
-        
+
         # Advance time past expiry
         frozen_time.tick(delta=datetime.timedelta(minutes=8))
-        
+
         assert signer.verify(signed_url) is False
 
 
@@ -68,7 +67,7 @@ def test_sign_preserves_query_check(signer: UrlSigner) -> None:
     """Test that signing respects existing query params."""
     path = "/api/resource?foo=bar"
     signed_url = signer.sign(path)
-    
+
     assert "foo=bar" in signed_url
     assert "signature=" in signed_url
     assert signer.verify(signed_url) is True
