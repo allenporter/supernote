@@ -1,31 +1,46 @@
+import hashlib
+
 from supernote.client.file import FileClient
-from tests.server.conftest import TEST_USERNAME, UserStorageHelper
+from tests.server.conftest import UserStorageHelper
 
 
 async def test_query_v3_success(
     file_client: FileClient,
     user_storage: UserStorageHelper,
 ) -> None:
+    """Query by ID and path."""
     # Create a test file
-    await user_storage.create_file(TEST_USERNAME, "Note/test.note", content="content")
+    content = b"some content"
+    expected_hash = hashlib.md5(content).hexdigest()
+    upload_response = await file_client.upload_content(
+        "Note/test.note", content, equipment_no="SN123"
+    )
+    assert upload_response.id
+    assert upload_response.path_display == "/Note/test.note"
+    assert upload_response.name == "test.note"
+    assert upload_response.content_hash == expected_hash
 
     # Query by ID (resolve first)
     path_str = "Note/test.note"
     # Resolve valid ID using query_by_path
     path_resp = await file_client.query_by_path(path=path_str, equipment_no="SN123")
     assert path_resp.entries_vo
-    real_id = int(path_resp.entries_vo.id)
+    assert path_resp.entries_vo.path_display == "/Note/test.note"
+    assert path_resp.entries_vo.name == "test.note"
+    assert path_resp.entries_vo.content_hash == expected_hash
+    assert path_resp.entries_vo.is_downloadable
+    assert path_resp.entries_vo.id == upload_response.id
 
     # Now Query by strict ID
-    data = await file_client.query_by_id(file_id=real_id, equipment_no="SN123")
+    data = await file_client.query_by_id(
+        file_id=int(upload_response.id), equipment_no="SN123"
+    )
 
     assert data.entries_vo
-    assert data.entries_vo.id == str(real_id)
+    assert data.entries_vo.id == upload_response.id
     assert data.entries_vo.name == "test.note"
-    # When querying by ID, VFS now correctly reconstructs full path
     assert data.entries_vo.path_display == "/Note/test.note"
-    # MD5 of "content" is 9a0364b9e99bb480dd25e1f0284c8555
-    assert data.entries_vo.content_hash == "9a0364b9e99bb480dd25e1f0284c8555"
+    assert data.entries_vo.content_hash == expected_hash
 
 
 async def test_query_v3_not_found(
