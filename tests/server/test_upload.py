@@ -1,16 +1,15 @@
 import hashlib
 
 from aiohttp import FormData
-from aiohttp.test_utils import TestClient
 
+from supernote.client.file import FileClient
 from supernote.server.services.storage import StorageService
 from tests.server.conftest import TEST_USERNAME
 
 
 async def test_upload_file(
-    client: TestClient,
+    file_client: FileClient,
     storage_service: StorageService,
-    auth_headers: dict[str, str],
 ) -> None:
     filename = "test_upload.note"
     file_content = b"some binary content"
@@ -20,14 +19,7 @@ async def test_upload_file(
     data.add_field("file", file_content, filename=filename)
 
     # Upload data
-    # Note: The endpoint is /api/file/upload/data/{filename}
-    # It accepts POST or PUT
-    resp = await client.post(
-        f"/api/file/upload/data/{filename}",
-        data=data,
-        headers=auth_headers,
-    )
-    assert resp.status == 200
+    await file_client.upload_data(filename=filename, data=data)
 
     # Verify file exists in temp
     temp_file = storage_service.resolve_temp_path(TEST_USERNAME, filename)
@@ -36,9 +28,8 @@ async def test_upload_file(
 
 
 async def test_chunked_upload(
-    client: TestClient,
+    file_client: FileClient,
     storage_service: StorageService,
-    auth_headers: dict[str, str],
 ) -> None:
     """Test uploading a file in multiple chunks."""
 
@@ -54,22 +45,20 @@ async def test_chunked_upload(
     # Upload chunk 1
     data1 = FormData()
     data1.add_field("file", chunk1_content, filename=filename)
-    resp1 = await client.post(
-        f"/api/file/upload/data/{filename}?uploadId={upload_id}&totalChunks={total_chunks}&partNumber=1",
+    await file_client.upload_data(
+        filename=filename,
         data=data1,
-        headers=auth_headers,
+        params={"uploadId": upload_id, "totalChunks": total_chunks, "partNumber": 1},
     )
-    assert resp1.status == 200
 
     # Upload chunk 2 (final chunk - should trigger merge)
     data2 = FormData()
     data2.add_field("file", chunk2_content, filename=filename)
-    resp2 = await client.post(
-        f"/api/file/upload/data/{filename}?uploadId={upload_id}&totalChunks={total_chunks}&partNumber=2",
+    await file_client.upload_data(
+        filename=filename,
         data=data2,
-        headers=auth_headers,
+        params={"uploadId": upload_id, "totalChunks": total_chunks, "partNumber": 2},
     )
-    assert resp2.status == 200
 
     # Verify merged file exists in temp
     temp_file = storage_service.resolve_temp_path(TEST_USERNAME, filename)
