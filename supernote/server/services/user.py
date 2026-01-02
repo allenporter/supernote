@@ -309,7 +309,7 @@ class UserService:
 
         async with self._session_manager.session() as session:
             await session.execute(
-                update(UserDO)``
+                update(UserDO)
                 .where(UserDO.username == account)
                 .values(password_md5=new_md5)
             )
