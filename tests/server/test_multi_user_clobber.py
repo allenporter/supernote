@@ -1,5 +1,4 @@
 import hashlib
-from pathlib import Path
 
 import jwt
 import pytest
@@ -8,10 +7,9 @@ from aiohttp.test_utils import TestClient
 from supernote.client import Client
 from supernote.client.auth import ConstantAuth
 from supernote.client.file import FileClient
-from supernote.server.config import AuthConfig, ServerConfig, UserEntry
+from supernote.server.config import ServerConfig
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import JWT_ALGORITHM
-from tests.server.conftest import TEST_PASSWORD
 
 USER_A = "user_a@example.com"
 USER_B = "user_b@example.com"
@@ -24,31 +22,8 @@ def mock_storage() -> None:
 
 
 @pytest.fixture
-def server_config(storage_root: Path, mock_trace_log: str) -> ServerConfig:
-    """Create a test config with multiple users."""
-    users = [
-        UserEntry(
-            username=USER_A,
-            password_md5=hashlib.md5(TEST_PASSWORD.encode("utf-8")).hexdigest(),
-            is_active=True,
-            display_name="User A",
-        ),
-        UserEntry(
-            username=USER_B,
-            password_md5=hashlib.md5(TEST_PASSWORD.encode("utf-8")).hexdigest(),
-            is_active=True,
-            display_name="User B",
-        ),
-    ]
-
-    return ServerConfig(
-        trace_log_file=mock_trace_log,
-        storage_dir=str(storage_root),
-        auth=AuthConfig(
-            users=users,
-            secret_key="test-secret-key",
-        ),
-    )
+def test_users() -> list[str]:
+    return [USER_A, USER_B]
 
 
 async def register_session(
@@ -68,6 +43,7 @@ async def register_session(
 
 async def test_multi_user_content_with_same_paths(
     client: TestClient,
+    create_test_user: None,
     coordination_service: CoordinationService,
     server_config: ServerConfig,
 ) -> None:

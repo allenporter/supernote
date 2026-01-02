@@ -3,6 +3,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from supernote.server.db.base import Base
 
+# Default quota in bytes - 10GB
+DEFAULT_QUOTA = 10 * 1024 * 1024 * 1024
+
 
 class UserDO(Base):
     """User database model."""
@@ -13,7 +16,13 @@ class UserDO(Base):
     username: Mapped[str] = mapped_column(String, unique=True, index=True)
     email: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    # We can add additional fields here in the future.
+    # Auth & Profile Fields
+    password_md5: Mapped[str] = mapped_column(String)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    display_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    avatar: Mapped[str | None] = mapped_column(String, nullable=True)
+    total_capacity: Mapped[str] = mapped_column(String, default=str(DEFAULT_QUOTA))
 
     def __repr__(self) -> str:
         return f"<UserDO(id={self.id}, username='{self.username}')>"

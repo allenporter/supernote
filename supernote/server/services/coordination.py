@@ -1,8 +1,12 @@
-import asyncio
 import logging
 import time
 from abc import ABC, abstractmethod
 from typing import Optional
+
+from sqlalchemy import delete, select
+
+from supernote.server.db.models.kv import KeyValueDO
+from supernote.server.db.session import DatabaseSessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -16,16 +20,6 @@ class CoordinationService(ABC):
     """
 
     @abstractmethod
-    async def acquire_lock(self, key: str, ttl: int) -> bool:
-        """Try to acquire a lock. Returns True if successful."""
-        pass
-
-    @abstractmethod
-    async def release_lock(self, key: str) -> None:
-        """Release a lock."""
-        pass
-
-    @abstractmethod
     async def set_value(self, key: str, value: str, ttl: int | None = None) -> None:
         """Set a key-value pair with optional TTL."""
         pass
@@ -41,65 +35,58 @@ class CoordinationService(ABC):
         pass
 
 
-class LocalCoordinationService(CoordinationService):
-    """In-memory implementation for single-process instances (Supernote Lite).
+class SqliteCoordinationService(CoordinationService):
+    """SQLite-backed implementation for distributed locks and key-value state."""
 
-    Uses asyncio.Lock and a Dict with expiry checks.
-    """
+    def __init__(self, session_manager: DatabaseSessionManager) -> None:
+        self._session_manager = session_manager
 
-    def __init__(self) -> None:
-        self._store: dict[str, tuple[str, float]] = {}  # key -> (value, expiry_ts)
-        self._global_lock = asyncio.Lock()
-
-    def _cleanup(self) -> None:
-        """Lazy cleanup of expired keys. Callers must hold lock."""
-        now = time.time()
-        keys_to_delete = [k for k, v in self._store.items() if v[1] < now]
-        for k in keys_to_delete:
-            del self._store[k]
-
-    async def acquire_lock(self, key: str, ttl: int) -> bool:
-        """Naive local lock imlpementation.
-
-        This uses a single process lock and is not suitable for a distributed
-        computing environment.
-        """
-        async with self._global_lock:
-            self._cleanup()
-            if key in self._store:
-                return False
-
-            expiry = time.time() + ttl
-            # Store a dummy value for the lock
-            self._store[key] = ("LOCKED", expiry)
-            return True
-
-    async def release_lock(self, key: str) -> None:
-        """Release a lock."""
-        async with self._global_lock:
-            if key in self._store:
-                del self._store[key]
+    async def _cleanup(self) -> None:
+        """Cleanup expired keys."""
+        # This could be run periodically or on access.
+        # For simplicity, we trust on-access checks or external cleanup jobs.
+        pass
 
     async def set_value(self, key: str, value: str, ttl: int | None = None) -> None:
         """Set a key-value pair with optional TTL."""
-        async with self._global_lock:
+        async with self._session_manager.session() as session:
             expiry = time.time() + (ttl if ttl else 31536000)  # Default 1 year
-            self._store[key] = (value, expiry)
+
+            # Upsert
+            stmt = select(KeyValueDO).where(KeyValueDO.key == key)
+            result = await session.execute(stmt)
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                existing.value = value
+                existing.expiry = expiry
+            else:
+                new_kv = KeyValueDO(key=key, value=value, expiry=expiry)
+                session.add(new_kv)
+
+            await session.commit()
 
     async def get_value(self, key: str) -> Optional[str]:
         """Get a value by key."""
-        async with self._global_lock:
-            if key not in self._store:
+        async with self._session_manager.session() as session:
+            stmt = select(KeyValueDO).where(KeyValueDO.key == key)
+            result = await session.execute(stmt)
+            kv = result.scalar_one_or_none()
+
+            if not kv:
                 return None
 
-            val, expiry = self._store[key]
-            if time.time() > expiry:
-                del self._store[key]
+            if time.time() > kv.expiry:
+                # Lazy delete
+                await session.execute(delete(KeyValueDO).where(KeyValueDO.key == key))
+                await session.commit()
                 return None
-            return val
+
+            return kv.value
 
     async def delete_value(self, key: str) -> None:
         """Delete a key."""
-        async with self._global_lock:
-            if key in self._store:
-                del self._store[key]
+        async with self._session_manager.session() as session:
+            stmt = delete(KeyValueDO).where(KeyValueDO.key == key)
+            await session.execute(stmt)
+            await session.commit()
