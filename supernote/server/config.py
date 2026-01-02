@@ -14,23 +14,7 @@ logger = logging.getLogger(__name__)
 class AuthConfig(DataClassYAMLMixin):
     secret_key: str = ""
     expiration_hours: int = 24
-    users: list["UserEntry"] = field(default_factory=list)
-
-    class Config(BaseConfig):
-        omit_none = True
-        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
-
-
-@dataclass
-class UserEntry(DataClassYAMLMixin):
-    username: str
-    password_md5: str
-    is_active: bool = True
-    display_name: str | None = None
-    email: str | None = None
-    phone: str | None = None
-    avatar: str | None = None
-    total_capacity: str = "25485312"
+    enable_registration: bool = False
 
     class Config(BaseConfig):
         omit_none = True
@@ -97,6 +81,11 @@ class ServerConfig(DataClassYAMLMixin):
         if os.getenv("SUPERNOTE_STORAGE_DIR"):
             config.storage_dir = os.getenv("SUPERNOTE_STORAGE_DIR", config.storage_dir)
             logger.info(f"Using SUPERNOTE_STORAGE_DIR: {config.storage_dir}")
+
+        if os.getenv("SUPERNOTE_ENABLE_REGISTRATION"):
+            val = os.getenv("SUPERNOTE_ENABLE_REGISTRATION", "").lower()
+            config.auth.enable_registration = val in ("true", "1", "yes")
+            logger.info(f"Registration Enabled: {config.auth.enable_registration}")
 
         return config
 

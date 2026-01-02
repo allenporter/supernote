@@ -40,7 +40,7 @@ def test_server_config_load_from_file(tmp_path: Path) -> None:
         "port": 9090,
         "auth": {
             "secret_key": "my-secret-key",
-            "users": [{"username": "testuser", "password_md5": "hash123"}],
+            "enable_registration": True,
         },
     }
     with open(config_file, "w") as f:
@@ -51,9 +51,7 @@ def test_server_config_load_from_file(tmp_path: Path) -> None:
     assert config.host == "127.0.0.1"
     assert config.port == 9090
     assert config.auth.secret_key == "my-secret-key"
-    assert len(config.auth.users) == 1
-    assert config.auth.users[0].username == "testuser"
-    assert config.auth.users[0].password_md5 == "hash123"
+    assert config.auth.enable_registration is True
 
 
 def test_server_config_env_var_override(tmp_path: Path) -> None:

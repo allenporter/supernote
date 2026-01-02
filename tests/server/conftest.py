@@ -13,6 +13,7 @@ import jwt
 import pytest
 from aiohttp.test_utils import TestClient
 from pytest_aiohttp import AiohttpClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.pool import StaticPool
 
@@ -20,12 +21,15 @@ from supernote.client.auth import AbstractAuth
 from supernote.client.client import Client
 from supernote.client.file import FileClient
 from supernote.server.app import create_app
-from supernote.server.config import AuthConfig, ServerConfig, UserEntry
+from supernote.server.config import AuthConfig, ServerConfig
 from supernote.server.db.base import Base
+from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage, LocalBlobStorage
-from supernote.server.services.coordination import LocalCoordinationService
-from supernote.server.services.state import StateService
+from supernote.server.services.coordination import (
+    CoordinationService,
+    SqliteCoordinationService,
+)
 from supernote.server.services.user import JWT_ALGORITHM, UserService
 
 TEST_USERNAME = "test@example.com"
@@ -52,18 +56,12 @@ def mock_trace_log(tmp_path: Path) -> Generator[str, None, None]:
 @pytest.fixture
 def server_config(mock_trace_log: str, storage_root: Path) -> ServerConfig:
     """Create a ServerConfig object for testing."""
-    test_user = UserEntry(
-        username=TEST_USERNAME,
-        password_md5=hashlib.md5(TEST_PASSWORD.encode("utf-8")).hexdigest(),
-        is_active=True,
-        display_name="Test User",
-    )
-
     return ServerConfig(
         trace_log_file=mock_trace_log,
         storage_dir=str(storage_root),
         auth=AuthConfig(
-            users=[test_user],
+            enable_registration=True,
+            expiration_hours=1,
             secret_key="test-secret-key",
         ),
     )
@@ -77,9 +75,11 @@ def patch_server_config(server_config: ServerConfig) -> Generator[None, None, No
 
 
 @pytest.fixture(autouse=True)
-def coordination_service() -> Generator[LocalCoordinationService, None, None]:
+def coordination_service(
+    session_manager: DatabaseSessionManager,
+) -> Generator[CoordinationService, None, None]:
     """Shared coordination service for tests."""
-    coordination_service = LocalCoordinationService()
+    coordination_service = SqliteCoordinationService(session_manager)
     with patch(
         "supernote.server.app.create_coordination_service",
         return_value=coordination_service,
@@ -87,18 +87,44 @@ def coordination_service() -> Generator[LocalCoordinationService, None, None]:
         yield coordination_service
 
 
+@pytest.fixture
+async def test_users() -> list[str]:
+    """Fixture with test users to create."""
+    return [TEST_USERNAME, "a"]
+
+
+@pytest.fixture
+async def create_test_user(
+    session_manager: DatabaseSessionManager, test_users: list[str]
+) -> None:
+    """Create the default test user in the database."""
+
+    async with session_manager.session() as session:
+        for test_user in test_users:
+            stmt = select(UserDO).where(UserDO.username == test_user)
+            existing = (await session.execute(stmt)).scalar_one_or_none()
+            if not existing:
+                user = UserDO(
+                    username=test_user,
+                    email=test_user,
+                    password_md5=hashlib.md5(TEST_PASSWORD.encode("utf-8")).hexdigest(),
+                    is_active=True,
+                    display_name="Test User",
+                )
+                session.add(user)
+                await session.commit()
+
+
 @pytest.fixture(name="auth_headers")
 async def auth_headers_fixture(
     server_config: ServerConfig,
-    state_service: StateService,
-    coordination_service: LocalCoordinationService,
+    coordination_service: SqliteCoordinationService,
+    create_test_user: None,
 ) -> dict[str, str]:
     """Generate auth headers and persist session in state."""
     secret = server_config.auth.secret_key
-    token = jwt.encode({"sub": TEST_USERNAME}, secret, algorithm=JWT_ALGORITHM)
 
-    # Write to StateService (Legacy)
-    state_service.create_session(token, TEST_USERNAME)
+    token = jwt.encode({"sub": TEST_USERNAME}, secret, algorithm=JWT_ALGORITHM)
 
     # Write to CoordinationService
     session_val = f"{TEST_USERNAME}|"
@@ -171,22 +197,13 @@ def blob_storage(storage_root: Path) -> BlobStorage:
 
 
 @pytest.fixture
-def state_service(storage_root: Path) -> StateService:
-    """Provides a StateService instance for testing."""
-    return StateService(storage_root / "system" / "state.json")
-
-
-@pytest.fixture
 def user_service(
     server_config: ServerConfig,
-    state_service: StateService,
-    coordination_service: LocalCoordinationService,
+    coordination_service: SqliteCoordinationService,
     session_manager: DatabaseSessionManager,
 ) -> UserService:
     """Provides a UserService instance for testing."""
-    return UserService(
-        server_config.auth, state_service, coordination_service, session_manager
-    )
+    return UserService(server_config.auth, coordination_service, session_manager)
 
 
 @pytest.fixture
@@ -218,7 +235,7 @@ async def client_fixture(
     server_config: ServerConfig,
     # mock_storage: Path, # REMOVED to break cycle
     session_manager: DatabaseSessionManager,
-    coordination_service: LocalCoordinationService,
+    coordination_service: SqliteCoordinationService,
 ) -> TestClient:
     """Create a test client for server tests."""
     app = create_app(server_config)
