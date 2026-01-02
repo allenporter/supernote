@@ -36,7 +36,7 @@ class AccountWithCode:
 def sign_login_token(account_with_code: AccountWithCode, token: str) -> str:
     """Sign the login token."""
     real_key = _extract_real_key(token)
-    return sha256_string(f"{account_with_code.encode()}{real_key}")
+    return _sha256_string(f"{account_with_code.encode()}{real_key}")
 
 
 def _extract_real_key(token: str) -> str:
