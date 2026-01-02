@@ -5,7 +5,7 @@ from sqlalchemy import BigInteger, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from supernote.server.db.base import Base
-from supernote.server.utils.snowflake import next_id
+from supernote.server.utils.unique_id import next_id
 
 
 class UserFileDO(Base):
