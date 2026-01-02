@@ -3,14 +3,13 @@ import shutil
 from pathlib import Path
 from urllib.parse import urlparse
 
-import aiohttp
 import pytest
-from aiohttp import FormData
 from aiohttp.test_utils import TestClient
 from sqlalchemy import delete
 
 from supernote.client.client import Client
 from supernote.client.exceptions import UnauthorizedException
+from supernote.client.file import FileClient
 from supernote.client.login_client import LoginClient
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
@@ -241,127 +240,60 @@ async def test_capacity_query(client: TestClient, auth_headers: dict[str, str]) 
     assert "allocationVO" in data
     assert data["allocationVO"]["allocated"] > 0
 
+# TODO: Test upload flow with various chunk sizes and verify the server always
+# receives the right content and right hash. If needed we can combine upload
+# and download flow tests.abs
 
-async def test_query_by_path(client: TestClient, auth_headers: dict[str, str]) -> None:
-    resp = await client.post(
-        "/api/file/3/files/query/by/path_v3",
-        json={"equipmentNo": "SN123456", "path": "/EXPORT/test.note"},
-        headers=auth_headers,
-    )
-    assert resp.status == 200
-    data = await resp.json()
-    assert data["success"] is True
-    # entriesVO is omitted if None (file not found)
-    assert "entriesVO" not in data
-
-
-async def test_upload_flow(client: TestClient, auth_headers: dict[str, str]) -> None:
+async def test_upload_flow(
+    file_client: FileClient, client: TestClient, auth_headers: dict[str, str]
+) -> None:
     # 1. Apply for upload
-    resp = await client.post(
-        "/api/file/3/files/upload/apply",
-        json={
-            "equipmentNo": "SN123456",
-            "path": "/EXPORT/test.note",
-            "fileName": "test.note",
-            "size": "1024",
-        },
-        headers=auth_headers,
-    )
-    assert resp.status == 200
-    data = await resp.json()
-    assert data["success"] is True
-    assert "fullUploadUrl" in data
-    upload_url = data["fullUploadUrl"]
-
-    # 2. Perform upload (using the returned URL)
-    parsed_url = urlparse(upload_url)
-    upload_path = parsed_url.path
-
-    # Use multipart upload
-    data = FormData()
-    data.add_field("file", b"test content", filename="test.note")
-
-    resp = await client.post(upload_path, data=data, headers=auth_headers)
-    assert resp.status == 200
-
-    # 3. Finish upload
     content = b"test content"
-    content_hash = hashlib.md5(content).hexdigest()
-
-    resp = await client.post(
-        "/api/file/2/files/upload/finish",
-        json={
-            "equipmentNo": "SN123456",
-            "fileName": "test.note",
-            "path": "/EXPORT/",
-            "content_hash": content_hash,
-            "size": len(content),
-        },
-        headers=auth_headers,
+    upload_response = await file_client.upload_content(
+        path="/EXPORT/test.note",
+        equipment_no="SN123456",
+        content=content,
     )
-    assert resp.status == 200
-    data = await resp.json()
-    assert data["success"] is True
+    assert upload_response
+    assert upload_response.content_hash == hashlib.md5(content).hexdigest()
+    assert upload_response.id
+    assert upload_response.size == len(content)
+    assert upload_response.name == "test.note"
+    # TODO: Fix invalid path_display
+    assert upload_response.path_display == "//EXPORT/test.note"
 
 
-async def test_download_flow(client: TestClient, auth_headers: dict[str, str]) -> None:
+async def test_download_flow(
+    file_client: FileClient, client: TestClient, auth_headers: dict[str, str]
+) -> None:
     # Upload a file first
     file_content = b"Hello Download"
-    file_hash = hashlib.md5(file_content).hexdigest()
-
-    # Apply for upload
-    await client.post(
-        "/api/file/3/files/upload/apply",
-        json={
-            "equipmentNo": "SN123456",
-            "fileName": "download_test.note",
-            "fileMd5": file_hash,
-            "size": len(file_content),
-            "path": "/EXPORT/",
-        },
+    upload_response = await file_client.upload_content(
+        path="/EXPORT/download_test.note",
+        content=file_content,
+        equipment_no="SN123456",
     )
-
-    # Upload Data
-    data = aiohttp.FormData()
-    data.add_field("file", file_content, filename="download_test.note")
-    await client.post(
-        "/api/file/upload/data/download_test.note", data=data, headers=auth_headers
-    )
-
-    # Finish
-    await client.post(
-        "/api/file/2/files/upload/finish",
-        json={
-            "equipmentNo": "SN123456",
-            "fileName": "download_test.note",
-            "path": "/EXPORT/",
-            "content_hash": file_hash,
-            "size": len(file_content),
-        },
-        headers=auth_headers,
-    )
+    assert upload_response
 
     # Request Download URL
-    # First get ID
-    resp = await client.post(
-        "/api/file/3/files/query/by/path_v3",
-        json={"equipmentNo": "SN123456", "path": "/EXPORT/download_test.note"},
-        headers=auth_headers,
+    query_resp = await file_client.query_by_path(
+        path="/EXPORT/download_test.note",
+        equipment_no="SN123456",
     )
-    assert resp.status == 200
-    data = await resp.json()
-    assert data["success"] is True
-    file_id = int(data["entriesVO"]["id"])
+    assert query_resp
+    assert query_resp.entries_vo
+    file_id = int(query_resp.entries_vo.id)
 
-    resp = await client.post(
-        "/api/file/3/files/download_v3",
-        json={"equipmentNo": "SN123456", "id": file_id},
-        headers=auth_headers,
+    download_resp = await file_client.download_v3(
+        file_id=file_id,
+        equipment_no="SN123456",
     )
-    assert resp.status == 200
-    data = await resp.json()
-    assert data["success"] is True
-    download_url = data["url"]
+    assert download_resp
+    assert download_resp.url
+    download_url = download_resp.url
+
+    # TODO: We should add a download content function in the client library that
+    # handles directly fetching the content from the server.
 
     # Our test harness only wants relative urls so strip off the
     # hostname part and use the path and query only

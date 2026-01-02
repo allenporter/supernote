@@ -22,6 +22,7 @@ from supernote.models.file import (
     FileQueryLocalDTO,
     FileQueryLocalVO,
     FileUploadApplyLocalDTO,
+    FileUploadApplyLocalVO,
     FileUploadFinishLocalDTO,
     ListFolderLocalDTO,
     ListFolderLocalVO,
@@ -33,6 +34,7 @@ from supernote.models.file import (
     SynchronousStartLocalDTO,
     SynchronousStartLocalVO,
 )
+from supernote.server.utils.url_signer import UrlSigner
 
 from ..services.file import FileService
 
@@ -180,6 +182,10 @@ async def handle_query_by_path(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
 
     entries_vo = await file_service.get_file_info(user_email, path_str)
+    if not entries_vo:
+        return web.json_response(
+            create_error_response(error_msg="File not found").to_dict(), status=404
+        )
 
     return web.json_response(
         FileQueryByPathLocalVO(
@@ -218,20 +224,40 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
 
     req_data = FileUploadApplyLocalDTO.from_dict(await request.json())
     file_name = req_data.file_name
-    user_email = request["user"]
+    
     file_service: FileService = request.app["file_service"]
+    url_signer: UrlSigner = request.app["url_signer"]
 
-    response = await asyncio.to_thread(
-        file_service.apply_upload,
-        user_email,
-        file_name,
-        req_data.equipment_no or "",
-        request.host,
+    # Path to sign must match the route: /api/file/upload/data/{filename}
+    encoded_name = urllib.parse.quote(file_name)
+    path_to_sign = f"/api/file/upload/data/{encoded_name}"
+    
+    # helper returns: /api/file/upload/data/{encoded_name}?signature=...
+    signed_path = url_signer.sign(path_to_sign)
+    
+    # Construct full URL using request scheme and host
+    full_url = f"{request.scheme}://{request.host}{signed_path}"
+
+    return web.json_response(
+        FileUploadApplyLocalVO(
+            equipment_no=req_data.equipment_no or "",
+            bucket_name="supernote-local",
+            inner_name=file_name,
+            x_amz_date="",
+            authorization="",
+            full_upload_url=full_url,
+            # TODO: We should have a separate endpoint for partial upload
+            part_upload_url=full_url,
+        ).to_dict()
     )
 
-    return web.json_response(response.to_dict())
-
-
+# TODO: We should move to use the OSS endpoints for all of these urls:
+# *   `POST /api/oss/generate/upload/url`: Get Upload URL
+# *   `POST /api/oss/upload`: Upload File
+# *   `POST /api/oss/upload/part`: Multipart Upload
+# *   `POST /api/oss/generate/download/url`: Get Download URL
+# *   `GET /api/oss/download`: Download File /api/oss
+# We can make a separate oss routes if needed.
 @routes.post("/api/file/upload/data/{filename}")
 @routes.put("/api/file/upload/data/{filename}")
 async def handle_upload_data(request: web.Request) -> web.Response:
@@ -241,11 +267,22 @@ async def handle_upload_data(request: web.Request) -> web.Response:
     filename = request.match_info["filename"]
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
+    url_signer: UrlSigner = request.app["url_signer"]
 
     # Check for chunked upload parameters
     upload_id = request.query.get("uploadId")
     total_chunks_str = request.query.get("totalChunks")
     part_number_str = request.query.get("partNumber")
+
+    # Security: Verify Signature
+    # Verify using the full path + query string (which essentially is what we signed, plus the signature param)
+    # request.path_qs gives us /api/file/upload/data/filename?signature=... & other params
+    if not url_signer.verify(request.path_qs):
+        logger.warning(f"Invalid signature for upload: {filename}")
+        return web.json_response(
+            create_error_response("Invalid signature", "E403").to_dict(),
+            status=403,
+        )
 
     # The device sends multipart/form-data
     if request._read_bytes:
@@ -318,11 +355,13 @@ async def handle_upload_finish(request: web.Request) -> web.Response:
             req_data.equipment_no or "",
         )
     except FileNotFoundError:
+        # TODO: Update to use create_error_response
         return web.json_response(
             BaseResponse(success=False, error_msg="Upload not found").to_dict(),
             status=404,
         )
     except ValueError as err:
+        # TODO: Update to use create_error_response
         return web.json_response(
             BaseResponse(
                 success=False, error_msg=f"Failure processing upload: {err}"
@@ -352,11 +391,15 @@ async def handle_download_apply(request: web.Request) -> web.Response:
             status=404,
         )
 
-    # TODO: Re-evaluate if this is the url path we should use or we should go with
-    # a different approach. we don't care about backwards compatibility with anything
-    # and can be free to make breaking changes.
-    encoded_id = urllib.parse.quote(file_id)
-    download_url = f"http://{request.host}/api/file/download/data?path={encoded_id}"
+    # Generate signed download URL
+    url_signer: UrlSigner = request.app["url_signer"]
+    
+    encoded_id = urllib.parse.quote(info.id)
+    path_to_sign = f"/api/file/download/data?path={encoded_id}"
+    
+    # helper returns: /api/file/download/data?path={encoded_id}&signature=...
+    signed_path = url_signer.sign(path_to_sign)
+    download_url = f"{request.scheme}://{request.host}{signed_path}"
 
     return web.json_response(
         FileDownloadLocalVO(
@@ -377,12 +420,19 @@ async def handle_download_data(request: web.Request) -> web.StreamResponse:
     # Endpoint: GET /api/file/download/data
     # Purpose: Download the file.
 
+    file_service: FileService = request.app["file_service"]
+    url_signer: UrlSigner = request.app["url_signer"]
+
     path_str = request.query.get("path")
     if not path_str:
         return web.Response(status=400, text="Missing path")
 
+    # Security: Verify Signature
+    if not url_signer.verify(request.path_qs):
+        logger.warning(f"Invalid signature for download: {path_str}")
+        return web.Response(status=403, text="Invalid signature")
+
     user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
 
     # Resolve file metadata via VFS
     info = await file_service.get_file_info(user_email, path_str)
