@@ -1,7 +1,6 @@
 from pathlib import Path
 
-from aiohttp.test_utils import TestClient
-
+from supernote.client.file import FileClient
 from supernote.server.services.storage import StorageService
 
 
@@ -27,92 +26,45 @@ def test_id_generation(tmp_path: Path) -> None:
     assert resolved_path == path1
 
 
-async def test_create_directory(
-    client: TestClient, auth_headers: dict[str, str], tmp_path: Path
-) -> None:
+async def test_create_directory(file_client: FileClient) -> None:
     # Create folder
-    resp = await client.post(
-        "/api/file/2/files/create_folder_v2",
-        json={"equipmentNo": "SN123456", "path": "/NewFolder", "autorename": False},
-        headers=auth_headers,
-    )
-    assert resp.status == 200
-    data = await resp.json()
-    assert data["success"] is True
+    await file_client.create_folder(path="/NewFolder", equipment_no="SN123456")
 
     # Verify folder exists
-    resp = await client.post(
-        "/api/file/2/files/list_folder",
-        json={"equipmentNo": "SN123456", "path": "/"},
-        headers=auth_headers,
-    )
-    data = await resp.json()
-    assert any(e["name"] == "NewFolder" for e in data["entries"])
+    data = await file_client.list_folder(path="/", equipment_no="SN123456")
+    assert any(e.name == "NewFolder" for e in data.entries)
 
 
-async def test_delete_folder(client: TestClient, auth_headers: dict[str, str]) -> None:
+async def test_delete_folder(file_client: FileClient) -> None:
     # Create folder
-    await client.post(
-        "/api/file/2/files/create_folder_v2",
-        json={"equipmentNo": "SN123456", "path": "/DeleteMe"},
-        headers=auth_headers,
-    )
+    await file_client.create_folder(path="/DeleteMe", equipment_no="SN123456")
 
     # Get ID via list
-    resp = await client.post(
-        "/api/file/2/files/list_folder",
-        json={"equipmentNo": "SN123456", "path": "/"},
-        headers=auth_headers,
-    )
-    data = await resp.json()
-    entry = next(e for e in data["entries"] if e["name"] == "DeleteMe")
-    folder_id = int(entry["id"])
+    data = await file_client.list_folder(path="/", equipment_no="SN123456")
+    entry = next(e for e in data.entries if e.name == "DeleteMe")
+    folder_id = int(entry.id)
 
     # Delete
-    resp = await client.post(
-        "/api/file/3/files/delete_folder_v3",
-        json={"equipmentNo": "SN123456", "id": folder_id},
-        headers=auth_headers,
-    )
-    assert resp.status == 200
-    data = await resp.json()
-    assert data["success"] is True
+    await file_client.delete_folder(folder_id=folder_id, equipment_no="SN123456")
 
     # Verify gone
-    resp = await client.post(
-        "/api/file/2/files/list_folder",
-        json={"equipmentNo": "SN123456", "path": "/"},
-        headers=auth_headers,
-    )
-    data = await resp.json()
-    assert not any(e["name"] == "DeleteMe" for e in data["entries"])
+    data = await file_client.list_folder(path="/", equipment_no="SN123456")
+    assert not any(e.name == "DeleteMe" for e in data.entries)
 
 
-async def test_list_recursive(client: TestClient, auth_headers: dict[str, str]) -> None:
+async def test_list_recursive(file_client: FileClient) -> None:
     # Create /Parent
-    await client.post(
-        "/api/file/2/files/create_folder_v2",
-        json={"equipmentNo": "SN123456", "path": "/Parent"},
-        headers=auth_headers,
-    )
+    await file_client.create_folder(path="/Parent", equipment_no="SN123456")
 
     # Create /Parent/Child
-    await client.post(
-        "/api/file/2/files/create_folder_v2",
-        json={"equipmentNo": "SN123456", "path": "/Parent/Child"},
-        headers=auth_headers,
-    )
+    await file_client.create_folder(path="/Parent/Child", equipment_no="SN123456")
 
     # List non-recursive from root
-    resp = await client.post(
-        "/api/file/2/files/list_folder",
-        json={"equipmentNo": "SN123456", "path": "/", "recursive": False},
-        headers=auth_headers,
+    data = await file_client.list_folder(
+        path="/", equipment_no="SN123456", recursive=False
     )
-    assert resp.status == 200
-    data = await resp.json()
 
-    results = sorted((e["name"], e["path_display"]) for e in data["entries"])
+    results = sorted((e.name, e.path_display) for e in data.entries)
     assert results == [
         ("Document", "/Document"),
         ("EXPORT", "/EXPORT"),
@@ -121,15 +73,11 @@ async def test_list_recursive(client: TestClient, auth_headers: dict[str, str]) 
     ]
 
     # List recursive from root
-    resp = await client.post(
-        "/api/file/2/files/list_folder",
-        json={"equipmentNo": "SN123456", "path": "/", "recursive": True},
-        headers=auth_headers,
+    data = await file_client.list_folder(
+        path="/", equipment_no="SN123456", recursive=True
     )
-    assert resp.status == 200
-    data = await resp.json()
 
-    results = sorted((e["name"], e["path_display"]) for e in data["entries"])
+    results = sorted((e.name, e.path_display) for e in data.entries)
     assert results == [
         ("Child", "/Parent/Child"),
         ("Document", "/Document"),

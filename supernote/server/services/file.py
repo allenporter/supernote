@@ -3,19 +3,20 @@ import urllib.parse
 from pathlib import Path
 from typing import List
 
-from ..db.session import DatabaseSessionManager
-from ..models.base import BaseResponse
-from ..models.file import (
-    CreateDirectoryResponse,
-    DeleteResponse,
-    FileCopyResponse,
-    FileEntryVO,
-    FileMoveResponse,
-    RecycleFileListResponse,
+from supernote.models.base import BaseResponse
+from supernote.models.file import (
+    CreateFolderLocalVO,
+    DeleteFolderLocalVO,
+    EntriesVO,
+    FileCopyLocalVO,
+    FileMoveLocalVO,
+    FileUploadApplyLocalVO,
+    FileUploadFinishLocalVO,
+    RecycleFileListVO,
     RecycleFileVO,
-    UploadApplyResponse,
-    UploadFinishResponse,
 )
+
+from ..db.session import DatabaseSessionManager
 from .storage import StorageService
 from .user import UserService
 from .vfs import VirtualFileSystem
@@ -39,10 +40,10 @@ class FileService:
 
     async def list_folder(
         self, user: str, path_str: str, recursive: bool = False
-    ) -> list[FileEntryVO]:
+    ) -> list[EntriesVO]:
         """List files in a folder for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
-        entries: list[FileEntryVO] = []
+        entries: list[EntriesVO] = []
 
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
@@ -71,7 +72,7 @@ class FileService:
                         path_display = f"/{rel_path}"
 
                     entries.append(
-                        FileEntryVO(
+                        EntriesVO(
                             tag="folder" if item.is_folder == "Y" else "file",
                             id=str(item.id),
                             name=item.file_name,
@@ -98,7 +99,7 @@ class FileService:
                         path_display = f"/{item.file_name}"
 
                     entries.append(
-                        FileEntryVO(
+                        EntriesVO(
                             tag="folder" if item.is_folder == "Y" else "file",
                             id=str(item.id),
                             name=item.file_name,
@@ -114,7 +115,64 @@ class FileService:
                     )
         return entries
 
-    async def get_file_info(self, user: str, path_str: str) -> FileEntryVO | None:
+    async def list_folder_by_id(
+        self, user: str, folder_id: int, recursive: bool = False
+    ) -> list[EntriesVO]:
+        """List files in a folder by ID for a specific user using VFS."""
+        user_id = await self.user_service.get_user_id(user)
+        entries: list[EntriesVO] = []
+
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+
+            # Check if folder exists and verify ownership
+            if folder_id != 0:
+                node = await vfs.get_node_by_id(user_id, folder_id)
+                if not node:
+                    # Not found or not owned
+                    return []
+                if node.is_folder != "Y":
+                    return []
+                # TODO: Retrieve path string for display if needed?
+                # For V3 (device), path_display might not be critical or we can construct relative to root?
+                # We can't easily rebuild full path without walking up.
+                # Assuming devices rely on IDs and relative paths.
+
+            if recursive:
+                recursive_list = await vfs.list_recursive(user_id, folder_id)
+                for item, rel_path in recursive_list:
+                    entries.append(
+                        EntriesVO(
+                            tag="folder" if item.is_folder == "Y" else "file",
+                            id=str(item.id),
+                            name=item.file_name,
+                            path_display=f"/{rel_path}",  # Placeholder
+                            parent_path="",  # Placeholder
+                            content_hash=item.md5 or "",
+                            is_downloadable=True,
+                            size=item.size,
+                            last_update_time=item.update_time,
+                        )
+                    )
+            else:
+                do_list = await vfs.list_directory(user_id, folder_id)
+                for item in do_list:
+                    entries.append(
+                        EntriesVO(
+                            tag="folder" if item.is_folder == "Y" else "file",
+                            id=str(item.id),
+                            name=item.file_name,
+                            path_display=f"/{item.file_name}",  # Placeholder
+                            parent_path="",
+                            content_hash=item.md5 or "",
+                            is_downloadable=True,
+                            size=item.size,
+                            last_update_time=item.update_time,
+                        )
+                    )
+        return entries
+
+    async def get_file_info(self, user: str, path_str: str) -> EntriesVO | None:
         """Get file info by path or ID for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
 
@@ -122,7 +180,7 @@ class FileService:
         clean_path = path_str.strip("/")
         if not clean_path and (path_str == "" or path_str == "/"):
             # Virtual root directory
-            return FileEntryVO(
+            return EntriesVO(
                 tag="folder",
                 id="0",
                 name="",
@@ -164,7 +222,7 @@ class FileService:
                 # It was a path lookup. Use the path_str.
                 path_display = path_str if path_str.startswith("/") else f"/{path_str}"
 
-            return FileEntryVO(
+            return EntriesVO(
                 tag="folder" if node.is_folder == "Y" else "file",
                 id=str(node.id),
                 name=node.file_name,
@@ -178,7 +236,7 @@ class FileService:
 
     def apply_upload(
         self, user: str, file_name: str, equipment_no: str, host: str
-    ) -> UploadApplyResponse:
+    ) -> FileUploadApplyLocalVO:
         """Apply for upload by a specific user."""
         # Note: Ideally, the upload URL should also contain user context if it's handled by a separate request
         # But handle_upload_data currently might need to extract user from JWT or filename.
@@ -186,7 +244,7 @@ class FileService:
         encoded_name = urllib.parse.quote(file_name)
         upload_url = f"http://{host}/api/file/upload/data/{encoded_name}"
 
-        return UploadApplyResponse(
+        return FileUploadApplyLocalVO(
             equipment_no=equipment_no,
             bucket_name="supernote-local",
             inner_name=file_name,
@@ -203,7 +261,7 @@ class FileService:
         path_str: str,
         content_hash: str,
         equipment_no: str,
-    ) -> UploadFinishResponse:
+    ) -> FileUploadFinishLocalVO:
         """Finish upload for a specific user."""
         # 1. Resolve User ID
         user_id = await self.user_service.get_user_id(user)
@@ -280,7 +338,7 @@ class FileService:
         if not path_str or path_str == "/":
             full_path = f"/{filename}"
 
-        return UploadFinishResponse(
+        return FileUploadFinishLocalVO(
             equipment_no=equipment_no,
             path_display=full_path,
             id=file_id,
@@ -291,7 +349,7 @@ class FileService:
 
     async def create_directory(
         self, user: str, path: str, equipment_no: str
-    ) -> CreateDirectoryResponse:
+    ) -> CreateFolderLocalVO:
         """Create a directory for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
         rel_path = path.lstrip("/")
@@ -301,11 +359,11 @@ class FileService:
             if rel_path:
                 await vfs.ensure_directory_path(user_id, rel_path)
 
-        return CreateDirectoryResponse(equipment_no=equipment_no)
+        return CreateFolderLocalVO(equipment_no=equipment_no)
 
     async def delete_item(
         self, user: str, id: int, equipment_no: str
-    ) -> DeleteResponse:
+    ) -> DeleteFolderLocalVO:
         """Delete a file or directory for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
         async with self.session_manager.session() as session:
@@ -314,7 +372,7 @@ class FileService:
             if not success:
                 logger.warning(f"Delete requested for unknown ID: {id} for user {user}")
 
-        return DeleteResponse(equipment_no=equipment_no)
+        return DeleteFolderLocalVO(equipment_no=equipment_no)
 
     def _get_unique_path(self, user: str, rel_path: str) -> str:
         """Generate a unique path if the destination exists for a user."""
@@ -337,7 +395,7 @@ class FileService:
 
     async def move_item(
         self, user: str, id: int, to_path: str, autorename: bool, equipment_no: str
-    ) -> FileMoveResponse:
+    ) -> FileMoveLocalVO:
         """Move a file or directory for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
 
@@ -365,11 +423,11 @@ class FileService:
 
             await vfs.move_node(user_id, id, parent_id, new_name)
 
-        return FileMoveResponse(equipment_no=equipment_no)
+        return FileMoveLocalVO(equipment_no=equipment_no)
 
     async def copy_item(
         self, user: str, id: int, to_path: str, autorename: bool, equipment_no: str
-    ) -> FileCopyResponse:
+    ) -> FileCopyLocalVO:
         """Copy a file or directory for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
 
@@ -408,11 +466,11 @@ class FileService:
 
             await vfs.copy_node(user_id, id, parent_id, new_name)
 
-        return FileCopyResponse(equipment_no=equipment_no)
+        return FileCopyLocalVO(equipment_no=equipment_no)
 
     async def list_recycle(
         self, user: str, order: str, sequence: str, page_no: int, page_size: int
-    ) -> RecycleFileListResponse:
+    ) -> RecycleFileListVO:
         """List files in recycle bin for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
 
@@ -434,7 +492,7 @@ class FileService:
                         is_folder=item.is_folder,
                         file_name=item.file_name,
                         size=item.size,
-                        update_time=item.delete_time,
+                        update_time=str(item.delete_time),
                     )
                 )
 
@@ -454,7 +512,7 @@ class FileService:
         end = start + page_size
         page_items = recycle_files[start:end]
 
-        return RecycleFileListResponse(total=total, recycle_file_vo_list=page_items)
+        return RecycleFileListVO(total=total, recycle_file_vo_list=page_items)
 
     async def delete_from_recycle(self, user: str, id_list: list[int]) -> BaseResponse:
         """Permanently delete items from recycle bin for a specific user using VFS."""
@@ -484,10 +542,10 @@ class FileService:
 
         return BaseResponse()
 
-    async def search_files(self, user: str, keyword: str) -> list[FileEntryVO]:
+    async def search_files(self, user: str, keyword: str) -> list[EntriesVO]:
         """Search for files matching the keyword in user's storage."""
         user_id = await self.user_service.get_user_id(user)
-        results: List[FileEntryVO] = []
+        results: List[EntriesVO] = []
 
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
@@ -506,7 +564,7 @@ class FileService:
                 path_display = f"/{item.file_name}"
 
                 results.append(
-                    FileEntryVO(
+                    EntriesVO(
                         tag="folder" if item.is_folder == "Y" else "file",
                         id=str(item.id),
                         name=item.file_name,
@@ -515,6 +573,7 @@ class FileService:
                         size=item.size,
                         last_update_time=item.update_time,
                         content_hash=item.md5 or "",
+                        is_downloadable=True,  # default
                     )
                 )
 

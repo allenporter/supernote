@@ -1,222 +1,137 @@
-from aiohttp.test_utils import TestClient
+from supernote.client.file import FileClient
 
 
 async def test_soft_delete_to_recycle(
-    client: TestClient, auth_headers: dict[str, str]
+    file_client: FileClient, auth_headers: dict[str, str]
 ) -> None:
     # Create a folder
-    await client.post(
-        "/api/file/2/files/create_folder_v2",
-        json={"equipmentNo": "SN123456", "path": "/TestFolder"},
-        headers=auth_headers,
-    )
+    await file_client.create_folder(path="/TestFolder", equipment_no="SN123456")
 
     # Get ID of folder
-    resp = await client.post(
-        "/api/file/2/files/list_folder",
-        json={"equipmentNo": "SN123456", "path": "/"},
-        headers=auth_headers,
+    list_folder_result = await file_client.list_folder(
+        path="/", equipment_no="SN123456"
     )
-    data = await resp.json()
-    entry = next(e for e in data["entries"] if e["name"] == "TestFolder")
-    item_id = int(entry["id"])
+    entry = next(e for e in list_folder_result.entries if e.name == "TestFolder")
+    item_id = int(entry.id)
 
     # Delete (soft delete to recycle bin)
-    resp = await client.post(
-        "/api/file/3/files/delete_folder_v3",
-        json={"equipmentNo": "SN123456", "id": item_id},
-        headers=auth_headers,
-    )
-    assert resp.status == 200
+    await file_client.delete_folder(folder_id=item_id, equipment_no="SN123456")
 
     # Verify not in main folder
-    resp = await client.post(
-        "/api/file/2/files/list_folder",
-        json={"equipmentNo": "SN123456", "path": "/"},
-        headers=auth_headers,
+    list_folder_result = await file_client.list_folder(
+        path="/", equipment_no="SN123456"
     )
-    data = await resp.json()
-    assert not any(e["name"] == "TestFolder" for e in data["entries"])
+    assert not any(e.name == "TestFolder" for e in list_folder_result.entries)
 
     # Verify in recycle bin
-    resp = await client.post(
-        "/api/file/recycle/list/query",
-        json={"order": "time", "sequence": "desc", "pageNo": 1, "pageSize": 20},
-        headers=auth_headers,
-    )
-    assert resp.status == 200
-    data = await resp.json()
-    assert data["total"] == 1
-    assert data["recycleFileVOList"][0]["fileName"] == "TestFolder"
-    assert data["recycleFileVOList"][0]["isFolder"] == "Y"
+    recycle_list_result = await file_client.recycle_list(page_no=1, page_size=20)
+    assert recycle_list_result
+    assert recycle_list_result.total == 1
+    assert recycle_list_result.recycle_file_vo_list
+    assert len(recycle_list_result.recycle_file_vo_list) == 1
+    assert recycle_list_result.recycle_file_vo_list[0].file_name == "TestFolder"
+    assert recycle_list_result.recycle_file_vo_list[0].is_folder == "Y"
 
 
-async def test_recycle_revert(client: TestClient, auth_headers: dict[str, str]) -> None:
+async def test_recycle_revert(
+    file_client: FileClient, auth_headers: dict[str, str]
+) -> None:
     # Create and delete a folder
-    await client.post(
-        "/api/file/2/files/create_folder_v2",
-        json={"equipmentNo": "SN123456", "path": "/ToRestore"},
-        headers=auth_headers,
-    )
+    await file_client.create_folder(path="/ToRestore", equipment_no="SN123456")
 
-    resp = await client.post(
-        "/api/file/2/files/list_folder",
-        json={"equipmentNo": "SN123456", "path": "/"},
-        headers=auth_headers,
+    list_folder_result = await file_client.list_folder(
+        path="/", equipment_no="SN123456"
     )
-    data = await resp.json()
-    entry = next(e for e in data["entries"] if e["name"] == "ToRestore")
-    item_id = int(entry["id"])
+    entry = next(e for e in list_folder_result.entries if e.name == "ToRestore")
+    item_id = int(entry.id)
 
-    await client.post(
-        "/api/file/3/files/delete_folder_v3",
-        json={"equipmentNo": "SN123456", "id": item_id},
-        headers=auth_headers,
-    )
+    await file_client.delete_folder(folder_id=item_id, equipment_no="SN123456")
 
     # Get recycle bin item ID
-    resp = await client.post(
-        "/api/file/recycle/list/query",
-        json={"order": "time", "sequence": "desc", "pageNo": 1, "pageSize": 20},
-        headers=auth_headers,
-    )
-    data = await resp.json()
-    recycle_id = int(data["recycleFileVOList"][0]["fileId"])
+    recycle_list_result = await file_client.recycle_list(page_no=1, page_size=20)
+    assert recycle_list_result
+    assert recycle_list_result.recycle_file_vo_list
+    assert len(recycle_list_result.recycle_file_vo_list) == 1
+    recycle_id = int(recycle_list_result.recycle_file_vo_list[0].file_id)
 
     # Revert from recycle bin
-    resp = await client.post(
-        "/api/file/recycle/revert",
-        json={"idList": [recycle_id]},
-        headers=auth_headers,
-    )
-    assert resp.status == 200
+    await file_client.recycle_revert(id_list=[recycle_id])
 
     # Verify back in main folder
-    resp = await client.post(
-        "/api/file/2/files/list_folder",
-        json={"equipmentNo": "SN123456", "path": "/"},
-        headers=auth_headers,
+    list_folder_result = await file_client.list_folder(
+        path="/", equipment_no="SN123456"
     )
-    data = await resp.json()
-    assert any(e["name"] == "ToRestore" for e in data["entries"])
+    assert any(e.name == "ToRestore" for e in list_folder_result.entries)
 
     # Verify not in recycle bin
-    resp = await client.post(
-        "/api/file/recycle/list/query",
-        json={"order": "time", "sequence": "desc", "pageNo": 1, "pageSize": 20},
-        headers=auth_headers,
-    )
-    data = await resp.json()
-    assert data["total"] == 0
+    recycle_list_result = await file_client.recycle_list(page_no=1, page_size=20)
+    assert recycle_list_result.total == 0
 
 
 async def test_recycle_permanent_delete(
-    client: TestClient, auth_headers: dict[str, str]
+    file_client: FileClient, auth_headers: dict[str, str]
 ) -> None:
     # Create and delete a folder
-    await client.post(
-        "/api/file/2/files/create_folder_v2",
-        json={"equipmentNo": "SN123456", "path": "/ToDelete"},
-        headers=auth_headers,
-    )
+    await file_client.create_folder(path="/ToDelete", equipment_no="SN123456")
 
-    resp = await client.post(
-        "/api/file/2/files/list_folder",
-        json={"equipmentNo": "SN123456", "path": "/"},
-        headers=auth_headers,
+    list_folder_result = await file_client.list_folder(
+        path="/", equipment_no="SN123456"
     )
-    data = await resp.json()
-    entry = next(e for e in data["entries"] if e["name"] == "ToDelete")
-    item_id = int(entry["id"])
+    entry = next(e for e in list_folder_result.entries if e.name == "ToDelete")
+    item_id = int(entry.id)
 
-    await client.post(
-        "/api/file/3/files/delete_folder_v3",
-        json={"equipmentNo": "SN123456", "id": item_id},
-        headers=auth_headers,
-    )
+    await file_client.delete_folder(folder_id=item_id, equipment_no="SN123456")
 
     # Get recycle bin item ID
-    resp = await client.post(
-        "/api/file/recycle/list/query",
-        json={"order": "time", "sequence": "desc", "pageNo": 1, "pageSize": 20},
-        headers=auth_headers,
-    )
-    data = await resp.json()
-    recycle_id = int(data["recycleFileVOList"][0]["fileId"])
+    recycle_list_result = await file_client.recycle_list(page_no=1, page_size=20)
+    assert recycle_list_result
+    assert recycle_list_result.recycle_file_vo_list
+    assert len(recycle_list_result.recycle_file_vo_list) == 1
+    recycle_id = int(recycle_list_result.recycle_file_vo_list[0].file_id)
 
     # Permanently delete from recycle bin
-    resp = await client.post(
-        "/api/file/recycle/delete",
-        json={"idList": [recycle_id]},
-        headers=auth_headers,
-    )
-    assert resp.status == 200
+    await file_client.recycle_delete(id_list=[recycle_id])
 
     # Verify not in recycle bin
-    resp = await client.post(
-        "/api/file/recycle/list/query",
-        json={"order": "time", "sequence": "desc", "pageNo": 1, "pageSize": 20},
-        headers=auth_headers,
-    )
-    data = await resp.json()
-    assert data["total"] == 0
+    recycle_list_result = await file_client.recycle_list(page_no=1, page_size=20)
+    assert recycle_list_result
+    assert recycle_list_result.total == 0
 
 
-async def test_recycle_clear(client: TestClient, auth_headers: dict[str, str]) -> None:
+async def test_recycle_clear(
+    file_client: FileClient, auth_headers: dict[str, str]
+) -> None:
     # Default folders
-    resp = await client.post(
-        "/api/file/2/files/list_folder",
-        json={"equipmentNo": "SN123456", "path": "/"},
-        headers=auth_headers,
+    list_folder_result = await file_client.list_folder(
+        path="/", equipment_no="SN123456"
     )
-    data = await resp.json()
-    assert len(data["entries"]) == 3
+    assert list_folder_result
+    assert len(list_folder_result.entries) == 3
 
     # Create and delete multiple folders
     for name in ["Folder1", "Folder2", "Folder3"]:
-        await client.post(
-            "/api/file/2/files/create_folder_v2",
-            json={"equipmentNo": "SN123456", "path": f"/{name}"},
-            headers=auth_headers,
-        )
+        await file_client.create_folder(path=f"/{name}", equipment_no="SN123456")
 
-    resp = await client.post(
-        "/api/file/2/files/list_folder",
-        json={"equipmentNo": "SN123456", "path": "/"},
-        headers=auth_headers,
+    list_folder_result = await file_client.list_folder(
+        path="/", equipment_no="SN123456"
     )
-    data = await resp.json()
-    assert len(data["entries"]) == 6
+    assert list_folder_result
+    assert len(list_folder_result.entries) == 6
 
-    for entry in data["entries"]:
-        await client.post(
-            "/api/file/3/files/delete_folder_v3",
-            json={"equipmentNo": "SN123456", "id": int(entry["id"])},
-            headers=auth_headers,
+    for entry in list_folder_result.entries:
+        await file_client.delete_folder(
+            folder_id=int(entry.id), equipment_no="SN123456"
         )
 
     # Verify 6 items in recycle bin
-    resp = await client.post(
-        "/api/file/recycle/list/query",
-        json={"order": "time", "sequence": "desc", "pageNo": 1, "pageSize": 20},
-        headers=auth_headers,
-    )
-    data = await resp.json()
-    assert data["total"] == 6
+    recycle_list_result = await file_client.recycle_list(page_no=1, page_size=20)
+    assert recycle_list_result
+    assert recycle_list_result.total == 6
 
     # Clear recycle bin
-    resp = await client.post(
-        "/api/file/recycle/clear",
-        json={},
-        headers=auth_headers,
-    )
-    assert resp.status == 200
+    await file_client.recycle_clear()
 
     # Verify recycle bin is empty
-    resp = await client.post(
-        "/api/file/recycle/list/query",
-        json={"order": "time", "sequence": "desc", "pageNo": 1, "pageSize": 20},
-        headers=auth_headers,
-    )
-    data = await resp.json()
-    assert data["total"] == 0
+    recycle_list_result = await file_client.recycle_list(page_no=1, page_size=20)
+    assert recycle_list_result
+    assert recycle_list_result.total == 0

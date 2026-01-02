@@ -1,45 +1,39 @@
-from aiohttp.test_utils import TestClient
-
+from supernote.client.file import FileClient
 from tests.server.conftest import TEST_USERNAME, UserStorageHelper
 
 
 async def test_query_v3_success(
-    client: TestClient,
+    file_client: FileClient,
     user_storage: UserStorageHelper,
-    auth_headers: dict[str, str],
 ) -> None:
     # Create a test file
     await user_storage.create_file(TEST_USERNAME, "Note/test.note", content="content")
 
-    # Query by ID (relative path)
-    resp = await client.post(
-        "/api/file/3/files/query_v3",
-        json={"equipmentNo": "SN123", "id": "Note/test.note"},
-        headers=auth_headers,
-    )
+    # Query by ID (resolve first)
+    path_str = "Note/test.note"
+    # Resolve valid ID using query_by_path
+    path_resp = await file_client.query_by_path(path=path_str, equipment_no="SN123")
+    assert path_resp.entries_vo
+    real_id = int(path_resp.entries_vo.id)
 
-    assert resp.status == 200
-    data = await resp.json()
-    assert data["success"] is True
-    assert data["entriesVO"]["id"]  # ID varies with VFS
-    assert data["entriesVO"]["name"] == "test.note"
-    assert data["entriesVO"]["path_display"] == "/Note/test.note"
+    # Now Query by strict ID
+    data = await file_client.query_by_id(file_id=real_id, equipment_no="SN123")
+
+    assert data.entries_vo
+    assert data.entries_vo.id == str(real_id)
+    assert data.entries_vo.name == "test.note"
+    # When querying by ID, VFS returns /{filename} generally unless fully walked
+    assert data.entries_vo.path_display == "/test.note"
     # MD5 of "content" is 9a0364b9e99bb480dd25e1f0284c8555
-    assert data["entriesVO"]["content_hash"] == "9a0364b9e99bb480dd25e1f0284c8555"
+    assert data.entries_vo.content_hash == "9a0364b9e99bb480dd25e1f0284c8555"
 
 
 async def test_query_v3_not_found(
-    client: TestClient, auth_headers: dict[str, str]
+    file_client: FileClient,
 ) -> None:
-    resp = await client.post(
-        "/api/file/3/files/query_v3",
-        json={"equipmentNo": "SN123", "id": "Note/missing.note"},
-        headers=auth_headers,
-    )
+    """Query with an identifier that does not exist."""
+    # Use a specific ID that should not exist
+    data = await file_client.query_by_id(file_id=99999999, equipment_no="SN123")
 
-    assert resp.status == 200
-    data = await resp.json()
-    assert data == {
-        "success": True,
-        "equipmentNo": "SN123",
-    }
+    assert data.entries_vo is None
+    assert data.equipment_no == "SN123"

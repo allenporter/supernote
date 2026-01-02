@@ -922,3 +922,29 @@ FileLabelSearchVO:
           type: array
           items:
             $ref: "#/UserFileSearchVO"
+
+FileUploadFinishLocalVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        equipmentNo:
+          type: string
+          description: "Equipment number"
+        path_display:
+          type: string
+          description: "Path"
+        id:
+          type: string
+          description: "File ID"
+        size:
+          type: integer
+          format: int64
+          description: "File size"
+        name:
+          type: string
+          description: "File name"
+        content_hash:
+          type: string
+          description: "File hash value"

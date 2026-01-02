@@ -332,23 +332,32 @@ async def test_download_flow(client: TestClient, auth_headers: dict[str, str]) -
     )
 
     # Request Download URL
+    # First get ID
+    resp = await client.post(
+        "/api/file/3/files/query/by/path_v3",
+        json={"equipmentNo": "SN123456", "path": "/EXPORT/download_test.note"},
+        headers=auth_headers,
+    )
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["success"] is True
+    file_id = int(data["entriesVO"]["id"])
+
     resp = await client.post(
         "/api/file/3/files/download_v3",
-        json={"equipmentNo": "SN123456", "id": "EXPORT/download_test.note"},
+        json={"equipmentNo": "SN123456", "id": file_id},
         headers=auth_headers,
     )
     assert resp.status == 200
     data = await resp.json()
     assert data["success"] is True
     download_url = data["url"]
-    assert "path=EXPORT/download_test.note" in download_url
 
-    # Download Data
-    # Extract path from URL
-    path_param = download_url.split("path=")[1]
-    resp = await client.get(
-        f"/api/file/download/data?path={path_param}", headers=auth_headers
-    )
+    # Our test harness only wants relative urls so strip off the
+    # hostname part and use the path and query only
+    fetch_url = urlparse(download_url)
+    fetch_urlstr = fetch_url.path + "?" + fetch_url.query
+    resp = await client.get(fetch_urlstr, headers=auth_headers)
     assert resp.status == 200
     content = await resp.read()
     assert content == file_content
