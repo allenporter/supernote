@@ -8,6 +8,10 @@ from supernote.models.auth import (
     LoginDTO,
     RandomCodeDTO,
 )
+from supernote.models.equipment import (
+    BindEquipmentDTO,
+    UnbindEquipmentDTO,
+)
 from supernote.models.file import (
     CreateFolderLocalDTO,
     FileDownloadLocalDTO,
@@ -31,6 +35,8 @@ MODEL_REGISTRY: dict[str, Type] = {
     "/api/official/user/check/exists/server": UserCheckDTO,
     "/api/official/user/query/random/code": RandomCodeDTO,
     "/api/official/user/account/login/equipment": LoginDTO,
+    "/api/terminal/user/bindEquipment": BindEquipmentDTO,
+    "/api/terminal/equipment/unlink": UnbindEquipmentDTO,
     # File / Sync
     "/api/file/2/files/synchronous/start": SynchronousStartLocalDTO,
     "/api/file/2/files/synchronous/end": SynchronousEndLocalDTO,
