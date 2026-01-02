@@ -3,17 +3,15 @@ import asyncio
 from aiohttp import web
 from mashumaro.exceptions import MissingField
 
-from supernote.server.models.auth import (
-    BindEquipmentRequest,
-    LoginRequest,
-    LoginResponse,
-    RandomCodeRequest,
-    RandomCodeResponse,
-    UnlinkRequest,
-    UserCheckRequest,
-    UserQueryResponse,
+from supernote.models.auth import (
+    LoginDTO,
+    RandomCodeDTO,
+    RandomCodeVO,
+    UserCheckDTO,
+    UserQueryByIdVO,
 )
-from supernote.server.models.base import BaseResponse, create_error_response
+from supernote.models.base import BaseResponse, create_error_response
+from supernote.models.equipment import BindEquipmentDTO, UnbindEquipmentDTO
 from supernote.server.services.user import UserService
 
 from .decorators import public_route
@@ -28,7 +26,7 @@ async def handle_equipment_unlink(request: web.Request) -> web.Response:
     # Purpose: Device requests to unlink itself from the account/server.
     req_data = await request.json()
     try:
-        unlink_req = UnlinkRequest.from_dict(req_data)
+        unlink_req = UnbindEquipmentDTO.from_dict(req_data)
     except (MissingField, ValueError):
         return web.json_response(
             create_error_response("Invalid request format").to_dict(),
@@ -46,7 +44,7 @@ async def handle_check_user_exists(request: web.Request) -> web.Response:
     # Endpoint: POST /api/official/user/check/exists/server
     # Purpose: Check if the user exists on this server.
     req_data = await request.json()
-    user_check_req = UserCheckRequest.from_dict(req_data)
+    user_check_req = UserCheckDTO.from_dict(req_data)
     user_service: UserService = request.app["user_service"]
     if await asyncio.to_thread(user_service.check_user_exists, user_check_req.email):
         return web.json_response(BaseResponse().to_dict())
@@ -68,11 +66,11 @@ async def handle_random_code(request: web.Request) -> web.Response:
     # Endpoint: POST /api/official/user/query/random/code
     # Purpose: Get challenge for password hashing
     req_data = await request.json()
-    code_req = RandomCodeRequest.from_dict(req_data)
+    code_req = RandomCodeDTO.from_dict(req_data)
     user_service: UserService = request.app["user_service"]
     random_code, timestamp = await user_service.generate_random_code(code_req.account)
     return web.json_response(
-        RandomCodeResponse(random_code=random_code, timestamp=timestamp).to_dict()
+        RandomCodeVO(random_code=random_code, timestamp=timestamp).to_dict()
     )
 
 
@@ -86,7 +84,7 @@ async def handle_login(request: web.Request) -> web.Response:
 
     req_data = await request.json()
 
-    login_req = LoginRequest.from_dict(req_data)
+    login_req = LoginDTO.from_dict(req_data)
     result = await user_service.login(
         account=login_req.account,
         password_hash=login_req.password,
@@ -99,15 +97,7 @@ async def handle_login(request: web.Request) -> web.Response:
             status=401,
         )
 
-    return web.json_response(
-        LoginResponse(
-            token=result.token,
-            user_name=login_req.account,  # Or fetch real name if needed
-            is_bind=result.is_bind,
-            is_bind_equipment=result.is_bind_equipment,
-            sold_out_count=0,
-        ).to_dict()
-    )
+    return web.json_response(result.to_dict())
 
 
 @routes.post("/api/terminal/user/bindEquipment")
@@ -117,7 +107,7 @@ async def handle_bind_equipment(request: web.Request) -> web.Response:
     # Purpose: Bind the device to the account.
     req_data = await request.json()
     try:
-        bind_req = BindEquipmentRequest.from_dict(req_data)
+        bind_req = BindEquipmentDTO.from_dict(req_data)
     except (MissingField, ValueError):
         return web.json_response(
             create_error_response("Missing data").to_dict(), status=400
@@ -148,7 +138,7 @@ async def handle_user_query(request: web.Request) -> web.Response:
         )
 
     return web.json_response(
-        UserQueryResponse(
+        UserQueryByIdVO(
             user=user_vo,
             is_user=True,
             equipment_no=request.get("equipment_no"),

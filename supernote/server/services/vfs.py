@@ -2,7 +2,7 @@ import logging
 import time
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from supernote.server.db.models.file import RecycleFileDO, UserFileDO
@@ -349,3 +349,25 @@ class VirtualFileSystem:
 
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none() is not None
+
+    async def get_total_usage(self, user_id: int) -> int:
+        """Calculate total storage usage for a user in bytes."""
+        stmt = select(func.sum(UserFileDO.size)).where(
+            UserFileDO.user_id == user_id,
+            UserFileDO.is_active == "Y",
+            UserFileDO.is_folder == "N",
+        )
+        result = await self.db.execute(stmt)
+        total = result.scalar()
+        return total or 0
+
+    async def is_empty(self, user_id: int) -> bool:
+        """Check if user has any active files."""
+        # Use limit 1 for efficiency
+        stmt = (
+            select(UserFileDO.id)
+            .where(UserFileDO.user_id == user_id, UserFileDO.is_active == "Y")
+            .limit(1)
+        )
+        result = await self.db.execute(stmt)
+        return result.first() is None

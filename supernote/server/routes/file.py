@@ -5,6 +5,7 @@ import urllib.parse
 
 from aiohttp import BodyPartReader, web
 
+from supernote.models.base import BaseResponse, create_error_response
 from supernote.models.file import (
     AllocationVO,
     CapacityLocalVO,
@@ -33,9 +34,7 @@ from supernote.models.file import (
     SynchronousStartLocalVO,
 )
 
-from ..models.base import BaseResponse, create_error_response
 from ..services.file import FileService
-from ..services.storage import StorageService
 
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
@@ -52,9 +51,10 @@ async def handle_sync_start(request: web.Request) -> web.Response:
     req_data = SynchronousStartLocalDTO.from_dict(await request.json())
     user_email = request["user"]
     sync_locks = request.app["sync_locks"]
-    storage_service: StorageService = request.app["storage_service"]
+    sync_locks = request.app["sync_locks"]
+    file_service: FileService = request.app["file_service"]
 
-    is_empty = await asyncio.to_thread(storage_service.is_empty, user_email)
+    is_empty = await file_service.is_empty(user_email)
 
     now = time.time()
     if user_email in sync_locks:
@@ -153,8 +153,8 @@ async def handle_capacity_query(request: web.Request) -> web.Response:
     equipment_no = req_data.get("equipmentNo", "")
     user_email = request["user"]
 
-    storage_service: StorageService = request.app["storage_service"]
-    used = await asyncio.to_thread(storage_service.get_storage_usage, user_email)
+    file_service: FileService = request.app["file_service"]
+    used = await file_service.get_storage_usage(user_email)
 
     return web.json_response(
         CapacityLocalVO(
@@ -240,7 +240,7 @@ async def handle_upload_data(request: web.Request) -> web.Response:
 
     filename = request.match_info["filename"]
     user_email = request["user"]
-    storage_service: StorageService = request.app["storage_service"]
+    file_service: FileService = request.app["file_service"]
 
     # Check for chunked upload parameters
     upload_id = request.query.get("uploadId")
@@ -263,7 +263,7 @@ async def handle_upload_data(request: web.Request) -> web.Response:
             part_number = int(part_number_str)
 
             # Save this chunk
-            total_bytes = await storage_service.save_chunk_file(
+            total_bytes = await file_service.save_chunk_file(
                 user_email, upload_id, filename, part_number, field.read_chunk
             )
             logger.info(
@@ -276,7 +276,7 @@ async def handle_upload_data(request: web.Request) -> web.Response:
                 logger.info(
                     f"Received final chunk for {filename}, merging {total_chunks} chunks"
                 )
-                await storage_service.merge_chunks(
+                await file_service.merge_chunks(
                     user_email,
                     upload_id,
                     filename,
@@ -284,12 +284,12 @@ async def handle_upload_data(request: web.Request) -> web.Response:
                 )
                 # Clean up chunk files
                 await asyncio.to_thread(
-                    storage_service.cleanup_chunks, user_email, upload_id
+                    file_service.cleanup_chunks, user_email, upload_id
                 )
                 logger.info(f"Successfully merged and cleaned up chunks for {filename}")
         else:
             # Non-chunked upload
-            total_bytes = await storage_service.save_temp_file(
+            total_bytes = await file_service.save_temp_file(
                 user_email, filename, field.read_chunk
             )
             logger.info(
@@ -383,7 +383,6 @@ async def handle_download_data(request: web.Request) -> web.StreamResponse:
 
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
-    storage_service: StorageService = request.app["storage_service"]
 
     # Resolve file metadata via VFS
     info = await file_service.get_file_info(user_email, path_str)
@@ -395,23 +394,10 @@ async def handle_download_data(request: web.Request) -> web.StreamResponse:
 
     content_hash = info.content_hash
     if not content_hash:
-        # Legacy fallback? Or empty file?
-        # If size > 0 and no hash, it's an error in VFS migration?
-        # Let's try to fallback to physical file if hash missing (migration compat).
-        # Resolve physical path
-        # TODO: Remove this when we no longer need backwards compatibility.
-        target_path = storage_service.resolve_path(user_email, path_str)
-        if target_path.exists() and target_path.is_file():
-            return web.FileResponse(target_path)
-        return web.Response(status=404, text="File content not found")
+        return web.Response(status=404, text="File content not found (missing hash)")
 
     # Verify the content exists in BlobStorage
-    if not await storage_service.blob_storage.exists(content_hash):
-        # Fallback to physical path? (Hybrid mode)
-        target_path = storage_service.resolve_path(user_email, path_str)
-        if target_path.exists() and target_path.is_file():
-            return web.FileResponse(target_path)
-
+    if not await file_service.blob_storage.exists(content_hash):
         logger.error(
             "Unexpected: File %s / %s exists in VFS but not found in BlobStorage for content hash: %s",
             info.id,
@@ -421,7 +407,7 @@ async def handle_download_data(request: web.Request) -> web.StreamResponse:
         return web.Response(status=404, text="Blob not found")
 
     # Stream the content directly form blob storage
-    blob_path = storage_service.blob_storage.get_blob_path(content_hash)
+    blob_path = file_service.blob_storage.get_blob_path(content_hash)
     return web.FileResponse(
         blob_path,
         headers={"Content-Disposition": f'attachment; filename="{info.name}"'},

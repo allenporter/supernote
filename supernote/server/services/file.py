@@ -1,6 +1,12 @@
+import asyncio
+import hashlib
 import logging
+import shutil
 import urllib.parse
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from pathlib import Path
+
+import aiofiles
 
 from supernote.models.base import BaseResponse
 from supernote.models.file import (
@@ -16,7 +22,7 @@ from supernote.models.file import (
 )
 
 from ..db.session import DatabaseSessionManager
-from .storage import StorageService
+from .blob import BlobStorage
 from .user import UserService
 from .vfs import VirtualFileSystem
 
@@ -28,14 +34,18 @@ class FileService:
 
     def __init__(
         self,
-        storage_service: StorageService,
+        storage_root: Path,
+        blob_storage: BlobStorage,
         user_service: UserService,
         session_manager: DatabaseSessionManager,
     ) -> None:
         """Initialize the file service."""
-        self.storage_service = storage_service
+        self.storage_root = storage_root
+        self.blob_storage = blob_storage
+        self.temp_dir = storage_root / "temp"
         self.user_service = user_service
         self.session_manager = session_manager
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
 
     async def list_folder(
         self, user: str, path_str: str, recursive: bool = False
@@ -147,10 +157,10 @@ class FileService:
                     # if base_path is empty (root), full path is /rel_path
                     # if base_path is /foo, full path is /foo/rel_path
                     if base_path_display == "" or base_path_display == "/":
-                         full_path = f"/{rel_path}"
+                        full_path = f"/{rel_path}"
                     else:
-                         full_path = f"{base_path_display}/{rel_path}"
-                    
+                        full_path = f"{base_path_display}/{rel_path}"
+
                     parent_path = str(Path(full_path).parent)
                     if parent_path == ".":
                         parent_path = "/"
@@ -175,7 +185,7 @@ class FileService:
                         full_path = f"/{item.file_name}"
                     else:
                         full_path = f"{base_path_display}/{item.file_name}"
-                    
+
                     # Parent is the folder we are listing
                     parent_path = base_path_display if base_path_display else "/"
 
@@ -232,7 +242,7 @@ class FileService:
 
             # Always resolve the canonical path from the node structure
             path_display = await vfs.get_full_path(user_id, node.id)
-            
+
             parent_path = str(Path(path_display).parent)
             if parent_path == ".":
                 parent_path = "/"
@@ -282,27 +292,29 @@ class FileService:
         user_id = await self.user_service.get_user_id(user)
 
         # 2. Check if Blob exists (CAS)
-        # We trust the client's MD5 if the blob exists.
-        # This assumes merge_chunks already wrote it.
-        if not await self.storage_service.blob_storage.exists(content_hash):
-            # Fallback check: maybe it wasn't merged yet? Or legacy flow?
-            # For now, we enforce BlobStorage flow.
-            # Check if we have a legacy temp file?
-            temp_path = self.storage_service.resolve_temp_path(user, filename)
+        if not await self.blob_storage.exists(content_hash):
+            # Fallback: check legacy temp file from save_temp_file
+            temp_path = self.resolve_temp_path(user, filename)
             if temp_path.exists():
-                # Legacy path: calc md5, write to blob, verify
-                calc_md5 = self.storage_service.get_file_md5(temp_path)
+                # Calculate MD5 and promote to blob
+                hash_md5 = hashlib.md5()
+                with open(temp_path, "rb") as f:
+                    for chunk in iter(lambda: f.read(4096), b""):
+                        hash_md5.update(chunk)
+                calc_md5 = hash_md5.hexdigest()
+
                 if calc_md5 != content_hash:
                     raise ValueError(
                         f"Hash mismatch: expected {content_hash}, got {calc_md5}"
                     )
 
-                # Write to blob storage
+                # Write to blob
                 with open(temp_path, "rb") as f:
                     data = f.read()
-                    await self.storage_service.write_blob(data)
+                    await self.blob_storage.write_blob(data)
 
-                # Continue with content_hash
+                # Cleanup temp
+                temp_path.unlink(missing_ok=True)
             else:
                 raise FileNotFoundError(
                     f"Blob {content_hash} not found and no temp file."
@@ -311,32 +323,12 @@ class FileService:
         # 3. Create Metadata in VFS
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
-
-            # Resolve parent path ID
-            # path_str example: "/Notes/foo.txt" (filename included usually in path_str? No)
-            # path_str is usually the directory?
-            # In handle_upload_finish, data.path is passed.
-            # Client usually sends path="/Notes", filename="foo.txt".
-
-            # Ensure parent directory exists
             clean_path = path_str.strip("/")
             parent_id = 0
             if clean_path:
                 parent_id = await vfs.ensure_directory_path(user_id, clean_path)
 
-            # Create file node
-            # We assume size is 0 or needed?
-            # We can get size from BlobStorage? but BlobStorage doesn't store size metadata easily
-            # without reading.
-            # Ideally client sends size. But we only have content_hash.
-            # Let's read size from blob_storage (via path stat) or just 0 for now.
-            # Optimization: BlobStorage could return size.
-            # LocalBlobStorage: get_blob_path(hash).stat().st_size
-            blob_size = (
-                self.storage_service.blob_storage.get_blob_path(content_hash)
-                .stat()
-                .st_size
-            )
+            blob_size = self.blob_storage.get_blob_path(content_hash).stat().st_size
 
             new_file = await vfs.create_file(
                 user_id=user_id,
@@ -389,24 +381,115 @@ class FileService:
 
         return DeleteFolderLocalVO(equipment_no=equipment_no)
 
-    def _get_unique_path(self, user: str, rel_path: str) -> str:
-        """Generate a unique path if the destination exists for a user."""
-        dest_path = self.storage_service.resolve_path(user, rel_path)
-        if not dest_path.exists():
-            return rel_path
+    async def get_storage_usage(self, user: str) -> int:
+        """Get total storage usage for a specific user using VFS."""
+        user_id = await self.user_service.get_user_id(user)
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+            return await vfs.get_total_usage(user_id)
 
-        path_obj = Path(rel_path)
-        parent = path_obj.parent
-        stem = path_obj.stem
-        suffix = path_obj.suffix
+    async def is_empty(self, user: str) -> bool:
+        """Check if user storage is empty using VFS."""
+        user_id = await self.user_service.get_user_id(user)
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+            return await vfs.is_empty(user_id)
 
-        counter = 1
-        while True:
-            new_name = f"{stem}({counter}){suffix}"
-            new_rel_path = str(parent / new_name) if parent != Path(".") else new_name
-            if not self.storage_service.resolve_path(user, new_rel_path).exists():
-                return new_rel_path
-            counter += 1
+    # --- Chunk / Temp File Management (Moved from StorageService) ---
+
+    def resolve_temp_path(self, user: str, filename: str) -> Path:
+        """Resolve a filename to an absolute path in user's temp storage."""
+        return self.temp_dir / user / filename
+
+    def get_chunk_path(
+        self, user: str, upload_id: str, filename: str, part_number: int
+    ) -> Path:
+        """Get path for a chunk."""
+        chunk_filename = f"{filename}_chunk_{part_number}"
+        return self.temp_dir / user / upload_id / chunk_filename
+
+    async def save_temp_file(
+        self, user: str, filename: str, chunk_reader: Callable[[], Awaitable[bytes]]
+    ) -> int:
+        """Save data to user's temp file."""
+        temp_path = self.resolve_temp_path(user, filename)
+        temp_path.parent.mkdir(parents=True, exist_ok=True)
+
+        loop = asyncio.get_running_loop()
+        f = await loop.run_in_executor(None, open, temp_path, "wb")
+        total_bytes = 0
+        try:
+            while True:
+                chunk = await chunk_reader()
+                if not chunk:
+                    break
+                await loop.run_in_executor(None, f.write, chunk)
+                total_bytes += len(chunk)
+        finally:
+            await loop.run_in_executor(None, f.close)
+        return total_bytes
+
+    async def save_chunk_file(
+        self,
+        user: str,
+        upload_id: str,
+        filename: str,
+        part_number: int,
+        chunk_reader: Callable[[], Awaitable[bytes]],
+    ) -> int:
+        """Save a single chunk."""
+        chunk_path = self.get_chunk_path(user, upload_id, filename, part_number)
+        chunk_path.parent.mkdir(parents=True, exist_ok=True)
+
+        loop = asyncio.get_running_loop()
+        f = await loop.run_in_executor(None, open, chunk_path, "wb")
+        total_bytes = 0
+        try:
+            while True:
+                chunk = await chunk_reader()
+                if not chunk:
+                    break
+                await loop.run_in_executor(None, f.write, chunk)
+                total_bytes += len(chunk)
+        finally:
+            await loop.run_in_executor(None, f.close)
+
+        logger.info(
+            f"Saved chunk {part_number} for {filename} (user: {user}): {total_bytes} bytes"
+        )
+        return total_bytes
+
+    async def merge_chunks(
+        self, user: str, upload_id: str, filename: str, total_chunks: int
+    ) -> str:
+        """Merge chunks into BlobStorage. Returns MD5."""
+        logger.info(f"Merging {total_chunks} chunks for {filename} (user: {user})")
+
+        async def chunk_stream() -> AsyncGenerator[bytes, None]:
+            for part_number in range(1, total_chunks + 1):
+                chunk_path = self.get_chunk_path(user, upload_id, filename, part_number)
+                if not chunk_path.exists():
+                    raise FileNotFoundError(f"Chunk {part_number} not found")
+
+                async with aiofiles.open(chunk_path, "rb") as f:
+                    while True:
+                        data = await f.read(8192)
+                        if not data:
+                            break
+                        yield data
+
+        md5 = await self.blob_storage.write_stream(chunk_stream())
+        logger.info(f"Merged chunks for {filename}, MD5: {md5}")
+        return md5
+
+    def cleanup_chunks(self, user: str, upload_id: str) -> None:
+        """Delete upload directory."""
+        upload_dir = self.temp_dir / user / upload_id
+        if upload_dir.exists():
+            try:
+                shutil.rmtree(upload_dir)
+            except OSError as e:
+                logger.warning(f"Failed to cleanup chunks {upload_id}: {e}")
 
     async def move_item(
         self, user: str, id: int, to_path: str, autorename: bool, equipment_no: str

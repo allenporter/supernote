@@ -1,15 +1,15 @@
 import hashlib
+from pathlib import Path
 
 from aiohttp import FormData
 
 from supernote.client.file import FileClient
-from supernote.server.services.storage import StorageService
-from tests.server.conftest import TEST_USERNAME
+from tests.server.conftest import TEST_USERNAME, UserStorageHelper
 
 
 async def test_upload_file(
     file_client: FileClient,
-    storage_service: StorageService,
+    storage_root: Path,
 ) -> None:
     filename = "test_upload.note"
     file_content = b"some binary content"
@@ -22,14 +22,16 @@ async def test_upload_file(
     await file_client.upload_data(filename=filename, data=data)
 
     # Verify file exists in temp
-    temp_file = storage_service.resolve_temp_path(TEST_USERNAME, filename)
+    # Verify file exists in temp
+    temp_file = storage_root / "temp" / TEST_USERNAME / filename
     assert temp_file.exists()
     assert temp_file.read_bytes() == file_content
 
 
 async def test_chunked_upload(
     file_client: FileClient,
-    storage_service: StorageService,
+    storage_root: Path,
+    user_storage: UserStorageHelper,
 ) -> None:
     """Test uploading a file in multiple chunks."""
 
@@ -60,20 +62,15 @@ async def test_chunked_upload(
         params={"uploadId": upload_id, "totalChunks": total_chunks, "partNumber": 2},
     )
 
-    # Verify merged file exists in temp
-    temp_file = storage_service.resolve_temp_path(TEST_USERNAME, filename)
-    assert temp_file.exists()
+    # Verify merged file exists in BlobStorage (via hash)
+    # The temp file is gone because merge_chunks cleans it up (or writes directly to blob and never creates it)
+    full_hash = hashlib.md5(full_content).hexdigest()
+    assert await user_storage.blob_storage.exists(full_hash)
 
-    # Verify content is correctly assembled
-    merged_content = temp_file.read_bytes()
-    assert merged_content == full_content
-    assert len(merged_content) == len(chunk1_content) + len(chunk2_content)
-
-    # Verify MD5 hash matches
-    expected_hash = hashlib.md5(full_content).hexdigest()
-    actual_hash = storage_service.get_file_md5(temp_file)
-    assert actual_hash == expected_hash
+    # Content verification via blob
+    blob_path = user_storage.blob_storage.get_blob_path(full_hash)
+    assert blob_path.read_bytes() == full_content
 
     # Verify chunk files were cleaned up
-    upload_dir = storage_service.temp_dir / TEST_USERNAME / upload_id
+    upload_dir = storage_root / "temp" / TEST_USERNAME / upload_id
     assert not upload_dir.exists()

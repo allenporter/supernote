@@ -1,29 +1,4 @@
-from pathlib import Path
-
 from supernote.client.file import FileClient
-from supernote.server.services.storage import StorageService
-
-
-def test_id_generation(tmp_path: Path) -> None:
-    service = StorageService(tmp_path / "storage")
-    user = "testuser"
-
-    path1 = "EXPORT/test.note"
-    id1 = service.get_id_from_path(path1)
-
-    # Stable ID
-    assert service.get_id_from_path(path1) == id1
-
-    # Different ID for different path
-    path2 = "EXPORT/test2.note"
-    assert service.get_id_from_path(path2) != id1
-
-    # Test path resolution (requires file to exist)
-    (service.users_dir / user / "EXPORT").mkdir(parents=True, exist_ok=True)
-    (service.users_dir / user / "EXPORT" / "test.note").touch()
-
-    resolved_path = service.get_path_from_id(user, id1)
-    assert resolved_path == path1
 
 
 async def test_create_directory(file_client: FileClient) -> None:
@@ -103,7 +78,7 @@ async def test_list_subdirectory(file_client: FileClient) -> None:
     )
 
     results = sorted((e.name, e.path_display, e.parent_path) for e in data.entries)
-    
+
     # Expect FolderB. Path display should be full path /FolderA/FolderB
     assert results == [
         ("FolderB", "/FolderA/FolderB", "/FolderA"),
@@ -113,7 +88,7 @@ async def test_list_subdirectory(file_client: FileClient) -> None:
     data = await file_client.list_folder(
         folder_id=folder_a_id, equipment_no="SN123456", recursive=False
     )
-    
+
     results = sorted((e.name, e.path_display, e.parent_path) for e in data.entries)
     assert results == [
         ("FolderB", "/FolderA/FolderB", "/FolderA"),

@@ -2,7 +2,7 @@ import secrets
 
 from aiohttp import web
 
-from supernote.server.models.base import BaseResponse
+from supernote.models.base import BaseResponse
 
 from .decorators import public_route
 

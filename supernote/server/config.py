@@ -49,6 +49,10 @@ class ServerConfig(DataClassYAMLMixin):
     def db_url(self) -> str:
         return f"sqlite+aiosqlite:///{self.storage_dir}/system/supernote.db"
 
+    @property
+    def storage_root(self) -> Path:
+        return Path(self.storage_dir)
+
     @classmethod
     def load(cls, config_dir: str | Path | None = None) -> "ServerConfig":
         """Load configuration from directory. READ-ONLY."""

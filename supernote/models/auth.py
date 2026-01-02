@@ -33,6 +33,20 @@ class Equipment(BaseEnum):
     USER_PLATFORM = 4
 
 
+@dataclass
+class UserCheckDTO(DataClassJSONMixin):
+    """Request to check user existence."""
+
+    email: str
+    country_code: str = field(metadata=field_options(alias="countryCode"), default="")
+    telephone: str = ""
+    user_name: str = field(metadata=field_options(alias="userName"), default="")
+    domain: str = ""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
 class LoginMethod(str, BaseEnum):
     """Method for logging in to account."""
 
@@ -165,6 +179,45 @@ class OSType(str, BaseEnum):
     LINUX = "LINUX"
     ANDROID = "ANDROID"
     IOS = "IOS"
+
+
+@dataclass
+class UserVO(DataClassJSONMixin):
+    """User profile VO."""
+
+    user_name: str | None = field(
+        metadata=field_options(alias="userName"), default=None
+    )
+    email: str | None = None
+    phone: str | None = None
+    country_code: str | None = field(
+        metadata=field_options(alias="countryCode"), default=None
+    )
+    total_capacity: str = field(
+        metadata=field_options(alias="totalCapacity"), default="0"
+    )
+    file_server: str = field(metadata=field_options(alias="fileServer"), default="0")
+    avatars_url: str | None = field(
+        metadata=field_options(alias="avatarsUrl"), default=None
+    )
+    birthday: str | None = None
+    sex: str | None = None
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+        omit_none = True
+        code_generation_options = ["TO_DICT_ADD_OMIT_NONE_FLAG"]
+
+
+@dataclass
+class UserQueryByIdVO(BaseResponse):
+    """User query response."""
+
+    user: UserVO | None = None
+    is_user: bool = field(metadata=field_options(alias="isUser"), default=False)
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
 
 
 @dataclass

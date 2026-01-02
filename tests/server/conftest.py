@@ -24,9 +24,9 @@ from supernote.server.config import AuthConfig, ServerConfig, UserEntry
 from supernote.server.db.base import Base
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.services.blob import BlobStorage, LocalBlobStorage
 from supernote.server.services.coordination import LocalCoordinationService
 from supernote.server.services.state import StateService
-from supernote.server.services.storage import StorageService
 from supernote.server.services.user import JWT_ALGORITHM, UserService
 from supernote.server.services.vfs import VirtualFileSystem
 
@@ -151,35 +151,38 @@ class UserStorageHelper:
 
     def __init__(
         self,
-        storage_service: StorageService,
+        storage_root: Path,
+        blob_storage: BlobStorage,
         user_service: UserService,
         session_manager: DatabaseSessionManager,
     ) -> None:
-        """Initialize the helper with a StorageService instance and an optional session manager."""
-        self.storage_service = storage_service
+        """Initialize the helper."""
+        self.storage_root = storage_root
+        self.blob_storage = blob_storage
         self.user_service = user_service
         self.session_manager = session_manager
 
     async def create_file(
         self, user: str, rel_path: str, content: str = "content"
     ) -> Path:
-        """Create a file for a user in the storage service and BlobStorage."""
-        # 1. Write to physical path (legacy/hybrid support)
-        path = self.storage_service.resolve_path(user, rel_path)
+        """Create a file for a user in BlobStorage and VFS (and physical for compat)."""
+        # Resolve physical path manually
+        clean_rel = rel_path.lstrip("/")
+        path = self.storage_root / "users" / user / clean_rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
 
         user_id = await self.user_service.get_user_id(user)
 
-        # 2. Write to BlobStorage
+        # Write to BlobStorage
         content_bytes = content.encode()
         content_md5 = hashlib.md5(content_bytes).hexdigest()
-        await self.storage_service.write_blob(content_bytes)
+        await self.blob_storage.write_blob(content_bytes)
 
         # 3. Create VFS Entry
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
-            filename = path.name
+            filename = Path(rel_path).name
             parent_path = str(Path(rel_path).parent)
             if parent_path == ".":
                 parent_path = ""
@@ -198,8 +201,9 @@ class UserStorageHelper:
         return path
 
     async def create_directory(self, user: str, rel_path: str) -> Path:
-        """Create a directory for a user in the storage service."""
-        path = self.storage_service.resolve_path(user, rel_path)
+        """Create a directory for a user in the VFS."""
+        clean_rel = rel_path.lstrip("/")
+        path = self.storage_root / "users" / user / clean_rel
         path.mkdir(parents=True, exist_ok=True)
 
         user_id = int(hashlib.md5(user.encode()).hexdigest()[:15], 16)
@@ -224,15 +228,15 @@ def storage_root(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def storage_service(storage_root: Path) -> StorageService:
-    """Provides a StorageService instance for testing."""
-    return StorageService(storage_root)
+def blob_storage(storage_root: Path) -> BlobStorage:
+    """Provides a BlobStorage instance for testing."""
+    return LocalBlobStorage(storage_root)
 
 
 @pytest.fixture
-def state_service(storage_service: StorageService) -> StateService:
+def state_service(storage_root: Path) -> StateService:
     """Provides a StateService instance for testing."""
-    return StateService(storage_service.system_dir / "state.json")
+    return StateService(storage_root / "system" / "state.json")
 
 
 @pytest.fixture
@@ -250,18 +254,19 @@ def user_service(
 
 @pytest.fixture
 def user_storage(
-    storage_service: StorageService,
+    storage_root: Path,
+    blob_storage: BlobStorage,
     user_service: UserService,
     session_manager: DatabaseSessionManager,
 ) -> UserStorageHelper:
     """Fixture to easily create test files/folders for users."""
-    return UserStorageHelper(storage_service, user_service, session_manager)
+    return UserStorageHelper(storage_root, blob_storage, user_service, session_manager)
 
 
 @pytest.fixture
 async def mock_storage(
     storage_root: Path,
-    storage_service: StorageService,
+    blob_storage: BlobStorage,
     session_manager: DatabaseSessionManager,
     user_storage: UserStorageHelper,
 ) -> AsyncGenerator[Path, None]:

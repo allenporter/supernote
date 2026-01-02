@@ -27,6 +27,7 @@ async def _login(client: TestClient, equipment_no: str) -> Any:
             "password": password_hash,
             "timestamp": timestamp,
             "equipmentNo": equipment_no,
+            "loginMethod": "1",
         },
     )
     return await resp.json()
@@ -45,7 +46,13 @@ async def test_device_binding_lifecycle(client: TestClient) -> None:
     # 2. Bind the device
     resp = await client.post(
         "/api/terminal/user/bindEquipment",
-        json={"account": TEST_USERNAME, "equipmentNo": equipment_a},
+        json={
+            "account": TEST_USERNAME,
+            "equipmentNo": equipment_a,
+            "name": "Test Device",
+            "totalCapacity": "100",
+            "label": ["Test"],
+        },
     )
     assert resp.status == 200
     assert (await resp.json())["success"] is True
@@ -65,7 +72,8 @@ async def test_device_binding_lifecycle(client: TestClient) -> None:
 
     # 5. Unlink Device A
     resp = await client.post(
-        "/api/terminal/equipment/unlink", json={"equipmentNo": equipment_a}
+        "/api/terminal/equipment/unlink",
+        json={"equipmentNo": equipment_a},
     )
     assert resp.status == 200
 
