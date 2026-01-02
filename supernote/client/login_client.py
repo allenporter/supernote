@@ -1,6 +1,4 @@
-"""Library for accessing backups in Supenote Cloud."""
-
-import hashlib
+"""Library for authenticating with the Supernote (Private) Cloud Server."""
 import logging
 from typing import TypeVar
 
@@ -21,45 +19,14 @@ from supernote.models.auth import (
     UserPreAuthRequest,
     UserPreAuthResponse,
 )
-
 from .client import Client
 from .exceptions import ApiException, SmsVerificationRequired
+from .hashing import encode_password, sign_login_token, AccountWithCode
 
 _LOGGER = logging.getLogger(__name__)
 
 
 _T = TypeVar("_T", bound=DataClassJSONMixin)
-
-
-def _sha256_s(s: str) -> str:
-    return hashlib.sha256(s.encode("utf-8")).hexdigest()
-
-
-def _md5_s(s: str) -> str:
-    return hashlib.md5(s.encode("utf-8")).hexdigest()
-
-
-def _encode_password(password: str, rc: str) -> str:
-    return _sha256_s(_md5_s(password) + rc)
-
-
-def _extract_real_key(token: str) -> str:
-    """Extract real key from token as per JS logic."""
-    # var t = e.charAt(e.length - 1)
-    # var n = parseInt(t)
-    # var a = e.split("-")
-    # var o = a[n];
-    if not token:
-        return ""
-    last_char = token[-1]
-    try:
-        index = int(last_char)
-        parts = token.split("-")
-        if 0 <= index < len(parts):
-            return parts[index]
-    except ValueError:
-        pass
-    return ""
 
 
 class LoginClient:
@@ -73,7 +40,7 @@ class LoginClient:
         """Log in and return an access token."""
         await self._token()
         random_code_response = await self._get_random_code(email)
-        encoded_password = _encode_password(password, random_code_response.random_code)
+        encoded_password = encode_password(password, random_code_response.random_code)
         access_token_response = await self._get_access_token(
             email, encoded_password, random_code_response.timestamp
         )
@@ -85,7 +52,7 @@ class LoginClient:
         """Log in via equipment endpoint and return full login response."""
         await self._token()
         random_code_response = await self._get_random_code(email)
-        encoded_password = _encode_password(password, random_code_response.random_code)
+        encoded_password = encode_password(password, random_code_response.random_code)
 
         payload = LoginDTO(
             account=email,
@@ -118,11 +85,9 @@ class LoginClient:
 
     async def request_sms_code(self, telephone: str, country_code: int = 1) -> None:
         """Request an SMS verification code."""
-        # 1. Pre-auth to get token
-        # Note: The JS code prefixes the account with the country code for pre-auth
-        # account: this.tempAccountInfo.countryCode + this.tempAccountInfo.account
-        account_with_code = f"{country_code}{telephone}"
-        pre_auth_payload = UserPreAuthRequest(account=account_with_code).to_dict()
+        # Pre-authentication step to obtain a token
+        account_with_code = AccountWithCode(account=telephone, country_code=country_code)   
+        pre_auth_payload = UserPreAuthRequest(account=account_with_code.encode()).to_dict()
 
         # Always get a fresh CSRF token
         await self._client._get_csrf_token()
@@ -131,32 +96,20 @@ class LoginClient:
             "/api/user/validcode/pre-auth", UserPreAuthResponse, json=pre_auth_payload
         )
 
-        token = pre_auth_response.token
+        # Calculate signature needed to send the random code over SMS
+        sign = sign_login_token(account_with_code, pre_auth_response.token)   
 
-        # 2. Extract real key and calculate sign
-        # e.sign = e.hash256(n + a) where n is account_with_code and a is real_key
-        real_key = _extract_real_key(token)
-        sign = _sha256_s(account_with_code + real_key)
-
-        # 3. Send SMS
-        # timestamp is needed here. In the JS it uses e.tempAccountInfo.timestamp
-        # We might need to fetch a timestamp first if we don't have one, but let's see.
-        # The JS gets timestamp from the initial login failure or a separate query.
-        # For now, let's try to get a fresh timestamp/random code first?
-        # Actually, the JS flow for "sendVerificationCode" seems to use existing timestamp.
-        # But if we are starting fresh, we might need one.
-        # Let's assume we can get a fresh random code to get a timestamp.
+        # Obtain a random code timestamp and send SMS
         random_code_resp = await self._get_random_code(telephone)
         timestamp = random_code_resp.timestamp
 
         sms_payload = SendSmsDTO(
-            telephone=telephone,
+            telephone=account_with_code.telephone,
             timestamp=timestamp,
-            token=token,
+            token=pre_auth_response.token,
             sign=sign,
-            nationcode=country_code,
+            nationcode=account_with_code.country_code,
         ).to_dict()
-
         await self._client.post_json(
             "/api/user/sms/validcode/send", SendSmsVO, json=sms_payload
         )
