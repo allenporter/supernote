@@ -142,6 +142,14 @@ class Client:
             raise ApiException(f"Error connecting to API: {err}") from err
         return await self._raise_for_status(resp)
 
+    async def get_content(self, url: str, **kwargs: Any) -> bytes:
+        """Make a get request and return bytes."""
+        resp = await self.get(url, **kwargs)
+        try:
+            return await resp.read()
+        except ClientError as err:
+            raise ApiException(f"Error reading response: {err}") from err
+
     async def post_json(self, url: str, data_cls: Type[_T], **kwargs: Any) -> _T:
         """Make a post request and return a json response."""
         resp = await self.post(url, **kwargs)

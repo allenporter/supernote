@@ -11,7 +11,7 @@ from supernote.models.base import create_error_response
 
 from .config import ServerConfig
 from .db.session import DatabaseSessionManager
-from .routes import auth, file, schedule, system
+from .routes import auth, file, oss, schedule, system
 from .services.blob import LocalBlobStorage
 from .services.coordination import LocalCoordinationService
 from .services.file import FileService
@@ -30,7 +30,7 @@ async def trace_middleware(
 ) -> web.StreamResponse:
     # Skip reading body for upload endpoints to avoid consuming the stream
     # which breaks multipart parsing in the handler.
-    if "/upload/data/" in request.path:
+    if "/api/oss/upload" in request.path:
         return await handler(request)
 
     # Read body if present
@@ -164,6 +164,7 @@ def create_app(config: ServerConfig) -> web.Application:
     app.add_routes(system.routes)
     app.add_routes(auth.routes)
     app.add_routes(file.routes)
+    app.add_routes(oss.routes)
     app.add_routes(schedule.routes)
 
     # Add a catch-all route to log everything (must be last)
