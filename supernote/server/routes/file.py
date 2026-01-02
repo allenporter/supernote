@@ -311,7 +311,7 @@ async def handle_download_apply(request: web.Request) -> web.Response:
     url_signer: UrlSigner = request.app["url_signer"]
 
     encoded_id = urllib.parse.quote(info.id)
-    # New OSS download URL: /api/oss/download?path={id}
+    # OSS download URL: /api/oss/download?path={id}
     path_to_sign = f"/api/oss/download?path={encoded_id}"
 
     # helper returns: ...?signature=...
