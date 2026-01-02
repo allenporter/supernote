@@ -1,4 +1,3 @@
-import hashlib
 import logging
 import secrets
 import time
@@ -8,6 +7,7 @@ import jwt
 from sqlalchemy import select
 
 from supernote.models.auth import LoginVO, UserVO
+from supernote.server.utils.hashing import hash_with_salt
 
 from ..config import AuthConfig, UserEntry
 from ..db.models.user import UserDO
@@ -99,12 +99,6 @@ class UserService:
             # But VFS relies on valid user.
             raise ValueError(f"User {account} not found")
 
-    def verify_password(self, account: str, password: str) -> bool:
-        user = self._get_user(account)
-        if not user or not user.is_active:
-            return False
-        hash_hex = hashlib.md5(password.encode()).hexdigest()
-        return bool(hash_hex == user.password_md5)
 
     async def verify_login_hash(
         self, account: str, client_hash: str, timestamp: str
@@ -123,8 +117,7 @@ class UserService:
         if stored_timestamp != timestamp:
             return False
 
-        concat = user.password_md5 + random_code
-        expected_hash = hashlib.sha256(concat.encode()).hexdigest()
+        expected_hash = hash_with_salt(user.password_md5, random_code)
 
         return expected_hash == client_hash
 
