@@ -214,7 +214,7 @@ class FileClient:
             "/api/file/recycle/delete", BaseResponse, json=dto.to_dict()
         )
 
-    async def recycle_revert(self, id_list: Llistist[int]) -> None:
+    async def recycle_revert(self, id_list: list[int]) -> None:
         """Revert from recycle bin."""
         dto = RecycleFileDTO(id_list=id_list)
         await self._client.post_json(
