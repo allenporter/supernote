@@ -137,16 +137,31 @@ class FileService:
                 # We can't easily rebuild full path without walking up.
                 # Assuming devices rely on IDs and relative paths.
 
+            # Resolve base path for the folder
+            base_path_display = await vfs.get_full_path(user_id, folder_id)
+
             if recursive:
                 recursive_list = await vfs.list_recursive(user_id, folder_id)
                 for item, rel_path in recursive_list:
+                    # rel_path is relative to folder_id
+                    # if base_path is empty (root), full path is /rel_path
+                    # if base_path is /foo, full path is /foo/rel_path
+                    if base_path_display == "" or base_path_display == "/":
+                         full_path = f"/{rel_path}"
+                    else:
+                         full_path = f"{base_path_display}/{rel_path}"
+                    
+                    parent_path = str(Path(full_path).parent)
+                    if parent_path == ".":
+                        parent_path = "/"
+
                     entries.append(
                         EntriesVO(
                             tag="folder" if item.is_folder == "Y" else "file",
                             id=str(item.id),
                             name=item.file_name,
-                            path_display=f"/{rel_path}",  # Placeholder
-                            parent_path="",  # Placeholder
+                            path_display=full_path,
+                            parent_path=parent_path,
                             content_hash=item.md5 or "",
                             is_downloadable=True,
                             size=item.size,
@@ -156,13 +171,21 @@ class FileService:
             else:
                 do_list = await vfs.list_directory(user_id, folder_id)
                 for item in do_list:
+                    if base_path_display == "" or base_path_display == "/":
+                        full_path = f"/{item.file_name}"
+                    else:
+                        full_path = f"{base_path_display}/{item.file_name}"
+                    
+                    # Parent is the folder we are listing
+                    parent_path = base_path_display if base_path_display else "/"
+
                     entries.append(
                         EntriesVO(
                             tag="folder" if item.is_folder == "Y" else "file",
                             id=str(item.id),
                             name=item.file_name,
-                            path_display=f"/{item.file_name}",  # Placeholder
-                            parent_path="",
+                            path_display=full_path,
+                            parent_path=parent_path,
                             content_hash=item.md5 or "",
                             is_downloadable=True,
                             size=item.size,
@@ -207,26 +230,19 @@ class FileService:
             if not node:
                 return None
 
-            # Construct fully qualified path?
-            # We don't easily know parent path string without walking up.
-            # For now, use the requested path_str if it resolved, or just /Name
-
-            # Default
-            path_display = f"/{node.file_name}"
-
-            # If the input path_str was what resolved the node (i.e. not an integer ID lookup)
-            # we should trust it as the path (ensure leading slash).
-            # If path_str is numeric, we treated it as ID.
-            if not clean_path.isdigit():
-                # It was a path lookup. Use the path_str.
-                path_display = path_str if path_str.startswith("/") else f"/{path_str}"
+            # Always resolve the canonical path from the node structure
+            path_display = await vfs.get_full_path(user_id, node.id)
+            
+            parent_path = str(Path(path_display).parent)
+            if parent_path == ".":
+                parent_path = "/"
 
             return EntriesVO(
                 tag="folder" if node.is_folder == "Y" else "file",
                 id=str(node.id),
                 name=node.file_name,
                 path_display=path_display,
-                parent_path=str(Path(path_display).parent),
+                parent_path=parent_path,
                 content_hash=node.md5 or "",
                 is_downloadable=True,
                 size=node.size,
@@ -551,16 +567,11 @@ class FileService:
             do_list = await vfs.search_files(user_id, keyword)
 
             for item in do_list:
-                # Reconstructing full path is hard without parent pointers recursion.
-                # For now, we return name as display or just "/...".
-                # Ideally UserFileDO should store parent_id, so we can walk up?
-                # Or we just don't return full path correctly if not expensive?
-                # Test expects path?
-                # For flat search results, maybe just /Name is okay? or we need full path.
-                # VFS: We can resolve full path if we walk up parent_id until 0.
-
-                # Simple path reconstruction (placeholder)
-                path_display = f"/{item.file_name}"
+                # Resolve full path using VFS recursion
+                path_display = await vfs.get_full_path(user_id, item.id)
+                parent_path = str(Path(path_display).parent)
+                if parent_path == ".":
+                    parent_path = "/"
 
                 results.append(
                     EntriesVO(
@@ -568,7 +579,7 @@ class FileService:
                         id=str(item.id),
                         name=item.file_name,
                         path_display=path_display,
-                        parent_path="/",  # Unknown without walk
+                        parent_path=parent_path,
                         size=item.size,
                         last_update_time=item.update_time,
                         content_hash=item.md5 or "",

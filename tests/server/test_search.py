@@ -52,3 +52,24 @@ async def test_search_no_results(file_client: FileClient) -> None:
     # Search for non-existent keyword
     data = await file_client.search(keyword="NonExistent")
     assert len(data.entries) == 0
+
+
+async def test_search_path_reconstruction(file_client: FileClient) -> None:
+    """Test that search returns the correct full path for nested files."""
+    # Create /Nested/Folder/DeepTarget
+    await file_client.create_folder(path="/Nested", equipment_no="SN123")
+    await file_client.create_folder(path="/Nested/Folder", equipment_no="SN123")
+
+    # Create a deep folder to search for
+    await file_client.create_folder(
+        path="/Nested/Folder/DeepTarget", equipment_no="SN123"
+    )
+
+    # Search for "DeepTarget"
+    data = await file_client.search(keyword="DeepTarget")
+    assert len(data.entries) == 1
+    entry = data.entries[0]
+
+    assert entry.name == "DeepTarget"
+    assert entry.path_display == "/Nested/Folder/DeepTarget"
+    assert entry.parent_path == "/Nested/Folder"

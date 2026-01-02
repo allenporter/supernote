@@ -85,3 +85,36 @@ async def test_list_recursive(file_client: FileClient) -> None:
         ("Note", "/Note"),
         ("Parent", "/Parent"),
     ]
+
+
+async def test_list_subdirectory(file_client: FileClient) -> None:
+    # Create /FolderA/FolderB
+    await file_client.create_folder(path="/FolderA", equipment_no="SN123456")
+    await file_client.create_folder(path="/FolderA/FolderB", equipment_no="SN123456")
+
+    # Get ID of FolderA
+    data = await file_client.list_folder(path="/", equipment_no="SN123456")
+    entry = next(e for e in data.entries if e.name == "FolderA")
+    folder_a_id = int(entry.id)
+
+    # List recursive from FolderA
+    data = await file_client.list_folder(
+        folder_id=folder_a_id, equipment_no="SN123456", recursive=True
+    )
+
+    results = sorted((e.name, e.path_display, e.parent_path) for e in data.entries)
+    
+    # Expect FolderB. Path display should be full path /FolderA/FolderB
+    assert results == [
+        ("FolderB", "/FolderA/FolderB", "/FolderA"),
+    ]
+
+    # List flat from FolderA
+    data = await file_client.list_folder(
+        folder_id=folder_a_id, equipment_no="SN123456", recursive=False
+    )
+    
+    results = sorted((e.name, e.path_display, e.parent_path) for e in data.entries)
+    assert results == [
+        ("FolderB", "/FolderA/FolderB", "/FolderA"),
+    ]
