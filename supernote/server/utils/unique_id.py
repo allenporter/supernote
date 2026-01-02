@@ -1,3 +1,5 @@
+"""Module for generating unique ids."""
+
 import random
 import threading
 import time
@@ -6,12 +8,11 @@ import time
 _lock = threading.Lock()
 _last_timestamp = -1
 _sequence = 0
-_MAX_SEQUENCE = 4096  # 12 bits
 
 
 def next_id() -> int:
-    """
-    Generate a unique, time-ordered 64-bit integer ID.
+    """Generate a unique, time-ordered 64-bit integer ID.
+
     Format: [Timestamp (41 bits)] [Random/Sequence (22 bits)]
 
     This is a simplified version for a single-node server.

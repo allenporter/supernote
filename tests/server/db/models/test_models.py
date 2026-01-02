@@ -29,7 +29,7 @@ async def test_user_file_crud(db_session: AsyncSession) -> None:
     assert fetched.file_name == "test.txt"
     assert fetched.user_id == 12345
     assert fetched.create_time > 0
-    assert fetched.id > 0  # Snowflake check
+    assert fetched.id > 0  # unique_id check
 
     # Update
     fetched.file_name = "updated.txt"

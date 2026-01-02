@@ -1,10 +1,10 @@
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from supernote.server.utils.snowflake import next_id
+from supernote.server.utils.unique_id import next_id
 
 
-def test_snowflake_unique_ids() -> None:
+def test_unique_ids() -> None:
     """Test that generated IDs are unique."""
     ids = set()
     count = 1000
@@ -14,7 +14,7 @@ def test_snowflake_unique_ids() -> None:
     assert len(ids) == count
 
 
-def test_snowflake_ordered_ids() -> None:
+def test_ordered_ids() -> None:
     """Test that IDs are roughly time-ordered."""
     id1 = next_id()
     time.sleep(0.001)

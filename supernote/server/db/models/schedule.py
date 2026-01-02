@@ -5,7 +5,7 @@ from sqlalchemy import BigInteger, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from supernote.server.db.base import Base
-from supernote.server.utils.snowflake import next_id
+from supernote.server.utils.unique_id import next_id
 
 
 class ScheduleTaskGroupDO(Base):
@@ -14,7 +14,7 @@ class ScheduleTaskGroupDO(Base):
     __tablename__ = "t_schedule_task_group"
 
     # In legacy/docs, task_list_id might be a string (UUID) or Int.
-    # Using Snowflake Int for consistency, but mapping to String if API requires it.
+    # Using unique_id Int for consistency, but mapping to String if API requires it.
     task_list_id: Mapped[int] = mapped_column(
         BigInteger, primary_key=True, default=next_id
     )
