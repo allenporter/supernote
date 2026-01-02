@@ -1,7 +1,6 @@
 """File related API data models mirroring OpenAPI Spec."""
 
 from dataclasses import dataclass, field
-from typing import List
 
 from mashumaro import field_options
 from mashumaro.config import BaseConfig
@@ -87,7 +86,7 @@ class FileListQueryVO(BaseResponse):
     pages: int = 0
     page_num: int = field(metadata=field_options(alias="pageNum"), default=0)
     page_size: int = field(metadata=field_options(alias="pageSize"), default=20)
-    user_file_vo_list: List[UserFileVO] = field(
+    user_file_vo_list: list[UserFileVO] = field(
         metadata=field_options(alias="userFileVOList"), default_factory=list
     )
 
@@ -101,7 +100,7 @@ class FolderListQueryDTO(DataClassJSONMixin):
     """
 
     directory_id: int = field(metadata=field_options(alias="directoryId"))
-    id_list: List[int] = field(metadata=field_options(alias="idList"))
+    id_list: list[int] = field(metadata=field_options(alias="idList"))
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -128,7 +127,7 @@ class FolderListQueryVO(BaseResponse):
         /api/file/folder/list/query
     """
 
-    folder_vo_list: List[FolderVO] = field(
+    folder_vo_list: list[FolderVO] = field(
         metadata=field_options(alias="folderVOList"), default_factory=list
     )
 
@@ -197,7 +196,7 @@ class FileDeleteDTO(DataClassJSONMixin):
         /api/file/delete
     """
 
-    id_list: List[int] = field(metadata=field_options(alias="idList"))
+    id_list: list[int] = field(metadata=field_options(alias="idList"))
     directory_id: int = field(metadata=field_options(alias="directoryId"))
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
@@ -231,7 +230,7 @@ class FileMoveAndCopyDTO(DataClassJSONMixin):
         /api/file/copy
     """
 
-    id_list: List[int] = field(metadata=field_options(alias="idList"))
+    id_list: list[int] = field(metadata=field_options(alias="idList"))
     directory_id: int = field(metadata=field_options(alias="directoryId"))
     go_directory_id: int = field(metadata=field_options(alias="goDirectoryId"))
 
@@ -300,7 +299,7 @@ class FileListSearchVO(BaseResponse):
     """
 
     total: int = 0
-    user_file_search_vo_list: List[UserFileSearchVO] = field(
+    user_file_search_vo_list: list[UserFileSearchVO] = field(
         metadata=field_options(alias="userFileSearchVOList"), default_factory=list
     )
 
@@ -345,7 +344,7 @@ class RecycleFileListVO(BaseResponse):
     """
 
     total: int = 0
-    recycle_file_vo_list: List[RecycleFileVO] = field(
+    recycle_file_vo_list: list[RecycleFileVO] = field(
         metadata=field_options(alias="recycleFileVOList"), default_factory=list
     )
 
@@ -359,7 +358,7 @@ class RecycleFileDTO(DataClassJSONMixin):
         /api/file/recycle/revert
     """
 
-    id_list: List[int] = field(metadata=field_options(alias="idList"))
+    id_list: list[int] = field(metadata=field_options(alias="idList"))
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -674,7 +673,7 @@ class ListFolderLocalVO(BaseResponse):
     equipment_no: str | None = field(
         metadata=field_options(alias="equipmentNo"), default=None
     )
-    entries: List[EntriesVO] = field(default_factory=list)
+    entries: list[EntriesVO] = field(default_factory=list)
 
 
 @dataclass
@@ -955,7 +954,7 @@ class PdfDTO(DataClassJSONMixin):
     """
 
     id: int
-    page_no_list: List[int] | None = field(
+    page_no_list: list[int] | None = field(
         metadata=field_options(alias="pageNoList"), default=None
     )
 
@@ -1007,7 +1006,7 @@ class PngVO(BaseResponse):
         /api/file/note/to/png (POST)
     """
 
-    png_page_vo_list: List[PngPageVO] | None = field(
+    png_page_vo_list: list[PngPageVO] | None = field(
         metadata=field_options(alias="pngPageVOList"), default=None
     )
 

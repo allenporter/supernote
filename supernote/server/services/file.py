@@ -1,7 +1,6 @@
 import logging
 import urllib.parse
 from pathlib import Path
-from typing import List
 
 from supernote.models.base import BaseResponse
 from supernote.models.file import (
@@ -474,7 +473,7 @@ class FileService:
         """List files in recycle bin for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
 
-        recycle_files: List[RecycleFileVO] = []
+        recycle_files: list[RecycleFileVO] = []
 
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
@@ -545,7 +544,7 @@ class FileService:
     async def search_files(self, user: str, keyword: str) -> list[EntriesVO]:
         """Search for files matching the keyword in user's storage."""
         user_id = await self.user_service.get_user_id(user)
-        results: List[EntriesVO] = []
+        results: list[EntriesVO] = []
 
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
