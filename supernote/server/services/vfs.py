@@ -174,6 +174,32 @@ class VirtualFileSystem:
 
         return current_node
 
+    async def get_full_path(self, user_id: int, node_id: int) -> str:
+        """Resolve the full path of a node by walking up the directory tree."""
+        if node_id == 0:
+            return ""
+
+        path_parts: list[str] = []
+        current_id = node_id
+
+        # Loop until root (0) or not found.
+        # Check for circular refs? Simple depth limit could work if needed.
+        depth = 0
+        max_depth = 50
+
+        while current_id != 0 and depth < max_depth:
+            node = await self.get_node_by_id(user_id, current_id)
+            if not node:
+                # If node is missing mid-tree, we might have a broken tree or root
+                # Just return what we have? or broken?
+                break
+
+            path_parts.insert(0, node.file_name)
+            current_id = node.directory_id
+            depth += 1
+
+        return "/" + "/".join(path_parts)
+
     async def ensure_directory_path(self, user_id: int, path: str) -> int:
         """Ensure a directory path exists, creating if necessary. Returns the final directory ID."""
         parts = [p for p in path.strip("/").split("/") if p]

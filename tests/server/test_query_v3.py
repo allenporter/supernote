@@ -22,8 +22,8 @@ async def test_query_v3_success(
     assert data.entries_vo
     assert data.entries_vo.id == str(real_id)
     assert data.entries_vo.name == "test.note"
-    # When querying by ID, VFS returns /{filename} generally unless fully walked
-    assert data.entries_vo.path_display == "/test.note"
+    # When querying by ID, VFS now correctly reconstructs full path
+    assert data.entries_vo.path_display == "/Note/test.note"
     # MD5 of "content" is 9a0364b9e99bb480dd25e1f0284c8555
     assert data.entries_vo.content_hash == "9a0364b9e99bb480dd25e1f0284c8555"
 
