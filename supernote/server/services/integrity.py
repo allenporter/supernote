@@ -15,6 +15,7 @@ class IntegrityReport:
     scanned: int
     missing_blob: int
     size_mismatch: int
+    orphans: int
     ok: int
 
 
@@ -30,35 +31,57 @@ class IntegrityService:
 
     async def verify_user_storage(self, user_id: int) -> IntegrityReport:
         """Check all files for a user."""
-        report = IntegrityReport(scanned=0, missing_blob=0, size_mismatch=0, ok=0)
+        report = IntegrityReport(
+            scanned=0, missing_blob=0, size_mismatch=0, orphans=0, ok=0
+        )
 
         async with self.session_manager.session() as session:
-            # Query all active files (not folders)
+            # Query all active files AND folders
+            # We need folders to verify parent logic
             stmt = select(UserFileDO).where(
                 UserFileDO.user_id == user_id,
                 UserFileDO.is_active == "Y",
-                UserFileDO.is_folder == "N",
             )
             result = await session.execute(stmt)
-            files = result.scalars().all()
+            all_nodes = result.scalars().all()
 
-            for file_do in files:
+            # Build a set of valid directory IDs
+            # Root (0) is always valid
+            valid_dirs = {0}
+            for node in all_nodes:
+                if node.is_folder == "Y":
+                    valid_dirs.add(node.id)
+
+            for node in all_nodes:
                 report.scanned += 1
-                md5 = file_do.md5
 
-                # Check Blob Existence
+                # Check 1: Orphan Check (Parent Validity)
+                if node.directory_id not in valid_dirs:
+                    logger.error(
+                        f"Integrity Fail: Node {node.id} ({node.file_name}) has invalid parent {node.directory_id}"
+                    )
+                    report.orphans += 1
+                    # If it's orphaned, we might still check blob, but let's count it first
+                    continue
+
+                if node.is_folder == "Y":
+                    report.ok += 1
+                    continue
+
+                # Check 2: Blob Existence (Files only)
+                md5 = node.md5
                 if not md5 or not await self.blob_storage.exists(md5):
                     logger.error(
-                        f"Integrity Fail: File {file_do.id} ({file_do.file_name}) missing blob {md5}"
+                        f"Integrity Fail: File {node.id} ({node.file_name}) missing blob {md5}"
                     )
                     report.missing_blob += 1
                     continue
 
-                # Check Size
+                # Check 3: Size Mismatch
                 blob_size = await self.blob_storage.get_size(md5)
-                if blob_size != file_do.size:
+                if blob_size != node.size:
                     logger.warning(
-                        f"Integrity Warning: File {file_do.id} size mismatch. VFS: {file_do.size}, Blob: {blob_size}"
+                        f"Integrity Warning: File {node.id} size mismatch. VFS: {node.size}, Blob: {blob_size}"
                     )
                     report.size_mismatch += 1
                     continue
