@@ -1,6 +1,5 @@
 """Unit tests for UrlSigner utility."""
 
-import time
 
 import pytest
 from freezegun import freeze_time
