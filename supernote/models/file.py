@@ -755,8 +755,11 @@ class FileDownloadLocalDTO(DataClassJSONMixin):
         /api/file/3/files/download_v3
     """
 
-    id: int | str  # Spec says int, usage implies str (path) sometimes? Spec says int64.
+    id: int
+    """File id number from the devices api."""
+
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
+    """Equipment number."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -1120,3 +1123,53 @@ class FileCopyLocalVO(BaseResponse):
     entries_vo: EntriesVO | None = field(
         metadata=field_options(alias="entriesVO"), default=None
     )
+
+
+@dataclass
+class FileUploadFinishLocalVO(BaseResponse):
+    """Response model for completing a file upload (Device/Path-based).
+
+    This is used by the following POST endpoint:
+        /api/file/2/files/upload/finish
+    """
+
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
+    path_display: str | None = field(
+        metadata=field_options(alias="path_display"), default=None
+    )
+    id: str | None = None
+    size: int = 0
+    name: str | None = None
+    content_hash: str | None = field(
+        metadata=field_options(alias="content_hash"), default=None
+    )
+
+
+@dataclass
+class FileLabelSearchDTO(DataClassJSONMixin):
+    """Request model for searching files by label/keyword.
+
+    Used by:
+        /api/file/label/list/search (POST)
+    """
+
+    keyword: str
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class FileLabelSearchVO(BaseResponse):
+    """Response model for file label search.
+
+    Used by:
+        /api/file/label/list/search (POST)
+    """
+
+    entries: list[EntriesVO] = field(default_factory=list)

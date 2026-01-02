@@ -17,6 +17,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.pool import StaticPool
 
+from supernote.client.client import Client
+from supernote.client.file import FileClient
 from supernote.server.app import create_app
 from supernote.server.config import AuthConfig, ServerConfig, UserEntry
 from supernote.server.db.base import Base
@@ -161,16 +163,20 @@ class UserStorageHelper:
     async def create_file(
         self, user: str, rel_path: str, content: str = "content"
     ) -> Path:
-        """Create a file for a user in the storage service."""
+        """Create a file for a user in the storage service and BlobStorage."""
+        # 1. Write to physical path (legacy/hybrid support)
         path = self.storage_service.resolve_path(user, rel_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
 
         user_id = await self.user_service.get_user_id(user)
 
-        # MD5 of content
-        content_md5 = hashlib.md5(content.encode()).hexdigest()
+        # 2. Write to BlobStorage
+        content_bytes = content.encode()
+        content_md5 = hashlib.md5(content_bytes).hexdigest()
+        await self.storage_service.write_blob(content_bytes)
 
+        # 3. Create VFS Entry
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
             filename = path.name
@@ -186,7 +192,7 @@ class UserStorageHelper:
                 await vfs.delete_node(user_id, existing.id)
 
             await vfs.create_file(
-                user_id, parent_id, filename, len(content), content_md5
+                user_id, parent_id, filename, len(content_bytes), content_md5
             )
 
         return path
@@ -278,3 +284,32 @@ async def client_fixture(
     """Create a test client for server tests."""
     app = create_app(server_config)
     return await aiohttp_client(app)
+
+
+@pytest.fixture
+async def authenticated_client(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> AsyncGenerator[Client, None]:
+    """Create an authenticated supernote client."""
+    from supernote.client.auth import AbstractAuth
+    from supernote.client.client import Client
+
+    token = auth_headers["x-access-token"]
+
+    class TokenAuth(AbstractAuth):
+        async def async_get_access_token(self) -> str:
+            return token
+
+    # client is TestClient, client.session is ClientSession
+    base_url = str(client.make_url(""))
+    supernote_client = Client(client.session, auth=TokenAuth(), host=base_url)
+    yield supernote_client
+
+
+@pytest.fixture
+def file_client(authenticated_client: Client) -> Generator[FileClient, None, None]:
+    """Create a FileClient."""
+    from supernote.client.file import FileClient
+
+    yield FileClient(authenticated_client)
