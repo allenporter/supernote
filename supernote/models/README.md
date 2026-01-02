@@ -126,6 +126,8 @@ The TerminalFileUploadController is the main controller for handling terminal fi
 
 The FileLocalController is the main controller for handling cloud/nas synchronization requests.
 
+See `supernote.models.file` for more information on the data models related to these API endpoints.
+
 ### Sync Handshake
 
 The FileLocalController is the main controller for handling cloud/nas synchronization requests.
@@ -182,6 +184,10 @@ The ShareController is the main controller for handling sharing requests.
 ### Scheduling & Calendar
 
 The ScheduleController is the main controller for handling scheduling and calendar requests.
+
+See `supernote.models.schedule` module for more information on the data models
+related to these API endpoints.
+
 
 *   **Groups:**
     *   `POST /api/file/schedule/group`: Add Group
