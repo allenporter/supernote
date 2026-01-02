@@ -110,11 +110,9 @@ class FileClient:
             )
         raise ValueError("path or folder_id must be specified")
 
-    async def delete_folder(
-        self, folder_id: int, equipment_no: str
-    ) -> DeleteFolderLocalVO:
+    async def delete(self, id: int, equipment_no: str) -> DeleteFolderLocalVO:
         """Delete a folder or file (V3)."""
-        dto = DeleteFolderLocalDTO(id=folder_id, equipment_no=equipment_no)
+        dto = DeleteFolderLocalDTO(id=id, equipment_no=equipment_no)
         return await self._client.post_json(
             "/api/file/3/files/delete_folder_v3",
             DeleteFolderLocalVO,
