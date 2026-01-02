@@ -1,4 +1,9 @@
-from typing import Any
+import hashlib
+import logging
+import uuid
+from pathlib import Path
+
+from aiohttp import FormData
 
 from supernote.models.base import BaseResponse
 from supernote.models.file import (
@@ -35,8 +40,11 @@ from supernote.models.file import (
     SynchronousStartLocalDTO,
     SynchronousStartLocalVO,
 )
+from supernote.models.system import FileChunkParams
 
 from . import Client
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class FileClient:
@@ -133,6 +141,99 @@ class FileClient:
         )
         return await self._client.post_json(
             "/api/file/3/files/copy_v3", FileCopyLocalVO, json=dto.to_dict()
+        )
+
+    async def upload_content(
+        self,
+        path: str,
+        content: str | bytes,
+        equipment_no: str | None = None,
+        chunk_size: int = 5 * 1024 * 1024,
+    ) -> FileUploadFinishLocalVO:
+        """Create a file (convenience method wrapping upload flow).
+
+        Args:
+            path: Full cloud path (e.g. /Folder/file.txt)
+            content: File content (string or bytes)
+            equipment_no: Equipment number
+
+        Returns:
+            FileUploadFinishLocalVO containing file upload finish response
+        """
+        if equipment_no is None:
+            equipment_no = "WEB"
+        filename = Path(path).name
+        size = len(content)
+
+        # First upload the upload url
+        _LOGGER.debug("Initiating upload for file %s", path)
+        apply = await self.upload_apply(filename, path, size, equipment_no)
+
+        if apply.part_upload_url is None and apply.full_upload_url is None:
+            raise ValueError("No upload URL available")
+
+        if isinstance(content, str):
+            content_bytes = content.encode("utf-8")
+        else:
+            content_bytes = content
+
+        if size < chunk_size or apply.part_upload_url is None:
+            if apply.full_upload_url is None:
+                raise ValueError("No upload URL available")
+            _LOGGER.debug("Uploading file %s in one chunk", path)
+            data = FormData()
+            data.add_field("file", content_bytes, filename=filename)
+            # Pass empty dict to headers to avoid default application/json Content-Type
+            # The client will still add Auth and XSRF headers
+            await self._client.request(
+                "post",
+                apply.full_upload_url,
+                data=data,
+                headers={},
+            )
+        else:
+            upload_id = uuid.uuid4().hex
+            # Break into chunks
+            chunks = [
+                content_bytes[i : i + chunk_size] for i in range(0, size, chunk_size)
+            ]
+            for i, chunk in enumerate(chunks):
+                _LOGGER.debug(
+                    f"Uploading chunk {i + 1} of {len(chunks)} ({len(chunk)} bytes)"
+                )
+                data = FormData()
+                data.add_field("file", chunk, filename=filename)
+                params = FileChunkParams(
+                    upload_id=upload_id,
+                    part_number=i + 1,
+                    total_chunks=len(chunks),
+                )
+                await self._client.request(
+                    "post",
+                    apply.part_upload_url,
+                    data=data,
+                    params=params.to_dict(),
+                    headers={},
+                )
+
+        _LOGGER.debug("Finishing upload for file %s", path)
+
+        parent = str(Path(path).parent)
+        if parent == ".":
+            parent = ""
+        parent_path_str = "/" + parent if parent else "/"
+        # Ensure parent_path starts with /
+        if not parent_path_str.startswith("/"):
+            parent_path_str = "/" + parent_path_str
+
+        md5 = hashlib.md5(content_bytes).hexdigest()
+        # TODO: Determine if we should be using one of the other endpoints or supporting
+        # multiple for this flow.
+        return await self.upload_finish(
+            file_name=filename,
+            path=parent_path_str,
+            content_hash=md5,
+            equipment_no=equipment_no,
         )
 
     async def upload_apply(
@@ -250,18 +351,4 @@ class FileClient:
             "/api/file/2/files/synchronous/end",
             SynchronousEndLocalVO,
             json=dto.to_dict(),
-        )
-
-    async def upload_data(
-        self, filename: str, data: Any, params: dict | None = None
-    ) -> None:
-        """Upload file data (Device/V3)."""
-        # Pass empty dict to headers to avoid default application/json Content-Type
-        # The client will still add Auth and XSRF headers
-        await self._client.request(
-            "post",
-            f"/api/file/upload/data/{filename}",
-            data=data,
-            params=params,
-            headers={},
         )

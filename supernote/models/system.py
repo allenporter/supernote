@@ -116,6 +116,28 @@ class EmailPublicKeyVO(BaseResponse):
     )
 
 
+@dataclass
+class FileUploadParams:
+    """Query parameters for file uploads."""
+
+    signature: str
+    timestamp: int
+    nonce: str
+    path: str
+
+
+@dataclass
+class FileChunkParams(DataClassJSONMixin):
+    """Query parameters for file uploads by chunk."""
+
+    part_number: int = field(metadata=field_options(alias="partNumber"))
+    total_chunks: int = field(metadata=field_options(alias="totalChunks"))
+    upload_id: str = field(metadata=field_options(alias="uploadId"))
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
 @dataclass(kw_only=True)
 class FileUploadApplyLocalVO(BaseResponse):
     """OSS upload apply response.

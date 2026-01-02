@@ -718,9 +718,6 @@ class FileUploadApplyLocalDTO(DataClassJSONMixin):
     size: str  # Note: Spec says string
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
 
-    # Not strictly in spec but often needed or legacy
-    md5: str | None = field(metadata=field_options(alias="fileMd5"), default=None)
-
     class Config(BaseConfig):
         serialize_by_alias = True
 

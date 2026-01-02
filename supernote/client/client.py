@@ -182,16 +182,14 @@ class Client:
         _LOGGER.debug("CSRF request[get]=%s %s", url, HEADERS)
         resp = await self._websession.request("get", url, headers=HEADERS)
         try:
-            result = await resp.text()
+            await resp.text()
         except ClientError as err:
             raise ApiException("Server returned malformed response") from err
-        _LOGGER.debug("CSRF response=%s", result)
-        _LOGGER.debug("CSRF response headers=%s", resp.headers)
+        # Can be added back later for debugging
+        # _LOGGER.debug("CSRF response headers=%s", resp.headers)
         token = resp.headers.get(XSRF_HEADER)
         if token is None:
             raise ApiException("Failed to get CSRF token from header")
-        _LOGGER.debug("CSRF token=%s", token)
-        _LOGGER.debug("CSRF response cookies=%s", resp.cookies)
         return token
 
     @classmethod
