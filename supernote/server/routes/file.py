@@ -224,17 +224,16 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
 
     req_data = FileUploadApplyLocalDTO.from_dict(await request.json())
     file_name = req_data.file_name
-    
-    file_service: FileService = request.app["file_service"]
+
     url_signer: UrlSigner = request.app["url_signer"]
 
     # Path to sign must match the route: /api/file/upload/data/{filename}
     encoded_name = urllib.parse.quote(file_name)
     path_to_sign = f"/api/file/upload/data/{encoded_name}"
-    
+
     # helper returns: /api/file/upload/data/{encoded_name}?signature=...
     signed_path = url_signer.sign(path_to_sign)
-    
+
     # Construct full URL using request scheme and host
     full_url = f"{request.scheme}://{request.host}{signed_path}"
 
@@ -250,6 +249,7 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
             part_upload_url=full_url,
         ).to_dict()
     )
+
 
 # TODO: We should move to use the OSS endpoints for all of these urls:
 # *   `POST /api/oss/generate/upload/url`: Get Upload URL
@@ -393,10 +393,10 @@ async def handle_download_apply(request: web.Request) -> web.Response:
 
     # Generate signed download URL
     url_signer: UrlSigner = request.app["url_signer"]
-    
+
     encoded_id = urllib.parse.quote(info.id)
     path_to_sign = f"/api/file/download/data?path={encoded_id}"
-    
+
     # helper returns: /api/file/download/data?path={encoded_id}&signature=...
     signed_path = url_signer.sign(path_to_sign)
     download_url = f"{request.scheme}://{request.host}{signed_path}"
