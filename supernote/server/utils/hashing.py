@@ -1,7 +1,6 @@
 """Module for hashing utilities."""
 
 import hashlib
-import hmac
 
 
 def sha256_string(s: str) -> str:
