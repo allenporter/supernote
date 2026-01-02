@@ -7,11 +7,12 @@ import aiohttp
 import pytest
 from aiohttp import FormData
 from aiohttp.test_utils import TestClient
+from sqlalchemy import delete
 
 from supernote.client.client import Client
 from supernote.client.exceptions import UnauthorizedException
 from supernote.client.login_client import LoginClient
-from supernote.server.services.storage import StorageService
+from supernote.server.db.models.file import UserFileDO
 from tests.server.conftest import (
     TEST_PASSWORD,
     TEST_USERNAME,
@@ -116,6 +117,7 @@ async def test_bind_equipment(client: TestClient) -> None:
             "equipmentNo": "SN123456",
             "flag": "1",
             "name": "Supernote A6 X2 Nomad",
+            "totalCapacity": "32000000",
         },
     )
     assert resp.status == 200
@@ -135,15 +137,21 @@ async def test_user_query(client: TestClient, auth_headers: dict[str, str]) -> N
 async def test_sync_start_syn_type(
     client: TestClient,
     auth_headers: dict[str, str],
-    storage_service: StorageService,
+    storage_root: Path,
     user_storage: UserStorageHelper,
 ) -> None:
     # Clear storage root for test
-    if storage_service.root_dir.exists():
-        shutil.rmtree(str(storage_service.root_dir))
-    storage_service._ensure_directories()
+    if storage_root.exists():
+        shutil.rmtree(str(storage_root))
+    storage_root.mkdir(parents=True, exist_ok=True)
 
-    # 1. Initially storage is empty, should return synType: False
+    # Clear VFS state for this user
+    async with user_storage.session_manager.session() as session:
+        # Delete all nodes for simplicity. In a real shared DB this would be bad,
+        # but here we are in a test environment with a shared in-memory DB.
+        # Ideally we filter by user_id but we need to resolve it first.
+        await session.execute(delete(UserFileDO))
+        await session.commit()
     resp = await client.post(
         "/api/file/2/files/synchronous/start",
         json={"equipmentNo": "SN123456"},

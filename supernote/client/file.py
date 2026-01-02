@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any
 
 from supernote.models.base import BaseResponse
 from supernote.models.file import (

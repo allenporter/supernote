@@ -7,10 +7,11 @@ from typing import Optional
 import jwt
 from sqlalchemy import select
 
+from supernote.models.auth import LoginVO, UserVO
+
 from ..config import AuthConfig, UserEntry
 from ..db.models.user import UserDO
 from ..db.session import DatabaseSessionManager
-from ..models.auth import LoginResult, UserVO
 from .coordination import CoordinationService
 from .state import SessionState, StateService
 
@@ -133,7 +134,7 @@ class UserService:
         password_hash: str,
         timestamp: str,
         equipment_no: Optional[str] = None,
-    ) -> LoginResult | None:
+    ) -> LoginVO | None:
         user = self._get_user(account)
         if not user or not user.is_active:
             return None
@@ -173,10 +174,11 @@ class UserService:
         # For now, strictly following roadmap "Refactor AuthService to use CoordinationService".
         # self._state_service.create_session(token, account, equipment_no)
 
-        return LoginResult(
+        return LoginVO(
             token=token,
             is_bind=is_bind,
             is_bind_equipment=is_bind_equipment,
+            user_name=account,
         )
 
     async def verify_token(self, token: str) -> SessionState | None:

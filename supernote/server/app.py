@@ -7,16 +7,16 @@ from typing import Any, Awaitable, Callable
 
 from aiohttp import web
 
+from supernote.models.base import create_error_response
+
 from .config import ServerConfig
 from .db.session import DatabaseSessionManager
-from .models.base import create_error_response
 from .routes import auth, file, schedule, system
 from .services.blob import LocalBlobStorage
 from .services.coordination import LocalCoordinationService
 from .services.file import FileService
 from .services.schedule import ScheduleService
 from .services.state import StateService
-from .services.storage import StorageService
 from .services.user import UserService
 
 logger = logging.getLogger(__name__)
@@ -130,31 +130,33 @@ def create_app(
     app["config"] = config
 
     # Initialize services
-    storage_root = Path(config.storage_dir)
-    blob_storage = LocalBlobStorage(storage_root)
-    storage_service = StorageService(storage_root, blob_storage)
+    blob_storage = LocalBlobStorage(config.storage_root)
     if state_service is None:
-        state_service = StateService(storage_service.system_dir / "state.json")
+        state_service = StateService(config.storage_root / "system" / "state.json")
 
     session_manager = create_db_session_manager(config.db_url)
     coordination_service = LocalCoordinationService()
 
     app["session_manager"] = session_manager
-    app["storage_service"] = storage_service
     app["state_service"] = state_service
     app["coordination_service"] = coordination_service
-    app["user_service"] = UserService(
+    user_service = UserService(
         config.auth, state_service, coordination_service, session_manager
     )
-    app["file_service"] = FileService(
-        storage_service, app["user_service"], session_manager
+    file_service = FileService(
+        config.storage_root,
+        blob_storage,
+        user_service,
+        session_manager,
     )
+    app["user_service"] = user_service
+    app["file_service"] = file_service
     app["schedule_service"] = ScheduleService(session_manager)
     app["sync_locks"] = {}  # user -> (equipment_no, expiry_time)
 
     # Resolve trace log path if not set
     if not config.trace_log_file:
-        config.trace_log_file = str(storage_service.system_dir / "trace.log")
+        config.trace_log_file = str(config.storage_root / "system" / "trace.log")
 
     # Register routes
     app.add_routes(system.routes)

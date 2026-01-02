@@ -29,7 +29,6 @@ class ActivateEquipmentDTO(DataClassJSONMixin):
 
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
     """Device serial number."""
-    """设备号."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -45,27 +44,21 @@ class BindEquipmentDTO(DataClassJSONMixin):
 
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
     """Device serial number."""
-    """设备号."""
 
     account: str
     """User account."""
-    """账号."""
 
     name: str
     """Device name."""
-    """设备名称."""
 
     total_capacity: str = field(metadata=field_options(alias="totalCapacity"))
     """Total device capacity."""
-    """设备总容量."""
 
     flag: str | None = None
     """Identifier (Fixed value: 1)."""
-    """标识（固定值：1）."""
 
     label: list[str] = field(default_factory=list)
     """Labels."""
-    """标签页."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -81,7 +74,6 @@ class UnbindEquipmentDTO(DataClassJSONMixin):
 
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
     """Device serial number."""
-    """设备号."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -96,31 +88,31 @@ class QueryEquipmentDTO(DataClassJSONMixin):
     """
 
     page_no: str = field(metadata=field_options(alias="pageNo"))
-    """页码."""
+    """Page number."""
 
     page_size: str = field(metadata=field_options(alias="pageSize"))
-    """每页显示的个数."""
+    """Page size."""
 
     equipment_number: str | None = field(
         metadata=field_options(alias="equipmentNumber"), default=None
     )
-    """设备号."""
+    """Equipment number."""
 
     firmware_version: str | None = field(
         metadata=field_options(alias="firmwareVersion"), default=None
     )
-    """固件版本号."""
+    """Firmware version."""
 
     country_code: str | None = field(
         metadata=field_options(alias="countryCode"), default=None
     )
-    """国家码."""
+    """Country code."""
 
     telephone: str | None = field(default=None)
-    """手机号."""
+    """Telephone."""
 
     email: str | None = field(default=None)
-    """邮箱."""
+    """Email."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -136,7 +128,6 @@ class UserEquipmentDTO(DataClassJSONMixin):
 
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
     """Device serial number."""
-    """设备号."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -152,15 +143,12 @@ class EquipmentManualDTO(DataClassJSONMixin):
 
     equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
     """Device serial number."""
-    """设备号."""
 
     language: str
     """Language (JP, CN, HK, EN)."""
-    """语言-JP、CN、HK、EN."""
 
     logic_version: str = field(metadata=field_options(alias="logicVersion"))
     """Logic version number."""
-    """逻辑版本号."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -177,7 +165,6 @@ class BindStatusVO(BaseResponse):
     bind_status: bool | None = field(
         metadata=field_options(alias="bindStatus"), default=None
     )
-    """绑定状态(true:绑定；false:未绑定)."""
     """Bind status (true: bound, false: unbound)."""
 
 

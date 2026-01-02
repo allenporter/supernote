@@ -7,7 +7,7 @@ ActivateEquipmentDTO:
   properties:
     equipmentNo:
       type: string
-      description: 设备号
+      description: Equipment Number
 
 BindEquipmentDTO:
   type: object
@@ -20,27 +20,27 @@ BindEquipmentDTO:
   properties:
     equipmentNo:
       type: string
-      description: 设备号
+      description: Equipment Number
     account:
       type: string
-      description: 账号
+      description: Account
     countryCode:
       type: string
-      description: 国家码
+      description: Country Code
     name:
       type: string
-      description: 设备名称
+      description: Device Name
     totalCapacity:
       type: string
-      description: 设备总容量
+      description: Total Capacity
     flag:
       type: string
-      description: 标识（固定值：1）
+      description: "Flag (Fixed value: 1)"
     label:
       type: array
       items:
         type: string
-      description: 标签页
+      description: Labels
 
 UnbindEquipmentDTO:
   type: object
@@ -49,7 +49,7 @@ UnbindEquipmentDTO:
   properties:
     equipmentNo:
       type: string
-      description: 设备号
+      description: Equipment Number
 
 QueryEquipmentDTO:
   type: object
@@ -59,25 +59,25 @@ QueryEquipmentDTO:
   properties:
     pageNo:
       type: string
-      description: 页码
+      description: Page Number
     pageSize:
       type: string
-      description: 每页显示的个数
+      description: Page Size
     equipmentNumber:
       type: string
-      description: 设备号
+      description: Equipment Number
     firmwareVersion:
       type: string
-      description: 固件版本号
+      description: Firmware Version
     countryCode:
       type: string
-      description: 国家码
+      description: Country Code
     telephone:
       type: string
-      description: 手机号
+      description: Phone Number
     email:
       type: string
-      description: 邮箱
+      description: Email
 
 UserEquipmentDTO:
   type: object
@@ -86,7 +86,7 @@ UserEquipmentDTO:
   properties:
     equipmentNo:
       type: string
-      description: 设备号
+      description: Equipment Number
 
 EquipmentManualDTO:
   type: object
@@ -97,13 +97,13 @@ EquipmentManualDTO:
   properties:
     equipmentNo:
       type: string
-      description: 设备号
+      description: Equipment Number
     language:
       type: string
-      description: 语言-JP、CN、HK、EN
+      description: "Language (JP, CN, HK, EN)"
     logicVersion:
       type: string
-      description: 逻辑版本号
+      description: Logic Version
 
 BindStatusVO:
   allOf:
@@ -112,7 +112,7 @@ BindStatusVO:
       properties:
         bindStatus:
           type: boolean
-          description: "绑定状态(true:绑定；false:未绑定)"
+          description: "Bind Status (true: bound; false: unbound)"
 
 EquipmentManualVO:
   allOf:
