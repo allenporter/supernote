@@ -20,7 +20,7 @@ async def test_delete_folder(file_client: FileClient) -> None:
     folder_id = int(entry.id)
 
     # Delete
-    await file_client.delete_folder(folder_id=folder_id, equipment_no="SN123456")
+    await file_client.delete(id=folder_id, equipment_no="SN123456")
 
     # Verify gone
     data = await file_client.list_folder(path="/", equipment_no="SN123456")
