@@ -23,12 +23,16 @@ from supernote.models.auth import (
 
 from .client import Client
 from .exceptions import ApiException, SmsVerificationRequired
-from .hashing import AccountWithCode, encode_password, sign_login_token
+from .hashing import get_token_salt, hash_password, hash_with_salt
 
 _LOGGER = logging.getLogger(__name__)
 
 
 _T = TypeVar("_T", bound=DataClassJSONMixin)
+
+__all__ = [
+    "LoginClient",
+]
 
 
 class LoginClient:
@@ -42,7 +46,7 @@ class LoginClient:
         """Log in and return an access token."""
         await self._token()
         random_code_response = await self._get_random_code(email)
-        encoded_password = encode_password(password, random_code_response.random_code)
+        encoded_password = hash_password(password, random_code_response.random_code)
         access_token_response = await self._get_access_token(
             email, encoded_password, random_code_response.timestamp
         )
@@ -54,7 +58,7 @@ class LoginClient:
         """Log in via equipment endpoint and return full login response."""
         await self._token()
         random_code_response = await self._get_random_code(email)
-        encoded_password = encode_password(password, random_code_response.random_code)
+        encoded_password = hash_password(password, random_code_response.random_code)
 
         payload = LoginDTO(
             account=email,
@@ -88,12 +92,8 @@ class LoginClient:
     async def request_sms_code(self, telephone: str, country_code: int = 1) -> None:
         """Request an SMS verification code."""
         # Pre-authentication step to obtain a token
-        account_with_code = AccountWithCode(
-            account=telephone, country_code=country_code
-        )
-        pre_auth_payload = UserPreAuthRequest(
-            account=account_with_code.encode()
-        ).to_dict()
+        account_with_code = f"{country_code}{telephone}"
+        pre_auth_payload = UserPreAuthRequest(account=account_with_code).to_dict()
 
         # Always get a fresh CSRF token
         await self._client._get_csrf_token()
@@ -103,18 +103,19 @@ class LoginClient:
         )
 
         # Calculate signature needed to send the random code over SMS
-        sign = sign_login_token(account_with_code, pre_auth_response.token)
+        token_salt = get_token_salt(pre_auth_response.token)
+        sign = hash_with_salt(account_with_code, token_salt)
 
         # Obtain a random code timestamp and send SMS
         random_code_resp = await self._get_random_code(telephone)
         timestamp = random_code_resp.timestamp
 
         sms_payload = SendSmsDTO(
-            telephone=account_with_code.account,
+            telephone=telephone,
             timestamp=timestamp,
             token=pre_auth_response.token,
             sign=sign,
-            nationcode=account_with_code.country_code,
+            nationcode=country_code,
         ).to_dict()
         await self._client.post_json(
             "/api/user/sms/validcode/send", SendSmsVO, json=sms_payload
