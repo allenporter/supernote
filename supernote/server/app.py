@@ -13,10 +13,9 @@ from .config import ServerConfig
 from .db.session import DatabaseSessionManager
 from .routes import auth, file, oss, schedule, system
 from .services.blob import LocalBlobStorage
-from .services.coordination import LocalCoordinationService
+from .services.coordination import SqliteCoordinationService
 from .services.file import FileService
 from .services.schedule import ScheduleService
-from .services.state import StateService
 from .services.user import UserService
 from .utils.url_signer import UrlSigner
 
@@ -123,8 +122,10 @@ def create_db_session_manager(db_url: str) -> DatabaseSessionManager:
     return DatabaseSessionManager(db_url)
 
 
-def create_coordination_service() -> LocalCoordinationService:
-    return LocalCoordinationService()
+def create_coordination_service(
+    session_manager: DatabaseSessionManager,
+) -> SqliteCoordinationService:
+    return SqliteCoordinationService(session_manager)
 
 
 def create_app(config: ServerConfig) -> web.Application:
@@ -133,17 +134,13 @@ def create_app(config: ServerConfig) -> web.Application:
 
     # Initialize services
     blob_storage = LocalBlobStorage(config.storage_root)
-    state_service = StateService(config.storage_root / "system" / "state.json")
 
     session_manager = create_db_session_manager(config.db_url)
-    coordination_service = create_coordination_service()
+    coordination_service = create_coordination_service(session_manager)
 
     app["session_manager"] = session_manager
-    app["state_service"] = state_service
     app["coordination_service"] = coordination_service
-    user_service = UserService(
-        config.auth, state_service, coordination_service, session_manager
-    )
+    user_service = UserService(config.auth, coordination_service, session_manager)
     file_service = FileService(
         config.storage_root,
         blob_storage,

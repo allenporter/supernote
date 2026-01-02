@@ -1,19 +1,43 @@
+import datetime
+import hashlib
 import logging
 import secrets
 import time
+from dataclasses import dataclass, field
 from typing import Optional
 
 import jwt
-from sqlalchemy import select
+from mashumaro.mixins.json import DataClassJSONMixin
+from sqlalchemy import delete, func, select, update
 
 from supernote.models.auth import LoginVO, UserVO
+from supernote.models.user import (
+    LoginRecordVO,
+    RetrievePasswordDTO,
+    UpdateEmailDTO,
+    UpdatePasswordDTO,
+    UserRegisterDTO,
+)
 from supernote.server.utils.hashing import hash_with_salt
 
-from ..config import AuthConfig, UserEntry
+from ..config import AuthConfig
+from ..db.models.device import DeviceDO
+from ..db.models.login_record import LoginRecordDO
 from ..db.models.user import UserDO
 from ..db.session import DatabaseSessionManager
 from .coordination import CoordinationService
-from .state import SessionState, StateService
+
+RANDOM_CODE_TTL = datetime.timedelta(minutes=5)
+
+
+@dataclass
+class SessionState(DataClassJSONMixin):
+    token: str
+    username: str
+    equipment_no: Optional[str] = None
+    created_at: float = field(default_factory=time.time)
+    last_active_at: float = field(default_factory=time.time)
+
 
 logger = logging.getLogger(__name__)
 
@@ -26,25 +50,68 @@ class UserService:
     def __init__(
         self,
         config: AuthConfig,
-        state_service: StateService,
         coordination_service: CoordinationService,
         session_manager: DatabaseSessionManager,
     ) -> None:
         """Initialize the user service."""
         self._config = config
-        self._state_service = state_service
         self._coordination_service = coordination_service
         self._session_manager = session_manager
 
-    @property
-    def _users(self) -> list[UserEntry]:
-        return self._config.users
+    async def list_users(self) -> list[UserDO]:
+        async with self._session_manager.session() as session:
+            result = await session.execute(select(UserDO))
+            return list(result.scalars().all())
 
-    def list_users(self) -> list[UserEntry]:
-        return list(self._users)
+    async def check_user_exists(self, account: str) -> bool:
+        async with self._session_manager.session() as session:
+            stmt = select(UserDO).where(UserDO.username == account)
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none() is not None
 
-    def check_user_exists(self, account: str) -> bool:
-        return any(u.username == account for u in self._users)
+    async def register(self, dto: UserRegisterDTO) -> UserDO:
+        """Register a new user."""
+        if not self._config.enable_registration:
+            raise ValueError("Registration is disabled")
+
+        if await self.check_user_exists(dto.email):
+            raise ValueError("User already exists")
+
+        # Hash password before storage.
+        # Future improvement: Upgrade to stronger hashing (e.g., bcrypt/argon2).
+        password_md5 = hashlib.md5(dto.password.encode()).hexdigest()
+
+        async with self._session_manager.session() as session:
+            new_user = UserDO(
+                username=dto.email,
+                email=dto.email,
+                password_md5=password_md5,
+                display_name=dto.user_name,
+                is_active=True,
+            )
+            session.add(new_user)
+            await session.commit()
+            await session.refresh(new_user)
+            return new_user
+
+    async def unregister(self, account: str) -> None:
+        """Delete a user."""
+        if not self._config.enable_registration:
+            raise ValueError("Registration is disabled")
+        async with self._session_manager.session() as session:
+            # Find user ID first
+            stmt = select(UserDO).where(UserDO.username == account)
+            result = await session.execute(stmt)
+            user = result.scalar_one_or_none()
+            if not user:
+                return
+
+            await session.execute(delete(DeviceDO).where(DeviceDO.user_id == user.id))
+            await session.execute(
+                delete(LoginRecordDO).where(LoginRecordDO.user_id == user.id)
+            )
+            await session.execute(delete(UserDO).where(UserDO.id == user.id))
+            await session.commit()
 
     async def generate_random_code(self, account: str) -> tuple[str, str]:
         """Generate a random code for login challenge."""
@@ -54,56 +121,27 @@ class UserService:
         # Store in coordination service with short TTL (e.g. 5 mins)
         value = f"{random_code}|{timestamp}"
         await self._coordination_service.set_value(
-            f"challenge:{account}", value, ttl=300
+            f"challenge:{account}", value, ttl=int(RANDOM_CODE_TTL.total_seconds())
         )
 
         return random_code, timestamp
 
-    def _get_user(self, account: str) -> UserEntry | None:
-        for user in self._users:
-            if user.username == account:
-                return user
-        return None
-
-    async def get_user_id(self, account: str) -> int:
-        """Get a stable integer ID for a username using the database.
-
-        If the user exists in config but not DB, create them in DB.
-        """
+    async def _get_user_do(self, account: str) -> UserDO | None:
         async with self._session_manager.session() as session:
-            # Try to find user
             stmt = select(UserDO).where(UserDO.username == account)
             result = await session.execute(stmt)
-            user_do = result.scalar_one_or_none()
+            return result.scalar_one_or_none()
 
-            if user_do:
-                return user_do.id
-
-            # If not found, create if valid in config
-            if self.check_user_exists(account):
-                # Retrieve details from config to populate DB (optional)
-                config_user = self._get_user(account)
-                email = config_user.email if config_user else None
-
-                new_user = UserDO(username=account, email=email)
-                session.add(new_user)
-                await session.commit()
-                await session.refresh(new_user)
-                return new_user.id
-
-            # If not in config either?
-            # Logic: If we are asking for ID, presumably the caller thinks they exist?
-            # Or we return -1? Or raise?
-            # Existing logic was just hash.
-            # If invalid user, hash would still return valid int.
-            # But VFS relies on valid user.
-            raise ValueError(f"User {account} not found")
-
+    async def get_user_id(self, account: str) -> int:
+        user = await self._get_user_do(account)
+        if user:
+            return user.id
+        raise ValueError(f"User {account} not found")
 
     async def verify_login_hash(
         self, account: str, client_hash: str, timestamp: str
     ) -> bool:
-        user = self._get_user(account)
+        user = await self._get_user_do(account)
         if not user or not user.is_active:
             return False
 
@@ -118,7 +156,6 @@ class UserService:
             return False
 
         expected_hash = hash_with_salt(user.password_md5, random_code)
-
         return expected_hash == client_hash
 
     async def login(
@@ -127,45 +164,56 @@ class UserService:
         password_hash: str,
         timestamp: str,
         equipment_no: Optional[str] = None,
+        ip: Optional[str] = None,
+        login_method: Optional[str] = None,
     ) -> LoginVO | None:
-        user = self._get_user(account)
+        user = await self._get_user_do(account)
         if not user or not user.is_active:
             return None
 
         if not await self.verify_login_hash(account, password_hash, timestamp):
             return None
 
-        # Check binding status from StateService
-        # StateService access is sync (local file/memory), assuming it stays that way for binding.
-        user_state = self._state_service.get_user_state(account)
-        bound_devices = user_state.devices
-        is_bind = "Y" if bound_devices else "N"
-        is_bind_equipment = (
-            "Y" if equipment_no and equipment_no in bound_devices else "N"
-        )
+        # Check binding status from DB
+        is_bind = "N"
+        is_bind_equipment = "N"
 
+        async with self._session_manager.session() as session:
+            # Check devices
+            stmt = select(DeviceDO).where(DeviceDO.user_id == user.id)
+            devices = (await session.execute(stmt)).scalars().all()
+            if devices:
+                is_bind = "Y"
+                if equipment_no and any(
+                    d.equipment_no == equipment_no for d in devices
+                ):
+                    is_bind_equipment = "Y"
+
+            # Record Login
+            record = LoginRecordDO(
+                user_id=user.id,
+                login_method=login_method or "2",  # Default email
+                equipment=equipment_no,
+                ip=ip,
+                create_time=datetime.datetime.now().isoformat(),
+            )
+            session.add(record)
+            await session.commit()
+
+        ttl = self._config.expiration_hours * 3600
         payload = {
             "sub": account,
             "equipment_no": equipment_no or "",
             "iat": int(time.time()),
-            "exp": int(time.time()) + (self._config.expiration_hours * 3600),
+            "exp": int(time.time()) + ttl,
         }
         token = jwt.encode(payload, self._config.secret_key, algorithm=JWT_ALGORITHM)
 
         # Persist session in CoordinationService
-        # Key: session:{token}, Value: JSON or simple string.
-        # Storing username|equipment_no for simple reconstruction
         session_val = f"{account}|{equipment_no or ''}"
-        ttl = self._config.expiration_hours * 3600
         await self._coordination_service.set_value(
             f"session:{token}", session_val, ttl=ttl
         )
-
-        # Also populate StateService for legacy compatibility/persistence?
-        # The roadmap implies moving AWAY from StateService for tokens.
-        # But if we want to support "list sessions" later, we might need a set or something.
-        # For now, strictly following roadmap "Refactor AuthService to use CoordinationService".
-        # self._state_service.create_session(token, account, equipment_no)
 
         return LoginVO(
             token=token,
@@ -179,9 +227,6 @@ class UserService:
         try:
             # 1. Check if session exists in CoordinationService
             session_val = await self._coordination_service.get_value(f"session:{token}")
-
-            # Fallback to StateService during migration?
-            # session = self._state_service.get_session(token)
 
             if not session_val:
                 logger.warning(
@@ -197,14 +242,9 @@ class UserService:
             payload = jwt.decode(
                 token, self._config.secret_key, algorithms=[JWT_ALGORITHM]
             )
-            # Ensure the token subject matches the session username
             if payload.get("sub") != username:
-                logger.warning(
-                    "Token sub mismatch: %s != %s", payload.get("sub"), username
-                )
                 return None
 
-            # Return SessionState object (constructing it on the fly)
             return SessionState(
                 token=token,
                 username=username,
@@ -214,9 +254,8 @@ class UserService:
             logger.warning("Token verification failed: %s", e)
             return None
 
-    def get_user_profile(self, account: str) -> UserVO | None:
-        """Get user profile from static config."""
-        user = self._get_user(account)
+    async def get_user_profile(self, account: str) -> UserVO | None:
+        user = await self._get_user_do(account)
         if not user:
             return None
 
@@ -232,14 +271,121 @@ class UserService:
             sex="",
         )
 
-    def bind_equipment(self, account: str, equipment_no: str) -> bool:
-        """Bind a device to the user account using StateService."""
-        if not self.check_user_exists(account):
+    async def bind_equipment(self, account: str, equipment_no: str) -> bool:
+        """Bind a device to the user."""
+        user = await self._get_user_do(account)
+        if not user:
             return False
-        self._state_service.add_device(account, equipment_no)
+
+        async with self._session_manager.session() as session:
+            # Upsert
+            existing = await session.execute(
+                select(DeviceDO).where(DeviceDO.equipment_no == equipment_no)
+            )
+            if existing.scalar_one_or_none():
+                # Device already exists, update binding to current user.
+                await session.execute(
+                    update(DeviceDO)
+                    .where(DeviceDO.equipment_no == equipment_no)
+                    .values(user_id=user.id)
+                )
+            else:
+                session.add(DeviceDO(user_id=user.id, equipment_no=equipment_no))
+            await session.commit()
+            return True
+
+    async def unlink_equipment(self, equipment_no: str) -> bool:
+        """Unlink a device."""
+        async with self._session_manager.session() as session:
+            await session.execute(
+                delete(DeviceDO).where(DeviceDO.equipment_no == equipment_no)
+            )
+            await session.commit()
         return True
 
-    def unlink_equipment(self, equipment_no: str) -> bool:
-        """Unlink a device from all users using StateService."""
-        self._state_service.remove_device(equipment_no)
+    async def update_password(self, account: str, dto: UpdatePasswordDTO) -> bool:
+        """Update user password."""
+        new_md5 = hashlib.md5(dto.password.encode()).hexdigest()
+
+        async with self._session_manager.session() as session:
+            await session.execute(
+                update(UserDO)``
+                .where(UserDO.username == account)
+                .values(password_md5=new_md5)
+            )
+            await session.commit()
         return True
+
+    async def update_email(self, account: str, dto: UpdateEmailDTO) -> bool:
+        """Update user email."""
+        async with self._session_manager.session() as session:
+            await session.execute(
+                update(UserDO).where(UserDO.username == account).values(email=dto.email)
+            )
+            await session.commit()
+        return True
+
+    async def retrieve_password(self, dto: RetrievePasswordDTO) -> bool:
+        """Retrieve/Reset password."""
+        # Find user by alias (email/phone/username) and reset password.
+        target = dto.email or dto.telephone
+        if not target:
+            return False
+
+        new_md5 = hashlib.md5(dto.password.encode()).hexdigest()
+
+        async with self._session_manager.session() as session:
+            # Find user
+            stmt = select(UserDO).where(
+                (UserDO.email == target)
+                | (UserDO.phone == target)
+                | (UserDO.username == target)
+            )
+            result = await session.execute(stmt)
+            user = result.scalar_one_or_none()
+
+            if not user:
+                return False
+
+            user.password_md5 = new_md5
+            await session.commit()
+        return True
+
+    async def query_login_records(
+        self, account: str, page: int, size: int
+    ) -> tuple[list[LoginRecordVO], int]:
+        """Query login records."""
+        user = await self._get_user_do(account)
+        if not user:
+            return [], 0
+
+        async with self._session_manager.session() as session:
+            count_stmt = (
+                select(func.count())
+                .select_from(LoginRecordDO)
+                .where(LoginRecordDO.user_id == user.id)
+            )
+            total = (await session.execute(count_stmt)).scalar() or 0
+
+            stmt = (
+                select(LoginRecordDO)
+                .where(LoginRecordDO.user_id == user.id)
+                .order_by(LoginRecordDO.create_time.desc())
+                .offset((page - 1) * size)
+                .limit(size)
+            )
+            records = (await session.execute(stmt)).scalars().all()
+
+            vos = [
+                LoginRecordVO(
+                    user_id=str(user.id),
+                    user_name=user.username,
+                    create_time=r.create_time,
+                    equipment=r.equipment,
+                    ip=r.ip,
+                    login_method=r.login_method,
+                )
+                for r in records
+            ]
+
+            return vos, total
