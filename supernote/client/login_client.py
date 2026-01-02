@@ -1,4 +1,5 @@
 """Library for authenticating with the Supernote (Private) Cloud Server."""
+
 import logging
 from typing import TypeVar
 
@@ -87,8 +88,12 @@ class LoginClient:
     async def request_sms_code(self, telephone: str, country_code: int = 1) -> None:
         """Request an SMS verification code."""
         # Pre-authentication step to obtain a token
-        account_with_code = AccountWithCode(account=telephone, country_code=country_code)   
-        pre_auth_payload = UserPreAuthRequest(account=account_with_code.encode()).to_dict()
+        account_with_code = AccountWithCode(
+            account=telephone, country_code=country_code
+        )
+        pre_auth_payload = UserPreAuthRequest(
+            account=account_with_code.encode()
+        ).to_dict()
 
         # Always get a fresh CSRF token
         await self._client._get_csrf_token()
@@ -98,14 +103,14 @@ class LoginClient:
         )
 
         # Calculate signature needed to send the random code over SMS
-        sign = sign_login_token(account_with_code, pre_auth_response.token)   
+        sign = sign_login_token(account_with_code, pre_auth_response.token)
 
         # Obtain a random code timestamp and send SMS
         random_code_resp = await self._get_random_code(telephone)
         timestamp = random_code_resp.timestamp
 
         sms_payload = SendSmsDTO(
-            telephone=account_with_code.telephone,
+            telephone=account_with_code.account,
             timestamp=timestamp,
             token=pre_auth_response.token,
             sign=sign,
