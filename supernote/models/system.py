@@ -130,9 +130,16 @@ class FileUploadParams:
 class FileChunkParams(DataClassJSONMixin):
     """Query parameters for file uploads by chunk."""
 
+    # Client provided parameters
     part_number: int = field(metadata=field_options(alias="partNumber"))
     total_chunks: int = field(metadata=field_options(alias="totalChunks"))
     upload_id: str = field(metadata=field_options(alias="uploadId"))
+
+    # Server provided paramsters
+    object_name: str | None = field(
+        metadata=field_options(alias="object_name"), default=None
+    )
+    signature: str | None = None
 
     class Config(BaseConfig):
         serialize_by_alias = True

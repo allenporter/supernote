@@ -1,9 +1,8 @@
-import asyncio
 import logging
 import time
 import urllib.parse
 
-from aiohttp import BodyPartReader, web
+from aiohttp import web
 
 from supernote.models.base import BaseResponse, create_error_response
 from supernote.models.file import (
@@ -227,15 +226,18 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
 
     url_signer: UrlSigner = request.app["url_signer"]
 
-    # Path to sign must match the route: /api/file/upload/data/{filename}
     encoded_name = urllib.parse.quote(file_name)
-    path_to_sign = f"/api/file/upload/data/{encoded_name}"
 
-    # helper returns: /api/file/upload/data/{encoded_name}?signature=...
-    signed_path = url_signer.sign(path_to_sign)
+    # Simple Upload URL: /api/oss/upload?object_name={name}
+    simple_path = f"/api/oss/upload?object_name={encoded_name}"
+    full_upload_url_path = url_signer.sign(simple_path)
+    full_upload_url = f"{request.scheme}://{request.host}{full_upload_url_path}"
 
-    # Construct full URL using request scheme and host
-    full_url = f"{request.scheme}://{request.host}{signed_path}"
+    # Part Upload URL: /api/oss/upload/part?object_name={name}
+    # Client will append &uploadId=...&partNumber=...
+    part_path = f"/api/oss/upload/part?object_name={encoded_name}"
+    part_upload_url_path = url_signer.sign(part_path)
+    part_upload_url = f"{request.scheme}://{request.host}{part_upload_url_path}"
 
     return web.json_response(
         FileUploadApplyLocalVO(
@@ -244,96 +246,10 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
             inner_name=file_name,
             x_amz_date="",
             authorization="",
-            full_upload_url=full_url,
-            # TODO: We should have a separate endpoint for partial upload
-            part_upload_url=full_url,
+            full_upload_url=full_upload_url,
+            part_upload_url=part_upload_url,
         ).to_dict()
     )
-
-
-# TODO: We should move to use the OSS endpoints for all of these urls:
-# *   `POST /api/oss/generate/upload/url`: Get Upload URL
-# *   `POST /api/oss/upload`: Upload File
-# *   `POST /api/oss/upload/part`: Multipart Upload
-# *   `POST /api/oss/generate/download/url`: Get Download URL
-# *   `GET /api/oss/download`: Download File /api/oss
-# We can make a separate oss routes if needed.
-@routes.post("/api/file/upload/data/{filename}")
-@routes.put("/api/file/upload/data/{filename}")
-async def handle_upload_data(request: web.Request) -> web.Response:
-    # Endpoint: POST /api/file/upload/data/{filename}
-    # Purpose: Receive the actual file content (supports chunked uploads).
-
-    filename = request.match_info["filename"]
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
-    url_signer: UrlSigner = request.app["url_signer"]
-
-    # Check for chunked upload parameters
-    upload_id = request.query.get("uploadId")
-    total_chunks_str = request.query.get("totalChunks")
-    part_number_str = request.query.get("partNumber")
-
-    # Security: Verify Signature
-    # Verify using the full path + query string (which essentially is what we signed, plus the signature param)
-    # request.path_qs gives us /api/file/upload/data/filename?signature=... & other params
-    if not url_signer.verify(request.path_qs):
-        logger.warning(f"Invalid signature for upload: {filename}")
-        return web.json_response(
-            create_error_response("Invalid signature", "E403").to_dict(),
-            status=403,
-        )
-
-    # The device sends multipart/form-data
-    if request._read_bytes:
-        # Body already read by middleware
-        pass
-
-    reader = await request.multipart()
-
-    # Read the first part (which should be the file)
-    field = await reader.next()
-    if isinstance(field, BodyPartReader) and field.name == "file":
-        # Check if this is a chunked upload
-        if upload_id and total_chunks_str and part_number_str:
-            total_chunks = int(total_chunks_str)
-            part_number = int(part_number_str)
-
-            # Save this chunk
-            total_bytes = await file_service.save_chunk_file(
-                user_email, upload_id, filename, part_number, field.read_chunk
-            )
-            logger.info(
-                f"Received chunk {part_number}/{total_chunks} for {filename} "
-                f"(user: {user_email}, uploadId: {upload_id}): {total_bytes} bytes"
-            )
-
-            # If this is the last chunk, merge all chunks
-            if part_number == total_chunks:
-                logger.info(
-                    f"Received final chunk for {filename}, merging {total_chunks} chunks"
-                )
-                await file_service.merge_chunks(
-                    user_email,
-                    upload_id,
-                    filename,
-                    total_chunks,
-                )
-                # Clean up chunk files
-                await asyncio.to_thread(
-                    file_service.cleanup_chunks, user_email, upload_id
-                )
-                logger.info(f"Successfully merged and cleaned up chunks for {filename}")
-        else:
-            # Non-chunked upload
-            total_bytes = await file_service.save_temp_file(
-                user_email, filename, field.read_chunk
-            )
-            logger.info(
-                f"Received upload for {filename} (user: {user_email}): {total_bytes} bytes"
-            )
-
-    return web.Response(status=200)
 
 
 @routes.post("/api/file/2/files/upload/finish")
@@ -395,9 +311,10 @@ async def handle_download_apply(request: web.Request) -> web.Response:
     url_signer: UrlSigner = request.app["url_signer"]
 
     encoded_id = urllib.parse.quote(info.id)
-    path_to_sign = f"/api/file/download/data?path={encoded_id}"
+    # New OSS download URL: /api/oss/download?path={id}
+    path_to_sign = f"/api/oss/download?path={encoded_id}"
 
-    # helper returns: /api/file/download/data?path={encoded_id}&signature=...
+    # helper returns: ...?signature=...
     signed_path = url_signer.sign(path_to_sign)
     download_url = f"{request.scheme}://{request.host}{signed_path}"
 
@@ -413,67 +330,6 @@ async def handle_download_apply(request: web.Request) -> web.Response:
             is_downloadable=info.is_downloadable,
         ).to_dict()
     )
-
-
-@routes.get("/api/file/download/data")
-async def handle_download_data(request: web.Request) -> web.StreamResponse:
-    # Endpoint: GET /api/file/download/data
-    # Purpose: Download the file.
-
-    file_service: FileService = request.app["file_service"]
-    url_signer: UrlSigner = request.app["url_signer"]
-
-    path_str = request.query.get("path")
-    if not path_str:
-        return web.Response(status=400, text="Missing path")
-
-    # Security: Verify Signature
-    if not url_signer.verify(request.path_qs):
-        logger.warning(f"Invalid signature for download: {path_str}")
-        return web.Response(status=403, text="Invalid signature")
-
-    user_email = request["user"]
-
-    # Resolve file metadata via VFS
-    info = await file_service.get_file_info(user_email, path_str)
-    if not info:
-        return web.Response(status=404, text="File not found")
-
-    if not info.is_downloadable or info.tag == "folder":
-        return web.Response(status=400, text="Not a file")
-
-    content_hash = info.content_hash
-    if not content_hash:
-        return web.Response(status=404, text="File content not found (missing hash)")
-
-    # Verify the content exists in BlobStorage
-    if not await file_service.blob_storage.exists(content_hash):
-        logger.error(
-            "Unexpected: File %s / %s exists in VFS but not found in BlobStorage for content hash: %s",
-            info.id,
-            info.name,
-            content_hash,
-        )
-        return web.Response(status=404, text="Blob not found")
-
-    # Stream the content directly form blob storage
-    # Stream the content directly form blob storage
-    response = web.StreamResponse(
-        headers={"Content-Disposition": f'attachment; filename="{info.name}"'}
-    )
-    await response.prepare(request)
-
-    try:
-        async with file_service.blob_storage.open_blob(content_hash) as f:
-            while True:
-                chunk = await f.read(8192)
-                if not chunk:
-                    break
-                await response.write(chunk)
-    except FileNotFoundError:
-        return web.Response(status=404, text="Blob not found")
-
-    return response
 
 
 @routes.post("/api/file/2/files/create_folder_v2")

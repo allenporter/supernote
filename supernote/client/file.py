@@ -212,7 +212,7 @@ class FileClient:
                     "post",
                     apply.part_upload_url,
                     data=data,
-                    params=params.to_dict(),
+                    params={k: v for k, v in params.to_dict().items() if v is not None},
                     headers={},
                 )
 
@@ -227,8 +227,6 @@ class FileClient:
             parent_path_str = "/" + parent_path_str
 
         md5 = hashlib.md5(content_bytes).hexdigest()
-        # TODO: Determine if we should be using one of the other endpoints or supporting
-        # multiple for this flow.
         return await self.upload_finish(
             file_name=filename,
             path=parent_path_str,
@@ -266,6 +264,51 @@ class FileClient:
             FileUploadFinishLocalVO,
             json=dto.to_dict(),
         )
+
+    async def download_content(
+        self,
+        path: str | None = None,
+        file_id: int | None = None,
+        equipment_no: str = "",
+        offset: int = 0,
+        length: int = -1,
+    ) -> bytes:
+        """Download file content, optionally with range.
+
+        Args:
+           path: File path (e.g. /Folder/file.pdf) (optional if file_id provided)
+           file_id: File ID (optional if path provided)
+           equipment_no: Equipment number
+           offset: Start byte offset
+           length: Number of bytes to read (-1 for until end)
+
+        Returns:
+            File content bytes
+        """
+        if equipment_no == "":
+            equipment_no = "WEB"
+
+        if file_id is None:
+            if path is None:
+                raise ValueError("Either path or file_id must be provided")
+            # Resolve path to ID
+            info = await self.query_by_path(path, equipment_no)
+            if not info.entries_vo:
+                raise FileNotFoundError(f"File not found: {path}")
+            # The API returns id as str, we need int for download_v3
+            file_id = int(info.entries_vo.id)
+
+        download_info = await self.download_v3(file_id, equipment_no)
+        url = download_info.url
+
+        headers = {}
+        if offset > 0 or length != -1:
+            end = ""
+            if length != -1:
+                end = str(offset + length - 1)
+            headers["Range"] = f"bytes={offset}-{end}"
+
+        return await self._client.get_content(url, headers=headers)
 
     async def download_v3(self, file_id: int, equipment_no: str) -> FileDownloadLocalVO:
         """Get download URL (V3)."""
