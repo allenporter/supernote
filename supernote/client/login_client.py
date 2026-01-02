@@ -19,9 +19,10 @@ from supernote.models.auth import (
     UserPreAuthRequest,
     UserPreAuthResponse,
 )
+
 from .client import Client
 from .exceptions import ApiException, SmsVerificationRequired
-from .hashing import encode_password, sign_login_token, AccountWithCode
+from .hashing import AccountWithCode, encode_password, sign_login_token
 
 _LOGGER = logging.getLogger(__name__)
 

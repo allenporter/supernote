@@ -1,7 +1,6 @@
 """Module for hashing utilities."""
 
 import hashlib
-import hmac
 import logging
 from dataclasses import dataclass
 
