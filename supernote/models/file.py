@@ -456,6 +456,8 @@ class FileUploadApplyLocalVO(BaseResponse):
     bucket_name: str | None = field(
         metadata=field_options(alias="bucketName"), default=None
     )
+    """In private clouds, typically 'supernote'."""
+
     inner_name: str | None = field(
         metadata=field_options(alias="innerName"), default=None
     )
@@ -738,6 +740,7 @@ class FileUploadFinishLocalDTO(DataClassJSONMixin):
     inner_name: str | None = field(
         metadata=field_options(alias="innerName"), default=None
     )
+    """Obfuscated storage filename: {UUID}-{tail}.{ext} where tail is derived from the the client equipmentNo"""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -859,6 +862,7 @@ class TerminalFileUploadFinishDTO(DataClassJSONMixin):
     file_name: str = field(metadata=field_options(alias="fileName"))
     md5: str
     inner_name: str = field(metadata=field_options(alias="innerName"))
+    """Obfuscated storage filename: {UUID}-{tail}.{ext} where tail is derived from the the client equipmentNo"""
     modify_time: str = field(metadata=field_options(alias="modifyTime"))
     upload_time: str = field(metadata=field_options(alias="uploadTime"))
 
