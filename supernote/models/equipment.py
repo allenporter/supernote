@@ -11,7 +11,6 @@ The following endpoints are supported:
 """
 
 from dataclasses import dataclass, field
-from typing import List
 
 from mashumaro import field_options
 from mashumaro.config import BaseConfig
@@ -64,7 +63,7 @@ class BindEquipmentDTO(DataClassJSONMixin):
     """Identifier (Fixed value: 1)."""
     """标识（固定值：1）."""
 
-    label: List[str] = field(default_factory=list)
+    label: list[str] = field(default_factory=list)
     """Labels."""
     """标签页."""
 
@@ -244,7 +243,7 @@ class UserEquipmentListVO(BaseResponse):
         /api/equipment/query/by/{userId} (GET)
     """
 
-    equipment_vo_list: List[UserEquipmentVO] = field(
+    equipment_vo_list: list[UserEquipmentVO] = field(
         metadata=field_options(alias="equipmentVOList"), default_factory=list
     )
 

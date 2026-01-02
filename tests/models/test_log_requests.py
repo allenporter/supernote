@@ -1,6 +1,6 @@
 import json
 import pathlib
-from typing import Dict, Type
+from typing import Type
 
 import pytest
 
@@ -26,7 +26,7 @@ from supernote.models.user import (
 EXTRACTED_REQUESTS_PATH = pathlib.Path("tests/models/testdata/extracted_requests.json")
 
 # Registry mapping URL paths to Model classes
-MODEL_REGISTRY: Dict[str, Type] = {
+MODEL_REGISTRY: dict[str, Type] = {
     # Auth & User
     "/api/official/user/check/exists/server": UserCheckDTO,
     "/api/official/user/query/random/code": RandomCodeDTO,

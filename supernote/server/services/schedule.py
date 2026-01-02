@@ -1,5 +1,5 @@
 import logging
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 from sqlalchemy import delete, select, update
 
@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 MAX_TITLE_LENGTH = 255
 MAX_DETAIL_LENGTH = 1 * 1024 * 1024  # 1MB
+
 
 class ScheduleService:
     """Schedule service."""
@@ -35,7 +36,7 @@ class ScheduleService:
             await session.refresh(group)
             return group
 
-    async def list_groups(self, user_id: int) -> List[ScheduleTaskGroupDO]:
+    async def list_groups(self, user_id: int) -> list[ScheduleTaskGroupDO]:
         """List all task groups for a user."""
         async with self.session_manager.session() as session:
             stmt = (
@@ -100,7 +101,7 @@ class ScheduleService:
         self,
         user_id: int,
         group_id: int | None = None,
-    ) -> List[ScheduleTaskDO]:
+    ) -> list[ScheduleTaskDO]:
         """List tasks for a user, optionally filtered by group."""
         async with self.session_manager.session() as session:
             query = select(ScheduleTaskDO).where(ScheduleTaskDO.user_id == user_id)

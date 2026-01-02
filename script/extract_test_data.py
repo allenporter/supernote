@@ -1,7 +1,7 @@
 import json
 import pathlib
 import time
-from typing import Any, Dict
+from typing import Any
 from urllib.parse import urlparse
 
 # Configuration
@@ -52,7 +52,7 @@ def main():
         print(f"Error: Log file not found at {LOG_FILE}")
         return
 
-    extracted_requests: Dict[str, Any] = {}
+    extracted_requests: dict[str, Any] = {}
 
     print(f"Reading from {LOG_FILE}...")
     with LOG_FILE.open("r") as f:

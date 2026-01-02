@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import List, Optional
+from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -250,7 +250,7 @@ class VirtualFileSystem:
         await self.db.refresh(new_node)
         return new_node
 
-    async def list_recycle(self, user_id: int) -> List[RecycleFileDO]:
+    async def list_recycle(self, user_id: int) -> list[RecycleFileDO]:
         """List files in recycle bin."""
         stmt = select(RecycleFileDO).where(RecycleFileDO.user_id == user_id)
         result = await self.db.execute(stmt)
@@ -281,7 +281,7 @@ class VirtualFileSystem:
         return True
 
     async def purge_recycle(
-        self, user_id: int, recycle_ids: List[int] | None = None
+        self, user_id: int, recycle_ids: list[int] | None = None
     ) -> None:
         """Permanently delete items from recycle bin."""
         from sqlalchemy import delete
@@ -294,7 +294,7 @@ class VirtualFileSystem:
         # TODO: Also delete UserFileDO? For now, VFS "active='N'" nodes remain.
         await self.db.commit()
 
-    async def search_files(self, user_id: int, keyword: str) -> List[UserFileDO]:
+    async def search_files(self, user_id: int, keyword: str) -> list[UserFileDO]:
         """Search for active files/folders by keyword (case-insensitive)."""
         stmt = select(UserFileDO).where(
             UserFileDO.user_id == user_id,

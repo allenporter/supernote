@@ -207,14 +207,14 @@ class FileClient:
             "/api/file/recycle/list/query", RecycleFileListVO, json=dto.to_dict()
         )
 
-    async def recycle_delete(self, id_list: List[int]) -> None:
+    async def recycle_delete(self, id_list: list[int]) -> None:
         """Delete from recycle bin."""
         dto = RecycleFileDTO(id_list=id_list)
         await self._client.post_json(
             "/api/file/recycle/delete", BaseResponse, json=dto.to_dict()
         )
 
-    async def recycle_revert(self, id_list: List[int]) -> None:
+    async def recycle_revert(self, id_list: Llistist[int]) -> None:
         """Revert from recycle bin."""
         dto = RecycleFileDTO(id_list=id_list)
         await self._client.post_json(

@@ -20,7 +20,6 @@ The following endpoints are supported:
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List
 
 from mashumaro import field_options
 from mashumaro.config import BaseConfig
@@ -129,7 +128,7 @@ class SummaryInfoItem(DataClassJSONMixin):
     last_modified_time: int | None = field(
         metadata=field_options(alias="lastModifiedTime"), default=None
     )
-    metadata_map: Dict[str, str] = field(
+    metadata_map: dict[str, str] = field(
         metadata=field_options(alias="metadataMap"), default_factory=dict
     )
 
@@ -199,7 +198,7 @@ class QuerySummaryTagVO(BaseResponse):
         /api/file/query/summary/tag (POST)
     """
 
-    summary_tag_do_list: List[SummaryTagItem] = field(
+    summary_tag_do_list: list[SummaryTagItem] = field(
         metadata=field_options(alias="summaryTagDOList"), default_factory=list
     )
 
@@ -320,7 +319,7 @@ class QuerySummaryGroupVO(BaseResponse):
     page_size: int | None = field(
         metadata=field_options(alias="pageSize"), default=None
     )
-    summary_do_list: List[SummaryItem] = field(
+    summary_do_list: list[SummaryItem] = field(
         metadata=field_options(alias="summaryDOList"), default_factory=list
     )
 
@@ -461,7 +460,7 @@ class QuerySummaryDTO(DataClassJSONMixin):
     parent_unique_identifier: str | None = field(
         metadata=field_options(alias="parentUniqueIdentifier"), default=None
     )
-    ids: List[int] = field(default_factory=list)
+    ids: list[int] = field(default_factory=list)
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -487,7 +486,7 @@ class QuerySummaryVO(BaseResponse):
     page_size: int | None = field(
         metadata=field_options(alias="pageSize"), default=None
     )
-    summary_do_list: List[SummaryItem] = field(
+    summary_do_list: list[SummaryItem] = field(
         metadata=field_options(alias="summaryDOList"), default_factory=list
     )
 
@@ -500,7 +499,7 @@ class QuerySummaryByIdVO(BaseResponse):
         /api/file/query/summary/id (POST)
     """
 
-    summary_do_list: List[SummaryItem] = field(
+    summary_do_list: list[SummaryItem] = field(
         metadata=field_options(alias="summaryDOList"), default_factory=list
     )
 
@@ -525,7 +524,7 @@ class QuerySummaryMD5HashVO(BaseResponse):
     page_size: int | None = field(
         metadata=field_options(alias="pageSize"), default=None
     )
-    summary_info_vo_list: List[SummaryInfoItem] = field(
+    summary_info_vo_list: list[SummaryInfoItem] = field(
         metadata=field_options(alias="summaryInfoVOList"), default_factory=list
     )
 

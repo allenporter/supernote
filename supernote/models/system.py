@@ -17,7 +17,6 @@ The following endpoints are supported:
 """
 
 from dataclasses import dataclass, field
-from typing import List
 
 from mashumaro import field_options
 from mashumaro.config import BaseConfig
@@ -286,7 +285,7 @@ class DictionaryListVO(BaseResponse):
         /api/system/base/dictionary/deleteApi (GET)
     """
 
-    dictionary_vo_list: List[DictionaryVO] = field(
+    dictionary_vo_list: list[DictionaryVO] = field(
         metadata=field_options(alias="dictionaryVOList"), default_factory=list
     )
 
@@ -299,7 +298,7 @@ class DictionaryByNameVO(BaseResponse):
         /api/system/base/dictionary/by/{name}/deleteApi (GET)
     """
 
-    dictionary_vo_list: List[DictionaryVO] = field(
+    dictionary_vo_list: list[DictionaryVO] = field(
         metadata=field_options(alias="dictionaryVOList"), default_factory=list
     )
 
@@ -374,7 +373,7 @@ class ReferenceListVO(BaseResponse):
         /api/system/base/reference/deleteApi (POST)
     """
 
-    reference_vo_list: List[ReferenceVO] = field(
+    reference_vo_list: list[ReferenceVO] = field(
         metadata=field_options(alias="referenceVOList"), default_factory=list
     )
 
@@ -399,7 +398,7 @@ class ReferenceRespVO(BaseResponse):
         /api/official/system/base/param (POST)
     """
 
-    param_list: List[ReferenceInfoVO] = field(
+    param_list: list[ReferenceInfoVO] = field(
         metadata=field_options(alias="paramList"), default_factory=list
     )
     random: str | None = None

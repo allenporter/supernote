@@ -14,7 +14,6 @@ The following endpoints are supported:
 """
 
 from dataclasses import dataclass, field
-from typing import List
 
 from mashumaro import field_options
 from mashumaro.config import BaseConfig
@@ -169,7 +168,7 @@ class ScheduleTaskInfo(DataClassJSONMixin):
     all_sort_time: int | None = field(
         metadata=field_options(alias="allSortTime"), default=None
     )
-    schedule_recur_task: List[ScheduleRecurTaskItem] = field(
+    schedule_recur_task: list[ScheduleRecurTaskItem] = field(
         metadata=field_options(alias="scheduleRecurTask"), default_factory=list
     )
 
@@ -408,7 +407,7 @@ class UpdateScheduleTaskListDTO(DataClassJSONMixin):
     task_list_id: str | None = field(
         metadata=field_options(alias="taskListId"), default=None
     )
-    update_schedule_task_list: List[UpdateScheduleTaskDTO] = field(
+    update_schedule_task_list: list[UpdateScheduleTaskDTO] = field(
         metadata=field_options(alias="updateScheduleTaskList"), default_factory=list
     )
 
@@ -528,7 +527,7 @@ class ScheduleTaskGroupVO(BaseResponse):
     page_token: str | None = field(
         metadata=field_options(alias="pageToken"), default=None
     )
-    schedule_task_group: List[ScheduleTaskGroupItem] = field(
+    schedule_task_group: list[ScheduleTaskGroupItem] = field(
         metadata=field_options(alias="scheduleTaskGroup"), default_factory=list
     )
 
@@ -619,7 +618,7 @@ class ScheduleTaskVO(BaseResponse):
     all_sort_time: int | None = field(
         metadata=field_options(alias="allSortTime"), default=None
     )
-    schedule_recur_task: List[ScheduleRecurTaskItem] = field(
+    schedule_recur_task: list[ScheduleRecurTaskItem] = field(
         metadata=field_options(alias="scheduleRecurTask"), default_factory=list
     )
 
@@ -638,7 +637,7 @@ class ScheduleTaskAllVO(BaseResponse):
     next_sync_token: int | None = field(
         metadata=field_options(alias="nextSyncToken"), default=None
     )
-    schedule_task: List[ScheduleTaskInfo] = field(
+    schedule_task: list[ScheduleTaskInfo] = field(
         metadata=field_options(alias="scheduleTask"), default_factory=list
     )
 

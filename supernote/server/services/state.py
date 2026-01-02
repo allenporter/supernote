@@ -3,7 +3,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, cast
+from typing import Optional, cast
 
 from mashumaro.config import TO_DICT_ADD_OMIT_NONE_FLAG, BaseConfig
 from mashumaro.mixins.json import DataClassJSONMixin
@@ -23,13 +23,13 @@ class SessionState(DataClassJSONMixin):
 @dataclass
 class UserState(DataClassJSONMixin):
     username: str
-    devices: List[str] = field(default_factory=list)
+    devices: list[str] = field(default_factory=list)
 
 
 @dataclass
 class SystemState(DataClassJSONMixin):
-    users: Dict[str, UserState] = field(default_factory=dict)
-    sessions: Dict[str, SessionState] = field(default_factory=dict)
+    users: dict[str, UserState] = field(default_factory=dict)
+    sessions: dict[str, SessionState] = field(default_factory=dict)
 
     class Config(BaseConfig):
         serialize_by_alias = True
