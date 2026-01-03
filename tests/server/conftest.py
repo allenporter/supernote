@@ -54,11 +54,24 @@ def mock_trace_log(tmp_path: Path) -> Generator[str, None, None]:
 
 
 @pytest.fixture
-def server_config(mock_trace_log: str, storage_root: Path) -> ServerConfig:
+def proxy_mode() -> str | None:
+    """Default proxy mode for tests. Can be overridden by individual tests.
+    
+    Defaults to None (disabled) to match production default behavior.
+    Tests that need proxy header handling should override this fixture.
+    """
+    return None
+
+
+@pytest.fixture
+def server_config(
+    mock_trace_log: str, storage_root: Path, proxy_mode: str | None
+) -> ServerConfig:
     """Create a ServerConfig object for testing."""
     return ServerConfig(
         trace_log_file=mock_trace_log,
         storage_dir=str(storage_root),
+        proxy_mode=proxy_mode,
         auth=AuthConfig(
             enable_registration=True,
             expiration_hours=1,
