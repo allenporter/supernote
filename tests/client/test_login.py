@@ -36,7 +36,7 @@ async def handler_login_new(request: web.Request) -> web.Response:
     expected_hash = sha256("password" + "123456")
 
     if data.get("password") == expected_hash:
-        return web.json_response({"success": True, "token": "new-access-token"})
+        return web.json_response({"success": True, "token": "new-access-token", "counts": "0"})
     return web.json_response({"success": False, "errorMsg": "Invalid password"})
 
 

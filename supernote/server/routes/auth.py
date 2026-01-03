@@ -162,7 +162,11 @@ async def handle_register(request: web.Request) -> web.Response:
     # Endpoint: POST /api/user/register
 
     req_data = await request.json()
-    dto = UserRegisterDTO.from_dict(req_data)
+    try:
+        dto = UserRegisterDTO.from_dict(req_data)
+    except (MissingField, ValueError) as e:
+        return web.json_response(create_error_response(str(e)).to_dict(), status=400)
+
     user_service: UserService = request.app["user_service"]
     try:
         await user_service.register(dto)

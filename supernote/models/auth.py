@@ -69,7 +69,7 @@ class LoginDTO(DataClassJSONMixin):
     """
 
     account: str
-    """User account (email, username, phone number etc)."""
+    """User account (must be an email address)."""
 
     password: str
     """Hashed password. Schema: SHA256(MD5(pwd) + randomCode)) or MD5(pwd + randomCode)."""
@@ -110,6 +110,9 @@ class LoginVO(BaseResponse):
     token: str
     """JWT Access Token."""
 
+    counts: str
+    """Error count."""
+
     user_name: str | None = field(
         metadata=field_options(alias="userName"), default=None
     )
@@ -136,7 +139,7 @@ class RandomCodeDTO(DataClassJSONMixin):
     """
 
     account: str
-    """User account (email, username, phone number etc)."""
+    """User account (must be an email address)."""
 
     country_code: int | None = field(metadata=field_options(alias="countryCode"), default=None)
     """Country code."""

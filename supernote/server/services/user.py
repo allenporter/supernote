@@ -1,6 +1,7 @@
 import datetime
 import hashlib
 import logging
+import re
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -29,6 +30,15 @@ from ..db.session import DatabaseSessionManager
 from .coordination import CoordinationService
 
 RANDOM_CODE_TTL = datetime.timedelta(minutes=5)
+
+# Validate email format
+# 1. No consecutive dots: (?!.*\.\.)
+# 2. No leading dot: (?!^\.)
+# 3. No trailing dot in local part: (?<!\.)@
+EMAIL_REGEX = r"^(?!.*\.\.)(?!^\.)[a-zA-Z0-9_.+-]+(?<!\.)@[a-zA-Z0-9][a-zA-Z0-9-]*\.[a-zA-Z0-9-.]+$"
+
+# Validate MD5 hash
+MD5_REGEX = r"^[a-f0-9]{32}$"
 
 
 @dataclass
@@ -77,14 +87,16 @@ class UserService:
         if await self.check_user_exists(dto.email):
             raise ValueError("User already exists")
 
-        # Hash password before storage.
-        # Future improvement: Upgrade to stronger hashing (e.g., bcrypt/argon2).
-        password_md5 = hashlib.md5(dto.password.encode()).hexdigest()
+        if not re.match(EMAIL_REGEX, dto.email):
+            raise ValueError("Invalid email address format")
 
+        # Hash password before storage.
+        if not re.match(MD5_REGEX, dto.password):
+            raise ValueError("Invalid password format, must be md5 hash")
         new_user = UserDO(
             username=dto.email,
             email=dto.email,
-            password_md5=password_md5,
+            password_md5=dto.password,
             display_name=dto.user_name,
             is_active=True,
             is_admin=is_admin,
@@ -242,6 +254,7 @@ class UserService:
 
         return LoginVO(
             token=token,
+            counts="0",
             is_bind=is_bind,
             is_bind_equipment=is_bind_equipment,
             user_name=account,

@@ -2,6 +2,7 @@
 
 import asyncio
 import getpass
+import hashlib
 import sys
 
 from supernote.client.admin import AdminClient
@@ -17,11 +18,14 @@ async def add_user_async(url: str, username: str, password: str):
 
         admin_client = AdminClient(client)
 
+        # Hash password
+        password_md5 = hashlib.md5(password.encode()).hexdigest()
+
         # Try Public Registration
         try:
             await admin_client.register(
                 email=username,
-                password=password,
+                password=password_md5,
                 username=username.split("@")[0],  # Simple default
             )
             print("Success! User created (Public Registration).")
@@ -36,7 +40,7 @@ async def add_user_async(url: str, username: str, password: str):
         try:
             await admin_client.admin_create_user(
                 email=username,
-                password=password,
+                password=password_md5,
                 username=username.split("@")[0],  # Simple default
             )
             print("Success! User created (Admin API).")
