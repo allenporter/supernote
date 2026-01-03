@@ -7,16 +7,20 @@ from pathlib import Path
 
 import aiofiles
 
-from supernote.models.base import BaseResponse
+from supernote.models.base import BaseResponse, BooleanEnum
 from supernote.models.file import (
     CreateFolderLocalVO,
     DeleteFolderLocalVO,
     EntriesVO,
     FileCopyLocalVO,
+    FileListQueryVO,
     FileMoveLocalVO,
     FileUploadFinishLocalVO,
     RecycleFileListVO,
     RecycleFileVO,
+    UserFileVO,
+    FileSortOrder,
+    FileSortSequence,
 )
 
 from ..db.session import DatabaseSessionManager
@@ -256,8 +260,6 @@ class FileService:
                 size=node.size,
                 last_update_time=node.update_time,
             )
-
-
 
     async def finish_upload(
         self,
@@ -651,3 +653,63 @@ class FileService:
                 )
 
         return results
+
+    async def query_file_list(
+        self,
+        user: str,
+        directory_id: int,
+        order: str,
+        sequence: str,
+        page_no: int,
+        page_size: int,
+    ) -> FileListQueryVO:
+        """Query files in a directory for a specific user."""
+        user_id = await self.user_service.get_user_id(user)
+
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+            items = await vfs.list_directory(user_id, directory_id)
+
+        # Mapping
+        user_file_vos: list[UserFileVO] = []
+        for item in items:
+            user_file_vos.append(
+                UserFileVO(
+                    id=str(item.id),
+                    directory_id=str(item.directory_id),
+                    file_name=item.file_name,
+                    size=item.size,
+                    md5=item.md5,
+                    inner_name=item.md5,
+                    is_folder=BooleanEnum.YES
+                    if item.is_folder == "Y"
+                    else BooleanEnum.NO,
+                    create_time=item.create_time,
+                    update_time=item.update_time,
+                )
+            )
+
+        # Sorting
+        reverse = sequence.lower() == FileSortSequence.DESC
+        if order == FileSortOrder.FILENAME:
+            user_file_vos.sort(key=lambda x: x.file_name, reverse=reverse)
+        elif order == FileSortOrder.TIME:
+            user_file_vos.sort(key=lambda x: x.update_time or 0, reverse=reverse)
+        elif order == FileSortOrder.SIZE:
+            user_file_vos.sort(key=lambda x: x.size or 0, reverse=reverse)
+
+        # Pagination
+        total = len(user_file_vos)
+        start = (page_no - 1) * page_size
+        end = start + page_size
+        page_items = user_file_vos[start:end]
+
+        pages = (total + page_size - 1) // page_size
+
+        return FileListQueryVO(
+            total=total,
+            pages=pages,
+            page_num=page_no,
+            page_size=page_size,
+            user_file_vo_list=page_items,
+        )

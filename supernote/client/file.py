@@ -19,12 +19,16 @@ from supernote.models.file import (
     FileDownloadLocalVO,
     FileLabelSearchDTO,
     FileLabelSearchVO,
+    FileListQueryDTO,
+    FileListQueryVO,
     FileMoveLocalDTO,
     FileMoveLocalVO,
     FileQueryByPathLocalDTO,
     FileQueryByPathLocalVO,
     FileQueryLocalDTO,
     FileQueryLocalVO,
+    FileSortOrder,
+    FileSortSequence,
     FileUploadApplyLocalDTO,
     FileUploadApplyLocalVO,
     FileUploadFinishLocalDTO,
@@ -45,6 +49,8 @@ from supernote.models.system import FileChunkParams
 from . import Client
 
 _LOGGER = logging.getLogger(__name__)
+
+DEFAULT_PAGE_SIZE = 50
 
 
 class FileClient:
@@ -109,6 +115,26 @@ class FileClient:
                 json=dto_v3.to_dict(),
             )
         raise ValueError("path or folder_id must be specified")
+
+    async def list_query(
+        self,
+        directory_id: int,
+        order: FileSortOrder = FileSortOrder.FILENAME,
+        sequence: FileSortSequence = FileSortSequence.DESC,
+        page_no: int = 1,
+        page_size: int = DEFAULT_PAGE_SIZE,
+    ) -> FileListQueryVO:
+        """Query file list (Web API)."""
+        dto = FileListQueryDTO(
+            directory_id=directory_id,
+            order=order,
+            sequence=sequence,
+            page_no=page_no,
+            page_size=page_size,
+        )
+        return await self._client.post_json(
+            "/api/file/list/query", FileListQueryVO, json=dto.to_dict()
+        )
 
     async def delete(self, id: int, equipment_no: str) -> DeleteFolderLocalVO:
         """Delete a folder or file (V3)."""

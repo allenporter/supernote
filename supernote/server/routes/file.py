@@ -15,6 +15,7 @@ from supernote.models.file import (
     FileDownloadLocalVO,
     FileLabelSearchDTO,
     FileLabelSearchVO,
+    FileListQueryDTO,
     FileMoveLocalDTO,
     FileQueryByPathLocalDTO,
     FileQueryByPathLocalVO,
@@ -465,6 +466,27 @@ async def handle_recycle_clear(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
 
     response = await file_service.clear_recycle(user_email)
+    return web.json_response(response.to_dict())
+
+
+@routes.post("/api/file/list/query")
+async def handle_file_list_query(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/list/query
+    # Purpose: Query files in a directory.
+    # Response: FileListQueryVO
+
+    req_data = FileListQueryDTO.from_dict(await request.json())
+    user_email = request["user"]
+    file_service: FileService = request.app["file_service"]
+
+    response = await file_service.query_file_list(
+        user_email,
+        req_data.directory_id,
+        req_data.order,
+        req_data.sequence,
+        req_data.page_no,
+        req_data.page_size,
+    )
     return web.json_response(response.to_dict())
 
 
