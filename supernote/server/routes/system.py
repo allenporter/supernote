@@ -33,8 +33,7 @@ async def handle_base_param(request: web.Request) -> web.Response:
     return web.json_response(
         ReferenceRespVO(
             param_list=[
-                ReferenceInfoVO(name=k, value=v)
-                for k, v in DEFAULT_PARAMS.items()
+                ReferenceInfoVO(name=k, value=v) for k, v in DEFAULT_PARAMS.items()
             ]
         ).to_dict()
     )

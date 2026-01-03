@@ -91,7 +91,10 @@ class LoginDTO(DataClassJSONMixin):
     browser: str = BROWSER
     """Browser name (user agent info)."""
 
-    equipment: Equipment = field(metadata=field_options(deserialize=_deserialize_int_equipment), default=Equipment.WEB)
+    equipment: Equipment = field(
+        metadata=field_options(deserialize=_deserialize_int_equipment),
+        default=Equipment.WEB,
+    )
     """Device type."""
 
     equipment_no: str | None = field(
@@ -141,7 +144,9 @@ class RandomCodeDTO(DataClassJSONMixin):
     account: str
     """User account (must be an email address)."""
 
-    country_code: int | None = field(metadata=field_options(alias="countryCode"), default=None)
+    country_code: int | None = field(
+        metadata=field_options(alias="countryCode"), default=None
+    )
     """Country code."""
 
     version: str | None = None
