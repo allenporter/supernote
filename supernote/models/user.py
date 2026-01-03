@@ -498,7 +498,7 @@ class RetrievePasswordDTO(DataClassJSONMixin):
     """
 
     password: str
-    """New password."""
+    """New password (md5 hash)."""
 
     telephone: str | None = None
     """Telephone number."""
@@ -527,7 +527,7 @@ class UpdatePasswordDTO(DataClassJSONMixin):
     """
 
     password: str
-    """New password."""
+    """New password (md5 hash)."""
 
     version: str | None = None
     """Version."""

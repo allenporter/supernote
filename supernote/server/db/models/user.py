@@ -13,8 +13,7 @@ class UserDO(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    username: Mapped[str] = mapped_column(String, unique=True, index=True)
-    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    email: Mapped[str] = mapped_column(String, unique=True, index=True)
 
     # Auth & Profile Fields
     password_md5: Mapped[str] = mapped_column(String)
@@ -28,4 +27,4 @@ class UserDO(Base):
     """Allows the user to perform admin actions, auto enabled for first user."""
 
     def __repr__(self) -> str:
-        return f"<UserDO(id={self.id}, username='{self.username}')>"
+        return f"<UserDO(id={self.id}, email='{self.email}')>"
