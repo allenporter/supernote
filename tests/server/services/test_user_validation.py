@@ -1,4 +1,6 @@
+import re
 import pytest
+import hashlib
 from supernote.models.user import UserRegisterDTO
 from supernote.server.services.user import UserService
 
@@ -23,10 +25,11 @@ async def test_register_invalid_email(user_service: UserService) -> None:
         "Abc..123@example.com",
     ]
 
+    pw_md5 = hashlib.md5("password".encode()).hexdigest()
     for email in invalid_emails:
         try:
             await user_service.register(
-                UserRegisterDTO(email=email, password="password", user_name="Test User")
+                UserRegisterDTO(email=email, password=pw_md5, user_name="Test User")
             )
             pytest.fail(f"Email '{email}' should have failed validation but passed")
         except ValueError as e:
@@ -50,11 +53,12 @@ async def test_register_valid_email(user_service: UserService) -> None:
         "firstname-lastname@example.com",
     ]
 
+    pw_md5 = hashlib.md5("password".encode()).hexdigest()
     for email in valid_emails:
         # Should not raise
         try:
             user = await user_service.register(
-                UserRegisterDTO(email=email, password="password", user_name="Test User")
+                UserRegisterDTO(email=email, password=pw_md5, user_name="Test User")
             )
             assert user.email == email
         except ValueError as e:
