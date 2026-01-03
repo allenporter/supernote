@@ -7,7 +7,7 @@ from pathlib import Path
 
 import aiofiles
 
-from supernote.models.base import BaseResponse, BooleanEnum
+from supernote.models.base import BaseResponse, BooleanEnum, create_error_response
 from supernote.models.file_common import (
     EntriesVO,
     FileSortOrder,
@@ -22,6 +22,7 @@ from supernote.models.file_device import (
 )
 from supernote.models.file_web import (
     FileListQueryVO,
+    FolderVO,
     RecycleFileListVO,
     RecycleFileVO,
     UserFileVO,
@@ -354,6 +355,26 @@ class FileService:
 
         return CreateFolderLocalVO(equipment_no=equipment_no)
 
+    # TODO: We should be able to share code between the version that creates by path
+    # and the version that creates by ID.
+    async def create_directory_by_id(
+        self, user: str, parent_id: int, name: str
+    ) -> FolderVO:
+        """Create a directory by parent ID for a specific user."""
+        user_id = await self.user_service.get_user_id(user)
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+            # TODO: This is not checking if the existing directory is empty
+            # or not. Its returning an existing id and we can't tell the difference.
+            new_dir = await vfs.create_directory(user_id, parent_id, name)
+
+            return FolderVO(
+                id=str(new_dir.id),
+                directory_id=str(new_dir.directory_id),
+                file_name=new_dir.file_name,
+                empty=BooleanEnum.YES,  # Newly created is empty
+            )
+
     async def delete_item(
         self, user: str, id: int, equipment_no: str
     ) -> DeleteFolderLocalVO:
@@ -366,6 +387,28 @@ class FileService:
                 logger.warning(f"Delete requested for unknown ID: {id} for user {user}")
 
         return DeleteFolderLocalVO(equipment_no=equipment_no)
+
+    async def delete_items(
+        self, user: str, id_list: list[int], parent_id: int
+    ) -> BaseResponse:
+        """Delete files or directories for a specific user using VFS (Web API)."""
+        user_id = await self.user_service.get_user_id(user)
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+            for file_id in id_list:
+                # Validate parent ownership/location
+                node = await vfs.get_node_by_id(user_id, file_id)
+                if not node:
+                    continue  # Already gone?
+
+                if node.directory_id != parent_id:
+                    return create_error_response(
+                        f"File {file_id} is not in directory {parent_id}", "E400"
+                    )
+
+                await vfs.delete_node(user_id, file_id)
+
+        return BaseResponse()
 
     async def get_storage_usage(self, user: str) -> int:
         """Get total storage usage for a specific user using VFS."""

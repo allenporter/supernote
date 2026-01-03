@@ -97,13 +97,15 @@ class FolderListQueryDTO(DataClassJSONMixin):
 
 
 @dataclass
-class FolderVO(DataClassJSONMixin):
+class FolderVO(BaseResponse):
     """Object representing a folder."""
 
-    id: str
-    directory_id: str = field(metadata=field_options(alias="directoryId"))
-    file_name: str = field(metadata=field_options(alias="fileName"))
-    empty: BooleanEnum = field(metadata=field_options(alias="empty"))
+    id: str = ""
+    directory_id: str = field(metadata=field_options(alias="directoryId"), default="")
+    file_name: str = field(metadata=field_options(alias="fileName"), default="")
+    empty: BooleanEnum = field(
+        metadata=field_options(alias="empty"), default=BooleanEnum.NO
+    )
 
     class Config(BaseConfig):
         serialize_by_alias = True

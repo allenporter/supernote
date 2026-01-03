@@ -15,7 +15,7 @@ async def test_file_list_query(
     #    - File2
 
     # Create FolderA in Root
-    await device_client.create_folder(path="/FolderA", equipment_no="test")
+    await web_client.create_folder(parent_id=0, name="FolderA")
 
     # Create files in FolderA
     await device_client.upload_content("/FolderA/File1.txt", b"content1")
@@ -80,7 +80,7 @@ async def test_file_list_query_root(
     device_client: DeviceClient,
 ) -> None:
     # Test listing root (directory_id=0)
-    await device_client.create_folder(path="/FolderRoot", equipment_no="test")
+    await web_client.create_folder(parent_id=0, name="FolderRoot")
 
     res = await web_client.list_query(
         directory_id=0, order=FileSortOrder.FILENAME, sequence=FileSortSequence.ASC

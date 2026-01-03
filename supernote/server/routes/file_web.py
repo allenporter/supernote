@@ -4,9 +4,11 @@ from aiohttp import web
 
 from supernote.models.file import (
     CapacityVO,
+    FileDeleteDTO,
     FileLabelSearchDTO,
     FileLabelSearchVO,
     FileListQueryDTO,
+    FolderAddDTO,
     RecycleFileDTO,
     RecycleFileListDTO,
 )
@@ -127,4 +129,36 @@ async def handle_file_search(request: web.Request) -> web.Response:
 
     results = await file_service.search_files(user_email, req_data.keyword)
     response = FileLabelSearchVO(entries=results)
+    return web.json_response(response.to_dict())
+
+
+@routes.post("/api/file/folder/add")
+async def handle_folder_add(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/folder/add
+    # Purpose: Create a new folder (Web).
+    # Response: FolderVO
+
+    req_data = FolderAddDTO.from_dict(await request.json())
+    user_email = request["user"]
+    file_service: FileService = request.app["file_service"]
+
+    response = await file_service.create_directory_by_id(
+        user_email, req_data.directory_id, req_data.file_name
+    )
+    return web.json_response(response.to_dict())
+
+
+@routes.post("/api/file/delete")
+async def handle_file_delete(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/delete
+    # Purpose: Delete file/folder (Web).
+    # Response: BaseResponse
+
+    req_data = FileDeleteDTO.from_dict(await request.json())
+    user_email = request["user"]
+    file_service: FileService = request.app["file_service"]
+
+    response = await file_service.delete_items(
+        user_email, req_data.id_list, req_data.directory_id
+    )
     return web.json_response(response.to_dict())

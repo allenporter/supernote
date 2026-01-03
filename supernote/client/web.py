@@ -1,12 +1,15 @@
 from supernote.models.base import BaseResponse
 from supernote.models.file import (
     CapacityVO,
+    FileDeleteDTO,
     FileLabelSearchDTO,
     FileLabelSearchVO,
     FileListQueryDTO,
     FileListQueryVO,
     FileSortOrder,
     FileSortSequence,
+    FolderAddDTO,
+    FolderVO,
     RecycleFileDTO,
     RecycleFileListDTO,
     RecycleFileListVO,
@@ -84,4 +87,25 @@ class WebClient:
         dto = FileLabelSearchDTO(keyword=keyword, equipment_no=equipment_no)
         return await self._client.post_json(
             "/api/file/label/list/search", FileLabelSearchVO, json=dto.to_dict()
+        )
+
+    async def create_folder(self, parent_id: int, name: str) -> FolderVO:
+        """Create a new folder (Web API)."""
+        dto = FolderAddDTO(directory_id=parent_id, file_name=name)
+        return await self._client.post_json(
+            "/api/file/folder/add", FolderVO, json=dto.to_dict()
+        )
+
+    async def file_delete(
+        self,
+        id_list: list[int],
+        parent_id: int = 0,
+        equipment_no: str | None = None,
+    ) -> None:
+        """Delete files/folders (Web API)."""
+        dto = FileDeleteDTO(
+            id_list=id_list, directory_id=parent_id, equipment_no=equipment_no
+        )
+        await self._client.post_json(
+            "/api/file/delete", BaseResponse, json=dto.to_dict()
         )
