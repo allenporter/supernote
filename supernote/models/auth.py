@@ -33,6 +33,10 @@ class Equipment(BaseEnum):
     USER_PLATFORM = 4
 
 
+def _deserialize_int_equipment(value: str) -> Equipment:
+    return Equipment(int(value))
+
+
 @dataclass
 class UserCheckDTO(DataClassJSONMixin):
     """Request to check user existence."""
@@ -79,15 +83,15 @@ class LoginDTO(DataClassJSONMixin):
     language: str = LANGUAGE
     """Language code."""
 
-    country_code: int = field(
-        metadata=field_options(alias="countryCode"), default=COUNTRY_CODE
+    country_code: int | None = field(
+        metadata=field_options(alias="countryCode"), default=None
     )
     """Country code."""
 
     browser: str = BROWSER
     """Browser name (user agent info)."""
 
-    equipment: Equipment = Equipment.WEB
+    equipment: Equipment = field(metadata=field_options(deserialize=_deserialize_int_equipment), default=Equipment.WEB)
     """Device type."""
 
     equipment_no: str | None = field(
@@ -134,9 +138,7 @@ class RandomCodeDTO(DataClassJSONMixin):
     account: str
     """User account (email, username, phone number etc)."""
 
-    country_code: int = field(
-        metadata=field_options(alias="countryCode"), default=COUNTRY_CODE
-    )
+    country_code: int | None = field(metadata=field_options(alias="countryCode"), default=None)
     """Country code."""
 
     version: str | None = None
@@ -169,6 +171,14 @@ class QueryTokenDTO(DataClassJSONMixin):
 @dataclass(kw_only=True)
 class QueryTokenVO(BaseResponse):
     """Response from token endpoint."""
+
+    token: str | None = None
+    """JWT Access Token."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+        omit_none = False
+        code_generation_options = ["TO_DICT_ADD_OMIT_NONE_FLAG"]
 
 
 class OSType(str, BaseEnum):

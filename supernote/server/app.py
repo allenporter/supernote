@@ -165,9 +165,6 @@ def create_app(config: ServerConfig) -> web.Application:
     app.add_routes(oss.routes)
     app.add_routes(schedule.routes)
 
-    # Add a catch-all route to log everything (must be last)
-    app.router.add_route("*", "/{tail:.*}", system.handle_root)
-
     async def on_startup_handler(app: web.Application) -> None:
         await session_manager.create_all_tables()
 

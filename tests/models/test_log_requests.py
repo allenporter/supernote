@@ -35,6 +35,7 @@ MODEL_REGISTRY: dict[str, Type] = {
     "/api/official/user/check/exists/server": UserCheckDTO,
     "/api/official/user/query/random/code": RandomCodeDTO,
     "/api/official/user/account/login/equipment": LoginDTO,
+    "/api/official/user/account/login/new": LoginDTO,
     "/api/terminal/user/bindEquipment": BindEquipmentDTO,
     "/api/terminal/equipment/unlink": UnbindEquipmentDTO,
     # File / Sync

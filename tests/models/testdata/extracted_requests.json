@@ -126,5 +126,27 @@
       "equipmentNo": "test-equipment-no",
       "id": "7655816004510727396"
     }
+  },
+  {
+    "method": "POST",
+    "path": "/api/official/user/query/random/code",
+    "body": {
+      "account": "test-email@example.com",
+      "countryCode": null
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/official/user/account/login/new",
+    "body": {
+      "account": "user@example.com",
+      "browser": "Chrome142",
+      "countryCode": null,
+      "equipment": "1",
+      "language": "en",
+      "loginMethod": "1",
+      "password": "5f4dcc3b5aa765d61d8327deb882cf995f4dcc3b5aa765d61d8327deb882cf99",
+      "timestamp": "1767462794289"
+    }
   }
 ]

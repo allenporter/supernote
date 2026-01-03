@@ -7,6 +7,8 @@ from supernote.models.auth import (
     RandomCodeVO,
     UserCheckDTO,
     UserQueryByIdVO,
+    QueryTokenDTO,
+    QueryTokenVO,
 )
 from supernote.models.base import BaseResponse, create_error_response
 from supernote.models.equipment import BindEquipmentDTO, UnbindEquipmentDTO
@@ -58,11 +60,12 @@ async def handle_check_user_exists(request: web.Request) -> web.Response:
 
 
 @routes.post("/api/user/query/token")
+@routes.get("/api/user/query/token")
 @public_route
 async def handle_query_token(request: web.Request) -> web.Response:
     # Endpoint: POST /api/user/query/token
     # Purpose: Initial token check (often empty request)
-    return web.json_response(BaseResponse().to_dict())
+    return web.json_response(QueryTokenVO().to_dict(omit_none=False))
 
 
 @routes.post("/api/official/user/query/random/code")
