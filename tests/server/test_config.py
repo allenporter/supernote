@@ -69,3 +69,17 @@ def test_server_config_env_var_override(tmp_path: Path) -> None:
         assert config.auth.secret_key == "env-secret"
         assert config.host == "1.2.3.4"
         assert config.port == 5555
+
+
+def test_example_config_is_valid() -> None:
+    """Ensure config-example.yaml can be loaded by ServerConfig."""
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    config_path = os.path.join(base_dir, "config-example.yaml")
+
+    config = ServerConfig.load(config_file=config_path)
+
+    assert config.host == "0.0.0.0"
+    assert config.port == 8080
+    assert config.storage_dir == "storage"
+    assert config.auth.secret_key == "CHANGE_ME_TO_A_SECURE_RANDOM_STRING"
+    assert config.auth.enable_registration is False

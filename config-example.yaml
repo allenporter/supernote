@@ -1,0 +1,26 @@
+# Supernote Server Configuration Example
+#
+# This file serves as a reference for configuring the Supernote Server.
+# Copy this file to `config.yaml` and adjust the values as needed.
+---
+# Host and port to bind the server to.
+host: 0.0.0.0
+port: 8080
+
+# Directory where uploaded files and databases will be stored.
+storage_dir: storage
+
+# Authentication settings
+auth:
+  # Secret key used for signing session tokens.
+  # IMPORTANT: Change this to a random secure string for production use.
+  # You can generate one using `openssl rand -hex 32` or similar tools.
+  secret_key: "CHANGE_ME_TO_A_SECURE_RANDOM_STRING"
+
+  # Token expiration time in hours.
+  expiration_hours: 168 # 7 days
+
+  # Whether to allow public registration.
+  # If false, users must be created via the admin CLI.
+  # The first user created (or added via the admin CLI) will be an admin.
+  enable_registration: false

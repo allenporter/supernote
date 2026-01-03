@@ -35,33 +35,45 @@ class FileCacheAuth(AbstractAuth):
         """Initialize the auth."""
         self._cache_path = cache_path
         self._access_token: str | None = None
+        self._host: str | None = None
+        try:
+            self._load_from_cache()
+        except ValueError as err:
+            _LOGGER.info(f"No cached credentials found at {self._cache_path} ({err})")
 
     async def async_get_access_token(self) -> str:
         """Return a valid access token."""
         if self._access_token:
             return self._access_token
+        raise ValueError(f"No access token found in cache: {self._cache_path}")
 
-        if os.path.exists(self._cache_path):
-            try:
-                with open(self._cache_path, "rb") as f:
-                    data = pickle.load(f)
-                    if isinstance(data, dict) and "access_token" in data:
-                        self._access_token = data["access_token"]
-                        return self._access_token
-            except Exception as err:
-                _LOGGER.warning("Failed to load token from cache: %s", err)
+    def get_host(self) -> str | None:
+        """Return the cached host URL."""
+        return self._host
 
-        raise ValueError("No access token found in cache")
+    def _load_from_cache(self) -> None:
+        if not os.path.exists(self._cache_path):
+            raise ValueError("Cache file does not exist")
+        try:
+            with open(self._cache_path, "rb") as f:
+                data = pickle.load(f)
+        except Exception as err:
+            raise ValueError(f"Failed to load token from cache: {err}")
+        if not isinstance(data, dict):
+            raise ValueError("Cache file is not a dictionary")
+        self._access_token = data["access_token"]
+        if "host" not in data:
+            raise ValueError("Cache file is missing host")
+        self._host = data["host"]
 
-    def save_access_token(self, token: str) -> None:
-        """Save access token to cache."""
+    def save_credentials(self, token: str, host: str) -> None:
+        """Save access token and host to cache."""
         self._access_token = token
+        self._host = host
 
         # Ensure directory exists
         os.makedirs(os.path.dirname(self._cache_path), exist_ok=True)
 
-        try:
-            with open(self._cache_path, "wb") as f:
-                pickle.dump({"access_token": token}, f)
-        except Exception as err:
-            _LOGGER.warning("Failed to save token to cache: %s", err)
+        with open(self._cache_path, "wb") as f:
+            data = {"access_token": token, "host": host}
+            pickle.dump(data, f)
