@@ -12,7 +12,9 @@ async def test_capacity_query_device(device_client: DeviceClient) -> None:
 
     # 2. Upload a file
     content = b"y" * 2048  # 2KB
-    await device_client.upload_content("/capacity_test_device.txt", content, equipment_no="test")
+    await device_client.upload_content(
+        "/capacity_test_device.txt", content, equipment_no="test"
+    )
 
     # 3. Check Capacity Updated
     cap_after = await device_client.get_capacity()

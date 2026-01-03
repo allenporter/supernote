@@ -30,7 +30,9 @@ async def test_file_list_query(
         order=FileSortOrder.FILENAME,
         sequence=FileSortSequence.ASC,
     )
-    folder_a_entry = next(e for e in root_list.user_file_vo_list if e.file_name == "FolderA")
+    folder_a_entry = next(
+        e for e in root_list.user_file_vo_list if e.file_name == "FolderA"
+    )
     folder_a_id = int(folder_a_entry.id)
 
     # 2. Query List (The actual test)

@@ -13,7 +13,9 @@ async def test_move_file(device_client: DeviceClient) -> None:
     )
 
     # Get ID of /SourceFolder/ToMove
-    data = await device_client.list_folder(path="/SourceFolder", equipment_no="SN123456")
+    data = await device_client.list_folder(
+        path="/SourceFolder", equipment_no="SN123456"
+    )
     entry = next(e for e in data.entries if e.name == "ToMove")
     item_id = int(entry.id)
 
@@ -27,7 +29,9 @@ async def test_move_file(device_client: DeviceClient) -> None:
     assert any(e.name == "ToMove" for e in data.entries)
 
     # Verify NOT in SourceFolder
-    data = await device_client.list_folder(path="/SourceFolder", equipment_no="SN123456")
+    data = await device_client.list_folder(
+        path="/SourceFolder", equipment_no="SN123456"
+    )
     assert not any(e.name == "ToMove" for e in data.entries)
 
 

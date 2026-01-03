@@ -1,5 +1,3 @@
-
-
 from supernote.client.client import Client
 
 

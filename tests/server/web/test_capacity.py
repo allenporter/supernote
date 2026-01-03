@@ -15,7 +15,9 @@ async def test_capacity_query_web(
     # 2. Upload a file (using Device Client as Web UI uses Device API or similar for upload usually,
     # or purely relies on device sync. We simulate device upload.)
     content = b"x" * 1024  # 1KB
-    await device_client.upload_content("/capacity_test_web.txt", content, equipment_no="test")
+    await device_client.upload_content(
+        "/capacity_test_web.txt", content, equipment_no="test"
+    )
 
     # 3. Check Capacity Updated
     cap_after = await web_client.get_capacity_web()
