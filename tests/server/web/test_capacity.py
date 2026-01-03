@@ -1,10 +1,8 @@
-from supernote.client.device import DeviceClient
 from supernote.client.web import WebClient
 
 
 async def test_capacity_query_web(
     web_client: WebClient,
-    device_client: DeviceClient,
 ) -> None:
     # 1. Initial State
     cap = await web_client.get_capacity_web()
@@ -12,11 +10,10 @@ async def test_capacity_query_web(
     # Default quota is 10GB
     assert cap.total_capacity == 10 * 1024 * 1024 * 1024
 
-    # 2. Upload a file (using Device Client as Web UI uses Device API or similar for upload usually,
-    # or purely relies on device sync. We simulate device upload.)
+    # 2. Upload a file via Web API
     content = b"x" * 1024  # 1KB
-    await device_client.upload_content(
-        "/capacity_test_web.txt", content, equipment_no="test"
+    await web_client.upload_file(
+        parent_id=0, name="capacity_test_web.txt", content=content
     )
 
     # 3. Check Capacity Updated

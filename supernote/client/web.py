@@ -1,3 +1,5 @@
+import hashlib
+
 from supernote.models.base import BaseResponse
 from supernote.models.file import (
     CapacityVO,
@@ -8,11 +10,15 @@ from supernote.models.file import (
     FileListQueryVO,
     FileSortOrder,
     FileSortSequence,
+    FileUploadApplyDTO,
+    FileUploadApplyLocalVO,
+    FileUploadFinishDTO,
     FolderAddDTO,
     FolderVO,
     RecycleFileDTO,
     RecycleFileListDTO,
     RecycleFileListVO,
+    UploadType,
 )
 
 from . import Client
@@ -108,4 +114,41 @@ class WebClient:
         )
         await self._client.post_json(
             "/api/file/delete", BaseResponse, json=dto.to_dict()
+        )
+
+    async def upload_file(self, parent_id: int, name: str, content: bytes) -> None:
+        """Upload a file (Web API)."""
+        md5 = hashlib.md5(content).hexdigest()
+        size = len(content)
+
+        # Apply to get an upload endpoint
+        dto = FileUploadApplyDTO(
+            directory_id=parent_id,
+            file_name=name,
+            size=size,
+            md5=md5,
+        )
+        apply_vo = await self._client.post_json(
+            "/api/file/upload/apply", FileUploadApplyLocalVO, json=dto.to_dict()
+        )
+
+        # Upload to OSS (using signed URL)
+        await self._client._upload_to_oss(
+            content,
+            apply_vo.inner_name or "",
+            apply_vo.full_upload_url,
+            apply_vo.part_upload_url,
+        )
+
+        # Finish upload
+        finish_dto = FileUploadFinishDTO(
+            directory_id=parent_id,
+            file_size=size,
+            file_name=name,
+            md5=md5,
+            inner_name=apply_vo.inner_name or "",
+            type=UploadType.CLOUD,
+        )
+        await self._client.post_json(
+            "/api/file/upload/finish", BaseResponse, json=finish_dto.to_dict()
         )

@@ -1,14 +1,11 @@
 import pytest
 
-from supernote.client.device import DeviceClient
 from supernote.client.exceptions import ApiException
 from supernote.client.web import WebClient
 
 
 async def test_soft_delete_to_recycle(
     web_client: WebClient,
-    device_client: DeviceClient,
-    auth_headers: dict[str, str],
 ) -> None:
     # Create a folder
     await web_client.create_folder(parent_id=0, name="TestFolder")
@@ -25,10 +22,10 @@ async def test_soft_delete_to_recycle(
     await web_client.file_delete(id_list=[item_id])
 
     # Verify not in main folder
-    list_folder_result = await device_client.list_folder(
-        path="/", equipment_no="SN123456"
+    list_folder_result = await web_client.list_query(directory_id=0)
+    assert not any(
+        e.file_name == "TestFolder" for e in list_folder_result.user_file_vo_list
     )
-    assert not any(e.name == "TestFolder" for e in list_folder_result.entries)
 
     # Verify in recycle bin
     recycle_list_result = await web_client.recycle_list(page_no=1, page_size=20)
@@ -42,8 +39,6 @@ async def test_soft_delete_to_recycle(
 
 async def test_recycle_revert(
     web_client: WebClient,
-    device_client: DeviceClient,
-    auth_headers: dict[str, str],
 ) -> None:
     # Create and delete a folder
     await web_client.create_folder(parent_id=0, name="ToRestore")
@@ -65,10 +60,8 @@ async def test_recycle_revert(
     await web_client.recycle_revert(id_list=[recycle_id])
 
     # Verify back in main folder
-    list_folder_result = await device_client.list_folder(
-        path="/", equipment_no="SN123456"
-    )
-    assert any(e.name == "ToRestore" for e in list_folder_result.entries)
+    list_folder_result = await web_client.list_query(directory_id=0)
+    assert any(e.file_name == "ToRestore" for e in list_folder_result.user_file_vo_list)
 
     # Verify not in recycle bin
     recycle_list_result = await web_client.recycle_list(page_no=1, page_size=20)
@@ -77,8 +70,6 @@ async def test_recycle_revert(
 
 async def test_recycle_permanent_delete(
     web_client: WebClient,
-    device_client: DeviceClient,
-    auth_headers: dict[str, str],
 ) -> None:
     # Create and delete a folder
     await web_client.create_folder(parent_id=0, name="ToDelete")
@@ -107,15 +98,11 @@ async def test_recycle_permanent_delete(
 
 async def test_recycle_clear(
     web_client: WebClient,
-    device_client: DeviceClient,
-    auth_headers: dict[str, str],
 ) -> None:
     # Default folders
-    list_folder_result = await device_client.list_folder(
-        path="/", equipment_no="SN123456"
-    )
+    list_folder_result = await web_client.list_query(directory_id=0)
     assert list_folder_result
-    assert len(list_folder_result.entries) == 3
+    assert len(list_folder_result.user_file_vo_list) == 3
 
     # Create and delete multiple folders
     for name in ["Folder1", "Folder2", "Folder3"]:
@@ -144,8 +131,6 @@ async def test_recycle_clear(
 
 async def test_delete_wrong_parent(
     web_client: WebClient,
-    device_client: DeviceClient,
-    auth_headers: dict[str, str],
 ) -> None:
     # 1. Create Parent Folder (in Root)
     parent_vo = await web_client.create_folder(parent_id=0, name="ParentFolder")

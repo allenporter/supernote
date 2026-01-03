@@ -1,4 +1,3 @@
-from supernote.client.device import DeviceClient
 from supernote.client.web import WebClient
 from supernote.models.base import BooleanEnum
 from supernote.models.file import FileSortOrder, FileSortSequence
@@ -6,34 +5,26 @@ from supernote.models.file import FileSortOrder, FileSortSequence
 
 async def test_file_list_query(
     web_client: WebClient,
-    device_client: DeviceClient,
 ) -> None:
-    # 1. Create directory structure (Setup using Device Client / storage helper)
+    # Create directory structure
     # Root
     #  - FolderA
     #    - File1
     #    - File2
 
     # Create FolderA in Root
-    await web_client.create_folder(parent_id=0, name="FolderA")
+    folder_vo = await web_client.create_folder(parent_id=0, name="FolderA")
+    folder_a_id = int(folder_vo.id)
 
-    # Create files in FolderA
-    await device_client.upload_content("/FolderA/File1.txt", b"content1")
-    await device_client.upload_content("/FolderA/File2.txt", b"content2")
-
-    # We need the ID of FolderA.
-    # Since we are testing Web Listing, let's use Web Listing to find the ID from root.
-    root_list = await web_client.list_query(
-        directory_id=0,
-        order=FileSortOrder.FILENAME,
-        sequence=FileSortSequence.ASC,
+    # Create files in FolderA using WebClient
+    await web_client.upload_file(
+        parent_id=folder_a_id, name="File1.txt", content=b"content1"
     )
-    folder_a_entry = next(
-        e for e in root_list.user_file_vo_list if e.file_name == "FolderA"
+    await web_client.upload_file(
+        parent_id=folder_a_id, name="File2.txt", content=b"content2"
     )
-    folder_a_id = int(folder_a_entry.id)
 
-    # 2. Query List (The actual test)
+    # Query List (The actual test)
     # Query FolderA (by ID)
     res = await web_client.list_query(
         directory_id=folder_a_id,
@@ -52,7 +43,7 @@ async def test_file_list_query(
     # Check BooleanEnum value usage
     assert f1.is_folder == BooleanEnum.NO
 
-    # 3. Pagination
+    # Pagination
     res_page1 = await web_client.list_query(
         directory_id=folder_a_id,
         order=FileSortOrder.FILENAME,
@@ -77,7 +68,6 @@ async def test_file_list_query(
 
 async def test_file_list_query_root(
     web_client: WebClient,
-    device_client: DeviceClient,
 ) -> None:
     # Test listing root (directory_id=0)
     await web_client.create_folder(parent_id=0, name="FolderRoot")

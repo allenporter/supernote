@@ -1,9 +1,6 @@
 import hashlib
 import logging
-import uuid
 from pathlib import Path
-
-from aiohttp import FormData
 
 from supernote.models.file import (
     CapacityLocalDTO,
@@ -34,7 +31,6 @@ from supernote.models.file import (
     SynchronousStartLocalDTO,
     SynchronousStartLocalVO,
 )
-from supernote.models.system import FileChunkParams
 
 from . import Client
 
@@ -162,52 +158,18 @@ class DeviceClient:
         _LOGGER.debug("Initiating upload for file %s", path)
         apply = await self.upload_apply(filename, path, size, equipment_no)
 
-        if apply.part_upload_url is None and apply.full_upload_url is None:
-            raise ValueError("No upload URL available")
-
         if isinstance(content, str):
             content_bytes = content.encode("utf-8")
         else:
             content_bytes = content
 
-        if size < chunk_size or apply.part_upload_url is None:
-            if apply.full_upload_url is None:
-                raise ValueError("No upload URL available")
-            _LOGGER.debug("Uploading file %s in one chunk", path)
-            data = FormData()
-            data.add_field("file", content_bytes, filename=filename)
-            # Pass empty dict to headers to avoid default application/json Content-Type
-            # The client will still add Auth and XSRF headers
-            await self._client.request(
-                "post",
-                apply.full_upload_url,
-                data=data,
-                headers={},
-            )
-        else:
-            upload_id = uuid.uuid4().hex
-            # Break into chunks
-            chunks = [
-                content_bytes[i : i + chunk_size] for i in range(0, size, chunk_size)
-            ]
-            for i, chunk in enumerate(chunks):
-                _LOGGER.debug(
-                    f"Uploading chunk {i + 1} of {len(chunks)} ({len(chunk)} bytes)"
-                )
-                data = FormData()
-                data.add_field("file", chunk, filename=filename)
-                params = FileChunkParams(
-                    upload_id=upload_id,
-                    part_number=i + 1,
-                    total_chunks=len(chunks),
-                )
-                await self._client.request(
-                    "post",
-                    apply.part_upload_url,
-                    data=data,
-                    params={k: v for k, v in params.to_dict().items() if v is not None},
-                    headers={},
-                )
+        await self._client._upload_to_oss(
+            content_bytes,
+            filename,
+            apply.full_upload_url,
+            apply.part_upload_url,
+            chunk_size,
+        )
 
         _LOGGER.debug("Finishing upload for file %s", path)
 

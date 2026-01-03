@@ -1,16 +1,15 @@
-from supernote.client.device import DeviceClient
 from supernote.client.web import WebClient
 
 
 async def test_search_by_filename(
-    web_client: WebClient, device_client: DeviceClient
+    web_client: WebClient,
 ) -> None:
     """Test searching for files by filename."""
 
     # Create some test folders and files
-    await device_client.create_folder(path="/Notes", equipment_no="SN123456")
-    await device_client.create_folder(path="/Documents", equipment_no="SN123456")
-    await device_client.create_folder(path="/Notes/Meeting", equipment_no="SN123456")
+    notes = await web_client.create_folder(parent_id=0, name="Notes")
+    await web_client.create_folder(parent_id=0, name="Documents")
+    await web_client.create_folder(parent_id=int(notes.id), name="Meeting")
 
     # Search for "Notes"
     data = await web_client.search(keyword="Notes")
@@ -20,12 +19,13 @@ async def test_search_by_filename(
 
 
 async def test_search_case_insensitive(
-    web_client: WebClient, device_client: DeviceClient
+    web_client: WebClient,
 ) -> None:
     """Test that search is case-insensitive."""
 
     # Create folder
-    await device_client.create_folder(path="/MyFolder", equipment_no="SN123456")
+    # Create folder
+    await web_client.create_folder(parent_id=0, name="MyFolder")
 
     # Search with lowercase
     data = await web_client.search(keyword="myfolder")
@@ -34,14 +34,15 @@ async def test_search_case_insensitive(
 
 
 async def test_search_partial_match(
-    web_client: WebClient, device_client: DeviceClient
+    web_client: WebClient,
 ) -> None:
     """Test that search matches partial filenames."""
 
     # Create folders
-    await device_client.create_folder(path="/Meeting2024", equipment_no="SN123456")
-    await device_client.create_folder(path="/Meeting2023", equipment_no="SN123456")
-    await device_client.create_folder(path="/Notes", equipment_no="SN123456")
+    # Create folders
+    await web_client.create_folder(parent_id=0, name="Meeting2024")
+    await web_client.create_folder(parent_id=0, name="Meeting2023")
+    await web_client.create_folder(parent_id=0, name="Notes")
 
     # Search for "Meeting"
     data = await web_client.search(keyword="Meeting")
@@ -51,12 +52,13 @@ async def test_search_partial_match(
 
 
 async def test_search_no_results(
-    web_client: WebClient, device_client: DeviceClient
+    web_client: WebClient,
 ) -> None:
     """Test search with no matching results."""
 
     # Create folder
-    await device_client.create_folder(path="/Notes", equipment_no="SN123456")
+    # Create folder
+    await web_client.create_folder(parent_id=0, name="Notes")
 
     # Search for non-existent keyword
     data = await web_client.search(keyword="NonExistent")
@@ -64,17 +66,14 @@ async def test_search_no_results(
 
 
 async def test_search_path_reconstruction(
-    web_client: WebClient, device_client: DeviceClient
+    web_client: WebClient,
 ) -> None:
     """Test that search returns the correct full path for nested files."""
     # Create /Nested/Folder/DeepTarget
-    await device_client.create_folder(path="/Nested", equipment_no="SN123")
-    await device_client.create_folder(path="/Nested/Folder", equipment_no="SN123")
-
-    # Create a deep folder to search for
-    await device_client.create_folder(
-        path="/Nested/Folder/DeepTarget", equipment_no="SN123"
-    )
+    # Create /Nested/Folder/DeepTarget
+    nested = await web_client.create_folder(parent_id=0, name="Nested")
+    folder = await web_client.create_folder(parent_id=int(nested.id), name="Folder")
+    await web_client.create_folder(parent_id=int(folder.id), name="DeepTarget")
 
     # Search for "DeepTarget"
     data = await web_client.search(keyword="DeepTarget")

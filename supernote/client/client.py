@@ -1,12 +1,15 @@
 """Library for accessing backups in Supenote Cloud."""
 
 import logging
+import uuid
 from typing import Any, Type, TypeVar
 
 import aiohttp
+from aiohttp import FormData
 from aiohttp.client_exceptions import ClientError
 
 from supernote.models.base import BaseResponse
+from supernote.models.system import FileChunkParams
 
 from .auth import AbstractAuth
 from .exceptions import ApiException, ForbiddenException, UnauthorizedException
@@ -240,3 +243,50 @@ class Client:
         except ClientError:
             return None
         return result
+
+    async def _upload_to_oss(
+        self,
+        content: bytes,
+        filename: str,
+        full_upload_url: str | None,
+        part_upload_url: str | None,
+        chunk_size: int = 5 * 1024 * 1024,
+    ) -> None:
+        """Upload content to OSS (support single or multi-part)."""
+        size = len(content)
+
+        if size < chunk_size or part_upload_url is None:
+            if full_upload_url is None:
+                raise ValueError("No upload URL available")
+            _LOGGER.debug("Uploading file %s in one chunk", filename)
+            data = FormData()
+            data.add_field("file", content, filename=filename)
+            # Pass empty dict to headers to avoid default application/json Content-Type
+            await self.request(
+                "post",
+                full_upload_url,
+                data=data,
+                headers={},
+            )
+        else:
+            upload_id = uuid.uuid4().hex
+            # Break into chunks
+            chunks = [content[i : i + chunk_size] for i in range(0, size, chunk_size)]
+            for i, chunk in enumerate(chunks):
+                _LOGGER.debug(
+                    f"Uploading chunk {i + 1} of {len(chunks)} ({len(chunk)} bytes)"
+                )
+                data = FormData()
+                data.add_field("file", chunk, filename=filename)
+                params = FileChunkParams(
+                    upload_id=upload_id,
+                    part_number=i + 1,
+                    total_chunks=len(chunks),
+                )
+                await self.request(
+                    "post",
+                    part_upload_url,
+                    data=data,
+                    params={k: v for k, v in params.to_dict().items() if v is not None},
+                    headers={},
+                )

@@ -22,6 +22,7 @@ from supernote.models.file_device import (
 )
 from supernote.models.file_web import (
     FileListQueryVO,
+    FileUploadFinishDTO,
     FolderVO,
     RecycleFileListVO,
     RecycleFileVO,
@@ -282,11 +283,14 @@ class FileService:
         if not await self.blob_storage.exists(content_hash):
             # Fallback: check legacy temp file from save_temp_file
             temp_path = self.resolve_temp_path(user, filename)
-            if temp_path.exists():
+            if await asyncio.to_thread(temp_path.exists):
                 # Calculate MD5 and promote to blob
                 hash_md5 = hashlib.md5()
-                with open(temp_path, "rb") as f:
-                    for chunk in iter(lambda: f.read(4096), b""):
+                async with aiofiles.open(temp_path, "rb") as f:
+                    while True:
+                        chunk = await f.read(4096)
+                        if not chunk:
+                            break
                         hash_md5.update(chunk)
                 calc_md5 = hash_md5.hexdigest()
 
@@ -296,12 +300,12 @@ class FileService:
                     )
 
                 # Write to blob
-                with open(temp_path, "rb") as f:
-                    data = f.read()
+                async with aiofiles.open(temp_path, "rb") as f:
+                    data = await f.read()
                     await self.blob_storage.write_blob(data)
 
                 # Cleanup temp
-                temp_path.unlink(missing_ok=True)
+                await asyncio.to_thread(temp_path.unlink, missing_ok=True)
             else:
                 raise FileNotFoundError(
                     f"Blob {content_hash} not found and no temp file."
@@ -340,6 +344,64 @@ class FileService:
             name=filename,
             content_hash=content_hash,
         )
+
+    async def upload_finish_web(
+        self, user: str, dto: FileUploadFinishDTO
+    ) -> BaseResponse:
+        """Finish upload (Web API)."""
+        user_id = await self.user_service.get_user_id(user)
+
+        # 1. Check/Promote Blob
+        # Note: We use inner_name to find the temp file if not in blob storage
+        if not await self.blob_storage.exists(dto.md5):
+            temp_path = self.resolve_temp_path(user, dto.inner_name)
+            if await asyncio.to_thread(temp_path.exists):
+                # Validate MD5
+                hash_md5 = hashlib.md5()
+                async with aiofiles.open(temp_path, "rb") as f:
+                    while True:
+                        chunk = await f.read(4096)
+                        if not chunk:
+                            break
+                        hash_md5.update(chunk)
+                calc_md5 = hash_md5.hexdigest()
+
+                if calc_md5 != dto.md5:
+                    raise ValueError(
+                        f"Hash mismatch: expected {dto.md5}, got {calc_md5}"
+                    )
+
+                # Promote to Blob
+                async with aiofiles.open(temp_path, "rb") as f:
+                    data = await f.read()
+                    await self.blob_storage.write_blob(data)
+
+                await asyncio.to_thread(temp_path.unlink, missing_ok=True)
+            else:
+                # If neither blob nor temp file exists -> error
+                raise FileNotFoundError(
+                    f"Blob {dto.md5} not found and temporary file {dto.inner_name} missing."
+                )
+
+        # 2. Create VFS Node
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+            # Verify directory exists? (Optional, create_file might check FK or fail)
+            # create_file expects valid parent_id.
+
+            # Using actual size from blob or DTO? DTO usually trusted or verified during promotion.
+            # Ideally verify blob size.
+            blob_size = self.blob_storage.get_blob_path(dto.md5).stat().st_size
+
+            await vfs.create_file(
+                user_id=user_id,
+                parent_id=dto.directory_id,
+                name=dto.file_name,
+                size=blob_size,
+                md5=dto.md5,
+            )
+
+        return BaseResponse()
 
     async def create_directory(
         self, user: str, path: str, equipment_no: str

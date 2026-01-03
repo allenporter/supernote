@@ -1,4 +1,7 @@
 import logging
+import urllib.parse
+import uuid
+from pathlib import Path
 
 from aiohttp import web
 
@@ -8,6 +11,9 @@ from supernote.models.file import (
     FileLabelSearchDTO,
     FileLabelSearchVO,
     FileListQueryDTO,
+    FileUploadApplyDTO,
+    FileUploadApplyLocalVO,
+    FileUploadFinishDTO,
     FolderAddDTO,
     RecycleFileDTO,
     RecycleFileListDTO,
@@ -161,4 +167,45 @@ async def handle_file_delete(request: web.Request) -> web.Response:
     response = await file_service.delete_items(
         user_email, req_data.id_list, req_data.directory_id
     )
+    return web.json_response(response.to_dict())
+
+
+@routes.post("/api/file/upload/apply")
+async def handle_file_upload_apply(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/upload/apply
+    # Purpose: Request upload (Web).
+    # Response: FileUploadApplyLocalVO
+
+    req_data = FileUploadApplyDTO.from_dict(await request.json())
+    url_signer = request.app["url_signer"]
+
+    # Generate inner_name
+    ext = "".join(Path(req_data.file_name).suffixes)
+    inner_name = f"{uuid.uuid4()}{ext}"
+
+    # Sign URL
+    encoded_name = urllib.parse.quote(inner_name)
+    path_to_sign = f"/api/oss/upload?object_name={encoded_name}"
+    signed_path = url_signer.sign(path_to_sign)
+    full_url = f"{request.scheme}://{request.host}{signed_path}"
+
+    return web.json_response(
+        FileUploadApplyLocalVO(
+            full_upload_url=full_url,
+            inner_name=inner_name,
+        ).to_dict()
+    )
+
+
+@routes.post("/api/file/upload/finish")
+async def handle_file_upload_finish(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/upload/finish
+    # Purpose: Complete upload (Web).
+    # Response: BaseResponse
+
+    req_data = FileUploadFinishDTO.from_dict(await request.json())
+    user_email = request["user"]
+    file_service: FileService = request.app["file_service"]
+
+    response = await file_service.upload_finish_web(user_email, req_data)
     return web.json_response(response.to_dict())
