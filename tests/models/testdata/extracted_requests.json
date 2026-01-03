@@ -148,5 +148,16 @@
       "password": "5f4dcc3b5aa765d61d8327deb882cf995f4dcc3b5aa765d61d8327deb882cf99",
       "timestamp": "1767462794289"
     }
-  }
+  },
+  {
+    "method": "POST",
+    "path": "/api/file/list/query",
+    "body": {
+      "directoryId": 0,
+      "pageNo": 1,
+      "pageSize": 20,
+      "sequence": "desc",
+      "order": "time"
+    }
+  },
 ]

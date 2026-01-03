@@ -22,6 +22,7 @@ from supernote.models.file import (
     ListFolderV2DTO,
     SynchronousEndLocalDTO,
     SynchronousStartLocalDTO,
+    FileListQueryDTO,
 )
 from supernote.models.user import (
     UserCheckDTO,
@@ -48,6 +49,7 @@ MODEL_REGISTRY: dict[str, Type] = {
     "/api/file/3/files/upload/apply": FileUploadApplyLocalDTO,
     "/api/file/2/files/upload/finish": FileUploadFinishLocalDTO,
     "/api/file/2/files/download": FileDownloadLocalDTO,
+    "/api/file/list/query": FileListQueryDTO,
 }
 
 
