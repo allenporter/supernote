@@ -8,8 +8,8 @@ from aiohttp.test_utils import TestClient
 from sqlalchemy import delete
 
 from supernote.client.client import Client
+from supernote.client.device import DeviceClient
 from supernote.client.exceptions import UnauthorizedException
-from supernote.client.file import FileClient
 from supernote.client.login_client import LoginClient
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
@@ -245,11 +245,11 @@ async def test_capacity_query(client: TestClient, auth_headers: dict[str, str]) 
 # and download flow tests.abs
 
 async def test_upload_flow(
-    file_client: FileClient, client: TestClient, auth_headers: dict[str, str]
+    device_client: DeviceClient, client: TestClient, auth_headers: dict[str, str]
 ) -> None:
     # 1. Apply for upload
     content = b"test content"
-    upload_response = await file_client.upload_content(
+    upload_response = await device_client.upload_content(
         path="/EXPORT/test.note",
         equipment_no="SN123456",
         content=content,
@@ -264,11 +264,11 @@ async def test_upload_flow(
 
 
 async def test_download_flow(
-    file_client: FileClient, client: TestClient, auth_headers: dict[str, str]
+    device_client: DeviceClient, client: TestClient, auth_headers: dict[str, str]
 ) -> None:
     # Upload a file first
     file_content = b"Hello Download"
-    upload_response = await file_client.upload_content(
+    upload_response = await device_client.upload_content(
         path="/EXPORT/download_test.note",
         content=file_content,
         equipment_no="SN123456",
@@ -276,7 +276,7 @@ async def test_download_flow(
     assert upload_response
 
     # Request Download URL
-    query_resp = await file_client.query_by_path(
+    query_resp = await device_client.query_by_path(
         path="/EXPORT/download_test.note",
         equipment_no="SN123456",
     )
@@ -284,7 +284,7 @@ async def test_download_flow(
     assert query_resp.entries_vo
     file_id = int(query_resp.entries_vo.id)
 
-    download_resp = await file_client.download_v3(
+    download_resp = await device_client.download_v3(
         file_id=file_id,
         equipment_no="SN123456",
     )

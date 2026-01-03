@@ -1,18 +1,18 @@
 import hashlib
 
-from supernote.client.file import FileClient
+from supernote.client.device import DeviceClient
 from tests.server.conftest import UserStorageHelper
 
 
 async def test_query_v3_success(
-    file_client: FileClient,
+    device_client: DeviceClient,
     user_storage: UserStorageHelper,
 ) -> None:
     """Query by ID and path."""
     # Create a test file
     content = b"some content"
     expected_hash = hashlib.md5(content).hexdigest()
-    upload_response = await file_client.upload_content(
+    upload_response = await device_client.upload_content(
         "Note/test.note", content, equipment_no="SN123"
     )
     assert upload_response.id
@@ -23,7 +23,7 @@ async def test_query_v3_success(
     # Query by ID (resolve first)
     path_str = "Note/test.note"
     # Resolve valid ID using query_by_path
-    path_resp = await file_client.query_by_path(path=path_str, equipment_no="SN123")
+    path_resp = await device_client.query_by_path(path=path_str, equipment_no="SN123")
     assert path_resp.entries_vo
     assert path_resp.entries_vo.path_display == "/Note/test.note"
     assert path_resp.entries_vo.name == "test.note"
@@ -32,7 +32,7 @@ async def test_query_v3_success(
     assert path_resp.entries_vo.id == upload_response.id
 
     # Now Query by strict ID
-    data = await file_client.query_by_id(
+    data = await device_client.query_by_id(
         file_id=int(upload_response.id), equipment_no="SN123"
     )
 
@@ -44,11 +44,11 @@ async def test_query_v3_success(
 
 
 async def test_query_v3_not_found(
-    file_client: FileClient,
+    device_client: DeviceClient,
 ) -> None:
     """Query with an identifier that does not exist."""
     # Use a specific ID that should not exist
-    data = await file_client.query_by_id(file_id=99999999, equipment_no="SN123")
+    data = await device_client.query_by_id(file_id=99999999, equipment_no="SN123")
 
     assert data.entries_vo is None
     assert data.equipment_no == "SN123"

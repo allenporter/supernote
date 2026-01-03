@@ -19,7 +19,9 @@ from sqlalchemy.pool import StaticPool
 
 from supernote.client.auth import AbstractAuth
 from supernote.client.client import Client
-from supernote.client.file import FileClient
+from supernote.client.device import DeviceClient
+
+from supernote.client.web import WebClient
 from supernote.server.app import create_app
 from supernote.server.config import AuthConfig, ServerConfig
 from supernote.server.db.models.user import UserDO
@@ -164,9 +166,9 @@ async def db_session(
 class UserStorageHelper:
     """Helper to create test files/folders for users."""
 
-    def __init__(self, file_client: FileClient, storage_root: Path) -> None:
+    def __init__(self, device_client: DeviceClient, storage_root: Path) -> None:
         """Initialize the helper."""
-        self.file_client = file_client
+        self.file_client = device_client
         self.storage_root = storage_root
 
     async def create_file(
@@ -206,11 +208,11 @@ def user_service(
 
 @pytest.fixture
 def user_storage(
-    file_client: FileClient,
+    device_client: DeviceClient,
     storage_root: Path,
 ) -> UserStorageHelper:
     """Fixture to easily create test files/folders for users."""
-    return UserStorageHelper(file_client, storage_root)
+    return UserStorageHelper(device_client, storage_root)
 
 
 @pytest.fixture(autouse=True)
@@ -260,9 +262,16 @@ async def authenticated_client(
     yield supernote_client
 
 
-@pytest.fixture
-def file_client(authenticated_client: Client) -> Generator[FileClient, None, None]:
-    """Create a FileClient."""
-    from supernote.client.file import FileClient
 
-    yield FileClient(authenticated_client)
+
+
+@pytest.fixture
+def device_client(authenticated_client: Client) -> Generator[DeviceClient, None, None]:
+    """Create a DeviceClient."""
+    yield DeviceClient(authenticated_client)
+
+
+@pytest.fixture
+def web_client(authenticated_client: Client) -> Generator[WebClient, None, None]:
+    """Create a WebClient."""
+    yield WebClient(authenticated_client)

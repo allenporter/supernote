@@ -1,31 +1,41 @@
-from supernote.client.file import FileClient
+from supernote.client.device import DeviceClient
+from supernote.client.web import WebClient
 from supernote.models.base import BooleanEnum
 from supernote.models.file import FileSortOrder, FileSortSequence
+from tests.server.conftest import UserStorageHelper
 
 
-async def test_file_list_query(file_client: FileClient) -> None:
-    # 1. Create directory structure
+async def test_file_list_query(
+    web_client: WebClient,
+    device_client: DeviceClient,
+    user_storage: UserStorageHelper,
+) -> None:
+    # 1. Create directory structure (Setup using Device Client / storage helper)
     # Root
     #  - FolderA
     #    - File1
     #    - File2
 
     # Create FolderA in Root
-    await file_client.create_folder(path="/FolderA", equipment_no="test")
-
-    # We need the ID of FolderA.
-    root_list = await file_client.list_folder(path="/", equipment_no="test")
-    folder_a_entry = next(e for e in root_list.entries if e.name == "FolderA")
-    folder_a_id = int(folder_a_entry.id)
+    await device_client.create_folder(path="/FolderA", equipment_no="test")
 
     # Create files in FolderA
-    await file_client.upload_content("/FolderA/File1.txt", b"content1")
-    await file_client.upload_content("/FolderA/File2.txt", b"content2")
+    await device_client.upload_content("/FolderA/File1.txt", b"content1")
+    await device_client.upload_content("/FolderA/File2.txt", b"content2")
 
-    # 2. Query List
+    # We need the ID of FolderA.
+    # Since we are testing Web Listing, let's use Web Listing to find the ID from root.
+    root_list = await web_client.list_query(
+        directory_id=0,
+        order=FileSortOrder.FILENAME,
+        sequence=FileSortSequence.ASC,
+    )
+    folder_a_entry = next(e for e in root_list.user_file_vo_list if e.file_name == "FolderA")
+    folder_a_id = int(folder_a_entry.id)
 
+    # 2. Query List (The actual test)
     # Query FolderA (by ID)
-    res = await file_client.list_query(
+    res = await web_client.list_query(
         directory_id=folder_a_id,
         order=FileSortOrder.FILENAME,
         sequence=FileSortSequence.ASC,
@@ -43,7 +53,7 @@ async def test_file_list_query(file_client: FileClient) -> None:
     assert f1.is_folder == BooleanEnum.NO
 
     # 3. Pagination
-    res_page1 = await file_client.list_query(
+    res_page1 = await web_client.list_query(
         directory_id=folder_a_id,
         order=FileSortOrder.FILENAME,
         sequence=FileSortSequence.ASC,
@@ -54,7 +64,7 @@ async def test_file_list_query(file_client: FileClient) -> None:
     assert len(res_page1.user_file_vo_list) == 1
     assert res_page1.user_file_vo_list[0].file_name == "File1.txt"
 
-    res_page2 = await file_client.list_query(
+    res_page2 = await web_client.list_query(
         directory_id=folder_a_id,
         order=FileSortOrder.FILENAME,
         sequence=FileSortSequence.ASC,
@@ -65,11 +75,14 @@ async def test_file_list_query(file_client: FileClient) -> None:
     assert res_page2.user_file_vo_list[0].file_name == "File2.txt"
 
 
-async def test_file_list_query_root(file_client: FileClient) -> None:
+async def test_file_list_query_root(
+    web_client: WebClient,
+    device_client: DeviceClient,
+) -> None:
     # Test listing root (directory_id=0)
-    await file_client.create_folder(path="/FolderRoot", equipment_no="test")
+    await device_client.create_folder(path="/FolderRoot", equipment_no="test")
 
-    res = await file_client.list_query(
+    res = await web_client.list_query(
         directory_id=0, order=FileSortOrder.FILENAME, sequence=FileSortSequence.ASC
     )
 
