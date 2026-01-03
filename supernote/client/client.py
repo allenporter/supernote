@@ -55,6 +55,11 @@ class Client:
         self._auth = auth
         self._xsrf_token: str | None = None
 
+    @property
+    def host(self) -> str:
+        """Return the host URL."""
+        return self._host
+
     def _url(self, url: str) -> str:
         if not (url.startswith("http://") or url.startswith("https://")):
             if self._host.endswith("/"):

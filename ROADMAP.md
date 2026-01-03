@@ -68,3 +68,5 @@ This document outlines the path to making Supernote Private Cloud a reliable "da
     - Clarify generic `soft_delete` and recursive copy logic.
 - [ ] **Code Cleanup**:
     - Remove dead code in `CoordinationService`.
+- [ ] **Multi-host Client Authentication**:
+    - Update `FileCacheAuth` and `Client` to support storing and retrieving credentials for multiple hosts simultaneously.
