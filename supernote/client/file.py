@@ -9,6 +9,7 @@ from supernote.models.base import BaseResponse
 from supernote.models.file import (
     CapacityLocalDTO,
     CapacityLocalVO,
+    CapacityVO,
     CreateFolderLocalDTO,
     CreateFolderLocalVO,
     DeleteFolderLocalDTO,
@@ -342,10 +343,16 @@ class FileClient:
         )
 
     async def get_capacity(self, equipment_no: str = "") -> CapacityLocalVO:
-        """Get storage capacity."""
+        """Get storage capacity (Device)."""
         dto = CapacityLocalDTO(equipment_no=equipment_no)
         return await self._client.post_json(
             "/api/file/2/users/get_space_usage", CapacityLocalVO, json=dto.to_dict()
+        )
+
+    async def get_capacity_web(self) -> CapacityVO:
+        """Get storage capacity (Web)."""
+        return await self._client.post_json(
+            "/api/file/capacity/query", CapacityVO, json={}
         )
 
     async def query_by_path(

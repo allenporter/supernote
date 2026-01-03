@@ -73,6 +73,9 @@ These features have not ben categorized or prioritized yet in the roadmap.
 - [ ] Make a typed "hash" object for other types of content hashes (e.g. md5, sha256, etc) stored in the database for integrity checks
 - [ ] Audit use of the "file_server" field in the database and ensure it is used consistently
 - [ ] Audit use of the "inner name" and "bucket" fields for storage systems.
+- [ ] Implement proper quota allocation value.
+- [ ] Understand AllocationVO implementation details and tag.
+
 
 ### Testing & Quality
 - [ ] **Test Coverage**:

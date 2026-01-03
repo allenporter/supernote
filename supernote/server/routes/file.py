@@ -8,6 +8,7 @@ from supernote.models.base import BaseResponse, create_error_response
 from supernote.models.file import (
     AllocationVO,
     CapacityLocalVO,
+    CapacityVO,
     CreateFolderLocalDTO,
     DeleteFolderLocalDTO,
     FileCopyLocalDTO,
@@ -142,6 +143,25 @@ async def handle_list_folder_v3(request: web.Request) -> web.Response:
 
     return web.json_response(
         ListFolderLocalVO(equipment_no=req_data.equipment_no, entries=entries).to_dict()
+    )
+
+
+@routes.post("/api/file/capacity/query")
+async def handle_capacity_query_cloud(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/capacity/query
+    # Purpose: Get storage capacity usage (Cloud).
+    # Response: CapacityVO
+
+    user_email = request["user"]
+    file_service: FileService = request.app["file_service"]
+
+    # TODO: Implement quota properly
+    used = await file_service.get_storage_usage(user_email)
+    return web.json_response(
+        CapacityVO(
+            used_capacity=used,
+            total_capacity=1024 * 1024 * 1024 * 10,  # 10GB total
+        ).to_dict()
     )
 
 
