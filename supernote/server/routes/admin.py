@@ -66,7 +66,7 @@ async def handle_list_users(request: web.Request) -> web.Response:
 
     user_vos = [
         UserVO(
-            user_name=u.display_name or u,
+            user_name=u.display_name or u.email,
             email=u.email,
             phone=u.phone or "",
             country_code="1",
