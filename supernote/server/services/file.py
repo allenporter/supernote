@@ -15,12 +15,12 @@ from supernote.models.file import (
     FileCopyLocalVO,
     FileListQueryVO,
     FileMoveLocalVO,
+    FileSortOrder,
+    FileSortSequence,
     FileUploadFinishLocalVO,
     RecycleFileListVO,
     RecycleFileVO,
     UserFileVO,
-    FileSortOrder,
-    FileSortSequence,
 )
 
 from ..db.session import DatabaseSessionManager

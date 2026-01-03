@@ -15,6 +15,7 @@ from supernote.models.equipment import (
 from supernote.models.file import (
     CreateFolderLocalDTO,
     FileDownloadLocalDTO,
+    FileListQueryDTO,
     FileQueryByPathLocalDTO,
     FileQueryLocalDTO,
     FileUploadApplyLocalDTO,
@@ -22,7 +23,6 @@ from supernote.models.file import (
     ListFolderV2DTO,
     SynchronousEndLocalDTO,
     SynchronousStartLocalDTO,
-    FileListQueryDTO,
 )
 from supernote.models.user import (
     UserCheckDTO,

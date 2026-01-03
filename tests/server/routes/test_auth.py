@@ -1,9 +1,6 @@
-import urllib.parse
 
-import pytest
 
 from supernote.client.client import Client
-from tests.server.conftest import TEST_USERNAME, UserStorageHelper
 
 
 async def test_empty_token(
