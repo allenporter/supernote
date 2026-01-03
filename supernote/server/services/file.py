@@ -8,16 +8,21 @@ from pathlib import Path
 import aiofiles
 
 from supernote.models.base import BaseResponse, BooleanEnum
-from supernote.models.file import (
-    CreateFolderLocalVO,
-    DeleteFolderLocalVO,
+from supernote.models.file_common import (
     EntriesVO,
-    FileCopyLocalVO,
-    FileListQueryVO,
-    FileMoveLocalVO,
     FileSortOrder,
     FileSortSequence,
+    FileUploadApplyLocalVO,
+)
+from supernote.models.file_device import (
+    CreateFolderLocalVO,
+    DeleteFolderLocalVO,
+    FileCopyLocalVO,
+    FileMoveLocalVO,
     FileUploadFinishLocalVO,
+)
+from supernote.models.file_web import (
+    FileListQueryVO,
     RecycleFileListVO,
     RecycleFileVO,
     UserFileVO,
