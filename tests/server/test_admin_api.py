@@ -1,9 +1,11 @@
+import hashlib
 from typing import Any
 
 import jwt
 import pytest
 from sqlalchemy import delete
 
+from supernote.client.admin import AdminClient
 from supernote.client.client import Client
 from supernote.models.user import UserRegisterDTO
 from supernote.server.config import ServerConfig
@@ -42,8 +44,9 @@ async def setup_users(
     service = UserService(server_config.auth, coordination_service, session_manager)
 
     # Register Admin (Bootstrapping)
+    pw_md5 = hashlib.md5("pw".encode()).hexdigest()
     await service.register(
-        UserRegisterDTO(email="admin@example.com", password="pw", user_name="Admin")
+        UserRegisterDTO(email="admin@example.com", password=pw_md5, user_name="Admin")
     )
 
     # Register Normal User (via Admin creation to ensure consistency,
@@ -53,7 +56,7 @@ async def setup_users(
     # Easier: manually set is_admin=False for the second user if needed,
     # but register() naturally makes 2nd user non-admin.
     await service.register(
-        UserRegisterDTO(email="user@example.com", password="pw", user_name="User")
+        UserRegisterDTO(email="user@example.com", password=pw_md5, user_name="User")
     )
 
     # Store sessions in coordination service
@@ -112,7 +115,7 @@ async def test_admin_create_user(
     new_user = {
         "email": "newbie@example.com",
         "userName": "Newbie",
-        "password": "password",
+        "password": hashlib.md5("password".encode()).hexdigest(),
         "countryCode": "1",
     }
 
@@ -125,3 +128,19 @@ async def test_admin_create_user(
     data = await resp.json()
     emails = [u["email"] for u in data]
     assert "newbie@example.com" in emails
+
+
+@pytest.fixture
+def admin_client(authenticated_client: Client) -> AdminClient:
+    return AdminClient(authenticated_client)
+
+
+@pytest.mark.asyncio
+async def test_admin_update_password(admin_client: AdminClient) -> None:
+    md5_pwd = hashlib.md5("newpass123".encode()).hexdigest()
+    await admin_client.update_password(md5_pwd)
+
+
+@pytest.mark.asyncio
+async def test_admin_unregister(admin_client: AdminClient) -> None:
+    await admin_client.unregister()

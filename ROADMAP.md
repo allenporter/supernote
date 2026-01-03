@@ -56,12 +56,23 @@ This document outlines the path to making Supernote Private Cloud a reliable "da
 
 ## Backlog & Technical Debt
 
-### Misc
+### Uncategorized
+
+These features have not ben categorized or prioritized yet in the roadmap.
+
 - [ ] The readme is getting stale and out of date
    - [ ] Examples may no longer be accurate
 - [ ] Separate Client libraries: We originally started off with SupernoteClient then added separate file, schedule, etc APIs. We should reconcile this (e.g. remove supernote client) and use the more specific ones
-    - [ ] The SupernoteClient.from_credentials hepler is nice, maybe we want though to wrap that for Login Client to return a simple object that we can persist with the filecache etc. We have server url, etc as well.
+    - [ ] The SupernoteClient.from_credentials helper is nice, maybe we want though to wrap that for Login Client to return a simple object that we can persist with the filecache etc. We have server url, etc as well.
 - [ ] File vs Device APIs. We should (1) organize apis by device vs web APIs in the data model, (2) organize implementation the server by routes (3) decide current gaps and what to do about them. (e.g. do we want to reorganize the client library base don device vs web)
+- [ ] Abuse protection (e.g. tracking error counts, showing captchas, etc)
+- [ ] Determine if we need any email address canonicalization for user entry vs unique email address in the database
+- [ ] Security review for all the auth and user flows.
+- [ ] Understand reset password semantics and how it works securely, what is the end to end flow etc
+- [ ] Make a typed "password" object that we can use for all password related operations (e.g. validated that its in M55 format to not get confused with raw strings)
+- [ ] Make a typed "hash" object for other types of content hashes (e.g. md5, sha256, etc) stored in the database for integrity checks
+- [ ] Audit use of the "file_server" field in the database and ensure it is used consistently
+- [ ] Audit use of the "inner name" and "bucket" fields for storage systems.
 
 ### Testing & Quality
 - [ ] **Test Coverage**:

@@ -1,6 +1,6 @@
 import datetime
-import hashlib
 import logging
+import re
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -30,11 +30,20 @@ from .coordination import CoordinationService
 
 RANDOM_CODE_TTL = datetime.timedelta(minutes=5)
 
+# Validate email format
+# 1. No consecutive dots: (?!.*\.\.)
+# 2. No leading dot: (?!^\.)
+# 3. No trailing dot in local part: (?<!\.)@
+EMAIL_REGEX = r"^(?!.*\.\.)(?!^\.)[a-zA-Z0-9_.+-]+(?<!\.)@[a-zA-Z0-9][a-zA-Z0-9-]*\.[a-zA-Z0-9-.]+$"
+
+# Validate MD5 hash
+MD5_REGEX = r"^[a-f0-9]{32}$"
+
 
 @dataclass
 class SessionState(DataClassJSONMixin):
     token: str
-    username: str
+    email: str
     equipment_no: Optional[str] = None
     created_at: float = field(default_factory=time.time)
     last_active_at: float = field(default_factory=time.time)
@@ -66,7 +75,7 @@ class UserService:
 
     async def check_user_exists(self, account: str) -> bool:
         async with self._session_manager.session() as session:
-            stmt = select(UserDO).where(UserDO.username == account)
+            stmt = select(UserDO).where(UserDO.email == account)
             result = await session.execute(stmt)
             return result.scalar_one_or_none() is not None
 
@@ -77,14 +86,15 @@ class UserService:
         if await self.check_user_exists(dto.email):
             raise ValueError("User already exists")
 
-        # Hash password before storage.
-        # Future improvement: Upgrade to stronger hashing (e.g., bcrypt/argon2).
-        password_md5 = hashlib.md5(dto.password.encode()).hexdigest()
+        if not re.match(EMAIL_REGEX, dto.email):
+            raise ValueError("Invalid email address format")
 
+        # Hash password before storage.
+        if not re.match(MD5_REGEX, dto.password):
+            raise ValueError("Invalid password format, must be md5 hash")
         new_user = UserDO(
-            username=dto.email,
             email=dto.email,
-            password_md5=password_md5,
+            password_md5=dto.password,
             display_name=dto.user_name,
             is_active=True,
             is_admin=is_admin,
@@ -125,7 +135,7 @@ class UserService:
             raise ValueError("Registration is disabled")
         async with self._session_manager.session() as session:
             # Find user ID first
-            stmt = select(UserDO).where(UserDO.username == account)
+            stmt = select(UserDO).where(UserDO.email == account)
             result = await session.execute(stmt)
             user = result.scalar_one_or_none()
             if not user:
@@ -153,7 +163,7 @@ class UserService:
 
     async def _get_user_do(self, account: str) -> UserDO | None:
         async with self._session_manager.session() as session:
-            stmt = select(UserDO).where(UserDO.username == account)
+            stmt = select(UserDO).where(UserDO.email == account)
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
@@ -242,6 +252,7 @@ class UserService:
 
         return LoginVO(
             token=token,
+            counts="0",
             is_bind=is_bind,
             is_bind_equipment=is_bind_equipment,
             user_name=account,
@@ -272,7 +283,7 @@ class UserService:
 
             return SessionState(
                 token=token,
-                username=username,
+                email=username,
                 equipment_no=equipment_no,
             )
         except jwt.PyJWTError as e:
@@ -288,9 +299,8 @@ class UserService:
             user_name=user.display_name or account,
             email=user.email or account,
             phone=user.phone or "",
-            country_code="1",
             total_capacity=user.total_capacity,
-            file_server="0",
+            file_server="",
             avatars_url=user.avatar or "",
             birthday="",
             sex="",
@@ -330,13 +340,14 @@ class UserService:
 
     async def update_password(self, account: str, dto: UpdatePasswordDTO) -> bool:
         """Update user password."""
-        new_md5 = hashlib.md5(dto.password.encode()).hexdigest()
+        if not re.match(MD5_REGEX, dto.password):
+            raise ValueError("Invalid password format, must be md5 hash")
 
         async with self._session_manager.session() as session:
             await session.execute(
                 update(UserDO)
-                .where(UserDO.username == account)
-                .values(password_md5=new_md5)
+                .where(UserDO.email == account)
+                .values(password_md5=dto.password)
             )
             await session.commit()
         return True
@@ -345,7 +356,7 @@ class UserService:
         """Update user email."""
         async with self._session_manager.session() as session:
             await session.execute(
-                update(UserDO).where(UserDO.username == account).values(email=dto.email)
+                update(UserDO).where(UserDO.email == account).values(email=dto.email)
             )
             await session.commit()
         return True
@@ -357,14 +368,13 @@ class UserService:
         if not target:
             return False
 
-        new_md5 = hashlib.md5(dto.password.encode()).hexdigest()
+        if not re.match(MD5_REGEX, dto.password):
+            raise ValueError("Invalid password format, must be md5 hash")
 
         async with self._session_manager.session() as session:
             # Find user
             stmt = select(UserDO).where(
-                (UserDO.email == target)
-                | (UserDO.phone == target)
-                | (UserDO.username == target)
+                (UserDO.email == target) | (UserDO.phone == target)
             )
             result = await session.execute(stmt)
             user = result.scalar_one_or_none()
@@ -372,7 +382,7 @@ class UserService:
             if not user:
                 return False
 
-            user.password_md5 = new_md5
+            user.password_md5 = dto.password
             await session.commit()
         return True
 
@@ -404,7 +414,7 @@ class UserService:
             vos = [
                 LoginRecordVO(
                     user_id=str(user.id),
-                    user_name=user.username,
+                    user_name=user.email,
                     create_time=r.create_time,
                     equipment=r.equipment,
                     ip=r.ip,

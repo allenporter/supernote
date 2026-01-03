@@ -113,7 +113,7 @@ async def jwt_auth_middleware(
             create_error_response("Invalid token").to_dict(), status=401
         )
 
-    request["user"] = session.username
+    request["user"] = session.email
     request["equipment_no"] = session.equipment_no
     return await handler(request)
 

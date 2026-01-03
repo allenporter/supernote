@@ -80,7 +80,6 @@ async def test_integrity_orphans(
     # Create the user manually
     async with session_manager.session() as session:
         new_user = UserDO(
-            username=user_email,
             email=user_email,
             password_md5="md5",
             is_active=True,

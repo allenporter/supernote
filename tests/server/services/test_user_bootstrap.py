@@ -1,3 +1,5 @@
+import hashlib
+
 import pytest
 
 from supernote.models.user import UserRegisterDTO
@@ -24,16 +26,15 @@ async def test_bootstrap_first_user_is_admin(
     service = UserService(config, coordination_service, session_manager)
 
     # Register first user (should be admin)
+    pw_md5 = hashlib.md5("password".encode()).hexdigest()
     dto1 = UserRegisterDTO(
-        email="admin@example.com", password="password", user_name="Admin"
+        email="admin@example.com", password=pw_md5, user_name="Admin"
     )
     user1 = await service.register(dto1)
     assert user1.is_admin is True
 
     # Register second user (should NOT be admin)
-    dto2 = UserRegisterDTO(
-        email="user@example.com", password="password", user_name="User"
-    )
+    dto2 = UserRegisterDTO(email="user@example.com", password=pw_md5, user_name="User")
     user2 = await service.register(dto2)
     assert user2.is_admin is False
 
@@ -48,17 +49,16 @@ async def test_bootstrap_bypasses_disabled_registration(
     service = UserService(config, coordination_service, session_manager)
 
     # Register first user (should succeed because of bootstrap)
+    pw_md5 = hashlib.md5("password".encode()).hexdigest()
     dto1 = UserRegisterDTO(
-        email="bootstrap@example.com", password="password", user_name="Bootstrap"
+        email="bootstrap@example.com", password=pw_md5, user_name="Bootstrap"
     )
     user1 = await service.register(dto1)
 
     assert user1.is_admin is True
 
     # Register second user (should FAIL because registration is disabled)
-    dto2 = UserRegisterDTO(
-        email="fail@example.com", password="password", user_name="Fail"
-    )
+    dto2 = UserRegisterDTO(email="fail@example.com", password=pw_md5, user_name="Fail")
     with pytest.raises(ValueError, match="Registration is disabled"):
         await service.register(dto2)
 
@@ -72,12 +72,13 @@ async def test_admin_create_user_bypass(
     service = UserService(config, coordination_service, session_manager)
 
     # Bootstrap first
+    pw_md5 = hashlib.md5("pw".encode()).hexdigest()
     await service.register(
-        UserRegisterDTO(email="admin@example.com", password="pw", user_name="Admin")
+        UserRegisterDTO(email="admin@example.com", password=pw_md5, user_name="Admin")
     )
 
     # Explicitly use create_user (Admin action simulation)
-    dto2 = UserRegisterDTO(email="new@example.com", password="pw", user_name="New")
+    dto2 = UserRegisterDTO(email="new@example.com", password=pw_md5, user_name="New")
     user2 = await service.create_user(dto2)
 
     assert user2.email == "new@example.com"
