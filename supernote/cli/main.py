@@ -3,12 +3,13 @@
 import argparse
 import sys
 
-from . import client, notebook, server
+from . import admin, client, notebook, server
 
 SUBPARSERS = [
     notebook,
     client,
     server,
+    admin,
 ]
 
 
