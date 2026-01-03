@@ -10,6 +10,21 @@ port: 8080
 # Directory where uploaded files and databases will be stored.
 storage_dir: storage
 
+# Proxy header handling mode (optional, defaults to 'relaxed')
+# - 'relaxed': Trust the immediate upstream proxy (suitable for Docker/local setups)
+# - 'strict': Only trust specific proxy IPs (configured in trusted_proxies)
+# Use 'strict' for production deployments behind known proxies.
+proxy_mode: strict
+
+# List of trusted proxy IPs/networks (used when proxy_mode is 'strict')
+# Supports CIDR notation for network ranges.
+trusted_proxies:
+  - 127.0.0.1
+  - ::1
+  - 172.17.0.0/16 # Docker bridge network
+  # Add your reverse proxy IP here, e.g.:
+  # - 10.0.1.5
+
 # Authentication settings
 auth:
   # Secret key used for signing session tokens.

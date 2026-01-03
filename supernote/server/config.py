@@ -34,6 +34,12 @@ class ServerConfig(DataClassYAMLMixin):
     port: int = 8080
     trace_log_file: str | None = None
     storage_dir: str = "storage"
+
+    proxy_mode: str = "relaxed"
+    """Proxy header handling mode: 'relaxed' (trust immediate upstream) or 'strict' (require specific trusted IPs)."""
+    trusted_proxies: list[str] = field(default_factory=list)
+    """List of trusted proxy IPs/networks (used in strict mode). Supports CIDR notation."""
+
     auth: AuthConfig = field(default_factory=AuthConfig)
 
     @property

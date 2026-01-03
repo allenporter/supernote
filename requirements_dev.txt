@@ -10,6 +10,7 @@ ruff==0.14.10
 
 aiohttp==3.13.2
 mashumaro==3.17
+aiohttp-remotes==1.3.0
 
 # For user management CLI
 pyyaml>=6.0

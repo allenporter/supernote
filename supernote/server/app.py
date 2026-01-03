@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+import aiohttp_remotes
 from aiohttp import web
 
 from supernote.models.base import create_error_response
@@ -129,7 +130,7 @@ def create_coordination_service(
 
 
 def create_app(config: ServerConfig) -> web.Application:
-    app = web.Application(middlewares=[trace_middleware, jwt_auth_middleware])
+    app = web.Application()
     app["config"] = config
 
     # Initialize services
@@ -167,6 +168,21 @@ def create_app(config: ServerConfig) -> web.Application:
     app.add_routes(schedule.routes)
 
     async def on_startup_handler(app: web.Application) -> None:
+        # Configure proxy middleware based on config
+        if config.proxy_mode == "strict":
+            # XForwardedStrict requires explicit trusted proxy IPs
+            # Convert list of strings to list of lists for aiohttp-remotes
+            trusted = [[ip] for ip in config.trusted_proxies]
+            await aiohttp_remotes.setup(
+                app,
+                aiohttp_remotes.XForwardedStrict(trusted),
+            )
+        else:
+            # XForwardedRelaxed trusts the immediate upstream proxy
+            await aiohttp_remotes.setup(app, aiohttp_remotes.XForwardedRelaxed())
+
+        app.middlewares.append(trace_middleware)
+        app.middlewares.append(jwt_auth_middleware)
         await session_manager.create_all_tables()
 
     app.on_startup.append(on_startup_handler)
