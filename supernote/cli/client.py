@@ -56,8 +56,7 @@ def setup_logging(verbose: bool = False) -> None:
     )
     # Enable debug logging for cloud modules and aiohttp
     if verbose:
-        logging.getLogger("supernote.cloud").setLevel(logging.DEBUG)
-        logging.getLogger("supernote.cloud.client").setLevel(logging.DEBUG)
+        logging.getLogger("supernote").setLevel(logging.DEBUG)
         logging.getLogger("aiohttp").setLevel(logging.DEBUG)
 
 
