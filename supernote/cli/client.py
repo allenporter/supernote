@@ -225,8 +225,8 @@ async def async_cloud_ls(verbose: bool = False) -> None:
             file_list_response = await cloud_client.file_list()
 
             print(f"Total files: {file_list_response.total}")
-            if file_list_response.file_list:
-                for file in file_list_response.file_list:
+            if file_list_response.user_file_vo_list:
+                for file in file_list_response.user_file_vo_list:
                     folder_marker = "📁" if file.is_folder == "Y" else "📄"
                     print(f"{folder_marker} {file.file_name} (ID: {file.id})")
 
