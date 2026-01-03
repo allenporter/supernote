@@ -151,7 +151,7 @@ async def async_cloud_login(
             # Test 1: Query user
             print("  Test 1: Querying user information...")
             try:
-                user_response = await cloud_client.query_user(email)
+                user_response = await cloud_client.query_user()
                 print("  ✓ User query successful!")
                 print(f"    - User ID: {user_response.user_id}")
                 print(f"    - User Name: {user_response.user_name}")
@@ -169,11 +169,11 @@ async def async_cloud_login(
                 print("  ✓ File list successful!")
                 print(f"    - Total files: {file_list_response.total}")
                 print(f"    - Pages: {file_list_response.pages}")
-                print(f"    - Files in this page: {file_list_response.size}")
+                print(f"    - Files in this page: {len(file_list_response.user_file_vo_list)}")
 
-                if file_list_response.file_list:
+                if file_list_response.user_file_vo_list:
                     print("    - First few files:")
-                    for i, file in enumerate(file_list_response.file_list[:5]):
+                    for i, file in enumerate(file_list_response.user_file_vo_list[:5]):
                         folder_marker = "📁" if file.is_folder == "Y" else "📄"
                         print(f"      {folder_marker} {file.file_name} (ID: {file.id})")
                 else:
