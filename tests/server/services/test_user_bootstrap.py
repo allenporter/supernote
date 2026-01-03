@@ -61,3 +61,23 @@ async def test_bootstrap_bypasses_disabled_registration(
     )
     with pytest.raises(ValueError, match="Registration is disabled"):
         await service.register(dto2)
+
+
+@pytest.mark.asyncio
+async def test_admin_create_user_bypass(
+    session_manager: DatabaseSessionManager, coordination_service: CoordinationService
+) -> None:
+    """Test that create_user allows creating users when disabled."""
+    config = AuthConfig(enable_registration=False)
+    service = UserService(config, coordination_service, session_manager)
+
+    # Bootstrap first
+    await service.register(
+        UserRegisterDTO(email="admin@example.com", password="pw", user_name="Admin")
+    )
+
+    # Explicitly use create_user (Admin action simulation)
+    dto2 = UserRegisterDTO(email="new@example.com", password="pw", user_name="New")
+    user2 = await service.create_user(dto2)
+
+    assert user2.email == "new@example.com"

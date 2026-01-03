@@ -9,6 +9,7 @@ from typing import Optional
 import jwt
 from mashumaro.mixins.json import DataClassJSONMixin
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from supernote.models.auth import LoginVO, UserVO
 from supernote.models.user import (
@@ -69,33 +70,51 @@ class UserService:
             result = await session.execute(stmt)
             return result.scalar_one_or_none() is not None
 
+    async def _create_user_entry(
+        self, session: AsyncSession, dto: UserRegisterDTO, is_admin: bool = False
+    ) -> UserDO:
+        """Internal helper to insert user into DB."""
+        if await self.check_user_exists(dto.email):
+            raise ValueError("User already exists")
+
+        # Hash password before storage.
+        # Future improvement: Upgrade to stronger hashing (e.g., bcrypt/argon2).
+        password_md5 = hashlib.md5(dto.password.encode()).hexdigest()
+
+        new_user = UserDO(
+            username=dto.email,
+            email=dto.email,
+            password_md5=password_md5,
+            display_name=dto.user_name,
+            is_active=True,
+            is_admin=is_admin,
+        )
+        session.add(new_user)
+        # Flush to get ID, but let caller commit
+        await session.flush()
+        return new_user
+
     async def register(self, dto: UserRegisterDTO) -> UserDO:
-        """Register a new user."""
+        """Register a new user (Public/Self-Service)."""
         async with self._session_manager.session() as session:
-            # Check for bootstrapping condition (no users exist). We allow registration if there are no users.
-            # even when registration is disabled when bootstrapping.
+            # Check for bootstrapping condition (no users exist)
             user_count = (await session.execute(select(func.count(UserDO.id)))).scalar()
             is_bootstrap = user_count == 0
 
             if not self._config.enable_registration and not is_bootstrap:
                 raise ValueError("Registration is disabled")
 
-            if await self.check_user_exists(dto.email):
-                raise ValueError("User already exists")
-
-            # Hash password before storage.
-            # Future improvement: Upgrade to stronger hashing (e.g., bcrypt/argon2).
-            password_md5 = hashlib.md5(dto.password.encode()).hexdigest()
-
-            new_user = UserDO(
-                username=dto.email,
-                email=dto.email,
-                password_md5=password_md5,
-                display_name=dto.user_name,
-                is_active=True,
-                is_admin=is_bootstrap,
+            new_user = await self._create_user_entry(
+                session, dto, is_admin=is_bootstrap
             )
-            session.add(new_user)
+            await session.commit()
+            await session.refresh(new_user)
+            return new_user
+
+    async def create_user(self, dto: UserRegisterDTO) -> UserDO:
+        """Create a new user (Admin/System). Skips registration enabled check."""
+        async with self._session_manager.session() as session:
+            new_user = await self._create_user_entry(session, dto, is_admin=False)
             await session.commit()
             await session.refresh(new_user)
             return new_user

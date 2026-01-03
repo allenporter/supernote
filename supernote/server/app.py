@@ -11,7 +11,7 @@ from supernote.models.base import create_error_response
 
 from .config import ServerConfig
 from .db.session import DatabaseSessionManager
-from .routes import auth, file, oss, schedule, system
+from .routes import admin, auth, file, oss, schedule, system
 from .services.blob import LocalBlobStorage
 from .services.coordination import SqliteCoordinationService
 from .services.file import FileService
@@ -159,6 +159,7 @@ def create_app(config: ServerConfig) -> web.Application:
 
     # Register routes
     app.add_routes(system.routes)
+    app.add_routes(admin.routes)
     app.add_routes(auth.routes)
     app.add_routes(file.routes)
     app.add_routes(oss.routes)
