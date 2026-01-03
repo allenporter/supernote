@@ -5,7 +5,6 @@ import pytest
 from supernote.client.client import Client
 from supernote.client.device import DeviceClient
 from supernote.client.exceptions import ApiException
-from tests.server.conftest import TEST_USERNAME, UserStorageHelper
 
 
 async def test_oss_upload_simple(
@@ -39,12 +38,11 @@ async def test_oss_chunked_upload(
 
 async def test_oss_download_range(
     device_client: DeviceClient,
-    user_storage: UserStorageHelper,
 ) -> None:
     path = "/oss_range.txt"
     content = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    await user_storage.create_file(
-        TEST_USERNAME, "oss_range.txt", content.decode("utf-8")
+    await device_client.upload_content(
+        path="oss_range.txt", content=content, equipment_no="TEST"
     )
 
     # Test first 10 bytes

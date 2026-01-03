@@ -162,27 +162,6 @@ async def db_session(
         yield session
 
 
-class UserStorageHelper:
-    """Helper to create test files/folders for users."""
-
-    def __init__(self, device_client: DeviceClient, storage_root: Path) -> None:
-        """Initialize the helper."""
-        self.file_client = device_client
-        self.storage_root = storage_root
-
-    async def create_file(
-        self, user: str, rel_path: str, content: str = "content"
-    ) -> None:
-        """Create a file for a user using the FileClient API."""
-        await self.file_client.upload_content(
-            path=rel_path, content=content, equipment_no="TEST_DEVICE"
-        )
-
-    async def create_directory(self, user: str, rel_path: str) -> None:
-        """Create a directory for a user using VFS."""
-        await self.file_client.create_folder(rel_path, "TEST_DEVICE")
-
-
 @pytest.fixture
 def storage_root(tmp_path: Path) -> Path:
     """Provides a StorageService instance for testing."""
@@ -205,35 +184,19 @@ def user_service(
     return UserService(server_config.auth, coordination_service, session_manager)
 
 
-@pytest.fixture
-def user_storage(
-    device_client: DeviceClient,
-    storage_root: Path,
-) -> UserStorageHelper:
-    """Fixture to easily create test files/folders for users."""
-    return UserStorageHelper(device_client, storage_root)
-
-
 @pytest.fixture(autouse=True)
-async def mock_storage(
-    storage_root: Path,
-    user_storage: UserStorageHelper,
-    test_users: list[str],
-) -> AsyncGenerator[Path, None]:
-    """Mock storage setup for all tests."""
-    for test_user in test_users:
-        await user_storage.create_directory(test_user, "Note")
-        await user_storage.create_directory(test_user, "Document")
-        await user_storage.create_directory(test_user, "EXPORT")
+async def mock_storage(device_client: DeviceClient) -> None:
+    """Mock storage setup for the default device_client user."""
 
-    yield storage_root
+    await device_client.create_folder("Note", "TEST_DEVICE")
+    await device_client.create_folder("Document", "TEST_DEVICE")
+    await device_client.create_folder("EXPORT", "TEST_DEVICE")
 
 
 @pytest.fixture(name="client")
 async def client_fixture(
     aiohttp_client: AiohttpClient,
     server_config: ServerConfig,
-    # mock_storage: Path, # REMOVED to break cycle
     session_manager: DatabaseSessionManager,
     coordination_service: SqliteCoordinationService,
 ) -> TestClient:

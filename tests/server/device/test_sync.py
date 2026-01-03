@@ -4,16 +4,16 @@ from pathlib import Path
 from aiohttp.test_utils import TestClient
 from sqlalchemy import delete
 
+from supernote.client.device import DeviceClient
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
-from tests.server.conftest import TEST_USERNAME, UserStorageHelper
 
 
 async def test_sync_start_syn_type(
     client: TestClient,
     auth_headers: dict[str, str],
     storage_root: Path,
-    user_storage: UserStorageHelper,
+    device_client: DeviceClient,
     session_manager: DatabaseSessionManager,
 ) -> None:
     # Clear storage root for test
@@ -39,7 +39,7 @@ async def test_sync_start_syn_type(
     assert data["synType"] is False  # Empty storage
 
     # 2. Add a dummy file
-    await user_storage.create_file(TEST_USERNAME, "Note/test.note")
+    await device_client.upload_content("Note/test.note", "content", equipment_no="test")
 
     resp = await client.post(
         "/api/file/2/files/synchronous/start",

@@ -2,18 +2,18 @@ from urllib.parse import urlparse
 
 from supernote.client import Client
 from supernote.client.device import DeviceClient
-from tests.server.conftest import TEST_USERNAME, UserStorageHelper
 
 
 async def test_download_file_with_spaces(
     authenticated_client: Client,
     device_client: DeviceClient,
-    user_storage: UserStorageHelper,
 ) -> None:
     # Create a test file with spaces
     filename = "2023 December.pdf"
     full_filename = f"EXPORT/{filename}"
-    await user_storage.create_file(TEST_USERNAME, full_filename, content="pdf content")
+    await device_client.upload_content(
+        path=full_filename, content="pdf content", equipment_no="SN123"
+    )
 
     # Obtain a download URL
     # Resolve ID

@@ -2,13 +2,11 @@ from supernote.client.device import DeviceClient
 from supernote.client.web import WebClient
 from supernote.models.base import BooleanEnum
 from supernote.models.file import FileSortOrder, FileSortSequence
-from tests.server.conftest import UserStorageHelper
 
 
 async def test_file_list_query(
     web_client: WebClient,
     device_client: DeviceClient,
-    user_storage: UserStorageHelper,
 ) -> None:
     # 1. Create directory structure (Setup using Device Client / storage helper)
     # Root

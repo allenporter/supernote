@@ -18,7 +18,7 @@ USER_B = "user_b@example.com"
 
 @pytest.fixture
 def mock_storage() -> None:
-    """Mock storage for tests."""
+    """Stop the default directory creation."""
     pass
 
 

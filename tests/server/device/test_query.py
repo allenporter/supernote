@@ -1,12 +1,10 @@
 import hashlib
 
 from supernote.client.device import DeviceClient
-from tests.server.conftest import UserStorageHelper
 
 
 async def test_query_v3_success(
     device_client: DeviceClient,
-    user_storage: UserStorageHelper,
 ) -> None:
     """Query by ID and path."""
     # Create a test file
