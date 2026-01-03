@@ -6,7 +6,7 @@ from aiohttp.test_utils import TestClient
 
 from supernote.client import Client
 from supernote.client.auth import ConstantAuth
-from supernote.client.file import FileClient
+from supernote.client.device import DeviceClient
 from supernote.server.config import ServerConfig
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.coordination import CoordinationService
@@ -59,10 +59,10 @@ async def test_multi_user_content_with_same_hash(
     base_url = str(client.make_url(""))
 
     client_a = Client(client.session, auth=ConstantAuth(token_a), host=base_url)
-    file_client_a = FileClient(client_a)
+    file_client_a = DeviceClient(client_a)
 
     client_b = Client(client.session, auth=ConstantAuth(token_b), host=base_url)
-    file_client_b = FileClient(client_b)
+    file_client_b = DeviceClient(client_b)
 
     # Common Content
     common_content = b"Shared Content Block"
@@ -133,10 +133,10 @@ async def test_multi_user_content_with_same_paths(
     base_url = str(client.make_url(""))
 
     client_a = Client(client.session, auth=ConstantAuth(token_a), host=base_url)
-    file_client_a = FileClient(client_a)
+    file_client_a = DeviceClient(client_a)
 
     client_b = Client(client.session, auth=ConstantAuth(token_b), host=base_url)
-    file_client_b = FileClient(client_b)
+    file_client_b = DeviceClient(client_b)
 
     # User A uploads a file
     filename = "shared.note"
