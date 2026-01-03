@@ -1,8 +1,10 @@
-import re
-import pytest
 import hashlib
+
+import pytest
+
 from supernote.models.user import UserRegisterDTO
 from supernote.server.services.user import UserService
+
 
 async def test_register_invalid_email(user_service: UserService) -> None:
     # Test cases for invalid emails
