@@ -219,12 +219,13 @@ def user_storage(
 async def mock_storage(
     storage_root: Path,
     user_storage: UserStorageHelper,
+    test_users: list[str],
 ) -> AsyncGenerator[Path, None]:
     """Mock storage setup for all tests."""
-    # Create default folders for the test user
-    await user_storage.create_directory(TEST_USERNAME, "Note")
-    await user_storage.create_directory(TEST_USERNAME, "Document")
-    await user_storage.create_directory(TEST_USERNAME, "EXPORT")
+    for test_user in test_users:
+        await user_storage.create_directory(test_user, "Note")
+        await user_storage.create_directory(test_user, "Document")
+        await user_storage.create_directory(test_user, "EXPORT")
 
     yield storage_root
 

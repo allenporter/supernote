@@ -71,23 +71,29 @@ class UserService:
 
     async def register(self, dto: UserRegisterDTO) -> UserDO:
         """Register a new user."""
-        if not self._config.enable_registration:
-            raise ValueError("Registration is disabled")
-
-        if await self.check_user_exists(dto.email):
-            raise ValueError("User already exists")
-
-        # Hash password before storage.
-        # Future improvement: Upgrade to stronger hashing (e.g., bcrypt/argon2).
-        password_md5 = hashlib.md5(dto.password.encode()).hexdigest()
-
         async with self._session_manager.session() as session:
+            # Check for bootstrapping condition (no users exist). We allow registration if there are no users.
+            # even when registration is disabled when bootstrapping.
+            user_count = (await session.execute(select(func.count(UserDO.id)))).scalar()
+            is_bootstrap = user_count == 0
+
+            if not self._config.enable_registration and not is_bootstrap:
+                raise ValueError("Registration is disabled")
+
+            if await self.check_user_exists(dto.email):
+                raise ValueError("User already exists")
+
+            # Hash password before storage.
+            # Future improvement: Upgrade to stronger hashing (e.g., bcrypt/argon2).
+            password_md5 = hashlib.md5(dto.password.encode()).hexdigest()
+
             new_user = UserDO(
                 username=dto.email,
                 email=dto.email,
                 password_md5=password_md5,
                 display_name=dto.user_name,
                 is_active=True,
+                is_admin=is_bootstrap,
             )
             session.add(new_user)
             await session.commit()

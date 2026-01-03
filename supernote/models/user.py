@@ -477,6 +477,8 @@ class UserRegisterDTO(DataClassJSONMixin):
     email: str
     """Email address."""
 
+    # TODO: This is currently expected to be plain text, but we should confirm
+    # whether it should be hashed here and clarify in this documentattion.
     password: str
     """Password."""
 
