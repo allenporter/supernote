@@ -24,5 +24,8 @@ class UserDO(Base):
     avatar: Mapped[str | None] = mapped_column(String, nullable=True)
     total_capacity: Mapped[str] = mapped_column(String, default=str(DEFAULT_QUOTA))
 
+    is_admin: Mapped[bool] = mapped_column(default=False)
+    """Allows the user to perform admin actions, auto enabled for first user."""
+
     def __repr__(self) -> str:
         return f"<UserDO(id={self.id}, username='{self.username}')>"

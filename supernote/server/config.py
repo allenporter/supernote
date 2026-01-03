@@ -12,9 +12,16 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AuthConfig(DataClassYAMLMixin):
+    """Authentication configuration."""
+
     secret_key: str = ""
+    """JWT secret key."""
+
     expiration_hours: int = 24
+    """JWT expiration time in hours."""
+
     enable_registration: bool = False
+    """When disabled, registration is only allowed if there are no users in the system."""
 
     class Config(BaseConfig):
         omit_none = True
