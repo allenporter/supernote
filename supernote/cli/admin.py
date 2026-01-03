@@ -11,10 +11,12 @@ from supernote.client.exceptions import ApiException
 from .client import create_client
 
 
-async def add_user_async(url: str, username: str, password: str):
+async def add_user_async(
+    url: str, email: str, password: str, display_name: str | None = None
+):
     """Async implementation of add user."""
     async with create_client(url) as client:
-        print(f"Attempting to register user '{username}' on {client.host}...")
+        print(f"Attempting to register user '{email}' on {client.host}...")
 
         admin_client = AdminClient(client)
 
@@ -24,9 +26,9 @@ async def add_user_async(url: str, username: str, password: str):
         # Try Public Registration
         try:
             await admin_client.register(
-                email=username,
+                email=email,
                 password=password_md5,
-                username=username.split("@")[0],  # Simple default
+                username=display_name,
             )
             print("Success! User created (Public Registration).")
             return
@@ -39,9 +41,9 @@ async def add_user_async(url: str, username: str, password: str):
         print("Public registration failed or disabled. Attempting Admin creation...")
         try:
             await admin_client.admin_create_user(
-                email=username,
+                email=email,
                 password=password_md5,
-                username=username.split("@")[0],  # Simple default
+                username=display_name,
             )
             print("Success! User created (Admin API).")
         except Exception as e:
@@ -74,11 +76,11 @@ async def list_users_async():
             users = await resp.json()
 
             print(f"\nTotal Users: {len(users)}\n")
-            print(f"{'Username':<30} {'Email':<30} {'Capacity':<10}")
-            print("-" * 75)
+            print(f"{'Email':<30} {'Name':<20} {'Capacity':<10}")
+            print("-" * 65)
             for u in users:
                 print(
-                    f"{u.get('userName', 'N/A'):<30} {u.get('email', 'N/A'):<30} {u.get('totalCapacity', '0'):<10}"
+                    f"{u.get('email', 'N/A'):<30} {u.get('userName', 'N/A'):<20} {u.get('totalCapacity', '0'):<10}"
                 )
 
         except Exception as e:
@@ -88,9 +90,10 @@ async def list_users_async():
 def add_user(args):
     password = args.password
     if not password:
-        password = getpass.getpass(f"Password for {args.username}: ")
+        password = getpass.getpass(f"Password for {args.email}: ")
 
-    asyncio.run(add_user_async(args.url, args.username, password))
+    display_name = args.name or args.email.split("@")[0]
+    asyncio.run(add_user_async(args.url, args.email, password, display_name))
 
 
 def list_users(args):
@@ -124,9 +127,12 @@ def add_parser(subparsers):
         help="Add a new user",
     )
     parser_user_add.add_argument(
-        "username", type=str, help="Email/Username for the new user"
+        "email", type=str, help="Email address for the new user"
     )
     parser_user_add.add_argument(
         "--password", type=str, help="Password (if omitted, prompt interactively)"
+    )
+    parser_user_add.add_argument(
+        "--name", type=str, help="Display name (optional)", default=None
     )
     parser_user_add.set_defaults(func=add_user)

@@ -1,6 +1,7 @@
 """Client CLI commands."""
 
 import asyncio
+import getpass
 import logging
 import os
 import sys
@@ -168,7 +169,9 @@ async def async_cloud_login(
                 print("  ✓ File list successful!")
                 print(f"    - Total files: {file_list_response.total}")
                 print(f"    - Pages: {file_list_response.pages}")
-                print(f"    - Files in this page: {len(file_list_response.user_file_vo_list)}")
+                print(
+                    f"    - Files in this page: {len(file_list_response.user_file_vo_list)}"
+                )
 
                 if file_list_response.user_file_vo_list:
                     print("    - First few files:")
@@ -209,7 +212,11 @@ async def async_cloud_login(
 
 def subcommand_cloud_login(args) -> None:
     """Handler for cloud-login subcommand."""
-    asyncio.run(async_cloud_login(args.email, args.password, args.url, args.verbose))
+    password = args.password
+    if not password:
+        password = getpass.getpass(f"Password for {args.email}: ")
+
+    asyncio.run(async_cloud_login(args.email, password, args.url, args.verbose))
 
 
 async def async_cloud_ls(verbose: bool = False) -> None:
@@ -257,7 +264,9 @@ def add_parser(subparsers):
         "cloud-login", help="debug Supernote Cloud login flow"
     )
     parser_cloud_login.add_argument("email", type=str, help="user email/account")
-    parser_cloud_login.add_argument("password", type=str, help="user password")
+    parser_cloud_login.add_argument(
+        "--password", type=str, help="user password (prompt if omitted)"
+    )
     parser_cloud_login.add_argument(
         "--url", type=str, required=True, help="Server URL (e.g. http://localhost:8080)"
     )
