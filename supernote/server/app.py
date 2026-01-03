@@ -177,7 +177,7 @@ def create_app(config: ServerConfig) -> web.Application:
                 app,
                 aiohttp_remotes.XForwardedStrict(trusted),
             )
-        else:
+        elif config.proxy_mode == "relaxed":
             # XForwardedRelaxed trusts the immediate upstream proxy
             await aiohttp_remotes.setup(app, aiohttp_remotes.XForwardedRelaxed())
 
