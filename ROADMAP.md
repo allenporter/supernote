@@ -56,6 +56,13 @@ This document outlines the path to making Supernote Private Cloud a reliable "da
 
 ## Backlog & Technical Debt
 
+### Misc
+- [ ] The readme is getting stale and out of date
+   - [ ] Examples may no longer be accurate
+- [ ] Separate Client libraries: We originally started off with SupernoteClient then added separate file, schedule, etc APIs. We should reconcile this (e.g. remove supernote client) and use the more specific ones
+    - [ ] The SupernoteClient.from_credentials hepler is nice, maybe we want though to wrap that for Login Client to return a simple object that we can persist with the filecache etc. We have server url, etc as well.
+- [ ] File vs Device APIs. We should (1) organize apis by device vs web APIs in the data model, (2) organize implementation the server by routes (3) decide current gaps and what to do about them. (e.g. do we want to reorganize the client library base don device vs web)
+
 ### Testing & Quality
 - [ ] **Test Coverage**:
     - Upload flow with various chunk sizes.
@@ -67,6 +74,7 @@ This document outlines the path to making Supernote Private Cloud a reliable "da
     - We have error codes in supernote.models.base that should be defined as an enum.
     - We have a "error_code" field that we are not currently using, and error messages are not used uniformly.
     - Specific backend errors need to be handled better/uniformly. Sqlalchemy errors are raised all the way to caller/HTTP response.
+- [ ] **Test Coverage**: We have not looked closely at test coverage or prioritized where to expand.
 
 
 ### Refactoring
@@ -76,3 +84,4 @@ This document outlines the path to making Supernote Private Cloud a reliable "da
     - Remove dead code in `CoordinationService`.
 - [ ] **Multi-host Client Authentication**:
     - Update `FileCacheAuth` and `Client` to support storing and retrieving credentials for multiple hosts simultaneously.
+- [ ] Test structure: The current tests are not structured well. We need tests for each module, rather than arbitrary tests based on one unique case. These tests should be in the same directory as the module they test, with the same name as the module, and "test_" prefix. We should probably move the api tests in the routes subdirectory.
