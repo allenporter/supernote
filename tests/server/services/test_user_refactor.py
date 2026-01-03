@@ -8,9 +8,10 @@ from supernote.server.utils.hashing import hash_with_salt
 async def test_register_login_flow(user_service: UserService) -> None:
     """Register and login a user."""
     # Register
+    pw_md5 = hashlib.md5("password123".encode()).hexdigest()
     dto = UserRegisterDTO(
         email="unique_test_reg@example.com",
-        password="password123",
+        password=pw_md5,
         user_name="Test User",
     )
     user = await user_service.register(dto)
@@ -48,10 +49,15 @@ async def test_register_login_flow(user_service: UserService) -> None:
 async def test_update_password(user_service: UserService) -> None:
     """Update a user's password."""
     # Register
-    await user_service.register(UserRegisterDTO(email="pw@test.com", password="old"))
+    # Register
+    old_md5 = hashlib.md5("old".encode()).hexdigest()
+    await user_service.register(UserRegisterDTO(email="pw@test.com", password=old_md5))
 
     # Update
-    await user_service.update_password("pw@test.com", UpdatePasswordDTO(password="new"))
+    new_md5 = hashlib.md5("new".encode()).hexdigest()
+    await user_service.update_password(
+        "pw@test.com", UpdatePasswordDTO(password=new_md5)
+    )
 
     # Login with old fails (we'd need a full login flow to test, strictly speaking)
     # But we can check DB directly via service internal method if we exposed it, or just trust update worked.
@@ -66,7 +72,8 @@ async def test_update_password(user_service: UserService) -> None:
 
 async def test_unregister(user_service: UserService) -> None:
     """Unregister a user."""
-    await user_service.register(UserRegisterDTO(email="del@test.com", password="pw"))
+    pw_md5 = hashlib.md5("pw".encode()).hexdigest()
+    await user_service.register(UserRegisterDTO(email="del@test.com", password=pw_md5))
     assert await user_service.check_user_exists("del@test.com")
 
     await user_service.unregister("del@test.com")

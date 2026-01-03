@@ -3,18 +3,16 @@ from mashumaro.exceptions import MissingField
 
 from supernote.models.auth import (
     LoginDTO,
+    QueryTokenVO,
     RandomCodeDTO,
     RandomCodeVO,
     UserCheckDTO,
     UserQueryByIdVO,
-    QueryTokenDTO,
-    QueryTokenVO,
 )
 from supernote.models.base import BaseResponse, create_error_response
 from supernote.models.equipment import BindEquipmentDTO, UnbindEquipmentDTO
 from supernote.models.user import (
     LoginRecordDTO,
-    RetrievePasswordDTO,
     UpdateEmailDTO,
     UpdatePasswordDTO,
     UserRegisterDTO,
@@ -162,7 +160,11 @@ async def handle_register(request: web.Request) -> web.Response:
     # Endpoint: POST /api/user/register
 
     req_data = await request.json()
-    dto = UserRegisterDTO.from_dict(req_data)
+    try:
+        dto = UserRegisterDTO.from_dict(req_data)
+    except (MissingField, ValueError) as e:
+        return web.json_response(create_error_response(str(e)).to_dict(), status=400)
+
     user_service: UserService = request.app["user_service"]
     try:
         await user_service.register(dto)
@@ -222,15 +224,19 @@ async def handle_update_email(request: web.Request) -> web.Response:
 @public_route
 async def handle_retrieve_password(request: web.Request) -> web.Response:
     """Retrieve password."""
-    req_data = await request.json()
-    dto = RetrievePasswordDTO.from_dict(req_data)
-    user_service: UserService = request.app["user_service"]
-    if await user_service.retrieve_password(dto):
-        return web.json_response(BaseResponse().to_dict())
-    else:
-        return web.json_response(
-            create_error_response("User not found").to_dict(), status=404
-        )
+    # TODO: The current implementation seems like it has a security hole and the
+    # semantics need to be revisited (e.g. or allow only via admin API etc)
+    raise ValueError("Not implemented")
+
+    # req_data = await request.json()
+    # dto = RetrievePasswordDTO.from_dict(req_data)
+    # user_service: UserService = request.app["user_service"]
+    # if await user_service.retrieve_password(dto):
+    #     return web.json_response(BaseResponse().to_dict())
+    # else:
+    #     return web.json_response(
+    #         create_error_response("User not found").to_dict(), status=404
+    #     )
 
 
 # TODO: Actually implement the return values for this.

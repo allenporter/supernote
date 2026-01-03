@@ -100,11 +100,11 @@ async def create_test_user(
 
     async with session_manager.session() as session:
         for test_user in test_users:
-            stmt = select(UserDO).where(UserDO.username == test_user)
-            existing = (await session.execute(stmt)).scalar_one_or_none()
-            if not existing:
+            stmt = select(UserDO).where(UserDO.email == test_user)
+            result = await session.execute(stmt)
+            user = result.scalar_one_or_none()
+            if not user:
                 user = UserDO(
-                    username=test_user,
                     email=test_user,
                     password_md5=hashlib.md5(TEST_PASSWORD.encode("utf-8")).hexdigest(),
                     is_active=True,
