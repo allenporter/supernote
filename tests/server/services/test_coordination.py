@@ -3,7 +3,6 @@ from typing import AsyncGenerator
 import freezegun
 import pytest
 
-from supernote.server.db.base import Base
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.coordination import (
     CoordinationService,
@@ -18,8 +17,7 @@ async def local_coordination_service() -> AsyncGenerator[CoordinationService, No
     """Create a local coordination service for testing."""
     manager = DatabaseSessionManager(TEST_DB_URL)
     assert manager._engine
-    async with manager._engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    await manager.create_all_tables()
 
     service = SqliteCoordinationService(manager)
     yield service
