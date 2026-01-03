@@ -375,10 +375,10 @@ class FileUploadApplyDTO(DataClassJSONMixin):
         /api/file/upload/apply
     """
 
-    directory_id: int = field(metadata=field_options(alias="directoryId"))
     size: int
     file_name: str = field(metadata=field_options(alias="fileName"))
     md5: str
+    directory_id: int = field(metadata=field_options(alias="directoryId"), default=0)
 
     class Config(BaseConfig):
         serialize_by_alias = True

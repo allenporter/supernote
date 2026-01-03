@@ -159,5 +159,14 @@
       "sequence": "desc",
       "order": "time"
     }
+  },
+  {
+    "method": "POST",
+    "path": "/api/file/upload/apply",
+    "body": {
+      "fileName": "French.note",
+      "md5": "64e12ab6aa0d4c7473286d43b6a35fc8",
+      "size": 6863511
+    }
   }
 ]
