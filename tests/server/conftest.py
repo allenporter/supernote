@@ -22,7 +22,6 @@ from supernote.client.client import Client
 from supernote.client.file import FileClient
 from supernote.server.app import create_app
 from supernote.server.config import AuthConfig, ServerConfig
-from supernote.server.db.base import Base
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage, LocalBlobStorage
@@ -145,8 +144,7 @@ async def session_manager_fixture() -> AsyncGenerator[DatabaseSessionManager, No
     )
     engine = session_manager._engine
     assert engine is not None
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    await session_manager.create_all_tables()
 
     with patch(
         "supernote.server.app.create_db_session_manager", return_value=session_manager

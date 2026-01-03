@@ -25,8 +25,11 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from .base import Base
+
 ENGINE_KWARGS: dict[str, Any] = {
-    "echo": True,
+    # Set to True to enable verbose SQL logging
+    "echo": False,
 }
 
 
@@ -63,3 +66,11 @@ class DatabaseSessionManager:
             raise
         finally:
             await session.close()
+
+    async def create_all_tables(self) -> None:
+        """Create all tables."""
+        if self._engine is None:
+            raise Exception("DatabaseSessionManager has been closed")
+
+        async with self._engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
