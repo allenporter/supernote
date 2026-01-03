@@ -1,41 +1,41 @@
-from supernote.client.file import FileClient
+from supernote.client.device import DeviceClient
 
 
-async def test_create_directory(file_client: FileClient) -> None:
+async def test_create_directory(device_client: DeviceClient) -> None:
     # Create folder
-    await file_client.create_folder(path="/NewFolder", equipment_no="SN123456")
+    await device_client.create_folder(path="/NewFolder", equipment_no="SN123456")
 
     # Verify folder exists
-    data = await file_client.list_folder(path="/", equipment_no="SN123456")
+    data = await device_client.list_folder(path="/", equipment_no="SN123456")
     assert any(e.name == "NewFolder" for e in data.entries)
 
 
-async def test_delete_folder(file_client: FileClient) -> None:
+async def test_delete_folder(device_client: DeviceClient) -> None:
     # Create folder
-    await file_client.create_folder(path="/DeleteMe", equipment_no="SN123456")
+    await device_client.create_folder(path="/DeleteMe", equipment_no="SN123456")
 
     # Get ID via list
-    data = await file_client.list_folder(path="/", equipment_no="SN123456")
+    data = await device_client.list_folder(path="/", equipment_no="SN123456")
     entry = next(e for e in data.entries if e.name == "DeleteMe")
     folder_id = int(entry.id)
 
     # Delete
-    await file_client.delete(id=folder_id, equipment_no="SN123456")
+    await device_client.delete(id=folder_id, equipment_no="SN123456")
 
     # Verify gone
-    data = await file_client.list_folder(path="/", equipment_no="SN123456")
+    data = await device_client.list_folder(path="/", equipment_no="SN123456")
     assert not any(e.name == "DeleteMe" for e in data.entries)
 
 
-async def test_list_recursive(file_client: FileClient) -> None:
+async def test_list_recursive(device_client: DeviceClient) -> None:
     # Create /Parent
-    await file_client.create_folder(path="/Parent", equipment_no="SN123456")
+    await device_client.create_folder(path="/Parent", equipment_no="SN123456")
 
     # Create /Parent/Child
-    await file_client.create_folder(path="/Parent/Child", equipment_no="SN123456")
+    await device_client.create_folder(path="/Parent/Child", equipment_no="SN123456")
 
     # List non-recursive from root
-    data = await file_client.list_folder(
+    data = await device_client.list_folder(
         path="/", equipment_no="SN123456", recursive=False
     )
 
@@ -48,7 +48,7 @@ async def test_list_recursive(file_client: FileClient) -> None:
     ]
 
     # List recursive from root
-    data = await file_client.list_folder(
+    data = await device_client.list_folder(
         path="/", equipment_no="SN123456", recursive=True
     )
 
@@ -62,18 +62,18 @@ async def test_list_recursive(file_client: FileClient) -> None:
     ]
 
 
-async def test_list_subdirectory(file_client: FileClient) -> None:
+async def test_list_subdirectory(device_client: DeviceClient) -> None:
     # Create /FolderA/FolderB
-    await file_client.create_folder(path="/FolderA", equipment_no="SN123456")
-    await file_client.create_folder(path="/FolderA/FolderB", equipment_no="SN123456")
+    await device_client.create_folder(path="/FolderA", equipment_no="SN123456")
+    await device_client.create_folder(path="/FolderA/FolderB", equipment_no="SN123456")
 
     # Get ID of FolderA
-    data = await file_client.list_folder(path="/", equipment_no="SN123456")
+    data = await device_client.list_folder(path="/", equipment_no="SN123456")
     entry = next(e for e in data.entries if e.name == "FolderA")
     folder_a_id = int(entry.id)
 
     # List recursive from FolderA
-    data = await file_client.list_folder(
+    data = await device_client.list_folder(
         folder_id=folder_a_id, equipment_no="SN123456", recursive=True
     )
 
@@ -85,7 +85,7 @@ async def test_list_subdirectory(file_client: FileClient) -> None:
     ]
 
     # List flat from FolderA
-    data = await file_client.list_folder(
+    data = await device_client.list_folder(
         folder_id=folder_a_id, equipment_no="SN123456", recursive=False
     )
 

@@ -1,5 +1,4 @@
 from supernote.client.device import DeviceClient
-from supernote.models.file import EntriesVO
 
 
 async def test_device_list_folder(device_client: DeviceClient) -> None:
@@ -9,7 +8,9 @@ async def test_device_list_folder(device_client: DeviceClient) -> None:
     #    - FileDevice
 
     await device_client.create_folder(path="/FolderDevice", equipment_no="test")
-    await device_client.upload_content("/FolderDevice/FileDevice.txt", b"content_device")
+    await device_client.upload_content(
+        "/FolderDevice/FileDevice.txt", b"content_device"
+    )
 
     # 2. List Root (V2 API usually, allows path)
     res_root = await device_client.list_folder(path="/", equipment_no="test")
