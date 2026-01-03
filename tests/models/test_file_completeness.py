@@ -22,7 +22,7 @@ def test_folder_file_add_dto() -> None:
         file_id=123,
         directory_id=456,
         go_directory_id=789,
-        is_folder="Y"
+        is_folder="Y",
     )
     data = dto.to_dict()
     assert data["fileName"] == "NewFolder"
@@ -38,7 +38,7 @@ def test_terminal_file_upload_apply_dto() -> None:
         file_name="test.pdf",
         md5="md5sums",
         equipment_no="dev1",
-        file_path="/data/test.pdf"
+        file_path="/data/test.pdf",
     )
     data = dto.to_dict()
     assert data["fileSize"] == "1024"
@@ -57,7 +57,7 @@ def test_terminal_file_upload_finish_dto() -> None:
         modify_time="2024-01-01",
         upload_time="2024-01-01",
         equipment_no="dev1",
-        file_path="/data/test.pdf"
+        file_path="/data/test.pdf",
     )
     data = dto.to_dict()
     assert data["fileSize"] == "1024"

@@ -20,7 +20,6 @@ from sqlalchemy.pool import StaticPool
 from supernote.client.auth import AbstractAuth
 from supernote.client.client import Client
 from supernote.client.device import DeviceClient
-
 from supernote.client.web import WebClient
 from supernote.server.app import create_app
 from supernote.server.config import AuthConfig, ServerConfig
@@ -260,9 +259,6 @@ async def authenticated_client(
     base_url = str(client.make_url(""))
     supernote_client = Client(client.session, auth=TokenAuth(), host=base_url)
     yield supernote_client
-
-
-
 
 
 @pytest.fixture

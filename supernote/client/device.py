@@ -5,7 +5,6 @@ from pathlib import Path
 
 from aiohttp import FormData
 
-from supernote.models.base import BaseResponse
 from supernote.models.file import (
     CapacityLocalDTO,
     CapacityLocalVO,

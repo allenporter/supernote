@@ -87,7 +87,7 @@ The FileLocalWebController is the main controller for handling web file operatio
 
 ### Basic File Ops
 
-The FileController is the main co   ntroller for handling basic file operations requests.
+The FileController is the main controller for handling basic file operations requests.
 
 *   `POST /api/file/add/folder/file/deleteApi`: Add Folder/File (Desktop)
 *   `POST /api/file/2/files/query/deleteApi`: Query File (Dropbox style)

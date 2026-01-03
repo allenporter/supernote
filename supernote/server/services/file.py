@@ -12,7 +12,6 @@ from supernote.models.file_common import (
     EntriesVO,
     FileSortOrder,
     FileSortSequence,
-    FileUploadApplyLocalVO,
 )
 from supernote.models.file_device import (
     CreateFolderLocalVO,
