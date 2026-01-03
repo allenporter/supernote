@@ -62,6 +62,12 @@ This document outlines the path to making Supernote Private Cloud a reliable "da
     - Fix invalid assertions (path_display).
 - [ ] **Static Analysis**:
     - Fix Mypy errors.
+- [ ] **Error Handling**:
+    - Implement proper error handling for all HTTP responses.
+    - We have error codes in supernote.models.base that should be defined as an enum.
+    - We have a "error_code" field that we are not currently using, and error messages are not used uniformly.
+    - Specific backend errors need to be handled better/uniformly. Sqlalchemy errors are raised all the way to caller/HTTP response.
+
 
 ### Refactoring
 - [ ] **VFS Semantics**:
