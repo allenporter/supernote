@@ -4,16 +4,46 @@ import asyncio
 import logging
 import os
 import sys
+from contextlib import asynccontextmanager
 
 import aiohttp
 
 from supernote.client.auth import FileCacheAuth
 from supernote.client.client import Client
 from supernote.client.cloud_client import SupernoteClient
-from supernote.client.exceptions import SupernoteException
+from supernote.client.exceptions import SmsVerificationRequired, SupernoteException
 from supernote.client.login_client import LoginClient
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def load_cached_auth(url: str | None = None) -> tuple[FileCacheAuth, str]:
+    """Load cached credentials."""
+    cache_path = os.path.expanduser("~/.cache/supernote.pkl")
+    if not os.path.exists(cache_path):
+        print(f"Error: No cached credentials found at {cache_path}")
+        print("Please run 'supernote cloud-login --url <URL>' first.")
+        sys.exit(1)
+
+    auth = FileCacheAuth(cache_path)
+    if not url:
+        url = auth.get_host()
+        if not url:
+            print("Error: No server URL found in cached credentials.")
+            print("Please run 'supernote cloud-login --url <URL>' first.")
+            sys.exit(1)
+
+    return auth, url
+
+
+@asynccontextmanager
+async def create_client(url: str | None = None) -> Client:
+    """Initialize client with cached credentials as a context manager."""
+    auth, url = load_cached_auth(url)
+
+    async with aiohttp.ClientSession() as session:
+        client = Client(session, host=url, auth=auth)
+        yield client
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -31,12 +61,15 @@ def setup_logging(verbose: bool = False) -> None:
         logging.getLogger("aiohttp").setLevel(logging.DEBUG)
 
 
-async def async_cloud_login(email: str, password: str, verbose: bool = False) -> None:
+async def async_cloud_login(
+    email: str, password: str, url: str, verbose: bool = False
+) -> None:
     """Perform cloud login with detailed debugging output.
 
     Args:
         email: User email/account
         password: User password
+        url: Server URL (e.g. http://localhost:8080)
         verbose: Enable verbose HTTP logging
     """
     setup_logging(verbose)
@@ -45,6 +78,7 @@ async def async_cloud_login(email: str, password: str, verbose: bool = False) ->
     print("Supernote Cloud Login Debugging Tool")
     print("=" * 80)
     print(f"Email: {email}")
+    print(f"URL: {url}")
     print(
         f"Verbose Mode: {'ENABLED' if verbose else 'DISABLED (use -v or --verbose for detailed logs)'}"
     )
@@ -55,7 +89,7 @@ async def async_cloud_login(email: str, password: str, verbose: bool = False) ->
         try:
             # Step 1: Create client and login
             print("Step 1: Initializing client...")
-            client = Client(session)
+            client = Client(session, host=url)
             login_client = LoginClient(client)
 
             print("Step 2: Starting login flow...")
@@ -69,9 +103,6 @@ async def async_cloud_login(email: str, password: str, verbose: bool = False) ->
             try:
                 access_token = await login_client.login(email, password)
             except SupernoteException as err:
-                # Check if it's an SMS verification requirement
-                from supernote.client.exceptions import SmsVerificationRequired
-
                 if isinstance(err, SmsVerificationRequired):
                     print()
                     print("!" * 80)
@@ -106,15 +137,15 @@ async def async_cloud_login(email: str, password: str, verbose: bool = False) ->
 
             # Save token to cache
             cache_path = os.path.expanduser("~/.cache/supernote.pkl")
-            print(f"Saving token to {cache_path}...")
+            print(f"Saving credentials to {cache_path}...")
             auth = FileCacheAuth(cache_path)
-            auth.save_access_token(access_token)
-            print("✓ Token saved!")
+            auth.save_credentials(access_token, url)
+            print("✓ Credentials saved!")
             print()
 
             # Step 2: Test basic functionality
             print("Step 3: Testing basic functionality...")
-            authenticated_client = Client(session, auth=auth)
+            authenticated_client = Client(session, host=url, auth=auth)
             cloud_client = SupernoteClient(authenticated_client)
 
             # Test 1: Query user
@@ -179,24 +210,17 @@ async def async_cloud_login(email: str, password: str, verbose: bool = False) ->
 
 def subcommand_cloud_login(args) -> None:
     """Handler for cloud-login subcommand."""
-    asyncio.run(async_cloud_login(args.email, args.password, args.verbose))
+    asyncio.run(async_cloud_login(args.email, args.password, args.url, args.verbose))
 
 
 async def async_cloud_ls(verbose: bool = False) -> None:
     """List files in Supernote Cloud using cached credentials."""
     setup_logging(verbose)
 
-    cache_path = os.path.expanduser("~/.cache/supernote.pkl")
-    if not os.path.exists(cache_path):
-        print(f"Error: No cached credentials found at {cache_path}")
-        print("Please run 'supernote cloud login' first.")
-        sys.exit(1)
-
-    async with aiohttp.ClientSession() as session:
-        try:
-            auth = FileCacheAuth(cache_path)
-            client = Client(session, auth=auth)
+    try:
+        async with create_client() as client:
             cloud_client = SupernoteClient(client)
+            print(f"Using server: {client.host}")
 
             print("Listing files in root directory...")
             file_list_response = await cloud_client.file_list()
@@ -207,20 +231,20 @@ async def async_cloud_ls(verbose: bool = False) -> None:
                     folder_marker = "📁" if file.is_folder == "Y" else "📄"
                     print(f"{folder_marker} {file.file_name} (ID: {file.id})")
 
-        except SupernoteException as err:
-            print(f"Error: {err}")
-            if verbose:
-                import traceback
+    except SupernoteException as err:
+        print(f"Error: {err}")
+        if verbose:
+            import traceback
 
-                traceback.print_exc()
-            sys.exit(1)
-        except Exception as err:
-            print(f"Unexpected error: {err}")
-            if verbose:
-                import traceback
+            traceback.print_exc()
+        sys.exit(1)
+    except Exception as err:
+        print(f"Unexpected error: {err}")
+        if verbose:
+            import traceback
 
-                traceback.print_exc()
-            sys.exit(1)
+            traceback.print_exc()
+        sys.exit(1)
 
 
 def subcommand_cloud_ls(args) -> None:
@@ -235,6 +259,9 @@ def add_parser(subparsers):
     )
     parser_cloud_login.add_argument("email", type=str, help="user email/account")
     parser_cloud_login.add_argument("password", type=str, help="user password")
+    parser_cloud_login.add_argument(
+        "--url", type=str, required=True, help="Server URL (e.g. http://localhost:8080)"
+    )
     parser_cloud_login.add_argument(
         "-v", "--verbose", action="store_true", help="Enable verbose logging"
     )

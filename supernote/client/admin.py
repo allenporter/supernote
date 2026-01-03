@@ -55,3 +55,13 @@ class AdminClient:
             "/api/official/user/retrieve/password", BaseResponse, json=dto.to_dict()
         )
         logger.info(f"Password reset for {email}")
+
+    async def admin_create_user(
+        self, email: str, password: str, username: str | None = None
+    ) -> None:
+        """Register a new user through the admin API."""
+        dto = UserRegisterDTO(email=email, password=password, user_name=username)
+        await self.client.post_json(
+            "/api/admin/users", BaseResponse, json=dto.to_dict()
+        )
+        logger.info(f"Registered user {email}")

@@ -1,0 +1,128 @@
+"""Admin CLI commands."""
+
+import asyncio
+import getpass
+import sys
+
+from supernote.client.admin import AdminClient
+from supernote.client.exceptions import ApiException
+
+from .client import create_client
+
+
+async def add_user_async(url: str, username: str, password: str):
+    """Async implementation of add user."""
+    async with create_client(url) as client:
+        print(f"Attempting to register user '{username}' on {client.host}...")
+
+        admin_client = AdminClient(client)
+
+        # Try Public Registration
+        try:
+            await admin_client.register(
+                email=username,
+                password=password,
+                username=username.split("@")[0],  # Simple default
+            )
+            print("Success! User created (Public Registration).")
+            return
+        except ApiException:
+            # If failed, we don't have detailed status code in simple try/except unless we check exception type
+            # But client raises ApiException
+            pass
+
+        # Try Admin Creation API
+        print("Public registration failed or disabled. Attempting Admin creation...")
+        try:
+            await admin_client.admin_create_user(
+                email=username,
+                password=password,
+                username=username.split("@")[0],  # Simple default
+            )
+            print("Success! User created (Admin API).")
+        except Exception as e:
+            print(f"Admin creation failed: {e}")
+            sys.exit(1)
+
+
+async def list_users_async():
+    """Async implementation of list users."""
+    async with create_client() as client:
+        try:
+            users = await client.get_json("/api/admin/users", list)
+
+            print(f"\nTotal Users: {len(users)}\n")
+            print(f"{'Username':<30} {'Email':<30} {'Capacity':<10}")
+            print("-" * 75)
+            for u in users:
+                # users is a list of dicts if we passed list to get_json, or we need a VO
+                # client.get_json returns data_cls.from_json(result)
+                # But list doesn't have from_json.
+                # We should probably use raw get or define a List[UserVO] type if we can.
+                # For now let's just use raw request to get json list safely.
+                pass
+        except Exception:
+            pass
+
+        # Re-doing list fetch with raw request because of typing limitation in client.get_json for list[dict]
+        try:
+            resp = await client.get("/api/admin/users")
+            users = await resp.json()
+
+            print(f"\nTotal Users: {len(users)}\n")
+            print(f"{'Username':<30} {'Email':<30} {'Capacity':<10}")
+            print("-" * 75)
+            for u in users:
+                print(
+                    f"{u.get('userName', 'N/A'):<30} {u.get('email', 'N/A'):<30} {u.get('totalCapacity', '0'):<10}"
+                )
+
+        except Exception as e:
+            print(f"Failed to list users: {e}")
+
+
+def add_user(args):
+    password = args.password
+    if not password:
+        password = getpass.getpass(f"Password for {args.username}: ")
+
+    asyncio.run(add_user_async(args.url, args.username, password))
+
+
+def list_users(args):
+    asyncio.run(list_users_async())
+
+
+def add_parser(subparsers):
+    # 'admin' parent command
+    parser_admin = subparsers.add_parser(
+        "admin",
+        help="Administrative commands for Supernote Server",
+    )
+    parser_admin.add_argument("--url", type=str, help="URL of the Supernote Server")
+
+    admin_subparsers = parser_admin.add_subparsers(dest="admin_command")
+
+    # --- User Management ---
+    parser_user = admin_subparsers.add_parser("user", help="User management commands")
+    user_subparsers = parser_user.add_subparsers(dest="user_command")
+
+    # user list
+    parser_user_list = user_subparsers.add_parser(
+        "list",
+        help="List all users",
+    )
+    parser_user_list.set_defaults(func=list_users)
+
+    # user add
+    parser_user_add = user_subparsers.add_parser(
+        "add",
+        help="Add a new user",
+    )
+    parser_user_add.add_argument(
+        "username", type=str, help="Email/Username for the new user"
+    )
+    parser_user_add.add_argument(
+        "--password", type=str, help="Password (if omitted, prompt interactively)"
+    )
+    parser_user_add.set_defaults(func=add_user)

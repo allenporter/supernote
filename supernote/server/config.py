@@ -45,13 +45,17 @@ class ServerConfig(DataClassYAMLMixin):
         return Path(self.storage_dir)
 
     @classmethod
-    def load(cls, config_dir: str | Path | None = None) -> "ServerConfig":
+    def load(
+        cls, config_dir: str | Path | None = None, config_file: str | Path | None = None
+    ) -> "ServerConfig":
         """Load configuration from directory. READ-ONLY."""
-        if config_dir is None:
-            config_dir = os.getenv("SUPERNOTE_CONFIG_DIR", "config")
-
-        config_dir_path = Path(config_dir)
-        config_file = config_dir_path / "config.yaml"
+        if config_file is not None:
+            config_file = Path(config_file)
+        else:
+            if config_dir is None:
+                config_dir = os.getenv("SUPERNOTE_CONFIG_DIR", "config")
+            config_dir_path = Path(config_dir)
+            config_file = config_dir_path / "config.yaml"
 
         config = cls()
         if config_file.exists():
