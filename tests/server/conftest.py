@@ -185,12 +185,12 @@ def user_service(
 
 
 @pytest.fixture(autouse=True)
-async def mock_storage(device_client: DeviceClient) -> None:
+async def mock_storage(test_users: list[str], device_client: DeviceClient) -> None:
     """Mock storage setup for the default device_client user."""
-
-    await device_client.create_folder("Note", "TEST_DEVICE")
-    await device_client.create_folder("Document", "TEST_DEVICE")
-    await device_client.create_folder("EXPORT", "TEST_DEVICE")
+    if test_users:
+        await device_client.create_folder("Note", "TEST_DEVICE")
+        await device_client.create_folder("Document", "TEST_DEVICE")
+        await device_client.create_folder("EXPORT", "TEST_DEVICE")
 
 
 @pytest.fixture(name="client")
