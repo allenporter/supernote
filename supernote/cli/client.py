@@ -56,8 +56,7 @@ def setup_logging(verbose: bool = False) -> None:
     )
     # Enable debug logging for cloud modules and aiohttp
     if verbose:
-        logging.getLogger("supernote.cloud").setLevel(logging.DEBUG)
-        logging.getLogger("supernote.cloud.client").setLevel(logging.DEBUG)
+        logging.getLogger("supernote").setLevel(logging.DEBUG)
         logging.getLogger("aiohttp").setLevel(logging.DEBUG)
 
 
@@ -151,7 +150,7 @@ async def async_cloud_login(
             # Test 1: Query user
             print("  Test 1: Querying user information...")
             try:
-                user_response = await cloud_client.query_user(email)
+                user_response = await cloud_client.query_user()
                 print("  ✓ User query successful!")
                 print(f"    - User ID: {user_response.user_id}")
                 print(f"    - User Name: {user_response.user_name}")
