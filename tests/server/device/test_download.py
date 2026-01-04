@@ -12,7 +12,7 @@ async def test_download_file_with_spaces(
     filename = "2023 December.pdf"
     full_filename = f"EXPORT/{filename}"
     await device_client.upload_content(
-        path=full_filename, content="pdf content", equipment_no="SN123"
+        path=full_filename, content=b"pdf content", equipment_no="SN123"
     )
 
     # Obtain a download URL

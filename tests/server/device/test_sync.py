@@ -39,7 +39,9 @@ async def test_sync_start_syn_type(
     assert data["synType"] is False  # Empty storage
 
     # 2. Add a dummy file
-    await device_client.upload_content("Note/test.note", "content", equipment_no="test")
+    await device_client.upload_content(
+        "Note/test.note", b"content", equipment_no="test"
+    )
 
     resp = await client.post(
         "/api/file/2/files/synchronous/start",

@@ -134,7 +134,7 @@ class DeviceClient:
     async def upload_content(
         self,
         path: str,
-        content: str | bytes,
+        content: bytes,
         equipment_no: str | None = None,
         chunk_size: int = 5 * 1024 * 1024,
     ) -> FileUploadFinishLocalVO:
@@ -158,13 +158,10 @@ class DeviceClient:
         _LOGGER.debug("Initiating upload for file %s", path)
         apply = await self.upload_apply(filename, path, size, equipment_no)
 
-        if isinstance(content, str):
-            content_bytes = content.encode("utf-8")
-        else:
-            content_bytes = content
+        md5 = hashlib.md5(content).hexdigest()
 
         await self._client._upload_to_oss(
-            content_bytes,
+            content,
             filename,
             apply.full_upload_url,
             apply.part_upload_url,
@@ -181,7 +178,6 @@ class DeviceClient:
         if not parent_path_str.startswith("/"):
             parent_path_str = "/" + parent_path_str
 
-        md5 = hashlib.md5(content_bytes).hexdigest()
         return await self.upload_finish(
             file_name=filename,
             path=parent_path_str,
