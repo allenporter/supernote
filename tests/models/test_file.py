@@ -1,4 +1,5 @@
-from supernote.models.file import BooleanEnum, UserFileVO
+from supernote.models.base import BooleanEnum
+from supernote.models.file_web import UserFileVO
 
 
 def test_user_file_vo_datetime_parsing() -> None:

@@ -12,21 +12,23 @@ from supernote.models.equipment import (
     BindEquipmentDTO,
     UnbindEquipmentDTO,
 )
-from supernote.models.file import (
+from supernote.models.file_device import (
     CreateFolderLocalDTO,
     FileDownloadLocalDTO,
-    FileListQueryDTO,
     FileQueryByPathLocalDTO,
     FileQueryLocalDTO,
-    FileUploadApplyDTO,
     FileUploadApplyLocalDTO,
-    FileUploadFinishDTO,
     FileUploadFinishLocalDTO,
     ListFolderV2DTO,
     SynchronousEndLocalDTO,
     SynchronousStartLocalDTO,
 )
-from supernote.models.file_web import FolderAddDTO
+from supernote.models.file_web import (
+    FileListQueryDTO,
+    FileUploadApplyDTO,
+    FileUploadFinishDTO,
+    FolderAddDTO,
+)
 from supernote.models.user import (
     UserCheckDTO,
 )

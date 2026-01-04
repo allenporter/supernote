@@ -7,7 +7,7 @@ when deployed behind a reverse proxy, with different proxy modes.
 import pytest
 from aiohttp.test_utils import TestClient
 
-from supernote.models.file import FileUploadApplyLocalDTO
+from supernote.models.file_device import FileUploadApplyLocalDTO
 
 
 # Test for default proxy mode (disabled)
