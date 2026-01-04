@@ -891,7 +891,7 @@ class FileService:
                 # Web API Root Flattening
                 # - Fetch children of NOTE and DOCUMENT
                 # - Include MyStyle (which is already at root)
-                nodes: list[File] = []
+                nodes: list[UserFileDO] = []
 
                 # Get category nodes first
                 category_id_map: dict[str, int] = {}
@@ -955,7 +955,7 @@ class FileService:
             # 4. Sorting logic for Root
             if flatten and parent_id == 0:
                 # Specific Order: Note, Document, then others alphabetically
-                def root_sort_key(vo: FolderVO):
+                def root_sort_key(vo: FolderVO) -> tuple[int, str]:
                     name = vo.file_name
                     # Use ORDERED_WEB_ROOT for priority sorting
                     for i, priority_name in enumerate(ORDERED_WEB_ROOT):
