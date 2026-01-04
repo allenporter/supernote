@@ -9,25 +9,13 @@ from pathlib import Path
 import aiofiles
 
 from supernote.models.base import BaseResponse, BooleanEnum, create_error_response
-from supernote.models.file_web import (
-    EntriesVO,
-    FileListQueryVO,
-    FileSortOrder,
-    FileSortSequence,
-    FileUploadFinishDTO,
-    FolderListQueryVO,
-    FolderVO,
-    RecycleFileListVO,
-    RecycleFileVO,
-    UserFileVO,
-)
 from supernote.server.constants import (
     CATEGORY_CONTAINERS,
     IMMUTABLE_SYSTEM_DIRECTORIES,
     ORDERED_WEB_ROOT,
 )
 
-from ..db.models.file import UserFileDO
+from ..db.models.file import RecycleFileDO, UserFileDO
 from ..db.session import DatabaseSessionManager
 from .blob import BlobStorage
 from .user import UserService
@@ -50,6 +38,10 @@ class FileServiceException(Exception):
 
 class InvalidPathException(FileServiceException):
     """Exception raised when an invalid path is provided."""
+
+
+class HashMismatchException(FileServiceException):
+    """Exception raised when a hash mismatch is detected."""
 
 
 @dataclass
@@ -82,6 +74,11 @@ class FileEntity:
         """Return the tag of the file."""
         return "folder" if self.is_folder else "file"
 
+    @property
+    def sort_time(self) -> int:
+        """Return the sort time of the file."""
+        return self.update_time
+
 
 def _to_file_entity(node: UserFileDO, full_path: str) -> FileEntity:
     """Convert a UserFileDO to a FileEntity."""
@@ -99,10 +96,46 @@ def _to_file_entity(node: UserFileDO, full_path: str) -> FileEntity:
 
 
 @dataclass
+class RecycleEntity:
+    """Domain object representing a file in the system."""
+
+    id: int
+    name: str
+    is_folder: bool
+    size: int
+    delete_time: int
+
+    @property
+    def sort_time(self) -> int:
+        """Return the sort time of the file."""
+        return self.delete_time
+
+
+def _to_recycle_entity(node: RecycleFileDO) -> RecycleEntity:
+    """Convert a RecycleFileVO to a FileEntity."""
+    return RecycleEntity(
+        id=node.id,
+        name=node.file_name,
+        is_folder=bool(node.is_folder == "Y"),
+        size=node.size,
+        delete_time=int(node.delete_time),
+    )
+
+
+@dataclass
 class PathInfo:
     """Domain object for path information."""
+
     path: str
     id_path: str
+
+
+@dataclass
+class FolderDetail:
+    """Domain object for folder details with metadata."""
+
+    entity: FileEntity
+    has_subfolders: bool
 
 
 class FileService:
@@ -125,10 +158,10 @@ class FileService:
 
     async def list_folder(
         self, user: str, path_str: str, recursive: bool = False
-    ) -> list[EntriesVO]:
+    ) -> list[FileEntity]:
         """List files in a folder for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
-        entries: list[EntriesVO] = []
+        entities: list[FileEntity] = []
 
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
@@ -148,64 +181,27 @@ class FileService:
             if recursive:
                 recursive_list = await vfs.list_recursive(user_id, parent_id)
                 for item, rel_path in recursive_list:
-                    # Construct full path display
-                    # rel_path is relative to parent_path (clean_path)
-                    # path_str is e.g. "/Notes" or "/"
-                    parent_clean = path_str.strip("/")
-                    path_display = (
-                        f"{parent_clean}/{rel_path}" if parent_clean else rel_path
-                    )
-
-                    entries.append(
-                        EntriesVO(
-                            tag="folder" if item.is_folder == "Y" else "file",
-                            id=str(item.id),
-                            name=item.file_name,
-                            path_display=path_display,
-                            parent_path=str(Path(path_display).parent),
-                            content_hash=item.md5 or "",
-                            is_downloadable=True,
-                            size=item.size,
-                            last_update_time=item.update_time,
-                        )
-                    )
+                    full_path = f"{clean_path}/{rel_path}" if clean_path else rel_path
+                    entities.append(_to_file_entity(item, full_path))
             else:
                 # Flat listing
                 do_list = await vfs.list_directory(user_id, parent_id)
 
                 for item in do_list:
-                    # Construct path_display
-                    # This is tricky without fully qualified path in DO.
-                    # But we know the parent path is path_str.
-                    # path_str is e.g. "/Notes". Item name "foo.txt". -> "/Notes/foo.txt".
-                    parent_clean = path_str.strip("/")
-                    path_display = (
-                        f"{parent_clean}/{item.file_name}"
-                        if parent_clean
+                    full_path = (
+                        f"{clean_path}/{item.file_name}"
+                        if clean_path
                         else item.file_name
                     )
-
-                    entries.append(
-                        EntriesVO(
-                            tag="folder" if item.is_folder == "Y" else "file",
-                            id=str(item.id),
-                            name=item.file_name,
-                            path_display=path_display,
-                            parent_path=path_str.strip("/"),
-                            content_hash=item.md5 or "",
-                            is_downloadable=True,
-                            size=item.size,
-                            last_update_time=item.update_time,
-                        )
-                    )
-        return entries
+                    entities.append(_to_file_entity(item, full_path))
+        return entities
 
     async def list_folder_by_id(
         self, user: str, folder_id: int, recursive: bool = False
-    ) -> list[EntriesVO]:
+    ) -> list[FileEntity]:
         """List files in a folder by ID for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
-        entries: list[EntriesVO] = []
+        entities: list[FileEntity] = []
 
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
@@ -236,24 +232,7 @@ class FileService:
                     full_path = (
                         f"{base_path_clean}/{rel_path}" if base_path_clean else rel_path
                     )
-
-                    parent_path = str(Path(full_path).parent)
-                    if parent_path == ".":
-                        parent_path = ""
-
-                    entries.append(
-                        EntriesVO(
-                            tag="folder" if item.is_folder == "Y" else "file",
-                            id=str(item.id),
-                            name=item.file_name,
-                            path_display=full_path,
-                            parent_path=parent_path,
-                            content_hash=item.md5 or "",
-                            is_downloadable=True,
-                            size=item.size,
-                            last_update_time=item.update_time,
-                        )
-                    )
+                    entities.append(_to_file_entity(item, full_path))
             else:
                 do_list = await vfs.list_directory(user_id, folder_id)
                 for item in do_list:
@@ -263,26 +242,10 @@ class FileService:
                         if base_path_clean
                         else item.file_name
                     )
+                    entities.append(_to_file_entity(item, full_path))
+        return entities
 
-                    # Parent is the folder we are listing
-                    parent_path = base_path_clean
-
-                    entries.append(
-                        EntriesVO(
-                            tag="folder" if item.is_folder == "Y" else "file",
-                            id=str(item.id),
-                            name=item.file_name,
-                            path_display=full_path,
-                            parent_path=parent_path,
-                            content_hash=item.md5 or "",
-                            is_downloadable=True,
-                            size=item.size,
-                            last_update_time=item.update_time,
-                        )
-                    )
-        return entries
-
-    async def get_file_info(self, user: str, path_str: str) -> EntriesVO | None:
+    async def get_file_info(self, user: str, path_str: str) -> FileEntity | None:
         """Get file info by path or ID for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
 
@@ -290,16 +253,16 @@ class FileService:
         clean_path = path_str.strip("/")
         if not clean_path and (path_str == "" or path_str == "/"):
             # Virtual root directory
-            return EntriesVO(
-                tag="folder",
-                id="0",
+            return FileEntity(
+                id=0,
+                parent_id=-1,  # No parent
                 name="",
-                path_display="",
-                parent_path="",  # Logical parent of root is root? or empty
+                is_folder=True,
                 size=0,
-                last_update_time=0,
-                content_hash="",
-                is_downloadable=False,
+                md5=None,
+                create_time=0,
+                update_time=0,
+                full_path="",
             )
 
         async with self.session_manager.session() as session:
@@ -319,25 +282,11 @@ class FileService:
                 return None
 
             # Always resolve the canonical path from the node structure
-            path_display = await vfs.get_full_path(user_id, node.id)
+            full_path = await vfs.get_full_path(user_id, node.id)
 
-            parent_path = str(Path(path_display).parent)
-            if parent_path == ".":
-                parent_path = ""
+            return _to_file_entity(node, full_path)
 
-            return EntriesVO(
-                tag="folder" if node.is_folder == "Y" else "file",
-                id=str(node.id),
-                name=node.file_name,
-                path_display=path_display,
-                parent_path=parent_path,
-                content_hash=node.md5 or "",
-                is_downloadable=True,
-                size=node.size,
-                last_update_time=node.update_time,
-            )
-
-    def _flatten_path(self, path: str) -> str:
+    def flatten_path(self, path: str) -> str:
         """Flatten paths for items inside category containers (e.g., NOTE/Note -> Note)."""
 
         path_parts = path.strip("/").split("/")
@@ -461,15 +410,20 @@ class FileService:
         return _to_file_entity(new_file, full_path)
 
     async def upload_finish_web(
-        self, user: str, dto: FileUploadFinishDTO
-    ) -> BaseResponse:
+        self,
+        user: str,
+        directory_id: int,
+        file_name: str,
+        md5: str,
+        inner_name: str,
+    ) -> None:
         """Finish upload (Web API)."""
         user_id = await self.user_service.get_user_id(user)
 
         # 1. Check/Promote Blob
         # Note: We use inner_name to find the temp file if not in blob storage
-        if not await self.blob_storage.exists(dto.md5):
-            temp_path = self.resolve_temp_path(user, dto.inner_name)
+        if not await self.blob_storage.exists(md5):
+            temp_path = self.resolve_temp_path(user, inner_name)
             if await asyncio.to_thread(temp_path.exists):
                 # Validate MD5
                 hash_md5 = hashlib.md5()
@@ -481,9 +435,9 @@ class FileService:
                         hash_md5.update(chunk)
                 calc_md5 = hash_md5.hexdigest()
 
-                if calc_md5 != dto.md5:
-                    raise ValueError(
-                        f"Hash mismatch: expected {dto.md5}, got {calc_md5}"
+                if calc_md5 != md5:
+                    raise HashMismatchException(
+                        f"Hash mismatch: expected {md5}, got {calc_md5}"
                     )
 
                 # Promote to Blob
@@ -494,8 +448,8 @@ class FileService:
                 await asyncio.to_thread(temp_path.unlink, missing_ok=True)
             else:
                 # If neither blob nor temp file exists -> error
-                raise FileNotFoundError(
-                    f"Blob {dto.md5} not found and temporary file {dto.inner_name} missing."
+                raise InvalidPathException(
+                    f"Blob {md5} not found and temporary file {inner_name} missing."
                 )
 
         # 2. Create VFS Node
@@ -506,17 +460,15 @@ class FileService:
 
             # Using actual size from blob or DTO? DTO usually trusted or verified during promotion.
             # Ideally verify blob size.
-            blob_size = self.blob_storage.get_blob_path(dto.md5).stat().st_size
+            blob_size = self.blob_storage.get_blob_path(md5).stat().st_size
 
             await vfs.create_file(
                 user_id=user_id,
-                parent_id=dto.directory_id,
-                name=dto.file_name,
+                parent_id=directory_id,
+                name=file_name,
                 size=blob_size,
-                md5=dto.md5,
+                md5=md5,
             )
-
-        return BaseResponse()
 
     async def create_directory(self, user: str, path: str) -> FileEntity:
         """Create a directory for a specific user using VFS."""
@@ -908,18 +860,18 @@ class FileService:
 
     async def get_folders_by_ids(
         self, user: str, parent_id: int, id_list: list[int], flatten: bool = False
-    ) -> FolderListQueryVO:
+    ) -> list[FolderDetail]:
         """Get details for a list of folders, specialized for Move/Copy dialogs.
 
         Rules:
         1. id_list is an EXCLUSION filter.
         2. If flatten is True and parent_id is 0, flattened folders (Note, Document, MyStyle) are elevated.
         3. If flatten is True, root folders have a specific order: Note, Document, others.
-        4. isEmpty is 'Y' if the folder has NO sub-folders, 'N' if it DOES.
+        4. has_subfolders is True checking children.
         5. If flatten is True, root folder names are capitalized.
         """
         user_id = await self.user_service.get_user_id(user)
-        folder_vos: list[FolderVO] = []
+        results: list[FolderDetail] = []
 
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
@@ -958,11 +910,11 @@ class FileService:
             # 2. Filter exclusions from id_list
             nodes = [n for n in nodes if n.id not in id_list]
 
-            # 3. Build FolderVOs with isEmpty lookahead
+            # 3. Build FolderDetail with lookahead
             for node in nodes:
                 is_flat = flatten and parent_id == 0 and node.directory_id != 0
 
-                # Check for sub-folders (isEmpty lookahead)
+                # Check for sub-folders (lookahead)
                 children = await vfs.list_directory(user_id, node.id)
                 has_subfolders = any(c.is_folder == BooleanEnum.YES for c in children)
 
@@ -981,75 +933,56 @@ class FileService:
                     )
                     file_name = match if match else file_name.capitalize()
 
-                folder_vos.append(
-                    FolderVO(
-                        id=str(node.id),
-                        directory_id=str(0 if is_flat else node.directory_id),
-                        file_name=file_name,
-                        empty=BooleanEnum.NO if has_subfolders else BooleanEnum.YES,
-                    )
+                # Construct FileEntity with view-adjusted name
+                full_path = await vfs.get_full_path(user_id, node.id)
+
+                entity = FileEntity(
+                    id=node.id,
+                    parent_id=0
+                    if is_flat
+                    else node.directory_id,  # Report parent as 0 if flattened
+                    name=file_name,  # View-adjusted name
+                    is_folder=True,
+                    size=node.size,
+                    md5=node.md5,
+                    create_time=int(node.create_time),
+                    update_time=int(node.update_time),
+                    full_path=full_path,
+                )
+
+                results.append(
+                    FolderDetail(entity=entity, has_subfolders=has_subfolders)
                 )
 
             # 4. Sorting logic for Root
             if flatten and parent_id == 0:
                 # Specific Order: Note, Document, then others alphabetically
-                def root_sort_key(vo: FolderVO) -> tuple[int, str]:
-                    name = vo.file_name
+                def root_sort_key(detail: FolderDetail) -> tuple[int, str]:
+                    name = detail.entity.name
                     # Use ORDERED_WEB_ROOT for priority sorting
                     for i, priority_name in enumerate(ORDERED_WEB_ROOT):
                         if name.lower() == priority_name.lower():
                             return (i, name)
                     return (len(ORDERED_WEB_ROOT), name)
 
-                folder_vos.sort(key=root_sort_key)
+                results.sort(key=root_sort_key)
 
-        return FolderListQueryVO(folder_vo_list=folder_vos)
+        return results
 
-    async def list_recycle(
-        self, user: str, order: str, sequence: str, page_no: int, page_size: int
-    ) -> RecycleFileListVO:
+    async def list_recycle(self, user: str) -> list[RecycleEntity]:
         """List files in recycle bin for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
 
-        recycle_files: list[RecycleFileVO] = []
+        recycle_files: list[RecycleEntity] = []
 
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
             items = await vfs.list_recycle(user_id)
 
             for item in items:
-                recycle_files.append(
-                    RecycleFileVO(
-                        file_id=str(
-                            item.id
-                        ),  # Recycle ID, not Original File ID? Client usually wants ID to action on.
-                        # Wait, legacy physical implementation returned "trash_rel_path" ID.
-                        # Here we have RecycleFileDO.id.
-                        # But revert uses this ID.
-                        is_folder=item.is_folder,
-                        file_name=item.file_name,
-                        size=item.size,
-                        update_time=str(item.delete_time),
-                    )
-                )
+                recycle_files.append(_to_recycle_entity(item))
 
-        # Sort
-        if order == "filename":
-            recycle_files.sort(key=lambda x: x.file_name, reverse=(sequence == "desc"))
-        elif order == "size":
-            recycle_files.sort(key=lambda x: x.size, reverse=(sequence == "desc"))
-        else:  # time
-            recycle_files.sort(
-                key=lambda x: x.update_time, reverse=(sequence == "desc")
-            )
-
-        # Paginate
-        total = len(recycle_files)
-        start = (page_no - 1) * page_size
-        end = start + page_size
-        page_items = recycle_files[start:end]
-
-        return RecycleFileListVO(total=total, recycle_file_vo_list=page_items)
+        return recycle_files
 
     async def delete_from_recycle(self, user: str, id_list: list[int]) -> BaseResponse:
         """Permanently delete items from recycle bin for a specific user using VFS."""
@@ -1081,16 +1014,16 @@ class FileService:
 
     async def search_files(
         self, user: str, keyword: str, flatten: bool = False
-    ) -> list[EntriesVO]:
+    ) -> list[FileEntity]:
         """Search for files matching the keyword in user's storage.
 
         Args:
             user: User email.
             keyword: Search keyword.
-            flatten: If True, flattens paths of system folders in category containers (Web API view).
+            flatten: Deprecated. The service returns full paths. Flattening should be done by caller.
         """
         user_id = await self.user_service.get_user_id(user)
-        results: list[EntriesVO] = []
+        results: list[FileEntity] = []
 
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
@@ -1098,28 +1031,8 @@ class FileService:
 
             for item in do_list:
                 # Resolve full path using VFS recursion
-                path_display = await vfs.get_full_path(user_id, item.id)
-
-                if flatten:
-                    path_display = self._flatten_path(path_display)
-
-                parent_path = str(Path(path_display).parent)
-                if parent_path == ".":
-                    parent_path = ""
-
-                results.append(
-                    EntriesVO(
-                        tag="folder" if item.is_folder == "Y" else "file",
-                        id=str(item.id),
-                        name=item.file_name,
-                        path_display=path_display,
-                        parent_path=parent_path,
-                        size=item.size,
-                        last_update_time=item.update_time,
-                        content_hash=item.md5 or "",
-                        is_downloadable=True,  # default
-                    )
-                )
+                full_path = await vfs.get_full_path(user_id, item.id)
+                results.append(_to_file_entity(item, full_path))
 
         return results
 
@@ -1127,11 +1040,7 @@ class FileService:
         self,
         user: str,
         directory_id: int,
-        order: str,
-        sequence: str,
-        page_no: int,
-        page_size: int,
-    ) -> FileListQueryVO:
+    ) -> list[FileEntity]:
         """Query files in a directory for a specific user."""
         user_id = await self.user_service.get_user_id(user)
 
@@ -1139,53 +1048,17 @@ class FileService:
             vfs = VirtualFileSystem(session)
             items = await vfs.list_directory(user_id, directory_id)
 
-        # Flatten directory structure ONLY for root listing (web API behavior)
-        if directory_id == 0:
-            items = await self._flatten_root_directory(user_id, items)
+            # Flatten directory structure ONLY for root listing (web API behavior)
+            if directory_id == 0:
+                items = await self._flatten_root_directory(user_id, items)
 
-        # Mapping
-        user_file_vos: list[UserFileVO] = []
-        for item in items:
-            user_file_vos.append(
-                UserFileVO(
-                    id=str(item.id),
-                    directory_id=str(item.directory_id),
-                    file_name=item.file_name,
-                    size=item.size,
-                    md5=item.md5,
-                    inner_name=item.md5,
-                    is_folder=BooleanEnum.YES
-                    if item.is_folder == "Y"
-                    else BooleanEnum.NO,
-                    create_time=item.create_time,
-                    update_time=item.update_time,
-                )
-            )
+            # Mapping to FileEntity
+            file_entities: list[FileEntity] = []
+            for item in items:
+                full_path = await vfs.get_full_path(user_id, item.id)
+                file_entities.append(_to_file_entity(item, full_path))
 
-        # Sorting
-        reverse = sequence.lower() == FileSortSequence.DESC
-        if order == FileSortOrder.FILENAME:
-            user_file_vos.sort(key=lambda x: x.file_name, reverse=reverse)
-        elif order == FileSortOrder.TIME:
-            user_file_vos.sort(key=lambda x: x.update_time or 0, reverse=reverse)
-        elif order == FileSortOrder.SIZE:
-            user_file_vos.sort(key=lambda x: x.size or 0, reverse=reverse)
-
-        # Pagination
-        total = len(user_file_vos)
-        start = (page_no - 1) * page_size
-        end = start + page_size
-        page_items = user_file_vos[start:end]
-
-        pages = max(1, (total + page_size - 1) // page_size)
-
-        return FileListQueryVO(
-            total=total,
-            pages=pages,
-            page_num=page_no,
-            page_size=page_size,
-            user_file_vo_list=page_items,
-        )
+            return file_entities
 
     async def _flatten_root_directory(
         self, user_id: int, items: list[UserFileDO]

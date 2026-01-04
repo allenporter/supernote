@@ -2,37 +2,83 @@ import logging
 import urllib.parse
 import uuid
 from pathlib import Path
+from typing import TypeVar
 
 from aiohttp import web
 
-from supernote.models.base import BooleanEnum, create_error_response
+from supernote.models.base import (
+    BaseResponse,
+    BooleanEnum,
+    create_error_response,
+)
 from supernote.models.file_common import FileUploadApplyLocalVO
 from supernote.models.file_web import (
     CapacityVO,
+    EntriesVO,
     FileDeleteDTO,
     FileLabelSearchDTO,
     FileLabelSearchVO,
     FileListQueryDTO,
+    FileListQueryVO,
     FileMoveAndCopyDTO,
     FilePathQueryDTO,
     FilePathQueryVO,
     FileReNameDTO,
+    FileSortOrder,
+    FileSortSequence,
     FileUploadApplyDTO,
     FileUploadFinishDTO,
     FolderAddDTO,
     FolderListQueryDTO,
+    FolderListQueryVO,
     FolderVO,
     RecycleFileDTO,
     RecycleFileListDTO,
+    RecycleFileListVO,
+    RecycleFileVO,
+    UserFileVO,
 )
 from supernote.server.services.file import (
+    FileEntity,
     FileService,
     FileServiceException,
     InvalidPathException,
+    RecycleEntity,
 )
 
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
+
+_T = TypeVar("_T", bound=(FileEntity | RecycleEntity))
+
+
+def _sort_and_page(
+    items: list[_T],
+    sequence: FileSortSequence,
+    order: FileSortOrder,
+    page_no: int,
+    page_size: int,
+) -> tuple[list[_T], int]:
+    """Sort and paginate a list of items.
+
+    Returns:
+        tuple[list[_T], int]: the page of items and the total number of items.
+    """
+    # Sorting
+    reverse = sequence.lower() == FileSortSequence.DESC
+    if order == FileSortOrder.FILENAME:
+        items.sort(key=lambda x: x.name, reverse=reverse)
+    elif order == FileSortOrder.SIZE:
+        items.sort(key=lambda x: x.size, reverse=reverse)
+    else:  # time
+        items.sort(key=lambda x: x.sort_time, reverse=reverse)
+
+    # Pagination
+    total = len(items)
+    start = (page_no - 1) * page_size
+    end = start + page_size
+    page_items = items[start:end]
+    return page_items, total
 
 
 @routes.post("/api/file/capacity/query")
@@ -63,13 +109,32 @@ async def handle_recycle_list(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await file_service.list_recycle(
+    recycle_files = await file_service.list_recycle(
         user_email,
-        req_data.order,
+    )
+
+    page_items, total = _sort_and_page(
+        recycle_files,
         req_data.sequence,
+        req_data.order,
         req_data.page_no,
         req_data.page_size,
     )
+
+    result_items = []
+    for item in page_items:
+        result_items.append(
+            RecycleFileVO(
+                # Recycle ID, not Original File ID? Client usually wants ID to action on.
+                file_id=str(item.id),
+                is_folder="Y" if item.is_folder else "N",
+                file_name=item.name,
+                size=item.size,
+                update_time=str(item.delete_time),
+            )
+        )
+
+    response = RecycleFileListVO(total=total, recycle_file_vo_list=result_items)
     return web.json_response(response.to_dict())
 
 
@@ -138,13 +203,43 @@ async def handle_file_list_query(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await file_service.query_file_list(
+    file_entities = await file_service.query_file_list(
         user_email,
         req_data.directory_id,
-        req_data.order,
+    )
+
+    page_items, total = _sort_and_page(
+        file_entities,
         req_data.sequence,
+        req_data.order,
         req_data.page_no,
         req_data.page_size,
+    )
+
+    user_file_vos: list[UserFileVO] = []
+    for entity in page_items:
+        user_file_vos.append(
+            UserFileVO(
+                id=str(entity.id),
+                directory_id=str(entity.parent_id),
+                file_name=entity.name,
+                size=entity.size,
+                md5=entity.md5,
+                inner_name=entity.md5,  # Using md5 as inner_name compatible
+                is_folder=BooleanEnum.YES if entity.is_folder else BooleanEnum.NO,
+                create_time=entity.create_time,
+                update_time=entity.update_time,
+            )
+        )
+
+    pages = max(1, (total + req_data.page_size - 1) // req_data.page_size)
+
+    response = FileListQueryVO(
+        total=total,
+        pages=pages,
+        page_num=req_data.page_no,
+        page_size=req_data.page_size,
+        user_file_vo_list=user_file_vos,
     )
     return web.json_response(response.to_dict())
 
@@ -159,10 +254,33 @@ async def handle_file_search(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    results = await file_service.search_files(
+    file_entities = await file_service.search_files(
         user_email, req_data.keyword, flatten=True
     )
-    response = FileLabelSearchVO(entries=results)
+
+    entries_vos: list[EntriesVO] = []
+    for entity in file_entities:
+        # Web API expects flattened paths for system directories
+        path_display = file_service.flatten_path(entity.full_path)
+        parent_path = str(Path(path_display).parent)
+        if parent_path == ".":
+            parent_path = ""
+
+        entries_vos.append(
+            EntriesVO(
+                tag="folder" if entity.is_folder else "file",
+                id=str(entity.id),
+                name=entity.name,
+                path_display=path_display,
+                parent_path=parent_path,
+                size=entity.size,
+                last_update_time=entity.update_time,
+                content_hash=entity.md5 or "",
+                is_downloadable=True,
+            )
+        )
+
+    response = FileLabelSearchVO(entries=entries_vos)
     return web.json_response(response.to_dict())
 
 
@@ -205,9 +323,22 @@ async def handle_folder_list_query(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await file_service.get_folders_by_ids(
+    folder_details = await file_service.get_folders_by_ids(
         user_email, req_data.directory_id, req_data.id_list, flatten=True
     )
+
+    folder_vos: list[FolderVO] = []
+    for detail in folder_details:
+        folder_vos.append(
+            FolderVO(
+                id=str(detail.entity.id),
+                directory_id=str(detail.entity.parent_id),
+                file_name=detail.entity.name,
+                empty=BooleanEnum.NO if detail.has_subfolders else BooleanEnum.YES,
+            )
+        )
+
+    response = FolderListQueryVO(folder_vo_list=folder_vos)
     return web.json_response(response.to_dict())
 
 
@@ -317,5 +448,17 @@ async def handle_file_upload_finish(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await file_service.upload_finish_web(user_email, req_data)
-    return web.json_response(response.to_dict())
+    try:
+        await file_service.upload_finish_web(
+            user=user_email,
+            directory_id=req_data.directory_id,
+            file_name=req_data.file_name,
+            md5=req_data.md5,
+            inner_name=req_data.inner_name,
+        )
+    except InvalidPathException as e:
+        return web.json_response(create_error_response(str(e)).to_dict(), status=400)
+    except FileServiceException as e:
+        return web.json_response(create_error_response(str(e)).to_dict(), status=500)
+
+    return web.json_response(BaseResponse(success=True).to_dict())

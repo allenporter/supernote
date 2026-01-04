@@ -48,6 +48,21 @@ logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
 
 
+def _to_entries_vo(entity: FileEntity) -> EntriesVO:
+    """Convert FileEntity to EntriesVO."""
+    return EntriesVO(
+        tag=entity.tag,
+        id=str(entity.id),
+        name=entity.name,
+        path_display=entity.full_path,
+        parent_path=entity.parent_path,
+        content_hash=entity.md5 or "",
+        is_downloadable=True,
+        size=entity.size,
+        last_update_time=entity.update_time,
+    )
+
+
 SYNC_LOCK_TIMEOUT = 300  # 5 minutes
 
 
@@ -118,11 +133,12 @@ async def handle_list_folder(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    entries = await file_service.list_folder(
+    entities = await file_service.list_folder(
         user_email,
         path_str,
         req_data.recursive,
     )
+    entries = [_to_entries_vo(e) for e in entities]
 
     return web.json_response(
         ListFolderLocalVO(equipment_no=req_data.equipment_no, entries=entries).to_dict()
@@ -140,11 +156,12 @@ async def handle_list_folder_v3(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    entries = await file_service.list_folder_by_id(
+    entities = await file_service.list_folder_by_id(
         user_email,
         folder_id,
         req_data.recursive,
     )
+    entries = [_to_entries_vo(e) for e in entities]
 
     return web.json_response(
         ListFolderLocalVO(equipment_no=req_data.equipment_no, entries=entries).to_dict()
@@ -187,8 +204,8 @@ async def handle_query_by_path(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    entries_vo = await file_service.get_file_info(user_email, path_str)
-    if not entries_vo:
+    entity = await file_service.get_file_info(user_email, path_str)
+    if not entity:
         return web.json_response(
             create_error_response(error_msg="File not found").to_dict(), status=404
         )
@@ -196,7 +213,7 @@ async def handle_query_by_path(request: web.Request) -> web.Response:
     return web.json_response(
         FileQueryByPathLocalVO(
             equipment_no=req_data.equipment_no,
-            entries_vo=entries_vo,
+            entries_vo=_to_entries_vo(entity),
         ).to_dict()
     )
 
@@ -212,7 +229,9 @@ async def handle_query_v3(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    entries_vo = await file_service.get_file_info(user_email, file_id)
+    entity = await file_service.get_file_info(user_email, str(file_id))
+
+    entries_vo = _to_entries_vo(entity) if entity else None
 
     return web.json_response(
         FileQueryLocalVO(
@@ -326,7 +345,7 @@ async def handle_download_apply(request: web.Request) -> web.Response:
     # Generate signed download URL
     url_signer: UrlSigner = request.app["url_signer"]
 
-    encoded_id = urllib.parse.quote(info.id)
+    encoded_id = urllib.parse.quote(str(info.id))
     # OSS download URL: /api/oss/download?path={id}
     path_to_sign = f"/api/oss/download?path={encoded_id}"
 
@@ -338,12 +357,12 @@ async def handle_download_apply(request: web.Request) -> web.Response:
         FileDownloadLocalVO(
             equipment_no=req_data.equipment_no,
             url=download_url,
-            id=info.id,
+            id=str(info.id),
             name=info.name,
-            path_display=info.path_display,
-            content_hash=info.content_hash or "",
+            path_display=info.full_path,
+            content_hash=info.md5 or "",
             size=info.size,
-            is_downloadable=info.is_downloadable,
+            is_downloadable=True,
         ).to_dict()
     )
 
@@ -418,19 +437,6 @@ async def handle_delete_folder(request: web.Request) -> web.Response:
             equipment_no=req_data.equipment_no,
             metadata=_to_metadata_vo(deleted_item),
         ).to_dict()
-    )
-
-
-def _to_entries_vo(entity: FileEntity) -> EntriesVO:
-    return EntriesVO(
-        id=str(entity.id),
-        name=entity.name,
-        tag=entity.tag,
-        content_hash=entity.md5,
-        size=entity.size,
-        last_update_time=entity.update_time,
-        path_display=entity.full_path,
-        parent_path=entity.parent_path,
     )
 
 

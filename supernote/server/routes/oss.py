@@ -159,10 +159,10 @@ async def handle_oss_download(request: web.Request) -> web.StreamResponse:
     if not info:
         return web.Response(status=404, text="File not found")
 
-    if not info.is_downloadable or info.tag == "folder":
+    if info.is_folder:
         return web.Response(status=400, text="Not a file")
 
-    content_hash = info.content_hash
+    content_hash = info.md5
     if not content_hash:
         return web.Response(status=404, text="File content not found")
 
