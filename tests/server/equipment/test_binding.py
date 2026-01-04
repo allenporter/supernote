@@ -33,7 +33,7 @@ async def _login(client: TestClient, equipment_no: str) -> Any:
     return await resp.json()
 
 
-async def test_device_binding_lifecycle(client: TestClient) -> None:
+async def test_device_binding_lifecycle(create_test_user: Any, client: TestClient) -> None:
     equipment_a = "SN-A"
 
     # 1. Login WITHOUT binding
