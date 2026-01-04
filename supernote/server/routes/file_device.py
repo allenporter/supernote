@@ -13,16 +13,20 @@ from supernote.models.file_device import (
     CreateFolderLocalVO,
     DeleteFolderLocalDTO,
     DeleteFolderLocalVO,
+    EntriesVO,
     FileCopyLocalDTO,
+    FileCopyLocalVO,
     FileDownloadLocalDTO,
     FileDownloadLocalVO,
     FileMoveLocalDTO,
+    FileMoveLocalVO,
     FileQueryByPathLocalDTO,
     FileQueryByPathLocalVO,
     FileQueryLocalDTO,
     FileQueryLocalVO,
     FileUploadApplyLocalDTO,
     FileUploadFinishLocalDTO,
+    FileUploadFinishLocalVO,
     ListFolderLocalDTO,
     ListFolderLocalVO,
     ListFolderV2DTO,
@@ -266,29 +270,38 @@ async def handle_upload_finish(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
 
     try:
-        response = await file_service.finish_upload(
+        entity = await file_service.finish_upload(
             user_email,
             req_data.file_name,
             req_data.path,
             req_data.content_hash,
-            req_data.equipment_no or "",
         )
-    except FileNotFoundError:
-        # TODO: Update to use create_error_response
+    except InvalidPathException as err:
         return web.json_response(
-            BaseResponse(success=False, error_msg="Upload not found").to_dict(),
-            status=404,
-        )
-    except ValueError as err:
-        # TODO: Update to use create_error_response
-        return web.json_response(
-            BaseResponse(
-                success=False, error_msg=f"Failure processing upload: {err}"
-            ).to_dict(),
+            create_error_response(error_msg=str(err)).to_dict(),
             status=400,
         )
+    except FileServiceException as err:
+        return web.json_response(
+            create_error_response(error_msg=str(err)).to_dict(),
+            status=500,
+        )
+    if not entity.md5:
+        return web.json_response(
+            create_error_response(error_msg="Invalid upload missing md5").to_dict(),
+            status=500,
+        )
 
-    return web.json_response(response.to_dict())
+    return web.json_response(
+        FileUploadFinishLocalVO(
+            equipment_no=req_data.equipment_no or "",
+            path_display=entity.full_path,
+            id=str(entity.id),
+            size=entity.size,
+            name=entity.name,
+            content_hash=entity.md5 or "",
+        ).to_dict()
+    )
 
 
 @routes.post("/api/file/3/files/download_v3")
@@ -408,6 +421,19 @@ async def handle_delete_folder(request: web.Request) -> web.Response:
     )
 
 
+def _to_entries_vo(entity: FileEntity) -> EntriesVO:
+    return EntriesVO(
+        id=str(entity.id),
+        name=entity.name,
+        tag=entity.tag,
+        content_hash=entity.md5,
+        size=entity.size,
+        last_update_time=entity.update_time,
+        path_display=entity.full_path,
+        parent_path=entity.parent_path,
+    )
+
+
 @routes.post("/api/file/3/files/move_v3")
 async def handle_move_file(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/3/files/move_v3
@@ -418,14 +444,29 @@ async def handle_move_file(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await file_service.move_item(
-        user_email,
-        req_data.id,
-        req_data.to_path,
-        req_data.autorename,
-        req_data.equipment_no,
+    try:
+        result = await file_service.move_item(
+            user_email,
+            req_data.id,
+            req_data.to_path,
+            req_data.autorename,
+        )
+    except InvalidPathException as e:
+        return web.json_response(
+            create_error_response(error_msg=str(e)).to_dict(),
+            status=400,
+        )
+    except FileServiceException as e:
+        return web.json_response(
+            create_error_response(error_msg=str(e)).to_dict(),
+            status=500,
+        )
+    return web.json_response(
+        FileMoveLocalVO(
+            equipment_no=req_data.equipment_no,
+            entries_vo=_to_entries_vo(result),
+        ).to_dict()
     )
-    return web.json_response(response.to_dict())
 
 
 @routes.post("/api/file/3/files/copy_v3")
@@ -438,11 +479,26 @@ async def handle_copy_file(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await file_service.copy_item(
-        user_email,
-        req_data.id,
-        req_data.to_path,
-        req_data.autorename,
-        req_data.equipment_no,
+    try:
+        result = await file_service.copy_item(
+            user_email,
+            req_data.id,
+            req_data.to_path,
+            req_data.autorename,
+        )
+    except InvalidPathException as e:
+        return web.json_response(
+            create_error_response(error_msg=str(e)).to_dict(),
+            status=400,
+        )
+    except FileServiceException as e:
+        return web.json_response(
+            create_error_response(error_msg=str(e)).to_dict(),
+            status=500,
+        )
+    return web.json_response(
+        FileCopyLocalVO(
+            equipment_no=req_data.equipment_no,
+            entries_vo=_to_entries_vo(result),
+        ).to_dict()
     )
-    return web.json_response(response.to_dict())

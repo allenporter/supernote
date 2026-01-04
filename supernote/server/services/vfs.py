@@ -226,32 +226,58 @@ class VirtualFileSystem:
         return current_dir_id
 
     async def move_node(
-        self, user_id: int, node_id: int, new_parent_id: int, new_name: str
-    ) -> bool:
+        self,
+        user_id: int,
+        node_id: int,
+        new_parent_id: int,
+        new_name: str,
+        autorename: bool = False,
+    ) -> UserFileDO | None:
         """Move a node to a new directory."""
         node = await self.get_node_by_id(user_id, node_id)
         if not node:
-            return False
+            return None
 
-        # TODO: We should check for name collisions in the new directory
-        # and decide how to handle this (e.g. fail, overwrite, or auto rename)
+        new_name = new_name
+        # TODO: If we have a conflict, we should probably fail when autorename
+        # is disabled?
+        if autorename:
+            logger.debug("Autorename enabled for move")
+            base_name = new_name
+            ext = ""
+            if "." in base_name and not node.is_folder == "Y":
+                parts = base_name.rsplit(".", 1)
+                base_name = parts[0]
+                ext = f".{parts[1]}"
+
+            counter = 1
+            while True:
+                # Check if exists
+                exists = await self._check_exists(
+                    user_id, new_parent_id, new_name, node.is_folder
+                )
+                if not exists:
+                    break
+                new_name = f"{base_name}({counter}){ext}"
+                logger.debug(
+                    "Name collision detected, incrementing counter: %s", new_name
+                )
+                counter += 1
+
         node.directory_id = new_parent_id
         node.file_name = new_name
         node.update_time = int(time.time() * 1000)
 
         await self.db.commit()
-        return True
+        return node
 
     async def copy_node(
-        self, user_id: int, source_node_id: int, new_parent_id: int, new_name: str
-    ) -> Optional[UserFileDO]:
+        self, user_id: int, source_node_id: int, new_parent_id: int, autorename: bool
+    ) -> UserFileDO | None:
         """Copy a node."""
         node = await self.get_node_by_id(user_id, source_node_id)
         if not node:
             return None
-
-        # TODO: We should check for name collisions in the new directory
-        # and decide how to handle this (e.g. fail, overwrite, or auto rename)
 
         now_ms = int(time.time() * 1000)
 
@@ -259,6 +285,34 @@ class VirtualFileSystem:
         # automatically by the VFS? Presumably this doesn't work as is.
         # Let's add tests for that case and ensure it works.
         # For now we just copy the file.
+
+        # TODO: If we have a conflict, we should probably fail when autorename
+        # is disabled?
+
+        # Autorename Logic
+        new_name = node.file_name
+        if autorename:
+            logger.debug("Autorename enabled for copy")
+            base_name = new_name
+            ext = ""
+            if "." in base_name and not node.is_folder == "Y":
+                parts = base_name.rsplit(".", 1)
+                base_name = parts[0]
+                ext = f".{parts[1]}"
+
+            counter = 1
+            while True:
+                # Check if exists
+                exists = await self._check_exists(
+                    user_id, new_parent_id, new_name, node.is_folder
+                )
+                if not exists:
+                    break
+                new_name = f"{base_name}({counter}){ext}"
+                logger.debug(
+                    "Name collision detected, incrementing counter: %s", new_name
+                )
+                counter += 1
 
         new_node = UserFileDO(
             user_id=user_id,

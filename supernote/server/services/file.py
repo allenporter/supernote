@@ -9,11 +9,6 @@ from pathlib import Path
 import aiofiles
 
 from supernote.models.base import BaseResponse, BooleanEnum, create_error_response
-from supernote.models.file_device import (
-    FileCopyLocalVO,
-    FileMoveLocalVO,
-    FileUploadFinishLocalVO,
-)
 from supernote.models.file_web import (
     EntriesVO,
     FileListQueryVO,
@@ -75,13 +70,13 @@ class FileEntity:
     # full path of the file in the storage system with no leading or trailing slashes.
     full_path: str
 
-    # TODO: Add parent path if needed or remove after migration if not needed.
-    # We technically should be able to compute parent_path from full_path
-    # so we could also expose as a helper property method.
-    # parent_path: str | None = None
-
     def __post_init__(self) -> None:
         self.full_path = self.full_path.strip("/")
+
+    @property
+    def parent_path(self) -> str:
+        """Return the parent path of the file."""
+        return str(Path(self.full_path).parent)
 
     @property
     def tag(self) -> str:
@@ -398,8 +393,7 @@ class FileService:
         filename: str,
         path_str: str,
         content_hash: str,
-        equipment_no: str,
-    ) -> FileUploadFinishLocalVO:
+    ) -> FileEntity:
         """Finish upload for a specific user."""
         # 1. Resolve User ID
         user_id = await self.user_service.get_user_id(user)
@@ -454,20 +448,11 @@ class FileService:
                 md5=content_hash,
             )
 
-            file_id = str(new_file.id)
-
         # 4. Construct response
         clean_path = path_str.strip("/")
         full_path = f"{clean_path}/{filename}" if clean_path else filename
 
-        return FileUploadFinishLocalVO(
-            equipment_no=equipment_no,
-            path_display=full_path,
-            id=file_id,
-            size=blob_size,
-            name=filename,
-            content_hash=content_hash,
-        )
+        return _to_file_entity(new_file, full_path)
 
     async def upload_finish_web(
         self, user: str, dto: FileUploadFinishDTO
@@ -783,25 +768,29 @@ class FileService:
                         "E_SYSTEM_DIR",
                     )
 
-                await vfs.move_node(user_id, item_id, target_parent_id, node.file_name)
+                await vfs.move_node(
+                    user_id, item_id, target_parent_id, node.file_name, autorename=True
+                )
 
         return BaseResponse(success=True)
 
     async def move_item(
-        self, user: str, id: int, to_path: str, autorename: bool, equipment_no: str
-    ) -> FileMoveLocalVO:
+        self, user: str, item_id: int, to_path: str, autorename: bool = False
+    ) -> FileEntity:
         """Move a file or directory for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
 
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
-            node = await vfs.get_node_by_id(user_id, id)
+            node = await vfs.get_node_by_id(user_id, item_id)
             if not node:
-                raise FileNotFoundError("Source not found")
+                raise InvalidPathException(f"Source item {item_id} not found")
 
             # Immutability check
             if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
-                raise ValueError(f"Cannot move system directory: {node.file_name}")
+                raise InvalidPathException(
+                    f"Cannot move system directory: {node.file_name}"
+                )
 
             # Resolve destination parent
             clean_to_path = to_path.strip("/")
@@ -809,19 +798,17 @@ class FileService:
             if clean_to_path:
                 parent_id = await vfs.ensure_directory_path(user_id, clean_to_path)
 
-            # Autorename logic
-            # Simplified: if conflict, append (1)
-            # This logic should ideally be in VFS move_node or handled here by checking existence.
-            # For now, let's assume move_node returns success.
-            # If we need autorename, we need to check if name exists in parent_id.
-
-            new_name = node.file_name
-            # TODO: Implement full autorename logic using VFS existence checks?
-            # For MVP/Lite, we might just try moving.
-
-            await vfs.move_node(user_id, id, parent_id, new_name)
-
-        return FileMoveLocalVO(equipment_no=equipment_no)
+            new_node = await vfs.move_node(
+                user_id, item_id, parent_id, node.file_name, autorename
+            )
+            if not new_node:
+                raise FileServiceException(
+                    f"Moving item {item_id} to {parent_id} failed"
+                )
+            # Re-fetch the new full path for simplicity rather than trying to
+            # rebuild it.
+            full_path = await vfs.get_full_path(user_id, new_node.id)
+            return _to_file_entity(new_node, full_path)
 
     async def copy_items(
         self,
@@ -849,25 +836,27 @@ class FileService:
                     )
 
                 # Copy logic (no source parent check usually required for copy but we can add it for completeness)
-                await vfs.copy_node(user_id, item_id, target_parent_id, node.file_name)
+                await vfs.copy_node(user_id, item_id, target_parent_id, autorename=True)
 
         return BaseResponse(success=True)
 
     async def copy_item(
-        self, user: str, id: int, to_path: str, autorename: bool, equipment_no: str
-    ) -> FileCopyLocalVO:
+        self, email: str, id: int, to_path: str, autorename: bool
+    ) -> FileEntity:
         """Copy a file or directory for a specific user using VFS."""
-        user_id = await self.user_service.get_user_id(user)
+        user_id = await self.user_service.get_user_id(email)
 
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
             node = await vfs.get_node_by_id(user_id, id)
             if not node:
-                raise FileNotFoundError("Source not found")
+                raise InvalidPathException(f"Source {id} not found")
 
             # Immutability check
             if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
-                raise ValueError(f"Cannot copy system directory: {node.file_name}")
+                raise InvalidPathException(
+                    f"Cannot copy system directory: {node.file_name}"
+                )
 
             # Resolve destination parent
             clean_to_path = to_path.strip("/")
@@ -875,30 +864,16 @@ class FileService:
             if clean_to_path:
                 parent_id = await vfs.ensure_directory_path(user_id, clean_to_path)
 
-            # Autorename Logic
-            new_name = node.file_name
-            if autorename:
-                base_name = new_name
-                ext = ""
-                if "." in base_name and not node.is_folder == "Y":
-                    parts = base_name.rsplit(".", 1)
-                    base_name = parts[0]
-                    ext = f".{parts[1]}"
+            new_node = await vfs.copy_node(
+                user_id, id, parent_id, autorename=autorename
+            )
+            if not new_node:
+                raise FileServiceException(f"Copying item {id} to {parent_id} failed")
 
-                counter = 1
-                while True:
-                    # Check if exists
-                    exists = await vfs._check_exists(
-                        user_id, parent_id, new_name, node.is_folder
-                    )
-                    if not exists:
-                        break
-                    new_name = f"{base_name}({counter}){ext}"
-                    counter += 1
-
-            await vfs.copy_node(user_id, id, parent_id, new_name)
-
-        return FileCopyLocalVO(equipment_no=equipment_no)
+            # Re-fetch the new full path for simplicity rather than trying to
+            # rebuild it.
+            full_path = await vfs.get_full_path(user_id, new_node.id)
+            return _to_file_entity(new_node, full_path)
 
     async def rename_item(self, user: str, id: int, new_name: str) -> BaseResponse:
         """Rename a file or directory for a specific user using VFS."""
@@ -924,7 +899,10 @@ class FileService:
                 return create_error_response("File already exists", "E409")
 
             # Perform rename by updating name in same directory
-            await vfs.move_node(user_id, id, node.directory_id, new_name)
+            # TODO: Verify auto rename behavior here.
+            await vfs.move_node(
+                user_id, id, node.directory_id, new_name, autorename=False
+            )
 
         return BaseResponse(success=True)
 
