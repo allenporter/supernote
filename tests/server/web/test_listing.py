@@ -80,3 +80,196 @@ async def test_file_list_query_root(
         f.file_name == "FolderRoot" and f.is_folder == BooleanEnum.YES
         for f in res.user_file_vo_list
     )
+
+
+async def test_list_query_returns_default_folders(
+    web_client: WebClient,
+) -> None:
+    """Verify that default folders are returned when listing root directory."""
+    # Query root directory (directory_id=0)
+    res = await web_client.list_query(
+        directory_id=0,
+        order=FileSortOrder.FILENAME,
+        sequence=FileSortSequence.ASC,
+    )
+
+    # Extract folder names
+    folders = [
+        f.file_name for f in res.user_file_vo_list if f.is_folder == BooleanEnum.YES
+    ]
+
+    # Verify all three default folders are present
+    assert "Note" in folders
+    assert "Document" in folders
+    assert "EXPORT" in folders
+
+    # Verify each default folder has correct properties
+    for folder_name in ["Note", "Document", "EXPORT"]:
+        folder = next(f for f in res.user_file_vo_list if f.file_name == folder_name)
+        assert folder.is_folder == BooleanEnum.YES
+        assert folder.directory_id == "0"
+
+
+async def test_list_query_returns_subdirectories(
+    web_client: WebClient,
+) -> None:
+    """Verify that subdirectories are returned when listing a parent directory."""
+    # Create a parent folder
+    parent_folder = await web_client.create_folder(parent_id=0, name="ParentFolder")
+    parent_id = int(parent_folder.id)
+
+    # Create two subdirectories within the parent
+    await web_client.create_folder(parent_id=parent_id, name="SubFolder1")
+    await web_client.create_folder(parent_id=parent_id, name="SubFolder2")
+
+    # Query the parent folder by ID
+    res = await web_client.list_query(
+        directory_id=parent_id,
+        order=FileSortOrder.FILENAME,
+        sequence=FileSortSequence.ASC,
+    )
+
+    # Verify both subdirectories are returned
+    assert res.total == 2
+    folder_names = [f.file_name for f in res.user_file_vo_list]
+    assert sorted(folder_names) == ["SubFolder1", "SubFolder2"]
+
+    # Verify each subdirectory has correct properties
+    for folder in res.user_file_vo_list:
+        assert folder.is_folder == BooleanEnum.YES
+        assert folder.directory_id == str(parent_id)
+
+
+async def test_create_root_directory(
+    web_client: WebClient,
+) -> None:
+    """Verify that creating a root directory works and it appears in root listing."""
+    # Create a new folder at root level
+    new_folder = await web_client.create_folder(parent_id=0, name="NewRootFolder")
+
+    # Verify the returned folder object
+    assert new_folder.file_name == "NewRootFolder"
+    assert int(new_folder.id) > 0
+
+    # Query root directory to verify the folder appears
+    res = await web_client.list_query(
+        directory_id=0,
+        order=FileSortOrder.FILENAME,
+        sequence=FileSortSequence.ASC,
+    )
+
+    # Verify the new folder is in the listing
+    folder_names = [
+        f.file_name for f in res.user_file_vo_list if f.is_folder == BooleanEnum.YES
+    ]
+    assert "NewRootFolder" in folder_names
+
+    # Verify the folder has correct properties
+    new_folder_in_list = next(
+        f for f in res.user_file_vo_list if f.file_name == "NewRootFolder"
+    )
+    assert new_folder_in_list.is_folder == BooleanEnum.YES
+    assert new_folder_in_list.directory_id == "0"
+    assert new_folder_in_list.id == new_folder.id
+
+
+async def test_user_file_vo_all_fields_for_file(
+    web_client: WebClient,
+) -> None:
+    """Verify all UserFileVO fields are populated correctly for a file."""
+    # Create a folder to upload into
+    folder = await web_client.create_folder(parent_id=0, name="TestFolder")
+    folder_id = int(folder.id)
+
+    # Upload a file with known content
+    file_content = b"Test file content for field validation"
+    file_name = "test_file.txt"
+    await web_client.upload_file(
+        parent_id=folder_id, name=file_name, content=file_content
+    )
+
+    # Query the folder to get the file
+    res = await web_client.list_query(
+        directory_id=folder_id,
+        order=FileSortOrder.FILENAME,
+        sequence=FileSortSequence.ASC,
+    )
+
+    assert res.total == 1
+    file_vo = res.user_file_vo_list[0]
+
+    # Verify all fields are present and correct
+    assert file_vo.id is not None
+    assert file_vo.id != ""
+    assert int(file_vo.id) > 0
+
+    assert file_vo.directory_id == str(folder_id)
+
+    assert file_vo.file_name == file_name
+
+    assert file_vo.size == len(file_content)
+
+    assert file_vo.md5 is not None
+    assert len(file_vo.md5) == 32  # MD5 hash is 32 hex characters
+
+    assert file_vo.inner_name is not None
+    # inner_name should be the MD5 hash for uploaded files
+    assert file_vo.inner_name == file_vo.md5
+
+    assert file_vo.is_folder == BooleanEnum.NO
+
+    assert file_vo.create_time is not None
+    assert file_vo.create_time > 0
+
+    assert file_vo.update_time is not None
+    assert file_vo.update_time > 0
+    # Update time should be >= create time
+    assert file_vo.update_time >= file_vo.create_time
+
+
+async def test_user_file_vo_all_fields_for_folder(
+    web_client: WebClient,
+) -> None:
+    """Verify all UserFileVO fields are populated correctly for a folder."""
+    # Create a folder at root
+    folder_name = "ComprehensiveTestFolder"
+    created_folder = await web_client.create_folder(parent_id=0, name=folder_name)
+
+    # Query root to get the folder in the listing
+    res = await web_client.list_query(
+        directory_id=0,
+        order=FileSortOrder.FILENAME,
+        sequence=FileSortSequence.ASC,
+    )
+
+    # Find our folder in the results
+    folder_vo = next(f for f in res.user_file_vo_list if f.file_name == folder_name)
+
+    # Verify all fields are present and correct
+    assert folder_vo.id is not None
+    assert folder_vo.id != ""
+    assert int(folder_vo.id) > 0
+    assert folder_vo.id == created_folder.id
+
+    assert folder_vo.directory_id == "0"
+
+    assert folder_vo.file_name == folder_name
+
+    # Folders should have None or 0 for size
+    assert folder_vo.size is None or folder_vo.size == 0
+
+    # Folders should have None for md5
+    assert folder_vo.md5 is None
+
+    # Folders should have None for inner_name
+    assert folder_vo.inner_name is None
+
+    assert folder_vo.is_folder == BooleanEnum.YES
+
+    assert folder_vo.create_time is not None
+    assert folder_vo.create_time > 0
+
+    assert folder_vo.update_time is not None
+    assert folder_vo.update_time > 0
+    # Update time should be >= create time
+    assert folder_vo.update_time >= folder_vo.create_time
