@@ -9,19 +9,17 @@ from pathlib import Path
 import aiofiles
 
 from supernote.models.base import BaseResponse, BooleanEnum, create_error_response
-from supernote.models.file import (
-    EntriesVO,
-    FileSortOrder,
-    FileSortSequence,
-)
 from supernote.models.file_device import (
     FileCopyLocalVO,
     FileMoveLocalVO,
     FileUploadFinishLocalVO,
 )
 from supernote.models.file_web import (
+    EntriesVO,
     FileListQueryVO,
     FilePathQueryVO,
+    FileSortOrder,
+    FileSortSequence,
     FileUploadFinishDTO,
     FolderListQueryVO,
     FolderVO,
@@ -577,7 +575,9 @@ class FileService:
                 # Preferring this instead of idempotency for now
                 raise InvalidPathException(f"Node {id} not found for user {email}")
             if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
-                raise InvalidPathException(f"Cannot delete system directory: {node.file_name}")
+                raise InvalidPathException(
+                    f"Cannot delete system directory: {node.file_name}"
+                )
 
             path_display = await vfs.get_full_path(user_id, node.id)
             entity = _to_file_entity(node, path_display)

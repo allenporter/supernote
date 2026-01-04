@@ -73,7 +73,7 @@ The AccountController is the main controller for handling account settings reque
 
 ## 2. File Management (Web & General)
 
-See `supernote.models.file` for more information on the data models related to these API endpoints.
+See `supernote.models.file_web` for more information on the data models related to these API endpoints.
 
 ### Web File Operations
 
@@ -109,7 +109,7 @@ The FileController is the main controller for handling basic file operations req
 
 ### File Search
 
-The FileSearchController is the main controller for handling file search requests.  
+The FileSearchController is the main controller for handling file search requests.
 
 *   `POST /api/file/label/list/search`: Search by Label/Name
 
@@ -126,7 +126,7 @@ The TerminalFileUploadController is the main controller for handling terminal fi
 
 The FileLocalController is the main controller for handling cloud/nas synchronization requests.
 
-See `supernote.models.file` for more information on the data models related to these API endpoints.
+See `supernote.models.file_device` for more information on the data models related to these API endpoints.
 
 ### Sync Handshake
 

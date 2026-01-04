@@ -6,7 +6,8 @@ from pathlib import Path
 from aiohttp import web
 
 from supernote.models.base import create_error_response
-from supernote.models.file import (
+from supernote.models.file_common import FileUploadApplyLocalVO
+from supernote.models.file_web import (
     CapacityVO,
     FileDeleteDTO,
     FileLabelSearchDTO,
@@ -16,14 +17,17 @@ from supernote.models.file import (
     FilePathQueryDTO,
     FileReNameDTO,
     FileUploadApplyDTO,
-    FileUploadApplyLocalVO,
     FileUploadFinishDTO,
     FolderAddDTO,
     FolderListQueryDTO,
     RecycleFileDTO,
     RecycleFileListDTO,
 )
-from supernote.server.services.file import FileService, FileServiceException, InvalidPathException
+from supernote.server.services.file import (
+    FileService,
+    FileServiceException,
+    InvalidPathException,
+)
 
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
@@ -254,13 +258,9 @@ async def handle_file_delete(request: web.Request) -> web.Response:
             user_email, req_data.id_list, req_data.directory_id
         )
     except InvalidPathException as err:
-        return web.json_response(
-            create_error_response(str(err)).to_dict(), status=400
-        )
+        return web.json_response(create_error_response(str(err)).to_dict(), status=400)
     except FileServiceException as err:
-        return web.json_response(
-            create_error_response(str(err)).to_dict(), status=500
-        )
+        return web.json_response(create_error_response(str(err)).to_dict(), status=500)
     return web.json_response(response.to_dict())
 
 

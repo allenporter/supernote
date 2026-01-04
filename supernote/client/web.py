@@ -1,7 +1,8 @@
 import hashlib
 
 from supernote.models.base import BaseResponse
-from supernote.models.file import (
+from supernote.models.file_common import FileUploadApplyLocalVO
+from supernote.models.file_web import (
     CapacityVO,
     FileDeleteDTO,
     FileLabelSearchDTO,
@@ -15,7 +16,6 @@ from supernote.models.file import (
     FileSortOrder,
     FileSortSequence,
     FileUploadApplyDTO,
-    FileUploadApplyLocalVO,
     FileUploadFinishDTO,
     FolderAddDTO,
     FolderListQueryDTO,

@@ -5,7 +5,7 @@ from typing import AsyncGenerator, Self
 
 import aiohttp
 
-from supernote.models.file import (
+from supernote.models.file_web import (
     DownloadType,
     FileDownloadDTO,
     FileDownloadUrlVO,

@@ -8,7 +8,7 @@ from pytest_aiohttp import AiohttpClient
 
 from supernote.client import Client
 from supernote.client.cloud_client import SupernoteClient
-from supernote.models.file import FileListQueryVO
+from supernote.models.file_web import FileListQueryVO
 
 
 @dataclass

@@ -1,6 +1,10 @@
 """Tests for new File models."""
 
-from supernote.models.file import (
+from supernote.models.file_device import (
+    TerminalFileUploadApplyDTO,
+    TerminalFileUploadFinishDTO,
+)
+from supernote.models.file_web import (
     EntriesVO,
     FileQueryByPathV2DTO,
     FileQueryV2DTO,
@@ -11,8 +15,6 @@ from supernote.models.file import (
     PngDTO,
     PngPageVO,
     PngVO,
-    TerminalFileUploadApplyDTO,
-    TerminalFileUploadFinishDTO,
 )
 
 

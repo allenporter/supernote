@@ -2,7 +2,8 @@ import hashlib
 import logging
 from pathlib import Path
 
-from supernote.models.file import (
+from supernote.models.file_common import FileUploadApplyLocalVO
+from supernote.models.file_device import (
     CapacityLocalDTO,
     CapacityLocalVO,
     CreateFolderLocalDTO,
@@ -20,7 +21,6 @@ from supernote.models.file import (
     FileQueryLocalDTO,
     FileQueryLocalVO,
     FileUploadApplyLocalDTO,
-    FileUploadApplyLocalVO,
     FileUploadFinishLocalDTO,
     FileUploadFinishLocalVO,
     ListFolderLocalDTO,

@@ -1,6 +1,6 @@
 from supernote.client.web import WebClient
 from supernote.models.base import BooleanEnum
-from supernote.models.file import FileSortOrder, FileSortSequence
+from supernote.models.file_web import FileSortOrder, FileSortSequence
 
 
 async def test_file_list_query(

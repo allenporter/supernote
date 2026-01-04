@@ -1,5 +1,5 @@
 from supernote.client.web import WebClient
-from supernote.models.file import FileSortOrder, FileSortSequence
+from supernote.models.file_web import FileSortOrder, FileSortSequence
 
 
 async def test_empty_subdirectory_listing(web_client: WebClient) -> None:
