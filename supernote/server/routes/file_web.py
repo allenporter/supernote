@@ -116,7 +116,7 @@ async def handle_path_query(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await file_service.get_path_info(user_email, req_data.id)
+    response = await file_service.get_path_info(user_email, req_data.id, flatten=True)
     return web.json_response(response.to_dict())
 
 

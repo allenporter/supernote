@@ -307,6 +307,28 @@ async def test_path_query(
     assert info_p.id_path == f"0/{parent_id}"
 
 
+async def test_path_query_flattening(
+    web_client: WebClient,
+) -> None:
+    """Verify that /api/file/path/query flattens categorized folders."""
+    # Find Note folder (physically at /NOTE/Note)
+    res = await web_client.list_query(directory_id=0)
+    note_folder = next(f for f in res.user_file_vo_list if f.file_name == "Note")
+    note_id = int(note_folder.id)
+
+    # Query Path for Note
+    info = await web_client.path_query(id=note_id)
+    assert info.success
+    # Should be flattened to just "Note"
+    assert info.path == "Note"
+    # idPath should be "0/note_container_id/note_id"
+    # We don't necessarily know the container ID here but we can check format
+    parts = info.id_path.split("/")
+    assert parts[0] == "0"
+    assert parts[-1] == str(note_id)
+    assert len(parts) == 3
+
+
 async def test_list_query_flattening(
     web_client: WebClient,
 ) -> None:

@@ -273,14 +273,27 @@ class FileService:
                 last_update_time=node.update_time,
             )
 
-    async def get_path_info(self, user: str, node_id: int) -> FilePathQueryVO:
+    def _flatten_path(self, path: str) -> str:
+        """Flatten paths for items inside category containers (e.g., NOTE/Note -> Note)."""
+
+        path_parts = path.strip("/").split("/")
+        if len(path_parts) >= 2 and path_parts[0] in CATEGORY_CONTAINERS:
+            # Convert NOTE/Note/Sub -> Note/Sub
+            return "/".join(path_parts[1:])
+        return path
+
+    async def get_path_info(
+        self, user: str, node_id: int, flatten: bool = False
+    ) -> FilePathQueryVO:
         """Resolve both full path and ID path (ID/ID/ID) for a node."""
         user_id = await self.user_service.get_user_id(user)
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
 
-            # Resolve full path (e.g. /NOTE/Note)
+            # Resolve full path (e.g. NOTE/Note)
             path = await vfs.get_full_path(user_id, node_id)
+            if flatten:
+                path = self._flatten_path(path)
 
             # Resolve ID path (e.g. 0/123/456)
             id_path_list = [str(node_id)]
@@ -952,13 +965,7 @@ class FileService:
                 path_display = await vfs.get_full_path(user_id, item.id)
 
                 if flatten:
-                    # Flatten paths for items inside category containers (e.g., /NOTE/Note -> /Note)
-                    from supernote.server.constants import CATEGORY_CONTAINERS
-
-                    path_parts = path_display.strip("/").split("/")
-                    if len(path_parts) >= 2 and path_parts[0] in CATEGORY_CONTAINERS:
-                        # Convert /NOTE/Note/Sub -> /Note/Sub
-                        path_display = "/".join(path_parts[1:])
+                    path_display = self._flatten_path(path_display)
 
                 parent_path = str(Path(path_display).parent)
                 if parent_path == ".":
