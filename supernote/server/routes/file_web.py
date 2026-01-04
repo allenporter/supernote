@@ -15,6 +15,7 @@ from supernote.models.file_web import (
     FileListQueryDTO,
     FileMoveAndCopyDTO,
     FilePathQueryDTO,
+    FilePathQueryVO,
     FileReNameDTO,
     FileUploadApplyDTO,
     FileUploadFinishDTO,
@@ -122,7 +123,8 @@ async def handle_path_query(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await file_service.get_path_info(user_email, req_data.id, flatten=True)
+    path_info = await file_service.get_path_info(user_email, req_data.id, flatten=True)
+    response = FilePathQueryVO(path=path_info.path, id_path=path_info.id_path)
     return web.json_response(response.to_dict())
 
 

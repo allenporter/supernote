@@ -12,7 +12,6 @@ from supernote.models.base import BaseResponse, BooleanEnum, create_error_respon
 from supernote.models.file_web import (
     EntriesVO,
     FileListQueryVO,
-    FilePathQueryVO,
     FileSortOrder,
     FileSortSequence,
     FileUploadFinishDTO,
@@ -97,6 +96,13 @@ def _to_file_entity(node: UserFileDO, full_path: str) -> FileEntity:
         update_time=int(node.update_time),
         full_path=full_path,
     )
+
+
+@dataclass
+class PathInfo:
+    """Domain object for path information."""
+    path: str
+    id_path: str
 
 
 class FileService:
@@ -342,7 +348,7 @@ class FileService:
 
     async def get_path_info(
         self, user: str, node_id: int, flatten: bool = False
-    ) -> FilePathQueryVO:
+    ) -> PathInfo:
         """Resolve both full path and ID path for a node.
 
         Rules:
@@ -385,7 +391,7 @@ class FileService:
             if id_path:
                 id_path += "/"
 
-            return FilePathQueryVO(path=path, id_path=id_path)
+            return PathInfo(path=path, id_path=id_path)
 
     async def finish_upload(
         self,
