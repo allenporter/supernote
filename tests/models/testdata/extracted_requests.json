@@ -167,6 +167,16 @@
       "fileName": "French.note",
       "md5": "64e12ab6aa0d4c7473286d43b6a35fc8",
       "size": 6863511
+  }
+  },
+  {
+    "method": "POST",
+    "path": "/api/file/upload/finish",
+    "body": {
+      "fileName": "French.note",
+      "fileSize": 6863511,
+      "innerName": "5425f474-4d83-468b-85e9-fe2c384b4b21.note",
+      "md5": "64e12ab6aa0d4c7473286d43b6a35fc8"
     }
   }
 ]

@@ -375,10 +375,12 @@ class FileUploadApplyDTO(DataClassJSONMixin):
         /api/file/upload/apply
     """
 
-    size: int
     file_name: str = field(metadata=field_options(alias="fileName"))
+    size: int
     md5: str
+
     directory_id: int = field(metadata=field_options(alias="directoryId"), default=0)
+    """Represents the directory ID where the file will be stored."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -392,12 +394,16 @@ class FileUploadFinishDTO(DataClassJSONMixin):
         /api/file/upload/finish
     """
 
-    directory_id: int = field(metadata=field_options(alias="directoryId"))
     file_size: int = field(metadata=field_options(alias="fileSize"))
     file_name: str = field(metadata=field_options(alias="fileName"))
     md5: str
     inner_name: str = field(metadata=field_options(alias="innerName"))
     """Obfuscated storage key. Formula: {UUID}-{tail}.{ext} where tail is SN last 3 digits."""
+
+    directory_id: int | None = field(
+        metadata=field_options(alias="directoryId"), default=None
+    )
+    """Represents the directory ID where the file will be stored."""
 
     type: UploadType = UploadType.CLOUD
 
