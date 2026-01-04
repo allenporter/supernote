@@ -29,7 +29,12 @@ from supernote.models.file import (
     SynchronousStartLocalDTO,
     SynchronousStartLocalVO,
 )
-from supernote.server.services.file import FileService
+from supernote.models.file_device import (
+    CreateFolderLocalVO,
+    DeleteFolderLocalVO,
+    MetadataVO,
+)
+from supernote.server.services.file import FileEntity, FileService, FileServiceException, InvalidPathException
 from supernote.server.utils.url_signer import UrlSigner
 
 logger = logging.getLogger(__name__)
@@ -327,6 +332,15 @@ async def handle_download_apply(request: web.Request) -> web.Response:
     )
 
 
+def _to_metadata_vo(entity: FileEntity) -> MetadataVO:
+    return MetadataVO(
+        name=entity.name,
+        tag=entity.tag,
+        id=str(entity.id),
+        path_display=entity.full_path,
+    )
+
+
 @routes.post("/api/file/2/files/create_folder_v2")
 async def handle_create_folder(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/2/files/create_folder_v2
@@ -337,13 +351,24 @@ async def handle_create_folder(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await file_service.create_directory(
-        user_email,
-        req_data.path,
-        req_data.equipment_no,
+    try:
+        entry = await file_service.create_directory(user_email, req_data.path)
+    except InvalidPathException as e:
+        return web.json_response(
+            create_error_response(error_msg=str(e)).to_dict(),
+            status=400,
+        )
+    except FileServiceException as e:
+        return web.json_response(
+            create_error_response(error_msg=str(e)).to_dict(),
+            status=500,
+        )
+    return web.json_response(
+        CreateFolderLocalVO(
+            equipment_no=req_data.equipment_no,
+            metadata=_to_metadata_vo(entry),
+        ).to_dict()
     )
-
-    return web.json_response(response.to_dict())
 
 
 @routes.post("/api/file/3/files/delete_folder_v3")
@@ -356,12 +381,28 @@ async def handle_delete_folder(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await file_service.delete_item(
-        user_email,
-        req_data.id,
-        req_data.equipment_no,
+    try:
+        deleted_item = await file_service.delete_item(
+            user_email,
+            req_data.id,
+        )
+    except InvalidPathException as e:
+        return web.json_response(
+            create_error_response(error_msg=str(e)).to_dict(),
+            status=400,
+        )
+    except FileServiceException as e:
+        return web.json_response(
+            create_error_response(error_msg=str(e)).to_dict(),
+            status=500,
+        )
+
+    return web.json_response(
+        DeleteFolderLocalVO(
+            equipment_no=req_data.equipment_no,
+            metadata=_to_metadata_vo(deleted_item),
+        ).to_dict()
     )
-    return web.json_response(response.to_dict())
 
 
 @routes.post("/api/file/3/files/move_v3")

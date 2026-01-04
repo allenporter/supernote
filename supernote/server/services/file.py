@@ -3,6 +3,7 @@ import hashlib
 import logging
 import shutil
 from collections.abc import AsyncGenerator, Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import aiofiles
@@ -14,8 +15,6 @@ from supernote.models.file import (
     FileSortSequence,
 )
 from supernote.models.file_device import (
-    CreateFolderLocalVO,
-    DeleteFolderLocalVO,
     FileCopyLocalVO,
     FileMoveLocalVO,
     FileUploadFinishLocalVO,
@@ -43,6 +42,68 @@ from .user import UserService
 from .vfs import VirtualFileSystem
 
 logger = logging.getLogger(__name__)
+
+
+__all__ = [
+    "FileService",
+    "FileEntity",
+    "FileServiceException",
+    "InvalidPathException",
+]
+
+
+class FileServiceException(Exception):
+    """Exception raised by file service."""
+
+
+class InvalidPathException(FileServiceException):
+    """Exception raised when an invalid path is provided."""
+
+
+@dataclass
+class FileEntity:
+    """Domain object representing a file in the system."""
+
+    id: int
+    parent_id: int
+    name: str
+    is_folder: bool
+    size: int
+    md5: str | None
+    create_time: int
+    update_time: int
+
+    # Contextual fields computed by the service. This should be the
+    # full path of the file in the storage system with no leading or trailing slashes.
+    full_path: str
+
+    # TODO: Add parent path if needed or remove after migration if not needed.
+    # We technically should be able to compute parent_path from full_path
+    # so we could also expose as a helper property method.
+    # parent_path: str | None = None
+
+    def __post_init__(self) -> None:
+        self.full_path = self.full_path.strip("/")
+
+    @property
+    def tag(self) -> str:
+        """Return the tag of the file."""
+        return "folder" if self.is_folder else "file"
+
+
+def _to_file_entity(node: UserFileDO, full_path: str) -> FileEntity:
+    """Convert a UserFileDO to a FileEntity."""
+    return FileEntity(
+        id=node.id,
+        parent_id=node.directory_id,
+        name=node.file_name,
+        is_folder=bool(node.is_folder == "Y"),
+        size=node.size,
+        md5=node.md5,
+        create_time=int(node.create_time),
+        update_time=int(node.update_time),
+        full_path=full_path,
+    )
 
 
 class FileService:
@@ -468,19 +529,21 @@ class FileService:
 
         return BaseResponse()
 
-    async def create_directory(
-        self, user: str, path: str, equipment_no: str
-    ) -> CreateFolderLocalVO:
+    async def create_directory(self, user: str, path: str) -> FileEntity:
         """Create a directory for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
-        rel_path = path.lstrip("/")
+        rel_path = path.strip("/")
+        if not rel_path:
+            raise InvalidPathException("Cannot create root directory")
 
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
-            if rel_path:
-                await vfs.ensure_directory_path(user_id, rel_path)
+            node_id = await vfs.ensure_directory_path(user_id, rel_path)
+            node = await vfs.get_node_by_id(user_id, node_id)
+            if not node:
+                raise InvalidPathException(f"Failed to create directory: {rel_path}")
 
-        return CreateFolderLocalVO(equipment_no=equipment_no)
+            return _to_file_entity(node, rel_path)
 
     # TODO: We should be able to share code between the version that creates by path
     # and the version that creates by ID.
@@ -502,29 +565,27 @@ class FileService:
                 empty=BooleanEnum.YES,  # Newly created is empty
             )
 
-    async def delete_item(
-        self, user: str, id: int, equipment_no: str
-    ) -> DeleteFolderLocalVO:
+    async def delete_item(self, email: str, id: int) -> FileEntity:
         """Delete a file or directory for a specific user using VFS."""
-        user_id = await self.user_service.get_user_id(user)
+        user_id = await self.user_service.get_user_id(email)
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
 
             # Immutability check
             node = await vfs.get_node_by_id(user_id, id)
-            if node and node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
-                return DeleteFolderLocalVO(
-                    equipment_no=equipment_no,
-                    success=False,
-                    error_msg=f"Cannot delete system directory: {node.file_name}",
-                    error_code="E_SYSTEM_DIR",
-                )
+            if not node:
+                # Preferring this instead of idempotency for now
+                raise InvalidPathException(f"Node {id} not found for user {email}")
+            if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
+                raise InvalidPathException(f"Cannot delete system directory: {node.file_name}")
+
+            path_display = await vfs.get_full_path(user_id, node.id)
+            entity = _to_file_entity(node, path_display)
 
             success = await vfs.delete_node(user_id, id)
             if not success:
-                logger.warning(f"Delete requested for unknown ID: {id} for user {user}")
-
-        return DeleteFolderLocalVO(equipment_no=equipment_no)
+                raise InvalidPathException(f"Node {id} not found for user {email}")
+            return entity
 
     async def delete_items(
         self, user: str, id_list: list[int], parent_id: int
@@ -558,9 +619,8 @@ class FileService:
 
                 # Immutability check
                 if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
-                    return create_error_response(
-                        f"Cannot delete system directory: {node.file_name}",
-                        "E_SYSTEM_DIR",
+                    raise InvalidPathException(
+                        f"Cannot delete system directory: {node.file_name}"
                     )
 
                 await vfs.delete_node(user_id, file_id)
