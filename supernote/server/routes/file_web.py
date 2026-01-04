@@ -5,7 +5,7 @@ from pathlib import Path
 
 from aiohttp import web
 
-from supernote.models.base import create_error_response
+from supernote.models.base import BooleanEnum, create_error_response
 from supernote.models.file_common import FileUploadApplyLocalVO
 from supernote.models.file_web import (
     CapacityVO,
@@ -20,6 +20,7 @@ from supernote.models.file_web import (
     FileUploadFinishDTO,
     FolderAddDTO,
     FolderListQueryDTO,
+    FolderVO,
     RecycleFileDTO,
     RecycleFileListDTO,
 )
@@ -173,8 +174,21 @@ async def handle_folder_add(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await file_service.create_directory_by_id(
-        user_email, req_data.directory_id, req_data.file_name
+    try:
+        new_dir = await file_service.create_directory_by_id(
+            user_email, req_data.directory_id, req_data.file_name
+        )
+    except InvalidPathException as e:
+        return web.json_response(create_error_response(str(e)).to_dict(), status=400)
+    except FileServiceException as e:
+        return web.json_response(create_error_response(str(e)).to_dict(), status=500)
+
+    response = FolderVO(
+        id=str(new_dir.id),
+        directory_id=str(new_dir.parent_id),
+        file_name=new_dir.name,
+        # TODO: What is the expected behavior when targeting an existing non-empty directory?
+        empty=BooleanEnum.YES,  # Newly created is empty
     )
     return web.json_response(response.to_dict())
 

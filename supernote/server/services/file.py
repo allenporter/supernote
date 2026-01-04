@@ -532,21 +532,15 @@ class FileService:
     # and the version that creates by ID.
     async def create_directory_by_id(
         self, user: str, parent_id: int, name: str
-    ) -> FolderVO:
+    ) -> FileEntity:
         """Create a directory by parent ID for a specific user."""
         user_id = await self.user_service.get_user_id(user)
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
-            # TODO: This is not checking if the existing directory is empty
-            # or not. Its returning an existing id and we can't tell the difference.
             new_dir = await vfs.create_directory(user_id, parent_id, name)
+            full_path = await vfs.get_full_path(user_id, new_dir.id)
 
-            return FolderVO(
-                id=str(new_dir.id),
-                directory_id=str(new_dir.directory_id),
-                file_name=new_dir.file_name,
-                empty=BooleanEnum.YES,  # Newly created is empty
-            )
+            return _to_file_entity(new_dir, full_path)
 
     async def delete_item(self, email: str, id: int) -> FileEntity:
         """Delete a file or directory for a specific user using VFS."""
