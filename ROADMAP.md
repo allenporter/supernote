@@ -75,7 +75,7 @@ These features have not ben categorized or prioritized yet in the roadmap.
 - [ ] Audit use of the "inner name" and "bucket" fields for storage systems.
 - [ ] Implement proper quota allocation value.
 - [ ] Understand AllocationVO implementation details and tag.
-
+- [ ] Sync safety review: when "syn" is true we have to be concrned about dataloss. review the right approach to set this field.
 
 ### Testing & Quality
 - [ ] **Test Coverage**:
