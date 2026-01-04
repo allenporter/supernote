@@ -297,14 +297,14 @@ async def test_path_query(
     # Query Path for Child
     info = await web_client.path_query(id=child_id)
     assert info.success
-    assert info.path == "Parent/Child"
-    # idPath should be "0/parent_id/child_id"
-    assert info.id_path == f"0/{parent_id}/{child_id}"
+    assert info.path == "Parent/Child/"
+    # idPath should be "parent_id/child_id/"
+    assert info.id_path == f"{parent_id}/{child_id}/"
 
     # Query Path for Parent
     info_p = await web_client.path_query(id=parent_id)
-    assert info_p.path == "Parent"
-    assert info_p.id_path == f"0/{parent_id}"
+    assert info_p.path == "Parent/"
+    assert info_p.id_path == f"{parent_id}/"
 
 
 async def test_path_query_flattening(
@@ -319,14 +319,10 @@ async def test_path_query_flattening(
     # Query Path for Note
     info = await web_client.path_query(id=note_id)
     assert info.success
-    # Should be flattened to just "Note"
-    assert info.path == "Note"
-    # idPath should be "0/note_container_id/note_id"
-    # We don't necessarily know the container ID here but we can check format
-    parts = info.id_path.split("/")
-    assert parts[0] == "0"
-    assert parts[-1] == str(note_id)
-    assert len(parts) == 3
+    # Should be flattened to just "Note/"
+    assert info.path == "Note/"
+    # idPath should be "note_id/"
+    assert info.id_path == f"{note_id}/"
 
 
 async def test_list_query_flattening(

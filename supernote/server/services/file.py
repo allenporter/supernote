@@ -285,27 +285,47 @@ class FileService:
     async def get_path_info(
         self, user: str, node_id: int, flatten: bool = False
     ) -> FilePathQueryVO:
-        """Resolve both full path and ID path (ID/ID/ID) for a node."""
+        """Resolve both full path and ID path for a node.
+        
+        Rules:
+        - Both path and idPath end with a trailing slash (/).
+        - idPath includes the terminal item ID.
+        - idPath does NOT start with the root ID (0/).
+        - If flatten=True, category containers are stripped from both.
+        """
         user_id = await self.user_service.get_user_id(user)
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
 
-            # Resolve full path (e.g. NOTE/Note)
-            path = await vfs.get_full_path(user_id, node_id)
-            if flatten:
-                path = self._flatten_path(path)
+            # Resolve paths by walking up to root (directory_id=0)
+            path_parts: list[str] = []
+            id_path_parts: list[str] = []
 
-            # Resolve ID path (e.g. 0/123/456)
-            id_path_list = [str(node_id)]
             curr_id = node_id
             while curr_id != 0:
                 node = await vfs.get_node_by_id(user_id, curr_id)
                 if not node:
                     break
+                path_parts.insert(0, node.file_name)
+                id_path_parts.insert(0, str(node.id))
                 curr_id = node.directory_id
-                id_path_list.insert(0, str(curr_id))
 
-            id_path = "/".join(id_path_list)
+            # Apply flattening if requested for Web API
+            if flatten:
+                from supernote.server.constants import CATEGORY_CONTAINERS
+
+                if path_parts and path_parts[0] in CATEGORY_CONTAINERS:
+                    path_parts = path_parts[1:]
+                    id_path_parts = id_path_parts[1:]
+
+            # Construct strings and append trailing slashes
+            path = "/".join(path_parts)
+            if path:
+                path += "/"
+
+            id_path = "/".join(id_path_parts)
+            if id_path:
+                id_path += "/"
 
             return FilePathQueryVO(path=path, id_path=id_path)
 
