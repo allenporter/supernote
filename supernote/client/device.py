@@ -173,10 +173,7 @@ class DeviceClient:
         parent = str(Path(path).parent)
         if parent == ".":
             parent = ""
-        parent_path_str = "/" + parent if parent else "/"
-        # Ensure parent_path starts with /
-        if not parent_path_str.startswith("/"):
-            parent_path_str = "/" + parent_path_str
+        parent_path_str = parent.strip("/")
 
         return await self.upload_finish(
             file_name=filename,

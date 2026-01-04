@@ -87,10 +87,10 @@ class FileService:
                     # Construct full path display
                     # rel_path is relative to parent_path (clean_path)
                     # path_str is e.g. "/Notes" or "/"
-                    parent_clean = path_str.rstrip("/")
-                    path_display = f"{parent_clean}/{rel_path}"
-                    if not parent_clean:
-                        path_display = f"/{rel_path}"
+                    parent_clean = path_str.strip("/")
+                    path_display = (
+                        f"{parent_clean}/{rel_path}" if parent_clean else rel_path
+                    )
 
                     entries.append(
                         EntriesVO(
@@ -114,10 +114,12 @@ class FileService:
                     # This is tricky without fully qualified path in DO.
                     # But we know the parent path is path_str.
                     # path_str is e.g. "/Notes". Item name "foo.txt". -> "/Notes/foo.txt".
-                    parent_clean = path_str.rstrip("/")
-                    path_display = f"{parent_clean}/{item.file_name}"
-                    if not parent_clean:
-                        path_display = f"/{item.file_name}"
+                    parent_clean = path_str.strip("/")
+                    path_display = (
+                        f"{parent_clean}/{item.file_name}"
+                        if parent_clean
+                        else item.file_name
+                    )
 
                     entries.append(
                         EntriesVO(
@@ -125,9 +127,7 @@ class FileService:
                             id=str(item.id),
                             name=item.file_name,
                             path_display=path_display,
-                            parent_path=path_str
-                            if path_str.startswith("/")
-                            else "/" + path_str,
+                            parent_path=path_str.strip("/"),
                             content_hash=item.md5 or "",
                             is_downloadable=True,
                             size=item.size,
@@ -168,14 +168,14 @@ class FileService:
                     # rel_path is relative to folder_id
                     # if base_path is empty (root), full path is /rel_path
                     # if base_path is /foo, full path is /foo/rel_path
-                    if base_path_display == "" or base_path_display == "/":
-                        full_path = f"/{rel_path}"
-                    else:
-                        full_path = f"{base_path_display}/{rel_path}"
+                    base_path_clean = base_path_display.strip("/")
+                    full_path = (
+                        f"{base_path_clean}/{rel_path}" if base_path_clean else rel_path
+                    )
 
                     parent_path = str(Path(full_path).parent)
                     if parent_path == ".":
-                        parent_path = "/"
+                        parent_path = ""
 
                     entries.append(
                         EntriesVO(
@@ -193,13 +193,15 @@ class FileService:
             else:
                 do_list = await vfs.list_directory(user_id, folder_id)
                 for item in do_list:
-                    if base_path_display == "" or base_path_display == "/":
-                        full_path = f"/{item.file_name}"
-                    else:
-                        full_path = f"{base_path_display}/{item.file_name}"
+                    base_path_clean = base_path_display.strip("/")
+                    full_path = (
+                        f"{base_path_clean}/{item.file_name}"
+                        if base_path_clean
+                        else item.file_name
+                    )
 
                     # Parent is the folder we are listing
-                    parent_path = base_path_display if base_path_display else "/"
+                    parent_path = base_path_clean
 
                     entries.append(
                         EntriesVO(
@@ -228,8 +230,8 @@ class FileService:
                 tag="folder",
                 id="0",
                 name="",
-                path_display="/",
-                parent_path="/",  # Logical parent of root is root? or empty
+                path_display="",
+                parent_path="",  # Logical parent of root is root? or empty
                 size=0,
                 last_update_time=0,
                 content_hash="",
@@ -257,7 +259,7 @@ class FileService:
 
             parent_path = str(Path(path_display).parent)
             if parent_path == ".":
-                parent_path = "/"
+                parent_path = ""
 
             return EntriesVO(
                 tag="folder" if node.is_folder == "Y" else "file",
@@ -359,9 +361,8 @@ class FileService:
             file_id = str(new_file.id)
 
         # 4. Construct response
-        full_path = f"{path_str.rstrip('/')}/{filename}"
-        if not path_str or path_str == "/":
-            full_path = f"/{filename}"
+        clean_path = path_str.strip("/")
+        full_path = f"{clean_path}/{filename}" if clean_path else filename
 
         return FileUploadFinishLocalVO(
             equipment_no=equipment_no,
@@ -957,11 +958,11 @@ class FileService:
                     path_parts = path_display.strip("/").split("/")
                     if len(path_parts) >= 2 and path_parts[0] in CATEGORY_CONTAINERS:
                         # Convert /NOTE/Note/Sub -> /Note/Sub
-                        path_display = "/".join([""] + path_parts[1:])
+                        path_display = "/".join(path_parts[1:])
 
                 parent_path = str(Path(path_display).parent)
                 if parent_path == ".":
-                    parent_path = "/"
+                    parent_path = ""
 
                 results.append(
                     EntriesVO(

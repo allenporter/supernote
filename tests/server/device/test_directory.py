@@ -41,12 +41,12 @@ async def test_list_recursive(device_client: DeviceClient) -> None:
 
     results = sorted((e.name, e.path_display) for e in data.entries)
     assert results == [
-        ("DOCUMENT", "/DOCUMENT"),
-        ("Export", "/Export"),
-        ("Inbox", "/Inbox"),
-        ("NOTE", "/NOTE"),
-        ("Parent", "/Parent"),
-        ("Screenshot", "/Screenshot"),
+        ("DOCUMENT", "DOCUMENT"),
+        ("Export", "Export"),
+        ("Inbox", "Inbox"),
+        ("NOTE", "NOTE"),
+        ("Parent", "Parent"),
+        ("Screenshot", "Screenshot"),
     ]
 
     # List recursive from root
@@ -56,16 +56,16 @@ async def test_list_recursive(device_client: DeviceClient) -> None:
 
     results = sorted((e.name, e.path_display) for e in data.entries)
     assert results == [
-        ("Child", "/Parent/Child"),
-        ("DOCUMENT", "/DOCUMENT"),
-        ("Document", "/DOCUMENT/Document"),
-        ("Export", "/Export"),
-        ("Inbox", "/Inbox"),
-        ("MyStyle", "/NOTE/MyStyle"),
-        ("NOTE", "/NOTE"),
-        ("Note", "/NOTE/Note"),
-        ("Parent", "/Parent"),
-        ("Screenshot", "/Screenshot"),
+        ("Child", "Parent/Child"),
+        ("DOCUMENT", "DOCUMENT"),
+        ("Document", "DOCUMENT/Document"),
+        ("Export", "Export"),
+        ("Inbox", "Inbox"),
+        ("MyStyle", "NOTE/MyStyle"),
+        ("NOTE", "NOTE"),
+        ("Note", "NOTE/Note"),
+        ("Parent", "Parent"),
+        ("Screenshot", "Screenshot"),
     ]
 
 
@@ -88,7 +88,7 @@ async def test_list_subdirectory(device_client: DeviceClient) -> None:
 
     # Expect FolderB. Path display should be full path /FolderA/FolderB
     assert results == [
-        ("FolderB", "/FolderA/FolderB", "/FolderA"),
+        ("FolderB", "FolderA/FolderB", "FolderA"),
     ]
 
     # List flat from FolderA
@@ -98,5 +98,5 @@ async def test_list_subdirectory(device_client: DeviceClient) -> None:
 
     results = sorted((e.name, e.path_display, e.parent_path) for e in data.entries)
     assert results == [
-        ("FolderB", "/FolderA/FolderB", "/FolderA"),
+        ("FolderB", "FolderA/FolderB", "FolderA"),
     ]

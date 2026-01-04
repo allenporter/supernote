@@ -120,5 +120,5 @@ async def test_web_search_path_flattening(web_client: WebClient) -> None:
     # Search should report /Note
     search_res = await web_client.search(keyword="Note")
     note_entry = next(e for e in search_res.entries if e.name == "Note")
-    assert note_entry.path_display == "/Note"
-    assert note_entry.parent_path == "/"
+    assert note_entry.path_display == "Note"
+    assert note_entry.parent_path == ""

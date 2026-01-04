@@ -81,5 +81,5 @@ async def test_search_path_reconstruction(
     entry = data.entries[0]
 
     assert entry.name == "DeepTarget"
-    assert entry.path_display == "/Nested/Folder/DeepTarget"
-    assert entry.parent_path == "/Nested/Folder"
+    assert entry.path_display == "Nested/Folder/DeepTarget"
+    assert entry.parent_path == "Nested/Folder"

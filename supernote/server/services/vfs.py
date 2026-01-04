@@ -198,7 +198,7 @@ class VirtualFileSystem:
             current_id = node.directory_id
             depth += 1
 
-        return "/" + "/".join(path_parts)
+        return "/".join(path_parts)
 
     async def ensure_directory_path(self, user_id: int, path: str) -> int:
         """Ensure a directory path exists, creating if necessary. Returns the final directory ID."""

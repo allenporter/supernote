@@ -297,13 +297,13 @@ async def test_path_query(
     # Query Path for Child
     info = await web_client.path_query(id=child_id)
     assert info.success
-    assert info.path == "/Parent/Child"
+    assert info.path == "Parent/Child"
     # idPath should be "0/parent_id/child_id"
     assert info.id_path == f"0/{parent_id}/{child_id}"
 
     # Query Path for Parent
     info_p = await web_client.path_query(id=parent_id)
-    assert info_p.path == "/Parent"
+    assert info_p.path == "Parent"
     assert info_p.id_path == f"0/{parent_id}"
 
 

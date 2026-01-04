@@ -45,4 +45,4 @@ async def test_device_vs_web_structure(
 
     assert web_note.id == str(device_note.id)
     assert web_note.directory_id == "0"
-    assert device_note.parent_path == "/NOTE"
+    assert device_note.parent_path == "NOTE"
