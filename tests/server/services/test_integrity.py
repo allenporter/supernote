@@ -22,7 +22,7 @@ async def test_integrity_check(
     await device_client.create_folder(path="/Docs", equipment_no="test")
 
     # Create the correct file
-    await device_client.upload_content("Docs/good.txt", "content", equipment_no="test")
+    await device_client.upload_content("Docs/good.txt", b"content", equipment_no="test")
 
     # Corrupt Data (Simulate missing blob)
     md5 = hashlib.md5(b"content").hexdigest()
@@ -32,7 +32,7 @@ async def test_integrity_check(
 
     # Corrupt Data (Simulate size mismatch)
     await device_client.upload_content(
-        "Docs/bad_size.txt", "content2", equipment_no="test"
+        "Docs/bad_size.txt", b"content2", equipment_no="test"
     )
 
     # Manually update VFS size to be wrong

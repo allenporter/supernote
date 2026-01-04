@@ -501,24 +501,26 @@ class FileService:
 
     async def save_temp_file(
         self, user: str, filename: str, chunk_reader: Callable[[], Awaitable[bytes]]
-    ) -> int:
-        """Save data to user's temp file."""
+    ) -> tuple[int, str]:
+        """Save data to user's temp file. Returns (total_bytes, md5_hash)."""
         temp_path = self.resolve_temp_path(user, filename)
         temp_path.parent.mkdir(parents=True, exist_ok=True)
 
         loop = asyncio.get_running_loop()
         f = await loop.run_in_executor(None, open, temp_path, "wb")
         total_bytes = 0
+        hash_md5 = hashlib.md5()
         try:
             while True:
                 chunk = await chunk_reader()
                 if not chunk:
                     break
                 await loop.run_in_executor(None, f.write, chunk)
+                hash_md5.update(chunk)
                 total_bytes += len(chunk)
         finally:
             await loop.run_in_executor(None, f.close)
-        return total_bytes
+        return total_bytes, hash_md5.hexdigest()
 
     async def save_chunk_file(
         self,
@@ -527,28 +529,31 @@ class FileService:
         filename: str,
         part_number: int,
         chunk_reader: Callable[[], Awaitable[bytes]],
-    ) -> int:
-        """Save a single chunk."""
+    ) -> tuple[int, str]:
+        """Save a single chunk. Returns (total_bytes, md5_hash)."""
         chunk_path = self.get_chunk_path(user, upload_id, filename, part_number)
         chunk_path.parent.mkdir(parents=True, exist_ok=True)
 
         loop = asyncio.get_running_loop()
         f = await loop.run_in_executor(None, open, chunk_path, "wb")
         total_bytes = 0
+        hash_md5 = hashlib.md5()
         try:
             while True:
                 chunk = await chunk_reader()
                 if not chunk:
                     break
                 await loop.run_in_executor(None, f.write, chunk)
+                hash_md5.update(chunk)
                 total_bytes += len(chunk)
         finally:
             await loop.run_in_executor(None, f.close)
 
+        chunk_md5 = hash_md5.hexdigest()
         logger.info(
-            f"Saved chunk {part_number} for {filename} (user: {user}): {total_bytes} bytes"
+            f"Saved chunk {part_number} for {filename} (user: {user}): {total_bytes} bytes, MD5: {chunk_md5}"
         )
-        return total_bytes
+        return total_bytes, chunk_md5
 
     async def merge_chunks(
         self, user: str, upload_id: str, filename: str, total_chunks: int

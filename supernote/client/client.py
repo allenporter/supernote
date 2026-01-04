@@ -1,5 +1,6 @@
 """Library for accessing backups in Supenote Cloud."""
 
+import hashlib
 import logging
 import uuid
 from typing import Any, Type, TypeVar
@@ -9,7 +10,7 @@ from aiohttp import FormData
 from aiohttp.client_exceptions import ClientError
 
 from supernote.models.base import BaseResponse
-from supernote.models.system import FileChunkParams
+from supernote.models.system import FileChunkParams, FileChunkVO, UploadFileVO
 
 from .auth import AbstractAuth
 from .exceptions import ApiException, ForbiddenException, UnauthorizedException
@@ -258,35 +259,87 @@ class Client:
         if size < chunk_size or part_upload_url is None:
             if full_upload_url is None:
                 raise ValueError("No upload URL available")
-            _LOGGER.debug("Uploading file %s in one chunk", filename)
+
+            # Compute MD5 of content for verification
+            content_md5 = hashlib.md5(content).hexdigest()
+
+            _LOGGER.debug(
+                "Uploading file %s in one chunk (MD5: %s)", filename, content_md5
+            )
             data = FormData()
             data.add_field("file", content, filename=filename)
             # Pass empty dict to headers to avoid default application/json Content-Type
-            await self.request(
-                "post",
-                full_upload_url,
-                data=data,
-                headers={},
+            try:
+                resp = await self.request(
+                    "post",
+                    full_upload_url,
+                    data=data,
+                    headers={},
+                )
+            except ClientError as err:
+                raise ApiException("Failed to upload file") from err
+            # Parse the UploadFileVO response
+            try:
+                result = await resp.text()
+            except ClientError:
+                raise ApiException("Server returned malformed response")
+            _LOGGER.debug("Upload response: %s", result)
+            try:
+                upload_vo = UploadFileVO.from_json(result)
+            except (LookupError, ValueError) as err:
+                raise ApiException(
+                    f"Server returned malformed upload response: {result}"
+                ) from err
+            if not upload_vo.success:
+                raise ApiException(f"Upload failed: {upload_vo.error_msg}")
+
+            # Verify MD5 matches
+            if upload_vo.md5 != content_md5:
+                raise ApiException(
+                    f"MD5 mismatch: client={content_md5}, server={upload_vo.md5}"
+                )
+            return
+
+        upload_id = uuid.uuid4().hex
+        # Break into chunks
+        chunks = [content[i : i + chunk_size] for i in range(0, size, chunk_size)]
+        for i, chunk in enumerate(chunks):
+            chunk_md5 = hashlib.md5(chunk).hexdigest()
+            _LOGGER.debug(f"Uploading chunk {i + 1} of {size} ({len(chunk)} bytes)")
+            data = FormData()
+            data.add_field("file", chunk, filename=filename)
+            params = FileChunkParams(
+                upload_id=upload_id,
+                part_number=i + 1,
+                total_chunks=len(chunks),
             )
-        else:
-            upload_id = uuid.uuid4().hex
-            # Break into chunks
-            chunks = [content[i : i + chunk_size] for i in range(0, size, chunk_size)]
-            for i, chunk in enumerate(chunks):
-                _LOGGER.debug(
-                    f"Uploading chunk {i + 1} of {len(chunks)} ({len(chunk)} bytes)"
-                )
-                data = FormData()
-                data.add_field("file", chunk, filename=filename)
-                params = FileChunkParams(
-                    upload_id=upload_id,
-                    part_number=i + 1,
-                    total_chunks=len(chunks),
-                )
-                await self.request(
+            try:
+                resp = await self.request(
                     "post",
                     part_upload_url,
                     data=data,
                     params={k: v for k, v in params.to_dict().items() if v is not None},
                     headers={},
+                )
+            except ApiException as err:
+                raise ApiException(f"Chunk upload failed: {err}")
+            try:
+                result = await resp.text()
+            except ClientError as err:
+                raise ApiException("Failed to get chunk response") from err
+            try:
+                _LOGGER.debug("Chunk response: %s", result)
+                chunk_vo = FileChunkVO.from_json(result)
+            except (LookupError, ValueError) as err:
+                raise ApiException(
+                    f"Server returned malformed chunk response: {result}"
+                ) from err
+
+            if not chunk_vo.success:
+                raise ApiException(f"Chunk upload failed: {chunk_vo.error_msg}")
+
+            # Verify MD5 matches
+            if chunk_vo.chunk_md5 != chunk_md5:
+                raise ApiException(
+                    f"Chunk {i + 1} MD5 mismatch: client={chunk_md5}, server={chunk_vo.chunk_md5}"
                 )

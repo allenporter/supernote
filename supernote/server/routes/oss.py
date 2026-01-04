@@ -6,7 +6,7 @@ import logging
 from aiohttp import BodyPartReader, web
 
 from supernote.models.base import create_error_response
-from supernote.models.system import FileChunkParams, FileChunkVO
+from supernote.models.system import FileChunkParams, FileChunkVO, UploadFileVO
 from supernote.server.services.file import FileService
 from supernote.server.utils.url_signer import UrlSigner
 
@@ -44,13 +44,19 @@ async def handle_oss_upload(request: web.Request) -> web.Response:
     reader = await request.multipart()
     field = await reader.next()
     if isinstance(field, BodyPartReader) and field.name == "file":
-        total_bytes = await file_service.save_temp_file(
+        total_bytes, md5_hash = await file_service.save_temp_file(
             user_email, object_name, field.read_chunk
         )
         logger.info(
-            f"Received OSS upload for {object_name} (user: {user_email}): {total_bytes} bytes"
+            f"Received OSS upload for {object_name} (user: {user_email}): {total_bytes} bytes, MD5: {md5_hash}"
         )
-        return web.Response(status=200)
+
+        # Return UploadFileVO with innerName and md5
+        response = UploadFileVO(
+            inner_name=object_name,
+            md5=md5_hash,
+        )
+        return web.json_response(response.to_dict())
 
     return web.Response(status=400, text="No file field found")
 
@@ -88,7 +94,7 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
     reader = await request.multipart()
     field = await reader.next()
     if isinstance(field, BodyPartReader) and field.name == "file":
-        await file_service.save_chunk_file(
+        total_bytes, chunk_md5 = await file_service.save_chunk_file(
             user_email,
             params.upload_id,
             params.object_name,
@@ -96,7 +102,7 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
             field.read_chunk,
         )
         logger.info(
-            f"Received chunk {params.part_number} for {params.object_name} (uploadId: {params.upload_id})"
+            f"Received chunk {params.part_number} for {params.object_name} (uploadId: {params.upload_id}): {total_bytes} bytes, MD5: {chunk_md5}"
         )
 
         # Implicit Merge Logic (for Device Compatibility)
@@ -116,11 +122,12 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
                 )
                 logger.info(f"Successfully merged chunks for {params.object_name}")
 
-        # Return FileChunkVO
+        # Return FileChunkVO with chunk MD5
         resp_vo = FileChunkVO(
             upload_id=params.upload_id,
             part_number=params.part_number,
             total_chunks=params.total_chunks,
+            chunk_md5=chunk_md5,
             status="success",
         )
         return web.json_response(resp_vo.to_dict())
