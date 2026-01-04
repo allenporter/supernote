@@ -18,13 +18,13 @@ from supernote.models.file import (
     FileListQueryDTO,
     FileQueryByPathLocalDTO,
     FileQueryLocalDTO,
+    FileUploadApplyDTO,
     FileUploadApplyLocalDTO,
+    FileUploadFinishDTO,
     FileUploadFinishLocalDTO,
     ListFolderV2DTO,
     SynchronousEndLocalDTO,
     SynchronousStartLocalDTO,
-    FileUploadApplyDTO,
-    FileUploadFinishDTO,
 )
 from supernote.models.user import (
     UserCheckDTO,

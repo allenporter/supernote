@@ -9,9 +9,9 @@ the shared session_manager fixture. The default 'relaxed' mode is tested here,
 and strict/disabled modes can be verified through manual testing or integration
 tests with separate server instances.
 """
+
 import pytest
 from aiohttp.test_utils import TestClient
-from pathlib import Path
 
 from supernote.models.file import FileUploadApplyLocalDTO
 

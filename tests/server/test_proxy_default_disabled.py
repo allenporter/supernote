@@ -1,5 +1,4 @@
 """Test that proxy mode is disabled by default."""
-import pytest
 from aiohttp.test_utils import TestClient
 
 from supernote.models.file import FileUploadApplyLocalDTO
