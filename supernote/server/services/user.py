@@ -27,6 +27,7 @@ from ..db.models.login_record import LoginRecordDO
 from ..db.models.user import UserDO
 from ..db.session import DatabaseSessionManager
 from .coordination import CoordinationService
+from .vfs import VirtualFileSystem
 
 RANDOM_CODE_TTL = datetime.timedelta(minutes=5)
 
@@ -104,6 +105,34 @@ class UserService:
         await session.flush()
         return new_user
 
+    async def _create_system_directories(self, user_id: int) -> None:
+        """Create the standard Supernote directory structure for a new user.
+
+        Creates the real two-level structure used by device firmware:
+        - System folders at root (Export, Inbox, Screenshot)
+        - Category containers (NOTE, DOCUMENT) with children
+
+        This structure is stored as-is in the database. The web API will
+        flatten it during listing operations.
+        """
+        async with self._session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+
+            # System folders at root (directoryId=0) - always visible
+            await vfs.create_directory(user_id, 0, "Export")
+            await vfs.create_directory(user_id, 0, "Inbox")
+            await vfs.create_directory(user_id, 0, "Screenshot")
+
+            # Category containers with children (for device firmware compatibility)
+            note_parent = await vfs.create_directory(user_id, 0, "NOTE")
+            await vfs.create_directory(user_id, note_parent.id, "Note")
+            await vfs.create_directory(user_id, note_parent.id, "MyStyle")
+
+            doc_parent = await vfs.create_directory(user_id, 0, "DOCUMENT")
+            await vfs.create_directory(user_id, doc_parent.id, "Document")
+
+            await session.commit()
+
     async def register(self, dto: UserRegisterDTO) -> UserDO:
         """Register a new user (Public/Self-Service)."""
         async with self._session_manager.session() as session:
@@ -119,7 +148,10 @@ class UserService:
             )
             await session.commit()
             await session.refresh(new_user)
-            return new_user
+
+        # Create system directories after user is committed
+        await self._create_system_directories(new_user.id)
+        return new_user
 
     async def create_user(self, dto: UserRegisterDTO) -> UserDO:
         """Create a new user (Admin/System). Skips registration enabled check."""
@@ -127,7 +159,10 @@ class UserService:
             new_user = await self._create_user_entry(session, dto, is_admin=False)
             await session.commit()
             await session.refresh(new_user)
-            return new_user
+
+        # Create system directories after user is committed
+        await self._create_system_directories(new_user.id)
+        return new_user
 
     async def unregister(self, account: str) -> None:
         """Delete a user."""
@@ -204,9 +239,11 @@ class UserService:
     ) -> LoginVO | None:
         user = await self._get_user_do(account)
         if not user or not user.is_active:
+            logger.debug("User %s not found or not active", account)
             return None
 
         if not await self.verify_login_hash(account, password_hash, timestamp):
+            logger.debug("Invalid login hash for user %s", account)
             return None
 
         # Check binding status from DB

@@ -43,7 +43,7 @@ async def test_equipment_unlink(client: TestClient) -> None:
     assert data == {"success": True}
 
 
-async def test_check_user_exists(client: TestClient) -> None:
+async def test_check_user_exists(create_test_user: None, client: TestClient) -> None:
     resp = await client.post(
         "/api/official/user/check/exists/server",
         json={"email": TEST_USERNAME, "version": "202407"},
@@ -53,7 +53,9 @@ async def test_check_user_exists(client: TestClient) -> None:
     assert data == {"success": True}
 
 
-async def test_login_flow(client: TestClient, login_client: LoginClient) -> None:
+async def test_login_flow(
+    create_test_user: None, client: TestClient, login_client: LoginClient
+) -> None:
     """Test login flow."""
     login_result = await login_client.login_equipment(
         TEST_USERNAME, TEST_PASSWORD, "SN123456"

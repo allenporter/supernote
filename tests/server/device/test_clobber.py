@@ -14,12 +14,7 @@ from supernote.server.services.user import JWT_ALGORITHM
 
 USER_A = "user_a@example.com"
 USER_B = "user_b@example.com"
-
-
-@pytest.fixture
-def mock_storage() -> None:
-    """Stop the default directory creation."""
-    pass
+DEFAULT_FOLDERS = ["Export", "Inbox", "Screenshot", "NOTE", "DOCUMENT"]
 
 
 @pytest.fixture
@@ -151,11 +146,11 @@ async def test_multi_user_content_with_same_paths(
 
     # User A list files should see their file
     entries_a = await file_client_a.list_folder(path="/", equipment_no="EQ001")
-    assert [e.name for e in entries_a.entries] == ["shared.note"]
+    assert [e.name for e in entries_a.entries] == [*DEFAULT_FOLDERS, "shared.note"]
 
     # User B list files should NOT see User A's file
     entries_b = await file_client_b.list_folder(path="/", equipment_no="EQ002")
-    assert [e.name for e in entries_b.entries] == []
+    assert [e.name for e in entries_b.entries] == DEFAULT_FOLDERS
 
     # User B uploads a file with the same name
     content_b = b"Content from User B"

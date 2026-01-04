@@ -13,7 +13,6 @@ import jwt
 import pytest
 from aiohttp.test_utils import TestClient
 from pytest_aiohttp import AiohttpClient
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.pool import StaticPool
 
@@ -21,9 +20,9 @@ from supernote.client.auth import AbstractAuth
 from supernote.client.client import Client
 from supernote.client.device import DeviceClient
 from supernote.client.web import WebClient
+from supernote.models.user import UserRegisterDTO
 from supernote.server.app import create_app
 from supernote.server.config import AuthConfig, ServerConfig
-from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage, LocalBlobStorage
 from supernote.server.services.coordination import (
@@ -56,7 +55,7 @@ def mock_trace_log(tmp_path: Path) -> Generator[str, None, None]:
 @pytest.fixture
 def proxy_mode() -> str | None:
     """Default proxy mode for tests. Can be overridden by individual tests.
-    
+
     Defaults to None (disabled) to match production default behavior.
     Tests that need proxy header handling should override this fixture.
     """
@@ -103,29 +102,27 @@ def coordination_service(
 @pytest.fixture
 async def test_users() -> list[str]:
     """Fixture with test users to create."""
-    return [TEST_USERNAME, "a"]
+    return [TEST_USERNAME, "a@example.com"]
 
 
 @pytest.fixture
 async def create_test_user(
-    session_manager: DatabaseSessionManager, test_users: list[str]
+    user_service: UserService,
+    session_manager: DatabaseSessionManager,
+    test_users: list[str],
 ) -> None:
     """Create the default test user in the database."""
 
-    async with session_manager.session() as session:
-        for test_user in test_users:
-            stmt = select(UserDO).where(UserDO.email == test_user)
-            result = await session.execute(stmt)
-            user = result.scalar_one_or_none()
-            if not user:
-                user = UserDO(
-                    email=test_user,
-                    password_md5=hashlib.md5(TEST_PASSWORD.encode("utf-8")).hexdigest(),
-                    is_active=True,
-                    display_name="Test User",
-                )
-                session.add(user)
-                await session.commit()
+    for test_user in test_users:
+        result = await user_service.create_user(
+            UserRegisterDTO(
+                email=test_user,
+                password=hashlib.md5(TEST_PASSWORD.encode("utf-8")).hexdigest(),
+                user_name="Test User",
+            )
+        )
+        assert result.id
+        assert result.is_active
 
 
 @pytest.fixture(name="auth_headers")
@@ -197,13 +194,13 @@ def user_service(
     return UserService(server_config.auth, coordination_service, session_manager)
 
 
-@pytest.fixture(autouse=True)
-async def mock_storage(test_users: list[str], device_client: DeviceClient) -> None:
-    """Mock storage setup for the default device_client user."""
-    if test_users:
-        await device_client.create_folder("Note", "TEST_DEVICE")
-        await device_client.create_folder("Document", "TEST_DEVICE")
-        await device_client.create_folder("EXPORT", "TEST_DEVICE")
+# @pytest.fixture(autouse=True)
+# async def mock_storage(test_users: list[str], device_client: DeviceClient) -> None:
+#     """Mock storage setup for the default device_client user."""
+#     if test_users:
+#         # await device_client.create_folder("Note", "TEST_DEVICE")
+#         # await device_client.create_folder("Document", "TEST_DEVICE")
+#         # await device_client.create_folder("EXPORT", "TEST_DEVICE")
 
 
 @pytest.fixture(name="client")

@@ -66,8 +66,8 @@ async def test_integrity_check(
     assert report.missing_blob == 1
     assert report.size_mismatch == 1
     # Scanned: 3 (default folders) + Docs + good + bad_size = 6
-    assert report.scanned == 6
-    assert report.ok == 4  # 4 folders (3 default + Docs) are OK.
+    assert report.scanned == 11
+    assert report.ok == 9  # Some default folders are ok
 
 
 async def test_integrity_orphans(

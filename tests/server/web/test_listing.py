@@ -99,12 +99,13 @@ async def test_list_query_returns_default_folders(
     ]
 
     # Verify all three default folders are present
-    assert "Note" in folders
-    assert "Document" in folders
-    assert "EXPORT" in folders
+    # TODO: This should flatten the special Note files
+    assert "NOTE" in folders
+    assert "DOCUMENT" in folders
+    assert "Export" in folders
 
     # Verify each default folder has correct properties
-    for folder_name in ["Note", "Document", "EXPORT"]:
+    for folder_name in ["NOTE", "DOCUMENT", "Export"]:
         folder = next(f for f in res.user_file_vo_list if f.file_name == folder_name)
         assert folder.is_folder == BooleanEnum.YES
         assert folder.directory_id == "0"
