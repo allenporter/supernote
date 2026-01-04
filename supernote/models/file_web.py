@@ -165,7 +165,10 @@ class FolderAddDTO(DataClassJSONMixin):
     """
 
     file_name: str = field(metadata=field_options(alias="fileName"))
-    directory_id: int = field(metadata=field_options(alias="directoryId"))
+    """The name of the folder."""
+
+    directory_id: int = field(metadata=field_options(alias="directoryId"), default=0)
+    """The parent directory ID. If not specified, the root directory is used."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
