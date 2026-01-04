@@ -8,6 +8,8 @@ from supernote.models.file import (
     FileLabelSearchVO,
     FileListQueryDTO,
     FileListQueryVO,
+    FilePathQueryDTO,
+    FilePathQueryVO,
     FileSortOrder,
     FileSortSequence,
     FileUploadApplyDTO,
@@ -51,6 +53,13 @@ class WebClient:
         )
         return await self._client.post_json(
             "/api/file/list/query", FileListQueryVO, json=dto.to_dict()
+        )
+
+    async def path_query(self, id: int) -> FilePathQueryVO:
+        """Query file path (Web API)."""
+        dto = FilePathQueryDTO(id=id)
+        return await self._client.post_json(
+            "/api/file/path/query", FilePathQueryVO, json=dto.to_dict()
         )
 
     async def get_capacity_web(self) -> CapacityVO:
@@ -107,12 +116,12 @@ class WebClient:
         id_list: list[int],
         parent_id: int = 0,
         equipment_no: str | None = None,
-    ) -> None:
+    ) -> BaseResponse:
         """Delete files/folders (Web API)."""
         dto = FileDeleteDTO(
             id_list=id_list, directory_id=parent_id, equipment_no=equipment_no
         )
-        await self._client.post_json(
+        return await self._client.post_json(
             "/api/file/delete", BaseResponse, json=dto.to_dict()
         )
 

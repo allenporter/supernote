@@ -8,7 +8,7 @@ from pathlib import Path
 import aiofiles
 
 from supernote.models.base import BaseResponse, BooleanEnum, create_error_response
-from supernote.models.file_common import (
+from supernote.models.file import (
     EntriesVO,
     FileSortOrder,
     FileSortSequence,
@@ -22,13 +22,16 @@ from supernote.models.file_device import (
 )
 from supernote.models.file_web import (
     FileListQueryVO,
+    FilePathQueryVO,
     FileUploadFinishDTO,
     FolderVO,
     RecycleFileListVO,
     RecycleFileVO,
     UserFileVO,
 )
+from supernote.server.constants import CATEGORY_CONTAINERS, IMMUTABLE_SYSTEM_DIRECTORIES
 
+from ..db.models.file import UserFileDO
 from ..db.session import DatabaseSessionManager
 from .blob import BlobStorage
 from .user import UserService
@@ -267,6 +270,29 @@ class FileService:
                 last_update_time=node.update_time,
             )
 
+    async def get_path_info(self, user: str, node_id: int) -> FilePathQueryVO:
+        """Resolve both full path and ID path (ID/ID/ID) for a node."""
+        user_id = await self.user_service.get_user_id(user)
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+
+            # Resolve full path (e.g. /NOTE/Note)
+            path = await vfs.get_full_path(user_id, node_id)
+
+            # Resolve ID path (e.g. 0/123/456)
+            id_path_list = [str(node_id)]
+            curr_id = node_id
+            while curr_id != 0:
+                node = await vfs.get_node_by_id(user_id, curr_id)
+                if not node:
+                    break
+                curr_id = node.directory_id
+                id_path_list.insert(0, str(curr_id))
+
+            id_path = "/".join(id_path_list)
+
+            return FilePathQueryVO(path=path, id_path=id_path)
+
     async def finish_upload(
         self,
         user: str,
@@ -444,6 +470,17 @@ class FileService:
         user_id = await self.user_service.get_user_id(user)
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
+
+            # Immutability check
+            node = await vfs.get_node_by_id(user_id, id)
+            if node and node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
+                return DeleteFolderLocalVO(
+                    equipment_no=equipment_no,
+                    success=False,
+                    error_msg=f"Cannot delete system directory: {node.file_name}",
+                    error_code="E_SYSTEM_DIR",
+                )
+
             success = await vfs.delete_node(user_id, id)
             if not success:
                 logger.warning(f"Delete requested for unknown ID: {id} for user {user}")
@@ -464,8 +501,27 @@ class FileService:
                     continue  # Already gone?
 
                 if node.directory_id != parent_id:
+                    # Special case for flattened Web API: allow parent_id=0 if it's a categorized folder
+                    is_categorized = False
+                    # We need to know if it's a child of a category container
+                    async with self.session_manager.session() as sess:
+                        vfs_i = VirtualFileSystem(sess)
+                        parent_node = await vfs_i.get_node_by_id(
+                            user_id, node.directory_id
+                        )
+                        if parent_node and parent_node.file_name in CATEGORY_CONTAINERS:
+                            is_categorized = True
+
+                    if not (parent_id == 0 and is_categorized):
+                        return create_error_response(
+                            f"File {file_id} is not in directory {parent_id}", "E400"
+                        )
+
+                # Immutability check
+                if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
                     return create_error_response(
-                        f"File {file_id} is not in directory {parent_id}", "E400"
+                        f"Cannot delete system directory: {node.file_name}",
+                        "E_SYSTEM_DIR",
                     )
 
                 await vfs.delete_node(user_id, file_id)
@@ -784,6 +840,10 @@ class FileService:
             vfs = VirtualFileSystem(session)
             items = await vfs.list_directory(user_id, directory_id)
 
+        # Flatten directory structure ONLY for root listing (web API behavior)
+        if directory_id == 0:
+            items = await self._flatten_root_directory(user_id, items)
+
         # Mapping
         user_file_vos: list[UserFileVO] = []
         for item in items:
@@ -827,3 +887,61 @@ class FileService:
             page_size=page_size,
             user_file_vo_list=page_items,
         )
+
+    async def _flatten_root_directory(
+        self, user_id: int, items: list[UserFileDO]
+    ) -> list[UserFileDO]:
+        """Flatten categorized folders to appear at root level (web API only).
+
+        Transforms:
+            NOTE/ (hidden)
+            NOTE/Note → Note (directoryId=0)
+            NOTE/MyStyle → MyStyle (directoryId=0)
+            DOCUMENT/ (hidden)
+            DOCUMENT/Document → Document (directoryId=0)
+        """
+        # Category containers to flatten
+        CATEGORY_FOLDERS = {"NOTE", "DOCUMENT"}
+
+        # Find category parent IDs
+        parent_map = {
+            item.id: item.file_name
+            for item in items
+            if item.file_name in CATEGORY_FOLDERS
+        }
+
+        if not parent_map:
+            return items  # No flattening needed
+
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+            flattened = []
+
+            # Keep system folders (Export, Inbox, Screenshot) and others not in categories
+            for item in items:
+                if item.file_name not in CATEGORY_FOLDERS:
+                    flattened.append(item)
+
+            # Add children of category folders, modified to appear at root
+            for parent_id in parent_map.keys():
+                children = await vfs.list_directory(user_id, parent_id)
+                for child in children:
+                    # Clone and modify directory_id to 0 for web API view
+                    # We don't modify the actual DO we got from DB, just the list we return
+                    # Actually, SQLAlchemy might track these if we just modify them.
+                    # Let's create shallow copies of the DO specifically for the VO mapping.
+                    child_copy = UserFileDO(
+                        id=child.id,
+                        user_id=child.user_id,
+                        directory_id=0,  # Flattened to root
+                        file_name=child.file_name,
+                        size=child.size,
+                        md5=child.md5,
+                        is_folder=child.is_folder,
+                        is_active=child.is_active,
+                        create_time=child.create_time,
+                        update_time=child.update_time,
+                    )
+                    flattened.append(child_copy)
+
+        return flattened

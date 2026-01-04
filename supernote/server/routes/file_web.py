@@ -11,6 +11,7 @@ from supernote.models.file import (
     FileLabelSearchDTO,
     FileLabelSearchVO,
     FileListQueryDTO,
+    FilePathQueryDTO,
     FileUploadApplyDTO,
     FileUploadApplyLocalVO,
     FileUploadFinishDTO,
@@ -99,6 +100,20 @@ async def handle_recycle_clear(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
 
     response = await file_service.clear_recycle(user_email)
+    return web.json_response(response.to_dict())
+
+
+@routes.post("/api/file/path/query")
+async def handle_path_query(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/path/query
+    # Purpose: Resolve file path and ID path.
+    # Response: FilePathQueryVO
+
+    req_data = FilePathQueryDTO.from_dict(await request.json())
+    user_email = request["user"]
+    file_service: FileService = request.app["file_service"]
+
+    response = await file_service.get_path_info(user_email, req_data.id)
     return web.json_response(response.to_dict())
 
 

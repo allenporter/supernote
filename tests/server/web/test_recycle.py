@@ -2,6 +2,7 @@ import pytest
 
 from supernote.client.exceptions import ApiException
 from supernote.client.web import WebClient
+from supernote.server.constants import IMMUTABLE_SYSTEM_DIRECTORIES
 
 
 async def test_soft_delete_to_recycle(
@@ -102,23 +103,28 @@ async def test_recycle_clear(
     # Default folders
     list_folder_result = await web_client.list_query(directory_id=0)
     assert list_folder_result
-    assert len(list_folder_result.user_file_vo_list) == 5
+    assert len(list_folder_result.user_file_vo_list) == 6
 
     # Create and delete multiple folders
     for name in ["Folder1", "Folder2", "Folder3"]:
         await web_client.create_folder(parent_id=0, name=name)
 
     list_result = await web_client.list_query(directory_id=0)
-    assert list_result.total == 8
+    assert list_result.total == 9
 
-    # Delete everything
-    ids_to_delete = [int(f.id) for f in list_result.user_file_vo_list]
+    # Delete ONLY the new folders (skip immutable system folders)
+    ids_to_delete = [
+        int(f.id)
+        for f in list_result.user_file_vo_list
+        if f.file_name not in IMMUTABLE_SYSTEM_DIRECTORIES
+    ]
+    assert len(ids_to_delete) == 3
     await web_client.file_delete(id_list=ids_to_delete)
 
-    # Verify 8 items in recycle bin
+    # Verify 3 items in recycle bin
     recycle_list_result = await web_client.recycle_list(page_no=1, page_size=20)
     assert recycle_list_result
-    assert recycle_list_result.total == 8
+    assert recycle_list_result.total == 3
 
     # Clear recycle bin
     await web_client.recycle_clear()
