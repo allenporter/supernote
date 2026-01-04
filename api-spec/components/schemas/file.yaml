@@ -77,7 +77,7 @@ FolderListQueryDTO:
       items:
         type: integer
         format: int64
-      description: "List of folder IDs to EXCLUDE from results. Used in Move/Copy dialogs to prevent selecting a folder or a file's parent folder as a destination."
+      description: "List of IDs to filter out from the returned folder list. Primary purpose is to hide the folder(s) being moved so they cannot be selected as their own destination."
   required:
     - directoryId
     - idList
