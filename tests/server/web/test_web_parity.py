@@ -114,8 +114,14 @@ async def test_web_folder_list_query_spec(web_client: WebClient) -> None:
         directory_id=0, id_list=[self_excl_id]
     )
     names_self_excl = [f.file_name for f in res_self_excl.folder_vo_list]
-    assert "SelfExclusionFolder" not in names_self_excl
-    assert "Document" in names_self_excl  # Should still see other folders
+    assert names_self_excl == [
+        "Note",
+        "Document",
+        "Export",
+        "Inbox",
+        "MyStyle",
+        "Screenshot",
+    ]
 
     # isEmpty Lookahead (sub-folders only)
     # Create a folder with a file (should be empty=Y because it only checks for folders)
