@@ -5,6 +5,7 @@ FileListQueryDTO:
     directoryId:
       type: integer
       format: int64
+      description: "Parent directory ID. Use 0 for root. Note: Web API (queryUserFileList) performs 'collapsing' for the root directory, hiding internal NOTE/DOCUMENT folders and lifting their children (Note, Document, MyStyle) to the top level."
     order:
       type: string
       description: "Sort by: filename, time, size"
@@ -76,6 +77,7 @@ FolderListQueryDTO:
       items:
         type: integer
         format: int64
+      description: "List of folder IDs to EXCLUDE from results. Used in Move/Copy dialogs to prevent selecting a folder or a file's parent folder as a destination."
   required:
     - directoryId
     - idList
@@ -89,9 +91,10 @@ FolderVO:
       type: string
     fileName:
       type: string
+      description: "Folder name, may have capitalization updated display consistency."
     empty:
       type: string
-      description: "Y: Empty, N: Not Empty"
+      description: "Lookahead for sub-folders only (files are ignored). Y: No sub-folders, N: Contains sub-folders. Used by web client for tree expandability."
 
 FolderListQueryVO:
   type: object
@@ -127,6 +130,7 @@ FileDeleteDTO:
       items:
         type: integer
         format: int64
+      description: "List of internal IDs for files or folders to be deleted."
     directoryId:
       type: integer
       format: int64
@@ -332,8 +336,10 @@ FilePathQueryVO:
       properties:
         path:
           type: string
+          description: "Slash-separated relative path. For web queries, the 'NOTE/' or 'DOCUMENT/' prefix is stripped to match the flattened UI (e.g., 'Note/MyFile'). Includes the item name and ends with a trailing slash."
         idPath:
           type: string
+          description: "Slash-separated IDs from root. Includes the target item's own ID and ends with a trailing slash (e.g., '123/456/')."
 
 FileUploadApplyDTO:
   type: object
@@ -608,7 +614,7 @@ SynchronousStartLocalVO:
           type: string
         synType:
           type: boolean
-          description: "true: normal sync, false: full re-upload"
+          description: "Sync Mode. true: Differential sync (Data exists on server). false: Initialization mode (Server is empty, triggers device-to-server upload). CRITICAL: If set to true while server is unexpectedly empty, the device may incorrectly perceive this as a mass deletion."
 
 SynchronousEndLocalVO:
   type: object

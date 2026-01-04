@@ -9,6 +9,7 @@ SummaryItem:
     fileId:
       type: integer
       format: int64
+      description: The numeric database ID of the source file.
     name:
       type: string
     userId:
@@ -16,12 +17,15 @@ SummaryItem:
       format: int64
     uniqueIdentifier:
       type: string
+      description: The unique UUID of the summary connection, typically matching the source file's UUID.
     parentUniqueIdentifier:
       type: string
+      description: The unique UUID of the parent folder or summary group.
     content:
       type: string
     sourcePath:
       type: string
+      description: The full path to the source file (e.g. /Document/Note/MyNote.note).
     dataSource:
       type: string
     sourceType:
@@ -29,12 +33,14 @@ SummaryItem:
       format: int32
     isSummaryGroup:
       type: string
+      description: Flag indicating if this item is a group/folder for other summaries ('Y' or 'N').
     description:
       type: string
     tags:
       type: string
     md5Hash:
       type: string
+      description: MD5 hash of the summary content itself.
     metadata:
       type: string
       description: JSON string
@@ -46,6 +52,7 @@ SummaryItem:
       type: string
     handwriteMD5:
       type: string
+      description: MD5 hash of the associated handwriting data.
     creationTime:
       type: integer
       format: int64
