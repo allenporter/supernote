@@ -30,7 +30,11 @@ from supernote.models.file_web import (
     RecycleFileVO,
     UserFileVO,
 )
-from supernote.server.constants import CATEGORY_CONTAINERS, IMMUTABLE_SYSTEM_DIRECTORIES
+from supernote.server.constants import (
+    CATEGORY_CONTAINERS,
+    IMMUTABLE_SYSTEM_DIRECTORIES,
+    ORDERED_WEB_ROOT,
+)
 
 from ..db.models.file import UserFileDO
 from ..db.session import DatabaseSessionManager
@@ -286,7 +290,7 @@ class FileService:
         self, user: str, node_id: int, flatten: bool = False
     ) -> FilePathQueryVO:
         """Resolve both full path and ID path for a node.
-        
+
         Rules:
         - Both path and idPath end with a trailing slash (/).
         - idPath includes the terminal item ID.
@@ -865,27 +869,101 @@ class FileService:
         return BaseResponse(success=True)
 
     async def get_folders_by_ids(
-        self, user: str, parent_id: int, id_list: list[int]
+        self, user: str, parent_id: int, id_list: list[int], flatten: bool = False
     ) -> FolderListQueryVO:
-        """Get details for a list of folders."""
+        """Get details for a list of folders, specialized for Move/Copy dialogs.
+
+        Rules:
+        1. id_list is an EXCLUSION filter.
+        2. If flatten is True and parent_id is 0, flattened folders (Note, Document, MyStyle) are elevated.
+        3. If flatten is True, root folders have a specific order: Note, Document, others.
+        4. isEmpty is 'Y' if the folder has NO sub-folders, 'N' if it DOES.
+        5. If flatten is True, root folder names are capitalized.
+        """
         user_id = await self.user_service.get_user_id(user)
         folder_vos: list[FolderVO] = []
 
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
-            for folder_id in id_list:
-                node = await vfs.get_node_by_id(user_id, folder_id)
-                if node and node.is_folder == "Y":
-                    # Check if empty
-                    children = await vfs.list_directory(user_id, folder_id)
-                    folder_vos.append(
-                        FolderVO(
-                            id=str(node.id),
-                            directory_id=str(node.directory_id),
-                            file_name=node.file_name,
-                            empty=BooleanEnum.YES if not children else BooleanEnum.NO,
-                        )
+
+            # 1. Fetch all folders in the parent directory
+            if flatten and parent_id == 0:
+                # Web API Root Flattening
+                # - Fetch children of NOTE and DOCUMENT
+                # - Include MyStyle (which is already at root)
+                nodes: list[File] = []
+
+                # Get category nodes first
+                category_id_map: dict[str, int] = {}
+                root_nodes = await vfs.list_directory(user_id, 0)
+                for node in root_nodes:
+                    if node.is_folder == BooleanEnum.YES:
+                        if node.file_name in CATEGORY_CONTAINERS:
+                            category_id_map[node.file_name] = node.id
+                        else:
+                            # Include all other root folders (Export, Inbox, Screenshot, MyStyle etc)
+                            nodes.append(node)
+
+                # Fetch children of NOTE and DOCUMENT
+                for cat_name in CATEGORY_CONTAINERS:
+                    if cat_name in category_id_map:
+                        cat_id = category_id_map[cat_name]
+                        cat_children = await vfs.list_directory(user_id, cat_id)
+                        for child in cat_children:
+                            if child.is_folder == BooleanEnum.YES:
+                                # Mark as flattened to repo-root for directory_id reporting
+                                nodes.append(child)
+            else:
+                raw_nodes = await vfs.list_directory(user_id, parent_id)
+                nodes = [n for n in raw_nodes if n.is_folder == BooleanEnum.YES]
+
+            # 2. Filter exclusions from id_list
+            nodes = [n for n in nodes if n.id not in id_list]
+
+            # 3. Build FolderVOs with isEmpty lookahead
+            for node in nodes:
+                is_flat = flatten and parent_id == 0 and node.directory_id != 0
+
+                # Check for sub-folders (isEmpty lookahead)
+                children = await vfs.list_directory(user_id, node.id)
+                has_subfolders = any(c.is_folder == BooleanEnum.YES for c in children)
+
+                file_name = node.file_name
+                if flatten and parent_id == 0:
+                    # Match case with immutable directories if possible, else capitalize
+                    # This ensures "MyStyle" stays "MyStyle" instead of "Mystyle"
+                    match = next(
+                        (
+                            s
+                            for s in IMMUTABLE_SYSTEM_DIRECTORIES
+                            if s.lower() == file_name.lower()
+                            and s not in CATEGORY_CONTAINERS
+                        ),
+                        None,
                     )
+                    file_name = match if match else file_name.capitalize()
+
+                folder_vos.append(
+                    FolderVO(
+                        id=str(node.id),
+                        directory_id=str(0 if is_flat else node.directory_id),
+                        file_name=file_name,
+                        empty=BooleanEnum.NO if has_subfolders else BooleanEnum.YES,
+                    )
+                )
+
+            # 4. Sorting logic for Root
+            if flatten and parent_id == 0:
+                # Specific Order: Note, Document, then others alphabetically
+                def root_sort_key(vo: FolderVO):
+                    name = vo.file_name
+                    # Use ORDERED_WEB_ROOT for priority sorting
+                    for i, priority_name in enumerate(ORDERED_WEB_ROOT):
+                        if name.lower() == priority_name.lower():
+                            return (i, name)
+                    return (len(ORDERED_WEB_ROOT), name)
+
+                folder_vos.sort(key=root_sort_key)
 
         return FolderListQueryVO(folder_vo_list=folder_vos)
 

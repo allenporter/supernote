@@ -185,7 +185,7 @@ async def handle_folder_list_query(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
 
     response = await file_service.get_folders_by_ids(
-        user_email, req_data.directory_id, req_data.id_list
+        user_email, req_data.directory_id, req_data.id_list, flatten=True
     )
     return web.json_response(response.to_dict())
 

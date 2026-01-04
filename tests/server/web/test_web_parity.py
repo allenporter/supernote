@@ -83,18 +83,47 @@ async def test_web_copy_items(web_client: WebClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_web_folder_list_query(web_client: WebClient) -> None:
-    # 1. Create a folder
-    res = await web_client.create_folder(parent_id=0, name="QueryFolder")
-    folder_id = int(res.id)
+async def test_web_folder_list_query_spec(web_client: WebClient) -> None:
+    """Comprehensive test for api/file/folder/list/query specification."""
+    # 1. Root Level Flattening and Ordering
+    # Note: physically at /NOTE/Note
+    # Document: physically at /DOCUMENT/Document
+    # MyStyle: physically at root /MyStyle
+    res = await web_client.folder_list_query(directory_id=0, id_list=[])
+    folders = res.folder_vo_list
 
-    # 2. Query folder list
-    resp = await web_client.folder_list_query(directory_id=0, id_list=[folder_id])
+    # Check for presence and capitalization
+    names = [f.file_name for f in folders]
+    assert names == ["Note", "Document", "Export", "Inbox", "MyStyle", "Screenshot"]
 
-    # 3. Verify response
-    assert resp.folder_vo_list
-    folders = resp.folder_vo_list
-    assert len(folders) == 1
+    # 2. Exclusion Filter (idList)
+    note_id = int(next(f for f in folders if f.file_name == "Note").id)
+    res_excl = await web_client.folder_list_query(directory_id=0, id_list=[note_id])
+    names_excl = [f.file_name for f in res_excl.folder_vo_list]
+    assert names_excl == ["Document", "Export", "Inbox", "MyStyle", "Screenshot"]
+
+    # 3. isEmpty Lookahead (sub-folders only)
+    # Create a folder with a file (should be empty=Y because it only checks for folders)
+    await web_client.create_folder(parent_id=0, name="ParentFolder")
+    root_res = await web_client.folder_list_query(directory_id=0, id_list=[])
+    parent_vo = next(
+        f for f in root_res.folder_vo_list if f.file_name == "Parentfolder"
+    )
+    parent_id = int(parent_vo.id)
+    assert parent_vo.empty == "Y"
+
+    # Add a sub-folder (should become empty=N)
+    await web_client.create_folder(parent_id=parent_id, name="SubFolder")
+    root_res_2 = await web_client.folder_list_query(directory_id=0, id_list=[])
+    parent_vo_2 = next(
+        f for f in root_res_2.folder_vo_list if f.file_name == "Parentfolder"
+    )
+    assert parent_vo_2.empty == "N"
+
+    # Check the sub-folder itself (should be empty=Y)
+    sub_res = await web_client.folder_list_query(directory_id=parent_id, id_list=[])
+    sub_vo = next(f for f in sub_res.folder_vo_list if f.file_name == "SubFolder")
+    assert sub_vo.empty == "Y"
 
 
 @pytest.mark.asyncio

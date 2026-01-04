@@ -14,3 +14,6 @@ IMMUTABLE_SYSTEM_DIRECTORIES = {
 
 # Category containers (hidden from web API)
 CATEGORY_CONTAINERS = {"NOTE", "DOCUMENT"}
+
+# Forced order and specific names for web API root (when flatten=True)
+ORDERED_WEB_ROOT = ["Note", "Document"]
