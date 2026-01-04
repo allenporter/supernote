@@ -24,6 +24,7 @@ from supernote.models.file_web import (
     FileListQueryVO,
     FilePathQueryVO,
     FileUploadFinishDTO,
+    FolderListQueryVO,
     FolderVO,
     RecycleFileListVO,
     RecycleFileVO,
@@ -643,6 +644,51 @@ class FileService:
             except OSError as e:
                 logger.warning(f"Failed to cleanup chunks {upload_id}: {e}")
 
+    async def move_items(
+        self,
+        user: str,
+        id_list: list[int],
+        source_parent_id: int,
+        target_parent_id: int,
+    ) -> BaseResponse:
+        """Batch move items for a specific user."""
+        user_id = await self.user_service.get_user_id(user)
+
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+            for item_id in id_list:
+                node = await vfs.get_node_by_id(user_id, item_id)
+                if not node:
+                    continue
+
+                if node.directory_id != source_parent_id:
+                    # Special case for flattened Web API: allow source_parent_id=0 if it's a categorized folder
+                    from supernote.server.constants import CATEGORY_CONTAINERS
+
+                    is_categorized = False
+                    async with self.session_manager.session() as sess:
+                        vfs_i = VirtualFileSystem(sess)
+                        p_node = await vfs_i.get_node_by_id(user_id, node.directory_id)
+                        if p_node and p_node.file_name in CATEGORY_CONTAINERS:
+                            is_categorized = True
+
+                    if not (source_parent_id == 0 and is_categorized):
+                        return create_error_response(
+                            f"Item {item_id} is not in directory {source_parent_id}",
+                            "E400",
+                        )
+
+                # Immutability check
+                if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
+                    return create_error_response(
+                        f"Cannot move system directory: {node.file_name}",
+                        "E_SYSTEM_DIR",
+                    )
+
+                await vfs.move_node(user_id, item_id, target_parent_id, node.file_name)
+
+        return BaseResponse(success=True)
+
     async def move_item(
         self, user: str, id: int, to_path: str, autorename: bool, equipment_no: str
     ) -> FileMoveLocalVO:
@@ -654,6 +700,10 @@ class FileService:
             node = await vfs.get_node_by_id(user_id, id)
             if not node:
                 raise FileNotFoundError("Source not found")
+
+            # Immutability check
+            if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
+                raise ValueError(f"Cannot move system directory: {node.file_name}")
 
             # Resolve destination parent
             clean_to_path = to_path.strip("/")
@@ -675,6 +725,36 @@ class FileService:
 
         return FileMoveLocalVO(equipment_no=equipment_no)
 
+    async def copy_items(
+        self,
+        user: str,
+        id_list: list[int],
+        source_parent_id: int,
+        target_parent_id: int,
+    ) -> BaseResponse:
+        """Batch copy items for a specific user."""
+        user_id = await self.user_service.get_user_id(user)
+
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+            for item_id in id_list:
+                node = await vfs.get_node_by_id(user_id, item_id)
+                if not node:
+                    continue
+
+                # Check immutability? Usually copy is allowed, but let's be safe.
+                # Actually device API copy_item blocks it too.
+                if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
+                    return create_error_response(
+                        f"Cannot copy system directory: {node.file_name}",
+                        "E_SYSTEM_DIR",
+                    )
+
+                # Copy logic (no source parent check usually required for copy but we can add it for completeness)
+                await vfs.copy_node(user_id, item_id, target_parent_id, node.file_name)
+
+        return BaseResponse(success=True)
+
     async def copy_item(
         self, user: str, id: int, to_path: str, autorename: bool, equipment_no: str
     ) -> FileCopyLocalVO:
@@ -686,6 +766,10 @@ class FileService:
             node = await vfs.get_node_by_id(user_id, id)
             if not node:
                 raise FileNotFoundError("Source not found")
+
+            # Immutability check
+            if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
+                raise ValueError(f"Cannot copy system directory: {node.file_name}")
 
             # Resolve destination parent
             clean_to_path = to_path.strip("/")
@@ -717,6 +801,59 @@ class FileService:
             await vfs.copy_node(user_id, id, parent_id, new_name)
 
         return FileCopyLocalVO(equipment_no=equipment_no)
+
+    async def rename_item(self, user: str, id: int, new_name: str) -> BaseResponse:
+        """Rename a file or directory for a specific user using VFS."""
+        user_id = await self.user_service.get_user_id(user)
+
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+            node = await vfs.get_node_by_id(user_id, id)
+            if not node:
+                return create_error_response("Source not found", "E404")
+
+            # Immutability check
+            if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
+                return create_error_response(
+                    f"Cannot rename system directory: {node.file_name}", "E_SYSTEM_DIR"
+                )
+
+            # Check if name already exists in same directory
+            exists = await vfs._check_exists(
+                user_id, node.directory_id, new_name, node.is_folder
+            )
+            if exists:
+                return create_error_response("File already exists", "E409")
+
+            # Perform rename by updating name in same directory
+            await vfs.move_node(user_id, id, node.directory_id, new_name)
+
+        return BaseResponse(success=True)
+
+    async def get_folders_by_ids(
+        self, user: str, parent_id: int, id_list: list[int]
+    ) -> FolderListQueryVO:
+        """Get details for a list of folders."""
+        user_id = await self.user_service.get_user_id(user)
+        folder_vos: list[FolderVO] = []
+
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+            for folder_id in id_list:
+                node = await vfs.get_node_by_id(user_id, folder_id)
+                if node and node.is_folder == "Y":
+                    # Check if empty
+                    children = await vfs.list_directory(user_id, folder_id)
+                    folder_vos.append(
+                        FolderVO(
+                            id=str(node.id),
+                            directory_id=str(node.directory_id),
+                            file_name=node.file_name,
+                            empty=BooleanEnum.YES if not children else BooleanEnum.NO,
+                        )
+                    )
+
+        return FolderListQueryVO(folder_vo_list=folder_vos)
 
     async def list_recycle(
         self, user: str, order: str, sequence: str, page_no: int, page_size: int
@@ -792,8 +929,16 @@ class FileService:
 
         return BaseResponse()
 
-    async def search_files(self, user: str, keyword: str) -> list[EntriesVO]:
-        """Search for files matching the keyword in user's storage."""
+    async def search_files(
+        self, user: str, keyword: str, flatten: bool = False
+    ) -> list[EntriesVO]:
+        """Search for files matching the keyword in user's storage.
+
+        Args:
+            user: User email.
+            keyword: Search keyword.
+            flatten: If True, flattens paths of system folders in category containers (Web API view).
+        """
         user_id = await self.user_service.get_user_id(user)
         results: list[EntriesVO] = []
 
@@ -804,6 +949,16 @@ class FileService:
             for item in do_list:
                 # Resolve full path using VFS recursion
                 path_display = await vfs.get_full_path(user_id, item.id)
+
+                if flatten:
+                    # Flatten paths for items inside category containers (e.g., /NOTE/Note -> /Note)
+                    from supernote.server.constants import CATEGORY_CONTAINERS
+
+                    path_parts = path_display.strip("/").split("/")
+                    if len(path_parts) >= 2 and path_parts[0] in CATEGORY_CONTAINERS:
+                        # Convert /NOTE/Note/Sub -> /Note/Sub
+                        path_display = "/".join([""] + path_parts[1:])
+
                 parent_path = str(Path(path_display).parent)
                 if parent_path == ".":
                     parent_path = "/"
@@ -878,7 +1033,7 @@ class FileService:
         end = start + page_size
         page_items = user_file_vos[start:end]
 
-        pages = (total + page_size - 1) // page_size
+        pages = max(1, (total + page_size - 1) // page_size)
 
         return FileListQueryVO(
             total=total,

@@ -11,11 +11,14 @@ from supernote.models.file import (
     FileLabelSearchDTO,
     FileLabelSearchVO,
     FileListQueryDTO,
+    FileMoveAndCopyDTO,
     FilePathQueryDTO,
+    FileReNameDTO,
     FileUploadApplyDTO,
     FileUploadApplyLocalVO,
     FileUploadFinishDTO,
     FolderAddDTO,
+    FolderListQueryDTO,
     RecycleFileDTO,
     RecycleFileListDTO,
 )
@@ -148,7 +151,9 @@ async def handle_file_search(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    results = await file_service.search_files(user_email, req_data.keyword)
+    results = await file_service.search_files(
+        user_email, req_data.keyword, flatten=True
+    )
     response = FileLabelSearchVO(entries=results)
     return web.json_response(response.to_dict())
 
@@ -165,6 +170,70 @@ async def handle_folder_add(request: web.Request) -> web.Response:
 
     response = await file_service.create_directory_by_id(
         user_email, req_data.directory_id, req_data.file_name
+    )
+    return web.json_response(response.to_dict())
+
+
+@routes.post("/api/file/folder/list/query")
+async def handle_folder_list_query(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/folder/list/query
+    # Purpose: Query details for a list of folders.
+    # Response: FolderListQueryVO
+
+    req_data = FolderListQueryDTO.from_dict(await request.json())
+    user_email = request["user"]
+    file_service: FileService = request.app["file_service"]
+
+    response = await file_service.get_folders_by_ids(
+        user_email, req_data.directory_id, req_data.id_list
+    )
+    return web.json_response(response.to_dict())
+
+
+@routes.post("/api/file/move")
+async def handle_file_move_web(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/move
+    # Purpose: Move files/folders (Web).
+    # Response: BaseResponse
+
+    req_data = FileMoveAndCopyDTO.from_dict(await request.json())
+    user_email = request["user"]
+    file_service: FileService = request.app["file_service"]
+
+    response = await file_service.move_items(
+        user_email, req_data.id_list, req_data.directory_id, req_data.go_directory_id
+    )
+    return web.json_response(response.to_dict())
+
+
+@routes.post("/api/file/copy")
+async def handle_file_copy_web(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/copy
+    # Purpose: Copy files/folders (Web).
+    # Response: BaseResponse
+
+    req_data = FileMoveAndCopyDTO.from_dict(await request.json())
+    user_email = request["user"]
+    file_service: FileService = request.app["file_service"]
+
+    response = await file_service.copy_items(
+        user_email, req_data.id_list, req_data.directory_id, req_data.go_directory_id
+    )
+    return web.json_response(response.to_dict())
+
+
+@routes.post("/api/file/rename")
+async def handle_file_rename_web(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/rename
+    # Purpose: Rename file/folder (Web).
+    # Response: BaseResponse
+
+    req_data = FileReNameDTO.from_dict(await request.json())
+    user_email = request["user"]
+    file_service: FileService = request.app["file_service"]
+
+    response = await file_service.rename_item(
+        user_email, req_data.id, req_data.new_name
     )
     return web.json_response(response.to_dict())
 

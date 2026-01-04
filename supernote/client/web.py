@@ -8,14 +8,18 @@ from supernote.models.file import (
     FileLabelSearchVO,
     FileListQueryDTO,
     FileListQueryVO,
+    FileMoveAndCopyDTO,
     FilePathQueryDTO,
     FilePathQueryVO,
+    FileReNameDTO,
     FileSortOrder,
     FileSortSequence,
     FileUploadApplyDTO,
     FileUploadApplyLocalVO,
     FileUploadFinishDTO,
     FolderAddDTO,
+    FolderListQueryDTO,
+    FolderListQueryVO,
     FolderVO,
     RecycleFileDTO,
     RecycleFileListDTO,
@@ -123,6 +127,44 @@ class WebClient:
         )
         return await self._client.post_json(
             "/api/file/delete", BaseResponse, json=dto.to_dict()
+        )
+
+    async def file_rename(self, id: int, new_name: str) -> BaseResponse:
+        """Rename a file/folder (Web API)."""
+        dto = FileReNameDTO(id=id, new_name=new_name)
+        return await self._client.post_json(
+            "/api/file/rename", BaseResponse, json=dto.to_dict()
+        )
+
+    async def file_move(
+        self, id_list: list[int], directory_id: int, go_directory_id: int
+    ) -> BaseResponse:
+        """Move files/folders (Web API)."""
+        dto = FileMoveAndCopyDTO(
+            id_list=id_list, directory_id=directory_id, go_directory_id=go_directory_id
+        )
+        return await self._client.post_json(
+            "/api/file/move", BaseResponse, json=dto.to_dict()
+        )
+
+    async def file_copy(
+        self, id_list: list[int], directory_id: int, go_directory_id: int
+    ) -> BaseResponse:
+        """Copy files/folders (Web API)."""
+        dto = FileMoveAndCopyDTO(
+            id_list=id_list, directory_id=directory_id, go_directory_id=go_directory_id
+        )
+        return await self._client.post_json(
+            "/api/file/copy", BaseResponse, json=dto.to_dict()
+        )
+
+    async def folder_list_query(
+        self, directory_id: int, id_list: list[int]
+    ) -> FolderListQueryVO:
+        """Query folder list (Web API)."""
+        dto = FolderListQueryDTO(directory_id=directory_id, id_list=id_list)
+        return await self._client.post_json(
+            "/api/file/folder/list/query", FolderListQueryVO, json=dto.to_dict()
         )
 
     async def upload_file(self, parent_id: int, name: str, content: bytes) -> None:
