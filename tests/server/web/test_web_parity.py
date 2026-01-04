@@ -85,7 +85,7 @@ async def test_web_copy_items(web_client: WebClient) -> None:
 @pytest.mark.asyncio
 async def test_web_folder_list_query_spec(web_client: WebClient) -> None:
     """Comprehensive test for api/file/folder/list/query specification."""
-    # 1. Root Level Flattening and Ordering
+    # Root Level Flattening and Ordering
     # Note: physically at /NOTE/Note
     # Document: physically at /DOCUMENT/Document
     # MyStyle: physically at root /MyStyle
@@ -96,13 +96,28 @@ async def test_web_folder_list_query_spec(web_client: WebClient) -> None:
     names = [f.file_name for f in folders]
     assert names == ["Note", "Document", "Export", "Inbox", "MyStyle", "Screenshot"]
 
-    # 2. Exclusion Filter (idList)
+    # Exclusion Filter (idList)
     note_id = int(next(f for f in folders if f.file_name == "Note").id)
     res_excl = await web_client.folder_list_query(directory_id=0, id_list=[note_id])
     names_excl = [f.file_name for f in res_excl.folder_vo_list]
     assert names_excl == ["Document", "Export", "Inbox", "MyStyle", "Screenshot"]
 
-    # 3. isEmpty Lookahead (sub-folders only)
+    # Self-Exclusion (Folder hidden when in id_list)
+    # Create a folder
+    self_excl_res = await web_client.create_folder(
+        parent_id=0, name="SelfExclusionFolder"
+    )
+    self_excl_id = int(self_excl_res.id)
+
+    # Query Root with this folder in id_list -> should be excluded
+    res_self_excl = await web_client.folder_list_query(
+        directory_id=0, id_list=[self_excl_id]
+    )
+    names_self_excl = [f.file_name for f in res_self_excl.folder_vo_list]
+    assert "SelfExclusionFolder" not in names_self_excl
+    assert "Document" in names_self_excl  # Should still see other folders
+
+    # isEmpty Lookahead (sub-folders only)
     # Create a folder with a file (should be empty=Y because it only checks for folders)
     await web_client.create_folder(parent_id=0, name="ParentFolder")
     root_res = await web_client.folder_list_query(directory_id=0, id_list=[])
