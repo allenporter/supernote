@@ -403,9 +403,7 @@ class FileUploadFinishDTO(DataClassJSONMixin):
     inner_name: str = field(metadata=field_options(alias="innerName"))
     """Obfuscated storage key. Formula: {UUID}-{tail}.{ext} where tail is SN last 3 digits."""
 
-    directory_id: int = field(
-        metadata=field_options(alias="directoryId"), default=0
-    )
+    directory_id: int = field(metadata=field_options(alias="directoryId"), default=0)
     """Represents the directory ID where the file will be stored or 0 means the root."""
 
     type: UploadType = UploadType.CLOUD

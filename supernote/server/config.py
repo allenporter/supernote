@@ -38,7 +38,9 @@ class ServerConfig(DataClassYAMLMixin):
     proxy_mode: str | None = None
     """Proxy header handling mode: None/'disabled' (ignore proxy headers), 'relaxed' (trust immediate upstream), or 'strict' (require specific trusted IPs). Defaults to None for security."""
 
-    trusted_proxies: list[str] = field(default_factory=lambda: ["127.0.0.1", "::1", "172.17.0.0/16"])
+    trusted_proxies: list[str] = field(
+        default_factory=lambda: ["127.0.0.1", "::1", "172.17.0.0/16"]
+    )
     """List of trusted proxy IPs/networks (used in strict mode). Supports CIDR notation."""
 
     auth: AuthConfig = field(default_factory=AuthConfig)

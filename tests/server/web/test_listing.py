@@ -98,17 +98,24 @@ async def test_list_query_returns_default_folders(
         f.file_name for f in res.user_file_vo_list if f.is_folder == BooleanEnum.YES
     ]
 
-    # Verify all three default folders are present
-    # TODO: This should flatten the special Note files
-    assert "NOTE" in folders
-    assert "DOCUMENT" in folders
+    # Verify all six visible folders are present in flattened view
     assert "Export" in folders
+    assert "Inbox" in folders
+    assert "Screenshot" in folders
+    assert "Note" in folders
+    assert "Document" in folders
+    assert "MyStyle" in folders
+
+    # Verify category containers are HIDDEN
+    assert "NOTE" not in folders
+    assert "DOCUMENT" not in folders
 
     # Verify each default folder has correct properties
-    for folder_name in ["NOTE", "DOCUMENT", "Export"]:
-        folder = next(f for f in res.user_file_vo_list if f.file_name == folder_name)
-        assert folder.is_folder == BooleanEnum.YES
-        assert folder.directory_id == "0"
+    for folder_name in ["Export", "Inbox", "Screenshot", "Note", "Document", "MyStyle"]:
+        folder_vo = next(f for f in res.user_file_vo_list if f.file_name == folder_name)
+        assert folder_vo.is_folder == BooleanEnum.YES
+        assert folder_vo.id is not None
+        assert folder_vo.directory_id == "0"
 
 
 async def test_list_query_returns_subdirectories(
@@ -274,3 +281,58 @@ async def test_user_file_vo_all_fields_for_folder(
     assert folder_vo.update_time > 0
     # Update time should be >= create time
     assert folder_vo.update_time >= folder_vo.create_time
+
+
+async def test_path_query(
+    web_client: WebClient,
+) -> None:
+    """Verify that /api/file/path/query returns correct path and ID path."""
+    # Create structure: Root -> Parent -> Child
+    parent_vo = await web_client.create_folder(parent_id=0, name="Parent")
+    parent_id = int(parent_vo.id)
+
+    child_vo = await web_client.create_folder(parent_id=parent_id, name="Child")
+    child_id = int(child_vo.id)
+
+    # Query Path for Child
+    info = await web_client.path_query(id=child_id)
+    assert info.success
+    assert info.path == "/Parent/Child"
+    # idPath should be "0/parent_id/child_id"
+    assert info.id_path == f"0/{parent_id}/{child_id}"
+
+    # Query Path for Parent
+    info_p = await web_client.path_query(id=parent_id)
+    assert info_p.path == "/Parent"
+    assert info_p.id_path == f"0/{parent_id}"
+
+
+async def test_list_query_flattening(
+    web_client: WebClient,
+) -> None:
+    """Verify that root listing flattens categorized folders and hides containers."""
+    res = await web_client.list_query(directory_id=0)
+    assert res.success
+
+    folder_names = [
+        f.file_name for f in res.user_file_vo_list if f.is_folder == BooleanEnum.YES
+    ]
+
+    # Verify all categorized folders are at root level
+    assert "Export" in folder_names
+    assert "Inbox" in folder_names
+    assert "Screenshot" in folder_names
+    assert "Note" in folder_names
+    assert "Document" in folder_names
+    assert "MyStyle" in folder_names
+
+    # Verify container folders are HIDDEN from web API
+    assert "NOTE" not in folder_names
+    assert "DOCUMENT" not in folder_names
+
+    # Verify flattened folders show directoryId=0
+    note_folder = next(f for f in res.user_file_vo_list if f.file_name == "Note")
+    assert note_folder.directory_id == "0"
+
+    doc_folder = next(f for f in res.user_file_vo_list if f.file_name == "Document")
+    assert doc_folder.directory_id == "0"
