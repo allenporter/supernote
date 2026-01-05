@@ -251,7 +251,7 @@ class FileService:
 
         # Handle Root
         clean_path = path_str.strip("/")
-        if not clean_path and (path_str == "" or path_str == "/"):
+        if not clean_path:
             # Virtual root directory
             return FileEntity(
                 id=0,
@@ -267,17 +267,7 @@ class FileService:
 
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
-            node = None
-
-            # 1. Try ID if numeric and large enough to be an ID
-            if clean_path.isdigit():
-                id_val = int(clean_path)
-                node = await vfs.get_node_by_id(user_id, id_val)
-
-            # 2. If not found by ID, try path resolution
-            if not node:
-                node = await vfs.resolve_path(user_id, path_str)
-
+            node = await vfs.resolve_path(user_id, path_str)
             if not node:
                 return None
 
@@ -286,14 +276,20 @@ class FileService:
 
             return _to_file_entity(node, full_path)
 
-    def flatten_path(self, path: str) -> str:
-        """Flatten paths for items inside category containers (e.g., NOTE/Note -> Note)."""
+    async def get_file_info_by_id(self, user: str, file_id: int) -> FileEntity | None:
+        """Get file info by path or ID for a specific user using VFS."""
+        user_id = await self.user_service.get_user_id(user)
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+            node = await vfs.get_node_by_id(user_id, file_id)
+            if not node:
+                return None
 
-        path_parts = path.strip("/").split("/")
-        if len(path_parts) >= 2 and path_parts[0] in CATEGORY_CONTAINERS:
-            # Convert NOTE/Note/Sub -> Note/Sub
-            return "/".join(path_parts[1:])
-        return path
+            # Always resolve the canonical path from the node structure.
+            # This may do a bunch of queries.
+            full_path = await vfs.get_full_path(user_id, node.id)
+
+            return _to_file_entity(node, full_path)
 
     async def get_path_info(
         self, user: str, node_id: int, flatten: bool = False

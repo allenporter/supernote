@@ -229,7 +229,7 @@ async def handle_query_v3(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    entity = await file_service.get_file_info(user_email, str(file_id))
+    entity = await file_service.get_file_info_by_id(user_email, int(file_id))
 
     entries_vo = _to_entries_vo(entity) if entity else None
 
@@ -332,12 +332,12 @@ async def handle_download_apply(request: web.Request) -> web.Response:
     # Response: FileDownloadLocalVO
 
     req_data = FileDownloadLocalDTO.from_dict(await request.json())
-    file_id = str(req_data.id)  # API Spec says int/str? Use str for path
+    file_id = int(req_data.id)
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
     # Verify file exists using VFS
-    info = await file_service.get_file_info(user_email, file_id)
+    info = await file_service.get_file_info_by_id(user_email, file_id)
     if not info:
         return web.json_response(
             BaseResponse(success=False, error_msg="File not found").to_dict(),
@@ -347,9 +347,8 @@ async def handle_download_apply(request: web.Request) -> web.Response:
     # Generate signed download URL
     url_signer: UrlSigner = request.app["url_signer"]
 
-    encoded_id = urllib.parse.quote(str(info.id))
     # OSS download URL: /api/oss/download?path={id}
-    path_to_sign = f"/api/oss/download?path={encoded_id}"
+    path_to_sign = f"/api/oss/download?id={info.id}"
 
     # helper returns: ...?signature=...
     signed_path = url_signer.sign(path_to_sign, user=user_email)

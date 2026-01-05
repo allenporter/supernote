@@ -38,6 +38,7 @@ from supernote.models.file_web import (
     RecycleFileVO,
     UserFileVO,
 )
+from supernote.server.constants import CATEGORY_CONTAINERS
 from supernote.server.services.file import (
     FileEntity,
     FileService,
@@ -79,6 +80,16 @@ def _sort_and_page(
     end = start + page_size
     page_items = items[start:end]
     return page_items, total
+
+
+def _flatten_path(path: str) -> str:
+    """Flatten paths for items inside category containers (e.g., NOTE/Note -> Note)."""
+
+    path_parts = path.strip("/").split("/")
+    if len(path_parts) >= 2 and path_parts[0] in CATEGORY_CONTAINERS:
+        # Convert NOTE/Note/Sub -> Note/Sub
+        return "/".join(path_parts[1:])
+    return path
 
 
 @routes.post("/api/file/capacity/query")
@@ -261,7 +272,7 @@ async def handle_file_search(request: web.Request) -> web.Response:
     entries_vos: list[EntriesVO] = []
     for entity in file_entities:
         # Web API expects flattened paths for system directories
-        path_display = file_service.flatten_path(entity.full_path)
+        path_display = _flatten_path(entity.full_path)
         parent_path = str(Path(path_display).parent)
         if parent_path == ".":
             parent_path = ""

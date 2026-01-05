@@ -170,14 +170,14 @@ async def handle_oss_download(request: web.Request) -> web.StreamResponse:
             status=403,
         )
 
-    path_str = request.query.get("path")
-    if not path_str:
+    file_id = request.query.get("id")
+    if not file_id:
         return web.json_response(
-            create_error_response("Missing path").to_dict(), status=400
+            create_error_response("Missing id").to_dict(), status=400
         )
 
     # Resolve file metadata via VFS
-    info = await file_service.get_file_info(user_email, path_str)
+    info = await file_service.get_file_info_by_id(user_email, int(file_id))
     if not info:
         return web.json_response(
             create_error_response("File not found").to_dict(), status=404
