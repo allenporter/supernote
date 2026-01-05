@@ -12,7 +12,6 @@ from supernote.models.base import BaseResponse, BooleanEnum, create_error_respon
 from supernote.server.constants import (
     CATEGORY_CONTAINERS,
     IMMUTABLE_SYSTEM_DIRECTORIES,
-    ORDERED_WEB_ROOT,
 )
 
 from ..db.models.file import RecycleFileDO, UserFileDO
@@ -291,16 +290,13 @@ class FileService:
 
             return _to_file_entity(node, full_path)
 
-    async def get_path_info(
-        self, user: str, node_id: int, flatten: bool = False
-    ) -> PathInfo:
+    async def get_path_info(self, user: str, node_id: int) -> PathInfo:
         """Resolve both full path and ID path for a node.
 
         Rules:
-        - Both path and idPath end with a trailing slash (/).
+        - Both path and idPath do not have any starting or trailing slashes.
         - idPath includes the terminal item ID.
         - idPath does NOT start with the root ID (0/).
-        - If flatten=True, category containers are stripped from both.
         """
         user_id = await self.user_service.get_user_id(user)
         async with self.session_manager.session() as session:
@@ -319,23 +315,9 @@ class FileService:
                 id_path_parts.insert(0, str(node.id))
                 curr_id = node.directory_id
 
-            # Apply flattening if requested for Web API
-            if flatten:
-                from supernote.server.constants import CATEGORY_CONTAINERS
-
-                if path_parts and path_parts[0] in CATEGORY_CONTAINERS:
-                    path_parts = path_parts[1:]
-                    id_path_parts = id_path_parts[1:]
-
-            # Construct strings and append trailing slashes
-            path = "/".join(path_parts)
-            if path:
-                path += "/"
-
-            id_path = "/".join(id_path_parts)
-            if id_path:
-                id_path += "/"
-
+            # Construct paths
+            path = "/".join(path_parts).strip()
+            id_path = "/".join(id_path_parts).strip()
             return PathInfo(path=path, id_path=id_path)
 
     async def finish_upload(
@@ -679,7 +661,6 @@ class FileService:
         self,
         user: str,
         id_list: list[int],
-        source_parent_id: int,
         target_parent_id: int,
     ) -> BaseResponse:
         """Batch move items for a specific user."""
@@ -691,23 +672,6 @@ class FileService:
                 node = await vfs.get_node_by_id(user_id, item_id)
                 if not node:
                     continue
-
-                if node.directory_id != source_parent_id:
-                    # Special case for flattened Web API: allow source_parent_id=0 if it's a categorized folder
-                    from supernote.server.constants import CATEGORY_CONTAINERS
-
-                    is_categorized = False
-                    async with self.session_manager.session() as sess:
-                        vfs_i = VirtualFileSystem(sess)
-                        p_node = await vfs_i.get_node_by_id(user_id, node.directory_id)
-                        if p_node and p_node.file_name in CATEGORY_CONTAINERS:
-                            is_categorized = True
-
-                    if not (source_parent_id == 0 and is_categorized):
-                        return create_error_response(
-                            f"Item {item_id} is not in directory {source_parent_id}",
-                            "E400",
-                        )
 
                 # Immutability check
                 if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
@@ -762,7 +726,6 @@ class FileService:
         self,
         user: str,
         id_list: list[int],
-        source_parent_id: int,
         target_parent_id: int,
     ) -> BaseResponse:
         """Batch copy items for a specific user."""
@@ -855,16 +818,13 @@ class FileService:
         return BaseResponse(success=True)
 
     async def get_folders_by_ids(
-        self, user: str, parent_id: int, id_list: list[int], flatten: bool = False
+        self, user: str, parent_id: int, id_list: list[int]
     ) -> list[FolderDetail]:
         """Get details for a list of folders, specialized for Move/Copy dialogs.
 
         Rules:
         1. id_list is an EXCLUSION filter.
-        2. If flatten is True and parent_id is 0, flattened folders (Note, Document, MyStyle) are elevated.
-        3. If flatten is True, root folders have a specific order: Note, Document, others.
-        4. has_subfolders is True checking children.
-        5. If flatten is True, root folder names are capitalized.
+        2. has_subfolders is True if it has subfolders.
         """
         user_id = await self.user_service.get_user_id(user)
         results: list[FolderDetail] = []
@@ -873,71 +833,25 @@ class FileService:
             vfs = VirtualFileSystem(session)
 
             # 1. Fetch all folders in the parent directory
-            if flatten and parent_id == 0:
-                # Web API Root Flattening
-                # - Fetch children of NOTE and DOCUMENT
-                # - Include MyStyle (which is already at root)
-                nodes: list[UserFileDO] = []
-
-                # Get category nodes first
-                category_id_map: dict[str, int] = {}
-                root_nodes = await vfs.list_directory(user_id, 0)
-                for node in root_nodes:
-                    if node.is_folder == BooleanEnum.YES:
-                        if node.file_name in CATEGORY_CONTAINERS:
-                            category_id_map[node.file_name] = node.id
-                        else:
-                            # Include all other root folders (Export, Inbox, Screenshot, MyStyle etc)
-                            nodes.append(node)
-
-                # Fetch children of NOTE and DOCUMENT
-                for cat_name in CATEGORY_CONTAINERS:
-                    if cat_name in category_id_map:
-                        cat_id = category_id_map[cat_name]
-                        cat_children = await vfs.list_directory(user_id, cat_id)
-                        for child in cat_children:
-                            if child.is_folder == BooleanEnum.YES:
-                                # Mark as flattened to repo-root for directory_id reporting
-                                nodes.append(child)
-            else:
-                raw_nodes = await vfs.list_directory(user_id, parent_id)
-                nodes = [n for n in raw_nodes if n.is_folder == BooleanEnum.YES]
+            raw_nodes = await vfs.list_directory(user_id, parent_id)
+            nodes = [n for n in raw_nodes if n.is_folder == BooleanEnum.YES]
 
             # 2. Filter exclusions from id_list
             nodes = [n for n in nodes if n.id not in id_list]
 
             # 3. Build FolderDetail with lookahead
             for node in nodes:
-                is_flat = flatten and parent_id == 0 and node.directory_id != 0
-
                 # Check for sub-folders (lookahead)
                 children = await vfs.list_directory(user_id, node.id)
                 has_subfolders = any(c.is_folder == BooleanEnum.YES for c in children)
 
-                file_name = node.file_name
-                if flatten and parent_id == 0:
-                    # Match case with immutable directories if possible, else capitalize
-                    # This ensures "MyStyle" stays "MyStyle" instead of "Mystyle"
-                    match = next(
-                        (
-                            s
-                            for s in IMMUTABLE_SYSTEM_DIRECTORIES
-                            if s.lower() == file_name.lower()
-                            and s not in CATEGORY_CONTAINERS
-                        ),
-                        None,
-                    )
-                    file_name = match if match else file_name.capitalize()
-
-                # Construct FileEntity with view-adjusted name
+                # Construct FileEntity
                 full_path = await vfs.get_full_path(user_id, node.id)
 
                 entity = FileEntity(
                     id=node.id,
-                    parent_id=0
-                    if is_flat
-                    else node.directory_id,  # Report parent as 0 if flattened
-                    name=file_name,  # View-adjusted name
+                    parent_id=node.directory_id,
+                    name=node.file_name,
                     is_folder=True,
                     size=node.size,
                     md5=node.md5,
@@ -949,19 +863,6 @@ class FileService:
                 results.append(
                     FolderDetail(entity=entity, has_subfolders=has_subfolders)
                 )
-
-            # 4. Sorting logic for Root
-            if flatten and parent_id == 0:
-                # Specific Order: Note, Document, then others alphabetically
-                def root_sort_key(detail: FolderDetail) -> tuple[int, str]:
-                    name = detail.entity.name
-                    # Use ORDERED_WEB_ROOT for priority sorting
-                    for i, priority_name in enumerate(ORDERED_WEB_ROOT):
-                        if name.lower() == priority_name.lower():
-                            return (i, name)
-                    return (len(ORDERED_WEB_ROOT), name)
-
-                results.sort(key=root_sort_key)
 
         return results
 
@@ -1008,15 +909,12 @@ class FileService:
 
         return BaseResponse()
 
-    async def search_files(
-        self, user: str, keyword: str, flatten: bool = False
-    ) -> list[FileEntity]:
+    async def search_files(self, user: str, keyword: str) -> list[FileEntity]:
         """Search for files matching the keyword in user's storage.
 
         Args:
             user: User email.
             keyword: Search keyword.
-            flatten: Deprecated. The service returns full paths. Flattening should be done by caller.
         """
         user_id = await self.user_service.get_user_id(user)
         results: list[FileEntity] = []
@@ -1044,10 +942,6 @@ class FileService:
             vfs = VirtualFileSystem(session)
             items = await vfs.list_directory(user_id, directory_id)
 
-            # Flatten directory structure ONLY for root listing (web API behavior)
-            if directory_id == 0:
-                items = await self._flatten_root_directory(user_id, items)
-
             # Mapping to FileEntity
             file_entities: list[FileEntity] = []
             for item in items:
@@ -1055,61 +949,3 @@ class FileService:
                 file_entities.append(_to_file_entity(item, full_path))
 
             return file_entities
-
-    async def _flatten_root_directory(
-        self, user_id: int, items: list[UserFileDO]
-    ) -> list[UserFileDO]:
-        """Flatten categorized folders to appear at root level (web API only).
-
-        Transforms:
-            NOTE/ (hidden)
-            NOTE/Note → Note (directoryId=0)
-            NOTE/MyStyle → MyStyle (directoryId=0)
-            DOCUMENT/ (hidden)
-            DOCUMENT/Document → Document (directoryId=0)
-        """
-        # Category containers to flatten
-        CATEGORY_FOLDERS = {"NOTE", "DOCUMENT"}
-
-        # Find category parent IDs
-        parent_map = {
-            item.id: item.file_name
-            for item in items
-            if item.file_name in CATEGORY_FOLDERS
-        }
-
-        if not parent_map:
-            return items  # No flattening needed
-
-        async with self.session_manager.session() as session:
-            vfs = VirtualFileSystem(session)
-            flattened = []
-
-            # Keep system folders (Export, Inbox, Screenshot) and others not in categories
-            for item in items:
-                if item.file_name not in CATEGORY_FOLDERS:
-                    flattened.append(item)
-
-            # Add children of category folders, modified to appear at root
-            for parent_id in parent_map.keys():
-                children = await vfs.list_directory(user_id, parent_id)
-                for child in children:
-                    # Clone and modify directory_id to 0 for web API view
-                    # We don't modify the actual DO we got from DB, just the list we return
-                    # Actually, SQLAlchemy might track these if we just modify them.
-                    # Let's create shallow copies of the DO specifically for the VO mapping.
-                    child_copy = UserFileDO(
-                        id=child.id,
-                        user_id=child.user_id,
-                        directory_id=0,  # Flattened to root
-                        file_name=child.file_name,
-                        size=child.size,
-                        md5=child.md5,
-                        is_folder=child.is_folder,
-                        is_active=child.is_active,
-                        create_time=child.create_time,
-                        update_time=child.update_time,
-                    )
-                    flattened.append(child_copy)
-
-        return flattened
