@@ -161,7 +161,10 @@ class WebClient:
     async def folder_list_query(
         self, directory_id: int, id_list: list[int]
     ) -> FolderListQueryVO:
-        """Query folder list (Web API)."""
+        """Query folder list (Web API) for operations like move.
+
+        The id_list is an exclusion list to not include the folders in the list.
+        """
         dto = FolderListQueryDTO(directory_id=directory_id, id_list=id_list)
         return await self._client.post_json(
             "/api/file/folder/list/query", FolderListQueryVO, json=dto.to_dict()

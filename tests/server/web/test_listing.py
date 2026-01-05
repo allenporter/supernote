@@ -6,6 +6,7 @@ from supernote.models.file_web import FileSortOrder, FileSortSequence
 async def test_file_list_query(
     web_client: WebClient,
 ) -> None:
+    """Test querying contents of a folder."""
     # Create directory structure
     # Root
     #  - FolderA
@@ -54,6 +55,9 @@ async def test_file_list_query(
     assert res_page1.total == 2
     assert len(res_page1.user_file_vo_list) == 1
     assert res_page1.user_file_vo_list[0].file_name == "File1.txt"
+    assert res_page1.user_file_vo_list[0].directory_id == str(folder_a_id)
+    # TODO: We're not using valid values of inner name so fix that
+    # assert res_page1.user_file_vo_list[0].inner_name
 
     res_page2 = await web_client.list_query(
         directory_id=folder_a_id,
@@ -64,6 +68,9 @@ async def test_file_list_query(
     )
     assert len(res_page2.user_file_vo_list) == 1
     assert res_page2.user_file_vo_list[0].file_name == "File2.txt"
+    assert res_page1.user_file_vo_list[0].directory_id == str(folder_a_id)
+    # TODO: We're not using valid values of inner name so fix that
+    # assert res_page1.user_file_vo_list[0].inner_name
 
 
 async def test_file_list_query_root(
@@ -75,11 +82,27 @@ async def test_file_list_query_root(
     res = await web_client.list_query(
         directory_id=0, order=FileSortOrder.FILENAME, sequence=FileSortSequence.ASC
     )
+    assert res.total == 7
+    assert res.page_num == 1
+    assert res.page_size == 50
+    assert len(res.user_file_vo_list) == 7
+    assert res.user_file_vo_list[0].id
+    assert res.user_file_vo_list[0].file_name == "Document"
+    assert res.user_file_vo_list[0].directory_id == "0"
+    assert res.user_file_vo_list[0].size == 0
+    assert res.user_file_vo_list[0].is_folder == BooleanEnum.YES
 
-    assert any(
-        f.file_name == "FolderRoot" and f.is_folder == BooleanEnum.YES
-        for f in res.user_file_vo_list
-    )
+    assert [
+        f.file_name for f in res.user_file_vo_list if f.is_folder == BooleanEnum.YES
+    ] == [
+        "Document",
+        "Export",
+        "FolderRoot",
+        "Inbox",
+        "MyStyle",
+        "Note",
+        "Screenshot",
+    ]
 
 
 async def test_list_query_returns_default_folders(
@@ -297,14 +320,19 @@ async def test_path_query(
     # Query Path for Child
     info = await web_client.path_query(id=child_id)
     assert info.success
-    assert info.path == "Parent/Child/"
+    assert info.path == "Parent/Child"
     # idPath should be "parent_id/child_id/"
-    assert info.id_path == f"{parent_id}/{child_id}/"
+    assert info.id_path == f"{parent_id}/{child_id}"
 
     # Query Path for Parent
     info_p = await web_client.path_query(id=parent_id)
-    assert info_p.path == "Parent/"
-    assert info_p.id_path == f"{parent_id}/"
+    assert info_p.path == "Parent"
+    assert info_p.id_path == f"{parent_id}"
+
+    # Query Path for ROot
+    info_p = await web_client.path_query(id=0)
+    assert info_p.path == ""
+    assert info_p.id_path == ""
 
 
 async def test_path_query_flattening(
@@ -320,9 +348,9 @@ async def test_path_query_flattening(
     info = await web_client.path_query(id=note_id)
     assert info.success
     # Should be flattened to just "Note/"
-    assert info.path == "Note/"
-    # idPath should be "note_id/"
-    assert info.id_path == f"{note_id}/"
+    assert info.path == "Note"
+    # idPath should be "note_id"
+    assert info.id_path == f"{note_id}"
 
 
 async def test_list_query_flattening(

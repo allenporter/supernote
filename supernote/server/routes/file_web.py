@@ -38,11 +38,16 @@ from supernote.models.file_web import (
     RecycleFileVO,
     UserFileVO,
 )
-from supernote.server.constants import CATEGORY_CONTAINERS
+from supernote.server.constants import (
+    CATEGORY_CONTAINERS,
+    IMMUTABLE_SYSTEM_DIRECTORIES,
+    ORDERED_WEB_ROOT,
+)
 from supernote.server.services.file import (
     FileEntity,
     FileService,
     FileServiceException,
+    FolderDetail,
     InvalidPathException,
     RecycleEntity,
 )
@@ -199,8 +204,22 @@ async def handle_path_query(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    path_info = await file_service.get_path_info(user_email, req_data.id, flatten=True)
-    response = FilePathQueryVO(path=path_info.path, id_path=path_info.id_path)
+    path_info = await file_service.get_path_info(user_email, req_data.id)
+
+    # Flatten if needed for Web API
+    path = path_info.path.strip("/")
+    id_path = path_info.id_path.strip("/")
+
+    parts = path.split("/")
+    if parts and parts[0] in CATEGORY_CONTAINERS:
+        # Strip first component from both path and id_path
+        path = "/".join(parts[1:])
+
+        id_parts = id_path.split("/")
+        if len(id_parts) >= len(parts):  # Safety check
+            id_path = "/".join(id_parts[1:])
+
+    response = FilePathQueryVO(path=path, id_path=id_path)
     return web.json_response(response.to_dict())
 
 
@@ -219,6 +238,32 @@ async def handle_file_list_query(request: web.Request) -> web.Response:
         req_data.directory_id,
     )
 
+    # Flatten root directory for Web API (View Logic)
+    if req_data.directory_id == 0:
+        flattened_entities: list[FileEntity] = []
+        # Identify category containers
+        category_map: dict[str, FileEntity] = {}
+        for entity in file_entities:
+            if entity.name in CATEGORY_CONTAINERS:
+                category_map[entity.name] = entity
+            else:
+                flattened_entities.append(entity)
+
+        # Fetch children of category containers and promote to root
+        for name, entity in category_map.items():
+            children = await file_service.query_file_list(user_email, entity.id)
+            for child in children:
+                # Modify parent_id to 0 for the view
+                child.parent_id = 0
+                flattened_entities.append(child)
+
+        file_entities = flattened_entities
+
+    # TODO: This is not currently using the same sorting where there is
+    # a preferred orderign and capitalization for the items in the root folder.
+    # for item in page_items:
+    #     if req_data.directory_id != 0 or item.name not in IMMUTABLE_SYSTEM_DIRECTORIES:
+    #         item.name = item.name.capitalize()
     page_items, total = _sort_and_page(
         file_entities,
         req_data.sequence,
@@ -265,9 +310,7 @@ async def handle_file_search(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    file_entities = await file_service.search_files(
-        user_email, req_data.keyword, flatten=True
-    )
+    file_entities = await file_service.search_files(user_email, req_data.keyword)
 
     entries_vos: list[EntriesVO] = []
     for entity in file_entities:
@@ -324,6 +367,14 @@ async def handle_folder_add(request: web.Request) -> web.Response:
     return web.json_response(response.to_dict())
 
 
+def _root_sort_key(d: FolderDetail) -> tuple[int, str]:
+    try:
+        idx = ORDERED_WEB_ROOT.index(d.entity.name)
+        return (0, str(idx))
+    except ValueError:
+        return (1, d.entity.name)
+
+
 @routes.post("/api/file/folder/list/query")
 async def handle_folder_list_query(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/folder/list/query
@@ -334,21 +385,42 @@ async def handle_folder_list_query(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
+    # Initial query
     folder_details = await file_service.get_folders_by_ids(
-        user_email, req_data.directory_id, req_data.id_list, flatten=True
+        user_email, req_data.directory_id, req_data.id_list
     )
 
-    folder_vos: list[FolderVO] = []
-    for detail in folder_details:
-        folder_vos.append(
-            FolderVO(
-                id=str(detail.entity.id),
-                directory_id=str(detail.entity.parent_id),
-                file_name=detail.entity.name,
-                empty=BooleanEnum.NO if detail.has_subfolders else BooleanEnum.YES,
-            )
-        )
+    # Web API Flattening Logic for Root. We fetch the special folders
+    # and flatten them to pretend they were really in the root.
+    if req_data.directory_id == 0:
+        pending_scans = list(folder_details)
+        folder_details = []
+        for detail in pending_scans:
+            if detail.entity.name in CATEGORY_CONTAINERS:
+                # Fetch children
+                children = await file_service.get_folders_by_ids(
+                    user_email, detail.entity.id, req_data.id_list
+                )
+                # Add children to results (flattened)
+                for child in children:
+                    child.entity.parent_id = 0  # View adjustment
+                    folder_details.append(child)
+            else:
+                if detail.entity.name not in IMMUTABLE_SYSTEM_DIRECTORIES:
+                    detail.entity.name = detail.entity.name.capitalize()
+                folder_details.append(detail)
 
+    folder_details.sort(key=_root_sort_key)
+
+    folder_vos = [
+        FolderVO(
+            id=str(detail.entity.id),
+            directory_id=str(detail.entity.parent_id),
+            file_name=detail.entity.name,
+            empty=BooleanEnum.NO if detail.has_subfolders else BooleanEnum.YES,
+        )
+        for detail in folder_details
+    ]
     response = FolderListQueryVO(folder_vo_list=folder_vos)
     return web.json_response(response.to_dict())
 
@@ -364,7 +436,7 @@ async def handle_file_move_web(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
 
     response = await file_service.move_items(
-        user_email, req_data.id_list, req_data.directory_id, req_data.go_directory_id
+        user_email, req_data.id_list, req_data.go_directory_id
     )
     return web.json_response(response.to_dict())
 
@@ -380,7 +452,7 @@ async def handle_file_copy_web(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
 
     response = await file_service.copy_items(
-        user_email, req_data.id_list, req_data.directory_id, req_data.go_directory_id
+        user_email, req_data.id_list, req_data.go_directory_id
     )
     return web.json_response(response.to_dict())
 
