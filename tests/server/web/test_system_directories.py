@@ -24,7 +24,6 @@ async def test_web_cannot_delete_system_directories(web_client: WebClient) -> No
     assert any(f.file_name == "Note" for f in res_after.user_file_vo_list)
 
 
-
 async def test_device_cannot_delete_system_directories(
     device_client: DeviceClient,
 ) -> None:
