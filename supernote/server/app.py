@@ -22,6 +22,8 @@ from .utils.url_signer import UrlSigner
 
 logger = logging.getLogger(__name__)
 
+TRUNCATE_BODY_LOG = 10 * 1024
+
 
 @web.middleware
 async def trace_middleware(
@@ -30,64 +32,100 @@ async def trace_middleware(
 ) -> web.StreamResponse:
     # Skip reading body for upload endpoints to avoid consuming the stream
     # which breaks multipart parsing in the handler.
+    req_body_str = None
     if "/api/oss/upload" in request.path:
-        return await handler(request)
-
-    # Read body if present
-    body_bytes = None
-    if request.can_read_body:
+        req_body_str = "<multipart upload skipped>"
+    elif request.can_read_body:
         try:
-            body_bytes = await request.read()
+            # Check content type for request
+            if is_binary_content_type(request.content_type):
+                req_body_str = "<binary data>"
+            else:
+                body_bytes = await request.read()
+                req_body_str = body_bytes.decode("utf-8", errors="replace")
+                # Truncate body if it's too long
+                if len(req_body_str) > TRUNCATE_BODY_LOG:
+                    req_body_str = req_body_str[:2048] + "... (truncated)"
         except Exception as e:
-            logger.error(f"Error reading body: {e}")
-            body_bytes = b"<error reading body>"
+            logger.error(f"Error reading request body: {e}")
+            req_body_str = "<error reading body>"
 
-    body_str = None
-    if body_bytes:
-        try:
-            body_str = body_bytes.decode("utf-8", errors="replace")
-            # Truncate body if it's too long (e.g. > 1KB)
-            if len(body_str) > 1024:
-                body_str = body_str[:1024] + "... (truncated)"
-        except Exception:
-            body_str = "<binary data>"
-
-    # Log request details
-    log_entry = {
-        "timestamp": time.time(),
-        "method": request.method,
-        "url": str(request.url),
-        "headers": dict(request.headers),
-        "body": body_str,
-    }
-
-    # Get config from app
-    server_config: ServerConfig = request.app["config"]
-    if not server_config.trace_log_file:
-        return await handler(request)
-
-    trace_log_path = Path(server_config.trace_log_file)
-
-    try:
-
-        def write_trace() -> None:
-            trace_log_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(trace_log_path, "a") as f:
-                f.write(json.dumps(log_entry) + "\n")
-                f.flush()
-
-        await asyncio.to_thread(write_trace)
-    except Exception as e:
-        logger.error(f"Failed to write to trace log at {trace_log_path}: {e}")
-
-    logger.info(
-        f"Trace: {request.method} {request.path} (Body: {len(body_bytes) if body_bytes else 0} bytes)"
-    )
-
-    # Process request
+    # Process Request
     response = await handler(request)
 
+    # Capture Response Body
+    res_body_str = None
+    if isinstance(response, web.Response) and response.body:
+        # Check content type for response
+        if is_binary_content_type(response.content_type):
+            res_body_str = "<binary data>"
+        else:
+            try:
+                # response.body is bytes/payload
+                if isinstance(response.body, bytes):
+                    res_body_str = response.body.decode("utf-8", errors="replace")
+                    if len(res_body_str) > TRUNCATE_BODY_LOG:
+                        res_body_str = res_body_str[:2048] + "... (truncated)"
+                else:
+                    res_body_str = "<stream/payload>"
+            except Exception:
+                res_body_str = "<error reading response>"
+
+    # Write Log
+    server_config: ServerConfig = request.app["config"]
+    if server_config.trace_log_file:
+        log_entry = {
+            "timestamp": time.time(),
+            "request": {
+                "method": request.method,
+                "url": str(request.url),
+                "headers": dict(request.headers),
+                "body": try_parse_json(req_body_str),
+            },
+            "response": {
+                "status": response.status,
+                "headers": dict(response.headers),
+                "body": try_parse_json(res_body_str),
+            },
+        }
+
+        trace_log_path = Path(server_config.trace_log_file)
+        try:
+
+            def write_trace() -> None:
+                trace_log_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(trace_log_path, "a") as f:
+                    f.write(json.dumps(log_entry, indent=2) + "\n")
+                    f.flush()
+
+            await asyncio.to_thread(write_trace)
+        except Exception as e:
+            logger.error(f"Failed to write to trace log: {e}")
+
     return response
+
+
+def try_parse_json(body: str | None) -> Any:
+    """Attempt to parse string as JSON, return original if fails or is not string."""
+    if not isinstance(body, str):
+        return body
+    try:
+        return json.loads(body)
+    except Exception:
+        return body
+
+
+def is_binary_content_type(content_type: str) -> bool:
+    """Check if content type is likely binary."""
+    binary_types = [
+        "application/octet-stream",
+        "application/pdf",
+        "application/zip",
+        "image/",
+        "audio/",
+        "video/",
+    ]
+    return any(t in content_type for t in binary_types)
 
 
 @web.middleware
