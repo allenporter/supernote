@@ -170,3 +170,60 @@ async def test_copy_folder(device_client: DeviceClient) -> None:
     assert len(data.entries) == 0
 
     # TODO Exercise doing a recursive copy of a folder
+
+
+"""
+Corner Case Scenarios for Move and Copy (Black Box)
+-----------------------------------------------
+
+1. Move/Copy to same parent, same name (Identity)
+   - [ ] Move `/A/file.txt` -> `/A/file.txt` (autorename=False)
+   - [ ] Move `/A/file.txt` -> `/A/file.txt` (autorename=True)
+   - [ ] Move `/A/folder` -> `/A/folder`
+   - Expected: Should be a no-op or success. Verify if the system handles this as a rename or rejects it.
+
+2. Basic Rename (Same parent, different name)
+   - [ ] Move `/A/file.txt` -> `/A/new_file.txt`
+   - [ ] Move `/A/folder` -> `/A/new_folder`
+   - Expected: Success, original name gone, new name exists.
+
+3. Name Collisions (autorename=False)
+   - [ ] Move `/A/file.txt` -> `/B/file.txt` (where `/B/file.txt` exists)
+   - [ ] Move `/A/folder` -> `/B/folder` (where `/B/folder` exists)
+   - [ ] Move `/A/file.txt` -> `/B/folder` (where `/B/folder` exists with SAME NAME)
+   - Expected: Should fail with a Conflict (409) or similar error.
+
+4. Name Collisions (autorename=True)
+   - [ ] Move `/A/file.txt` -> `/B/file.txt` (where `/B/file.txt` exists)
+   - Expected: Success, destination becomes `/B/file(1).txt`.
+   - [ ] Copy `/A/file.txt` -> `/A/file.txt`
+   - Expected: Success, destination becomes `/A/file(1).txt`.
+
+5. Cyclic Moves (The "black hole" problem)
+   - [ ] Move `/A` -> `/A/B`
+   - [ ] Move `/A` -> `/A/B/C`
+   - Expected: Should fail. A folder cannot be moved into itself or its descendants.
+
+6. Invalid Destinations
+   - [ ] Move `/A/file.txt` -> `/B/non_existent_folder/file.txt`
+   - [ ] Move `/A/file.txt` -> `/B/existing_file.txt/file.txt`
+   - Expected: Failure. Target parent must exist and be a directory.
+
+7. System/Protected Files
+   - [ ] Move `/MyStyle` -> `/Documents/MyStyle`
+   - [ ] Rename `/MyStyle` -> `/MyCustomStyle`
+   - Expected: Failure. System folders should be immutable/immovable via standard API.
+
+8. Root Operations
+   - [ ] Move `/` -> `/SomeFolder`
+   - [ ] Copy `/` -> `/Backup`
+   - Expected: Failure. Root cannot be moved or copied.
+
+9. Recursive Operations
+   - [ ] Copy `/SourceFolder` (with deep hierarchy) -> `/DestFolder`
+   - Expected: Entire structure duplicated with new IDs but same names/relative paths.
+
+10. Rapid Operations (Concurrency/Race conditions) - Optional
+    - [ ] Move `/A` -> `/B` and immediately Move `/A/sub` -> `/C`
+    - [ ] Move `/A` -> `/B` and immediately Delete `/A`
+"""
