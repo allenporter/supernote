@@ -8,7 +8,9 @@ from aiohttp import BodyPartReader, web
 from supernote.models.base import create_error_response
 from supernote.models.system import FileChunkParams, FileChunkVO, UploadFileVO
 from supernote.server.services.file import FileService
-from supernote.server.utils.url_signer import UrlSigner
+from supernote.server.utils.url_signer import UrlSigner, UrlSignerError
+
+from .decorators import public_route
 
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
@@ -136,6 +138,7 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
 
 
 @routes.get("/api/oss/download")
+@public_route
 async def handle_oss_download(request: web.Request) -> web.StreamResponse:
     """Handle file download with Range support.
 
@@ -145,29 +148,47 @@ async def handle_oss_download(request: web.Request) -> web.StreamResponse:
     """
     url_signer: UrlSigner = request.app["url_signer"]
     file_service: FileService = request.app["file_service"]
-    user_email = request["user"]
+    try:
+        payload = url_signer.verify(request.path_qs)
+    except UrlSignerError as err:
+        return web.json_response(create_error_response(str(err)).to_dict(), status=403)
 
-    if not url_signer.verify(request.path_qs):
-        return web.Response(status=403, text="Invalid signature")
+    # This takes the place of the authentication middlewhere.
+    user_email = payload.get("user")
+    if not user_email:
+        return web.json_response(
+            create_error_response("Missing user identity in signature").to_dict(),
+            status=403,
+        )
 
     path_str = request.query.get("path")
     if not path_str:
-        return web.Response(status=400, text="Missing path")
+        return web.json_response(
+            create_error_response("Missing path").to_dict(), status=400
+        )
 
     # Resolve file metadata via VFS
     info = await file_service.get_file_info(user_email, path_str)
     if not info:
-        return web.Response(status=404, text="File not found")
+        return web.json_response(
+            create_error_response("File not found").to_dict(), status=404
+        )
 
     if info.is_folder:
-        return web.Response(status=400, text="Not a file")
+        return web.json_response(
+            create_error_response("Not a file").to_dict(), status=400
+        )
 
     content_hash = info.md5
     if not content_hash:
-        return web.Response(status=404, text="File content not found")
+        return web.json_response(
+            create_error_response("File content not found").to_dict(), status=404
+        )
 
     if not await file_service.blob_storage.exists(content_hash):
-        return web.Response(status=404, text="Blob not found")
+        return web.json_response(
+            create_error_response("Blob not found").to_dict(), status=404
+        )
 
     # Handle Range Header
     file_size = info.size
@@ -189,14 +210,16 @@ async def handle_oss_download(request: web.Request) -> web.StreamResponse:
 
                 # Check bounds
                 if start >= file_size:
-                    return web.Response(
-                        status=416, headers={"Content-Range": f"bytes */{file_size}"}
+                    return web.json_response(
+                        create_error_response("Invalid range").to_dict(), status=416
                     )
 
                 if end >= file_size:
                     end = file_size - 1
         except ValueError:
-            return web.Response(status=400, text="Invalid Range header")
+            return web.json_response(
+                create_error_response("Invalid Range header").to_dict(), status=400
+            )
 
     content_length = end - start + 1
     status = 206 if range_header else 200
@@ -230,6 +253,8 @@ async def handle_oss_download(request: web.Request) -> web.StreamResponse:
                 bytes_to_send -= len(chunk)
 
     except FileNotFoundError:
-        return web.Response(status=404, text="Blob not found")
+        return web.json_response(
+            create_error_response("Blob not found").to_dict(), status=404
+        )
 
     return response

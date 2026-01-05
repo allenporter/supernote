@@ -3,7 +3,7 @@ import datetime
 import freezegun
 import pytest
 
-from supernote.server.utils.url_signer import UrlSigner
+from supernote.server.utils.url_signer import UrlSigner, UrlSignerError
 
 
 @pytest.fixture
@@ -18,14 +18,18 @@ def test_sign_and_verify(signer: UrlSigner) -> None:
     signed_url = signer.sign(path)
 
     # Verify using full URL
-    assert signer.verify(signed_url) is True
+    # Verify using full URL
+    payload = signer.verify(signed_url)
+    assert payload["path"] == path
 
 
 def test_verify_preserves_query(signer: UrlSigner) -> None:
     """Test that query parameters are preserved."""
     path = "/api/resource?foo=bar"
     signed_url = signer.sign(path)
-    assert signer.verify(signed_url) is True
+    signed_url = signer.sign(path)
+    payload = signer.verify(signed_url)
+    assert payload["path"] == path
 
 
 def test_verify_failure_tampered_url(signer: UrlSigner) -> None:
@@ -36,12 +40,14 @@ def test_verify_failure_tampered_url(signer: UrlSigner) -> None:
     # Tamper with the path part of the URL (e.g. user changes /original to /hacked)
     tampered_url = signed_url.replace("/original", "/hacked")
 
-    assert signer.verify(tampered_url) is False
+    with pytest.raises(UrlSignerError, match="Signed path mismatch"):
+        signer.verify(tampered_url)
 
 
 def test_verify_failure_invalid_signature_string(signer: UrlSigner) -> None:
     """Test that verification fails for invalid signature strings."""
-    assert signer.verify("/path?signature=invalid-token") is False
+    with pytest.raises(UrlSignerError, match="Invalid signature"):
+        signer.verify("/path?signature=invalid-token")
 
 
 def test_verify_failure_expired(signer: UrlSigner) -> None:
@@ -54,7 +60,24 @@ def test_verify_failure_expired(signer: UrlSigner) -> None:
         # Advance time past expiry
         frozen_time.tick(delta=datetime.timedelta(minutes=8))
 
-        assert signer.verify(signed_url) is False
+        with pytest.raises(UrlSignerError, match="Signature expired"):
+            signer.verify(signed_url)
+
+
+def test_sign_with_user(signer: UrlSigner) -> None:
+    """Test signing with user identity."""
+    path = "/user/resource"
+    user = "test@example.com"
+    signed_url = signer.sign(path, user=user)
+
+    payload = signer.verify(signed_url)
+    assert payload["path"] == path
+    assert payload["user"] == user
+
+    # Ensure payload doesn't have user if not provided
+    signed_url_no_user = signer.sign(path)
+    payload_no_user = signer.verify(signed_url_no_user)
+    assert "user" not in payload_no_user
 
 
 def test_sign_rejects_fragment(signer: UrlSigner) -> None:
@@ -70,4 +93,4 @@ def test_sign_preserves_query_check(signer: UrlSigner) -> None:
 
     assert "foo=bar" in signed_url
     assert "signature=" in signed_url
-    assert signer.verify(signed_url) is True
+    assert signer.verify(signed_url)
