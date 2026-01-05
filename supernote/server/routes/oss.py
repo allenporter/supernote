@@ -17,22 +17,24 @@ routes = web.RouteTableDef()
 
 
 @routes.post("/api/oss/upload")
+@public_route
 async def handle_oss_upload(request: web.Request) -> web.Response:
-    """Handle simple file upload.
+    """Handle OSS upload (device/v3).
 
-    Endpoint: POST /api/oss/upload
-    Query Params: signature
-    Body: File content (multipart: 'file')
+    Query: object_name
     """
-    url_signer: UrlSigner = request.app["url_signer"]
     file_service: FileService = request.app["file_service"]
-    user_email = request["user"]
+    url_signer: UrlSigner = request.app["url_signer"]
 
-    # Verify signature using full path + query
-    if not url_signer.verify(request.path_qs):
-        logger.warning(f"Invalid signature for upload: {request.path_qs}")
+    try:
+        payload = url_signer.verify(request.path_qs)
+    except UrlSignerError as err:
+        return web.json_response(create_error_response(str(err)).to_dict(), status=403)
+
+    user_email = payload.get("user")
+    if not user_email:
         return web.json_response(
-            create_error_response("Invalid signature", "E403").to_dict(),
+            create_error_response("Missing user identity in signature").to_dict(),
             status=403,
         )
 
@@ -65,19 +67,26 @@ async def handle_oss_upload(request: web.Request) -> web.Response:
 
 @routes.put("/api/oss/upload/part")
 @routes.post("/api/oss/upload/part")
+@public_route
 async def handle_oss_upload_part(request: web.Request) -> web.Response:
     """Handle upload of a single part (chunk).
 
     Endpoint: POST /api/oss/upload/part
     Query Params: uploadId, partNumber, object_name, signature, totalChunks (optional/implied for implicit merge)
     """
-    url_signer: UrlSigner = request.app["url_signer"]
     file_service: FileService = request.app["file_service"]
-    user_email = request["user"]
+    url_signer: UrlSigner = request.app["url_signer"]
 
-    if not url_signer.verify(request.path_qs):
+    try:
+        payload = url_signer.verify(request.path_qs)
+    except UrlSignerError as err:
+        return web.json_response(create_error_response(str(err)).to_dict(), status=403)
+
+    user_email = payload.get("user")
+    if not user_email:
         return web.json_response(
-            create_error_response("Invalid signature", "E403").to_dict(), status=403
+            create_error_response("Missing user identity in signature").to_dict(),
+            status=403,
         )
 
     query_dict = dict(request.query)
