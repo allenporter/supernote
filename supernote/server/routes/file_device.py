@@ -205,15 +205,10 @@ async def handle_query_by_path(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
 
     entity = await file_service.get_file_info(user_email, path_str)
-    if not entity:
-        return web.json_response(
-            create_error_response(error_msg="File not found").to_dict(), status=404
-        )
-
     return web.json_response(
         FileQueryByPathLocalVO(
             equipment_no=req_data.equipment_no,
-            entries_vo=_to_entries_vo(entity),
+            entries_vo=_to_entries_vo(entity) if entity else None,
         ).to_dict()
     )
 
@@ -230,13 +225,10 @@ async def handle_query_v3(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
 
     entity = await file_service.get_file_info_by_id(user_email, int(file_id))
-
-    entries_vo = _to_entries_vo(entity) if entity else None
-
     return web.json_response(
         FileQueryLocalVO(
             equipment_no=req_data.equipment_no,
-            entries_vo=entries_vo,
+            entries_vo=_to_entries_vo(entity) if entity else None,
         ).to_dict()
     )
 

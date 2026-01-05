@@ -50,3 +50,12 @@ async def test_query_v3_not_found(
 
     assert data.entries_vo is None
     assert data.equipment_no == "SN123"
+
+
+async def test_query_by_path_not_found(device_client: DeviceClient) -> None:
+    """Query with a path that does not exist."""
+    data = await device_client.query_by_path(
+        path="Note/test.note", equipment_no="SN123"
+    )
+    assert data.entries_vo is None
+    assert data.equipment_no == "SN123"
