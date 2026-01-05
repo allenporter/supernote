@@ -256,13 +256,15 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
 
     # Simple Upload URL: /api/oss/upload?object_name={name}
     simple_path = f"/api/oss/upload?object_name={encoded_name}"
-    full_upload_url_path = url_signer.sign(simple_path)
+    simple_path = f"/api/oss/upload?object_name={encoded_name}"
+    full_upload_url_path = url_signer.sign(simple_path, user=request["user"])
     full_upload_url = f"{request.scheme}://{request.host}{full_upload_url_path}"
 
     # Part Upload URL: /api/oss/upload/part?object_name={name}
     # Client will append &uploadId=...&partNumber=...
     part_path = f"/api/oss/upload/part?object_name={encoded_name}"
-    part_upload_url_path = url_signer.sign(part_path)
+    part_path = f"/api/oss/upload/part?object_name={encoded_name}"
+    part_upload_url_path = url_signer.sign(part_path, user=request["user"])
     part_upload_url = f"{request.scheme}://{request.host}{part_upload_url_path}"
 
     return web.json_response(
@@ -350,7 +352,7 @@ async def handle_download_apply(request: web.Request) -> web.Response:
     path_to_sign = f"/api/oss/download?path={encoded_id}"
 
     # helper returns: ...?signature=...
-    signed_path = url_signer.sign(path_to_sign)
+    signed_path = url_signer.sign(path_to_sign, user=user_email)
     download_url = f"{request.scheme}://{request.host}{signed_path}"
 
     return web.json_response(
