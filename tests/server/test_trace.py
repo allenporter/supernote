@@ -49,8 +49,8 @@ def test_try_parse_json() -> None:
     assert try_parse_json('{"a": 1') == '{"a": 1'
     # None
     assert try_parse_json(None) is None
-    # Not a string
-    assert try_parse_json(123) == 123
+    # A number json string
+    assert try_parse_json("123") == 123
 
 
 def test_binary_content_type_check() -> None:
