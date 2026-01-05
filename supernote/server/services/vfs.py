@@ -272,7 +272,12 @@ class VirtualFileSystem:
         return node
 
     async def copy_node(
-        self, user_id: int, source_node_id: int, new_parent_id: int, autorename: bool
+        self,
+        user_id: int,
+        source_node_id: int,
+        new_parent_id: int,
+        autorename: bool,
+        new_name: str,
     ) -> UserFileDO | None:
         """Copy a node."""
         node = await self.get_node_by_id(user_id, source_node_id)
@@ -290,7 +295,6 @@ class VirtualFileSystem:
         # is disabled?
 
         # Autorename Logic
-        new_name = node.file_name
         if autorename:
             logger.debug("Autorename enabled for copy")
             base_name = new_name
