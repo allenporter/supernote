@@ -9,7 +9,6 @@ from aiohttp import web
 from supernote.models.base import (
     BaseResponse,
     BooleanEnum,
-    create_error_response,
 )
 from supernote.models.file_common import FileUploadApplyLocalVO
 from supernote.models.file_web import (
@@ -43,12 +42,11 @@ from supernote.server.constants import (
     IMMUTABLE_SYSTEM_DIRECTORIES,
     ORDERED_WEB_ROOT,
 )
+from supernote.server.exceptions import SupernoteError
 from supernote.server.services.file import (
     FileEntity,
     FileService,
-    FileServiceException,
     FolderDetail,
-    InvalidPathException,
     RecycleEntity,
 )
 
@@ -164,8 +162,11 @@ async def handle_recycle_delete(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await file_service.delete_from_recycle(user_email, req_data.id_list)
-    return web.json_response(response.to_dict())
+    try:
+        await file_service.delete_from_recycle(user_email, req_data.id_list)
+    except SupernoteError as err:
+        return err.to_response()
+    return web.json_response(BaseResponse(success=True).to_dict())
 
 
 @routes.post("/api/file/recycle/revert")
@@ -178,8 +179,11 @@ async def handle_recycle_revert(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await file_service.revert_from_recycle(user_email, req_data.id_list)
-    return web.json_response(response.to_dict())
+    try:
+        await file_service.revert_from_recycle(user_email, req_data.id_list)
+    except SupernoteError as err:
+        return err.to_response()
+    return web.json_response(BaseResponse(success=True).to_dict())
 
 
 @routes.post("/api/file/recycle/clear")
@@ -190,8 +194,11 @@ async def handle_recycle_clear(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await file_service.clear_recycle(user_email)
-    return web.json_response(response.to_dict())
+    try:
+        await file_service.clear_recycle(user_email)
+    except SupernoteError as err:
+        return err.to_response()
+    return web.json_response(BaseResponse(success=True).to_dict())
 
 
 @routes.post("/api/file/path/query")
@@ -352,10 +359,10 @@ async def handle_folder_add(request: web.Request) -> web.Response:
         new_dir = await file_service.create_directory_by_id(
             user_email, req_data.directory_id, req_data.file_name
         )
-    except InvalidPathException as e:
-        return web.json_response(create_error_response(str(e)).to_dict(), status=400)
-    except FileServiceException as e:
-        return web.json_response(create_error_response(str(e)).to_dict(), status=500)
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
     response = FolderVO(
         id=str(new_dir.id),
@@ -435,10 +442,13 @@ async def handle_file_move_web(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await file_service.move_items(
-        user_email, req_data.id_list, req_data.go_directory_id
-    )
-    return web.json_response(response.to_dict())
+    try:
+        await file_service.move_items(
+            user_email, req_data.id_list, req_data.go_directory_id
+        )
+    except SupernoteError as err:
+        return err.to_response()
+    return web.json_response(BaseResponse(success=True).to_dict())
 
 
 @routes.post("/api/file/copy")
@@ -451,10 +461,13 @@ async def handle_file_copy_web(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await file_service.copy_items(
-        user_email, req_data.id_list, req_data.go_directory_id
-    )
-    return web.json_response(response.to_dict())
+    try:
+        await file_service.copy_items(
+            user_email, req_data.id_list, req_data.go_directory_id
+        )
+    except SupernoteError as err:
+        return err.to_response()
+    return web.json_response(BaseResponse(success=True).to_dict())
 
 
 @routes.post("/api/file/rename")
@@ -467,10 +480,11 @@ async def handle_file_rename_web(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    response = await file_service.rename_item(
-        user_email, req_data.id, req_data.new_name
-    )
-    return web.json_response(response.to_dict())
+    try:
+        await file_service.rename_item(user_email, req_data.id, req_data.new_name)
+    except SupernoteError as err:
+        return err.to_response()
+    return web.json_response(BaseResponse(success=True).to_dict())
 
 
 @routes.post("/api/file/delete")
@@ -484,14 +498,14 @@ async def handle_file_delete(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
 
     try:
-        response = await file_service.delete_items(
+        await file_service.delete_items(
             user_email, req_data.id_list, req_data.directory_id
         )
-    except InvalidPathException as err:
-        return web.json_response(create_error_response(str(err)).to_dict(), status=400)
-    except FileServiceException as err:
-        return web.json_response(create_error_response(str(err)).to_dict(), status=500)
-    return web.json_response(response.to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
+    return web.json_response(BaseResponse(success=True).to_dict())
 
 
 @routes.post("/api/file/upload/apply")
@@ -539,9 +553,9 @@ async def handle_file_upload_finish(request: web.Request) -> web.Response:
             md5=req_data.md5,
             inner_name=req_data.inner_name,
         )
-    except InvalidPathException as e:
-        return web.json_response(create_error_response(str(e)).to_dict(), status=400)
-    except FileServiceException as e:
-        return web.json_response(create_error_response(str(e)).to_dict(), status=500)
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
     return web.json_response(BaseResponse(success=True).to_dict())

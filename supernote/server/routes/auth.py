@@ -17,6 +17,7 @@ from supernote.models.user import (
     UpdatePasswordDTO,
     UserRegisterDTO,
 )
+from supernote.server.exceptions import SupernoteError
 from supernote.server.services.user import UserService
 
 from .decorators import public_route
@@ -171,6 +172,10 @@ async def handle_register(request: web.Request) -> web.Response:
         return web.json_response(BaseResponse().to_dict())
     except ValueError as e:
         return web.json_response(create_error_response(str(e)).to_dict(), status=400)
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
 
 @routes.post("/api/user/unregister")
