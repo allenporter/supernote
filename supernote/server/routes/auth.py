@@ -20,6 +20,19 @@ from supernote.models.user import (
 )
 from supernote.server.exceptions import SupernoteError
 from supernote.server.services.user import UserService
+from supernote.server.utils.rate_limit import (
+    LIMIT_LOGIN_ACCOUNT_MAX,
+    LIMIT_LOGIN_ACCOUNT_WINDOW,
+    LIMIT_LOGIN_IP_MAX,
+    LIMIT_LOGIN_IP_WINDOW,
+    LIMIT_PW_RESET_MAX,
+    LIMIT_PW_RESET_WINDOW,
+    LOGIN_KEY_ACCOUNT,
+    LOGIN_KEY_IP,
+    RESET_KEY_ACCOUNT,
+    RESET_KEY_IP,
+    RateLimitExceeded,
+)
 
 from .decorators import public_route
 
@@ -93,7 +106,23 @@ async def handle_login(request: web.Request) -> web.Response:
     login_req = LoginDTO.from_dict(req_data)
 
     # Extract IP if possible
-    ip = request.remote
+    ip = request.remote or "unknown"
+
+    # RATE LIMIT CHECKS
+    rate_limiter = request.app["rate_limiter"]
+    try:
+        await rate_limiter.check(
+            f"{LOGIN_KEY_IP}:{ip}",
+            limit=LIMIT_LOGIN_IP_MAX,
+            window=LIMIT_LOGIN_IP_WINDOW,
+        )
+        await rate_limiter.check(
+            f"{LOGIN_KEY_ACCOUNT}:{login_req.account}",
+            limit=LIMIT_LOGIN_ACCOUNT_MAX,
+            window=LIMIT_LOGIN_ACCOUNT_WINDOW,
+        )
+    except RateLimitExceeded as e:
+        return e.to_response()
 
     result = await user_service.login(
         account=login_req.account,
@@ -230,7 +259,6 @@ async def handle_update_email(request: web.Request) -> web.Response:
 @public_route
 async def handle_retrieve_password(request: web.Request) -> web.Response:
     """Retrieve password."""
-    """Retrieve password."""
     if not request.app["config"].auth.enable_remote_password_reset:
         return web.json_response(
             create_error_response("Remote password reset is disabled").to_dict(),
@@ -244,6 +272,25 @@ async def handle_retrieve_password(request: web.Request) -> web.Response:
 
     # Extract target account and password from DTO
     account = dto.email or dto.telephone or ""
+
+    # RATE LIMIT CHECK
+    # Strict Limit: 5 attempts / hour
+    # We use a longer window for password reset to prevent enumeration
+    ip = request.remote or "unknown"
+    rate_limiter = request.app["rate_limiter"]
+    try:
+        await rate_limiter.check(
+            f"{RESET_KEY_IP}:{ip}",
+            limit=LIMIT_PW_RESET_MAX,
+            window=LIMIT_PW_RESET_WINDOW,
+        )
+        await rate_limiter.check(
+            f"{RESET_KEY_ACCOUNT}:{account}",
+            limit=LIMIT_PW_RESET_MAX,
+            window=LIMIT_PW_RESET_WINDOW,
+        )
+    except RateLimitExceeded as e:
+        return e.to_response()
 
     if await user_service.retrieve_password(account, dto.password):
         return web.json_response(BaseResponse().to_dict())

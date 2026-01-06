@@ -19,6 +19,7 @@ from .services.coordination import SqliteCoordinationService
 from .services.file import FileService
 from .services.schedule import ScheduleService
 from .services.user import UserService
+from .utils.rate_limit import RateLimiter
 from .utils.url_signer import UrlSigner
 
 logger = logging.getLogger(__name__)
@@ -220,6 +221,7 @@ def create_app(config: ServerConfig) -> web.Application:
     app["url_signer"] = UrlSigner(config.auth.secret_key, coordination_service)
     app["schedule_service"] = ScheduleService(session_manager)
     app["sync_locks"] = {}  # user -> (equipment_no, expiry_time)
+    app["rate_limiter"] = RateLimiter(coordination_service)
 
     # Register routes
     app.add_routes(system.routes)

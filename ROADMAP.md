@@ -17,7 +17,7 @@ This document outlines the path to making Supernote Private Cloud a reliable "da
 - [x] **Security & Identity**:
     - [x] Security review for all the auth and user flows.
     - [x] Understand reset password semantics and how it works securely.
-    - [ ] Abuse protection (e.g. tracking error counts, rate limiting).
+    - [x] Abuse protection (e.g. tracking error counts, rate limiting).
 - [ ] **Documentation**:
     - [ ] Refresh stale README.md and update examples.
 

@@ -3,12 +3,14 @@ import time
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
 from supernote.server.db.models.kv import KeyValueDO
 from supernote.server.db.session import DatabaseSessionManager
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_TTL = 31536000  # 1 year in seconds
 
 
 class CoordinationService(ABC):
@@ -39,6 +41,11 @@ class CoordinationService(ABC):
         """Get and delete a value atomically (if possible) or sequentially."""
         pass
 
+    @abstractmethod
+    async def increment(self, key: str, amount: int = 1, ttl: int | None = None) -> int:
+        """Atomically increment a value. Returns new value."""
+        pass
+
 
 class SqliteCoordinationService(CoordinationService):
     """SQLite-backed implementation for distributed locks and key-value state."""
@@ -55,7 +62,7 @@ class SqliteCoordinationService(CoordinationService):
     async def set_value(self, key: str, value: str, ttl: int | None = None) -> None:
         """Set a key-value pair with optional TTL."""
         async with self._session_manager.session() as session:
-            expiry = time.time() + (ttl if ttl else 31536000)  # Default 1 year
+            expiry = time.time() + (ttl if ttl else DEFAULT_TTL)
 
             # Upsert
             stmt = select(KeyValueDO).where(KeyValueDO.key == key)
@@ -120,3 +127,50 @@ class SqliteCoordinationService(CoordinationService):
             if time.time() > expiry:
                 return None
             return str(value)
+
+    async def increment(self, key: str, amount: int = 1, ttl: int | None = None) -> int:
+        """Atomically increment a value. Returns the new value.
+
+        If key does not exist, it is created with value `amount`.
+        If key exists, its value is incremented.
+        TTL is effective only if a new key is created.
+        """
+        async with self._session_manager.session() as session:
+            now = time.time()
+            expiry = now + (ttl if ttl else DEFAULT_TTL)
+
+            # 1. Cleanup expired key if any (enforce fresh start if expired)
+            stmt_del_expired = (
+                delete(KeyValueDO)
+                .where(KeyValueDO.key == key)
+                .where(KeyValueDO.expiry < now)
+            )
+            await session.execute(stmt_del_expired)
+
+            # 2. Upsert with RETURNING
+            # DB stores value as String. We cast to int for math, then back to string.
+            # On Conflict (key exists), we update value. We DO NOT update expiry (Redis behavior).
+
+            sql = text("""
+                INSERT INTO key_values (key, value, expiry)
+                VALUES (:key, :initial_val, :expiry)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = CAST(CAST(value AS INTEGER) + :amount AS TEXT)
+                RETURNING value
+            """)
+
+            result = await session.execute(
+                sql,
+                {
+                    "key": key,
+                    "initial_val": str(amount),
+                    "expiry": expiry,
+                    "amount": amount,
+                },
+            )
+            row = result.first()
+            await session.commit()
+
+            if row:
+                return int(row[0])
+            return amount  # Should not happen with RETURNING

@@ -129,3 +129,12 @@ class DatabaseError(SupernoteError):
         self, message: str, error_code: str | ErrorCode = ErrorCode.INTERNAL_ERROR
     ):
         super().__init__(message, error_code, status_code=500)
+
+
+class RateLimitExceeded(SupernoteError):
+    """Raised when a rate limit is exceeded."""
+
+    def __init__(
+        self, message: str, error_code: str | ErrorCode = ErrorCode.ACCESS_DENIED_SYSTEM
+    ):
+        super().__init__(message, error_code, status_code=429)
