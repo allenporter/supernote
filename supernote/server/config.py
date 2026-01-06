@@ -23,6 +23,9 @@ class AuthConfig(DataClassYAMLMixin):
     enable_registration: bool = False
     """When disabled, registration is only allowed if there are no users in the system."""
 
+    enable_remote_password_reset: bool = False
+    """When disabled, the public password reset endpoint returns 403."""
+
     class Config(BaseConfig):
         omit_none = True
         code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
@@ -106,6 +109,13 @@ class ServerConfig(DataClassYAMLMixin):
             val = os.getenv("SUPERNOTE_ENABLE_REGISTRATION", "").lower()
             config.auth.enable_registration = val in ("true", "1", "yes")
             logger.info(f"Registration Enabled: {config.auth.enable_registration}")
+
+        if os.getenv("SUPERNOTE_ENABLE_REMOTE_PASSWORD_RESET"):
+            val = os.getenv("SUPERNOTE_ENABLE_REMOTE_PASSWORD_RESET", "").lower()
+            config.auth.enable_remote_password_reset = val in ("true", "1", "yes")
+            logger.info(
+                f"Remote Password Reset Enabled: {config.auth.enable_remote_password_reset}"
+            )
 
         return config
 

@@ -25,13 +25,18 @@ async def test_oss_download_public_access_flow(
     assert download_info
     signed_url = download_info.url
 
-    # Access with authenticated client
+    # 1. Access with authenticated client (Consumes Nonce 1)
     resp_bytes = await authenticated_client.get_content(signed_url)
     assert resp_bytes == content
 
-    # Access with UNauthenticated client (the signature should give access)
+    # 2. Access with UNauthenticated client
+    # Cannot reuse signed_url because it was single-use and consumed above.
+    # Generate a NEW signed URL for this step.
+    download_info_2 = await device_client.download_v3(file_id, "TEST")
+    signed_url_2 = download_info_2.url
+
     # Extract relative path from signed_url for test client
-    parsed = urllib.parse.urlparse(signed_url)
+    parsed = urllib.parse.urlparse(signed_url_2)
     relative_url = f"{parsed.path}?{parsed.query}"
 
     resp_public = await client.get(relative_url, headers={})

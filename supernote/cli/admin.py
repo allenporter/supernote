@@ -100,6 +100,34 @@ def list_users(args):
     asyncio.run(list_users_async())
 
 
+async def reset_password_async(url: str, email: str, password: str):
+    """Async implementation of password reset."""
+    async with create_client(url) as client:
+        print(f"Attempting to reset password for '{email}' on {client.host}...")
+        admin_client = AdminClient(client)
+
+        password_md5 = hashlib.md5(password.encode()).hexdigest()
+
+        try:
+            await admin_client.admin_reset_password(email, password_md5)
+            print("Success! Password Reset.")
+        except Exception as e:
+            print(f"Failed to reset password: {e}")
+            sys.exit(1)
+
+
+def reset_password(args):
+    password = args.password
+    if not password:
+        password = getpass.getpass(f"New password for {args.email}: ")
+        confirm = getpass.getpass("Confirm password: ")
+        if password != confirm:
+            print("Passwords do not match.")
+            sys.exit(1)
+
+    asyncio.run(reset_password_async(args.url, args.email, password))
+
+
 def add_parser(subparsers):
     # 'admin' parent command
     parser_admin = subparsers.add_parser(
@@ -136,3 +164,14 @@ def add_parser(subparsers):
         "--name", type=str, help="Display name (optional)", default=None
     )
     parser_user_add.set_defaults(func=add_user)
+
+    # user reset-password
+    parser_user_reset = user_subparsers.add_parser(
+        "reset-password",
+        help="Reset user password",
+    )
+    parser_user_reset.add_argument("email", type=str, help="Email address of the user")
+    parser_user_reset.add_argument(
+        "--password", type=str, help="New password (if omitted, prompt interactively)"
+    )
+    parser_user_reset.set_defaults(func=reset_password)

@@ -7,6 +7,7 @@ from typing import Any, Awaitable, Callable
 
 import aiohttp_remotes
 from aiohttp import web
+from yarl import URL
 
 from supernote.models.base import create_error_response
 
@@ -78,13 +79,13 @@ async def trace_middleware(
             "timestamp": time.time(),
             "request": {
                 "method": request.method,
-                "url": str(request.url),
-                "headers": dict(request.headers),
+                "url": str(_redact_url(request.url)),
+                "headers": _sanitize_headers(dict(request.headers)),
                 "body": try_parse_json(req_body_str),
             },
             "response": {
                 "status": response.status,
-                "headers": dict(response.headers),
+                "headers": _sanitize_headers(dict(response.headers)),
                 "body": try_parse_json(res_body_str),
             },
         }
@@ -126,6 +127,34 @@ def is_binary_content_type(content_type: str) -> bool:
         "video/",
     ]
     return any(t in content_type for t in binary_types)
+
+
+def _sanitize_headers(headers: dict[str, Any]) -> dict[str, Any]:
+    new_headers = headers.copy()
+    if "x-access-token" in new_headers:
+        new_headers["x-access-token"] = "***"
+    if "Authorization" in new_headers:
+        new_headers["Authorization"] = "***"
+    return new_headers
+
+
+def _redact_url(url: Any) -> str:
+    """Redact sensitive query parameters from URL."""
+    # Handle yarl.URL or string
+    url_str = str(url)
+    if "signature=" not in url_str and "token=" not in url_str:
+        return url_str
+
+    try:
+        u = URL(url_str)
+        query = u.query.copy()
+        if "signature" in query:
+            query["signature"] = "***"
+        if "token" in query:
+            query["token"] = "***"
+        return str(u.with_query(query))
+    except Exception:
+        return url_str
 
 
 @web.middleware
@@ -188,7 +217,7 @@ def create_app(config: ServerConfig) -> web.Application:
     )
     app["user_service"] = user_service
     app["file_service"] = file_service
-    app["url_signer"] = UrlSigner(config.auth.secret_key)
+    app["url_signer"] = UrlSigner(config.auth.secret_key, coordination_service)
     app["schedule_service"] = ScheduleService(session_manager)
     app["sync_locks"] = {}  # user -> (equipment_no, expiry_time)
 

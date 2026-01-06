@@ -34,6 +34,11 @@ class CoordinationService(ABC):
         """Delete a key."""
         pass
 
+    @abstractmethod
+    async def pop_value(self, key: str) -> Optional[str]:
+        """Get and delete a value atomically (if possible) or sequentially."""
+        pass
+
 
 class SqliteCoordinationService(CoordinationService):
     """SQLite-backed implementation for distributed locks and key-value state."""
@@ -90,3 +95,28 @@ class SqliteCoordinationService(CoordinationService):
             stmt = delete(KeyValueDO).where(KeyValueDO.key == key)
             await session.execute(stmt)
             await session.commit()
+
+    async def pop_value(self, key: str) -> Optional[str]:
+        """Get and delete a value atomically."""
+        async with self._session_manager.session() as session:
+            # Check validity first (lazy expiry check logic repeated or simple get)
+            # To be strictly atomic in SQL without stored procedure is hard, but we can do:
+            # DELETE FROM kv WHERE key=:key RETURNING value
+            # SQLite supports RETURNING since 3.35.0 (2021). Assuming modern sqlite.
+            # Fallback for older: Get then Delete in transaction.
+            stmt = (
+                delete(KeyValueDO)
+                .where(KeyValueDO.key == key)
+                .returning(KeyValueDO.value, KeyValueDO.expiry)
+            )
+            result = await session.execute(stmt)
+            row = result.first()
+            await session.commit()
+
+            if not row:
+                return None
+
+            value, expiry = row
+            if time.time() > expiry:
+                return None
+            return str(value)

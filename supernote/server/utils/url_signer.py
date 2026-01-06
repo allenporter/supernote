@@ -16,6 +16,13 @@ the payload (path, user, expiration, nonce) into a single, standard, url-safe
 string. This simplifies the client-side usage (one query parameter) and
 leverages standard libraries for verification and expiration handling.
 
+Single-Use Tokens:
+For strict security (default), tokens are single-use. This is implemented
+via a 'whitelist' in CoordinationService. When a token is signed, its nonce
+is stored. successfully verification removes (consumes) the nonce.
+However, for operations like chunked uploads where the URL is reused,
+verification can optionally skip consumption (`consume=False`).
+
 Usage example:
 
 ```python
@@ -40,9 +47,9 @@ from typing import Any
 import jwt
 
 from supernote.server.exceptions import InvalidSignature, SignerError
+from supernote.server.services.coordination import CoordinationService
 
 logger = logging.getLogger(__name__)
-
 
 DEFAULT_EXPIRATION = datetime.timedelta(minutes=15)
 
@@ -50,12 +57,17 @@ DEFAULT_EXPIRATION = datetime.timedelta(minutes=15)
 class UrlSigner:
     """Sign and verify URLs using HMAC-SHA256 (via JWT)."""
 
-    def __init__(self, secret_key: str) -> None:
+    def __init__(
+        self,
+        secret_key: str,
+        coordination_service: CoordinationService | None = None,
+    ) -> None:
         """Initialize the signer with a secret key."""
         self.secret_key = secret_key
         self.algorithm = "HS256"
+        self._coordination_service = coordination_service
 
-    def sign(
+    async def sign(
         self,
         path: str,
         user: str | None = None,
@@ -83,6 +95,18 @@ class UrlSigner:
         exp = now + int(expiration.total_seconds())
         nonce = uuid.uuid4().hex
 
+        # whitelist logic: store nonce before issuing token
+        if self._coordination_service:
+            # Key format: nonce:{user}:{nonce} for easier namespacing/debug
+            # Fallback to 'anon' if no user provided
+            user_key_part = user if user else "anon"
+            key = f"nonce:{user_key_part}:{nonce}"
+
+            # Store with TTL matching expiration + buffer (e.g. 1m) to ensure it lives long enough
+            # We use "1" as value indicating "valid/issed"
+            ttl = int(expiration.total_seconds()) + 60
+            await self._coordination_service.set_value(key, "1", ttl=ttl)
+
         payload = {
             "path": path,
             "exp": exp,
@@ -101,11 +125,12 @@ class UrlSigner:
         separator = "&" if "?" in path else "?"
         return f"{path}{separator}signature={token}"
 
-    def verify(self, signed_url: str) -> dict[str, Any]:
+    async def verify(self, signed_url: str, consume: bool = True) -> dict[str, Any]:
         """Verify the signature embedded in the URL.
 
         Args:
             signed_url: The full path + query string containing the signature.
+            consume: Whether to consume the nonce (single-use). Default True.
 
         Returns:
             The decoded payload if valid, None otherwise.
@@ -139,6 +164,26 @@ class UrlSigner:
         # against what was signed (payload['path']).
         if not (expected_path := payload.get("path")):
             raise InvalidSignature(f"No path found in payload: {payload}")
+
+        # CONSUME NONCE (Single-Use Token)
+        # Check and Remove (atomic pop if possible)
+        nonce = payload.get("nonce")
+        user = payload.get("user")
+        if self._coordination_service and nonce:
+            user_key_part = user if user else "anon"
+            key = f"nonce:{user_key_part}:{nonce}"
+
+            # Atomic Pop if consuming, otherwise just check existence
+            if consume:
+                val = await self._coordination_service.pop_value(key)
+                if not val:
+                    raise InvalidSignature(
+                        f"Token invalid or already used (nonce: {nonce})"
+                    )
+            else:
+                val = await self._coordination_service.get_value(key)
+                if not val:
+                    raise InvalidSignature(f"Token invalid or expired (nonce: {nonce})")
 
         if not signed_url.startswith(expected_path):
             raise InvalidSignature(

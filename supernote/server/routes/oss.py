@@ -28,7 +28,7 @@ async def handle_oss_upload(request: web.Request) -> web.Response:
     url_signer: UrlSigner = request.app["url_signer"]
 
     try:
-        payload = url_signer.verify(request.path_qs)
+        payload = await url_signer.verify(request.path_qs)
     except SupernoteError as err:
         return err.to_response()
 
@@ -78,18 +78,6 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
     url_signer: UrlSigner = request.app["url_signer"]
 
-    try:
-        payload = url_signer.verify(request.path_qs)
-    except SupernoteError as err:
-        return err.to_response()
-
-    user_email = payload.get("user")
-    if not user_email:
-        return web.json_response(
-            create_error_response("Missing user identity in signature").to_dict(),
-            status=403,
-        )
-
     query_dict = dict(request.query)
     try:
         params = FileChunkParams.from_dict(query_dict)
@@ -101,6 +89,23 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
     if not params.object_name:
         return web.json_response(
             create_error_response("Missing object_name", "E400").to_dict(), status=400
+        )
+
+    # Determine if this is the last chunk to consume the nonce
+    should_consume = False
+    if params.total_chunks and params.part_number == params.total_chunks:
+        should_consume = True
+
+    try:
+        payload = await url_signer.verify(request.path_qs, consume=should_consume)
+    except SupernoteError as err:
+        return err.to_response()
+
+    user_email = payload.get("user")
+    if not user_email:
+        return web.json_response(
+            create_error_response("Missing user identity in signature").to_dict(),
+            status=403,
         )
 
     reader = await request.multipart()
@@ -159,7 +164,7 @@ async def handle_oss_download(request: web.Request) -> web.StreamResponse:
     url_signer: UrlSigner = request.app["url_signer"]
     file_service: FileService = request.app["file_service"]
     try:
-        payload = url_signer.verify(request.path_qs)
+        payload = await url_signer.verify(request.path_qs)
     except SupernoteError as err:
         return err.to_response()
 

@@ -13,6 +13,7 @@ from supernote.models.base import BaseResponse, create_error_response
 from supernote.models.equipment import BindEquipmentDTO, UnbindEquipmentDTO
 from supernote.models.user import (
     LoginRecordDTO,
+    RetrievePasswordDTO,
     UpdateEmailDTO,
     UpdatePasswordDTO,
     UserRegisterDTO,
@@ -229,19 +230,27 @@ async def handle_update_email(request: web.Request) -> web.Response:
 @public_route
 async def handle_retrieve_password(request: web.Request) -> web.Response:
     """Retrieve password."""
-    # TODO: The current implementation seems like it has a security hole and the
-    # semantics need to be revisited (e.g. or allow only via admin API etc)
-    raise ValueError("Not implemented")
+    """Retrieve password."""
+    if not request.app["config"].auth.enable_remote_password_reset:
+        return web.json_response(
+            create_error_response("Remote password reset is disabled").to_dict(),
+            status=403,
+        )
 
-    # req_data = await request.json()
-    # dto = RetrievePasswordDTO.from_dict(req_data)
-    # user_service: UserService = request.app["user_service"]
-    # if await user_service.retrieve_password(dto):
-    #     return web.json_response(BaseResponse().to_dict())
-    # else:
-    #     return web.json_response(
-    #         create_error_response("User not found").to_dict(), status=404
-    #     )
+    req_data = await request.json()
+    req_data = await request.json()
+    dto = RetrievePasswordDTO.from_dict(req_data)
+    user_service: UserService = request.app["user_service"]
+
+    # Extract target account and password from DTO
+    account = dto.email or dto.telephone or ""
+
+    if await user_service.retrieve_password(account, dto.password):
+        return web.json_response(BaseResponse().to_dict())
+    else:
+        return web.json_response(
+            create_error_response("User not found").to_dict(), status=404
+        )
 
 
 # TODO: Actually implement the return values for this.

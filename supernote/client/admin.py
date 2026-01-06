@@ -65,3 +65,12 @@ class AdminClient:
             "/api/admin/users", BaseResponse, json=dto.to_dict()
         )
         logger.info(f"Registered user {email}")
+
+    async def admin_reset_password(self, email: str, password_md5: str) -> None:
+        """Force reset user password through admin API."""
+        await self.client.post_json(
+            "/api/admin/users/password",
+            BaseResponse,
+            json={"email": email, "password": password_md5},
+        )
+        logger.info(f"Password reset for {email}")

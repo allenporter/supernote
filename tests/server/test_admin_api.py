@@ -135,12 +135,45 @@ def admin_client(authenticated_client: Client) -> AdminClient:
     return AdminClient(authenticated_client)
 
 
-@pytest.mark.asyncio
 async def test_admin_update_password(admin_client: AdminClient) -> None:
     md5_pwd = hashlib.md5("newpass123".encode()).hexdigest()
     await admin_client.update_password(md5_pwd)
 
 
-@pytest.mark.asyncio
 async def test_admin_unregister(admin_client: AdminClient) -> None:
     await admin_client.unregister()
+
+
+async def test_admin_force_password_reset(
+    client: Client,
+    session_manager: DatabaseSessionManager,
+    coordination_service: CoordinationService,
+    server_config: ServerConfig,
+    admin_headers: dict[str, str],
+) -> None:
+    """Test admin force-resetting a user's password."""
+    await setup_users(session_manager, coordination_service, server_config)
+
+    # 1. Reset user password
+    target_email = "user@example.com"
+    new_pw = hashlib.md5("reset123".encode()).hexdigest()
+
+    resp = await client.post(
+        "/api/admin/users/password",
+        json={"email": target_email, "password": new_pw},
+        headers=admin_headers,
+    )
+    assert resp.status == 200
+
+    # 2. Verify user can login with new password logic (simulated by checking DB)
+    async with session_manager.session() as session:
+        from sqlalchemy import select
+
+        from supernote.server.db.models.user import UserDO
+
+        result = await session.execute(
+            select(UserDO).where(UserDO.email == target_email)
+        )
+        user = result.scalar_one_or_none()
+        assert user is not None
+        assert user.password_md5 == new_pw

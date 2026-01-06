@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from supernote.models.auth import LoginVO, UserVO
 from supernote.models.user import (
     LoginRecordVO,
-    RetrievePasswordDTO,
     UpdateEmailDTO,
     UpdatePasswordDTO,
     UserRegisterDTO,
@@ -398,20 +397,33 @@ class UserService:
             await session.commit()
         return True
 
-    async def retrieve_password(self, dto: RetrievePasswordDTO) -> bool:
+    async def admin_reset_password(self, email: str, password_md5: str) -> None:
+        """Force reset user password (Admin only)."""
+        if not re.match(MD5_REGEX, password_md5):
+            raise ValueError("Invalid password format, must be md5 hash")
+
+        async with self._session_manager.session() as session:
+            result = await session.execute(select(UserDO).where(UserDO.email == email))
+            user = result.scalar_one_or_none()
+            if not user:
+                raise ValueError(f"User {email} not found")
+
+            user.password_md5 = password_md5
+            await session.commit()
+
+    async def retrieve_password(self, account: str, password_md5: str) -> bool:
         """Retrieve/Reset password."""
         # Find user by alias (email/phone/username) and reset password.
-        target = dto.email or dto.telephone
-        if not target:
+        if not account:
             return False
 
-        if not re.match(MD5_REGEX, dto.password):
+        if not re.match(MD5_REGEX, password_md5):
             raise ValueError("Invalid password format, must be md5 hash")
 
         async with self._session_manager.session() as session:
             # Find user
             stmt = select(UserDO).where(
-                (UserDO.email == target) | (UserDO.phone == target)
+                (UserDO.email == account) | (UserDO.phone == account)
             )
             result = await session.execute(stmt)
             user = result.scalar_one_or_none()
@@ -419,7 +431,7 @@ class UserService:
             if not user:
                 return False
 
-            user.password_md5 = dto.password
+            user.password_md5 = password_md5
             await session.commit()
         return True
 

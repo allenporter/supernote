@@ -95,7 +95,7 @@ The FileController is the main controller for handling basic file operations req
 
 ### File Search
 
-The FileSearchController is the main controller for handling file search requests.  
+The FileSearchController is the main controller for handling file search requests.
 
 *   `POST /api/file/label/list/search`: Search by Label/Name
 

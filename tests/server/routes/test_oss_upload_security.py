@@ -6,7 +6,6 @@ from aiohttp import FormData
 from supernote.client.client import Client
 from supernote.client.device import DeviceClient
 from supernote.models.system import FileChunkVO, UploadFileVO
-from supernote.server.utils.url_signer import UrlSigner
 
 
 async def test_oss_upload_public_access_flow(
@@ -92,28 +91,3 @@ async def test_oss_upload_part_public_access_flow(
     vo = FileChunkVO.from_json(result)
     assert vo.status == "success"
     assert vo.chunk_md5 == hashlib.md5(content).hexdigest()
-
-
-async def test_oss_upload_missing_user_in_signature(
-    device_client: DeviceClient,
-    client: Client,
-) -> None:
-    """Verify rejection when user is missing in signature."""
-
-    # client is a TestClient, client.app is the aiohttp Application
-    path = "/api/oss/upload?object_name=test"
-    # Sign WITHOUT user
-    signer = UrlSigner(secret_key="test-secret-key")
-    signed = signer.sign(path)
-
-    parsed = urllib.parse.urlparse(signed)
-    relative_url = f"{parsed.path}?{parsed.query}"
-
-    data = FormData()
-    data.add_field("file", b"content", filename="test.txt")
-
-    resp = await client.post(relative_url, data=data, headers={})
-    # Should fail because middleware is bypassed (public) but code checks payload['user']
-    assert resp.status == 403
-    text = await resp.text()
-    assert "Missing user" in text
