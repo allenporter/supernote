@@ -86,7 +86,7 @@ def patch_server_config(server_config: ServerConfig) -> Generator[None, None, No
         yield
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def coordination_service(
     session_manager: DatabaseSessionManager,
 ) -> Generator[CoordinationService, None, None]:
@@ -192,15 +192,6 @@ def user_service(
 ) -> UserService:
     """Provides a UserService instance for testing."""
     return UserService(server_config.auth, coordination_service, session_manager)
-
-
-# @pytest.fixture(autouse=True)
-# async def mock_storage(test_users: list[str], device_client: DeviceClient) -> None:
-#     """Mock storage setup for the default device_client user."""
-#     if test_users:
-#         # await device_client.create_folder("Note", "TEST_DEVICE")
-#         # await device_client.create_folder("Document", "TEST_DEVICE")
-#         # await device_client.create_folder("EXPORT", "TEST_DEVICE")
 
 
 @pytest.fixture(name="client")
