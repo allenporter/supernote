@@ -5,12 +5,12 @@ This document outlines the path to making Supernote Private Cloud a reliable "da
 ## Phase 1: Operational Readiness ("Daily Driver")
 *Goal: Securely deploy the server for personal daily use.*
 
-- [ ] **Bootstrap & Deployment Guide**:
+- [x] **Bootstrap & Deployment Guide**:
     - Document standard secure setup (Docker/Kubernetes).
     - Define how to handle registration/secrets securely in a self-hosted context.
 - [ ] **SSL/TLS Support**:
     - Document reverse proxy setup (Nginx/Traefik) for secure HTTPS connections (essential for real device usage).
-- [ ] **Web UI Compatibility**:
+- [x] **Web UI Compatibility**:
     - Verify server works against the official Supernote Web UI container (ultimate compatibility check).
 - [x] **Dockerization**:
     - (Done) Basic Dockerfile exists. Needs verifying with the bootstrap guide.

@@ -48,35 +48,34 @@ The notebook parser is a fork and slightly lighter dependency version of [supern
 limitation. All credit goes to the original authors of [supernote-tool](https://github.com/jya-dev/supernote-tool) for providing an amazing low level utility.
 
 
-### Run Private Server
+### Server Setup & Bootstrap
 
-```bash
-# Generate configuration
-supernote-server config init > config.yaml
+1. **Start the Server**:
+   ```bash
+   supernote serve
+   ```
 
-# Generate users (outputs YAML, append to users.yaml)
-supernote-server user add alice >> users.yaml
+2. **Register the Admin**:
+   The first user registered becomes the system administrator.
+   ```bash
+   supernote admin user add email@example.com --url http://localhost:8080
+   ```
 
-# Start server
-supernote-server serve
-```
+3. **Login to CLI**:
+   ```bash
+   supernote cloud-login email@example.com --url http://localhost:8080
+   ```
+
+See the [Bootstrap Guide](docs/bootstrap_guide.md) for detailed deployment and security instructions.
 
 ### Run with Docker
 
 ```bash
 # Build image
-docker build -t supernote-server .
-
-# Generate initial configuration
-mkdir config
-docker run --rm supernote-server supernote-server config init > config/config.yaml
-docker run --rm -it supernote-server supernote-server user add alice >> config/users.yaml
+docker build -t supernote .
 
 # Run server
-docker run -d -p 8080:8080 \
-  -v $(pwd)/config:/config \
-  -v $(pwd)/storage:/data \
-  supernote-server
+docker run -d -p 8080:8080 -v $(pwd)/storage:/storage supernote serve
 ```
 
 See [Server Documentation](https://github.com/allenporter/supernote-lite/blob/main/supernote/server/README.mdd) for details.
@@ -97,17 +96,17 @@ async with SupernoteClient.from_credentials(email, password) as client:
 
 ```bash
 # Notebook operations
-supernote convert input.note output.pdf
-supernote analyze input.note
+supernote notebook convert input.note output.pdf
+supernote notebook analyze input.note
 
 # Server operations
-supernote-server serve
-supernote-server user add alice
-
+supernote serve
+supernote admin user list
+supernote admin user add email@example.com
 
 # Client operations
-supernote client login
-supernote client ls
+supernote cloud-login --url http://localhost:8080 email@example.com
+supernote cloud-ls
 ```
 
 ## Development
