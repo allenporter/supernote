@@ -14,9 +14,9 @@ This document outlines the path to making Supernote Private Cloud a reliable "da
     - Verify server works against the official Supernote Web UI container (ultimate compatibility check).
 - [x] **Dockerization**:
     - (Done) Basic Dockerfile exists. Needs verifying with the bootstrap guide.
-- [ ] **Security & Identity**:
-    - [ ] Security review for all the auth and user flows.
-    - [ ] Understand reset password semantics and how it works securely.
+- [x] **Security & Identity**:
+    - [x] Security review for all the auth and user flows.
+    - [x] Understand reset password semantics and how it works securely.
     - [ ] Abuse protection (e.g. tracking error counts, rate limiting).
 - [ ] **Documentation**:
     - [ ] Refresh stale README.md and update examples.
