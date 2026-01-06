@@ -104,8 +104,14 @@ async def handle_capacity_query_cloud(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    # TODO: Implement quota properly
-    used = await file_service.get_storage_usage(user_email)
+    try:
+        # TODO: Implement quota properly
+        used = await file_service.get_storage_usage(user_email)
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
+
     return web.json_response(
         CapacityVO(
             used_capacity=used,
@@ -123,33 +129,38 @@ async def handle_recycle_list(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    recycle_files = await file_service.list_recycle(
-        user_email,
-    )
-
-    page_items, total = _sort_and_page(
-        recycle_files,
-        req_data.sequence,
-        req_data.order,
-        req_data.page_no,
-        req_data.page_size,
-    )
-
-    result_items = []
-    for item in page_items:
-        result_items.append(
-            RecycleFileVO(
-                # Recycle ID, not Original File ID? Client usually wants ID to action on.
-                file_id=str(item.id),
-                is_folder="Y" if item.is_folder else "N",
-                file_name=item.name,
-                size=item.size,
-                update_time=str(item.delete_time),
-            )
+    try:
+        recycle_files = await file_service.list_recycle(
+            user_email,
         )
 
-    response = RecycleFileListVO(total=total, recycle_file_vo_list=result_items)
-    return web.json_response(response.to_dict())
+        page_items, total = _sort_and_page(
+            recycle_files,
+            req_data.sequence,
+            req_data.order,
+            req_data.page_no,
+            req_data.page_size,
+        )
+
+        result_items = []
+        for item in page_items:
+            result_items.append(
+                RecycleFileVO(
+                    # Recycle ID, not Original File ID? Client usually wants ID to action on.
+                    file_id=str(item.id),
+                    is_folder="Y" if item.is_folder else "N",
+                    file_name=item.name,
+                    size=item.size,
+                    update_time=str(item.delete_time),
+                )
+            )
+
+        response = RecycleFileListVO(total=total, recycle_file_vo_list=result_items)
+        return web.json_response(response.to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
 
 @routes.post("/api/file/recycle/delete")
@@ -211,23 +222,28 @@ async def handle_path_query(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    path_info = await file_service.get_path_info(user_email, req_data.id)
+    try:
+        path_info = await file_service.get_path_info(user_email, req_data.id)
 
-    # Flatten if needed for Web API
-    path = path_info.path.strip("/")
-    id_path = path_info.id_path.strip("/")
+        # Flatten if needed for Web API
+        path = path_info.path.strip("/")
+        id_path = path_info.id_path.strip("/")
 
-    parts = path.split("/")
-    if parts and parts[0] in CATEGORY_CONTAINERS:
-        # Strip first component from both path and id_path
-        path = "/".join(parts[1:])
+        parts = path.split("/")
+        if parts and parts[0] in CATEGORY_CONTAINERS:
+            # Strip first component from both path and id_path
+            path = "/".join(parts[1:])
 
-        id_parts = id_path.split("/")
-        if len(id_parts) >= len(parts):  # Safety check
-            id_path = "/".join(id_parts[1:])
+            id_parts = id_path.split("/")
+            if len(id_parts) >= len(parts):  # Safety check
+                id_path = "/".join(id_parts[1:])
 
-    response = FilePathQueryVO(path=path, id_path=id_path)
-    return web.json_response(response.to_dict())
+        response = FilePathQueryVO(path=path, id_path=id_path)
+        return web.json_response(response.to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
 
 @routes.post("/api/file/list/query")
@@ -240,71 +256,76 @@ async def handle_file_list_query(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    file_entities = await file_service.query_file_list(
-        user_email,
-        req_data.directory_id,
-    )
-
-    # Flatten root directory for Web API (View Logic)
-    if req_data.directory_id == 0:
-        flattened_entities: list[FileEntity] = []
-        # Identify category containers
-        category_map: dict[str, FileEntity] = {}
-        for entity in file_entities:
-            if entity.name in CATEGORY_CONTAINERS:
-                category_map[entity.name] = entity
-            else:
-                flattened_entities.append(entity)
-
-        # Fetch children of category containers and promote to root
-        for name, entity in category_map.items():
-            children = await file_service.query_file_list(user_email, entity.id)
-            for child in children:
-                # Modify parent_id to 0 for the view
-                child.parent_id = 0
-                flattened_entities.append(child)
-
-        file_entities = flattened_entities
-
-    # TODO: This is not currently using the same sorting where there is
-    # a preferred orderign and capitalization for the items in the root folder.
-    # for item in page_items:
-    #     if req_data.directory_id != 0 or item.name not in IMMUTABLE_SYSTEM_DIRECTORIES:
-    #         item.name = item.name.capitalize()
-    page_items, total = _sort_and_page(
-        file_entities,
-        req_data.sequence,
-        req_data.order,
-        req_data.page_no,
-        req_data.page_size,
-    )
-
-    user_file_vos: list[UserFileVO] = []
-    for entity in page_items:
-        user_file_vos.append(
-            UserFileVO(
-                id=str(entity.id),
-                directory_id=str(entity.parent_id),
-                file_name=entity.name,
-                size=entity.size,
-                md5=entity.md5,
-                inner_name=entity.md5,  # Using md5 as inner_name compatible
-                is_folder=BooleanEnum.YES if entity.is_folder else BooleanEnum.NO,
-                create_time=entity.create_time,
-                update_time=entity.update_time,
-            )
+    try:
+        file_entities = await file_service.query_file_list(
+            user_email,
+            req_data.directory_id,
         )
 
-    pages = max(1, (total + req_data.page_size - 1) // req_data.page_size)
+        # Flatten root directory for Web API (View Logic)
+        if req_data.directory_id == 0:
+            flattened_entities: list[FileEntity] = []
+            # Identify category containers
+            category_map: dict[str, FileEntity] = {}
+            for entity in file_entities:
+                if entity.name in CATEGORY_CONTAINERS:
+                    category_map[entity.name] = entity
+                else:
+                    flattened_entities.append(entity)
 
-    response = FileListQueryVO(
-        total=total,
-        pages=pages,
-        page_num=req_data.page_no,
-        page_size=req_data.page_size,
-        user_file_vo_list=user_file_vos,
-    )
-    return web.json_response(response.to_dict())
+            # Fetch children of category containers and promote to root
+            for name, entity in category_map.items():
+                children = await file_service.query_file_list(user_email, entity.id)
+                for child in children:
+                    # Modify parent_id to 0 for the view
+                    child.parent_id = 0
+                    flattened_entities.append(child)
+
+            file_entities = flattened_entities
+
+        # TODO: This is not currently using the same sorting where there is
+        # a preferred orderign and capitalization for the items in the root folder.
+        # for item in page_items:
+        #     if req_data.directory_id != 0 or item.name not in IMMUTABLE_SYSTEM_DIRECTORIES:
+        #         item.name = item.name.capitalize()
+        page_items, total = _sort_and_page(
+            file_entities,
+            req_data.sequence,
+            req_data.order,
+            req_data.page_no,
+            req_data.page_size,
+        )
+
+        user_file_vos: list[UserFileVO] = []
+        for entity in page_items:
+            user_file_vos.append(
+                UserFileVO(
+                    id=str(entity.id),
+                    directory_id=str(entity.parent_id),
+                    file_name=entity.name,
+                    size=entity.size,
+                    md5=entity.md5,
+                    inner_name=entity.md5,  # Using md5 as inner_name compatible
+                    is_folder=BooleanEnum.YES if entity.is_folder else BooleanEnum.NO,
+                    create_time=entity.create_time,
+                    update_time=entity.update_time,
+                )
+            )
+
+        pages = max(1, (total + req_data.page_size - 1) // req_data.page_size)
+
+        response = FileListQueryVO(
+            total=total,
+            pages=pages,
+            page_num=req_data.page_no,
+            page_size=req_data.page_size,
+            user_file_vo_list=user_file_vos,
+        )
+        return web.json_response(response.to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
 
 @routes.post("/api/file/label/list/search")
@@ -317,32 +338,37 @@ async def handle_file_search(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    file_entities = await file_service.search_files(user_email, req_data.keyword)
+    try:
+        file_entities = await file_service.search_files(user_email, req_data.keyword)
 
-    entries_vos: list[EntriesVO] = []
-    for entity in file_entities:
-        # Web API expects flattened paths for system directories
-        path_display = _flatten_path(entity.full_path)
-        parent_path = str(Path(path_display).parent)
-        if parent_path == ".":
-            parent_path = ""
+        entries_vos: list[EntriesVO] = []
+        for entity in file_entities:
+            # Web API expects flattened paths for system directories
+            path_display = _flatten_path(entity.full_path)
+            parent_path = str(Path(path_display).parent)
+            if parent_path == ".":
+                parent_path = ""
 
-        entries_vos.append(
-            EntriesVO(
-                tag="folder" if entity.is_folder else "file",
-                id=str(entity.id),
-                name=entity.name,
-                path_display=path_display,
-                parent_path=parent_path,
-                size=entity.size,
-                last_update_time=entity.update_time,
-                content_hash=entity.md5 or "",
-                is_downloadable=True,
+            entries_vos.append(
+                EntriesVO(
+                    tag="folder" if entity.is_folder else "file",
+                    id=str(entity.id),
+                    name=entity.name,
+                    path_display=path_display,
+                    parent_path=parent_path,
+                    size=entity.size,
+                    last_update_time=entity.update_time,
+                    content_hash=entity.md5 or "",
+                    is_downloadable=True,
+                )
             )
-        )
 
-    response = FileLabelSearchVO(entries=entries_vos)
-    return web.json_response(response.to_dict())
+        response = FileLabelSearchVO(entries=entries_vos)
+        return web.json_response(response.to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
 
 @routes.post("/api/file/folder/add")
@@ -392,44 +418,49 @@ async def handle_folder_list_query(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    # Initial query
-    folder_details = await file_service.get_folders_by_ids(
-        user_email, req_data.directory_id, req_data.id_list
-    )
-
-    # Web API Flattening Logic for Root. We fetch the special folders
-    # and flatten them to pretend they were really in the root.
-    if req_data.directory_id == 0:
-        pending_scans = list(folder_details)
-        folder_details = []
-        for detail in pending_scans:
-            if detail.entity.name in CATEGORY_CONTAINERS:
-                # Fetch children
-                children = await file_service.get_folders_by_ids(
-                    user_email, detail.entity.id, req_data.id_list
-                )
-                # Add children to results (flattened)
-                for child in children:
-                    child.entity.parent_id = 0  # View adjustment
-                    folder_details.append(child)
-            else:
-                if detail.entity.name not in IMMUTABLE_SYSTEM_DIRECTORIES:
-                    detail.entity.name = detail.entity.name.capitalize()
-                folder_details.append(detail)
-
-    folder_details.sort(key=_root_sort_key)
-
-    folder_vos = [
-        FolderVO(
-            id=str(detail.entity.id),
-            directory_id=str(detail.entity.parent_id),
-            file_name=detail.entity.name,
-            empty=BooleanEnum.NO if detail.has_subfolders else BooleanEnum.YES,
+    try:
+        # Initial query
+        folder_details = await file_service.get_folders_by_ids(
+            user_email, req_data.directory_id, req_data.id_list
         )
-        for detail in folder_details
-    ]
-    response = FolderListQueryVO(folder_vo_list=folder_vos)
-    return web.json_response(response.to_dict())
+
+        # Web API Flattening Logic for Root. We fetch the special folders
+        # and flatten them to pretend they were really in the root.
+        if req_data.directory_id == 0:
+            pending_scans = list(folder_details)
+            folder_details = []
+            for detail in pending_scans:
+                if detail.entity.name in CATEGORY_CONTAINERS:
+                    # Fetch children
+                    children = await file_service.get_folders_by_ids(
+                        user_email, detail.entity.id, req_data.id_list
+                    )
+                    # Add children to results (flattened)
+                    for child in children:
+                        child.entity.parent_id = 0  # View adjustment
+                        folder_details.append(child)
+                else:
+                    if detail.entity.name not in IMMUTABLE_SYSTEM_DIRECTORIES:
+                        detail.entity.name = detail.entity.name.capitalize()
+                    folder_details.append(detail)
+
+        folder_details.sort(key=_root_sort_key)
+
+        folder_vos = [
+            FolderVO(
+                id=str(detail.entity.id),
+                directory_id=str(detail.entity.parent_id),
+                file_name=detail.entity.name,
+                empty=BooleanEnum.NO if detail.has_subfolders else BooleanEnum.YES,
+            )
+            for detail in folder_details
+        ]
+        response = FolderListQueryVO(folder_vo_list=folder_vos)
+        return web.json_response(response.to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
 
 @routes.post("/api/file/move")
@@ -517,22 +548,27 @@ async def handle_file_upload_apply(request: web.Request) -> web.Response:
     req_data = FileUploadApplyDTO.from_dict(await request.json())
     url_signer = request.app["url_signer"]
 
-    # Generate inner_name
-    ext = "".join(Path(req_data.file_name).suffixes)
-    inner_name = f"{uuid.uuid4()}{ext}"
+    try:
+        # Generate inner_name
+        ext = "".join(Path(req_data.file_name).suffixes)
+        inner_name = f"{uuid.uuid4()}{ext}"
 
-    # Sign URL
-    encoded_name = urllib.parse.quote(inner_name)
-    path_to_sign = f"/api/oss/upload?object_name={encoded_name}"
-    signed_path = url_signer.sign(path_to_sign, user=request["user"])
-    full_url = f"{request.scheme}://{request.host}{signed_path}"
+        # Sign URL
+        encoded_name = urllib.parse.quote(inner_name)
+        path_to_sign = f"/api/oss/upload?object_name={encoded_name}"
+        signed_path = url_signer.sign(path_to_sign, user=request["user"])
+        full_url = f"{request.scheme}://{request.host}{signed_path}"
 
-    return web.json_response(
-        FileUploadApplyLocalVO(
-            full_upload_url=full_url,
-            inner_name=inner_name,
-        ).to_dict()
-    )
+        return web.json_response(
+            FileUploadApplyLocalVO(
+                full_upload_url=full_url,
+                inner_name=inner_name,
+            ).to_dict()
+        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
 
 @routes.post("/api/file/upload/finish")

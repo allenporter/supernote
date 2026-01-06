@@ -7,8 +7,9 @@ from aiohttp import BodyPartReader, web
 
 from supernote.models.base import create_error_response
 from supernote.models.system import FileChunkParams, FileChunkVO, UploadFileVO
+from supernote.server.exceptions import SupernoteError
 from supernote.server.services.file import FileService
-from supernote.server.utils.url_signer import UrlSigner, UrlSignerError
+from supernote.server.utils.url_signer import UrlSigner
 
 from .decorators import public_route
 
@@ -28,8 +29,8 @@ async def handle_oss_upload(request: web.Request) -> web.Response:
 
     try:
         payload = url_signer.verify(request.path_qs)
-    except UrlSignerError as err:
-        return web.json_response(create_error_response(str(err)).to_dict(), status=403)
+    except SupernoteError as err:
+        return err.to_response()
 
     user_email = payload.get("user")
     if not user_email:
@@ -79,8 +80,8 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
 
     try:
         payload = url_signer.verify(request.path_qs)
-    except UrlSignerError as err:
-        return web.json_response(create_error_response(str(err)).to_dict(), status=403)
+    except SupernoteError as err:
+        return err.to_response()
 
     user_email = payload.get("user")
     if not user_email:
@@ -159,8 +160,8 @@ async def handle_oss_download(request: web.Request) -> web.StreamResponse:
     file_service: FileService = request.app["file_service"]
     try:
         payload = url_signer.verify(request.path_qs)
-    except UrlSignerError as err:
-        return web.json_response(create_error_response(str(err)).to_dict(), status=403)
+    except SupernoteError as err:
+        return err.to_response()
 
     # This takes the place of the authentication middlewhere.
     user_email = payload.get("user")

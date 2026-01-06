@@ -164,11 +164,9 @@ class FileService:
             parent_id = 0
             if clean_path:
                 if (node := await vfs.resolve_path(user_id, clean_path)) is None:
-                    # Path not found
-                    return []
+                    raise FileNotFound(f"Path not found: {clean_path}")
                 if node.is_folder != "Y":
-                    # Not a folder
-                    return []
+                    raise InvalidPath(f"Not a folder: {clean_path}")
                 parent_id = node.id
 
             if recursive:
@@ -203,10 +201,9 @@ class FileService:
             if folder_id != 0:
                 node = await vfs.get_node_by_id(user_id, folder_id)
                 if not node:
-                    # Not found or not owned
-                    return []
+                    raise FileNotFound(f"Folder ID {folder_id} not found")
                 if node.is_folder != "Y":
-                    return []
+                    raise InvalidPath(f"ID {folder_id} is not a folder")
                 # TODO: Retrieve path string for display if needed?
                 # For V3 (device), path_display might not be critical or we can construct relative to root?
                 # We can't easily rebuild full path without walking up.

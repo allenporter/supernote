@@ -76,31 +76,36 @@ async def handle_sync_start(request: web.Request) -> web.Response:
     sync_locks = request.app["sync_locks"]
     file_service: FileService = request.app["file_service"]
 
-    is_empty = await file_service.is_empty(user_email)
+    try:
+        is_empty = await file_service.is_empty(user_email)
 
-    now = time.time()
-    if user_email in sync_locks:
-        owner_eq, expiry = sync_locks[user_email]
-        if now < expiry and owner_eq != req_data.equipment_no:
-            logger.info(
-                f"Sync conflict: user {user_email} already syncing from {owner_eq}"
-            )
-            return web.json_response(
-                create_error_response(
-                    error_msg="Another device is synchronizing",
-                    error_code="E0078",
-                ).to_dict(),
-                status=409,
-            )
+        now = time.time()
+        if user_email in sync_locks:
+            owner_eq, expiry = sync_locks[user_email]
+            if now < expiry and owner_eq != req_data.equipment_no:
+                logger.info(
+                    f"Sync conflict: user {user_email} already syncing from {owner_eq}"
+                )
+                return web.json_response(
+                    create_error_response(
+                        error_msg="Another device is synchronizing",
+                        error_code="E0078",
+                    ).to_dict(),
+                    status=409,
+                )
 
-    sync_locks[user_email] = (req_data.equipment_no, now + SYNC_LOCK_TIMEOUT)
+        sync_locks[user_email] = (req_data.equipment_no, now + SYNC_LOCK_TIMEOUT)
 
-    return web.json_response(
-        SynchronousStartLocalVO(
-            equipment_no=req_data.equipment_no,
-            syn_type=not is_empty,
-        ).to_dict()
-    )
+        return web.json_response(
+            SynchronousStartLocalVO(
+                equipment_no=req_data.equipment_no,
+                syn_type=not is_empty,
+            ).to_dict()
+        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
 
 @routes.post("/api/file/2/files/synchronous/end")
@@ -132,16 +137,23 @@ async def handle_list_folder(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    entities = await file_service.list_folder(
-        user_email,
-        path_str,
-        req_data.recursive,
-    )
-    entries = [_to_entries_vo(e) for e in entities]
+    try:
+        entities = await file_service.list_folder(
+            user_email,
+            path_str,
+            req_data.recursive,
+        )
+        entries = [_to_entries_vo(e) for e in entities]
 
-    return web.json_response(
-        ListFolderLocalVO(equipment_no=req_data.equipment_no, entries=entries).to_dict()
-    )
+        return web.json_response(
+            ListFolderLocalVO(
+                equipment_no=req_data.equipment_no, entries=entries
+            ).to_dict()
+        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
 
 @routes.post("/api/file/3/files/list_folder_v3")
@@ -155,16 +167,23 @@ async def handle_list_folder_v3(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    entities = await file_service.list_folder_by_id(
-        user_email,
-        folder_id,
-        req_data.recursive,
-    )
-    entries = [_to_entries_vo(e) for e in entities]
+    try:
+        entities = await file_service.list_folder_by_id(
+            user_email,
+            folder_id,
+            req_data.recursive,
+        )
+        entries = [_to_entries_vo(e) for e in entities]
 
-    return web.json_response(
-        ListFolderLocalVO(equipment_no=req_data.equipment_no, entries=entries).to_dict()
-    )
+        return web.json_response(
+            ListFolderLocalVO(
+                equipment_no=req_data.equipment_no, entries=entries
+            ).to_dict()
+        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
 
 @routes.post("/api/file/2/users/get_space_usage")
@@ -178,18 +197,23 @@ async def handle_capacity_query(request: web.Request) -> web.Response:
     user_email = request["user"]
 
     file_service: FileService = request.app["file_service"]
-    used = await file_service.get_storage_usage(user_email)
+    try:
+        used = await file_service.get_storage_usage(user_email)
 
-    return web.json_response(
-        CapacityLocalVO(
-            equipment_no=equipment_no,
-            used=used,
-            allocation_vo=AllocationVO(
-                tag="personal",
-                allocated=1024 * 1024 * 1024 * 10,  # 10GB total
-            ),
-        ).to_dict()
-    )
+        return web.json_response(
+            CapacityLocalVO(
+                equipment_no=equipment_no,
+                used=used,
+                allocation_vo=AllocationVO(
+                    tag="personal",
+                    allocated=1024 * 1024 * 1024 * 10,  # 10GB total
+                ),
+            ).to_dict()
+        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
 
 @routes.post("/api/file/3/files/query/by/path_v3")
@@ -203,13 +227,18 @@ async def handle_query_by_path(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    entity = await file_service.get_file_info(user_email, path_str)
-    return web.json_response(
-        FileQueryByPathLocalVO(
-            equipment_no=req_data.equipment_no,
-            entries_vo=_to_entries_vo(entity) if entity else None,
-        ).to_dict()
-    )
+    try:
+        entity = await file_service.get_file_info(user_email, path_str)
+        return web.json_response(
+            FileQueryByPathLocalVO(
+                equipment_no=req_data.equipment_no,
+                entries_vo=_to_entries_vo(entity) if entity else None,
+            ).to_dict()
+        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
 
 @routes.post("/api/file/3/files/query_v3")
@@ -223,13 +252,18 @@ async def handle_query_v3(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    entity = await file_service.get_file_info_by_id(user_email, int(file_id))
-    return web.json_response(
-        FileQueryLocalVO(
-            equipment_no=req_data.equipment_no,
-            entries_vo=_to_entries_vo(entity) if entity else None,
-        ).to_dict()
-    )
+    try:
+        entity = await file_service.get_file_info_by_id(user_email, int(file_id))
+        return web.json_response(
+            FileQueryLocalVO(
+                equipment_no=req_data.equipment_no,
+                entries_vo=_to_entries_vo(entity) if entity else None,
+            ).to_dict()
+        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
 
 @routes.post("/api/file/3/files/upload/apply")
@@ -241,34 +275,37 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
     req_data = FileUploadApplyLocalDTO.from_dict(await request.json())
     file_name = req_data.file_name
 
-    url_signer: UrlSigner = request.app["url_signer"]
+    try:
+        url_signer: UrlSigner = request.app["url_signer"]
 
-    encoded_name = urllib.parse.quote(file_name)
+        encoded_name = urllib.parse.quote(file_name)
 
-    # Simple Upload URL: /api/oss/upload?object_name={name}
-    simple_path = f"/api/oss/upload?object_name={encoded_name}"
-    simple_path = f"/api/oss/upload?object_name={encoded_name}"
-    full_upload_url_path = url_signer.sign(simple_path, user=request["user"])
-    full_upload_url = f"{request.scheme}://{request.host}{full_upload_url_path}"
+        # Simple Upload URL: /api/oss/upload?object_name={name}
+        simple_path = f"/api/oss/upload?object_name={encoded_name}"
+        full_upload_url_path = url_signer.sign(simple_path, user=request["user"])
+        full_upload_url = f"{request.scheme}://{request.host}{full_upload_url_path}"
 
-    # Part Upload URL: /api/oss/upload/part?object_name={name}
-    # Client will append &uploadId=...&partNumber=...
-    part_path = f"/api/oss/upload/part?object_name={encoded_name}"
-    part_path = f"/api/oss/upload/part?object_name={encoded_name}"
-    part_upload_url_path = url_signer.sign(part_path, user=request["user"])
-    part_upload_url = f"{request.scheme}://{request.host}{part_upload_url_path}"
+        # Part Upload URL: /api/oss/upload/part?object_name={name}
+        # Client will append &uploadId=...&partNumber=...
+        part_path = f"/api/oss/upload/part?object_name={encoded_name}"
+        part_upload_url_path = url_signer.sign(part_path, user=request["user"])
+        part_upload_url = f"{request.scheme}://{request.host}{part_upload_url_path}"
 
-    return web.json_response(
-        FileUploadApplyLocalVO(
-            equipment_no=req_data.equipment_no or "",
-            bucket_name="supernote-local",
-            inner_name=file_name,
-            x_amz_date="",
-            authorization="",
-            full_upload_url=full_upload_url,
-            part_upload_url=part_upload_url,
-        ).to_dict()
-    )
+        return web.json_response(
+            FileUploadApplyLocalVO(
+                equipment_no=req_data.equipment_no or "",
+                bucket_name="supernote-local",
+                inner_name=file_name,
+                x_amz_date="",
+                authorization="",
+                full_upload_url=full_upload_url,
+                part_upload_url=part_upload_url,
+            ).to_dict()
+        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
 
 @routes.post("/api/file/2/files/upload/finish")
@@ -321,23 +358,29 @@ async def handle_download_apply(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
-    # Verify file exists using VFS
-    info = await file_service.get_file_info_by_id(user_email, file_id)
-    if not info:
-        return web.json_response(
-            BaseResponse(success=False, error_msg="File not found").to_dict(),
-            status=404,
-        )
+    try:
+        # Verify file exists using VFS
+        info = await file_service.get_file_info_by_id(user_email, file_id)
+        if not info:
+            return web.json_response(
+                BaseResponse(success=False, error_msg="File not found").to_dict(),
+                status=404,
+            )
 
-    # Generate signed download URL
-    url_signer: UrlSigner = request.app["url_signer"]
+        # Generate signed download URL
+        url_signer: UrlSigner = request.app["url_signer"]
 
-    # OSS download URL: /api/oss/download?path={id}
-    path_to_sign = f"/api/oss/download?id={info.id}"
+        # OSS download URL: /api/oss/download?path={id}
+        path_to_sign = f"/api/oss/download?id={info.id}"
 
-    # helper returns: ...?signature=...
-    signed_path = url_signer.sign(path_to_sign, user=user_email)
-    download_url = f"{request.scheme}://{request.host}{signed_path}"
+        # helper returns: ...?signature=...
+        signed_path = url_signer.sign(path_to_sign, user=user_email)
+        download_url = f"{request.scheme}://{request.host}{signed_path}"
+
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
     return web.json_response(
         FileDownloadLocalVO(

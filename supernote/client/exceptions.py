@@ -23,3 +23,11 @@ class ForbiddenException(ApiException):
 
 class UnauthorizedException(ApiException):
     """Authentication exception."""
+
+
+class NotFoundException(ApiException):
+    """Resource not found (404)."""
+
+
+class BadRequestException(ApiException):
+    """Bad request (400)."""

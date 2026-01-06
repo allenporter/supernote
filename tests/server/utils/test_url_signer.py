@@ -3,7 +3,8 @@ import datetime
 import freezegun
 import pytest
 
-from supernote.server.utils.url_signer import UrlSigner, UrlSignerError
+from supernote.server.exceptions import InvalidSignature
+from supernote.server.utils.url_signer import UrlSigner
 
 
 @pytest.fixture
@@ -40,13 +41,13 @@ def test_verify_failure_tampered_url(signer: UrlSigner) -> None:
     # Tamper with the path part of the URL (e.g. user changes /original to /hacked)
     tampered_url = signed_url.replace("/original", "/hacked")
 
-    with pytest.raises(UrlSignerError, match="Signed path mismatch"):
+    with pytest.raises(InvalidSignature, match="Signed path mismatch"):
         signer.verify(tampered_url)
 
 
 def test_verify_failure_invalid_signature_string(signer: UrlSigner) -> None:
     """Test that verification fails for invalid signature strings."""
-    with pytest.raises(UrlSignerError, match="Invalid signature"):
+    with pytest.raises(InvalidSignature, match="Invalid signature"):
         signer.verify("/path?signature=invalid-token")
 
 
@@ -60,7 +61,7 @@ def test_verify_failure_expired(signer: UrlSigner) -> None:
         # Advance time past expiry
         frozen_time.tick(delta=datetime.timedelta(minutes=8))
 
-        with pytest.raises(UrlSignerError, match="Signature expired"):
+        with pytest.raises(InvalidSignature, match="Signature expired"):
             signer.verify(signed_url)
 
 

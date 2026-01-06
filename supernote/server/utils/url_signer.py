@@ -39,14 +39,12 @@ from typing import Any
 
 import jwt
 
+from supernote.server.exceptions import InvalidSignature, SignerError
+
 logger = logging.getLogger(__name__)
 
 
 DEFAULT_EXPIRATION = datetime.timedelta(minutes=15)
-
-
-class UrlSignerError(Exception):
-    """Base class for all UrlSigner exceptions."""
 
 
 class UrlSigner:
@@ -93,7 +91,11 @@ class UrlSigner:
         }
         if user:
             payload["user"] = user
-        token = jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+
+        try:
+            token = jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+        except jwt.PyJWTError as err:
+            raise SignerError(f"Failed to encode signature: {err}") from err
 
         # Check if query params exist
         separator = "&" if "?" in path else "?"
@@ -116,7 +118,7 @@ class UrlSigner:
         query_params = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
 
         if not (signatures := query_params.get("signature")):
-            raise UrlSignerError(f"No signature found in URL: {signed_url}")
+            raise InvalidSignature(f"No signature found in URL: {signed_url}")
 
         signature = signatures[0]
         try:
@@ -124,19 +126,22 @@ class UrlSigner:
                 signature, self.secret_key, algorithms=[self.algorithm]
             )
         except jwt.ExpiredSignatureError as err:
-            raise UrlSignerError(f"Signature expired: {signed_url}") from err
+            raise InvalidSignature(f"Signature expired: {signed_url}") from err
         except jwt.InvalidTokenError as err:
-            raise UrlSignerError(f"Invalid signature: {signed_url}") from err
+            raise InvalidSignature(f"Invalid signature: {signed_url}") from err
+        except jwt.PyJWTError as err:
+            raise InvalidSignature(f"Error decoding signature: {err}") from err
+
         if not isinstance(payload, dict):
-            raise UrlSignerError(f"Invalid payload: {payload}")
+            raise InvalidSignature(f"Invalid payload type: {type(payload)}")
 
         # We reconstruct the URL *without* the signature param to compare
         # against what was signed (payload['path']).
         if not (expected_path := payload.get("path")):
-            raise UrlSignerError(f"No path found in payload: {payload}")
+            raise InvalidSignature(f"No path found in payload: {payload}")
 
         if not signed_url.startswith(expected_path):
-            raise UrlSignerError(
+            raise InvalidSignature(
                 f"Signed path mismatch: signed path '{expected_path}' is not prefix of request '{signed_url}'"
             )
 

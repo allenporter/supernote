@@ -102,3 +102,30 @@ class QuotaExceeded(FileError):
         self, message: str, error_code: str | ErrorCode = ErrorCode.QUOTA_EXCEEDED
     ):
         super().__init__(message, error_code, status_code=403)
+
+
+class InvalidSignature(SupernoteError):
+    """Raised when a URL signature is invalid or expired."""
+
+    def __init__(
+        self, message: str, error_code: str | ErrorCode = ErrorCode.ACCESS_DENIED_SYSTEM
+    ):
+        super().__init__(message, error_code, status_code=403)
+
+
+class SignerError(SupernoteError):
+    """Raised when an error occurs during URL signing."""
+
+    def __init__(
+        self, message: str, error_code: str | ErrorCode = ErrorCode.INTERNAL_ERROR
+    ):
+        super().__init__(message, error_code, status_code=500)
+
+
+class DatabaseError(SupernoteError):
+    """Raised when a database error occurs."""
+
+    def __init__(
+        self, message: str, error_code: str | ErrorCode = ErrorCode.INTERNAL_ERROR
+    ):
+        super().__init__(message, error_code, status_code=500)
