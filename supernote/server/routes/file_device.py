@@ -451,8 +451,11 @@ async def handle_move_file(request: web.Request) -> web.Response:
             req_data.autorename,
         )
     except InvalidPathException as e:
+        error_code = "E400"
+        if "Conflict" in str(e):
+            error_code = "E0322"
         return web.json_response(
-            create_error_response(error_msg=str(e)).to_dict(),
+            create_error_response(error_msg=str(e), error_code=error_code).to_dict(),
             status=400,
         )
     except FileServiceException as e:
@@ -486,8 +489,11 @@ async def handle_copy_file(request: web.Request) -> web.Response:
             req_data.autorename,
         )
     except InvalidPathException as e:
+        error_code = "E400"
+        if "Conflict" in str(e):
+            error_code = "E0322"
         return web.json_response(
-            create_error_response(error_msg=str(e)).to_dict(),
+            create_error_response(error_msg=str(e), error_code=error_code).to_dict(),
             status=400,
         )
     except FileServiceException as e:

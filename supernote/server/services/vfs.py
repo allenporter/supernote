@@ -238,9 +238,45 @@ class VirtualFileSystem:
         if not node:
             return None
 
-        new_name = new_name
-        # TODO: If we have a conflict, we should probably fail when autorename
-        # is disabled?
+        # Cyclic check: ensure new_parent is not a descendant of node
+        if node.is_folder == "Y":
+            curr_id = new_parent_id
+            visited = set()
+            while curr_id != 0:
+                if curr_id == node.id:
+                    raise ValueError(
+                        "Cyclic move: cannot move a folder into itself or its descendants"
+                    )
+                if curr_id in visited:
+                    raise ValueError(
+                        f"Cycle detected in move {node_id} -> {new_parent_id} found {curr_id} multiple times"
+                    )
+                visited.add(curr_id)
+                stmt = select(UserFileDO.directory_id).where(
+                    UserFileDO.user_id == user_id,
+                    UserFileDO.id == curr_id,
+                    UserFileDO.is_active == "Y",
+                )
+                res = await self.db.execute(stmt)
+                curr_id = res.scalar() or 0
+
+        # Identity check: if same parent and same name, it's a no-op UNLESS autorename is True
+        if (
+            not autorename
+            and node.directory_id == new_parent_id
+            and node.file_name == new_name
+        ):
+            return node
+
+        # Validate destination
+        if new_parent_id != 0:
+            parent = await self.get_node_by_id(user_id, new_parent_id)
+            if not parent or parent.is_folder == "N":
+                raise ValueError(
+                    f"Invalid destination: folder {new_parent_id} not found"
+                )
+
+        # Collision resolution
         if autorename:
             logger.debug("Autorename enabled for move")
             base_name = new_name
@@ -251,18 +287,15 @@ class VirtualFileSystem:
                 ext = f".{parts[1]}"
 
             counter = 1
-            while True:
-                # Check if exists
-                exists = await self._check_exists(
-                    user_id, new_parent_id, new_name, node.is_folder
-                )
-                if not exists:
-                    break
-                new_name = f"{base_name}({counter}){ext}"
-                logger.debug(
-                    "Name collision detected, incrementing counter: %s", new_name
-                )
+            while await self._check_exists(
+                user_id, new_parent_id, new_name, node.is_folder
+            ):
+                new_name = f"{base_name} ({counter}){ext}"
                 counter += 1
+                if counter > 100:
+                    raise FileExistsError(f"File already exists: {new_name}")
+        elif await self._check_exists(user_id, new_parent_id, new_name, node.is_folder):
+            raise FileExistsError(f"File already exists: {new_name}")
 
         node.directory_id = new_parent_id
         node.file_name = new_name
@@ -279,52 +312,42 @@ class VirtualFileSystem:
         autorename: bool,
         new_name: str,
     ) -> UserFileDO | None:
-        """Copy a node."""
-        node = await self.get_node_by_id(user_id, source_node_id)
-        if not node:
+        """Copy a node recursively."""
+        source_node = await self.get_node_by_id(user_id, source_node_id)
+        if not source_node:
             return None
 
-        now_ms = int(time.time() * 1000)
-
-        # TODO: Do we need to handle recursive copy or should it get handled
-        # automatically by the VFS? Presumably this doesn't work as is.
-        # Let's add tests for that case and ensure it works.
-        # For now we just copy the file.
-
-        # TODO: If we have a conflict, we should probably fail when autorename
-        # is disabled?
-
-        # Autorename Logic
+        # Collision resolution for the root of the copy
         if autorename:
             logger.debug("Autorename enabled for copy")
             base_name = new_name
             ext = ""
-            if "." in base_name and not node.is_folder == "Y":
+            if "." in base_name and not source_node.is_folder == "Y":
                 parts = base_name.rsplit(".", 1)
                 base_name = parts[0]
                 ext = f".{parts[1]}"
 
             counter = 1
-            while True:
-                # Check if exists
-                exists = await self._check_exists(
-                    user_id, new_parent_id, new_name, node.is_folder
-                )
-                if not exists:
-                    break
+            while await self._check_exists(
+                user_id, new_parent_id, new_name, source_node.is_folder
+            ):
                 new_name = f"{base_name}({counter}){ext}"
-                logger.debug(
-                    "Name collision detected, incrementing counter: %s", new_name
-                )
                 counter += 1
+                if counter > 100:
+                    raise FileExistsError(f"File already exists: {new_name}")
+        elif await self._check_exists(
+            user_id, new_parent_id, new_name, source_node.is_folder
+        ):
+            raise FileExistsError(f"File already exists: {new_name}")
 
+        now_ms = int(time.time() * 1000)
         new_node = UserFileDO(
             user_id=user_id,
             directory_id=new_parent_id,
             file_name=new_name,
-            is_folder=node.is_folder,
-            size=node.size,
-            md5=node.md5,
+            is_folder=source_node.is_folder,
+            size=source_node.size,
+            md5=source_node.md5,
             create_time=now_ms,
             update_time=now_ms,
             is_active="Y",
@@ -332,6 +355,19 @@ class VirtualFileSystem:
         self.db.add(new_node)
         await self.db.commit()
         await self.db.refresh(new_node)
+
+        # Recursive copy for folders
+        if source_node.is_folder == "Y":
+            children = await self.list_directory(user_id, source_node_id)
+            for child in children:
+                await self.copy_node(
+                    user_id=user_id,
+                    source_node_id=child.id,
+                    new_parent_id=new_node.id,
+                    autorename=False,  # Children names are copied exactly within the new folder
+                    new_name=child.file_name,
+                )
+
         return new_node
 
     async def list_recycle(self, user_id: int) -> list[RecycleFileDO]:

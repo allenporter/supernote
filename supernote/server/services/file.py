@@ -671,7 +671,9 @@ class FileService:
             for item_id in id_list:
                 node = await vfs.get_node_by_id(user_id, item_id)
                 if not node:
-                    continue
+                    return create_error_response(
+                        f"Source item {item_id} not found", "E404"
+                    )
 
                 # Immutability check
                 if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
@@ -680,9 +682,16 @@ class FileService:
                         "E_SYSTEM_DIR",
                     )
 
-                await vfs.move_node(
-                    user_id, item_id, target_parent_id, node.file_name, autorename=True
-                )
+                try:
+                    await vfs.move_node(
+                        user_id,
+                        item_id,
+                        target_parent_id,
+                        node.file_name,
+                        autorename=True,
+                    )
+                except ValueError as e:
+                    return create_error_response(str(e), "E400")
 
         return BaseResponse(success=True)
 
@@ -726,9 +735,18 @@ class FileService:
                         new_name = parts[0]
                         parent_id = 0
 
-            new_node = await vfs.move_node(
-                user_id, item_id, parent_id, new_name, autorename
-            )
+            try:
+                new_node = await vfs.move_node(
+                    user_id, item_id, parent_id, new_name, autorename
+                )
+            except ValueError as e:
+                raise InvalidPathException(str(e))
+            except FileExistsError as e:
+                # Device API conflict error is usually E0322, which we can map to InvalidPathException
+                # or a specialized conflict exception if we had one.
+                # For now, InvalidPathException will be caught and return 400 or 409 depending on handler.
+                raise InvalidPathException(f"Conflict: {str(e)}")
+
             if not new_node:
                 raise FileServiceException(
                     f"Moving item {item_id} to {parent_id} failed"
@@ -752,7 +770,9 @@ class FileService:
             for item_id in id_list:
                 node = await vfs.get_node_by_id(user_id, item_id)
                 if not node:
-                    continue
+                    return create_error_response(
+                        f"Source item {item_id} not found", "E404"
+                    )
 
                 # Check immutability? Usually copy is allowed, but let's be safe.
                 # Actually device API copy_item blocks it too.
@@ -763,13 +783,16 @@ class FileService:
                     )
 
                 # Copy logic (no source parent check usually required for copy but we can add it for completeness)
-                await vfs.copy_node(
-                    user_id,
-                    item_id,
-                    target_parent_id,
-                    autorename=True,
-                    new_name=node.file_name,
-                )
+                try:
+                    await vfs.copy_node(
+                        user_id,
+                        item_id,
+                        target_parent_id,
+                        autorename=True,
+                        new_name=node.file_name,
+                    )
+                except ValueError as e:
+                    return create_error_response(str(e), "E400")
 
         return BaseResponse(success=True)
 
@@ -813,9 +836,13 @@ class FileService:
                         new_name = parts[0]
                         parent_id = 0
 
-            new_node = await vfs.copy_node(
-                user_id, id, parent_id, autorename=autorename, new_name=new_name
-            )
+            try:
+                new_node = await vfs.copy_node(
+                    user_id, id, parent_id, autorename=autorename, new_name=new_name
+                )
+            except FileExistsError as e:
+                raise InvalidPathException(f"Conflict: {str(e)}")
+
             if not new_node:
                 raise FileServiceException(f"Copying item {id} to {parent_id} failed")
 

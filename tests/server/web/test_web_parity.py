@@ -6,35 +6,41 @@ from supernote.client.web import WebClient
 
 @pytest.mark.asyncio
 async def test_web_rename(web_client: WebClient) -> None:
-    # 1. Create a folder
+    # Create a folder
     res = await web_client.create_folder(parent_id=0, name="OldName")
     folder_id = int(res.id)
 
-    # 2. Rename it
+    # Rename it
     await web_client.file_rename(id=folder_id, new_name="NewName")
 
-    # 3. Verify name change
+    # Verify name change
     list_res = await web_client.list_query(directory_id=0)
-    assert any(f.file_name == "NewName" for f in list_res.user_file_vo_list)
-    assert not any(f.file_name == "OldName" for f in list_res.user_file_vo_list)
+    assert [f.file_name for f in list_res.user_file_vo_list] == [
+        "Screenshot",
+        "Note",
+        "NewName",  # New folder
+        "MyStyle",
+        "Inbox",
+        "Export",
+        "Document",
+    ]
 
 
 @pytest.mark.asyncio
 async def test_web_rename_immutable_fails(web_client: WebClient) -> None:
-    # 1. Find a system folder
+    # Find a system folder
     res = await web_client.list_query(directory_id=0)
     note_folder = next(f for f in res.user_file_vo_list if f.file_name == "Note")
     note_id = int(note_folder.id)
 
     # 2. Attempt rename
-    with pytest.raises(ApiException) as excinfo:
+    with pytest.raises(ApiException, match="Cannot rename system directory"):
         await web_client.file_rename(id=note_id, new_name="RenamedNote")
-    assert "Cannot rename system directory" in str(excinfo.value)
 
 
 @pytest.mark.asyncio
 async def test_web_move_items(web_client: WebClient) -> None:
-    # 1. Create source and target folders
+    # Create source and target folders
     src_res = await web_client.create_folder(parent_id=0, name="Source")
     src_id = int(src_res.id)
     target_res = await web_client.create_folder(parent_id=0, name="Target")
@@ -44,22 +50,22 @@ async def test_web_move_items(web_client: WebClient) -> None:
     item_res = await web_client.create_folder(parent_id=src_id, name="ItemToMove")
     item_id = int(item_res.id)
 
-    # 2. Move item
+    # Move item
     await web_client.file_move(
         id_list=[item_id], directory_id=src_id, go_directory_id=target_id
     )
 
-    # 3. Verify move
+    # Verify move
     src_list = await web_client.list_query(directory_id=src_id)
-    assert not any(f.file_name == "ItemToMove" for f in src_list.user_file_vo_list)
+    assert [f.file_name for f in src_list.user_file_vo_list] == []
 
     target_list = await web_client.list_query(directory_id=target_id)
-    assert any(f.file_name == "ItemToMove" for f in target_list.user_file_vo_list)
+    assert [f.file_name for f in target_list.user_file_vo_list] == ["ItemToMove"]
 
 
 @pytest.mark.asyncio
 async def test_web_copy_items(web_client: WebClient) -> None:
-    # 1. Create source and target folders
+    # Create source and target folders
     src_res = await web_client.create_folder(parent_id=0, name="SourceCopy")
     src_id = int(src_res.id)
     target_res = await web_client.create_folder(parent_id=0, name="TargetCopy")
@@ -69,12 +75,12 @@ async def test_web_copy_items(web_client: WebClient) -> None:
     item_res = await web_client.create_folder(parent_id=src_id, name="ItemToCopy")
     item_id = int(item_res.id)
 
-    # 2. Copy item
+    # Copy item
     await web_client.file_copy(
         id_list=[item_id], directory_id=src_id, go_directory_id=target_id
     )
 
-    # 3. Verify copy (exists in both)
+    # Verify copy (exists in both)
     src_list = await web_client.list_query(directory_id=src_id)
     assert any(f.file_name == "ItemToCopy" for f in src_list.user_file_vo_list)
 
@@ -172,3 +178,76 @@ async def test_web_search_path_flattening(web_client: WebClient) -> None:
     note_entry = next(e for e in search_res.entries if e.name == "Note")
     assert note_entry.path_display == "Note"
     assert note_entry.parent_path == ""
+
+
+async def test_web_move_identity_autorenames(web_client: WebClient) -> None:
+    """Test identity move/copy (no-op)
+
+    This exercises the case where the move/copy is a no-op, as the source and destination are the same.
+    """
+    res = await web_client.create_folder(parent_id=0, name="A")
+    folder_id = int(res.id)
+
+    # Move /A to / (its own parent)
+    await web_client.file_move(id_list=[folder_id], directory_id=0, go_directory_id=0)
+
+    # Check for A (1)
+    list_res = await web_client.list_query(directory_id=0)
+    names = [f.file_name for f in list_res.user_file_vo_list]
+    assert "A (1)" in names
+
+
+async def test_web_move_cyclic_fails(web_client: WebClient) -> None:
+    """Test cyclic moves (failure)"""
+    res_a = await web_client.create_folder(parent_id=0, name="A")
+    id_a = int(res_a.id)
+    res_b = await web_client.create_folder(parent_id=id_a, name="B")
+    id_b = int(res_b.id)
+
+    # Try to move A into B
+    with pytest.raises(ApiException, match="Cyclic"):
+        await web_client.file_move(id_list=[id_a], directory_id=0, go_directory_id=id_b)
+
+
+async def test_web_move_invalid_dest_fails(web_client: WebClient) -> None:
+    """Test invalid destinations (failure)"""
+    res = await web_client.create_folder(parent_id=0, name="A")
+    id_a = int(res.id)
+
+    with pytest.raises(ApiException, match="not found"):
+        await web_client.file_move(
+            id_list=[id_a], directory_id=0, go_directory_id=999999
+        )
+
+
+async def test_web_move_root_fails(web_client: WebClient) -> None:
+    """Test moving the root (failure)"""
+    with pytest.raises(ApiException):
+        await web_client.file_move(
+            id_list=[0],
+            directory_id=0,
+            go_directory_id=1,  # Assuming 1 is some folder
+        )
+
+
+async def test_web_recursive_copy(web_client: WebClient) -> None:
+    """Test recursive copy (deep hierarchy)"""
+    res_src = await web_client.create_folder(parent_id=0, name="Src")
+    src_id = int(res_src.id)
+    await web_client.create_folder(parent_id=src_id, name="Sub")
+
+    # Copy Src to Dest
+    res_dest = await web_client.create_folder(parent_id=0, name="Dest")
+    dest_id = int(res_dest.id)
+
+    await web_client.file_copy(
+        id_list=[src_id], directory_id=0, go_directory_id=dest_id
+    )
+
+    # Verify Dest/Src/Sub exists
+    list_dest = await web_client.list_query(directory_id=dest_id)
+    new_src = next(f for f in list_dest.user_file_vo_list if f.file_name == "Src")
+    new_src_id = int(new_src.id)
+
+    list_new_src = await web_client.list_query(directory_id=new_src_id)
+    assert [f.file_name for f in list_new_src.user_file_vo_list] == ["Sub"]
