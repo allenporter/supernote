@@ -3,16 +3,18 @@
 This module is automatically discovered by pytest as a plugin.
 """
 
+import asyncio
 import hashlib
 import logging
 from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import jwt
 import pytest
 from aiohttp.test_utils import TestClient
 from pytest_aiohttp import AiohttpClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.pool import StaticPool
 
@@ -23,6 +25,7 @@ from supernote.client.web import WebClient
 from supernote.models.user import UserRegisterDTO
 from supernote.server.app import create_app
 from supernote.server.config import AuthConfig, ServerConfig
+from supernote.server.db.base import Base
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage, LocalBlobStorage
 from supernote.server.services.coordination import (
@@ -46,10 +49,13 @@ def ignore_aiossqllite_debug() -> None:
 
 
 @pytest.fixture
-def mock_trace_log(tmp_path: Path) -> Generator[str, None, None]:
-    """Create a temporary trace log file for testing."""
-    log_file = tmp_path / "trace.log"
-    yield str(log_file)
+def mock_trace_log(tmp_path: Path) -> str | None:
+    """Create a temporary trace log file for testing.
+
+    Defaults to None (disabled) for performance.
+    Can be overridden by individual tests or modules.
+    """
+    return None
 
 
 @pytest.fixture
@@ -143,9 +149,9 @@ async def auth_headers_fixture(
     return {"x-access-token": token}
 
 
-@pytest.fixture(name="session_manager")
-async def session_manager_fixture() -> AsyncGenerator[DatabaseSessionManager, None]:
-    """Create a session manager for tests."""
+@pytest.fixture(scope="session")
+async def _session_manager_shared() -> AsyncGenerator[DatabaseSessionManager, None]:
+    """Create a singleton session manager for the entire test session."""
     session_manager = DatabaseSessionManager(
         TEST_DATABASE_URL,
         engine_kwargs={
@@ -153,17 +159,40 @@ async def session_manager_fixture() -> AsyncGenerator[DatabaseSessionManager, No
             "poolclass": StaticPool,
         },
     )
-    engine = session_manager._engine
-    assert engine is not None
     await session_manager.create_all_tables()
+    # Prevent anyone (like app startup or cleanup) from redundant work/closing
+    session_manager.create_all_tables = AsyncMock()  # type: ignore
+    real_close = session_manager.close
+    session_manager.close = AsyncMock()  # type: ignore
+    yield session_manager
+    # Actually close it at the end of the session
+    await real_close()
+
+
+@pytest.fixture(name="session_manager")
+async def session_manager_fixture(
+    _session_manager_shared: DatabaseSessionManager,
+) -> AsyncGenerator[DatabaseSessionManager, None]:
+    """Provide a session manager and clean up data after each test."""
 
     with patch(
-        "supernote.server.app.create_db_session_manager", return_value=session_manager
+        "supernote.server.app.create_db_session_manager",
+        return_value=_session_manager_shared,
     ):
-        yield session_manager
+        yield _session_manager_shared
+
+    # Truncate all tables to ensure isolation between tests efficiently
+    # In the future if we have AUTOINCREMENT counters:
+    #   DELETE FROM sqlite_sequence
+    async with _session_manager_shared.session() as session:
+        tasks = []
+        for table in reversed(Base.metadata.sorted_tables):
+            tasks.append(session.execute(text(f"DELETE FROM {table.name}")))
+        await asyncio.gather(*tasks)
+        await session.commit()
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 async def db_session(
     session_manager: DatabaseSessionManager,
 ) -> AsyncGenerator[AsyncSession, None]:

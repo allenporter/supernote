@@ -192,10 +192,6 @@ def create_app(config: ServerConfig) -> web.Application:
     app["schedule_service"] = ScheduleService(session_manager)
     app["sync_locks"] = {}  # user -> (equipment_no, expiry_time)
 
-    # Resolve trace log path if not set
-    if not config.trace_log_file:
-        config.trace_log_file = str(config.storage_root / "system" / "trace.log")
-
     # Register routes
     app.add_routes(system.routes)
     app.add_routes(admin.routes)
@@ -219,7 +215,9 @@ def create_app(config: ServerConfig) -> web.Application:
             # XForwardedRelaxed trusts the immediate upstream proxy
             await aiohttp_remotes.setup(app, aiohttp_remotes.XForwardedRelaxed())
 
-        app.middlewares.append(trace_middleware)
+        if config.trace_log_file:
+            app.middlewares.append(trace_middleware)
+
         app.middlewares.append(jwt_auth_middleware)
         await session_manager.create_all_tables()
 

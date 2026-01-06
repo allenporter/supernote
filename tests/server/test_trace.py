@@ -1,7 +1,15 @@
 import json
 from pathlib import Path
 
+import pytest
 from aiohttp.test_utils import TestClient
+
+
+@pytest.fixture
+def mock_trace_log(tmp_path: Path) -> str:
+    """Enable trace log for this module."""
+    log_file = tmp_path / "trace.log"
+    return str(log_file)
 
 
 async def test_trace_logging(

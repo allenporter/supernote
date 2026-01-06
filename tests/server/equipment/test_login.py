@@ -9,6 +9,13 @@ from supernote.client.login_client import LoginClient
 from tests.server.conftest import TEST_PASSWORD, TEST_USERNAME
 
 
+@pytest.fixture
+def mock_trace_log(tmp_path: Path) -> str:
+    """Enable trace log for this module."""
+    log_file = tmp_path / "trace.log"
+    return str(log_file)
+
+
 @pytest.fixture(name="login_client")
 async def supernote_login_client_fixture(client: TestClient) -> LoginClient:
     base_url = str(client.make_url("/"))
