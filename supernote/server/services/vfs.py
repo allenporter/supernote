@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from supernote.server.db.models.file import RecycleFileDO, UserFileDO
+from supernote.server.exceptions import FileAlreadyExists, InvalidPath
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +216,7 @@ class VirtualFileSystem:
             result = await self.db.execute(stmt)
             if node := result.scalar_one_or_none():
                 if node.is_folder != "Y":
-                    raise NotADirectoryError(f"{part} is a file")
+                    raise InvalidPath(f"{part} is a file")
                 current_dir_id = node.id
             else:
                 # Note: This could likely be made more efficient creating multiple
@@ -244,11 +245,11 @@ class VirtualFileSystem:
             visited = set()
             while curr_id != 0:
                 if curr_id == node.id:
-                    raise ValueError(
+                    raise InvalidPath(
                         "Cyclic move: cannot move a folder into itself or its descendants"
                     )
                 if curr_id in visited:
-                    raise ValueError(
+                    raise InvalidPath(
                         f"Cycle detected in move {node_id} -> {new_parent_id} found {curr_id} multiple times"
                     )
                 visited.add(curr_id)
@@ -272,7 +273,7 @@ class VirtualFileSystem:
         if new_parent_id != 0:
             parent = await self.get_node_by_id(user_id, new_parent_id)
             if not parent or parent.is_folder == "N":
-                raise ValueError(
+                raise InvalidPath(
                     f"Invalid destination: folder {new_parent_id} not found"
                 )
 
@@ -293,9 +294,9 @@ class VirtualFileSystem:
                 new_name = f"{base_name} ({counter}){ext}"
                 counter += 1
                 if counter > 100:
-                    raise FileExistsError(f"File already exists: {new_name}")
+                    raise FileAlreadyExists(f"File already exists: {new_name}")
         elif await self._check_exists(user_id, new_parent_id, new_name, node.is_folder):
-            raise FileExistsError(f"File already exists: {new_name}")
+            raise FileAlreadyExists(f"File already exists: {new_name}")
 
         node.directory_id = new_parent_id
         node.file_name = new_name
@@ -334,11 +335,11 @@ class VirtualFileSystem:
                 new_name = f"{base_name}({counter}){ext}"
                 counter += 1
                 if counter > 100:
-                    raise FileExistsError(f"File already exists: {new_name}")
+                    raise FileAlreadyExists(f"File already exists: {new_name}")
         elif await self._check_exists(
             user_id, new_parent_id, new_name, source_node.is_folder
         ):
-            raise FileExistsError(f"File already exists: {new_name}")
+            raise FileAlreadyExists(f"File already exists: {new_name}")
 
         now_ms = int(time.time() * 1000)
         new_node = UserFileDO(

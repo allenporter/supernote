@@ -8,10 +8,18 @@ from pathlib import Path
 
 import aiofiles
 
-from supernote.models.base import BaseResponse, BooleanEnum, create_error_response
+from supernote.models.base import BooleanEnum
 from supernote.server.constants import (
     CATEGORY_CONTAINERS,
     IMMUTABLE_SYSTEM_DIRECTORIES,
+)
+from supernote.server.exceptions import (
+    AccessDenied,
+    FileAlreadyExists,
+    FileError,
+    FileNotFound,
+    HashMismatch,
+    InvalidPath,
 )
 
 from ..db.models.file import RecycleFileDO, UserFileDO
@@ -26,21 +34,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "FileService",
     "FileEntity",
-    "FileServiceException",
-    "InvalidPathException",
 ]
-
-
-class FileServiceException(Exception):
-    """Exception raised by file service."""
-
-
-class InvalidPathException(FileServiceException):
-    """Exception raised when an invalid path is provided."""
-
-
-class HashMismatchException(FileServiceException):
-    """Exception raised when a hash mismatch is detected."""
 
 
 @dataclass
@@ -347,7 +341,7 @@ class FileService:
                 calc_md5 = hash_md5.hexdigest()
 
                 if calc_md5 != content_hash:
-                    raise ValueError(
+                    raise HashMismatch(
                         f"Hash mismatch: expected {content_hash}, got {calc_md5}"
                     )
 
@@ -359,9 +353,7 @@ class FileService:
                 # Cleanup temp
                 await asyncio.to_thread(temp_path.unlink, missing_ok=True)
             else:
-                raise FileNotFoundError(
-                    f"Blob {content_hash} not found and no temp file."
-                )
+                raise FileNotFound(f"Blob {content_hash} not found and no temp file.")
 
         # 3. Create Metadata in VFS
         async with self.session_manager.session() as session:
@@ -414,9 +406,7 @@ class FileService:
                 calc_md5 = hash_md5.hexdigest()
 
                 if calc_md5 != md5:
-                    raise HashMismatchException(
-                        f"Hash mismatch: expected {md5}, got {calc_md5}"
-                    )
+                    raise HashMismatch(f"Hash mismatch: expected {md5}, got {calc_md5}")
 
                 # Promote to Blob
                 async with aiofiles.open(temp_path, "rb") as f:
@@ -426,7 +416,7 @@ class FileService:
                 await asyncio.to_thread(temp_path.unlink, missing_ok=True)
             else:
                 # If neither blob nor temp file exists -> error
-                raise InvalidPathException(
+                raise FileNotFound(
                     f"Blob {md5} not found and temporary file {inner_name} missing."
                 )
 
@@ -453,14 +443,14 @@ class FileService:
         user_id = await self.user_service.get_user_id(user)
         rel_path = path.strip("/")
         if not rel_path:
-            raise InvalidPathException("Cannot create root directory")
+            raise InvalidPath("Cannot create root directory")
 
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
             node_id = await vfs.ensure_directory_path(user_id, rel_path)
             node = await vfs.get_node_by_id(user_id, node_id)
             if not node:
-                raise InvalidPathException(f"Failed to create directory: {rel_path}")
+                raise FileError(f"Failed to create directory: {rel_path}")
 
             return _to_file_entity(node, rel_path)
 
@@ -488,23 +478,19 @@ class FileService:
             node = await vfs.get_node_by_id(user_id, id)
             if not node:
                 # Preferring this instead of idempotency for now
-                raise InvalidPathException(f"Node {id} not found for user {email}")
+                raise FileNotFound(f"Node {id} not found for user {email}")
             if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
-                raise InvalidPathException(
-                    f"Cannot delete system directory: {node.file_name}"
-                )
+                raise AccessDenied(f"Cannot delete system directory: {node.file_name}")
 
             path_display = await vfs.get_full_path(user_id, node.id)
             entity = _to_file_entity(node, path_display)
 
             success = await vfs.delete_node(user_id, id)
             if not success:
-                raise InvalidPathException(f"Node {id} not found for user {email}")
+                raise FileNotFound(f"Node {id} not found for user {email}")
             return entity
 
-    async def delete_items(
-        self, user: str, id_list: list[int], parent_id: int
-    ) -> BaseResponse:
+    async def delete_items(self, user: str, id_list: list[int], parent_id: int) -> None:
         """Delete files or directories for a specific user using VFS (Web API)."""
         user_id = await self.user_service.get_user_id(user)
         async with self.session_manager.session() as session:
@@ -528,19 +514,17 @@ class FileService:
                             is_categorized = True
 
                     if not (parent_id == 0 and is_categorized):
-                        return create_error_response(
-                            f"File {file_id} is not in directory {parent_id}", "E400"
+                        raise InvalidPath(
+                            f"File {file_id} is not in directory {parent_id}"
                         )
 
                 # Immutability check
                 if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
-                    raise InvalidPathException(
+                    raise AccessDenied(
                         f"Cannot delete system directory: {node.file_name}"
                     )
 
                 await vfs.delete_node(user_id, file_id)
-
-        return BaseResponse()
 
     async def get_storage_usage(self, user: str) -> int:
         """Get total storage usage for a specific user using VFS."""
@@ -662,7 +646,7 @@ class FileService:
         user: str,
         id_list: list[int],
         target_parent_id: int,
-    ) -> BaseResponse:
+    ) -> None:
         """Batch move items for a specific user."""
         user_id = await self.user_service.get_user_id(user)
 
@@ -671,29 +655,21 @@ class FileService:
             for item_id in id_list:
                 node = await vfs.get_node_by_id(user_id, item_id)
                 if not node:
-                    return create_error_response(
-                        f"Source item {item_id} not found", "E404"
-                    )
+                    raise FileNotFound(f"Source item {item_id} not found")
 
                 # Immutability check
                 if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
-                    return create_error_response(
-                        f"Cannot move system directory: {node.file_name}",
-                        "E_SYSTEM_DIR",
+                    raise AccessDenied(
+                        f"Cannot move system directory: {node.file_name}"
                     )
 
-                try:
-                    await vfs.move_node(
-                        user_id,
-                        item_id,
-                        target_parent_id,
-                        node.file_name,
-                        autorename=True,
-                    )
-                except ValueError as e:
-                    return create_error_response(str(e), "E400")
-
-        return BaseResponse(success=True)
+                await vfs.move_node(
+                    user_id,
+                    item_id,
+                    target_parent_id,
+                    node.file_name,
+                    autorename=True,
+                )
 
     async def move_item(
         self, user: str, item_id: int, to_path: str, autorename: bool = False
@@ -705,13 +681,11 @@ class FileService:
             vfs = VirtualFileSystem(session)
             node = await vfs.get_node_by_id(user_id, item_id)
             if not node:
-                raise InvalidPathException(f"Source item {item_id} not found")
+                raise FileNotFound(f"Source item {item_id} not found")
 
             # Immutability check
             if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
-                raise InvalidPathException(
-                    f"Cannot move system directory: {node.file_name}"
-                )
+                raise AccessDenied(f"Cannot move system directory: {node.file_name}")
 
             # Resolve destination parent
             clean_to_path = to_path.strip("/")
@@ -735,22 +709,12 @@ class FileService:
                         new_name = parts[0]
                         parent_id = 0
 
-            try:
-                new_node = await vfs.move_node(
-                    user_id, item_id, parent_id, new_name, autorename
-                )
-            except ValueError as e:
-                raise InvalidPathException(str(e))
-            except FileExistsError as e:
-                # Device API conflict error is usually E0322, which we can map to InvalidPathException
-                # or a specialized conflict exception if we had one.
-                # For now, InvalidPathException will be caught and return 400 or 409 depending on handler.
-                raise InvalidPathException(f"Conflict: {str(e)}")
+            new_node = await vfs.move_node(
+                user_id, item_id, parent_id, new_name, autorename
+            )
 
             if not new_node:
-                raise FileServiceException(
-                    f"Moving item {item_id} to {parent_id} failed"
-                )
+                raise FileError(f"Moving item {item_id} to {parent_id} failed")
             # Re-fetch the new full path for simplicity rather than trying to
             # rebuild it.
             full_path = await vfs.get_full_path(user_id, new_node.id)
@@ -761,7 +725,7 @@ class FileService:
         user: str,
         id_list: list[int],
         target_parent_id: int,
-    ) -> BaseResponse:
+    ) -> None:
         """Batch copy items for a specific user."""
         user_id = await self.user_service.get_user_id(user)
 
@@ -770,31 +734,23 @@ class FileService:
             for item_id in id_list:
                 node = await vfs.get_node_by_id(user_id, item_id)
                 if not node:
-                    return create_error_response(
-                        f"Source item {item_id} not found", "E404"
-                    )
+                    raise FileNotFound(f"Source item {item_id} not found")
 
                 # Check immutability? Usually copy is allowed, but let's be safe.
                 # Actually device API copy_item blocks it too.
                 if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
-                    return create_error_response(
-                        f"Cannot copy system directory: {node.file_name}",
-                        "E_SYSTEM_DIR",
+                    raise AccessDenied(
+                        f"Cannot copy system directory: {node.file_name}"
                     )
 
                 # Copy logic (no source parent check usually required for copy but we can add it for completeness)
-                try:
-                    await vfs.copy_node(
-                        user_id,
-                        item_id,
-                        target_parent_id,
-                        autorename=True,
-                        new_name=node.file_name,
-                    )
-                except ValueError as e:
-                    return create_error_response(str(e), "E400")
-
-        return BaseResponse(success=True)
+                await vfs.copy_node(
+                    user_id,
+                    item_id,
+                    target_parent_id,
+                    autorename=True,
+                    new_name=node.file_name,
+                )
 
     async def copy_item(
         self, email: str, id: int, to_path: str, autorename: bool
@@ -806,13 +762,11 @@ class FileService:
             vfs = VirtualFileSystem(session)
             node = await vfs.get_node_by_id(user_id, id)
             if not node:
-                raise InvalidPathException(f"Source {id} not found")
+                raise FileNotFound(f"Source {id} not found")
 
             # Immutability check
             if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
-                raise InvalidPathException(
-                    f"Cannot copy system directory: {node.file_name}"
-                )
+                raise AccessDenied(f"Cannot copy system directory: {node.file_name}")
 
             # Resolve destination parent
             clean_to_path = to_path.strip("/")
@@ -836,22 +790,19 @@ class FileService:
                         new_name = parts[0]
                         parent_id = 0
 
-            try:
-                new_node = await vfs.copy_node(
-                    user_id, id, parent_id, autorename=autorename, new_name=new_name
-                )
-            except FileExistsError as e:
-                raise InvalidPathException(f"Conflict: {str(e)}")
+            new_node = await vfs.copy_node(
+                user_id, id, parent_id, autorename=autorename, new_name=new_name
+            )
 
             if not new_node:
-                raise FileServiceException(f"Copying item {id} to {parent_id} failed")
+                raise FileError(f"Copying item {id} to {parent_id} failed")
 
             # Re-fetch the new full path for simplicity rather than trying to
             # rebuild it.
             full_path = await vfs.get_full_path(user_id, new_node.id)
             return _to_file_entity(new_node, full_path)
 
-    async def rename_item(self, user: str, id: int, new_name: str) -> BaseResponse:
+    async def rename_item(self, user: str, id: int, new_name: str) -> None:
         """Rename a file or directory for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
 
@@ -859,28 +810,24 @@ class FileService:
             vfs = VirtualFileSystem(session)
             node = await vfs.get_node_by_id(user_id, id)
             if not node:
-                return create_error_response("Source not found", "E404")
+                raise FileNotFound("Source not found")
 
             # Immutability check
             if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
-                return create_error_response(
-                    f"Cannot rename system directory: {node.file_name}", "E_SYSTEM_DIR"
-                )
+                raise AccessDenied(f"Cannot rename system directory: {node.file_name}")
 
             # Check if name already exists in same directory
             exists = await vfs._check_exists(
                 user_id, node.directory_id, new_name, node.is_folder
             )
             if exists:
-                return create_error_response("File already exists", "E409")
+                raise FileAlreadyExists("File already exists")
 
             # Perform rename by updating name in same directory
             # TODO: Verify auto rename behavior here.
             await vfs.move_node(
                 user_id, id, node.directory_id, new_name, autorename=False
             )
-
-        return BaseResponse(success=True)
 
     async def get_folders_by_ids(
         self, user: str, parent_id: int, id_list: list[int]
@@ -946,16 +893,14 @@ class FileService:
 
         return recycle_files
 
-    async def delete_from_recycle(self, user: str, id_list: list[int]) -> BaseResponse:
+    async def delete_from_recycle(self, user: str, id_list: list[int]) -> None:
         """Permanently delete items from recycle bin for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
             await vfs.purge_recycle(user_id, id_list)
 
-        return BaseResponse()
-
-    async def revert_from_recycle(self, user: str, id_list: list[int]) -> BaseResponse:
+    async def revert_from_recycle(self, user: str, id_list: list[int]) -> None:
         """Restore items from recycle bin for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
         async with self.session_manager.session() as session:
@@ -963,16 +908,12 @@ class FileService:
             for recycle_id in id_list:
                 await vfs.restore_node(user_id, recycle_id)
 
-        return BaseResponse()
-
-    async def clear_recycle(self, user: str) -> BaseResponse:
+    async def clear_recycle(self, user: str) -> None:
         """Empty the recycle bin for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
             await vfs.purge_recycle(user_id)
-
-        return BaseResponse()
 
     async def search_files(self, user: str, keyword: str) -> list[FileEntity]:
         """Search for files matching the keyword in user's storage.

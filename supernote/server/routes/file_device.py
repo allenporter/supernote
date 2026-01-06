@@ -36,11 +36,10 @@ from supernote.models.file_device import (
     SynchronousStartLocalDTO,
     SynchronousStartLocalVO,
 )
+from supernote.server.exceptions import SupernoteError
 from supernote.server.services.file import (
     FileEntity,
     FileService,
-    FileServiceException,
-    InvalidPathException,
 )
 from supernote.server.utils.url_signer import UrlSigner
 
@@ -289,16 +288,10 @@ async def handle_upload_finish(request: web.Request) -> web.Response:
             req_data.path,
             req_data.content_hash,
         )
-    except InvalidPathException as err:
-        return web.json_response(
-            create_error_response(error_msg=str(err)).to_dict(),
-            status=400,
-        )
-    except FileServiceException as err:
-        return web.json_response(
-            create_error_response(error_msg=str(err)).to_dict(),
-            status=500,
-        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
     if not entity.md5:
         return web.json_response(
             create_error_response(error_msg="Invalid upload missing md5").to_dict(),
@@ -381,16 +374,10 @@ async def handle_create_folder(request: web.Request) -> web.Response:
 
     try:
         entry = await file_service.create_directory(user_email, req_data.path)
-    except InvalidPathException as e:
-        return web.json_response(
-            create_error_response(error_msg=str(e)).to_dict(),
-            status=400,
-        )
-    except FileServiceException as e:
-        return web.json_response(
-            create_error_response(error_msg=str(e)).to_dict(),
-            status=500,
-        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
     return web.json_response(
         CreateFolderLocalVO(
             equipment_no=req_data.equipment_no,
@@ -414,16 +401,10 @@ async def handle_delete_folder(request: web.Request) -> web.Response:
             user_email,
             req_data.id,
         )
-    except InvalidPathException as e:
-        return web.json_response(
-            create_error_response(error_msg=str(e)).to_dict(),
-            status=400,
-        )
-    except FileServiceException as e:
-        return web.json_response(
-            create_error_response(error_msg=str(e)).to_dict(),
-            status=500,
-        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
     return web.json_response(
         DeleteFolderLocalVO(
@@ -450,19 +431,10 @@ async def handle_move_file(request: web.Request) -> web.Response:
             req_data.to_path,
             req_data.autorename,
         )
-    except InvalidPathException as e:
-        error_code = "E400"
-        if "Conflict" in str(e):
-            error_code = "E0322"
-        return web.json_response(
-            create_error_response(error_msg=str(e), error_code=error_code).to_dict(),
-            status=400,
-        )
-    except FileServiceException as e:
-        return web.json_response(
-            create_error_response(error_msg=str(e)).to_dict(),
-            status=500,
-        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
     return web.json_response(
         FileMoveLocalVO(
             equipment_no=req_data.equipment_no,
@@ -488,19 +460,10 @@ async def handle_copy_file(request: web.Request) -> web.Response:
             req_data.to_path,
             req_data.autorename,
         )
-    except InvalidPathException as e:
-        error_code = "E400"
-        if "Conflict" in str(e):
-            error_code = "E0322"
-        return web.json_response(
-            create_error_response(error_msg=str(e), error_code=error_code).to_dict(),
-            status=400,
-        )
-    except FileServiceException as e:
-        return web.json_response(
-            create_error_response(error_msg=str(e)).to_dict(),
-            status=500,
-        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
     return web.json_response(
         FileCopyLocalVO(
             equipment_no=req_data.equipment_no,
