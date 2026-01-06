@@ -1,6 +1,11 @@
 # Contributing to Supernote-Lite
 
-Thank you for your interest in contributing to Supernote-Lite! This document outlines the coding standards and conventions used in this project.
+This package is designed for:
+1. **Server operators** - Self-hosting Supernote Private Cloud
+2. **Developers** - Integrating Supernote into applications
+3. **Reference** - Understanding Supernote protocols
+
+Thank you for your interest in contributing to Supernote-Lite! This document outlines the setup, architecture, and standards used in this project.
 
 ## Code Style & Standards
 
@@ -43,13 +48,28 @@ The server is built with `aiohttp`.
 -   **Imports**: Use absolute imports `from supernote...`.
 -   **Async**: All I/O operations (file, network) must be non-blocking.
 
-## Enabling virtual environment
+## Local Development Setup
 
-We use `uv` to manage virtual environments. To create a virtual environment:
+We use `uv` to manage development environments and dependencies.
+
+### Environment Setup
 
 ```bash
-uv venv --python=3.14
-uv sync  # Install dependencies
+# Create a virtual environment and install all dependencies (including extras)
+uv sync --all-extras
+```
+
+This will create a `.venv` directory and install all required packages.
+
+### Manual Setup (Optional)
+
+If you prefer to manage the environment manually:
+
+```bash
+uv venv --python=3.13  # Or your preferred 3.13+ version
+source .venv/bin/activate
+uv pip install -e ".[all]"
+uv pip install -r requirements_dev.txt
 ```
 
 ## Running Tests

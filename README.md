@@ -23,15 +23,9 @@ pip install supernote[client]      # + Client
 pip install supernote[all]
 ```
 
-## Local Development
+## Local Development Setup
 
-Install in a virtual environment:
-
-```bash
-uv venv --python=3.14
-source .venv/bin/activate
-uv pip install -r requirements_dev.txt
-```
+To set up the project for development, please refer to the [Contributing Guide](docs/CONTRIBUTING.md).
 
 ## Quick Start
 
@@ -109,23 +103,13 @@ supernote cloud-login --url http://localhost:8080 email@example.com
 supernote cloud-ls
 ```
 
-## Development
+## Contributing
 
-This package is designed for:
-1. **Server operators** - Self-hosting Supernote Private Cloud
-2. **Developers** - Integrating Supernote into applications
-3. **Reference** - Understanding Supernote protocols
-
-See [ARCHITECTURE.md](https://github.com/allenporter/supernote-lite/blob/main/supernote/server/ARCHITECTURE.md) for protocol details.
-
-### Setup
-
-```bash
-uv venv --python=3.14
-source .venv/bin/activate
-uv pip install -r requirements_dev.txt
-uv pip install -e ".[all]"
-```
+We welcome contributions! Please see our [Contributing Guide](docs/CONTRIBUTING.md) for details on:
+- Local development setup
+- Project architecture
+- Coding standards
+- Running tests
 
 ## Credits
 
