@@ -4,7 +4,7 @@ FROM python:3.14-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     SUPERNOTE_STORAGE_DIR=/data \
-    SUPERNOTE_CONFIG_DIR=/config \
+    SUPERNOTE_CONFIG_DIR=/data/config \
     SUPERNOTE_HOST=0.0.0.0 \
     SUPERNOTE_PORT=8080
 
@@ -21,14 +21,14 @@ COPY supernote/ supernote/
 RUN pip install --no-cache-dir ".[server]"
 
 # Create directories for storage and config, and set permissions
-RUN mkdir -p /data /config && \
-    chown -R supernote:supernote /data /config
+RUN mkdir -p /data /data/config && \
+    chown -R supernote:supernote /data
 
 # Switch to non-root user
 USER supernote
 
 EXPOSE 8080
 
-VOLUME ["/data", "/config"]
+VOLUME ["/data"]
 
 CMD ["supernote-server", "serve"]
