@@ -21,7 +21,7 @@ _LOGGER = logging.getLogger(__name__)
 def load_cached_auth(url: str | None = None) -> tuple[FileCacheAuth, str]:
     """Load cached credentials."""
     cache_path = os.path.expanduser("~/.cache/supernote.pkl")
-    if not os.path.exists(cache_path):
+    if not os.path.exists(cache_path) and not url:
         print(f"Error: No cached credentials found at {cache_path}")
         print("Please run 'supernote cloud-login --url <URL>' first.")
         sys.exit(1)
