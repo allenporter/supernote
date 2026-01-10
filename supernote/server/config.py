@@ -120,6 +120,15 @@ class ServerConfig(DataClassYAMLMixin):
                 f"Remote Password Reset Enabled: {config.auth.enable_remote_password_reset}"
             )
 
+        if os.getenv("SUPERNOTE_PROXY_MODE"):
+            config.proxy_mode = os.getenv("SUPERNOTE_PROXY_MODE")
+            logger.info(f"Using SUPERNOTE_PROXY_MODE: {config.proxy_mode}")
+
+        if os.getenv("SUPERNOTE_TRUSTED_PROXIES"):
+            val = os.getenv("SUPERNOTE_TRUSTED_PROXIES", "")
+            config.trusted_proxies = [p.strip() for p in val.split(",") if p.strip()]
+            logger.info(f"Using SUPERNOTE_TRUSTED_PROXIES: {config.trusted_proxies}")
+
         if not config_file.exists():
             # Set default trace log file if not specified
             if config.trace_log_file is None:

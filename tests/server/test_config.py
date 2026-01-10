@@ -83,3 +83,19 @@ def test_example_config_is_valid() -> None:
     assert config.storage_dir == "storage"
     assert config.auth.secret_key == "CHANGE_ME_TO_A_SECURE_RANDOM_STRING"
     assert config.auth.enable_registration is False
+
+
+def test_server_config_proxy_env_vars(tmp_path: Path) -> None:
+    """Test that proxy configuration can be set via environment variables."""
+    config_dir = tmp_path / "config"
+    with patch.dict(
+        os.environ,
+        {
+            "SUPERNOTE_PROXY_MODE": "strict",
+            "SUPERNOTE_TRUSTED_PROXIES": "10.0.0.1,10.0.0.2",
+        },
+    ):
+        config = ServerConfig.load(config_dir)
+        assert config.proxy_mode == "strict"
+        # The list should be parsed from the comma-separated string
+        assert config.trusted_proxies == ["10.0.0.1", "10.0.0.2"]
