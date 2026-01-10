@@ -3,6 +3,7 @@ import os
 import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 from mashumaro.config import TO_DICT_ADD_OMIT_NONE_FLAG, BaseConfig
 from mashumaro.mixins.yaml import DataClassYAMLMixin
@@ -66,8 +67,10 @@ class ServerConfig(DataClassYAMLMixin):
         else:
             if config_dir is None:
                 config_dir = os.getenv("SUPERNOTE_CONFIG_DIR", "config")
+                logger.info(f"Using SUPERNOTE_CONFIG_DIR: {config_dir}")
             config_dir_path = Path(config_dir)
             config_file = config_dir_path / "config.yaml"
+            logger.info(f"Using config file: {config_file}")
 
         config = cls()
         if config_file.exists():
@@ -116,6 +119,17 @@ class ServerConfig(DataClassYAMLMixin):
             logger.info(
                 f"Remote Password Reset Enabled: {config.auth.enable_remote_password_reset}"
             )
+
+        if not config_file.exists():
+            # Set default trace log file if not specified
+            if config.trace_log_file is None:
+                config.trace_log_file = str(
+                    Path(config.storage_dir) / "system" / "trace.log"
+                )
+
+            logger.info(f"Saving config to {config_file}")
+            config_file.parent.mkdir(parents=True, exist_ok=True)
+            config_file.write_text(cast(str, config.to_yaml()))
 
         return config
 
