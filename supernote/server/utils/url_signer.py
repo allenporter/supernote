@@ -126,7 +126,7 @@ class UrlSigner:
 
         # Check if query params exist
         separator = "&" if "?" in path else "?"
-        return f"{path}{separator}timestamp={now_ms}&signature={token}"
+        return f"{path}{separator}timestamp={now_ms}&nonce={nonce}&signature={token}"
 
     async def verify(self, signed_url: str, consume: bool = True) -> dict[str, Any]:
         """Verify the signature embedded in the URL.

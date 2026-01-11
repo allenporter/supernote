@@ -136,9 +136,7 @@ class FileChunkParams(DataClassJSONMixin):
     upload_id: str = field(metadata=field_options(alias="uploadId"))
 
     # Server provided paramsters
-    object_name: str | None = field(
-        metadata=field_options(alias="object_name"), default=None
-    )
+    path: str | None = None
     signature: str | None = None
 
     class Config(BaseConfig):

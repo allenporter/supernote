@@ -57,10 +57,10 @@ async def handle_oss_upload(request: web.Request) -> web.Response:
         )
 
     # Extract object name/path from query params
-    object_name = request.query.get("object_name")
+    object_name = request.query.get("path")
     if not object_name:
         return web.json_response(
-            create_error_response("Missing object_name", "E400").to_dict(), status=400
+            create_error_response("Missing path", "E400").to_dict(), status=400
         )
 
     reader = await request.multipart()
@@ -103,9 +103,9 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
             create_error_response("Invalid param types", "E400").to_dict(), status=400
         )
     # Validate object_name which we added to model
-    if not params.object_name:
+    if not params.path:
         return web.json_response(
-            create_error_response("Missing object_name", "E400").to_dict(), status=400
+            create_error_response("Missing path", "E400").to_dict(), status=400
         )
 
     # Determine if this is the last chunk to consume the nonce
@@ -128,7 +128,7 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
     reader = await request.multipart()
     field = await reader.next()
     if isinstance(field, BodyPartReader) and field.name == "file":
-        chunk_key = _get_chunk_key(params.object_name, params.part_number)
+        chunk_key = _get_chunk_key(params.path, params.part_number)
 
         metadata = await blob_storage.put(
             USER_DATA_BUCKET, chunk_key, _stream_upload_field(field)
@@ -137,17 +137,17 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
         total_bytes = metadata.size
 
         logger.info(
-            f"Received chunk {params.part_number} for {params.object_name} (uploadId: {params.upload_id}): {total_bytes} bytes, MD5: {chunk_md5}"
+            f"Received chunk {params.part_number} for {params.path} (uploadId: {params.upload_id}): {total_bytes} bytes, MD5: {chunk_md5}"
         )
 
         # Implicit Merge Logic (for Device Compatibility)
         if params.total_chunks:
             if params.part_number == params.total_chunks:
                 logger.info(
-                    f"Implicitly merging {params.total_chunks} chunks for {params.object_name}"
+                    f"Implicitly merging {params.total_chunks} chunks for {params.path}"
                 )
                 source_keys = [
-                    _get_chunk_key(params.object_name, i)
+                    _get_chunk_key(params.path, i)
                     for i in range(1, params.total_chunks + 1)
                 ]
 
@@ -158,10 +158,8 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
                         ):
                             yield chunk
 
-                await blob_storage.put(
-                    USER_DATA_BUCKET, params.object_name, combined_stream()
-                )
-                logger.info(f"Successfully merged chunks for {params.object_name}")
+                await blob_storage.put(USER_DATA_BUCKET, params.path, combined_stream())
+                logger.info(f"Successfully merged chunks for {params.path}")
 
                 # Cleanup chunks
                 await asyncio.gather(
@@ -205,10 +203,10 @@ async def handle_oss_download(request: web.Request) -> web.StreamResponse:
             status=403,
         )
 
-    file_id = request.query.get("id")
+    file_id = request.query.get("path")
     if not file_id:
         return web.json_response(
-            create_error_response("Missing id").to_dict(), status=400
+            create_error_response("Missing path").to_dict(), status=400
         )
 
     # Resolve file metadata via VFS
