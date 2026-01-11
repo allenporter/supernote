@@ -1,19 +1,14 @@
-import asyncio
-import hashlib
 import logging
 import os
-import shutil
 import uuid
-from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-
-import aiofiles
 
 from supernote.models.base import BooleanEnum
 from supernote.server.constants import (
     CATEGORY_CONTAINERS,
     IMMUTABLE_SYSTEM_DIRECTORIES,
+    USER_DATA_BUCKET,
 )
 from supernote.server.exceptions import (
     AccessDenied,
@@ -51,10 +46,10 @@ class FileEntity:
     md5: str | None
     create_time: int
     update_time: int
-
     # Contextual fields computed by the service. This should be the
     # full path of the file in the storage system with no leading or trailing slashes.
     full_path: str
+    storage_key: str | None = None
 
     def __post_init__(self) -> None:
         self.full_path = self.full_path.strip("/")
@@ -87,6 +82,7 @@ def _to_file_entity(node: UserFileDO, full_path: str) -> FileEntity:
         create_time=int(node.create_time),
         update_time=int(node.update_time),
         full_path=full_path,
+        storage_key=node.storage_key,
     )
 
 
@@ -322,38 +318,23 @@ class FileService:
         inner_name: str,
     ) -> FileEntity:
         """Finish upload for a specific user."""
-        # 1. Resolve User ID
         user_id = await self.user_service.get_user_id(user)
 
-        # 2. Check if Blob exists (CAS)
-        if not await self.blob_storage.exists(content_hash):
-            # Fallback: check legacy temp file from save_temp_file
-            temp_path = self.resolve_temp_path(user, inner_name)
-            if await asyncio.to_thread(temp_path.exists):
-                # Calculate MD5 and promote to blob
-                hash_md5 = hashlib.md5()
-                async with aiofiles.open(temp_path, "rb") as f:
-                    while True:
-                        chunk = await f.read(4096)
-                        if not chunk:
-                            break
-                        hash_md5.update(chunk)
-                calc_md5 = hash_md5.hexdigest()
+        # Verify blob and get metadata
+        # We need MD5 to verify integrity
+        try:
+            metadata = await self.blob_storage.get_metadata(
+                USER_DATA_BUCKET, inner_name, include_md5=True
+            )
+        except FileNotFoundError:
+            raise FileNotFound(f"Blob {inner_name} not found")
 
-                if calc_md5 != content_hash:
-                    raise HashMismatch(
-                        f"Hash mismatch: expected {content_hash}, got {calc_md5}"
-                    )
+        if metadata.content_md5 != content_hash:
+            raise HashMismatch(
+                f"Hash mismatch: expected {content_hash}, got {metadata.content_md5}"
+            )
 
-                # Write to blob
-                async with aiofiles.open(temp_path, "rb") as f:
-                    data = await f.read()
-                    await self.blob_storage.write_blob(data)
-
-                # Cleanup temp
-                await asyncio.to_thread(temp_path.unlink, missing_ok=True)
-            else:
-                raise FileNotFound(f"Blob {content_hash} not found and no temp file.")
+        blob_size = metadata.size
 
         # 3. Create Metadata in VFS
         async with self.session_manager.session() as session:
@@ -363,14 +344,13 @@ class FileService:
             if clean_path:
                 parent_id = await vfs.ensure_directory_path(user_id, clean_path)
 
-            blob_size = self.blob_storage.get_blob_path(content_hash).stat().st_size
-
             new_file = await vfs.create_file(
                 user_id=user_id,
                 parent_id=parent_id,
                 name=filename,
                 size=blob_size,
                 md5=content_hash,
+                storage_key=inner_name,
             )
 
         # 4. Construct response
@@ -390,45 +370,26 @@ class FileService:
         """Finish upload (Web API)."""
         user_id = await self.user_service.get_user_id(user)
 
-        # 1. Check/Promote Blob
-        # Note: We use inner_name to find the temp file if not in blob storage
-        if not await self.blob_storage.exists(md5):
-            temp_path = self.resolve_temp_path(user, inner_name)
-            if await asyncio.to_thread(temp_path.exists):
-                # Validate MD5
-                hash_md5 = hashlib.md5()
-                async with aiofiles.open(temp_path, "rb") as f:
-                    while True:
-                        chunk = await f.read(4096)
-                        if not chunk:
-                            break
-                        hash_md5.update(chunk)
-                calc_md5 = hash_md5.hexdigest()
+        # 1. Check/Promote Blob & Verify Integrity
+        try:
+            metadata = await self.blob_storage.get_metadata(
+                USER_DATA_BUCKET, inner_name, include_md5=True
+            )
+        except FileNotFoundError:
+            raise FileNotFound(f"Blob {inner_name} not found")
 
-                if calc_md5 != md5:
-                    raise HashMismatch(f"Hash mismatch: expected {md5}, got {calc_md5}")
+        if metadata.content_md5 != md5:
+            # Note: The Web API might not expect a HashMismatch error, but it's correct for integrity.
+            # Convert to appropriate error if needed, but HashMismatch is fine for now.
+            raise HashMismatch(
+                f"Hash mismatch: expected {md5}, got {metadata.content_md5}"
+            )
 
-                # Promote to Blob
-                async with aiofiles.open(temp_path, "rb") as f:
-                    data = await f.read()
-                    await self.blob_storage.write_blob(data)
-
-                await asyncio.to_thread(temp_path.unlink, missing_ok=True)
-            else:
-                # If neither blob nor temp file exists -> error
-                raise FileNotFound(
-                    f"Blob {md5} not found and temporary file {inner_name} missing."
-                )
+        blob_size = metadata.size
 
         # 2. Create VFS Node
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
-            # Verify directory exists? (Optional, create_file might check FK or fail)
-            # create_file expects valid parent_id.
-
-            # Using actual size from blob or DTO? DTO usually trusted or verified during promotion.
-            # Ideally verify blob size.
-            blob_size = self.blob_storage.get_blob_path(md5).stat().st_size
 
             await vfs.create_file(
                 user_id=user_id,
@@ -436,6 +397,7 @@ class FileService:
                 name=file_name,
                 size=blob_size,
                 md5=md5,
+                storage_key=inner_name,
             )
 
     async def create_directory(self, user: str, path: str) -> FileEntity:
@@ -539,105 +501,6 @@ class FileService:
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
             return await vfs.is_empty(user_id)
-
-    def resolve_temp_path(self, user: str, filename: str) -> Path:
-        """Resolve a filename to an absolute path in user's temp storage."""
-        return self.temp_dir / user / filename
-
-    def get_chunk_path(
-        self, user: str, upload_id: str, filename: str, part_number: int
-    ) -> Path:
-        """Get path for a chunk."""
-        chunk_filename = f"{filename}_chunk_{part_number}"
-        return self.temp_dir / user / upload_id / chunk_filename
-
-    async def save_temp_file(
-        self, user: str, filename: str, chunk_reader: Callable[[], Awaitable[bytes]]
-    ) -> tuple[int, str]:
-        """Save data to user's temp file. Returns (total_bytes, md5_hash)."""
-        temp_path = self.resolve_temp_path(user, filename)
-        temp_path.parent.mkdir(parents=True, exist_ok=True)
-
-        loop = asyncio.get_running_loop()
-        f = await loop.run_in_executor(None, open, temp_path, "wb")
-        total_bytes = 0
-        hash_md5 = hashlib.md5()
-        try:
-            while True:
-                chunk = await chunk_reader()
-                if not chunk:
-                    break
-                await loop.run_in_executor(None, f.write, chunk)
-                hash_md5.update(chunk)
-                total_bytes += len(chunk)
-        finally:
-            await loop.run_in_executor(None, f.close)
-        return total_bytes, hash_md5.hexdigest()
-
-    async def save_chunk_file(
-        self,
-        user: str,
-        upload_id: str,
-        filename: str,
-        part_number: int,
-        chunk_reader: Callable[[], Awaitable[bytes]],
-    ) -> tuple[int, str]:
-        """Save a single chunk. Returns (total_bytes, md5_hash)."""
-        chunk_path = self.get_chunk_path(user, upload_id, filename, part_number)
-        chunk_path.parent.mkdir(parents=True, exist_ok=True)
-
-        loop = asyncio.get_running_loop()
-        f = await loop.run_in_executor(None, open, chunk_path, "wb")
-        total_bytes = 0
-        hash_md5 = hashlib.md5()
-        try:
-            while True:
-                chunk = await chunk_reader()
-                if not chunk:
-                    break
-                await loop.run_in_executor(None, f.write, chunk)
-                hash_md5.update(chunk)
-                total_bytes += len(chunk)
-        finally:
-            await loop.run_in_executor(None, f.close)
-
-        chunk_md5 = hash_md5.hexdigest()
-        logger.info(
-            f"Saved chunk {part_number} for {filename} (user: {user}): {total_bytes} bytes, MD5: {chunk_md5}"
-        )
-        return total_bytes, chunk_md5
-
-    async def merge_chunks(
-        self, user: str, upload_id: str, filename: str, total_chunks: int
-    ) -> str:
-        """Merge chunks into BlobStorage. Returns MD5."""
-        logger.info(f"Merging {total_chunks} chunks for {filename} (user: {user})")
-
-        async def chunk_stream() -> AsyncGenerator[bytes, None]:
-            for part_number in range(1, total_chunks + 1):
-                chunk_path = self.get_chunk_path(user, upload_id, filename, part_number)
-                if not chunk_path.exists():
-                    raise FileNotFoundError(f"Chunk {part_number} not found")
-
-                async with aiofiles.open(chunk_path, "rb") as f:
-                    while True:
-                        data = await f.read(8192)
-                        if not data:
-                            break
-                        yield data
-
-        md5 = await self.blob_storage.write_stream(chunk_stream())
-        logger.info(f"Merged chunks for {filename}, MD5: {md5}")
-        return md5
-
-    def cleanup_chunks(self, user: str, upload_id: str) -> None:
-        """Delete upload directory."""
-        upload_dir = self.temp_dir / user / upload_id
-        if upload_dir.exists():
-            try:
-                shutil.rmtree(upload_dir)
-            except OSError as e:
-                logger.warning(f"Failed to cleanup chunks {upload_id}: {e}")
 
     async def move_items(
         self,

@@ -88,7 +88,13 @@ class VirtualFileSystem:
         return results
 
     async def create_file(
-        self, user_id: int, parent_id: int, name: str, size: int, md5: str
+        self,
+        user_id: int,
+        parent_id: int,
+        name: str,
+        size: int,
+        md5: str,
+        storage_key: str,
     ) -> UserFileDO:
         """Create a file entry (assuming content is handled elsewhere/CAS)."""
         now_ms = int(time.time() * 1000)
@@ -102,6 +108,7 @@ class VirtualFileSystem:
             is_folder="N",
             size=size,
             md5=md5,
+            storage_key=storage_key,
             create_time=now_ms,
             update_time=now_ms,
             is_active="Y",
@@ -349,6 +356,7 @@ class VirtualFileSystem:
             is_folder=source_node.is_folder,
             size=source_node.size,
             md5=source_node.md5,
+            storage_key=source_node.storage_key,
             create_time=now_ms,
             update_time=now_ms,
             is_active="Y",

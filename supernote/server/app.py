@@ -209,6 +209,7 @@ def create_app(config: ServerConfig) -> web.Application:
 
     app["session_manager"] = session_manager
     app["coordination_service"] = coordination_service
+    app["blob_storage"] = blob_storage
     user_service = UserService(config.auth, coordination_service, session_manager)
     file_service = FileService(
         config.storage_root,

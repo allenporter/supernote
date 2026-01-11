@@ -1,8 +1,7 @@
-import hashlib
-
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from supernote.client.device import DeviceClient
+from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
@@ -25,8 +24,20 @@ async def test_integrity_check(
     await device_client.upload_content("Docs/good.txt", b"content", equipment_no="test")
 
     # Corrupt Data (Simulate missing blob)
-    md5 = hashlib.md5(b"content").hexdigest()
-    blob_path = blob_storage.get_blob_path(md5)
+    # Query VFS for the storage key.
+    user_id = await user_service.get_user_id(user)
+    async with session_manager.session() as session:
+        result = await session.execute(
+            select(UserFileDO).where(
+                UserFileDO.user_id == user_id, UserFileDO.file_name == "good.txt"
+            )
+        )
+        good_file = result.scalars().first()
+        assert good_file
+        storage_key = good_file.storage_key
+        assert storage_key
+
+    blob_path = blob_storage.get_blob_path(USER_DATA_BUCKET, storage_key)
     assert blob_path.exists()
     blob_path.unlink()  # Delete physical blob
 
@@ -36,8 +47,6 @@ async def test_integrity_check(
     )
 
     # Manually update VFS size to be wrong
-    user_id = await user_service.get_user_id(user)
-
     async with session_manager.session() as session:
         stmt = (
             update(UserFileDO)
@@ -93,7 +102,9 @@ async def test_integrity_orphans(
 
     # 1. Create a valid file manually (since user_storage uses default user)
     valid_content = b"valid"
-    valid_md5 = await blob_storage.write_blob(valid_content)
+    key = "valid-key-uuid"
+    metadata = await blob_storage.put(USER_DATA_BUCKET, key, valid_content)
+    valid_md5 = metadata.content_md5
 
     async with session_manager.session() as session:
         valid_file = UserFileDO(
@@ -101,6 +112,7 @@ async def test_integrity_orphans(
             directory_id=0,  # Root is valid
             file_name="valid.txt",
             md5=valid_md5,
+            storage_key=key,
             size=len(valid_content),
             is_active="Y",
         )
@@ -114,6 +126,7 @@ async def test_integrity_orphans(
             directory_id=99999,
             file_name="orphan.txt",
             md5="fakehash",
+            storage_key="fake-key",
             size=10,
             is_active="Y",
         )

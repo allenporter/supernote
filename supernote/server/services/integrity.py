@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import select
 
+from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
@@ -68,20 +69,28 @@ class IntegrityService:
                     report.ok += 1
                     continue
 
-                # Check 2: Blob Existence (Files only)
-                md5 = node.md5
-                if not md5 or not await self.blob_storage.exists(md5):
+                # Check 2: Blob Integrity (Existence & Size)
+                if not node.storage_key:
                     logger.error(
-                        f"Integrity Fail: File {node.id} ({node.file_name}) missing blob {md5}"
+                        f"Integrity Fail: File {node.id} ({node.file_name}) missing storage key"
                     )
                     report.missing_blob += 1
                     continue
 
-                # Check 3: Size Mismatch
-                blob_size = await self.blob_storage.get_size(md5)
-                if blob_size != node.size:
+                try:
+                    metadata = await self.blob_storage.get_metadata(
+                        USER_DATA_BUCKET, node.storage_key, include_md5=False
+                    )
+                except FileNotFoundError:
+                    logger.error(
+                        f"Integrity Fail: File {node.id} ({node.file_name}) missing blob key {node.storage_key}"
+                    )
+                    report.missing_blob += 1
+                    continue
+
+                if metadata.size != node.size:
                     logger.warning(
-                        f"Integrity Warning: File {node.id} size mismatch. VFS: {node.size}, Blob: {blob_size}"
+                        f"Integrity Warning: File {node.id} size mismatch. VFS: {node.size}, Blob: {metadata.size}"
                     )
                     report.size_mismatch += 1
                     continue

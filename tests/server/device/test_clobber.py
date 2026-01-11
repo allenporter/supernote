@@ -32,14 +32,14 @@ async def register_session(
     return {"x-access-token": token}
 
 
-async def test_multi_user_content_with_same_hash(
+async def test_multi_user_content_with_same_hash_isolation(
     client: TestClient,
     coordination_service: CoordinationService,
     server_config: ServerConfig,
     blob_storage: BlobStorage,
     create_test_user: None,
 ) -> None:
-    """Test that users uploading same content (same hash) share blob but don't clobber."""
+    """Test that users uploading same content have INDEPENDENT blobs (KV separation)."""
     # Setup Users
     headers_a = await register_session(
         coordination_service, USER_A, server_config.auth.secret_key
@@ -61,7 +61,6 @@ async def test_multi_user_content_with_same_hash(
 
     # Common Content
     common_content = b"Shared Content Block"
-    common_hash = hashlib.md5(common_content).hexdigest()
 
     # User A uploads
     await file_client_a.upload_content(
@@ -77,34 +76,20 @@ async def test_multi_user_content_with_same_hash(
         equipment_no="EQ002",
     )
 
-    # Verify Blob Exists
-    assert await blob_storage.exists(common_hash)
-
     # User A Deletes their file
-    # Get ID first
     info_a = await file_client_a.query_by_path(path="/doc_a.txt", equipment_no="EQ001")
     assert info_a.entries_vo
     file_id_a = info_a.entries_vo.id
 
     await file_client_a.delete(id=int(file_id_a), equipment_no="EQ001")
 
-    # Verify Blob STILL Exists (User B still has it)
-    # Note: Our current simple implementation might NOT ref-count blobs,
-    # but it definitively should NOT delete the blob if another user has it.
-    # Actually, the current deletion logic (in FileService/VFS) usually just marks VFS node as valid='N' (recycle bin)
-    # or deletes the node. It generally does NOT delete the physical blob immediately unless a GC runs.
-    # However, IF it did attempt to delete the blob, we want to ensure it doesn't break User B.
-
-    assert await blob_storage.exists(common_hash), (
-        "Blob should persist after User A delete"
-    )
-
     # User B should still be able to download/read
-    # We can check by downloading or just ensuring existence is enough for now logic-wise.
     downloaded_b = await file_client_b.download_content(
         path="/doc_b.txt", equipment_no="EQ002"
     )
-    assert downloaded_b == common_content
+    assert downloaded_b == common_content, (
+        "User B content must persist after User A deletion"
+    )
 
 
 async def test_multi_user_content_with_same_paths(
@@ -163,7 +148,6 @@ async def test_multi_user_content_with_same_paths(
     )
 
     # 4. User A queries their file - SHOULD STILL HAVE THEIR CONTENT
-    # explicit query call wrapper doesn't verify hash automatically, we check return
     info_a = await file_client_a.query_by_path(
         path=f"/{filename}", equipment_no="EQ001"
     )
