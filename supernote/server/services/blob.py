@@ -1,147 +1,214 @@
 import hashlib
 import secrets
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, AsyncContextManager, AsyncGenerator
+from typing import AsyncGenerator
 
 import aiofiles
+import aiofiles.os
+
+
+@dataclass
+class BlobMetadata:
+    """Metadata for a blob."""
+
+    content_type: str | None = None
+    content_md5: str | None = None
+    size: int = 0
 
 
 class BlobStorage(ABC):
-    """Interface for Physical Blob Storage (Content-Addressable)."""
+    """Interface for Key-Value Blob Storage."""
 
     @abstractmethod
-    async def write_blob(self, data: bytes) -> str:
-        """Write bytes to storage and return its MD5 hash."""
+    async def put(
+        self, bucket: str, key: str, stream: AsyncGenerator[bytes, None] | bytes
+    ) -> BlobMetadata:
+        """Write blob to storage."""
         pass
 
     @abstractmethod
-    async def write_stream(self, stream: AsyncGenerator[bytes, None]) -> str:
-        """Write stream to storage and return its MD5 hash."""
+    def get(
+        self, bucket: str, key: str, start: int | None = None, end: int | None = None
+    ) -> AsyncGenerator[bytes, None]:
+        """Read blob content.
+
+        Args:
+            bucket: Bucket name.
+            key: Blob key.
+            start: Start byte position (inclusive).
+            end: End byte position (inclusive).
+        """
         pass
 
     @abstractmethod
-    async def read_blob(self, md5: str) -> bytes:
-        """Read full blob content."""
+    async def delete(self, bucket: str, key: str) -> None:
+        """Delete blob."""
         pass
 
     @abstractmethod
-    def get_blob_path(self, md5: str) -> Path:
-        """Get physical path to the blob (optional, useful for serving files via specialized logic)."""
-        pass
-
-    @abstractmethod
-    async def exists(self, md5: str) -> bool:
+    async def exists(self, bucket: str, key: str) -> bool:
         """Check if blob exists."""
         pass
 
     @abstractmethod
-    async def get_size(self, md5: str) -> int:
-        """Get the size of the blob in bytes."""
+    async def get_metadata(
+        self, bucket: str, key: str, include_md5: bool = False
+    ) -> BlobMetadata:
+        """Get metadata for a blob.
+
+        Args:
+            bucket: Bucket name.
+            key: Blob key.
+            include_md5: If True, compute and return MD5 checksum.
+
+        Returns:
+            BlobMetadata with size and optional content_md5.
+        """
         pass
 
     @abstractmethod
-    def open_blob(self, md5: str) -> AsyncContextManager[Any]:
-        """Open blob for reading (streaming). Context manager or generator."""
+    def get_blob_path(self, bucket: str, key: str) -> Path:
+        """Get physical path to the blob (optional, useful for serving files)."""
         pass
 
 
 class LocalBlobStorage(BlobStorage):
-    """Local filesystem implementation of CAS Blob Storage.
+    """Local filesystem implementation of Blob Storage.
 
-    Path structure: <root>/blobs/<md5[0:2]>/<md5>
-    Example: storage/blobs/ab/abc12345...
+    Path structure: <root>/<bucket>/<key[0:2]>/<key>
     """
 
     def __init__(self, storage_root: Path) -> None:
         """Create a local blob storage instance."""
-        self.root = storage_root / "blobs"
+        self.root = storage_root
         self.root.mkdir(parents=True, exist_ok=True)
 
-    def _get_path(self, md5: str) -> Path:
+    def _get_path(self, bucket: str, key: str) -> Path:
         """Get physical path to the blob."""
-        return self.root / md5[:2] / md5
+        # Clean inputs to prevent traversal
+        clean_bucket = Path(bucket).name
+        clean_key = Path(key).name
+        prefix = clean_key[:2] if len(clean_key) >= 2 else "misc"
+        return self.root / clean_bucket / prefix / clean_key
 
-    async def write_blob(self, data: bytes) -> str:
-        """Write bytes to storage and return its MD5 hash."""
-        md5 = hashlib.md5(data).hexdigest()
-        blob_path = self._get_path(md5)
+    async def put(
+        self, bucket: str, key: str, stream: AsyncGenerator[bytes, None] | bytes
+    ) -> BlobMetadata:
+        """Write blob to storage."""
+        blob_path = self._get_path(bucket, key)
+        await aiofiles.os.makedirs(blob_path.parent, exist_ok=True)
 
-        if blob_path.exists():
-            return md5
-
-        blob_path.parent.mkdir(parents=True, exist_ok=True)
-        # Write to temp file and move for atomicity
-        temp_path = blob_path.with_suffix(".tmp")
-        async with aiofiles.open(temp_path, "wb") as f:
-            await f.write(data)
-
-        temp_path.rename(blob_path)
-        return md5
-
-    async def write_stream(self, stream: AsyncGenerator[bytes, None]) -> str:
-        """Write stream to storage and return its MD5 hash."""
-        # We need to calculate MD5 while writing
-        md5_hasher = hashlib.md5()
-
-        # We don't know the MD5 yet, so we write to a temp file first
-        # Ideally using a temp dir not tied to final path yet
+        # Write to temp file for atomicity
         temp_dir = self.root / "temp"
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        await aiofiles.os.makedirs(temp_dir, exist_ok=True)
+        temp_path = temp_dir / f"{secrets.token_hex(8)}.tmp"
 
-        # Use a random name for temp file
-        temp_name = f"upload_{secrets.token_hex(8)}.tmp"
-        temp_path = temp_dir / temp_name
+        total_size = 0
+        md5_hasher = hashlib.md5()
 
         try:
             async with aiofiles.open(temp_path, "wb") as f:
-                async for chunk in stream:
-                    md5_hasher.update(chunk)
-                    await f.write(chunk)
+                if isinstance(stream, bytes):
+                    total_size = len(stream)
+                    md5_hasher.update(stream)
+                    await f.write(stream)
+                else:
+                    async for chunk in stream:
+                        total_size += len(chunk)
+                        md5_hasher.update(chunk)
+                        await f.write(chunk)
 
-            md5 = md5_hasher.hexdigest()
-            final_path = self._get_path(md5)
+            # Move to final location
+            await aiofiles.os.rename(temp_path, blob_path)
 
-            if final_path.exists():
-                # Already exists, just delete temp
-                temp_path.unlink()
-                return md5
-
-            final_path.parent.mkdir(parents=True, exist_ok=True)
-            temp_path.rename(final_path)
-            return md5
+            return BlobMetadata(
+                content_md5=md5_hasher.hexdigest(),
+                size=total_size,
+            )
 
         except Exception:
-            if temp_path.exists():
-                temp_path.unlink()
+            if await aiofiles.os.path.exists(temp_path):
+                await aiofiles.os.remove(temp_path)
             raise
 
-    async def read_blob(self, md5: str) -> bytes:
-        """Read full blob content."""
-        path = self._get_path(md5)
-        if not path.exists():
-            raise FileNotFoundError(f"Blob {md5} not found")
+    async def get(
+        self, bucket: str, key: str, start: int | None = None, end: int | None = None
+    ) -> AsyncGenerator[bytes, None]:
+        """Read blob content."""
+        path = self._get_path(bucket, key)
+        if not await aiofiles.os.path.exists(path):
+            raise FileNotFoundError(f"Blob {bucket}/{key} not found")
+
+        bytes_remaining = None
+        if end is not None:
+            if start is None:
+                start = 0
+            bytes_remaining = end - start + 1
+
         async with aiofiles.open(path, "rb") as f:
-            return await f.read()  # type: ignore[no-any-return]
+            if start is not None and start > 0:
+                await f.seek(start)
 
-    def get_blob_path(self, md5: str) -> Path:
-        """Get physical path to the blob."""
-        return self._get_path(md5)
+            while True:
+                chunk_size = 8192
+                if bytes_remaining is not None:
+                    if bytes_remaining <= 0:
+                        break
+                    chunk_size = min(chunk_size, bytes_remaining)
 
-    async def exists(self, md5: str) -> bool:
+                chunk = await f.read(chunk_size)
+                if not chunk:
+                    break
+
+                if bytes_remaining is not None:
+                    bytes_remaining -= len(chunk)
+
+                yield chunk
+
+    async def delete(self, bucket: str, key: str) -> None:
+        """Delete blob."""
+        path = self._get_path(bucket, key)
+        if await aiofiles.os.path.exists(path):
+            await aiofiles.os.remove(path)
+
+    async def exists(self, bucket: str, key: str) -> bool:
         """Check if blob exists."""
-        return self._get_path(md5).exists()
+        return bool(await aiofiles.os.path.exists(self._get_path(bucket, key)))
 
-    async def get_size(self, md5: str) -> int:
-        """Get the size of the blob in bytes."""
-        path = self._get_path(md5)
-        if not path.exists():
-            raise FileNotFoundError(f"Blob {md5} not found")
-        return path.stat().st_size
+    async def get_metadata(
+        self, bucket: str, key: str, include_md5: bool = False
+    ) -> BlobMetadata:
+        """Get metadata for a blob."""
+        path = self._get_path(bucket, key)
+        if not await aiofiles.os.path.exists(path):
+            raise FileNotFoundError(f"Blob {bucket}/{key} not found")
 
-    def open_blob(self, md5: str) -> AsyncContextManager[Any]:
-        """Return an async context manager that yields a file-like object."""
-        path = self._get_path(md5)
-        if not path.exists():
-            raise FileNotFoundError(f"Blob {md5} not found")
-        return aiofiles.open(path, "rb")  # type: ignore[no-any-return]
+        stat = await aiofiles.os.stat(path)
+
+        if not include_md5:
+            return BlobMetadata(size=stat.st_size)
+
+        # Compute MD5 and size
+        md5_hasher = hashlib.md5()
+        read_size = 0
+        async with aiofiles.open(path, "rb") as f:
+            while True:
+                chunk = await f.read(8192)
+                if not chunk:
+                    break
+                md5_hasher.update(chunk)
+                read_size += len(chunk)
+
+        if read_size != stat.st_size:
+            # This could happen if file was modified during read
+            raise ValueError(
+                f"File size changed during read: metadata={stat.st_size}, read={read_size}"
+            )
+
+        return BlobMetadata(size=stat.st_size, content_md5=md5_hasher.hexdigest())
+
+    def get_blob_path(self, bucket: str, key: str) -> Path:
+        """Get physical path to the blob."""
+        return self._get_path(bucket, key)

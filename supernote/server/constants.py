@@ -17,3 +17,6 @@ CATEGORY_CONTAINERS = {"NOTE", "DOCUMENT"}
 
 # Forced order and specific names for web API root (when flatten=True)
 ORDERED_WEB_ROOT = ["Note", "Document"]
+
+# Blob Storage Buckets
+USER_DATA_BUCKET = "supernote-user-data"

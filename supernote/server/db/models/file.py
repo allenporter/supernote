@@ -39,6 +39,9 @@ class UserFileDO(Base):
     md5: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     """Content hash."""
 
+    storage_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    """Physical storage key (inner_name/UUID)."""
+
     is_active: Mapped[str] = mapped_column(String(1), default="Y", nullable=False)
     """'Y' = Active, 'N' = Deleted."""
 

@@ -58,9 +58,13 @@ async def test_error_hash_mismatch_missing_blob(device_client: DeviceClient) -> 
         file_name="bad.txt", path="/", size=5, equipment_no="test"
     )
     # 2. Finish with wrong hash -> Blob not found (404)
-    with pytest.raises(NotFoundException, match="Blob wronghash not found"):
+    with pytest.raises(NotFoundException, match="Blob .* not found"):
         await device_client.upload_finish(
-            file_name="bad.txt", path="/", content_hash="wronghash", equipment_no="test", inner_name=apply_response.inner_name
+            file_name="bad.txt",
+            path="/",
+            content_hash="wronghash",
+            equipment_no="test",
+            inner_name=apply_response.inner_name,
         )
 
 

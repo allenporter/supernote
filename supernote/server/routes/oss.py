@@ -2,12 +2,15 @@
 
 import asyncio
 import logging
+from collections.abc import AsyncGenerator
 
 from aiohttp import BodyPartReader, web
 
 from supernote.models.base import create_error_response
 from supernote.models.system import FileChunkParams, FileChunkVO, UploadFileVO
+from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.exceptions import SupernoteError
+from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.utils.url_signer import UrlSigner
 
@@ -17,6 +20,20 @@ logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
 
 
+def _get_chunk_key(object_name: str, part_number: int) -> str:
+    """Generate a storage key for a file chunk."""
+    return f"{object_name}.part.{part_number}"
+
+
+async def _stream_upload_field(field: BodyPartReader) -> AsyncGenerator[bytes, None]:
+    """Stream chunks from a multipart field."""
+    while True:
+        chunk = await field.read_chunk()
+        if not chunk:
+            break
+        yield chunk
+
+
 @routes.post("/api/oss/upload")
 @public_route
 async def handle_oss_upload(request: web.Request) -> web.Response:
@@ -24,8 +41,8 @@ async def handle_oss_upload(request: web.Request) -> web.Response:
 
     Query: object_name
     """
-    file_service: FileService = request.app["file_service"]
     url_signer: UrlSigner = request.app["url_signer"]
+    blob_storage: BlobStorage = request.app["blob_storage"]
 
     try:
         payload = await url_signer.verify(request.path_qs)
@@ -49,17 +66,17 @@ async def handle_oss_upload(request: web.Request) -> web.Response:
     reader = await request.multipart()
     field = await reader.next()
     if isinstance(field, BodyPartReader) and field.name == "file":
-        total_bytes, md5_hash = await file_service.save_temp_file(
-            user_email, object_name, field.read_chunk
+        metadata = await blob_storage.put(
+            USER_DATA_BUCKET, object_name, _stream_upload_field(field)
         )
         logger.info(
-            f"Received OSS upload for {object_name} (user: {user_email}): {total_bytes} bytes, MD5: {md5_hash}"
+            f"Received OSS upload for {object_name} (user: {user_email}): {metadata.size} bytes, MD5: {metadata.content_md5}"
         )
 
         # Return UploadFileVO with innerName and md5
         response = UploadFileVO(
             inner_name=object_name,
-            md5=md5_hash,
+            md5=metadata.content_md5,
         )
         return web.json_response(response.to_dict())
 
@@ -75,8 +92,8 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
     Endpoint: POST /api/oss/upload/part
     Query Params: uploadId, partNumber, object_name, signature, totalChunks (optional/implied for implicit merge)
     """
-    file_service: FileService = request.app["file_service"]
     url_signer: UrlSigner = request.app["url_signer"]
+    blob_storage: BlobStorage = request.app["blob_storage"]
 
     query_dict = dict(request.query)
     try:
@@ -111,13 +128,14 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
     reader = await request.multipart()
     field = await reader.next()
     if isinstance(field, BodyPartReader) and field.name == "file":
-        total_bytes, chunk_md5 = await file_service.save_chunk_file(
-            user_email,
-            params.upload_id,
-            params.object_name,
-            params.part_number,
-            field.read_chunk,
+        chunk_key = _get_chunk_key(params.object_name, params.part_number)
+
+        metadata = await blob_storage.put(
+            USER_DATA_BUCKET, chunk_key, _stream_upload_field(field)
         )
+        chunk_md5 = metadata.content_md5
+        total_bytes = metadata.size
+
         logger.info(
             f"Received chunk {params.part_number} for {params.object_name} (uploadId: {params.upload_id}): {total_bytes} bytes, MD5: {chunk_md5}"
         )
@@ -128,16 +146,27 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
                 logger.info(
                     f"Implicitly merging {params.total_chunks} chunks for {params.object_name}"
                 )
-                await file_service.merge_chunks(
-                    user_email,
-                    params.upload_id,
-                    params.object_name,
-                    params.total_chunks,
-                )
-                await asyncio.to_thread(
-                    file_service.cleanup_chunks, user_email, params.upload_id
+                source_keys = [
+                    _get_chunk_key(params.object_name, i)
+                    for i in range(1, params.total_chunks + 1)
+                ]
+
+                async def combined_stream() -> AsyncGenerator[bytes, None]:
+                    for source_key in source_keys:
+                        async for chunk in blob_storage.get(
+                            USER_DATA_BUCKET, source_key
+                        ):
+                            yield chunk
+
+                await blob_storage.put(
+                    USER_DATA_BUCKET, params.object_name, combined_stream()
                 )
                 logger.info(f"Successfully merged chunks for {params.object_name}")
+
+                # Cleanup chunks
+                await asyncio.gather(
+                    *[blob_storage.delete(USER_DATA_BUCKET, key) for key in source_keys]
+                )
 
         # Return FileChunkVO with chunk MD5
         resp_vo = FileChunkVO(
@@ -194,13 +223,12 @@ async def handle_oss_download(request: web.Request) -> web.StreamResponse:
             create_error_response("Not a file").to_dict(), status=400
         )
 
-    content_hash = info.md5
-    if not content_hash:
+    if not info.storage_key:
         return web.json_response(
             create_error_response("File content not found").to_dict(), status=404
         )
 
-    if not await file_service.blob_storage.exists(content_hash):
+    if not await file_service.blob_storage.exists(USER_DATA_BUCKET, info.storage_key):
         return web.json_response(
             create_error_response("Blob not found").to_dict(), status=404
         )
@@ -252,20 +280,11 @@ async def handle_oss_download(request: web.Request) -> web.StreamResponse:
     await response.prepare(request)
 
     try:
-        async with file_service.blob_storage.open_blob(content_hash) as f:
-            if start > 0:
-                await f.seek(start)
-
-            bytes_to_send = content_length
-            chunk_size = 8192
-
-            while bytes_to_send > 0:
-                read_size = min(chunk_size, bytes_to_send)
-                chunk = await f.read(read_size)
-                if not chunk:
-                    break
-                await response.write(chunk)
-                bytes_to_send -= len(chunk)
+        stream = file_service.blob_storage.get(
+            USER_DATA_BUCKET, info.storage_key, start=start, end=end
+        )
+        async for chunk in stream:
+            await response.write(chunk)
 
     except FileNotFoundError:
         return web.json_response(
