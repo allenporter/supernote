@@ -9,34 +9,11 @@ This package provides a self-hosted implementation of the Supernote Cloud server
 - A Supernote device (A5 X, A6 X, Nomad, etc.)
 - A computer running this server (accessible on your local network)
 
-### Managing User Accounts
-
-You must create a private cloud user account in order to login to the
-device. The CLI tool acts as a **generator** for these accounts.
-
-To generate a user entry (outputs YAML to stdout):
-
-```sh
-supernote-server user add alice >> config/users.yaml
-```
-
-You will be prompted for a password, which will be securely hashed and output as part of a YAML snippet.
-
-To list users currently in your `users.yaml`:
-
-```sh
-supernote-server user list
-```
-
-#### Notes
-
-- Only users listed in this file can log in.
-- Passwords are never stored in plain text—only SHA256 hashes (see PLAN.md for security notes).
-- Set `is_active: false` to disable a user without deleting their entry.
-
 ### Configuration
 
-The server is configured via `config/config.yaml`. You can specify a different configuration directory using the `SUPERNOTE_CONFIG_DIR` environment variable or the `--config-dir` CLI argument.
+The server is configured via `config/config.yaml`. Configuration can also be overridden using environment variables.
+
+For a comprehensive reference of all configuration options and their corresponding environment variables, see the [ServerConfig documentation](https://allenporter.github.io/supernote-lite/supernote/server.html#ServerConfig).
 
 Example `config.yaml`:
 ```yaml
@@ -45,7 +22,6 @@ port: 8080
 storage_dir: storage
 auth:
   secret_key: "your-secret-key"
-  users_file: users.yaml
 ```
 
 ### Running the Server
@@ -64,20 +40,6 @@ export SUPERNOTE_PORT=8080
 export SUPERNOTE_HOST=0.0.0.0
 supernote-server serve
 ```
-
-#### Security Configuration
-
-For production deployments, configure JWT authentication:
-
-```bash
-# Generate a secure random secret (recommended)
-export SUPERNOTE_JWT_SECRET=$(openssl rand -hex 32)
-
-supernote-server serve
-```
-
-**Important**: Always set a unique `SUPERNOTE_JWT_SECRET` in production to prevent unauthorized access.
-
 ### Running with Docker
 
 You can run the server using Docker.
@@ -94,16 +56,13 @@ You can run the server using Docker.
     mkdir config
     # Generate default config
     docker run --rm supernote-server supernote-server config init > config/config.yaml
-    # Generate user entry
-    docker run --rm -it supernote-server supernote-server user add alice >> config/users.yaml
     ```
 
 3.  **Run the container**:
-    Mount the `config` and `storage` directories to persist data.
+    Mount the `storage` directory to persist data and config.
     ```bash
     docker run -d \
       -p 8080:8080 \
-      -v $(pwd)/config:/config \
       -v $(pwd)/storage:/data \
       --name supernote-server \
       supernote-server
@@ -124,10 +83,10 @@ with the technology involved and can configure your own reverse proxy as needed,
 
 ### Debugging & Tracing
 
-The server logs all incoming requests to `server_trace.log` in the current directory. This is useful for reverse-engineering the protocol and debugging connection issues.
+The server logs all incoming requests to `storage/system/server_trace.log` in the current directory. This is useful for debugging connection issues.
 
 ```bash
-tail -f server_trace.log
+tail -f storage/system/server_trace.log
 ```
 
 ## Development
@@ -138,4 +97,4 @@ The server is built using `aiohttp`.
 -   **Configuration**: `supernote/server/config.py`
 -   **Tests**: `tests/server/`
 
-For coding standards and contribution guidelines, see [CONTRIBUTING.md](docs/CONTRIBUTING.md).
+For coding standards and contribution guidelines, see [CONTRIBUTING.md](../docs/CONTRIBUTING.md).

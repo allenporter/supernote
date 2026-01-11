@@ -16,16 +16,25 @@ class AuthConfig(DataClassYAMLMixin):
     """Authentication configuration."""
 
     secret_key: str = ""
-    """JWT secret key."""
+    """JWT secret key.
+    
+    Env Var: `SUPERNOTE_JWT_SECRET`
+    """
 
     expiration_hours: int = 24
     """JWT expiration time in hours."""
 
     enable_registration: bool = False
-    """When disabled, registration is only allowed if there are no users in the system."""
+    """When disabled, registration is only allowed if there are no users in the system.
+    
+    Env Var: `SUPERNOTE_ENABLE_REGISTRATION`
+    """
 
     enable_remote_password_reset: bool = False
-    """When disabled, the public password reset endpoint returns 403."""
+    """When disabled, the public password reset endpoint returns 403.
+    
+    Env Var: `SUPERNOTE_ENABLE_REMOTE_PASSWORD_RESET`
+    """
 
     class Config(BaseConfig):
         omit_none = True
@@ -35,17 +44,36 @@ class AuthConfig(DataClassYAMLMixin):
 @dataclass
 class ServerConfig(DataClassYAMLMixin):
     host: str = "0.0.0.0"
+    """Host to bind the server to.
+    
+    Env Var: `SUPERNOTE_HOST`
+    """
+
     port: int = 8080
+    """Port to bind the server to.
+    
+    Env Var: `SUPERNOTE_PORT`
+    """
     trace_log_file: str | None = None
     storage_dir: str = "storage"
+    """Directory for storing files and database.
+    
+    Env Var: `SUPERNOTE_STORAGE_DIR`
+    """
 
     proxy_mode: str | None = None
-    """Proxy header handling mode: None/'disabled' (ignore proxy headers), 'relaxed' (trust immediate upstream), or 'strict' (require specific trusted IPs). Defaults to None for security."""
+    """Proxy header handling mode: None/'disabled' (ignore proxy headers), 'relaxed' (trust immediate upstream), or 'strict' (require specific trusted IPs). Defaults to None for security.
+    
+    Env Var: `SUPERNOTE_PROXY_MODE`
+    """
 
     trusted_proxies: list[str] = field(
         default_factory=lambda: ["127.0.0.1", "::1", "172.17.0.0/16"]
     )
-    """List of trusted proxy IPs/networks (used in strict mode). Supports CIDR notation."""
+    """List of trusted proxy IPs/networks (used in strict mode). Supports CIDR notation.
+    
+    Env Var: `SUPERNOTE_TRUSTED_PROXIES` (comma-separated)
+    """
 
     auth: AuthConfig = field(default_factory=AuthConfig)
 

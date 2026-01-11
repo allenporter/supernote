@@ -10,6 +10,9 @@ port: 8080
 # Directory where uploaded files and databases will be stored.
 storage_dir: storage
 
+# Optional: Path to trace log file for debugging (default: storage/system/trace.log)
+# trace_log_file: storage/system/trace.log
+
 # Proxy header handling mode (optional, defaults to 'relaxed')
 # - 'relaxed': Trust the immediate upstream proxy (suitable for Docker/local setups)
 # - 'strict': Only trust specific proxy IPs (configured in trusted_proxies)
@@ -39,3 +42,7 @@ auth:
   # If false, users must be created via the admin CLI.
   # The first user created (or added via the admin CLI) will be an admin.
   enable_registration: false
+
+  # Whether to allow remote password reset via email.
+  # When disabled, the public password reset endpoint returns 403.
+  enable_remote_password_reset: false
