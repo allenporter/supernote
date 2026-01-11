@@ -283,8 +283,8 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
         inner_name = generate_inner_name(file_name, req_data.equipment_no)
         encoded_name = urllib.parse.quote(inner_name)
 
-        # Simple Upload URL: /api/oss/upload?object_name={name}&timestamp={ms}
-        simple_path = f"/api/oss/upload?object_name={encoded_name}"
+        # Simple Upload URL: /api/oss/upload?path={name}&timestamp={ms}
+        simple_path = f"/api/oss/upload?path={encoded_name}"
         full_upload_url_path = await url_signer.sign(simple_path, user=request["user"])
         full_upload_url = f"{request.scheme}://{request.host}{full_upload_url_path}"
 
@@ -294,9 +294,9 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
         if not signature or not x_amz_date:
             raise SupernoteError("Server generated invalid upload URL")
 
-        # Part Upload URL: /api/oss/upload/part?object_name={name}
+        # Part Upload URL: /api/oss/upload/part?path={name}
         # Client will append &uploadId=...&partNumber=...
-        part_path = f"/api/oss/upload/part?object_name={encoded_name}"
+        part_path = f"/api/oss/upload/part?path={encoded_name}"
         part_upload_url_path = await url_signer.sign(part_path, user=request["user"])
         part_upload_url = f"{request.scheme}://{request.host}{part_upload_url_path}"
 
@@ -387,7 +387,7 @@ async def handle_download_apply(request: web.Request) -> web.Response:
         url_signer: UrlSigner = request.app["url_signer"]
 
         # OSS download URL: /api/oss/download?path={id}
-        path_to_sign = f"/api/oss/download?id={info.id}"
+        path_to_sign = f"/api/oss/download?path={info.id}"
 
         # helper returns: ...?signature=...
         signed_path = await url_signer.sign(path_to_sign, user=user_email)

@@ -555,7 +555,7 @@ async def handle_file_upload_apply(request: web.Request) -> web.Response:
 
         # Sign URL
         encoded_name = urllib.parse.quote(inner_name)
-        path_to_sign = f"/api/oss/upload?object_name={encoded_name}"
+        path_to_sign = f"/api/oss/upload?path={encoded_name}"
         signed_path = await url_signer.sign(path_to_sign, user=request["user"])
         full_url = f"{request.scheme}://{request.host}{signed_path}"
 
