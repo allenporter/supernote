@@ -92,6 +92,8 @@ class UrlSigner:
             raise ValueError("Expiration must be non-negative")
 
         now = int(time.time())
+        now_ms = int(time.time() * 1000)
+
         exp = now + int(expiration.total_seconds())
         nonce = uuid.uuid4().hex
 
@@ -112,6 +114,7 @@ class UrlSigner:
             "exp": exp,
             "nonce": nonce,
             "iat": now,
+            "timestamp": now_ms,
         }
         if user:
             payload["user"] = user
@@ -123,7 +126,7 @@ class UrlSigner:
 
         # Check if query params exist
         separator = "&" if "?" in path else "?"
-        return f"{path}{separator}signature={token}"
+        return f"{path}{separator}timestamp={now_ms}&signature={token}"
 
     async def verify(self, signed_url: str, consume: bool = True) -> dict[str, Any]:
         """Verify the signature embedded in the URL.
@@ -190,4 +193,26 @@ class UrlSigner:
                 f"Signed path mismatch: signed path '{expected_path}' is not prefix of request '{signed_url}'"
             )
 
+        # Verify timestamp if present in payload
+        if "timestamp" in payload:
+            ts_param = query_params.get("timestamp")
+            if not ts_param:
+                raise InvalidSignature("Timestamp missing from URL")
+            if str(payload["timestamp"]) != ts_param[0]:
+                raise InvalidSignature("Timestamp mismatch")
+
         return payload
+
+    @staticmethod
+    def extract_signature(url: str) -> str | None:
+        """Extract the signature from a signed URL."""
+        parsed = urllib.parse.urlparse(url)
+        qs = urllib.parse.parse_qs(parsed.query)
+        return qs.get("signature", [None])[0]
+
+    @staticmethod
+    def extract_timestamp(url: str) -> str | None:
+        """Extract the timestamp from a signed URL."""
+        parsed = urllib.parse.urlparse(url)
+        qs = urllib.parse.parse_qs(parsed.query)
+        return qs.get("timestamp", [None])[0]

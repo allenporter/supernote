@@ -54,13 +54,13 @@ async def test_error_list_file_as_folder(device_client: DeviceClient) -> None:
 
 async def test_error_hash_mismatch_missing_blob(device_client: DeviceClient) -> None:
     # 1. Apply
-    await device_client.upload_apply(
+    apply_response = await device_client.upload_apply(
         file_name="bad.txt", path="/", size=5, equipment_no="test"
     )
     # 2. Finish with wrong hash -> Blob not found (404)
     with pytest.raises(NotFoundException, match="Blob wronghash not found"):
         await device_client.upload_finish(
-            file_name="bad.txt", path="/", content_hash="wronghash", equipment_no="test"
+            file_name="bad.txt", path="/", content_hash="wronghash", equipment_no="test", inner_name=apply_response.inner_name
         )
 
 

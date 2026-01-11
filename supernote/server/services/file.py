@@ -1,7 +1,9 @@
 import asyncio
 import hashlib
 import logging
+import os
 import shutil
+import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -317,6 +319,7 @@ class FileService:
         filename: str,
         path_str: str,
         content_hash: str,
+        inner_name: str,
     ) -> FileEntity:
         """Finish upload for a specific user."""
         # 1. Resolve User ID
@@ -325,7 +328,7 @@ class FileService:
         # 2. Check if Blob exists (CAS)
         if not await self.blob_storage.exists(content_hash):
             # Fallback: check legacy temp file from save_temp_file
-            temp_path = self.resolve_temp_path(user, filename)
+            temp_path = self.resolve_temp_path(user, inner_name)
             if await asyncio.to_thread(temp_path.exists):
                 # Calculate MD5 and promote to blob
                 hash_md5 = hashlib.md5()
@@ -536,8 +539,6 @@ class FileService:
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
             return await vfs.is_empty(user_id)
-
-    # --- Chunk / Temp File Management (Moved from StorageService) ---
 
     def resolve_temp_path(self, user: str, filename: str) -> Path:
         """Resolve a filename to an absolute path in user's temp storage."""
@@ -952,3 +953,22 @@ class FileService:
                 file_entities.append(_to_file_entity(item, full_path))
 
             return file_entities
+
+
+def generate_inner_name(filename: str, equipment_no: str | None) -> str:
+    """Generate a system-of-record inner name.
+
+    Format: {UUID}-{Tail}.{Ext}
+    - UUID: Random UUID
+    - Tail: Last 3 chars of equipment number (or full if short, default '000')
+    - Ext: Original file extension
+    """
+    req_uuid = uuid.uuid4()
+    ext = os.path.splitext(filename)[1]
+
+    # Determine tail
+    tail = "000"
+    if equipment_no:
+        tail = equipment_no[-3:] if len(equipment_no) >= 3 else equipment_no
+
+    return f"{req_uuid}-{tail}{ext}"

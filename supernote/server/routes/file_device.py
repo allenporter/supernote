@@ -40,6 +40,7 @@ from supernote.server.exceptions import SupernoteError
 from supernote.server.services.file import (
     FileEntity,
     FileService,
+    generate_inner_name,
 )
 from supernote.server.utils.url_signer import UrlSigner
 
@@ -278,12 +279,20 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
     try:
         url_signer: UrlSigner = request.app["url_signer"]
 
-        encoded_name = urllib.parse.quote(file_name)
+        # Generate a unique inner name for storage
+        inner_name = generate_inner_name(file_name, req_data.equipment_no)
+        encoded_name = urllib.parse.quote(inner_name)
 
-        # Simple Upload URL: /api/oss/upload?object_name={name}
+        # Simple Upload URL: /api/oss/upload?object_name={name}&timestamp={ms}
         simple_path = f"/api/oss/upload?object_name={encoded_name}"
         full_upload_url_path = await url_signer.sign(simple_path, user=request["user"])
         full_upload_url = f"{request.scheme}://{request.host}{full_upload_url_path}"
+
+        # Extract signature and timestamp using UrlSigner helpers
+        signature = UrlSigner.extract_signature(full_upload_url_path)
+        x_amz_date = UrlSigner.extract_timestamp(full_upload_url_path)
+        if not signature or not x_amz_date:
+            raise SupernoteError("Server generated invalid upload URL")
 
         # Part Upload URL: /api/oss/upload/part?object_name={name}
         # Client will append &uploadId=...&partNumber=...
@@ -294,10 +303,10 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
         return web.json_response(
             FileUploadApplyLocalVO(
                 equipment_no=req_data.equipment_no or "",
-                bucket_name="supernote-local",
-                inner_name=file_name,
-                x_amz_date="",
-                authorization="",
+                bucket_name=file_name,  # Reference impl checks this matches filename
+                inner_name=inner_name,
+                x_amz_date=x_amz_date,
+                authorization=signature,
                 full_upload_url=full_upload_url,
                 part_upload_url=part_upload_url,
             ).to_dict()
@@ -318,12 +327,19 @@ async def handle_upload_finish(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
 
+    if not req_data.inner_name:
+        return web.json_response(
+            create_error_response("Invalid upload missing inner name").to_dict(),
+            status=400,
+        )
+
     try:
         entity = await file_service.finish_upload(
             user_email,
             req_data.file_name,
             req_data.path,
             req_data.content_hash,
+            inner_name=req_data.inner_name,
         )
     except SupernoteError as err:
         return err.to_response()
