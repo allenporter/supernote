@@ -180,6 +180,7 @@ class DeviceClient:
             path=parent_path_str,
             content_hash=md5,
             equipment_no=equipment_no,
+            inner_name=apply.inner_name,
         )
 
     async def upload_apply(
@@ -199,6 +200,7 @@ class DeviceClient:
         path: str,
         content_hash: str,
         equipment_no: str,
+        inner_name: str | None = None,
     ) -> FileUploadFinishLocalVO:
         """Finish file upload."""
         dto = FileUploadFinishLocalDTO(
@@ -206,6 +208,7 @@ class DeviceClient:
             path=path,
             content_hash=content_hash,
             equipment_no=equipment_no,
+            inner_name=inner_name,
         )
         return await self._client.post_json(
             "/api/file/2/files/upload/finish",
