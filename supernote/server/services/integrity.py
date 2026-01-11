@@ -16,6 +16,7 @@ class IntegrityReport:
     scanned: int
     missing_blob: int
     size_mismatch: int
+    hash_mismatch: int
     orphans: int
     ok: int
 
@@ -33,7 +34,7 @@ class IntegrityService:
     async def verify_user_storage(self, user_id: int) -> IntegrityReport:
         """Check all files for a user."""
         report = IntegrityReport(
-            scanned=0, missing_blob=0, size_mismatch=0, orphans=0, ok=0
+            scanned=0, missing_blob=0, size_mismatch=0, hash_mismatch=0, orphans=0, ok=0
         )
 
         async with self.session_manager.session() as session:
@@ -79,7 +80,7 @@ class IntegrityService:
 
                 try:
                     metadata = await self.blob_storage.get_metadata(
-                        USER_DATA_BUCKET, node.storage_key, include_md5=False
+                        USER_DATA_BUCKET, node.storage_key, include_md5=True
                     )
                 except FileNotFoundError:
                     logger.error(
@@ -93,6 +94,17 @@ class IntegrityService:
                         f"Integrity Warning: File {node.id} size mismatch. VFS: {node.size}, Blob: {metadata.size}"
                     )
                     report.size_mismatch += 1
+                    continue
+
+                if (
+                    node.md5
+                    and metadata.content_md5
+                    and node.md5 != metadata.content_md5
+                ):
+                    logger.error(
+                        f"Integrity Fail: File {node.id} hash mismatch. VFS: {node.md5}, Blob: {metadata.content_md5}"
+                    )
+                    report.hash_mismatch += 1
                     continue
 
                 report.ok += 1
