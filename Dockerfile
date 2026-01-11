@@ -11,6 +11,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Create a non-root user
 RUN groupadd -g 1000 -r supernote && useradd -u 1000 -r -g supernote supernote
 
+# Install system dependencies for SQL Lite CLI
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends sqlite3 && \
+    rm -rf /var/lib/apt/lists/*
+
 # Set working directory and copy project files
 WORKDIR /app
 
