@@ -2,9 +2,17 @@ import logging
 import os
 import uuid
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 
 from supernote.models.base import BooleanEnum
+from supernote.notebook import (
+    ImageConverter,
+    PdfConverter,
+)
+from supernote.notebook import (
+    load as load_notebook,
+)
 from supernote.server.constants import (
     CATEGORY_CONTAINERS,
     IMMUTABLE_SYSTEM_DIRECTORIES,
@@ -127,6 +135,14 @@ class FolderDetail:
 
     entity: FileEntity
     has_subfolders: bool
+
+
+@dataclass
+class ConversionsVO:
+    """Domain object for note conversion results."""
+
+    storage_key: str
+    page_no: int
 
 
 class FileService:
@@ -816,6 +832,86 @@ class FileService:
                 file_entities.append(_to_file_entity(item, full_path))
 
             return file_entities
+
+    async def convert_note_to_png(self, user: str, file_id: int) -> list[ConversionsVO]:
+        """Convert a note to PNG pages."""
+        user_id = await self.user_service.get_user_id(user)
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+            node = await vfs.get_node_by_id(user_id, file_id)
+            if not node or node.is_folder == "Y":
+                raise FileNotFound(f"Note file {file_id} not found")
+
+            # Load notebook from blob storage
+            if node.storage_key is None:
+                raise FileNotFound(f"Note file {file_id} has no content")
+            blob_content = b"".join(
+                [
+                    chunk
+                    async for chunk in self.blob_storage.get(
+                        USER_DATA_BUCKET, node.storage_key
+                    )
+                ]
+            )
+            note = load_notebook(BytesIO(blob_content))  # type: ignore[arg-type]
+
+            # Convert each page to PNG
+            converter = ImageConverter(note)  # type: ignore[no-untyped-call]
+            results = []
+            for i in range(note.get_total_pages()):
+                img = converter.convert(i)  # type: ignore[no-untyped-call]
+                img_io = BytesIO()
+                img.save(img_io, format="PNG")
+                img_bytes = img_io.getvalue()
+
+                # Store PNG in blob storage with a unique key
+                # Format: conversions/{user_id}/{file_id}/page_{i}_{md5}.png
+                png_storage_key = (
+                    f"conversions/{user_id}/{file_id}/page_{i}_{node.md5}.png"
+                )
+                await self.blob_storage.put(
+                    USER_DATA_BUCKET, png_storage_key, img_bytes
+                )
+                results.append(ConversionsVO(storage_key=png_storage_key, page_no=i))
+
+            return results
+
+    async def convert_note_to_pdf(
+        self, user: str, file_id: int, page_no_list: list[int]
+    ) -> str:
+        """Convert a note to PDF."""
+        user_id = await self.user_service.get_user_id(user)
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+            node = await vfs.get_node_by_id(user_id, file_id)
+            if not node or node.is_folder == "Y":
+                raise FileNotFound(f"Note file {file_id} not found")
+
+            # Load notebook
+            if node.storage_key is None:
+                raise FileNotFound(f"Note file {file_id} has no content")
+            blob_content = b"".join(
+                [
+                    chunk
+                    async for chunk in self.blob_storage.get(
+                        USER_DATA_BUCKET, node.storage_key
+                    )
+                ]
+            )
+            note = load_notebook(BytesIO(blob_content))  # type: ignore[arg-type]
+
+            # 2. Convert to PDF
+            converter = PdfConverter(note)
+
+            # If page_no_list is empty, pass -1 to convert all pages.
+            # Otherwise pass the list of indices.
+            pdf_bytes = converter.convert(page_no_list if page_no_list else -1)
+
+            # 3. Store PDF
+            pdf_storage_key = f"conversions/{user_id}/{file_id}/note_{node.md5}.pdf"
+            await self.blob_storage.put(USER_DATA_BUCKET, pdf_storage_key, pdf_bytes)
+
+            return pdf_storage_key
 
 
 def generate_inner_name(filename: str, equipment_no: str | None) -> str:

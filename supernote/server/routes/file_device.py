@@ -31,6 +31,11 @@ from supernote.models.file_device import (
     ListFolderLocalVO,
     ListFolderV2DTO,
     MetadataVO,
+    PdfDTO,
+    PdfVO,
+    PngDTO,
+    PngPageVO,
+    PngVO,
     SynchronousEndLocalDTO,
     SynchronousEndLocalVO,
     SynchronousStartLocalDTO,
@@ -529,3 +534,60 @@ async def handle_copy_file(request: web.Request) -> web.Response:
             entries_vo=_to_entries_vo(result),
         ).to_dict()
     )
+
+
+@routes.post("/api/file/note/to/png")
+async def handle_note_to_png(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/note/to/png
+    # Purpose: Convert a note to PNG.
+    # Response: PngVO
+    req_data = PngDTO.from_dict(await request.json())
+    user_email = request["user"]
+    file_service: FileService = request.app["file_service"]
+    url_signer: UrlSigner = request.app["url_signer"]
+
+    try:
+        results = await file_service.convert_note_to_png(user_email, req_data.id)
+        png_pages = []
+        for res in results:
+            # Generate signed URL for each PNG
+            # OSS download URL: /api/oss/download?path={inner_name}
+            # Here storage_key is already the full path within bucket
+            path_to_sign = f"/api/oss/download?path={res.storage_key}"
+            signed_path = await url_signer.sign(path_to_sign, user=user_email)
+            download_url = f"{request.scheme}://{request.host}{signed_path}"
+
+            png_pages.append(PngPageVO(page_no=res.page_no, url=download_url))
+
+        return web.json_response(PngVO(png_page_vo_list=png_pages).to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
+
+
+@routes.post("/api/file/note/to/pdf")
+async def handle_note_to_pdf(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/note/to/pdf
+    # Purpose: Convert a note to PDF.
+    # Response: PdfVO
+    req_data = PdfDTO.from_dict(await request.json())
+    user_email = request["user"]
+    file_service: FileService = request.app["file_service"]
+    url_signer: UrlSigner = request.app["url_signer"]
+
+    try:
+        storage_key = await file_service.convert_note_to_pdf(
+            user_email, req_data.id, req_data.page_no_list
+        )
+
+        # Generate signed URL for PDF
+        path_to_sign = f"/api/oss/download?path={storage_key}"
+        signed_path = await url_signer.sign(path_to_sign, user=user_email)
+        download_url = f"{request.scheme}://{request.host}{signed_path}"
+
+        return web.json_response(PdfVO(url=download_url).to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()

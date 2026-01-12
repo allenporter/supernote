@@ -26,6 +26,10 @@ from supernote.models.file_device import (
     ListFolderLocalDTO,
     ListFolderLocalVO,
     ListFolderV2DTO,
+    PdfDTO,
+    PdfVO,
+    PngDTO,
+    PngVO,
     SynchronousEndLocalDTO,
     SynchronousEndLocalVO,
     SynchronousStartLocalDTO,
@@ -310,3 +314,37 @@ class DeviceClient:
             SynchronousEndLocalVO,
             json=dto.to_dict(),
         )
+
+    async def note_to_png(self, file_id: int) -> PngVO:
+        """Convert a note to PNG (Device API)."""
+        dto = PngDTO(id=file_id)
+        return await self._client.post_json(
+            "/api/file/note/to/png", PngVO, json=dto.to_dict()
+        )
+
+    async def note_to_pdf(
+        self, file_id: int, page_no_list: list[int] | None = None
+    ) -> PdfVO:
+        """Convert a note to PDF (Device API)."""
+        dto = PdfDTO(id=file_id, page_no_list=page_no_list or [])
+        return await self._client.post_json(
+            "/api/file/note/to/pdf", PdfVO, json=dto.to_dict()
+        )
+
+    async def get_note_png_pages(self, file_id: int) -> list[bytes]:
+        """Convenience method to get PNG content for all pages of a note."""
+        conversion = await self.note_to_png(file_id)
+        pages = []
+        for page_vo in conversion.png_page_vo_list:
+            content = await self._client.get_content(page_vo.url)
+            pages.append(content)
+        return pages
+
+    async def get_note_pdf(
+        self, file_id: int, page_no_list: list[int] | None = None
+    ) -> bytes:
+        """Convenience method to get PDF content for a note."""
+        conversion = await self.note_to_pdf(file_id, page_no_list)
+        if not conversion.url:
+            raise ValueError("Conversion failed: no URL returned")
+        return await self._client.get_content(conversion.url)

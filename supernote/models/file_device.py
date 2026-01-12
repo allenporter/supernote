@@ -503,3 +503,69 @@ class TerminalFileUploadFinishDTO(DataClassJSONMixin):
 
     class Config(BaseConfig):
         serialize_by_alias = True
+
+
+@dataclass
+class PdfDTO(DataClassJSONMixin):
+    """Request model for converting a note to PDF.
+
+    This is used by the following POST endpoint:
+        /api/file/note/to/pdf
+    """
+
+    id: int
+    page_no_list: list[int] = field(
+        metadata=field_options(alias="pageNoList"), default_factory=list
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class PdfVO(BaseResponse):
+    """Response model for PDF conversion.
+
+    This is used by the following POST endpoint:
+        /api/file/note/to/pdf
+    """
+
+    url: str | None = None
+
+
+@dataclass
+class PngDTO(DataClassJSONMixin):
+    """Request model for converting a note to PNG.
+
+    This is used by the following POST endpoint:
+        /api/file/note/to/png
+    """
+
+    id: int
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class PngPageVO(DataClassJSONMixin):
+    """Object representing a single converted PNG page."""
+
+    page_no: int = field(metadata=field_options(alias="pageNo"))
+    url: str
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class PngVO(BaseResponse):
+    """Response model for PNG conversion.
+
+    This is used by the following POST endpoint:
+        /api/file/note/to/png
+    """
+
+    png_page_vo_list: list[PngPageVO] = field(
+        metadata=field_options(alias="pngPageVOList"), default_factory=list
+    )
