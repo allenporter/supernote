@@ -15,31 +15,27 @@ This document outlines the architecture for evolving the Supernote Lite server i
 
 ## 3. Data Schema (Proposed)
 
-### `NotePageStatus` (Table)
-Tracks the status of individual operations per page.
-- `file_id`: Reference to the user file.
-- `page_index`: Integer.
-- `content_hash`: Hash of the page's raw stroke data to detect changes.
-- `png_status`: `DONE`, `FAILED`, `PENDING`.
-- `ocr_status`: `DONE`, `FAILED`, `PENDING`.
-- `embed_status`: `DONE`, `FAILED`, `PENDING`.
-- `retry_count`: State for exponential backoff on intelligent tasks.
+### `NotePageStatus` (Table - Process Tracking)
+Tracks the *state* of the pipeline. Not visible to the user.
+- `file_id`, `page_index`, `content_hash`.
+- `png_status`, `ocr_status`, `embed_status`.
+- `retry_count`, `last_error`.
 
-### `NoteKnowledge` (Table - Chunks)
-Stores per-page intelligence.
-- `file_id`: Reference.
-- `page_index`: Integer.
-- `ocr_text`: Raw extracted text.
-- `chunk_embedding`: (Reference/Index) for granular search.
+### `SummaryDO` (User-Facing Results)
+We leverage the existing `SummaryService` to store our outputs.
+1.  **"AI Insights" Summary**:
+    - `uniqueIdentifier`: Derived from File UUID (e.g., `{uuid}-summary`).
+    - `content`: The structured/formatted synthesis (Topics, Actions).
+    - `metadata`: JSON blob with structure for UI parsing.
+2.  **"OCR Transcript" Summary** (Optional/Configurable):
+    - `uniqueIdentifier`: Derived from File UUID (e.g., `{uuid}-transcript`).
+    - `content`: Full concatenated text of the note. Useful for portability.
+    - `metadata`: `{"page_offsets": {1: 0, 2: 500...}}` to allow mapping search hits back to pages.
 
-### `NoteDocumentKnowledge` (Table - Documents)
-Stores whole-note intelligence.
-- `file_id`: Reference.
-- `summary_content`: Structured JSON (Overview, Actions, etc.).
-- **Chunk Embeddings (Page-indexed)**: Generated per-page from raw OCR text. These are high-resolution vectors used for "finding the needle in the haystack."
-- **Document Embeddings (File-indexed)**: Generated from the **LLM-generated summary** (to capture synthesis) or the aggregated OCR text (if summary is pending). Used for broad topic-level retrieval.
-- `last_processed_hash`: Combined hash of all pages.
-- `status`: `PENDING`, `DONE`, `FAILED` (for the document-level phase).
+### `NotePageContent` (Internal Cache - Optional)
+If we don't want to parse the large "Transcript Summary" every time we need a single page's text for a diff-update, we might keep a lightweight intermediate table:
+- `file_id`, `page_index`, `raw_text`.
+(Alternatively, we just re-read the Transcript Summary and splice it).
 
 ## 4. Pipeline Logic
 1.  **Diff Phase**: Parser extracts page streams. Each stream is hashed and compared to the database.
@@ -48,8 +44,11 @@ Stores whole-note intelligence.
     - Send PNG to Gemini (with retry/backoff) for OCR.
     - **Chunk Embeddings (Page-indexed)**: Generated per-page from raw OCR text. Ideal for "finding the needle in the haystack."
 4.  **Document Phase**:
-    - Once all pages reach `DONE`, aggregate text to generate a **Whole File Summary**.
-    - **Document Embeddings (File-indexed)**: Generated from the **LLM-generated summary**. This ensures the embedding captures the high-level intent and synthesis rather than just a bag of words.
+    - **Transcript Generation**: Aggregate all page text into a single "OCR Transcript" `SummaryDO`.
+    - **Insight Generation**: Prompt Gemini with the transcript to create an "AI Insights" `SummaryDO`.
+    - **Vector Indexing**:
+        - **Chunks**: Generate vectors for each page window. Store in-memory index `(file_id, page_index)`.
+        - **Document**: Generate vector for the Insight Summary. Store in-memory index `(file_id)`.
 
 ## 5. Intelligence API Surface
 
@@ -65,9 +64,9 @@ The API distinguishes between finding *where* something was said and *which* not
     - **Output**: Ranked list of notebooks with high-level summaries.
     - **Optimization**: Global searches use the Document index first for speed, then can drill down into Chunks within selected documents.
 - **Document Summary**: `GET /api/file/{id}/summary`
-    - Returns the structured overview (Topics, Action Items, Actions).
+    - Proxies to `SummaryService.list_summaries(..., type='AI_INSIGHT')`.
 - **Processing Status**: `GET /api/knowledge/status/{file_id}`
-    - Provides a granular view of processing progress per page.
+    - Queries `NotePageStatus` table.
 
 ## 6. Cleanup
 - On file deletion, `NoteDeletedEvent` triggers a purge of:

@@ -120,3 +120,81 @@ class SummaryTagDO(Base):
         BigInteger, default=lambda: int(time.time() * 1000)
     )
     """Creation timestamp."""
+
+
+class NotePageStatusDO(Base):
+    """Tracks the processing status of each page in a note file."""
+
+    __tablename__ = "f_note_page_status"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, default=next_id)
+    """Internal database ID."""
+
+    file_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
+    """The numeric ID of the source file."""
+
+    page_index: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    """The 0-based index of the page in the note."""
+
+    content_hash: Mapped[str] = mapped_column(String, nullable=False)
+    """Hash of the page content (strokes) to detect changes."""
+
+    png_status: Mapped[str] = mapped_column(String, default="PENDING", nullable=False)
+    """Status of PNG generation (PENDING, PROCESSING, COMPLETED, FAILED)."""
+
+    ocr_status: Mapped[str] = mapped_column(String, default="PENDING", nullable=False)
+    """Status of OCR text extraction (PENDING, PROCESSING, COMPLETED, FAILED)."""
+
+    embed_status: Mapped[str] = mapped_column(String, default="PENDING", nullable=False)
+    """Status of embedding generation (PENDING, PROCESSING, COMPLETED, FAILED)."""
+
+    retry_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    """Number of times processing has been retried."""
+
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    """Error message from the last failure, if any."""
+
+    create_time: Mapped[int] = mapped_column(
+        BigInteger, default=lambda: int(time.time() * 1000)
+    )
+    """System creation timestamp."""
+
+    update_time: Mapped[int] = mapped_column(
+        BigInteger,
+        default=lambda: int(time.time() * 1000),
+        onupdate=lambda: int(time.time() * 1000),
+    )
+    """System update timestamp."""
+
+
+class NotePageContentDO(Base):
+    """Cache for page-level content (OCR text and embeddings)."""
+
+    __tablename__ = "f_note_page_content"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, default=next_id)
+    """Internal database ID."""
+
+    file_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
+    """The numeric ID of the source file."""
+
+    page_index: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    """The 0-based index of the page in the note."""
+
+    text_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    """The extracted OCR text for this page."""
+
+    embedding: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    """JSON string representation of the vector embedding."""
+
+    create_time: Mapped[int] = mapped_column(
+        BigInteger, default=lambda: int(time.time() * 1000)
+    )
+    """System creation timestamp."""
+
+    update_time: Mapped[int] = mapped_column(
+        BigInteger,
+        default=lambda: int(time.time() * 1000),
+        onupdate=lambda: int(time.time() * 1000),
+    )
+    """System update timestamp."""

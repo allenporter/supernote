@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 
+from sqlalchemy import select
+
 from supernote.models.base import BooleanEnum
 from supernote.notebook import (
     ImageConverter,
@@ -29,6 +31,7 @@ from supernote.server.exceptions import (
 
 from ..db.models.file import RecycleFileDO, UserFileDO
 from ..db.session import DatabaseSessionManager
+from ..events import LocalEventBus, NoteDeletedEvent, NoteUpdatedEvent
 from .blob import BlobStorage
 from .user import UserService
 from .vfs import VirtualFileSystem
@@ -154,6 +157,7 @@ class FileService:
         blob_storage: BlobStorage,
         user_service: UserService,
         session_manager: DatabaseSessionManager,
+        event_bus: LocalEventBus | None = None,
     ) -> None:
         """Initialize the file service."""
         self.storage_root = storage_root
@@ -161,6 +165,7 @@ class FileService:
         self.temp_dir = storage_root / "temp"
         self.user_service = user_service
         self.session_manager = session_manager
+        self.event_bus = event_bus
         self.temp_dir.mkdir(parents=True, exist_ok=True)
 
     async def list_folder(
@@ -372,6 +377,14 @@ class FileService:
         # 4. Construct response
         clean_path = path_str.strip("/")
         full_path = f"{clean_path}/{filename}" if clean_path else filename
+
+        # 5. Emit Event (Fire and Forget)
+        if self.event_bus and filename.endswith(".note"):
+            await self.event_bus.publish(
+                NoteUpdatedEvent(
+                    file_id=new_file.id, user_id=user_id, file_path=full_path
+                )
+            )
 
         return _to_file_entity(new_file, full_path)
 
@@ -775,7 +788,26 @@ class FileService:
         user_id = await self.user_service.get_user_id(user)
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
+            # Fetch recycle nodes before deletion to get their names/types for event emission
+            # We must query RecycleFileDO because id_list are recycle_bin_ids
+            stmt = select(RecycleFileDO).where(
+                RecycleFileDO.user_id == user_id, RecycleFileDO.id.in_(id_list)
+            )
+            result = await session.execute(stmt)
+            nodes_to_delete = result.scalars().all()
+
             await vfs.purge_recycle(user_id, id_list)
+
+            if self.event_bus:
+                for node in nodes_to_delete:
+                    # Only emit for actual files, not folders, or if it was a note
+                    if node.is_folder == BooleanEnum.NO and node.file_name.endswith(
+                        ".note"
+                    ):
+                        # node.file_id is the original File ID
+                        await self.event_bus.publish(
+                            NoteDeletedEvent(file_id=node.file_id, user_id=user_id)
+                        )
 
     async def revert_from_recycle(self, user: str, id_list: list[int]) -> None:
         """Restore items from recycle bin for a specific user using VFS."""

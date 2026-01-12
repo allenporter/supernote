@@ -14,10 +14,12 @@ from supernote.models.base import create_error_response
 from .config import ServerConfig
 from .constants import MAX_UPLOAD_SIZE
 from .db.session import DatabaseSessionManager
+from .events import LocalEventBus
 from .routes import admin, auth, file_device, file_web, oss, schedule, summary, system
 from .services.blob import LocalBlobStorage
 from .services.coordination import SqliteCoordinationService
 from .services.file import FileService
+from .services.processor import ProcessorService
 from .services.schedule import ScheduleService
 from .services.summary import SummaryService
 from .services.user import UserService
@@ -212,20 +214,30 @@ def create_app(config: ServerConfig) -> web.Application:
     app["session_manager"] = session_manager
     app["coordination_service"] = coordination_service
     app["blob_storage"] = blob_storage
+    event_bus = LocalEventBus()
+    app["event_bus"] = event_bus
+
     user_service = UserService(config.auth, coordination_service, session_manager)
     file_service = FileService(
         config.storage_root,
         blob_storage,
         user_service,
         session_manager,
+        event_bus,
     )
     app["user_service"] = user_service
     app["file_service"] = file_service
     app["url_signer"] = UrlSigner(config.auth.secret_key, coordination_service)
     app["schedule_service"] = ScheduleService(session_manager)
-    app["summary_service"] = SummaryService(user_service, session_manager)
+    summary_service = SummaryService(user_service, session_manager)
+    app["summary_service"] = summary_service
     app["sync_locks"] = {}  # user -> (equipment_no, expiry_time)
     app["rate_limiter"] = RateLimiter(coordination_service)
+
+    processor_service = ProcessorService(
+        event_bus, session_manager, file_service, summary_service
+    )
+    app["processor_service"] = processor_service
 
     # Register routes
     app.add_routes(system.routes)
@@ -256,10 +268,12 @@ def create_app(config: ServerConfig) -> web.Application:
 
         app.middlewares.append(jwt_auth_middleware)
         await session_manager.create_all_tables()
+        await processor_service.start()
 
     app.on_startup.append(on_startup_handler)
 
     async def on_shutdown_handler(app: web.Application) -> None:
+        await processor_service.stop()
         await session_manager.close()
 
     app.on_shutdown.append(on_shutdown_handler)
