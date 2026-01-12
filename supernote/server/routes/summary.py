@@ -5,18 +5,26 @@ from aiohttp import web
 from supernote.models.base import BaseResponse
 from supernote.models.summary import (
     AddSummaryDTO,
+    AddSummaryGroupDTO,
+    AddSummaryGroupVO,
     AddSummaryTagDTO,
     AddSummaryTagVO,
     AddSummaryVO,
     DeleteSummaryDTO,
+    DeleteSummaryGroupDTO,
     DeleteSummaryTagDTO,
+    DownloadSummaryDTO,
     QuerySummaryDTO,
+    QuerySummaryGroupDTO,
+    QuerySummaryGroupVO,
     QuerySummaryTagVO,
     QuerySummaryVO,
     UpdateSummaryDTO,
+    UpdateSummaryGroupDTO,
     UpdateSummaryTagDTO,
+    UploadSummaryApplyDTO,
 )
-from supernote.server.exceptions import SummaryNotFound, SupernoteError
+from supernote.server.exceptions import SupernoteError
 from supernote.server.services.summary import SummaryService
 
 logger = logging.getLogger(__name__)
@@ -35,7 +43,7 @@ async def handle_add_summary_tag(request: web.Request) -> web.Response:
     try:
         tag = await summary_service.add_tag(user_email, req_data.name)
         return web.json_response(AddSummaryTagVO(id=tag.id).to_dict())
-    except SummaryNotFound as err:
+    except SupernoteError as err:
         return err.to_response()
     except Exception as err:
         return SupernoteError.uncaught(err).to_response()
@@ -53,7 +61,7 @@ async def handle_update_summary_tag(request: web.Request) -> web.Response:
     try:
         await summary_service.update_tag(user_email, req_data.id, req_data.name)
         return web.json_response(BaseResponse().to_dict())
-    except SummaryNotFound as err:
+    except SupernoteError as err:
         return err.to_response()
     except Exception as err:
         return SupernoteError.uncaught(err).to_response()
@@ -71,7 +79,7 @@ async def handle_delete_summary_tag(request: web.Request) -> web.Response:
     try:
         await summary_service.delete_tag(user_email, req_data.id)
         return web.json_response(BaseResponse().to_dict())
-    except SummaryNotFound as err:
+    except SupernoteError as err:
         return err.to_response()
     except Exception as err:
         return SupernoteError.uncaught(err).to_response()
@@ -88,7 +96,7 @@ async def handle_query_summary_tag(request: web.Request) -> web.Response:
     try:
         tags = await summary_service.list_tags(user_email)
         return web.json_response(QuerySummaryTagVO(summary_tag_do_list=tags).to_dict())
-    except SummaryNotFound as err:
+    except SupernoteError as err:
         return err.to_response()
     except Exception as err:
         return SupernoteError.uncaught(err).to_response()
@@ -106,6 +114,8 @@ async def handle_add_summary(request: web.Request) -> web.Response:
     try:
         summary = await summary_service.add_summary(user_email, req_data)
         return web.json_response(AddSummaryVO(id=summary.id).to_dict())
+    except SupernoteError as err:
+        return err.to_response()
     except Exception as err:
         return SupernoteError.uncaught(err).to_response()
 
@@ -122,7 +132,7 @@ async def handle_update_summary(request: web.Request) -> web.Response:
     try:
         await summary_service.update_summary(user_email, req_data)
         return web.json_response(BaseResponse().to_dict())
-    except SummaryNotFound as err:
+    except SupernoteError as err:
         return err.to_response()
     except Exception as err:
         return SupernoteError.uncaught(err).to_response()
@@ -140,7 +150,7 @@ async def handle_delete_summary(request: web.Request) -> web.Response:
     try:
         await summary_service.delete_summary(user_email, req_data.id)
         return web.json_response(BaseResponse().to_dict())
-    except SummaryNotFound as err:
+    except SupernoteError as err:
         return err.to_response()
     except Exception as err:
         return SupernoteError.uncaught(err).to_response()
@@ -172,7 +182,124 @@ async def handle_query_summary(request: web.Request) -> web.Response:
                 page_size=req_data.size,
             ).to_dict()
         )
-    except SummaryNotFound as err:
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
+
+
+@routes.post("/api/file/add/summary/group")
+async def handle_add_summary_group(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/add/summary/group
+    # Purpose: Add a new summary group.
+    # Response: AddSummaryGroupVO
+    req_data = AddSummaryGroupDTO.from_dict(await request.json())
+    user_email = request["user"]
+    summary_service: SummaryService = request.app["summary_service"]
+
+    try:
+        group = await summary_service.add_group(user_email, req_data)
+        return web.json_response(AddSummaryGroupVO(id=group.id).to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
+
+
+@routes.post("/api/file/update/summary/group")
+async def handle_update_summary_group(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/update/summary/group
+    # Purpose: Update an existing summary group.
+    # Response: BaseResponse
+    req_data = UpdateSummaryGroupDTO.from_dict(await request.json())
+    user_email = request["user"]
+    summary_service: SummaryService = request.app["summary_service"]
+
+    try:
+        await summary_service.update_group(user_email, req_data)
+        return web.json_response(BaseResponse().to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
+
+
+@routes.post("/api/file/delete/summary/group")
+async def handle_delete_summary_group(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/delete/summary/group
+    # Purpose: Delete a summary group.
+    # Response: BaseResponse
+    req_data = DeleteSummaryGroupDTO.from_dict(await request.json())
+    user_email = request["user"]
+    summary_service: SummaryService = request.app["summary_service"]
+
+    try:
+        await summary_service.delete_group(user_email, req_data.id)
+        return web.json_response(BaseResponse().to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
+
+
+@routes.post("/api/file/query/summary/group")
+async def handle_query_summary_group(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/query/summary/group
+    # Purpose: Query summary groups.
+    # Response: QuerySummaryGroupVO
+    req_data = QuerySummaryGroupDTO.from_dict(await request.json())
+    user_email = request["user"]
+    summary_service: SummaryService = request.app["summary_service"]
+
+    try:
+        groups = await summary_service.list_groups(user_email, req_data)
+        return web.json_response(
+            QuerySummaryGroupVO(
+                summary_do_list=groups,
+                total_records=len(groups),
+                total_pages=1,
+                current_page=req_data.page or 1,
+                page_size=req_data.size or 20,
+            ).to_dict()
+        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
+
+
+@routes.post("/api/file/upload/apply/summary")
+async def handle_upload_apply_summary(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/upload/apply/summary
+    # Purpose: Apply for summary upload.
+    # Response: UploadSummaryApplyVO
+    req_data = UploadSummaryApplyDTO.from_dict(await request.json())
+    user_email = request["user"]
+    equipment_no = request.get("equipment_no")
+    summary_service: SummaryService = request.app["summary_service"]
+
+    try:
+        vo = await summary_service.upload_apply(user_email, equipment_no, req_data)
+        return web.json_response(vo.to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
+
+
+@routes.post("/api/file/download/summary")
+async def handle_download_summary(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/download/summary
+    # Purpose: Download summary.
+    # Response: DownloadSummaryVO
+    req_data = DownloadSummaryDTO.from_dict(await request.json())
+    user_email = request["user"]
+    summary_service: SummaryService = request.app["summary_service"]
+
+    try:
+        vo = await summary_service.download(user_email, req_data)
+        return web.json_response(vo.to_dict())
+    except SupernoteError as err:
         return err.to_response()
     except Exception as err:
         return SupernoteError.uncaught(err).to_response()

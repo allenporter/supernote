@@ -2,17 +2,27 @@
 
 from supernote.models.summary import (
     AddSummaryDTO,
+    AddSummaryGroupDTO,
+    AddSummaryGroupVO,
     AddSummaryTagDTO,
     AddSummaryTagVO,
     AddSummaryVO,
     BaseResponse,
     DeleteSummaryDTO,
+    DeleteSummaryGroupDTO,
     DeleteSummaryTagDTO,
+    DownloadSummaryDTO,
+    DownloadSummaryVO,
     QuerySummaryDTO,
+    QuerySummaryGroupDTO,
+    QuerySummaryGroupVO,
     QuerySummaryTagVO,
     QuerySummaryVO,
     UpdateSummaryDTO,
+    UpdateSummaryGroupDTO,
     UpdateSummaryTagDTO,
+    UploadSummaryApplyDTO,
+    UploadSummaryApplyVO,
 )
 
 from . import Client
@@ -87,4 +97,46 @@ class SummaryClient:
         )
         return await self._client.post_json(
             "/api/file/query/summary", QuerySummaryVO, json=dto.to_dict()
+        )
+
+    async def add_group(self, dto: AddSummaryGroupDTO) -> AddSummaryGroupVO:
+        """Add a summary group."""
+        return await self._client.post_json(
+            "/api/file/add/summary/group", AddSummaryGroupVO, json=dto.to_dict()
+        )
+
+    async def update_group(self, dto: UpdateSummaryGroupDTO) -> BaseResponse:
+        """Update a summary group."""
+        return await self._client.post_json(
+            "/api/file/update/summary/group", BaseResponse, json=dto.to_dict()
+        )
+
+    async def delete_group(self, group_id: int) -> BaseResponse:
+        """Delete a summary group."""
+        dto = DeleteSummaryGroupDTO(id=group_id)
+        return await self._client.post_json(
+            "/api/file/delete/summary/group", BaseResponse, json=dto.to_dict()
+        )
+
+    async def query_groups(self, page: int = 1, size: int = 20) -> QuerySummaryGroupVO:
+        """Query summary groups."""
+        dto = QuerySummaryGroupDTO(page=page, size=size)
+        return await self._client.post_json(
+            "/api/file/query/summary/group", QuerySummaryGroupVO, json=dto.to_dict()
+        )
+
+    async def upload_apply(
+        self, file_name: str, equipment_no: str | None = None
+    ) -> UploadSummaryApplyVO:
+        """Apply for summary upload."""
+        dto = UploadSummaryApplyDTO(file_name=file_name, equipment_no=equipment_no)
+        return await self._client.post_json(
+            "/api/file/upload/apply/summary", UploadSummaryApplyVO, json=dto.to_dict()
+        )
+
+    async def download_summary(self, summary_id: int) -> DownloadSummaryVO:
+        """Download summary binary data."""
+        dto = DownloadSummaryDTO(id=summary_id)
+        return await self._client.post_json(
+            "/api/file/download/summary", DownloadSummaryVO, json=dto.to_dict()
         )

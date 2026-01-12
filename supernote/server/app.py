@@ -221,9 +221,13 @@ def create_app(config: ServerConfig) -> web.Application:
     )
     app["user_service"] = user_service
     app["file_service"] = file_service
-    app["url_signer"] = UrlSigner(config.auth.secret_key, coordination_service)
+    app["url_signer"] = url_signer = UrlSigner(
+        config.auth.secret_key, coordination_service
+    )
     app["schedule_service"] = ScheduleService(session_manager)
-    app["summary_service"] = SummaryService(user_service, session_manager)
+    app["summary_service"] = SummaryService(
+        user_service, session_manager, blob_storage, url_signer
+    )
     app["sync_locks"] = {}  # user -> (equipment_no, expiry_time)
     app["rate_limiter"] = RateLimiter(coordination_service)
 

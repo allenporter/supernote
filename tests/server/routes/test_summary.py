@@ -2,7 +2,12 @@ import pytest
 
 from supernote.client.client import Client
 from supernote.client.summary import SummaryClient
-from supernote.models.summary import AddSummaryDTO, UpdateSummaryDTO
+from supernote.models.summary import (
+    AddSummaryDTO,
+    AddSummaryGroupDTO,
+    UpdateSummaryDTO,
+    UpdateSummaryGroupDTO,
+)
 
 
 @pytest.fixture
@@ -91,3 +96,74 @@ async def test_summary_crud(summary_client: SummaryClient) -> None:
     # 6. Verify deletion
     query_response = await summary_client.query_summaries(ids=[summary_id])
     assert len(query_response.summary_do_list) == 0
+
+
+async def test_group_crud(summary_client: SummaryClient) -> None:
+    # 1. Add a group
+    group_uuid = "test-group-uuid"
+    add_dto = AddSummaryGroupDTO(
+        unique_identifier=group_uuid,
+        name="Test Group",
+        md5_hash="hash123",
+        description="A test group",
+    )
+    add_response = await summary_client.add_group(add_dto)
+    assert add_response.success
+    group_id = add_response.id
+    assert group_id is not None
+
+    # 2. Query groups
+    query_response = await summary_client.query_groups()
+    assert query_response.success
+    assert [
+        (g.id, g.unique_identifier, g.name) for g in query_response.summary_do_list
+    ] == [(group_id, group_uuid, "Test Group")]
+
+    # 3. Update group
+    update_dto = UpdateSummaryGroupDTO(
+        id=group_id,
+        unique_identifier=group_uuid,
+        name="Updated Group",
+        md5_hash="newhash",
+    )
+    update_response = await summary_client.update_group(update_dto)
+    assert update_response.success
+
+    # 4. Verify update
+    query_response = await summary_client.query_groups()
+    assert [
+        (g.id, g.unique_identifier, g.name) for g in query_response.summary_do_list
+    ] == [(group_id, group_uuid, "Updated Group")]
+
+    # 5. Delete group
+    delete_response = await summary_client.delete_group(group_id)
+    assert delete_response.success
+
+    # 6. Verify deletion
+    query_response = await summary_client.query_groups()
+    assert not any(g.id == group_id for g in query_response.summary_do_list)
+
+
+async def test_summary_binary_flow(summary_client: SummaryClient) -> None:
+    # 1. Apply for upload
+    upload_response = await summary_client.upload_apply("test_strokes.bin")
+    assert upload_response.success
+    assert upload_response.full_upload_url is not None
+    assert upload_response.inner_name is not None
+    inner_name = upload_response.inner_name
+
+    # 2. Add summary with that inner name
+    add_dto = AddSummaryDTO(
+        content="Summary with binary",
+        data_source="TEST",
+        handwrite_inner_name=inner_name,
+    )
+    add_response = await summary_client.add_summary(add_dto)
+    assert add_response.id
+    summary_id = add_response.id
+
+    # 3. Apply for download
+    download_response = await summary_client.download_summary(summary_id)
+    assert download_response.success
+    assert download_response.url is not None
+    assert inner_name in download_response.url

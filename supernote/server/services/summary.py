@@ -7,14 +7,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from supernote.models.base import BooleanEnum
 from supernote.models.summary import (
     AddSummaryDTO,
+    AddSummaryGroupDTO,
+    DownloadSummaryDTO,
+    DownloadSummaryVO,
+    QuerySummaryGroupDTO,
     SummaryItem,
     SummaryTagItem,
     UpdateSummaryDTO,
+    UpdateSummaryGroupDTO,
+    UploadSummaryApplyDTO,
+    UploadSummaryApplyVO,
 )
 from supernote.server.db.models.summary import SummaryDO, SummaryTagDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import SummaryNotFound
+from supernote.server.services.blob import BlobStorage
 from supernote.server.services.user import UserService
+from supernote.server.utils.url_signer import UrlSigner
 
 logger = logging.getLogger(__name__)
 
@@ -68,10 +77,14 @@ class SummaryService:
         self,
         user_service: UserService,
         session_manager: DatabaseSessionManager,
+        blob_storage: BlobStorage,
+        url_signer: UrlSigner,
     ) -> None:
         """Initialize the summary service."""
         self.user_service = user_service
         self.session_manager = session_manager
+        self.blob_storage = blob_storage
+        self.url_signer = url_signer
 
     async def add_tag(self, user_email: str, name: str) -> SummaryTagItem:
         """Add a new summary tag."""
@@ -192,7 +205,11 @@ class SummaryService:
         """List summaries based on filters."""
         user_id = await self.user_service.get_user_id(user_email)
         async with self.session_manager.session() as session:
-            filters = [SummaryDO.user_id == user_id, SummaryDO.is_deleted.is_(False)]
+            filters = [
+                SummaryDO.user_id == user_id,
+                SummaryDO.is_deleted.is_(False),
+                SummaryDO.is_summary_group.is_(False),
+            ]
 
             if parent_uuid is not None:
                 filters.append(SummaryDO.parent_unique_identifier == parent_uuid)
@@ -209,6 +226,136 @@ class SummaryService:
             result = await session.execute(stmt)
             summaries = list(result.scalars().all())
             return [_to_summary_item(s) for s in summaries]
+
+    async def add_group(self, user_email: str, dto: AddSummaryGroupDTO) -> SummaryItem:
+        """Add a new summary group."""
+        user_id = await self.user_service.get_user_id(user_email)
+        async with self.session_manager.session() as session:
+            summary_do = SummaryDO(
+                user_id=user_id,
+                unique_identifier=dto.unique_identifier,
+                name=dto.name,
+                md5_hash=dto.md5_hash,
+                description=dto.description,
+                creation_time=dto.creation_time,
+                last_modified_time=dto.last_modified_time,
+                is_summary_group=True,
+            )
+            session.add(summary_do)
+            await session.commit()
+            await session.refresh(summary_do)
+            return _to_summary_item(summary_do)
+
+    async def update_group(self, user_email: str, dto: UpdateSummaryGroupDTO) -> bool:
+        """Update an existing summary group."""
+        user_id = await self.user_service.get_user_id(user_email)
+        async with self.session_manager.session() as session:
+            group_do = await self._get_summary_by_uuid(
+                session, user_id, dto.unique_identifier
+            )
+            if not group_do or not group_do.is_summary_group:
+                # If not found by UUID, try by ID if available (though UUID is preferred for sync)
+                group_do = await self._get_summary(session, user_id, dto.id)
+                if not group_do or not group_do.is_summary_group:
+                    raise SummaryNotFound(f"Group with ID {dto.id} not found")
+
+            group_do.md5_hash = dto.md5_hash
+            if dto.name is not None:
+                group_do.name = dto.name
+            if dto.description is not None:
+                group_do.description = dto.description
+            if dto.last_modified_time is not None:
+                group_do.last_modified_time = dto.last_modified_time
+
+            await session.commit()
+            return True
+
+    async def delete_group(self, user_email: str, group_id: int) -> bool:
+        """Delete a summary group (soft delete)."""
+        # Note: In a real implementation, we might want to check if the group is empty
+        # or recursively delete children. For now, we follow the leaf summary pattern.
+        return await self.delete_summary(user_email, group_id)
+
+    async def list_groups(
+        self, user_email: str, dto: QuerySummaryGroupDTO
+    ) -> list[SummaryItem]:
+        """List summary groups for a user."""
+        user_id = await self.user_service.get_user_id(user_email)
+        page = dto.page or 1
+        size = dto.size or 20
+        async with self.session_manager.session() as session:
+            stmt = (
+                select(SummaryDO)
+                .where(
+                    SummaryDO.user_id == user_id,
+                    SummaryDO.is_deleted.is_(False),
+                    SummaryDO.is_summary_group.is_(True),
+                )
+                .offset((page - 1) * size)
+                .limit(size)
+            )
+            result = await session.execute(stmt)
+            groups = list(result.scalars().all())
+            return [_to_summary_item(g) for g in groups]
+
+    async def _get_summary_by_uuid(
+        self, session: AsyncSession, user_id: int, uuid_str: str | None
+    ) -> SummaryDO | None:
+        """Helper to get a summary by UUID and user ownership."""
+        if not uuid_str:
+            return None
+        stmt = select(SummaryDO).where(
+            SummaryDO.unique_identifier == uuid_str, SummaryDO.user_id == user_id
+        )
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def upload_apply(
+        self, user_email: str, equipment_no: str | None, dto: UploadSummaryApplyDTO
+    ) -> UploadSummaryApplyVO:
+        """Handle upload apply for summary handwriting data."""
+        # Generate inner name: {UUID}-{equipment_no}.{ext}
+        ext = dto.file_name.split(".")[-1] if "." in dto.file_name else "bin"
+        inner_name = f"{uuid.uuid4()}-{equipment_no or 'unknown'}.{ext}"
+
+        # Generate signed URLs pointing to OSS endpoints
+        # Note: oss.py handles both /api/oss/upload and /api/oss/download
+        # It expects the object key in the 'path' query parameter.
+        full_url = await self.url_signer.sign(
+            f"/api/oss/upload?path={inner_name}", user=user_email
+        )
+        # For now, we use the same URL for part upload as oss.py handle_oss_upload_part
+        # also expects 'path' and 'signature'.
+        part_url = await self.url_signer.sign(
+            f"/api/oss/upload/part?path={inner_name}", user=user_email
+        )
+
+        return UploadSummaryApplyVO(
+            full_upload_url=full_url,
+            part_upload_url=part_url,
+            inner_name=inner_name,
+        )
+
+    async def download(
+        self, user_email: str, dto: DownloadSummaryDTO
+    ) -> DownloadSummaryVO:
+        """Handle download for summary handwriting data."""
+        user_id = await self.user_service.get_user_id(user_email)
+        async with self.session_manager.session() as session:
+            summary_do = await self._get_summary(session, user_id, dto.id)
+            if not summary_do:
+                raise SummaryNotFound(f"Summary with ID {dto.id} not found")
+
+            if not summary_do.handwrite_inner_name:
+                raise SummaryNotFound(
+                    f"Summary with ID {dto.id} has no handwriting data"
+                )
+
+            url = await self.url_signer.sign(
+                f"/api/oss/download?path={summary_do.handwrite_inner_name}",
+                user=user_email,
+            )
+            return DownloadSummaryVO(url=url)
 
     async def _get_summary(
         self, session: AsyncSession, user_id: int, summary_id: int
