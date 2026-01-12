@@ -1,4 +1,5 @@
 import logging
+import urllib.parse
 
 from aiohttp import web
 
@@ -14,6 +15,7 @@ from supernote.models.summary import (
     DeleteSummaryGroupDTO,
     DeleteSummaryTagDTO,
     DownloadSummaryDTO,
+    DownloadSummaryVO,
     QuerySummaryByIdVO,
     QuerySummaryDTO,
     QuerySummaryGroupDTO,
@@ -25,9 +27,12 @@ from supernote.models.summary import (
     UpdateSummaryGroupDTO,
     UpdateSummaryTagDTO,
     UploadSummaryApplyDTO,
+    UploadSummaryApplyVO,
 )
 from supernote.server.exceptions import SupernoteError
+from supernote.server.services.file import generate_inner_name
 from supernote.server.services.summary import SummaryService
+from supernote.server.utils.url_signer import UrlSigner
 
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
@@ -273,16 +278,34 @@ async def handle_query_summary_group(request: web.Request) -> web.Response:
 @routes.post("/api/file/upload/apply/summary")
 async def handle_upload_apply_summary(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/upload/apply/summary
-    # Purpose: Apply for summary upload.
+    # Purpose: Apply for upload (signed URL).
     # Response: UploadSummaryApplyVO
     req_data = UploadSummaryApplyDTO.from_dict(await request.json())
     user_email = request["user"]
-    equipment_no = request.get("equipment_no")
-    summary_service: SummaryService = request.app["summary_service"]
 
     try:
-        vo = await summary_service.upload_apply(user_email, equipment_no, req_data)
-        return web.json_response(vo.to_dict())
+        url_signer: UrlSigner = request.app["url_signer"]
+
+        # Generate inner name
+        inner_name = generate_inner_name(req_data.file_name, req_data.equipment_no)
+        encoded_name = urllib.parse.quote(inner_name)
+
+        # Sign URLs
+        full_path = f"/api/oss/upload?path={encoded_name}"
+        full_url_path = await url_signer.sign(full_path, user=user_email)
+        full_url = f"{request.scheme}://{request.host}{full_url_path}"
+
+        part_path = f"/api/oss/upload/part?path={encoded_name}"
+        part_url_path = await url_signer.sign(part_path, user=user_email)
+        part_url = f"{request.scheme}://{request.host}{part_url_path}"
+
+        return web.json_response(
+            UploadSummaryApplyVO(
+                full_upload_url=full_url,
+                part_upload_url=part_url,
+                inner_name=inner_name,
+            ).to_dict()
+        )
     except SupernoteError as err:
         return err.to_response()
     except Exception as err:
@@ -292,15 +315,29 @@ async def handle_upload_apply_summary(request: web.Request) -> web.Response:
 @routes.post("/api/file/download/summary")
 async def handle_download_summary(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/download/summary
-    # Purpose: Download summary.
+    # Purpose: Get signed download URL for binary content.
     # Response: DownloadSummaryVO
     req_data = DownloadSummaryDTO.from_dict(await request.json())
     user_email = request["user"]
     summary_service: SummaryService = request.app["summary_service"]
 
     try:
-        vo = await summary_service.download(user_email, req_data)
-        return web.json_response(vo.to_dict())
+        summary = await summary_service.get_summary(user_email, req_data.id)
+        if not summary.handwrite_inner_name:
+            return web.json_response(
+                BaseResponse(
+                    success=False, error_msg="Handwriting data not found"
+                ).to_dict(),
+                status=404,
+            )
+
+        url_signer: UrlSigner = request.app["url_signer"]
+        encoded_name = urllib.parse.quote(summary.handwrite_inner_name)
+        download_path = f"/api/oss/download?path={encoded_name}"
+        signed_path = await url_signer.sign(download_path, user=user_email)
+        download_url = f"{request.scheme}://{request.host}{signed_path}"
+
+        return web.json_response(DownloadSummaryVO(url=download_url).to_dict())
     except SupernoteError as err:
         return err.to_response()
     except Exception as err:
