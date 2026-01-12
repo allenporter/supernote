@@ -8,8 +8,6 @@ from supernote.models.base import BooleanEnum
 from supernote.models.summary import (
     AddSummaryDTO,
     AddSummaryGroupDTO,
-    DownloadSummaryDTO,
-    DownloadSummaryVO,
     QuerySummaryDTO,
     QuerySummaryGroupDTO,
     SummaryInfoItem,
@@ -17,15 +15,11 @@ from supernote.models.summary import (
     SummaryTagItem,
     UpdateSummaryDTO,
     UpdateSummaryGroupDTO,
-    UploadSummaryApplyDTO,
-    UploadSummaryApplyVO,
 )
 from supernote.server.db.models.summary import SummaryDO, SummaryTagDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import SummaryNotFound
-from supernote.server.services.blob import BlobStorage
 from supernote.server.services.user import UserService
-from supernote.server.utils.url_signer import UrlSigner
 
 logger = logging.getLogger(__name__)
 
@@ -91,14 +85,10 @@ class SummaryService:
         self,
         user_service: UserService,
         session_manager: DatabaseSessionManager,
-        blob_storage: BlobStorage,
-        url_signer: UrlSigner,
     ) -> None:
         """Initialize the summary service."""
         self.user_service = user_service
         self.session_manager = session_manager
-        self.blob_storage = blob_storage
-        self.url_signer = url_signer
 
     async def add_tag(self, user_email: str, name: str) -> SummaryTagItem:
         """Add a new summary tag."""
@@ -324,52 +314,14 @@ class SummaryService:
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def upload_apply(
-        self, user_email: str, equipment_no: str | None, dto: UploadSummaryApplyDTO
-    ) -> UploadSummaryApplyVO:
-        """Handle upload apply for summary handwriting data."""
-        # Generate inner name: {UUID}-{equipment_no}.{ext}
-        ext = dto.file_name.split(".")[-1] if "." in dto.file_name else "bin"
-        inner_name = f"{uuid.uuid4()}-{equipment_no or 'unknown'}.{ext}"
-
-        # Generate signed URLs pointing to OSS endpoints
-        # Note: oss.py handles both /api/oss/upload and /api/oss/download
-        # It expects the object key in the 'path' query parameter.
-        full_url = await self.url_signer.sign(
-            f"/api/oss/upload?path={inner_name}", user=user_email
-        )
-        # For now, we use the same URL for part upload as oss.py handle_oss_upload_part
-        # also expects 'path' and 'signature'.
-        part_url = await self.url_signer.sign(
-            f"/api/oss/upload/part?path={inner_name}", user=user_email
-        )
-
-        return UploadSummaryApplyVO(
-            full_upload_url=full_url,
-            part_upload_url=part_url,
-            inner_name=inner_name,
-        )
-
-    async def download(
-        self, user_email: str, dto: DownloadSummaryDTO
-    ) -> DownloadSummaryVO:
-        """Handle download for summary handwriting data."""
+    async def get_summary(self, user_email: str, summary_id: int) -> SummaryItem:
+        """Get a single summary by ID."""
         user_id = await self.user_service.get_user_id(user_email)
         async with self.session_manager.session() as session:
-            summary_do = await self._get_summary(session, user_id, dto.id)
+            summary_do = await self._get_summary(session, user_id, summary_id)
             if not summary_do:
-                raise SummaryNotFound(f"Summary with ID {dto.id} not found")
-
-            if not summary_do.handwrite_inner_name:
-                raise SummaryNotFound(
-                    f"Summary with ID {dto.id} has no handwriting data"
-                )
-
-            url = await self.url_signer.sign(
-                f"/api/oss/download?path={summary_do.handwrite_inner_name}",
-                user=user_email,
-            )
-            return DownloadSummaryVO(url=url)
+                raise SummaryNotFound(f"Summary with ID {summary_id} not found")
+            return _to_summary_item(summary_do)
 
     async def list_summary_infos(
         self, user_email: str, dto: QuerySummaryDTO
