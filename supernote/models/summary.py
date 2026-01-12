@@ -810,5 +810,4 @@ class UploadSummaryApplyVO(BaseResponse):
     inner_name: str | None = field(
         metadata=field_options(alias="innerName"), default=None
     )
-    """The generated internal name on object storage."""
-    """Obfuscated storage filename: {UUID}-{tail}.{ext} where tail is derived from the the client equipmentNo"""
+    """The generated internal name on object storage: {UUID}-{tail}.{ext} where tail is derived from the the client equipmentNo"""
