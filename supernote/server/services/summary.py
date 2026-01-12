@@ -13,6 +13,7 @@ from supernote.models.summary import (
 )
 from supernote.server.db.models.summary import SummaryDO, SummaryTagDO
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.exceptions import SummaryNotFound
 from supernote.server.services.user import UserService
 
 logger = logging.getLogger(__name__)
@@ -92,7 +93,7 @@ class SummaryService:
         async with self.session_manager.session() as session:
             tag_do = await self._get_tag(session, user_id, tag_id)
             if not tag_do:
-                return False
+                raise SummaryNotFound(f"Tag with ID {tag_id} not found")
             tag_do.name = name
             await session.commit()
             return True
@@ -103,7 +104,7 @@ class SummaryService:
         async with self.session_manager.session() as session:
             tag_do = await self._get_tag(session, user_id, tag_id)
             if not tag_do:
-                return False
+                raise SummaryNotFound(f"Tag with ID {tag_id} not found")
             await session.delete(tag_do)
             await session.commit()
             return True
@@ -153,7 +154,7 @@ class SummaryService:
         async with self.session_manager.session() as session:
             summary_do = await self._get_summary(session, user_id, dto.id)
             if not summary_do:
-                return False
+                raise SummaryNotFound(f"Summary with ID {dto.id} not found")
 
             if dto.content is not None:
                 summary_do.content = dto.content
@@ -175,7 +176,7 @@ class SummaryService:
         async with self.session_manager.session() as session:
             summary_do = await self._get_summary(session, user_id, summary_id)
             if not summary_do:
-                return False
+                raise SummaryNotFound(f"Summary with ID {summary_id} not found")
             summary_do.is_deleted = True
             await session.commit()
             return True
@@ -191,7 +192,7 @@ class SummaryService:
         """List summaries based on filters."""
         user_id = await self.user_service.get_user_id(user_email)
         async with self.session_manager.session() as session:
-            filters = [SummaryDO.user_id == user_id, SummaryDO.is_deleted == False]
+            filters = [SummaryDO.user_id == user_id, SummaryDO.is_deleted.is_(False)]
 
             if parent_uuid is not None:
                 filters.append(SummaryDO.parent_unique_identifier == parent_uuid)

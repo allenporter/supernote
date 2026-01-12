@@ -104,6 +104,19 @@ class QuotaExceeded(FileError):
         super().__init__(message, error_code, status_code=403)
 
 
+class SummaryError(SupernoteError):
+    """Base class for summary-related errors."""
+
+    pass
+
+
+class SummaryNotFound(SummaryError):
+    """Raised when a summary or tag is not found."""
+
+    def __init__(self, message: str, error_code: str | ErrorCode = ErrorCode.NOT_FOUND):
+        super().__init__(message, error_code, status_code=404)
+
+
 class InvalidSignature(SupernoteError):
     """Raised when a URL signature is invalid or expired."""
 
