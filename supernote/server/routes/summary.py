@@ -14,9 +14,11 @@ from supernote.models.summary import (
     DeleteSummaryGroupDTO,
     DeleteSummaryTagDTO,
     DownloadSummaryDTO,
+    QuerySummaryByIdVO,
     QuerySummaryDTO,
     QuerySummaryGroupDTO,
     QuerySummaryGroupVO,
+    QuerySummaryMD5HashVO,
     QuerySummaryTagVO,
     QuerySummaryVO,
     UpdateSummaryDTO,
@@ -299,6 +301,52 @@ async def handle_download_summary(request: web.Request) -> web.Response:
     try:
         vo = await summary_service.download(user_email, req_data)
         return web.json_response(vo.to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
+
+
+@routes.post("/api/file/query/summary/hash")
+async def handle_query_summary_hash(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/query/summary/hash
+    # Purpose: Query summary lightweight info (hash/integrity).
+    # Response: QuerySummaryMD5HashVO
+    req_data = QuerySummaryDTO.from_dict(await request.json())
+    user_email = request["user"]
+    summary_service: SummaryService = request.app["summary_service"]
+
+    try:
+        infos = await summary_service.list_summary_infos(user_email, req_data)
+        return web.json_response(
+            QuerySummaryMD5HashVO(
+                summary_info_vo_list=infos,
+                total_records=len(infos),
+                total_pages=1,
+                current_page=req_data.page or 1,
+                page_size=req_data.size or 20,
+            ).to_dict()
+        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
+
+
+@routes.post("/api/file/query/summary/id")
+async def handle_query_summary_id(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/query/summary/id
+    # Purpose: Query full summaries by ID.
+    # Response: QuerySummaryByIdVO
+    req_data = QuerySummaryDTO.from_dict(await request.json())
+    user_email = request["user"]
+    summary_service: SummaryService = request.app["summary_service"]
+
+    try:
+        summaries = await summary_service.list_summaries_by_id(user_email, req_data)
+        return web.json_response(
+            QuerySummaryByIdVO(summary_do_list=summaries).to_dict()
+        )
     except SupernoteError as err:
         return err.to_response()
     except Exception as err:

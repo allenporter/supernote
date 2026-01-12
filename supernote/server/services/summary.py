@@ -10,7 +10,9 @@ from supernote.models.summary import (
     AddSummaryGroupDTO,
     DownloadSummaryDTO,
     DownloadSummaryVO,
+    QuerySummaryDTO,
     QuerySummaryGroupDTO,
+    SummaryInfoItem,
     SummaryItem,
     SummaryTagItem,
     UpdateSummaryDTO,
@@ -36,6 +38,18 @@ def _to_tag_item(do: SummaryTagDO) -> SummaryTagItem:
         user_id=do.user_id,
         unique_identifier=do.unique_identifier,
         created_at=do.create_time,
+    )
+
+
+def _to_summary_info_item(do: SummaryDO) -> SummaryInfoItem:
+    """Convert SummaryDO to SummaryInfoItem."""
+    return SummaryInfoItem(
+        id=do.id,
+        user_id=do.user_id,
+        md5_hash=do.md5_hash,
+        handwrite_md5=do.handwrite_md5,
+        comment_handwrite_name=do.comment_handwrite_name,
+        last_modified_time=do.last_modified_time,
     )
 
 
@@ -356,6 +370,50 @@ class SummaryService:
                 user=user_email,
             )
             return DownloadSummaryVO(url=url)
+
+    async def list_summary_infos(
+        self, user_email: str, dto: QuerySummaryDTO
+    ) -> list[SummaryInfoItem]:
+        """List lightweight summary info for integrity checking."""
+        user_id = await self.user_service.get_user_id(user_email)
+        page = dto.page or 1
+        size = dto.size or 20
+        async with self.session_manager.session() as session:
+            filters = [
+                SummaryDO.user_id == user_id,
+                SummaryDO.is_deleted.is_(False),
+                SummaryDO.is_summary_group.is_(False),
+            ]
+
+            if dto.parent_unique_identifier is not None:
+                filters.append(
+                    SummaryDO.parent_unique_identifier == dto.parent_unique_identifier
+                )
+
+            if dto.ids:
+                filters.append(SummaryDO.id.in_(dto.ids))
+
+            stmt = (
+                select(SummaryDO)
+                .where(and_(*filters))
+                .offset((page - 1) * size)
+                .limit(size)
+            )
+            result = await session.execute(stmt)
+            summaries = list(result.scalars().all())
+            return [_to_summary_info_item(s) for s in summaries]
+
+    async def list_summaries_by_id(
+        self, user_email: str, dto: QuerySummaryDTO
+    ) -> list[SummaryItem]:
+        """List full summaries by IDs."""
+        return await self.list_summaries(
+            user_email,
+            parent_uuid=dto.parent_unique_identifier,
+            ids=dto.ids,
+            page=dto.page or 1,
+            size=dto.size or 20,
+        )
 
     async def _get_summary(
         self, session: AsyncSession, user_id: int, summary_id: int

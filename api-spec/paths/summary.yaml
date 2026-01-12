@@ -250,7 +250,10 @@ querySummaryMD5Hash:
   post:
     tags:
       - Summary
-    summary: Query Summary MD5 Hash
+    summary: Query Summary Sync Manifest (MD5 Hash)
+    description: >
+      Lightweight endpoint for synchronization checks. Returns MD5 hashes
+      (SummaryInfoItem) to help clients decide if full content needs to be downloaded.
     operationId: querySummaryMD5Hash
     security:
       - accessToken: []

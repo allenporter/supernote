@@ -5,6 +5,7 @@ from supernote.client.summary import SummaryClient
 from supernote.models.summary import (
     AddSummaryDTO,
     AddSummaryGroupDTO,
+    QuerySummaryDTO,
     UpdateSummaryDTO,
     UpdateSummaryGroupDTO,
 )
@@ -167,3 +168,35 @@ async def test_summary_binary_flow(summary_client: SummaryClient) -> None:
     assert download_response.success
     assert download_response.url is not None
     assert inner_name in download_response.url
+
+
+async def test_advanced_queries(summary_client: SummaryClient) -> None:
+    # 1. Setup: Add a test summary
+    add_dto = AddSummaryDTO(
+        content="Advanced Test content",
+        md5_hash="advhash",
+        handwrite_md5="advhwmd5",
+        comment_handwrite_name="advhw.bin",
+    )
+    add_response = await summary_client.add_summary(add_dto)
+    summary_id = add_response.id
+    assert summary_id is not None
+
+    # 2. Test query/summary/hash
+    query_dto = QuerySummaryDTO(ids=[summary_id])
+    hash_response = await summary_client.query_summary_hash(query_dto)
+    assert hash_response.success
+    assert len(hash_response.summary_info_vo_list) == 1
+    info = hash_response.summary_info_vo_list[0]
+    assert info.id == summary_id
+    assert info.md5_hash == "advhash"
+    assert info.handwrite_md5 == "advhwmd5"
+    assert info.comment_handwrite_name == "advhw.bin"
+
+    # 3. Test query/summary/id
+    id_response = await summary_client.query_summary_id(query_dto)
+    assert id_response.success
+    assert len(id_response.summary_do_list) == 1
+    summary = id_response.summary_do_list[0]
+    assert summary.id == summary_id
+    assert summary.content == "Advanced Test content"

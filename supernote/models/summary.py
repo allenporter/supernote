@@ -173,7 +173,11 @@ class SummaryTagItem(DataClassJSONMixin):
 
 @dataclass
 class SummaryInfoItem(DataClassJSONMixin):
-    """Integrity and metadata summary for a file's associated content."""
+    """Lightweight metadata for synchronization and integrity checks.
+
+    Used by QuerySummaryMD5HashVO to provide a 'Sync Manifest' that allows
+    clients to compare MD5 hashes before downloading full content.
+    """
 
     id: int | None = None
     """Internal database ID."""
@@ -710,7 +714,10 @@ class QuerySummaryByIdVO(BaseResponse):
 
 @dataclass(kw_only=True)
 class QuerySummaryMD5HashVO(BaseResponse):
-    """Response for querying summary by MD5 hash.
+    """Response for a Lightweight Synchronization Manifest (MD5 query).
+
+    Returns a list of SummaryInfoItem records. Designed for sync checks,
+    allowing clients to identify changed summaries without full detail downloads.
 
     Used by:
         /api/file/query/summary/hash (POST)

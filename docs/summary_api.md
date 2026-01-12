@@ -93,3 +93,7 @@ The fields `handwriteInnerName` and `handwriteMD5` refer to binary stroke data s
 
 ### 4. Timestamp Precision
 All `Time` fields (`creationTime`, `lastModifiedTime`, `createTime`, `updateTime`) follow the standard Supernote convention of using **Unix timestamps in milliseconds**.
+
+### 5. Sync Integrity Checks (`query/summary/hash`)
+The `query/summary/hash` endpoint provides lightweight integrity information (`SummaryInfoItem`) rather than full summary content.
+*   **Purpose**: This endpoint is designed for synchronization checks. A client can call this lightweight endpoint to see if the server has a different MD5 hash than the device, avoiding the need to download the full content unless a change is detected. It's essentially a "Sync Manifest" endpoint that allows for efficient differential updates.

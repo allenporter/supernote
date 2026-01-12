@@ -13,9 +13,11 @@ from supernote.models.summary import (
     DeleteSummaryTagDTO,
     DownloadSummaryDTO,
     DownloadSummaryVO,
+    QuerySummaryByIdVO,
     QuerySummaryDTO,
     QuerySummaryGroupDTO,
     QuerySummaryGroupVO,
+    QuerySummaryMD5HashVO,
     QuerySummaryTagVO,
     QuerySummaryVO,
     UpdateSummaryDTO,
@@ -139,4 +141,16 @@ class SummaryClient:
         dto = DownloadSummaryDTO(id=summary_id)
         return await self._client.post_json(
             "/api/file/download/summary", DownloadSummaryVO, json=dto.to_dict()
+        )
+
+    async def query_summary_hash(self, dto: QuerySummaryDTO) -> QuerySummaryMD5HashVO:
+        """Query summary lightweight info (hash/integrity)."""
+        return await self._client.post_json(
+            "/api/file/query/summary/hash", QuerySummaryMD5HashVO, json=dto.to_dict()
+        )
+
+    async def query_summary_id(self, dto: QuerySummaryDTO) -> QuerySummaryByIdVO:
+        """Query full summaries by ID."""
+        return await self._client.post_json(
+            "/api/file/query/summary/id", QuerySummaryByIdVO, json=dto.to_dict()
         )
