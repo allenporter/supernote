@@ -20,3 +20,6 @@ ORDERED_WEB_ROOT = ["Note", "Document"]
 
 # Blob Storage Buckets
 USER_DATA_BUCKET = "supernote-user-data"
+
+# Maximum upload size for file uploads
+MAX_UPLOAD_SIZE = 1024 * 1024 * 1024  # 1GB

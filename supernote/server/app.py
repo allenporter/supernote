@@ -12,6 +12,7 @@ from yarl import URL
 from supernote.models.base import create_error_response
 
 from .config import ServerConfig
+from .constants import MAX_UPLOAD_SIZE
 from .db.session import DatabaseSessionManager
 from .routes import admin, auth, file_device, file_web, oss, schedule, system
 from .services.blob import LocalBlobStorage
@@ -198,7 +199,7 @@ def create_coordination_service(
 
 
 def create_app(config: ServerConfig) -> web.Application:
-    app = web.Application()
+    app = web.Application(client_max_size=MAX_UPLOAD_SIZE)
     app["config"] = config
 
     # Initialize services
