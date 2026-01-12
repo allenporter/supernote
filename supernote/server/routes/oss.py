@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
 from aiohttp import BodyPartReader, web
 
@@ -203,36 +204,46 @@ async def handle_oss_download(request: web.Request) -> web.StreamResponse:
             status=403,
         )
 
-    file_id = request.query.get("path")
-    if not file_id:
+    file_id_str = request.query.get("path")
+    if not file_id_str:
         return web.json_response(
             create_error_response("Missing path").to_dict(), status=400
         )
 
-    # Resolve file metadata via VFS
-    info = await file_service.get_file_info_by_id(user_email, int(file_id))
-    if not info:
-        return web.json_response(
-            create_error_response("File not found").to_dict(), status=404
+    # Resolve file metadata
+    try:
+        # Try as numeric ID (legacy/sync flow)
+        id_val = int(file_id_str)
+        info = await file_service.get_file_info_by_id(user_email, id_val)
+        if not info:
+            return web.json_response(
+                create_error_response("File not found").to_dict(), status=404
+            )
+        if info.is_folder:
+            return web.json_response(
+                create_error_response("Not a file").to_dict(), status=400
+            )
+        storage_key = info.storage_key
+        if not storage_key:
+            return web.json_response(
+                create_error_response("File content not found").to_dict(), status=404
+            )
+        file_name = info.name
+        file_size = info.size
+    except ValueError:
+        # Treat as direct storage key (conversions flow)
+        storage_key = file_id_str
+        if not await file_service.blob_storage.exists(USER_DATA_BUCKET, storage_key):
+            return web.json_response(
+                create_error_response("Blob not found").to_dict(), status=404
+            )
+        metadata = await file_service.blob_storage.get_metadata(
+            USER_DATA_BUCKET, storage_key
         )
-
-    if info.is_folder:
-        return web.json_response(
-            create_error_response("Not a file").to_dict(), status=400
-        )
-
-    if not info.storage_key:
-        return web.json_response(
-            create_error_response("File content not found").to_dict(), status=404
-        )
-
-    if not await file_service.blob_storage.exists(USER_DATA_BUCKET, info.storage_key):
-        return web.json_response(
-            create_error_response("Blob not found").to_dict(), status=404
-        )
+        file_size = metadata.size
+        file_name = Path(storage_key).name
 
     # Handle Range Header
-    file_size = info.size
     range_header = request.headers.get("Range")
 
     start = 0
@@ -266,7 +277,7 @@ async def handle_oss_download(request: web.Request) -> web.StreamResponse:
     status = 206 if range_header else 200
 
     headers = {
-        "Content-Disposition": f'attachment; filename="{info.name}"',
+        "Content-Disposition": f'attachment; filename="{file_name}"',
         "Content-Length": str(content_length),
         "Accept-Ranges": "bytes",
     }
@@ -279,7 +290,7 @@ async def handle_oss_download(request: web.Request) -> web.StreamResponse:
 
     try:
         stream = file_service.blob_storage.get(
-            USER_DATA_BUCKET, info.storage_key, start=start, end=end
+            USER_DATA_BUCKET, storage_key, start=start, end=end
         )
         async for chunk in stream:
             await response.write(chunk)

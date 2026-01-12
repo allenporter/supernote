@@ -27,6 +27,8 @@ from reportlab.pdfgen import canvas
 
 from . import color, exceptions, fileformat, utils
 from . import decoder as Decoder
+from .color import ColorPalette
+from .fileformat import Notebook
 
 
 class VisibilityOverlay(Enum):
@@ -383,18 +385,36 @@ class SvgConverter:
 
 
 class PdfConverter:
-    def __init__(self, notebook, palette=None):
+    class ImgPageRenderer:
+        def __init__(self, img: Image.Image, pagesize):
+            self.img = img
+            self.pagesize = pagesize
+
+        def get_scale(self):
+            (w, h) = self.pagesize
+            return (w / self.img.width, h / self.img.height)
+
+        def draw(self, cvs):
+            (w, h) = self.pagesize
+            cvs.drawInlineImage(self.img, 0, 0, width=w, height=h)
+
+    def __init__(self, notebook: Notebook, palette: ColorPalette | None = None) -> None:
         self.note = notebook
         self.palette = palette
         self.pagesize = A4
 
-    def convert(self, page_number, enable_link=False, enable_keyword=False):
-        """Returns PDF data of the given page.
+    def convert(
+        self,
+        page_indices: int | list[int],
+        enable_link: bool = False,
+        enable_keyword: bool = False,
+    ) -> bytes:
+        """Returns PDF data of the given page(s).
 
         Parameters
         ----------
-        page_number : int
-            page number to convert
+        page_indices : int | list[int]
+            page number to convert, -1 for all, or a list of page numbers
         enable_link : bool
             enable page links and web links
         enable_keyword : bool
@@ -407,29 +427,40 @@ class PdfConverter:
         """
         converter = ImageConverter(self.note, self.palette)
         renderer_class = PdfConverter.ImgPageRenderer
-        imglist = self._create_image_list(converter, page_number)
+        imglist = self._create_image_list(converter, page_indices)
         pdf_data = BytesIO()
         self._create_pdf(pdf_data, imglist, renderer_class, enable_link, enable_keyword)
         return pdf_data.getvalue()
 
-    def _create_image_list(self, converter, page_number):
+    def _create_image_list(
+        self, converter: ImageConverter, page_indices: int | list[int]
+    ) -> list[tuple[int, Image]]:
         imglist = []
-        if page_number < 0:
-            # convert all pages
-            total = self.note.get_total_pages()
-            for i in range(total):
-                img = converter.convert(i)
-                imglist.append(img)
+        if isinstance(page_indices, int):
+            if page_indices < 0:
+                indices = list(range(self.note.get_total_pages()))
+            else:
+                indices = [page_indices]
         else:
-            img = converter.convert(page_number)
-            imglist.append(img)
+            indices = page_indices
+
+        for i in indices:
+            img = converter.convert(i)
+            imglist.append((i, img))
         return imglist
 
-    def _create_pdf(self, buf, imglist, renderer_class, enable_link, enable_keyword):
+    def _create_pdf(
+        self,
+        buf: BytesIO,
+        imglist: list[tuple[int, Image]],
+        renderer_class: type[ImgPageRenderer],
+        enable_link: bool,
+        enable_keyword: bool,
+    ) -> None:
         c = canvas.Canvas(buf, pagesize=self.pagesize)
         keywords = self.note.get_keywords()
-        for n, img in enumerate(imglist):
-            page = self.note.get_page(n)
+        for page_idx, img in imglist:
+            page = self.note.get_page(page_idx)
             pageid = page.get_pageid()
             horizontal = (
                 page.get_orientation() == fileformat.Page.ORIENTATION_HORIZONTAL
@@ -443,7 +474,7 @@ class PdfConverter:
             if enable_keyword:
                 found = []
                 for keyword in keywords:
-                    if keyword.get_page_number() == n:
+                    if keyword.get_page_number() == page_idx:
                         found.append(keyword)
                 for i in found:
                     try:
@@ -458,7 +489,7 @@ class PdfConverter:
                 pageid = page.get_pageid()
                 if pageid is not None:
                     c.bookmarkPage(pageid)
-                    self._add_links(c, n, renderer.get_scale())
+                    self._add_links(c, page_idx, renderer.get_scale())
             c.showPage()
         c.save()
 
@@ -492,19 +523,6 @@ class PdfConverter:
             right * scale_x,
             h - bottom * scale_y,
         )
-
-    class ImgPageRenderer:
-        def __init__(self, img: Image.Image, pagesize):
-            self.img = img
-            self.pagesize = pagesize
-
-        def get_scale(self):
-            (w, h) = self.pagesize
-            return (w / self.img.width, h / self.img.height)
-
-        def draw(self, cvs):
-            (w, h) = self.pagesize
-            cvs.drawInlineImage(self.img, 0, 0, width=w, height=h)
 
 
 class TextConverter:
