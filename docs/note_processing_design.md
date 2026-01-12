@@ -1,55 +1,80 @@
-# Design Brainstorming: Asynchronous Note Processing
+# Design: Asynchronous Note Processing
 
-This document outlines the design space and considerations for evolving the Supernote Lite server to support multi-stage processing of `.note` files, including PDF/PNG conversion, OCR (via Gemini), and semantic embeddings.
+This document outlines the architecture for evolving the Supernote Lite server into an intelligent knowledge base. It focuses on asynchronous, multi-stage processing of `.note` files.
 
-## Objectives
-- Support high-latency operations (OCR, Embeddings) without blocking user interactions.
-- Ensure content is readily available for search and viewing.
-- Optimize for cost (Gemini API usage) and resource utilization.
+## 1. Core Principles
+- **Incremental & Page-Atomic**: The **Page** is the unit of processing. Only modified pages trigger expensive operations (OCR, Chunk Embeddings).
+- **Hierarchical Knowledge**: Intelligence is captured at two levels: **Chunks** (individual pages) for granular search, and **Documents** (whole files) for summaries and global classification.
+- **Asynchronous & Event-Driven**: Processing is triggered by events post-sync (`NoteUpdatedEvent`) and runs in the background using `asyncio`. Sync is never blocked.
+- **Operation-Level Status Tracking**: Every stage (PNG, PDF, OCR, Embeddings) is tracked independently. The user can access the "Visual" content (PDF) immediately or while intelligence tasks (OCR) are still running or retrying with exponential backoff.
+- **Personal-Scale Concurrency**: Optimized for household use (1-2 users). Uses an internal `asyncio.Queue` with limited concurrency to prevents resource exhaustion.
+- **Privacy & Isolation**: OCR text and embeddings are stored and indexed strictly **per-user**.
+- **Lifecycle Management**: Associated artifacts are purged when the source file is deleted.
 
-## 1. Triggering Mechanism
-- **Hook on Upload/Update**: Trigger the pipeline immediately after `upload_finish`.
-    - *Pros*: Data is always ready; ideal for "Instant Search" UX.
-    - *Cons*: High resource floor; processes potentially unused files.
-- **On-Demand with Persistence (Lazy)**: Trigger on first request (e.g., first semi-semantic search or first PDF view).
-    - *Pros*: Cost-effective; only processes active files.
-    - *Cons*: High latency for the "first" request.
+4.  **Resilience & Recovery**: Intelligent tasks (OCR, Embeddings) include persistent state in the database. On server startup, the `ProcessorService` scans the `NotePageStatus` table for unfinished tasks and re-enqueues them.
 
-## 2. Processing Pipeline Orchestration
-Operations should be handled by an asynchronous task worker.
+## 3. Data Schema (Proposed)
 
-```mermaid
-graph LR
-    A[File Uploaded] --> B[PNG Generation]
-    B --> C[PDF Merging]
-    B --> D[Gemini OCR]
-    D --> E[Vector Embeddings]
-    E --> F[Knowledge Base Ready]
-```
+### `NotePageStatus` (Table)
+Tracks the status of individual operations per page.
+- `file_id`: Reference to the user file.
+- `page_index`: Integer.
+- `content_hash`: Hash of the page's raw stroke data to detect changes.
+- `png_status`: `DONE`, `FAILED`, `PENDING`.
+- `ocr_status`: `DONE`, `FAILED`, `PENDING`.
+- `embed_status`: `DONE`, `FAILED`, `PENDING`.
+- `retry_count`: State for exponential backoff on intelligent tasks.
 
-### Pipeline Stages:
-1.  **Visual Extraction**: Convert notebook pages to PNG. (Dependency for OCR).
-2.  **Document Assembly**: Merge PNGs into a standard PDF.
-3.  **Intelligence Layer**:
-    - Send PNGs to Gemini for high-fidelity OCR (handling handwriting).
-    - Extract text and layout information.
-4.  **Semantic Layer**:
-    - Generate embeddings from OCR text using a model like `text-embedding-004`.
-    - Store in a Vector Database.
+### `NoteKnowledge` (Table - Chunks)
+Stores per-page intelligence.
+- `file_id`: Reference.
+- `page_index`: Integer.
+- `ocr_text`: Raw extracted text.
+- `chunk_embedding`: (Reference/Index) for granular search.
 
-## 3. Data Persistence
-- **Artifacts (PNG/PDF)**: Continue using Blob Storage with a deterministic path: `processed/{file_id}/{md5}/...`.
-- **Structured Metadata (OCR Text)**:
-    - Primary: Store in a `FileKnowledge` table in the database for keyword search.
-    - Secondary: Full JSON extraction in Blob Storage.
-- **Vectors**: Use a Vector Store (e.g., pgvector, Chroma) for semantic retrieval.
+### `NoteDocumentKnowledge` (Table - Documents)
+Stores whole-note intelligence.
+- `file_id`: Reference.
+- `summary_content`: Structured JSON (Overview, Actions, etc.).
+- **Chunk Embeddings (Page-indexed)**: Generated per-page from raw OCR text. These are high-resolution vectors used for "finding the needle in the haystack."
+- **Document Embeddings (File-indexed)**: Generated from the **LLM-generated summary** (to capture synthesis) or the aggregated OCR text (if summary is pending). Used for broad topic-level retrieval.
+- `last_processed_hash`: Combined hash of all pages.
+- `status`: `PENDING`, `DONE`, `FAILED` (for the document-level phase).
 
-## 4. Cache Invalidation & Consistency
-- **MD5 Tracking**: Use the file's MD5 as the version key. If a file is updated on the device and synced, the mismatch triggers a re-process.
-- **Incremental Logic**: If the file format allows, identify added/modified pages to avoid re-running Gemini OCR on unchanged pages.
+## 4. Pipeline Logic
+1.  **Diff Phase**: Parser extracts page streams. Each stream is hashed and compared to the database.
+2.  **Visual Phase**: Generate PNGs for new/changed pages. Assemble full PDF using cached PNGs for unchanged pages.
+3.  **Intelligence Phase**: 
+    - Send PNG to Gemini (with retry/backoff) for OCR. 
+    - **Chunk Embeddings (Page-indexed)**: Generated per-page from raw OCR text. Ideal for "finding the needle in the haystack."
+4.  **Document Phase**: 
+    - Once all pages reach `DONE`, aggregate text to generate a **Whole File Summary**.
+    - **Document Embeddings (File-indexed)**: Generated from the **LLM-generated summary**. This ensures the embedding captures the high-level intent and synthesis rather than just a bag of words.
 
-## 5. Future "Knowledge API" Surface
-- `GET /api/knowledge/{file_id}/search?q=...`: Semantic search within a specific notebook.
-- `GET /api/knowledge/global-search?q=...`: Search across all user notes.
-- `GET /api/knowledge/{file_id}/summary`: LLM-generated summary of the notebook content.
-- `GET /api/knowledge/{file_id}/status`: Current processing state (`PENDING`, `OCR_COMPLETE`, `FAILED`, etc.).
+## 5. Intelligence API Surface
+
+The API distinguishes between finding *where* something was said and *which* note is about a topic.
+
+- **Semantic Search (Chunks)**: `GET /api/knowledge/search/chunks?q=...`
+    - **Purpose**: "Find exactly where I wrote about X."
+    - **Internals**: Queries the page-level vector index.
+    - **Output**: Ranked list of page snippets and deep-links.
+- **Semantic Search (Documents)**: `GET /api/knowledge/search/documents?q=...`
+    - **Purpose**: "Which of my notebooks are about topic Y?"
+    - **Internals**: Queries the document-level vector index (1 vector per file).
+    - **Output**: Ranked list of notebooks with high-level summaries.
+    - **Optimization**: Global searches use the Document index first for speed, then can drill down into Chunks within selected documents.
+- **Document Summary**: `GET /api/file/{id}/summary`
+    - Returns the structured overview (Topics, Action Items, Actions).
+- **Processing Status**: `GET /api/knowledge/status/{file_id}`
+    - Provides a granular view of processing progress per page.
+
+## 6. Cleanup
+- On file deletion, `NoteDeletedEvent` triggers a purge of:
+    - Blob storage artifacts (PNG/PDF).
+    - Database entries (OCR text, status).
+    - **Vectors**: Stored as per-user `(id, vector)` pairs in the database or sidecar files. Given the small scale (1-2 users), search is performed via **exhaustive in-memory vector comparison** (e.g., NumPy cosine similarity) to avoid heavy external dependencies.
+
+## 7. Ongoing Research
+1.  **Stable Page Hashing**: Determining the most reliable way to calculate the hash of a page's stroke data from the `.note` parser.
+2.  **Summary Specification**: Revisit the specific schema and implementation for the hierarchical summary after the initial design has been fleshed out.
