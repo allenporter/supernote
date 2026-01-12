@@ -44,10 +44,10 @@ Stores whole-note intelligence.
 ## 4. Pipeline Logic
 1.  **Diff Phase**: Parser extracts page streams. Each stream is hashed and compared to the database.
 2.  **Visual Phase**: Generate PNGs for new/changed pages. Assemble full PDF using cached PNGs for unchanged pages.
-3.  **Intelligence Phase**: 
-    - Send PNG to Gemini (with retry/backoff) for OCR. 
+3.  **Intelligence Phase**:
+    - Send PNG to Gemini (with retry/backoff) for OCR.
     - **Chunk Embeddings (Page-indexed)**: Generated per-page from raw OCR text. Ideal for "finding the needle in the haystack."
-4.  **Document Phase**: 
+4.  **Document Phase**:
     - Once all pages reach `DONE`, aggregate text to generate a **Whole File Summary**.
     - **Document Embeddings (File-indexed)**: Generated from the **LLM-generated summary**. This ensures the embedding captures the high-level intent and synthesis rather than just a bag of words.
 

@@ -2,6 +2,7 @@ import pytest
 
 from supernote.client.client import Client
 from supernote.client.summary import SummaryClient
+from supernote.models.summary import AddSummaryDTO, UpdateSummaryDTO
 
 
 @pytest.fixture
@@ -43,3 +44,50 @@ async def test_summary_tags_crud(summary_client: SummaryClient) -> None:
     # 7. Verify deletion
     response = await summary_client.query_tags()
     assert len(response.summary_tag_do_list) == 0
+
+
+async def test_summary_crud(summary_client: SummaryClient) -> None:
+    # 1. Add a summary
+    add_dto = AddSummaryDTO(
+        content="This is a test summary",
+        data_source="TEST",
+        tags="test,summary",
+        metadata='{"key": "value"}',
+    )
+    add_response = await summary_client.add_summary(add_dto)
+    assert add_response.success
+    summary_id = add_response.id
+    assert summary_id is not None
+
+    # 2. Query the summary
+    query_response = await summary_client.query_summaries(ids=[summary_id])
+    assert query_response.success
+    assert len(query_response.summary_do_list) == 1
+    summary = query_response.summary_do_list[0]
+    assert summary.content == "This is a test summary"
+    assert summary.data_source == "TEST"
+    assert summary.tags == "test,summary"
+    assert summary.metadata == '{"key": "value"}'
+
+    # 3. Update the summary
+    update_dto = UpdateSummaryDTO(
+        id=summary_id,
+        content="Updated test summary",
+        tags="updated",
+    )
+    update_response = await summary_client.update_summary(update_dto)
+    assert update_response.success
+
+    # 4. Verify update
+    query_response = await summary_client.query_summaries(ids=[summary_id])
+    summary = query_response.summary_do_list[0]
+    assert summary.content == "Updated test summary"
+    assert summary.tags == "updated"
+
+    # 5. Delete the summary
+    delete_response = await summary_client.delete_summary(summary_id)
+    assert delete_response.success
+
+    # 6. Verify deletion
+    query_response = await summary_client.query_summaries(ids=[summary_id])
+    assert len(query_response.summary_do_list) == 0
