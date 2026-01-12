@@ -86,6 +86,7 @@ class FileUploadApplyLocalVO(BaseResponse):
         metadata=field_options(alias="xAmzDate"), default=None
     )
     authorization: str | None = None
+    """The signature for the upload request which should be passed in the x-access-token header."""
     full_upload_url: str | None = field(
         metadata=field_options(alias="fullUploadUrl"), default=None
     )
