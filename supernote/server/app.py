@@ -14,11 +14,12 @@ from supernote.models.base import create_error_response
 from .config import ServerConfig
 from .constants import MAX_UPLOAD_SIZE
 from .db.session import DatabaseSessionManager
-from .routes import admin, auth, file_device, file_web, oss, schedule, system
+from .routes import admin, auth, file_device, file_web, oss, schedule, summary, system
 from .services.blob import LocalBlobStorage
 from .services.coordination import SqliteCoordinationService
 from .services.file import FileService
 from .services.schedule import ScheduleService
+from .services.summary import SummaryService
 from .services.user import UserService
 from .utils.rate_limit import RateLimiter
 from .utils.url_signer import UrlSigner
@@ -222,6 +223,7 @@ def create_app(config: ServerConfig) -> web.Application:
     app["file_service"] = file_service
     app["url_signer"] = UrlSigner(config.auth.secret_key, coordination_service)
     app["schedule_service"] = ScheduleService(session_manager)
+    app["summary_service"] = SummaryService(user_service, session_manager)
     app["sync_locks"] = {}  # user -> (equipment_no, expiry_time)
     app["rate_limiter"] = RateLimiter(coordination_service)
 
@@ -233,6 +235,7 @@ def create_app(config: ServerConfig) -> web.Application:
     app.add_routes(file_device.routes)
     app.add_routes(oss.routes)
     app.add_routes(schedule.routes)
+    app.add_routes(summary.routes)
 
     async def on_startup_handler(app: web.Application) -> None:
         # Configure proxy middleware based on config

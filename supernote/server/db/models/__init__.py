@@ -1,6 +1,6 @@
 """Module for database models."""
 
-from . import device, file, kv, login_record, schedule, user  # noqa: F401
+from . import device, file, kv, login_record, schedule, summary, user  # noqa: F401
 
 __all__ = [
     "device",
@@ -8,5 +8,6 @@ __all__ = [
     "kv",
     "login_record",
     "schedule",
+    "summary",
     "user",
 ]
