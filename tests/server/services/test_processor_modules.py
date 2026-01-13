@@ -32,6 +32,7 @@ async def test_explicit_orchestration_flow(
 ) -> None:
     # 1. Setup - Create Mocks explicitly
     hashing = MagicMock(spec=PageHashingModule)
+
     hashing.run_if_needed = AsyncMock(return_value=True)
     hashing.process = AsyncMock()
 
