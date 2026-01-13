@@ -13,7 +13,7 @@ class GeminiOcrModule(ProcessorModule):
     def task_type(self) -> str:
         return "OCR_EXTRACTION"
 
-    async def should_process(
+    async def run_if_needed(
         self,
         file_id: int,
         session_manager: DatabaseSessionManager,

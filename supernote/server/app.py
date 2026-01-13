@@ -245,11 +245,13 @@ def create_app(config: ServerConfig) -> web.Application:
     app["processor_service"] = processor_service
 
     # Register modules
-    processor_service.register_module(PageHashingModule())
-    processor_service.register_module(PngConversionModule())
-    processor_service.register_module(GeminiOcrModule())
-    processor_service.register_module(GeminiEmbeddingModule())
-    processor_service.register_module(SummaryModule())
+    processor_service.register_modules(
+        hashing=PageHashingModule(),
+        png=PngConversionModule(),
+        ocr=GeminiOcrModule(),
+        embedding=GeminiEmbeddingModule(),
+        summary=SummaryModule(),
+    )
 
     # Register routes
     app.add_routes(system.routes)

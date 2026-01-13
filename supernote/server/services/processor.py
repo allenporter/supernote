@@ -8,7 +8,11 @@ from ..db.models.note_processing import NotePageContentDO
 from ..db.session import DatabaseSessionManager
 from ..events import Event, LocalEventBus, NoteDeletedEvent, NoteUpdatedEvent
 from ..services.file import FileService
-from ..services.processor_modules import ProcessorModule
+from ..services.processor_modules.gemini_embedding import GeminiEmbeddingModule
+from ..services.processor_modules.gemini_ocr import GeminiOcrModule
+from ..services.processor_modules.page_hashing import PageHashingModule
+from ..services.processor_modules.png_conversion import PngConversionModule
+from ..services.processor_modules.summary import SummaryModule
 from ..services.summary import SummaryService
 
 logger = logging.getLogger(__name__)
@@ -42,12 +46,29 @@ class ProcessorService:
         self.processing_files: Set[int] = set()
         self.workers: list[asyncio.Task] = []
         self._shutdown_event = asyncio.Event()
-        self.modules: list[ProcessorModule] = []
 
-    def register_module(self, module: ProcessorModule) -> None:
-        """Register a processing module."""
-        self.modules.append(module)
-        logger.info(f"Registered processor module: {module.name}")
+        # Explicit modules
+        self.hashing_module: PageHashingModule | None = None
+        self.png_module: PngConversionModule | None = None
+        self.ocr_module: GeminiOcrModule | None = None
+        self.embedding_module: GeminiEmbeddingModule | None = None
+        self.summary_module: SummaryModule | None = None
+
+    def register_modules(
+        self,
+        hashing: PageHashingModule,
+        png: PngConversionModule,
+        ocr: GeminiOcrModule,
+        embedding: GeminiEmbeddingModule,
+        summary: SummaryModule,
+    ) -> None:
+        """Register processing modules."""
+        self.hashing_module = hashing
+        self.png_module = png
+        self.ocr_module = ocr
+        self.embedding_module = embedding
+        self.summary_module = summary
+        logger.info("Registered all processor modules.")
 
     async def start(self) -> None:
         """Start the processor service workers and subscriptions."""
@@ -122,24 +143,25 @@ class ProcessorService:
         """Orchestrate the processing pipeline for a single file."""
         logger.info(f"Processing file {file_id}...")
 
-        # 1. Run Global Modules (e.g., PageHashing)
-        for module in self.modules:
-            try:
-                if await module.should_process(
-                    file_id, self.session_manager, page_index=None
-                ):
-                    logger.info(
-                        f"Running global module {module.name} for file {file_id}"
-                    )
-                    await module.process(file_id, self.session_manager, page_index=None)
-            except Exception as e:
-                logger.error(
-                    f"Global module {module.name} failed for file {file_id}: {e}",
-                    exc_info=True,
-                )
+        if not all(
+            [
+                self.hashing_module,
+                self.png_module,
+                self.ocr_module,
+                self.embedding_module,
+                self.summary_module,
+            ]
+        ):
+            logger.error("Modules not fully registered. Skipping processing.")
+            return
+
+        # 1. Hashing (Global)
+        # Detect changes. If no changes, return early?
+        # For now, hashing just updates the DB state.
+        if await self.hashing_module.run_if_needed(file_id, self.session_manager):  # type: ignore
+            await self.hashing_module.process(file_id, self.session_manager)  # type: ignore
 
         # 2. Identify Pages
-        # Query NotePageContentDO to see what pages exist (populated by HashingModule)
         async with self.session_manager.session() as session:
             stmt = (
                 select(NotePageContentDO.page_index)
@@ -152,23 +174,32 @@ class ProcessorService:
         if not page_indices:
             logger.info(f"No pages found for file {file_id}. Skipping page tasks.")
 
-        # 3. Run Page-Level Modules
+        # 3. Per-Page Pipeline (Explicit Order)
         for page_index in page_indices:
-            for module in self.modules:
-                try:
-                    if await module.should_process(
-                        file_id, self.session_manager, page_index=page_index
-                    ):
-                        logger.info(
-                            f"Running module {module.name} for file {file_id} page {page_index}"
-                        )
-                        await module.process(
-                            file_id,
-                            self.session_manager,
-                            page_index=page_index,
-                        )
-                except Exception as e:
-                    logger.error(
-                        f"Module {module.name} failed for file {file_id} page {page_index}: {e}",
-                        exc_info=True,
-                    )
+            # PNG acts as a gate for OCR
+            if await self.png_module.run_if_needed(  # type: ignore
+                file_id, self.session_manager, page_index=page_index
+            ):
+                await self.png_module.process(  # type: ignore
+                    file_id, self.session_manager, page_index=page_index
+                )
+
+            # OCR acts as a gate for Embedding
+            if await self.ocr_module.run_if_needed(  # type: ignore
+                file_id, self.session_manager, page_index=page_index
+            ):
+                await self.ocr_module.process(  # type: ignore
+                    file_id, self.session_manager, page_index=page_index
+                )
+
+            # Embedding
+            if await self.embedding_module.run_if_needed(  # type: ignore
+                file_id, self.session_manager, page_index=page_index
+            ):
+                await self.embedding_module.process(  # type: ignore
+                    file_id, self.session_manager, page_index=page_index
+                )
+
+        # 4. Summary (Global)
+        if await self.summary_module.run_if_needed(file_id, self.session_manager):  # type: ignore
+            await self.summary_module.process(file_id, self.session_manager)  # type: ignore
