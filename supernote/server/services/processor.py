@@ -2,9 +2,13 @@ import asyncio
 import logging
 from typing import Set
 
+from sqlalchemy import select
+
+from ..db.models.note_processing import NotePageContentDO
 from ..db.session import DatabaseSessionManager
 from ..events import Event, LocalEventBus, NoteDeletedEvent, NoteUpdatedEvent
 from ..services.file import FileService
+from ..services.processor_modules import ProcessorModule
 from ..services.summary import SummaryService
 
 logger = logging.getLogger(__name__)
@@ -38,6 +42,12 @@ class ProcessorService:
         self.processing_files: Set[int] = set()
         self.workers: list[asyncio.Task] = []
         self._shutdown_event = asyncio.Event()
+        self.modules: list[ProcessorModule] = []
+
+    def register_module(self, module: ProcessorModule) -> None:
+        """Register a processing module."""
+        self.modules.append(module)
+        logger.info(f"Registered processor module: {module.name}")
 
     async def start(self) -> None:
         """Start the processor service workers and subscriptions."""
@@ -86,7 +96,7 @@ class ProcessorService:
     async def recover_tasks(self) -> None:
         """Check DB for incomplete tasks on startup."""
         logger.info("Recovering pending processing tasks...")
-        # TODO: Query NotePageStatus for incomplete items
+        # TODO: Query SystemTaskDO for incomplete items
         # and re-enqueue associated file_ids
         pass
 
@@ -112,15 +122,53 @@ class ProcessorService:
         """Orchestrate the processing pipeline for a single file."""
         logger.info(f"Processing file {file_id}...")
 
-        # 1. Parse .note file and extract page hashes
-        # 2. Diff against NotePageStatus to find changed/new pages
-        # 3. For each changed page:
-        #    a. Generate PNG
-        #    b. OCR (Gemini)
-        #    c. Generate Chunk Embedding
-        # 4. If any page changed or Summary missing:
-        #    a. Generate Full Transcript
-        #    b. Generate Insight Summary (with Tags/Dates)
-        #    c. Generate Document Embedding
+        # 1. Run Global Modules (e.g., PageHashing)
+        for module in self.modules:
+            try:
+                if await module.should_process(
+                    file_id, self.session_manager, page_index=None
+                ):
+                    logger.info(
+                        f"Running global module {module.name} for file {file_id}"
+                    )
+                    await module.process(file_id, self.session_manager, page_index=None)
+            except Exception as e:
+                logger.error(
+                    f"Global module {module.name} failed for file {file_id}: {e}",
+                    exc_info=True,
+                )
 
-        pass
+        # 2. Identify Pages
+        # Query NotePageContentDO to see what pages exist (populated by HashingModule)
+        async with self.session_manager.session() as session:
+            stmt = (
+                select(NotePageContentDO.page_index)
+                .where(NotePageContentDO.file_id == file_id)
+                .order_by(NotePageContentDO.page_index)
+            )
+            result = await session.execute(stmt)
+            page_indices = result.scalars().all()
+
+        if not page_indices:
+            logger.info(f"No pages found for file {file_id}. Skipping page tasks.")
+
+        # 3. Run Page-Level Modules
+        for page_index in page_indices:
+            for module in self.modules:
+                try:
+                    if await module.should_process(
+                        file_id, self.session_manager, page_index=page_index
+                    ):
+                        logger.info(
+                            f"Running module {module.name} for file {file_id} page {page_index}"
+                        )
+                        await module.process(
+                            file_id,
+                            self.session_manager,
+                            page_index=page_index,
+                        )
+                except Exception as e:
+                    logger.error(
+                        f"Module {module.name} failed for file {file_id} page {page_index}: {e}",
+                        exc_info=True,
+                    )
