@@ -20,6 +20,11 @@ from .services.blob import LocalBlobStorage
 from .services.coordination import SqliteCoordinationService
 from .services.file import FileService
 from .services.processor import ProcessorService
+from .services.processor_modules.gemini_embedding import GeminiEmbeddingModule
+from .services.processor_modules.gemini_ocr import GeminiOcrModule
+from .services.processor_modules.page_hashing import PageHashingModule
+from .services.processor_modules.png_conversion import PngConversionModule
+from .services.processor_modules.summary import SummaryModule
 from .services.schedule import ScheduleService
 from .services.summary import SummaryService
 from .services.user import UserService
@@ -238,6 +243,13 @@ def create_app(config: ServerConfig) -> web.Application:
         event_bus, session_manager, file_service, summary_service
     )
     app["processor_service"] = processor_service
+
+    # Register modules
+    processor_service.register_module(PageHashingModule())
+    processor_service.register_module(PngConversionModule())
+    processor_service.register_module(GeminiOcrModule())
+    processor_service.register_module(GeminiEmbeddingModule())
+    processor_service.register_module(SummaryModule())
 
     # Register routes
     app.add_routes(system.routes)
