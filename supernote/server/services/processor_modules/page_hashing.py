@@ -153,6 +153,23 @@ class PageHashingModule(ProcessorModule):
                         existing_content.text_content = None  # Clear OCR
                         existing_content.embedding = None  # Clear Embedding
                         # We do NOT delete the row, just clear validity.
+
+                        # Invalidate downstream tasks to force re-processing
+                        page_task_key = f"page_{i}"
+                        await session.execute(
+                            delete(SystemTaskDO)
+                            .where(SystemTaskDO.file_id == file_id)
+                            .where(
+                                SystemTaskDO.task_type.in_(
+                                    [
+                                        "PNG_CONVERSION",
+                                        "OCR_EXTRACTION",
+                                        "EMBEDDING_GENERATION",
+                                    ]
+                                )
+                            )
+                            .where(SystemTaskDO.key == page_task_key)
+                        )
                 else:
                     logger.info(f"New page {i} for file {file_id} detected.")
                     new_content = NotePageContentDO(
