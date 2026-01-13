@@ -246,7 +246,7 @@ def create_app(config: ServerConfig) -> web.Application:
 
     # Register modules
     processor_service.register_modules(
-        hashing=PageHashingModule(),
+        hashing=PageHashingModule(file_service=file_service),
         png=PngConversionModule(),
         ocr=GeminiOcrModule(),
         embedding=GeminiEmbeddingModule(),

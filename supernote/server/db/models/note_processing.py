@@ -22,6 +22,9 @@ class NotePageContentDO(Base):
     page_index: Mapped[int] = mapped_column(BigInteger, nullable=False)
     """The 0-based index of the page in the note."""
 
+    content_hash: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    """MD5 hash of the page content (e.g. layers) to detect changes."""
+
     text_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     """The extracted OCR text for this page."""
 
