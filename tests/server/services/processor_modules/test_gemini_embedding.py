@@ -1,18 +1,18 @@
+import json
 from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy import select
 
 from supernote.server.config import ServerConfig
-from supernote.server.constants import CACHE_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.services.gemini import GeminiService
-from supernote.server.services.processor_modules.gemini_ocr import GeminiOcrModule
-from supernote.server.utils.paths import get_page_png_path
+from supernote.server.services.processor_modules.gemini_embedding import (
+    GeminiEmbeddingModule,
+)
 
 
 @pytest.fixture
@@ -23,12 +23,12 @@ def mock_gemini_service() -> MagicMock:
 
 
 @pytest.fixture
-def gemini_ocr_module(
+def gemini_embedding_module(
     file_service: FileService,
     server_config_gemini: ServerConfig,
     mock_gemini_service: MagicMock,
-) -> GeminiOcrModule:
-    return GeminiOcrModule(
+) -> GeminiEmbeddingModule:
+    return GeminiEmbeddingModule(
         file_service=file_service,
         config=server_config_gemini,
         gemini_service=mock_gemini_service,
@@ -36,10 +36,9 @@ def gemini_ocr_module(
 
 
 @pytest.mark.asyncio
-async def test_process_ocr_success(
-    gemini_ocr_module: GeminiOcrModule,
+async def test_process_embedding_success(
+    gemini_embedding_module: GeminiEmbeddingModule,
     session_manager: DatabaseSessionManager,
-    blob_storage: BlobStorage,
     mock_gemini_service: MagicMock,
 ) -> None:
     # 1. Setup Data
@@ -47,11 +46,6 @@ async def test_process_ocr_success(
     file_id = 999
     page_index = 0
     storage_key = "test_note_storage_key"
-
-    # Create dummy PNG
-    png_content = b"fake-png-data"
-    png_path = get_page_png_path(file_id, page_index)
-    await blob_storage.put(CACHE_BUCKET, png_path, png_content)
 
     async with session_manager.session() as session:
         # UserFile
@@ -64,35 +58,35 @@ async def test_process_ocr_success(
         )
         session.add(user_file)
 
-        # NotePageContent (Pre-existing from hashing)
+        # NotePageContent (Pre-existing from OCR)
         content = NotePageContentDO(
-            file_id=file_id, page_index=page_index, content_hash="somehash"
+            file_id=file_id,
+            page_index=page_index,
+            content_hash="somehash",
+            text_content="This is the text to embed.",
         )
         session.add(content)
         await session.commit()
 
     # 2. Mock Gemini API Response
     mock_response = MagicMock()
-    mock_response.text = "Handwritten text content"
-    mock_gemini_service.generate_content.return_value = mock_response
+    mock_embedding = MagicMock()
+    mock_embedding.values = [0.1, 0.2, 0.3]
+    mock_response.embeddings = [mock_embedding]
+    mock_gemini_service.embed_content.return_value = mock_response
 
     # 3. Run Process
-    await gemini_ocr_module.process(file_id, session_manager, page_index=page_index)
+    await gemini_embedding_module.process(
+        file_id, session_manager, page_index=page_index
+    )
 
     # 4. Verifications
     # Verify API Call
-    call_args = mock_gemini_service.generate_content.call_args
+    call_args = mock_gemini_service.embed_content.call_args
     assert call_args is not None
     _, kwargs = call_args
-    assert kwargs["model"] == "gemini-2.0-flash-exp"
-
-    content_obj = kwargs["contents"][0]
-    parts = content_obj.parts
-    assert len(parts) == 2
-    assert parts[0].text.startswith("Transcribe")
-    assert parts[1].inline_data.data == png_content
-    # Verify config passed
-    assert kwargs["config"] == {"media_resolution": "media_resolution_high"}
+    assert kwargs["model"] == "text-embedding-004"
+    assert kwargs["contents"] == "This is the text to embed."
 
     # 5. Verify DB Updates
     async with session_manager.session() as session:
@@ -110,7 +104,9 @@ async def test_process_ocr_success(
         )
 
         assert updated_content is not None
-        assert updated_content.text_content == "Handwritten text content"
+        assert updated_content.embedding is not None
+        embedding_list = json.loads(updated_content.embedding)
+        assert embedding_list == [0.1, 0.2, 0.3]
 
         # Check Task Status
         task = (
@@ -118,7 +114,7 @@ async def test_process_ocr_success(
                 await session.execute(
                     select(SystemTaskDO)
                     .where(SystemTaskDO.file_id == file_id)
-                    .where(SystemTaskDO.task_type == "OCR_EXTRACTION")
+                    .where(SystemTaskDO.task_type == "EMBEDDING_GENERATION")
                     .where(SystemTaskDO.key == f"page_{page_index}")
                 )
             )

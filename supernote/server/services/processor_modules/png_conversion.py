@@ -1,7 +1,6 @@
 import asyncio
 import io
 import logging
-import time
 from functools import partial
 from typing import Optional
 
@@ -11,11 +10,11 @@ from supernote.notebook.converter import ImageConverter
 from supernote.notebook.parser import load_notebook
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.utils.paths import get_page_png_path
+from supernote.server.utils.tasks import get_task, update_task_status
 
 logger = logging.getLogger(__name__)
 
@@ -56,23 +55,12 @@ class PngConversionModule(ProcessorModule):
             return False
 
         task_key = f"page_{page_index}"
-        async with session_manager.session() as session:
-            task = (
-                (
-                    await session.execute(
-                        select(SystemTaskDO)
-                        .where(SystemTaskDO.file_id == file_id)
-                        .where(SystemTaskDO.task_type == self.task_type)
-                        .where(SystemTaskDO.key == task_key)
-                    )
-                )
-                .scalars()
-                .first()
-            )
-            if task and task.status == "COMPLETED":
-                # Check if file exists in blob storage?
-                # Optimization: Trust DB for now, or check blob existence if robust.
-                return False
+        task = await get_task(session_manager, file_id, self.task_type, task_key)
+
+        if task and task.status == "COMPLETED":
+            # Check if file exists in blob storage?
+            # Optimization: Trust DB for now, or check blob existence if robust.
+            return False
 
         return True
 
@@ -92,6 +80,7 @@ class PngConversionModule(ProcessorModule):
             )
             return
 
+        task_key = f"page_{page_index}"
         logger.info(f"Starting {self.name} for file {file_id} page {page_index}")
 
         # 1. Resolve file path (Logic shared with PageHashingModule - TODO: refactor to common util)
@@ -125,8 +114,8 @@ class PngConversionModule(ProcessorModule):
             )
         except Exception as e:
             logger.error(f"Failed to convert page {page_index} of {file_id}: {e}")
-            await self._update_task_status(
-                session_manager, file_id, page_index, "FAILED", str(e)
+            await update_task_status(
+                session_manager, file_id, self.task_type, task_key, "FAILED", str(e)
             )
             return
 
@@ -137,52 +126,18 @@ class PngConversionModule(ProcessorModule):
             await self.file_service.blob_storage.put(CACHE_BUCKET, blob_path, png_data)
         except Exception as e:
             logger.error(f"Failed to upload PNG for {file_id} page {page_index}: {e}")
-            await self._update_task_status(
-                session_manager, file_id, page_index, "FAILED", f"Upload failed: {e}"
+            await update_task_status(
+                session_manager,
+                file_id,
+                self.task_type,
+                task_key,
+                "FAILED",
+                f"Upload failed: {e}",
             )
             return
 
         # 4. Update Task Status
-        await self._update_task_status(
-            session_manager, file_id, page_index, "COMPLETED"
+        await update_task_status(
+            session_manager, file_id, self.task_type, task_key, "COMPLETED"
         )
         logger.info(f"Successfully converted page {page_index} of {file_id} to PNG")
-
-    async def _update_task_status(
-        self,
-        session_manager: DatabaseSessionManager,
-        file_id: int,
-        page_index: int,
-        status: str,
-        error: Optional[str] = None,
-    ) -> None:
-        task_key = f"page_{page_index}"
-        async with session_manager.session() as session:
-            existing_task = (
-                (
-                    await session.execute(
-                        select(SystemTaskDO)
-                        .where(SystemTaskDO.file_id == file_id)
-                        .where(SystemTaskDO.task_type == self.task_type)
-                        .where(SystemTaskDO.key == task_key)
-                    )
-                )
-                .scalars()
-                .first()
-            )
-
-            if not existing_task:
-                existing_task = SystemTaskDO(
-                    file_id=file_id,
-                    task_type=self.task_type,
-                    key=task_key,
-                    status=status,
-                    last_error=error,
-                )
-                session.add(existing_task)
-            else:
-                existing_task.status = status
-                existing_task.last_error = error
-                existing_task.update_time = int(time.time() * 1000)
-
-            await session.commit()

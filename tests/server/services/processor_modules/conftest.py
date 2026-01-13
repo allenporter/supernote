@@ -7,6 +7,7 @@ from supernote.server.config import AuthConfig, ServerConfig
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
+from supernote.server.services.gemini import GeminiService
 from supernote.server.services.user import UserService
 
 
@@ -27,12 +28,18 @@ def file_service(
 
 
 @pytest.fixture
-def server_config_gemini() -> ServerConfig:
+def server_config_gemini(tmp_path: Path) -> ServerConfig:
     conf = ServerConfig(
         auth=AuthConfig(secret_key="secret"),
-        storage_dir=".",
+        storage_dir=str(tmp_path),
         # db_url is a property, not an init arg. We mock session_manager anyway.
     )
     conf.gemini_api_key = "fake-key"
     conf.gemini_ocr_model = "gemini-2.0-flash-exp"
+    conf.gemini_embedding_model = "text-embedding-004"
     return conf
+
+
+@pytest.fixture
+def gemini_service(server_config_gemini: ServerConfig) -> GeminiService:
+    return GeminiService(api_key=server_config_gemini.gemini_api_key)
