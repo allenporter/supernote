@@ -83,10 +83,16 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_GEMINI_API_KEY`
     """
 
-    gemini_ocr_model: str = "gemini-2.0-flash-exp"
+    gemini_ocr_model: str = "gemini-3-flash-preview"
     """Gemini model to use for OCR.
 
     Env Var: `SUPERNOTE_GEMINI_OCR_MODEL`
+    """
+
+    gemini_embedding_model: str = "gemini-embedding-001"
+    """Gemini model to use for Embeddings.
+
+    Env Var: `SUPERNOTE_GEMINI_EMBEDDING_MODEL`
     """
 
     @property
@@ -175,6 +181,11 @@ class ServerConfig(DataClassYAMLMixin):
         if os.getenv("SUPERNOTE_GEMINI_OCR_MODEL"):
             config.gemini_ocr_model = os.getenv(
                 "SUPERNOTE_GEMINI_OCR_MODEL", config.gemini_ocr_model
+            )
+
+        if os.getenv("SUPERNOTE_GEMINI_EMBEDDING_MODEL"):
+            config.gemini_embedding_model = os.getenv(
+                "SUPERNOTE_GEMINI_EMBEDDING_MODEL", config.gemini_embedding_model
             )
 
         if not config_file.exists():

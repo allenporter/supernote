@@ -19,6 +19,7 @@ from .routes import admin, auth, file_device, file_web, oss, schedule, summary, 
 from .services.blob import LocalBlobStorage
 from .services.coordination import SqliteCoordinationService
 from .services.file import FileService
+from .services.gemini import GeminiService
 from .services.processor import ProcessorService
 from .services.processor_modules.gemini_embedding import GeminiEmbeddingModule
 from .services.processor_modules.gemini_ocr import GeminiOcrModule
@@ -234,6 +235,9 @@ def create_app(config: ServerConfig) -> web.Application:
     app["file_service"] = file_service
     app["url_signer"] = UrlSigner(config.auth.secret_key, coordination_service)
     app["schedule_service"] = ScheduleService(session_manager)
+    gemini_service = GeminiService(config.gemini_api_key)
+    app["gemini_service"] = gemini_service
+
     summary_service = SummaryService(user_service, session_manager)
     app["summary_service"] = summary_service
     app["sync_locks"] = {}  # user -> (equipment_no, expiry_time)
@@ -248,8 +252,12 @@ def create_app(config: ServerConfig) -> web.Application:
     processor_service.register_modules(
         hashing=PageHashingModule(file_service=file_service),
         png=PngConversionModule(file_service=file_service),
-        ocr=GeminiOcrModule(file_service=file_service, config=config),
-        embedding=GeminiEmbeddingModule(),
+        ocr=GeminiOcrModule(
+            file_service=file_service, config=config, gemini_service=gemini_service
+        ),
+        embedding=GeminiEmbeddingModule(
+            file_service=file_service, config=config, gemini_service=gemini_service
+        ),
         summary=SummaryModule(),
     )
 

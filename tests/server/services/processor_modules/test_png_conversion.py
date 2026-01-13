@@ -22,11 +22,11 @@ def png_conversion_module(file_service: FileService) -> PngConversionModule:
     return PngConversionModule(file_service=file_service)
 
 
-@pytest.mark.asyncio
 async def test_process_png_conversion_success(
     png_conversion_module: PngConversionModule,
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
+    test_note_path: Path,
 ) -> None:
     """Integration test using a real .note file and real FileService."""
 
@@ -37,11 +37,10 @@ async def test_process_png_conversion_success(
     page_index = 0
 
     # Read real test file
-    test_file_path = Path("tests/testdata/20251207_221454.note")
-    if not test_file_path.exists():
-        pytest.skip(f"Test file not found at {test_file_path}")
+    if not test_note_path.exists():
+        pytest.skip(f"Test file not found at {test_note_path}")
 
-    file_content = test_file_path.read_bytes()
+    file_content = test_note_path.read_bytes()
 
     # Write to Blob Storage
     await blob_storage.put(USER_DATA_BUCKET, storage_key, file_content)

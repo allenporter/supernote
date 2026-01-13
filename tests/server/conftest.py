@@ -26,6 +26,7 @@ from supernote.models.user import UserRegisterDTO
 from supernote.server.app import create_app
 from supernote.server.config import AuthConfig, ServerConfig
 from supernote.server.db.base import Base
+import supernote.server.db.models  # noqa: F401
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage, LocalBlobStorage
 from supernote.server.services.coordination import (
@@ -120,6 +121,10 @@ async def create_test_user(
     """Create the default test user in the database."""
 
     for test_user in test_users:
+        # Ensure clean state
+        if await user_service.check_user_exists(test_user):
+            await user_service.unregister(test_user)
+
         result = await user_service.create_user(
             UserRegisterDTO(
                 email=test_user,
@@ -185,10 +190,14 @@ async def session_manager_fixture(
     # In the future if we have AUTOINCREMENT counters:
     #   DELETE FROM sqlite_sequence
     async with _session_manager_shared.session() as session:
-        tasks = []
         for table in reversed(Base.metadata.sorted_tables):
-            tasks.append(session.execute(text(f"DELETE FROM {table.name}")))
-        await asyncio.gather(*tasks)
+            # Wrap in try/except to handle cases where a table in metadata
+            # wasn't created (e.g. import race conditions) or was dropped.
+            try:
+                await session.execute(text(f"DELETE FROM {table.name}"))
+            except Exception:
+                # Warning: Failed to truncate table. This is usually fine if the table doesn't exist.
+                pass
         await session.commit()
 
 

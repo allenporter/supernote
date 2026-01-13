@@ -6,12 +6,10 @@ from supernote.client.device import DeviceClient
 async def test_note_conversion_wrappers(
     device_client: DeviceClient,
     storage_root: Path,
+    test_note_path: Path,
 ) -> None:
     # 1. Setup: Upload the test note
-    testdata_dir = Path(__file__).parent.parent.parent / "testdata"
-    note_path = testdata_dir / "20251207_221454.note"
-
-    with open(note_path, "rb") as f:
+    with test_note_path.open("rb") as f:
         note_content = f.read()
 
     filename = "test_conversion_wrapper.note"
@@ -33,11 +31,10 @@ async def test_note_conversion_wrappers(
 
 async def test_note_to_pdf_partial(
     device_client: DeviceClient,
+    test_note_path: Path,
 ) -> None:
     # Use existing note from previous test or upload new one
-    testdata_dir = Path(__file__).parent.parent.parent / "testdata"
-    note_path = testdata_dir / "20251207_221454.note"
-    with open(note_path, "rb") as f:
+    with test_note_path.open("rb") as f:
         note_content = f.read()
 
     upload_res = await device_client.upload_content(
