@@ -1,5 +1,4 @@
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy import select
@@ -11,24 +10,6 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.page_hashing import PageHashingModule
-from supernote.server.services.user import UserService
-
-
-@pytest.fixture(name="file_service")
-def file_service_fixture(
-    storage_root: Path,
-    blob_storage: BlobStorage,
-    user_service: UserService,
-    session_manager: DatabaseSessionManager,
-) -> FileService:
-    # We can probably leave event_bus as None or mock it
-    return FileService(
-        storage_root=storage_root,
-        blob_storage=blob_storage,
-        user_service=user_service,
-        session_manager=session_manager,
-        event_bus=MagicMock(),
-    )
 
 
 @pytest.fixture

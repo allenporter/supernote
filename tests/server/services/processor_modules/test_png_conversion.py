@@ -1,12 +1,11 @@
 import io
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 from PIL import Image
 from sqlalchemy import select
 
-from supernote.server.constants import USER_DATA_BUCKET
+from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
@@ -15,28 +14,12 @@ from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.png_conversion import (
     PngConversionModule,
 )
-from supernote.server.services.user import UserService
+from supernote.server.utils.paths import get_page_png_path
 
 
 @pytest.fixture
-def real_file_service(
-    storage_root: Path,
-    blob_storage: BlobStorage,
-    user_service: UserService,
-    session_manager: DatabaseSessionManager,
-) -> FileService:
-    return FileService(
-        storage_root=storage_root,
-        blob_storage=blob_storage,
-        user_service=user_service,
-        session_manager=session_manager,
-        event_bus=MagicMock(),
-    )
-
-
-@pytest.fixture
-def png_conversion_module(real_file_service: FileService) -> PngConversionModule:
-    return PngConversionModule(file_service=real_file_service)
+def png_conversion_module(file_service: FileService) -> PngConversionModule:
+    return PngConversionModule(file_service=file_service)
 
 
 @pytest.mark.asyncio
@@ -99,12 +82,14 @@ async def test_process_png_conversion_success(
         assert task.status == "COMPLETED"
 
     # Check Blob Output
-    expected_blob_path = f"caches/{file_id}/pages/{page_index}.png"
-    assert await blob_storage.exists(USER_DATA_BUCKET, expected_blob_path)
+    # Expected path no longer has caches/ prefix if helper changed, but helper returns full key.
+    expected_blob_path = get_page_png_path(file_id, page_index)
+
+    assert await blob_storage.exists(CACHE_BUCKET, expected_blob_path)
 
     # Verify Content is valid PNG
     content = b""
-    async for chunk in blob_storage.get(USER_DATA_BUCKET, expected_blob_path):
+    async for chunk in blob_storage.get(CACHE_BUCKET, expected_blob_path):
         content += chunk
     assert content is not None
 

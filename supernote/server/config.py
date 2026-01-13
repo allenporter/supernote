@@ -77,6 +77,18 @@ class ServerConfig(DataClassYAMLMixin):
 
     auth: AuthConfig = field(default_factory=AuthConfig)
 
+    gemini_api_key: str | None = None
+    """Google Gemini API Key for OCR and Embeddings.
+
+    Env Var: `SUPERNOTE_GEMINI_API_KEY`
+    """
+
+    gemini_ocr_model: str = "gemini-2.0-flash-exp"
+    """Gemini model to use for OCR.
+
+    Env Var: `SUPERNOTE_GEMINI_OCR_MODEL`
+    """
+
     @property
     def db_url(self) -> str:
         return f"sqlite+aiosqlite:///{self.storage_dir}/system/supernote.db"
@@ -156,6 +168,14 @@ class ServerConfig(DataClassYAMLMixin):
             val = os.getenv("SUPERNOTE_TRUSTED_PROXIES", "")
             config.trusted_proxies = [p.strip() for p in val.split(",") if p.strip()]
             logger.info(f"Using SUPERNOTE_TRUSTED_PROXIES: {config.trusted_proxies}")
+
+        if os.getenv("SUPERNOTE_GEMINI_API_KEY"):
+            config.gemini_api_key = os.getenv("SUPERNOTE_GEMINI_API_KEY")
+
+        if os.getenv("SUPERNOTE_GEMINI_OCR_MODEL"):
+            config.gemini_ocr_model = os.getenv(
+                "SUPERNOTE_GEMINI_OCR_MODEL", config.gemini_ocr_model
+            )
 
         if not config_file.exists():
             # Set default trace log file if not specified

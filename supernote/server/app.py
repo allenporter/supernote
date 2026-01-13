@@ -248,7 +248,7 @@ def create_app(config: ServerConfig) -> web.Application:
     processor_service.register_modules(
         hashing=PageHashingModule(file_service=file_service),
         png=PngConversionModule(file_service=file_service),
-        ocr=GeminiOcrModule(),
+        ocr=GeminiOcrModule(file_service=file_service, config=config),
         embedding=GeminiEmbeddingModule(),
         summary=SummaryModule(),
     )

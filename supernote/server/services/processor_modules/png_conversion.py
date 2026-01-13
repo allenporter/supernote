@@ -9,12 +9,13 @@ from sqlalchemy import select
 
 from supernote.notebook.converter import ImageConverter
 from supernote.notebook.parser import load_notebook
-from supernote.server.constants import USER_DATA_BUCKET
+from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
+from supernote.server.utils.paths import get_page_png_path
 
 logger = logging.getLogger(__name__)
 
@@ -130,12 +131,10 @@ class PngConversionModule(ProcessorModule):
             return
 
         # 3. Upload to Blob Storage
-        # Path format: caches/{file_id}/pages/{page_index}.png
-        blob_path = f"caches/{file_id}/pages/{page_index}.png"
+        # Path format: {file_id}/pages/{page_index}.png
+        blob_path = get_page_png_path(file_id, page_index)
         try:
-            await self.file_service.blob_storage.put(
-                USER_DATA_BUCKET, blob_path, png_data
-            )
+            await self.file_service.blob_storage.put(CACHE_BUCKET, blob_path, png_data)
         except Exception as e:
             logger.error(f"Failed to upload PNG for {file_id} page {page_index}: {e}")
             await self._update_task_status(
