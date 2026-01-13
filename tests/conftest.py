@@ -1,3 +1,5 @@
+"""Root pytest configuration and common fixtures."""
+
 from pathlib import Path
 
 import pytest

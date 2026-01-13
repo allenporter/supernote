@@ -106,24 +106,19 @@ class SqliteCoordinationService(CoordinationService):
     async def pop_value(self, key: str) -> Optional[str]:
         """Get and delete a value atomically."""
         async with self._session_manager.session() as session:
-            # Check validity first (lazy expiry check logic repeated or simple get)
-            # To be strictly atomic in SQL without stored procedure is hard, but we can do:
-            # DELETE FROM kv WHERE key=:key RETURNING value
-            # SQLite supports RETURNING since 3.35.0 (2021). Assuming modern sqlite.
-            # Fallback for older: Get then Delete in transaction.
-            stmt = (
-                delete(KeyValueDO)
-                .where(KeyValueDO.key == key)
-                .returning(KeyValueDO.value, KeyValueDO.expiry)
-            )
+            # Traditional Select then Delete to avoid issues with RETURNING in some sqlite/alchemy versions
+            stmt = select(KeyValueDO).where(KeyValueDO.key == key)
             result = await session.execute(stmt)
-            row = result.first()
-            await session.commit()
+            kv = result.scalar_one_or_none()
 
-            if not row:
+            if not kv:
                 return None
 
-            value, expiry = row
+            value = kv.value
+            expiry = kv.expiry
+            await session.delete(kv)
+            await session.commit()
+
             if time.time() > expiry:
                 return None
             return str(value)

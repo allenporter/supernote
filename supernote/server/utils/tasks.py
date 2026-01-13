@@ -1,10 +1,11 @@
 import time
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.utils.unique_id import next_id
 
 
 async def get_task(
@@ -37,33 +38,33 @@ async def update_task_status(
     status: str,
     error: Optional[str] = None,
 ) -> None:
-    """Create or update a SystemTaskDO status."""
+    """Create or update a SystemTaskDO status atomically."""
     async with session_manager.session() as session:
-        existing_task = (
-            (
-                await session.execute(
-                    select(SystemTaskDO)
-                    .where(SystemTaskDO.file_id == file_id)
-                    .where(SystemTaskDO.task_type == task_type)
-                    .where(SystemTaskDO.key == key)
-                )
-            )
-            .scalars()
-            .first()
+        now = int(time.time() * 1000)
+        # Using native SQL UPSERT because SQLite's ON CONFLICT
+        # is very robust for our needs and avoids SELECT-then-UPDATE races.
+        # We must provide 'id' and 'retry_count' manually for the INSERT part.
+        sql = text(
+            """
+            INSERT INTO f_system_task (id, file_id, task_type, key, status, last_error, retry_count, create_time, update_time)
+            VALUES (:id, :file_id, :task_type, :key, :status, :error, 0, :now, :now)
+            ON CONFLICT(file_id, task_type, key) DO UPDATE SET
+                status = excluded.status,
+                last_error = excluded.last_error,
+                update_time = excluded.update_time
+        """
         )
 
-        if not existing_task:
-            existing_task = SystemTaskDO(
-                file_id=file_id,
-                task_type=task_type,
-                key=key,
-                status=status,
-                last_error=error,
-            )
-            session.add(existing_task)
-        else:
-            existing_task.status = status
-            existing_task.last_error = error
-            existing_task.update_time = int(time.time() * 1000)
-
+        await session.execute(
+            sql,
+            {
+                "id": next_id(),
+                "file_id": file_id,
+                "task_type": task_type,
+                "key": key,
+                "status": status,
+                "error": error,
+                "now": now,
+            },
+        )
         await session.commit()

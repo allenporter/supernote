@@ -1,7 +1,7 @@
 import time
 from typing import Optional
 
-from sqlalchemy import BigInteger, String, Text
+from sqlalchemy import BigInteger, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from supernote.server.db.base import Base
@@ -42,6 +42,10 @@ class NotePageContentDO(Base):
         onupdate=lambda: int(time.time() * 1000),
     )
     """System update timestamp."""
+
+    __table_args__ = (
+        UniqueConstraint("file_id", "page_index", name="uq_note_page_content"),
+    )
 
 
 class SystemTaskDO(Base):
@@ -84,3 +88,7 @@ class SystemTaskDO(Base):
         onupdate=lambda: int(time.time() * 1000),
     )
     """System update timestamp."""
+
+    __table_args__ = (
+        UniqueConstraint("file_id", "task_type", "key", name="uq_system_task"),
+    )

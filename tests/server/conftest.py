@@ -3,7 +3,6 @@
 This module is automatically discovered by pytest as a plugin.
 """
 
-import asyncio
 import hashlib
 import logging
 from collections.abc import AsyncGenerator, Generator
@@ -16,8 +15,8 @@ from aiohttp.test_utils import TestClient
 from pytest_aiohttp import AiohttpClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.pool import StaticPool
 
+import supernote.server.db.models  # noqa: F401
 from supernote.client.auth import AbstractAuth
 from supernote.client.client import Client
 from supernote.client.device import DeviceClient
@@ -26,7 +25,6 @@ from supernote.models.user import UserRegisterDTO
 from supernote.server.app import create_app
 from supernote.server.config import AuthConfig, ServerConfig
 from supernote.server.db.base import Base
-import supernote.server.db.models  # noqa: F401
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage, LocalBlobStorage
 from supernote.server.services.coordination import (
@@ -155,13 +153,17 @@ async def auth_headers_fixture(
 
 
 @pytest.fixture(scope="session")
-async def _session_manager_shared() -> AsyncGenerator[DatabaseSessionManager, None]:
+async def _session_manager_shared(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> AsyncGenerator[DatabaseSessionManager, None]:
     """Create a singleton session manager for the entire test session."""
+    tmp_dir = tmp_path_factory.mktemp("db")
+    db_path = tmp_dir / "test_db.sqlite"
+    db_url = f"sqlite+aiosqlite:///{db_path}"
     session_manager = DatabaseSessionManager(
-        TEST_DATABASE_URL,
+        db_url,
         engine_kwargs={
             "connect_args": {"check_same_thread": False},
-            "poolclass": StaticPool,
         },
     )
     await session_manager.create_all_tables()
