@@ -140,6 +140,15 @@ async def test_process_with_real_file(
         page.content_hash = "FAKE_HASH"
         # Set some dummy content that should be cleared
         page.text_content = "dummy_ocr"
+
+        # Add a mock downstream task that should be invalidated (deleted)
+        ocr_task = SystemTaskDO(
+            file_id=file_id,
+            task_type="OCR_EXTRACTION",
+            key="page_0",
+            status="COMPLETED",
+        )
+        session.add(ocr_task)
         await session.commit()
 
     # Run process again
@@ -163,6 +172,21 @@ async def test_process_with_real_file(
         assert page.content_hash == original_hash
         # Text content should be cleared because we simulated a "change" (Fake -> Real)
         assert page.text_content is None
+
+        # Check that the downstream task was invalidated (deleted)
+        invalidated_task = (
+            (
+                await session.execute(
+                    select(SystemTaskDO)
+                    .where(SystemTaskDO.file_id == file_id)
+                    .where(SystemTaskDO.task_type == "OCR_EXTRACTION")
+                    .where(SystemTaskDO.key == "page_0")
+                )
+            )
+            .scalars()
+            .first()
+        )
+        assert invalidated_task is None
 
     # 5. Test Deletion
     # We will simulate deletion by manually adding an extra page that doesn't exist in the file.
