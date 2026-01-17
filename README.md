@@ -78,11 +78,15 @@ See [Server Documentation](https://github.com/allenporter/supernote-lite/blob/ma
 ### Access Supernote Services
 
 ```python
+from supernote.client import Supernote
 
-from supernote.client import SupernoteClient
+async with await Supernote.login("debug@example.com", "password", host="http://localhost:8080") as sn:
+    # Access Web and Device APIs directly through the session object
+    # Example: List root folder using path-based Device API
+    result = await sn.device.list_folder("/")
 
-async with SupernoteClient.from_credentials(email, password) as client:
-    files = await client.list_files()
+    # sn.token contains the access token for use with `Supernote.from_auth`
+    print(sn.token)
 ```
 
 

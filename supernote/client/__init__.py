@@ -1,15 +1,13 @@
-"""Supernote client library."""
-
+from .api import Supernote
 from .auth import AbstractAuth, ConstantAuth, FileCacheAuth
 from .client import Client
-from .cloud_client import SupernoteClient
 from .login_client import LoginClient
 
 __all__ = [
+    "Supernote",
     "Client",
     "AbstractAuth",
     "ConstantAuth",
     "FileCacheAuth",
-    "SupernoteClient",
     "LoginClient",
 ]

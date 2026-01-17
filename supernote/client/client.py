@@ -70,6 +70,14 @@ class Client:
         """Return the host URL."""
         return self._host
 
+    def with_auth(self, auth: AbstractAuth) -> "Client":
+        """Return a new client with the given authentication credentials."""
+        return Client(self._websession, host=self._host, auth=auth)
+
+    def get_auth(self) -> AbstractAuth | None:
+        """Return the current authentication credentials."""
+        return self._auth
+
     def _url(self, url: str) -> str:
         if not (url.startswith("http://") or url.startswith("https://")):
             if self._host.endswith("/"):
