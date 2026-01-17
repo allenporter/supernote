@@ -197,7 +197,10 @@ BaseConfig
         if os.getenv("SUPERNOTE_GEMINI_MAX_CONCURRENCY"):
             try:
                 config.gemini_max_concurrency = int(
-                    os.getenv("SUPERNOTE_GEMINI_MAX_CONCURRENCY", str(config.gemini_max_concurrency))
+                    os.getenv(
+                        "SUPERNOTE_GEMINI_MAX_CONCURRENCY",
+                        str(config.gemini_max_concurrency),
+                    )
                 )
             except ValueError:
                 pass

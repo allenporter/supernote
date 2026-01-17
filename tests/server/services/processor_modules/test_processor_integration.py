@@ -9,6 +9,7 @@ from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
+from supernote.server.services.file import FileService
 from supernote.server.services.processor import ProcessorService
 from supernote.server.services.processor_modules.gemini_embedding import (
     GeminiEmbeddingModule,
@@ -50,18 +51,18 @@ async def test_full_processing_pipeline_with_real_file(
     mock_gemini_service: MagicMock,
 ) -> None:
     """Full integration test using a real .note file."""
-    
+
     # Setup Data
     user_id = 100
     file_id = 999
     storage_key = "test_integration_note"
-    
+
     if not test_note_path.exists():
         pytest.skip(f"Test file not found at {test_note_path}")
-        
+
     file_content = test_note_path.read_bytes()
     await blob_storage.put(USER_DATA_BUCKET, storage_key, file_content)
-    
+
     async with session_manager.session() as session:
         user_file = UserFileDO(
             id=file_id,
@@ -97,7 +98,7 @@ async def test_full_processing_pipeline_with_real_file(
     mock_response = MagicMock()
     mock_response.text = "Handwritten text content"
     mock_gemini_service.generate_content.return_value = mock_response
-    
+
     mock_embed = MagicMock()
     mock_embed.values = [0.1, 0.2, 0.3]
     mock_gemini_service.embed_content.return_value = MagicMock(embeddings=[mock_embed])
@@ -121,7 +122,7 @@ async def test_full_processing_pipeline_with_real_file(
         )
         assert len(pages) > 0
         total_pages = len(pages)
-        
+
         # 2. Verify OCR and Embedding content was saved
         for page in pages:
             assert page.content_hash is not None
@@ -138,13 +139,13 @@ async def test_full_processing_pipeline_with_real_file(
             .scalars()
             .all()
         )
-        
+
         # Hashing (1) + Per-Page (3 types * N pages) + Summary (1)
-        # Summary is implemented as False for run_if_needed, so it might not create a COMPLETED task 
+        # Summary is implemented as False for run_if_needed, so it might not create a COMPLETED task
         # unless it actually runs. My SummaryModule.run_if_needed returns False.
-        # So: 1 (HASHING) + total_pages * 3 (PNG, OCR, EMBEDDING) 
+        # So: 1 (HASHING) + total_pages * 3 (PNG, OCR, EMBEDDING)
         expected_task_count = 1 + (total_pages * 3)
-        
+
         # Filter for COMPLETED
         completed_tasks = [t for t in tasks if t.status == "COMPLETED"]
         assert len(completed_tasks) == expected_task_count
@@ -152,6 +153,7 @@ async def test_full_processing_pipeline_with_real_file(
         # 4. Verify PNGs exist in cache
         for i in range(total_pages):
             from supernote.server.utils.paths import get_page_png_path
+
             png_path = get_page_png_path(file_id, i)
             assert await blob_storage.exists(CACHE_BUCKET, png_path)
 

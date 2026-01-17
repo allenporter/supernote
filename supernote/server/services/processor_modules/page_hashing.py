@@ -6,13 +6,14 @@ from typing import Any, Optional
 from sqlalchemy import delete, select
 
 from supernote.notebook.parser import parse_metadata
-from supernote.server.constants import USER_DATA_BUCKET
+from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.utils.hashing import get_md5_hash
+from supernote.server.utils.paths import get_page_png_path
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +27,13 @@ class PageHashingModule(ProcessorModule):
     """Module responsible for detecting changes in .note files at the page level.
 
     This module performs the following:
-    1.  Parses the binary .note file using `SupernoteParser`.
-    2.  Computes a unique MD5 hash for each page based on its layer metadata.
-    3.  Updates the `NotePageContentDO` table:
-        -   Creates entries for new pages.
-        -   Updates hashes for changed pages and invalidates downstream data (OCR, Embeddings) to trigger reprocessing.
-        -   Removes entries for deleted pages.
-    4.  Updates the `SystemTaskDO` status for the 'HASHING' task (handled by base class).
+    - Parses the binary .note file using `SupernoteParser`.
+    - Computes a unique MD5 hash for each page based on its layer metadata.
+    - Updates the `NotePageContentDO` table:
+        - Creates entries for new pages.
+        - Updates hashes for changed pages and invalidates downstream data (OCR, Embeddings) to trigger reprocessing.
+        - Removes entries for deleted pages.
+    - Updates the `SystemTaskDO` status for the 'HASHING' task (handled by base class).
 
     This module acts as the entry point and "change detector" for the incremental processing pipeline.
     """
@@ -117,6 +118,16 @@ class PageHashingModule(ProcessorModule):
             return
 
         async with session_manager.session() as session:
+            # Get current max page index to identify orphans later
+            idx_result = await session.execute(
+                select(NotePageContentDO.page_index)
+                .where(NotePageContentDO.file_id == file_id)
+                .order_by(NotePageContentDO.page_index.desc())
+                .limit(1)
+            )
+            last_page_idx = idx_result.scalars().first()
+            prev_page_count = (last_page_idx + 1) if last_page_idx is not None else 0
+
             for i in range(total_pages):
                 # Calculate Hash
                 # Constructing a unique signature for the page content:
@@ -177,12 +188,38 @@ class PageHashingModule(ProcessorModule):
                     session.add(new_content)
 
             # Handle Page Deletions
-            # If the notebook shrank (pages removed), delete orphaned entries.
+            # If the notebook shrank (pages removed), delete orphaned entries and blobs.
+            if prev_page_count > total_pages:
+                logger.info(
+                    f"File {file_id} shrank from {prev_page_count} to {total_pages} pages. Cleaning up orphans."
+                )
 
-            await session.execute(
-                delete(NotePageContentDO)
-                .where(NotePageContentDO.file_id == file_id)
-                .where(NotePageContentDO.page_index >= total_pages)
-            )
+                # DB cleanup
+                await session.execute(
+                    delete(NotePageContentDO)
+                    .where(NotePageContentDO.file_id == file_id)
+                    .where(NotePageContentDO.page_index >= total_pages)
+                )
+                await session.execute(
+                    delete(SystemTaskDO)
+                    .where(SystemTaskDO.file_id == file_id)
+                    .where(
+                        SystemTaskDO.key.in_(
+                            [f"page_{j}" for j in range(total_pages, prev_page_count)]
+                        )
+                    )
+                )
+
+                # Blob cleanup
+                for j in range(total_pages, prev_page_count):
+                    png_path = get_page_png_path(file_id, j)
+                    try:
+                        await self.file_service.blob_storage.delete(
+                            CACHE_BUCKET, png_path
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to delete orphaned PNG for {file_id} page {j}: {e}"
+                        )
 
             await session.commit()
