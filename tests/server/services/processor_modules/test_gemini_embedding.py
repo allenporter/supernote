@@ -9,12 +9,9 @@ from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
-from supernote.server.services.gemini import GeminiService
 from supernote.server.services.processor_modules.gemini_embedding import (
     GeminiEmbeddingModule,
 )
-
-
 
 
 @pytest.fixture
@@ -71,9 +68,7 @@ async def test_process_embedding_success(
     mock_gemini_service.embed_content.return_value = mock_response
 
     # Run full module lifecycle
-    await gemini_embedding_module.run(
-        file_id, session_manager, page_index=page_index
-    )
+    await gemini_embedding_module.run(file_id, session_manager, page_index=page_index)
 
     # Verifications
     # Verify API Call

@@ -2,14 +2,16 @@ import asyncio
 import logging
 from typing import List, Set
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
-from ..db.models.note_processing import NotePageContentDO
+from ..constants import CACHE_BUCKET
+from ..db.models.note_processing import NotePageContentDO, SystemTaskDO
 from ..db.session import DatabaseSessionManager
 from ..events import Event, LocalEventBus, NoteDeletedEvent, NoteUpdatedEvent
 from ..services.file import FileService
 from ..services.processor_modules import ProcessorModule
 from ..services.summary import SummaryService
+from ..utils.paths import get_page_png_path
 
 logger = logging.getLogger(__name__)
 
@@ -102,16 +104,56 @@ class ProcessorService:
         """Clean up artifacts for deleted note."""
         if not isinstance(event, NoteDeletedEvent):
             return
-        logger.info(f"Received delete for note: {event.file_id}")
-        # TODO: Implement cleanup logic (delete PNGs, OCR text, Vectors)
-        pass
+        file_id = event.file_id
+        logger.info(f"Received delete for note: {file_id}")
+
+        async with self.session_manager.session() as session:
+            # Get all pages to know which PNGs to delete
+            stmt = select(NotePageContentDO.page_index).where(
+                NotePageContentDO.file_id == file_id
+            )
+            result = await session.execute(stmt)
+            page_indices = result.scalars().all()
+
+            # Delete DB records
+            await session.execute(
+                delete(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
+            )
+            await session.execute(
+                delete(SystemTaskDO).where(SystemTaskDO.file_id == file_id)
+            )
+            await session.commit()
+
+        # Delete Blobs (PNGs)
+        for page_index in page_indices:
+            png_path = get_page_png_path(file_id, page_index)
+            try:
+                await self.file_service.blob_storage.delete(CACHE_BUCKET, png_path)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to delete PNG for {file_id} page {page_index}: {e}"
+                )
+
+        logger.info(f"Cleanup complete for deleted note: {file_id}")
 
     async def recover_tasks(self) -> None:
         """Check DB for incomplete tasks on startup."""
         logger.info("Recovering pending processing tasks...")
-        # TODO: Query SystemTaskDO for incomplete items
-        # and re-enqueue associated file_ids
-        pass
+        async with self.session_manager.session() as session:
+            # Find all file_ids that have any task NOT in COMPLETED status
+            stmt = (
+                select(SystemTaskDO.file_id)
+                .where(SystemTaskDO.status != "COMPLETED")
+                .distinct()
+            )
+            result = await session.execute(stmt)
+            file_ids = result.scalars().all()
+
+        for file_id in file_ids:
+            logger.info(f"Recovering incomplete pipeline for file {file_id}")
+            if file_id not in self.processing_files:
+                self.processing_files.add(file_id)
+                await self.queue.put(file_id)
 
     async def worker_loop(self, worker_id: int) -> None:
         """Background worker to process items from the queue."""

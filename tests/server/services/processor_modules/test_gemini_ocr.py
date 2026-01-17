@@ -10,11 +10,8 @@ from supernote.server.db.models.note_processing import NotePageContentDO, System
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
-from supernote.server.services.gemini import GeminiService
 from supernote.server.services.processor_modules.gemini_ocr import GeminiOcrModule
 from supernote.server.utils.paths import get_page_png_path
-
-
 
 
 @pytest.fixture
