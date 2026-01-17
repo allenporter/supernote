@@ -11,6 +11,14 @@ from mashumaro.mixins.yaml import DataClassYAMLMixin
 logger = logging.getLogger(__name__)
 
 
+def _get_bool_env(name: str, default: bool) -> bool:
+    """Get a boolean value from an environment variable."""
+    val = os.getenv(name)
+    if val is None:
+        return default
+    return val.lower() in ("true", "1", "yes", "on")
+
+
 @dataclass
 class AuthConfig(DataClassYAMLMixin):
     """Authentication configuration."""
@@ -55,6 +63,13 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_PORT`
     """
     trace_log_file: str | None = None
+    """Path to trace log file.
+
+    This will default to a file in the storage directory if unset.
+
+    Env Var: `SUPERNOTE_TRACE_LOG_FILE`
+    """
+
     storage_dir: str = "storage"
     """Directory for storing files and database.
 
@@ -161,13 +176,16 @@ BaseConfig
             logger.info(f"Using SUPERNOTE_STORAGE_DIR: {config.storage_dir}")
 
         if os.getenv("SUPERNOTE_ENABLE_REGISTRATION"):
-            val = os.getenv("SUPERNOTE_ENABLE_REGISTRATION", "").lower()
-            config.auth.enable_registration = val in ("true", "1", "yes")
+            config.auth.enable_registration = _get_bool_env(
+                "SUPERNOTE_ENABLE_REGISTRATION", config.auth.enable_registration
+            )
             logger.info(f"Registration Enabled: {config.auth.enable_registration}")
 
         if os.getenv("SUPERNOTE_ENABLE_REMOTE_PASSWORD_RESET"):
-            val = os.getenv("SUPERNOTE_ENABLE_REMOTE_PASSWORD_RESET", "").lower()
-            config.auth.enable_remote_password_reset = val in ("true", "1", "yes")
+            config.auth.enable_remote_password_reset = _get_bool_env(
+                "SUPERNOTE_ENABLE_REMOTE_PASSWORD_RESET",
+                config.auth.enable_remote_password_reset,
+            )
             logger.info(
                 f"Remote Password Reset Enabled: {config.auth.enable_remote_password_reset}"
             )
