@@ -26,7 +26,6 @@ def processor_service() -> ProcessorService:
     return service
 
 
-@pytest.mark.asyncio
 async def test_explicit_orchestration_flow(
     processor_service: ProcessorService,
 ) -> None:
@@ -81,7 +80,6 @@ async def test_explicit_orchestration_flow(
     summary.run.assert_called_once_with(file_id, sm_mock)
 
 
-@pytest.mark.asyncio
 async def test_dependant_skipping(
     processor_service: ProcessorService,
 ) -> None:

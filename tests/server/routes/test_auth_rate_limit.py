@@ -9,7 +9,6 @@ from supernote.server.services.coordination import CoordinationService
 from supernote.server.utils.rate_limit import LIMIT_LOGIN_IP_MAX, LIMIT_PW_RESET_MAX
 
 
-@pytest.mark.asyncio
 async def test_login_rate_limit(
     client: Client,
     session_manager: DatabaseSessionManager,
@@ -68,7 +67,6 @@ async def test_login_rate_limit(
     assert "Rate limit exceeded" in data["errorMsg"]
 
 
-@pytest.mark.asyncio
 async def test_password_retrieve_rate_limit(
     client: Client,
     session_manager: DatabaseSessionManager,

@@ -4,7 +4,6 @@ from supernote.client.exceptions import ApiException
 from supernote.client.web import WebClient
 
 
-@pytest.mark.asyncio
 async def test_web_rename(web_client: WebClient) -> None:
     # Create a folder
     res = await web_client.create_folder(parent_id=0, name="OldName")
@@ -26,7 +25,6 @@ async def test_web_rename(web_client: WebClient) -> None:
     ]
 
 
-@pytest.mark.asyncio
 async def test_web_rename_immutable_fails(web_client: WebClient) -> None:
     # Find a system folder
     res = await web_client.list_query(directory_id=0)
@@ -38,7 +36,6 @@ async def test_web_rename_immutable_fails(web_client: WebClient) -> None:
         await web_client.file_rename(id=note_id, new_name="RenamedNote")
 
 
-@pytest.mark.asyncio
 async def test_web_move_items(web_client: WebClient) -> None:
     # Create source and target folders
     src_res = await web_client.create_folder(parent_id=0, name="Source")
@@ -63,7 +60,6 @@ async def test_web_move_items(web_client: WebClient) -> None:
     assert [f.file_name for f in target_list.user_file_vo_list] == ["ItemToMove"]
 
 
-@pytest.mark.asyncio
 async def test_web_copy_items(web_client: WebClient) -> None:
     # Create source and target folders
     src_res = await web_client.create_folder(parent_id=0, name="SourceCopy")
@@ -88,7 +84,6 @@ async def test_web_copy_items(web_client: WebClient) -> None:
     assert any(f.file_name == "ItemToCopy" for f in target_list.user_file_vo_list)
 
 
-@pytest.mark.asyncio
 async def test_web_folder_list_query_spec(web_client: WebClient) -> None:
     """Comprehensive test for api/file/folder/list/query specification."""
     # Root Level Flattening and Ordering
@@ -153,7 +148,6 @@ async def test_web_folder_list_query_spec(web_client: WebClient) -> None:
     assert sub_vo.empty == "Y"
 
 
-@pytest.mark.asyncio
 async def test_web_pages_1_even_if_empty(web_client: WebClient) -> None:
     # 1. Clear recycle bin to ensure it's empty
     await web_client.recycle_clear()
@@ -170,7 +164,6 @@ async def test_web_pages_1_even_if_empty(web_client: WebClient) -> None:
     assert list_res.pages == 1
 
 
-@pytest.mark.asyncio
 async def test_web_search_path_flattening(web_client: WebClient) -> None:
     # Note is physically at /NOTE/Note
     # Search should report /Note

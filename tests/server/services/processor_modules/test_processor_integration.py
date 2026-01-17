@@ -41,7 +41,6 @@ def processor_service(
     )
 
 
-@pytest.mark.asyncio
 async def test_full_processing_pipeline_with_real_file(
     processor_service: ProcessorService,
     session_manager: DatabaseSessionManager,

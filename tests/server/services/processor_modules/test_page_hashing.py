@@ -17,7 +17,6 @@ def page_hashing_module(file_service: FileService) -> PageHashingModule:
     return PageHashingModule(file_service=file_service)
 
 
-@pytest.mark.asyncio
 async def test_process_with_real_file(
     page_hashing_module: PageHashingModule,
     session_manager: DatabaseSessionManager,

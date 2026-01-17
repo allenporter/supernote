@@ -27,7 +27,6 @@ def gemini_ocr_module(
     )
 
 
-@pytest.mark.asyncio
 async def test_process_ocr_success(
     gemini_ocr_module: GeminiOcrModule,
     session_manager: DatabaseSessionManager,

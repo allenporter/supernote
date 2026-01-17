@@ -1,11 +1,8 @@
-import pytest
-
 from supernote.server.services.coordination import (
     SqliteCoordinationService,
 )
 
 
-@pytest.mark.asyncio
 async def test_increment(coordination_service: SqliteCoordinationService) -> None:
     key = "incr:test"
 
@@ -26,7 +23,6 @@ async def test_increment(coordination_service: SqliteCoordinationService) -> Non
     assert val == 12
 
 
-@pytest.mark.asyncio
 async def test_increment_expiry(
     coordination_service: SqliteCoordinationService,
 ) -> None:

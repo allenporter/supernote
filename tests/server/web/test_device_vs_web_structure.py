@@ -1,10 +1,7 @@
-import pytest
-
 from supernote.client.device import DeviceClient
 from supernote.client.web import WebClient
 
 
-@pytest.mark.asyncio
 async def test_device_vs_web_structure(
     web_client: WebClient, device_client: DeviceClient
 ) -> None:
