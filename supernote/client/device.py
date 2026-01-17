@@ -36,7 +36,7 @@ from supernote.models.file_device import (
     SynchronousStartLocalVO,
 )
 
-from . import Client
+from .client import Client
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -112,6 +112,17 @@ class DeviceClient:
             DeleteFolderLocalVO,
             json=dto.to_dict(),
         )
+
+    async def delete_by_path(
+        self, path: str, equipment_no: str | None = None
+    ) -> DeleteFolderLocalVO:
+        """Delete a folder or file by path (V3)."""
+        if equipment_no is None:
+            equipment_no = "WEB"
+        info = await self.query_by_path(path, equipment_no)
+        if not info.entries_vo:
+            raise FileNotFoundError(f"File or folder not found: {path}")
+        return await self.delete(int(info.entries_vo.id), equipment_no)
 
     async def move(
         self, id: int, to_path: str, equipment_no: str, autorename: bool = False

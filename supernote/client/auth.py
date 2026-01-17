@@ -27,6 +27,11 @@ class ConstantAuth(AbstractAuth):
         """Return a valid access token."""
         return self._access_token
 
+    @property
+    def token(self) -> str:
+        """Return the access token."""
+        return self._access_token
+
 
 class FileCacheAuth(AbstractAuth):
     """Authentication library that caches token in a file."""

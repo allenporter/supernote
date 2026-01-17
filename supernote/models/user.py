@@ -149,8 +149,8 @@ class IsNormalUser(str, BaseEnum):
     ADMIN = "A"
 
 
-@dataclass
-class UserVO(DataClassJSONMixin):
+@dataclass(kw_only=True)
+class UserVO(BaseResponse):
     """Data object describing user information."""
 
     user_id: str | None = field(metadata=field_options(alias="userId"), default=None)

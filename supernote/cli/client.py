@@ -5,15 +5,12 @@ import getpass
 import logging
 import os
 import sys
+import traceback
 from contextlib import asynccontextmanager
 
-import aiohttp
-
-from supernote.client.auth import FileCacheAuth
-from supernote.client.client import Client
-from supernote.client.cloud_client import SupernoteClient
+from supernote.client import Supernote
+from supernote.client.auth import ConstantAuth, FileCacheAuth
 from supernote.client.exceptions import SmsVerificationRequired, SupernoteException
-from supernote.client.login_client import LoginClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,13 +35,11 @@ def load_cached_auth(url: str | None = None) -> tuple[FileCacheAuth, str]:
 
 
 @asynccontextmanager
-async def create_client(url: str | None = None) -> Client:
-    """Initialize client with cached credentials as a context manager."""
+async def create_session(url: str | None = None) -> Supernote:
+    """Initialize Supernote session with cached credentials."""
     auth, url = load_cached_auth(url)
-
-    async with aiohttp.ClientSession() as session:
-        client = Client(session, host=url, auth=auth)
-        yield client
+    async with Supernote.from_auth(auth, host=url) as sn:
+        yield sn
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -85,52 +80,27 @@ async def async_cloud_login(
     print("=" * 80)
     print()
 
-    async with aiohttp.ClientSession() as session:
+    try:
+        # Step 1: Login
+        print("Step 1: Starting login flow...")
+        print("  - This will get CSRF token")
+        print("  - Call token endpoint")
+        print("  - Get random code")
+        print("  - Encode password")
+        print("  - Submit login request")
+        print()
+
         try:
-            # Step 1: Create client and login
-            print("Step 1: Initializing client...")
-            client = Client(session, host=url)
-            login_client = LoginClient(client)
+            sn = await Supernote.login(email, password, host=url)
+        except SmsVerificationRequired as err:
+            sn = await _handle_sms_verification(email, url, err)
 
-            print("Step 2: Starting login flow...")
-            print("  - This will get CSRF token")
-            print("  - Call token endpoint")
-            print("  - Get random code")
-            print("  - Encode password")
-            print("  - Submit login request")
-            print()
-
-            try:
-                access_token = await login_client.login(email, password)
-            except SupernoteException as err:
-                if isinstance(err, SmsVerificationRequired):
-                    print()
-                    print("!" * 80)
-                    print("SMS Verification Required")
-                    print("!" * 80)
-                    print(f"Message: {err}")
-                    print("The server has sent an SMS verification code to your phone.")
-                    print()
-
-                    print("Requesting SMS verification code...")
-                    await login_client.request_sms_code(email)
-                    print("SMS code requested successfully.")
-                    print()
-
-                    code = input("Enter verification code: ").strip()
-                    print()
-                    print("Submitting verification code...")
-
-                    access_token = await login_client.sms_login(
-                        email, code, err.timestamp
-                    )
-                else:
-                    raise
-
+        async with sn:
+            access_token = sn.token
             print("✓ Login successful!")
             print(
                 f"Access Token: {access_token[:20]}..."
-                if len(access_token) > 20
+                if access_token and len(access_token) > 20
                 else access_token
             )
             print()
@@ -143,71 +113,97 @@ async def async_cloud_login(
             print("✓ Credentials saved!")
             print()
 
-            # Step 2: Test basic functionality
-            print("Step 3: Testing basic functionality...")
-            authenticated_client = Client(session, host=url, auth=auth)
-            cloud_client = SupernoteClient(authenticated_client)
+            await _run_login_sanity_tests(sn)
 
-            # Test 1: Query user
-            print("  Test 1: Querying user information...")
-            try:
-                user_response = await cloud_client.query_user()
-                print("  ✓ User query successful!")
-                print(f"    - User ID: {user_response.user_id}")
-                print(f"    - User Name: {user_response.user_name}")
-                print(f"    - Country Code: {user_response.country_code}")
-                if user_response.file_server:
-                    print(f"    - File Server: {user_response.file_server}")
-            except SupernoteException as err:
-                print(f"  ✗ User query failed: {err}")
-            print()
+    except SupernoteException as err:
+        print()
+        print("=" * 80)
+        print(f"✗ Error during login flow: {err}")
+        print("=" * 80)
+        if verbose:
+            traceback.print_exc()
+        sys.exit(1)
+    except Exception as err:
+        print()
+        print("=" * 80)
+        print(f"✗ Unexpected error: {err}")
+        print("=" * 80)
+        if verbose:
+            traceback.print_exc()
+        sys.exit(1)
 
-            # Test 2: List files
-            print("  Test 2: Listing files in root directory...")
-            try:
-                file_list_response = await cloud_client.file_list(directory_id=0)
-                print("  ✓ File list successful!")
-                print(f"    - Total files: {file_list_response.total}")
-                print(f"    - Pages: {file_list_response.pages}")
-                print(
-                    f"    - Files in this page: {len(file_list_response.user_file_vo_list)}"
-                )
 
-                if file_list_response.user_file_vo_list:
-                    print("    - First few files:")
-                    for i, file in enumerate(file_list_response.user_file_vo_list[:5]):
-                        folder_marker = "📁" if file.is_folder == "Y" else "📄"
-                        print(f"      {folder_marker} {file.file_name} (ID: {file.id})")
-                else:
-                    print("    - No files found")
-            except SupernoteException as err:
-                print(f"  ✗ File list failed: {err}")
-            print()
+async def _handle_sms_verification(
+    email: str, url: str, err: SmsVerificationRequired
+) -> Supernote:
+    """Handle SMS verification flow."""
+    async with Supernote(host=url) as temp_sn:
+        print()
+        print("!" * 80)
+        print("SMS Verification Required")
+        print("!" * 80)
+        print(f"Message: {err}")
+        print("The server has sent an SMS verification code to your phone.")
+        print()
 
-            print("=" * 80)
-            print("All tests completed successfully!")
-            print("=" * 80)
+        print("Requesting SMS verification code...")
+        await temp_sn.login_client.request_sms_code(email)
+        print("SMS code requested successfully.")
+        print()
 
-        except SupernoteException as err:
-            print()
-            print("=" * 80)
-            print(f"✗ Error during login flow: {err}")
-            print("=" * 80)
-            if verbose:
-                import traceback
+        code = input("Enter verification code: ").strip()
+        print()
+        print("Submitting verification code...")
 
-                traceback.print_exc()
-            sys.exit(1)
-        except Exception as err:
-            print()
-            print("=" * 80)
-            print(f"✗ Unexpected error: {err}")
-            print("=" * 80)
-            if verbose:
-                import traceback
+        access_token = await temp_sn.login_client.sms_login(email, code, err.timestamp)
+        # Create authenticated session
+        return temp_sn.with_auth(ConstantAuth(access_token))
 
-                traceback.print_exc()
-            sys.exit(1)
+
+async def _run_login_sanity_tests(sn: Supernote) -> None:
+    """Run basic functionality tests after login."""
+    print("Step 3: Testing basic functionality...")
+
+    # Test 1: Query user
+    print("  Test 1: Querying user information...")
+    try:
+        user_resp = await sn.web.query_user()
+        print("  ✓ User query successful!")
+        if user_resp.user:
+            user = user_resp.user
+            print(f"    - User Name: {user.user_name}")
+            print(f"    - Email: {user.email}")
+            print(f"    - Country Code: {user.country_code}")
+            if user.file_server:
+                print(f"    - File Server: {user.file_server}")
+        else:
+            print("    - No user information returned")
+    except SupernoteException as err:
+        print(f"  ✗ User query failed: {err}")
+    print()
+
+    # Test 2: Listing files
+    print("  Test 2: Listing files in root directory...")
+    try:
+        list_resp = await sn.device.list_folder("/")
+        print("  ✓ File list successful!")
+        files = list_resp.entries
+        print(f"    - Files count: {len(files)}")
+
+        if files:
+            print("    - First few files:")
+            for file in files[:5]:
+                folder_marker = "📁" if file.is_folder == "Y" else "📄"
+                print(f"      {folder_marker} {file.file_name} (ID: {file.id})")
+        else:
+            print("    - No files found")
+    except SupernoteException as err:
+        print(f"  ✗ File list failed: {err}")
+    print()
+
+    print("=" * 80)
+    print("All tests completed successfully!")
+    print("=" * 80)
 
 
 def subcommand_cloud_login(args) -> None:
@@ -219,67 +215,220 @@ def subcommand_cloud_login(args) -> None:
     asyncio.run(async_cloud_login(args.email, password, args.url, args.verbose))
 
 
-async def async_cloud_ls(verbose: bool = False) -> None:
+async def async_cloud_ls(path: str, verbose: bool = False) -> None:
     """List files in Supernote Cloud using cached credentials."""
     setup_logging(verbose)
 
     try:
-        async with create_client() as client:
-            cloud_client = SupernoteClient(client)
-            print(f"Using server: {client.host}")
+        async with create_session() as sn:
+            print(f"Using server: {sn.client.host}")
 
-            print("Listing files in root directory...")
-            file_list_response = await cloud_client.file_list()
+            print(f"Listing files in {path}...")
+            list_resp = await sn.device.list_folder(path)
+            files = list_resp.entries
 
-            print(f"Total files: {file_list_response.total}")
-            if file_list_response.user_file_vo_list:
-                for file in file_list_response.user_file_vo_list:
+            print(f"Total files: {len(files)}")
+            if files:
+                for file in files:
                     folder_marker = "📁" if file.is_folder == "Y" else "📄"
                     print(f"{folder_marker} {file.file_name} (ID: {file.id})")
 
     except SupernoteException as err:
         print(f"Error: {err}")
         if verbose:
-            import traceback
-
             traceback.print_exc()
         sys.exit(1)
     except Exception as err:
         print(f"Unexpected error: {err}")
         if verbose:
-            import traceback
-
             traceback.print_exc()
         sys.exit(1)
 
 
 def subcommand_cloud_ls(args) -> None:
     """Handler for cloud-ls subcommand."""
-    asyncio.run(async_cloud_ls(args.verbose))
+    asyncio.run(async_cloud_ls(args.path, args.verbose))
+
+
+async def async_cloud_upload(
+    local_path: str, remote_path: str, verbose: bool = False
+) -> None:
+    """Upload a file to Supernote Cloud."""
+    setup_logging(verbose)
+
+    if not os.path.exists(local_path):
+        print(f"Error: Local file not found: {local_path}")
+        sys.exit(1)
+
+    try:
+        with open(local_path, "rb") as f:
+            content = f.read()
+
+        async with create_session() as sn:
+            print(f"Uploading {local_path} to {remote_path}...")
+            await sn.device.upload_content(remote_path, content)
+            print("✓ Upload successful!")
+    except SupernoteException as err:
+        print(f"Error: {err}")
+        sys.exit(1)
+
+
+def subcommand_cloud_upload(args) -> None:
+    """Handler for cloud-upload subcommand."""
+    # If remote_path is not provided, use the same filename in the root directory
+    remote_path = args.remote_path
+    if not remote_path:
+        remote_path = "/" + os.path.basename(args.local_path)
+    # If remote_path is a directory (ends with /), append the local filename
+    elif remote_path.endswith("/"):
+        remote_path += os.path.basename(args.local_path)
+
+    asyncio.run(async_cloud_upload(args.local_path, remote_path, args.verbose))
+
+
+async def async_cloud_download(
+    remote_path: str, local_path: str, verbose: bool = False
+) -> None:
+    """Download a file from Supernote Cloud."""
+    setup_logging(verbose)
+
+    try:
+        async with create_session() as sn:
+            print(f"Downloading {remote_path} to {local_path}...")
+            content = await sn.device.download_content(path=remote_path)
+
+            with open(local_path, "wb") as f:
+                f.write(content)
+            print(f"✓ Downloaded to {local_path}")
+    except SupernoteException as err:
+        print(f"Error: {err}")
+        sys.exit(1)
+
+
+def subcommand_cloud_download(args) -> None:
+    """Handler for cloud-download subcommand."""
+    local_path = args.local_path
+    if not local_path:
+        local_path = os.path.basename(args.remote_path)
+    elif os.path.isdir(local_path):
+        local_path = os.path.join(local_path, os.path.basename(args.remote_path))
+
+    asyncio.run(async_cloud_download(args.remote_path, local_path, args.verbose))
+
+
+async def async_cloud_mkdir(path: str, verbose: bool = False) -> None:
+    """Create a folder in Supernote Cloud."""
+    setup_logging(verbose)
+
+    try:
+        async with create_session() as sn:
+            print(f"Creating folder: {path}...")
+            await sn.device.create_folder(path, equipment_no="WEB")
+            print("✓ Folder created successfully!")
+    except SupernoteException as err:
+        print(f"Error: {err}")
+        sys.exit(1)
+
+
+def subcommand_cloud_mkdir(args) -> None:
+    """Handler for cloud-mkdir subcommand."""
+    asyncio.run(async_cloud_mkdir(args.path, args.verbose))
+
+
+async def async_cloud_rm(path: str, verbose: bool = False) -> None:
+    """Remove a file or folder from Supernote Cloud."""
+    setup_logging(verbose)
+
+    try:
+        async with create_session() as sn:
+            print(f"Removing {path}...")
+            await sn.device.delete_by_path(path)
+            print("✓ Removed successfully!")
+    except SupernoteException as err:
+        print(f"Error: {err}")
+        sys.exit(1)
+
+
+def subcommand_cloud_rm(args) -> None:
+    """Handler for cloud-rm subcommand."""
+    asyncio.run(async_cloud_rm(args.path, args.verbose))
 
 
 def add_parser(subparsers):
-    # 'cloud-login' subcommand
-    parser_cloud_login = subparsers.add_parser(
-        "cloud-login", help="debug Supernote Cloud login flow"
+    """Add the cloud subparser to the main subparsers."""
+    cloud_parser = subparsers.add_parser("cloud", help="Interact with Supernote Cloud")
+    cloud_subparsers = cloud_parser.add_subparsers(
+        dest="cloud_command", help="Cloud command"
     )
-    parser_cloud_login.add_argument("email", type=str, help="user email/account")
-    parser_cloud_login.add_argument(
+
+    # 'cloud login' subcommand
+    parser_login = cloud_subparsers.add_parser(
+        "login", help="Authenticate with Supernote Cloud"
+    )
+    parser_login.add_argument("email", type=str, help="user email/account")
+    parser_login.add_argument(
         "--password", type=str, help="user password (prompt if omitted)"
     )
-    parser_cloud_login.add_argument(
+    parser_login.add_argument(
         "--url", type=str, required=True, help="Server URL (e.g. http://localhost:8080)"
     )
-    parser_cloud_login.add_argument(
+    parser_login.add_argument(
         "-v", "--verbose", action="store_true", help="Enable verbose logging"
     )
-    parser_cloud_login.set_defaults(func=subcommand_cloud_login)
+    parser_login.set_defaults(func=subcommand_cloud_login)
 
-    # Cloud ls command
-    cloud_ls_parser = subparsers.add_parser(
-        "cloud-ls", help="List files in Supernote Cloud"
+    # 'cloud ls' subcommand
+    parser_ls = cloud_subparsers.add_parser("ls", help="List files in Supernote Cloud")
+    parser_ls.add_argument(
+        "path", type=str, nargs="?", default="/", help="Path to list"
     )
-    cloud_ls_parser.add_argument(
+    parser_ls.add_argument(
         "-v", "--verbose", action="store_true", help="Enable verbose logging"
     )
-    cloud_ls_parser.set_defaults(func=subcommand_cloud_ls)
+    parser_ls.set_defaults(func=subcommand_cloud_ls)
+
+    # 'cloud upload' subcommand
+    parser_upload = cloud_subparsers.add_parser(
+        "upload", help="Upload a file to Supernote Cloud"
+    )
+    parser_upload.add_argument("local_path", type=str, help="Local file path")
+    parser_upload.add_argument(
+        "remote_path", type=str, nargs="?", help="Cloud destination path (optional)"
+    )
+    parser_upload.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    parser_upload.set_defaults(func=subcommand_cloud_upload)
+
+    # 'cloud download' subcommand
+    parser_download = cloud_subparsers.add_parser(
+        "download", help="Download a file from Supernote Cloud"
+    )
+    parser_download.add_argument("remote_path", type=str, help="Cloud file path")
+    parser_download.add_argument(
+        "local_path", type=str, nargs="?", help="Local destination path (optional)"
+    )
+    parser_download.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    parser_download.set_defaults(func=subcommand_cloud_download)
+
+    # 'cloud mkdir' subcommand
+    parser_mkdir = cloud_subparsers.add_parser(
+        "mkdir", help="Create a folder in Supernote Cloud"
+    )
+    parser_mkdir.add_argument("path", type=str, help="Cloud folder path")
+    parser_mkdir.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    parser_mkdir.set_defaults(func=subcommand_cloud_mkdir)
+
+    # 'cloud rm' subcommand
+    parser_rm = cloud_subparsers.add_parser(
+        "rm", help="Remove a file or folder from Supernote Cloud"
+    )
+    parser_rm.add_argument("path", type=str, help="Cloud file or folder path")
+    parser_rm.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    parser_rm.set_defaults(func=subcommand_cloud_rm)

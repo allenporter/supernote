@@ -26,8 +26,9 @@ from supernote.models.file_web import (
     RecycleFileListVO,
     UploadType,
 )
+from supernote.models.auth import UserQueryByIdVO
 
-from . import Client
+from .client import Client
 
 DEFAULT_PAGE_SIZE = 50
 
@@ -38,6 +39,10 @@ class WebClient:
     def __init__(self, client: Client) -> None:
         """Initialize the WebClient."""
         self._client = client
+
+    async def query_user(self) -> UserQueryByIdVO:
+        """Query user information (Web API)."""
+        return await self._client.post_json("/api/user/query", UserQueryByIdVO, json={})
 
     async def list_query(
         self,
