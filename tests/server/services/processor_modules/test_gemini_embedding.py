@@ -15,11 +15,6 @@ from supernote.server.services.processor_modules.gemini_embedding import (
 )
 
 
-@pytest.fixture
-def mock_gemini_service() -> MagicMock:
-    service = MagicMock(spec=GeminiService)
-    service.is_configured = True
-    return service
 
 
 @pytest.fixture

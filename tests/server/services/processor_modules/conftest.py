@@ -43,3 +43,10 @@ def server_config_gemini(tmp_path: Path) -> ServerConfig:
 @pytest.fixture
 def gemini_service(server_config_gemini: ServerConfig) -> GeminiService:
     return GeminiService(api_key=server_config_gemini.gemini_api_key)
+
+
+@pytest.fixture
+def mock_gemini_service() -> MagicMock:
+    service = MagicMock(spec=GeminiService)
+    service.is_configured = True
+    return service
