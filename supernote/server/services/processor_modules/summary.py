@@ -19,6 +19,7 @@ class SummaryModule(ProcessorModule):
         session_manager: DatabaseSessionManager,
         page_index: Optional[int] = None,
     ) -> bool:
+        # Placeholder: Summary generation is not yet implemented.
         return False
 
     async def process(
@@ -28,4 +29,5 @@ class SummaryModule(ProcessorModule):
         page_index: Optional[int] = None,
         **kwargs: object,
     ) -> None:
+        """Placeholder for summary generation logic."""
         pass

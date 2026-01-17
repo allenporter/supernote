@@ -30,29 +30,23 @@ def processor_service() -> ProcessorService:
 async def test_explicit_orchestration_flow(
     processor_service: ProcessorService,
 ) -> None:
-    # 1. Setup - Create Mocks explicitly
+    # Setup - Create Mocks explicitly
     hashing = MagicMock(spec=PageHashingModule)
-
-    hashing.run_if_needed = AsyncMock(return_value=True)
-    hashing.process = AsyncMock()
+    hashing.run = AsyncMock(return_value=True)
 
     png = MagicMock(spec=PngConversionModule)
-    png.run_if_needed = AsyncMock(return_value=True)
-    png.process = AsyncMock()
+    png.run = AsyncMock(return_value=True)
 
     ocr = MagicMock(spec=GeminiOcrModule)
-    ocr.run_if_needed = AsyncMock(return_value=True)
-    ocr.process = AsyncMock()
+    ocr.run = AsyncMock(return_value=True)
 
     embedding = MagicMock(spec=GeminiEmbeddingModule)
-    embedding.run_if_needed = AsyncMock(return_value=True)
-    embedding.process = AsyncMock()
+    embedding.run = AsyncMock(return_value=True)
 
     summary = MagicMock(spec=SummaryModule)
-    summary.run_if_needed = AsyncMock(return_value=True)
-    summary.process = AsyncMock()
+    summary.run = AsyncMock(return_value=True)
 
-    # 2. Register
+    # Register
     processor_service.register_modules(
         hashing=hashing,
         png=png,
@@ -61,71 +55,53 @@ async def test_explicit_orchestration_flow(
         summary=summary,
     )
 
-    # 3. Mock DB Session (2 pages)
-    # Create the mock session manager explicitly and assign it
+    # Mock DB Session (2 pages)
     mock_session = AsyncMock()
     mock_result = MagicMock()
     mock_result.scalars().all.return_value = [0, 1]
     mock_session.execute.return_value = mock_result
 
-    # We must ensure the session_manager on the service returns our mock_session
     sm_mock = cast(MagicMock, processor_service.session_manager)
     sm_mock.session.return_value.__aenter__.return_value = mock_session
 
-    # 4. Execute
+    # Execute
     file_id = 123
     await processor_service.process_file(file_id)
 
-    # 5. Verify flow
+    # Verify flow
+    hashing.run.assert_called_once_with(file_id, sm_mock)
 
-    # Hashing (Global) runs first
-    # Use sm_mock (which is processor_service.session_manager) for assertion
-    hashing.run_if_needed.assert_called_once_with(file_id, sm_mock)
-    hashing.process.assert_called_once()
-
-    # Per-Page Pipeline
-    # Page 0
-    png.run_if_needed.assert_any_call(file_id, sm_mock, page_index=0)
-    ocr.run_if_needed.assert_any_call(file_id, sm_mock, page_index=0)
-    embedding.run_if_needed.assert_any_call(file_id, sm_mock, page_index=0)
+    # Per-Page Pipeline (Parallel across pages)
+    png.run.assert_any_call(file_id, sm_mock, page_index=0)
+    png.run.assert_any_call(file_id, sm_mock, page_index=1)
+    ocr.run.assert_any_call(file_id, sm_mock, page_index=0)
+    embedding.run.assert_any_call(file_id, sm_mock, page_index=0)
 
     # Summary (Global) runs last
-    summary.run_if_needed.assert_called_once_with(file_id, sm_mock)
+    summary.run.assert_called_once_with(file_id, sm_mock)
 
 
 @pytest.mark.asyncio
 async def test_dependant_skipping(
     processor_service: ProcessorService,
 ) -> None:
-    """Verify that if PNG conversion is not needed (or fails/returns False), OCR is skipped."""
-    # 1. Setup - Create Mocks explicitly
+    """Verify that if a module fails (returns False), the page pipeline stops."""
+    # Setup - Create Mocks explicitly
     hashing = MagicMock(spec=PageHashingModule)
-    hashing.run_if_needed = AsyncMock(return_value=True)
-    hashing.process = AsyncMock()
+    hashing.run = AsyncMock(return_value=True)
 
-    # PNG returns FALSE -> Skipped
+    # PNG returns FALSE -> Failure/Stall
     png = MagicMock(spec=PngConversionModule)
-    png.run_if_needed = AsyncMock(return_value=False)
-    png.process = AsyncMock()
-
-    # OCR dependency requires PNG to run?
-    # Actually my logic is simpler:
-    # if await png.run_if_needed(): await png.process()
-    # if await ocr.run_if_needed(): await ocr.process()
-    # Checks are independent in `process_file` logic,
-    # correctness relies on `ocr.run_if_needed` checking PNG existence.
+    png.run = AsyncMock(return_value=False)
 
     ocr = MagicMock(spec=GeminiOcrModule)
-    ocr.run_if_needed = AsyncMock(return_value=True)
-    ocr.process = AsyncMock()
+    ocr.run = AsyncMock(return_value=True)
 
     embedding = MagicMock(spec=GeminiEmbeddingModule)
-    embedding.run_if_needed = AsyncMock(return_value=True)
-    embedding.process = AsyncMock()
+    embedding.run = AsyncMock(return_value=True)
 
     summary = MagicMock(spec=SummaryModule)
-    summary.run_if_needed = AsyncMock(return_value=True)
-    summary.process = AsyncMock()
+    summary.run = AsyncMock(return_value=True)
 
     # Register
     processor_service.register_modules(
@@ -148,16 +124,12 @@ async def test_dependant_skipping(
     file_id = 123
     await processor_service.process_file(file_id)
 
-    # Debug
-    print(f"DEBUG: Calls: {png.run_if_needed.call_args_list}")
-    print(f"DEBUG: Session Manager in Service: {processor_service.session_manager}")
-    print(f"DEBUG: Session Manager in Test: {sm_mock}")
-
     # Verify
-    # PNG check was called, but process was NOT called (because it returned False)
-    # Use positional args for file_id and session_manager to match call signature
-    png.run_if_needed.assert_any_call(123, sm_mock, page_index=0)
-    png.process.assert_not_called()
+    png.run.assert_called_once_with(123, sm_mock, page_index=0)
 
-    # OCR should still be checked (because loop continues)
-    ocr.run_if_needed.assert_any_call(123, sm_mock, page_index=0)
+    # OCR and Embedding should NOT be checked because PNG returned False
+    ocr.run.assert_not_called()
+    embedding.run.assert_not_called()
+
+    # Summary (Global) should still run
+    summary.run.assert_called_once_with(file_id, sm_mock)

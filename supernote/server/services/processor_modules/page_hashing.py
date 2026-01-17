@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import time
 from functools import partial
 from typing import Any, Optional
 
@@ -33,7 +32,7 @@ class PageHashingModule(ProcessorModule):
         -   Creates entries for new pages.
         -   Updates hashes for changed pages and invalidates downstream data (OCR, Embeddings) to trigger reprocessing.
         -   Removes entries for deleted pages.
-    4.  Updates the `SystemTaskDO` status for the 'HASHING' task.
+    4.  Updates the `SystemTaskDO` status for the 'HASHING' task (handled by base class).
 
     This module acts as the entry point and "change detector" for the incremental processing pipeline.
     """
@@ -55,11 +54,7 @@ class PageHashingModule(ProcessorModule):
         session_manager: DatabaseSessionManager,
         page_index: Optional[int] = None,
     ) -> bool:
-        """Check if hashing is needed for the file.
-
-        Hashing acts as the change detector, so it MUST run every time the file is processed.
-        It is cheap to run because parsing the .note structure is fast compared to OCR/Embeddings.
-        """
+        """Hashing acts as the change detector, so it MUST run every time the file is processed."""
         return True
 
     async def process(
@@ -72,7 +67,7 @@ class PageHashingModule(ProcessorModule):
         """Parses the .note file, computes page hashes, and updates NotePageContentDO."""
         logger.info(f"Starting PageHashingModule for file_id={file_id}")
 
-        # 1. Resolve file path
+        # Resolve file path
         async with session_manager.session() as session:
             # Get UserFileDO to find owner & storage key
             result = await session.execute(
@@ -103,7 +98,7 @@ class PageHashingModule(ProcessorModule):
             logger.error(f"File {abs_path} does not exist on disk")
             return
 
-        # 2. Parse .note file
+        # Parse .note file
         try:
             # Run parser in thread pool
             loop = asyncio.get_running_loop()
@@ -115,7 +110,7 @@ class PageHashingModule(ProcessorModule):
             logger.error(f"Failed to parse .note file {file_id}: {e}")
             return
 
-        # 3. Iterate pages and update DB
+        # Iterate pages and update DB
         total_pages = metadata.get_total_pages()
         if not metadata.pages:
             # Should not happen if total_pages > 0, but safe check for types
@@ -181,7 +176,7 @@ class PageHashingModule(ProcessorModule):
                     )
                     session.add(new_content)
 
-            # 4. Handle Page Deletions
+            # Handle Page Deletions
             # If the notebook shrank (pages removed), delete orphaned entries.
 
             await session.execute(
@@ -189,33 +184,5 @@ class PageHashingModule(ProcessorModule):
                 .where(NotePageContentDO.file_id == file_id)
                 .where(NotePageContentDO.page_index >= total_pages)
             )
-
-            # 5. Mark Hashing Task as Complete
-            task_key = "global"
-            existing_task = (
-                (
-                    await session.execute(
-                        select(SystemTaskDO)
-                        .where(SystemTaskDO.file_id == file_id)
-                        .where(SystemTaskDO.task_type == self.task_type)
-                        .where(SystemTaskDO.key == task_key)
-                    )
-                )
-                .scalars()
-                .first()
-            )
-
-            if not existing_task:
-                existing_task = SystemTaskDO(
-                    file_id=file_id,
-                    task_type=self.task_type,
-                    key=task_key,
-                    status="COMPLETED",
-                )
-                session.add(existing_task)
-            else:
-                existing_task.status = "COMPLETED"
-                existing_task.last_error = None
-                existing_task.update_time = int(time.time() * 1000)
 
             await session.commit()

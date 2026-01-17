@@ -30,7 +30,7 @@ async def test_process_png_conversion_success(
 ) -> None:
     """Integration test using a real .note file and real FileService."""
 
-    # 1. Setup Data
+    # Setup Data
     user_id = 100
     file_id = 999
     storage_key = "test_note_storage_key_png"
@@ -56,10 +56,10 @@ async def test_process_png_conversion_success(
         session.add(user_file)
         await session.commit()
 
-    # 2. Run Process
-    await png_conversion_module.process(file_id, session_manager, page_index=page_index)
+    # Run full module lifecycle
+    await png_conversion_module.run(file_id, session_manager, page_index=page_index)
 
-    # 3. Assertions
+    # Assertions
     async with session_manager.session() as session:
         # Check Task Status
         task = (
