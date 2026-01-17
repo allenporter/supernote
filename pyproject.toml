@@ -89,3 +89,7 @@ warn_unreachable = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# Ignore pytest warnings in upstream libraries
+filterwarnings = [
+    "ignore:'_UnionGenericAlias' is deprecated and slated for removal in Python 3.17:DeprecationWarning:google.genai",
+]
