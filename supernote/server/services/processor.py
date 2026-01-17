@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Set
+from typing import List, Set
 
 from sqlalchemy import select
 
@@ -8,11 +8,7 @@ from ..db.models.note_processing import NotePageContentDO
 from ..db.session import DatabaseSessionManager
 from ..events import Event, LocalEventBus, NoteDeletedEvent, NoteUpdatedEvent
 from ..services.file import FileService
-from ..services.processor_modules.gemini_embedding import GeminiEmbeddingModule
-from ..services.processor_modules.gemini_ocr import GeminiOcrModule
-from ..services.processor_modules.page_hashing import PageHashingModule
-from ..services.processor_modules.png_conversion import PngConversionModule
-from ..services.processor_modules.summary import SummaryModule
+from ..services.processor_modules import ProcessorModule
 from ..services.summary import SummaryService
 
 logger = logging.getLogger(__name__)
@@ -47,27 +43,23 @@ class ProcessorService:
         self.workers: list[asyncio.Task] = []
         self._shutdown_event = asyncio.Event()
 
-        # Explicit modules
-        self.hashing_module: PageHashingModule | None = None
-        self.png_module: PngConversionModule | None = None
-        self.ocr_module: GeminiOcrModule | None = None
-        self.embedding_module: GeminiEmbeddingModule | None = None
-        self.summary_module: SummaryModule | None = None
+        # Module registry
+        self.global_pre_modules: List[ProcessorModule] = []
+        self.page_modules: List[ProcessorModule] = []
+        self.global_post_modules: List[ProcessorModule] = []
 
     def register_modules(
         self,
-        hashing: PageHashingModule,
-        png: PngConversionModule,
-        ocr: GeminiOcrModule,
-        embedding: GeminiEmbeddingModule,
-        summary: SummaryModule,
+        hashing: ProcessorModule,
+        png: ProcessorModule,
+        ocr: ProcessorModule,
+        embedding: ProcessorModule,
+        summary: ProcessorModule,
     ) -> None:
-        """Register processing modules."""
-        self.hashing_module = hashing
-        self.png_module = png
-        self.ocr_module = ocr
-        self.embedding_module = embedding
-        self.summary_module = summary
+        """Register processing modules in logical order."""
+        self.global_pre_modules = [hashing]
+        self.page_modules = [png, ocr, embedding]
+        self.global_post_modules = [summary]
         logger.info("Registered all processor modules.")
 
     async def start(self) -> None:
@@ -143,25 +135,17 @@ class ProcessorService:
         """Orchestrate the processing pipeline for a single file."""
         logger.info(f"Processing file {file_id}...")
 
-        if not all(
-            [
-                self.hashing_module,
-                self.png_module,
-                self.ocr_module,
-                self.embedding_module,
-                self.summary_module,
-            ]
-        ):
+        if not self.global_pre_modules or not self.page_modules:
             logger.error("Modules not fully registered. Skipping processing.")
             return
 
-        # 1. Hashing (Global)
-        # Detect changes. If no changes, return early?
-        # For now, hashing just updates the DB state.
-        if await self.hashing_module.run_if_needed(file_id, self.session_manager):  # type: ignore
-            await self.hashing_module.process(file_id, self.session_manager)  # type: ignore
+        # Pipeline Stage: Global Pre-processing (Hashing)
+        for module in self.global_pre_modules:
+            if not await module.run(file_id, self.session_manager):
+                logger.error(f"Pre-module {module.name} failed. Aborting pipeline.")
+                return
 
-        # 2. Identify Pages
+        # Identify Pages
         async with self.session_manager.session() as session:
             stmt = (
                 select(NotePageContentDO.page_index)
@@ -173,33 +157,29 @@ class ProcessorService:
 
         if not page_indices:
             logger.info(f"No pages found for file {file_id}. Skipping page tasks.")
+        else:
+            # Pipeline Stage: Per-Page Processing (Parallel across pages)
+            # Each page pipeline runs sequentially (PNG -> OCR -> Embedding)
+            # but multiple pages run in parallel.
+            tasks = [
+                self._process_page(file_id, page_index) for page_index in page_indices
+            ]
+            await asyncio.gather(*tasks)
 
-        # 3. Per-Page Pipeline (Explicit Order)
-        for page_index in page_indices:
-            # PNG acts as a gate for OCR
-            if await self.png_module.run_if_needed(  # type: ignore
+        # Pipeline Stage: Global Post-processing (Summary)
+        for module in self.global_post_modules:
+            await module.run(file_id, self.session_manager)
+
+    async def _process_page(self, file_id: int, page_index: int) -> None:
+        """Process all modules for a single page sequentially."""
+        for module in self.page_modules:
+            # We run them sequentially because they have dependencies (PNG -> OCR -> Embedding)
+            # If one fails, we stop this page's pipeline.
+            success = await module.run(
                 file_id, self.session_manager, page_index=page_index
-            ):
-                await self.png_module.process(  # type: ignore
-                    file_id, self.session_manager, page_index=page_index
+            )
+            if not success:
+                logger.warning(
+                    f"Page {page_index} processing stalled at {module.name} for file {file_id}"
                 )
-
-            # OCR acts as a gate for Embedding
-            if await self.ocr_module.run_if_needed(  # type: ignore
-                file_id, self.session_manager, page_index=page_index
-            ):
-                await self.ocr_module.process(  # type: ignore
-                    file_id, self.session_manager, page_index=page_index
-                )
-
-            # Embedding
-            if await self.embedding_module.run_if_needed(  # type: ignore
-                file_id, self.session_manager, page_index=page_index
-            ):
-                await self.embedding_module.process(  # type: ignore
-                    file_id, self.session_manager, page_index=page_index
-                )
-
-        # 4. Summary (Global)
-        if await self.summary_module.run_if_needed(file_id, self.session_manager):  # type: ignore
-            await self.summary_module.process(file_id, self.session_manager)  # type: ignore
+                break

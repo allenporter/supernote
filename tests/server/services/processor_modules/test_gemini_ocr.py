@@ -42,7 +42,7 @@ async def test_process_ocr_success(
     blob_storage: BlobStorage,
     mock_gemini_service: MagicMock,
 ) -> None:
-    # 1. Setup Data
+    # Setup Data
     user_id = 100
     file_id = 999
     page_index = 0
@@ -71,15 +71,15 @@ async def test_process_ocr_success(
         session.add(content)
         await session.commit()
 
-    # 2. Mock Gemini API Response
+    # Mock Gemini API Response
     mock_response = MagicMock()
     mock_response.text = "Handwritten text content"
     mock_gemini_service.generate_content.return_value = mock_response
 
-    # 3. Run Process
-    await gemini_ocr_module.process(file_id, session_manager, page_index=page_index)
+    # Run full module lifecycle
+    await gemini_ocr_module.run(file_id, session_manager, page_index=page_index)
 
-    # 4. Verifications
+    # Verifications
     # Verify API Call
     call_args = mock_gemini_service.generate_content.call_args
     assert call_args is not None
@@ -94,7 +94,7 @@ async def test_process_ocr_success(
     # Verify config passed
     assert kwargs["config"] == {"media_resolution": "media_resolution_high"}
 
-    # 5. Verify DB Updates
+    # Verify DB Updates
     async with session_manager.session() as session:
         # Check Content Update
         updated_content = (

@@ -26,7 +26,7 @@ async def test_process_with_real_file(
 ) -> None:
     """Integration test using a real .note file and real FileService."""
 
-    # 1. Setup Data
+    # Setup Data
     user_id = 100
     file_id = 999
     storage_key = "test_note_storage_key"
@@ -51,11 +51,10 @@ async def test_process_with_real_file(
         session.add(user_file)
         await session.commit()
 
-    # 2. Run Process (Real Parser, Real File)
-    # No mocks for parser!
-    await page_hashing_module.process(file_id, session_manager)
+    # Run module lifecycle (Real Parser, Real File)
+    await page_hashing_module.run(file_id, session_manager)
 
-    # 3. Assertions
+    # Assertions
     async with session_manager.session() as session:
         # Check Pages
         pages = (
@@ -98,7 +97,7 @@ async def test_process_with_real_file(
         assert task is not None
         assert task.status == "COMPLETED"
 
-    # 4. Test Change Detection (Simulated)
+    # Test Change Detection (Simulated)
     # Since we can't easily edit the binary .note file to change content,
     # we will Simulate a change by manually modifying the DB hash to be wrong.
     # Then running process again should revert it to the correct hash.
@@ -168,7 +167,7 @@ async def test_process_with_real_file(
         )
         assert invalidated_task is None
 
-    # 5. Test Deletion
+    # Test Deletion
     # We will simulate deletion by manually adding an extra page that doesn't exist in the file.
     # The process should remove it.
 
