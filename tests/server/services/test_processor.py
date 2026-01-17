@@ -64,7 +64,6 @@ class SlowModule(ProcessorModule):
             self.active_count -= 1
 
 
-@pytest.mark.asyncio
 async def test_processor_lifecycle(processor_service: ProcessorService) -> None:
     # Test Start
     await processor_service.start()
@@ -78,7 +77,6 @@ async def test_processor_lifecycle(processor_service: ProcessorService) -> None:
         assert worker.cancelled() or worker.done()
 
 
-@pytest.mark.asyncio
 async def test_processor_handles_event(processor_service: ProcessorService) -> None:
     await processor_service.start()
 
@@ -127,7 +125,6 @@ async def test_processor_deduplication(processor_service: ProcessorService) -> N
     assert processor_service.queue.put.call_count == 1
 
 
-@pytest.mark.asyncio
 async def test_handle_note_deleted_cleanup(
     processor_service: ProcessorService,
     session_manager: DatabaseSessionManager,
@@ -190,7 +187,6 @@ async def test_handle_note_deleted_cleanup(
     )
 
 
-@pytest.mark.asyncio
 async def test_page_hashing_orphan_cleanup(
     session_manager: DatabaseSessionManager, mock_file_service: MagicMock
 ) -> None:
@@ -272,7 +268,6 @@ async def test_page_hashing_orphan_cleanup(
     )
 
 
-@pytest.mark.asyncio
 async def test_recover_tasks_enqueues_incomplete(
     processor_service: ProcessorService, session_manager: DatabaseSessionManager
 ) -> None:
@@ -303,7 +298,6 @@ async def test_recover_tasks_enqueues_incomplete(
     assert set(ids) == {1, 2}
 
 
-@pytest.mark.asyncio
 async def test_start_calls_recover_tasks(processor_service: ProcessorService) -> None:
     with patch.object(
         processor_service, "recover_tasks", new_callable=AsyncMock
@@ -315,7 +309,6 @@ async def test_start_calls_recover_tasks(processor_service: ProcessorService) ->
             await processor_service.stop()
 
 
-@pytest.mark.asyncio
 async def test_page_parallelism(
     processor_service: ProcessorService, session_manager: DatabaseSessionManager
 ) -> None:
@@ -346,7 +339,6 @@ async def test_page_parallelism(
     )
 
 
-@pytest.mark.asyncio
 async def test_gemini_concurrency_limit() -> None:
     max_concurrency = 2
     from supernote.server.services.gemini import GeminiService

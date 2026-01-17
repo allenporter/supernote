@@ -4,7 +4,6 @@ from supernote.server.services.coordination import CoordinationService
 from supernote.server.utils.rate_limit import RateLimiter, RateLimitExceeded
 
 
-@pytest.mark.asyncio
 async def test_rate_limiter_allow(coordination_service: CoordinationService) -> None:
     limiter = RateLimiter(coordination_service)
 
@@ -17,7 +16,6 @@ async def test_rate_limiter_allow(coordination_service: CoordinationService) -> 
     pass
 
 
-@pytest.mark.asyncio
 async def test_rate_limiter_exceed(coordination_service: CoordinationService) -> None:
     limiter = RateLimiter(coordination_service)
     key = "exceed_key"
@@ -34,7 +32,6 @@ async def test_rate_limiter_exceed(coordination_service: CoordinationService) ->
         await limiter.check(key, limit, window)
 
 
-@pytest.mark.asyncio
 async def test_rate_limiter_expiry(coordination_service: CoordinationService) -> None:
     from freezegun import freeze_time
 

@@ -10,7 +10,6 @@ from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
 
 
-@pytest.mark.asyncio
 async def test_retrieve_password_success(
     user_service: UserService,
     session_manager: DatabaseSessionManager,
@@ -41,13 +40,11 @@ async def test_retrieve_password_success(
         assert user.password_md5 == new_pw
 
 
-@pytest.mark.asyncio
 async def test_retrieve_password_invalid_md5(user_service: UserService) -> None:
     with pytest.raises(ValueError, match="Invalid password format"):
         await user_service.retrieve_password("user@example.com", "plain_text_password")
 
 
-@pytest.mark.asyncio
 async def test_retrieve_password_user_not_found(user_service: UserService) -> None:
     result = await user_service.retrieve_password(
         "nonexistent@example.com", hashlib.md5("pw".encode()).hexdigest()

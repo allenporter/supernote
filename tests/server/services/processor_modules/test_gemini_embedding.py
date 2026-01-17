@@ -27,7 +27,6 @@ def gemini_embedding_module(
     )
 
 
-@pytest.mark.asyncio
 async def test_process_embedding_success(
     gemini_embedding_module: GeminiEmbeddingModule,
     session_manager: DatabaseSessionManager,

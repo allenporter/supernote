@@ -63,7 +63,6 @@ async def test_bootstrap_bypasses_disabled_registration(
         await service.register(dto2)
 
 
-@pytest.mark.asyncio
 async def test_admin_create_user_bypass(
     session_manager: DatabaseSessionManager, coordination_service: CoordinationService
 ) -> None:
