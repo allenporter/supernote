@@ -91,8 +91,14 @@ class ServerConfig(DataClassYAMLMixin):
 
     gemini_embedding_model: str = "gemini-embedding-001"
     """Gemini model to use for Embeddings.
-
+BaseConfig
     Env Var: `SUPERNOTE_GEMINI_EMBEDDING_MODEL`
+    """
+
+    gemini_max_concurrency: int = 5
+    """Maximum number of concurrent Gemini API calls.
+
+    Env Var: `SUPERNOTE_GEMINI_MAX_CONCURRENCY`
     """
 
     @property
@@ -187,6 +193,14 @@ class ServerConfig(DataClassYAMLMixin):
             config.gemini_embedding_model = os.getenv(
                 "SUPERNOTE_GEMINI_EMBEDDING_MODEL", config.gemini_embedding_model
             )
+
+        if os.getenv("SUPERNOTE_GEMINI_MAX_CONCURRENCY"):
+            try:
+                config.gemini_max_concurrency = int(
+                    os.getenv("SUPERNOTE_GEMINI_MAX_CONCURRENCY", str(config.gemini_max_concurrency))
+                )
+            except ValueError:
+                pass
 
         if not config_file.exists():
             # Set default trace log file if not specified
