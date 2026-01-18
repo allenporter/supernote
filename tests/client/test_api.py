@@ -1,5 +1,6 @@
 """Tests for the Supernote session API."""
 
+import aiohttp
 from aiohttp import web
 
 from supernote.client import ConstantAuth, Supernote
