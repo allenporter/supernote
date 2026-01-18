@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -185,6 +186,7 @@ async def test_full_processing_pipeline_with_real_file(
         # Check transcript
         transcript = summaries[1]  # -transcript comes after -summary
         assert transcript.unique_identifier == f"{storage_key}-transcript"
+        assert transcript.content is not None
         assert "Handwritten text content" in transcript.content
         assert transcript.data_source == "OCR"
 

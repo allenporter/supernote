@@ -83,12 +83,12 @@ class SummaryModule(ProcessorModule):
             file_do, user_email = row
 
             # 2. Aggregate OCR Text
-            stmt = (
+            stmt_pages = (
                 select(NotePageContentDO)
                 .where(NotePageContentDO.file_id == file_id)
                 .order_by(NotePageContentDO.page_index.asc())
             )
-            result = await session.execute(stmt)
+            result = await session.execute(stmt_pages)
             pages = result.scalars().all()
 
             text_parts = []
@@ -157,10 +157,14 @@ class SummaryModule(ProcessorModule):
 
     async def _upsert_summary(self, user_email: str, dto: AddSummaryDTO) -> None:
         """Helper to either add or update a summary based on its unique identifier."""
+        if not dto.unique_identifier:
+            logger.error("Cannot upsert summary without a unique identifier")
+            return
+
         existing = await self.summary_service.get_summary_by_uuid(
             user_email, dto.unique_identifier
         )
-        if existing:
+        if existing and existing.id is not None:
             await self.summary_service.update_summary(
                 user_email,
                 UpdateSummaryDTO(

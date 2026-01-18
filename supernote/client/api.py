@@ -72,7 +72,12 @@ class Supernote:
         """Enter the async context manager."""
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object | None,
+    ) -> None:
         """Exit the async context manager."""
         if self._close_session:
             await self._session.close()
@@ -107,7 +112,7 @@ class Supernote:
 
     def with_auth(self, auth: AbstractAuth) -> Self:
         """Return a new Supernote instance with the given authentication credentials."""
-        return Supernote(
+        return self.__class__(
             session=self._session,
             host=self._client.host,
             auth=auth,

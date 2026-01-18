@@ -97,6 +97,7 @@ async def test_summary_success(
     dto = transcript_call.args[1]
     assert isinstance(dto, AddSummaryDTO)
     assert dto.unique_identifier == f"{storage_key}-transcript"
+    assert dto.content is not None
     assert "Page 1 text" in dto.content
     assert "Page 2 text" in dto.content
     assert dto.data_source == "OCR"
@@ -181,4 +182,5 @@ async def test_summary_idempotency_update(
     update_call = mock_summary_service.update_summary.call_args_list[0]
     assert update_call.args[0] == user_email
     assert update_call.args[1].id == 10
+    assert update_call.args[1].content is not None
     assert "Page 1" in update_call.args[1].content
