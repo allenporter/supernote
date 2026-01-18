@@ -12,6 +12,7 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.summary import SummaryModule
 from supernote.server.services.summary import SummaryService
+from supernote.server.utils.paths import get_summary_id, get_transcript_id
 
 
 @pytest.fixture
@@ -69,14 +70,16 @@ async def test_summary_success(
         p1 = NotePageContentDO(
             file_id=file_id,
             page_index=0,
-            text_content="Page 1 text",
+            page_id="p0",
             content_hash="h1",
+            text_content="Page 1 text",
         )
         p2 = NotePageContentDO(
             file_id=file_id,
             page_index=1,
-            text_content="Page 2 text",
+            page_id="p1",
             content_hash="h2",
+            text_content="Page 2 text",
         )
         session.add(p1)
         session.add(p2)
@@ -96,7 +99,7 @@ async def test_summary_success(
     assert transcript_call.args[0] == user_email
     dto = transcript_call.args[1]
     assert isinstance(dto, AddSummaryDTO)
-    assert dto.unique_identifier == f"{storage_key}-transcript"
+    assert dto.unique_identifier == get_transcript_id(storage_key)
     assert dto.content is not None
     assert "Page 1 text" in dto.content
     assert "Page 2 text" in dto.content
@@ -106,7 +109,7 @@ async def test_summary_success(
     ai_call = mock_summary_service.add_summary.call_args_list[1]
     assert ai_call.args[0] == user_email
     dto_ai = ai_call.args[1]
-    assert dto_ai.unique_identifier == f"{storage_key}-summary"
+    assert dto_ai.unique_identifier == get_summary_id(storage_key)
     assert dto_ai.content == "AI Summary Output"
     assert dto_ai.data_source == "GEMINI"
 
@@ -151,13 +154,15 @@ async def test_summary_idempotency_update(
             directory_id=0,
         )
         session.add(user_file)
-        p1 = NotePageContentDO(
-            file_id=file_id,
-            page_index=0,
-            text_content="Page 1",
-            content_hash="h1",
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="p0",
+                content_hash="h1",
+                text_content="Some text",
+            )
         )
-        session.add(p1)
         await session.commit()
 
     # Mock Gemini
@@ -167,8 +172,8 @@ async def test_summary_idempotency_update(
 
     # Mock Existing Summary
     mock_summary_service.get_summary_by_uuid.side_effect = [
-        SummaryItem(id=10, unique_identifier=f"{storage_key}-transcript"),
-        SummaryItem(id=11, unique_identifier=f"{storage_key}-summary"),
+        SummaryItem(id=10, unique_identifier=get_transcript_id(storage_key)),
+        SummaryItem(id=11, unique_identifier=get_summary_id(storage_key)),
     ]
 
     # Run

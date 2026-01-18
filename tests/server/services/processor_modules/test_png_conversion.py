@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import SystemTaskDO
+from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
@@ -54,10 +54,21 @@ async def test_process_png_conversion_success(
             directory_id=0,
         )
         session.add(user_file)
+        # Add NotePageContentDO so page_id exists
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=page_index,
+                page_id="p0",
+                content_hash="hash",
+            )
+        )
         await session.commit()
 
     # Run full module lifecycle
-    await png_conversion_module.run(file_id, session_manager, page_index=page_index)
+    await png_conversion_module.run(
+        file_id, session_manager, page_index=page_index, page_id="p0"
+    )
 
     # Assertions
     async with session_manager.session() as session:
@@ -68,7 +79,7 @@ async def test_process_png_conversion_success(
                     select(SystemTaskDO)
                     .where(SystemTaskDO.file_id == file_id)
                     .where(SystemTaskDO.task_type == "PNG_CONVERSION")
-                    .where(SystemTaskDO.key == f"page_{page_index}")
+                    .where(SystemTaskDO.key == "page_p0")
                 )
             )
             .scalars()
@@ -81,8 +92,7 @@ async def test_process_png_conversion_success(
         assert task.status == "COMPLETED"
 
     # Check Blob Output
-    # Expected path no longer has caches/ prefix if helper changed, but helper returns full key.
-    expected_blob_path = get_page_png_path(file_id, page_index)
+    expected_blob_path = get_page_png_path(file_id, "p0")
 
     assert await blob_storage.exists(CACHE_BUCKET, expected_blob_path)
 

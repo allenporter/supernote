@@ -123,7 +123,7 @@ async def test_process_with_real_file(
         ocr_task = SystemTaskDO(
             file_id=file_id,
             task_type="OCR_EXTRACTION",
-            key="page_0",
+            key=f"page_{page.page_id}",
             status="COMPLETED",
         )
         session.add(ocr_task)
@@ -158,7 +158,7 @@ async def test_process_with_real_file(
                     select(SystemTaskDO)
                     .where(SystemTaskDO.file_id == file_id)
                     .where(SystemTaskDO.task_type == "OCR_EXTRACTION")
-                    .where(SystemTaskDO.key == "page_0")
+                    .where(SystemTaskDO.key == f"page_{page.page_id}")
                 )
             )
             .scalars()
@@ -173,7 +173,10 @@ async def test_process_with_real_file(
     extra_page_index = len(pages) + 5  # Safely out of bounds
     async with session_manager.session() as session:
         extra_page = NotePageContentDO(
-            file_id=file_id, page_index=extra_page_index, content_hash="trash"
+            file_id=file_id,
+            page_index=extra_page_index,
+            page_id="trash_id",
+            content_hash="trash",
         )
         session.add(extra_page)
         await session.commit()

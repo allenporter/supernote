@@ -13,6 +13,7 @@ from supernote.server.services.file import FileService
 from supernote.server.services.gemini import GeminiService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.services.summary import SummaryService
+from supernote.server.utils.paths import get_summary_id, get_transcript_id
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ class SummaryModule(ProcessorModule):
         file_id: int,
         session_manager: DatabaseSessionManager,
         page_index: Optional[int] = None,
+        page_id: Optional[str] = None,
     ) -> bool:
         # Summary is a file-level task (global), not page-level.
         if page_index is not None:
@@ -63,6 +65,7 @@ class SummaryModule(ProcessorModule):
         file_id: int,
         session_manager: DatabaseSessionManager,
         page_index: Optional[int] = None,
+        page_id: Optional[str] = None,
         **kwargs: object,
     ) -> None:
         """Aggregate OCR text and generate summaries."""
@@ -107,7 +110,7 @@ class SummaryModule(ProcessorModule):
         file_basis = file_do.storage_key or str(file_do.id)
 
         # 3. Create/Update Transcript Summary
-        transcript_uuid = f"{file_basis}-transcript"
+        transcript_uuid = get_transcript_id(file_basis)
         await self._upsert_summary(
             user_email,
             AddSummaryDTO(
@@ -123,7 +126,7 @@ class SummaryModule(ProcessorModule):
         if not self.gemini_service.is_configured:
             return
 
-        summary_uuid = f"{file_basis}-summary"
+        summary_uuid = get_summary_id(file_basis)
 
         prompt = (
             "You are a helpful assistant summarizing handwritten notes from a Supernote device. "

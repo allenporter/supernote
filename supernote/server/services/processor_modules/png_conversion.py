@@ -10,6 +10,7 @@ from supernote.notebook.converter import ImageConverter
 from supernote.notebook.parser import load_notebook
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
+from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
@@ -45,6 +46,7 @@ class PngConversionModule(ProcessorModule):
         file_id: int,
         session_manager: DatabaseSessionManager,
         page_index: Optional[int] = None,
+        page_id: Optional[str] = None,
         **kwargs: object,
     ) -> None:
         """
@@ -67,6 +69,18 @@ class PngConversionModule(ProcessorModule):
                 return
             storage_key = user_file.storage_key
 
+            # Get Page ID for stable path
+            page_result = await session.execute(
+                select(NotePageContentDO.page_id).where(
+                    NotePageContentDO.file_id == file_id,
+                    NotePageContentDO.page_index == page_index,
+                )
+            )
+            page_id = page_result.scalars().first()
+            if not page_id:
+                logger.error(f"Page ID not found for {file_id} index {page_index}")
+                return
+
         try:
             abs_path = self.file_service.blob_storage.get_blob_path(
                 USER_DATA_BUCKET, storage_key
@@ -86,6 +100,8 @@ class PngConversionModule(ProcessorModule):
         )
 
         # Upload to Blob Storage
-        blob_path = get_page_png_path(file_id, page_index)
+        blob_path = get_page_png_path(file_id, page_id)
         await self.file_service.blob_storage.put(CACHE_BUCKET, blob_path, png_data)
-        logger.info(f"Successfully converted page {page_index} of {file_id} to PNG")
+        logger.info(
+            f"Successfully converted page {page_index} ({page_id}) of {file_id} to PNG"
+        )

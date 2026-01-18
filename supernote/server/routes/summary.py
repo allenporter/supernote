@@ -30,8 +30,8 @@ from supernote.models.summary import (
     UploadSummaryApplyVO,
 )
 from supernote.server.exceptions import SupernoteError
-from supernote.server.services.file import generate_inner_name
 from supernote.server.services.summary import SummaryService
+from supernote.server.utils.paths import generate_inner_name
 from supernote.server.utils.url_signer import UrlSigner
 
 logger = logging.getLogger(__name__)

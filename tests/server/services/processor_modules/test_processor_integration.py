@@ -24,6 +24,7 @@ from supernote.server.services.processor_modules.png_conversion import (
 from supernote.server.services.processor_modules.summary import SummaryModule
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
+from supernote.server.utils.paths import get_summary_id, get_transcript_id
 
 
 @pytest.fixture
@@ -163,10 +164,11 @@ async def test_full_processing_pipeline_with_real_file(
         assert len(completed_tasks) == expected_task_count
 
         # 4. Verify PNGs exist in cache
-        for i in range(total_pages):
+        # 4. Verify PNGs exist in cache
+        for page in pages:
             from supernote.server.utils.paths import get_page_png_path
 
-            png_path = get_page_png_path(file_id, i)
+            png_path = get_page_png_path(file_id, page.page_id)
             assert await blob_storage.exists(CACHE_BUCKET, png_path)
 
         # 5. Verify Summary existence in DB
@@ -185,14 +187,14 @@ async def test_full_processing_pipeline_with_real_file(
 
         # Check transcript
         transcript = summaries[1]  # -transcript comes after -summary
-        assert transcript.unique_identifier == f"{storage_key}-transcript"
+        assert transcript.unique_identifier == get_transcript_id(storage_key)
         assert transcript.content is not None
         assert "Handwritten text content" in transcript.content
         assert transcript.data_source == "OCR"
 
         # Check AI summary
         ai_summary = summaries[0]
-        assert ai_summary.unique_identifier == f"{storage_key}-summary"
+        assert ai_summary.unique_identifier == get_summary_id(storage_key)
         assert ai_summary.content == "Handwritten text content"  # Mocked response
         assert ai_summary.data_source == "GEMINI"
 

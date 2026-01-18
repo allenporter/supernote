@@ -109,11 +109,11 @@ class ProcessorService:
 
         async with self.session_manager.session() as session:
             # Get all pages to know which PNGs to delete
-            stmt = select(NotePageContentDO.page_index).where(
+            stmt = select(NotePageContentDO.page_id).where(
                 NotePageContentDO.file_id == file_id
             )
             result = await session.execute(stmt)
-            page_indices = result.scalars().all()
+            page_ids = result.scalars().all()
 
             # Delete DB records
             await session.execute(
@@ -125,13 +125,15 @@ class ProcessorService:
             await session.commit()
 
         # Delete Blobs (PNGs)
-        for page_index in page_indices:
-            png_path = get_page_png_path(file_id, page_index)
+        for page_id in page_ids:
+            if not page_id:
+                continue
+            png_path = get_page_png_path(file_id, page_id)
             try:
                 await self.file_service.blob_storage.delete(CACHE_BUCKET, png_path)
             except Exception as e:
                 logger.warning(
-                    f"Failed to delete PNG for {file_id} page {page_index}: {e}"
+                    f"Failed to delete PNG for {file_id} page {page_id}: {e}"
                 )
 
         logger.info(f"Cleanup complete for deleted note: {file_id}")
@@ -189,22 +191,23 @@ class ProcessorService:
 
         # Identify Pages
         async with self.session_manager.session() as session:
+            # We want both index and ID. Index is needed for order, ID for tasks/storage.
             stmt = (
-                select(NotePageContentDO.page_index)
+                select(NotePageContentDO.page_index, NotePageContentDO.page_id)
                 .where(NotePageContentDO.file_id == file_id)
                 .order_by(NotePageContentDO.page_index)
             )
             result = await session.execute(stmt)
-            page_indices = result.scalars().all()
+            pages = result.all()  # List of (index, id) tuples
 
-        if not page_indices:
+        if not pages:
             logger.info(f"No pages found for file {file_id}. Skipping page tasks.")
         else:
             # Pipeline Stage: Per-Page Processing (Parallel across pages)
-            # Each page pipeline runs sequentially (PNG -> OCR -> Embedding)
-            # but multiple pages run in parallel.
             tasks = [
-                self._process_page(file_id, page_index) for page_index in page_indices
+                self._process_page(file_id, page_index, page_id)
+                for page_index, page_id in pages
+                if page_id  # Strict Check: Everything must have a page_id
             ]
             await asyncio.gather(*tasks)
 
@@ -212,16 +215,18 @@ class ProcessorService:
         for module in self.global_post_modules:
             await module.run(file_id, self.session_manager)
 
-    async def _process_page(self, file_id: int, page_index: int) -> None:
+    async def _process_page(self, file_id: int, page_index: int, page_id: str) -> None:
         """Process all modules for a single page sequentially."""
         for module in self.page_modules:
-            # We run them sequentially because they have dependencies (PNG -> OCR -> Embedding)
-            # If one fails, we stop this page's pipeline.
+            # We enforce page_id as the task key
             success = await module.run(
-                file_id, self.session_manager, page_index=page_index
+                file_id,
+                self.session_manager,
+                page_index=page_index,
+                page_id=page_id,  # Pass page_id to modules
             )
             if not success:
                 logger.warning(
-                    f"Page {page_index} processing stalled at {module.name} for file {file_id}"
+                    f"Page {page_id} (idx {page_index}) processing stalled at {module.name} for file {file_id}"
                 )
                 break

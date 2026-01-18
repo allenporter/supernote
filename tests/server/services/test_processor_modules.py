@@ -57,7 +57,7 @@ async def test_explicit_orchestration_flow(
     # Mock DB Session (2 pages)
     mock_session = AsyncMock()
     mock_result = MagicMock()
-    mock_result.scalars().all.return_value = [0, 1]
+    mock_result.all.return_value = [(0, "p0"), (1, "p1")]
     mock_session.execute.return_value = mock_result
 
     sm_mock = cast(MagicMock, processor_service.session_manager)
@@ -71,10 +71,10 @@ async def test_explicit_orchestration_flow(
     hashing.run.assert_called_once_with(file_id, sm_mock)
 
     # Per-Page Pipeline (Parallel across pages)
-    png.run.assert_any_call(file_id, sm_mock, page_index=0)
-    png.run.assert_any_call(file_id, sm_mock, page_index=1)
-    ocr.run.assert_any_call(file_id, sm_mock, page_index=0)
-    embedding.run.assert_any_call(file_id, sm_mock, page_index=0)
+    png.run.assert_any_call(file_id, sm_mock, page_index=0, page_id="p0")
+    png.run.assert_any_call(file_id, sm_mock, page_index=1, page_id="p1")
+    ocr.run.assert_any_call(file_id, sm_mock, page_index=0, page_id="p0")
+    embedding.run.assert_any_call(file_id, sm_mock, page_index=0, page_id="p0")
 
     # Summary (Global) runs last
     summary.run.assert_called_once_with(file_id, sm_mock)
@@ -112,7 +112,7 @@ async def test_dependant_skipping(
 
     mock_session = AsyncMock()
     mock_result = MagicMock()
-    mock_result.scalars().all.return_value = [0]
+    mock_result.all.return_value = [(0, "p0")]
     mock_session.execute.return_value = mock_result
 
     sm_mock = cast(MagicMock, processor_service.session_manager)
@@ -123,7 +123,7 @@ async def test_dependant_skipping(
     await processor_service.process_file(file_id)
 
     # Verify
-    png.run.assert_called_once_with(123, sm_mock, page_index=0)
+    png.run.assert_called_once_with(file_id, sm_mock, page_index=0, page_id="p0")
 
     # OCR and Embedding should NOT be checked because PNG returned False
     ocr.run.assert_not_called()

@@ -32,17 +32,24 @@ class ProcessorModule(abc.ABC):
         """
         pass
 
-    def get_task_key(self, page_index: Optional[int] = None) -> str:
+    def get_task_key(
+        self, page_index: Optional[int] = None, page_id: Optional[str] = None
+    ) -> str:
         """Generate a unique task key for the given file and page.
-        Returns 'page_{index}' for page-level tasks or 'global' for file-level tasks.
+        Returns 'page_{id}' if page_id exists.
+        Returns 'global' if page_id is None.
+        Legacy 'page_{index}' fallback is removed.
         """
-        return f"page_{page_index}" if page_index is not None else "global"
+        if page_id:
+            return f"page_{page_id}"
+        return "global"
 
     async def run_if_needed(
         self,
         file_id: int,
         session_manager: DatabaseSessionManager,
         page_index: Optional[int] = None,
+        page_id: Optional[str] = None,
     ) -> bool:
         """Pre-flight check to determine if the module should execute.
 
@@ -55,7 +62,7 @@ class ProcessorModule(abc.ABC):
             - It is used for feature gating (e.g., skip if API key is missing).
             - It is used for dependency management (e.g., OCR returns False if PNG is missing).
         """
-        key = self.get_task_key(page_index)
+        key = self.get_task_key(page_index, page_id)
         task = await get_task(session_manager, file_id, self.task_type, key)
         if task and task.status == "COMPLETED":
             return False
@@ -67,6 +74,7 @@ class ProcessorModule(abc.ABC):
         file_id: int,
         session_manager: DatabaseSessionManager,
         page_index: Optional[int] = None,
+        page_id: Optional[str] = None,
         **kwargs: object,
     ) -> None:
         """Execute the core module logic (CPU/IO intensive work).
@@ -90,6 +98,7 @@ class ProcessorModule(abc.ABC):
         file_id: int,
         session_manager: DatabaseSessionManager,
         page_index: Optional[int] = None,
+        page_id: Optional[str] = None,
         **kwargs: object,
     ) -> bool:
         """The entry point for executing a module.
@@ -104,14 +113,16 @@ class ProcessorModule(abc.ABC):
             bool: True if the process is completed or skipped. False if it failed.
                   A False return value usually stalls the pipeline for this page/file.
         """
-        if not await self.run_if_needed(file_id, session_manager, page_index):
+        if not await self.run_if_needed(file_id, session_manager, page_index, page_id):
             return True
 
-        key = self.get_task_key(page_index)
+        key = self.get_task_key(page_index, page_id)
         logger.info(f"Running {self.name} for file {file_id} (key={key})")
 
         try:
-            await self.process(file_id, session_manager, page_index, **kwargs)
+            await self.process(
+                file_id, session_manager, page_index, page_id=page_id, **kwargs
+            )
             await update_task_status(
                 session_manager, file_id, self.task_type, key, "COMPLETED"
             )

@@ -284,11 +284,11 @@ class Link:
     # Link Types
     TYPE_PAGE_LINK = 0  # Internal link to another page
     TYPE_FILE_LINK = 1  # Link to another file
-    TYPE_WEB_LINK = 4   # External web link
+    TYPE_WEB_LINK = 4  # External web link
 
     # Link Direction
     DIRECTION_OUT = 0  # Outgoing link (from this page)
-    DIRECTION_IN = 1   # Incoming link (to this page)
+    DIRECTION_IN = 1  # Incoming link (to this page)
 
     def __init__(self, link_info: dict[str, str]) -> None:
         self.metadata = link_info
@@ -340,12 +340,12 @@ class Link:
 
 class Page:
     # Recognition Status
-    RECOGNSTATUS_NONE = 0     # No recognition performed
-    RECOGNSTATUS_DONE = 1     # Recognition complete (RECOGNTEXT available)
+    RECOGNSTATUS_NONE = 0  # No recognition performed
+    RECOGNSTATUS_DONE = 1  # Recognition complete (RECOGNTEXT available)
     RECOGNSTATUS_RUNNING = 2  # Recognition in progress
 
     # Orientation
-    ORIENTATION_VERTICAL = "1000"    # Portrait
+    ORIENTATION_VERTICAL = "1000"  # Portrait
     ORIENTATION_HORIZONTAL = "1090"  # Landscape
 
     def __init__(self, page_info: ParamsBlock) -> None:

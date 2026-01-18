@@ -7,7 +7,7 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.gemini import GeminiService
 from supernote.server.services.processor_modules import ProcessorModule
-from supernote.server.utils.note_content import get_page_content
+from supernote.server.utils.note_content import get_page_content_by_id
 
 logger = logging.getLogger(__name__)
 
@@ -38,19 +38,23 @@ class GeminiEmbeddingModule(ProcessorModule):
         file_id: int,
         session_manager: DatabaseSessionManager,
         page_index: Optional[int] = None,
+        page_id: Optional[str] = None,
     ) -> bool:
-        if page_index is None:
+        if not page_id:
             return False
 
         if not self.gemini_service.is_configured:
             return False
 
-        if not await super().run_if_needed(file_id, session_manager, page_index):
+        if not await super().run_if_needed(
+            file_id, session_manager, page_index, page_id
+        ):
             return False
 
         async with session_manager.session() as session:
             # Check Prerequisites (Text Content must exist)
-            content = await get_page_content(session, file_id, page_index)
+            content = await get_page_content_by_id(session, file_id, page_id)
+
             if not content or not content.text_content:
                 # Dependency not met yet (OCR not done or empty page)
                 return False
@@ -62,18 +66,20 @@ class GeminiEmbeddingModule(ProcessorModule):
         file_id: int,
         session_manager: DatabaseSessionManager,
         page_index: Optional[int] = None,
+        page_id: Optional[str] = None,
         **kwargs: object,
     ) -> None:
-        if page_index is None:
+        if not page_id:
             return
 
         # Get Text Content
         text_content = ""
         async with session_manager.session() as session:
-            content = await get_page_content(session, file_id, page_index)
+            content = await get_page_content_by_id(session, file_id, page_id)
+
             if not content or not content.text_content:
                 logger.warning(
-                    f"No text content found for embedding: file {file_id} page {page_index}"
+                    f"No text content found for embedding: file {file_id} page {page_id} (idx {page_index})"
                 )
                 return
             text_content = content.text_content
@@ -97,7 +103,8 @@ class GeminiEmbeddingModule(ProcessorModule):
 
         # Save Result
         async with session_manager.session() as session:
-            content = await get_page_content(session, file_id, page_index)
+            content = await get_page_content_by_id(session, file_id, page_id)
+
             if content:
                 content.embedding = embedding_json
             await session.commit()

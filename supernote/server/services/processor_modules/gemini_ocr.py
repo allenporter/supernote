@@ -9,7 +9,7 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.gemini import GeminiService
 from supernote.server.services.processor_modules import ProcessorModule
-from supernote.server.utils.note_content import get_page_content
+from supernote.server.utils.note_content import get_page_content_by_id
 from supernote.server.utils.paths import get_page_png_path
 
 logger = logging.getLogger(__name__)
@@ -41,6 +41,7 @@ class GeminiOcrModule(ProcessorModule):
         file_id: int,
         session_manager: DatabaseSessionManager,
         page_index: Optional[int] = None,
+        page_id: Optional[str] = None,
     ) -> bool:
         if page_index is None:
             return False
@@ -48,14 +49,19 @@ class GeminiOcrModule(ProcessorModule):
         if not self.gemini_service.is_configured:
             return False
 
-        if not await super().run_if_needed(file_id, session_manager, page_index):
+        if not await super().run_if_needed(
+            file_id, session_manager, page_index, page_id
+        ):
+            return False
+
+        if not page_id:
             return False
 
         # Check if PNG exists (Prerequisite)
-        png_path = get_page_png_path(file_id, page_index)
+        png_path = get_page_png_path(file_id, page_id)
         if not await self.file_service.blob_storage.exists(CACHE_BUCKET, png_path):
             logger.warning(
-                f"PNG prerequisite not met for OCR of {file_id} page {page_index}"
+                f"PNG prerequisite not met for OCR of {file_id} page {page_id}"
             )
             return False
 
@@ -66,13 +72,15 @@ class GeminiOcrModule(ProcessorModule):
         file_id: int,
         session_manager: DatabaseSessionManager,
         page_index: Optional[int] = None,
+        page_id: Optional[str] = None,
         **kwargs: object,
     ) -> None:
-        if page_index is None:
+        if page_id is None:
+            logger.error(f"Page ID required for OCR processing of file {file_id}")
             return
 
         # Get PNG Content
-        png_path = get_page_png_path(file_id, page_index)
+        png_path = get_page_png_path(file_id, page_id)
         png_data = b""
         async for chunk in self.file_service.blob_storage.get(CACHE_BUCKET, png_path):
             png_data += chunk
@@ -101,13 +109,13 @@ class GeminiOcrModule(ProcessorModule):
 
         # Save Result
         async with session_manager.session() as session:
-            content = await get_page_content(session, file_id, page_index)
+            content = await get_page_content_by_id(session, file_id, page_id)
             if content:
                 content.text_content = text_content
             else:
                 logger.warning(
-                    f"NotePageContentDO missing for {file_id} page {page_index} during OCR"
+                    f"NotePageContentDO missing for {file_id} page {page_id} during OCR"
                 )
             await session.commit()
 
-        logger.info(f"Completed OCR for file {file_id} page {page_index}")
+        logger.info(f"Completed OCR for file {file_id} page {page_id}")

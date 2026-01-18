@@ -134,8 +134,16 @@ async def test_handle_note_deleted_cleanup(
 
     # Setup mock data in DB
     async with session_manager.session() as session:
-        session.add(NotePageContentDO(file_id=file_id, page_index=0, content_hash="h1"))
-        session.add(NotePageContentDO(file_id=file_id, page_index=1, content_hash="h2"))
+        session.add(
+            NotePageContentDO(
+                file_id=file_id, page_index=0, page_id="p0", content_hash="h1"
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id, page_index=1, page_id="p1", content_hash="h2"
+            )
+        )
 
         session.add(
             SystemTaskDO(
@@ -180,10 +188,10 @@ async def test_handle_note_deleted_cleanup(
 
     # Verify Blobs are deleted
     mock_file_service.blob_storage.delete.assert_any_call(
-        CACHE_BUCKET, get_page_png_path(file_id, 0)
+        CACHE_BUCKET, get_page_png_path(file_id, "p0")
     )
     mock_file_service.blob_storage.delete.assert_any_call(
-        CACHE_BUCKET, get_page_png_path(file_id, 1)
+        CACHE_BUCKET, get_page_png_path(file_id, "p1")
     )
 
 
@@ -205,10 +213,12 @@ async def test_page_hashing_orphan_cleanup(
             )
         )
         for i in range(3):
-            content_hash = current_content_hash if i == 0 else f"old_{i}"
             session.add(
                 NotePageContentDO(
-                    file_id=file_id, page_index=i, content_hash=content_hash
+                    file_id=file_id,
+                    page_index=i,
+                    page_id=str(i),
+                    content_hash=current_content_hash if i == 0 else f"old_{i}",
                 )
             )
             session.add(
@@ -225,6 +235,7 @@ async def test_page_hashing_orphan_cleanup(
     mock_metadata.get_total_pages.return_value = 1
     mock_page = MagicMock()
     mock_page.__str__.return_value = "page_content_0"  # type: ignore[attr-defined]
+    mock_page.get.return_value = "0"  # Matches existing page_id "0"
     mock_metadata.pages = [mock_page]
     mock_file_service.blob_storage.get_blob_path.return_value = MagicMock(
         exists=lambda: True
@@ -261,10 +272,10 @@ async def test_page_hashing_orphan_cleanup(
         assert tasks[0].key == "page_0"
 
     mock_file_service.blob_storage.delete.assert_any_call(
-        CACHE_BUCKET, get_page_png_path(file_id, 1)
+        CACHE_BUCKET, get_page_png_path(file_id, "1")
     )
     mock_file_service.blob_storage.delete.assert_any_call(
-        CACHE_BUCKET, get_page_png_path(file_id, 2)
+        CACHE_BUCKET, get_page_png_path(file_id, "2")
     )
 
 
@@ -327,7 +338,13 @@ async def test_page_parallelism(
 
     mock_session = AsyncMock()
     mock_result = MagicMock()
-    mock_result.scalars().all.return_value = [0, 1, 2, 3]
+    # Mock return must now match (page_index, page_id) tuple structure
+    mock_result.all.return_value = [
+        (0, "p0"),
+        (1, "p1"),
+        (2, "p2"),
+        (3, "p3"),
+    ]
     mock_session.execute.return_value = mock_result
     # Use patch.object to mock the session context manager
     with patch.object(session_manager, "session") as mock_session_ctx:

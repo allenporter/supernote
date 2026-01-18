@@ -1,6 +1,4 @@
 import logging
-import os
-import uuid
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -27,6 +25,10 @@ from supernote.server.exceptions import (
     FileNotFound,
     HashMismatch,
     InvalidPath,
+)
+from supernote.server.utils.paths import (
+    get_conversion_pdf_path,
+    get_conversion_png_path,
 )
 
 from ..db.models.file import RecycleFileDO, UserFileDO
@@ -898,8 +900,11 @@ class FileService:
 
                 # Store PNG in blob storage with a unique key
                 # Format: conversions/{user_id}/{file_id}/page_{i}_{md5}.png
-                png_storage_key = (
-                    f"conversions/{user_id}/{file_id}/page_{i}_{node.md5}.png"
+                png_storage_key = get_conversion_png_path(
+                    user_id=user_id,
+                    file_id=file_id,
+                    page_index=i,
+                    file_md5=node.md5 or "nomd5",
                 )
                 await self.blob_storage.put(
                     USER_DATA_BUCKET, png_storage_key, img_bytes
@@ -940,26 +945,10 @@ class FileService:
             pdf_bytes = converter.convert(page_no_list if page_no_list else -1)
 
             # 3. Store PDF
-            pdf_storage_key = f"conversions/{user_id}/{file_id}/note_{node.md5}.pdf"
+            # 3. Store PDF
+            pdf_storage_key = get_conversion_pdf_path(
+                user_id=user_id, file_id=file_id, file_md5=node.md5 or "nomd5"
+            )
             await self.blob_storage.put(USER_DATA_BUCKET, pdf_storage_key, pdf_bytes)
 
             return pdf_storage_key
-
-
-def generate_inner_name(filename: str, equipment_no: str | None) -> str:
-    """Generate a system-of-record inner name.
-
-    Format: {UUID}-{Tail}.{Ext}
-    - UUID: Random UUID
-    - Tail: Last 3 chars of equipment number (or full if short, default '000')
-    - Ext: Original file extension
-    """
-    req_uuid = uuid.uuid4()
-    ext = os.path.splitext(filename)[1]
-
-    # Determine tail
-    tail = "000"
-    if equipment_no:
-        tail = equipment_no[-3:] if len(equipment_no) >= 3 else equipment_no
-
-    return f"{req_uuid}-{tail}{ext}"

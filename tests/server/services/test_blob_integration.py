@@ -9,8 +9,9 @@ from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import LocalBlobStorage
-from supernote.server.services.file import FileService, generate_inner_name
+from supernote.server.services.file import FileService
 from supernote.server.services.user import UserService
+from supernote.server.utils.paths import generate_inner_name
 
 
 @pytest.fixture

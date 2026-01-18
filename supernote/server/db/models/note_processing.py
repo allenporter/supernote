@@ -22,6 +22,9 @@ class NotePageContentDO(Base):
     page_index: Mapped[int] = mapped_column(BigInteger, nullable=False)
     """The 0-based index of the page in the note."""
 
+    page_id: Mapped[str] = mapped_column(String, nullable=False, default="")
+    """The stable unique identifier for the page (from .note file)."""
+
     content_hash: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     """MD5 hash of the page content (e.g. layers) to detect changes."""
 
@@ -44,7 +47,7 @@ class NotePageContentDO(Base):
     """System update timestamp."""
 
     __table_args__ = (
-        UniqueConstraint("file_id", "page_index", name="uq_note_page_content"),
+        UniqueConstraint("file_id", "page_id", name="uq_note_page_content"),
     )
 
 

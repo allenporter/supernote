@@ -53,6 +53,7 @@ async def test_process_embedding_success(
         content = NotePageContentDO(
             file_id=file_id,
             page_index=page_index,
+            page_id="p0",
             content_hash="somehash",
             text_content="This is the text to embed.",
         )
@@ -67,7 +68,9 @@ async def test_process_embedding_success(
     mock_gemini_service.embed_content.return_value = mock_response
 
     # Run full module lifecycle
-    await gemini_embedding_module.run(file_id, session_manager, page_index=page_index)
+    await gemini_embedding_module.run(
+        file_id, session_manager, page_index=page_index, page_id="p0"
+    )
 
     # Verifications
     # Verify API Call
@@ -104,7 +107,7 @@ async def test_process_embedding_success(
                     select(SystemTaskDO)
                     .where(SystemTaskDO.file_id == file_id)
                     .where(SystemTaskDO.task_type == "EMBEDDING_GENERATION")
-                    .where(SystemTaskDO.key == f"page_{page_index}")
+                    .where(SystemTaskDO.key == "page_p0")
                 )
             )
             .scalars()
@@ -124,7 +127,17 @@ async def test_embedding_run_if_needed_disabled(
     mock_gemini_service.is_configured = False
 
     # Should return False
-    assert await gemini_embedding_module.run_if_needed(1, session_manager, page_index=0) is False
+    assert (
+        await gemini_embedding_module.run_if_needed(
+            1, session_manager, page_index=0, page_id="p0"
+        )
+        is False
+    )
 
     # run() should still return True (skipped success)
-    assert await gemini_embedding_module.run(1, session_manager, page_index=0) is True
+    assert (
+        await gemini_embedding_module.run(
+            1, session_manager, page_index=0, page_id="p0"
+        )
+        is True
+    )

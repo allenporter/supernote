@@ -54,6 +54,7 @@ class PageHashingModule(ProcessorModule):
         file_id: int,
         session_manager: DatabaseSessionManager,
         page_index: Optional[int] = None,
+        page_id: Optional[str] = None,
     ) -> bool:
         """Hashing acts as the change detector, so it MUST run every time the file is processed."""
         return True
@@ -63,6 +64,7 @@ class PageHashingModule(ProcessorModule):
         file_id: int,
         session_manager: DatabaseSessionManager,
         page_index: Optional[int] = None,
+        page_id: Optional[str] = None,
         **kwargs: object,
     ) -> None:
         """Parses the .note file, computes page hashes, and updates NotePageContentDO."""
@@ -114,112 +116,105 @@ class PageHashingModule(ProcessorModule):
         # Iterate pages and update DB
         total_pages = metadata.get_total_pages()
         if not metadata.pages:
-            # Should not happen if total_pages > 0, but safe check for types
             return
 
         async with session_manager.session() as session:
-            # Get current max page index to identify orphans later
-            idx_result = await session.execute(
-                select(NotePageContentDO.page_index)
-                .where(NotePageContentDO.file_id == file_id)
-                .order_by(NotePageContentDO.page_index.desc())
-                .limit(1)
+            # 1. Fetch all existing pages for this file and map by page_id
+            existing_pages = await session.execute(
+                select(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
             )
-            last_page_idx = idx_result.scalars().first()
-            prev_page_count = (last_page_idx + 1) if last_page_idx is not None else 0
+            existing_map = {p.page_id: p for p in existing_pages.scalars().all()}
+
+            # Track which page_ids are present in the current file
+            current_page_ids = set()
 
             for i in range(total_pages):
-                # Calculate Hash
-                # Constructing a unique signature for the page content:
                 page_info = metadata.pages[i]
+                page_id = page_info.get("PAGEID")
+
+                if not page_id:
+                    logger.warning(f"Page {i} of file {file_id} has no PAGEID.")
+                    continue
+
+                current_page_ids.add(page_id)
+
                 # Canonical string representation of page metadata for hashing
                 page_hash_input = str(page_info)
-
-                # Check for existing content
-                existing_content = (
-                    (
-                        await session.execute(
-                            select(NotePageContentDO)
-                            .where(NotePageContentDO.file_id == file_id)
-                            .where(NotePageContentDO.page_index == i)
-                        )
-                    )
-                    .scalars()
-                    .first()
-                )
-
                 current_hash = get_md5_hash(page_hash_input)
 
-                if existing_content:
-                    if existing_content.content_hash != current_hash:
-                        logger.info(
-                            f"Page {i} of file {file_id} changed. Resetting content."
-                        )
-                        existing_content.content_hash = current_hash
-                        existing_content.text_content = None  # Clear OCR
-                        existing_content.embedding = None  # Clear Embedding
-                        # We do NOT delete the row, just clear validity.
+                if page_id in existing_map:
+                    # UPDATE path
+                    row = existing_map[page_id]
 
-                        # Invalidate downstream tasks to force re-processing
-                        page_task_key = f"page_{i}"
+                    # Check for Move (Index Changed)
+                    if row.page_index != i:
+                        logger.info(
+                            f"Page {page_id} moved from {row.page_index} to {i}"
+                        )
+                        row.page_index = i
+
+                    # Check for Content Change
+                    if row.content_hash != current_hash:
+                        logger.info(
+                            f"Page {page_id} (idx {i}) changed. Resetting content."
+                        )
+                        row.content_hash = current_hash
+                        row.text_content = None  # Clear OCR
+                        row.embedding = None  # Clear Embedding
+
+                        # Invalidate downstream tasks
+                        # Note: Tasks are keyed by page_index usually?
+                        # We should probably migrate tasks to use page_id too,
+                        # but for now let's invalidate based on the NEW index
+                        # or just all tasks for this file/page logic.
+                        # Ideally, SystemTaskDO key should be page_id.
+                        # For now, let's assume keys are "page_{page_index}".
+                        # If page moved, the old task key "page_{old_idx}" is irrelevant,
+                        # and we need to trigger "page_{new_idx}".
+                        # Refactoring SystemTaskDO is out of scope?
+                        # Let's clean up tasks for this "logical" page.
+                        # Actually, keeping it simple: invalidate tasks for the CURRENT index.
+                        # Update: Use page_id for task keys now.
+                        page_task_key = f"page_{page_id}"
                         await session.execute(
                             delete(SystemTaskDO)
                             .where(SystemTaskDO.file_id == file_id)
-                            .where(
-                                SystemTaskDO.task_type.in_(
-                                    [
-                                        "PNG_CONVERSION",
-                                        "OCR_EXTRACTION",
-                                        "EMBEDDING_GENERATION",
-                                    ]
-                                )
-                            )
                             .where(SystemTaskDO.key == page_task_key)
                         )
                 else:
-                    logger.info(f"New page {i} for file {file_id} detected.")
+                    # INSERT path
+                    logger.info(f"New page {page_id} at index {i} detected.")
                     new_content = NotePageContentDO(
                         file_id=file_id,
                         page_index=i,
+                        page_id=page_id,
                         content_hash=current_hash,
                         text_content=None,
                         embedding=None,
                     )
                     session.add(new_content)
 
-            # Handle Page Deletions
-            # If the notebook shrank (pages removed), delete orphaned entries and blobs.
-            if prev_page_count > total_pages:
-                logger.info(
-                    f"File {file_id} shrank from {prev_page_count} to {total_pages} pages. Cleaning up orphans."
-                )
+            # 2. Handle Deletions
+            # Any page_id in existing_map but NOT in current_page_ids is deleted
+            for pid, row in existing_map.items():
+                if pid not in current_page_ids:
+                    logger.info(f"Page {pid} deleted (was at {row.page_index}).")
+                    await session.delete(row)
 
-                # DB cleanup
-                await session.execute(
-                    delete(NotePageContentDO)
-                    .where(NotePageContentDO.file_id == file_id)
-                    .where(NotePageContentDO.page_index >= total_pages)
-                )
-                await session.execute(
-                    delete(SystemTaskDO)
-                    .where(SystemTaskDO.file_id == file_id)
-                    .where(
-                        SystemTaskDO.key.in_(
-                            [f"page_{j}" for j in range(total_pages, prev_page_count)]
-                        )
-                    )
-                )
-
-                # Blob cleanup
-                for j in range(total_pages, prev_page_count):
-                    png_path = get_page_png_path(file_id, j)
+                    # Cleanup Blobs
+                    png_path = get_page_png_path(file_id, pid)
                     try:
                         await self.file_service.blob_storage.delete(
                             CACHE_BUCKET, png_path
                         )
                     except Exception as e:
-                        logger.warning(
-                            f"Failed to delete orphaned PNG for {file_id} page {j}: {e}"
-                        )
+                        logger.warning(f"Failed to delete orphan PNG {pid}: {e}")
+
+                    # Cleanup Tasks
+                    await session.execute(
+                        delete(SystemTaskDO)
+                        .where(SystemTaskDO.file_id == file_id)
+                        .where(SystemTaskDO.key == f"page_{pid}")
+                    )
 
             await session.commit()

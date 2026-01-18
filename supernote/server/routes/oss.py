@@ -13,17 +13,13 @@ from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.exceptions import SupernoteError
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
+from supernote.server.utils.paths import get_file_chunk_path
 from supernote.server.utils.url_signer import UrlSigner
 
 from .decorators import public_route
 
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
-
-
-def _get_chunk_key(object_name: str, part_number: int) -> str:
-    """Generate a storage key for a file chunk."""
-    return f"{object_name}.part.{part_number}"
 
 
 async def _stream_upload_field(field: BodyPartReader) -> AsyncGenerator[bytes, None]:
@@ -129,7 +125,7 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
     reader = await request.multipart()
     field = await reader.next()
     if isinstance(field, BodyPartReader) and field.name == "file":
-        chunk_key = _get_chunk_key(params.path, params.part_number)
+        chunk_key = get_file_chunk_path(params.path, params.part_number)
 
         metadata = await blob_storage.put(
             USER_DATA_BUCKET, chunk_key, _stream_upload_field(field)
@@ -148,7 +144,7 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
                     f"Implicitly merging {params.total_chunks} chunks for {params.path}"
                 )
                 source_keys = [
-                    _get_chunk_key(params.path, i)
+                    get_file_chunk_path(params.path, i)
                     for i in range(1, params.total_chunks + 1)
                 ]
 
