@@ -314,6 +314,19 @@ class SummaryService:
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_summary_by_uuid(
+        self, user_email: str, unique_identifier: str
+    ) -> SummaryItem | None:
+        """Get a single summary by UUID and user ownership."""
+        user_id = await self.user_service.get_user_id(user_email)
+        async with self.session_manager.session() as session:
+            summary_do = await self._get_summary_by_uuid(
+                session, user_id, unique_identifier
+            )
+            if not summary_do:
+                return None
+            return _to_summary_item(summary_do)
+
     async def get_summary(self, user_email: str, summary_id: int) -> SummaryItem:
         """Get a single summary by ID."""
         user_id = await self.user_service.get_user_id(user_email)

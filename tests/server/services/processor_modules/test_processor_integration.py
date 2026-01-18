@@ -1,4 +1,3 @@
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -7,6 +6,8 @@ from sqlalchemy import select
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
+from supernote.server.db.models.summary import SummaryDO
+from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
@@ -20,24 +21,29 @@ from supernote.server.services.processor_modules.png_conversion import (
     PngConversionModule,
 )
 from supernote.server.services.processor_modules.summary import SummaryModule
+from supernote.server.services.summary import SummaryService
+from supernote.server.services.user import UserService
 
 
 @pytest.fixture
-def mock_summary_service() -> MagicMock:
-    return MagicMock()
+def summary_service(
+    user_service: UserService,
+    session_manager: DatabaseSessionManager,
+) -> SummaryService:
+    return SummaryService(user_service=user_service, session_manager=session_manager)
 
 
 @pytest.fixture
 def processor_service(
     session_manager: DatabaseSessionManager,
     file_service: FileService,
-    mock_summary_service: MagicMock,
+    summary_service: SummaryService,
 ) -> ProcessorService:
     return ProcessorService(
         event_bus=MagicMock(),
         session_manager=session_manager,
         file_service=file_service,
-        summary_service=mock_summary_service,
+        summary_service=summary_service,
     )
 
 
@@ -63,6 +69,10 @@ async def test_full_processing_pipeline_with_real_file(
     await blob_storage.put(USER_DATA_BUCKET, storage_key, file_content)
 
     async with session_manager.session() as session:
+        # User
+        user = UserDO(id=user_id, email="test@example.com", password_md5="hash")
+        session.add(user)
+
         user_file = UserFileDO(
             id=file_id,
             user_id=user_id,
@@ -83,7 +93,12 @@ async def test_full_processing_pipeline_with_real_file(
     embedding = GeminiEmbeddingModule(
         processor_service.file_service, server_config_gemini, mock_gemini_service
     )
-    summary = SummaryModule()
+    summary = SummaryModule(
+        file_service=processor_service.file_service,
+        config=server_config_gemini,
+        gemini_service=mock_gemini_service,
+        summary_service=processor_service.summary_service,
+    )
 
     processor_service.register_modules(
         hashing=hashing,
@@ -140,10 +155,7 @@ async def test_full_processing_pipeline_with_real_file(
         )
 
         # Hashing (1) + Per-Page (3 types * N pages) + Summary (1)
-        # Summary is implemented as False for run_if_needed, so it might not create a COMPLETED task
-        # unless it actually runs. My SummaryModule.run_if_needed returns False.
-        # So: 1 (HASHING) + total_pages * 3 (PNG, OCR, EMBEDDING)
-        expected_task_count = 1 + (total_pages * 3)
+        expected_task_count = 1 + (total_pages * 3) + 1
 
         # Filter for COMPLETED
         completed_tasks = [t for t in tasks if t.status == "COMPLETED"]
@@ -155,5 +167,31 @@ async def test_full_processing_pipeline_with_real_file(
 
             png_path = get_page_png_path(file_id, i)
             assert await blob_storage.exists(CACHE_BUCKET, png_path)
+
+        # 5. Verify Summary existence in DB
+        summaries = (
+            (
+                await session.execute(
+                    select(SummaryDO)
+                    .where(SummaryDO.file_id == file_id)
+                    .order_by(SummaryDO.unique_identifier)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(summaries) == 2
+
+        # Check transcript
+        transcript = summaries[1]  # -transcript comes after -summary
+        assert transcript.unique_identifier == f"{storage_key}-transcript"
+        assert "Handwritten text content" in transcript.content
+        assert transcript.data_source == "OCR"
+
+        # Check AI summary
+        ai_summary = summaries[0]
+        assert ai_summary.unique_identifier == f"{storage_key}-summary"
+        assert ai_summary.content == "Handwritten text content"  # Mocked response
+        assert ai_summary.data_source == "GEMINI"
 
     print(f"Integration test passed with {total_pages} pages processed.")

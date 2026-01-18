@@ -260,7 +260,12 @@ def create_app(config: ServerConfig) -> web.Application:
         embedding=GeminiEmbeddingModule(
             file_service=file_service, config=config, gemini_service=gemini_service
         ),
-        summary=SummaryModule(),
+        summary=SummaryModule(
+            file_service=file_service,
+            config=config,
+            gemini_service=gemini_service,
+            summary_service=summary_service,
+        ),
     )
 
     # Register routes
