@@ -12,7 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Classes for Suernote file format."""
+"""Classes for Suernote file format.
+
+The Supernote file format relies on a "Footer-first" parsing strategy.
+The last 4 bytes of the file (the "Tail") contain the offset to the Footer Block.
+The Footer Block then contains references (offsets) to all other metadata blocks
+(Pages, Titles, Keywords, etc.) and the Header Block.
+"""
 
 import json
 
@@ -275,12 +281,14 @@ class Title:
 
 
 class Link:
-    TYPE_PAGE_LINK = 0
-    TYPE_FILE_LINK = 1
-    TYPE_WEB_LINK = 4
+    # Link Types
+    TYPE_PAGE_LINK = 0  # Internal link to another page
+    TYPE_FILE_LINK = 1  # Link to another file
+    TYPE_WEB_LINK = 4   # External web link
 
-    DIRECTION_OUT = 0
-    DIRECTION_IN = 1
+    # Link Direction
+    DIRECTION_OUT = 0  # Outgoing link (from this page)
+    DIRECTION_IN = 1   # Incoming link (to this page)
 
     def __init__(self, link_info: dict[str, str]) -> None:
         self.metadata = link_info
@@ -331,12 +339,14 @@ class Link:
 
 
 class Page:
-    RECOGNSTATUS_NONE = 0
-    RECOGNSTATUS_DONE = 1
-    RECOGNSTATUS_RUNNING = 2
+    # Recognition Status
+    RECOGNSTATUS_NONE = 0     # No recognition performed
+    RECOGNSTATUS_DONE = 1     # Recognition complete (RECOGNTEXT available)
+    RECOGNSTATUS_RUNNING = 2  # Recognition in progress
 
-    ORIENTATION_VERTICAL = "1000"
-    ORIENTATION_HORIZONTAL = "1090"
+    # Orientation
+    ORIENTATION_VERTICAL = "1000"    # Portrait
+    ORIENTATION_HORIZONTAL = "1090"  # Landscape
 
     def __init__(self, page_info: ParamsBlock) -> None:
         self.metadata = page_info
