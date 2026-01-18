@@ -84,3 +84,47 @@ Run tests:
 ```bash
 pytest
 ```
+
+## Development Workflow
+
+### Running an Ephemeral Server
+
+For rapid development and testing, you can run an ephemeral server. This server starts with a clean state, a random port, and a pre-configured debug user. It is destroyed when the process exits.
+
+**Basic Usage:**
+
+```bash
+python3 -m supernote.cli.main serve --ephemeral
+```
+
+**With Gemini API Support:**
+
+To enable OCR and AI features during development, set the `SUPERNOTE_GEMINI_API_KEY` environment variable:
+
+```bash
+export SUPERNOTE_GEMINI_API_KEY="your_api_key_here"
+supernote serve --ephemeral
+```
+
+The server startup log will display the temporary storage directory and the default credentials.
+
+**Example Output:**
+
+```text
+Using ephemeral mode with storage directory: /var/folders/.../supernote-ephemeral-xyz
+Created default user: debug@example.com / password
+Run command to login:
+  supernote cloud login --url http://127.0.0.1:8080 debug@example.com --password password
+```
+
+### Uploading Files
+
+You can use the CLI to upload`.note` files to your running server.
+
+```bash
+# Login using the command provided in the ephemeral server output
+supernote cloud login --url http://127.0.0.1:8080 debug@example.com --password password
+
+# Upload a file
+supernote cloud upload tests/testdata/20251207_221454.note
+```
