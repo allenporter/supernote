@@ -42,6 +42,9 @@ class GeminiEmbeddingModule(ProcessorModule):
         if page_index is None:
             return False
 
+        if not self.gemini_service.is_configured:
+            return False
+
         if not await super().run_if_needed(file_id, session_manager, page_index):
             return False
 

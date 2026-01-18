@@ -113,3 +113,18 @@ async def test_process_embedding_success(
 
         assert task is not None
         assert task.status == "COMPLETED"
+
+
+async def test_embedding_run_if_needed_disabled(
+    gemini_embedding_module: GeminiEmbeddingModule,
+    session_manager: DatabaseSessionManager,
+    mock_gemini_service: MagicMock,
+) -> None:
+    # Disable Gemini
+    mock_gemini_service.is_configured = False
+
+    # Should return False
+    assert await gemini_embedding_module.run_if_needed(1, session_manager, page_index=0) is False
+
+    # run() should still return True (skipped success)
+    assert await gemini_embedding_module.run(1, session_manager, page_index=0) is True
