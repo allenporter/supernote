@@ -74,6 +74,49 @@ The API distinguishes between finding *where* something was said and *which* not
     - Database entries (OCR text, status).
     - **Vectors**: Stored as per-user `(id, vector)` pairs in the database or sidecar files. Given the small scale (1-2 users), search is performed via **exhaustive in-memory vector comparison** (e.g., NumPy cosine similarity) to avoid heavy external dependencies.
 
-## 7. Ongoing Research
-1.  **Stable Page Hashing**: Determining the most reliable way to calculate the hash of a page's stroke data from the `.note` parser.
-2.  **Summary Specification**: Revisit the specific schema and implementation for the hierarchical summary after the initial design has been fleshed out.
+### 8. Processor Module API Contract
+
+Each stage of the pipeline is implemented as a `ProcessorModule`. The interaction between the orchestrator and modules follows a strict contract.
+
+### Core Methods
+
+| Method | Role | Return/Side Effect |
+| :--- | :--- | :--- |
+| `run_if_needed` | **Gating** | `True`: Run `process`. `False`: Skip. |
+| `process` | **Work** | Main logic. Overwrites domain data (idempotent). |
+| `run` | **Lifecycle** | Entry point. Manages `SystemTaskDO` status. |
+
+### Return Value Semantics
+
+*   **`run_if_needed` -> `False`**:
+    *   **Meaning**: Task is either already `COMPLETED`, its prerequisites are missing (e.g., OCR needs PNG), or the feature is disabled (e.g., Gemini API key missing).
+    *   **Result**: `run()` returns `True` immediately without calling `process()`. The pipeline continues as if this step was successful.
+*   **`run` -> `True`**:
+    *   **Meaning**: The step is successfully finished or was gracefully skipped. The orchestrator can proceed to the next module in the chain.
+*   **`run` -> `False`**:
+    *   **Meaning**: The step **FAILED** (exception raised during `process`). The orchestrator **stalls** the pipeline for this page/file. This prevents cascading errors and allows for retry on next trigger.
+
+## 9. Failure & Exception Semantics
+
+To maintain a resilient pipeline, modules must follow specific error handling patterns:
+
+### 1. Expectations for `process()`
+- **No Internal Try/Except (Mostly)**: Modules should let exceptions bubble up. The base class's `run()` method is the centralized error handler.
+- **Descriptive Exceptions**: Raise specific exceptions (e.g., `FileNotFoundError`, `GeminiAPIError`) so the automated logs are useful.
+- **Idempotency is Mandatory**: If `process()` fails halfway (e.g., after writing a file but before updating a DB record), the next attempt must be able to resume or overwrite without creating duplicates or corruption.
+
+### 2. Orchestrator Reaction
+- **Sequential Stall**: When a module returns `False` (Failure), the `ProcessorService` stops the sequential chain for that specific page.
+    - Example: If `PNG_CONVERSION` fails, `OCR_EXTRACTION` is NOT attempted.
+- **Persistent Error State**: The exception message is stored in `f_system_task.last_error`.
+- **Automatic Retry**: Recovery logic on startup or subsequent file updates will re-attempt `FAILED` tasks.
+
+### 3. Recoverable vs. Fatal Errors
+- **Transient (Recoverable)**: Network timeouts, API rate limits. These should result in an exception that triggers a `FAILED` status, ready for retry.
+- **Business/Logic (Fatal)**: Missing files that shouldn't be missing, or corrupted data. These also result in `FAILED`, but may require manual resolution (fixing the file) or code changes.
+
+### Failure Modes & Corner Cases
+
+1.  **Dependency Staleness**: If `PageHashingModule` detects a change, it deletes the `SystemTaskDO` entries for `OCR` and `Embedding`. This causes their `run_if_needed` to return `True` on the next run, forcing a re-poll.
+2.  **Concurrency Limits**: `ProcessorService` limits the number of files processed in parallel. Modules should use internal semaphores (like `GeminiService`) if they have external API rate limits.
+3.  **Idempotency Requirement**: If a task fails *after* writing data but *before* updating its status to `COMPLETED`, it will be re-run. `process()` must be safe to call again (e.g., using `UPSERT` or overwriting files).
