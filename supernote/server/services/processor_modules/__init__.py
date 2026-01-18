@@ -9,22 +9,33 @@ logger = logging.getLogger(__name__)
 
 
 class ProcessorModule(abc.ABC):
-    """Abstract base class for processor modules."""
+    """Abstract base class for processor modules in the asynchronous pipeline.
+
+    The pipeline follows a state-machine pattern:
+    1. Orchestrator calls `run()`.
+    2. `run()` calls `run_if_needed()` to check preconditions and status.
+    3. If `run_if_needed()` is True, `run()` calls `process()` for the actual work.
+    4. `run()` updates `SystemTaskDO` based on the outcome of `process()`.
+    """
 
     @property
     @abc.abstractmethod
     def name(self) -> str:
-        """Unique name of the module."""
+        """Unique name of the module, used for logging."""
         pass
 
     @property
     @abc.abstractmethod
     def task_type(self) -> str:
-        """The Task Type this module handles (e.g., 'PNG', 'OCR')."""
+        """The Task Type this module handles (e.g., 'PNG', 'OCR').
+        Matches the `task_type` column in `f_system_task`.
+        """
         pass
 
     def get_task_key(self, page_index: Optional[int] = None) -> str:
-        """Generate a unique task key for the given file and page."""
+        """Generate a unique task key for the given file and page.
+        Returns 'page_{index}' for page-level tasks or 'global' for file-level tasks.
+        """
         return f"page_{page_index}" if page_index is not None else "global"
 
     async def run_if_needed(
@@ -33,9 +44,16 @@ class ProcessorModule(abc.ABC):
         session_manager: DatabaseSessionManager,
         page_index: Optional[int] = None,
     ) -> bool:
-        """
-        Check if the task needs to be run by checking SystemTaskDO status.
-        Subclasses can override this for additional prerequisite checks.
+        """Pre-flight check to determine if the module should execute.
+
+        Returns:
+            bool: True if `process()` should be called. False if the task is already
+                  complete, prerequisites are missing, or the module is disabled.
+
+        Semantic Expectations:
+            - This should be a lightweight operation (DB lookup or config check).
+            - It is used for feature gating (e.g., skip if API key is missing).
+            - It is used for dependency management (e.g., OCR returns False if PNG is missing).
         """
         key = self.get_task_key(page_index)
         task = await get_task(session_manager, file_id, self.task_type, key)
@@ -51,7 +69,20 @@ class ProcessorModule(abc.ABC):
         page_index: Optional[int] = None,
         **kwargs: object,
     ) -> None:
-        """Execute the module logic. Should not worry about status updates unless specific failure cases arise."""
+        """Execute the core module logic (CPU/IO intensive work).
+
+        Expectations:
+            - **Idempotency**: Must be safe to call multiple times for the same input.
+            - **Atomic Updates**: Perform domain data updates within a DB transaction.
+            - **Error Handling**:
+                - **Raise Exceptions**: Raise descriptive exceptions for any failure.
+                  Do not catch and log-then-swallow exceptions here.
+                - **Recoverable vs Fatal**: Distinguish between transient errors
+                  (which can be retried) and logic errors.
+                - **SystemTask Status**: The `run` method automatically catches
+                  exceptions, logs the traceback, and sets the `f_system_task`
+                  status to `FAILED` with the error message.
+        """
         pass
 
     async def run(
@@ -61,10 +92,17 @@ class ProcessorModule(abc.ABC):
         page_index: Optional[int] = None,
         **kwargs: object,
     ) -> bool:
-        """
-        The entry point for executing a module.
-        Handles run_if_needed check, status updates, and error handling.
-        Returns True if the process completed successfully (or was already completed).
+        """The entry point for executing a module.
+
+        Logic:
+            1. If `run_if_needed()` returns False, returns True (graceful skip).
+            2. Calls `process()`.
+            3. On success, marks task `COMPLETED` and returns True.
+            4. On failure, marks task `FAILED` with error message and returns False.
+
+        Returns:
+            bool: True if the process is completed or skipped. False if it failed.
+                  A False return value usually stalls the pipeline for this page/file.
         """
         if not await self.run_if_needed(file_id, session_manager, page_index):
             return True
