@@ -141,15 +141,18 @@ When building systems to index or process Supernote files (e.g., for RAG or Know
     - Supernote files are append-only for new data but may rewrite metadata blocks. A "hashing module" is essential for efficient re-processing.
 
 ### 3. Text Extraction Strategies
-You have two paths for extracting text, depending on your latency/quality trade-off:
+You have two paths for extracting text.
 
-**Fast Path (Metadata)**
+> [!IMPORTANT]
+> **Architecture Decision**: This project exclusively uses the **Slow Path (OCR)** strategy. We have found that modern LLM-based OCR (e.g., Gemini) provides significantly higher quality transcription than the device's embedded `RECOGNTEXT`. Therefore, we skip parsing the `RECOGNTEXT` block entirely.
+
+**Fast Path (Metadata) [NOT USED]**
 - Check `Page.RECOGNTEXT` address.
 - If present (>0), read the binary block and decode using `TextDecoder` (Protobuf/JSON based).
 - **Pros**: Instant, no heavy compute.
-- **Cons**: Only available if the user enabled "Real-time Recognition" and the device has processed it.
+- **Cons**: Only available if the user enabled "Real-time Recognition" and the device has processed it. Quality varies.
 
-**Slow Path (OCR)**
+**Slow Path (OCR) [SELECTED]**
 - If `RECOGNTEXT` is missing, you must render the page.
 - decode `LAYERBITMAP` data using the appropriate protocol (`RATTA_RLE`).
 - Flatten layers (Background + Main + Layers) into a PNG.
