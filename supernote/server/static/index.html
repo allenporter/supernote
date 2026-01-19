@@ -6,9 +6,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Supernote Cloud - Web Viewer</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
+    <!-- Import Map for Vue (No Build) -->
+    <script type="importmap">
+        {
+          "imports": {
+            "vue": "https://unpkg.com/vue@3/dist/vue.esm-browser.js"
+          }
+        }
+    </script>
 </head>
 
 <body class="bg-slate-50 text-slate-900 antialiased min-h-screen">
@@ -22,11 +29,6 @@
                             S</div>
                         <h1 class="text-xl font-semibold tracking-tight">Supernote <span
                                 class="text-indigo-600">Lite</span></h1>
-                    </div>
-                    <div class="flex items-center gap-4">
-                        <div
-                            class="h-8 w-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 border-2 border-white shadow-sm">
-                        </div>
                     </div>
                 </div>
             </div>
@@ -51,6 +53,14 @@
                 </div>
             </nav>
 
+            <!-- Error State -->
+            <div v-if="error" class="bg-red-50 text-red-600 p-4 rounded-xl mb-6">
+                {{ error }}
+                <div v-if="error === 'Unauthorized'" class="mt-2 text-sm">
+                    Please log in via the CLI or check your token.
+                </div>
+            </div>
+
             <!-- Loading State -->
             <div v-if="isLoading" class="flex justify-center py-20">
                 <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
@@ -58,83 +68,26 @@
 
             <!-- Grid View -->
             <div v-if="view === 'grid' && !isLoading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <!-- Items (Mixed Files and Folders logic handled by computed props in JS, but simpler to just iterate) -->
+
                 <!-- Folders -->
-                <div v-for="folder in folders" :key="folder.id" @click="openFolder(folder)"
-                    class="group bg-white p-5 rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer">
-                    <div class="flex justify-between items-start mb-4">
-                        <div class="p-3 bg-amber-50 text-amber-500 rounded-2xl">
-                            <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"></path>
-                            </svg>
-                        </div>
-                    </div>
-                    <h3 class="font-bold text-slate-800 truncate">{{ folder.name }}</h3>
-                    <p class="text-xs text-slate-400 mt-1 uppercase tracking-wider font-semibold">Folder · {{
-                        folder.count }} Items</p>
-                </div>
+                <file-card v-for="folder in folders" :key="folder.id" :file="folder"
+                    @click="openItem(folder)"></file-card>
 
                 <!-- Files -->
-                <div v-for="file in files" :key="file.id" @click="openFile(file)"
-                    class="group file-card bg-white rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer overflow-hidden flex flex-col">
-                    <div
-                        class="aspect-[4/3] bg-slate-100 flex items-center justify-center p-8 relative transition-all bg-[url('https://www.transparenttextures.com/patterns/notebook.png')]">
-                        <div v-if="file.type === 'note'"
-                            class="p-4 bg-white/80 backdrop-blur rounded-2xl shadow-lg border border-white/50">
-                            <svg class="w-12 h-12 text-indigo-500" fill="none" stroke="currentColor"
-                                viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z">
-                                </path>
-                            </svg>
-                        </div>
-                        <div v-else class="p-4 bg-white/80 backdrop-blur rounded-2xl shadow-lg border border-white/50">
-                            <svg class="w-12 h-12 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                                    d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z">
-                                </path>
-                            </svg>
-                        </div>
-                    </div>
-                    <div class="p-5">
-                        <h3 class="font-bold text-slate-800 truncate">{{ file.name }}</h3>
-                        <p class="text-xs text-slate-400 mt-1 uppercase tracking-wider font-semibold">{{ file.type }} ·
-                            {{ file.size }}</p>
-                    </div>
-                </div>
+                <file-card v-for="file in regularFiles" :key="file.id" :file="file" @click="openItem(file)"></file-card>
             </div>
 
-            <!-- Viewer -->
-            <div v-if="view === 'viewer' && !isLoading"
-                class="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden min-h-[600px] flex flex-col">
-                <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                    <button @click="view = 'grid'"
-                        class="flex items-center text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">
-                        <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7">
-                            </path>
-                        </svg>
-                        Back to List
-                    </button>
-                    <div class="text-center">
-                        <h3 class="font-bold text-slate-900">{{ selectedFile?.name }}</h3>
-                        <p class="text-xs text-slate-400">Last edited {{ selectedFile?.date }}</p>
-                    </div>
-                    <div></div> <!-- Spacer -->
-                </div>
-                <div class="flex-grow p-4 sm:p-12 flex items-center justify-center bg-slate-100/50">
-                    <!-- Placeholder Note Content -->
-                    <div
-                        class="w-full max-w-4xl aspect-[3/4] bg-white shadow-2xl rounded-sm border border-slate-200 p-8 sm:p-12 text-slate-300 font-serif italic text-xl sm:text-2xl overflow-y-auto">
-                        <div
-                            class="border-b border-slate-100 mb-8 pb-4 text-slate-900 not-italic font-sans text-xs uppercase tracking-widest font-bold">
-                            Preview Mode</div>
-                        <p class="mb-6">Note content preview will appear here...</p>
-                    </div>
-                </div>
+            <!-- Viewer (Simplified for now) -->
+            <div v-if="view === 'viewer' && !isLoading" class="bg-white p-8 rounded-lg">
+                <button @click="view = 'grid'" class="mb-4 text-indigo-600">Back</button>
+                <h2 class="text-2xl font-bold mb-4">{{ selectedFile?.name }}</h2>
+                <p>Viewer implementation pending...</p>
             </div>
         </main>
     </div>
-    <script src="/static/app.js"></script>
+    <!-- Load Main Module -->
+    <script type="module" src="/static/js/main.js"></script>
 </body>
 
 </html>
