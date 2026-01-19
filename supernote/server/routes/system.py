@@ -19,9 +19,9 @@ DEFAULT_PARAMS = {
 }
 
 
-@routes.get("/")
+@routes.get("/api/health")
 @public_route
-async def handle_root(request: web.Request) -> web.Response:
+async def handle_health(request: web.Request) -> web.Response:
     return web.Response(text="Supernote Private Cloud Server")
 
 
