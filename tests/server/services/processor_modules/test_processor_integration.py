@@ -6,12 +6,9 @@ from sqlalchemy import select
 
 from supernote.client.client import Client
 from supernote.client.summary import SummaryClient
-
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
-from supernote.server.db.models.summary import SummaryDO
-from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
@@ -185,11 +182,19 @@ async def test_full_processing_pipeline_with_real_file(
         transcript_uuid = get_transcript_id(storage_key)
         summary_uuid = get_summary_id(storage_key)
 
-        transcript = next((s for s in summaries if s.unique_identifier == transcript_uuid), None)
-        ai_summary = next((s for s in summaries if s.unique_identifier == summary_uuid), None)
+        transcript = next(
+            (s for s in summaries if s.unique_identifier == transcript_uuid), None
+        )
+        ai_summary = next(
+            (s for s in summaries if s.unique_identifier == summary_uuid), None
+        )
 
-        assert transcript is not None, f"Transcript {transcript_uuid} not found in {summaries}"
-        assert ai_summary is not None, f"AI Summary {summary_uuid} not found in {summaries}"
+        assert transcript is not None, (
+            f"Transcript {transcript_uuid} not found in {summaries}"
+        )
+        assert ai_summary is not None, (
+            f"AI Summary {summary_uuid} not found in {summaries}"
+        )
 
         # Check transcript content
         assert transcript.content is not None

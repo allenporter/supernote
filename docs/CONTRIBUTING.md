@@ -50,36 +50,42 @@ The server is built with `aiohttp`.
 
 ## Local Development Setup
 
-We use `uv` to manage development environments and dependencies.
+We use standard scripts in the `script/` directory to manage the development environment, following the "Scripts to Rule Them All" pattern.
 
 ### Environment Setup
 
-```bash
-# Create a virtual environment and install all dependencies (including extras)
-uv sync --all-extras
-```
-
-This will create a `.venv` directory and install all required packages.
-
-### Manual Setup (Optional)
-
-If you prefer to manage the environment manually:
+To set up your development environment, run:
 
 ```bash
-uv venv --python=3.13  # Or your preferred 3.13+ version
-source .venv/bin/activate
-uv pip install -e ".[all]"
-uv pip install -r requirements_dev.txt
+./script/bootstrap
 ```
+
+This script will:
+1. Initialize a virtual environment using `uv`.
+2. Install all core and optional dependencies (`.[all]`).
+3. Install developer-specific dependencies (`requirements_dev.txt`).
+4. Install `pre-commit` hooks.
+
+### Standard Scripts
+
+| Script | Purpose |
+| :--- | :--- |
+| `script/bootstrap` | Initial environment setup and dependency installation. |
+| `script/setup` | Setup the project and help with venv activation. |
+| `script/update` | Pulls latest changes and re-runs bootstrap. |
+| `script/test` | Runs the full test suite using `pytest`. |
+| `script/lint` | Runs linters and style checks via `pre-commit`. |
+| `script/server` | Starts an ephemeral development server. |
 
 ## Running Tests
 
-Load the virtual environment:
+You can run the tests using the standard script:
+
 ```bash
-source .venv/bin/activate
+./script/test
 ```
 
-Run tests:
+Or manually:
 
 ```bash
 pytest

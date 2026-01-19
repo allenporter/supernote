@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# script/server: Start development server
+
+set -e
+
+cd "$(dirname "$0")/.."
+
+echo "==> Starting ephemeral server..."
+
+if command -v uv >/dev/null 2>&1; then
+  uv run supernote serve --ephemeral "$@"
+else
+  supernote serve --ephemeral "$@"
+fi
