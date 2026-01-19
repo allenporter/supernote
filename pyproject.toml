@@ -56,6 +56,9 @@ include = ["supernote*"]
 supernote = "supernote.cli.main:main"
 supernote-server = "supernote.cli.server:main"
 
+[tool.setuptools.package-data]
+"supernote.server.resources.prompts" = ["*.md"]
+
 [tool.mypy]
 exclude = [
   "venv/",
