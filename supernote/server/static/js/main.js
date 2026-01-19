@@ -1,18 +1,26 @@
 import { createApp, ref, onMounted, computed } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
 import { useFileSystem } from './composables/useFileSystem.js';
-import { setToken } from './api/client.js';
+import { setToken, getToken, login, logout } from './api/client.js';
 import FileCard from './components/FileCard.js';
+import LoginCard from './components/LoginCard.js';
 
 createApp({
     components: {
-        FileCard
+        FileCard,
+        LoginCard
     },
     setup() {
+        // Auth State
+        const isLoggedIn = ref(false);
+        const loginError = ref(null);
+
         // Dev helper: Set token from URL
         const urlParams = new URLSearchParams(window.location.search);
         const token = urlParams.get('token');
         if (token) {
             setToken(token);
+            // Clean URL
+            window.history.replaceState({}, document.title, "/");
         }
 
         const { files, currentDirectoryId, isLoading, error, loadDirectory } = useFileSystem();
@@ -21,7 +29,6 @@ createApp({
         const selectedFile = ref(null);
         const breadcrumbs = ref([{ id: "0", name: "Cloud" }]);
 
-        // Separate folders and files for display
         const folders = computed(() => files.value.filter(f => f.isDirectory));
         const regularFiles = computed(() => files.value.filter(f => !f.isDirectory));
 
@@ -44,12 +51,33 @@ createApp({
             await loadDirectory(target.id);
         }
 
+        async function handleLogin({ email, password }) {
+            loginError.value = null;
+            try {
+                await login(email, password);
+                isLoggedIn.value = true;
+                await loadDirectory();
+            } catch (e) {
+                loginError.value = e.message;
+                alert(e.message); // Simple feedback for now
+            }
+        }
+
+        function handleLogout() {
+            logout();
+        }
+
         onMounted(() => {
-            // Initial load
-            loadDirectory();
+            if (getToken()) {
+                isLoggedIn.value = true;
+                loadDirectory();
+            }
         });
 
         return {
+            isLoggedIn,
+            handleLogin,
+            handleLogout,
             view,
             files,
             folders,

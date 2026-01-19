@@ -13,9 +13,75 @@ export function getToken() {
     return authToken;
 }
 
+export function logout() {
+    authToken = null;
+    localStorage.removeItem('supernote_token');
+    window.location.reload();
+}
+
+/**
+ * Secure Login Flow
+ */
+export async function login(email, password) {
+    // 1. Wakeup / Get Token (Using query/token endpoint as a pre-check/wakeup)
+    // This step in the CLI client ensures a clean session/CSRF token if needed,
+    // although for the Web API we primarily rely on the random code flow.
+    await fetch('/api/user/query/token', { method: 'POST', body: '{}' });
+
+    // 2. Get Random Code (Challenge)
+    const randomCodeResp = await fetch('/api/official/user/query/random/code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account: email })
+    });
+
+    if (!randomCodeResp.ok) throw new Error("Failed to get login challenge");
+    const { randomCode, timestamp } = await randomCodeResp.json();
+
+    // 3. Hash Password
+    // Schema: SHA256(MD5(password) + randomCode)
+
+    // Step 3a: MD5(password)
+    // Using SparkMD5 global from CDN
+    const md5Password = SparkMD5.hash(password);
+
+    // Step 3b: SHA256(md5Password + randomCode)
+    const contentToHash = md5Password + randomCode;
+    const sha256Hash = await sha256(contentToHash);
+
+    // 4. Authenticate
+    const loginResp = await fetch('/api/official/user/account/login/new', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            account: email,
+            password: sha256Hash,
+            timestamp: timestamp,
+            loginMethod: "2", // Email
+            equipment: 1 // WEB
+        })
+    });
+
+    if (!loginResp.ok) {
+        if (loginResp.status === 401) throw new Error("Invalid credentials");
+        throw new Error("Login failed");
+    }
+
+    const loginData = await loginResp.json();
+    setToken(loginData.token);
+    return loginData;
+}
+
+// Helper: SHA-256 using Web Crypto API
+async function sha256(message) {
+    const msgBuffer = new TextEncoder().encode(message);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 /**
  * Fetch files for a given directory.
- * Maps the backend UserFileVO to the frontend SupernoteFile interface.
  */
 export async function fetchFiles(directoryId = "0", pageNo = 1, pageSize = 50) {
     const headers = {
@@ -39,6 +105,11 @@ export async function fetchFiles(directoryId = "0", pageNo = 1, pageSize = 50) {
 
     if (!response.ok) {
         if (response.status === 401) {
+            // If the token is invalid, clear it
+            if (authToken) {
+                logout();
+                throw new Error("Unauthorized");
+            }
             throw new Error("Unauthorized");
         }
         throw new Error(`Failed to fetch files: ${response.statusText}`);
@@ -50,9 +121,9 @@ export async function fetchFiles(directoryId = "0", pageNo = 1, pageSize = 50) {
     return (data.userFileVOList || []).map(file => ({
         id: file.id,
         name: file.fileName,
-        isDirectory: file.isFolder === "Y" || file.isFolder === true || file.isFolder === 1, // Handle various BooleanEnum serializations
+        isDirectory: file.isFolder === "Y" || file.isFolder === true || file.isFolder === 1,
         size: file.size,
-        updatedAt: file.updateTime, // Expected to be ISO string or similar
+        updatedAt: file.updateTime,
         extension: file.isFolder === "Y" ? null : getExtension(file.fileName)
     }));
 }

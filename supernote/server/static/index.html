@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Supernote Cloud - Web Viewer</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/spark-md5/3.0.0/spark-md5.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
     <!-- Import Map for Vue (No Build) -->
@@ -30,60 +31,70 @@
                         <h1 class="text-xl font-semibold tracking-tight">Supernote <span
                                 class="text-indigo-600">Lite</span></h1>
                     </div>
+                    <button v-if="isLoggedIn" @click="handleLogout"
+                        class="text-sm font-medium text-slate-500 hover:text-slate-800 transition-colors">
+                        Sign Out
+                    </button>
                 </div>
             </div>
         </header>
 
         <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <!-- Breadcrumbs -->
-            <nav
-                class="flex mb-8 text-sm font-medium text-slate-500 items-center overflow-x-auto whitespace-nowrap pb-2">
-                <div v-for="(crumb, index) in breadcrumbs" :key="crumb.id" class="flex items-center">
-                    <button @click="navigateTo(index)"
-                        :class="index === breadcrumbs.length - 1 ? 'text-slate-900 font-bold' : 'hover:text-indigo-600 transition-colors'"
-                        class="flex items-center">
-                        <svg v-if="index === 0" class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                            <path
-                                d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z">
-                            </path>
-                        </svg>
-                        {{ crumb.name }}
-                    </button>
-                    <span v-if="index < breadcrumbs.length - 1" class="mx-2 text-slate-300">/</span>
+            <template v-if="isLoggedIn">
+                <!-- Breadcrumbs -->
+                <nav
+                    class="flex mb-8 text-sm font-medium text-slate-500 items-center overflow-x-auto whitespace-nowrap pb-2">
+                    <div v-for="(crumb, index) in breadcrumbs" :key="crumb.id" class="flex items-center">
+                        <button @click="navigateTo(index)"
+                            :class="index === breadcrumbs.length - 1 ? 'text-slate-900 font-bold' : 'hover:text-indigo-600 transition-colors'"
+                            class="flex items-center">
+                            <svg v-if="index === 0" class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                <path
+                                    d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z">
+                                </path>
+                            </svg>
+                            {{ crumb.name }}
+                        </button>
+                        <span v-if="index < breadcrumbs.length - 1" class="mx-2 text-slate-300">/</span>
+                    </div>
+                </nav>
+
+                <!-- Error State -->
+                <div v-if="error" class="bg-red-50 text-red-600 p-4 rounded-xl mb-6">
+                    {{ error }}
+                    <div v-if="error === 'Unauthorized'" class="mt-2 text-sm">
+                        Please log in via the CLI or check your token.
+                    </div>
                 </div>
-            </nav>
 
-            <!-- Error State -->
-            <div v-if="error" class="bg-red-50 text-red-600 p-4 rounded-xl mb-6">
-                {{ error }}
-                <div v-if="error === 'Unauthorized'" class="mt-2 text-sm">
-                    Please log in via the CLI or check your token.
+                <!-- Loading State -->
+                <div v-if="isLoading" class="flex justify-center py-20">
+                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
                 </div>
-            </div>
 
-            <!-- Loading State -->
-            <div v-if="isLoading" class="flex justify-center py-20">
-                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-            </div>
+                <!-- Grid View -->
+                <div v-if="view === 'grid' && !isLoading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <!-- Folders -->
+                    <file-card v-for="folder in folders" :key="folder.id" :file="folder"
+                        @click="openItem(folder)"></file-card>
 
-            <!-- Grid View -->
-            <div v-if="view === 'grid' && !isLoading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <!-- Items (Mixed Files and Folders logic handled by computed props in JS, but simpler to just iterate) -->
+                    <!-- Files -->
+                    <file-card v-for="file in regularFiles" :key="file.id" :file="file"
+                        @click="openItem(file)"></file-card>
+                </div>
 
-                <!-- Folders -->
-                <file-card v-for="folder in folders" :key="folder.id" :file="folder"
-                    @click="openItem(folder)"></file-card>
+                <!-- Viewer (Simplified for now) -->
+                <div v-if="view === 'viewer' && !isLoading" class="bg-white p-8 rounded-lg">
+                    <button @click="view = 'grid'" class="mb-4 text-indigo-600">Back</button>
+                    <h2 class="text-2xl font-bold mb-4">{{ selectedFile?.name }}</h2>
+                    <p>Viewer implementation pending...</p>
+                </div>
+            </template>
 
-                <!-- Files -->
-                <file-card v-for="file in regularFiles" :key="file.id" :file="file" @click="openItem(file)"></file-card>
-            </div>
-
-            <!-- Viewer (Simplified for now) -->
-            <div v-if="view === 'viewer' && !isLoading" class="bg-white p-8 rounded-lg">
-                <button @click="view = 'grid'" class="mb-4 text-indigo-600">Back</button>
-                <h2 class="text-2xl font-bold mb-4">{{ selectedFile?.name }}</h2>
-                <p>Viewer implementation pending...</p>
-            </div>
+            <!-- Login Screen -->
+            <template v-else>
+                <login-card @login="handleLogin"></login-card>
+            </template>
         </main>
     </div>
     <!-- Load Main Module -->
