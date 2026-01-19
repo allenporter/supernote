@@ -9,6 +9,7 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.gemini import GeminiService
 from supernote.server.services.processor_modules import ProcessorModule
+from supernote.server.services.prompt_loader import PROMPT_LOADER
 from supernote.server.utils.note_content import get_page_content_by_id
 from supernote.server.utils.paths import get_page_png_path
 
@@ -90,8 +91,7 @@ class GeminiOcrModule(ProcessorModule):
             raise ValueError("Gemini API key not configured")
 
         model_id = self.config.gemini_ocr_model
-        prompt = "Transcribe the handwritten text in this image. Output ONLY the text."
-
+        prompt = PROMPT_LOADER.get_prompt("ocr_transcription")
         response = await self.gemini_service.generate_content(
             model=model_id,
             contents=[

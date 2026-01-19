@@ -12,6 +12,7 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.gemini import GeminiService
 from supernote.server.services.processor_modules import ProcessorModule
+from supernote.server.services.prompt_loader import PROMPT_LOADER
 from supernote.server.services.summary import SummaryService
 from supernote.server.utils.paths import get_summary_id, get_transcript_id
 
@@ -128,15 +129,8 @@ class SummaryModule(ProcessorModule):
 
         summary_uuid = get_summary_id(file_basis)
 
-        prompt = (
-            "You are a helpful assistant summarizing handwritten notes from a Supernote device. "
-            "Below is the OCR transcript of a notebook. Please provide a concise summary including: "
-            "1. Key Topics discussed. "
-            "2. Action Items or Tasks. "
-            "3. Decisions made. "
-            "Use Markdown for formatting."
-            "\n\nTranscript:\n" + full_text
-        )
+        prompt_template = PROMPT_LOADER.get_prompt("summary_generation")
+        prompt = prompt_template.replace("{{TRANSCRIPT}}", full_text)
 
         try:
             response = await self.gemini_service.generate_content(
