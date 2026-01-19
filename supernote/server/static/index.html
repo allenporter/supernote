@@ -83,11 +83,9 @@
                         @click="openItem(file)"></file-card>
                 </div>
 
-                <!-- Viewer (Simplified for now) -->
-                <div v-if="view === 'viewer' && !isLoading" class="bg-white p-8 rounded-lg">
-                    <button @click="view = 'grid'" class="mb-4 text-indigo-600">Back</button>
-                    <h2 class="text-2xl font-bold mb-4">{{ selectedFile?.name }}</h2>
-                    <p>Viewer implementation pending...</p>
+                <!-- Viewer -->
+                <div v-if="view === 'viewer'" class="min-h-full">
+                    <file-viewer :file="selectedFile" @close="view = 'grid'"></file-viewer>
                 </div>
             </template>
 

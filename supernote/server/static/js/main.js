@@ -3,11 +3,13 @@ import { useFileSystem } from './composables/useFileSystem.js';
 import { setToken, getToken, login, logout } from './api/client.js';
 import FileCard from './components/FileCard.js';
 import LoginCard from './components/LoginCard.js';
+import FileViewer from './components/FileViewer.js';
 
 createApp({
     components: {
         FileCard,
-        LoginCard
+        LoginCard,
+        FileViewer
     },
     setup() {
         // Auth State

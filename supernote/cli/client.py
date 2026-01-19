@@ -193,8 +193,8 @@ async def _run_login_sanity_tests(sn: Supernote) -> None:
         if files:
             print("    - First few files:")
             for file in files[:5]:
-                folder_marker = "📁" if file.is_folder == "Y" else "📄"
-                print(f"      {folder_marker} {file.file_name} (ID: {file.id})")
+                folder_marker = "📁" if file.tag == "folder" else "📄"
+                print(f"      {folder_marker} {file.name} (ID: {file.id})")
         else:
             print("    - No files found")
     except SupernoteException as err:
@@ -230,8 +230,8 @@ async def async_cloud_ls(path: str, verbose: bool = False) -> None:
             print(f"Total files: {len(files)}")
             if files:
                 for file in files:
-                    folder_marker = "📁" if file.is_folder == "Y" else "📄"
-                    print(f"{folder_marker} {file.file_name} (ID: {file.id})")
+                    folder_marker = "📁" if file.tag == "folder" else "📄"
+                    print(f"{folder_marker} {file.name} (ID: {file.id})")
 
     except SupernoteException as err:
         print(f"Error: {err}")

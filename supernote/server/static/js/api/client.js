@@ -95,7 +95,7 @@ export async function fetchFiles(directoryId = "0", pageNo = 1, pageSize = 50) {
         method: 'POST',
         headers,
         body: JSON.stringify({
-            directoryId: parseInt(directoryId),
+            directoryId: directoryId, // Pass as string/raw to preserve precision
             pageNo,
             pageSize,
             order: "filename",
@@ -132,4 +132,36 @@ function getExtension(filename) {
     if (!filename) return null;
     const parts = filename.split('.');
     return parts.length > 1 ? parts.pop().toLowerCase() : null;
+}
+
+/**
+ * Convert Note to PNG
+ * @param {string} fileId
+ * @returns {Promise<Array<{pageNo: number, url: string}>>}
+ */
+export async function convertNoteToPng(fileId) {
+    // 1. Get Token
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    // 2. Call API
+    const response = await fetch('/api/file/note/to/png', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        },
+        body: JSON.stringify({ id: fileId }) // Pass as string to preserve 64-bit precision
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error("Unauthorized");
+        }
+        throw new Error(`Conversion failed: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.pngPageVOList || [];
 }
