@@ -16,6 +16,7 @@ from .constants import MAX_UPLOAD_SIZE
 from .db.session import DatabaseSessionManager
 from .events import LocalEventBus
 from .routes import admin, auth, file_device, file_web, oss, schedule, summary, system
+from .routes.decorators import public_route
 from .services.blob import LocalBlobStorage
 from .services.coordination import SqliteCoordinationService
 from .services.file import FileService
@@ -173,6 +174,10 @@ async def jwt_auth_middleware(
     request: web.Request,
     handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
 ) -> web.StreamResponse:
+    # Allow public access to index and static assets
+    if request.path == "/" or request.path.startswith("/static/"):
+        return await handler(request)
+
     # Check if the matched route handler is public
     route = request.match_info.route
     handler_func = getattr(route, "handler", None)
@@ -277,6 +282,16 @@ def create_app(config: ServerConfig) -> web.Application:
     app.add_routes(oss.routes)
     app.add_routes(schedule.routes)
     app.add_routes(summary.routes)
+
+    # Serve static frontend files
+    static_path = Path(__file__).parent / "static"
+
+    @public_route
+    async def handle_index(request: web.Request) -> web.FileResponse:
+        return web.FileResponse(static_path / "index.html")
+
+    app.router.add_get("/", handle_index)
+    app.router.add_static("/static/", path=static_path, name="static")
 
     async def on_startup_handler(app: web.Application) -> None:
         # Configure proxy middleware based on config

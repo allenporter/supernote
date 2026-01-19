@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supernote Cloud - Web Viewer Mockup</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Vue 3 Global Build -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .file-card:hover .file-actions {
+            opacity: 1;
+        }
+
+        .file-actions {
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-50 text-slate-900 antialiased min-h-screen">
+    <div id="app" class="flex flex-col min-h-screen">
+        <!-- Header -->
+        <header class="sticky top-0 z-50 glass-effect border-b border-slate-200">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center h-16">
+                    <div class="flex items-center gap-3">
+                        <div
+                            class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-200">
+                            S
+                        </div>
+                        <h1 class="text-xl font-semibold tracking-tight">Supernote <span
+                                class="text-indigo-600">Lite</span></h1>
+                    </div>
+
+                    <div class="flex items-center gap-4">
+                        <div
+                            class="hidden md:flex items-center bg-slate-100 rounded-full px-4 py-1.5 text-sm text-slate-500 border border-slate-200">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                            </svg>
+                            Search notes...
+                        </div>
+                        <button class="p-2 text-slate-500 hover:text-indigo-600 transition-colors">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4">
+                                </path>
+                            </svg>
+                        </button>
+                        <div
+                            class="h-8 w-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 border-2 border-white shadow-sm ring-1 ring-slate-200">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <!-- Breadcrumbs -->
+            <nav class="flex mb-8 text-sm font-medium text-slate-500 items-center">
+                <a href="#" class="hover:text-indigo-600 transition-colors flex items-center">
+                    <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path
+                            d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z">
+                        </path>
+                    </svg>
+                    Cloud
+                </a>
+                <span class="mx-2 text-slate-300">/</span>
+                <a href="#" class="hover:text-indigo-600 transition-colors">Notebooks</a>
+                <span class="mx-2 text-slate-300">/</span>
+                <span class="text-slate-900">Meeting Notes</span>
+            </nav>
+
+            <!-- Actions Bar -->
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+                <div>
+                    <h2 class="text-3xl font-bold text-slate-900 tracking-tight">Meeting Notes</h2>
+                    <p class="text-slate-500 mt-1">12 files · Updated 2 hours ago</p>
+                </div>
+                <div class="flex gap-3">
+                    <button
+                        class="bg-white text-slate-700 px-4 py-2 rounded-xl shadow-sm border border-slate-200 font-semibold hover:bg-slate-50 transition-all active:scale-95 flex items-center">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path>
+                        </svg>
+                        Sort
+                    </button>
+                    <button
+                        class="bg-indigo-600 text-white px-5 py-2 rounded-xl shadow-lg shadow-indigo-100 font-semibold hover:bg-indigo-700 transition-all active:scale-95 flex items-center">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4">
+                            </path>
+                        </svg>
+                        Upload
+                    </button>
+                </div>
+            </div>
+
+            <!-- File Grid -->
+            <div v-if="view === 'grid'" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <!-- Directory Example -->
+                <div v-for="folder in folders" :key="folder.id" @click="openFolder(folder)"
+                    class="group bg-white p-5 rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer">
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="p-3 bg-amber-50 text-amber-500 rounded-2xl">
+                            <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"></path>
+                            </svg>
+                        </div>
+                    </div>
+                    <h3 class="font-bold text-slate-800 truncate">{{ folder.name }}</h3>
+                    <p class="text-xs text-slate-400 mt-1 uppercase tracking-wider font-semibold">Folder · {{
+                        folder.count }} Items</p>
+                </div>
+
+                <!-- Note File Example -->
+                <div v-for="file in files" :key="file.id" @click="openFile(file)"
+                    class="group file-card bg-white rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer overflow-hidden flex flex-col">
+                    <div
+                        class="aspect-[4/3] bg-slate-100 flex items-center justify-center p-8 relative grayscale group-hover:grayscale-0 transition-all bg-[url('https://www.transparenttextures.com/patterns/notebook.png')]">
+                        <div v-if="file.type === 'note'"
+                            class="p-4 bg-white/80 backdrop-blur rounded-2xl shadow-lg border border-white/50">
+                            <svg class="w-12 h-12 text-indigo-500" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z">
+                                </path>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="p-5">
+                        <h3 class="font-bold text-slate-800 truncate">{{ file.name }}</h3>
+                        <p class="text-xs text-slate-400 mt-1 uppercase tracking-wider font-semibold">{{ file.type }} ·
+                            {{ file.size }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Note Viewer View -->
+            <div v-if="view === 'viewer'"
+                class="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden min-h-[600px] flex flex-col">
+                <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <button @click="view = 'grid'"
+                        class="flex items-center text-sm font-semibold text-slate-600 hover:text-indigo-600 transition-colors">
+                        <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7">
+                            </path>
+                        </svg>
+                        Back to List
+                    </button>
+                    <div class="text-center">
+                        <h3 class="font-bold text-slate-900">{{ selectedFile?.name }}</h3>
+                        <p class="text-xs text-slate-400">Last edited {{ selectedFile?.date }}</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button class="p-2 text-slate-400 hover:text-indigo-600">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <!-- Mockup of Content -->
+                <div class="flex-grow p-12 flex items-center justify-center bg-slate-100/50">
+                    <div
+                        class="w-full max-w-4xl aspect-[3/4] bg-white shadow-2xl rounded shadow-slate-200 border border-slate-200 p-12 text-slate-300 font-serif italic text-2xl">
+                        <div
+                            class="border-b border-slate-100 mb-8 pb-4 text-slate-900 not-italic font-sans text-sm uppercase tracking-widest font-bold">
+                            Meeting Notes - Jan 18</div>
+                        <p class="mb-6">Discussion regarding the new AI summarization feature...</p>
+                        <p class="mb-6">Requirements:</p>
+                        <ul class="list-disc pl-8 mb-6 space-y-4">
+                            <li>Privacy-first local processing</li>
+                            <li>Integration with Supernote's native cloud</li>
+                            <li>Beautiful web-based preview</li>
+                        </ul>
+                        <div class="mt-20 border-t border-slate-100 pt-8 text-right opacity-50">Handwritten on Nomad
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="border-t border-slate-200 py-6 mt-12 bg-white">
+            <div
+                class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-slate-500">
+                <p>&copy; 2026 Supernote Lite Viewer. Open Source.</p>
+                <div class="flex gap-6">
+                    <a href="#" class="hover:text-indigo-600">Documentation</a>
+                    <a href="#" class="hover:text-indigo-600">GitHub</a>
+                    <a href="#" class="hover:text-indigo-600">Privacy</a>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        const { createApp, ref } = Vue;
+
+        createApp({
+            setup() {
+                const view = ref('grid');
+                const selectedFile = ref(null);
+
+                const folders = ref([
+                    { id: 1, name: 'Archive 2024', count: 42 },
+                    { id: 2, name: 'System Logs', count: 5 },
+                    { id: 3, name: 'Templates', count: 12 },
+                    { id: 4, name: 'Work Project X', count: 88 },
+                ]);
+
+                const files = ref([
+                    { id: 1, name: 'Q1 Strategy Brainstorm.note', size: '2.4 MB', date: '2h ago', type: 'note' },
+                    { id: 2, name: 'Design Specs V2.pdf', size: '12.1 MB', date: 'Yesterday', type: 'pdf' },
+                    { id: 3, name: 'Daily Standup Reflection.note', size: '1.2 MB', date: 'Oct 12', type: 'note' },
+                    { id: 4, name: 'User Interview Notes.note', size: '5.6 MB', date: 'Oct 11', type: 'note' },
+                ]);
+
+                function openFile(file) {
+                    selectedFile.value = file;
+                    view.value = 'viewer';
+                }
+
+                function openFolder(folder) {
+                    alert(`Opening folder: ${folder.name}`);
+                }
+
+                return { view, selectedFile, folders, files, openFile, openFolder };
+            }
+        }).mount('#app');
+    </script>
+</body>
+
+</html>
