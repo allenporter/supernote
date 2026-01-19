@@ -4,6 +4,9 @@ from unittest.mock import MagicMock
 import pytest
 from sqlalchemy import select
 
+from supernote.client.client import Client
+from supernote.client.summary import SummaryClient
+
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
@@ -56,11 +59,14 @@ async def test_full_processing_pipeline_with_real_file(
     test_note_path: Path,
     server_config_gemini: MagicMock,
     mock_gemini_service: MagicMock,
+    authenticated_client: Client,
+    user_service: UserService,
 ) -> None:
     """Full integration test using a real .note file."""
 
     # Setup Data
-    user_id = 100
+    user_email = "test@example.com"
+    user_id = await user_service.get_user_id(user_email)
     file_id = 999
     storage_key = "test_integration_note"
 
@@ -71,10 +77,6 @@ async def test_full_processing_pipeline_with_real_file(
     await blob_storage.put(USER_DATA_BUCKET, storage_key, file_content)
 
     async with session_manager.session() as session:
-        # User
-        user = UserDO(id=user_id, email="test@example.com", password_md5="hash")
-        session.add(user)
-
         user_file = UserFileDO(
             id=file_id,
             user_id=user_id,
@@ -164,37 +166,37 @@ async def test_full_processing_pipeline_with_real_file(
         assert len(completed_tasks) == expected_task_count
 
         # 4. Verify PNGs exist in cache
-        # 4. Verify PNGs exist in cache
         for page in pages:
             from supernote.server.utils.paths import get_page_png_path
 
             png_path = get_page_png_path(file_id, page.page_id)
             assert await blob_storage.exists(CACHE_BUCKET, png_path)
 
-        # 5. Verify Summary existence in DB
-        summaries = (
-            (
-                await session.execute(
-                    select(SummaryDO)
-                    .where(SummaryDO.file_id == file_id)
-                    .order_by(SummaryDO.unique_identifier)
-                )
-            )
-            .scalars()
-            .all()
-        )
-        assert len(summaries) == 2
+        # 5. Verify Summary existence via API
+        summary_client = SummaryClient(authenticated_client)
 
-        # Check transcript
-        transcript = summaries[1]  # -transcript comes after -summary
-        assert transcript.unique_identifier == get_transcript_id(storage_key)
+        # Query all summaries
+        query_response = await summary_client.query_summaries()
+        assert query_response.success
+        summaries = query_response.summary_do_list
+        assert len(summaries) >= 2  # At least transcript and AI summary
+
+        # Find our specific summaries by unique identifier
+        transcript_uuid = get_transcript_id(storage_key)
+        summary_uuid = get_summary_id(storage_key)
+
+        transcript = next((s for s in summaries if s.unique_identifier == transcript_uuid), None)
+        ai_summary = next((s for s in summaries if s.unique_identifier == summary_uuid), None)
+
+        assert transcript is not None, f"Transcript {transcript_uuid} not found in {summaries}"
+        assert ai_summary is not None, f"AI Summary {summary_uuid} not found in {summaries}"
+
+        # Check transcript content
         assert transcript.content is not None
         assert "Handwritten text content" in transcript.content
         assert transcript.data_source == "OCR"
 
-        # Check AI summary
-        ai_summary = summaries[0]
-        assert ai_summary.unique_identifier == get_summary_id(storage_key)
+        # Check AI summary content
         assert ai_summary.content == "Handwritten text content"  # Mocked response
         assert ai_summary.data_source == "GEMINI"
 
