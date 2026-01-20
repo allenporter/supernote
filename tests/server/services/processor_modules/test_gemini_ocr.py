@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import select
@@ -11,6 +11,7 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.gemini_ocr import GeminiOcrModule
+from supernote.server.services.prompt_loader import PromptId
 from supernote.server.utils.paths import get_page_png_path
 
 
@@ -72,12 +73,23 @@ async def test_process_ocr_success(
     mock_response.text = "Handwritten text content"
     mock_gemini_service.generate_content.return_value = mock_response
 
-    # Run full module lifecycle
-    await gemini_ocr_module.run(
-        file_id, session_manager, page_index=page_index, page_id="p0"
-    )
+    # Mock PromptLoader
+    with patch(
+        "supernote.server.services.processor_modules.gemini_ocr.PROMPT_LOADER"
+    ) as mock_loader:
+        mock_loader.get_prompt.return_value = "Transcribe this page."
 
-    # Verifications
+        # Run full module lifecycle
+        await gemini_ocr_module.run(
+            file_id, session_manager, page_index=page_index, page_id="p0"
+        )
+
+        # Verifications
+        # Verify PromptLoader called with correct filename
+        mock_loader.get_prompt.assert_called_with(
+            PromptId.OCR_TRANSCRIPTION, custom_type="real"
+        )
+
     # Verify API Call
     call_args = mock_gemini_service.generate_content.call_args
     assert call_args is not None
@@ -87,7 +99,7 @@ async def test_process_ocr_success(
     content_obj = kwargs["contents"][0]
     parts = content_obj.parts
     assert len(parts) == 2
-    assert parts[0].text.startswith("Transcribe")
+    assert parts[0].text == "Transcribe this page."
     assert parts[1].inline_data.data == png_content
     # Verify config passed
     assert kwargs["config"] == {"media_resolution": "media_resolution_high"}

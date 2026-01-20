@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy import select
@@ -11,6 +11,7 @@ from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.summary import SummaryModule
+from supernote.server.services.prompt_loader import PromptId
 from supernote.server.services.summary import SummaryService
 from supernote.server.utils.paths import get_summary_id, get_transcript_id
 
@@ -90,10 +91,29 @@ async def test_summary_success(
     mock_response.text = "AI Summary Output"
     mock_gemini_service.generate_content.return_value = mock_response
 
-    # Run full module lifecycle
-    await summary_module.run(file_id, session_manager)
+    # Mock PromptLoader
+    with patch(
+        "supernote.server.services.processor_modules.summary.PROMPT_LOADER"
+    ) as mock_loader:
+        mock_loader.get_prompt.return_value = "Generate {{TRANSCRIPT}}"
 
-    # Verifications
+        # Run full module lifecycle
+        await summary_module.run(file_id, session_manager)
+
+        # Verifications
+        # Verify PromptLoader called with correct filename
+        mock_loader.get_prompt.assert_called_with(
+            PromptId.SUMMARY_GENERATION, custom_type="real"
+        )
+
+        # Verify Gemini called with populated prompt
+        call_args = mock_gemini_service.generate_content.call_args
+        assert call_args is not None
+        _, kwargs = call_args
+        assert "Page 1 text" in kwargs["contents"]
+        assert "Page 2 text" in kwargs["contents"]
+        assert "Generate" in kwargs["contents"]
+
     # 1. Transcript Upsert
     transcript_call = mock_summary_service.add_summary.call_args_list[0]
     assert transcript_call.args[0] == user_email

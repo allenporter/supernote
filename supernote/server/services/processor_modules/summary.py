@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from typing import Optional
 
 from sqlalchemy import select
@@ -12,7 +13,7 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.gemini import GeminiService
 from supernote.server.services.processor_modules import ProcessorModule
-from supernote.server.services.prompt_loader import PROMPT_LOADER
+from supernote.server.services.prompt_loader import PROMPT_LOADER, PromptId
 from supernote.server.services.summary import SummaryService
 from supernote.server.utils.paths import get_summary_id, get_transcript_id
 
@@ -128,8 +129,11 @@ class SummaryModule(ProcessorModule):
             return
 
         summary_uuid = get_summary_id(file_basis)
+        file_name_basis = Path(file_do.file_name).stem.lower()
 
-        prompt_template = PROMPT_LOADER.get_prompt("summary_generation")
+        prompt_template = PROMPT_LOADER.get_prompt(
+            PromptId.SUMMARY_GENERATION, custom_type=file_name_basis
+        )
         prompt = prompt_template.replace("{{TRANSCRIPT}}", full_text)
 
         try:

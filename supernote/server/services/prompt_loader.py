@@ -1,3 +1,4 @@
+import enum
 import logging
 from pathlib import Path
 from typing import Dict, Optional
@@ -7,35 +8,117 @@ logger = logging.getLogger(__name__)
 RESOURCES_DIR = Path(__file__).parent.parent / "resources" / "prompts"
 
 
+class PromptId(str, enum.Enum):
+    OCR_TRANSCRIPTION = "ocr_transcription"
+    SUMMARY_GENERATION = "summary_generation"
+
+
+CATEGORY_MAP = {
+    "ocr": PromptId.OCR_TRANSCRIPTION.value,
+    "summary": PromptId.SUMMARY_GENERATION.value,
+}
+COMMON = "common"
+DEFAULT = "default"
+
+
 class PromptLoader:
     """Service to load and manage externalized prompts."""
 
     def __init__(self, resources_dir: Optional[Path] = None) -> None:
         self.resources_dir = resources_dir or RESOURCES_DIR
-        self.prompts: Dict[str, str] = {}
+        # Map: prompt_id -> (type -> prompt_text)
+        # type can be "common", "default", or specific custom types like "monthly"
+        self.prompts: Dict[str, Dict[str, str]] = {}
         self._load_prompts()
 
     def _load_prompts(self) -> None:
-        """Load prompts from the markdown files in the prompts directory."""
+        """Load all prompts from the resources directory into memory."""
         if not self.resources_dir.exists():
             logger.warning(f"Prompts directory not found at {self.resources_dir}")
             return
 
+        # Initialize dicts for known prompt IDs
+        for pid in PromptId:
+            self.prompts[pid.value] = {}
+
         try:
-            for file_path in self.resources_dir.glob("*.md"):
-                if file_path.is_file():
-                    key = file_path.stem
-                    prompt_text = file_path.read_text(encoding="utf-8").strip()
-                    self.prompts[key] = prompt_text
-            logger.info(f"Loaded {len(self.prompts)} prompts from {self.resources_dir}")
+            # Map categories to PromptId
+            for category, prompt_id in CATEGORY_MAP.items():
+                category_dir = self.resources_dir / category
+                if not category_dir.exists():
+                    continue
+
+                if prompt_id not in self.prompts:
+                    self.prompts[prompt_id] = {}
+
+                # 1. Load Common Prompts (Always On)
+                common_dir = category_dir / COMMON
+                if common_dir.exists() and common_dir.is_dir():
+                    common_text = self._read_prompts_from_dir(common_dir)
+                    if common_text:
+                        self.prompts[prompt_id][COMMON] = common_text
+
+                # 2. Load Default Prompts
+                default_dir = category_dir / DEFAULT
+                if default_dir.exists() and default_dir.is_dir():
+                    default_text = self._read_prompts_from_dir(default_dir)
+                    if default_text:
+                        self.prompts[prompt_id][DEFAULT] = default_text
+
+                # 3. Load Custom Prompts (sub-directories)
+                for item in category_dir.iterdir():
+                    if item.is_dir() and item.name not in [COMMON, DEFAULT]:
+                        custom_type = item.name.lower()
+                        custom_text = self._read_prompts_from_dir(item)
+                        if custom_text:
+                            self.prompts[prompt_id][custom_type] = custom_text
+
+            logger.info(f"Loaded prompts from {self.resources_dir}")
+
         except Exception as e:
             logger.error(f"Failed to load prompts from {self.resources_dir}: {e}")
 
-    def get_prompt(self, prompt_id: str) -> str:
-        """Retrieve a prompt by its ID."""
+    def _read_prompts_from_dir(self, directory: Path) -> str:
+        """Read and concatenate all .md files in a directory."""
+        prompts = []
+        for file_path in sorted(directory.glob("*.md")):
+            if file_path.is_file():
+                prompts.append(file_path.read_text(encoding="utf-8").strip())
+        return "\n\n".join(prompts)
+
+    def get_prompt(self, prompt_id: str, custom_type: Optional[str] = None) -> str:
+        """Retrieve a prompt by its ID, optionally overridden by a custom type.
+
+        Logic: Common + (Custom if exists else Default)
+        """
         if prompt_id not in self.prompts:
-            raise ValueError(f"Prompt '{prompt_id}' not found in {self.resources_dir}.")
-        return self.prompts[prompt_id]
+            raise ValueError(f"Prompt ID '{prompt_id}' not found.")
+
+        type_map = self.prompts[prompt_id]
+
+        parts = []
+
+        # 1. Add Common
+        if COMMON in type_map:
+            parts.append(type_map[COMMON])
+
+        # 2. Add Specific (Custom or Default)
+        specific_prompt = None
+        if custom_type and custom_type in type_map:
+            logger.info(f"Using custom prompt '{custom_type}' for {prompt_id}")
+            specific_prompt = type_map[custom_type]
+        elif DEFAULT in type_map:
+            specific_prompt = type_map[DEFAULT]
+
+        if specific_prompt:
+            parts.append(specific_prompt)
+        elif not parts:
+            # If no common and no specific/default, that's an issue
+            raise ValueError(
+                f"No prompt content found for '{prompt_id}' (Custom: {custom_type})"
+            )
+
+        return "\n\n".join(parts)
 
 
 PROMPT_LOADER = PromptLoader()
