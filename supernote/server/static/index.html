@@ -31,10 +31,20 @@
                         <h1 class="text-xl font-semibold tracking-tight">Supernote <span
                                 class="text-indigo-600">Lite</span></h1>
                     </div>
-                    <button v-if="isLoggedIn" @click="handleLogout"
-                        class="text-sm font-medium text-slate-500 hover:text-slate-800 transition-colors">
-                        Sign Out
-                    </button>
+                    <div v-if="isLoggedIn" class="flex items-center gap-4">
+                        <button @click="showSystemPanel = true"
+                            class="text-slate-500 hover:text-slate-700 transition-colors" title="System Status">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
+                                </path>
+                            </svg>
+                        </button>
+                        <button @click="handleLogout"
+                            class="text-sm font-medium text-slate-500 hover:text-slate-800 transition-colors">
+                            Sign Out
+                        </button>
+                    </div>
                 </div>
             </div>
         </header>
@@ -93,6 +103,9 @@
             <template v-else>
                 <login-card @login="handleLogin"></login-card>
             </template>
+
+            <!-- System Panel -->
+            <system-panel v-if="showSystemPanel" @close="showSystemPanel = false"></system-panel>
         </main>
     </div>
     <!-- Load Main Module -->

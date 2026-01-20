@@ -4,17 +4,20 @@ import { setToken, getToken, login, logout } from './api/client.js';
 import FileCard from './components/FileCard.js';
 import LoginCard from './components/LoginCard.js';
 import FileViewer from './components/FileViewer.js';
+import SystemPanel from './components/SystemPanel.js';
 
 createApp({
     components: {
         FileCard,
         LoginCard,
-        FileViewer
+        FileViewer,
+        SystemPanel
     },
     setup() {
         // Auth State
         const isLoggedIn = ref(false);
         const loginError = ref(null);
+        const showSystemPanel = ref(false);
 
         // Dev helper: Set token from URL
         const urlParams = new URLSearchParams(window.location.search);
@@ -90,7 +93,8 @@ createApp({
             breadcrumbs,
             openItem,
             navigateTo,
-            selectedFile
+            selectedFile,
+            showSystemPanel
         };
     }
 }).mount('#app');

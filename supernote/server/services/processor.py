@@ -230,3 +230,14 @@ class ProcessorService:
                     f"Page {page_id} (idx {page_index}) processing stalled at {module.name} for file {file_id}"
                 )
                 break
+
+    async def list_system_tasks(self, limit: int = 100) -> List[SystemTaskDO]:
+        """List recent system tasks."""
+        async with self.session_manager.session() as session:
+            stmt = (
+                select(SystemTaskDO)
+                .order_by(SystemTaskDO.update_time.desc())
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())

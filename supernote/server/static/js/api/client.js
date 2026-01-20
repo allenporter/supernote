@@ -196,3 +196,31 @@ export async function fetchSummaries(fileId) {
     const data = await response.json();
     return data.summaryDOList || [];
 }
+
+/**
+ * Fetch system tasks (Extended API).
+ * @returns {Promise<Object>} The system task list response.
+ */
+export async function fetchSystemTasks() {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/extended/system/tasks', {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        }
+    });
+
+    if (response.status === 401) {
+        logout();
+        throw new Error("Unauthorized");
+    }
+
+    if (!response.ok) {
+        throw new Error(`Failed to fetch system tasks: ${response.statusText}`);
+    }
+
+    return await response.json();
+}

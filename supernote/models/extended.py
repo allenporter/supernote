@@ -27,15 +27,69 @@ class WebSummaryListRequestDTO(DataClassJSONMixin):
 
 @dataclass
 class WebSummaryListVO(BaseResponse):
-    """Response VO for listing summaries (Web Extension)."""
+    """Response VO for listing summaries (Web Extension).
+
+    Used by: POST /api/extended/file/summary/list
+    """
 
     summary_do_list: list[SummaryItem] = field(
         metadata=field_options(alias="summaryDOList"), default_factory=list
     )
-    """List of summary items."""
+    """List of summary items found for the file."""
 
     total_records: int = field(metadata=field_options(alias="totalRecords"), default=0)
-    """Total number of records."""
+    """Total count of summaries returned."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class SystemTaskVO(DataClassJSONMixin):
+    """VO for a system processing task.
+
+    Used by: GET /api/extended/system/tasks
+    """
+
+    id: int
+    """The unique ID of the system task."""
+
+    file_id: int = field(metadata=field_options(alias="fileId"))
+    """The ID of the file associated with this task."""
+
+    task_type: str = field(metadata=field_options(alias="taskType"))
+    """The type of task (e.g. 'OCR', 'SUMMARY')."""
+
+    key: str
+    """The specific key for the task (e.g. 'page_1', 'global')."""
+
+    status: str
+    """The current status (PENDING, PROCESSING, COMPLETED, FAILED)."""
+
+    retry_count: int = field(metadata=field_options(alias="retryCount"))
+    """Number of times the task has been retried."""
+
+    update_time: int = field(metadata=field_options(alias="updateTime"))
+    """Timestamp of the last update (ms)."""
+
+    last_error: str | None = field(
+        metadata=field_options(alias="lastError"), default=None
+    )
+    """Error message from the last failure, if any."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class SystemTaskListVO(BaseResponse):
+    """Response VO for listing system tasks.
+
+    Used by: GET /api/extended/system/tasks
+    """
+
+    tasks: list[SystemTaskVO] = field(default_factory=list)
+    """List of recent system tasks."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
