@@ -451,6 +451,16 @@ class QuerySummaryGroupVO(BaseResponse):
     """List of summary groups (as SummaryItems)."""
 
 
+# Metadata keys used in the Summary 'extra_metadata' field
+METADATA_SEGMENTS = "segments"
+"""List of semantic segments. Each segment is a dict with:
+    - date_range: str
+    - summary: str
+    - extracted_dates: List[str]
+    - page_refs: List[int]
+"""
+
+
 @dataclass
 class AddSummaryDTO(DataClassJSONMixin):
     """Request to add a summary.

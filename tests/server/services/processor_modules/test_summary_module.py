@@ -4,7 +4,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy import select
 
-from supernote.models.summary import AddSummaryDTO, SummaryItem
+from supernote.models.summary import (
+    METADATA_SEGMENTS,
+    AddSummaryDTO,
+    SummaryItem,
+)
 from supernote.server.config import ServerConfig
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
@@ -97,6 +101,7 @@ async def test_summary_success(
                     "date_range": "2023-10-27",
                     "summary": "AI Summary Output",
                     "extracted_dates": ["2023-10-27"],
+                    "page_refs": [1, 2],
                 }
             ]
         }
@@ -143,10 +148,14 @@ async def test_summary_success(
     assert ai_call.args[0] == user_email
     dto_ai = ai_call.args[1]
     assert dto_ai.unique_identifier == get_summary_id(storage_key)
-    # Check for Markdown formatting
     assert "## 2023-10-27" in dto_ai.content
     assert "AI Summary Output" in dto_ai.content
     assert dto_ai.data_source == "GEMINI"
+
+    # Check Metadata
+    assert dto_ai.metadata is not None
+    meta = json.loads(dto_ai.metadata)
+    assert meta[METADATA_SEGMENTS][0]["page_refs"] == [1, 2]
 
     # 3. Check Task Status
     async with session_manager.session() as session:
@@ -209,6 +218,7 @@ async def test_summary_idempotency_update(
                     "date_range": "2023-10-28",
                     "summary": "New AI Summary",
                     "extracted_dates": [],
+                    "page_refs": [3, 4],
                 }
             ]
         }
@@ -216,21 +226,32 @@ async def test_summary_idempotency_update(
     mock_gemini_service.generate_content.return_value = mock_response
 
     # Mock Existing Summary
-    mock_summary_service.get_summary_by_uuid.side_effect = [
-        SummaryItem(id=10, unique_identifier=get_transcript_id(storage_key)),
-        SummaryItem(id=11, unique_identifier=get_summary_id(storage_key)),
-    ]
+    existing_summary = SummaryItem(id=11, unique_identifier=get_summary_id(storage_key))
+    # 1st call (transcript): return None -> calls add_summary
+    # 2nd call (ai summary): return existing -> calls update_summary
+    mock_summary_service.get_summary_by_uuid.side_effect = [None, existing_summary]
 
-    # Run
+    # Run module
     await summary_module.run(file_id, session_manager)
 
-    # Should call update_summary instead of add_summary
-    assert mock_summary_service.add_summary.call_count == 0
-    assert mock_summary_service.update_summary.call_count == 2
+    # Transcript should be added
+    mock_summary_service.add_summary.assert_called_once()
+    transcript_dto = mock_summary_service.add_summary.call_args.args[1]
+    assert transcript_dto.unique_identifier == get_transcript_id(storage_key)
 
-    # Check first update (transcript)
-    update_call = mock_summary_service.update_summary.call_args_list[0]
-    assert update_call.args[0] == user_email
-    assert update_call.args[1].id == 10
-    assert update_call.args[1].content is not None
-    assert "Page 1" in update_call.args[1].content
+    # AI Summary should be updated
+    mock_summary_service.update_summary.assert_called_once()
+    update_call = mock_summary_service.update_summary.call_args
+    assert update_call is not None
+
+    # helper to get DTO from call args (user_email, dto)
+    update_dto = update_call.args[1]
+
+    assert update_dto.id == existing_summary.id
+    assert "## 2023-10-28 (Pages 3, 4)" in update_dto.content
+    assert "New AI Summary" in update_dto.content
+
+    # Check Metadata JSON
+    assert update_dto.metadata is not None
+    meta = json.loads(update_dto.metadata)
+    assert meta[METADATA_SEGMENTS][0]["page_refs"] == [3, 4]
