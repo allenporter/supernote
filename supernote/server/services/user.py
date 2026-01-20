@@ -11,7 +11,7 @@ from mashumaro.mixins.json import DataClassJSONMixin
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from supernote.models.auth import LoginVO, UserVO
+from supernote.models.auth import Equipment, LoginVO, UserVO
 from supernote.models.user import (
     LoginRecordVO,
     UpdateEmailDTO,
@@ -233,6 +233,7 @@ class UserService:
         password_hash: str,
         timestamp: str,
         equipment_no: Optional[str] = None,
+        equipment: Equipment = Equipment.WEB,
         ip: Optional[str] = None,
         login_method: Optional[str] = None,
     ) -> LoginVO | None:
@@ -271,7 +272,11 @@ class UserService:
             session.add(record)
             await session.commit()
 
-        ttl = self._config.expiration_hours * 3600
+        if equipment in (Equipment.TERMINAL, Equipment.APP):
+            ttl = self._config.device_expiration_hours * 3600
+        else:
+            ttl = self._config.expiration_hours * 3600
+
         payload = {
             "sub": account,
             "equipment_no": equipment_no or "",
