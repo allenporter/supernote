@@ -1,9 +1,11 @@
 import json
 import logging
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from mashumaro.jsonschema import build_json_schema
+from mashumaro.mixins.json import DataClassJSONMixin
 from sqlalchemy import select
 
 from supernote.models.summary import (
@@ -27,24 +29,36 @@ logger = logging.getLogger(__name__)
 
 
 # Define structured output schema
-class SummarySegment(BaseModel):
-    date_range: str = Field(
-        description="The date range covered by this segment (e.g., '2023-10-27', 'Week of Oct 27')."
+@dataclass
+class SummarySegment(DataClassJSONMixin):
+    date_range: str = field(
+        metadata={
+            "description": "The date range covered by this segment (e.g., '2023-10-27', 'Week of Oct 27')."
+        }
     )
-    summary: str = Field(
-        description="A concise summary of the events, tasks, and notes for this period."
+    summary: str = field(
+        metadata={
+            "description": "A concise summary of the events, tasks, and notes for this period."
+        }
     )
-    extracted_dates: List[str] = Field(
-        description="List of specific dates derived from the content in ISO 8601 format (YYYY-MM-DD)."
+    extracted_dates: List[str] = field(
+        metadata={
+            "description": "List of specific dates derived from the content in ISO 8601 format (YYYY-MM-DD)."
+        }
     )
-    page_refs: List[int] = Field(
-        description="List of 1-indexed page numbers typically found in the text as '--- Page X ---'."
+    page_refs: List[int] = field(
+        metadata={
+            "description": "List of 1-indexed page numbers typically found in the text as '--- Page X ---'."
+        }
     )
 
 
-class SummaryResponse(BaseModel):
-    segments: List[SummarySegment] = Field(
-        description="List of summary segments extracted from the transcript."
+@dataclass
+class SummaryResponse(DataClassJSONMixin):
+    segments: List[SummarySegment] = field(
+        metadata={
+            "description": "List of summary segments extracted from the transcript."
+        }
     )
 
 
@@ -178,7 +192,9 @@ class SummaryModule(ProcessorModule):
                 contents=prompt,
                 config={
                     "response_mime_type": "application/json",
-                    "response_json_schema": SummaryResponse.model_json_schema(),
+                    "response_json_schema": build_json_schema(
+                        SummaryResponse
+                    ).to_dict(),
                 },
             )
         except Exception as e:
