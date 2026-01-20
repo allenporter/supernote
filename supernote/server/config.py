@@ -231,13 +231,12 @@ BaseConfig
             except ValueError:
                 pass
 
-        if not config_file.exists():
-            # Set default trace log file if not specified
-            if config.trace_log_file is None:
-                config.trace_log_file = str(
-                    Path(config.storage_dir) / "system" / "trace.log"
-                )
+        if config.trace_log_file is None:
+            config.trace_log_file = str(
+                Path(config.storage_dir) / "system" / "trace.log"
+            )
 
+        if not config_file.exists():
             logger.info(f"Saving config to {config_file}")
             config_file.parent.mkdir(parents=True, exist_ok=True)
             config_file.write_text(cast(str, config.to_yaml()))

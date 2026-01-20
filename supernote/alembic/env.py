@@ -25,8 +25,10 @@ config = context.config
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+if config.config_file_name is not None and not config.get_main_option(
+    "skip_logging_config"
+):
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # target_metadata is the MetaData object of your ORM base
 target_metadata = Base.metadata

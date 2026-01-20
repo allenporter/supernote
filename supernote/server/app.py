@@ -49,55 +49,63 @@ logger = logging.getLogger(__name__)
 TRUNCATE_BODY_LOG = 10 * 1024
 
 
+async def _write_trace_log(config: ServerConfig, log_entry: dict[str, Any]) -> None:
+    """Helper to write log entry to trace file."""
+    if not config.trace_log_file:
+        return
+
+    trace_log_path = Path(config.trace_log_file)
+
+    def write_op() -> None:
+        try:
+            trace_log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(trace_log_path, "a") as f:
+                f.write(json.dumps(log_entry, indent=2) + "\n")
+                f.flush()
+        except Exception as e:
+            logger.error(f"Failed to write to trace log: {e}")
+
+    await asyncio.to_thread(write_op)
+
+
 @web.middleware
 async def trace_middleware(
     request: web.Request,
     handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
 ) -> web.StreamResponse:
-    # Skip reading body for upload endpoints to avoid consuming the stream
-    # which breaks multipart parsing in the handler.
-    req_body_str = None
-    if "/api/oss/upload" in request.path:
-        req_body_str = "<multipart upload skipped>"
-    elif request.can_read_body:
-        try:
-            # Check content type for request
-            if is_binary_content_type(request.content_type):
-                req_body_str = "<binary data>"
-            else:
+    # Process Request
+    try:
+        response = await handler(request)
+
+        # Capture Request Body (SAFELY AFTER HANDLER)
+        req_body_str = None
+        if "/api/oss/upload" in request.path:
+            req_body_str = "<multipart upload skipped>"
+        elif request.can_read_body:
+            try:
+                # aiohttp allows reading multiple times once buffered
                 body_bytes = await request.read()
                 req_body_str = body_bytes.decode("utf-8", errors="replace")
-                # Truncate body if it's too long
                 if len(req_body_str) > TRUNCATE_BODY_LOG:
                     req_body_str = req_body_str[:2048] + "... (truncated)"
-        except Exception as e:
-            logger.error(f"Error reading request body: {e}")
-            req_body_str = "<error reading body>"
-
-    # Process Request
-    response = await handler(request)
-
-    # Capture Response Body
-    res_body_str = None
-    if isinstance(response, web.Response) and response.body:
-        # Check content type for response
-        if is_binary_content_type(response.content_type):
-            res_body_str = "<binary data>"
-        else:
-            try:
-                # response.body is bytes/payload
-                if isinstance(response.body, bytes):
-                    res_body_str = response.body.decode("utf-8", errors="replace")
-                    if len(res_body_str) > TRUNCATE_BODY_LOG:
-                        res_body_str = res_body_str[:2048] + "... (truncated)"
-                else:
-                    res_body_str = "<stream/payload>"
             except Exception:
-                res_body_str = "<error reading response>"
+                req_body_str = "<error reading body>"
 
-    # Write Log
-    server_config: ServerConfig = request.app["config"]
-    if server_config.trace_log_file:
+        # Capture Response Body
+        res_body_str = None
+        if isinstance(response, web.Response) and response.body:
+            if is_binary_content_type(response.content_type):
+                res_body_str = "<binary data>"
+            else:
+                try:
+                    if isinstance(response.body, bytes):
+                        res_body_str = response.body.decode("utf-8", errors="replace")
+                        if len(res_body_str) > TRUNCATE_BODY_LOG:
+                            res_body_str = res_body_str[:2048] + "... (truncated)"
+                except Exception:
+                    res_body_str = "<error reading response>"
+
+        # Write Log
         log_entry = {
             "timestamp": time.time(),
             "request": {
@@ -112,21 +120,33 @@ async def trace_middleware(
                 "body": try_parse_json(res_body_str),
             },
         }
+        await _write_trace_log(request.app["config"], log_entry)
+        return response
 
-        trace_log_path = Path(server_config.trace_log_file)
+    except Exception as e:
+        logger.exception(f"Error handling request: {e}")
+        # Try to capture body even on error
+        req_body_str = "<unknown>"
         try:
+            if request.can_read_body:
+                body_bytes = await request.read()
+                req_body_str = body_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            pass
 
-            def write_trace() -> None:
-                trace_log_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(trace_log_path, "a") as f:
-                    f.write(json.dumps(log_entry, indent=2) + "\n")
-                    f.flush()
-
-            await asyncio.to_thread(write_trace)
-        except Exception as e:
-            logger.error(f"Failed to write to trace log: {e}")
-
-    return response
+        log_entry = {
+            "timestamp": time.time(),
+            "request": {
+                "method": request.method,
+                "url": str(_redact_url(request.url)),
+                "headers": _sanitize_headers(dict(request.headers)),
+                "body": try_parse_json(req_body_str),
+            },
+            "error": str(e),
+            "status": 500,
+        }
+        await _write_trace_log(request.app["config"], log_entry)
+        raise
 
 
 def try_parse_json(body: str | None) -> Any:
@@ -305,6 +325,10 @@ def create_app(config: ServerConfig) -> web.Application:
     app.router.add_get("/", handle_index)
     app.router.add_static("/static/", path=static_path, name="static")
 
+    # Serve static frontend files
+    static_path = Path(__file__).parent / "static"
+
+    # Register Middlewares
     async def on_startup_handler(app: web.Application) -> None:
         # Configure proxy middleware based on config
         if config.proxy_mode == "strict":
@@ -319,18 +343,19 @@ def create_app(config: ServerConfig) -> web.Application:
             # XForwardedRelaxed trusts the immediate upstream proxy
             await aiohttp_remotes.setup(app, aiohttp_remotes.XForwardedRelaxed())
 
-        if config.trace_log_file:
-            app.middlewares.append(trace_middleware)
-
+        # Register trace and auth middlewares after proxy setup to avoid clone errors
+        app.middlewares.append(trace_middleware)
         app.middlewares.append(jwt_auth_middleware)
 
+        logger.info("Running database migrations...")
         await asyncio.to_thread(run_migrations, config.db_url)
 
-        # Handle ephemeral user creation if needed
         if config.ephemeral:
             await bootstrap_ephemeral_user(app)
 
+        logger.info("Starting background services...")
         await processor_service.start()
+        logger.info("Startup sequence complete.")
 
     app.on_startup.append(on_startup_handler)
 
@@ -368,8 +393,25 @@ async def bootstrap_ephemeral_user(app: web.Application) -> None:
 
 
 def run(args: Any) -> None:
-    logging.basicConfig(level=logging.DEBUG)
+    # Robust logging setup
+    FORMAT = "%(asctime)s %(levelname)-8s [%(name)s] %(message)s"
+    logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
+
+    # Suppress noisy library logs
+    logging.getLogger("aiosqlite").setLevel(logging.INFO)
+    logging.getLogger("asyncio").setLevel(logging.INFO)
+
     config_dir = getattr(args, "config_dir", None)
     config = ServerConfig.load(config_dir)
     app = create_app(config)
-    web.run_app(app, host=config.host, port=config.port)
+
+    # Standard access log format for aiohttp
+    ACCESS_LOG_FORMAT = '%a %t "%r" %s %b "%{Referer}i" "%{User-Agent}i" (%Tf)'
+
+    web.run_app(
+        app,
+        host=config.host,
+        port=config.port,
+        access_log=logging.getLogger("aiohttp.access"),
+        access_log_format=ACCESS_LOG_FORMAT,
+    )

@@ -33,6 +33,8 @@ def run_migrations(db_url: str) -> None:
 
     # IMPORTANT: Override the URL with the one from the running application.
     alembic_cfg.set_main_option("sqlalchemy.url", db_url)
+    # Don't let alembic reset our carefully configured logging
+    alembic_cfg.set_main_option("skip_logging_config", "true")
 
     # Ensure the database directory exists because sqlite won't create it
     if db_url.startswith("sqlite"):

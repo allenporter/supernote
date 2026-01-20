@@ -32,6 +32,7 @@ async def _stream_upload_field(field: BodyPartReader) -> AsyncGenerator[bytes, N
 
 
 @routes.post("/api/oss/upload")
+@routes.put("/api/oss/upload")
 @public_route
 async def handle_oss_upload(request: web.Request) -> web.Response:
     """Handle OSS upload (device/v3).
