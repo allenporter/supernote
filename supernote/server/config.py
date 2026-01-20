@@ -32,6 +32,9 @@ class AuthConfig(DataClassYAMLMixin):
     expiration_hours: int = 24
     """JWT expiration time in hours."""
 
+    device_expiration_hours: int = 87600
+    """JWT expiration time for devices in hours (default: 10 years)."""
+
     enable_registration: bool = False
     """When disabled, registration is only allowed if there are no users in the system.
 

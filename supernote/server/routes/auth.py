@@ -129,6 +129,7 @@ async def handle_login(request: web.Request) -> web.Response:
         password_hash=login_req.password,
         timestamp=login_req.timestamp or "",
         equipment_no=login_req.equipment_no,
+        equipment=login_req.equipment,
         ip=ip,
     )
     if not result:
