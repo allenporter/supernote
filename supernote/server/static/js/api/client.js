@@ -165,3 +165,34 @@ export async function convertNoteToPng(fileId) {
     const data = await response.json();
     return data.pngPageVOList || [];
 }
+
+/**
+ * Fetch summaries for a file
+ * @param {string} fileId
+ * @returns {Promise<Array<Object>>}
+ */
+export async function fetchSummaries(fileId) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/extended/file/summary/list', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        },
+        // Extension endpoint expects { fileId: ... }
+        body: JSON.stringify({ fileId: fileId })
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error("Unauthorized");
+        }
+        throw new Error(`Summary fetch failed: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.summaryDOList || [];
+}
