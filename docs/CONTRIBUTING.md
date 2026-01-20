@@ -1,70 +1,45 @@
 # Contributing to Supernote-Lite
 
-This package is designed for:
-1. **Server operators** - Self-hosting Supernote Private Cloud
-2. **Developers** - Integrating Supernote into applications
-3. **Reference** - Understanding Supernote protocols
-
-Thank you for your interest in contributing to Supernote-Lite! This document outlines the setup, architecture, and standards used in this project.
+Supernote-Lite is evolving from a set of utilities into a **Personal Knowledge Management Hub**. We welcome contributions that help realize this vision—whether through better parsing, more robust server features, or new AI-powered insights.
 
 ## Code Style & Standards
 
 ### Testing
 
-This project uses `pytest` and `pytest-asyncio` for testing. We are migrating away from `unittest`.
+This project uses `pytest` and `pytest-asyncio` for testing.
 
--   **Framework**: Use `pytest`.
--   **Async**: We use async auto mode so no need to use `@pytest.mark.
--   **Fixtures**: Use `pytest` fixtures for setup/teardown. Common fixtures are defined in `tests/conftest.py` rather than repeating them in each test file.
--   **Structure**:
-    -   **Model Tests**: Unit tests for data models (serialization/deserialization) should be separate from API tests.
-    -   **API Tests**: Functional tests for endpoints using `aiohttp.test_utils`.
--   **Test Data**:
-    -   Do not hardcode large JSON blobs in test files.
-    -   Store test data in `tests/data/` as JSON files.
-    -   Load strictly typed objects from JSON in tests.
+- **Framework**: Use `pytest`.
+- **Async**: We use async auto mode.
+- **Fixtures**: Common fixtures are defined in `tests/conftest.py`.
+- **Structure**:
+    - **Model Tests**: Unit tests for data models (serialization).
+    - **API Tests**: Functional tests for endpoints.
 
 ### Typing & Data Models
 
--   **Dataclasses**: Use standard Python `dataclasses`.
--   **Serialization**: Use `mashumaro.DataClassJSONMixin` for JSON serialization/deserialization.
--   **Strictness**: Define explicit types for all DTOs (Data Transfer Objects) in `supernote/server/models/` to handle request parsing.
--   **Naming**: Match the naming conventions of the external API where possible (snake_case vs camelCase is handled by configuration in Mashumaro).
+- **Dataclasses**: Use standard Python `dataclasses`.
+- **Serialization**: Use `mashumaro`.
+- **Strictness**: Define explicit types for all DTOs in `supernote/server/models/`.
 
 ### Server Architecture
 
-The server is built with `aiohttp`.
+- **Routes**: `supernote/server/routes/` - keep handlers thin.
+- **Services**: `supernote/server/services/` - contain business logic.
+- **Dependency Injection**: Services are injected into route handlers.
 
--   **Routes**: `supernote/server/routes/`
-    -   Keep route handlers thin. They should parse the request, call a service, and return a typed response.
--   **Services**: `supernote/server/services/`
-    -   Contain the business logic.
-    -   Should be independent of the HTTP layer where possible.
--   **Dependency Injection**:
-    -   Services are injected into route handlers. Avoid global state.
-
-### Code Organization
-
--   **Imports**: Use absolute imports `from supernote...`.
--   **Async**: All I/O operations (file, network) must be non-blocking.
+---
 
 ## Local Development Setup
 
-We use standard scripts in the `script/` directory to manage the development environment, following the "Scripts to Rule Them All" pattern.
+We use standard scripts in the `script/` directory following the "Scripts to Rule Them All" pattern.
 
 ### Environment Setup
-
-To set up your development environment, run:
 
 ```bash
 ./script/bootstrap
 ```
 
-This script will:
-1. Initialize a virtual environment using `uv`.
-2. Install all core and optional dependencies (`.[all]`).
-3. Install developer-specific dependencies (`requirements_dev.txt`).
-4. Install `pre-commit` hooks.
+This script will initialize a virtual environment using `uv`, install dependencies (`.[all]`), and set up `pre-commit` hooks.
 
 ### Standard Scripts
 
@@ -77,60 +52,38 @@ This script will:
 | `script/lint` | Runs linters and style checks via `pre-commit`. |
 | `script/server` | Starts an ephemeral development server. |
 
-## Running Tests
-
-You can run the tests using the standard script:
-
-```bash
-./script/test
-```
-
-Or manually:
-
-```bash
-pytest
-```
+---
 
 ## Development Workflow
 
-### Running an Ephemeral Server
+### Ephemeral Mode
 
-For rapid development and testing, you can run an ephemeral server. This server starts with a clean state, a random port, and a pre-configured debug user. It is destroyed when the process exits.
-
-**Basic Usage:**
+For rapid iteration, run an ephemeral server. It starts with a clean state and a pre-configured debug user.
 
 ```bash
-python3 -m supernote.cli.main serve --ephemeral
-```
+# Enable AI features for development
+export SUPERNOTE_GEMINI_API_KEY="your_api_key"
 
-**With Gemini API Support:**
-
-To enable OCR and AI features during development, set the `SUPERNOTE_GEMINI_API_KEY` environment variable:
-
-```bash
-export SUPERNOTE_GEMINI_API_KEY="your_api_key_here"
+# Start the ephemeral server
 supernote serve --ephemeral
 ```
 
-The server startup log will display the temporary storage directory and the default credentials.
-
-**Example Output:**
-
-```text
-Using ephemeral mode with storage directory: /var/folders/.../supernote-ephemeral-xyz
+The server will print the temporary storage path and login command:
+```bash
 Created default user: debug@example.com / password
 Run command to login:
   supernote cloud login --url http://127.0.0.1:8080 debug@example.com --password password
 ```
 
+### AI Skills & Agentic Coding
+
+This project includes "AI Skills" to help developers (and AI agents) interact with the codebase effectively. See `.agent/skills` for more details on how we structure these for automated development.
+
 ### Uploading Files
 
-You can use the CLI to upload`.note` files to your running server.
+Test the sync flow using the CLI:
 
 ```bash
-# Login using the command provided in the ephemeral server output
-supernote cloud login --url http://127.0.0.1:8080 debug@example.com --password password
-
-# Upload a file
+# Upload a test file
 supernote cloud upload tests/testdata/20251207_221454.note
 ```

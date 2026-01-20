@@ -17,6 +17,9 @@ Supernote Private Cloud uses an **"Admin-First"** bootstrap model:
 Start the server using the CLI:
 
 ```bash
+# Optional: Set Gemini API Key for AI features (OCR, Summaries)
+export SUPERNOTE_GEMINI_API_KEY="your-api-key"
+
 # Start with default configuration (port 8080)
 supernote serve
 ```
@@ -45,7 +48,7 @@ To perform further administrative actions, you must authenticate your CLI sessio
 
 ```bash
 # This caches your credentials locally in ~/.cache/supernote.pkl
-supernote cloud-login your-email@example.com --url http://localhost:8080
+supernote cloud login your-email@example.com --url http://localhost:8080
 ```
 
 ---
@@ -61,7 +64,14 @@ supernote admin user add member@example.com --name "New Member"
 
 ---
 
-## Security Configuration
+## Security & Advanced Configuration
+
+### Environment Variables
+
+For production, it is recommended to set secrets via environment:
+- `SUPERNOTE_JWT_SECRET`: The secret key for signing tokens.
+- `SUPERNOTE_ENABLE_REGISTRATION`: "true" or "false".
+- `SUPERNOTE_GEMINI_API_KEY`: API key for AI processing features.
 
 You can control registration behavior in your `config.yaml`:
 
@@ -69,12 +79,4 @@ You can control registration behavior in your `config.yaml`:
 auth:
   # Set to true to allow anyone to register even if an admin exists
   enable_registration: false
-  # JWT Secret - set via environment variable for production!
-  secret_key: ""
 ```
-
-### Environment Variables
-
-For production, it is recommended to set secrets via environment:
-- `SUPERNOTE_JWT_SECRET`: The secret key for signing tokens.
-- `SUPERNOTE_ENABLE_REGISTRATION`: "true" or "false".

@@ -1,23 +1,33 @@
 # supernote
 
-All-in-one toolkit for Supernote devices: parse notebooks, self host, and access services.
+Personal Knowledge Management Hub for Supernote: parse notebooks, self-host services, and unlock AI insights.
 
 This content is shared between the [documentation](https://allenporter.github.io/supernote-lite/) and github repository at [github.com/allenporter/supernote-lite](https://github.com/allenporter/supernote-lite).
 
 ## Features
 
 - **Notebook Parsing**: Convert `.note` files to PDF, PNG, SVG, or text
-- **Private Server**: Self-hosted Supernote Private Cloud implementation
-- **Client**: Interact with Supernote (Private) Cloud API
+- **AI-Powered Insights**: OCR, automated summarization, and key metadata extraction via Gemini API
+- **Supernote Private Server**: Self-hosted Supernote Private Cloud with robust background processing
+- **Developer API**: Interact with Supernote Cloud and local data through a modern async Python client
+- **System Maintenance**: Background polling, auto-recovery for stalled tasks, and storage quota management
+
+## AI & Automation
+
+Supernote-Lite transforms your handwritten notes into structured knowledge. When configured with a Gemini API key, the server automatically:
+
+- **OCR**: Transcribes handwriting with high accuracy.
+- **Summarization**: Generates concise summaries of your note journals.
+- **Entity Extraction**: Identifies dates, tasks, and key themes.
+- **Retrieval Support**: Chunks and indexes notes for efficient search (Experimental).
 
 ## Installation
 
 ```bash
-
 # Install specific components
 pip install supernote              # Notebook parsing only
-pip install supernote[server]      # + Private server
-pip install supernote[client]      # + Client
+pip install supernote[server]      # + Private server & AI features
+pip install supernote[client]      # + API Client
 
 # Full installation (recommended for server users)
 pip install supernote[all]
@@ -29,6 +39,25 @@ To set up the project for development, please refer to the [Contributing Guide](
 
 ## Quick Start
 
+### Start the AI-Powered Server
+
+1. **Bootstrap with Gemini**:
+   ```bash
+   export SUPERNOTE_GEMINI_API_KEY="your-api-key"
+   supernote serve
+   ```
+
+2. **Register & Login**:
+   ```bash
+   # Add your first user (System Admin)
+   supernote admin user add email@example.com --url http://localhost:8080
+
+   # Login via CLI
+   supernote cloud login email@example.com --url http://localhost:8080
+   ```
+
+See the [Bootstrap Guide](docs/bootstrap_guide.md) for detailed deployment and security instructions.
+
 ### Parse a Notebook
 
 ```python
@@ -38,73 +67,32 @@ notebook = parse_notebook("mynote.note")
 notebook.to_pdf("output.pdf")
 ```
 
-The notebook parser is a fork and slightly lighter dependency version of [supernote-tool](https://github.com/jya-dev/supernote-tool) that drops svg dependencies not found in some containers. Generally, you should probably prefer to use that original library unless there is a specific reason you're also having a similar dependency
-limitation. All credit goes to the original authors of [supernote-tool](https://github.com/jya-dev/supernote-tool) for providing an amazing low level utility.
-
-
-### Server Setup & Bootstrap
-
-1. **Start the Server**:
-   ```bash
-   supernote serve
-   ```
-
-2. **Register the Admin**:
-   The first user registered becomes the system administrator.
-   ```bash
-   supernote admin user add email@example.com --url http://localhost:8080
-   ```
-
-3. **Login to CLI**:
-   ```bash
-   supernote cloud-login email@example.com --url http://localhost:8080
-   ```
-
-See the [Bootstrap Guide](docs/bootstrap_guide.md) for detailed deployment and security instructions.
+The notebook parser is a fork and slightly lighter dependency version of [supernote-tool](https://github.com/jya-dev/supernote-tool). All credit goes to the original authors for providing an amazing low-level utility.
 
 ### Run with Docker
 
 ```bash
-# Build image
+# Build & Run server
 docker build -t supernote .
-
-# Run server
 docker run -d -p 8080:8080 -v $(pwd)/storage:/storage supernote serve
 ```
 
-See [Server Documentation](https://github.com/allenporter/supernote-lite/blob/main/supernote/server/README.mdd) for details.
-
-
-### Access Supernote Services
-
-```python
-from supernote.client import Supernote
-
-async with await Supernote.login("debug@example.com", "password", host="http://localhost:8080") as sn:
-    # Access Web and Device APIs directly through the session object
-    # Example: List root folder using path-based Device API
-    result = await sn.device.list_folder("/")
-
-    # sn.token contains the access token for use with `Supernote.from_auth`
-    print(sn.token)
-```
-
+See [Server Documentation](https://github.com/allenporter/supernote-lite/blob/main/supernote/server/README.md) for details.
 
 ## CLI Usage
 
 ```bash
+# Server & Admin
+supernote serve
+supernote admin user list
+
 # Notebook operations
 supernote notebook convert input.note output.pdf
 supernote notebook analyze input.note
 
-# Server operations
-supernote serve
-supernote admin user list
-supernote admin user add email@example.com
-
-# Client operations
-supernote cloud-login --url http://localhost:8080 email@example.com
-supernote cloud-ls
+# Cloud operations
+supernote cloud login --url http://localhost:8080 email@example.com
+supernote cloud ls
 ```
 
 ## Contributing
@@ -112,54 +100,36 @@ supernote cloud-ls
 We welcome contributions! Please see our [Contributing Guide](docs/CONTRIBUTING.md) for details on:
 - Local development setup
 - Project architecture
-- Coding standards
-- Running tests
-
-## Credits
-
-The `supernote` library is a fork and slightly lighter dependency version of [supernote-tool](https://github.com/jya-dev/supernote-tool) that drops svg dependencies not found in some containers. Generally, you should probably prefer to use that library unless there is a specific reason you're also having a similar dependency limitation.
+- Using **Ephemeral Mode** for fast testing
+- AI Skills for agentic interaction
 
 ## Acknowledgments
 
-This project is in support of the amazing [Ratta Supernote](https://supernote.com/) product and community. This project aims to be a complementary, unofficial offering that is compatible with the [Private Cloud feature](https://support.supernote.com/Whats-New/setting-up-your-own-supernote-private-cloud-beta), helping to support their open ecosystem, helping to reduce load on their servers etc (e.g. for AI
-powered personal assistant integrations that need to process notebooks, etc)
+This project is in support of the amazing [Ratta Supernote](https://supernote.com/) product and community. It aims to be a complementary, unofficial offering that is compatible with the [Private Cloud feature](https://support.supernote.com/Whats-New/setting-up-your-own-supernote-private-cloud-beta).
 
 ### Comparison with Official Private Cloud
 
-Ratta offers an [official Private Cloud solution](https://support.supernote.com/Whats-New/setting-up-your-own-supernote-private-cloud-beta) based on Docker. You
-should generally prefer that solution, unless you are interested in lower level
-integrations and are comfortable managing your own security, SSL, etc.
-
-Here is how this project compares:
-
 | Feature | Official Private Cloud | Supernote-Lite (This Project) |
 |---------|------------------------|-------------------------------|
-| **Type** | Official Product | Community Project |
-| **Technology** | Docker Container (Java/Spring) | Python Package |
+| **Core AI** | No (Basic Sync) | **Yes** (OCR, Summaries, Insights) |
+| **System** | Java / Spring | Python (Asyncio) |
 | **Source** | Closed Source | Open Source |
-| **Focus** | Stability & End-Users | Hackability & Developers |
-| **Requirements** | Docker Environment | Python 3.10+ |
-| **Extensibility** | Low (Black Box) | High (Modular Codebase) |
-| **Security/SSL** | Documented Guides Included | DIY (Bring Your Own Proxy) |
+| **Flexibility** | Set-and-forget | High (Developer-friendly, CLI) |
+| **Hardware** | Docker Required | Python 3.13+ (Low resource) |
+| **Status** | Stable Product | Community Innovation |
 
 **Use the Official Private Cloud if:**
 - You want a supported, "set-and-forget" solution.
 - You prefer using Docker containers.
 
 **Use Supernote-Lite if:**
-- You want to understand how the protocol works.
+- You want **AI insights** and OCR for your notes.
+- You want to integrate Supernote data into your local scripts or knowledge workflows.
 - You want to run on low-power hardware without Docker overhead.
-- You want to integrate Supernote sync into your own Python applications.
-- You want to customize the server behavior.
+- You want full control over how your data is processed.
 
-### Community Projects
+## Community Projects
 
-- [github.com/jya-dev/supernote-tool](https://github.com/jya-dev/supernote-tool) - Unofficial python tool for Ratta Supernote for parsing notebook files, which this projects notebook module is based on.
-- [github.com/philips/supernote-typescript](https://github.com/philips/supernote-typescript) - Supernote file-format support in typescript
-- [github.com/julianprester/sncloud](https://github.com/julianprester/sncloud) - Supernote Cloud API for Python
-- [github.com/fharper/awesome-supernote](https://github.com/fharper/awesome-supernote) - A curated list of Supernote resources
-- [github.com/philips/supernote-obsidian-plugin](https://github.com/philips/supernote-obsidian-plugin) - Obsidian plugin for Supernote
-- [github.com/jbchouinard/supernote-sync](https://github.com/jbchouinard/supernote-sync) - Tool to automatically backup files from the Supernote using local WiFi using the Supernote Browse & Access feature
-- [github.com/theburningbush/snbackup](https://github.com/theburningbush/snbackup) - CLI tool for wireless Supernote backups using the Browse & Access feature
-- [github.com/dsummersl/sn2md](https://github.com/dsummersl/sn2md) - Supernote to text/image converter (sn2md)
-- [github.com/calebc42/eink-template-gen](https://github.com/calebc42/eink-template-gen) - Generates pixel-perfect page templates for e-ink devices.
+- [jya-dev/supernote-tool](https://github.com/jya-dev/supernote-tool) - Original parser foundation.
+- [awesome-supernote](https://github.com/fharper/awesome-supernote) - Curated resource list.
+- [sn2md](https://github.com/dsummersl/sn2md) - Supernote to text/image converter.
