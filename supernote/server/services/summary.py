@@ -399,3 +399,21 @@ class SummaryService:
         )
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def list_summaries_for_file_internal(
+        self, user_email: str, file_id: int
+    ) -> list[SummaryItem]:
+        """Internal helper to list summaries for a specific file.
+
+        This is NOT part of the standard public API but used by web frontend extensions.
+        """
+        user_id = await self.user_service.get_user_id(user_email)
+        async with self.session_manager.session() as session:
+            stmt = select(SummaryDO).where(
+                SummaryDO.user_id == user_id,
+                SummaryDO.file_id == file_id,
+                SummaryDO.is_deleted.is_(False),
+            )
+            result = await session.execute(stmt)
+            summaries = list(result.scalars().all())
+            return [_to_summary_item(s) for s in summaries]

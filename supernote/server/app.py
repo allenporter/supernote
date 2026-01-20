@@ -15,7 +15,17 @@ from .config import ServerConfig
 from .constants import MAX_UPLOAD_SIZE
 from .db.session import DatabaseSessionManager
 from .events import LocalEventBus
-from .routes import admin, auth, file_device, file_web, oss, schedule, summary, system
+from .routes import (
+    admin,
+    auth,
+    extended,
+    file_device,
+    file_web,
+    oss,
+    schedule,
+    summary,
+    system,
+)
 from .routes.decorators import public_route
 from .services.blob import LocalBlobStorage
 from .services.coordination import SqliteCoordinationService
@@ -282,6 +292,7 @@ def create_app(config: ServerConfig) -> web.Application:
     app.add_routes(oss.routes)
     app.add_routes(schedule.routes)
     app.add_routes(summary.routes)
+    app.add_routes(extended.routes)
 
     # Serve static frontend files
     static_path = Path(__file__).parent / "static"
