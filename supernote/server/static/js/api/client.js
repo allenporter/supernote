@@ -224,3 +224,32 @@ export async function fetchSystemTasks() {
 
     return await response.json();
 }
+
+/**
+ * Fetch storage capacity/quota.
+ * @returns {Promise<{usedCapacity: number, totalCapacity: number}>}
+ */
+export async function fetchCapacity() {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/file/capacity/query', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        },
+        body: JSON.stringify({})
+    });
+
+    if (response.status === 401) {
+        logout();
+        throw new Error("Unauthorized");
+    }
+
+    if (!response.ok) {
+        throw new Error(`Failed to fetch capacity: ${response.statusText}`);
+    }
+
+    return await response.json();
+}
