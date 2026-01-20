@@ -68,6 +68,66 @@
                         <span v-if="index < breadcrumbs.length - 1" class="mx-2 text-slate-300">/</span>
                     </div>
                 </nav>
+                <!-- Actions Bar -->
+                <div class="flex flex-wrap items-center justify-between gap-4 mb-8">
+                    <div class="flex items-center gap-2">
+                        <button @click="triggerUpload"
+                            class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-lg shadow-indigo-100">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                            </svg>
+                            Upload
+                        </button>
+                        <button @click="showNewFolderModal = true"
+                            class="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2 rounded-xl font-medium transition-all">
+                            <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 4v16m8-8H4"></path>
+                            </svg>
+                            New Folder
+                        </button>
+                    </div>
+
+                    <div v-if="selectedIds.length > 0" class="flex items-center gap-2 animate-in slide-in-from-right">
+                        <span class="text-sm text-slate-500 font-medium mr-2">{{ selectedIds.length }} selected</span>
+                        <button @click="handleMoveSelected"
+                            class="text-sm bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg transition-colors">
+                            Move
+                        </button>
+                        <button @click="handleDeleteSelected"
+                            class="text-sm bg-rose-50 border border-rose-100 hover:bg-rose-100 text-rose-600 px-3 py-1.5 rounded-lg transition-colors">
+                            Delete
+                        </button>
+                        <button @click="selectedIds = []"
+                            class="text-sm text-slate-400 hover:text-slate-600 underline px-2">
+                            Clear
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Hidden Upload Input -->
+                <input type="file" ref="fileInput" class="hidden" multiple @change="handleFileUpload">
+
+                <!-- New Folder Modal -->
+                <div v-if="showNewFolderModal"
+                    class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
+                    @click.self="showNewFolderModal = false">
+                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
+                        <h3 class="text-lg font-bold text-slate-900 mb-4">Create New Folder</h3>
+                        <input v-model="newFolderName" type="text" placeholder="Folder name"
+                            class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all mb-6"
+                            @keyup.enter="handleCreateFolder">
+                        <div class="flex justify-end gap-3">
+                            <button @click="showNewFolderModal = false"
+                                class="px-4 py-2 text-slate-500 hover:text-slate-700 font-medium">Cancel</button>
+                            <button @click="handleCreateFolder" :disabled="!newFolderName"
+                                class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 transition-all">
+                                Create
+                            </button>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Error State -->
                 <div v-if="error" class="bg-red-50 text-red-600 p-4 rounded-xl mb-6">
@@ -86,17 +146,26 @@
                 <div v-if="view === 'grid' && !isLoading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                     <!-- Folders -->
                     <file-card v-for="folder in folders" :key="folder.id" :file="folder"
-                        @click="openItem(folder)"></file-card>
+                        :is-selected="selectedIds.includes(folder.id)" @open="openItem" @select="toggleSelection"
+                        @rename="triggerRename"></file-card>
 
                     <!-- Files -->
                     <file-card v-for="file in regularFiles" :key="file.id" :file="file"
-                        @click="openItem(file)"></file-card>
+                        :is-selected="selectedIds.includes(file.id)" @open="openItem" @select="toggleSelection"
+                        @rename="triggerRename"></file-card>
                 </div>
 
                 <!-- Viewer -->
                 <div v-if="view === 'viewer'" class="min-h-full">
                     <file-viewer :file="selectedFile" @close="view = 'grid'"></file-viewer>
                 </div>
+
+                <!-- Modals -->
+                <move-modal v-if="showMoveModal" :item-ids="selectedIds" @close="showMoveModal = false"
+                    @confirm="onConfirmMove"></move-modal>
+
+                <rename-modal v-if="showRenameModal" :item="itemToRename" @close="showRenameModal = false"
+                    @confirm="onConfirmRename"></rename-modal>
             </template>
 
             <!-- Login Screen -->
