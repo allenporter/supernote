@@ -1,7 +1,9 @@
+import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
+from pydantic import BaseModel
 from sqlalchemy import select
 
 from supernote.models.summary import AddSummaryDTO, UpdateSummaryDTO
@@ -18,6 +20,12 @@ from supernote.server.services.summary import SummaryService
 from supernote.server.utils.paths import get_summary_id, get_transcript_id
 
 logger = logging.getLogger(__name__)
+
+
+# Define structured output schema
+class SummaryExtraction(BaseModel):
+    summary: str
+    dates: List[str]
 
 
 class SummaryModule(ProcessorModule):
@@ -134,14 +142,31 @@ class SummaryModule(ProcessorModule):
         prompt_template = PROMPT_LOADER.get_prompt(
             PromptId.SUMMARY_GENERATION, custom_type=file_name_basis
         )
-        prompt = prompt_template.replace("{{TRANSCRIPT}}", full_text)
+        prompt = f"{prompt_template}\n\nTRANSCRIPT:\n{full_text}"
 
         try:
             response = await self.gemini_service.generate_content(
                 model=self.config.gemini_ocr_model,
                 contents=prompt,
+                config={
+                    "response_mime_type": "application/json",
+                    "response_json_schema": SummaryExtraction.model_json_schema(),
+                },
             )
-            ai_summary = response.text if response.text else "No summary generated."
+
+            # Parse JSON response
+            if response.text:
+                try:
+                    data = json.loads(response.text)
+                    ai_summary = data.get("summary", "No summary generated.")
+                    dates = data.get("dates", [])
+                    if dates:
+                        logger.info(f"Extracted dates for file {file_id}: {dates}")
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to parse JSON response for file {file_id}")
+                    ai_summary = response.text
+            else:
+                ai_summary = "No summary generated."
 
             await self._upsert_summary(
                 user_email,

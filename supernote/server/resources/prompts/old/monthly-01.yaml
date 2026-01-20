@@ -1,0 +1,48 @@
+---
+prompt: >-
+  There is a special "Monthly Review" page. This is used for reflection on
+  the previous monthy as well as the month ahead, usually in the form of prompt
+  questions. Typically the monthly reflection is a time to check in on progress
+  on quarterly or yearly goals, and to set new goals for the upcoming month.
+filename: Monthly-02-P2023030106305275344.png
+created_at: "2023-03-01T06:30:52.75344"
+content: |
+  FEBRUARY REVIEW
+
+  - What was the most memorable part of last month?
+    - The trip to the mountains with the family
+    - The team-building exercise at work
+
+  - What were the three biggest lessons learned?
+    - The importance of taking time off & quality time with family
+    - The need to prioritize self-care
+    - The value of open communication
+
+  - What are my goals for the upcoming month?
+    - Plan another weekend getaway with the family
+    - Spend at least one day a week outside in nature
+    - Schedule a meeting with my manager to discuss career goals
+---
+filename: Monthly-02-P2023030106305275344.png
+created_at: "2023-03-01T06:30:52.75344"
+label: monthly
+date: "2023-03-01"
+title: "Monthly Review - February 2023"
+records:
+  - type: note
+    content: What was the most memorable part of last month?
+    entries:
+      - The trip to the mountains with the family
+      - The team-building exercise at work
+  - type: note
+    content: What were the three biggest lessons learned?
+    entries:
+      - The importance of taking time off & quality time with family
+      - The need to prioritize self-care
+      - The value of open communication
+  - type: note
+    content: What are my goals for the upcoming month?
+    entries:
+      - Plan another weekend getaway with the family
+      - Spend at least one day a week outside in nature
+      - Schedule a meeting with my manager to discuss career goals

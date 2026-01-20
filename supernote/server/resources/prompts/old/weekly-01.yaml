@@ -1,0 +1,41 @@
+---
+prompt: >-
+  There is a special "Weekly Review" page. This is used for reflection on
+  the previous week as well as the week ahead, and is usually in the form of
+  prompt questions.
+filename: Weeky-07-P2024090207100618749.png
+created_at: "2024-09-02T07:15:10.7646"
+content: |
+  WEEKLY REVIEW 0826-0901
+
+  - What did I accomplish last week?
+    - After completing the salary analysis, i got assigned to do the final report
+    - I also got a lot of positive feedback from the team on the presentation
+  - What were my biggest challenges?
+    - I had a hard time getting the data for the salary report
+    - Perhaps I should consider asking for help
+  - What are my goals for next week?
+    - Make sure i talk to at least one parent
+    - Finish the salary report
+---
+filename: Weeky-08-P2024090207150618749.png
+created_at: "2024-09-02T07:15:10.7646"
+label: weekly
+date: "2024-09-01"
+title: "Weekly Review - August 26 - September 1, 2024"
+records:
+  - type: note
+    content: What did I accomplish last week?
+    entries:
+      - After completing the salary analysis, i got assigned to do the final report
+      - I also got a lot of positive feedback from the team on the presentation
+  - type: note
+    content: What were my biggest challenges?
+    entries:
+      - I had a hard time getting the data for the salary report
+      - Perhaps I should consider asking for help
+  - type: note
+    content: What are my goals for next week?
+    entries:
+      - Make sure i talk to at least one parent
+      - Finish the salary report

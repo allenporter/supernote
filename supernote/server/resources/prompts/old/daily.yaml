@@ -1,0 +1,48 @@
+---
+prompt: >-
+  Below is an example of some OCR text for a daily log for October 30th
+  and October 31st, 2022. The output json has a separate
+  rapid log record for the date it was logged under. Note that this is
+  just one example and your task will be to do this from an actual png image.
+filename: Daily-00-P20221030210760068713clbdtpKcEWTi.png
+created_at: "2022-10-30T21:07:60.068713"
+content: |
+  1030 SUN
+    o Halloween Party @ 7PM @ Kid's school
+    • Pick up candy
+    X Buy pumpkins
+  * > Call mom
+
+  1031 MON
+    - Trickortreaters were so cute
+  * • Call mom
+---
+filename: Daily-01-P20221030210760068713clbdtpKcEWTi.png
+created_at: "2022-10-30T21:07:60.068713"
+label: daily
+date: "2022-10-30"
+records:
+  - type: event
+    date: "2022-10-30"
+    content: Halloween Party @ 7PM @ Kid's school
+    status: migrated
+  - type: note
+    date: "2022-10-30"
+    content: Pick up candy
+  - type: task
+    date: "2022-10-30"
+    content: Buy pumpkins
+    status: completed
+  - type: task
+    date: "2022-10-30"
+    content: Call mom
+    status: migrated
+    critical: true
+  - type: note
+    date: "2022-10-31"
+    content: Trickortreaters were so cute
+  - type: task
+    date: "2022-10-31"
+    content: Call mom
+    status: migrated
+    critical: true
