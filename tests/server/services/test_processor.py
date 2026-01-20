@@ -309,15 +309,73 @@ async def test_recover_tasks_enqueues_incomplete(
     assert set(ids) == {1, 2}
 
 
-async def test_start_calls_recover_tasks(processor_service: ProcessorService) -> None:
+async def test_start_calls_poll_loop(processor_service: ProcessorService) -> None:
+    async def fake_poll_loop() -> None:
+        try:
+            await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            pass
+
     with patch.object(
         processor_service, "recover_tasks", new_callable=AsyncMock
     ) as mock_recover:
-        with patch.object(processor_service, "worker_loop", return_value=AsyncMock()):
-            await processor_service.start()
-            await asyncio.sleep(0.01)
-            mock_recover.assert_called_once()
-            await processor_service.stop()
+        # We don't mock poll_loop with just AsyncMock because it finishes instantly.
+        # We replace it with a fake that sleeps so we can assert it's running.
+        with patch.object(processor_service, "poll_loop", side_effect=fake_poll_loop):
+            with patch.object(
+                processor_service, "worker_loop", return_value=AsyncMock()
+            ):
+                await processor_service.start()
+                await asyncio.sleep(0.01)
+                mock_recover.assert_called_once()
+                # Verify poll loop started
+                assert processor_service.polling_task is not None
+                assert not processor_service.polling_task.done()
+
+                await processor_service.stop()
+                assert (
+                    processor_service.polling_task.cancelled()
+                    or processor_service.polling_task.done()
+                )
+
+
+async def test_recover_stalled_tasks_time_threshold(
+    processor_service: ProcessorService, session_manager: DatabaseSessionManager
+) -> None:
+    import time
+
+    now_ms = int(time.time() * 1000)
+    stale_ms = now_ms - (600 * 1000)  # 10 mins ago
+
+    async with session_manager.session() as session:
+        # Stalled task (old update time)
+        session.add(
+            SystemTaskDO(
+                file_id=10,
+                task_type="PNG",
+                key="p0",
+                status="PROCESSING",
+                update_time=stale_ms,
+            )
+        )
+        # Fresh task (recent update time)
+        session.add(
+            SystemTaskDO(
+                file_id=11,
+                task_type="OCR",
+                key="p0",
+                status="PROCESSING",
+                update_time=now_ms,
+            )
+        )
+        await session.commit()
+
+    await processor_service.recover_stalled_tasks()
+
+    assert 10 in processor_service.processing_files
+    assert 11 not in processor_service.processing_files
+    assert processor_service.queue.qsize() == 1
+    assert await processor_service.queue.get() == 10
 
 
 async def test_page_parallelism(

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from typing import List, Set
 
 from sqlalchemy import delete, select
@@ -43,6 +44,7 @@ class ProcessorService:
         self.queue: asyncio.Queue[int] = asyncio.Queue()  # Queue of file_ids
         self.processing_files: Set[int] = set()
         self.workers: list[asyncio.Task] = []
+        self.polling_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
 
         # Module registry
@@ -80,10 +82,21 @@ class ProcessorService:
         # Recover pending tasks
         asyncio.create_task(self.recover_tasks())
 
+        # Start Polling Loop
+        self.polling_task = asyncio.create_task(self.poll_loop())
+
     async def stop(self) -> None:
         """Stop the processor service."""
         logger.info("Stopping ProcessorService...")
         self._shutdown_event.set()
+
+        # Stop Polling
+        if self.polling_task:
+            self.polling_task.cancel()
+            try:
+                await self.polling_task
+            except asyncio.CancelledError:
+                pass
 
         # Cancel workers
         for worker in self.workers:
@@ -154,6 +167,46 @@ class ProcessorService:
         for file_id in file_ids:
             logger.info(f"Recovering incomplete pipeline for file {file_id}")
             if file_id not in self.processing_files:
+                self.processing_files.add(file_id)
+                await self.queue.put(file_id)
+
+    async def poll_loop(self) -> None:
+        """Background loop to poll for stalled tasks."""
+        logger.info("Starting background task polling loop...")
+        while not self._shutdown_event.is_set():
+            try:
+                # Wait for 5 minutes (adjustable)
+                # We wait first to avoid thundering herd on startup (recover_tasks handles that)
+                await asyncio.sleep(300)
+                await self.recover_stalled_tasks()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in polling loop: {e}", exc_info=True)
+
+    async def recover_stalled_tasks(self) -> None:
+        """Find tasks that haven't been updated recently and retry them."""
+        logger.info("Checking for stalled tasks...")
+        # Stale threshold: 5 minutes ago
+        stale_threshold_ms = int((time.time() - 300) * 1000)
+
+        async with self.session_manager.session() as session:
+            stmt = (
+                select(SystemTaskDO.file_id)
+                .where(SystemTaskDO.status != "COMPLETED")
+                .where(SystemTaskDO.update_time < stale_threshold_ms)
+                .distinct()
+            )
+            result = await session.execute(stmt)
+            file_ids = result.scalars().all()
+
+        if not file_ids:
+            return
+
+        logger.info(f"Found {len(file_ids)} stalled files. Enqueuing...")
+        for file_id in file_ids:
+            if file_id not in self.processing_files:
+                logger.info(f"Enqueuing stalled file {file_id} for retry.")
                 self.processing_files.add(file_id)
                 await self.queue.put(file_id)
 
