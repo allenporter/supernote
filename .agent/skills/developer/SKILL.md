@@ -15,15 +15,17 @@ This skill teaches you how to interact with the Supernote-Lite codebase using st
 | `script/test` | Before submitting changes or to verify functionality. |
 | `script/lint` | Before committing to ensure code style and quality. |
 | `script/server` | When you need a running server for integration testing or manual verification. |
+| `script/db_revision` | To generate a database migration revision. |
 
 ## Usage Patterns
 
 ### Standard Development Flow
 1. **Initialize**: `./script/bootstrap`
 2. **Implement**: Make your changes to the code.
-3. **Lint**: `./script/lint` to check for style issues.
-4. **Test**: `./script/test` to run the test suite.
-5. **Verify**: `./script/server` to run an ephemeral server for manual checks.
+3. **Database**: If you changed models, run `./script/db_revision "..."`.
+4. **Lint**: `./script/lint` to check for style issues.
+5. **Test**: `./script/test` to run the test suite.
+6. **Verify**: `./script/server` to run an ephemeral server for manual checks.
 
 ### Notes
 - All scripts are located in the `script/` directory at the project root.
