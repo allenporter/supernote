@@ -32,7 +32,6 @@ async def _stream_upload_field(field: BodyPartReader) -> AsyncGenerator[bytes, N
 
 
 @routes.post("/api/oss/upload")
-@routes.put("/api/oss/upload")
 @public_route
 async def handle_oss_upload(request: web.Request) -> web.Response:
     """Handle OSS upload (device/v3).
@@ -42,6 +41,7 @@ async def handle_oss_upload(request: web.Request) -> web.Response:
     url_signer: UrlSigner = request.app["url_signer"]
     blob_storage: BlobStorage = request.app["blob_storage"]
 
+    logger.debug("OSS Upload Headers: %s", dict(request.headers))
     try:
         payload = await url_signer.verify(request.path_qs)
     except SupernoteError as err:
@@ -59,6 +59,14 @@ async def handle_oss_upload(request: web.Request) -> web.Response:
     if not object_name:
         return web.json_response(
             create_error_response("Missing path", "E400").to_dict(), status=400
+        )
+
+    if not request.content_type.startswith("multipart/"):
+        return web.json_response(
+            create_error_response(
+                f"Expected multipart content, got {request.content_type}", "E400"
+            ).to_dict(),
+            status=400,
         )
 
     reader = await request.multipart()
@@ -93,6 +101,7 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
     url_signer: UrlSigner = request.app["url_signer"]
     blob_storage: BlobStorage = request.app["blob_storage"]
 
+    logger.debug("OSS Upload Part Headers: %s", dict(request.headers))
     query_dict = dict(request.query)
     try:
         params = FileChunkParams.from_dict(query_dict)
@@ -121,6 +130,14 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
         return web.json_response(
             create_error_response("Missing user identity in signature").to_dict(),
             status=403,
+        )
+
+    if not request.content_type.startswith("multipart/"):
+        return web.json_response(
+            create_error_response(
+                f"Expected multipart content, got {request.content_type}", "E400"
+            ).to_dict(),
+            status=400,
         )
 
     reader = await request.multipart()

@@ -253,3 +253,211 @@ export async function fetchCapacity() {
 
     return await response.json();
 }
+
+/**
+ * Create a new folder.
+ */
+export async function createFolder(directoryId, folderName) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/file/folder/add', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        },
+        body: JSON.stringify({
+            directoryId: directoryId,
+            fileName: folderName
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error(`Failed to create folder: ${response.statusText}`);
+    }
+
+    return await response.json();
+}
+
+/**
+ * Delete items (files or folders).
+ */
+export async function deleteItems(directoryId, idList) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/file/delete', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        },
+        body: JSON.stringify({
+            directoryId: directoryId,
+            idList: idList
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error(`Failed to delete items: ${response.statusText}`);
+    }
+
+    return await response.json();
+}
+
+/**
+ * Move items to a new directory.
+ */
+export async function moveItems(idList, targetDirectoryId) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/file/move', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        },
+        body: JSON.stringify({
+            idList: idList,
+            directoryId: "0", // Not strictly required for move but good for DTO compliance if needed
+            goDirectoryId: targetDirectoryId
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error(`Failed to move items: ${response.statusText}`);
+    }
+
+    return await response.json();
+}
+
+/**
+ * Rename an item.
+ */
+export async function renameItem(id, newName) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/file/rename', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        },
+        body: JSON.stringify({
+            id: id,
+            newName: newName
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error(`Failed to rename item: ${response.statusText}`);
+    }
+
+    return await response.json();
+}
+
+/**
+ * File Upload: Step 1 - Apply
+ */
+async function uploadApply(directoryId, fileName, size, md5) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/file/upload/apply', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        },
+        body: JSON.stringify({
+            directoryId: directoryId,
+            fileName: fileName,
+            size: size,
+            md5: md5
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error(`Upload apply failed: ${response.statusText}`);
+    }
+
+    return await response.json();
+}
+
+/**
+ * File Upload: Step 2 - Finish
+ */
+async function uploadFinish(directoryId, fileName, size, md5, innerName) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/file/upload/finish', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        },
+        body: JSON.stringify({
+            directoryId: directoryId,
+            fileName: fileName,
+            fileSize: size,
+            md5: md5,
+            innerName: innerName,
+            type: "2" // CLOUD
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error(`Upload finish failed: ${response.statusText}`);
+    }
+
+    return await response.json();
+}
+
+/**
+ * Upload a file (orchestrates apply, put, and finish).
+ */
+export async function uploadFile(directoryId, file, onProgress) {
+    // 1. Calculate MD5 (optional but good for finish)
+    const md5 = await calculateFileMd5(file);
+
+    // 2. Apply
+    const applyData = await uploadApply(directoryId, file.name, file.size, md5);
+    const { fullUploadUrl, innerName } = applyData;
+
+    // 3. POST/PUT file to blob storage as multipart
+    // We use FormData to ensure the server receives a multipart request.
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const uploadResp = await fetch(fullUploadUrl, {
+        method: 'POST', // Both POST and PUT are supported by our oss.py handle_oss_upload
+        body: formData,
+        // Note: Do NOT set Content-Type header; fetch will set it with the correct boundary
+    });
+
+    if (!uploadResp.ok) {
+        throw new Error(`File binary upload failed: ${uploadResp.statusText}`);
+    }
+
+    // 4. Finish
+    return await uploadFinish(directoryId, file.name, file.size, md5, innerName);
+}
+
+/**
+ * Helper to calculate file MD5.
+ */
+function calculateFileMd5(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const hash = SparkMD5.ArrayBuffer.hash(e.target.result);
+            resolve(hash);
+        };
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(file);
+    });
+}

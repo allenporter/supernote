@@ -5,13 +5,17 @@ import FileCard from './components/FileCard.js';
 import LoginCard from './components/LoginCard.js';
 import FileViewer from './components/FileViewer.js';
 import SystemPanel from './components/SystemPanel.js';
+import MoveModal from './components/MoveModal.js';
+import RenameModal from './components/RenameModal.js';
 
 createApp({
     components: {
         FileCard,
         LoginCard,
         FileViewer,
-        SystemPanel
+        SystemPanel,
+        MoveModal,
+        RenameModal
     },
     setup() {
         // Auth State
@@ -19,16 +23,27 @@ createApp({
         const loginError = ref(null);
         const showSystemPanel = ref(false);
 
-        // Dev helper: Set token from URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const token = urlParams.get('token');
-        if (token) {
-            setToken(token);
-            // Clean URL
-            window.history.replaceState({}, document.title, "/");
-        }
+        // UI State
+        const showNewFolderModal = ref(false);
+        const newFolderName = ref('');
+        const showMoveModal = ref(false);
+        const showRenameModal = ref(false);
+        const itemToRename = ref(null);
+        const selectedIds = ref([]);
 
-        const { files, currentDirectoryId, isLoading, error, loadDirectory } = useFileSystem();
+        // File System
+        const {
+            files,
+            currentDirectoryId,
+            isLoading,
+            error,
+            loadDirectory,
+            createNewFolder,
+            deleteSelectedItems,
+            moveSelectedItems,
+            uploadFiles,
+            renameSelectedItem
+        } = useFileSystem();
 
         const view = ref('grid');
         const selectedFile = ref(null);
@@ -37,10 +52,12 @@ createApp({
         const folders = computed(() => files.value.filter(f => f.isDirectory));
         const regularFiles = computed(() => files.value.filter(f => !f.isDirectory));
 
+        // Methods
         async function openItem(item) {
             if (item.isDirectory) {
                 currentDirectoryId.value = item.id;
                 breadcrumbs.value.push({ id: item.id, name: item.name });
+                selectedIds.value = [];
                 await loadDirectory(item.id);
             } else {
                 selectedFile.value = item;
@@ -53,7 +70,86 @@ createApp({
             breadcrumbs.value = crumbs;
             const target = crumbs[crumbs.length - 1];
             view.value = 'grid';
+            selectedIds.value = [];
             await loadDirectory(target.id);
+        }
+
+        // Selection
+        function toggleSelection(id) {
+            const index = selectedIds.value.indexOf(id);
+            if (index > -1) {
+                selectedIds.value.splice(index, 1);
+            } else {
+                selectedIds.value.push(id);
+            }
+        }
+
+        // Actions
+        async function handleCreateFolder() {
+            if (!newFolderName.value) return;
+            try {
+                await createNewFolder(newFolderName.value);
+                showNewFolderModal.value = false;
+                newFolderName.value = '';
+            } catch (e) {
+                alert("Failed to create folder: " + e.message);
+            }
+        }
+
+        const fileInput = ref(null);
+        function triggerUpload() {
+            fileInput.value.click();
+        }
+
+        async function handleFileUpload(event) {
+            const selectedFiles = event.target.files;
+            if (selectedFiles.length === 0) return;
+            try {
+                await uploadFiles(selectedFiles);
+            } catch (e) {
+                alert("Upload failed: " + e.message);
+            } finally {
+                event.target.value = ''; // Reset input
+            }
+        }
+
+        async function handleDeleteSelected() {
+            if (!confirm(`Are you sure you want to delete ${selectedIds.value.length} items?`)) return;
+            try {
+                await deleteSelectedItems(selectedIds.value);
+                selectedIds.value = [];
+            } catch (e) {
+                alert("Delete failed: " + e.message);
+            }
+        }
+
+        function handleMoveSelected() {
+            showMoveModal.value = true;
+        }
+
+        async function onConfirmMove(targetDirId) {
+            try {
+                await moveSelectedItems(selectedIds.value, targetDirId);
+                selectedIds.value = [];
+                showMoveModal.value = false;
+            } catch (e) {
+                alert("Move failed: " + e.message);
+            }
+        }
+
+        function triggerRename(item) {
+            itemToRename.value = item;
+            showRenameModal.value = true;
+        }
+
+        async function onConfirmRename(newName) {
+            try {
+                await renameSelectedItem(itemToRename.value.id, newName);
+                showRenameModal.value = false;
+                itemToRename.value = null;
+            } catch (e) {
+                alert("Rename failed: " + e.message);
+            }
         }
 
         async function handleLogin({ email, password }) {
@@ -64,7 +160,7 @@ createApp({
                 await loadDirectory();
             } catch (e) {
                 loginError.value = e.message;
-                alert(e.message); // Simple feedback for now
+                alert(e.message);
             }
         }
 
@@ -94,7 +190,27 @@ createApp({
             openItem,
             navigateTo,
             selectedFile,
-            showSystemPanel
+            showSystemPanel,
+
+            // New States
+            showNewFolderModal,
+            newFolderName,
+            showMoveModal,
+            showRenameModal,
+            itemToRename,
+            selectedIds,
+            fileInput,
+
+            // New Methods
+            toggleSelection,
+            handleCreateFolder,
+            triggerUpload,
+            handleFileUpload,
+            handleDeleteSelected,
+            handleMoveSelected,
+            onConfirmMove,
+            triggerRename,
+            onConfirmRename
         };
     }
 }).mount('#app');

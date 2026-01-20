@@ -81,7 +81,9 @@ async def trace_middleware(
         req_body_str = None
         if "/api/oss/upload" in request.path:
             req_body_str = "<multipart upload skipped>"
-        elif request.can_read_body:
+        elif request.can_read_body and not request.content_type.startswith(
+            "multipart/"
+        ):
             try:
                 # aiohttp allows reading multiple times once buffered
                 body_bytes = await request.read()
