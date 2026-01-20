@@ -1,0 +1,81 @@
+---
+prompt: >-
+  The is an example of the calendar part of a Monthly Log which is a list of dates
+  and weekday names where import event, tasks, or notes can be recorded to get
+  a sense of the month at a glance.
+filename: Monthly-02-P20230301064260113420.png
+created_at: "2023-03-01T06:42:60.113420"
+content: |
+  MARCH 2023
+
+  1 W
+  2 T
+  3 F
+  4 S
+  5 S
+  6 M
+  7 T
+  8 W o Infrastructure Virtual Summit
+  9 T
+  10 F
+  11 S
+  12 S
+  13 M
+  14 T
+  15 W
+  16 T
+  17 F o St. Patrick's Day
+  18 S
+  19 S
+  20 M o Work Trip NYC
+  21 T o Work Trip NYC
+  22 W o Work Trip NYC o Return flight to SF
+  23 T
+  24 F
+  25 S
+  26 S
+  27 M o Kids no School
+  28 T o Kids no School
+  29 W o Kids no School
+  30 T o Kids no School
+  31 F o Kids no School
+---
+filename: Monthly-02-P20230301064260113420.png
+created_at: "2023-03-01T06:42:60.113420"
+label: monthly
+date: "2023-03-01"
+title: "Monthly Log - March 2023"
+records:
+  - date: "2023-03-08"
+    type: event
+    content: Infrastructure Virtual Summit
+  - date: "2023-03-17"
+    type: event
+    content: St. Patrick's Day
+  - date: "2023-03-20"
+    type: event
+    content: Work Trip NYC
+  - date: "2023-03-21"
+    type: event
+    content: Work Trip NYC
+  - date: "2023-03-22"
+    type: event
+    content: Work Trip NYC
+  - date: "2023-03-22"
+    type: event
+    content: Return flight to SF
+  - date: "2023-03-27"
+    type: event
+    content: Kids no School
+  - date: "2023-03-28"
+    type: event
+    content: Kids no School
+  - date: "2023-03-29"
+    type: event
+    content: Kids no School
+  - date: "2023-03-30"
+    type: event
+    content: Kids no School
+  - date: "2023-03-31"
+    type: event
+    content: Kids no School

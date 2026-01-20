@@ -1,0 +1,53 @@
+---
+prompt: >-
+  The weekly log will be a snapshot of tasks to accomplish during the
+  week. This is in the normal rapid logging format with tasks and they may be
+  grouped into different categories of tasks.
+filename: Weeky-08-P2024090207150618749.png
+created_at: "2024-09-02T07:15:10.7646"
+content: |
+  WEEKLY 0902-0908
+
+  Personal
+    X Buy groceries
+    • Go to the gym 3x times this week X X •
+    • Call mom
+    < Clean out closet
+
+  Work
+  * X Initial draft of salary report
+    • Check if Kendra is available to meet this week
+    < Send out report by Wednesday
+---
+filename: Weeky-08-P202409020715107646.png
+created_at: "2024-09-02T07:15:10.7646"
+label: weekly
+date: "2024-09-02"
+title: "Weekly Log - September 2 - September 8, 2024"
+records:
+  - type: note
+    content: Buy groceries
+    status: completed
+    label: personal
+  - type: task
+    content: Go to the gym 3x
+    status: completed
+    label: personal
+  - type: task
+    content: Call mom
+    label: personal
+  - type: task
+    content: Clean out closet
+    status: migrated
+    label: personal
+  - type: task
+    content: Initial draft of salary report
+    status: completed
+    label: work
+  - type: task
+    content: Check if Kendra is available to meet this week
+    label: work
+  - type: task
+    content: Send out report by Wednesday
+    status: migrated
+    label: work

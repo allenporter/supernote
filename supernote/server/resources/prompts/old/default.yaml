@@ -1,0 +1,81 @@
+---
+prompt: |
+  You are analyzing PNG images of handwritten text from an
+  e-ink notebook SuperNote A5X. The notes are written in English and are in a
+  bullet journal format. You can see that the text is not perfect and will need
+  some cleaning up
+
+  The Bullet Journal method is a system that combines elements of mindfulness,
+  productivity, and self-discovery. It empowers the user to become the author of their
+  own life, allowing them to track the past, organize the present, and plan for the
+  future. A Bullet Journal method may be described as a productivity system or an
+  organization system, but at its core, the method is a tool for changing the way
+  we approach our day-to-day tasks and long term goals. The Bullet Journal method
+  is centered on one key idea: intentionality. Why do we do what we do? What makes
+  these goals meaningful to us? What tasks are the most relevant to  us at any
+  given point in time?
+
+  Rapid logging is the language of the bullet journal method and it functions
+  through the use of  Bullets to indicate a task's status. A task starts with a simple
+  dot "•" to represent a task. If a task is completed, mark it with an "X". If it's
+  migrated to a future date, use a right arrow (>) to indicate that. And additional
+  bullet styles can be used depending on what makes sense to the author.
+
+  Tasks within the Bullet Journal method can then fall within any of the logs used
+  depending on where they fall in the author's timeline. Typically, journals contain
+  a Daily Log, Weekly Log, and Monthly Log.
+
+  Daily Log
+  ---------
+  The daily log is used to record tasks, events, and notes on a day-to-day
+  basis. A daily log is simply the current date as the header and then a list of
+  log entries. They can be short, bulleted entries with symbols to represent
+  different types of content (tasks, events, notes).
+
+  When new tasks arise throughout the day, they are add them to the daily log. If
+  a task is completed, it is marked with an "X". If a task is not completed and the
+  author still wants to work on it, they can migrate it to a future date by using
+  a right arrow (>) to indicate that. This way, the author maintains a concise and up-to-date
+  record of their daily activities.
+
+  Weekly Log
+  ----------
+  The weekly log provides an overview of the week, allowing the author to plan and
+  organize tasks, events, and commitments in a broader context. A weekly log
+  is started by writing the dates of the week at the top of the page. Below are
+  typically a list of tasks and notes for the week, using bulleted entries. At
+  the end of the week, the author can migrate unfinished tasks to the next week
+  as needed.
+
+  The weekly log serves as a snapshot of the upcoming week, helping prioritize
+  tasks, allocate time, and have a holistic view of the author's commitments.
+
+  A weekly log may also be accompanied by a weekly review, where the author
+  reflects on the previous week's accomplishments, challenges, and goals for the upcoming
+  week.
+
+  Monthly Log
+  -----------
+  The monthly log offers a broader perspective, enabling the author to plan and
+  track their activities, goals, and events throughout the month. To create a monthly
+  log, designate a double-page spread in their notebook for each month.
+
+  A monthly spread has the name of the month at the top of the list. The left-hand
+  page has a list of dates (1-30/31) down the side. This space is used to mark important
+  events, deadlines, or appointments for each day. The right-hand page is used as
+  a monthly last list, where the author can list out tasks, goals, or projects they
+  want to focus on during the month.
+
+  The monthly log serves as a reference point, allowing the author to see the big
+  picture and plan ahead. As the month progresses, they can refer to this log, migrate
+  tasks to specific days in their daily log or add new tasks as they arise.
+
+  Future Log
+  ----------
+  A Future Log is designed to help the author plan and organize events, tasks,
+  and important dates that extend beyond your current month. It serves as a
+  forward-looking overview of the upcoming months, allowing the author to capture
+  and track future commitments in a structured manner. The Future Log is a way
+  to ensure important events or deadlines are not forgotten and time and resources
+  can be allocated effectively. The format is usually a month name and a list of
+  tasks or events scheduled for that month.

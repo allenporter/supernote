@@ -88,13 +88,15 @@ async def test_summary_success(
 
     # Mock Gemini AI Response
     mock_response = MagicMock()
-    mock_response.text = "AI Summary Output"
+    # Return valid JSON matching the new schema
+    mock_response.text = '{"summary": "AI Summary Output", "dates": ["2023-10-27"]}'
     mock_gemini_service.generate_content.return_value = mock_response
 
     # Mock PromptLoader
     with patch(
         "supernote.server.services.processor_modules.summary.PROMPT_LOADER"
     ) as mock_loader:
+        # Provide a template that includes the placeholder
         mock_loader.get_prompt.return_value = "Generate {{TRANSCRIPT}}"
 
         # Run full module lifecycle
@@ -187,7 +189,7 @@ async def test_summary_idempotency_update(
 
     # Mock Gemini
     mock_response = MagicMock()
-    mock_response.text = "New AI Summary"
+    mock_response.text = '{"summary": "New AI Summary", "dates": []}'
     mock_gemini_service.generate_content.return_value = mock_response
 
     # Mock Existing Summary

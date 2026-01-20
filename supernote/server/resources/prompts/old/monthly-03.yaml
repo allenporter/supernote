@@ -1,0 +1,41 @@
+---
+prompt: >-
+  The monthly log will be a snapshot of tasks to accomplish during the
+  month. This is in the normal rapid logging format with tasks.
+filename: Monthly-03-P20230301064260113420.png
+created_at: "2023-03-01T06:42:60.113420"
+content: |
+  MONTHLY 2023-03
+
+  X Plan weekend getaway with family
+  • Look up hiking trails in the area
+  < Schedule meeting with manager to discuss career goals
+  • Squeaky garage door
+  *X Call mom
+  X Finish salary report
+  • Finish reading "Lessons in Chemistry"
+---
+filename: Monthly-03-P20230301064260113420.png
+created_at: "2023-03-01T06:42:60.113420"
+label: monthly
+date: "2023-03-01"
+title: "Monthly Log - March 2023"
+records:
+  - type: task
+    content: Plan weekend getaway with family
+    status: completed
+  - type: task
+    content: Look up hiking trails in the area
+  - type: task
+    content: Schedule meeting with manager to discuss career goals
+  - type: task
+    content: Squeaky garage door
+  - type: task
+    content: Call mom
+    status: completed
+    critical: true
+  - type: task
+    content: Finish salary report
+    status: completed
+  - type: task
+    content: Finish reading "Lessons in Chemistry"
