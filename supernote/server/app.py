@@ -10,6 +10,7 @@ from aiohttp import web
 from yarl import URL
 
 from supernote.models.base import create_error_response
+from supernote.server.db.migrations import run_migrations
 
 from .config import ServerConfig
 from .constants import MAX_UPLOAD_SIZE
@@ -323,15 +324,11 @@ def create_app(config: ServerConfig) -> web.Application:
 
         app.middlewares.append(jwt_auth_middleware)
 
-        # Run database migrations
-        # We use alembic to manage the database schema.
-        # This ensures the database is always up to date with the code.
-        # Run database migrations
-        # We use alembic to manage the database schema.
-        # This ensures the database is always up to date with the code.
-        from supernote.server.db.migrations import run_migrations
-
         await asyncio.to_thread(run_migrations, config.db_url)
+
+        # Handle ephemeral user creation if needed
+        if config.ephemeral:
+            await bootstrap_ephemeral_user(app)
 
         await processor_service.start()
 
@@ -344,6 +341,30 @@ def create_app(config: ServerConfig) -> web.Application:
     app.on_shutdown.append(on_shutdown_handler)
 
     return app
+
+
+async def bootstrap_ephemeral_user(app: web.Application) -> None:
+    """Create a default user for ephemeral mode if it doesn't exist."""
+    from sqlalchemy import select
+
+    from .db.models.user import UserDO
+    from .utils.hashing import get_md5_hash
+
+    session_manager: DatabaseSessionManager = app["session_manager"]
+    async with session_manager.session() as session:
+        # Check if user already exists
+        result = await session.execute(
+            select(UserDO).where(UserDO.email == "debug@example.com")
+        )
+        if not result.scalar_one_or_none():
+            logger.info("Creating default user debug@example.com / password")
+            user = UserDO(
+                email="debug@example.com",
+                password_md5=get_md5_hash("password"),
+                display_name="Debug User",
+            )
+            session.add(user)
+            await session.commit()
 
 
 def run(args: Any) -> None:

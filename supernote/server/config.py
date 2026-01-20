@@ -127,6 +127,11 @@ BaseConfig
     def storage_root(self) -> Path:
         return Path(self.storage_dir)
 
+    @property
+    def ephemeral(self) -> bool:
+        """Whether the server is running in ephemeral mode."""
+        return _get_bool_env("SUPERNOTE_EPHEMERAL", False)
+
     @classmethod
     def load(
         cls, config_dir: str | Path | None = None, config_file: str | Path | None = None
