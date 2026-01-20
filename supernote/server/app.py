@@ -322,7 +322,17 @@ def create_app(config: ServerConfig) -> web.Application:
             app.middlewares.append(trace_middleware)
 
         app.middlewares.append(jwt_auth_middleware)
-        await session_manager.create_all_tables()
+
+        # Run database migrations
+        # We use alembic to manage the database schema.
+        # This ensures the database is always up to date with the code.
+        # Run database migrations
+        # We use alembic to manage the database schema.
+        # This ensures the database is always up to date with the code.
+        from supernote.server.db.migrations import run_migrations
+
+        await asyncio.to_thread(run_migrations, config.db_url)
+
         await processor_service.start()
 
     app.on_startup.append(on_startup_handler)

@@ -57,6 +57,8 @@ supernote = "supernote.cli.main:main"
 supernote-server = "supernote.cli.server:main"
 
 [tool.setuptools.package-data]
+"supernote" = ["alembic.ini"]
+"supernote.alembic" = ["env.py", "script.py.mako", "versions/*.py"]
 "supernote.server.resources.prompts" = ["*.md"]
 
 [tool.mypy]

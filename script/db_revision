@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# script/db_revision: Create a new database migration
+#
+# Usage:
+#   script/db_revision "description of changes"
+#
+# This script is a wrapper around 'alembic revision --autogenerate'.
+# It ensures the correct configuration file is used.
+
+set -e
+
+cd "$(dirname "$0")/.."
+
+if [ -z "$1" ]; then
+  echo "Usage: script/db_revision \"description of changes\""
+  exit 1
+fi
+
+MESSAGE="$1"
+shift
+
+if command -v uv >/dev/null 2>&1; then
+  exec uv run alembic -c supernote/alembic.ini revision --autogenerate -m "$MESSAGE" "$@"
+else
+  exec alembic -c supernote/alembic.ini revision --autogenerate -m "$MESSAGE" "$@"
+fi
