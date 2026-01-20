@@ -1,3 +1,4 @@
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -88,8 +89,18 @@ async def test_summary_success(
 
     # Mock Gemini AI Response
     mock_response = MagicMock()
-    # Return valid JSON matching the new schema
-    mock_response.text = '{"summary": "AI Summary Output", "dates": ["2023-10-27"]}'
+    # Return valid JSON matching the new segmented schema
+    mock_response.text = json.dumps(
+        {
+            "segments": [
+                {
+                    "date_range": "2023-10-27",
+                    "summary": "AI Summary Output",
+                    "extracted_dates": ["2023-10-27"],
+                }
+            ]
+        }
+    )
     mock_gemini_service.generate_content.return_value = mock_response
 
     # Mock PromptLoader
@@ -132,7 +143,9 @@ async def test_summary_success(
     assert ai_call.args[0] == user_email
     dto_ai = ai_call.args[1]
     assert dto_ai.unique_identifier == get_summary_id(storage_key)
-    assert dto_ai.content == "AI Summary Output"
+    # Check for Markdown formatting
+    assert "## 2023-10-27" in dto_ai.content
+    assert "AI Summary Output" in dto_ai.content
     assert dto_ai.data_source == "GEMINI"
 
     # 3. Check Task Status
@@ -189,7 +202,17 @@ async def test_summary_idempotency_update(
 
     # Mock Gemini
     mock_response = MagicMock()
-    mock_response.text = '{"summary": "New AI Summary", "dates": []}'
+    mock_response.text = json.dumps(
+        {
+            "segments": [
+                {
+                    "date_range": "2023-10-28",
+                    "summary": "New AI Summary",
+                    "extracted_dates": [],
+                }
+            ]
+        }
+    )
     mock_gemini_service.generate_content.return_value = mock_response
 
     # Mock Existing Summary

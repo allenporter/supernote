@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from supernote.models.summary import AddSummaryDTO, UpdateSummaryDTO
@@ -23,9 +23,22 @@ logger = logging.getLogger(__name__)
 
 
 # Define structured output schema
-class SummaryExtraction(BaseModel):
-    summary: str
-    dates: List[str]
+class SummarySegment(BaseModel):
+    date_range: str = Field(
+        description="The date range covered by this segment (e.g., '2023-10-27', 'Week of Oct 27')."
+    )
+    summary: str = Field(
+        description="A concise summary of the events, tasks, and notes for this period."
+    )
+    extracted_dates: List[str] = Field(
+        description="List of specific dates derived from the content in ISO 8601 format (YYYY-MM-DD)."
+    )
+
+
+class SummaryResponse(BaseModel):
+    segments: List[SummarySegment] = Field(
+        description="List of summary segments extracted from the transcript."
+    )
 
 
 class SummaryModule(ProcessorModule):
@@ -150,36 +163,52 @@ class SummaryModule(ProcessorModule):
                 contents=prompt,
                 config={
                     "response_mime_type": "application/json",
-                    "response_json_schema": SummaryExtraction.model_json_schema(),
+                    "response_json_schema": SummaryResponse.model_json_schema(),
                 },
-            )
-
-            # Parse JSON response
-            if response.text:
-                try:
-                    data = json.loads(response.text)
-                    ai_summary = data.get("summary", "No summary generated.")
-                    dates = data.get("dates", [])
-                    if dates:
-                        logger.info(f"Extracted dates for file {file_id}: {dates}")
-                except json.JSONDecodeError:
-                    logger.error(f"Failed to parse JSON response for file {file_id}")
-                    ai_summary = response.text
-            else:
-                ai_summary = "No summary generated."
-
-            await self._upsert_summary(
-                user_email,
-                AddSummaryDTO(
-                    file_id=file_id,
-                    unique_identifier=summary_uuid,
-                    content=ai_summary,
-                    data_source="GEMINI",
-                    source_path=file_do.file_name,
-                ),
             )
         except Exception as e:
             logger.error(f"Failed to generate AI summary for file {file_id}: {e}")
+            return
+
+        # Parse JSON response
+        ai_summary = "No summary generated."
+        if response.text:
+            try:
+                data = json.loads(response.text)
+                segments_data = data.get("segments", [])
+
+                # Format segments into Markdown
+                summary_parts = []
+                all_dates = []
+
+                for seg in segments_data:
+                    date_range = seg.get("date_range", "Unknown Date")
+                    text = seg.get("summary", "")
+                    dates = seg.get("extracted_dates", [])
+
+                    summary_parts.append(f"## {date_range}\n{text}")
+                    all_dates.extend(dates)
+
+                if summary_parts:
+                    ai_summary = "\n\n".join(summary_parts)
+
+                if all_dates:
+                    logger.info(f"Extracted dates for file {file_id}: {all_dates}")
+
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse JSON response for file {file_id}")
+                ai_summary = response.text
+
+        await self._upsert_summary(
+            user_email,
+            AddSummaryDTO(
+                file_id=file_id,
+                unique_identifier=summary_uuid,
+                content=ai_summary,
+                data_source="GEMINI",
+                source_path=file_do.file_name,
+            ),
+        )
 
     async def _upsert_summary(self, user_email: str, dto: AddSummaryDTO) -> None:
         """Helper to either add or update a summary based on its unique identifier."""
