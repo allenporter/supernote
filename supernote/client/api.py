@@ -12,7 +12,22 @@ from .web import WebClient
 
 
 class Supernote:
-    """A session-managed entry point for Supernote clients."""
+    """A session-managed entry point for Supernote clients.
+
+    Example:
+        async with await Supernote.login("email@example.com", "password", host="http://localhost:8080") as sn:
+            # Access Web and Device APIs directly through the session object
+            # Example: List root folder using path-based Device API
+            result = await sn.device.list_folder("/")
+
+            # sn.token contains the access token for use with `Supernote.from_token`
+            print(sn.token)
+
+    Example using an existing token:
+        sn = Supernote.from_token("your-token", host="http://localhost:8080")
+        # Note: When created this way, you are responsible for closing the session
+        # or passing an existing one.
+    """
 
     def __init__(
         self,

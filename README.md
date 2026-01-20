@@ -79,6 +79,16 @@ docker run -d -p 8080:8080 -v $(pwd)/storage:/storage supernote serve
 
 See [Server Documentation](https://github.com/allenporter/supernote-lite/blob/main/supernote/server/README.md) for details.
 
+### Developer API
+
+Integrate Supernote into your own Python applications:
+
+```python
+from supernote.client import Supernote
+# See library docstrings for usage examples
+```
+
+
 ## CLI Usage
 
 ```bash
