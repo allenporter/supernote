@@ -164,14 +164,7 @@ class SummaryModule(ProcessorModule):
 
         # 5. Generate AI Summary using Gemini
         # Determine prompt based on filename/type
-        filename_basis = Path(file_do.file_name).stem.lower()
-        custom_type = filename_basis  # Default to stem for specific overrides
-        if "daily" in filename_basis:
-            custom_type = "daily"
-        elif "weekly" in filename_basis:
-            custom_type = "weekly"
-        elif "monthly" in filename_basis:
-            custom_type = "monthly"
+        custom_type = Path(file_do.file_name).stem.lower()
 
         # Load Prompt using specialized logic: Common + (Custom OR Default)
         prompt_template = PROMPT_LOADER.get_prompt(
