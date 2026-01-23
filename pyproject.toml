@@ -43,6 +43,7 @@ server = [
   "aiofiles>=25.1.0",
   "aiohttp-remotes>=1.3.0",
   "google-genai>=1.57.0",
+  "mcp>=1.25.0",
 ]
 all = ["supernote[client,server]"]
 
