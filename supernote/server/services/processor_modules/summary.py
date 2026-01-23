@@ -23,6 +23,7 @@ from supernote.server.services.gemini import GeminiService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.services.prompt_loader import PROMPT_LOADER, PromptId
 from supernote.server.services.summary import SummaryService
+from supernote.server.utils.note_content import format_page_metadata
 from supernote.server.utils.paths import get_summary_id, get_transcript_id
 
 logger = logging.getLogger(__name__)
@@ -154,11 +155,18 @@ class SummaryModule(ProcessorModule):
             logger.info(f"No OCR pages found for file {file_id}. Skipping summary.")
             return
 
-        # Format transcript with Page markers
+        # Format transcript with Page markers and inferred dates
         text_parts = []
         for p in pages:
             if p.text_content:
-                text_parts.append(f"--- Page {p.page_index + 1} ---\n{p.text_content}")
+                metadata = format_page_metadata(
+                    page_index=p.page_index,
+                    page_id=p.page_id or "",
+                    file_name=file_do.file_name,
+                    notebook_create_time=file_do.create_time,
+                    include_section_divider=True,
+                )
+                text_parts.append(f"{metadata}\n{p.text_content}")
 
         full_text = "\n\n".join(text_parts)
 

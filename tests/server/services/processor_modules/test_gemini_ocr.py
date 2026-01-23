@@ -99,7 +99,8 @@ async def test_process_ocr_success(
     content_obj = kwargs["contents"][0]
     parts = content_obj.parts
     assert len(parts) == 2
-    assert parts[0].text == "Transcribe this page."
+    assert "Transcribe this page." in parts[0].text
+    assert "Notebook Filename: real.note" in parts[0].text
     assert parts[1].inline_data.data == png_content
     # Verify config passed
     assert kwargs["config"] == {"media_resolution": "media_resolution_high"}
@@ -161,3 +162,48 @@ async def test_ocr_run_if_needed_disabled(
         await gemini_ocr_module.run(1, session_manager, page_index=0, page_id="p0")
         is True
     )
+
+
+async def test_ocr_with_inferred_date(
+    gemini_ocr_module: GeminiOcrModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    mock_gemini_service: MagicMock,
+) -> None:
+    # Setup Data
+    file_id = 123
+    page_id = "P20231027123456"
+
+    # Create dummy PNG
+    png_path = get_page_png_path(file_id, page_id)
+    await blob_storage.put(CACHE_BUCKET, png_path, b"data")
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(id=file_id, user_id=1, file_name="test.note", directory_id=0)
+        )
+        session.add(NotePageContentDO(file_id=file_id, page_index=0, page_id=page_id))
+        await session.commit()
+
+    # Mock Gemini
+    mock_response = MagicMock()
+    mock_response.text = "OCR text"
+    mock_gemini_service.generate_content.return_value = mock_response
+
+    # Mock PromptLoader
+    with patch(
+        "supernote.server.services.processor_modules.gemini_ocr.PROMPT_LOADER"
+    ) as mock_loader:
+        mock_loader.get_prompt.return_value = "Prompt"
+        await gemini_ocr_module.run(
+            file_id, session_manager, page_index=0, page_id=page_id
+        )
+
+    # Verify Prompt
+    call_args = mock_gemini_service.generate_content.call_args
+    _, kwargs = call_args
+    prompt_text = kwargs["contents"][0].parts[0].text
+    assert "--- Page 1 ---" in prompt_text
+    assert "Notebook Filename: test.note" in prompt_text
+    assert "Page ID: P20231027123456" in prompt_text
+    assert "Page Date (Inferred): 2023-10-27" in prompt_text

@@ -255,3 +255,54 @@ async def test_summary_idempotency_update(
     assert update_dto.metadata is not None
     meta = json.loads(update_dto.metadata)
     assert meta[METADATA_SEGMENTS][0]["page_refs"] == [3, 4]
+
+
+async def test_summary_transcript_with_dates(
+    summary_module: SummaryModule,
+    session_manager: DatabaseSessionManager,
+    mock_gemini_service: MagicMock,
+    mock_summary_service: MagicMock,
+) -> None:
+    # Setup Data
+    user_id = 100
+    user_email = "test@example.com"
+    file_id = 123
+    storage_key = "date_test_key"
+
+    async with session_manager.session() as session:
+        user = UserDO(id=user_id, email=user_email, password_md5="hash")
+        session.add(user)
+        user_file = UserFileDO(
+            id=file_id,
+            user_id=user_id,
+            storage_key=storage_key,
+            file_name="dates.note",
+            directory_id=0,
+        )
+        session.add(user_file)
+
+        # Page with date-encoded ID
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="P20231027120000abc",
+                text_content="Content on Oct 27",
+            )
+        )
+        await session.commit()
+
+    # Mock Gemini (minimal)
+    mock_response = MagicMock()
+    mock_response.text = json.dumps({"segments": []})
+    mock_gemini_service.generate_content.return_value = mock_response
+
+    # Run full module lifecycle
+    await summary_module.run(file_id, session_manager)
+
+    # Verify Transcript contains date and metadata
+    transcript_call = mock_summary_service.add_summary.call_args_list[0]
+    dto = transcript_call.args[1]
+    assert "--- Page 1 ---" in dto.content
+    assert "Page ID: P20231027120000abc" in dto.content
+    assert "Page Date (Inferred): 2023-10-27" in dto.content
