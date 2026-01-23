@@ -65,6 +65,13 @@ class ServerConfig(DataClassYAMLMixin):
 
     Env Var: `SUPERNOTE_PORT`
     """
+
+    mcp_port: int = 8081
+    """Port to bind the MCP server to.
+
+    Env Var: `SUPERNOTE_MCP_PORT`
+    """
+
     trace_log_file: str | None = None
     """Path to trace log file.
 
@@ -176,6 +183,15 @@ BaseConfig
             try:
                 config.port = int(os.getenv("SUPERNOTE_PORT", str(config.port)))
                 logger.info(f"Using SUPERNOTE_PORT: {config.port}")
+            except ValueError:
+                pass
+
+        if os.getenv("SUPERNOTE_MCP_PORT"):
+            try:
+                config.mcp_port = int(
+                    os.getenv("SUPERNOTE_MCP_PORT", str(config.mcp_port))
+                )
+                logger.info(f"Using SUPERNOTE_MCP_PORT: {config.mcp_port}")
             except ValueError:
                 pass
 

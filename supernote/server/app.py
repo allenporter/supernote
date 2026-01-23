@@ -9,6 +9,7 @@ import aiohttp_remotes
 from aiohttp import web
 from yarl import URL
 
+from supernote.mcp.server import run_server, set_services
 from supernote.models.base import create_error_response
 from supernote.server.db.migrations import run_migrations
 
@@ -39,6 +40,7 @@ from .services.processor_modules.page_hashing import PageHashingModule
 from .services.processor_modules.png_conversion import PngConversionModule
 from .services.processor_modules.summary import SummaryModule
 from .services.schedule import ScheduleService
+from .services.search import SearchService
 from .services.summary import SummaryService
 from .services.user import UserService
 from .utils.rate_limit import RateLimiter
@@ -280,6 +282,10 @@ def create_app(config: ServerConfig) -> web.Application:
 
     summary_service = SummaryService(user_service, session_manager)
     app["summary_service"] = summary_service
+
+    search_service = SearchService(session_manager, gemini_service, config)
+    app["search_service"] = search_service
+
     app["sync_locks"] = {}  # user -> (equipment_no, expiry_time)
     app["rate_limiter"] = RateLimiter(coordination_service)
 
@@ -354,6 +360,11 @@ def create_app(config: ServerConfig) -> web.Application:
 
         if config.ephemeral:
             await bootstrap_ephemeral_user(app)
+
+        # Inject services and start MCP server on a separate port
+        set_services(app["search_service"], app["user_service"])
+        mcp_port = config.mcp_port
+        asyncio.create_task(run_server(mcp_port))
 
         logger.info("Starting background services...")
         await processor_service.start()
