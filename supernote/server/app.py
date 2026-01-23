@@ -9,9 +9,9 @@ import aiohttp_remotes
 from aiohttp import web
 from yarl import URL
 
-from supernote.mcp.server import run_server, set_services
 from supernote.models.base import create_error_response
 from supernote.server.db.migrations import run_migrations
+from supernote.server.mcp.server import run_server, set_services
 
 from .config import ServerConfig
 from .constants import MAX_UPLOAD_SIZE
