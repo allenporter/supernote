@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from supernote.mcp.server import get_notebook_transcript, search_notebook_chunks
+from supernote.server.mcp.server import get_notebook_transcript, search_notebook_chunks
 from supernote.server.services.search import SearchResult
 
 
@@ -26,7 +26,7 @@ def mock_services() -> Generator[tuple[AsyncMock, AsyncMock], None, None]:
         "user_service": mock_user_service,
         "search_service": mock_search_service,
     }
-    with patch.dict("supernote.mcp.server._services", services):
+    with patch.dict("supernote.server.mcp.server._services", services):
         yield mock_user_service, mock_search_service
 
 

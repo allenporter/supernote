@@ -4,13 +4,13 @@ from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
 
-from supernote.mcp.models import (
+from supernote.models.base import ErrorCode, create_error_response
+from supernote.server.mcp.models import (
     SearchRequestDTO,
     SearchResponseVO,
     SearchResultVO,
     TranscriptResponseVO,
 )
-from supernote.models.base import ErrorCode, create_error_response
 from supernote.server.services.search import SearchService
 from supernote.server.services.user import UserService
 
