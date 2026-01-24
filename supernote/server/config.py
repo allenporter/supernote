@@ -223,26 +223,27 @@ BaseConfig
             config.trusted_proxies = [p.strip() for p in val.split(",") if p.strip()]
             logger.info(f"Using SUPERNOTE_TRUSTED_PROXIES: {config.trusted_proxies}")
 
-        if os.getenv("SUPERNOTE_GEMINI_API_KEY"):
-            config.gemini_api_key = os.getenv("SUPERNOTE_GEMINI_API_KEY")
-
-        if os.getenv("SUPERNOTE_GEMINI_OCR_MODEL"):
-            config.gemini_ocr_model = os.getenv(
-                "SUPERNOTE_GEMINI_OCR_MODEL", config.gemini_ocr_model
+        if gemini_api_key := os.getenv("SUPERNOTE_GEMINI_API_KEY"):
+            config.gemini_api_key = gemini_api_key
+            logger.info(
+                f"Using SUPERNOTE_GEMINI_API_KEY: xxx...{config.gemini_api_key[-3:]}"
             )
 
-        if os.getenv("SUPERNOTE_GEMINI_EMBEDDING_MODEL"):
-            config.gemini_embedding_model = os.getenv(
-                "SUPERNOTE_GEMINI_EMBEDDING_MODEL", config.gemini_embedding_model
+        if gemini_ocr_model := os.getenv("SUPERNOTE_GEMINI_OCR_MODEL"):
+            config.gemini_ocr_model = gemini_ocr_model
+            logger.info(f"Using SUPERNOTE_GEMINI_OCR_MODEL: {config.gemini_ocr_model}")
+
+        if gemini_embedding_model := os.getenv("SUPERNOTE_GEMINI_EMBEDDING_MODEL"):
+            config.gemini_embedding_model = gemini_embedding_model
+            logger.info(
+                f"Using SUPERNOTE_GEMINI_EMBEDDING_MODEL: {config.gemini_embedding_model}"
             )
 
-        if os.getenv("SUPERNOTE_GEMINI_MAX_CONCURRENCY"):
+        if gemini_max_concurrency := os.getenv("SUPERNOTE_GEMINI_MAX_CONCURRENCY"):
             try:
-                config.gemini_max_concurrency = int(
-                    os.getenv(
-                        "SUPERNOTE_GEMINI_MAX_CONCURRENCY",
-                        str(config.gemini_max_concurrency),
-                    )
+                config.gemini_max_concurrency = int(gemini_max_concurrency)
+                logger.info(
+                    f"Using SUPERNOTE_GEMINI_MAX_CONCURRENCY: {config.gemini_max_concurrency}"
                 )
             except ValueError:
                 pass
