@@ -1,3 +1,4 @@
+import importlib.resources
 import logging
 from pathlib import Path
 
@@ -17,19 +18,13 @@ def run_migrations(db_url: str) -> None:
                the correct environment (prod, test, etc).
     """
     # Locate alembic.ini inside the supernote package
-    # Structure: supernote/server/db/migrations.py
-    # We want:   supernote/alembic.ini
+    traversable = importlib.resources.files("supernote") / "alembic.ini"
 
-    # .parent = supernote/server/db
-    # .parent.parent = supernote/server
-    # .parent.parent.parent = supernote
-    package_root = Path(__file__).parent.parent.parent
-    ini_path = package_root / "alembic.ini"
+    with importlib.resources.as_file(traversable) as ini_path:
+        if not ini_path.exists():
+            raise FileNotFoundError(f"Could not find alembic.ini at {ini_path}")
 
-    if not ini_path.exists():
-        raise FileNotFoundError(f"Could not find alembic.ini at {ini_path}")
-
-    alembic_cfg = alembic.config.Config(str(ini_path))
+        alembic_cfg = alembic.config.Config(str(ini_path))
 
     # IMPORTANT: Override the URL with the one from the running application.
     alembic_cfg.set_main_option("sqlalchemy.url", db_url)

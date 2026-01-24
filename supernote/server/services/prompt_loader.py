@@ -1,11 +1,13 @@
 import enum
+import importlib.resources
 import logging
+from importlib.resources.abc import Traversable
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 
 logger = logging.getLogger(__name__)
 
-RESOURCES_DIR = Path(__file__).parent.parent / "resources" / "prompts"
+RESOURCES_DIR = importlib.resources.files("supernote.server") / "resources" / "prompts"
 
 
 class PromptId(str, enum.Enum):
@@ -24,7 +26,9 @@ DEFAULT = "default"
 class PromptLoader:
     """Service to load and manage externalized prompts."""
 
-    def __init__(self, resources_dir: Optional[Path] = None) -> None:
+    def __init__(
+        self, resources_dir: Optional[Union[Path, Traversable]] = None
+    ) -> None:
         self.resources_dir = resources_dir or RESOURCES_DIR
         # Map: prompt_id -> (type -> prompt_text)
         # type can be "common", "default", or specific custom types like "monthly"
@@ -33,7 +37,7 @@ class PromptLoader:
 
     def _load_prompts(self) -> None:
         """Load all prompts from the resources directory into memory."""
-        if not self.resources_dir.exists():
+        if not self.resources_dir.is_dir():
             logger.warning(f"Prompts directory not found at {self.resources_dir}")
             return
 
@@ -45,7 +49,7 @@ class PromptLoader:
             # Map categories to PromptId
             for category, prompt_id in CATEGORY_MAP.items():
                 category_dir = self.resources_dir / category
-                if not category_dir.exists():
+                if not category_dir.is_dir():
                     continue
 
                 if prompt_id not in self.prompts:
@@ -53,14 +57,14 @@ class PromptLoader:
 
                 # 1. Load Common Prompts (Always On)
                 common_dir = category_dir / COMMON
-                if common_dir.exists() and common_dir.is_dir():
+                if common_dir.is_dir():
                     common_text = self._read_prompts_from_dir(common_dir)
                     if common_text:
                         self.prompts[prompt_id][COMMON] = common_text
 
                 # 2. Load Default Prompts
                 default_dir = category_dir / DEFAULT
-                if default_dir.exists() and default_dir.is_dir():
+                if default_dir.is_dir():
                     default_text = self._read_prompts_from_dir(default_dir)
                     if default_text:
                         self.prompts[prompt_id][DEFAULT] = default_text
@@ -78,10 +82,15 @@ class PromptLoader:
         except Exception as e:
             logger.error(f"Failed to load prompts from {self.resources_dir}: {e}")
 
-    def _read_prompts_from_dir(self, directory: Path) -> str:
+    def _read_prompts_from_dir(self, directory: Union[Path, Traversable]) -> str:
         """Read and concatenate all .md files in a directory."""
         prompts = []
-        for file_path in sorted(directory.glob("*.md")):
+        # Use iterdir instead of glob for Traversable compatibility
+        files = sorted(
+            [f for f in directory.iterdir() if f.name.endswith(".md")],
+            key=lambda x: x.name,
+        )
+        for file_path in files:
             if file_path.is_file():
                 prompts.append(file_path.read_text(encoding="utf-8").strip())
         return "\n\n".join(prompts)

@@ -1,4 +1,5 @@
 import asyncio
+import importlib.resources
 import json
 import logging
 import time
@@ -324,7 +325,7 @@ def create_app(config: ServerConfig) -> web.Application:
     app.add_routes(extended.routes)
 
     # Serve static frontend files
-    static_path = Path(__file__).parent / "static"
+    static_path = Path(str(importlib.resources.files("supernote.server") / "static"))
 
     @public_route
     async def handle_index(request: web.Request) -> web.FileResponse:
@@ -332,9 +333,6 @@ def create_app(config: ServerConfig) -> web.Application:
 
     app.router.add_get("/", handle_index)
     app.router.add_static("/static/", path=static_path, name="static")
-
-    # Serve static frontend files
-    static_path = Path(__file__).parent / "static"
 
     # Register Middlewares
     async def on_startup_handler(app: web.Application) -> None:
