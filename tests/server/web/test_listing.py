@@ -235,17 +235,15 @@ async def test_user_file_vo_all_fields_for_file(
     assert int(file_vo.id) > 0
 
     assert file_vo.directory_id == str(folder_id)
-
     assert file_vo.file_name == file_name
-
     assert file_vo.size == len(file_content)
-
     assert file_vo.md5 is not None
     assert len(file_vo.md5) == 32  # MD5 hash is 32 hex characters
 
     assert file_vo.inner_name is not None
-    # inner_name should be the MD5 hash for uploaded files
-    assert file_vo.inner_name == file_vo.md5
+    # inner_name should be a unique storage key (UUID-based), not the MD5 hash
+    assert "-" in file_vo.inner_name
+    assert file_vo.inner_name.endswith(".txt")
 
     assert file_vo.is_folder == BooleanEnum.NO
 
