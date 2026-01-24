@@ -422,13 +422,23 @@ class FileService:
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
 
-            await vfs.create_file(
+            new_file = await vfs.create_file(
                 user_id=user_id,
                 parent_id=directory_id,
                 name=file_name,
                 size=blob_size,
                 md5=md5,
                 storage_key=inner_name,
+            )
+
+        # 3. Emit Event (Fire and Forget)
+        if self.event_bus and file_name.endswith(".note"):
+            # We need the full path for the event
+            full_path = await self.get_full_path_by_node(user_id, new_file.id)
+            await self.event_bus.publish(
+                NoteUpdatedEvent(
+                    file_id=new_file.id, user_id=user_id, file_path=full_path
+                )
             )
 
     async def create_directory(self, user: str, path: str) -> FileEntity:
@@ -769,6 +779,12 @@ class FileService:
                 )
 
         return results
+
+    async def get_full_path_by_node(self, user_id: int, node_id: int) -> str:
+        """Helper to get full path for a node."""
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+            return await vfs.get_full_path(user_id, node_id)
 
     async def list_recycle(self, user: str) -> list[RecycleEntity]:
         """List files in recycle bin for a specific user using VFS."""

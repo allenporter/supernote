@@ -147,13 +147,14 @@
                 <div v-if="view === 'grid' && !isLoading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                     <!-- Folders -->
                     <file-card v-for="folder in folders" :key="folder.id" :file="folder"
-                        :is-selected="selectedIds.includes(folder.id)" @open="openItem" @select="toggleSelection"
+                        :is-selected="selectedIds.includes(folder.id)"
+                        :processing-status="processingStatuses[folder.id]" @open="openItem" @select="toggleSelection"
                         @rename="triggerRename"></file-card>
 
                     <!-- Files -->
                     <file-card v-for="file in regularFiles" :key="file.id" :file="file"
-                        :is-selected="selectedIds.includes(file.id)" @open="openItem" @select="toggleSelection"
-                        @rename="triggerRename"></file-card>
+                        :is-selected="selectedIds.includes(file.id)" :processing-status="processingStatuses[file.id]"
+                        @open="openItem" @select="toggleSelection" @rename="triggerRename"></file-card>
                 </div>
 
                 <!-- Viewer -->

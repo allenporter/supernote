@@ -2,6 +2,7 @@ import abc
 import logging
 from typing import Optional
 
+from supernote.models.base import ProcessingStatus
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.utils.tasks import get_task, update_task_status
 
@@ -64,7 +65,7 @@ class ProcessorModule(abc.ABC):
         """
         key = self.get_task_key(page_index, page_id)
         task = await get_task(session_manager, file_id, self.task_type, key)
-        if task and task.status == "COMPLETED":
+        if task and task.status == ProcessingStatus.COMPLETED:
             return False
         return True
 
@@ -124,12 +125,21 @@ class ProcessorModule(abc.ABC):
                 file_id, session_manager, page_index, page_id=page_id, **kwargs
             )
             await update_task_status(
-                session_manager, file_id, self.task_type, key, "COMPLETED"
+                session_manager,
+                file_id,
+                self.task_type,
+                key,
+                ProcessingStatus.COMPLETED,
             )
             return True
         except Exception as e:
             logger.error(f"Error in {self.name} for file {file_id}: {e}", exc_info=True)
             await update_task_status(
-                session_manager, file_id, self.task_type, key, "FAILED", str(e)
+                session_manager,
+                file_id,
+                self.task_type,
+                key,
+                ProcessingStatus.FAILED,
+                str(e),
             )
             return False

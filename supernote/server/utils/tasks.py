@@ -3,6 +3,7 @@ from typing import Optional
 
 from sqlalchemy import select, text
 
+from supernote.models.base import ProcessingStatus
 from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.utils.unique_id import next_id
@@ -35,7 +36,7 @@ async def update_task_status(
     file_id: int,
     task_type: str,
     key: str,
-    status: str,
+    status: ProcessingStatus,
     error: Optional[str] = None,
 ) -> None:
     """Create or update a SystemTaskDO status atomically."""

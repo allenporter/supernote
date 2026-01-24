@@ -1,6 +1,6 @@
 import { createApp, ref, onMounted, computed } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
 import { useFileSystem } from './composables/useFileSystem.js';
-import { setToken, getToken, login, logout } from './api/client.js';
+import { setToken, getToken, login, logout, fetchProcessingStatus } from './api/client.js';
 import FileCard from './components/FileCard.js';
 import LoginCard from './components/LoginCard.js';
 import FileViewer from './components/FileViewer.js';
@@ -30,6 +30,7 @@ createApp({
         const showRenameModal = ref(false);
         const itemToRename = ref(null);
         const selectedIds = ref([]);
+        const processingStatuses = ref({}); // fileId -> status string
 
         // File System
         const {
@@ -173,6 +174,29 @@ createApp({
                 isLoggedIn.value = true;
                 loadDirectory();
             }
+
+            // Polling for processing status
+            setInterval(async () => {
+                if (!isLoggedIn.value || isLoading.value || files.value.length === 0) return;
+
+                const noteFileIds = files.value
+                    .filter(f => f.extension === 'note')
+                    .map(f => parseInt(f.id));
+
+                if (noteFileIds.length === 0) return;
+
+                try {
+                    const result = await fetchProcessingStatus(noteFileIds);
+                    if (result.success) {
+                        processingStatuses.value = {
+                            ...processingStatuses.value,
+                            ...result.statusMap
+                        };
+                    }
+                } catch (e) {
+                    console.error("Failed to poll status:", e);
+                }
+            }, 3000); // Every 3 seconds
         });
 
         return {
@@ -210,7 +234,8 @@ createApp({
             handleMoveSelected,
             onConfirmMove,
             triggerRename,
-            onConfirmRename
+            onConfirmRename,
+            processingStatuses
         };
     }
 }).mount('#app');

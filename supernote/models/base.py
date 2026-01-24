@@ -53,6 +53,16 @@ class BooleanEnum(str, BaseEnum):
         return cls.YES if value else cls.NO
 
 
+class ProcessingStatus(str, BaseEnum):
+    """Processing status for system tasks."""
+
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    NONE = "NONE"  # Used in view aggregation
+
+
 @dataclass
 class CommonList(BaseResponse):
     """Common list response class."""

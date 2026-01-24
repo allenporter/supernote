@@ -5,7 +5,10 @@ from typing import List, Set
 
 from sqlalchemy import delete, select
 
+from supernote.models.base import ProcessingStatus
+
 from ..constants import CACHE_BUCKET
+from ..db.models.file import UserFileDO
 from ..db.models.note_processing import NotePageContentDO, SystemTaskDO
 from ..db.session import DatabaseSessionManager
 from ..events import Event, LocalEventBus, NoteDeletedEvent, NoteUpdatedEvent
@@ -81,6 +84,8 @@ class ProcessorService:
 
         # Recover pending tasks
         asyncio.create_task(self.recover_tasks())
+        # Discover missing tasks
+        asyncio.create_task(self.recover_missing_tasks())
 
         # Start Polling Loop
         self.polling_task = asyncio.create_task(self.poll_loop())
@@ -158,7 +163,7 @@ class ProcessorService:
             # Find all file_ids that have any task NOT in COMPLETED status
             stmt = (
                 select(SystemTaskDO.file_id)
-                .where(SystemTaskDO.status != "COMPLETED")
+                .where(SystemTaskDO.status != ProcessingStatus.COMPLETED)
                 .distinct()
             )
             result = await session.execute(stmt)
@@ -179,6 +184,7 @@ class ProcessorService:
                 # We wait first to avoid thundering herd on startup (recover_tasks handles that)
                 await asyncio.sleep(300)
                 await self.recover_stalled_tasks()
+                await self.recover_missing_tasks()
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -193,7 +199,7 @@ class ProcessorService:
         async with self.session_manager.session() as session:
             stmt = (
                 select(SystemTaskDO.file_id)
-                .where(SystemTaskDO.status != "COMPLETED")
+                .where(SystemTaskDO.status != ProcessingStatus.COMPLETED)
                 .where(SystemTaskDO.update_time < stale_threshold_ms)
                 .distinct()
             )
@@ -207,6 +213,35 @@ class ProcessorService:
         for file_id in file_ids:
             if file_id not in self.processing_files:
                 logger.info(f"Enqueuing stalled file {file_id} for retry.")
+                self.processing_files.add(file_id)
+                await self.queue.put(file_id)
+
+    async def recover_missing_tasks(self) -> None:
+        """Find .note files that have no system tasks and enqueue them."""
+        logger.info("Checking for files with missing tasks...")
+        async with self.session_manager.session() as session:
+            # Subquery to find file_ids that exist in f_system_task
+            task_exists_stmt = select(SystemTaskDO.file_id)
+
+            # Find all UserFileDO with .note extension that are NOT in f_system_task
+            stmt = (
+                select(UserFileDO.id, UserFileDO.user_id)
+                .where(UserFileDO.file_name.like("%.note"))
+                .where(UserFileDO.id.not_in(task_exists_stmt))
+            )
+            result = await session.execute(stmt)
+            missing = result.all()
+
+        if not missing:
+            return
+
+        logger.info(f"Found {len(missing)} files with missing tasks. Enqueuing...")
+        for file_id, user_id in missing:
+            if file_id not in self.processing_files:
+                # We need the path for the event, but we can also just put it in the queue directly
+                # if we change process_file to handle it. Actually process_file only needs file_id.
+                # But handle_note_updated adds to self.processing_files.
+                logger.info(f"Enqueuing file {file_id} for initial processing.")
                 self.processing_files.add(file_id)
                 await self.queue.put(file_id)
 

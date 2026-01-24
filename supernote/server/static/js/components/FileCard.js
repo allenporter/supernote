@@ -1,5 +1,5 @@
 export default {
-    props: ['file', 'isSelected'],
+    props: ['file', 'isSelected', 'processingStatus'],
     methods: {
         formatSize(bytes) {
             if (!bytes || bytes === '0' || bytes === 0) return '0 B';
@@ -25,6 +25,18 @@ export default {
             </div>
             <div v-else class="p-4 bg-white/80 backdrop-blur rounded-2xl shadow-lg border border-white/50">
                 <svg class="w-12 h-12 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+            </div>
+
+            <!-- Processing Overlay -->
+            <div v-if="processingStatus && processingStatus !== 'COMPLETED' && processingStatus !== 'NONE'"
+                class="absolute inset-0 bg-white/60 backdrop-blur-[2px] flex items-center justify-center z-10">
+                <div class="flex flex-col items-center gap-2">
+                    <svg class="w-8 h-8 text-indigo-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span class="text-[10px] font-bold text-indigo-700 uppercase tracking-widest">{{ processingStatus }}</span>
+                </div>
             </div>
         </div>
         <div class="p-5 flex justify-between items-start gap-2">
