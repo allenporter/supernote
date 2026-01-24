@@ -362,7 +362,7 @@ def create_app(config: ServerConfig) -> web.Application:
         # Inject services and start MCP server on a separate port
         set_services(app["search_service"], app["user_service"])
         mcp_port = config.mcp_port
-        asyncio.create_task(run_server(mcp_port))
+        asyncio.create_task(run_server(config.host, mcp_port))
 
         logger.info("Starting background services...")
         await processor_service.start()

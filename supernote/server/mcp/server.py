@@ -156,8 +156,9 @@ async def get_notebook_transcript(
     return TranscriptResponseVO(transcript=transcript).to_dict()
 
 
-async def run_server(port: int) -> None:
+async def run_server(host: str, port: int) -> None:
     """Run the FastMCP server with Streamable HTTP transport."""
+    mcp.settings.host = host
     mcp.settings.port = port
-    logger.info(f"Starting MCP server on port {port} using streamable-http...")
+    logger.info(f"Starting MCP server on {host}:{port} using streamable-http...")
     await mcp.run_streamable_http_async()
