@@ -305,7 +305,7 @@ async def handle_file_list_query(request: web.Request) -> web.Response:
                     file_name=entity.name,
                     size=entity.size,
                     md5=entity.md5,
-                    inner_name=entity.md5,  # Using md5 as inner_name compatible
+                    inner_name=entity.storage_key,
                     is_folder=BooleanEnum.YES if entity.is_folder else BooleanEnum.NO,
                     create_time=entity.create_time,
                     update_time=entity.update_time,
