@@ -50,10 +50,11 @@ To set up the project for development, please refer to the [Contributing Guide](
 2. **Register & Login**:
    ```bash
    # Add your first user (System Admin)
-   supernote admin user add email@example.com --url http://localhost:8080
+   supernote admin --url http://localhost:8080 user add email@example.com
 
    # Login via CLI
    supernote cloud login email@example.com --url http://localhost:8080
+   supernote cloud ls
    ```
 
 See the [Bootstrap Guide](docs/bootstrap_guide.md) for detailed deployment and security instructions.

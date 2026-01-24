@@ -8,17 +8,17 @@ import sys
 from supernote.client.admin import AdminClient
 from supernote.client.exceptions import ApiException
 
-from .client import create_client
+from .client import create_session
 
 
 async def add_user_async(
     url: str, email: str, password: str, display_name: str | None = None
 ):
     """Async implementation of add user."""
-    async with create_client(url) as client:
-        print(f"Attempting to register user '{email}' on {client.host}...")
+    async with create_session(url) as session:
+        print(f"Attempting to register user '{email}' on {url}...")
 
-        admin_client = AdminClient(client)
+        admin_client = AdminClient(session.client)
 
         # Hash password
         password_md5 = hashlib.md5(password.encode()).hexdigest()
@@ -53,7 +53,8 @@ async def add_user_async(
 
 async def list_users_async():
     """Async implementation of list users."""
-    async with create_client() as client:
+    async with create_session() as session:
+        client = session.client
         try:
             users = await client.get_json("/api/admin/users", list)
 
@@ -102,9 +103,9 @@ def list_users(args):
 
 async def reset_password_async(url: str, email: str, password: str):
     """Async implementation of password reset."""
-    async with create_client(url) as client:
-        print(f"Attempting to reset password for '{email}' on {client.host}...")
-        admin_client = AdminClient(client)
+    async with create_session(url) as session:
+        print(f"Attempting to reset password for '{email}' on {url}...")
+        admin_client = AdminClient(session.client)
 
         password_md5 = hashlib.md5(password.encode()).hexdigest()
 
