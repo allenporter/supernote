@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import BigInteger, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
+from supernote.models.base import ProcessingStatus
 from supernote.server.db.base import Base
 from supernote.server.utils.unique_id import next_id
 
@@ -68,7 +69,9 @@ class SystemTaskDO(Base):
     key: Mapped[str] = mapped_column(String, nullable=False)
     """Task key (e.g., 'page_1', 'global')."""
 
-    status: Mapped[str] = mapped_column(String, default="PENDING", nullable=False)
+    status: Mapped[str] = mapped_column(
+        String, default=ProcessingStatus.PENDING, nullable=False
+    )
     """Current status (PENDING, PROCESSING, COMPLETED, FAILED)."""
 
     data: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

@@ -10,7 +10,7 @@ from mashumaro import field_options
 from mashumaro.config import BaseConfig
 from mashumaro.mixins.json import DataClassJSONMixin
 
-from supernote.models.base import BaseResponse
+from supernote.models.base import BaseResponse, ProcessingStatus
 from supernote.models.summary import SummaryItem
 
 
@@ -63,7 +63,7 @@ class SystemTaskVO(DataClassJSONMixin):
     key: str
     """The specific key for the task (e.g. 'page_1', 'global')."""
 
-    status: str
+    status: ProcessingStatus
     """The current status (PENDING, PROCESSING, COMPLETED, FAILED)."""
 
     retry_count: int = field(metadata=field_options(alias="retryCount"))
@@ -93,3 +93,32 @@ class SystemTaskListVO(BaseResponse):
 
     class Config(BaseConfig):
         serialize_by_alias = True
+
+
+@dataclass
+class FileProcessingStatusDTO(DataClassJSONMixin):
+    """Request model for querying processing status of files.
+
+    Used by:
+        /api/extended/file/processing/status (POST)
+    """
+
+    file_ids: list[int] = field(metadata=field_options(alias="fileIds"))
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class FileProcessingStatusVO(BaseResponse):
+    """Response model for file processing status.
+
+    Used by:
+        /api/extended/file/processing/status (POST)
+    """
+
+    # Map of file_id -> status summary
+    # status: PENDING, PROCESSING, COMPLETED, FAILED
+    status_map: dict[str, ProcessingStatus] = field(
+        metadata=field_options(alias="statusMap"), default_factory=dict
+    )

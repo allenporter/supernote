@@ -7,13 +7,18 @@ to our new server.
 import logging
 
 from aiohttp import web
+from sqlalchemy import select
 
+from supernote.models.base import ProcessingStatus
 from supernote.models.extended import (
+    FileProcessingStatusDTO,
+    FileProcessingStatusVO,
     SystemTaskListVO,
     SystemTaskVO,
     WebSummaryListRequestDTO,
     WebSummaryListVO,
 )
+from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.exceptions import SupernoteError
 from supernote.server.services.summary import SummaryService
 
@@ -83,3 +88,52 @@ async def handle_list_system_tasks(request: web.Request) -> web.Response:
     ]
 
     return web.json_response(SystemTaskListVO(tasks=task_vos).to_dict())
+
+
+@routes.post("/api/extended/file/processing/status")
+async def handle_file_processing_status(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/file/processing/status
+    # Purpose: Get aggregated processing status for a list of files.
+
+    try:
+        data = await request.json()
+        req_dto = FileProcessingStatusDTO.from_dict(data)
+    except Exception as e:
+        return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
+
+    session_manager = request.app["session_manager"]
+
+    try:
+        status_map = {}
+        async with session_manager.session() as session:
+            for file_id in req_dto.file_ids:
+                # Aggregate tasks for this file
+                stmt = select(SystemTaskDO).where(SystemTaskDO.file_id == file_id)
+                result = await session.execute(stmt)
+                tasks = result.scalars().all()
+
+                if not tasks:
+                    status_map[str(file_id)] = ProcessingStatus.NONE
+                    continue
+
+                # Logic:
+                # If any FAILED -> FAILED
+                # If any PROCESSING -> PROCESSING
+                # If all COMPLETED -> COMPLETED
+                # Else -> PENDING
+
+                if any(t.status == ProcessingStatus.FAILED for t in tasks):
+                    status_map[str(file_id)] = ProcessingStatus.FAILED
+                elif any(t.status == ProcessingStatus.PROCESSING for t in tasks):
+                    status_map[str(file_id)] = ProcessingStatus.PROCESSING
+                elif all(t.status == ProcessingStatus.COMPLETED for t in tasks):
+                    status_map[str(file_id)] = ProcessingStatus.COMPLETED
+                else:
+                    status_map[str(file_id)] = ProcessingStatus.PENDING
+
+        return web.json_response(
+            FileProcessingStatusVO(status_map=status_map).to_dict()
+        )
+    except Exception as err:
+        logger.exception("Error fetching processing status")
+        return SupernoteError.uncaught(err).to_response()
