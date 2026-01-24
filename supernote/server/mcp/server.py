@@ -3,6 +3,7 @@ import os
 from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from supernote.models.base import ErrorCode, create_error_response
 from supernote.server.mcp.models import (
@@ -156,9 +157,20 @@ async def get_notebook_transcript(
     return TranscriptResponseVO(transcript=transcript).to_dict()
 
 
-async def run_server(host: str, port: int) -> None:
+async def run_server(host: str, port: int, proxy_mode: Optional[str] = None) -> None:
     """Run the FastMCP server with Streamable HTTP transport."""
     mcp.settings.host = host
     mcp.settings.port = port
+
+    # Relax security for custom host headers (e.g. k8s ingress) only if proxy mode is enabled.
+    # This prevents DNS rebinding attacks while allowing operation behind proxies.
+    if proxy_mode == "relaxed":
+        logger.info(
+            f"Proxy mode {proxy_mode} detected. Relaxing MCP transport security."
+        )
+        mcp.settings.transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=False,
+        )
+
     logger.info(f"Starting MCP server on {host}:{port} using streamable-http...")
     await mcp.run_streamable_http_async()
