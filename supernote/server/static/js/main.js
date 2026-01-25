@@ -153,10 +153,25 @@ createApp({
             }
         }
 
+        function checkRedirect() {
+            const hash = window.location.hash;
+            if (hash.includes('?')) {
+                const query = hash.substring(hash.indexOf('?'));
+                const params = new URLSearchParams(query);
+                const returnTo = params.get('return_to');
+                if (returnTo) {
+                    window.location.href = returnTo;
+                    return true;
+                }
+            }
+            return false;
+        }
+
         async function handleLogin({ email, password }) {
             loginError.value = null;
             try {
                 await login(email, password);
+                if (checkRedirect()) return;
                 isLoggedIn.value = true;
                 await loadDirectory();
             } catch (e) {
@@ -171,6 +186,7 @@ createApp({
 
         onMounted(() => {
             if (getToken()) {
+                if (checkRedirect()) return;
                 isLoggedIn.value = true;
                 loadDirectory();
             }

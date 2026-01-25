@@ -3,8 +3,8 @@
 import logging
 import secrets
 import time
-from typing import Optional
-from urllib.parse import quote, urlencode
+from typing import Optional, override
+from urllib.parse import quote, urlencode, urlparse
 
 from mcp.server.auth.provider import (
     AccessToken,
@@ -13,8 +13,12 @@ from mcp.server.auth.provider import (
     RefreshToken,
 )
 from mcp.server.auth.routes import create_auth_routes
-from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-from pydantic import AnyHttpUrl
+from mcp.shared.auth import (
+    InvalidRedirectUriError,
+    OAuthClientInformationFull,
+    OAuthToken,
+)
+from pydantic import AnyHttpUrl, AnyUrl
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse
@@ -29,6 +33,23 @@ from .models import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class SupernoteOAuthClientInformationFull(OAuthClientInformationFull):
+    """OAuth 2.1 Client Information for Supernote MCP."""
+
+    @override
+    def validate_redirect_uri(self, redirect_uri: AnyUrl | None) -> AnyUrl:
+        """Allows redirect uri prefixes."""
+        if redirect_uri is None:
+            raise InvalidRedirectUriError("Redirect URI must be specified")
+        redirect_uri_str = str(redirect_uri)
+        for registered_redirect_uri in self.redirect_uris or ():
+            if redirect_uri_str.startswith(str(registered_redirect_uri)):
+                return redirect_uri
+        raise InvalidRedirectUriError(
+            f"Redirect URI '{redirect_uri}' not in allowed list"
+        )
 
 
 class SupernoteOAuthProvider(
@@ -50,14 +71,19 @@ class SupernoteOAuthProvider(
 
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
         """Retrieve client information by client ID."""
-        if client_id == "test-client":
-            return OAuthClientInformationFull(
-                client_id="test-client",
-                client_secret="test-secret",
-                redirect_uris=["http://127.0.0.1/callback"],  # type: ignore
+        # Support dynamic IndieAuth-style clients (Client ID is a URL)
+        try:
+            parsed = urlparse(client_id)
+        except ValueError:
+            return None
+        if parsed.scheme in ("http", "https") and parsed.netloc:
+            return SupernoteOAuthClientInformationFull(
+                client_id=client_id,
+                redirect_uris=[AnyHttpUrl(client_id)],
                 grant_types=["authorization_code", "refresh_token"],
                 response_types=["code"],
-                token_endpoint_auth_method="client_secret_post",
+                scope="supernote:all",
+                token_endpoint_auth_method="none",
             )
         return None
 
@@ -231,6 +257,11 @@ def create_auth_app(
         if not client_id or not redirect_uri:
             return JSONResponse({"error": "invalid_request"}, status_code=400)
 
+        # Validate Client compatibility
+        client_info = await provider.get_client(client_id)
+        if not client_info:
+            return JSONResponse({"error": "invalid_client"}, status_code=400)
+
         # Create the authorization code
         code_str = secrets.token_urlsafe(16)
         auth_code = SupernoteAuthorizationCode(
@@ -245,7 +276,7 @@ def create_auth_app(
         )
 
         # Store auth code
-        await user_service._coordination_service.set_value(
+        await coordination_service.set_value(
             f"mcp:auth_code:{code_str}",
             auth_code.model_dump_json(),
             ttl=600,

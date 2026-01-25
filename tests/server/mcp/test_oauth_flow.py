@@ -24,11 +24,15 @@ async def test_oauth_full_flow(
     # Calculate S256 challenge
     challenge = calculate_s256(verifier)
 
+    client_id = "http://localhost:3000"
+    redirect_uri = "http://localhost:3000/callback"
+
     params = {
         "response_type": "code",
-        "client_id": "test-client",
-        "redirect_uri": "http://127.0.0.1/callback",
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
         "state": "test-state",
+        "scope": "supernote:all",
         "code_challenge": challenge,
         "code_challenge_method": "S256",
     }
@@ -62,7 +66,7 @@ async def test_oauth_full_flow(
 
     # This should be the callback URL
     callback_url = resp2.headers["Location"]
-    assert "127.0.0.1/callback" in callback_url
+    assert "localhost:3000/callback" in callback_url
     assert "code=" in callback_url
     assert "state=test-state" in callback_url
 
@@ -74,9 +78,8 @@ async def test_oauth_full_flow(
     token_params = {
         "grant_type": "authorization_code",
         "code": code,
-        "client_id": "test-client",
-        "client_secret": "test-secret",
-        "redirect_uri": "http://127.0.0.1/callback",
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
         "code_verifier": verifier,
     }
 
@@ -94,10 +97,15 @@ async def test_oauth_unauthenticated_redirect(client: TestClient) -> None:
     verifier = "v" * 50
     challenge = calculate_s256(verifier)
 
+    client_id = "http://localhost:3000"
+    redirect_uri = "http://localhost:3000/callback"
+
     params = {
         "response_type": "code",
-        "client_id": "test-client",
-        "redirect_uri": "http://127.0.0.1/callback",
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "scope": "supernote:all",
+        "state": "test",
         "code_challenge": challenge,
         "code_challenge_method": "S256",
     }
@@ -105,7 +113,6 @@ async def test_oauth_unauthenticated_redirect(client: TestClient) -> None:
     # should NOT follow redirects automatically to see the first redirect destination
     resp = await client.get("/auth/authorize", params=params, allow_redirects=False)
 
-    # authorize -> login-bridge (internal to SDK/AS)
     # authorize -> login-bridge (internal to SDK/AS)
     assert resp.status in (302, 307)
     assert "login-bridge" in resp.headers["Location"]
@@ -116,4 +123,72 @@ async def test_oauth_unauthenticated_redirect(client: TestClient) -> None:
     resp2 = await client.get(relative_bridge_url, allow_redirects=False)
 
     assert resp2.status in (302, 307)
+    # Checks that we are redirected to the login page (hash based router for frontend)
     assert "#login" in resp2.headers["Location"]
+    # Check return_to param
+    location = resp2.headers["Location"]
+    assert "return_to" in location
+
+
+async def test_indieauth_valid(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """Test IndieAuth style: valid URL client_id matching redirect_uri."""
+
+    # client_id is a URL
+    client_id = "http://localhost:5000"
+    # Same host
+    redirect_uri = "http://localhost:5000/auth/callback"
+
+    params = {
+        "response_type": "code",
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "state": "test",
+        "scope": "supernote:all",
+        "code_challenge": "challenge",
+        "code_challenge_method": "S256",
+    }
+
+    token = auth_headers["x-access-token"]
+    client.session.cookie_jar.update_cookies({"session": token})
+
+    resp = await client.get("/auth/authorize", params=params, allow_redirects=False)
+    # authorize -> login-bridge
+    assert resp.status in (302, 307)
+    login_bridge_url = resp.headers["Location"]
+    relative_bridge_url = yarl.URL(login_bridge_url).path_qs
+
+    # login-bridge -> callback (success)
+    resp2 = await client.get(relative_bridge_url, allow_redirects=False)
+    assert resp2.status in (302, 307)
+    assert "code=" in resp2.headers["Location"]
+    assert "localhost:5000/auth/callback" in resp2.headers["Location"]
+
+
+async def test_indieauth_mismatch(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """Test IndieAuth style: valid URL client_id but mismatched redirect_uri."""
+
+    client_id = "http://localhost:3000"
+    redirect_uri = "http://evil.com/callback"
+
+    params = {
+        "response_type": "code",
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "state": "test",
+        "scope": "supernote:all",
+        "code_challenge": "challenge",
+        "code_challenge_method": "S256",
+    }
+
+    token = auth_headers["x-access-token"]
+    client.session.cookie_jar.update_cookies({"session": token})
+
+    # Redirects not allowed because we expect an error page or error JSON (actually JSONResponse 400)
+    resp = await client.get("/auth/authorize", params=params, allow_redirects=True)
+    assert resp.status == 400
+    text = await resp.text()
+    assert "Redirect URI 'http://evil.com/callback' not in allowed list" in text
