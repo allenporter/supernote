@@ -47,12 +47,6 @@ class AuthConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_ENABLE_REMOTE_PASSWORD_RESET`
     """
 
-    auth_url_base: str = "http://localhost:8081"
-    """Base URL for the auth server, used for generating links.
-
-    Env Var: `SUPERNOTE_AUTH_URL_BASE`
-    """
-
     class Config(BaseConfig):
         omit_none = True
         code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
@@ -77,6 +71,19 @@ class ServerConfig(DataClassYAMLMixin):
 
     Env Var: `SUPERNOTE_MCP_PORT`
     """
+
+    _base_url: str | None = field(default=None, metadata={"name": "base_url"})
+    """Base URL for the main server (port 8080).
+    Used for generating links and for the MCP Authorization Server issuer.
+    """
+
+    _mcp_base_url: str | None = field(default=None, metadata={"name": "mcp_base_url"})
+    """Base URL for the MCP server (port 8081).
+    Used for RFC 9728 discovery if the server is behind a proxy.
+    """
+
+    mcp_auth_path: str = "/auth"
+    """Path where the MCP Authorization Server is mounted on the main app (port 8080)."""
 
     trace_log_file: str | None = None
     """Path to trace log file.
@@ -131,6 +138,22 @@ BaseConfig
 
     Env Var: `SUPERNOTE_GEMINI_MAX_CONCURRENCY`
     """
+
+    @property
+    def base_url(self) -> str:
+        """Get the base URL for the main server."""
+        if self._base_url:
+            return self._base_url.rstrip("/")
+        host = "localhost" if self.host == "0.0.0.0" else self.host
+        return f"http://{host}:{self.port}"
+
+    @property
+    def mcp_base_url(self) -> str:
+        """Get the base URL for the MCP server."""
+        if self._mcp_base_url:
+            return self._mcp_base_url.rstrip("/")
+        host = "localhost" if self.host == "0.0.0.0" else self.host
+        return f"http://{host}:{self.mcp_port}"
 
     @property
     def db_url(self) -> str:
@@ -205,11 +228,21 @@ BaseConfig
             config.storage_dir = os.getenv("SUPERNOTE_STORAGE_DIR", config.storage_dir)
             logger.info(f"Using SUPERNOTE_STORAGE_DIR: {config.storage_dir}")
 
+        if os.getenv("SUPERNOTE_BASE_URL"):
+            config._base_url = os.getenv("SUPERNOTE_BASE_URL")
+            logger.info(f"Using SUPERNOTE_BASE_URL: {config._base_url}")
+
+        if os.getenv("SUPERNOTE_MCP_BASE_URL"):
+            config._mcp_base_url = os.getenv("SUPERNOTE_MCP_BASE_URL")
+            logger.info(f"Using SUPERNOTE_MCP_BASE_URL: {config._mcp_base_url}")
+
+        # Legacy support/compatibility if USER sets SUPERNOTE_AUTH_URL_BASE
         if os.getenv("SUPERNOTE_AUTH_URL_BASE"):
-            config.auth.auth_url_base = os.getenv(
-                "SUPERNOTE_AUTH_URL_BASE", config.auth.auth_url_base
-            )
-            logger.info(f"Using SUPERNOTE_AUTH_URL_BASE: {config.auth.auth_url_base}")
+            if not config._base_url:
+                config._base_url = os.getenv("SUPERNOTE_AUTH_URL_BASE")
+                logger.info(
+                    f"Using legacy SUPERNOTE_AUTH_URL_BASE as base_url: {config._base_url}"
+                )
 
         if os.getenv("SUPERNOTE_ENABLE_REGISTRATION"):
             config.auth.enable_registration = _get_bool_env(

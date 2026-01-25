@@ -177,14 +177,14 @@ async def get_notebook_transcript(
     return TranscriptResponseVO(transcript=transcript).to_dict()
 
 
-def create_mcp_server(auth_url_base: str) -> FastMCP:
+def create_mcp_server(issuer_url: str, resource_server_url: str) -> FastMCP:
     """Create a new FastMCP server instance and register tools."""
     token_verifier = SupernoteTokenVerifier(_services["user_service"])
     mcp = FastMCP(
         "Supernote Retrieval",
         auth=AuthSettings(
-            issuer_url=AnyHttpUrl(auth_url_base + "/auth"),
-            resource_server_url=AnyHttpUrl(auth_url_base + "/"),
+            issuer_url=AnyHttpUrl(issuer_url),
+            resource_server_url=AnyHttpUrl(resource_server_url),
         ),
         token_verifier=token_verifier,
     )

@@ -102,11 +102,12 @@ def server_config(
         port=server_port,
         mcp_port=mcp_port,
         proxy_mode=proxy_mode,
+        _base_url=f"http://127.0.0.1:{server_port}",
+        _mcp_base_url=f"http://127.0.0.1:{mcp_port}",
         auth=AuthConfig(
             enable_registration=True,
             expiration_hours=1,
             secret_key="test-secret-key",
-            auth_url_base=f"http://127.0.0.1:{mcp_port}",
         ),
     )
 

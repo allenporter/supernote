@@ -199,14 +199,11 @@ async def test_mcp_unauthorized(
     metadata_url = match.group(1)
 
     # Fetch metadata
-    print(metadata_url)
     async with httpx.AsyncClient() as client:
         meta_response = await client.get(metadata_url)
     assert meta_response.status_code == 200
     data = meta_response.json()
-    assert data.get("authorization_servers") == [
-        f"{server_config.auth.auth_url_base}/auth"
-    ]
+    assert data.get("authorization_servers") == [f"{server_config.base_url}/auth"]
 
 
 async def test_bearer_auth_headers(

@@ -2,7 +2,7 @@ import logging
 import time
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from supernote.server.db.models.file import RecycleFileDO, UserFileDO
@@ -413,7 +413,6 @@ class VirtualFileSystem:
         self, user_id: int, recycle_ids: list[int] | None = None
     ) -> None:
         """Permanently delete items from recycle bin."""
-        from sqlalchemy import delete
 
         stmt = delete(RecycleFileDO).where(RecycleFileDO.user_id == user_id)
         if recycle_ids:

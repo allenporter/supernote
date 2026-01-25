@@ -88,6 +88,18 @@ wheels = [
 ]
 
 [[package]]
+name = "aiohttp-asgi"
+version = "0.6.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a7/69/5d1d9308932508996fa5c87dc72b3c4c017ffee1e2aa1c44102bcb480878/aiohttp_asgi-0.6.1.tar.gz", hash = "sha256:bc86dec9c0e4aac75d82997ea8201c7ea7443841f168f997da7716d0d4def9d5", size = 10919 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/91/6e/35a4d9243339a18517b0ffd3539cc7ca4f29ac816da32a02a4540e1c70aa/aiohttp_asgi-0.6.1-py3-none-any.whl", hash = "sha256:6419fb2be43b3c9163973804d853fc8f4a04fa93a1f31e7065f358c68891144d", size = 15997 },
+]
+
+[[package]]
 name = "aiohttp-remotes"
 version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1375,6 +1387,7 @@ dependencies = [
 all = [
     { name = "aiofiles" },
     { name = "aiohttp" },
+    { name = "aiohttp-asgi" },
     { name = "aiohttp-remotes" },
     { name = "aiosqlite" },
     { name = "alembic" },
@@ -1395,6 +1408,7 @@ client = [
 server = [
     { name = "aiofiles" },
     { name = "aiohttp" },
+    { name = "aiohttp-asgi" },
     { name = "aiohttp-remotes" },
     { name = "aiosqlite" },
     { name = "alembic" },
@@ -1411,6 +1425,7 @@ requires-dist = [
     { name = "aiofiles", marker = "extra == 'server'", specifier = ">=25.1.0" },
     { name = "aiohttp", marker = "extra == 'client'" },
     { name = "aiohttp", marker = "extra == 'server'", specifier = ">=3.13.2" },
+    { name = "aiohttp-asgi", marker = "extra == 'server'", specifier = ">=0.6.1" },
     { name = "aiohttp-remotes", marker = "extra == 'server'", specifier = ">=1.3.0" },
     { name = "aiosqlite", marker = "extra == 'server'", specifier = ">=0.19.0" },
     { name = "alembic", marker = "extra == 'server'", specifier = ">=1.13.0" },

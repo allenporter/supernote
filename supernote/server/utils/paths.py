@@ -1,7 +1,5 @@
-"""Module for generating storage paths for various file types.
-
-This contains storage keys and database paths.
-"""
+import os
+import uuid
 
 
 def get_page_png_path(file_id: int, page_id: str) -> str:
@@ -42,11 +40,7 @@ def generate_inner_name(filename: str, equipment_no: str | None) -> str:
     Format: {UUID}-{Tail}.{Ext}
     - UUID: Random UUID
     - Tail: Last 3 chars of equipment number (or full if short, default '000')
-    - Ext: Original file extension
     """
-    import os
-    import uuid
-
     req_uuid = uuid.uuid4()
     ext = os.path.splitext(filename)[1]
 

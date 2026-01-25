@@ -8,14 +8,18 @@ from typing import Any, Awaitable, Callable
 
 import aiohttp_remotes
 from aiohttp import web
+from aiohttp_asgi import ASGIResource
+from sqlalchemy import select
 from yarl import URL
 
 from supernote.models.base import create_error_response
 from supernote.server.db.migrations import run_migrations
+from supernote.server.mcp.auth import create_auth_app
 from supernote.server.mcp.server import create_mcp_server, run_server, set_services
 
 from .config import ServerConfig
 from .constants import MAX_UPLOAD_SIZE
+from .db.models.user import UserDO
 from .db.session import DatabaseSessionManager
 from .events import LocalEventBus
 from .routes import (
@@ -44,6 +48,7 @@ from .services.schedule import ScheduleService
 from .services.search import SearchService
 from .services.summary import SummaryService
 from .services.user import UserService
+from .utils.hashing import get_md5_hash
 from .utils.rate_limit import RateLimiter
 from .utils.url_signer import UrlSigner
 
@@ -210,14 +215,15 @@ async def jwt_auth_middleware(
     request: web.Request,
     handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
 ) -> web.StreamResponse:
-    # Allow public access to index and static assets
-    if request.path == "/" or request.path.startswith("/static/"):
-        return await handler(request)
-
     # Check if the matched route handler is public
     route = request.match_info.route
     handler_func = getattr(route, "handler", None)
     if handler_func and getattr(handler_func, "is_public", False):
+        return await handler(request)
+
+    # Also allow public access to MCP OAuth which is registered without a
+    # decorator.
+    if request.path.startswith("/auth/"):
         return await handler(request)
 
     # Check for x-access-token header
@@ -359,10 +365,20 @@ def create_app(config: ServerConfig) -> web.Application:
         if config.ephemeral:
             await bootstrap_ephemeral_user(app)
 
+        as_issuer_url = f"{config.base_url}{config.mcp_auth_path}"
+        rs_url = f"{config.mcp_base_url}/mcp"
+
+        logger.info(f"Mounting MCP Authorization Server at {config.mcp_auth_path}")
+        auth_app = create_auth_app(
+            app["user_service"], app["coordination_service"], as_issuer_url
+        )
+        asgi_resource = ASGIResource(auth_app, root_path=config.mcp_auth_path)
+        app.router.register_resource(asgi_resource)
+
         # Inject services and start MCP server on a separate port
         set_services(app["search_service"], app["user_service"])
         mcp_port = config.mcp_port
-        mcp_server = create_mcp_server(config.auth.auth_url_base)
+        mcp_server = create_mcp_server(as_issuer_url, rs_url)
         mcp_task = asyncio.create_task(
             run_server(mcp_server, config.host, mcp_port, config.proxy_mode)
         )
@@ -393,11 +409,6 @@ def create_app(config: ServerConfig) -> web.Application:
 
 async def bootstrap_ephemeral_user(app: web.Application) -> None:
     """Create a default user for ephemeral mode if it doesn't exist."""
-    from sqlalchemy import select
-
-    from .db.models.user import UserDO
-    from .utils.hashing import get_md5_hash
-
     session_manager: DatabaseSessionManager = app["session_manager"]
     async with session_manager.session() as session:
         # Check if user already exists
