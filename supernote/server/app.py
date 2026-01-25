@@ -376,7 +376,9 @@ def create_app(config: ServerConfig) -> web.Application:
         app.router.register_resource(asgi_resource)
 
         # Inject services and start MCP server on a separate port
-        set_services(app["search_service"], app["user_service"])
+        set_services(
+            app["search_service"], app["user_service"], app["coordination_service"]
+        )
         mcp_port = config.mcp_port
         mcp_server = create_mcp_server(as_issuer_url, rs_url)
         mcp_task = asyncio.create_task(

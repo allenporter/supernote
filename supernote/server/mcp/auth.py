@@ -8,7 +8,6 @@ from urllib.parse import quote, urlencode
 
 from mcp.server.auth.provider import (
     AccessToken,
-    AuthorizationCode,
     AuthorizationParams,
     OAuthAuthorizationServerProvider,
     RefreshToken,
@@ -23,19 +22,13 @@ from starlette.responses import JSONResponse, RedirectResponse
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
 
+from .models import (
+    SupernoteAccessToken,
+    SupernoteAuthorizationCode,
+    SupernoteRefreshToken,
+)
+
 _LOGGER = logging.getLogger(__name__)
-
-
-class SupernoteAuthorizationCode(AuthorizationCode):
-    user_id: str
-
-
-class SupernoteAccessToken(AccessToken):
-    user_id: str
-
-
-class SupernoteRefreshToken(RefreshToken):
-    user_id: str
 
 
 class SupernoteOAuthProvider(
@@ -183,17 +176,12 @@ class SupernoteOAuthProvider(
 
     async def load_access_token(self, token: str) -> Optional[SupernoteAccessToken]:
         """Loads an access token by its token."""
-        # Reuse user_service.verify_token to bridge existing session system
-        session = await self.user_service.verify_token(token)
-        if not session:
+        # 1. Try to load as an MCP access token from coordination service
+        key = f"mcp:access_token:{token}"
+        data = await self._coordination.get_value(key)
+        if not data:
             return None
-        return SupernoteAccessToken(
-            token=token,
-            user_id=session.email,
-            client_id=session.email,
-            scopes=["supernote:all"],
-            resource=session.email,
-        )
+        return SupernoteAccessToken.model_validate_json(data)
 
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
         """Revokes an access or refresh token."""

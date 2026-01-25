@@ -133,7 +133,8 @@ async def test_mcp_search_notebook_chunks(
 ) -> None:
     """Integrated test for searching notebook chunks."""
     token = auth_headers["x-access-token"]
-    async with mcp_session(mcp_url, auth_headers) as session:
+    headers = {"Authorization": f"Bearer {token}"}
+    async with mcp_session(mcp_url, headers) as session:
         call_result = await session.call_tool(
             "search_notebook_chunks",
             arguments={"query": "test"},
@@ -157,7 +158,8 @@ async def test_mcp_get_notebook_transcript(
 ) -> None:
     """Integrated test for getting a notebook transcript."""
     token = auth_headers["x-access-token"]
-    async with mcp_session(mcp_url, auth_headers) as session:
+    headers = {"Authorization": f"Bearer {token}"}
+    async with mcp_session(mcp_url, headers) as session:
         transcript_result = await session.call_tool(
             "get_notebook_transcript",
             arguments={"file_id": notebook_file_id},
@@ -204,25 +206,3 @@ async def test_mcp_unauthorized(
     assert meta_response.status_code == 200
     data = meta_response.json()
     assert data.get("authorization_servers") == [f"{server_config.base_url}/auth"]
-
-
-async def test_bearer_auth_headers(
-    mcp_url: str,
-    auth_headers: dict[str, str],
-    notebook_file_id: int,
-    mock_gemini_service: Any,
-) -> None:
-    """Verify the typical OAuth auth headers work since other tests use x-access-token."""
-    token = auth_headers["x-access-token"]
-    headers = {"Authorization": f"Bearer {token}"}
-    async with mcp_session(mcp_url, headers) as session:
-        transcript_result = await session.call_tool(
-            "get_notebook_transcript",
-            arguments={"file_id": notebook_file_id},
-            meta={"token": token},
-        )
-        assert transcript_result.content
-        content = transcript_result.content[0]
-        assert isinstance(content, TextContent)
-        trans_data = json.loads(content.text)
-        assert "This is a test note." in trans_data.get("transcript", "")

@@ -1,8 +1,9 @@
+import json
 import logging
 from typing import Any, Optional
 
 from mcp.server.auth.middleware.auth_context import auth_context_var
-from mcp.server.auth.provider import AccessToken, TokenVerifier
+from mcp.server.auth.provider import TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
@@ -13,8 +14,10 @@ from supernote.server.mcp.models import (
     SearchRequestDTO,
     SearchResponseVO,
     SearchResultVO,
+    SupernoteAccessToken,
     TranscriptResponseVO,
 )
+from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.search import SearchService
 from supernote.server.services.user import UserService
 
@@ -24,47 +27,58 @@ logger = logging.getLogger(__name__)
 _services: dict[str, Any] = {
     "search_service": None,
     "user_service": None,
+    "coordination_service": None,
 }
 
 
-def set_services(search_service: SearchService, user_service: UserService) -> None:
+def set_services(
+    search_service: SearchService,
+    user_service: UserService,
+    coordination_service: CoordinationService,
+) -> None:
     """Inject services into the MCP module."""
     _services["search_service"] = search_service
     _services["user_service"] = user_service
+    _services["coordination_service"] = coordination_service
 
 
 class SupernoteTokenVerifier(TokenVerifier):
     """Verifier that maps tokens to users using UserService."""
 
-    def __init__(self, user_service: UserService):
+    def __init__(
+        self, user_service: UserService, coordination_service: CoordinationService
+    ):
         self.user_service = user_service
+        self.coordination_service = coordination_service
 
-    async def verify_token(self, token: str) -> Optional[AccessToken]:
-        session = await self.user_service.verify_token(token)
-        if not session:
+    async def verify_token(self, token: str) -> SupernoteAccessToken | None:
+        key = f"mcp:access_token:{token}"
+        data = await self.coordination_service.get_value(key)
+        if not data:
             return None
-
-        return AccessToken(
+        token_data = json.loads(data)
+        return SupernoteAccessToken(
             token=token,
-            # TODO: Use a real client id here (e.g. client id url)
-            client_id=session.email,
-            scopes=["supernote:all"],
-            resource=session.email,
+            user_id=token_data.get("user_id"),
+            client_id=token_data.get("client_id", "unknown"),
+            scopes=token_data.get("scopes", []),
+            resource=token_data.get("resource"),
         )
 
 
 async def _get_auth_user_id(ctx: Context) -> Optional[int]:
     """Verify token and return user_id."""
     if not (user_service_raw := _services["user_service"]):
-        return None
+        raise ValueError("User service not initialized.")
     user_service: UserService = user_service_raw
 
     # Try to get user from MCP Auth Context (e.g. Bearer token)
     if not (auth_context := auth_context_var.get()):
         return None
-    if not auth_context.access_token.resource:
+    token: SupernoteAccessToken = auth_context.access_token  # type: ignore[assignment]
+    if not token.user_id:
         return None
-    return await user_service.get_user_id(auth_context.access_token.resource)
+    return await user_service.get_user_id(token.user_id)
 
 
 async def search_notebook_chunks(
@@ -179,7 +193,9 @@ async def get_notebook_transcript(
 
 def create_mcp_server(issuer_url: str, resource_server_url: str) -> FastMCP:
     """Create a new FastMCP server instance and register tools."""
-    token_verifier = SupernoteTokenVerifier(_services["user_service"])
+    token_verifier = SupernoteTokenVerifier(
+        _services["user_service"], _services["coordination_service"]
+    )
     mcp = FastMCP(
         "Supernote Retrieval",
         auth=AuthSettings(

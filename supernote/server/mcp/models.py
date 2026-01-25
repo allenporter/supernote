@@ -4,8 +4,25 @@ from typing import Optional
 from mashumaro import field_options
 from mashumaro.config import BaseConfig
 from mashumaro.mixins.json import DataClassJSONMixin
+from mcp.server.auth.provider import (
+    AccessToken,
+    AuthorizationCode,
+    RefreshToken,
+)
 
 from supernote.models.base import BaseResponse
+
+
+class SupernoteAuthorizationCode(AuthorizationCode):
+    user_id: str
+
+
+class SupernoteAccessToken(AccessToken):
+    user_id: str
+
+
+class SupernoteRefreshToken(RefreshToken):
+    user_id: str
 
 
 @dataclass

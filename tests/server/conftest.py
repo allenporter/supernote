@@ -4,6 +4,7 @@ This module is automatically discovered by pytest as a plugin.
 """
 
 import hashlib
+import json
 import logging
 import socket
 from collections.abc import AsyncGenerator, Generator
@@ -169,13 +170,26 @@ async def auth_headers_fixture(
     create_test_user: None,
 ) -> dict[str, str]:
     """Generate auth headers and persist session in state."""
+    # Create a JWT token (so it works as a session token for login_bridge)
     secret = server_config.auth.secret_key
-
     token = jwt.encode({"sub": TEST_USERNAME}, secret, algorithm=JWT_ALGORITHM)
 
-    # Write to CoordinationService
+    # 1. Store as regular Session (for login bridge / user service)
     session_val = f"{TEST_USERNAME}|"
     await coordination_service.set_value(f"session:{token}", session_val, ttl=3600)
+
+    # 2. Store as MCP token (for MCP resource server verification)
+    token_data = {
+        "token": token,
+        "user_id": TEST_USERNAME,
+        "client_id": "test_client",
+        "scopes": ["supernote:all"],
+    }
+    await coordination_service.set_value(
+        f"mcp:access_token:{token}",
+        json.dumps(token_data),
+        ttl=3600,
+    )
 
     return {
         "x-access-token": token,
