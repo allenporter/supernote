@@ -47,6 +47,12 @@ class AuthConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_ENABLE_REMOTE_PASSWORD_RESET`
     """
 
+    auth_url_base: str = "http://localhost:8081"
+    """Base URL for the auth server, used for generating links.
+
+    Env Var: `SUPERNOTE_AUTH_URL_BASE`
+    """
+
     class Config(BaseConfig):
         omit_none = True
         code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
@@ -198,6 +204,12 @@ BaseConfig
         if os.getenv("SUPERNOTE_STORAGE_DIR"):
             config.storage_dir = os.getenv("SUPERNOTE_STORAGE_DIR", config.storage_dir)
             logger.info(f"Using SUPERNOTE_STORAGE_DIR: {config.storage_dir}")
+
+        if os.getenv("SUPERNOTE_AUTH_URL_BASE"):
+            config.auth.auth_url_base = os.getenv(
+                "SUPERNOTE_AUTH_URL_BASE", config.auth.auth_url_base
+            )
+            logger.info(f"Using SUPERNOTE_AUTH_URL_BASE: {config.auth.auth_url_base}")
 
         if os.getenv("SUPERNOTE_ENABLE_REGISTRATION"):
             config.auth.enable_registration = _get_bool_env(

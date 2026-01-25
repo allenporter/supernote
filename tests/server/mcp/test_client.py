@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -22,18 +23,18 @@ from supernote.server.db.session import DatabaseSessionManager
 _LOGGER = logging.getLogger(__name__)
 
 
-@pytest.fixture(autouse=True)
-async def setup_service(client: Any) -> AsyncGenerator[None, None]:
-    """Setup the MCP service."""
-    yield
-
-
 @pytest.fixture
 def mcp_url(server_config: ServerConfig) -> str:
     """Get the MCP URL."""
     # Ensure host is localhost for security checks
     server_config.host = "127.0.0.1"
     return f"http://{server_config.host}:{server_config.mcp_port}/mcp"
+
+
+@pytest.fixture(autouse=True)
+async def setup_service(client: Any) -> AsyncGenerator[None, None]:
+    """Setup the MCP service."""
+    yield
 
 
 @pytest.fixture
@@ -110,14 +111,13 @@ async def mcp_session(
                 yield session
 
 
-@pytest.mark.asyncio
 async def test_mcp_list_tools(
     mcp_url: str,
     auth_headers: dict[str, str],
     notebook_file_id: int,
     mock_gemini_service: Any,
 ) -> None:
-    """Integrated test for listing MCP tools."""
+    """Integrated test for listing MCP tools which does not require auth."""
     async with mcp_session(mcp_url, auth_headers) as session:
         result = await session.list_tools()
         tool_names = [t.name for t in result.tools]
@@ -125,7 +125,6 @@ async def test_mcp_list_tools(
         assert "get_notebook_transcript" in tool_names
 
 
-@pytest.mark.asyncio
 async def test_mcp_search_notebook_chunks(
     mcp_url: str,
     auth_headers: dict[str, str],
@@ -150,7 +149,6 @@ async def test_mcp_search_notebook_chunks(
         assert res_data["results"][0].get("textPreview") == "This is a test note."
 
 
-@pytest.mark.asyncio
 async def test_mcp_get_notebook_transcript(
     mcp_url: str,
     auth_headers: dict[str, str],
@@ -172,28 +170,62 @@ async def test_mcp_get_notebook_transcript(
         assert "This is a test note." in trans_data.get("transcript", "")
 
 
-@pytest.mark.asyncio
 async def test_mcp_unauthorized(
     mcp_url: str,
     notebook_file_id: int,
     mock_gemini_service: Any,
+    server_config: ServerConfig,
 ) -> None:
     """Integrated test for MCP tools with invalid authentication."""
     # Use invalid headers
-    invalid_headers = {"x-access-token": "invalid-token"}
-    async with mcp_session(mcp_url, invalid_headers) as session:
-        # Call tool
-        call_result = await session.call_tool(
-            "search_notebook_chunks",
-            arguments={"query": "test"},
-            meta={"token": "invalid-token"},
-        )
+    invalid_headers = {"Authorization": "Bearer invalid-token"}
 
-        # Verify failure response (based on create_error_response in server.py)
-        assert call_result.content
-        content = call_result.content[0]
+    # Standard MCP client will fail with 401 during stream connection or initialization
+    with pytest.raises(ExceptionGroup) as err:
+        async with mcp_session(mcp_url, invalid_headers):
+            pass
+    assert err.value.exceptions
+    exc = next(iter(err.value.exceptions))
+    assert isinstance(exc, httpx.HTTPStatusError)
+    assert exc.response.status_code == 401
+    assert "www-authenticate" in exc.response.headers
+    auth_header = exc.response.headers["www-authenticate"]
+    assert "error_description=" in auth_header
+    assert "resource_metadata=" in auth_header
+
+    # Extract metadata URL from WWW-Authenticate header
+    match = re.search(r'resource_metadata="([^"]+)"', auth_header)
+    assert match, f"WWW-Authenticate header missing resource_metadata: {auth_header}"
+    metadata_url = match.group(1)
+
+    # Fetch metadata
+    print(metadata_url)
+    async with httpx.AsyncClient() as client:
+        meta_response = await client.get(metadata_url)
+    assert meta_response.status_code == 200
+    data = meta_response.json()
+    assert data.get("authorization_servers") == [
+        f"{server_config.auth.auth_url_base}/auth"
+    ]
+
+
+async def test_bearer_auth_headers(
+    mcp_url: str,
+    auth_headers: dict[str, str],
+    notebook_file_id: int,
+    mock_gemini_service: Any,
+) -> None:
+    """Verify the typical OAuth auth headers work since other tests use x-access-token."""
+    token = auth_headers["x-access-token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    async with mcp_session(mcp_url, headers) as session:
+        transcript_result = await session.call_tool(
+            "get_notebook_transcript",
+            arguments={"file_id": notebook_file_id},
+            meta={"token": token},
+        )
+        assert transcript_result.content
+        content = transcript_result.content[0]
         assert isinstance(content, TextContent)
-        res_data = json.loads(content.text)
-        assert res_data["success"] is False
-        assert res_data["errorCode"] == "401"
-        assert "Authentication failed" in res_data["errorMsg"]
+        trans_data = json.loads(content.text)
+        assert "This is a test note." in trans_data.get("transcript", "")

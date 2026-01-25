@@ -1,8 +1,12 @@
 import logging
 from typing import Any, Optional
 
+from mcp.server.auth.middleware.auth_context import auth_context_var
+from mcp.server.auth.provider import AccessToken, TokenVerifier
+from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from pydantic import AnyHttpUrl
 
 from supernote.models.base import ErrorCode, create_error_response
 from supernote.server.mcp.models import (
@@ -29,21 +33,38 @@ def set_services(search_service: SearchService, user_service: UserService) -> No
     _services["user_service"] = user_service
 
 
+class SupernoteTokenVerifier(TokenVerifier):
+    """Verifier that maps tokens to users using UserService."""
+
+    def __init__(self, user_service: UserService):
+        self.user_service = user_service
+
+    async def verify_token(self, token: str) -> Optional[AccessToken]:
+        session = await self.user_service.verify_token(token)
+        if not session:
+            return None
+
+        return AccessToken(
+            token=token,
+            # TODO: Use a real client id here (e.g. client id url)
+            client_id=session.email,
+            scopes=["supernote:all"],
+            resource=session.email,
+        )
+
+
 async def _get_auth_user_id(ctx: Context) -> Optional[int]:
     """Verify token and return user_id."""
-    if not (user_service := _services["user_service"]):
+    if not (user_service_raw := _services["user_service"]):
         return None
+    user_service: UserService = user_service_raw
 
-    meta = getattr(ctx.request_context, "meta", None)
-    if not (token := getattr(meta, "token", getattr(meta, "x_access_token", None))):
-        logger.info("No token found in request context.")
+    # Try to get user from MCP Auth Context (e.g. Bearer token)
+    if not (auth_context := auth_context_var.get()):
         return None
-
-    if not (session := await user_service.verify_token(token)):
-        logger.info("Invalid token provided.")
+    if not auth_context.access_token.resource:
         return None
-
-    return await user_service.get_user_id(session.email)  # type: ignore[no-any-return]
+    return await user_service.get_user_id(auth_context.access_token.resource)
 
 
 async def search_notebook_chunks(
@@ -156,9 +177,17 @@ async def get_notebook_transcript(
     return TranscriptResponseVO(transcript=transcript).to_dict()
 
 
-def create_mcp_server() -> FastMCP:
+def create_mcp_server(auth_url_base: str) -> FastMCP:
     """Create a new FastMCP server instance and register tools."""
-    mcp = FastMCP("Supernote Retrieval")
+    token_verifier = SupernoteTokenVerifier(_services["user_service"])
+    mcp = FastMCP(
+        "Supernote Retrieval",
+        auth=AuthSettings(
+            issuer_url=AnyHttpUrl(auth_url_base + "/auth"),
+            resource_server_url=AnyHttpUrl(auth_url_base + "/"),
+        ),
+        token_verifier=token_verifier,
+    )
     mcp.tool()(search_notebook_chunks)
     mcp.tool()(get_notebook_transcript)
     return mcp

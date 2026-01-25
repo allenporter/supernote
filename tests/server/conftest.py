@@ -106,6 +106,7 @@ def server_config(
             enable_registration=True,
             expiration_hours=1,
             secret_key="test-secret-key",
+            auth_url_base=f"http://127.0.0.1:{mcp_port}",
         ),
     )
 
@@ -175,7 +176,10 @@ async def auth_headers_fixture(
     session_val = f"{TEST_USERNAME}|"
     await coordination_service.set_value(f"session:{token}", session_val, ttl=3600)
 
-    return {"x-access-token": token}
+    return {
+        "x-access-token": token,
+        "Authorization": f"Bearer {token}",
+    }
 
 
 @pytest.fixture(scope="session")
