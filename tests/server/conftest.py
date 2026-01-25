@@ -5,6 +5,7 @@ This module is automatically discovered by pytest as a plugin.
 
 import hashlib
 import logging
+import socket
 from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -67,14 +68,39 @@ def proxy_mode() -> str | None:
     return None
 
 
+def pick_port() -> int:
+    """Find a free port on the host."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        return int(s.getsockname()[1])
+
+
+@pytest.fixture
+def server_port() -> int:
+    """Find a free port for the main server."""
+    return pick_port()
+
+
+@pytest.fixture
+def mcp_port() -> int:
+    """Find a free port for the MCP server."""
+    return pick_port()
+
+
 @pytest.fixture
 def server_config(
-    mock_trace_log: str, storage_root: Path, proxy_mode: str | None
+    mock_trace_log: str,
+    storage_root: Path,
+    proxy_mode: str | None,
+    server_port: int,
+    mcp_port: int,
 ) -> ServerConfig:
     """Create a ServerConfig object for testing."""
     return ServerConfig(
         trace_log_file=mock_trace_log,
         storage_dir=str(storage_root),
+        port=server_port,
+        mcp_port=mcp_port,
         proxy_mode=proxy_mode,
         auth=AuthConfig(
             enable_registration=True,

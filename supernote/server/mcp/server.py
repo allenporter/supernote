@@ -1,8 +1,7 @@
 import logging
-import os
 from typing import Any, Optional
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from supernote.models.base import ErrorCode, create_error_response
@@ -17,9 +16,6 @@ from supernote.server.services.user import UserService
 
 logger = logging.getLogger(__name__)
 
-# FastMCP instance
-mcp = FastMCP("Supernote Retrieval")
-
 # Global services to be injected by the app
 _services: dict[str, Any] = {
     "search_service": None,
@@ -33,22 +29,25 @@ def set_services(search_service: SearchService, user_service: UserService) -> No
     _services["user_service"] = user_service
 
 
-async def _get_auth_user_id(token: str | None) -> Optional[int]:
+async def _get_auth_user_id(ctx: Context) -> Optional[int]:
     """Verify token and return user_id."""
-    user_service: UserService = _services["user_service"]
-
-    if not user_service or not token:
+    if not (user_service := _services["user_service"]):
         return None
 
-    session = await user_service.verify_token(token)
-    if not session:
+    meta = getattr(ctx.request_context, "meta", None)
+    if not (token := getattr(meta, "token", getattr(meta, "x_access_token", None))):
+        logger.info("No token found in request context.")
         return None
 
-    return await user_service.get_user_id(session.email)
+    if not (session := await user_service.verify_token(token)):
+        logger.info("Invalid token provided.")
+        return None
+
+    return await user_service.get_user_id(session.email)  # type: ignore[no-any-return]
 
 
-@mcp.tool()
 async def search_notebook_chunks(
+    ctx: Context,
     query: str,
     top_n: int = 5,
     name_filter: Optional[str] = None,
@@ -71,10 +70,10 @@ async def search_notebook_chunks(
             "Services not initialized.", ErrorCode.INTERNAL_ERROR
         ).to_dict()
 
-    user_id = await _get_auth_user_id(os.environ.get("SUPERNOTE_TOKEN"))
+    user_id = await _get_auth_user_id(ctx)
     if user_id is None:
         return create_error_response(
-            "Authentication failed. Please set a valid SUPERNOTE_TOKEN.",
+            "Authentication failed. Please set a valid token in meta.",
             ErrorCode.UNAUTHORIZED,
         ).to_dict()
 
@@ -115,8 +114,8 @@ async def search_notebook_chunks(
     return SearchResponseVO(results=vo_list).to_dict()
 
 
-@mcp.tool()
 async def get_notebook_transcript(
+    ctx: Context,
     file_id: int,
     start_index: Optional[int] = None,
     end_index: Optional[int] = None,
@@ -135,10 +134,10 @@ async def get_notebook_transcript(
             "Services not initialized.", ErrorCode.INTERNAL_ERROR
         ).to_dict()
 
-    user_id = await _get_auth_user_id(os.environ.get("SUPERNOTE_TOKEN"))
+    user_id = await _get_auth_user_id(ctx)
     if user_id is None:
         return create_error_response(
-            "Authentication failed. Please set a valid SUPERNOTE_TOKEN.",
+            "Authentication failed. Please set a valid token in meta.",
             ErrorCode.UNAUTHORIZED,
         ).to_dict()
 
@@ -157,7 +156,17 @@ async def get_notebook_transcript(
     return TranscriptResponseVO(transcript=transcript).to_dict()
 
 
-async def run_server(host: str, port: int, proxy_mode: Optional[str] = None) -> None:
+def create_mcp_server() -> FastMCP:
+    """Create a new FastMCP server instance and register tools."""
+    mcp = FastMCP("Supernote Retrieval")
+    mcp.tool()(search_notebook_chunks)
+    mcp.tool()(get_notebook_transcript)
+    return mcp
+
+
+async def run_server(
+    mcp: FastMCP, host: str, port: int, proxy_mode: Optional[str] = None
+) -> None:
     """Run the FastMCP server with Streamable HTTP transport."""
     mcp.settings.host = host
     mcp.settings.port = port

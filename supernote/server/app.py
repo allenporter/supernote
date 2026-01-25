@@ -12,7 +12,7 @@ from yarl import URL
 
 from supernote.models.base import create_error_response
 from supernote.server.db.migrations import run_migrations
-from supernote.server.mcp.server import run_server, set_services
+from supernote.server.mcp.server import create_mcp_server, run_server, set_services
 
 from .config import ServerConfig
 from .constants import MAX_UPLOAD_SIZE
@@ -362,15 +362,27 @@ def create_app(config: ServerConfig) -> web.Application:
         # Inject services and start MCP server on a separate port
         set_services(app["search_service"], app["user_service"])
         mcp_port = config.mcp_port
-        asyncio.create_task(run_server(config.host, mcp_port, config.proxy_mode))
+        mcp_server = create_mcp_server()
+        mcp_task = asyncio.create_task(
+            run_server(mcp_server, config.host, mcp_port, config.proxy_mode)
+        )
 
         logger.info("Starting background services...")
         await processor_service.start()
         logger.info("Startup sequence complete.")
 
+        app["mcp_task"] = mcp_task
+
     app.on_startup.append(on_startup_handler)
 
     async def on_shutdown_handler(app: web.Application) -> None:
+        if mcp_task := app.get("mcp_task"):
+            mcp_task.cancel()
+            try:
+                await mcp_task
+            except asyncio.CancelledError:
+                pass
+
         await processor_service.stop()
         await session_manager.close()
 

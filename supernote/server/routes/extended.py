@@ -79,7 +79,7 @@ async def handle_list_system_tasks(request: web.Request) -> web.Response:
             file_id=t.file_id,
             task_type=t.task_type,
             key=t.key,
-            status=t.status,
+            status=ProcessingStatus(t.status),
             retry_count=t.retry_count,
             last_error=t.last_error,
             update_time=t.update_time,
