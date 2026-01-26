@@ -79,6 +79,7 @@ class ServerConfig(DataClassYAMLMixin):
 
     _mcp_base_url: str | None = field(default=None, metadata={"name": "mcp_base_url"})
     """Base URL for the MCP server (port 8081).
+
     Used for RFC 9728 discovery if the server is behind a proxy.
     """
 
@@ -141,7 +142,10 @@ BaseConfig
 
     @property
     def base_url(self) -> str:
-        """Get the base URL for the main server."""
+        """Get the base URL for the main server.
+
+        Env Var: `SUPERNOTE_BASE_URL`
+        """
         if self._base_url:
             return self._base_url.rstrip("/")
         host = "localhost" if self.host == "0.0.0.0" else self.host
@@ -149,7 +153,10 @@ BaseConfig
 
     @property
     def mcp_base_url(self) -> str:
-        """Get the base URL for the MCP server."""
+        """Get the base URL for the MCP server.
+
+        Env Var: `SUPERNOTE_MCP_BASE_URL`
+        """
         if self._mcp_base_url:
             return self._mcp_base_url.rstrip("/")
         host = "localhost" if self.host == "0.0.0.0" else self.host
