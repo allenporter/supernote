@@ -224,8 +224,9 @@ async def jwt_auth_middleware(
     # Also allow public access to MCP OAuth which is registered without a
     # decorator.
     if (
-        request.path.startswith("/auth/")
-        or request.path.startswith("/static/")
+        request.path.startswith("/static/")
+        or request.path.startswith("/authorize")
+        or request.path.startswith("/token")
         or request.path.startswith("/.well-known/")
     ):
         return await handler(request)
@@ -369,14 +370,13 @@ def create_app(config: ServerConfig) -> web.Application:
         if config.ephemeral:
             await bootstrap_ephemeral_user(app)
 
-        as_issuer_url = f"{config.base_url}{config.mcp_auth_path}"
         rs_url = f"{config.mcp_base_url}/mcp"
 
-        logger.info(f"Mounting MCP Authorization Server at {config.mcp_auth_path}")
+        logger.info(f"Mounting MCP Authorization Server at {config.base_url}")
         auth_app = create_auth_app(
-            app["user_service"], app["coordination_service"], as_issuer_url
+            app["user_service"], app["coordination_service"], config.base_url
         )
-        asgi_resource = ASGIResource(auth_app, root_path=config.mcp_auth_path)
+        asgi_resource = ASGIResource(auth_app)
         app.router.register_resource(asgi_resource)
 
         # Inject services and start MCP server on a separate port
@@ -384,7 +384,7 @@ def create_app(config: ServerConfig) -> web.Application:
             app["search_service"], app["user_service"], app["coordination_service"]
         )
         mcp_port = config.mcp_port
-        mcp_server = create_mcp_server(as_issuer_url, rs_url)
+        mcp_server = create_mcp_server(config.base_url, rs_url)
         mcp_task = asyncio.create_task(
             run_server(mcp_server, config.host, mcp_port, config.proxy_mode)
         )
