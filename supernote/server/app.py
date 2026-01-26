@@ -228,6 +228,7 @@ async def jwt_auth_middleware(
         or request.path.startswith("/authorize")
         or request.path.startswith("/token")
         or request.path.startswith("/.well-known/")
+        or request.path == "/favicon.ico"
     ):
         return await handler(request)
 

@@ -461,3 +461,36 @@ function calculateFileMd5(file) {
         reader.readAsArrayBuffer(file);
     });
 }
+/**
+ * Fetch processing status for a list of files.
+ * @param {Array<number>} fileIds
+ * @returns {Promise<{success: boolean, statusMap: Object}>}
+ */
+export async function fetchProcessingStatus(fileIds) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/extended/file/processing/status', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        },
+        body: JSON.stringify({ fileIds: fileIds })
+    });
+
+    if (response.status === 401) {
+        logout();
+        throw new Error("Unauthorized");
+    }
+
+    if (!response.ok) {
+        throw new Error(`Failed to fetch processing status: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return {
+        success: true,
+        statusMap: data.statusMap
+    };
+}
