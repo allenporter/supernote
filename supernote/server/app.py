@@ -223,7 +223,11 @@ async def jwt_auth_middleware(
 
     # Also allow public access to MCP OAuth which is registered without a
     # decorator.
-    if request.path.startswith("/auth/"):
+    if (
+        request.path.startswith("/auth/")
+        or request.path.startswith("/static/")
+        or request.path.startswith("/.well-known/")
+    ):
         return await handler(request)
 
     # Check for x-access-token header
