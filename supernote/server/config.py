@@ -83,9 +83,6 @@ class ServerConfig(DataClassYAMLMixin):
     Used for RFC 9728 discovery if the server is behind a proxy.
     """
 
-    mcp_auth_path: str = "/auth"
-    """Path where the MCP Authorization Server is mounted on the main app (port 8080)."""
-
     trace_log_file: str | None = None
     """Path to trace log file.
 
