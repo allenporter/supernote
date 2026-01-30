@@ -41,9 +41,9 @@ async def test_oauth_full_flow(
     # Sync aiohttp TestClient cookie jar with session token
     client.session.cookie_jar.update_cookies({"session": token})
 
-    # GET /auth/authorize
+    # GET /authorize
     # Handler will redirect to login-bridge
-    resp1 = await client.get("/auth/authorize", params=params, allow_redirects=False)
+    resp1 = await client.get("/authorize", params=params, allow_redirects=False)
 
     # Authorize Status Check
     print(f"Authorize Status: {resp1.status}")
@@ -83,7 +83,7 @@ async def test_oauth_full_flow(
         "code_verifier": verifier,
     }
 
-    token_resp = await client.post("/auth/token", data=token_params)
+    token_resp = await client.post("/token", data=token_params)
     assert token_resp.status == 200, f"Token exchange failed: {await token_resp.text()}"
     token_data = await token_resp.json()
     assert "access_token" in token_data
@@ -111,7 +111,7 @@ async def test_oauth_unauthenticated_redirect(client: TestClient) -> None:
     }
 
     # should NOT follow redirects automatically to see the first redirect destination
-    resp = await client.get("/auth/authorize", params=params, allow_redirects=False)
+    resp = await client.get("/authorize", params=params, allow_redirects=False)
 
     # authorize -> login-bridge (internal to SDK/AS)
     assert resp.status in (302, 307)
@@ -138,7 +138,7 @@ async def test_indieauth_valid(
     # client_id is a URL
     client_id = "http://localhost:5000"
     # Same host
-    redirect_uri = "http://localhost:5000/auth/callback"
+    redirect_uri = "http://localhost:5000/callback"
 
     params = {
         "response_type": "code",
@@ -153,7 +153,7 @@ async def test_indieauth_valid(
     token = auth_headers["x-access-token"]
     client.session.cookie_jar.update_cookies({"session": token})
 
-    resp = await client.get("/auth/authorize", params=params, allow_redirects=False)
+    resp = await client.get("/authorize", params=params, allow_redirects=False)
     # authorize -> login-bridge
     assert resp.status in (302, 307)
     login_bridge_url = resp.headers["Location"]
@@ -163,7 +163,7 @@ async def test_indieauth_valid(
     resp2 = await client.get(relative_bridge_url, allow_redirects=False)
     assert resp2.status in (302, 307)
     assert "code=" in resp2.headers["Location"]
-    assert "localhost:5000/auth/callback" in resp2.headers["Location"]
+    assert "localhost:5000/callback" in resp2.headers["Location"]
 
 
 async def test_indieauth_mismatch(
@@ -188,7 +188,7 @@ async def test_indieauth_mismatch(
     client.session.cookie_jar.update_cookies({"session": token})
 
     # Redirects not allowed because we expect an error page or error JSON (actually JSONResponse 400)
-    resp = await client.get("/auth/authorize", params=params, allow_redirects=True)
+    resp = await client.get("/authorize", params=params, allow_redirects=True)
     assert resp.status == 400
     text = await resp.text()
     assert "Redirect URI 'http://evil.com/callback' not in allowed list" in text

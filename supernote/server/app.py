@@ -225,10 +225,12 @@ async def jwt_auth_middleware(
     # decorator.
     if (
         request.path.startswith("/static/")
+        or request.path == "/favicon.ico"
+        # Allow public access to auth routes
+        or request.path.startswith("/login-bridge")
         or request.path.startswith("/authorize")
         or request.path.startswith("/token")
         or request.path.startswith("/.well-known/")
-        or request.path == "/favicon.ico"
     ):
         return await handler(request)
 

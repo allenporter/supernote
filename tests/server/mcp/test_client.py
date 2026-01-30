@@ -205,4 +205,4 @@ async def test_mcp_unauthorized(
         meta_response = await client.get(metadata_url)
     assert meta_response.status_code == 200
     data = meta_response.json()
-    assert data.get("authorization_servers") == [f"{server_config.base_url}/auth"]
+    assert data.get("authorization_servers") == [f"{server_config.base_url}/"]
