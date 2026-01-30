@@ -95,7 +95,7 @@ class PromptLoader:
                 prompts.append(file_path.read_text(encoding="utf-8").strip())
         return "\n\n".join(prompts)
 
-    def get_prompt(self, prompt_id: str, custom_type: Optional[str] = None) -> str:
+    def get_prompt(self, prompt_id: PromptId, custom_type: Optional[str] = None) -> str:
         """Retrieve a prompt by its ID, optionally overridden by a custom type.
 
         Logic: Common + (Custom if exists else Default)

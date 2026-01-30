@@ -1,5 +1,4 @@
 import logging
-from pathlib import Path
 from typing import Optional
 
 from google.genai import types
@@ -11,9 +10,8 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.gemini import GeminiService
 from supernote.server.services.processor_modules import ProcessorModule
-from supernote.server.services.prompt_loader import PROMPT_LOADER, PromptId
+from supernote.server.utils.gemini_content import PageMetadata, create_gemini_content
 from supernote.server.utils.note_content import (
-    format_page_metadata,
     get_page_content_by_id,
 )
 from supernote.server.utils.paths import get_page_png_path
@@ -96,7 +94,6 @@ class GeminiOcrModule(ProcessorModule):
             raise ValueError("Gemini API key not configured")
 
         # Get File Info for custom prompt and metadata
-        file_name_basis: Optional[str] = None
         file_name: Optional[str] = None
         notebook_create_time: Optional[int] = None
         async with session_manager.session() as session:
@@ -104,30 +101,20 @@ class GeminiOcrModule(ProcessorModule):
             if file_do:
                 file_name = file_do.file_name
                 notebook_create_time = file_do.create_time
-                file_name_basis = Path(file_name).stem.lower()
 
-        model_id = self.config.gemini_ocr_model
-        prompt = PROMPT_LOADER.get_prompt(
-            PromptId.OCR_TRANSCRIPTION, custom_type=file_name_basis
-        )
-
-        metadata_block = format_page_metadata(
+        page_metadata = PageMetadata(
+            file_name=file_name,
             page_index=page_index or 0,
             page_id=page_id,
-            file_name=file_name,
             notebook_create_time=notebook_create_time,
-            include_section_divider=True,
         )
-        prompt = f"{metadata_block}\n\n{prompt}"
-
+        model_id = self.config.gemini_ocr_model
+        parts = create_gemini_content(page_metadata, png_data)
         response = await self.gemini_service.generate_content(
             model=model_id,
             contents=[
                 types.Content(
-                    parts=[
-                        types.Part.from_text(text=prompt),
-                        types.Part.from_bytes(data=png_data, mime_type="image/png"),
-                    ]
+                    parts=parts,
                 )
             ],
             config={"media_resolution": "media_resolution_high"},  # type: ignore[arg-type]

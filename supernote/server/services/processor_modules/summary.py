@@ -21,10 +21,10 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.gemini import GeminiService
 from supernote.server.services.processor_modules import ProcessorModule
-from supernote.server.services.prompt_loader import PROMPT_LOADER, PromptId
 from supernote.server.services.summary import SummaryService
 from supernote.server.utils.note_content import format_page_metadata
 from supernote.server.utils.paths import get_summary_id, get_transcript_id
+from supernote.server.utils.prompt_loader import PROMPT_LOADER, PromptId
 
 logger = logging.getLogger(__name__)
 

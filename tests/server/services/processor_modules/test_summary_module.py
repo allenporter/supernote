@@ -16,9 +16,9 @@ from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.summary import SummaryModule
-from supernote.server.services.prompt_loader import PromptId
 from supernote.server.services.summary import SummaryService
 from supernote.server.utils.paths import get_summary_id, get_transcript_id
+from supernote.server.utils.prompt_loader import PromptId
 
 
 @pytest.fixture

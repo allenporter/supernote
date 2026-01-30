@@ -11,8 +11,8 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.gemini_ocr import GeminiOcrModule
-from supernote.server.services.prompt_loader import PromptId
 from supernote.server.utils.paths import get_page_png_path
+from supernote.server.utils.prompt_loader import PromptId
 
 
 @pytest.fixture
@@ -74,9 +74,7 @@ async def test_process_ocr_success(
     mock_gemini_service.generate_content.return_value = mock_response
 
     # Mock PromptLoader
-    with patch(
-        "supernote.server.services.processor_modules.gemini_ocr.PROMPT_LOADER"
-    ) as mock_loader:
+    with patch("supernote.server.utils.gemini_content.PROMPT_LOADER") as mock_loader:
         mock_loader.get_prompt.return_value = "Transcribe this page."
 
         # Run full module lifecycle
@@ -191,9 +189,7 @@ async def test_ocr_with_inferred_date(
     mock_gemini_service.generate_content.return_value = mock_response
 
     # Mock PromptLoader
-    with patch(
-        "supernote.server.services.processor_modules.gemini_ocr.PROMPT_LOADER"
-    ) as mock_loader:
+    with patch("supernote.server.utils.gemini_content.PROMPT_LOADER") as mock_loader:
         mock_loader.get_prompt.return_value = "Prompt"
         await gemini_ocr_module.run(
             file_id, session_manager, page_index=0, page_id=page_id

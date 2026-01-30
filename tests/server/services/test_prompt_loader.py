@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from supernote.server.services.prompt_loader import PromptId, PromptLoader
+from supernote.server.utils.prompt_loader import PromptId, PromptLoader
 
 
 @pytest.fixture
@@ -69,9 +69,3 @@ def test_get_prompt_summary(mock_resources_dir: Path) -> None:
     loader = PromptLoader(resources_dir=mock_resources_dir)
     prompt = loader.get_prompt(PromptId.SUMMARY_GENERATION)
     assert prompt == "Default Summary"
-
-
-def test_get_prompt_unknown_id(mock_resources_dir: Path) -> None:
-    loader = PromptLoader(resources_dir=mock_resources_dir)
-    with pytest.raises(ValueError, match="not found"):
-        loader.get_prompt("unknown_id")
