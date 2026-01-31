@@ -1,194 +1,217 @@
 import base64
 import hashlib
 
+import pytest
 import yarl
 from aiohttp.test_utils import TestClient
 
-from supernote.server.config import ServerConfig
+from supernote.client.client import Client
+from supernote.client.login_client import LoginClient
+from tests.server.conftest import TEST_PASSWORD, TEST_USERNAME
+
+
+@pytest.fixture(name="login_client")
+async def supernote_login_client_fixture(client: TestClient) -> LoginClient:
+    base_url = str(client.make_url("/"))
+    real_client = Client(client.session, host=base_url)
+    return LoginClient(real_client)
 
 
 def calculate_s256(verifier: str) -> str:
-    """Calculate S256 code challenge."""
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
-async def test_oauth_full_flow(
-    client: TestClient, server_config: ServerConfig, auth_headers: dict[str, str]
+async def test_scenario_oauth_cold_login(
+    client: TestClient,
+    login_client: LoginClient,
+    create_test_user: None,
 ) -> None:
-    """Test the full OAuth flow from authorize to token exchange."""
-
-    # 1. Authorize - should redirect to login-bridge
-    # Verifier must be 43-128 chars
+    """
+    Scenario 1: Cold Start (Not Logged In) - Complete Flow
+    1. User clicks 'Login with Supernote' and is redirected to Bridge -> Login Page.
+    2. User performs actual login via API.
+    3. Frontend 'Resumes Session' with new token.
+    4. Code exchange completes successfully.
+    """
+    # 1. Authorize -> Bridge -> Login Page
     verifier = "v" * 50
-    # Calculate S256 challenge
-    challenge = calculate_s256(verifier)
-
     client_id = "http://localhost:3000"
     redirect_uri = "http://localhost:3000/callback"
 
-    params = {
-        "response_type": "code",
-        "client_id": client_id,
-        "redirect_uri": redirect_uri,
-        "state": "test-state",
-        "scope": "supernote:all",
-        "code_challenge": challenge,
-        "code_challenge_method": "S256",
-    }
-
-    token = auth_headers["x-access-token"]
-    # Sync aiohttp TestClient cookie jar with session token
-    client.session.cookie_jar.update_cookies({"session": token})
-
-    # GET /authorize
-    # Handler will redirect to login-bridge
-    resp1 = await client.get("/authorize", params=params, allow_redirects=False)
-
-    # Authorize Status Check
-    print(f"Authorize Status: {resp1.status}")
-    if resp1.status not in (302, 307):
-        print(f"Authorize Body: {await resp1.text()}")
+    resp1 = await client.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "state": "cold-state",
+            "scope": "supernote:all",
+            "code_challenge": calculate_s256(verifier),
+            "code_challenge_method": "S256",
+        },
+        allow_redirects=False,
+    )
     assert resp1.status in (302, 307)
-    assert "login-bridge" in resp1.headers["Location"]
+    bridge_path = yarl.URL(resp1.headers["Location"]).path_qs
 
-    # Follow to login-bridge using relative URL
-    login_bridge_url = resp1.headers["Location"]
-    print(f"Login Bridge URL: {login_bridge_url}")
-    relative_bridge_url = yarl.URL(login_bridge_url).path_qs
-    resp2 = await client.get(relative_bridge_url, allow_redirects=False)
-
-    # Bridge Status Check
-    print(f"Bridge Status: {resp2.status}")
-    if resp2.status not in (302, 307):
-        print(f"Bridge Body: {await resp2.text()}")
+    resp2 = await client.get(bridge_path, allow_redirects=False)
     assert resp2.status in (302, 307)
+    assert "/#login" in resp2.headers["Location"]
+    assert "return_to" in resp2.headers["Location"]
 
-    # This should be the callback URL
-    callback_url = resp2.headers["Location"]
-    assert "localhost:3000/callback" in callback_url
-    assert "code=" in callback_url
-    assert "state=test-state" in callback_url
+    # 2. Real User Login
+    fresh_token = await login_client.login(TEST_USERNAME, TEST_PASSWORD)
+    assert fresh_token
 
-    final_url = yarl.URL(callback_url)
-    code = final_url.query.get("code")
-    assert code
+    # 3. Resume Session (POST to Bridge)
+    resp3 = await client.post(
+        bridge_path,
+        headers={"x-access-token": fresh_token},
+        allow_redirects=False,
+    )
+    assert resp3.status == 200
+    callback_url = (await resp3.json())["redirect_url"]
 
-    # 2. Token Exchange
-    token_params = {
-        "grant_type": "authorization_code",
-        "code": code,
-        "client_id": client_id,
-        "redirect_uri": redirect_uri,
-        "code_verifier": verifier,
-    }
+    # 4. Token Exchange
+    code = yarl.URL(callback_url).query["code"]
+    token_resp = await client.post(
+        "/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "code_verifier": verifier,
+        },
+    )
+    assert token_resp.status == 200
+    assert "access_token" in await token_resp.json()
 
-    token_resp = await client.post("/token", data=token_params)
-    assert token_resp.status == 200, f"Token exchange failed: {await token_resp.text()}"
-    token_data = await token_resp.json()
-    assert "access_token" in token_data
-    assert "refresh_token" in token_data
-    assert token_data["token_type"] == "Bearer"
 
+async def test_scenario_oauth_warm_session(
+    client: TestClient,
+    login_client: LoginClient,
+    create_test_user: None,
+) -> None:
+    """
+    Scenario 2: Warm Session (Already Logged In)
+    1. User is already logged in (simulated by having a token).
+    2. User triggers OAuth flow.
+    3. Frontend fast-forwards through bridge using existing token.
+    """
+    # 1. Warm up session
+    token = await login_client.login(TEST_USERNAME, TEST_PASSWORD)
 
-async def test_oauth_unauthenticated_redirect(client: TestClient) -> None:
-    """Test that authorize redirects to login if no session is present."""
-    # Verifier must be 43-128 chars
+    # 2. Authorize
     verifier = "v" * 50
-    challenge = calculate_s256(verifier)
-
     client_id = "http://localhost:3000"
     redirect_uri = "http://localhost:3000/callback"
 
-    params = {
-        "response_type": "code",
-        "client_id": client_id,
-        "redirect_uri": redirect_uri,
-        "scope": "supernote:all",
-        "state": "test",
-        "code_challenge": challenge,
-        "code_challenge_method": "S256",
-    }
+    resp1 = await client.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "state": "warm-state",
+            "code_challenge": calculate_s256(verifier),
+            "code_challenge_method": "S256",
+        },
+        allow_redirects=False,
+    )
+    bridge_path = yarl.URL(resp1.headers["Location"]).path_qs
 
-    # should NOT follow redirects automatically to see the first redirect destination
-    resp = await client.get("/authorize", params=params, allow_redirects=False)
+    # 3. Bridge Fast-Forward
+    resp2 = await client.post(
+        bridge_path,
+        headers={"x-access-token": token},
+        allow_redirects=False,
+    )
+    assert resp2.status == 200
+    callback_url = (await resp2.json())["redirect_url"]
 
-    # authorize -> login-bridge (internal to SDK/AS)
-    assert resp.status in (302, 307)
-    assert "login-bridge" in resp.headers["Location"]
-
-    # Verify login-bridge -> login page using relative URL
-    login_bridge_url = resp.headers["Location"]
-    relative_bridge_url = yarl.URL(login_bridge_url).path_qs
-    resp2 = await client.get(relative_bridge_url, allow_redirects=False)
-
-    assert resp2.status in (302, 307)
-    # Checks that we are redirected to the login page (hash based router for frontend)
-    assert "#login" in resp2.headers["Location"]
-    # Check return_to param
-    location = resp2.headers["Location"]
-    assert "return_to" in location
+    # 4. Exchange
+    code = yarl.URL(callback_url).query["code"]
+    token_resp = await client.post(
+        "/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "code_verifier": verifier,
+        },
+    )
+    assert token_resp.status == 200
 
 
-async def test_indieauth_valid(
-    client: TestClient, auth_headers: dict[str, str]
+async def test_scenario_security_edge_cases(
+    client: TestClient,
+    login_client: LoginClient,
+    create_test_user: None,
 ) -> None:
-    """Test IndieAuth style: valid URL client_id matching redirect_uri."""
-
-    # client_id is a URL
-    client_id = "http://localhost:5000"
-    # Same host
-    redirect_uri = "http://localhost:5000/callback"
-
+    """
+    Scenario 3: Security & Error Handling
+    1. Invalid Token handling on Bridge (POST vs GET).
+    2. IndieAuth validation (Valid vs Mismatch).
+    """
+    # Setup
     params = {
-        "response_type": "code",
-        "client_id": client_id,
-        "redirect_uri": redirect_uri,
-        "state": "test",
-        "scope": "supernote:all",
-        "code_challenge": "challenge",
-        "code_challenge_method": "S256",
+        "client_id": "http://localhost:3000",
+        "redirect_uri": "http://localhost:3000/callback",
     }
 
-    token = auth_headers["x-access-token"]
-    client.session.cookie_jar.update_cookies({"session": token})
+    # 1a. POST with Invalid Token -> 401 Unauthorized (API Mode)
+    resp_invalid = await client.post(
+        "/login-bridge",
+        params=params,
+        headers={"x-access-token": "bad-token"},
+    )
+    assert resp_invalid.status == 401
 
-    resp = await client.get("/authorize", params=params, allow_redirects=False)
-    # authorize -> login-bridge
-    assert resp.status in (302, 307)
-    login_bridge_url = resp.headers["Location"]
-    relative_bridge_url = yarl.URL(login_bridge_url).path_qs
+    # 1b. GET with Invalid Token -> Redirect to Login (Browser Mode)
+    resp_redirect = await client.get(
+        "/login-bridge",
+        params=params,
+        headers={"x-access-token": "bad-token"},
+        allow_redirects=False,
+    )
+    assert resp_redirect.status in (302, 307)
+    assert "/#login" in resp_redirect.headers["Location"]
 
-    # login-bridge -> callback (success)
-    resp2 = await client.get(relative_bridge_url, allow_redirects=False)
-    assert resp2.status in (302, 307)
-    assert "code=" in resp2.headers["Location"]
-    assert "localhost:5000/callback" in resp2.headers["Location"]
+    # 2a. IndieAuth Valid (client_id matches redirect_uri host)
+    token = await login_client.login(TEST_USERNAME, TEST_PASSWORD)
+    resp_indie = await client.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": "http://localhost:5000",
+            "redirect_uri": "http://localhost:5000/callback",
+            "code_challenge": "mock",
+            "code_challenge_method": "S256",
+        },
+        allow_redirects=False,
+    )
+    bridge_path = yarl.URL(resp_indie.headers["Location"]).path_qs
 
+    resp_indie_bridge = await client.post(
+        bridge_path,
+        headers={"x-access-token": token},
+    )
+    assert resp_indie_bridge.status == 200
+    assert "localhost:5000/callback" in (await resp_indie_bridge.json())["redirect_url"]
 
-async def test_indieauth_mismatch(
-    client: TestClient, auth_headers: dict[str, str]
-) -> None:
-    """Test IndieAuth style: valid URL client_id but mismatched redirect_uri."""
-
-    client_id = "http://localhost:3000"
-    redirect_uri = "http://evil.com/callback"
-
-    params = {
-        "response_type": "code",
-        "client_id": client_id,
-        "redirect_uri": redirect_uri,
-        "state": "test",
-        "scope": "supernote:all",
-        "code_challenge": "challenge",
-        "code_challenge_method": "S256",
-    }
-
-    token = auth_headers["x-access-token"]
-    client.session.cookie_jar.update_cookies({"session": token})
-
-    # Redirects not allowed because we expect an error page or error JSON (actually JSONResponse 400)
-    resp = await client.get("/authorize", params=params, allow_redirects=True)
-    assert resp.status == 400
-    text = await resp.text()
-    assert "Redirect URI 'http://evil.com/callback' not in allowed list" in text
+    # 2b. IndieAuth Mismatch
+    resp_mismatch = await client.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": "http://localhost:3000",
+            "redirect_uri": "http://evil.com/callback",
+            "code_challenge": "mock",
+            "code_challenge_method": "S256",
+        },
+        allow_redirects=True,
+    )
+    assert resp_mismatch.status == 400

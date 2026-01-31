@@ -16,6 +16,7 @@ from supernote.models.base import create_error_response
 from supernote.server.db.migrations import run_migrations
 from supernote.server.mcp.auth import create_auth_app
 from supernote.server.mcp.server import create_mcp_server, run_server, set_services
+from supernote.server.utils.auth_utils import get_token_from_request
 
 from .config import ServerConfig
 from .constants import MAX_UPLOAD_SIZE
@@ -234,8 +235,7 @@ async def jwt_auth_middleware(
     ):
         return await handler(request)
 
-    # Check for x-access-token header
-    if not (token := request.headers.get("x-access-token")):
+    if not (token := get_token_from_request(request)):
         return web.json_response(
             create_error_response("Unauthorized").to_dict(), status=401
         )

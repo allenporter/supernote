@@ -153,27 +153,43 @@ createApp({
             }
         }
 
-        function checkRedirect() {
-            const hash = window.location.hash;
-            if (hash.includes('?')) {
-                const query = hash.substring(hash.indexOf('?'));
-                const params = new URLSearchParams(query);
-                const returnTo = params.get('return_to');
-                if (returnTo) {
-                    window.location.href = returnTo;
-                    return true;
+        async function resumeSession() {
+            const token = getToken();
+            if (!token) {
+                return false;
+            }
+
+            const params = new URLSearchParams(window.location.hash.split('?')[1]);
+            const returnTo = params.get('return_to');
+
+            // Handle OAuth Bridge exchange strictly
+            if (returnTo?.includes('/login-bridge')) {
+                try {
+                    const resp = await fetch(returnTo, {
+                        method: 'POST',
+                        headers: { 'x-access-token': token, 'Accept': 'application/json' }
+                    });
+                    const data = resp.ok ? await resp.json() : null;
+                    if (data?.redirect_url) {
+                        window.location.href = data.redirect_url;
+                        return true;
+                    }
+                } catch (e) {
+                    console.error("Bridge exchange failed", e);
                 }
             }
-            return false;
+
+            // Normal app session
+            isLoggedIn.value = true;
+            await loadDirectory();
+            return true;
         }
 
         async function handleLogin({ email, password }) {
             loginError.value = null;
             try {
                 await login(email, password);
-                if (checkRedirect()) return;
-                isLoggedIn.value = true;
-                await loadDirectory();
+                await resumeSession();
             } catch (e) {
                 loginError.value = e.message;
                 alert(e.message);
@@ -184,12 +200,8 @@ createApp({
             logout();
         }
 
-        onMounted(() => {
-            if (getToken()) {
-                if (checkRedirect()) return;
-                isLoggedIn.value = true;
-                loadDirectory();
-            }
+        onMounted(async () => {
+            await resumeSession();
 
             // Polling for processing status
             setInterval(async () => {

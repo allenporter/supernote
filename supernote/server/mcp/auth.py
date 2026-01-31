@@ -25,6 +25,7 @@ from starlette.responses import JSONResponse, RedirectResponse
 
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
+from supernote.server.utils.auth_utils import get_token_from_request
 
 from .models import (
     SupernoteAccessToken,
@@ -229,23 +230,32 @@ def create_auth_app(
     app = Starlette(routes=routes, debug=True)
 
     # Add login-bridge route
-    @app.route("/login-bridge")
+    @app.route("/login-bridge", methods=["GET", "POST"])
     async def login_bridge(request: Request) -> RedirectResponse | JSONResponse:
-        # Check for session cookie (we'll assume 'session' cookie contains the token)
-        token = request.cookies.get("session")
-        if not token:
-            # Redirect to main login page
+        """Handling the OAuth login flow bridging the SPA and the MCP server.
 
-            return_url = str(request.url)
-            # Use config properties if we could, but we have user_service._config
-            # We'll assume the main app is at the same host but different port or same path prefix
-            # For simplicity, we assume we can just redirect to /#login
-            login_url = f"/#login?return_to={quote(return_url)}"
-            return RedirectResponse(url=login_url)
-
-        # Verify token
-        session = await user_service.verify_token(token)
+        1. Browser visits /authorize -> Redirects here (/login-bridge).
+        2. If User is NOT logged in:
+           - GET request: Redirects to SPA login page (/#login) with return_to set to this URL.
+           - SPA handles login, then sees return_to pointing to /login-bridge.
+           - SPA makes background POST request to this URL with x-access-token header.
+        3. If User IS logged in (or via POST with token):
+           - Validates session.
+           - Generates OAuth Authorization Code.
+           - Returns JSON with 'redirect_url' containing the code (callback URL).
+           - SPA redirects the browser to that callback URL.
+        """
+        # Extract and verify token
+        token = get_token_from_request(request)
+        session = await user_service.verify_token(token) if token else None
         if not session:
+            # If this was an API background call (POST), return 401 JSON
+            if request.method == "POST":
+                return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+            # Not logged in: Redirect to web UI login page.
+            # We pass the bridge URL as return_to so the SPA knows where to return.
+            # We keep the query params (OAuth params) so they are preserved.
             login_url = f"/#login?return_to={quote(str(request.url))}"
             return RedirectResponse(url=login_url)
 
@@ -282,16 +292,14 @@ def create_auth_app(
             ttl=600,
         )
 
-        # Redirect back to client
-
+        # Return result
         callback_params = {"code": code_str}
         if state:
             callback_params["state"] = state
 
-        if redirect_uri:
-            sep = "&" if "?" in redirect_uri else "?"
-            final_url = f"{redirect_uri}{sep}{urlencode(callback_params)}"
-            return RedirectResponse(url=final_url)
-        return JSONResponse({"error": "invalid_redirect_uri"}, status_code=400)
+        sep = "&" if "?" in redirect_uri else "?"
+        final_url = f"{redirect_uri}{sep}{urlencode(callback_params)}"
+
+        return JSONResponse({"redirect_url": final_url})
 
     return app
