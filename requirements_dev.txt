@@ -16,7 +16,7 @@ mcp==1.26.0
 
 # For user management CLI
 pyyaml>=6.0
-PyJWT==2.10.1
+PyJWT==2.11.0
 
 # Developer dependencies
 pytest-aiohttp==1.1.0
