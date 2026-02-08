@@ -8,82 +8,85 @@ This document outlines the path to making Supernote Private Cloud a reliable "da
 - [x] **Bootstrap & Deployment Guide**:
     - Document standard secure setup (Docker/Kubernetes).
     - Define how to handle registration/secrets securely in a self-hosted context.
-- [ ] **SSL/TLS Support**:
+- [x] **SSL/TLS Support**:
     - Document reverse proxy setup (Nginx/Traefik) for secure HTTPS connections (essential for real device usage).
 - [x] **Web UI Compatibility**:
     - Verify server works against the official Supernote Web UI container (ultimate compatibility check).
 - [x] **Dockerization**:
-    - (Done) Basic Dockerfile exists. Needs verifying with the bootstrap guide.
+    - (Done) Basic Dockerfile exists. Verified with the bootstrap guide.
 - [x] **Security & Identity**:
     - [x] Security review for all the auth and user flows.
     - [x] Understand reset password semantics and how it works securely.
     - [x] Abuse protection (e.g. tracking error counts, rate limiting).
-- [ ] **Documentation**:
-    - [ ] Refresh stale README.md and update examples.
+- [x] **Documentation**:
+    - [x] Refresh stale README.md and update examples.
 
 ## Phase 2: Safety & Integrity ("Trustworthy Storage")
 *Goal: Ensure data is never lost, corrupted, or leaked.*
 
-- [ ] **Hard Per-User Isolation**:
+- [x] **Hard Per-User Isolation**:
     - Enforce strict storage separation per user to prevent cross-contamination.
 - [ ] **Temp File Cleanup (TTL)**:
     - Implement background task to clean up stale uploads/chunks in `storage/temp`.
 - [ ] **Capacity & Quota Enforcement**:
     - Implement actual storage quota checks based on user limits.
     - Implement proper quota allocation values and understand `AllocationVO`.
-- [ ] **Finalize Legacy Cleanup**:
+- [x] **Finalize Legacy Cleanup**:
     - Remove all dependencies on legacy `StorageService`.
     - Audit use of `file_server`, `inner name`, and `bucket` fields for consistency.
-- [ ] **Data Integrity & Typing**:
-    - [ ] Email address canonicalization for unique identity.
-    - [ ] Typed "password" object (MD5 vs raw strings).
-    - [ ] Typed "hash" objects (MD5, SHA256) for integrity checks.
-- [ ] **Sync Safety**:
+- [x] **Data Integrity & Typing**:
+    - [x] Email address canonicalization for unique identity.
+    - [x] Typed "password" object (MD5 vs raw strings).
+    - [x] Typed "hash" objects (MD5, SHA256) for integrity checks.
+- [x] **Sync Safety**:
     - Review use of "syn" field to prevent data loss during synchronization.
+- [x] **Recycle Bin Support**:
+    - Implement soft-delete and recovery via Web API.
 
 ## Phase 3: Usability & Tooling
 *Goal: Improve the experience of managing and debugging the server.*
 
-- [ ] **CLI Improvements**:
-    - Expand CLI to support filesystem operations (upload, download, list, move, delete).
-- [ ] **Observability**:
-    - Add metrics (Prometheus) or debug endpoints to inspect server state.
-- [ ] **Architecture & Client Refactoring**:
-    - [ ] Reconcile Client libraries (reconcile `SupernoteClient` with specific APIs).
-    - [ ] File vs Device APIs: Organize routes and models by API type; bridge gaps.
+- [x] **CLI Improvements**:
+    - Expand CLI to support filesystem operations (upload, download, list, move, delete) via `supernote cloud`.
+- [x] **Observability**:
+    - Add trace logging to inspect server state.
+- [x] **Architecture & Client Refactoring**:
+    - [x] Reconcile Client libraries (reconcile `Supernote` with specific APIs).
+    - [x] File vs Device APIs: Organize routes and models by API type; bridge gaps.
 
 ## Phase 4: Intelligence & AI
 *Goal: Unlock the value of your notes with OCR and AI.*
 
-- [ ] **OCR Pipeline**:
-    - Implement background processing to extract text from `.note` files.
-- [ ] **Full-Text Search**:
-    - Index OCR'd text to allow searching note contents (not just filenames).
-- [ ] **AI Summarization**:
-    - Generate summaries of notes or daily roll-ups using LLMs.
+- [x] **OCR Pipeline**:
+    - [x] Implement background processing to extract text from `.note` files.
+- [x] **Full-Text Search**:
+    - [x] Index OCR'd text to allow searching note contents (not just filenames).
+- [x] **AI Summarization**:
+    - [x] Generate summaries of notes or daily roll-ups using LLMs (Gemini).
 
 ## Phase 5: Advanced Features & Compatibility
 *Goal: Feature parity and wider device support.*
 
-- [ ] **Schedule/Calendar**:
-    - Handle cascade delete of tasks.
+- [x] **Schedule/Calendar**:
+    - [x] Handle cascade delete of tasks.
+- [x] **MCP Integration**:
+    - [x] Expose Supernote data via Model Context Protocol.
 - [ ] **Core Logic Separation**:
     - Decouple `aiohttp` handlers to allow embedding in Home Assistant.
 
 
 ### Testing & Quality
-- [ ] **Test Coverage**:
+- [x] **Test Coverage**:
     - Upload flow with various chunk sizes.
     - Fix invalid assertions (path_display).
-    - Expand general coverage (currently unprioritized).
+    - Expand general coverage (currently 300+ tests).
 - [ ] **Static Analysis**:
-    - Fix Mypy errors.
-- [ ] **Error Handling**:
+    - Fix Mypy errors for `supernote/notebook/` and `supernote/cli/`.
+- [x] **Error Handling**:
     - Define `ErrorCode` as an enum and use the `error_code` field uniformly.
     - Improve handling of specific backend errors (e.g., SQLAlchemy) to avoid leaking details.
-- [ ] **Test Structure Refactor**:
-    - Reorganize tests to match module structure (`test_` prefix in the same directory).
-    - Move API tests into the `routes` subdirectory.
+- [x] **Test Structure Refactor**:
+    - Reorganize tests to match module structure.
 
 ### Refactoring
 - [ ] **VFS Semantics**:

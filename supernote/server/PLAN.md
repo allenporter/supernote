@@ -34,21 +34,23 @@
 - [x] Implement File Download endpoints.
     - [x] `POST /api/file/3/files/download_v3` (Get Download URL).
     - [x] `GET /api/file/download/data/{filename}` (Serve File).
-- [ ] Implement Directory Management (Create/Delete folders).
+- [x] Implement Directory Management (Create/Delete folders).
 
 ## Phase 4: Persistence & Storage (Completed)
 - [x] Create `storage/` directory structure.
 - [x] Implement `handle_upload_data` to save to `storage/temp/`.
 - [x] Implement `handle_upload_finish` to move from `temp` to `storage/`.
-- [x] Implement `handle_list_folder` to list actual files.
+- [x] Implement `handle_list_folder` to list actual files via Virtual File System (VFS).
 - [x] Implement `handle_query_by_path` to check file existence.
 - [x] Add test isolation for storage.
 
-## Phase 5: Downloads (Completed)
-- [x] Implement `handle_download_apply` (POST /api/file/3/files/download_v3).
-- [x] Implement `handle_download_data` (GET /api/file/download/data).
-- [x] Update `handle_list_folder` to use relative path as ID.
-- [x] Add test for download flow.
+## Phase 5: AI & Intelligence (Completed)
+- [x] Implement `GeminiService` for LLM interaction.
+- [x] Implement `ProcessorService` background worker.
+- [x] Implement `GeminiOcrModule` for handwriting transcription.
+- [x] Implement `GeminiEmbeddingModule` for semantic indexing.
+- [x] Implement `SummaryModule` for AI-generated highlights.
+- [x] Implement `SearchService` for semantic search.
 
 ## Phase 6: Refactoring & Architecture (Completed)
 - [x] **Data Models (Type Safety)**:
@@ -59,13 +61,10 @@
     - [x] Create `supernote/server/services/` package.
     - [x] Implement `UserService`: Handle authentication, device binding, user profiles.
     - [x] Implement `FileService`: Handle file system operations, metadata management.
-    - [x] Implement `StorageService`: Abstract disk I/O (e.g., `save_file`, `list_dir`, `get_file_stream`).
+    - [x] Implement `BlobStorage`: Abstract disk I/O (Local CAS).
 - [x] **Route Separation**:
-    - [x] Split `app.py` into route modules (e.g., `supernote/server/routes/auth.py`, `supernote/server/routes/file.py`).
+    - [x] Split `app.py` into route modules (e.g., `admin.py`, `auth.py`, `file_device.py`, `file_web.py`, `summary.py`).
     - [x] Use `aiohttp.web.RouteTableDef` to organize routes.
-- [x] **Configuration & Dependency Injection**:
-    - [x] Refactor `create_app` to accept a `Config` object.
-    - [x] Inject services into route handlers (avoid global state).
 
 ## Caveats & Technical Debt (Prioritized)
 
@@ -74,30 +73,50 @@
 - [x] Random code generation and validation implemented.
 - [x] JWT tokens properly signed and verified with HS256.
 - [x] Token expiration implemented (configurable, default 24 hours).
-    - **Status:** Production-ready authentication system.
 
-### 2. Hardcoded Values & Placeholders (**Completed**)
-- [x] All hardcoded equipment_no values replaced with request data.
-- [x] User names derived from actual user accounts.
-    - **Status:** All critical hardcoded values removed.
+### 2. File Upload Handling (**Completed**)
+- [x] Robust multipart parsing and chunked upload support.
 
-### 3. File Upload Handling (**Medium-High**)
-- `trace_middleware` may consume the request body, which could break multipart parsing.
-    - **Action:** Refactor middleware and upload handler for robust compatibility and error handling.
+### 3. Hash Verification (**Completed**)
+- [x] File upload finish verifies MD5 hash against stored blob.
 
-### 4. Hash Verification (**Medium**)
-- File upload finish only logs a warning on hash mismatch, does not return error to client.
-    - **Action:** Return error on hash mismatch, consider supporting stronger hashes.
+### 4. Directory Traversal & Path Safety (**Completed**)
+- [x] Strict path validation in VFS and FileService.
 
-### 5. Directory Traversal & Path Safety (**Medium**)
-- Path safety checks exist but need more tests and stricter validation.
-    - **Action:** Add tests, consider stricter path validation.
+### 5. Device & Equipment Binding (**Completed**)
+- [x] Persistent device binding and validation in DB.
 
-### 6. Device & Equipment Binding (**Medium**)
-- Device binding/unlinking is stubbed, not persisted or validated.
-    - **Action:** Implement persistent device binding and validation.
+---
 
-### 7. Error Handling & API Consistency (**Medium**)
+## Major Features Implemented
+
+1. **Folder and File Management**
+    - Full CRUD for folders and files: create, delete, move, copy, rename, and list.
+    - Recycle Bin (Soft Delete) support via Web API.
+
+2. **User Accounts**
+    - Dynamic user registration (first user = admin).
+    - Password hashing and JWT-based authentication.
+    - Admin CLI for user management.
+
+3. **AI Intelligence**
+    - Page-level OCR and Content Indexing.
+    - Semantic Search across all notebooks.
+    - Automated AI Summarization and Highlight generation.
+
+4. **MCP Support**
+    - Integration with AI agents via Model Context Protocol.
+
+---
+
+## Technical Omissions & Next Steps
+
+- **Quota Enforcement:**
+    - Basic usage reporting exists, but hard enforcement is missing.
+- **Temp Cleanup:**
+    - Stale chunks in `storage/temp` need a TTL cleanup task.
+- **Core Logic Separation:**
+    - Better decoupling of `aiohttp` from services for embedding in other projects (e.g., Home Assistant).
 - Some errors are only logged, not returned to the client. API responses may not match official Supernote Cloud.
     - **Action:** Audit endpoints for error handling and response codes, align with official API.
 
