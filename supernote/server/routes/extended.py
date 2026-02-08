@@ -20,6 +20,8 @@ from supernote.models.extended import (
     WebSearchResponseVO,
     WebSummaryListRequestDTO,
     WebSummaryListVO,
+    WebTranscriptRequestDTO,
+    WebTranscriptResponseVO,
 )
 from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.exceptions import SupernoteError
@@ -188,4 +190,44 @@ async def handle_extended_search(request: web.Request) -> web.Response:
         return web.json_response(WebSearchResponseVO(results=vo_results).to_dict())
     except Exception as err:
         logger.exception("Error performing semantic search")
+        return SupernoteError.uncaught(err).to_response()
+
+
+@routes.post("/api/extended/transcript")
+async def handle_extended_transcript(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/transcript
+    # Purpose: Retrieve notebook transcript.
+    user_email = request["user"]
+    try:
+        data = await request.json()
+        req_dto = WebTranscriptRequestDTO.from_dict(data)
+    except Exception as e:
+        return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
+
+    user_service: UserService = request.app["user_service"]
+    search_service: SearchService = request.app["search_service"]
+
+    user_id = await user_service.get_user_id(user_email)
+    if not user_id:
+        return web.json_response({"error": "User not found"}, status=404)
+
+    try:
+        transcript = await search_service.get_transcript(
+            user_id=user_id,
+            file_id=req_dto.file_id,
+            start_index=req_dto.start_index,
+            end_index=req_dto.end_index,
+        )
+
+        if transcript is None:
+            return web.json_response(
+                {"error": f"No transcript found for notebook {req_dto.file_id}"},
+                status=404,
+            )
+
+        return web.json_response(
+            WebTranscriptResponseVO(transcript=transcript).to_dict()
+        )
+    except Exception as err:
+        logger.exception("Error fetching notebook transcript")
         return SupernoteError.uncaught(err).to_response()
