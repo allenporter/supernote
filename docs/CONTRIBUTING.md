@@ -1,6 +1,6 @@
-# Contributing to Supernote-Lite
+# Contributing to the Supernote Toolkit
 
-Supernote-Lite is evolving from a set of utilities into a **Personal Knowledge Management Hub**. We welcome contributions that help realize this vision—whether through better parsing, more robust server features, or new AI-powered insights.
+This project is evolving from a set of utilities into a comprehensive **Personal Knowledge Management Hub**. We welcome contributions that help realize this vision—whether through better parsing, more robust server features, or new AI-powered insights.
 
 ## Code Style & Standards
 

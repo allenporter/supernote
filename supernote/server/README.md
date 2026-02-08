@@ -74,7 +74,7 @@ docker run -d \
 
 ## Robustness & Maintenance
 
-Supernote-Lite is built for long-term stability:
+Supernote Knowledge Hub is built for long-term stability:
 
 - **Database Migrations**: Uses Alembic for seamless schema updates.
 - **Background Polling**: Automatically recovers stalled processing tasks.

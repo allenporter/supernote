@@ -1,29 +1,29 @@
-# supernote
+# Supernote Knowledge Hub
 
-**A private, AI-powered knowledge hub for your Supernote.**
+**The AI-powered intelligence layer for your Ratta Supernote.**
 
-Supernote Lite is a self-hosted implementation of the **Supernote Private Cloud** protocol. While Ratta's official private cloud provides a solid and reliable sync foundation, Supernote Lite extends that experience with an **AI-driven intelligence layer**—transforming your handwritten notes into structured, searchable knowledge using Google Gemini.
+This toolkit is a self-hosted implementation of the **Supernote Private Cloud** protocol. While Ratta's official private cloud provides a solid and reliable sync foundation, this project extends that experience with an **AI-driven synthesis engine**—transforming your handwritten notes into structured, searchable knowledge using Google Gemini.
 
 <p align="center">
-  <img src="docs/static-assets/hero-overview.jpg" alt="Supernote Lite Overview" width="800">
+  <img src="docs/static-assets/hero-overview.jpg" alt="Supernote Overview" width="800">
 </p>
 
-[![Documentation](https://img.shields.io/badge/docs-manual-blue.svg)](https://allenporter.github.io/supernote-lite/)
+[![Documentation](https://img.shields.io/badge/docs-manual-blue.svg)](https://allenporter.github.io/supernote/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-## Why Supernote Lite?
+## Why Supernote Knowledge Hub?
 
 This project is designed to be **fully compatible** with the official Supernote Private Cloud protocol, while adding specialized features for knowledge workers and researchers:
 
 - **📜 AI Synthesis**: Automatically transcribes handwriting and generates high-level summaries (Daily, Weekly, Monthly).
 - **🔍 Semantic Search**: Find concepts across all your notebooks—not just filenames—using vectorized content.
-- **🛡️ Private & Secure**: You own your database. Run it on your NAS, local PC, or a low-power server.
+- **🛡️ Private & Secure**: You own your database. Run it on your NAS, local PC, or a low-power server, just like Supernote Private Cloud.
 - **🖥️ Modern Web UI**: A sleek, reactive frontend to browse, review, and search your notes from any browser.
 - **🤖 MCP Ready**: Connect your notes to AI agents (like Claude or ChatGPT) via the built-in [Model Context Protocol](https://modelcontextprotocol.io/) server.
 
 ## Synthesis & AI in Action
 
-Beyond simple storage, Supernote Lite provides an active processing pipeline to increase the utility of your notes:
+Beyond simple storage, Supernote provides an active processing pipeline to increase the utility of your notes:
 
 1.  **Sync**: Your device uploads `.note` files using the official Private Cloud protocol.
 2.  **Transcribe**: The server extract pages and use Gemini Vision to OCR your handwriting.
@@ -85,7 +85,7 @@ supernote cloud search "What were my project goals for February?"
 </p>
 
 > [!TIP]
-> **Semantic Search**: Supernote Lite doesn't just look for words—it understands concepts. Searching for "budget" will find notes about "expenses" or "money," even if the specific word isn't there.
+> **Semantic Search**: Supernote doesn't just look for words—it understands concepts. Searching for "budget" will find notes about "expenses" or "money," even if the specific word isn't there.
 
 ## Features Deep Dive
 
@@ -134,7 +134,7 @@ docker build -t supernote .
 docker run -d -p 8080:8080 -v $(pwd)/storage:/storage supernote serve
 ```
 
-See [Server Documentation](https://github.com/allenporter/supernote-lite/blob/main/supernote/server/README.md) for details.
+See [Server Documentation](https://github.com/allenporter/supernote/blob/main/supernote/server/README.md) for details.
 
 ### Developer API
 
@@ -188,9 +188,9 @@ This project is in support of the amazing [Ratta Supernote](https://supernote.co
 
 ### Choosing Your Private Cloud Experience
 
-The official Supernote Private Cloud by Ratta is a rock-solid, production-grade implementation of the protocol. Supernote Lite (this project) serves as a **community-driven extension** for users who need deep data analysis and advanced integrations.
+The official Supernote Private Cloud by Ratta is a rock-solid, production-grade implementation of the protocol. This toolkit serves as a **community-driven extension** for users who need deep data analysis and advanced integrations.
 
-| Capability | Official Private Cloud (Ratta) | Supernote-Lite (Community) |
+| Capability | Official Private Cloud (Ratta) | Supernote Hub (This Project) |
 |------------|-------------------------------|-----------------------------|
 | **Core Sync** | ✅ Robust & Validated | ✅ Protocol Compatible |
 | **AI Analysis** | Basic OCR (Device-side) | **Adv. OCR & Multi-stage Synthesis** |
@@ -198,7 +198,7 @@ The official Supernote Private Cloud by Ratta is a rock-solid, production-grade 
 | **Stack** | Java / Spring Boot | Python / Asyncio |
 | **Focus** | Stability & Stability | Innovation & Extensibility |
 
-**Supernote-Lite is a great fit if:**
+**This toolkit is a great fit if:**
 - You want **AI-generated summaries** and insights from your notebooks.
 - You want to perform **semantic searches** across your entire handwriting library.
 - You want to integrate your notes into local scripts via a Python API or CLI.

@@ -1,17 +1,17 @@
-# Supernote Lite AI Instructions
+# Supernote AI Instructions
 
 ## Project Overview
-`supernote-lite` is a Python library for parsing and converting Ratta Supernote `.note` files, interacting with the Supernote Cloud API, and hosting a private Supernote Cloud server. It is a fork of `supernote-tool` with lighter dependencies.
+`supernote` is a Python library for parsing and converting Ratta Supernote `.note` files, interacting with the Supernote Cloud API, and hosting a private Supernote Cloud server. It was initially a fork of `supernote-tool` with lighter dependencies, then evolved into a full ecosystem with a unified CLI, API client, and server implementation.
 
 ## Architecture
-- **Core (`supernote/`)**:
+- **Core (`supernote/notebook`)**:
   - `parser.py`: Parses binary `.note` files into `SupernoteMetadata`.
   - `fileformat.py`: Defines file structure constants and metadata classes.
   - `converter.py`: Converts parsed data to PNG, SVG, PDF, TXT.
   - `decoder.py`: Decodes binary layer data.
 - **API Models (`supernote/models/`)**:
   - This directory contains data objects models using `mashumaro` for JSON serialization.
-- **Cloud (`supernote/cloud/`)**:
+- **Cloud (`supernote/client/`)**:
   - `client.py`: Async HTTP client using `aiohttp`.
   - `login_client.py`: Higher level login client using `aiohttp`.
   - `cloud_client.py`: Higher level cloud client using `aiohttp`.
@@ -20,7 +20,7 @@
   - **Protocol**: Implements the Supernote Cloud protocol (see `supernote/server/ARCHITECTURE.md`).
   - **Models**: `supernote/server/models/` contains `mashumaro` data models.
   - **Goal**: Provide a self-hosted alternative to the official cloud.
-- **CLI (`supernote/cmds/`)**:
+- **CLI (`supernote/cli/`)**:
   - `supernote_tool.py`: Main entry point (`supernote-tool`).
 
 ## Development Workflow

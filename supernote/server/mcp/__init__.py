@@ -1,1 +1,1 @@
-"""MCP server for Supernote lite server."""
+"""MCP server for Supernote Knowledge Hub server."""
