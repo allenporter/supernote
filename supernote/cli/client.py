@@ -7,10 +7,12 @@ import os
 import sys
 import traceback
 from contextlib import asynccontextmanager
+from datetime import datetime
 
-from supernote.client import Supernote
+from supernote.client import Supernote, extended
 from supernote.client.auth import ConstantAuth, FileCacheAuth
 from supernote.client.exceptions import SmsVerificationRequired, SupernoteException
+from supernote.models.extended import WebSummaryListVO
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -349,9 +351,141 @@ async def async_cloud_rm(path: str, verbose: bool = False) -> None:
         sys.exit(1)
 
 
+async def async_cloud_insights(path: str, verbose: bool = False) -> None:
+    """Show AI insights for a file in Supernote Cloud."""
+    setup_logging(verbose)
+
+    try:
+        async with create_session() as sn:
+            print(f"Resolving path: {path}...")
+            # Query by path to get ID
+            info = await sn.device.query_by_path(path, equipment_no="CLI")
+            if not info.entries_vo:
+                print(f"Error: File not found: {path}")
+                sys.exit(1)
+
+            file_id = int(info.entries_vo.id)
+            print(f"Fetching insights for {info.entries_vo.name} (ID: {file_id})...")
+
+            # Using the extended client to list summaries
+            extended_client = extended.ExtendedClient(sn.client)
+            summaries_vo: WebSummaryListVO = await extended_client.list_summaries(
+                file_id
+            )
+            summaries = summaries_vo.summary_do_list
+
+            if not summaries:
+                print(
+                    "No insights found. The note might still be processing or Gemini is not configured."
+                )
+                return
+
+            print("\n" + "=" * 40)
+            print(" AI INSIGHTS & SYNCHRONIZED SYNTHESIS")
+            print("=" * 40 + "\n")
+
+            # Sort by creation time desc
+            sorted_summaries = sorted(
+                summaries, key=lambda x: x.creation_time or 0, reverse=True
+            )
+
+            for item in sorted_summaries:
+                source = item.data_source or "AI Synthesis"
+                date_str = ""
+                if item.creation_time:
+                    date_str = f" ({datetime.fromtimestamp(item.creation_time / 1000).strftime('%Y-%m-%d %H:%M')})"
+
+                # Use blue color for header if in TTY
+                header = f"[{source.upper()}]{date_str}"
+                if sys.stdout.isatty():
+                    print(f"\033[1;34m{header}\033[0m")
+                else:
+                    print(header)
+
+                print("-" * len(header))
+                print(item.content)
+                print("\n")
+
+    except SupernoteException as err:
+        print(f"Error: {err}")
+        sys.exit(1)
+    except Exception as err:
+        print(f"Unexpected error: {err}")
+        if verbose:
+            traceback.print_exc()
+        sys.exit(1)
+
+
 def subcommand_cloud_rm(args) -> None:
     """Handler for cloud-rm subcommand."""
     asyncio.run(async_cloud_rm(args.path, args.verbose))
+
+
+def subcommand_cloud_insights(args) -> None:
+    """Handler for cloud-insights subcommand."""
+    asyncio.run(async_cloud_insights(args.path, args.verbose))
+
+
+async def async_cloud_search(
+    query: str,
+    top_n: int = 5,
+    name_filter: str | None = None,
+    after: str | None = None,
+    before: str | None = None,
+    verbose: bool = False,
+) -> None:
+    """Perform semantic search."""
+    setup_logging(verbose)
+    try:
+        async with create_session() as sn:
+            extended_client = extended.ExtendedClient(sn.client)
+            resp = await extended_client.search(
+                query=query,
+                top_n=top_n,
+                name_filter=name_filter,
+                date_after=after,
+                date_before=before,
+            )
+            if not resp.results:
+                print("No results found.")
+                return
+
+            print(f"\nSemantic Search Results for: '{query}'")
+            print("=" * 60)
+            for i, res in enumerate(resp.results, 1):
+                score_pct = f"{res.score * 100:.1f}%"
+                date_str = f" [{res.date}]" if res.date else ""
+                print(
+                    f"\n{i}. \033[1;36m{res.file_name}\033[0m (Page {res.page_index + 1}){date_str}"
+                )
+                print(f"   Relevance: \033[1;32m{score_pct}\033[0m")
+                print("   ---")
+                # Indent the text preview
+                preview = res.text_preview.replace("\n", "\n   ")
+                print(f"   {preview}")
+            print("\n" + "=" * 60)
+    except SupernoteException as err:
+        print(f"Error: {err}")
+        sys.exit(1)
+    except Exception as err:
+        print(f"Unexpected error: {err}")
+        if verbose:
+            traceback.print_exc()
+        sys.exit(1)
+
+
+def subcommand_cloud_search(args) -> None:
+    """Handler for cloud-search subcommand."""
+    asyncio.run(
+        async_cloud_search(
+            args.query,
+            args.top_n,
+            args.name_filter,
+            args.after,
+            args.before,
+            args.verbose,
+        )
+    )
 
 
 def add_parser(subparsers):
@@ -432,3 +566,35 @@ def add_parser(subparsers):
         "-v", "--verbose", action="store_true", help="Enable verbose logging"
     )
     parser_rm.set_defaults(func=subcommand_cloud_rm)
+
+    # 'cloud insights' subcommand
+    parser_insights = cloud_subparsers.add_parser(
+        "insights", help="Show AI insights and synthesis for a notebook"
+    )
+    parser_insights.add_argument("path", type=str, help="Cloud file path (.note)")
+    parser_insights.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    parser_insights.set_defaults(func=subcommand_cloud_insights)
+
+    # 'cloud search' subcommand
+    parser_search = cloud_subparsers.add_parser(
+        "search", help="Perform semantic search across all your notebooks"
+    )
+    parser_search.add_argument("query", type=str, help="Search query")
+    parser_search.add_argument(
+        "--top-n", type=int, default=5, help="Number of results to return"
+    )
+    parser_search.add_argument(
+        "--name-filter", type=str, help="Filter by notebook name"
+    )
+    parser_search.add_argument(
+        "--after", type=str, help="Filter by date after (YYYY-MM-DD)"
+    )
+    parser_search.add_argument(
+        "--before", type=str, help="Filter by date before (YYYY-MM-DD)"
+    )
+    parser_search.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    parser_search.set_defaults(func=subcommand_cloud_search)

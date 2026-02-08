@@ -13,14 +13,19 @@ from supernote.models.base import ProcessingStatus
 from supernote.models.extended import (
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
+    SearchResultVO,
     SystemTaskListVO,
     SystemTaskVO,
+    WebSearchRequestDTO,
+    WebSearchResponseVO,
     WebSummaryListRequestDTO,
     WebSummaryListVO,
 )
 from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.exceptions import SupernoteError
+from supernote.server.services.search import SearchService
 from supernote.server.services.summary import SummaryService
+from supernote.server.services.user import UserService
 
 logger = logging.getLogger(__name__)
 
@@ -136,4 +141,51 @@ async def handle_file_processing_status(request: web.Request) -> web.Response:
         )
     except Exception as err:
         logger.exception("Error fetching processing status")
+        return SupernoteError.uncaught(err).to_response()
+
+
+@routes.post("/api/extended/search")
+async def handle_extended_search(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/search
+    # Purpose: Semantic search across notebook content.
+    user_email = request["user"]
+    try:
+        data = await request.json()
+        req_dto = WebSearchRequestDTO.from_dict(data)
+    except Exception as e:
+        return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
+
+    user_service: UserService = request.app["user_service"]
+    search_service: SearchService = request.app["search_service"]
+
+    user_id = await user_service.get_user_id(user_email)
+    if not user_id:
+        return web.json_response({"error": "User not found"}, status=404)
+
+    try:
+        results = await search_service.search_chunks(
+            user_id=user_id,
+            query=req_dto.query,
+            top_n=req_dto.top_n,
+            name_filter=req_dto.name_filter,
+            date_after=req_dto.date_after,
+            date_before=req_dto.date_before,
+        )
+
+        vo_results = [
+            SearchResultVO(
+                file_id=r.file_id,
+                file_name=r.file_name,
+                page_index=r.page_index,
+                page_id=r.page_id,
+                score=float(r.score),
+                text_preview=r.text_preview,
+                date=r.date,
+            )
+            for r in results
+        ]
+
+        return web.json_response(WebSearchResponseVO(results=vo_results).to_dict())
+    except Exception as err:
+        logger.exception("Error performing semantic search")
         return SupernoteError.uncaught(err).to_response()

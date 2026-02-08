@@ -201,6 +201,10 @@ class UserService:
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
+    async def get_user_by_email(self, account: str) -> UserDO | None:
+        """Get a user by their email address."""
+        return await self._get_user_do(account)
+
     async def get_user_id(self, account: str) -> int:
         user = await self._get_user_do(account)
         if user:

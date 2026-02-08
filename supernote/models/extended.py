@@ -122,3 +122,47 @@ class FileProcessingStatusVO(BaseResponse):
     status_map: dict[str, ProcessingStatus] = field(
         metadata=field_options(alias="statusMap"), default_factory=dict
     )
+
+
+@dataclass
+class SearchResultVO(DataClassJSONMixin):
+    """VO for a single semantic search result."""
+
+    file_id: int = field(metadata=field_options(alias="fileId"))
+    file_name: str = field(metadata=field_options(alias="fileName"))
+    page_index: int = field(metadata=field_options(alias="pageIndex"))
+    page_id: str = field(metadata=field_options(alias="pageId"))
+    score: float
+    text_preview: str = field(metadata=field_options(alias="textPreview"))
+    date: str | None = None
+
+
+@dataclass
+class WebSearchRequestDTO(DataClassJSONMixin):
+    """Request DTO for semantic search (Web Extension)."""
+
+    query: str
+    top_n: int = field(metadata=field_options(alias="topN"), default=5)
+    name_filter: str | None = field(
+        metadata=field_options(alias="nameFilter"), default=None
+    )
+    date_after: str | None = field(
+        metadata=field_options(alias="dateAfter"), default=None
+    )
+    date_before: str | None = field(
+        metadata=field_options(alias="dateBefore"), default=None
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class WebSearchResponseVO(BaseResponse):
+    """Response VO for semantic search (Web Extension)."""
+
+    results: list[SearchResultVO] = field(default_factory=list)
+    """List of search results."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True

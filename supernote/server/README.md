@@ -1,20 +1,29 @@
 # Supernote Private Cloud Server
 
-This package provides a self-hosted implementation of the Supernote Cloud server, enhanced with AI-powered insights and robust background processing.
+This package provides a self-hosted implementation of the Supernote Cloud server, enhanced with AI-powered insights, a modern Web UI, and robust background processing.
+
+## Core Features
+
+-   **Seamless Sync**: Implements the native Supernote sync protocol.
+-   **AI Synthesis**: Automatically transcribes handwriting and identifies key insights using Google Gemini.
+-   **Knowledge Exploration**: Cross-notebook semantic search and web-based file browsing.
+-   **Private & Local**: Store your notes and metadata on your own infrastructure.
 
 ## Getting Started
 
+See the main [README.md](../../README.md) for a quick start guide.
+
 ### Prerequisites
 
-- A Supernote device (A5 X, A6 X, Nomad, etc.)
-- A computer running this server (accessible on your local network)
-- (Optional) Gemini API Key for OCR and Summarization
+-   A Supernote device (Nomad, A5 X, A6 X, etc.)
+-   Python 3.13+ or Docker.
+-   (Recommended) **Gemini API Key** for OCR and Summarization.
 
 ### Configuration
 
 The server is configured via `config/config.yaml` or environment variables.
 
-For a comprehensive reference, see the [ServerConfig documentation](https://allenporter.github.io/supernote-lite/supernote/server.html#ServerConfig).
+For a comprehensive reference, see the [ServerConfig documentation](https://allenporter.github.io/supernote/supernote/server.html#ServerConfig).
 
 #### AI Configuration
 To enable AI features, set the Gemini API key:
