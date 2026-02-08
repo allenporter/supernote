@@ -9,20 +9,34 @@ Example:
         # sn.token contains the access token for use with `Supernote.from_token`
         print(sn.token)
 
-    # Use an existing token:
+    # Use an existing token obtained with `LoginClient`
     sn = Supernote.from_token("your-token", host="http://localhost:8080")
 """
 
+from . import (
+    admin,
+    auth,
+    device,
+    exceptions,
+    extended,
+    login_client,
+    schedule,
+    summary,
+    web,
+)
 from .api import Supernote
-from .auth import AbstractAuth, ConstantAuth, FileCacheAuth
 from .client import Client
-from .login_client import LoginClient
 
 __all__ = [
     "Supernote",
     "Client",
-    "AbstractAuth",
-    "ConstantAuth",
-    "FileCacheAuth",
-    "LoginClient",
+    "login_client",
+    "auth",
+    "web",
+    "device",
+    "schedule",
+    "summary",
+    "exceptions",
+    "extended",
+    "admin",
 ]

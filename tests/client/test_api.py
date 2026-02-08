@@ -4,7 +4,8 @@ import aiohttp
 from aiohttp import web
 from pytest_aiohttp import AiohttpClient
 
-from supernote.client import ConstantAuth, Supernote
+from supernote.client import Supernote
+from supernote.client.auth import ConstantAuth
 from supernote.client.device import DeviceClient
 from supernote.client.web import WebClient
 from supernote.models.auth import UserQueryByIdVO

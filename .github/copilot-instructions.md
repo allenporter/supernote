@@ -53,7 +53,7 @@
 
 ## Key Files
 - `supernote/parser.py`: Entry point for parsing logic.
-- `supernote/cloud/client.py`: Core API client logic.
-- `supernote/cloud/api_model.py`: API data definitions.
+- `supernote/client`: Core API client logic.
+- `supernote/models`: API data definitions.
 - `supernote/server/ARCHITECTURE.md`: Documentation of the server protocol and architecture.
 - `pyproject.toml`: Project configuration and dependencies.
