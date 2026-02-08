@@ -27,7 +27,7 @@ from supernote.models.summary import (
     UploadSummaryApplyVO,
 )
 
-from . import Client
+from .client import Client
 
 
 class SummaryClient:

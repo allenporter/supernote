@@ -2,7 +2,7 @@
 
 from supernote.models.extended import WebSummaryListRequestDTO, WebSummaryListVO
 
-from . import Client
+from .client import Client
 
 
 class ExtendedClient:

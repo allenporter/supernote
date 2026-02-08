@@ -15,7 +15,7 @@ from supernote.models.schedule import (
     UpdateScheduleTaskVO,
 )
 
-from . import Client
+from .client import Client
 
 
 class ScheduleClient:
