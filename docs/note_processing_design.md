@@ -1,6 +1,6 @@
 # Design: Asynchronous Note Processing
 
-This document outlines the architecture for evolving the Supernote Lite server into an intelligent knowledge base. It focuses on asynchronous, multi-stage processing of `.note` files.
+This document outlines the architecture for evolving the Supernote server into an intelligent knowledge base. It focuses on asynchronous, multi-stage processing of `.note` files.
 
 ## 1. Core Principles
 - **Incremental & Page-Atomic**: The **Page** is the unit of processing. Only modified pages trigger expensive operations (OCR, Chunk Embeddings).

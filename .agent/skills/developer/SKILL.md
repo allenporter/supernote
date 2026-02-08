@@ -5,7 +5,7 @@ description: Use standardized scripts to manage the project environment, testing
 
 # Project Development Skill
 
-This skill teaches you how to interact with the Supernote-Lite codebase using standardized scripts, following the "Scripts to Rule Them All" pattern.
+This skill teaches you how to interact with the Supernote codebase using standardized scripts, following the "Scripts to Rule Them All" pattern.
 
 ## Core Scripts
 

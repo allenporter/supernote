@@ -352,6 +352,6 @@ The server delegates file conversion tasks (Note -> PDF, Note -> PNG) to an exte
 
 ### 8.3. Implementation Note
 Since the conversion logic is proprietary (likely involving the Ratta Supernote rendering engine), a re-implementation of the server would need to:
-1.  **the `.note` format** already described in `supernote-lite` python library.
+1.  **the `.note` format** already described in `supernote` python library.
 2.  **Implement a local renderer** (using the python library) to replace the external QTServer calls.
 3.  **Mock the QTServer protocol** OR rewrite the `FileLocalServiceImpl` to call the python library directly instead of opening a TCP socket.
