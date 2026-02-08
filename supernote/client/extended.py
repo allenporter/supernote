@@ -5,6 +5,8 @@ from supernote.models.extended import (
     WebSearchResponseVO,
     WebSummaryListRequestDTO,
     WebSummaryListVO,
+    WebTranscriptRequestDTO,
+    WebTranscriptResponseVO,
 )
 
 from .client import Client
@@ -42,4 +44,20 @@ class ExtendedClient:
         )
         return await self._client.post_json(
             "/api/extended/search", WebSearchResponseVO, json=dto.to_dict()
+        )
+
+    async def get_transcript(
+        self,
+        file_id: int,
+        start_index: int | None = None,
+        end_index: int | None = None,
+    ) -> WebTranscriptResponseVO:
+        """Retrieve a notebook transcript (Extension)."""
+        dto = WebTranscriptRequestDTO(
+            file_id=file_id,
+            start_index=start_index,
+            end_index=end_index,
+        )
+        return await self._client.post_json(
+            "/api/extended/transcript", WebTranscriptResponseVO, json=dto.to_dict()
         )

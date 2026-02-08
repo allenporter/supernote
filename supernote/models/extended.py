@@ -136,6 +136,9 @@ class SearchResultVO(DataClassJSONMixin):
     text_preview: str = field(metadata=field_options(alias="textPreview"))
     date: str | None = None
 
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
 
 @dataclass
 class WebSearchRequestDTO(DataClassJSONMixin):
@@ -163,6 +166,37 @@ class WebSearchResponseVO(BaseResponse):
 
     results: list[SearchResultVO] = field(default_factory=list)
     """List of search results."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class WebTranscriptRequestDTO(DataClassJSONMixin):
+    """Request DTO for retrieving a notebook transcript (Web Extension)."""
+
+    file_id: int = field(metadata=field_options(alias="fileId"))
+    """The unique ID of the notebook."""
+
+    start_index: int | None = field(
+        metadata=field_options(alias="startIndex"), default=None
+    )
+    """Optional 0-based start page index (inclusive)."""
+
+    end_index: int | None = field(
+        metadata=field_options(alias="endIndex"), default=None
+    )
+    """Optional 0-based end page index (inclusive)."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class WebTranscriptResponseVO(BaseResponse):
+    """Response VO for transcript retrieval (Web Extension)."""
+
+    transcript: str | None = None
 
     class Config(BaseConfig):
         serialize_by_alias = True
