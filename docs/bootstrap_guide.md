@@ -1,6 +1,6 @@
 # Bootstrap Guide
 
-This guide describes how to set up your Supernote Private Cloud server for the first time, including creating your initial admin account.
+This guide describes how to set up your Supernote Private Cloud server. This server is a community-developed implementation that is compatible with the official **Supernote Private Cloud** protocol, designed to work seamlessly with your Nomad, A6 X, or A5 X device.
 
 ## Overview
 
