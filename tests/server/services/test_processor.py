@@ -99,8 +99,9 @@ async def test_processor_handles_event(processor_service: ProcessorService) -> N
     # Alternatively, we can inspect the queue size BUT workers consume it.
 
     # Let's verify via side effect: process_file should have been called.
-    with patch.object(
-        processor_service, "process_file", new_callable=AsyncMock
+    with patch(
+        "supernote.server.services.processor.ProcessorService.process_file",
+        new_callable=AsyncMock,
     ) as mock_process:
         # Publish again
         await processor_service.event_bus.publish(event)
@@ -316,14 +317,19 @@ async def test_start_calls_poll_loop(processor_service: ProcessorService) -> Non
         except asyncio.CancelledError:
             pass
 
-    with patch.object(
-        processor_service, "recover_tasks", new_callable=AsyncMock
+    with patch(
+        "supernote.server.services.processor.ProcessorService.recover_tasks",
+        new_callable=AsyncMock,
     ) as mock_recover:
         # We don't mock poll_loop with just AsyncMock because it finishes instantly.
         # We replace it with a fake that sleeps so we can assert it's running.
-        with patch.object(processor_service, "poll_loop", side_effect=fake_poll_loop):
-            with patch.object(
-                processor_service, "worker_loop", return_value=AsyncMock()
+        with patch(
+            "supernote.server.services.processor.ProcessorService.poll_loop",
+            side_effect=fake_poll_loop,
+        ):
+            with patch(
+                "supernote.server.services.processor.ProcessorService.worker_loop",
+                return_value=AsyncMock(),
             ):
                 await processor_service.start()
                 await asyncio.sleep(0.01)
@@ -404,8 +410,10 @@ async def test_page_parallelism(
         (3, "p3"),
     ]
     mock_session.execute.return_value = mock_result
-    # Use patch.object to mock the session context manager
-    with patch.object(session_manager, "session") as mock_session_ctx:
+    # Use patch to mock the session context manager
+    with patch(
+        "supernote.server.db.session.DatabaseSessionManager.session"
+    ) as mock_session_ctx:
         mock_session_ctx.return_value.__aenter__.return_value = mock_session
         await processor_service.process_file(123)
 
