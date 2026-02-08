@@ -19,7 +19,7 @@ This project is designed to be **fully compatible** with the official Supernote 
 - **🔍 Semantic Search**: Find concepts across all your notebooks—not just filenames—using vectorized content.
 - **🛡️ Private & Secure**: You own your database. Run it on your NAS, local PC, or a low-power server, just like Supernote Private Cloud.
 - **🖥️ Modern Web UI**: A sleek, reactive frontend to browse, review, and search your notes from any browser.
-- **🤖 MCP Ready**: Connect your notes to AI agents (like Claude or ChatGPT) via the built-in [Model Context Protocol](https://modelcontextprotocol.io/) server.
+- **🤖 Agent Ready (MCP)**: Securely connect your notes to AI agents (Claude, ChatGPT) via the built-in [Model Context Protocol](https://modelcontextprotocol.io/) server. Supports dynamic **IndieAuth** for secure, remote access.
 
 ## Synthesis & AI in Action
 
@@ -83,6 +83,8 @@ supernote cloud search "What were my project goals for February?"
 <p align="center">
   <img src="docs/static-assets/cli-insights.jpg" alt="CLI AI Insights" width="700">
 </p>
+
+You can access the insights from the MCP server at `http://<your ip:port>/mcp`
 
 > [!TIP]
 > **Semantic Search**: Supernote doesn't just look for words—it understands concepts. Searching for "budget" will find notes about "expenses" or "money," even if the specific word isn't there.
@@ -202,7 +204,7 @@ The official Supernote Private Cloud by Ratta is a rock-solid, production-grade 
 - You want **AI-generated summaries** and insights from your notebooks.
 - You want to perform **semantic searches** across your entire handwriting library.
 - You want to integrate your notes into local scripts via a Python API or CLI.
-- You want to use the **Model Context Protocol (MCP)** to expose your knowledge to AI agents.
+- You want to use the **Model Context Protocol (MCP)** to [chat with your notes](docs/mcp.md) using AI agents.
 
 ## Community Projects
 
