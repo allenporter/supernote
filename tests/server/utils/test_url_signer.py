@@ -10,7 +10,7 @@ from supernote.server.utils.url_signer import UrlSigner
 @pytest.fixture
 def signer() -> UrlSigner:
     """Create a UrlSigner instance for testing."""
-    return UrlSigner("test-secret-key")
+    return UrlSigner("test-secret-key-32-characters-long!!")
 
 
 async def test_sign_and_verify(signer: UrlSigner) -> None:

@@ -108,7 +108,7 @@ def server_config(
         auth=AuthConfig(
             enable_registration=True,
             expiration_hours=1,
-            secret_key="test-secret-key",
+            secret_key="test-secret-key-32-characters-long!!",
         ),
     )
 
