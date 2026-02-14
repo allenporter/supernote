@@ -12,20 +12,35 @@ This skill teaches you how to interact with the Supernote codebase using standar
 | Script | When to use |
 | :--- | :--- |
 | `script/bootstrap` | After cloning or when dependencies change. |
+<<<<<<< ours
 | `script/test` | Before submitting changes or to verify functionality. |
 | `script/lint` | Before committing to ensure code style and quality. |
 | `script/server` | When you need a running server for integration testing or manual verification. |
 | `script/db_revision` | To generate a database migration revision. |
+=======
+| `script/setup` | When activating a virtual environment before development. |
+| `script/test` | Before submitting changes or to verify functionality. |
+| `script/lint` | Before committing to ensure code style and quality. |
+| `script/update` | When the repo is stale and there are changes to sync down from git. |
+>>>>>>> theirs
 
 ## Usage Patterns
 
 ### Standard Development Flow
+<<<<<<< ours
 1. **Initialize**: `./script/bootstrap`
 2. **Implement**: Make your changes to the code.
 3. **Database**: If you changed models, run `./script/db_revision "..."`.
 4. **Lint**: `./script/lint` to check for style issues.
 5. **Test**: `./script/test` to run the test suite.
 6. **Verify**: `./script/server` to run an ephemeral server for manual checks.
+=======
+1. **Initialize**: `./script/bootstrap` first time the repo is created
+2. **Setup**: `./script/setup` to activat the virtual environment
+3. **Implement**: Make your changes to the code.
+4. **Lint**: `./script/lint` to check for style issues.
+5. **Test**: `./script/test` to run the test suite.
+>>>>>>> theirs
 
 ### Notes
 - All scripts are located in the `script/` directory at the project root.
