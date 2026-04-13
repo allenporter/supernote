@@ -28,7 +28,7 @@ def serve_run(args: argparse.Namespace) -> None:
             # Set environment variables for the server process
             os.environ["SUPERNOTE_EPHEMERAL"] = "true"
             if not os.getenv("SUPERNOTE_PORT"):
-                os.environ["SUPERNOTE_PORT"] = "8000"
+                os.environ["SUPERNOTE_PORT"] = "8080"
             if not os.getenv("SUPERNOTE_HOST"):
                 os.environ["SUPERNOTE_HOST"] = "127.0.0.1"
             os.environ["SUPERNOTE_STORAGE_DIR"] = str(tmp_path)

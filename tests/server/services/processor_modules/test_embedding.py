@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
+from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.embedding import EmbeddingModule
@@ -107,8 +108,6 @@ async def test_embedding_fails_on_empty_vector(
     file_id = 888
 
     async with session_manager.session() as session:
-        from supernote.server.db.models.user import UserDO
-
         session.add(UserDO(id=user_id, email="e@example.com", password_md5="hash"))
         session.add(
             UserFileDO(

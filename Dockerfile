@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     SUPERNOTE_STORAGE_DIR=/data \
     SUPERNOTE_CONFIG_DIR=/data/config \
     SUPERNOTE_HOST=0.0.0.0 \
-    SUPERNOTE_PORT=8000
+    SUPERNOTE_PORT=8080
 
 # Create a non-root user
 RUN groupadd -g 1000 -r supernote && useradd -u 1000 -r -g supernote supernote
@@ -32,7 +32,7 @@ RUN mkdir -p /data /data/config && \
 # Switch to non-root user
 USER supernote
 
-EXPOSE 8000
+EXPOSE 8080
 
 VOLUME ["/data"]
 

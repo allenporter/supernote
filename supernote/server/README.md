@@ -62,14 +62,14 @@ Additional Mistral model settings:
 Start the server using the unified `supernote` CLI:
 
 ```bash
-# Start the server on port 8000
+# Start the server on port 8080
 supernote serve
 ```
 
 To override settings via environment:
 
 ```bash
-export SUPERNOTE_PORT=8000
+export SUPERNOTE_PORT=8080
 export SUPERNOTE_HOST=0.0.0.0
 supernote serve
 ```
@@ -82,7 +82,7 @@ docker build -t supernote .
 
 # Run the container
 docker run -d \
-  -p 8000:8000 \
+  -p 8080:8080 \
   -v $(pwd)/storage:/storage \
   -e SUPERNOTE_GEMINI_API_KEY="your-key" \
   --name supernote-server \
@@ -94,7 +94,7 @@ docker run -d \
 1. Review the [official Private Cloud setup guide](https://support.supernote.com/Whats-New/setting-up-your-own-supernote-private-cloud-beta).
 2. Ensure your Supernote device and server are on the same Wi-Fi network.
 3. On your Supernote device, go to **Settings** > **Sync** > **Supernote Cloud**.
-4. Select **Private Cloud** and enter your server's IP and port (e.g., `192.168.1.100:8000`).
+4. Select **Private Cloud** and enter your server's IP and port (e.g., `192.168.1.100:8080`).
 5. Attempt to login using the credentials created via `supernote admin user add`.
 6. Configure folders to sync (e.g., `Note`, `Document`, `EXPORT`) in **Settings** > **Drive** > **Private Cloud**.
 

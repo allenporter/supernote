@@ -45,12 +45,10 @@
 - [x] Add test isolation for storage.
 
 ## Phase 5: AI & Intelligence (Completed)
-- [x] Implement `AIService` abstract base class for provider-agnostic AI integration.
-- [x] Implement `GeminiService` for Google Gemini LLM interaction.
-- [x] Implement `MistralService` for Mistral AI (OCR API, embeddings, chat).
+- [x] Implement `GeminiService` for LLM interaction.
 - [x] Implement `ProcessorService` background worker.
-- [x] Implement `OcrModule` for handwriting transcription (provider-agnostic).
-- [x] Implement `EmbeddingModule` for semantic indexing (provider-agnostic).
+- [x] Implement `GeminiOcrModule` for handwriting transcription.
+- [x] Implement `GeminiEmbeddingModule` for semantic indexing.
 - [x] Implement `SummaryModule` for AI-generated highlights.
 - [x] Implement `SearchService` for semantic search.
 

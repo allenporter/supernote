@@ -60,16 +60,16 @@ supernote serve
 
 ```bash
 # Create the initial admin account
-supernote admin user add you@example.com --url http://localhost:8000
+supernote admin user add you@example.com --url http://localhost:8080
 
 # Authenticate your CLI
-supernote cloud login you@example.com --url http://localhost:8000
+supernote cloud login you@example.com --url http://localhost:8080
 ```
 
 ### 3. Connect Your Device
 
 1. On your Supernote, go to **Settings > Sync > Private Cloud**.
-2. Enter your server URL (e.g., `http://192.168.1.5:8000`).
+2. Enter your server URL (e.g., `http://192.168.1.5:8080`).
 3. Log in with the email and password you created in Step 2.
 4. Tap **Sync** to begin processing your notes.
 
@@ -140,7 +140,7 @@ The pre-built image is published to the GitHub Container Registry:
 ```bash
 # Pull and run the latest image
 docker run -d \
-  -p 8000:8000 \
+  -p 8080:8080 \
   -p 8001:8001 \
   -v supernote-data:/data \
   -e SUPERNOTE_GEMINI_API_KEY="your-api-key" \
@@ -151,7 +151,7 @@ Or build from source:
 
 ```bash
 docker build -t supernote .
-docker run -d -p 8000:8000 -v supernote-data:/data supernote
+docker run -d -p 8080:8080 -v $(pwd)/storage:/storage supernote serve
 ```
 
 For a full setup with Docker Compose, see [docker-compose.yml](docker-compose.yml).

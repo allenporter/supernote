@@ -49,8 +49,11 @@ class EmbeddingModule(ProcessorModule):
             return False
 
         async with session_manager.session() as session:
+            # Check Prerequisites (Text Content must exist)
             content = await get_page_content_by_id(session, file_id, page_id)
+
             if not content or not content.text_content:
+                # Dependency not met yet (OCR not done or empty page)
                 return False
 
         return True
@@ -66,9 +69,11 @@ class EmbeddingModule(ProcessorModule):
         if not page_id:
             return
 
+        # Get Text Content
         text_content = ""
         async with session_manager.session() as session:
             content = await get_page_content_by_id(session, file_id, page_id)
+
             if not content or not content.text_content:
                 logger.warning(
                     f"No text content found for embedding: file {file_id} page {page_id} (idx {page_index})"

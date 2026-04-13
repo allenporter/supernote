@@ -24,7 +24,7 @@ def test_server_config_defaults(tmp_path: Path) -> None:
     config = ServerConfig.load(config_dir)
 
     assert config.host == "0.0.0.0"
-    assert config.port == 8000
+    assert config.port == 8080
     assert config.storage_dir == "storage"
     assert config.auth.secret_key != ""  # Should be generated in-memory
 
@@ -79,7 +79,7 @@ def test_example_config_is_valid() -> None:
     config = ServerConfig.load(config_file=config_path)
 
     assert config.host == "0.0.0.0"
-    assert config.port == 8000
+    assert config.port == 8080
     assert config.storage_dir == "storage"
     assert config.auth.secret_key == "CHANGE_ME_TO_A_SECURE_RANDOM_STRING"
     assert config.auth.enable_registration is False

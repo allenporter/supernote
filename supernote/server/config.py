@@ -60,7 +60,7 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_HOST`
     """
 
-    port: int = 8000
+    port: int = 8080
     """Port to bind the server to.
 
     Env Var: `SUPERNOTE_PORT`
@@ -73,7 +73,7 @@ class ServerConfig(DataClassYAMLMixin):
     """
 
     _base_url: str | None = field(default=None, metadata={"name": "base_url"})
-    """Base URL for the main server (port 8000).
+    """Base URL for the main server (port 8080).
     Used for generating links and for the MCP Authorization Server issuer.
     """
 

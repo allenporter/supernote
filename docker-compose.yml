@@ -6,7 +6,7 @@ services:
     # build: .
     restart: unless-stopped
     ports:
-      - "8000:8000"   # Main server
+      - "8080:8080"   # Main server
       - "8001:8001"   # MCP server
     volumes:
       - supernote-data:/data
@@ -19,7 +19,7 @@ services:
       SUPERNOTE_STORAGE_DIR: /data
       SUPERNOTE_CONFIG_DIR: /data/config
       SUPERNOTE_HOST: 0.0.0.0
-      SUPERNOTE_PORT: "8000"
+      SUPERNOTE_PORT: "8080"
       SUPERNOTE_MCP_PORT: "8001"
 
       # Optional: set the public-facing base URL (e.g. behind a reverse proxy)

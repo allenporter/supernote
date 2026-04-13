@@ -66,7 +66,7 @@ async def async_cloud_login(
     Args:
         email: User email/account
         password: User password
-        url: Server URL (e.g. http://localhost:8000)
+        url: Server URL (e.g. http://localhost:8080)
         verbose: Enable verbose HTTP logging
     """
     setup_logging(verbose)
@@ -504,7 +504,7 @@ def add_parser(subparsers):
         "--password", type=str, help="user password (prompt if omitted)"
     )
     parser_login.add_argument(
-        "--url", type=str, required=True, help="Server URL (e.g. http://localhost:8000)"
+        "--url", type=str, required=True, help="Server URL (e.g. http://localhost:8080)"
     )
     parser_login.add_argument(
         "-v", "--verbose", action="store_true", help="Enable verbose logging"
