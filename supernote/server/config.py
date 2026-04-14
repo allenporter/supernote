@@ -131,7 +131,7 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_GEMINI_EMBEDDING_MODEL`
     """
 
-    gemini_chat_model: str = "gemini-2.0-flash"
+    gemini_chat_model: str = "gemini-3-flash-preview"
     """Gemini model to use for text generation (summaries).
 
     Env Var: `SUPERNOTE_GEMINI_CHAT_MODEL`
