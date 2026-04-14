@@ -7,11 +7,10 @@ from typing import List, Optional
 import numpy as np
 from sqlalchemy import select
 
-from supernote.server.config import ServerConfig
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.services.gemini import GeminiService
+from supernote.server.services.ai_service import AIService
 from supernote.server.utils.note_content import format_page_metadata, infer_page_date
 
 logger = logging.getLogger(__name__)
@@ -34,12 +33,10 @@ class SearchService:
     def __init__(
         self,
         session_manager: DatabaseSessionManager,
-        gemini_service: GeminiService,
-        config: ServerConfig,
+        ai_service: AIService,
     ) -> None:
         self.session_manager = session_manager
-        self.gemini_service = gemini_service
-        self.config = config
+        self.ai_service = ai_service
 
     async def search_chunks(
         self,
@@ -61,8 +58,8 @@ class SearchService:
             date_after: Optional ISO date string (YYYY-MM-DD). Filter results created after this date.
             date_before: Optional ISO date string (YYYY-MM-DD). Filter results created before this date.
         """
-        if not self.gemini_service.is_configured:
-            logger.warning("Search requested but Gemini is not configured")
+        if not self.ai_service.is_configured:
+            logger.warning("Search requested but AI service is not configured")
             return []
 
         # Parse date filters
@@ -78,23 +75,16 @@ class SearchService:
             return []
 
         # 1. Embed Query
-        model_id = self.config.gemini_embedding_model
         try:
-            response = await self.gemini_service.embed_content(
-                model=model_id,
-                contents=query,
-            )
-            if not response.embeddings:
-                logger.error("No embeddings returned for query")
-                return []
-
-            # Process the embedding values
-            query_embedding = np.array(response.embeddings[0].values)
+            embedding_values = await self.ai_service.embed_text(query)
+            query_embedding = np.array(embedding_values)
         except (ValueError, RuntimeError, TypeError) as e:
             logger.error(f"Failed to fetch or process query embedding: {e}")
             return []
 
         query_norm = np.linalg.norm(query_embedding)
+        if query_norm == 0:
+            raise ValueError("Query embedding has zero norm, cannot compute similarity")
 
         # 2. Fetch Candidates
         async with self.session_manager.session() as session:
@@ -133,10 +123,13 @@ class SearchService:
 
             try:
                 candidate_embedding = np.array(embedding_list)
+                candidate_norm = np.linalg.norm(candidate_embedding)
+                if candidate_norm == 0:
+                    continue
 
                 # Cosine Similarity
                 score = np.dot(query_embedding, candidate_embedding) / (
-                    query_norm * np.linalg.norm(candidate_embedding)
+                    query_norm * candidate_norm
                 )
 
                 # Date Inference (Phase 2)

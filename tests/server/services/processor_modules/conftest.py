@@ -1,13 +1,13 @@
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from supernote.server.config import AuthConfig, ServerConfig
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.services.ai_service import AIService
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
-from supernote.server.services.gemini import GeminiService
 from supernote.server.services.user import UserService
 
 
@@ -32,7 +32,6 @@ def server_config_gemini(tmp_path: Path) -> ServerConfig:
     conf = ServerConfig(
         auth=AuthConfig(secret_key="secret"),
         storage_dir=str(tmp_path),
-        # db_url is a property, not an init arg. We mock session_manager anyway.
     )
     conf.gemini_api_key = "fake-key"
     conf.gemini_ocr_model = "gemini-2.0-flash-exp"
@@ -41,12 +40,17 @@ def server_config_gemini(tmp_path: Path) -> ServerConfig:
 
 
 @pytest.fixture
-def gemini_service(server_config_gemini: ServerConfig) -> GeminiService:
-    return GeminiService(api_key=server_config_gemini.gemini_api_key)
-
-
-@pytest.fixture
-def mock_gemini_service() -> MagicMock:
-    service = MagicMock(spec=GeminiService)
+def mock_ai_service() -> MagicMock:
+    service = MagicMock(spec=AIService)
     service.is_configured = True
+    service.provider_name = "GEMINI"
+    service.ocr_image = AsyncMock(return_value="")
+    service.embed_text = AsyncMock(return_value=[])
+    service.generate_json = AsyncMock(return_value="{}")
     return service
+
+
+# Backwards-compatible alias used by older tests
+@pytest.fixture
+def mock_gemini_service(mock_ai_service: MagicMock) -> MagicMock:
+    return mock_ai_service

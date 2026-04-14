@@ -428,7 +428,13 @@ async def test_gemini_concurrency_limit() -> None:
 
     # Use patch to avoid actually calling the API
     with patch("google.genai.Client") as mock_client_cls:
-        service = GeminiService(api_key="fake-key", max_concurrency=max_concurrency)
+        service = GeminiService(
+            api_key="fake-key",
+            ocr_model="test-ocr",
+            embedding_model="test-embed",
+            chat_model="test-chat",
+            max_concurrency=max_concurrency,
+        )
         mock_client = mock_client_cls.return_value
         service._client = mock_client
 

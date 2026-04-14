@@ -1,6 +1,6 @@
 from collections.abc import Generator
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, PropertyMock, patch
 
 import pytest
 
@@ -21,17 +21,15 @@ def extended_client(authenticated_client: Client) -> ExtendedClient:
 def mock_gemini_service() -> Generator[None, None, None]:
     """Fixture to mock Gemini service."""
     # Mock Gemini Service to avoid network calls
-    mock_embedding_response = AsyncMock()
-    mock_embedding_response.embeddings = [AsyncMock(values=[1.0, 0.0, 0.0])]
-
     with (
         patch(
             "supernote.server.services.gemini.GeminiService.is_configured",
+            new_callable=PropertyMock,
             return_value=True,
         ),
         patch(
-            "supernote.server.services.gemini.GeminiService.embed_content",
-            return_value=mock_embedding_response,
+            "supernote.server.services.gemini.GeminiService.embed_text",
+            AsyncMock(return_value=[1.0, 0.0, 0.0]),
         ),
     ):
         yield

@@ -66,7 +66,7 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_PORT`
     """
 
-    mcp_port: int = 8081
+    mcp_port: int = 8001
     """Port to bind the MCP server to.
 
     Env Var: `SUPERNOTE_MCP_PORT`
@@ -78,7 +78,7 @@ class ServerConfig(DataClassYAMLMixin):
     """
 
     _mcp_base_url: str | None = field(default=None, metadata={"name": "mcp_base_url"})
-    """Base URL for the MCP server (port 8081).
+    """Base URL for the MCP server (port 8001).
 
     Used for RFC 9728 discovery if the server is behind a proxy.
     """
@@ -127,14 +127,52 @@ class ServerConfig(DataClassYAMLMixin):
 
     gemini_embedding_model: str = "gemini-embedding-001"
     """Gemini model to use for Embeddings.
-BaseConfig
+
     Env Var: `SUPERNOTE_GEMINI_EMBEDDING_MODEL`
+    """
+
+    gemini_chat_model: str = "gemini-3-flash-preview"
+    """Gemini model to use for text generation (summaries).
+
+    Env Var: `SUPERNOTE_GEMINI_CHAT_MODEL`
     """
 
     gemini_max_concurrency: int = 5
     """Maximum number of concurrent Gemini API calls.
 
     Env Var: `SUPERNOTE_GEMINI_MAX_CONCURRENCY`
+    """
+
+    mistral_api_key: str | None = None
+    """Mistral AI API Key for OCR, embeddings, and summaries.
+
+    When set, Mistral will be used as the AI backend instead of Gemini.
+
+    Env Var: `SUPERNOTE_MISTRAL_API_KEY`
+    """
+
+    mistral_ocr_model: str = "mistral-ocr-latest"
+    """Mistral model to use for OCR.
+
+    Env Var: `SUPERNOTE_MISTRAL_OCR_MODEL`
+    """
+
+    mistral_embedding_model: str = "mistral-embed"
+    """Mistral model to use for Embeddings.
+
+    Env Var: `SUPERNOTE_MISTRAL_EMBEDDING_MODEL`
+    """
+
+    mistral_chat_model: str = "mistral-large-latest"
+    """Mistral model to use for text generation (summaries).
+
+    Env Var: `SUPERNOTE_MISTRAL_CHAT_MODEL`
+    """
+
+    mistral_max_concurrency: int = 5
+    """Maximum number of concurrent Mistral API calls.
+
+    Env Var: `SUPERNOTE_MISTRAL_MAX_CONCURRENCY`
     """
 
     @property
@@ -274,9 +312,7 @@ BaseConfig
 
         if gemini_api_key := os.getenv("SUPERNOTE_GEMINI_API_KEY"):
             config.gemini_api_key = gemini_api_key
-            logger.info(
-                f"Using SUPERNOTE_GEMINI_API_KEY: xxx...{config.gemini_api_key[-3:]}"
-            )
+            logger.info("Using SUPERNOTE_GEMINI_API_KEY")
 
         if gemini_ocr_model := os.getenv("SUPERNOTE_GEMINI_OCR_MODEL"):
             config.gemini_ocr_model = gemini_ocr_model
@@ -288,14 +324,55 @@ BaseConfig
                 f"Using SUPERNOTE_GEMINI_EMBEDDING_MODEL: {config.gemini_embedding_model}"
             )
 
+        if gemini_chat_model := os.getenv("SUPERNOTE_GEMINI_CHAT_MODEL"):
+            config.gemini_chat_model = gemini_chat_model
+            logger.info(
+                f"Using SUPERNOTE_GEMINI_CHAT_MODEL: {config.gemini_chat_model}"
+            )
+
         if gemini_max_concurrency := os.getenv("SUPERNOTE_GEMINI_MAX_CONCURRENCY"):
             try:
-                config.gemini_max_concurrency = int(gemini_max_concurrency)
+                config.gemini_max_concurrency = max(1, int(gemini_max_concurrency))
                 logger.info(
                     f"Using SUPERNOTE_GEMINI_MAX_CONCURRENCY: {config.gemini_max_concurrency}"
                 )
             except ValueError:
-                pass
+                logger.warning(
+                    f"Ignoring invalid SUPERNOTE_GEMINI_MAX_CONCURRENCY={gemini_max_concurrency!r}; must be an integer"
+                )
+
+        if mistral_api_key := os.getenv("SUPERNOTE_MISTRAL_API_KEY"):
+            config.mistral_api_key = mistral_api_key
+            logger.info("Using SUPERNOTE_MISTRAL_API_KEY")
+
+        if mistral_ocr_model := os.getenv("SUPERNOTE_MISTRAL_OCR_MODEL"):
+            config.mistral_ocr_model = mistral_ocr_model
+            logger.info(
+                f"Using SUPERNOTE_MISTRAL_OCR_MODEL: {config.mistral_ocr_model}"
+            )
+
+        if mistral_embedding_model := os.getenv("SUPERNOTE_MISTRAL_EMBEDDING_MODEL"):
+            config.mistral_embedding_model = mistral_embedding_model
+            logger.info(
+                f"Using SUPERNOTE_MISTRAL_EMBEDDING_MODEL: {config.mistral_embedding_model}"
+            )
+
+        if mistral_chat_model := os.getenv("SUPERNOTE_MISTRAL_CHAT_MODEL"):
+            config.mistral_chat_model = mistral_chat_model
+            logger.info(
+                f"Using SUPERNOTE_MISTRAL_CHAT_MODEL: {config.mistral_chat_model}"
+            )
+
+        if mistral_max_concurrency := os.getenv("SUPERNOTE_MISTRAL_MAX_CONCURRENCY"):
+            try:
+                config.mistral_max_concurrency = max(1, int(mistral_max_concurrency))
+                logger.info(
+                    f"Using SUPERNOTE_MISTRAL_MAX_CONCURRENCY: {config.mistral_max_concurrency}"
+                )
+            except ValueError:
+                logger.warning(
+                    f"Ignoring invalid SUPERNOTE_MISTRAL_MAX_CONCURRENCY={mistral_max_concurrency!r}; must be an integer"
+                )
 
         if config.trace_log_file is None:
             config.trace_log_file = str(

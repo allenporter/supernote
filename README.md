@@ -2,7 +2,7 @@
 
 **The AI-powered intelligence layer for your Ratta Supernote.**
 
-This toolkit is a self-hosted implementation of the **Supernote Private Cloud** protocol. While Ratta's official private cloud provides a solid and reliable sync foundation, this project extends that experience with an **AI-driven synthesis engine**—transforming your handwritten notes into structured, searchable knowledge using Google Gemini.
+This toolkit is a self-hosted implementation of the **Supernote Private Cloud** protocol. While Ratta's official private cloud provides a solid and reliable sync foundation, this project extends that experience with an **AI-driven synthesis engine**—transforming your handwritten notes into structured, searchable knowledge using Google Gemini or Mistral AI.
 
 <p align="center">
   <img src="docs/static-assets/hero-overview.jpg" alt="Supernote Overview" width="800">
@@ -26,7 +26,7 @@ This project is designed to be **fully compatible** with the official Supernote 
 Beyond simple storage, Supernote provides an active processing pipeline to increase the utility of your notes:
 
 1.  **Sync**: Your device uploads `.note` files using the official Private Cloud protocol.
-2.  **Transcribe**: The server extract pages and use Gemini Vision to OCR your handwriting.
+2.  **Transcribe**: The server extracts pages and uses an AI provider (Gemini or Mistral) to OCR your handwriting.
 3.  **Synthesize**: AI Analyzers review your journals to find tasks, themes, and summaries.
 4.  **Index**: Every word is vectorized, enabling semantic search across your entire library.
 
@@ -43,10 +43,15 @@ The integrated frontend allows you to review your notes and AI insights side-by-
 
 ### 1. Launch the Cloud
 
-The easiest way to start is with the `all` bundle and a Gemini API key:
+The easiest way to start is with the `all` bundle and an AI API key. Choose either Google Gemini or Mistral AI:
 
 ```bash
-export SUPERNOTE_GEMINI_API_KEY="your-api-key"
+# Option A: Google Gemini (default)
+export SUPERNOTE_GEMINI_API_KEY="your-gemini-api-key"
+
+# Option B: Mistral AI
+export SUPERNOTE_MISTRAL_API_KEY="your-mistral-api-key"
+
 pip install "supernote[all]"
 supernote serve
 ```
@@ -130,13 +135,26 @@ The notebook parser is a fork and slightly lighter dependency version of [supern
 
 ### Run with Docker
 
+The pre-built image is published to the GitHub Container Registry:
+
 ```bash
-# Build & Run server
+# Pull and run the latest image
+docker run -d \
+  -p 8080:8080 \
+  -p 8001:8001 \
+  -v supernote-data:/data \
+  -e SUPERNOTE_GEMINI_API_KEY="your-api-key" \
+  ghcr.io/allenporter/supernote:latest
+```
+
+Or build from source:
+
+```bash
 docker build -t supernote .
 docker run -d -p 8080:8080 -v $(pwd)/storage:/storage supernote serve
 ```
 
-See [Server Documentation](https://github.com/allenporter/supernote/blob/main/supernote/server/README.md) for details.
+For a full setup with Docker Compose, see [docker-compose.yml](docker-compose.yml).
 
 ### Developer API
 

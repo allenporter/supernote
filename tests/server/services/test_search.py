@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from supernote.server.config import ServerConfig
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.session import DatabaseSessionManager
@@ -11,31 +10,28 @@ from supernote.server.services.search import SearchService
 
 
 @pytest.fixture
-def mock_gemini_service() -> MagicMock:
+def mock_ai_service() -> MagicMock:
     service = MagicMock()
     service.is_configured = True
-    service.embed_content = AsyncMock()
+    service.embed_text = AsyncMock()
     return service
 
 
 @pytest.fixture
 def search_service(
     session_manager: DatabaseSessionManager,
-    mock_gemini_service: MagicMock,
-    server_config: ServerConfig,
+    mock_ai_service: MagicMock,
 ) -> SearchService:
-    server_config.gemini_embedding_model = "text-embedding-004"
     return SearchService(
         session_manager=session_manager,
-        gemini_service=mock_gemini_service,
-        config=server_config,
+        ai_service=mock_ai_service,
     )
 
 
 async def test_search_chunks_success(
     search_service: SearchService,
     session_manager: DatabaseSessionManager,
-    mock_gemini_service: MagicMock,
+    mock_ai_service: MagicMock,
 ) -> None:
     # Setup Data
     user_id = 1
@@ -79,12 +75,8 @@ async def test_search_chunks_success(
         )
         await session.commit()
 
-    # Mock Gemini Embedding for query "cats"
-    mock_response = MagicMock()
-    mock_embedding = MagicMock()
-    mock_embedding.values = [1.0, 0.0, 0.0]
-    mock_response.embeddings = [mock_embedding]
-    mock_gemini_service.embed_content.return_value = mock_response
+    # Mock embedding for query "cats"
+    mock_ai_service.embed_text.return_value = [1.0, 0.0, 0.0]
 
     # Run Search
     results = await search_service.search_chunks(user_id=user_id, query="cats", top_n=5)
@@ -101,7 +93,7 @@ async def test_search_chunks_success(
 async def test_search_chunks_with_name_filter(
     search_service: SearchService,
     session_manager: DatabaseSessionManager,
-    mock_gemini_service: MagicMock,
+    mock_ai_service: MagicMock,
 ) -> None:
     # Setup Data
     user_id = 1
@@ -143,12 +135,7 @@ async def test_search_chunks_with_name_filter(
         )
         await session.commit()
 
-    # Mock Gemini Embedding
-    mock_response = MagicMock()
-    mock_embedding = MagicMock()
-    mock_embedding.values = [1.0, 0.0]
-    mock_response.embeddings = [mock_embedding]
-    mock_gemini_service.embed_content.return_value = mock_response
+    mock_ai_service.embed_text.return_value = [1.0, 0.0]
 
     # Run Search with name filter "Monthly"
     results = await search_service.search_chunks(
@@ -225,10 +212,58 @@ async def test_get_transcript(
     assert "Page ID: P20231028120000def" in range_trans
 
 
+async def test_search_skips_zero_norm_candidate(
+    search_service: SearchService,
+    session_manager: DatabaseSessionManager,
+    mock_ai_service: MagicMock,
+) -> None:
+    """Candidates with all-zero embeddings should be skipped (not cause NaN scores)."""
+    user_id = 1
+    file_id = 101
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id, user_id=user_id, file_name="Notes.note", directory_id=0
+            )
+        )
+        # Good page
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="p0",
+                text_content="Relevant content.",
+                embedding=json.dumps([1.0, 0.0]),
+            )
+        )
+        # Zero-norm page — should be skipped entirely
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=1,
+                page_id="p1",
+                text_content="Zero norm page.",
+                embedding=json.dumps([0.0, 0.0]),
+            )
+        )
+        await session.commit()
+
+    mock_ai_service.embed_text.return_value = [1.0, 0.0]
+
+    results = await search_service.search_chunks(user_id=user_id, query="anything")
+
+    # Only the good page should appear; zero-norm page is silently skipped
+    assert len(results) == 1
+    assert results[0].page_index == 0
+    # Score should be finite and valid
+    assert 0.0 <= results[0].score <= 1.0
+
+
 async def test_search_chunks_with_date_filter_inferred(
     search_service: SearchService,
     session_manager: DatabaseSessionManager,
-    mock_gemini_service: MagicMock,
+    mock_ai_service: MagicMock,
 ) -> None:
     # Setup Data
     user_id = 1
@@ -263,12 +298,7 @@ async def test_search_chunks_with_date_filter_inferred(
         )
         await session.commit()
 
-    # Mock Gemini
-    mock_response = MagicMock()
-    mock_embedding = MagicMock()
-    mock_embedding.values = [1.0, 0.0]
-    mock_response.embeddings = [mock_embedding]
-    mock_gemini_service.embed_content.return_value = mock_response
+    mock_ai_service.embed_text.return_value = [1.0, 0.0]
 
     # Filter for Oct 27
     results = await search_service.search_chunks(

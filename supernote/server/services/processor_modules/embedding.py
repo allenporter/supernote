@@ -2,32 +2,29 @@ import json
 import logging
 from typing import Optional
 
-from supernote.server.config import ServerConfig
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.services.ai_service import AIService
 from supernote.server.services.file import FileService
-from supernote.server.services.gemini import GeminiService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.utils.note_content import get_page_content_by_id
 
 logger = logging.getLogger(__name__)
 
 
-class GeminiEmbeddingModule(ProcessorModule):
-    """Module responsible for generating embeddings for note pages using Gemini."""
+class EmbeddingModule(ProcessorModule):
+    """Module responsible for generating embeddings for note pages using AI."""
 
     def __init__(
         self,
         file_service: FileService,
-        config: ServerConfig,
-        gemini_service: GeminiService,
+        ai_service: AIService,
     ) -> None:
         self.file_service = file_service
-        self.config = config
-        self.gemini_service = gemini_service
+        self.ai_service = ai_service
 
     @property
     def name(self) -> str:
-        return "GeminiEmbeddingModule"
+        return "EmbeddingModule"
 
     @property
     def task_type(self) -> str:
@@ -43,7 +40,7 @@ class GeminiEmbeddingModule(ProcessorModule):
         if not page_id:
             return False
 
-        if not self.gemini_service.is_configured:
+        if not self.ai_service.is_configured:
             return False
 
         if not await super().run_if_needed(
@@ -84,27 +81,22 @@ class GeminiEmbeddingModule(ProcessorModule):
                 return
             text_content = content.text_content
 
-        # Call Gemini API
-        if not self.gemini_service.is_configured:
-            raise ValueError("Gemini API key not configured")
+        if not self.ai_service.is_configured:
+            raise ValueError("AI service not configured")
 
-        model_id = self.config.gemini_embedding_model
-        response = await self.gemini_service.embed_content(
-            model=model_id,
-            contents=text_content,
-        )
-
-        if not response.embeddings:
-            raise ValueError("No embeddings returned from Gemini API")
-
-        # Assuming single embedding for the whole text block for now
-        embedding_values = response.embeddings[0].values
+        embedding_values = await self.ai_service.embed_text(text_content)
+        if not embedding_values:
+            raise ValueError(
+                f"AI service returned empty embedding for file {file_id} page {page_id}"
+            )
+        if not any(embedding_values):
+            raise ValueError(
+                f"AI service returned zero-norm embedding for file {file_id} page {page_id}"
+            )
         embedding_json = json.dumps(embedding_values)
 
-        # Save Result
         async with session_manager.session() as session:
             content = await get_page_content_by_id(session, file_id, page_id)
-
             if content:
                 content.embedding = embedding_json
             await session.commit()

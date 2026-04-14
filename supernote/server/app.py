@@ -35,13 +35,15 @@ from .routes import (
     system,
 )
 from .routes.decorators import public_route
+from .services.ai_service import AIService
 from .services.blob import LocalBlobStorage
 from .services.coordination import SqliteCoordinationService
 from .services.file import FileService
 from .services.gemini import GeminiService
+from .services.mistral import MistralService
 from .services.processor import ProcessorService
-from .services.processor_modules.gemini_embedding import GeminiEmbeddingModule
-from .services.processor_modules.gemini_ocr import GeminiOcrModule
+from .services.processor_modules.embedding import EmbeddingModule
+from .services.processor_modules.ocr import OcrModule
 from .services.processor_modules.page_hashing import PageHashingModule
 from .services.processor_modules.png_conversion import PngConversionModule
 from .services.processor_modules.summary import SummaryModule
@@ -290,15 +292,31 @@ def create_app(config: ServerConfig) -> web.Application:
     app["file_service"] = file_service
     app["url_signer"] = UrlSigner(config.auth.secret_key, coordination_service)
     app["schedule_service"] = ScheduleService(session_manager)
-    gemini_service = GeminiService(
-        config.gemini_api_key, max_concurrency=config.gemini_max_concurrency
-    )
-    app["gemini_service"] = gemini_service
+    ai_service: AIService
+    if config.mistral_api_key:
+        logger.info("Using Mistral as AI backend")
+        ai_service = MistralService(
+            api_key=config.mistral_api_key,
+            ocr_model=config.mistral_ocr_model,
+            embedding_model=config.mistral_embedding_model,
+            chat_model=config.mistral_chat_model,
+            max_concurrency=config.mistral_max_concurrency,
+        )
+    else:
+        logger.info("Using Gemini as AI backend")
+        ai_service = GeminiService(
+            api_key=config.gemini_api_key,
+            ocr_model=config.gemini_ocr_model,
+            embedding_model=config.gemini_embedding_model,
+            chat_model=config.gemini_chat_model,
+            max_concurrency=config.gemini_max_concurrency,
+        )
+    app["ai_service"] = ai_service
 
     summary_service = SummaryService(user_service, session_manager)
     app["summary_service"] = summary_service
 
-    search_service = SearchService(session_manager, gemini_service, config)
+    search_service = SearchService(session_manager, ai_service)
     app["search_service"] = search_service
 
     app["sync_locks"] = {}  # user -> (equipment_no, expiry_time)
@@ -313,16 +331,17 @@ def create_app(config: ServerConfig) -> web.Application:
     processor_service.register_modules(
         hashing=PageHashingModule(file_service=file_service),
         png=PngConversionModule(file_service=file_service),
-        ocr=GeminiOcrModule(
-            file_service=file_service, config=config, gemini_service=gemini_service
+        ocr=OcrModule(
+            file_service=file_service,
+            ai_service=ai_service,
         ),
-        embedding=GeminiEmbeddingModule(
-            file_service=file_service, config=config, gemini_service=gemini_service
+        embedding=EmbeddingModule(
+            file_service=file_service,
+            ai_service=ai_service,
         ),
         summary=SummaryModule(
             file_service=file_service,
-            config=config,
-            gemini_service=gemini_service,
+            ai_service=ai_service,
             summary_service=summary_service,
         ),
     )

@@ -9,7 +9,6 @@ from supernote.models.summary import (
     AddSummaryDTO,
     SummaryItem,
 )
-from supernote.server.config import ServerConfig
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
 from supernote.server.db.models.user import UserDO
@@ -33,14 +32,12 @@ def mock_summary_service() -> MagicMock:
 @pytest.fixture
 def summary_module(
     file_service: FileService,
-    server_config_gemini: ServerConfig,
     mock_gemini_service: MagicMock,
     mock_summary_service: MagicMock,
 ) -> SummaryModule:
     return SummaryModule(
         file_service=file_service,
-        config=server_config_gemini,
-        gemini_service=mock_gemini_service,
+        ai_service=mock_gemini_service,
         summary_service=mock_summary_service,
     )
 
@@ -91,10 +88,8 @@ async def test_summary_success(
         session.add(p2)
         await session.commit()
 
-    # Mock Gemini AI Response
-    mock_response = MagicMock()
-    # Return valid JSON matching the new segmented schema
-    mock_response.text = json.dumps(
+    # Mock AI JSON response
+    mock_gemini_service.generate_json.return_value = json.dumps(
         {
             "segments": [
                 {
@@ -106,7 +101,6 @@ async def test_summary_success(
             ]
         }
     )
-    mock_gemini_service.generate_content.return_value = mock_response
 
     # Mock PromptLoader
     with patch(
@@ -124,13 +118,13 @@ async def test_summary_success(
             PromptId.SUMMARY_GENERATION, custom_type="real"
         )
 
-        # Verify Gemini called with populated prompt
-        call_args = mock_gemini_service.generate_content.call_args
+        # Verify AI called with populated prompt
+        call_args = mock_gemini_service.generate_json.call_args
         assert call_args is not None
-        _, kwargs = call_args
-        assert "Page 1 text" in kwargs["contents"]
-        assert "Page 2 text" in kwargs["contents"]
-        assert "Generate" in kwargs["contents"]
+        called_prompt = call_args.kwargs["prompt"]
+        assert "Page 1 text" in called_prompt
+        assert "Page 2 text" in called_prompt
+        assert "Generate" in called_prompt
 
     # 1. Transcript Upsert
     transcript_call = mock_summary_service.add_summary.call_args_list[0]
@@ -150,7 +144,7 @@ async def test_summary_success(
     assert dto_ai.unique_identifier == get_summary_id(storage_key)
     assert "## 2023-10-27" in dto_ai.content
     assert "AI Summary Output" in dto_ai.content
-    assert dto_ai.data_source == "GEMINI"
+    assert dto_ai.data_source == mock_gemini_service.provider_name
 
     # Check Metadata
     assert dto_ai.metadata is not None
@@ -209,9 +203,7 @@ async def test_summary_idempotency_update(
         )
         await session.commit()
 
-    # Mock Gemini
-    mock_response = MagicMock()
-    mock_response.text = json.dumps(
+    mock_gemini_service.generate_json.return_value = json.dumps(
         {
             "segments": [
                 {
@@ -223,7 +215,6 @@ async def test_summary_idempotency_update(
             ]
         }
     )
-    mock_gemini_service.generate_content.return_value = mock_response
 
     # Mock Existing Summary
     existing_summary = SummaryItem(id=11, unique_identifier=get_summary_id(storage_key))
@@ -292,10 +283,7 @@ async def test_summary_transcript_with_dates(
         )
         await session.commit()
 
-    # Mock Gemini (minimal)
-    mock_response = MagicMock()
-    mock_response.text = json.dumps({"segments": []})
-    mock_gemini_service.generate_content.return_value = mock_response
+    mock_gemini_service.generate_json.return_value = json.dumps({"segments": []})
 
     # Run full module lifecycle
     await summary_module.run(file_id, session_manager)

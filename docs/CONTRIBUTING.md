@@ -61,8 +61,9 @@ This script will initialize a virtual environment using `uv`, install dependenci
 For rapid iteration, run an ephemeral server. It starts with a clean state and a pre-configured debug user.
 
 ```bash
-# Enable AI features for development
-export SUPERNOTE_GEMINI_API_KEY="your_api_key"
+# Enable AI features for development (choose one)
+export SUPERNOTE_GEMINI_API_KEY="your-gemini-api-key"     # Google Gemini (default)
+# export SUPERNOTE_MISTRAL_API_KEY="your-mistral-api-key"  # Mistral AI (alternative)
 
 # Start the ephemeral server
 supernote serve --ephemeral

@@ -13,13 +13,12 @@ from supernote.models.summary import (
     AddSummaryDTO,
     UpdateSummaryDTO,
 )
-from supernote.server.config import ServerConfig
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.services.ai_service import AIService
 from supernote.server.services.file import FileService
-from supernote.server.services.gemini import GeminiService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.services.summary import SummaryService
 from supernote.server.utils.note_content import format_page_metadata
@@ -69,13 +68,11 @@ class SummaryModule(ProcessorModule):
     def __init__(
         self,
         file_service: FileService,
-        config: ServerConfig,
-        gemini_service: GeminiService,
+        ai_service: AIService,
         summary_service: SummaryService,
     ) -> None:
         self.file_service = file_service
-        self.config = config
-        self.gemini_service = gemini_service
+        self.ai_service = ai_service
         self.summary_service = summary_service
 
     @property
@@ -98,7 +95,7 @@ class SummaryModule(ProcessorModule):
         if page_index is not None:
             return False
 
-        if not self.gemini_service.is_configured:
+        if not self.ai_service.is_configured:
             return False
 
         if not await super().run_if_needed(file_id, session_manager, page_index):
@@ -118,7 +115,7 @@ class SummaryModule(ProcessorModule):
         Generates an AI summary for the given file.
 
         1. Aggregates all OCR text for the file.
-        2. Sends to Gemini for summarization and date extraction.
+        2. Sends to the AI service for summarization and date extraction.
         3. Stores the result as a new Summary.
         """
         logger.info(f"Starting summary generation for file_id={file_id}")
@@ -184,7 +181,7 @@ class SummaryModule(ProcessorModule):
             ),
         )
 
-        # 5. Generate AI Summary using Gemini
+        # 5. Generate AI Summary
         # Determine prompt based on filename/type
         custom_type = Path(file_do.file_name).stem.lower()
 
@@ -195,27 +192,21 @@ class SummaryModule(ProcessorModule):
         prompt = f"{prompt_template}\n\nTRANSCRIPT:\n{full_text}"
 
         try:
-            response = await self.gemini_service.generate_content(
-                model=self.config.gemini_ocr_model,
-                contents=prompt,
-                config={
-                    "response_mime_type": "application/json",
-                    "response_json_schema": build_json_schema(
-                        SummaryResponse
-                    ).to_dict(),
-                },
+            response_text = await self.ai_service.generate_json(
+                prompt=prompt,
+                schema=build_json_schema(SummaryResponse).to_dict(),
             )
         except Exception as e:
             logger.error(f"Failed to generate AI summary for file {file_id}: {e}")
-            return
+            raise
 
         # Parse JSON response
         ai_summary = "No summary generated."
         metadata_str = None
 
-        if response.text:
+        if response_text:
             try:
-                data = json.loads(response.text)
+                data = json.loads(response_text)
                 segments_data = data.get("segments", [])
 
                 # Format segments into Markdown and collect metadata
@@ -264,7 +255,7 @@ class SummaryModule(ProcessorModule):
 
             except json.JSONDecodeError:
                 logger.error(f"Failed to parse JSON response for file {file_id}")
-                ai_summary = response.text
+                ai_summary = response_text
 
         await self._upsert_summary(
             user_email,
@@ -272,7 +263,7 @@ class SummaryModule(ProcessorModule):
                 file_id=file_id,
                 unique_identifier=summary_uuid,
                 content=ai_summary,
-                data_source="GEMINI",
+                data_source=self.ai_service.provider_name,
                 source_path=file_do.file_name,
                 metadata=metadata_str,
             ),

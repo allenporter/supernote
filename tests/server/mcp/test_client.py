@@ -5,7 +5,7 @@ import re
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, PropertyMock, patch
 
 import httpx
 import pytest
@@ -77,17 +77,15 @@ async def notebook_file_id(
 def mock_gemini_service() -> Generator[None, None, None]:
     """Fixture to mock Gemini service."""
     # 1. Mock Gemini Service to avoid network calls
-    mock_embedding_response = AsyncMock()
-    mock_embedding_response.embeddings = [AsyncMock(values=[0.1] * 768)]
-
     with (
         patch(
             "supernote.server.services.gemini.GeminiService.is_configured",
+            new_callable=PropertyMock,
             return_value=True,
         ),
         patch(
-            "supernote.server.services.gemini.GeminiService.embed_content",
-            return_value=mock_embedding_response,
+            "supernote.server.services.gemini.GeminiService.embed_text",
+            AsyncMock(return_value=[0.1] * 768),
         ),
     ):
         yield

@@ -1,0 +1,33 @@
+---
+services:
+  supernote:
+    image: ghcr.io/allenporter/supernote:latest
+    # Alternatively, build from source:
+    # build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"   # Main server
+      - "8001:8001"   # MCP server
+    volumes:
+      - supernote-data:/data
+    environment:
+      # AI Provider — set one of the following:
+      SUPERNOTE_GEMINI_API_KEY: ""      # Google Gemini API key
+      # SUPERNOTE_MISTRAL_API_KEY: ""   # Mistral AI API key (alternative)
+
+      # Storage & server
+      SUPERNOTE_STORAGE_DIR: /data
+      SUPERNOTE_CONFIG_DIR: /data/config
+      SUPERNOTE_HOST: 0.0.0.0
+      SUPERNOTE_PORT: "8080"
+      SUPERNOTE_MCP_PORT: "8001"
+
+      # Optional: set the public-facing base URL (e.g. behind a reverse proxy)
+      # SUPERNOTE_BASE_URL: "https://supernote.example.com"
+      # SUPERNOTE_MCP_BASE_URL: "https://mcp.example.com"
+
+      # Optional: enable user self-registration
+      # SUPERNOTE_ENABLE_REGISTRATION: "true"
+
+volumes:
+  supernote-data:
