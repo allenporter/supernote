@@ -15,21 +15,21 @@ from supernote.server.utils.prompt_loader import PromptId
 
 
 @pytest.fixture
-def ocr_module(
+def gemini_ocr_module(
     file_service: FileService,
-    mock_ai_service: MagicMock,
+    mock_gemini_service: MagicMock,
 ) -> OcrModule:
     return OcrModule(
         file_service=file_service,
-        ai_service=mock_ai_service,
+        ai_service=mock_gemini_service,
     )
 
 
 async def test_process_ocr_success(
-    ocr_module: OcrModule,
+    gemini_ocr_module: OcrModule,
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
-    mock_ai_service: MagicMock,
+    mock_gemini_service: MagicMock,
 ) -> None:
     user_id = 100
     file_id = 999
@@ -59,13 +59,13 @@ async def test_process_ocr_success(
         session.add(content)
         await session.commit()
 
-    mock_ai_service.ocr_image.return_value = "Handwritten text content"
+    mock_gemini_service.ocr_image.return_value = "Handwritten text content"
 
     with patch(
         "supernote.server.services.processor_modules.ocr.PROMPT_LOADER"
     ) as mock_loader:
         mock_loader.get_prompt.return_value = "Transcribe this page."
-        await ocr_module.run(
+        await gemini_ocr_module.run(
             file_id, session_manager, page_index=page_index, page_id="p0"
         )
         mock_loader.get_prompt.assert_called_with(
@@ -73,7 +73,7 @@ async def test_process_ocr_success(
         )
 
     # Verify ocr_image called with correct png_data and prompt containing metadata
-    call_args = mock_ai_service.ocr_image.call_args
+    call_args = mock_gemini_service.ocr_image.call_args
     assert call_args is not None
     called_png, called_prompt = call_args.args
     assert called_png == png_content
@@ -113,24 +113,24 @@ async def test_process_ocr_success(
 
 
 async def test_ocr_run_if_needed_disabled(
-    ocr_module: OcrModule,
+    gemini_ocr_module: OcrModule,
     session_manager: DatabaseSessionManager,
-    mock_ai_service: MagicMock,
+    mock_gemini_service: MagicMock,
 ) -> None:
-    mock_ai_service.is_configured = False
+    mock_gemini_service.is_configured = False
 
     assert (
-        await ocr_module.run_if_needed(1, session_manager, page_index=0, page_id="p0")
+        await gemini_ocr_module.run_if_needed(1, session_manager, page_index=0, page_id="p0")
         is False
     )
-    assert await ocr_module.run(1, session_manager, page_index=0, page_id="p0") is True
+    assert await gemini_ocr_module.run(1, session_manager, page_index=0, page_id="p0") is True
 
 
 async def test_ocr_with_inferred_date(
-    ocr_module: OcrModule,
+    gemini_ocr_module: OcrModule,
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
-    mock_ai_service: MagicMock,
+    mock_gemini_service: MagicMock,
 ) -> None:
     file_id = 123
     page_id = "P20231027123456"
@@ -145,15 +145,15 @@ async def test_ocr_with_inferred_date(
         session.add(NotePageContentDO(file_id=file_id, page_index=0, page_id=page_id))
         await session.commit()
 
-    mock_ai_service.ocr_image.return_value = "OCR text"
+    mock_gemini_service.ocr_image.return_value = "OCR text"
 
     with patch(
         "supernote.server.services.processor_modules.ocr.PROMPT_LOADER"
     ) as mock_loader:
         mock_loader.get_prompt.return_value = "Prompt"
-        await ocr_module.run(file_id, session_manager, page_index=0, page_id=page_id)
+        await gemini_ocr_module.run(file_id, session_manager, page_index=0, page_id=page_id)
 
-    _, called_prompt = mock_ai_service.ocr_image.call_args.args
+    _, called_prompt = mock_gemini_service.ocr_image.call_args.args
     assert "--- Page 1 ---" in called_prompt
     assert "Notebook Filename: test.note" in called_prompt
     assert "Page ID: P20231027123456" in called_prompt
