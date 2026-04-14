@@ -332,13 +332,7 @@ class ServerConfig(DataClassYAMLMixin):
 
         if gemini_max_concurrency := os.getenv("SUPERNOTE_GEMINI_MAX_CONCURRENCY"):
             try:
-                value = int(gemini_max_concurrency)
-                if value < 1:
-                    logger.warning(
-                        f"SUPERNOTE_GEMINI_MAX_CONCURRENCY={value} is invalid; clamping to 1"
-                    )
-                    value = 1
-                config.gemini_max_concurrency = value
+                config.gemini_max_concurrency = max(1, int(gemini_max_concurrency))
                 logger.info(
                     f"Using SUPERNOTE_GEMINI_MAX_CONCURRENCY: {config.gemini_max_concurrency}"
                 )
@@ -371,13 +365,7 @@ class ServerConfig(DataClassYAMLMixin):
 
         if mistral_max_concurrency := os.getenv("SUPERNOTE_MISTRAL_MAX_CONCURRENCY"):
             try:
-                value = int(mistral_max_concurrency)
-                if value < 1:
-                    logger.warning(
-                        f"SUPERNOTE_MISTRAL_MAX_CONCURRENCY={value} is invalid; clamping to 1"
-                    )
-                    value = 1
-                config.mistral_max_concurrency = value
+                config.mistral_max_concurrency = max(1, int(mistral_max_concurrency))
                 logger.info(
                     f"Using SUPERNOTE_MISTRAL_MAX_CONCURRENCY: {config.mistral_max_concurrency}"
                 )

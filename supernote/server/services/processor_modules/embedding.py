@@ -89,6 +89,10 @@ class EmbeddingModule(ProcessorModule):
             raise ValueError(
                 f"AI service returned empty embedding for file {file_id} page {page_id}"
             )
+        if not any(embedding_values):
+            raise ValueError(
+                f"AI service returned zero-norm embedding for file {file_id} page {page_id}"
+            )
         embedding_json = json.dumps(embedding_values)
 
         async with session_manager.session() as session:
