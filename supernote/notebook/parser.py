@@ -26,11 +26,11 @@ ParamsBlock = fileformat.ParamsBlock
 class FileObj(Protocol):
     """Protocol for file-like object."""
 
-    def seek(self, offset: int, whence: int) -> None:
+    def seek(self, offset: int, whence: int = 0, /) -> int:
         """Seeks to the given offset."""
         ...
 
-    def read(self, size: int) -> bytes:
+    def read(self, size: int = -1, /) -> bytes:
         """Reads bytes from the stream."""
         ...
 

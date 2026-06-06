@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.provider import TokenVerifier
@@ -75,7 +75,7 @@ async def _get_auth_user_id(ctx: Context) -> Optional[int]:
     # Try to get user from MCP Auth Context (e.g. Bearer token)
     if not (auth_context := auth_context_var.get()):
         return None
-    token: SupernoteAccessToken = auth_context.access_token  # type: ignore[assignment]
+    token = cast(SupernoteAccessToken, auth_context.access_token)
     if not token.user_id:
         return None
     return await user_service.get_user_id(token.user_id)

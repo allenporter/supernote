@@ -5,7 +5,7 @@ from supernote.notebook import SupernoteMetadata, parse_metadata
 
 def test_parse_metadata(test_note_path: Path) -> None:
     with test_note_path.open("rb") as fd:
-        notebook: SupernoteMetadata = parse_metadata(fd)  # type: ignore[arg-type]
+        notebook: SupernoteMetadata = parse_metadata(fd)
     data = notebook.header
     assert data
     assert data["FILE_TYPE"] == "NOTE"

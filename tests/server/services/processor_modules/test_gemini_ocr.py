@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from google.genai import types
 from sqlalchemy import select
 
 from supernote.server.config import ServerConfig
@@ -101,7 +102,9 @@ async def test_process_ocr_success(
     assert "Notebook Filename: real.note" in parts[0].text
     assert parts[1].inline_data.data == png_content
     # Verify config passed
-    assert kwargs["config"] == {"media_resolution": "media_resolution_high"}
+    assert kwargs["config"] == {
+        "media_resolution": types.MediaResolution.MEDIA_RESOLUTION_HIGH
+    }
 
     # Verify DB Updates
     async with session_manager.session() as session:

@@ -58,7 +58,7 @@ class ScheduleService:
             )
             result = await session.execute(stmt)
             await session.commit()
-            return bool(result.rowcount > 0)  # type: ignore[attr-defined]
+            return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
 
     # Task Operations
 
@@ -158,4 +158,4 @@ class ScheduleService:
             )
             result = await session.execute(stmt)
             await session.commit()
-            return bool(result.rowcount > 0)  # type: ignore[attr-defined]
+            return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
