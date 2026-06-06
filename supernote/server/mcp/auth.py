@@ -230,7 +230,7 @@ def create_auth_app(
     app = Starlette(routes=routes, debug=True)
 
     # Add login-bridge route
-    @app.route("/login-bridge", methods=["GET", "POST"])
+    @app.route("/login-bridge", methods=["GET", "POST"])  # ty: ignore[unresolved-attribute]
     async def login_bridge(request: Request) -> RedirectResponse | JSONResponse:
         """Handling the OAuth login flow bridging the SPA and the MCP server.
 
