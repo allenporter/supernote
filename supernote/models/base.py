@@ -49,7 +49,7 @@ class BooleanEnum(str, BaseEnum):
     NO = "N"
 
     @classmethod
-    def of(cls, value: bool) -> Self:
+    def of(cls, value: bool) -> "BooleanEnum":
         return cls.YES if value else cls.NO
 
 

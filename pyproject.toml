@@ -45,6 +45,7 @@ server = [
   "google-genai>=1.57.0",
   "mcp>=1.25.0",
   "aiohttp-asgi>=0.6.1",
+  "starlette>=0.35.0,<1.0",
 ]
 all = ["supernote[client,server]"]
 
@@ -104,3 +105,13 @@ filterwarnings = [
     "ignore:websockets.server.WebSocketServerProtocol is deprecated:DeprecationWarning:uvicorn.protocols.websockets.websockets_impl",
     "ignore:The `route` decorator is deprecated, and will be removed in version 1.0.0:DeprecationWarning:starlette.applications",
 ]
+
+[tool.ty.src]
+exclude = [
+    "supernote/notebook/",
+    "supernote/cli/",
+]
+
+[tool.ty.rules]
+unused-type-ignore-comment = "ignore"
+unresolved-import = "ignore"

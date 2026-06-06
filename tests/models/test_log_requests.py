@@ -1,8 +1,9 @@
 import json
 import pathlib
-from typing import Type
+from typing import Any
 
 import pytest
+from mashumaro.mixins.json import DataClassJSONMixin
 
 from supernote.models.auth import (
     LoginDTO,
@@ -36,7 +37,7 @@ from supernote.models.user import (
 EXTRACTED_REQUESTS_PATH = pathlib.Path("tests/models/testdata/extracted_requests.json")
 
 # Registry mapping URL paths to Model classes
-MODEL_REGISTRY: dict[str, Type] = {
+MODEL_REGISTRY: dict[str, type[DataClassJSONMixin]] = {
     # Auth & User
     "/api/official/user/check/exists/server": UserCheckDTO,
     "/api/official/user/query/random/code": RandomCodeDTO,
@@ -62,14 +63,14 @@ MODEL_REGISTRY: dict[str, Type] = {
 }
 
 
-def load_requests() -> list[dict[str, str]]:
+def load_requests() -> list[dict[str, Any]]:
     """Load requests from the generated JSON file."""
     with EXTRACTED_REQUESTS_PATH.open("r") as f:
         return json.load(f)  # type: ignore
 
 
 @pytest.mark.parametrize("request_entry", load_requests(), ids=lambda x: x["path"])
-def test_log_request_model(request_entry: dict[str, str]) -> None:
+def test_log_request_model(request_entry: dict[str, Any]) -> None:
     """Test request parsing."""
 
     path = request_entry["path"]
@@ -78,8 +79,9 @@ def test_log_request_model(request_entry: dict[str, str]) -> None:
     # Check if known path is in the request path
     model_class = MODEL_REGISTRY.get(path)
 
-    if not model_class:
+    if model_class is None:
         pytest.skip(f"No model mapping found for path: {path}")
+        return
 
     try:
         model_class.from_dict(body)
