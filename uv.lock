@@ -1398,6 +1398,7 @@ all = [
     { name = "pyyaml" },
     { name = "requests" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "starlette" },
     { name = "tqdm" },
 ]
 client = [
@@ -1418,6 +1419,7 @@ server = [
     { name = "pyjwt" },
     { name = "pyyaml" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "starlette" },
 ]
 
 [package.metadata]
@@ -1442,6 +1444,7 @@ requires-dist = [
     { name = "reportlab", specifier = ">=3.6.1" },
     { name = "requests", marker = "extra == 'client'" },
     { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'server'", specifier = ">=2.0.0" },
+    { name = "starlette", marker = "extra == 'server'", specifier = ">=0.35.0,<1.0" },
     { name = "supernote", extras = ["client", "server"], marker = "extra == 'all'" },
     { name = "svgwrite", specifier = ">=1.4" },
     { name = "tqdm", marker = "extra == 'client'" },
