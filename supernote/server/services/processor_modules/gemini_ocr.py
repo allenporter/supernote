@@ -117,7 +117,7 @@ class GeminiOcrModule(ProcessorModule):
                     parts=parts,
                 )
             ],
-            config={"media_resolution": "media_resolution_high"},  # type: ignore[arg-type]
+            config={"media_resolution": types.MediaResolution.MEDIA_RESOLUTION_HIGH},
         )
 
         text_content = response.text if response.text else ""

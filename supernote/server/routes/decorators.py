@@ -9,5 +9,5 @@ def public_route(
     handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
 ) -> Callable[[web.Request], Awaitable[web.StreamResponse]]:
     """Decorator to mark a route handler as public (no authentication required)."""
-    handler.is_public = True  # type: ignore[attr-defined]
+    setattr(handler, "is_public", True)
     return handler

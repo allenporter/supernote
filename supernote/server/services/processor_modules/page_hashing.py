@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 def _parse_helper(path: str) -> Any:
     with open(path, "rb") as f:
-        return parse_metadata(f)  # type: ignore[arg-type]
+        return parse_metadata(f)
 
 
 class PageHashingModule(ProcessorModule):
