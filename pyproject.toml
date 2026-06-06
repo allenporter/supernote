@@ -104,3 +104,13 @@ filterwarnings = [
     "ignore:websockets.server.WebSocketServerProtocol is deprecated:DeprecationWarning:uvicorn.protocols.websockets.websockets_impl",
     "ignore:The `route` decorator is deprecated, and will be removed in version 1.0.0:DeprecationWarning:starlette.applications",
 ]
+
+[tool.ty.src]
+exclude = [
+    "supernote/notebook/",
+    "supernote/cli/",
+]
+
+[tool.ty.rules]
+unused-type-ignore-comment = "ignore"
+unresolved-import = "ignore"
