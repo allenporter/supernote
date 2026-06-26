@@ -547,6 +547,7 @@ async def handle_file_upload_apply(request: web.Request) -> web.Response:
 
     req_data = FileUploadApplyDTO.from_dict(await request.json())
     url_signer = request.app["url_signer"]
+    config = request.app["config"]
 
     try:
         # Generate inner_name
@@ -557,7 +558,7 @@ async def handle_file_upload_apply(request: web.Request) -> web.Response:
         encoded_name = urllib.parse.quote(inner_name)
         path_to_sign = f"/api/oss/upload?path={encoded_name}"
         signed_path = await url_signer.sign(path_to_sign, user=request["user"])
-        full_url = f"{request.scheme}://{request.host}{signed_path}"
+        full_url = f"{config.base_url}{signed_path}"
 
         return web.json_response(
             FileUploadApplyLocalVO(

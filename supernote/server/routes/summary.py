@@ -285,6 +285,7 @@ async def handle_upload_apply_summary(request: web.Request) -> web.Response:
 
     try:
         url_signer: UrlSigner = request.app["url_signer"]
+        config = request.app["config"]
 
         # Generate inner name
         inner_name = generate_inner_name(req_data.file_name, req_data.equipment_no)
@@ -293,11 +294,11 @@ async def handle_upload_apply_summary(request: web.Request) -> web.Response:
         # Sign URLs
         full_path = f"/api/oss/upload?path={encoded_name}"
         full_url_path = await url_signer.sign(full_path, user=user_email)
-        full_url = f"{request.scheme}://{request.host}{full_url_path}"
+        full_url = f"{config.base_url}{full_url_path}"
 
         part_path = f"/api/oss/upload/part?path={encoded_name}"
         part_url_path = await url_signer.sign(part_path, user=user_email)
-        part_url = f"{request.scheme}://{request.host}{part_url_path}"
+        part_url = f"{config.base_url}{part_url_path}"
 
         return web.json_response(
             UploadSummaryApplyVO(
@@ -332,10 +333,11 @@ async def handle_download_summary(request: web.Request) -> web.Response:
             )
 
         url_signer: UrlSigner = request.app["url_signer"]
+        config = request.app["config"]
         encoded_name = urllib.parse.quote(summary.handwrite_inner_name)
         download_path = f"/api/oss/download?path={encoded_name}"
         signed_path = await url_signer.sign(download_path, user=user_email)
-        download_url = f"{request.scheme}://{request.host}{signed_path}"
+        download_url = f"{config.base_url}{signed_path}"
 
         return web.json_response(DownloadSummaryVO(url=download_url).to_dict())
     except SupernoteError as err:
