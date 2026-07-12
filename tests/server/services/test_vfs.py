@@ -34,7 +34,7 @@ async def test_vfs_file_operations(db_session: AsyncSession) -> None:
     user_id = 888
 
     # Create File
-    file_node = await vfs.create_file(
+    file_node = await vfs.create_or_update_file(
         user_id, 0, "test.txt", size=100, md5="hash", storage_key="test-key"
     )
     assert file_node.file_name == "test.txt"

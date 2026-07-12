@@ -367,7 +367,7 @@ class FileService:
             if clean_path:
                 parent_id = await vfs.ensure_directory_path(user_id, clean_path)
 
-            new_file = await vfs.create_file(
+            new_file = await vfs.create_or_update_file(
                 user_id=user_id,
                 parent_id=parent_id,
                 name=filename,
@@ -422,7 +422,7 @@ class FileService:
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
 
-            new_file = await vfs.create_file(
+            new_file = await vfs.create_or_update_file(
                 user_id=user_id,
                 parent_id=directory_id,
                 name=file_name,

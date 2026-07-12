@@ -87,7 +87,7 @@ class VirtualFileSystem:
 
         return results
 
-    async def create_file(
+    async def create_or_update_file(
         self,
         user_id: int,
         parent_id: int,
@@ -96,10 +96,29 @@ class VirtualFileSystem:
         md5: str,
         storage_key: str,
     ) -> UserFileDO:
-        """Create a file entry (assuming content is handled elsewhere/CAS)."""
+        """Create or update a file entry (assuming content is handled elsewhere/CAS)."""
         now_ms = int(time.time() * 1000)
 
-        # Check quota (TODO: Implement Capacity check)
+        # Check if active file already exists in this folder
+        stmt = select(UserFileDO).where(
+            UserFileDO.user_id == user_id,
+            UserFileDO.directory_id == parent_id,
+            UserFileDO.file_name == name,
+            UserFileDO.is_active == "Y",
+            UserFileDO.is_folder == "N",
+        )
+        result = await self.db.execute(stmt)
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            # Overwrite/update the existing active file entry
+            existing.size = size
+            existing.md5 = md5
+            existing.storage_key = storage_key
+            existing.update_time = now_ms
+            await self.db.commit()
+            await self.db.refresh(existing)
+            return existing
 
         new_file = UserFileDO(
             user_id=user_id,
