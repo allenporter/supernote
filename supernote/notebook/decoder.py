@@ -16,7 +16,6 @@
 
 import base64
 import json
-import queue
 import zlib
 
 import numpy as np
@@ -162,6 +161,9 @@ class RattaRleDecoder(BaseDecoder):
 
         colormap = self._create_colormap(palette)
 
+        # Precompute color byte arrays of size 256 for fast lookup
+        color_bytes_list = self._precompute_color_bytes(palette, colormap)
+
         if horizontal:
             page_height, page_width = (page_width, page_height)  # swap width and height
 
@@ -171,7 +173,6 @@ class RattaRleDecoder(BaseDecoder):
         bin = iter(data)
         try:
             holder = ()
-            waiting = queue.Queue()
             while True:
                 colorcode = next(bin)
                 length = next(bin)
@@ -182,11 +183,11 @@ class RattaRleDecoder(BaseDecoder):
                     holder = ()
                     if colorcode == prev_colorcode:
                         length = 1 + length + (((prev_length & 0x7F) + 1) << 7)
-                        waiting.put((colorcode, length))
+                        uncompressed += color_bytes_list[colorcode] * length
                         data_pushed = True
                     else:
                         prev_length = ((prev_length & 0x7F) + 1) << 7
-                        waiting.put((prev_colorcode, prev_length))
+                        uncompressed += color_bytes_list[prev_colorcode] * prev_length
 
                 if not data_pushed:
                     if length == self.SPECIAL_LENGTH_MARKER:
@@ -194,21 +195,13 @@ class RattaRleDecoder(BaseDecoder):
                             length = self.SPECIAL_LENGTH_FOR_BLANK
                         else:
                             length = self.SPECIAL_LENGTH
-                        waiting.put((colorcode, length))
-                        data_pushed = True
+                        uncompressed += color_bytes_list[colorcode] * length
                     elif length & 0x80 != 0:
                         holder = (colorcode, length)
                         # holded data are processed at next loop
                     else:
                         length += 1
-                        waiting.put((colorcode, length))
-                        data_pushed = True
-
-                while not waiting.empty():
-                    (colorcode, length) = waiting.get()
-                    uncompressed += self._create_color_bytearray(
-                        palette.mode, colormap, colorcode, length
-                    )
+                        uncompressed += color_bytes_list[colorcode] * length
         except StopIteration:
             if len(holder) > 0:
                 (colorcode, length) = holder
@@ -216,9 +209,7 @@ class RattaRleDecoder(BaseDecoder):
                     length, len(uncompressed), expected_length
                 )
                 if length > 0:
-                    uncompressed += self._create_color_bytearray(
-                        palette.mode, colormap, colorcode, length
-                    )
+                    uncompressed += color_bytes_list[colorcode] * length
 
         if len(uncompressed) != expected_length:
             raise exceptions.DecoderException(
@@ -240,23 +231,42 @@ class RattaRleDecoder(BaseDecoder):
         }
         return colormap
 
-    def _create_color_bytearray(self, mode, colormap, color_code, length):
-        if mode == color.MODE_RGB:
-            c = colormap.get(color_code)
-            r, g, b = color.get_rgb(c)
-            return (
-                bytearray(
-                    (
-                        r,
-                        g,
-                        b,
-                    )
-                )
-                * length
-            )
-        else:
-            c = colormap.get(color_code)
-            return bytearray((c,)) * length
+    def _precompute_color_bytes(
+        self, palette: color.ColorPalette, colormap: dict[int, int]
+    ) -> list[bytes]:
+        """Precomputes color byte sequences for all 256 possible RLE color codes.
+
+        This list maps Ratta RLE compressed color codes (indices 0 to 255) directly
+        to their decompressed byte representations (either 1-byte grayscale values or
+        3-byte RGB values) to avoid repeated dictionary lookups, conditional checks,
+        and tuple/byte conversions during decompression.
+
+        Parameters
+        ----------
+        palette : color.ColorPalette
+            The active color palette indicating the color mode (grayscale or RGB).
+        colormap : dict[int, int]
+            A dictionary mapping Ratta RLE color codes to their corresponding palette values.
+
+        Returns
+        -------
+        list[bytes]
+            A list of 256 bytes objects where the index is the RLE color code.
+        """
+        color_bytes_list = [b""] * 256
+        for code in range(256):
+            c = colormap.get(code)
+            if palette.mode == color.MODE_RGB:
+                if c is not None:
+                    r, g, b = color.get_rgb(c)
+                else:
+                    r, g, b = (code, code, code)
+                color_bytes_list[code] = bytes((r, g, b))
+            else:
+                if c is None:
+                    c = code
+                color_bytes_list[code] = bytes((c,))
+        return color_bytes_list
 
     def _adjust_tail_length(self, tail_length, current_length, total_length):
         gap = total_length - current_length
@@ -293,29 +303,6 @@ class RattaRleX2Decoder(RattaRleDecoder):
             self.COLORCODE_GRAY_COMPAT: palette.gray_compat,
         }
         return colormap
-
-    def _create_color_bytearray(self, mode, colormap, color_code, length):
-        if mode == color.MODE_RGB:
-            c = colormap.get(color_code)
-            if c is not None:
-                r, g, b = color.get_rgb(c)
-            else:  # if the color_code is not included in colormap, use the value as color directly
-                r, g, b = (color_code, color_code, color_code)
-            return (
-                bytearray(
-                    (
-                        r,
-                        g,
-                        b,
-                    )
-                )
-                * length
-            )
-        else:
-            c = colormap.get(color_code)
-            if c is None:
-                c = color_code
-            return bytearray((c,)) * length
 
 
 class PngDecoder(BaseDecoder):
