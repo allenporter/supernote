@@ -436,29 +436,22 @@ class SupernoteParser:
         string
             matching signature or None if not found
         """
-        for sig in self.SN_SIGNATURES:
-            try:
-                fobj.seek(self.SN_SIGNATURE_OFFSET, os.SEEK_SET)
-                signature = fobj.read(len(sig)).decode()
-            except UnicodeDecodeError:
-                # try next signature
-                continue
-            if signature == sig:
-                return signature
+        try:
+            fobj.seek(self.SN_SIGNATURE_OFFSET, os.SEEK_SET)
+            signature = fobj.read(20).decode()
+        except Exception:
+            return None
+        if signature in self.SN_SIGNATURES:
+            return signature
         return None
 
     def _check_signature_compatible(self, fobj: FileObj) -> bool:
-        latest_signature = self.SN_SIGNATURES[-1]
         try:
             fobj.seek(self.SN_SIGNATURE_OFFSET, os.SEEK_SET)
-            signature = fobj.read(len(latest_signature)).decode()
+            signature = fobj.read(20).decode()
         except Exception:
             return False
-        else:
-            if re.match(self.SN_SIGNATURE_PATTERN, signature):
-                return True
-            else:
-                return False
+        return bool(re.match(self.SN_SIGNATURE_PATTERN, signature))
 
     def _parse_footer_block(self, fobj: FileObj, address: int) -> ParamsBlock:
         return self._parse_metadata_block(fobj, address)
