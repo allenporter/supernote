@@ -436,19 +436,21 @@ class SupernoteParser:
         string
             matching signature or None if not found
         """
+        latest_signature = self.SN_SIGNATURES[-1]
         try:
             fobj.seek(self.SN_SIGNATURE_OFFSET, os.SEEK_SET)
-            signature = fobj.read(20).decode()
+            signature = fobj.read(len(latest_signature)).decode()
         except Exception:
             return None
-        if signature in self.SN_SIGNATURES:
+        if re.match(self.SN_SIGNATURE_PATTERN, signature):
             return signature
         return None
 
     def _check_signature_compatible(self, fobj: FileObj) -> bool:
+        latest_signature = self.SN_SIGNATURES[-1]
         try:
             fobj.seek(self.SN_SIGNATURE_OFFSET, os.SEEK_SET)
-            signature = fobj.read(20).decode()
+            signature = fobj.read(len(latest_signature)).decode()
         except Exception:
             return False
         return bool(re.match(self.SN_SIGNATURE_PATTERN, signature))
