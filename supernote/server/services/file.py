@@ -1,7 +1,9 @@
+import asyncio
 import logging
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import select
 
@@ -148,6 +150,27 @@ class ConversionsVO:
 
     storage_key: str
     page_no: int
+
+
+def _load_notebook_sync(blob_content: bytes) -> Any:
+    """Helper to parse note file in a worker thread."""
+    return load_notebook(BytesIO(blob_content), policy="loose")
+
+
+def _convert_single_page_sync(note: Any, page_index: int) -> bytes:
+    """Helper to render a single page in a worker thread."""
+    converter = ImageConverter(note)  # type: ignore[no-untyped-call]
+    img = converter.convert(page_index)  # type: ignore[no-untyped-call]
+    img_io = BytesIO()
+    img.save(img_io, format="PNG")
+    return img_io.getvalue()
+
+
+def _convert_note_to_pdf_sync(blob_content: bytes, page_no_list: list[int]) -> bytes:
+    """Helper to parse a note file and convert requested pages to PDF in a synchronous context."""
+    note = load_notebook(BytesIO(blob_content), policy="loose")
+    converter = PdfConverter(note)
+    return converter.convert(page_no_list if page_no_list else -1)
 
 
 class FileService:
@@ -903,17 +926,13 @@ class FileService:
                     )
                 ]
             )
-            note = load_notebook(BytesIO(blob_content), policy="loose")
+            # Offload heavy CPU-bound note loading to a worker thread
+            note = await asyncio.to_thread(_load_notebook_sync, blob_content)
 
-            # Convert each page to PNG
-            converter = ImageConverter(note)  # type: ignore[no-untyped-call]
+            # Convert and upload pages one by one to keep memory footprint minimal
             results = []
             for i in range(note.get_total_pages()):
-                img = converter.convert(i)  # type: ignore[no-untyped-call]
-                img_io = BytesIO()
-                img.save(img_io, format="PNG")
-                img_bytes = img_io.getvalue()
-
+                img_bytes = await asyncio.to_thread(_convert_single_page_sync, note, i)
                 # Store PNG in blob storage with a unique key
                 # Format: conversions/{user_id}/{file_id}/page_{i}_{md5}.png
                 png_storage_key = get_conversion_png_path(
@@ -951,16 +970,12 @@ class FileService:
                     )
                 ]
             )
-            note = load_notebook(BytesIO(blob_content), policy="loose")
 
-            # 2. Convert to PDF
-            converter = PdfConverter(note)
+            # Offload heavy CPU-bound parsing and rendering to a worker thread
+            pdf_bytes = await asyncio.to_thread(
+                _convert_note_to_pdf_sync, blob_content, page_no_list
+            )
 
-            # If page_no_list is empty, pass -1 to convert all pages.
-            # Otherwise pass the list of indices.
-            pdf_bytes = converter.convert(page_no_list if page_no_list else -1)
-
-            # 3. Store PDF
             # 3. Store PDF
             pdf_storage_key = get_conversion_pdf_path(
                 user_id=user_id, file_id=file_id, file_md5=node.md5 or "nomd5"
