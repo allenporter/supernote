@@ -1,8 +1,8 @@
-# Supernote Knowledge Hub
+# Supernote Private Cloud & Knowledge Hub
 
-**The AI-powered intelligence layer for your Ratta Supernote.**
+**A lightweight, self-hosted private cloud server and optional AI intelligence layer for your Ratta Supernote.**
 
-This toolkit is a self-hosted implementation of the **Supernote Private Cloud** protocol. While Ratta's official private cloud provides a solid and reliable sync foundation, this project extends that experience with an **AI-driven synthesis engine**—transforming your handwritten notes into structured, searchable knowledge using Google Gemini.
+This toolkit is a self-hosted, SQLite-based implementation of the **Supernote Private Cloud** protocol. It provides a simple and resource-efficient sync server with a minimal resource footprint (typically ~200MB idle memory, and 300–400MB to process large notebooks). It implements **100% of the community [Supernote OpenAPI Specification](api-spec/openapi.yaml)**, and can optionally be enhanced with an **AI-driven synthesis engine**—transforming your handwritten notes into structured, searchable knowledge using Google Gemini.
 
 <p align="center">
   <img src="docs/static-assets/hero-overview.jpg" alt="Supernote Overview" width="800">
@@ -11,15 +11,17 @@ This toolkit is a self-hosted implementation of the **Supernote Private Cloud** 
 [![Documentation](https://img.shields.io/badge/docs-manual-blue.svg)](https://allenporter.github.io/supernote/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-## Why Supernote Knowledge Hub?
+## Why Supernote Private Cloud & Knowledge Hub?
 
-This project is designed to be **fully compatible** with the official Supernote Private Cloud protocol, while adding specialized features for knowledge workers and researchers:
+This project is designed to be **fully compatible** with the official Supernote Private Cloud protocol, serving as a lightweight alternative that operates on a single SQLite database and runs comfortably on low-power NAS setups and home lab servers:
 
-- **📜 AI Synthesis**: Automatically transcribes handwriting and generates high-level summaries (Daily, Weekly, Monthly).
-- **🔍 Semantic Search**: Find concepts across all your notebooks—not just filenames—using vectorized content.
-- **🛡️ Private & Secure**: You own your database. Run it on your NAS, local PC, or a low-power server, just like Supernote Private Cloud.
-- **🖥️ Modern Web UI**: A sleek, reactive frontend to browse, review, and search your notes from any browser.
-- **🤖 Agent Ready (MCP)**: Securely connect your notes to AI agents (Claude, ChatGPT) via the built-in [Model Context Protocol](https://modelcontextprotocol.io/) server. Supports dynamic **IndieAuth** for secure, remote access.
+- **⚡ Lightweight Sync**: Runs on a simple, efficient Python/Asyncio stack with SQLite. Consumes ~200MB of idle memory (recommending 300–400MB for notebook processing).
+- **📋 OpenAPI Spec Compliant**: Implements **100% of the community [Supernote OpenAPI specification](api-spec/openapi.yaml)**.
+- **🛡️ Private & Secure**: You own your database and files. Runs locally on your NAS or local server with no external data leakage.
+- **🖥️ Sleek Web UI**: Browse and manage your synchronized notes from any web browser on your network.
+- **📜 Optional AI Synthesis**: If configured with a Gemini API key, it automatically transcribes handwriting and generates summaries (Daily, Weekly, Monthly).
+- **🔍 Optional Semantic Search**: Vectorizes content for concept-based search across all notebooks.
+- **🤖 Agent Ready (MCP)**: Securely connect your notes to AI agents (Claude, Gemini, ChatGPT) via the built-in [Model Context Protocol](https://modelcontextprotocol.io/) server.
 
 ## Synthesis & AI in Action
 
@@ -41,32 +43,80 @@ The integrated frontend allows you to review your notes and AI insights side-by-
 
 ## Quick Start
 
-### 1. Launch the Cloud
+You can run the server either as a **Lite Sync Server (Zero-Config)** or with the **AI & Semantic Search features enabled**.
 
-The easiest way to start is with the `all` bundle and a Gemini API key:
+### 1. Launch the Server
 
-```bash
-export SUPERNOTE_GEMINI_API_KEY="your-api-key"
-pip install "supernote[all]"
-supernote serve
-```
+Choose one of the options below to start the server.
+
+#### Option A: Lite Sync Server (Zero-Config)
+No API keys or external services required. Runs locally with SQLite.
+
+*   **Using Python**:
+    ```bash
+    pip install "supernote[server]"
+    supernote serve
+    ```
+*   **Using Docker**:
+    ```bash
+    # Build the docker image locally
+    docker build -t supernote .
+
+    # Run the container (maps the local storage/ folder to the container's /data volume)
+    docker run -d \
+      -p 8080:8080 \
+      -v $(pwd)/storage:/data \
+      --name supernote-server \
+      supernote
+    ```
+
+#### Option B: AI & Knowledge Hub (With Gemini)
+Enables handwriting transcription, summarization, and semantic search. Requires a Google Gemini API Key.
+
+*   **Using Python**:
+    ```bash
+    export SUPERNOTE_GEMINI_API_KEY="your-gemini-api-key"
+    pip install "supernote[all]"
+    supernote serve
+    ```
+*   **Using Docker**:
+    ```bash
+    # Build the docker image locally
+    docker build -t supernote .
+
+    # Run the container with your Gemini API key
+    docker run -d \
+      -p 8080:8080 \
+      -v $(pwd)/storage:/data \
+      -e SUPERNOTE_GEMINI_API_KEY="your-gemini-api-key" \
+      --name supernote-server \
+      supernote
+    ```
 
 ### 2. Bootstrap Your User
 
-```bash
-# Create the initial admin account
-supernote admin user add you@example.com --url http://localhost:8080
+Once the server is running, register your administrator account:
 
-# Authenticate your CLI
-supernote cloud login you@example.com --url http://localhost:8080
-```
+*   **Using Python CLI**:
+    ```bash
+    # Create the initial admin account
+    supernote admin user add you@example.com --url http://localhost:8080
+
+    # Authenticate your CLI
+    supernote cloud login you@example.com --url http://localhost:8080
+    ```
+*   **Using Docker CLI**:
+    ```bash
+    # Create the initial admin account
+    docker exec -it supernote-server supernote admin user add you@example.com --url http://localhost:8080
+    ```
 
 ### 3. Connect Your Device
 
 1. On your Supernote, go to **Settings > Sync > Private Cloud**.
 2. Enter your server URL (e.g., `http://192.168.1.5:8080`).
 3. Log in with the email and password you created in Step 2.
-4. Tap **Sync** to begin processing your notes.
+4. Tap **Sync** to begin syncing your notes.
 
 ### 4. Explore Your Insights
 
@@ -131,12 +181,18 @@ The notebook parser is a fork and slightly lighter dependency version of [supern
 ### Run with Docker
 
 ```bash
-# Build & Run server
+# Build the image locally
 docker build -t supernote .
-docker run -d -p 8080:8080 -v $(pwd)/storage:/storage supernote serve
+
+# Run container (maps your local storage directory to the container's /data volume)
+docker run -d \
+  -p 8080:8080 \
+  -v $(pwd)/storage:/data \
+  --name supernote-server \
+  supernote
 ```
 
-See [Server Documentation](https://github.com/allenporter/supernote/blob/main/supernote/server/README.md) for details.
+See [Server Documentation](https://github.com/allenporter/supernote/blob/main/supernote/server/README.md) for more configuration details.
 
 ### Developer API
 
@@ -190,19 +246,22 @@ This project is in support of the amazing [Ratta Supernote](https://supernote.co
 
 ### Choosing Your Private Cloud Experience
 
-The official Supernote Private Cloud by Ratta is a rock-solid, production-grade implementation of the protocol. This toolkit serves as a **community-driven extension** for users who need deep data analysis and advanced integrations.
+While the official Supernote Private Cloud by Ratta provides a production-grade managed sync experience, this toolkit offers a highly efficient self-hosted alternative with opt-in AI enhancement.
 
-| Capability | Official Private Cloud (Ratta) | Supernote Hub (This Project) |
+| Capability | Official Private Cloud (Ratta) | Supernote Private Cloud (This Project) |
 |------------|-------------------------------|-----------------------------|
-| **Core Sync** | ✅ Robust & Validated | ✅ Protocol Compatible |
-| **AI Analysis** | Basic OCR (Device-side) | **Adv. OCR & Multi-stage Synthesis** |
-| **Search** | Path/Filename | **Semantic Concept Search** |
-| **Stack** | Java / Spring Boot | Python / Asyncio |
-| **Focus** | Stability & Stability | Innovation & Extensibility |
+| **Core Sync** | ✅ Robust & Validated | ✅ Fully Compatible (100% OpenAPI compliant) |
+| **Memory Footprint**| ⚠️ High (~2 GB+ RAM required) | **⚡ Low (~300–400MB active)** |
+| **AI Analysis** | Basic OCR (Device-side) | **Optional: Gemini-powered Transcriptions & Synthesis** |
+| **Search** | Path/Filename | **Optional: Semantic Concept Search** |
+| **Stack** | Java / Spring Boot + Redis + MariaDB | Python / Asyncio + SQLite |
+| **Database** | Heavy MariaDB Instance | **Single SQLite File** |
 
 **This toolkit is a great fit if:**
-- You want **AI-generated summaries** and insights from your notebooks.
-- You want to perform **semantic searches** across your entire handwriting library.
+- You want a **lightweight, resource-friendly** private cloud that runs easily on a basic NAS or low-power server.
+- You want **100% compliance** with the local OpenAPI sync protocols.
+- You want **AI-generated summaries** and insights from your notebooks (optional).
+- You want to perform **semantic searches** across your entire handwriting library (optional).
 - You want to integrate your notes into local scripts via a Python API or CLI.
 - You want to use the **Model Context Protocol (MCP)** to [chat with your notes](docs/mcp.md) using AI agents.
 
