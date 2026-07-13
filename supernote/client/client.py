@@ -104,7 +104,8 @@ class Client:
 
         if self._auth and ACCESS_TOKEN not in headers:
             access_token = await self._auth.async_get_access_token()
-            headers[ACCESS_TOKEN] = access_token
+            if access_token:
+                headers[ACCESS_TOKEN] = access_token
         url = self._url(url)
         _LOGGER.debug(
             "request[%s]=%s %s %s",

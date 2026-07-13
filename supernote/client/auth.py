@@ -48,9 +48,7 @@ class FileCacheAuth(AbstractAuth):
 
     async def async_get_access_token(self) -> str:
         """Return a valid access token."""
-        if self._access_token:
-            return self._access_token
-        raise ValueError(f"No access token found in cache: {self._cache_path}")
+        return self._access_token or ""
 
     def get_host(self) -> str | None:
         """Return the cached host URL."""

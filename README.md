@@ -100,7 +100,7 @@ Once the server is running, register your administrator account:
 *   **Using Python CLI**:
     ```bash
     # Create the initial admin account
-    supernote admin user add you@example.com --url http://localhost:8080
+    supernote admin --url http://localhost:8080 user add you@example.com
 
     # Authenticate your CLI
     supernote cloud login you@example.com --url http://localhost:8080
@@ -108,7 +108,7 @@ Once the server is running, register your administrator account:
 *   **Using Docker CLI**:
     ```bash
     # Create the initial admin account
-    docker exec -it supernote-server supernote admin user add you@example.com --url http://localhost:8080
+    docker exec -it supernote-server supernote admin --url http://localhost:8080 user add you@example.com
     ```
 
 ### 3. Connect Your Device

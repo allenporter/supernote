@@ -8,7 +8,7 @@ from aiohttp import web
 from pytest_aiohttp import AiohttpClient
 
 from supernote.client import Client
-from supernote.client.auth import ConstantAuth
+from supernote.client.auth import AbstractAuth, ConstantAuth
 from supernote.client.exceptions import (
     ApiException,
     ForbiddenException,
@@ -189,3 +189,40 @@ async def test_headers_with_referrer(aiohttp_client: AiohttpClient) -> None:
     headers = response.data
     assert headers.get("Referer") == base_url
     assert headers.get("Origin") == base_url
+
+
+async def test_auth_token_missing(aiohttp_client: AiohttpClient) -> None:
+    """Test that empty access tokens are not injected into headers."""
+
+    @dataclass
+    class HeadersResponse(BaseResponse):
+        data: dict[str, str] = field(default_factory=dict)
+
+    async def handler_headers(request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "success": True,
+                "data": dict(request.headers),
+            }
+        )
+
+    async def handler_csrf(request: web.Request) -> web.Response:
+        return web.Response(text="ok", headers={"X-XSRF-TOKEN": "test-token"})
+
+    app = web.Application()
+    app.router.add_get("/api/csrf", handler_csrf)
+    app.router.add_get("/headers", handler_headers)
+
+    test_client = await aiohttp_client(app)
+    base_url = str(test_client.make_url(""))
+
+    class EmptyAuth(AbstractAuth):
+        async def async_get_access_token(self) -> str:
+            return ""
+
+    client = Client(test_client.session, host=base_url, auth=EmptyAuth())
+
+    response = await client.get_json("headers", HeadersResponse)
+    assert response.success
+    headers = response.data
+    assert "x-access-token" not in headers
