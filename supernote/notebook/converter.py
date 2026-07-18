@@ -16,6 +16,7 @@
 
 import base64
 import json
+import re
 from enum import Enum, auto
 from io import BytesIO
 
@@ -224,7 +225,13 @@ class ImageConverter:
         if info is None:
             # pass to the process of getting visibility for mark file
             return self._get_mark_layer_visibility(page)
-        info_array = json.loads(info)
+        try:
+            info_array = json.loads(info)
+        except json.decoder.JSONDecodeError:
+            # Newer Supernote firmwares (Chauvet 3.25.39 and later) encode the layer info JSON
+            # payload in base64. If parsing raw JSON fails, decode the base64 string and retry.
+            info = base64.b64decode(info).decode()
+            info_array = json.loads(info)
         for layer in info_array:
             is_bg_layer = layer.get("isBackgroundLayer")
             layer_id = layer.get("layerId")
@@ -529,6 +536,9 @@ class TextConverter:
     def convert(self, page_number: int) -> str | None:
         """Returns text of the given page if available.
 
+        Text elements are sorted top-to-bottom and joined intelligently
+        with newlines and spaces based on vertical spacing.
+
         Parameters
         ----------
         page_number : int
@@ -546,10 +556,52 @@ class TextConverter:
             return None
         binary = page.get_recogn_text()
         decoder = Decoder.TextDecoder()
-        text_list = decoder.decode(binary)
-        if text_list is None:
+        elements = decoder.decode(binary)
+        if elements is None:
             return None
-        return " ".join(text_list)
+
+        # Sort elements by y-position (top to bottom)
+        elements.sort(key=lambda e: e.y)
+
+        # Join elements intelligently based on vertical spacing
+        result = []
+        for i, elem in enumerate(elements):
+            if i > 0:
+                prev_elem = elements[i - 1]
+                # Check vertical gap between elements
+                y_gap = elem.y - prev_elem.y
+
+                # Use newline if vertical gap > 3 units
+                if y_gap > 3:
+                    result.append("\n")
+                else:
+                    result.append(" ")
+            result.append(elem.label)
+
+        text = "".join(result)
+
+        # Fix spacing around punctuation (preserve newlines)
+        fixed_lines = []
+        for line in text.split("\n"):
+            # Remove space before closing punctuation
+            line = re.sub(r" +([,.)!?;:\]])", r"\1", line)
+            # Remove space after opening punctuation
+            line = re.sub(r"([\[(]) +", r"\1", line)
+
+            # Fix spaces between quotes and words
+            line = re.sub(r'"\s+(\w)', r'"\1', line)
+            line = re.sub(r"(\w)\s+\"", r'\1"', line)
+            line = re.sub(r"(\w)\"(\w)", r'\1 "\2', line)
+
+            # Fix double spaces
+            line = re.sub(r" {2,}", " ", line)
+            line = line.strip()
+            if line:  # Only add non-empty lines
+                fixed_lines.append(line)
+
+        text = "\n".join(fixed_lines)
+
+        return text if text else None
 
 
 # Alias for backward compatibility

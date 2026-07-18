@@ -551,7 +551,7 @@ class SupernoteParser:
         dict
             extracted parameters
         """
-        pattern = r"<([^:<>]+):([^:<>]*)>"
+        pattern = r"<([^:<>]+):(.*?)>"
         result = re.finditer(pattern, metadata)
         params = {}
         for m in result:
@@ -602,6 +602,11 @@ class SupernoteXParser(SupernoteParser):
             map(lambda addr: self._parse_keyword_block(fobj, addr), keyword_addresses)
         )
         if keywords:
+            # Workaround: Replacing keyword content due to inaccurate parsing.
+            for keyword in keywords:
+                addr = int(keyword["KEYWORDSITE"])
+                content = _get_content_at_address(fobj, addr)
+                keyword["KEYWORD"] = content.decode()
             footer[fileformat.KEY_KEYWORDS] = keywords
         # parse titles
         title_addresses = self._get_title_addresses(footer)

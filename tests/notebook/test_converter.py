@@ -1,11 +1,19 @@
 import io
 from pathlib import Path
+from typing import Any, cast
+from unittest.mock import patch
 
 import pytest
 from PIL import Image, ImageChops
 from syrupy.extensions.image import PNGImageSnapshotExtension
 
-from supernote.notebook import PngConverter, load_notebook
+from supernote.notebook import (
+    ImageConverter,
+    PngConverter,
+    TextConverter,
+    load_notebook,
+)
+from supernote.notebook.decoder import TextElement
 
 # Find all test note paths dynamically under tests/testdata/
 TEST_DATA_DIR = Path(__file__).parent.parent / "testdata"
@@ -79,3 +87,72 @@ def test_notebook_png_snapshots(note_path: Path, snapshot) -> None:
         assert png_bytes == snapshot(
             name=f"page_{p}", extension_class=VisualPngSnapshotExtension
         )
+
+
+@pytest.mark.parametrize("note_path", NOTE_PATHS, ids=lambda p: p.name)
+def test_notebook_text_snapshots(note_path: Path, snapshot) -> None:
+    notebook = load_notebook(str(note_path))
+    texts = {}
+    if notebook.is_realtime_recognition():
+        converter = TextConverter(notebook)
+        total_pages = notebook.get_total_pages()
+
+        # Extract text from all pages
+        for p in range(total_pages):
+            texts[f"page_{p}"] = converter.convert(p)
+
+    assert texts == snapshot
+
+
+def test_text_converter_formatting() -> None:
+    # Create mock notebook and page
+    class MockPage:
+        def get_recogn_status(self):
+            return 1  # RECOGNSTATUS_DONE
+
+        def get_recogn_text(self):
+            return b"dummy_binary"
+
+    class MockNotebook:
+        def is_realtime_recognition(self):
+            return True
+
+        def get_page(self, page_number):
+            return MockPage()
+
+    # Mock decoder returning text elements at different y-coordinates
+    elements = [
+        TextElement(label="Hello", y=10),
+        TextElement(label="world", y=12),  # gap <= 3 -> space
+        TextElement(label="!", y=12),  # punctuation cleanup -> "world!"
+        TextElement(label="This is a new line", y=20),  # gap > 3 -> newline
+        TextElement(
+            label=" ( with parens ) ", y=20
+        ),  # punctuation cleanup -> "(with parens)"
+    ]
+
+    with patch("supernote.notebook.decoder.TextDecoder.decode", return_value=elements):
+        converter = TextConverter(cast(Any, MockNotebook()))
+        result = converter.convert(0)
+
+    assert result == "Hello world!\nThis is a new line (with parens)"
+
+
+def test_get_layer_visibility_base64() -> None:
+    # base64 encoded string of:
+    # '[{"layerId": 0, "isBackgroundLayer": false, "isVisible": true}]'
+    base64_layer_info = "W3sibGF5ZXJJZCI6IDAsICJpc0JhY2tncm91bmRMYXllciI6IGZhbHNlLCAiaXNWaXNpYmxlIjogdHJ1ZX1d"
+
+    class MockPage:
+        def get_layer_info(self):
+            return base64_layer_info
+
+    class DummyNotebook:
+        pass
+
+    converter = ImageConverter(DummyNotebook())
+
+    # We call the internal _get_layer_visibility method
+    visibility = converter._get_layer_visibility(MockPage())
+
+    assert visibility == {"MAINLAYER": True}

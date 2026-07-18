@@ -269,3 +269,87 @@
     'width': 1404,
   })
 # ---
+# name: test_notebook_text_snapshots[1to10.note]
+  dict({
+    'page_0': None,
+    'page_1': None,
+    'page_2': None,
+    'page_3': None,
+    'page_4': None,
+    'page_5': None,
+    'page_6': None,
+    'page_7': None,
+    'page_8': None,
+    'page_9': None,
+  })
+# ---
+# name: test_notebook_text_snapshots[20251207_221454.note]
+  dict({
+  })
+# ---
+# name: test_notebook_text_snapshots[a5x-2.14.28.note]
+  dict({
+    'page_0': '''
+      Subject: Obsidian Super Note Integration
+      Test File
+      Let me know how this works, please. I've
+      been thinking about setting up an obsidian
+      instance for a while now.
+    ''',
+  })
+# ---
+# name: test_notebook_text_snapshots[horizontal_1090.note]
+  dict({
+    'page_0': None,
+  })
+# ---
+# name: test_notebook_text_snapshots[horizontal_1270.note]
+  dict({
+  })
+# ---
+# name: test_notebook_text_snapshots[manta.note]
+  dict({
+  })
+# ---
+# name: test_notebook_text_snapshots[rtr.note]
+  dict({
+    'page_0': '''
+      Real paragraph test recognition time
+      With enough space a new paragraph
+      should be created. If lines are
+      close then the text should reflow.
+      This should be a new paragraph.
+      As well as this.
+      But thin is the last paragraph and
+      should reflow together.
+    ''',
+  })
+# ---
+# name: test_notebook_text_snapshots[sn2md_20260618.note]
+  dict({
+  })
+# ---
+# name: test_notebook_text_snapshots[stroller.note]
+  dict({
+  })
+# ---
+# name: test_notebook_text_snapshots[test.note]
+  dict({
+  })
+# ---
+# name: test_notebook_text_snapshots[turkish.note]
+  dict({
+    'page_0': '''
+      Şimdi ben buraya neden çıktım?
+      Niçin çıktım?
+      Nasıl Çıktım?
+      Bunu izaha gerek yok.
+      Gördünüz, yürüdüm çıktım.
+      Ama çıkmamış da olabilirim.
+    ''',
+  })
+# ---
+# name: test_notebook_text_snapshots[vertical_1180.note]
+  dict({
+  })
+# ---
