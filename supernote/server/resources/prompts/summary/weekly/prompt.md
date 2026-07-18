@@ -1,6 +1,9 @@
-This is a Weekly Log or Weekly Review.
+# Weekly Log & Review Summary
 
-1.  **Summary**: Summarize the week's major accomplishments, challenges, and goals.
-    *   If there is a "Weekly Review" section (reflection questions), prioritize that content.
-    *   Summarize the high-level tasks accomplished during the week.
-2.  **Dates**: Extract the date range of the week (e.g. "2023-10-23 to 2023-10-29").
+This transcript represents a Weekly Log or a Weekly Review spread.
+Organize the summary into structured lists following the Bullet Journal Summarization Guidelines:
+- Highlight the **Weekly Review Reflection** (accomplishments, challenges, and lessons learned) if present on the page.
+- Group the week's accomplishments (completed tasks `X`) and pending/migrated goals (`•`, `>`).
+- List events and notes.
+
+For the `date_range`, extract the date range of the week (e.g., "YYYY-MM-DD to YYYY-MM-DD").

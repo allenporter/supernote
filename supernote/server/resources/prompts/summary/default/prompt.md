@@ -1,4 +1,4 @@
-Analyze the following handwritten note transcript.
+# Default Summary Prompt
 
-1.  **Summary**: Write a concise summary of the content, capturing the main ideas, tasks, and events.
-2.  **Dates**: Extract any specific dates mentioned in the text.
+Analyze the following handwritten note transcript and extract the key activities.
+Follow the Bullet Journal Summarization Guidelines. Ensure that the summary details the ideas, tasks, and events in structured bullet points.
