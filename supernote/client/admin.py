@@ -74,3 +74,16 @@ class AdminClient:
             json={"email": email, "password": password_md5},
         )
         logger.info(f"Password reset for {email}")
+
+    async def admin_reprocess(self, task_type: str, file_id: int | None = None) -> None:
+        """Force reprocessing of notes by clearing task states on the server."""
+        payload: dict = {"task_type": task_type}
+        if file_id is not None:
+            payload["file_id"] = file_id
+
+        await self.client.post_json(
+            "/api/admin/reprocess",
+            BaseResponse,
+            json=payload,
+        )
+        logger.info(f"Triggered reprocessing of '{task_type}' tasks")

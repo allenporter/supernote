@@ -63,6 +63,43 @@ class ProcessingStatus(str, BaseEnum):
     NONE = "NONE"  # Used in view aggregation
 
 
+class TaskType(str, BaseEnum):
+    """Processing task types."""
+
+    friendly_name: str
+
+    def __new__(cls, value: str, friendly_name: str) -> "TaskType":
+        obj = str.__new__(cls, value)
+        obj._value_ = value
+        setattr(obj, "friendly_name", friendly_name)
+        return obj
+
+    PAGE_HASHING = ("PAGE_HASHING", "hashing")
+    PNG_CONVERSION = ("PNG_CONVERSION", "png")
+    OCR_EXTRACTION = ("OCR_EXTRACTION", "ocr")
+    EMBEDDING_GENERATION = ("EMBEDDING_GENERATION", "embedding")
+    SUMMARY_GENERATION = ("SUMMARY_GENERATION", "summary")
+
+    @classmethod
+    def from_friendly(cls, friendly: str) -> "TaskType":
+        """Resolve a task type from a friendly name or raw enum value."""
+        val = friendly.upper().strip()
+        friendly_lower = friendly.lower().strip()
+        for member in cls:
+            if member.value == val or member.friendly_name == friendly_lower:
+                return member
+        raise ValueError(f"Unknown task type: {friendly}")
+
+    @classmethod
+    def friendly_names(cls) -> list[str]:
+        """Return a list of all raw values and friendly short names."""
+        return [
+            name
+            for member in cls
+            for name in (member.value.lower(), member.friendly_name)
+        ]
+
+
 @dataclass
 class CommonList(BaseResponse):
     """Common list response class."""

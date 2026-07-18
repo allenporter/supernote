@@ -7,6 +7,7 @@ import sys
 
 from supernote.client.admin import AdminClient
 from supernote.client.exceptions import ApiException
+from supernote.models.base import TaskType
 
 from .client import create_session
 
@@ -129,6 +130,24 @@ def reset_password(args):
     asyncio.run(reset_password_async(args.url, args.email, password))
 
 
+async def reprocess_async(url: str, task_type: str, file_id: int | None = None):
+    """Async implementation of note reprocessing."""
+    async with create_session(url) as session:
+        print("Connecting to server to trigger reprocessing...")
+        admin_client = AdminClient(session.client)
+        try:
+            await admin_client.admin_reprocess(task_type, file_id)
+            target = f"file ID {file_id}" if file_id is not None else "all files"
+            print(f"Success! Triggered reprocessing of '{task_type}' for {target}.")
+        except Exception as e:
+            print(f"Failed to trigger reprocessing: {e}")
+            sys.exit(1)
+
+
+def reprocess(args):
+    asyncio.run(reprocess_async(args.url, args.type, args.file_id))
+
+
 def add_parser(subparsers):
     # 'admin' parent command
     parser_admin = subparsers.add_parser(
@@ -176,3 +195,24 @@ def add_parser(subparsers):
         "--password", type=str, help="New password (if omitted, prompt interactively)"
     )
     parser_user_reset.set_defaults(func=reset_password)
+
+    # --- Note Reprocessing ---
+    parser_reprocess = admin_subparsers.add_parser(
+        "reprocess",
+        help="Force reprocessing of notes by clearing task states on the server",
+    )
+    reprocess_choices = ["all", *TaskType.friendly_names()]
+
+    parser_reprocess.add_argument(
+        "--type",
+        choices=reprocess_choices,
+        default="summary",
+        help="Type of tasks to clear and reprocess (default: summary)",
+    )
+    parser_reprocess.add_argument(
+        "--file-id",
+        type=int,
+        default=None,
+        help="Specific file ID to reprocess (default: all files)",
+    )
+    parser_reprocess.set_defaults(func=reprocess)
