@@ -9,6 +9,7 @@ repos:
         args:
           - --allow-multiple-documents
       - id: check-added-large-files
+        exclude: '^tests/testdata/.*\.note$'
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.22
     hooks:

@@ -1,0 +1,271 @@
+# serializer version: 1
+# name: test_notebook_metadata_snapshot[1to10.note]
+  dict({
+    'height': 1872,
+    'keywords': list([
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20230015',
+    'titles': list([
+    ]),
+    'total_pages': 10,
+    'type': 'note',
+    'width': 1404,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[20251207_221454.note]
+  dict({
+    'height': 1872,
+    'keywords': list([
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20230015',
+    'titles': list([
+    ]),
+    'total_pages': 1,
+    'type': 'note',
+    'width': 1404,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[a5x-2.14.28.note]
+  dict({
+    'height': 1872,
+    'keywords': list([
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20230015',
+    'titles': list([
+    ]),
+    'total_pages': 1,
+    'type': 'note',
+    'width': 1404,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[horizontal_1090.note]
+  dict({
+    'height': 2560,
+    'keywords': list([
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20230015',
+    'titles': list([
+    ]),
+    'total_pages': 1,
+    'type': 'note',
+    'width': 1920,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[horizontal_1270.note]
+  dict({
+    'height': 1872,
+    'keywords': list([
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20230015',
+    'titles': list([
+    ]),
+    'total_pages': 1,
+    'type': 'note',
+    'width': 1404,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[manta.note]
+  dict({
+    'height': 2560,
+    'keywords': list([
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20230015',
+    'titles': list([
+    ]),
+    'total_pages': 1,
+    'type': 'note',
+    'width': 1920,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[rtr.note]
+  dict({
+    'height': 2560,
+    'keywords': list([
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20230015',
+    'titles': list([
+    ]),
+    'total_pages': 1,
+    'type': 'note',
+    'width': 1920,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[sn2md_20260618.note]
+  dict({
+    'height': 1872,
+    'keywords': list([
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20260016',
+    'titles': list([
+    ]),
+    'total_pages': 1,
+    'type': 'note',
+    'width': 1404,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[stroller.note]
+  dict({
+    'height': 1872,
+    'keywords': list([
+      dict({
+        'KEYWORD': 'ks-tilt',
+        'KEYWORDLEN': '7',
+        'KEYWORDPAGE': '1',
+        'KEYWORDRECT': '720,546,95,113',
+        'KEYWORDRECTORI': '702,537,132,132',
+        'KEYWORDSEQNO': '0',
+        'KEYWORDSITE': '439',
+      }),
+      dict({
+        'KEYWORD': 'ks-trapezoid',
+        'KEYWORDLEN': '12',
+        'KEYWORDPAGE': '1',
+        'KEYWORDRECT': '720,546,95,113',
+        'KEYWORDRECTORI': '702,537,132,132',
+        'KEYWORDSEQNO': '0',
+        'KEYWORDSITE': '593',
+      }),
+      dict({
+        'KEYWORD': 'ks-shapes',
+        'KEYWORDLEN': '9',
+        'KEYWORDPAGE': '1',
+        'KEYWORDRECT': '639,672,149,64',
+        'KEYWORDRECTORI': '639,638,149,132',
+        'KEYWORDSEQNO': '0',
+        'KEYWORDSITE': '758',
+      }),
+      dict({
+        'KEYWORD': 'ks-tilt',
+        'KEYWORDLEN': '7',
+        'KEYWORDPAGE': '2',
+        'KEYWORDRECT': '720,546,95,113',
+        'KEYWORDRECTORI': '702,537,132,132',
+        'KEYWORDSEQNO': '0',
+        'KEYWORDSITE': '916',
+      }),
+      dict({
+        'KEYWORD': 'ks-trapezoid',
+        'KEYWORDLEN': '12',
+        'KEYWORDPAGE': '2',
+        'KEYWORDRECT': '720,546,95,113',
+        'KEYWORDRECTORI': '702,537,132,132',
+        'KEYWORDSEQNO': '0',
+        'KEYWORDSITE': '1070',
+      }),
+      dict({
+        'KEYWORD': 'ks-shapes',
+        'KEYWORDLEN': '9',
+        'KEYWORDPAGE': '2',
+        'KEYWORDRECT': '639,672,149,64',
+        'KEYWORDRECTORI': '639,638,149,132',
+        'KEYWORDSEQNO': '0',
+        'KEYWORDSITE': '1236',
+      }),
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20230015',
+    'titles': list([
+    ]),
+    'total_pages': 2,
+    'type': 'note',
+    'width': 1404,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[test.note]
+  dict({
+    'height': 1872,
+    'keywords': list([
+      dict({
+        'KEYWORD': 'dummy',
+        'KEYWORDLEN': '5',
+        'KEYWORDPAGE': '1',
+        'KEYWORDRECT': '935,1024,213,180',
+        'KEYWORDRECTORI': '935,1024,213,180',
+        'KEYWORDSEQNO': '0',
+        'KEYWORDSITE': '277',
+      }),
+      dict({
+        'KEYWORD': 'Different',
+        'KEYWORDLEN': '9',
+        'KEYWORDPAGE': '2',
+        'KEYWORDRECT': '298,416,304,180',
+        'KEYWORDRECTORI': '298,416,304,180',
+        'KEYWORDSEQNO': '0',
+        'KEYWORDSITE': '430',
+      }),
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20220011',
+    'titles': list([
+      dict({
+        'TITLEBITMAP': '589',
+        'TITLELEVEL': '1',
+        'TITLEPROTOCOL': 'RATTA_RLE',
+        'TITLERECT': '121,100,341,93',
+        'TITLERECTORI': '121,57,341,180',
+        'TITLESEQNO': '0',
+        'TITLESTYLE': '1000254',
+      }),
+      dict({
+        'TITLEBITMAP': '4000',
+        'TITLELEVEL': '1',
+        'TITLEPROTOCOL': 'RATTA_RLE',
+        'TITLERECT': '111,323,424,88',
+        'TITLERECTORI': '111,277,424,180',
+        'TITLESEQNO': '0',
+        'TITLESTYLE': '1048254',
+      }),
+    ]),
+    'total_pages': 2,
+    'type': 'note',
+    'width': 1404,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[turkish.note]
+  dict({
+    'height': 1872,
+    'keywords': list([
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20230015',
+    'titles': list([
+    ]),
+    'total_pages': 1,
+    'type': 'note',
+    'width': 1404,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[vertical_1180.note]
+  dict({
+    'height': 1872,
+    'keywords': list([
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20230015',
+    'titles': list([
+    ]),
+    'total_pages': 1,
+    'type': 'note',
+    'width': 1404,
+  })
+# ---
