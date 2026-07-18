@@ -29,21 +29,33 @@ class PromptLoader:
     def __init__(
         self, resources_dir: Optional[Union[Path, Traversable]] = None
     ) -> None:
-        self.resources_dir = resources_dir or RESOURCES_DIR
+        self._resources_dir = resources_dir
         # Map: prompt_id -> (type -> prompt_text)
         # type can be "common", "default", or specific custom types like "monthly"
-        self.prompts: Dict[str, Dict[str, str]] = {}
-        self._load_prompts()
+        self._prompts: Optional[Dict[str, Dict[str, str]]] = None
+
+    def configure(self, resources_dir: Union[Path, Traversable]) -> None:
+        """Configure the custom prompts directory.
+
+        Clears loaded prompts to trigger reload on next get_prompt call.
+        """
+        self._resources_dir = resources_dir
+        self._prompts = None
+
+    @property
+    def resources_dir(self) -> Union[Path, Traversable]:
+        return self._resources_dir or RESOURCES_DIR
 
     def _load_prompts(self) -> None:
         """Load all prompts from the resources directory into memory."""
+        self._prompts = {}
         if not self.resources_dir.is_dir():
             logger.warning(f"Prompts directory not found at {self.resources_dir}")
             return
 
         # Initialize dicts for known prompt IDs
         for pid in PromptId:
-            self.prompts[pid.value] = {}
+            self._prompts[pid.value] = {}
 
         try:
             # Map categories to PromptId
@@ -52,22 +64,22 @@ class PromptLoader:
                 if not category_dir.is_dir():
                     continue
 
-                if prompt_id not in self.prompts:
-                    self.prompts[prompt_id] = {}
+                if prompt_id not in self._prompts:
+                    self._prompts[prompt_id] = {}
 
                 # 1. Load Common Prompts (Always On)
                 common_dir = category_dir / COMMON
                 if common_dir.is_dir():
                     common_text = self._read_prompts_from_dir(common_dir)
                     if common_text:
-                        self.prompts[prompt_id][COMMON] = common_text
+                        self._prompts[prompt_id][COMMON] = common_text
 
                 # 2. Load Default Prompts
                 default_dir = category_dir / DEFAULT
                 if default_dir.is_dir():
                     default_text = self._read_prompts_from_dir(default_dir)
                     if default_text:
-                        self.prompts[prompt_id][DEFAULT] = default_text
+                        self._prompts[prompt_id][DEFAULT] = default_text
 
                 # 3. Load Custom Prompts (sub-directories)
                 for item in category_dir.iterdir():
@@ -75,7 +87,7 @@ class PromptLoader:
                         custom_type = item.name.lower()
                         custom_text = self._read_prompts_from_dir(item)
                         if custom_text:
-                            self.prompts[prompt_id][custom_type] = custom_text
+                            self._prompts[prompt_id][custom_type] = custom_text
 
             logger.info(f"Loaded prompts from {self.resources_dir}")
 
@@ -100,10 +112,15 @@ class PromptLoader:
 
         Logic: Common + (Custom if exists else Default)
         """
-        if prompt_id not in self.prompts:
+        if self._prompts is None:
+            self._load_prompts()
+
+        assert self._prompts is not None
+
+        if prompt_id not in self._prompts:
             raise ValueError(f"Prompt ID '{prompt_id}' not found.")
 
-        type_map = self.prompts[prompt_id]
+        type_map = self._prompts[prompt_id]
 
         parts = []
 

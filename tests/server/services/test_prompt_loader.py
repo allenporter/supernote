@@ -69,3 +69,19 @@ def test_get_prompt_summary(mock_resources_dir: Path) -> None:
     loader = PromptLoader(resources_dir=mock_resources_dir)
     prompt = loader.get_prompt(PromptId.SUMMARY_GENERATION)
     assert prompt == "Default Summary"
+
+
+def test_reload_prompts(mock_resources_dir: Path, tmp_path: Path) -> None:
+    """Test reloading prompts dynamically from a new directory."""
+    loader = PromptLoader(resources_dir=mock_resources_dir)
+    assert loader.get_prompt(PromptId.SUMMARY_GENERATION) == "Default Summary"
+
+    new_prompts_dir = tmp_path / "new_prompts"
+    summary_dir = new_prompts_dir / "summary"
+    (summary_dir / "default").mkdir(parents=True)
+    (summary_dir / "default" / "summary_generation.md").write_text(
+        "New Summary", encoding="utf-8"
+    )
+
+    loader.configure(new_prompts_dir)
+    assert loader.get_prompt(PromptId.SUMMARY_GENERATION) == "New Summary"

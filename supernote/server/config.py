@@ -137,6 +137,12 @@ BaseConfig
     Env Var: `SUPERNOTE_GEMINI_MAX_CONCURRENCY`
     """
 
+    prompts_dir: str | None = None
+    """Directory where custom Gemini prompts are located.
+
+    Env Var: `SUPERNOTE_PROMPTS_DIR`
+    """
+
     @property
     def base_url(self) -> str:
         """Get the base URL for the main server.
@@ -296,6 +302,10 @@ BaseConfig
                 )
             except ValueError:
                 pass
+
+        if prompts_dir := os.getenv("SUPERNOTE_PROMPTS_DIR"):
+            config.prompts_dir = prompts_dir
+            logger.info(f"Using SUPERNOTE_PROMPTS_DIR: {config.prompts_dir}")
 
         if config.trace_log_file is None:
             config.trace_log_file = str(

@@ -50,6 +50,7 @@ from .services.search import SearchService
 from .services.summary import SummaryService
 from .services.user import UserService
 from .utils.hashing import get_md5_hash
+from .utils.prompt_loader import PROMPT_LOADER
 from .utils.rate_limit import RateLimiter
 from .utils.url_signer import UrlSigner
 
@@ -294,6 +295,9 @@ def create_app(config: ServerConfig) -> web.Application:
         config.gemini_api_key, max_concurrency=config.gemini_max_concurrency
     )
     app["gemini_service"] = gemini_service
+
+    if config.prompts_dir:
+        PROMPT_LOADER.configure(Path(config.prompts_dir))
 
     summary_service = SummaryService(user_service, session_manager)
     app["summary_service"] = summary_service
