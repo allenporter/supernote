@@ -232,6 +232,48 @@ note.to_pdf("journal.pdf") # Multi-layer PDF conversion
 
 The notebook parser is a fork of the excellent [supernote-tool](https://github.com/jya-dev/supernote-tool) with updated dependencies and modern type hints.
 
+## Customizing AI Prompts
+
+You can customize the prompts used for Gemini OCR (transcription) and Summarization by pointing the server to a custom prompts directory.
+
+### 1. Configuration
+Set the custom prompts directory using either:
+*   **Environment Variable**:
+    ```bash
+    export SUPERNOTE_PROMPTS_DIR="path/to/your/prompts"
+    ```
+*   **Config File (`config.yaml`)**:
+    ```yaml
+    prompts_dir: "path/to/your/prompts"
+    ```
+
+### 2. Directory Structure
+The custom prompts directory should mirror the structure of the default prompts:
+```text
+my-prompts/
+├── ocr/                     # Prompt templates for handwriting OCR
+│   ├── common/              # Appended to all OCR requests
+│   │   └── legend.md
+│   ├── default/             # Fallback default OCR prompt
+│   │   └── system.md
+│   └── daily/               # Custom OCR prompt for "daily" notebooks
+│       └── prompt.md
+└── summary/                 # Prompt templates for summaries
+    ├── common/              # Appended to all summary requests
+    │   └── instruction.md
+    ├── default/             # Fallback default summary prompt
+    │   └── prompt.md
+    └── daily/               # Custom summary prompt for "daily" notebooks
+        └── prompt.md
+```
+
+### 3. Filename-Based Prompt Routing
+The server dynamically routes prompts based on the notebook's file name:
+1.  When a notebook (e.g., `Daily.note` or `Weekly_Review.note`) is synced, the lowercased stem of the filename is extracted (`daily` or `weekly_review`).
+2.  The server looks under the `ocr/` and `summary/` directories for a subfolder matching that stem (e.g., `daily/` or `weekly_review/`).
+3.  If found, the templates inside that custom folder are loaded. If not found, it falls back to the `default/` templates.
+4.  Templates found in the `common/` folder are always concatenated first.
+
 ## Contributing
 
 We welcome contributions! Please see our [Contributing Guide](docs/CONTRIBUTING.md) for details on:
