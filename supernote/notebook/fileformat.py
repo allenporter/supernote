@@ -347,6 +347,14 @@ class Page:
     # Orientation
     ORIENTATION_VERTICAL = "1000"  # Portrait
     ORIENTATION_HORIZONTAL = "1090"  # Landscape
+    ORIENTATION_VERTICAL_180 = "1180"  # Portrait flipped
+    ORIENTATION_HORIZONTAL_270 = "1270"  # Landscape flipped
+
+    def is_horizontal(self) -> bool:
+        return self.get_orientation() in (
+            self.ORIENTATION_HORIZONTAL,
+            self.ORIENTATION_HORIZONTAL_270,
+        )
 
     def __init__(self, page_info: ParamsBlock) -> None:
         self.metadata = page_info

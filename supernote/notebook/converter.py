@@ -132,9 +132,7 @@ class ImageConverter:
             )
             if custom_bg:
                 decoder = Decoder.PngDecoder()
-            horizontal = (
-                page.get_orientation() == fileformat.Page.ORIENTATION_HORIZONTAL
-            )
+            horizontal = page.is_horizontal()
             plt = default_palette if layer_name == "BGLAYER" else palette
             img = self._create_image_from_decoder(
                 decoder,
@@ -154,7 +152,7 @@ class ImageConverter:
             mask = mask.point(lambda x: 0 if x == color.TRANSPARENT else 1, mode="1")
             return Image.composite(fg, bg, mask)
 
-        horizontal = page.get_orientation() == fileformat.Page.ORIENTATION_HORIZONTAL
+        horizontal = page.is_horizontal()
         page_width, page_height = (self.note.get_width(), self.note.get_height())
         if horizontal:
             page_height, page_width = (page_width, page_height)
@@ -300,7 +298,7 @@ class SvgConverter:
             an SVG string
         """
         page = self.note.get_page(page_number)
-        horizontal = page.get_orientation() == fileformat.Page.ORIENTATION_HORIZONTAL
+        horizontal = page.is_horizontal()
         page_width, page_height = (self.note.get_width(), self.note.get_height())
         if horizontal:
             page_height, page_width = (page_width, page_height)
@@ -462,9 +460,7 @@ class PdfConverter:
         for page_idx, img in imglist:
             page = self.note.get_page(page_idx)
             pageid = page.get_pageid()
-            horizontal = (
-                page.get_orientation() == fileformat.Page.ORIENTATION_HORIZONTAL
-            )
+            horizontal = page.is_horizontal()
             pagesize = (
                 landscape(self.pagesize) if horizontal else portrait(self.pagesize)
             )
