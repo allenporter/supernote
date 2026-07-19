@@ -44,6 +44,7 @@ class ProcessorService:
         summary_service: SummaryService,
         coordination_service: Any = None,
         concurrency: int = 2,
+        page_concurrency: int = 4,
     ) -> None:
         self.event_bus = event_bus
         self.session_manager = session_manager
@@ -51,6 +52,7 @@ class ProcessorService:
         self.summary_service = summary_service
         self.coordination_service = coordination_service
         self.concurrency = concurrency
+        self.page_concurrency = page_concurrency
 
         self.queue: asyncio.Queue[int] = asyncio.Queue()  # Queue of file_ids
         self.processing_files: Set[int] = set()
@@ -376,9 +378,15 @@ class ProcessorService:
         if not pages:
             logger.info(f"No pages found for file {file_id}. Skipping page tasks.")
         else:
-            # Pipeline Stage: Per-Page Processing (Parallel across pages)
+            # Pipeline Stage: Per-Page Processing (Parallel across pages with limit)
+            sem = asyncio.Semaphore(self.page_concurrency)
+
+            async def throttled_process_page(page_index: int, page_id: str):
+                async with sem:
+                    await self._process_page(file_id, page_index, page_id)
+
             tasks = [
-                self._process_page(file_id, page_index, page_id)
+                throttled_process_page(page_index, page_id)
                 for page_index, page_id in pages
                 if page_id  # Strict Check: Everything must have a page_id
             ]
@@ -390,19 +398,25 @@ class ProcessorService:
 
     async def _process_page(self, file_id: int, page_index: int, page_id: str) -> None:
         """Process all modules for a single page sequentially."""
-        for module in self.page_modules:
-            # We enforce page_id as the task key
-            success = await module.run(
-                file_id,
-                self.session_manager,
-                page_index=page_index,
-                page_id=page_id,  # Pass page_id to modules
-            )
-            if not success:
-                logger.warning(
-                    f"Page {page_id} (idx {page_index}) processing stalled at {module.name} for file {file_id}"
+        try:
+            for module in self.page_modules:
+                # We enforce page_id as the task key
+                success = await module.run(
+                    file_id,
+                    self.session_manager,
+                    page_index=page_index,
+                    page_id=page_id,  # Pass page_id to modules
                 )
-                break
+                if not success:
+                    logger.warning(
+                        f"Page {page_id} (idx {page_index}) processing stalled at {module.name} for file {file_id}"
+                    )
+                    break
+        except Exception as e:
+            logger.error(
+                f"Unhandled error processing page {page_id} (idx {page_index}) for file {file_id}: {e}",
+                exc_info=True,
+            )
 
     async def list_system_tasks(self, limit: int = 100) -> List[SystemTaskDO]:
         """List recent system tasks."""

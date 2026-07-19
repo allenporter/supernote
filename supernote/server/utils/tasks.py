@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import time
 from typing import Optional
 
@@ -7,6 +9,8 @@ from supernote.models.base import ProcessingStatus
 from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.utils.unique_id import next_id
+
+logger = logging.getLogger(__name__)
 
 
 async def get_task(
@@ -39,33 +43,48 @@ async def update_task_status(
     status: ProcessingStatus,
     error: Optional[str] = None,
 ) -> None:
-    """Create or update a SystemTaskDO status atomically."""
-    async with session_manager.session() as session:
-        now = int(time.time() * 1000)
-        # Using native SQL UPSERT because SQLite's ON CONFLICT
-        # is very robust for our needs and avoids SELECT-then-UPDATE races.
-        # We must provide 'id' and 'retry_count' manually for the INSERT part.
-        sql = text(
-            """
-            INSERT INTO f_system_task (id, file_id, task_type, key, status, last_error, retry_count, create_time, update_time)
-            VALUES (:id, :file_id, :task_type, :key, :status, :error, 0, :now, :now)
-            ON CONFLICT(file_id, task_type, key) DO UPDATE SET
-                status = excluded.status,
-                last_error = excluded.last_error,
-                update_time = excluded.update_time
-        """
-        )
+    """Create or update a SystemTaskDO status atomically with retries for lock conflicts."""
+    max_retries = 5
+    backoff = 0.1  # seconds
 
-        await session.execute(
-            sql,
-            {
-                "id": next_id(),
-                "file_id": file_id,
-                "task_type": task_type,
-                "key": key,
-                "status": status,
-                "error": error,
-                "now": now,
-            },
-        )
-        await session.commit()
+    for attempt in range(max_retries):
+        try:
+            async with session_manager.session() as session:
+                now = int(time.time() * 1000)
+                # Using native SQL UPSERT because SQLite's ON CONFLICT
+                # is very robust for our needs and avoids SELECT-then-UPDATE races.
+                # We must provide 'id' and 'retry_count' manually for the INSERT part.
+                sql = text(
+                    """
+                    INSERT INTO f_system_task (id, file_id, task_type, key, status, last_error, retry_count, create_time, update_time)
+                    VALUES (:id, :file_id, :task_type, :key, :status, :error, 0, :now, :now)
+                    ON CONFLICT(file_id, task_type, key) DO UPDATE SET
+                        status = excluded.status,
+                        last_error = excluded.last_error,
+                        update_time = excluded.update_time
+                """
+                )
+
+                await session.execute(
+                    sql,
+                    {
+                        "id": next_id(),
+                        "file_id": file_id,
+                        "task_type": task_type,
+                        "key": key,
+                        "status": status,
+                        "error": error,
+                        "now": now,
+                    },
+                )
+                await session.commit()
+                return  # Success!
+        except Exception as e:
+            if "locked" in str(e).lower() and attempt < max_retries - 1:
+                logger.warning(
+                    f"Database locked during task status update for file {file_id} (attempt {attempt + 1}/{max_retries}). Retrying in {backoff}s..."
+                )
+                await asyncio.sleep(backoff)
+                backoff *= 2
+            else:
+                raise

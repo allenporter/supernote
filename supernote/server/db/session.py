@@ -18,6 +18,7 @@ session_manager.close()
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
+from sqlalchemy import event
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -43,11 +44,30 @@ class DatabaseSessionManager:
     def __init__(self, host: str, engine_kwargs: dict[str, Any] | None = None):
         """Initialize the database session manager."""
         if engine_kwargs is None:
-            engine_kwargs = ENGINE_KWARGS
+            engine_kwargs = dict(ENGINE_KWARGS)
+        else:
+            engine_kwargs = dict(engine_kwargs)
+
+        # Apply SQLite timeout connection parameter
+        if "sqlite" in host:
+            connect_args = engine_kwargs.setdefault("connect_args", {})
+            if "timeout" not in connect_args:
+                connect_args["timeout"] = 60.0
+
         self._engine: AsyncEngine | None = create_async_engine(host, **engine_kwargs)
         self._sessionmaker: async_sessionmaker | None = async_sessionmaker(
             autocommit=False, bind=self._engine, expire_on_commit=False
         )
+
+        # Enable WAL (Write-Ahead Logging) and Normal synchronous mode for SQLite
+        if "sqlite" in host:
+
+            @event.listens_for(self._engine.sync_engine, "connect")
+            def set_sqlite_pragma(dbapi_connection, connection_record):
+                cursor = dbapi_connection.cursor()
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA synchronous=NORMAL")
+                cursor.close()
 
     async def close(self) -> None:
         """Close the database session manager."""
