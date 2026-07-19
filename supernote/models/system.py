@@ -429,3 +429,23 @@ class ReferenceRespVO(BaseResponse):
         metadata=field_options(alias="paramList"), default_factory=list
     )
     random: str | None = None
+
+
+@dataclass(kw_only=True)
+class QueueStatusVO(BaseResponse):
+    """Queue processing status response.
+
+    Used by:
+        /api/admin/queue/status (GET)
+    """
+
+    paused: bool = False
+    """Whether processing is paused."""
+
+    queue_size: int = field(metadata=field_options(alias="queueSize"), default=0)
+    """Number of items in the queue."""
+
+    processing_files: list[int] = field(
+        metadata=field_options(alias="processingFiles"), default_factory=list
+    )
+    """List of file IDs currently being processed."""

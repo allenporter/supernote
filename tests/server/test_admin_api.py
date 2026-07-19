@@ -179,6 +179,60 @@ async def test_admin_force_password_reset(
         assert user.password_md5 == new_pw
 
 
+async def test_admin_queue_control(
+    client: Client,
+    session_manager: DatabaseSessionManager,
+    coordination_service: CoordinationService,
+    server_config: ServerConfig,
+    admin_headers: dict[str, str],
+    user_headers: dict[str, str],
+) -> None:
+    """Test stopping, starting, and getting queue status."""
+    await setup_users(session_manager, coordination_service, server_config)
+
+    # 1. Access control tests
+    # Non-admin status get should fail
+    resp = await client.get("/api/admin/queue/status", headers=user_headers)
+    assert resp.status == 403
+
+    # Non-admin stop should fail
+    resp = await client.post("/api/admin/queue/stop", headers=user_headers)
+    assert resp.status == 403
+
+    # Non-admin start should fail
+    resp = await client.post("/api/admin/queue/start", headers=user_headers)
+    assert resp.status == 403
+
+    # 2. Admin functionality tests
+    # Admin status should succeed, default should be running (paused=False)
+    resp = await client.get("/api/admin/queue/status", headers=admin_headers)
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["paused"] is False
+    assert data["queueSize"] == 0
+    assert data["processingFiles"] == []
+
+    # Stop queue
+    resp = await client.post("/api/admin/queue/stop", headers=admin_headers)
+    assert resp.status == 200
+
+    # Status should now show paused
+    resp = await client.get("/api/admin/queue/status", headers=admin_headers)
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["paused"] is True
+
+    # Start queue
+    resp = await client.post("/api/admin/queue/start", headers=admin_headers)
+    assert resp.status == 200
+
+    # Status should show running again
+    resp = await client.get("/api/admin/queue/status", headers=admin_headers)
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["paused"] is False
+
+
 async def test_admin_reprocess(
     client: Client,
     session_manager: DatabaseSessionManager,

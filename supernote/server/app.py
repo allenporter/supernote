@@ -357,7 +357,7 @@ def create_app(config: ServerConfig) -> web.Application:
     app["rate_limiter"] = RateLimiter(coordination_service)
 
     processor_service = ProcessorService(
-        event_bus, session_manager, file_service, summary_service
+        event_bus, session_manager, file_service, summary_service, coordination_service
     )
     app["processor_service"] = processor_service
 

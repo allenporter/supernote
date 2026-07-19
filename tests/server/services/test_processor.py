@@ -454,3 +454,68 @@ async def test_gemini_concurrency_limit() -> None:
             f"Expected max 2 concurrent calls, saw {max_active_seen}"
         )
         assert active_calls == 0
+
+
+async def test_processor_pause_resume(
+    session_manager: DatabaseSessionManager,
+    mock_file_service: MagicMock,
+) -> None:
+    from supernote.server.services.coordination import SqliteCoordinationService
+
+    coordination_service = SqliteCoordinationService(session_manager)
+
+    processor_service = ProcessorService(
+        event_bus=LocalEventBus(),
+        session_manager=session_manager,
+        file_service=mock_file_service,
+        summary_service=MagicMock(),
+        coordination_service=coordination_service,
+        concurrency=1,
+    )
+
+    # 1. Default state
+    assert processor_service.is_processing_enabled() is True
+
+    # 2. Pause
+    await processor_service.pause()
+    assert processor_service.is_processing_enabled() is False
+    assert await coordination_service.get_value("queue_paused") == "true"
+
+    # Start service in paused state
+    processor_service.register_modules(
+        hashing=MagicMock(),
+        png=MagicMock(),
+        ocr=MagicMock(),
+        embedding=MagicMock(),
+        summary=MagicMock(),
+    )
+
+    with patch(
+        "supernote.server.services.processor.ProcessorService.process_file",
+        new_callable=AsyncMock,
+    ) as mock_process:
+        # Start the workers (they will be blocked since it's paused)
+        for i in range(processor_service.concurrency):
+            worker = asyncio.create_task(processor_service.worker_loop(i))
+            processor_service.workers.append(worker)
+
+        # Enqueue file ID
+        await processor_service.queue.put(101)
+        await asyncio.sleep(0.1)
+
+        # process_file should NOT have been called
+        mock_process.assert_not_called()
+
+        # 3. Resume
+        await processor_service.resume()
+        assert processor_service.is_processing_enabled() is True
+        assert await coordination_service.get_value("queue_paused") == "false"
+
+        # Wait for the worker to process the item
+        await asyncio.sleep(0.1)
+
+        # process_file should now have been called
+        mock_process.assert_called_once_with(101)
+
+        # Cleanup
+        await processor_service.stop()

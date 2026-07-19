@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from typing import List, Set
+from typing import Any, List, Set
 
 from sqlalchemy import delete, select
 
@@ -42,12 +42,14 @@ class ProcessorService:
         session_manager: DatabaseSessionManager,
         file_service: FileService,
         summary_service: SummaryService,
+        coordination_service: Any = None,
         concurrency: int = 2,
     ) -> None:
         self.event_bus = event_bus
         self.session_manager = session_manager
         self.file_service = file_service
         self.summary_service = summary_service
+        self.coordination_service = coordination_service
         self.concurrency = concurrency
 
         self.queue: asyncio.Queue[int] = asyncio.Queue()  # Queue of file_ids
@@ -55,6 +57,8 @@ class ProcessorService:
         self.workers: list[asyncio.Task] = []
         self.polling_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
+        self._processing_enabled = asyncio.Event()
+        self._processing_enabled.set()
 
         # Module registry
         self.global_pre_modules: List[ProcessorModule] = []
@@ -89,6 +93,23 @@ class ProcessorService:
         """Start the processor service workers and subscriptions."""
         logger.info("Starting ProcessorService...")
 
+        # Load paused state from coordination service if available
+        if self.coordination_service:
+            try:
+                paused_val = await self.coordination_service.get_value("queue_paused")
+                if paused_val == "true":
+                    self._processing_enabled.clear()
+                    logger.info(
+                        "ProcessorService queue processing starts in PAUSED state."
+                    )
+                else:
+                    self._processing_enabled.set()
+            except Exception as e:
+                logger.error(f"Failed to load queue paused state: {e}")
+                self._processing_enabled.set()
+        else:
+            self._processing_enabled.set()
+
         # subscribe to events
         self.event_bus.subscribe(NoteUpdatedEvent, self.handle_note_updated)
         self.event_bus.subscribe(NoteDeletedEvent, self.handle_note_deleted)
@@ -105,6 +126,34 @@ class ProcessorService:
 
         # Start Polling Loop
         self.polling_task = asyncio.create_task(self.poll_loop())
+
+    async def pause(self) -> None:
+        """Pause processing of tasks."""
+        self._processing_enabled.clear()
+        if self.coordination_service:
+            try:
+                await self.coordination_service.set_value("queue_paused", "true")
+            except Exception as e:
+                logger.error(f"Failed to persist queue paused state: {e}")
+        logger.info("ProcessorService queue processing paused.")
+
+    async def resume(self) -> None:
+        """Resume processing of tasks."""
+        self._processing_enabled.set()
+        if self.coordination_service:
+            try:
+                await self.coordination_service.set_value("queue_paused", "false")
+            except Exception as e:
+                logger.error(f"Failed to persist queue resumed state: {e}")
+        logger.info("ProcessorService queue processing resumed.")
+
+        # Trigger immediate recovery scan on resume to pick up any pending work immediately
+        asyncio.create_task(self.recover_tasks())
+        asyncio.create_task(self.recover_missing_tasks())
+
+    def is_processing_enabled(self) -> bool:
+        """Check if queue processing is enabled."""
+        return self._processing_enabled.is_set()
 
     async def stop(self) -> None:
         """Stop the processor service."""
@@ -201,8 +250,9 @@ class ProcessorService:
                 # Wait for 5 minutes (adjustable)
                 # We wait first to avoid thundering herd on startup (recover_tasks handles that)
                 await asyncio.sleep(300)
-                await self.recover_stalled_tasks()
-                await self.recover_missing_tasks()
+                if self.is_processing_enabled():
+                    await self.recover_stalled_tasks()
+                    await self.recover_missing_tasks()
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -272,8 +322,19 @@ class ProcessorService:
         logger.debug(f"Worker {worker_id} started.")
         while not self._shutdown_event.is_set():
             try:
+                # Wait until processing is enabled
+                await self._processing_enabled.wait()
+
                 file_id = await self.queue.get()
                 self._update_queue_metrics()
+
+                # Re-check processing enabled status in case it was paused while we were waiting on get()
+                if not self.is_processing_enabled():
+                    await self.queue.put(file_id)
+                    self.queue.task_done()
+                    self._update_queue_metrics()
+                    await asyncio.sleep(0.5)
+                    continue
                 try:
                     await self.process_file(file_id)
                 except Exception as e:

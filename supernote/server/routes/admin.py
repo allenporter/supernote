@@ -114,6 +114,39 @@ async def handle_list_users(request: web.Request) -> web.Response:
     return web.json_response([vo.to_dict() for vo in user_vos])
 
 
+@routes.post("/api/admin/queue/stop")
+@require_admin
+async def handle_stop_queue(request: web.Request) -> web.Response:
+    """Stop/pause the queue processing."""
+    processor_service = request.app["processor_service"]
+    await processor_service.pause()
+    return web.json_response(BaseResponse().to_dict())
+
+
+@routes.post("/api/admin/queue/start")
+@require_admin
+async def handle_start_queue(request: web.Request) -> web.Response:
+    """Start/resume the queue processing."""
+    processor_service = request.app["processor_service"]
+    await processor_service.resume()
+    return web.json_response(BaseResponse().to_dict())
+
+
+@routes.get("/api/admin/queue/status")
+@require_admin
+async def handle_queue_status(request: web.Request) -> web.Response:
+    """Get the queue status."""
+    processor_service = request.app["processor_service"]
+    from supernote.models.system import QueueStatusVO
+
+    status = QueueStatusVO(
+        paused=not processor_service.is_processing_enabled(),
+        queue_size=processor_service.queue.qsize(),
+        processing_files=list(processor_service.processing_files),
+    )
+    return web.json_response(status.to_dict())
+
+
 @routes.post("/api/admin/reprocess")
 @require_admin
 async def handle_reprocess(request: web.Request) -> web.Response:
