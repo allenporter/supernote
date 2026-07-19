@@ -973,6 +973,55 @@ class FileService:
         logger.info(f"Returning cached/copied PNG conversions for file {file_id}")
         return cached_results
 
+    async def _convert_note_to_png_fallback(
+        self,
+        user_id: int,
+        file_id: int,
+        file_md5: str,
+        storage_key: str,
+        db_pages: list[tuple[int, str]],
+    ) -> list[ConversionsVO]:
+        """Download notebook, parse it, and render/upload any missing pages."""
+        blob_content = b"".join(
+            [
+                chunk
+                async for chunk in self.blob_storage.get(USER_DATA_BUCKET, storage_key)
+            ]
+        )
+        # Offload heavy CPU-bound note loading to a worker thread
+        note = await asyncio.to_thread(_load_notebook_sync, blob_content)
+
+        results = []
+        db_pages_map = {idx: page_id for idx, page_id in db_pages} if db_pages else {}
+
+        for i in range(note.get_total_pages()):
+            png_storage_key = get_conversion_png_path(
+                user_id=user_id,
+                file_id=file_id,
+                page_index=i,
+                file_md5=file_md5,
+            )
+
+            # 1. Check if PNG already exists in USER_DATA_BUCKET
+            if await self.blob_storage.exists(USER_DATA_BUCKET, png_storage_key):
+                results.append(ConversionsVO(storage_key=png_storage_key, page_no=i))
+                continue
+
+            # 2. Check if we can copy from CACHE_BUCKET
+            page_id = db_pages_map.get(i)
+            if page_id and await self._try_copy_from_cache_bucket(
+                file_id, page_id, png_storage_key
+            ):
+                results.append(ConversionsVO(storage_key=png_storage_key, page_no=i))
+                continue
+
+            # 3. Fallback: render and upload
+            img_bytes = await asyncio.to_thread(_convert_single_page_sync, note, i)
+            await self.blob_storage.put(USER_DATA_BUCKET, png_storage_key, img_bytes)
+            results.append(ConversionsVO(storage_key=png_storage_key, page_no=i))
+
+        return results
+
     async def convert_note_to_png(self, user: str, file_id: int) -> list[ConversionsVO]:
         """Convert a note to PNG pages."""
         user_id = await self.user_service.get_user_id(user)
@@ -1005,48 +1054,14 @@ class FileService:
         # Fallback to downloading and rendering/uploading missing pages
         if node.storage_key is None:
             raise FileNotFound(f"Note file {file_id} has no content")
-        blob_content = b"".join(
-            [
-                chunk
-                async for chunk in self.blob_storage.get(
-                    USER_DATA_BUCKET, node.storage_key
-                )
-            ]
+
+        return await self._convert_note_to_png_fallback(
+            user_id=user_id,
+            file_id=file_id,
+            file_md5=file_md5,
+            storage_key=node.storage_key,
+            db_pages=db_pages,
         )
-        # Offload heavy CPU-bound note loading to a worker thread
-        note = await asyncio.to_thread(_load_notebook_sync, blob_content)
-
-        # Convert and upload pages one by one to keep memory footprint minimal
-        results = []
-        db_pages_map = {idx: page_id for idx, page_id in db_pages} if db_pages else {}
-
-        for i in range(note.get_total_pages()):
-            png_storage_key = get_conversion_png_path(
-                user_id=user_id,
-                file_id=file_id,
-                page_index=i,
-                file_md5=file_md5,
-            )
-
-            # 1. Check if PNG already exists in USER_DATA_BUCKET
-            if await self.blob_storage.exists(USER_DATA_BUCKET, png_storage_key):
-                results.append(ConversionsVO(storage_key=png_storage_key, page_no=i))
-                continue
-
-            # 2. Check if we can copy from CACHE_BUCKET
-            page_id = db_pages_map.get(i)
-            if page_id and await self._try_copy_from_cache_bucket(
-                file_id, page_id, png_storage_key
-            ):
-                results.append(ConversionsVO(storage_key=png_storage_key, page_no=i))
-                continue
-
-            # 3. Fallback: render and upload
-            img_bytes = await asyncio.to_thread(_convert_single_page_sync, note, i)
-            await self.blob_storage.put(USER_DATA_BUCKET, png_storage_key, img_bytes)
-            results.append(ConversionsVO(storage_key=png_storage_key, page_no=i))
-
-        return results
 
     async def convert_note_to_pdf(
         self, user: str, file_id: int, page_no_list: list[int]
