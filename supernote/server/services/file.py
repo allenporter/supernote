@@ -16,6 +16,7 @@ from supernote.notebook import (
     load as load_notebook,
 )
 from supernote.server.constants import (
+    CACHE_BUCKET,
     CATEGORY_CONTAINERS,
     IMMUTABLE_SYSTEM_DIRECTORIES,
     USER_DATA_BUCKET,
@@ -31,9 +32,11 @@ from supernote.server.exceptions import (
 from supernote.server.utils.paths import (
     get_conversion_pdf_path,
     get_conversion_png_path,
+    get_page_png_path,
 )
 
 from ..db.models.file import RecycleFileDO, UserFileDO
+from ..db.models.note_processing import NotePageContentDO
 from ..db.session import DatabaseSessionManager
 from ..events import LocalEventBus, NoteDeletedEvent, NoteUpdatedEvent
 from .blob import BlobStorage
@@ -906,6 +909,118 @@ class FileService:
 
             return file_entities
 
+    async def _try_copy_from_cache_bucket(
+        self, file_id: int, page_id: str, dst_key: str
+    ) -> bool:
+        """Attempt to copy page PNG from background CACHE_BUCKET to conversions in USER_DATA_BUCKET."""
+        cache_png_key = get_page_png_path(file_id, page_id)
+        if not await self.blob_storage.exists(CACHE_BUCKET, cache_png_key):
+            return False
+        try:
+            await self.blob_storage.put(
+                USER_DATA_BUCKET,
+                dst_key,
+                self.blob_storage.get(CACHE_BUCKET, cache_png_key),
+            )
+            return True
+        except OSError as e:
+            logger.warning(
+                f"Failed to copy cached PNG for file {file_id} page {page_id}: {e}"
+            )
+            return False
+
+    async def _process_single_page_cache(
+        self,
+        user_id: int,
+        file_id: int,
+        file_md5: str,
+        idx: int,
+        page_id: str | None = None,
+    ) -> ConversionsVO | None:
+        """Process cache check/copy for a single page."""
+        png_storage_key = get_conversion_png_path(
+            user_id=user_id,
+            file_id=file_id,
+            page_index=idx,
+            file_md5=file_md5,
+        )
+        # Check if already exists in USER_DATA_BUCKET
+        if await self.blob_storage.exists(USER_DATA_BUCKET, png_storage_key):
+            return ConversionsVO(storage_key=png_storage_key, page_no=idx)
+
+        # Check and copy from background CACHE_BUCKET
+        if page_id and await self._try_copy_from_cache_bucket(
+            file_id, page_id, png_storage_key
+        ):
+            return ConversionsVO(storage_key=png_storage_key, page_no=idx)
+
+        return None
+
+    async def _get_cached_conversions(
+        self,
+        user_id: int,
+        file_id: int,
+        file_md5: str,
+        db_pages: list[tuple[int, str]],
+    ) -> list[ConversionsVO | None] | None:
+        """Check if pages exist or can be copied from cache buckets in parallel.
+
+        Returns a list of ConversionsVO | None (where None represents a missing page),
+        or None if db_pages is empty.
+        """
+        if not db_pages:
+            return None
+
+        tasks = [
+            self._process_single_page_cache(user_id, file_id, file_md5, idx, page_id)
+            for idx, page_id in db_pages
+        ]
+        results = await asyncio.gather(*tasks)
+        return list(results)
+
+    async def _convert_note_to_png_fallback(
+        self,
+        user_id: int,
+        file_id: int,
+        file_md5: str,
+        storage_key: str,
+        cached_results: list[ConversionsVO | None] | None = None,
+    ) -> list[ConversionsVO]:
+        """Download notebook, parse it, and render/upload any missing pages."""
+        blob_content = b"".join(
+            [
+                chunk
+                async for chunk in self.blob_storage.get(USER_DATA_BUCKET, storage_key)
+            ]
+        )
+        # Offload heavy CPU-bound note loading to a worker thread
+        note = await asyncio.to_thread(_load_notebook_sync, blob_content)
+
+        total_pages = note.get_total_pages()
+
+        # If we don't have pre-computed cache checks (e.g. db_pages was empty), initialize empty results
+        if cached_results is None:
+            cached_results = [None] * total_pages
+        # Render and upload any pages that are still missing (sequentially to prevent RAM/CPU spikes)
+        final_results = []
+        for i in range(total_pages):
+            res = cached_results[i] if i < len(cached_results) else None
+            if res is not None:
+                final_results.append(res)
+                continue
+
+            png_storage_key = get_conversion_png_path(
+                user_id=user_id,
+                file_id=file_id,
+                page_index=i,
+                file_md5=file_md5,
+            )
+            img_bytes = await asyncio.to_thread(_convert_single_page_sync, note, i)
+            await self.blob_storage.put(USER_DATA_BUCKET, png_storage_key, img_bytes)
+            final_results.append(ConversionsVO(storage_key=png_storage_key, page_no=i))
+
+        return final_results
+
     async def convert_note_to_png(self, user: str, file_id: int) -> list[ConversionsVO]:
         """Convert a note to PNG pages."""
         user_id = await self.user_service.get_user_id(user)
@@ -914,39 +1029,40 @@ class FileService:
             node = await vfs.get_node_by_id(user_id, file_id)
             if not node or node.is_folder == "Y":
                 raise FileNotFound(f"Note file {file_id} not found")
+            if not node.md5:
+                raise FileError(f"Note file {file_id} is missing MD5 hash")
 
-            # Load notebook from blob storage
-            if node.storage_key is None:
-                raise FileNotFound(f"Note file {file_id} has no content")
-            blob_content = b"".join(
-                [
-                    chunk
-                    async for chunk in self.blob_storage.get(
-                        USER_DATA_BUCKET, node.storage_key
-                    )
-                ]
+            # Get page metadata from database
+            stmt = (
+                select(NotePageContentDO.page_index, NotePageContentDO.page_id)
+                .where(NotePageContentDO.file_id == file_id)
+                .order_by(NotePageContentDO.page_index)
             )
-            # Offload heavy CPU-bound note loading to a worker thread
-            note = await asyncio.to_thread(_load_notebook_sync, blob_content)
+            res = await session.execute(stmt)
+            db_pages = [(row[0], row[1]) for row in res.all()]
 
-            # Convert and upload pages one by one to keep memory footprint minimal
-            results = []
-            for i in range(note.get_total_pages()):
-                img_bytes = await asyncio.to_thread(_convert_single_page_sync, note, i)
-                # Store PNG in blob storage with a unique key
-                # Format: conversions/{user_id}/{file_id}/page_{i}_{md5}.png
-                png_storage_key = get_conversion_png_path(
-                    user_id=user_id,
-                    file_id=file_id,
-                    page_index=i,
-                    file_md5=node.md5 or "nomd5",
-                )
-                await self.blob_storage.put(
-                    USER_DATA_BUCKET, png_storage_key, img_bytes
-                )
-                results.append(ConversionsVO(storage_key=png_storage_key, page_no=i))
+        file_md5 = node.md5
 
-            return results
+        # Check if we can reuse already converted PNGs from USER_DATA_BUCKET or CACHE_BUCKET
+        cached_results = await self._get_cached_conversions(
+            user_id, file_id, file_md5, db_pages
+        )
+
+        if cached_results is not None and all(r is not None for r in cached_results):
+            logger.info(f"Returning cached/copied PNG conversions for file {file_id}")
+            return [r for r in cached_results if r is not None]
+
+        # Fallback to downloading and rendering/uploading missing pages
+        if node.storage_key is None:
+            raise FileNotFound(f"Note file {file_id} has no content")
+
+        return await self._convert_note_to_png_fallback(
+            user_id=user_id,
+            file_id=file_id,
+            file_md5=file_md5,
+            storage_key=node.storage_key,
+            cached_results=cached_results,
+        )
 
     async def convert_note_to_pdf(
         self, user: str, file_id: int, page_no_list: list[int]
@@ -958,6 +1074,8 @@ class FileService:
             node = await vfs.get_node_by_id(user_id, file_id)
             if not node or node.is_folder == "Y":
                 raise FileNotFound(f"Note file {file_id} not found")
+            if not node.md5:
+                raise FileError(f"Note file {file_id} is missing MD5 hash")
 
             # Load notebook
             if node.storage_key is None:
@@ -978,7 +1096,7 @@ class FileService:
 
             # 3. Store PDF
             pdf_storage_key = get_conversion_pdf_path(
-                user_id=user_id, file_id=file_id, file_md5=node.md5 or "nomd5"
+                user_id=user_id, file_id=file_id, file_md5=node.md5
             )
             await self.blob_storage.put(USER_DATA_BUCKET, pdf_storage_key, pdf_bytes)
 
