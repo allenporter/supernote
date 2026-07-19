@@ -24,3 +24,13 @@ CACHE_BUCKET = "supernote-cache"
 
 # Maximum upload size for file uploads
 MAX_UPLOAD_SIZE = 1024 * 1024 * 1024  # 1GB
+
+# Database connection settings
+SQLITE_TIMEOUT_SECONDS = 60.0
+
+# Task processing queue settings
+DEFAULT_PAGE_CONCURRENCY = 4
+
+# Task status database write retry settings
+DB_WRITE_MAX_RETRIES = 5
+DB_WRITE_RETRY_BACKOFF_SECONDS = 0.1

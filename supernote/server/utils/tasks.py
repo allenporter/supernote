@@ -6,8 +6,13 @@ from typing import Optional
 from sqlalchemy import select, text
 
 from supernote.models.base import ProcessingStatus
+from supernote.server.constants import (
+    DB_WRITE_MAX_RETRIES,
+    DB_WRITE_RETRY_BACKOFF_SECONDS,
+)
 from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.exceptions import DatabaseError
 from supernote.server.utils.unique_id import next_id
 
 logger = logging.getLogger(__name__)
@@ -44,8 +49,8 @@ async def update_task_status(
     error: Optional[str] = None,
 ) -> None:
     """Create or update a SystemTaskDO status atomically with retries for lock conflicts."""
-    max_retries = 5
-    backoff = 0.1  # seconds
+    max_retries = DB_WRITE_MAX_RETRIES
+    backoff = DB_WRITE_RETRY_BACKOFF_SECONDS
 
     for attempt in range(max_retries):
         try:
@@ -79,7 +84,7 @@ async def update_task_status(
                 )
                 await session.commit()
                 return  # Success!
-        except Exception as e:
+        except DatabaseError as e:
             if "locked" in str(e).lower() and attempt < max_retries - 1:
                 logger.warning(
                     f"Database locked during task status update for file {file_id} (attempt {attempt + 1}/{max_retries}). Retrying in {backoff}s..."

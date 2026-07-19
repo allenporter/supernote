@@ -13,7 +13,7 @@ from supernote.server.metrics import (
     PROCESSOR_STALLED_TASKS_RECOVERED_TOTAL,
 )
 
-from ..constants import CACHE_BUCKET
+from ..constants import CACHE_BUCKET, DEFAULT_PAGE_CONCURRENCY
 from ..db.models.file import UserFileDO
 from ..db.models.note_processing import NotePageContentDO, SystemTaskDO
 from ..db.session import DatabaseSessionManager
@@ -44,7 +44,7 @@ class ProcessorService:
         summary_service: SummaryService,
         coordination_service: Any = None,
         concurrency: int = 2,
-        page_concurrency: int = 4,
+        page_concurrency: int = DEFAULT_PAGE_CONCURRENCY,
     ) -> None:
         self.event_bus = event_bus
         self.session_manager = session_manager

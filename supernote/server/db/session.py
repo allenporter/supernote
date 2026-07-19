@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from supernote.server.constants import SQLITE_TIMEOUT_SECONDS
 from supernote.server.exceptions import DatabaseError, SupernoteError
 from supernote.server.metrics import DB_SESSION_ERRORS_TOTAL, DB_SESSIONS_ACTIVE
 
@@ -52,7 +53,7 @@ class DatabaseSessionManager:
         if "sqlite" in host:
             connect_args = engine_kwargs.setdefault("connect_args", {})
             if "timeout" not in connect_args:
-                connect_args["timeout"] = 60.0
+                connect_args["timeout"] = SQLITE_TIMEOUT_SECONDS
 
         self._engine: AsyncEngine | None = create_async_engine(host, **engine_kwargs)
         self._sessionmaker: async_sessionmaker | None = async_sessionmaker(
