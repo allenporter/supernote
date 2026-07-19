@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from supernote.server.exceptions import DatabaseError, SupernoteError
+from supernote.server.metrics import DB_SESSION_ERRORS_TOTAL, DB_SESSIONS_ACTIVE
 
 from .base import Base
 
@@ -62,18 +63,23 @@ class DatabaseSessionManager:
         if self._sessionmaker is None:
             raise DatabaseError("DatabaseSessionManager has been closed")
         session = self._sessionmaker()
+        DB_SESSIONS_ACTIVE.inc()
         try:
             yield session
         except SupernoteError:
+            DB_SESSION_ERRORS_TOTAL.inc()
             await session.rollback()
             raise
         except SQLAlchemyError as err:
+            DB_SESSION_ERRORS_TOTAL.inc()
             await session.rollback()
             raise DatabaseError(str(err)) from err
         except Exception:
+            DB_SESSION_ERRORS_TOTAL.inc()
             await session.rollback()
             raise
         finally:
+            DB_SESSIONS_ACTIVE.dec()
             await session.close()
 
     async def create_all_tables(self) -> None:

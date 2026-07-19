@@ -1,9 +1,14 @@
 import abc
 import logging
+import time
 from typing import Optional
 
 from supernote.models.base import ProcessingStatus
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.metrics import (
+    PROCESSOR_TASK_DURATION_SECONDS,
+    PROCESSOR_TASKS_TOTAL,
+)
 from supernote.server.utils.tasks import get_task, update_task_status
 
 logger = logging.getLogger(__name__)
@@ -120,6 +125,8 @@ class ProcessorModule(abc.ABC):
         key = self.get_task_key(page_index, page_id)
         logger.info(f"Running {self.name} for file {file_id} (key={key})")
 
+        start_time = time.perf_counter()
+        status_str = "failure"
         try:
             await self.process(
                 file_id, session_manager, page_index, page_id=page_id, **kwargs
@@ -131,6 +138,7 @@ class ProcessorModule(abc.ABC):
                 key,
                 ProcessingStatus.COMPLETED,
             )
+            status_str = "success"
             return True
         except Exception as e:
             logger.error(f"Error in {self.name} for file {file_id}: {e}", exc_info=True)
@@ -143,3 +151,7 @@ class ProcessorModule(abc.ABC):
                 str(e),
             )
             return False
+        finally:
+            duration = time.perf_counter() - start_time
+            PROCESSOR_TASKS_TOTAL.labels(module=self.name, status=status_str).inc()
+            PROCESSOR_TASK_DURATION_SECONDS.labels(module=self.name).observe(duration)

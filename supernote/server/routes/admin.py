@@ -2,10 +2,15 @@ from collections.abc import Awaitable, Callable
 
 from aiohttp import web
 from mashumaro.exceptions import MissingField
+from sqlalchemy import delete, select
 
 from supernote.models.auth import UserVO
-from supernote.models.base import BaseResponse, create_error_response
+from supernote.models.base import BaseResponse, TaskType, create_error_response
 from supernote.models.user import UserRegisterDTO
+from supernote.server.db.models.file import UserFileDO
+from supernote.server.db.models.note_processing import SystemTaskDO
+from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.events import LocalEventBus, NoteUpdatedEvent
 from supernote.server.exceptions import SupernoteError
 from supernote.server.services.user import UserService
 
@@ -140,3 +145,53 @@ async def handle_queue_status(request: web.Request) -> web.Response:
         processing_files=list(processor_service.processing_files),
     )
     return web.json_response(status.to_dict())
+
+
+@routes.post("/api/admin/reprocess")
+@require_admin
+async def handle_reprocess(request: web.Request) -> web.Response:
+    """Clear and trigger reprocessing of note tasks (Admin only)."""
+    req_data = await request.json()
+    task_type = req_data.get("task_type", "summary")
+    file_id = req_data.get("file_id")
+
+    session_manager: DatabaseSessionManager = request.app["session_manager"]
+    event_bus: LocalEventBus = request.app["event_bus"]
+
+    async with session_manager.session() as session:
+        stmt = delete(SystemTaskDO)
+
+        if task_type.upper() != "ALL":
+            try:
+                mapped_type = TaskType.from_friendly(task_type)
+            except ValueError:
+                return web.json_response(
+                    create_error_response(f"Invalid task_type: {task_type}").to_dict(),
+                    status=400,
+                )
+            stmt = stmt.where(SystemTaskDO.task_type == mapped_type.value)
+
+        # Get target file IDs to trigger events
+        if file_id is not None:
+            file_stmt = select(UserFileDO.user_id).where(UserFileDO.id == file_id)
+            file_result = await session.execute(file_stmt)
+            uid = file_result.scalar_one_or_none()
+            targets = [(file_id, uid if uid is not None else 0)]
+            stmt = stmt.where(SystemTaskDO.file_id == file_id)
+        else:
+            file_stmt = select(UserFileDO.id, UserFileDO.user_id).where(
+                UserFileDO.file_name.like("%.note")
+            )
+            file_result = await session.execute(file_stmt)
+            targets = list(file_result.all())
+
+        await session.execute(stmt)
+        await session.commit()
+
+    # Publish NoteUpdatedEvent to trigger immediate reprocessing
+    for fid, uid in targets:
+        await event_bus.publish(
+            NoteUpdatedEvent(file_id=fid, user_id=uid, file_path="")
+        )
+
+    return web.json_response(BaseResponse().to_dict())

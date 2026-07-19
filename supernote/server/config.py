@@ -143,6 +143,18 @@ BaseConfig
     Env Var: `SUPERNOTE_PROMPTS_DIR`
     """
 
+    metrics_enabled: bool = True
+    """Whether to enable the Prometheus metrics endpoint and logging middleware.
+
+    Env Var: `SUPERNOTE_METRICS_ENABLED`
+    """
+
+    metrics_path: str = "/metrics"
+    """The path where Prometheus metrics are exposed.
+
+    Env Var: `SUPERNOTE_METRICS_PATH`
+    """
+
     @property
     def base_url(self) -> str:
         """Get the base URL for the main server.
@@ -306,6 +318,16 @@ BaseConfig
         if prompts_dir := os.getenv("SUPERNOTE_PROMPTS_DIR"):
             config.prompts_dir = prompts_dir
             logger.info(f"Using SUPERNOTE_PROMPTS_DIR: {config.prompts_dir}")
+
+        if os.getenv("SUPERNOTE_METRICS_ENABLED"):
+            config.metrics_enabled = _get_bool_env(
+                "SUPERNOTE_METRICS_ENABLED", config.metrics_enabled
+            )
+            logger.info(f"Metrics Enabled: {config.metrics_enabled}")
+
+        if metrics_path := os.getenv("SUPERNOTE_METRICS_PATH"):
+            config.metrics_path = metrics_path
+            logger.info(f"Using SUPERNOTE_METRICS_PATH: {config.metrics_path}")
 
         if config.trace_log_file is None:
             config.trace_log_file = str(

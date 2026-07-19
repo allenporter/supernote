@@ -231,3 +231,66 @@ async def test_admin_queue_control(
     assert resp.status == 200
     data = await resp.json()
     assert data["paused"] is False
+
+
+async def test_admin_reprocess(
+    client: Client,
+    session_manager: DatabaseSessionManager,
+    coordination_service: CoordinationService,
+    server_config: ServerConfig,
+    admin_headers: dict[str, str],
+    user_headers: dict[str, str],
+) -> None:
+    """Test admin reprocess endpoint (permission and functionality)."""
+    await setup_users(session_manager, coordination_service, server_config)
+
+    # Insert a dummy SystemTaskDO
+    async with session_manager.session() as session:
+        from supernote.models.base import ProcessingStatus
+        from supernote.server.db.models.note_processing import SystemTaskDO
+
+        task = SystemTaskDO(
+            file_id=999,
+            task_type="SUMMARY_GENERATION",
+            key="global",
+            status=ProcessingStatus.COMPLETED,
+            update_time=12345,
+        )
+        session.add(task)
+        await session.commit()
+
+    # 1. Non-admin should fail (403)
+    resp = await client.post(
+        "/api/admin/reprocess",
+        json={"task_type": "summary", "file_id": 999},
+        headers=user_headers,
+    )
+    assert resp.status == 403
+
+    # 2. Admin should succeed (200)
+    resp = await client.post(
+        "/api/admin/reprocess",
+        json={"task_type": "summary", "file_id": 999},
+        headers=admin_headers,
+    )
+    assert resp.status == 200
+
+    # 3. Verify task is deleted in DB
+    async with session_manager.session() as session:
+        from sqlalchemy import select
+
+        from supernote.server.db.models.note_processing import SystemTaskDO
+
+        result = await session.execute(
+            select(SystemTaskDO).where(SystemTaskDO.file_id == 999)
+        )
+        tasks = result.scalars().all()
+        assert len(tasks) == 0
+
+    # 4. Admin with invalid task type should fail (400)
+    resp = await client.post(
+        "/api/admin/reprocess",
+        json={"task_type": "invalid_type", "file_id": 999},
+        headers=admin_headers,
+    )
+    assert resp.status == 400

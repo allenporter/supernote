@@ -6,6 +6,12 @@ from typing import Any, List, Set
 from sqlalchemy import delete, select
 
 from supernote.models.base import ProcessingStatus
+from supernote.server.metrics import (
+    PROCESSOR_FILES_PROCESSING,
+    PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL,
+    PROCESSOR_QUEUE_SIZE,
+    PROCESSOR_STALLED_TASKS_RECOVERED_TOTAL,
+)
 
 from ..constants import CACHE_BUCKET
 from ..db.models.file import UserFileDO
@@ -58,6 +64,16 @@ class ProcessorService:
         self.global_pre_modules: List[ProcessorModule] = []
         self.page_modules: List[ProcessorModule] = []
         self.global_post_modules: List[ProcessorModule] = []
+
+    def _update_queue_metrics(self) -> None:
+        try:
+            qsize = self.queue.qsize()
+            if not isinstance(qsize, (int, float)):
+                qsize = 0
+            PROCESSOR_QUEUE_SIZE.set(qsize)
+        except Exception:
+            pass
+        PROCESSOR_FILES_PROCESSING.set(len(self.processing_files))
 
     def register_modules(
         self,
@@ -166,6 +182,7 @@ class ProcessorService:
         if event.file_id not in self.processing_files:
             self.processing_files.add(event.file_id)
             await self.queue.put(event.file_id)
+            self._update_queue_metrics()
 
     async def handle_note_deleted(self, event: Event) -> None:
         """Clean up artifacts for deleted note."""
@@ -223,6 +240,7 @@ class ProcessorService:
             if file_id not in self.processing_files:
                 self.processing_files.add(file_id)
                 await self.queue.put(file_id)
+        self._update_queue_metrics()
 
     async def poll_loop(self) -> None:
         """Background loop to poll for stalled tasks."""
@@ -260,11 +278,13 @@ class ProcessorService:
             return
 
         logger.info(f"Found {len(file_ids)} stalled files. Enqueuing...")
+        PROCESSOR_STALLED_TASKS_RECOVERED_TOTAL.inc(len(file_ids))
         for file_id in file_ids:
             if file_id not in self.processing_files:
                 logger.info(f"Enqueuing stalled file {file_id} for retry.")
                 self.processing_files.add(file_id)
                 await self.queue.put(file_id)
+        self._update_queue_metrics()
 
     async def recover_missing_tasks(self) -> None:
         """Find .note files that have no system tasks and enqueue them."""
@@ -286,6 +306,7 @@ class ProcessorService:
             return
 
         logger.info(f"Found {len(missing)} files with missing tasks. Enqueuing...")
+        PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL.inc(len(missing))
         for file_id, user_id in missing:
             if file_id not in self.processing_files:
                 # We need the path for the event, but we can also just put it in the queue directly
@@ -294,6 +315,7 @@ class ProcessorService:
                 logger.info(f"Enqueuing file {file_id} for initial processing.")
                 self.processing_files.add(file_id)
                 await self.queue.put(file_id)
+        self._update_queue_metrics()
 
     async def worker_loop(self, worker_id: int) -> None:
         """Background worker to process items from the queue."""
@@ -304,14 +326,15 @@ class ProcessorService:
                 await self._processing_enabled.wait()
 
                 file_id = await self.queue.get()
+                self._update_queue_metrics()
 
                 # Re-check processing enabled status in case it was paused while we were waiting on get()
                 if not self.is_processing_enabled():
                     await self.queue.put(file_id)
                     self.queue.task_done()
+                    self._update_queue_metrics()
                     await asyncio.sleep(0.5)
                     continue
-
                 try:
                     await self.process_file(file_id)
                 except Exception as e:
@@ -319,6 +342,7 @@ class ProcessorService:
                 finally:
                     self.processing_files.discard(file_id)
                     self.queue.task_done()
+                    self._update_queue_metrics()
             except asyncio.CancelledError:
                 break
             except Exception as e:

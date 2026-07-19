@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable
 
 import aiohttp_remotes
 from aiohttp import web
+from aiohttp.web_urldispatcher import SystemRoute
 from aiohttp_asgi import ASGIResource
 from sqlalchemy import select
 from yarl import URL
@@ -23,6 +24,7 @@ from .constants import MAX_UPLOAD_SIZE
 from .db.models.user import UserDO
 from .db.session import DatabaseSessionManager
 from .events import LocalEventBus
+from .metrics import HTTP_REQUEST_DURATION_SECONDS, HTTP_REQUESTS_TOTAL
 from .routes import (
     admin,
     auth,
@@ -86,7 +88,6 @@ async def trace_middleware(
     # Process Request
     try:
         response = await handler(request)
-
         # Capture Request Body (SAFELY AFTER HANDLER)
         req_body_str = None
         if "/api/oss/upload" in request.path:
@@ -161,6 +162,44 @@ async def trace_middleware(
         raise
 
 
+@web.middleware
+async def metrics_middleware(
+    request: web.Request,
+    handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
+) -> web.StreamResponse:
+    start_time = time.perf_counter()
+    status = 500
+    try:
+        response = await handler(request)
+        status = response.status
+        return response
+    except web.HTTPException as ex:
+        status = ex.status
+        raise
+    except Exception:
+        status = 500
+        raise
+    finally:
+        duration = time.perf_counter() - start_time
+        route = request.match_info.route
+        resource = route.resource if route else None
+
+        if resource:
+            info = resource.get_info()
+            path_pattern = info.get("formatter") or info.get("path") or request.path
+            if route.name == "static" or path_pattern.startswith("/static/"):
+                path_pattern = "/static/{filename}"
+        else:
+            path_pattern = f"HTTP {status}"
+
+        HTTP_REQUESTS_TOTAL.labels(
+            method=request.method, path=path_pattern, status=str(status)
+        ).inc()
+        HTTP_REQUEST_DURATION_SECONDS.labels(
+            method=request.method, path=path_pattern
+        ).observe(duration)
+
+
 def try_parse_json(body: str | None) -> Any:
     """Attempt to parse string as JSON, return original if fails or is not string."""
     if not isinstance(body, str):
@@ -219,6 +258,15 @@ async def jwt_auth_middleware(
 ) -> web.StreamResponse:
     # Check if the matched route handler is public
     route = request.match_info.route
+    if route is None:
+        return await handler(request)
+
+    if isinstance(route, SystemRoute):
+        return await handler(request)
+
+    if route.resource and isinstance(route.resource, ASGIResource):
+        return await handler(request)
+
     handler_func = getattr(route, "handler", None)
     if handler_func and getattr(handler_func, "is_public", False):
         return await handler(request)
@@ -352,6 +400,19 @@ def create_app(config: ServerConfig) -> web.Application:
     app.router.add_get("/", handle_index)
     app.router.add_static("/static/", path=static_path, name="static")
 
+    if config.metrics_enabled:
+        from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+        @public_route
+        async def handle_metrics(request: web.Request) -> web.Response:
+            data = generate_latest()
+            return web.Response(
+                body=data, headers={"Content-Type": CONTENT_TYPE_LATEST}
+            )
+
+        app.router.add_get(config.metrics_path, handle_metrics)
+        logger.info(f"Exposing Prometheus metrics at {config.metrics_path}")
+
     # Register Middlewares
     async def on_startup_handler(app: web.Application) -> None:
         # Configure proxy middleware based on config
@@ -368,6 +429,8 @@ def create_app(config: ServerConfig) -> web.Application:
             await aiohttp_remotes.setup(app, aiohttp_remotes.XForwardedRelaxed())
 
         # Register trace and auth middlewares after proxy setup to avoid clone errors
+        if config.metrics_enabled:
+            app.middlewares.append(metrics_middleware)
         app.middlewares.append(trace_middleware)
         app.middlewares.append(jwt_auth_middleware)
 
