@@ -923,7 +923,7 @@ class FileService:
                 self.blob_storage.get(CACHE_BUCKET, cache_png_key),
             )
             return True
-        except Exception as e:
+        except OSError as e:
             logger.warning(
                 f"Failed to copy cached PNG for file {file_id} page {page_id}: {e}"
             )
@@ -944,11 +944,11 @@ class FileService:
             page_index=idx,
             file_md5=file_md5,
         )
-        # 1. Check if already exists in USER_DATA_BUCKET
+        # Check if already exists in USER_DATA_BUCKET
         if await self.blob_storage.exists(USER_DATA_BUCKET, png_storage_key):
             return ConversionsVO(storage_key=png_storage_key, page_no=idx)
 
-        # 2. Check and copy from background CACHE_BUCKET
+        # Check and copy from background CACHE_BUCKET
         if page_id and await self._try_copy_from_cache_bucket(
             file_id, page_id, png_storage_key
         ):
@@ -1001,7 +1001,6 @@ class FileService:
         # If we don't have pre-computed cache checks (e.g. db_pages was empty), initialize empty results
         if cached_results is None:
             cached_results = [None] * total_pages
-
         # Render and upload any pages that are still missing (sequentially to prevent RAM/CPU spikes)
         final_results = []
         for i in range(total_pages):

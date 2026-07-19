@@ -61,7 +61,7 @@ async def test_note_png_caching(
     test_note_path: Path,
     session_manager: DatabaseSessionManager,
 ) -> None:
-    # 1. Setup: Upload the test note
+    # Setup: Upload the test note
     with test_note_path.open("rb") as f:
         note_content = f.read()
 
@@ -95,7 +95,7 @@ async def test_note_png_caching(
     assert len(png_pages_second) == len(png_pages_first)
 
     # Now let's test CACHE_BUCKET copying (Medium-path)
-    # 1. Let's delete the files from USER_DATA_BUCKET's conversions directory
+    # Delete the files from USER_DATA_BUCKET's conversions directory
     user_id = await file_service.user_service.get_user_id(user_email)
 
     # Clean USER_DATA_BUCKET conversions
@@ -104,11 +104,11 @@ async def test_note_png_caching(
             user_id=user_id,
             file_id=file_id,
             page_index=idx,
-            file_md5=file_info.md5 or "nomd5",
+            file_md5=file_info.md5,
         )
         await file_service.blob_storage.delete(USER_DATA_BUCKET, png_storage_key)
 
-    # 2. Add records to NotePageContentDO and put dummy images in CACHE_BUCKET
+    # Add records to NotePageContentDO and put dummy images in CACHE_BUCKET
     async with session_manager.session() as session:
         await session.execute(
             delete(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
@@ -129,7 +129,7 @@ async def test_note_png_caching(
             )
         await session.commit()
 
-    # 3. Request conversion: should succeed by copying from CACHE_BUCKET to USER_DATA_BUCKET!
+    # Request conversion: should succeed by copying from CACHE_BUCKET to USER_DATA_BUCKET!
     png_pages_third = await device_client.get_note_png_pages(file_id)
     assert len(png_pages_third) == len(png_pages_first)
 
@@ -139,7 +139,7 @@ async def test_note_png_caching(
             user_id=user_id,
             file_id=file_id,
             page_index=idx,
-            file_md5=file_info.md5 or "nomd5",
+            file_md5=file_info.md5,
         )
         # Read from USER_DATA_BUCKET
         chunks = []
