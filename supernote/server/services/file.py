@@ -984,7 +984,6 @@ class FileService:
         file_id: int,
         file_md5: str,
         storage_key: str,
-        db_pages: list[tuple[int, str]],
         cached_results: list[ConversionsVO | None] | None = None,
     ) -> list[ConversionsVO]:
         """Download notebook, parse it, and render/upload any missing pages."""
@@ -1001,16 +1000,13 @@ class FileService:
 
         # If we don't have pre-computed cache checks (e.g. db_pages was empty), run them in parallel now
         if cached_results is None:
-            db_pages_map = (
-                {idx: page_id for idx, page_id in db_pages} if db_pages else {}
-            )
             tasks = [
                 self._process_single_page_cache(
                     user_id=user_id,
                     file_id=file_id,
                     file_md5=file_md5,
                     idx=i,
-                    page_id=db_pages_map.get(i),
+                    page_id=None,
                 )
                 for i in range(total_pages)
             ]
@@ -1076,7 +1072,6 @@ class FileService:
             file_id=file_id,
             file_md5=file_md5,
             storage_key=node.storage_key,
-            db_pages=db_pages,
             cached_results=cached_results,
         )
 
