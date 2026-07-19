@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 
@@ -25,11 +26,16 @@ async def test_trace_logging(
 
     # Check trace log
     log_path = Path(mock_trace_log)
-    assert log_path.exists()
+    content = ""
+    # Wait for the async file write thread to finish writing and flushing
+    for _ in range(20):
+        if log_path.exists():
+            content = log_path.read_text().strip()
+            if "/api/file/query/server" in content:
+                break
+        await asyncio.sleep(0.05)
 
-    # Since we use indent=2, a single entry spans multiple lines.
-    # In this test we only made one request, so we can just parse the whole file.
-    content = log_path.read_text().strip()
+    assert log_path.exists()
     entry = json.loads(content)
 
     # Check request fields
