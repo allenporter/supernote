@@ -998,19 +998,9 @@ class FileService:
 
         total_pages = note.get_total_pages()
 
-        # If we don't have pre-computed cache checks (e.g. db_pages was empty), run them in parallel now
+        # If we don't have pre-computed cache checks (e.g. db_pages was empty), initialize empty results
         if cached_results is None:
-            tasks = [
-                self._process_single_page_cache(
-                    user_id=user_id,
-                    file_id=file_id,
-                    file_md5=file_md5,
-                    idx=i,
-                    page_id=None,
-                )
-                for i in range(total_pages)
-            ]
-            cached_results = list(await asyncio.gather(*tasks))
+            cached_results = [None] * total_pages
 
         # Render and upload any pages that are still missing (sequentially to prevent RAM/CPU spikes)
         final_results = []
