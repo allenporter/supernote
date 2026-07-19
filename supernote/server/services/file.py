@@ -962,10 +962,11 @@ class FileService:
         file_id: int,
         file_md5: str,
         db_pages: list[tuple[int, str]],
-    ) -> list[ConversionsVO] | None:
-        """Check if all pages exist or can be copied from cache buckets in parallel.
+    ) -> list[ConversionsVO | None] | None:
+        """Check if pages exist or can be copied from cache buckets in parallel.
 
-        Returns the list of ConversionsVO if complete, else None.
+        Returns a list of ConversionsVO | None (where None represents a missing page),
+        or None if db_pages is empty.
         """
         if not db_pages:
             return None
@@ -975,15 +976,7 @@ class FileService:
             for idx, page_id in db_pages
         ]
         results = await asyncio.gather(*tasks)
-
-        cached_results = []
-        for res in results:
-            if res is None:
-                return None
-            cached_results.append(res)
-
-        logger.info(f"Returning cached/copied PNG conversions for file {file_id}")
-        return cached_results
+        return list(results)
 
     async def _convert_note_to_png_fallback(
         self,
@@ -992,6 +985,7 @@ class FileService:
         file_md5: str,
         storage_key: str,
         db_pages: list[tuple[int, str]],
+        cached_results: list[ConversionsVO | None] | None = None,
     ) -> list[ConversionsVO]:
         """Download notebook, parse it, and render/upload any missing pages."""
         blob_content = b"".join(
@@ -1003,24 +997,29 @@ class FileService:
         # Offload heavy CPU-bound note loading to a worker thread
         note = await asyncio.to_thread(_load_notebook_sync, blob_content)
 
-        db_pages_map = {idx: page_id for idx, page_id in db_pages} if db_pages else {}
+        total_pages = note.get_total_pages()
 
-        # 1. Check and copy cached pages in parallel first (non-blocking metadata operations)
-        tasks = [
-            self._process_single_page_cache(
-                user_id=user_id,
-                file_id=file_id,
-                file_md5=file_md5,
-                idx=i,
-                page_id=db_pages_map.get(i),
+        # If we don't have pre-computed cache checks (e.g. db_pages was empty), run them in parallel now
+        if cached_results is None:
+            db_pages_map = (
+                {idx: page_id for idx, page_id in db_pages} if db_pages else {}
             )
-            for i in range(note.get_total_pages())
-        ]
-        results = await asyncio.gather(*tasks)
+            tasks = [
+                self._process_single_page_cache(
+                    user_id=user_id,
+                    file_id=file_id,
+                    file_md5=file_md5,
+                    idx=i,
+                    page_id=db_pages_map.get(i),
+                )
+                for i in range(total_pages)
+            ]
+            cached_results = list(await asyncio.gather(*tasks))
 
-        # 2. Render and upload any pages that are still missing (sequentially to prevent RAM/CPU spikes)
+        # Render and upload any pages that are still missing (sequentially to prevent RAM/CPU spikes)
         final_results = []
-        for i, res in enumerate(results):
+        for i in range(total_pages):
+            res = cached_results[i] if i < len(cached_results) else None
             if res is not None:
                 final_results.append(res)
                 continue
@@ -1063,8 +1062,10 @@ class FileService:
         cached_results = await self._get_cached_conversions(
             user_id, file_id, file_md5, db_pages
         )
-        if cached_results is not None:
-            return cached_results
+
+        if cached_results is not None and all(r is not None for r in cached_results):
+            logger.info(f"Returning cached/copied PNG conversions for file {file_id}")
+            return [r for r in cached_results if r is not None]
 
         # Fallback to downloading and rendering/uploading missing pages
         if node.storage_key is None:
@@ -1076,6 +1077,7 @@ class FileService:
             file_md5=file_md5,
             storage_key=node.storage_key,
             db_pages=db_pages,
+            cached_results=cached_results,
         )
 
     async def convert_note_to_pdf(
