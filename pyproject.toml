@@ -46,6 +46,7 @@ server = [
   "mcp>=1.25.0",
   "aiohttp-asgi>=0.6.1",
   "starlette>=0.35.0",
+  "prometheus-client>=0.20.0",
 ]
 all = ["supernote[client,server]"]
 

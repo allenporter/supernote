@@ -898,6 +898,15 @@ wheels = [
 ]
 
 [[package]]
+name = "prometheus-client"
+version = "0.25.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/1b/fb/d9aa83ffe43ce1f19e557c0971d04b90561b0cfd50762aafb01968285553/prometheus_client-0.25.0.tar.gz", hash = "sha256:5e373b75c31afb3c86f1a52fa1ad470c9aace18082d39ec0d2f918d11cc9ba28", size = 86035 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/9b/d4b1e644385499c8346fa9b622a3f030dce14cd6ef8a1871c221a17a67e7/prometheus_client-0.25.0-py3-none-any.whl", hash = "sha256:d5aec89e349a6ec230805d0df882f3807f74fd6c1a2fa86864e3c2279059fed1", size = 64154 },
+]
+
+[[package]]
 name = "propcache"
 version = "0.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1394,6 +1403,7 @@ all = [
     { name = "google-genai" },
     { name = "mashumaro" },
     { name = "mcp" },
+    { name = "prometheus-client" },
     { name = "pyjwt" },
     { name = "pyyaml" },
     { name = "requests" },
@@ -1416,6 +1426,7 @@ server = [
     { name = "google-genai" },
     { name = "mashumaro" },
     { name = "mcp" },
+    { name = "prometheus-client" },
     { name = "pyjwt" },
     { name = "pyyaml" },
     { name = "sqlalchemy", extra = ["asyncio"] },
@@ -1438,6 +1449,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.19.0" },
     { name = "pillow", specifier = ">=7.2.0" },
     { name = "potracer", specifier = ">=0.0.1" },
+    { name = "prometheus-client", marker = "extra == 'server'", specifier = ">=0.20.0" },
     { name = "pyjwt", marker = "extra == 'server'", specifier = ">=2.10.1" },
     { name = "pypng", specifier = ">=0.0.20" },
     { name = "pyyaml", marker = "extra == 'server'", specifier = ">=6.0" },

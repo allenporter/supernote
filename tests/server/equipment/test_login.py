@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,12 @@ async def test_trace_logging(client: TestClient, mock_trace_log: str) -> None:
     await client.get("/some/random/path")
 
     log_file = Path(mock_trace_log)
+    # Wait for the async file write thread to finish writing
+    for _ in range(20):
+        if log_file.exists():
+            break
+        await asyncio.sleep(0.05)
+
     assert log_file.exists()
     content = log_file.read_text()
     assert "/some/random/path" in content

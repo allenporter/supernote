@@ -1,9 +1,12 @@
 import asyncio
 import logging
+import time
 from typing import Any
 
 from google import genai
 from google.genai import types
+
+from supernote.server.metrics import GEMINI_API_CALLS_TOTAL, GEMINI_API_DURATION_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -41,11 +44,25 @@ class GeminiService:
         if self._client is None:
             raise ValueError("Gemini API key not configured")
 
-        async with self._get_semaphore():
-            return await self._client.aio.models.generate_content(
-                model=model,
-                contents=contents,
-                config=config,
+        start_time = time.perf_counter()
+        status = "success"
+        try:
+            async with self._get_semaphore():
+                return await self._client.aio.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=config,
+                )
+        except Exception:
+            status = "failure"
+            raise
+        finally:
+            duration = time.perf_counter() - start_time
+            GEMINI_API_CALLS_TOTAL.labels(
+                operation="generate_content", status=status
+            ).inc()
+            GEMINI_API_DURATION_SECONDS.labels(operation="generate_content").observe(
+                duration
             )
 
     async def embed_content(
@@ -58,9 +75,23 @@ class GeminiService:
         if self._client is None:
             raise ValueError("Gemini API key not configured")
 
-        async with self._get_semaphore():
-            return await self._client.aio.models.embed_content(
-                model=model,
-                contents=contents,
-                config=config,
+        start_time = time.perf_counter()
+        status = "success"
+        try:
+            async with self._get_semaphore():
+                return await self._client.aio.models.embed_content(
+                    model=model,
+                    contents=contents,
+                    config=config,
+                )
+        except Exception:
+            status = "failure"
+            raise
+        finally:
+            duration = time.perf_counter() - start_time
+            GEMINI_API_CALLS_TOTAL.labels(
+                operation="embed_content", status=status
+            ).inc()
+            GEMINI_API_DURATION_SECONDS.labels(operation="embed_content").observe(
+                duration
             )
