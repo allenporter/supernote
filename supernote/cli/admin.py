@@ -51,9 +51,9 @@ async def add_user_async(
             sys.exit(1)
 
 
-async def list_users_async():
+async def list_users_async(url: str | None = None):
     """Async implementation of list users."""
-    async with create_session() as session:
+    async with create_session(url) as session:
         client = session.client
         try:
             users = await client.get_json("/api/admin/users", list)
@@ -98,7 +98,7 @@ def add_user(args):
 
 
 def list_users(args):
-    asyncio.run(list_users_async())
+    asyncio.run(list_users_async(args.url))
 
 
 async def reset_password_async(url: str, email: str, password: str):
@@ -127,6 +127,64 @@ def reset_password(args):
             sys.exit(1)
 
     asyncio.run(reset_password_async(args.url, args.email, password))
+
+
+async def queue_status_async(url: str | None = None):
+    """Show the background processing queue status."""
+    async with create_session(url) as session:
+        admin_client = AdminClient(session.client)
+        try:
+            status = await admin_client.get_queue_status()
+            print()
+            print("Queue Processing Status")
+            print("=======================")
+            print(f"Status:            {'PAUSED' if status.paused else 'RUNNING'}")
+            print(f"Queue Size:        {status.queue_size}")
+            print(
+                f"Processing Files:  {', '.join(map(str, status.processing_files)) if status.processing_files else 'None'}"
+            )
+            print()
+        except Exception as e:
+            print(f"Failed to get queue status: {e}")
+            sys.exit(1)
+
+
+async def queue_stop_async(url: str | None = None):
+    """Stop/pause the background processing queue."""
+    async with create_session(url) as session:
+        admin_client = AdminClient(session.client)
+        try:
+            print("Attempting to stop/pause background queue processing...")
+            await admin_client.stop_queue()
+            print("Success: Queue processing stopped.")
+        except Exception as e:
+            print(f"Failed to stop queue: {e}")
+            sys.exit(1)
+
+
+async def queue_start_async(url: str | None = None):
+    """Start/resume the background processing queue."""
+    async with create_session(url) as session:
+        admin_client = AdminClient(session.client)
+        try:
+            print("Attempting to start/resume background queue processing...")
+            await admin_client.start_queue()
+            print("Success: Queue processing started.")
+        except Exception as e:
+            print(f"Failed to start queue: {e}")
+            sys.exit(1)
+
+
+def queue_status(args):
+    asyncio.run(queue_status_async(args.url))
+
+
+def queue_stop(args):
+    asyncio.run(queue_stop_async(args.url))
+
+
+def queue_start(args):
+    asyncio.run(queue_start_async(args.url))
 
 
 def add_parser(subparsers):
@@ -176,3 +234,30 @@ def add_parser(subparsers):
         "--password", type=str, help="New password (if omitted, prompt interactively)"
     )
     parser_user_reset.set_defaults(func=reset_password)
+
+    # --- Queue Management ---
+    parser_queue = admin_subparsers.add_parser(
+        "queue", help="Queue management commands"
+    )
+    queue_subparsers = parser_queue.add_subparsers(dest="queue_command")
+
+    # queue status
+    parser_queue_status = queue_subparsers.add_parser(
+        "status",
+        help="Show queue processing status",
+    )
+    parser_queue_status.set_defaults(func=queue_status)
+
+    # queue stop
+    parser_queue_stop = queue_subparsers.add_parser(
+        "stop",
+        help="Stop/pause the queue processing",
+    )
+    parser_queue_stop.set_defaults(func=queue_stop)
+
+    # queue start
+    parser_queue_start = queue_subparsers.add_parser(
+        "start",
+        help="Start/resume the queue processing",
+    )
+    parser_queue_start.set_defaults(func=queue_start)

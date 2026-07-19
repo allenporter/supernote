@@ -2,6 +2,7 @@ import logging
 
 from supernote.client.client import Client
 from supernote.models.base import BaseResponse
+from supernote.models.system import QueueStatusVO
 from supernote.models.user import (
     RetrievePasswordDTO,
     UpdateEmailDTO,
@@ -74,3 +75,19 @@ class AdminClient:
             json={"email": email, "password": password_md5},
         )
         logger.info(f"Password reset for {email}")
+
+    async def stop_queue(self) -> None:
+        """Stop/pause the queue processing."""
+        await self.client.post_json("/api/admin/queue/stop", BaseResponse)
+        logger.info("Stopped/paused background queue processing")
+
+    async def start_queue(self) -> None:
+        """Start/resume the queue processing."""
+        await self.client.post_json("/api/admin/queue/start", BaseResponse)
+        logger.info("Started/resumed background queue processing")
+
+    async def get_queue_status(self) -> QueueStatusVO:
+        """Get the background queue processing status."""
+        from supernote.models.system import QueueStatusVO
+
+        return await self.client.get_json("/api/admin/queue/status", QueueStatusVO)
