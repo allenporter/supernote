@@ -138,13 +138,28 @@ BaseConfig
     """
 
     @property
-    def base_url(self) -> str:
-        """Get the base URL for the main server.
+    def configured_base_url(self) -> str | None:
+        """Get the explicitly configured base URL, or None if unset.
+
+        Returns `None` when `SUPERNOTE_BASE_URL` (config `base_url`) is not set,
+        allowing callers to fall back to the incoming request's base URL.
 
         Env Var: `SUPERNOTE_BASE_URL`
         """
         if self._base_url:
             return self._base_url.rstrip("/")
+        return None
+
+    @property
+    def base_url(self) -> str:
+        """Get the base URL for the main server.
+
+        Falls back to the configured host/port when `SUPERNOTE_BASE_URL` is unset.
+
+        Env Var: `SUPERNOTE_BASE_URL`
+        """
+        if self.configured_base_url is not None:
+            return self.configured_base_url
         host = "localhost" if self.host == "0.0.0.0" else self.host
         return f"http://{host}:{self.port}"
 

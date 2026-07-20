@@ -558,7 +558,8 @@ async def handle_file_upload_apply(request: web.Request) -> web.Response:
         encoded_name = urllib.parse.quote(inner_name)
         path_to_sign = f"/api/oss/upload?path={encoded_name}"
         signed_path = await url_signer.sign(path_to_sign, user=request["user"])
-        full_url = f"{config.base_url}{signed_path}"
+        base_url = config.configured_base_url or str(request.url.origin())
+        full_url = f"{base_url}{signed_path}"
 
         return web.json_response(
             FileUploadApplyLocalVO(
