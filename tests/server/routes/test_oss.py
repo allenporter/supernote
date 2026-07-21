@@ -115,16 +115,6 @@ async def test_oss_invalid_range_header(
     assert "400" in str(excinfo.value)
 
 
-# ---------------------------------------------------------------------------
-# Base-URL selection when signing upload/download URLs.
-#
-# The signed URL routes prefer the explicitly configured base URL
-# (``SUPERNOTE_BASE_URL``) and fall back to the incoming request's origin when
-# it is unset. These tests mock a request and assert the returned URL is built
-# from the correct base.
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("configured_base_url", ["https://notes.example.com/"])
 async def test_upload_url_uses_configured_base_url(
     authenticated_client: Client,
