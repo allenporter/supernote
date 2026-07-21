@@ -17,19 +17,31 @@ def test_serve_run_standard():
         mock_run.assert_called_once_with(args)
 
 
-def test_serve_run_ephemeral(capsys):
+def test_serve_run_ephemeral(capsys, monkeypatch):
     args = argparse.Namespace(ephemeral=True, config_dir=None)
-    # Clear env vars if set to test defaults
-    os.environ.pop("SUPERNOTE_PORT", None)
-    os.environ.pop("SUPERNOTE_HOST", None)
+    monkeypatch.delenv("SUPERNOTE_PORT", raising=False)
+    monkeypatch.delenv("SUPERNOTE_HOST", raising=False)
+    monkeypatch.delenv("SUPERNOTE_EPHEMERAL", raising=False)
+    monkeypatch.delenv("SUPERNOTE_STORAGE_DIR", raising=False)
 
-    with patch("supernote.server.app.run") as mock_run:
-        serve_run(args)
-        mock_run.assert_called_once_with(args)
+    env_checked = False
+
+    def check_env(parsed_args):
+        nonlocal env_checked
+        env_checked = True
         assert os.environ.get("SUPERNOTE_EPHEMERAL") == "true"
         assert os.environ.get("SUPERNOTE_PORT") == "8080"
         assert os.environ.get("SUPERNOTE_HOST") == "127.0.0.1"
         assert "SUPERNOTE_STORAGE_DIR" in os.environ
+
+    with patch("supernote.server.app.run", side_effect=check_env) as mock_run:
+        serve_run(args)
+        mock_run.assert_called_once_with(args)
+        assert env_checked is True
+
+    # Assert that environment variables were restored after serve_run completed
+    assert os.environ.get("SUPERNOTE_EPHEMERAL") is None
+    assert os.environ.get("SUPERNOTE_STORAGE_DIR") is None
 
     captured = capsys.readouterr()
     assert "Using ephemeral mode with storage directory:" in captured.out
