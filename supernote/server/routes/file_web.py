@@ -49,6 +49,7 @@ from supernote.server.services.file import (
     FolderDetail,
     RecycleEntity,
 )
+from supernote.server.utils.url_signer import get_request_base_url
 
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
@@ -547,7 +548,6 @@ async def handle_file_upload_apply(request: web.Request) -> web.Response:
 
     req_data = FileUploadApplyDTO.from_dict(await request.json())
     url_signer = request.app["url_signer"]
-    config = request.app["config"]
 
     try:
         # Generate inner_name
@@ -558,7 +558,7 @@ async def handle_file_upload_apply(request: web.Request) -> web.Response:
         encoded_name = urllib.parse.quote(inner_name)
         path_to_sign = f"/api/oss/upload?path={encoded_name}"
         signed_path = await url_signer.sign(path_to_sign, user=request["user"])
-        base_url = config.configured_base_url or str(request.url.origin())
+        base_url = get_request_base_url(request)
         full_url = f"{base_url}{signed_path}"
 
         return web.json_response(

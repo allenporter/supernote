@@ -69,6 +69,16 @@ def proxy_mode() -> str | None:
     return None
 
 
+@pytest.fixture
+def configured_base_url() -> str | None:
+    """Default configured base URL for tests. Can be overridden by individual tests.
+
+    Defaults to None.
+    Tests that need explicit SUPERNOTE_BASE_URL should override this fixture.
+    """
+    return None
+
+
 def pick_port() -> int:
     """Find a free port on the host."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -93,17 +103,19 @@ def server_config(
     mock_trace_log: str,
     storage_root: Path,
     proxy_mode: str | None,
+    configured_base_url: str | None,
     server_port: int,
     mcp_port: int,
 ) -> ServerConfig:
     """Create a ServerConfig object for testing."""
     return ServerConfig(
+        host="127.0.0.1",
         trace_log_file=mock_trace_log,
         storage_dir=str(storage_root),
         port=server_port,
         mcp_port=mcp_port,
         proxy_mode=proxy_mode,
-        _base_url=f"http://127.0.0.1:{server_port}",
+        _base_url=configured_base_url,
         _mcp_base_url=f"http://127.0.0.1:{mcp_port}",
         auth=AuthConfig(
             enable_registration=True,

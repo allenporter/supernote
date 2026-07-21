@@ -32,7 +32,7 @@ from supernote.models.summary import (
 from supernote.server.exceptions import SupernoteError
 from supernote.server.services.summary import SummaryService
 from supernote.server.utils.paths import generate_inner_name
-from supernote.server.utils.url_signer import UrlSigner
+from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
@@ -285,14 +285,13 @@ async def handle_upload_apply_summary(request: web.Request) -> web.Response:
 
     try:
         url_signer: UrlSigner = request.app["url_signer"]
-        config = request.app["config"]
 
         # Generate inner name
         inner_name = generate_inner_name(req_data.file_name, req_data.equipment_no)
         encoded_name = urllib.parse.quote(inner_name)
 
         # Sign URLs
-        base_url = config.configured_base_url or str(request.url.origin())
+        base_url = get_request_base_url(request)
         full_path = f"/api/oss/upload?path={encoded_name}"
         full_url_path = await url_signer.sign(full_path, user=user_email)
         full_url = f"{base_url}{full_url_path}"
@@ -334,11 +333,10 @@ async def handle_download_summary(request: web.Request) -> web.Response:
             )
 
         url_signer: UrlSigner = request.app["url_signer"]
-        config = request.app["config"]
         encoded_name = urllib.parse.quote(summary.handwrite_inner_name)
         download_path = f"/api/oss/download?path={encoded_name}"
         signed_path = await url_signer.sign(download_path, user=user_email)
-        base_url = config.configured_base_url or str(request.url.origin())
+        base_url = get_request_base_url(request)
         download_url = f"{base_url}{signed_path}"
 
         return web.json_response(DownloadSummaryVO(url=download_url).to_dict())

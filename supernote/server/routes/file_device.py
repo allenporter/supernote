@@ -47,7 +47,7 @@ from supernote.server.services.file import (
     FileService,
 )
 from supernote.server.utils.paths import generate_inner_name
-from supernote.server.utils.url_signer import UrlSigner
+from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
@@ -283,14 +283,13 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
 
     try:
         url_signer: UrlSigner = request.app["url_signer"]
-        config = request.app["config"]
 
         # Generate a unique inner name for storage
         inner_name = generate_inner_name(file_name, req_data.equipment_no)
         encoded_name = urllib.parse.quote(inner_name)
 
         # Simple Upload URL: /api/oss/upload?path={name}&timestamp={ms}
-        base_url = config.configured_base_url or str(request.url.origin())
+        base_url = get_request_base_url(request)
         simple_path = f"/api/oss/upload?path={encoded_name}"
         full_upload_url_path = await url_signer.sign(simple_path, user=request["user"])
         full_upload_url = f"{base_url}{full_upload_url_path}"
@@ -392,14 +391,13 @@ async def handle_download_apply(request: web.Request) -> web.Response:
 
         # Generate signed download URL
         url_signer: UrlSigner = request.app["url_signer"]
-        config = request.app["config"]
 
         # OSS download URL: /api/oss/download?path={id}
         path_to_sign = f"/api/oss/download?path={info.id}"
 
         # helper returns: ...?signature=...
         signed_path = await url_signer.sign(path_to_sign, user=user_email)
-        base_url = config.configured_base_url or str(request.url.origin())
+        base_url = get_request_base_url(request)
         download_url = f"{base_url}{signed_path}"
 
     except SupernoteError as err:
@@ -549,11 +547,10 @@ async def handle_note_to_png(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
     url_signer: UrlSigner = request.app["url_signer"]
-    config = request.app["config"]
 
     try:
         results = await file_service.convert_note_to_png(user_email, req_data.id)
-        base_url = config.configured_base_url or str(request.url.origin())
+        base_url = get_request_base_url(request)
         png_pages = []
         for res in results:
             # Generate signed URL for each PNG
@@ -581,7 +578,6 @@ async def handle_note_to_pdf(request: web.Request) -> web.Response:
     user_email = request["user"]
     file_service: FileService = request.app["file_service"]
     url_signer: UrlSigner = request.app["url_signer"]
-    config = request.app["config"]
 
     try:
         storage_key = await file_service.convert_note_to_pdf(
@@ -591,7 +587,7 @@ async def handle_note_to_pdf(request: web.Request) -> web.Response:
         # Generate signed URL for PDF
         path_to_sign = f"/api/oss/download?path={storage_key}"
         signed_path = await url_signer.sign(path_to_sign, user=user_email)
-        base_url = config.configured_base_url or str(request.url.origin())
+        base_url = get_request_base_url(request)
         download_url = f"{base_url}{signed_path}"
 
         return web.json_response(PdfVO(url=download_url).to_dict())
