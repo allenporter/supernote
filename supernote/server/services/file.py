@@ -402,9 +402,11 @@ class FileService:
                 storage_key=inner_name,
             )
 
-        # 4. Construct response
-        clean_path = path_str.strip("/")
-        full_path = f"{clean_path}/{filename}" if clean_path else filename
+            # 4. Construct response from the *actual* storage location. The
+            # requested path may have been un-flattened into a category
+            # container (e.g. "Note/…" -> "NOTE/Note/…"), so report where the
+            # file really landed — matching query_by_path / list_folder.
+            full_path = await vfs.get_full_path(user_id, new_file.id)
 
         # 5. Emit Event (Fire and Forget)
         if self.event_bus and filename.endswith(".note"):

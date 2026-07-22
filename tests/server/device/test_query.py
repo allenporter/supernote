@@ -14,16 +14,19 @@ async def test_query_v3_success(
         "Note/test.note", content, equipment_no="SN123"
     )
     assert upload_response.id
-    assert upload_response.path_display == "Note/test.note"
+    # An upload to the flattened display path "Note/…" lands under the canonical
+    # NOTE/Note container the device actually scans (see VFS._resolve_root_segment).
+    assert upload_response.path_display == "NOTE/Note/test.note"
     assert upload_response.name == "test.note"
     assert upload_response.content_hash == expected_hash
 
-    # Query by ID (resolve first)
+    # Query by ID (resolve first). The natural, flattened path still resolves —
+    # it un-flattens into the same canonical container.
     path_str = "Note/test.note"
     # Resolve valid ID using query_by_path
     path_resp = await device_client.query_by_path(path=path_str, equipment_no="SN123")
     assert path_resp.entries_vo
-    assert path_resp.entries_vo.path_display == "Note/test.note"
+    assert path_resp.entries_vo.path_display == "NOTE/Note/test.note"
     assert path_resp.entries_vo.name == "test.note"
     assert path_resp.entries_vo.content_hash == expected_hash
     assert path_resp.entries_vo.is_downloadable
@@ -37,7 +40,7 @@ async def test_query_v3_success(
     assert data.entries_vo
     assert data.entries_vo.id == upload_response.id
     assert data.entries_vo.name == "test.note"
-    assert data.entries_vo.path_display == "Note/test.note"
+    assert data.entries_vo.path_display == "NOTE/Note/test.note"
     assert data.entries_vo.content_hash == expected_hash
 
 

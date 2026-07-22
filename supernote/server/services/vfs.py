@@ -5,6 +5,7 @@ from typing import Optional
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from supernote.server.constants import CATEGORY_CONTAINERS
 from supernote.server.db.models.file import RecycleFileDO, UserFileDO
 from supernote.server.exceptions import FileAlreadyExists, InvalidPath
 
@@ -172,6 +173,59 @@ class VirtualFileSystem:
         await self.db.commit()
         return True
 
+    async def _child_in_dir(
+        self, user_id: int, parent_id: int, name: str
+    ) -> UserFileDO | None:
+        """Look up an active child by exact name in a specific directory."""
+        stmt = select(UserFileDO).where(
+            UserFileDO.user_id == user_id,
+            UserFileDO.directory_id == parent_id,
+            UserFileDO.file_name == name,
+            UserFileDO.is_active == "Y",
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def _resolve_root_segment(self, user_id: int, name: str) -> UserFileDO | None:
+        """Resolve the leading segment of a path in the *flattened* root namespace.
+
+        The web/device UIs present the children of the category containers
+        (``NOTE``, ``DOCUMENT``) as if they lived at the root — e.g. the folder
+        stored as ``NOTE/Note`` is shown, and scanned by the device, as ``Note``.
+        Reads flatten this (see ``routes/file_web._flatten_path`` and the root
+        listing merge), but path-based writes historically did not, so an upload
+        to ``Note/…`` created a rogue root ``Note`` the device never scans.
+
+        Resolving a leading segment therefore prefers the canonical container
+        child over any real root folder of the same name — those names are
+        reserved system directories (``constants.IMMUTABLE_SYSTEM_DIRECTORIES``),
+        and the precedence lets a fresh upload heal past a rogue root folder left
+        behind by the old bug. Non-canonical names fall through to the real root.
+        """
+        container_children = (
+            select(UserFileDO)
+            .where(
+                UserFileDO.user_id == user_id,
+                UserFileDO.file_name == name,
+                UserFileDO.is_folder == "Y",
+                UserFileDO.is_active == "Y",
+                UserFileDO.directory_id.in_(
+                    select(UserFileDO.id).where(
+                        UserFileDO.user_id == user_id,
+                        UserFileDO.directory_id == 0,
+                        UserFileDO.file_name.in_(CATEGORY_CONTAINERS),
+                        UserFileDO.is_folder == "Y",
+                        UserFileDO.is_active == "Y",
+                    )
+                ),
+            )
+            .limit(1)
+        )
+        result = await self.db.execute(container_children)
+        if (node := result.scalars().first()) is not None:
+            return node
+        return await self._child_in_dir(user_id, 0, name)
+
     async def resolve_path(self, user_id: int, path: str) -> UserFileDO | None:
         """Resolve a posix-style path to a file node."""
         parts = [p for p in path.strip("/").split("/") if p]
@@ -185,14 +239,13 @@ class VirtualFileSystem:
         current_node = None
 
         for part in parts:
-            stmt = select(UserFileDO).where(
-                UserFileDO.user_id == user_id,
-                UserFileDO.directory_id == current_dir_id,
-                UserFileDO.file_name == part,
-                UserFileDO.is_active == "Y",
-            )
-            result = await self.db.execute(stmt)
-            if (node := result.scalar_one_or_none()) is None:
+            # current_dir_id is 0 only for the leading segment, where the
+            # flattened-root namespace applies.
+            if current_dir_id == 0:
+                node = await self._resolve_root_segment(user_id, part)
+            else:
+                node = await self._child_in_dir(user_id, current_dir_id, part)
+            if node is None:
                 return None
 
             current_node = node
@@ -233,14 +286,15 @@ class VirtualFileSystem:
         current_dir_id = 0
 
         for part in parts:
-            stmt = select(UserFileDO).where(
-                UserFileDO.user_id == user_id,
-                UserFileDO.directory_id == current_dir_id,
-                UserFileDO.file_name == part,
-                UserFileDO.is_active == "Y",
-            )
-            result = await self.db.execute(stmt)
-            if node := result.scalar_one_or_none():
+            # The leading segment (current_dir_id == 0) resolves in the
+            # flattened-root namespace so an upload to e.g. ``Note/…`` descends
+            # into the canonical ``NOTE/Note`` container the device scans instead
+            # of creating a rogue root folder.
+            if current_dir_id == 0:
+                node = await self._resolve_root_segment(user_id, part)
+            else:
+                node = await self._child_in_dir(user_id, current_dir_id, part)
+            if node is not None:
                 if node.is_folder != "Y":
                     raise InvalidPath(f"{part} is a file")
                 current_dir_id = node.id
