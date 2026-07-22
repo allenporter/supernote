@@ -9,6 +9,7 @@ from supernote.models.schedule import (
     AddScheduleTaskGroupVO,
     AddScheduleTaskVO,
     ScheduleTaskGroupItem,
+    ScheduleTaskGroupVO,
     UpdateScheduleTaskVO,
 )
 
@@ -144,3 +145,55 @@ async def test_update_task_fields(authenticated_client: Client) -> None:
 
     # Cleanup
     await schedule.delete_group(group_id)
+
+
+async def test_device_group_all_endpoint(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    authenticated_client: Client,
+) -> None:
+    """The device pulls its planner groups via POST /api/file/schedule/group/all.
+
+    Regression: the server only registered the bespoke GET /api/schedule/groups, so
+    the device's spec call to /api/file/schedule/group/all returned 404, which the
+    firmware surfaces as "private cloud sync failed". This asserts the spec route is
+    registered and returns the groups.
+    """
+    # Seed a group via the bespoke API the CLI uses.
+    schedule = ScheduleClient(authenticated_client)
+    group_vo = await schedule.create_group("Planner")
+    assert group_vo.task_list_id is not None
+
+    # Hit the spec route the device uses (POST, ScheduleTaskGroupDTO body).
+    resp = await client.post(
+        "/api/file/schedule/group/all",
+        headers=auth_headers,
+        json={"maxResults": "100", "pageToken": None},
+    )
+
+    assert resp.status == 200
+    vo = ScheduleTaskGroupVO.from_dict(await resp.json())
+    assert vo.success is True
+    assert [g.title for g in vo.schedule_task_group] == ["Planner"]
+    assert isinstance(vo.schedule_task_group[0], ScheduleTaskGroupItem)
+
+
+async def test_device_group_all_endpoint_empty(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """The device's group/all call returns 200 with an empty list when no groups exist.
+
+    The device sends this on every sync; it must not 404 even before any planner data
+    is created.
+    """
+    resp = await client.post(
+        "/api/file/schedule/group/all",
+        headers=auth_headers,
+        json={},
+    )
+
+    assert resp.status == 200
+    vo = ScheduleTaskGroupVO.from_dict(await resp.json())
+    assert vo.success is True
+    assert vo.schedule_task_group == []

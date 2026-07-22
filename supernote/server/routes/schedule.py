@@ -53,15 +53,19 @@ async def create_group(request: web.Request) -> web.Response:
         return web.json_response(create_error_response(str(e)).to_dict(), status=400)
 
 
-@routes.get("/api/schedule/groups")
-async def list_groups(request: web.Request) -> web.Response:
+async def _all_groups_response(request: web.Request) -> web.Response:
+    """Build the ScheduleTaskGroupVO listing every group for the request's user.
+
+    Shared by the bespoke ``GET /api/schedule/groups`` (CLI) and the spec
+    ``POST /api/file/schedule/group/all`` (device) handlers, which return the
+    identical payload.
+    """
     user = request["user"]
     schedule_service: ScheduleService = request.app["schedule_service"]
     user_id = await request.app["user_service"].get_user_id(user)
 
     groups = await schedule_service.list_groups(user_id)
 
-    # Map to ScheduleTaskGroupItem
     items = [
         ScheduleTaskGroupItem(
             task_list_id=str(g.task_list_id),
@@ -75,6 +79,25 @@ async def list_groups(request: web.Request) -> web.Response:
     return web.json_response(
         ScheduleTaskGroupVO(success=True, schedule_task_group=items).to_dict()
     )
+
+
+@routes.get("/api/schedule/groups")
+async def list_groups(request: web.Request) -> web.Response:
+    return await _all_groups_response(request)
+
+
+@routes.post("/api/file/schedule/group/all")
+async def device_list_groups(request: web.Request) -> web.Response:
+    """List all schedule groups for the device planner sync (spec route).
+
+    The Supernote device syncs its planner via the community-spec
+    ``POST /api/file/schedule/group/all`` endpoint, distinct from the bespoke
+    ``GET /api/schedule/groups`` the CLI uses. Without this route the device's call
+    404s, which the firmware surfaces as "private cloud sync failed". The request body
+    is a ``ScheduleTaskGroupDTO`` (pagination); pagination is not yet applied — all
+    groups are returned, mirroring ``list_groups``.
+    """
+    return await _all_groups_response(request)
 
 
 @routes.delete("/api/schedule/groups/{id}")
