@@ -154,12 +154,16 @@ async def create_task(request: web.Request) -> web.Response:
         return web.json_response(create_error_response(str(e)).to_dict(), status=400)
 
 
-@routes.get("/api/schedule/tasks")
-async def list_tasks(request: web.Request) -> web.Response:
-    user = request["user"]
-    group_id_str = request.query.get("taskListId")
-    group_id = int(group_id_str) if group_id_str else None
+async def _all_tasks_response(
+    request: web.Request, group_id: int | None
+) -> web.Response:
+    """Build the ScheduleTaskAllVO listing the request user's tasks.
 
+    Shared by the bespoke ``GET /api/schedule/tasks`` (CLI, optionally filtered to one
+    group via ``taskListId``) and the spec ``POST /api/file/schedule/task/all`` (device,
+    account-wide with ``group_id=None``), which return the identical payload.
+    """
+    user = request["user"]
     schedule_service: ScheduleService = request.app["schedule_service"]
     user_id = await request.app["user_service"].get_user_id(user)
 
@@ -184,6 +188,27 @@ async def list_tasks(request: web.Request) -> web.Response:
     return web.json_response(
         ScheduleTaskAllVO(success=True, schedule_task=tasks_vos).to_dict()
     )
+
+
+@routes.get("/api/schedule/tasks")
+async def list_tasks(request: web.Request) -> web.Response:
+    group_id_str = request.query.get("taskListId")
+    group_id = int(group_id_str) if group_id_str else None
+    return await _all_tasks_response(request, group_id)
+
+
+@routes.post("/api/file/schedule/task/all")
+async def device_list_tasks(request: web.Request) -> web.Response:
+    """List all schedule tasks for the device planner sync (spec route).
+
+    The device calls ``POST /api/file/schedule/task/all`` immediately after
+    ``group/all`` on every sync; while unregistered it 404s, which keeps the "private
+    cloud sync failed" banner even once ``group/all`` returns 200. This is account-wide
+    (``group_id=None`` → tasks across all of the user's groups), unlike the bespoke
+    ``GET /api/schedule/tasks`` which can filter to one group. The request body is a
+    ``ScheduleTaskDTO`` (pagination / sync tokens); pagination is not yet applied.
+    """
+    return await _all_tasks_response(request, None)
 
 
 @routes.put("/api/schedule/tasks/{id}")

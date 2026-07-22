@@ -8,6 +8,7 @@ from supernote.models.base import BooleanEnum
 from supernote.models.schedule import (
     AddScheduleTaskGroupVO,
     AddScheduleTaskVO,
+    ScheduleTaskAllVO,
     ScheduleTaskGroupItem,
     ScheduleTaskGroupVO,
     UpdateScheduleTaskVO,
@@ -197,3 +198,55 @@ async def test_device_group_all_endpoint_empty(
     vo = ScheduleTaskGroupVO.from_dict(await resp.json())
     assert vo.success is True
     assert vo.schedule_task_group == []
+
+
+async def test_device_task_all_endpoint(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    authenticated_client: Client,
+) -> None:
+    """The device pulls all planner tasks via POST /api/file/schedule/task/all.
+
+    Companion to group/all: the live device sync calls task/all immediately after
+    group/all, and while unregistered it 404'd, keeping "private cloud sync failed"
+    even after group/all was fixed. This also guards that the endpoint is
+    account-wide (tasks across ALL groups), not group-scoped like the bespoke route.
+    """
+    schedule = ScheduleClient(authenticated_client)
+    g1 = await schedule.create_group("Work")
+    g2 = await schedule.create_group("Home")
+    assert g1.task_list_id is not None and g2.task_list_id is not None
+    await schedule.create_task(int(g1.task_list_id), "Ship task/all")
+    await schedule.create_task(int(g2.task_list_id), "Buy milk")
+
+    resp = await client.post(
+        "/api/file/schedule/task/all",
+        headers=auth_headers,
+        json={"maxResults": "100"},
+    )
+
+    assert resp.status == 200
+    vo = ScheduleTaskAllVO.from_dict(await resp.json())
+    assert vo.success is True
+    # Tasks from BOTH groups are returned (account-wide, not group-scoped).
+    assert sorted(t.title for t in vo.schedule_task) == ["Buy milk", "Ship task/all"]
+
+
+async def test_device_task_all_endpoint_empty(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """task/all returns 200 with an empty list when no tasks exist.
+
+    The device sends this on every sync, right after group/all; it must not 404.
+    """
+    resp = await client.post(
+        "/api/file/schedule/task/all",
+        headers=auth_headers,
+        json={},
+    )
+
+    assert resp.status == 200
+    vo = ScheduleTaskAllVO.from_dict(await resp.json())
+    assert vo.success is True
+    assert vo.schedule_task == []
