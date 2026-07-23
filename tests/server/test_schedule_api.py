@@ -358,6 +358,69 @@ async def test_device_task_delete_tombstones(
     assert all_vo.schedule_task == []
 
 
+async def test_device_task_list_batch_update(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """The device batches edits via PUT /api/file/schedule/task/list.
+
+    Regression (found live in ticket 04): a real device sync pushes edits/completions
+    through this batch route, not just the single POST; while unregistered it 404'd, so
+    device edits never reached the store. Each item upserts on (user_id, taskId).
+    """
+    # Seed a task via the single-push route.
+    await client.post(
+        "/api/file/schedule/task", headers=auth_headers, json=DEVICE_TASK_PUSH
+    )
+
+    # The device edits it (completes + retitles) via the batch route.
+    edited_item = {
+        **DEVICE_TASK_PUSH,
+        "title": "Make overnight oats (done)",
+        "status": "needsAction",
+    }
+    resp = await client.put(
+        "/api/file/schedule/task/list",
+        headers=auth_headers,
+        json={"updateScheduleTaskList": [edited_item]},
+    )
+    assert resp.status == 200
+
+    # The edit upserted the existing row (no duplicate) and round-trips.
+    resp2 = await client.post(
+        "/api/file/schedule/task/all", headers=auth_headers, json={}
+    )
+    all_vo = ScheduleTaskAllVO.from_dict(await resp2.json())
+    assert len(all_vo.schedule_task) == 1
+    t = all_vo.schedule_task[0]
+    assert t.task_id == "e704336260dcb1d775a2ebbad1fd6491"
+    assert t.title == "Make overnight oats (done)"
+    assert t.status == "needsAction"
+
+
+async def test_device_task_list_batch_delete_tombstones(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """A batch item with isDeleted='Y' tombstones and drops from task/all."""
+    await client.post(
+        "/api/file/schedule/task", headers=auth_headers, json=DEVICE_TASK_PUSH
+    )
+    deleted_item = {**DEVICE_TASK_PUSH, "isDeleted": "Y"}
+    resp = await client.put(
+        "/api/file/schedule/task/list",
+        headers=auth_headers,
+        json={"updateScheduleTaskList": [deleted_item]},
+    )
+    assert resp.status == 200
+
+    resp2 = await client.post(
+        "/api/file/schedule/task/all", headers=auth_headers, json={}
+    )
+    all_vo = ScheduleTaskAllVO.from_dict(await resp2.json())
+    assert all_vo.schedule_task == []
+
+
 async def test_device_and_cli_tasks_coexist(
     client: TestClient,
     auth_headers: dict[str, str],

@@ -14,6 +14,7 @@ from supernote.models.schedule import (
     ScheduleTaskGroupVO,
     ScheduleTaskInfo,
     UpdateScheduleTaskDTO,
+    UpdateScheduleTaskListDTO,
     UpdateScheduleTaskVO,
 )
 from supernote.server.services.schedule import ScheduleService
@@ -154,18 +155,61 @@ async def create_task(request: web.Request) -> web.Response:
         return web.json_response(create_error_response(str(e)).to_dict(), status=400)
 
 
+async def _upsert_device_task_from_dto(
+    schedule_service: ScheduleService,
+    user_id: int,
+    dto: AddScheduleTaskDTO | UpdateScheduleTaskDTO,
+) -> str | None:
+    """Persist one device task DTO through the shared upsert; return the device taskId.
+
+    The single-task ``POST /api/file/schedule/task`` and the batch
+    ``PUT /api/file/schedule/task/list`` carry the identical task shape (a device string
+    ``taskId`` plus the rich fields), so both funnel through here. Returns ``None`` for a
+    malformed item (missing ``taskId``/``title``) so callers can 400 or skip it.
+    """
+    task_id = dto.task_id
+    if not task_id or not dto.title:
+        return None
+
+    await schedule_service.upsert_task(
+        user_id,
+        device_task_id=task_id,
+        title=dto.title,
+        task_list_id=int(dto.task_list_id) if dto.task_list_id else None,
+        detail=dto.detail,
+        status=dto.status or "needsAction",
+        importance=dto.importance,
+        due_time=dto.due_time,
+        completed_time=dto.completed_time,
+        recurrence=dto.recurrence,
+        is_reminder_on=(dto.is_reminder_on == BooleanEnum.YES),
+        links=dto.links,
+        is_deleted=(dto.is_deleted == BooleanEnum.YES),
+        last_modified=dto.last_modified,
+        sort=dto.sort,
+        sort_completed=dto.sort_completed,
+        planer_sort=dto.planer_sort,
+        planer_sort_time=dto.planer_sort_time,
+        sort_time=dto.sort_time,
+        all_sort=dto.all_sort,
+        all_sort_completed=dto.all_sort_completed,
+        all_sort_time=dto.all_sort_time,
+    )
+    return task_id
+
+
 @routes.post("/api/file/schedule/task")
 async def device_upsert_task(request: web.Request) -> web.Response:
     """Create/update a task from the device planner sync (spec route).
 
-    The Supernote device pushes every planner change — create, edit, complete, and
-    delete — as a ``POST /api/file/schedule/task`` carrying its own opaque string
-    ``taskId``. While unregistered this 404'd, so no device task could ever be stored
-    ("private cloud sync failed"). This upserts on ``(user_id, taskId)`` via
-    :meth:`ScheduleService.upsert_task`, tombstoning on ``isDeleted='Y'``, and echoes
-    the device's own id back so it can reconcile the ack. Distinct from the bespoke CLI
-    ``POST /api/schedule/tasks`` (insert-only, server-generated int id), which is left
-    untouched.
+    The Supernote device pushes planner changes as a ``POST /api/file/schedule/task``
+    carrying its own opaque string ``taskId``. While unregistered this 404'd, so no
+    device task could ever be stored ("private cloud sync failed"). This upserts on
+    ``(user_id, taskId)`` via :meth:`ScheduleService.upsert_task`, tombstoning on
+    ``isDeleted='Y'``, and echoes the device's own id back so it can reconcile the ack.
+    Distinct from the bespoke CLI ``POST /api/schedule/tasks`` (insert-only,
+    server-generated int id), which is left untouched. The device also batches edits via
+    ``PUT /api/file/schedule/task/list`` (see :func:`device_update_task_list`).
     """
     user = request["user"]
     try:
@@ -176,45 +220,52 @@ async def device_upsert_task(request: web.Request) -> web.Response:
             create_error_response(f"Invalid request: {e}").to_dict(), status=400
         )
 
-    if not dto.task_id or not dto.title:
+    schedule_service: ScheduleService = request.app["schedule_service"]
+    user_id = await request.app["user_service"].get_user_id(user)
+
+    try:
+        task_id = await _upsert_device_task_from_dto(schedule_service, user_id, dto)
+    except ValueError as e:
+        return web.json_response(create_error_response(str(e)).to_dict(), status=400)
+
+    if task_id is None:
         return web.json_response(
             create_error_response("Missing required fields").to_dict(), status=400
+        )
+    # Echo the device's own taskId, not the server surrogate.
+    return web.json_response(AddScheduleTaskVO(success=True, task_id=task_id).to_dict())
+
+
+@routes.put("/api/file/schedule/task/list")
+async def device_update_task_list(request: web.Request) -> web.Response:
+    """Batch-update tasks from the device planner sync (spec route).
+
+    The device pushes edits/completions/reorders as a single
+    ``PUT /api/file/schedule/task/list`` carrying an ``updateScheduleTaskList`` array,
+    each item the same shape as a single push. While unregistered this 404'd, so device
+    edits never reached the store. Each item upserts on ``(user_id, taskId)`` — the same
+    seam as the single-task route — best-effort: a malformed item is skipped rather than
+    failing the whole batch. Returns a bare success ``BaseResponse`` per the spec.
+    """
+    user = request["user"]
+    try:
+        data = await request.json()
+        dto = UpdateScheduleTaskListDTO.from_dict(data)
+    except Exception as e:
+        return web.json_response(
+            create_error_response(f"Invalid request: {e}").to_dict(), status=400
         )
 
     schedule_service: ScheduleService = request.app["schedule_service"]
     user_id = await request.app["user_service"].get_user_id(user)
 
     try:
-        await schedule_service.upsert_task(
-            user_id,
-            device_task_id=dto.task_id,
-            title=dto.title,
-            task_list_id=int(dto.task_list_id) if dto.task_list_id else None,
-            detail=dto.detail,
-            status=dto.status or "needsAction",
-            importance=dto.importance,
-            due_time=dto.due_time,
-            completed_time=dto.completed_time,
-            recurrence=dto.recurrence,
-            is_reminder_on=(dto.is_reminder_on == BooleanEnum.YES),
-            links=dto.links,
-            is_deleted=(dto.is_deleted == BooleanEnum.YES),
-            last_modified=dto.last_modified,
-            sort=dto.sort,
-            sort_completed=dto.sort_completed,
-            planer_sort=dto.planer_sort,
-            planer_sort_time=dto.planer_sort_time,
-            sort_time=dto.sort_time,
-            all_sort=dto.all_sort,
-            all_sort_completed=dto.all_sort_completed,
-            all_sort_time=dto.all_sort_time,
-        )
-        # Echo the device's own taskId, not the server surrogate.
-        return web.json_response(
-            AddScheduleTaskVO(success=True, task_id=dto.task_id).to_dict()
-        )
+        for item in dto.update_schedule_task_list:
+            await _upsert_device_task_from_dto(schedule_service, user_id, item)
     except ValueError as e:
         return web.json_response(create_error_response(str(e)).to_dict(), status=400)
+
+    return web.json_response(BaseResponse(success=True).to_dict())
 
 
 async def _all_tasks_response(
