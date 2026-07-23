@@ -219,6 +219,8 @@ class VirtualFileSystem:
                     )
                 ),
             )
+            # Deterministic if the same name lived under both containers.
+            .order_by(UserFileDO.id)
             .limit(1)
         )
         result = await self.db.execute(container_children)

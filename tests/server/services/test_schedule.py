@@ -1,7 +1,39 @@
 import pytest
 
+from supernote.models.schedule import (
+    AddScheduleTaskDTO,
+    ScheduleTaskInfo,
+    UpdateScheduleTaskDTO,
+)
+from supernote.server.db.models.schedule import ScheduleTaskDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.services.schedule import ScheduleService
+from supernote.server.services.schedule import (
+    DEVICE_TASK_PASSTHROUGH_FIELDS,
+    ScheduleService,
+)
+
+
+def test_passthrough_fields_agree_across_dto_do_vo() -> None:
+    """The verbatim passthrough couples names across the DTO, the DO, and the VO.
+
+    Nothing coerces these fields on the way through — the write path reads them off
+    the DTO by name, stores them on the row by name, and the read path emits them on
+    the VO by name (see ``DEVICE_TASK_PASSTHROUGH_FIELDS``). If any name drifts out of
+    one of the three shapes the coupling breaks at runtime (an ``AttributeError`` on
+    read, or a silently dropped column), so pin the agreement here instead.
+    """
+    do_columns = set(ScheduleTaskDO.__mapper__.columns.keys())
+    vo_fields = set(ScheduleTaskInfo.__dataclass_fields__.keys())
+    add_dto_fields = set(AddScheduleTaskDTO.__dataclass_fields__.keys())
+    update_dto_fields = set(UpdateScheduleTaskDTO.__dataclass_fields__.keys())
+    for name in DEVICE_TASK_PASSTHROUGH_FIELDS:
+        assert name in do_columns, f"{name!r} missing from ScheduleTaskDO"
+        assert name in vo_fields, f"{name!r} missing from ScheduleTaskInfo"
+        assert name in add_dto_fields, f"{name!r} missing from AddScheduleTaskDTO"
+        assert name in update_dto_fields, f"{name!r} missing from UpdateScheduleTaskDTO"
+    # last_modified is deliberately NOT verbatim (device-clock-else-server-clock
+    # fallback on read), so it must stay out of the passthrough tuple.
+    assert "last_modified" not in DEVICE_TASK_PASSTHROUGH_FIELDS
 
 
 @pytest.fixture

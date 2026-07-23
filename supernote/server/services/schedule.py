@@ -26,7 +26,6 @@ DEVICE_TASK_PASSTHROUGH_FIELDS = (
     "completed_time",
     "recurrence",
     "links",
-    "last_modified",
     "sort",
     "sort_completed",
     "planer_sort",
@@ -184,21 +183,18 @@ class ScheduleService:
         return task
 
     async def upsert_task(self, user_id: int, **fields: Any) -> ScheduleTaskDO:
-        """Upsert a device-authored task, keyed on ``(user_id, device_task_id)``.
+        """Upsert a single device-authored task, keyed on ``(user_id, device_task_id)``.
 
         This is the device planner's write seam: unlike the CLI's insert-only
         :meth:`create_task`, re-pushing the same ``device_task_id`` updates the
         existing row (edit/complete/delete all arrive this way). A delete is a push
         with ``is_deleted=True`` which tombstones the row rather than removing it. The
         server surrogate ``task_id`` is generated once and never exposed to the device.
-        See :meth:`_apply_upsert` for the ``fields`` contract and :meth:`upsert_tasks`
-        for the atomic batch form.
+        Thin wrapper over the batch :meth:`upsert_tasks`; see :meth:`_apply_upsert` for
+        the ``fields`` contract.
         """
-        async with self.session_manager.session() as session:
-            task = await self._apply_upsert(session, user_id, **fields)
-            await session.commit()
-            await session.refresh(task)
-            return task
+        (task,) = await self.upsert_tasks(user_id, [fields])
+        return task
 
     async def upsert_tasks(
         self, user_id: int, items: list[dict[str, Any]]

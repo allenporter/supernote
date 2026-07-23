@@ -181,6 +181,9 @@ def _device_task_upsert_kwargs(
         "status": dto.status or "needsAction",
         "is_reminder_on": (dto.is_reminder_on == BooleanEnum.YES),
         "is_deleted": (dto.is_deleted == BooleanEnum.YES),
+        # Stored verbatim on write (the device clock); the read path adds the
+        # server-clock fallback, so it stays out of the verbatim passthrough tuple.
+        "last_modified": dto.last_modified,
         **{name: getattr(dto, name) for name in DEVICE_TASK_PASSTHROUGH_FIELDS},
     }
 
@@ -256,6 +259,15 @@ async def device_update_task_list(request: web.Request) -> web.Response:
         for item in dto.update_schedule_task_list
         if (kwargs := _device_task_upsert_kwargs(item)) is not None
     ]
+    dropped = len(dto.update_schedule_task_list) - len(items)
+    if dropped:
+        # Unlike the single-task route (which 400s on a malformed item), the batch
+        # silently skips them so one bad row can't fail the whole sync — but a
+        # success with fewer rows written than sent would otherwise be invisible.
+        logger.warning(
+            "device task batch dropped %d malformed item(s) (missing taskId/title)",
+            dropped,
+        )
     try:
         await schedule_service.upsert_tasks(user_id, items)
     except ValueError as e:
@@ -295,13 +307,8 @@ async def _all_tasks_response(
             last_modified=(
                 t.last_modified if t.last_modified is not None else t.update_time
             ),
-            # The verbatim device fields ride straight through (last_modified above has
-            # its own read fallback, so exclude it from the passthrough).
-            **{
-                name: getattr(t, name)
-                for name in DEVICE_TASK_PASSTHROUGH_FIELDS
-                if name != "last_modified"
-            },
+            # The verbatim device fields ride straight through.
+            **{name: getattr(t, name) for name in DEVICE_TASK_PASSTHROUGH_FIELDS},
         )
         for t in tasks_dos
     ]
