@@ -1,7 +1,7 @@
 import time
 from typing import Optional
 
-from sqlalchemy import BigInteger, String
+from sqlalchemy import BigInteger, Boolean, Index, String, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from supernote.server.db.base import Base
@@ -33,15 +33,36 @@ class ScheduleTaskGroupDO(Base):
 
 
 class ScheduleTaskDO(Base):
-    """Individual Tasks."""
+    """Individual Tasks.
+
+    Shared by the CLI (insert-only, server-generated int ``task_id``) and the device
+    planner sync (upsert keyed on ``device_task_id``). See the store-design ADR
+    ``.scratch/zero-banner-sync/assets/02-planner-store-design.md`` for the rationale.
+    """
 
     __tablename__ = "t_schedule_task"
 
-    task_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, default=next_id)
-    """Unique ID."""
+    __table_args__ = (
+        # Device tasks upsert on (user_id, device_task_id). NULL device_task_id (all
+        # CLI rows) are distinct under a UNIQUE index, so this binds device rows only.
+        Index(
+            "uq_schedule_task_device_id",
+            "user_id",
+            "device_task_id",
+            unique=True,
+        ),
+    )
 
-    task_list_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
-    """Link back to task list."""
+    task_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, default=next_id)
+    """Server surrogate ID (never exposed to the device)."""
+
+    device_task_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    """The device's own opaque string task id; NULL for CLI-created tasks."""
+
+    task_list_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, index=True, nullable=True
+    )
+    """Link back to task list; NULL for ungrouped (device) tasks."""
 
     user_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
     """User ID."""
@@ -80,4 +101,28 @@ class ScheduleTaskDO(Base):
     update_time: Mapped[int] = mapped_column(
         BigInteger, default=lambda: int(time.time() * 1000)
     )
-    """Update time in epoch milliseconds."""
+    """Server update time in epoch milliseconds (bookkeeping, server clock)."""
+
+    # --- Device planner fields (all faithful to the device's push shape) ---
+
+    links: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    """Opaque base64 JSON blob linking a task to a note page; stored verbatim."""
+
+    is_deleted: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+    """Soft-delete tombstone; the device deletes by re-pushing with isDeleted='Y'."""
+
+    last_modified: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    """The device's own lastModified (device clock); distinct from update_time."""
+
+    # Sort family. Nullable so "device omitted" (NULL) is distinct from "sent 0".
+    sort: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    sort_completed: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    planer_sort: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    planer_sort_time: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    sort_time: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    # Not seen in captured device traffic; carried for DTO/VO parity.
+    all_sort: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    all_sort_completed: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    all_sort_time: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)

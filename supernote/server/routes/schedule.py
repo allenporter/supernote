@@ -154,6 +154,69 @@ async def create_task(request: web.Request) -> web.Response:
         return web.json_response(create_error_response(str(e)).to_dict(), status=400)
 
 
+@routes.post("/api/file/schedule/task")
+async def device_upsert_task(request: web.Request) -> web.Response:
+    """Create/update a task from the device planner sync (spec route).
+
+    The Supernote device pushes every planner change — create, edit, complete, and
+    delete — as a ``POST /api/file/schedule/task`` carrying its own opaque string
+    ``taskId``. While unregistered this 404'd, so no device task could ever be stored
+    ("private cloud sync failed"). This upserts on ``(user_id, taskId)`` via
+    :meth:`ScheduleService.upsert_task`, tombstoning on ``isDeleted='Y'``, and echoes
+    the device's own id back so it can reconcile the ack. Distinct from the bespoke CLI
+    ``POST /api/schedule/tasks`` (insert-only, server-generated int id), which is left
+    untouched.
+    """
+    user = request["user"]
+    try:
+        data = await request.json()
+        dto = AddScheduleTaskDTO.from_dict(data)
+    except Exception as e:
+        return web.json_response(
+            create_error_response(f"Invalid request: {e}").to_dict(), status=400
+        )
+
+    if not dto.task_id or not dto.title:
+        return web.json_response(
+            create_error_response("Missing required fields").to_dict(), status=400
+        )
+
+    schedule_service: ScheduleService = request.app["schedule_service"]
+    user_id = await request.app["user_service"].get_user_id(user)
+
+    try:
+        await schedule_service.upsert_task(
+            user_id,
+            device_task_id=dto.task_id,
+            title=dto.title,
+            task_list_id=int(dto.task_list_id) if dto.task_list_id else None,
+            detail=dto.detail,
+            status=dto.status or "needsAction",
+            importance=dto.importance,
+            due_time=dto.due_time,
+            completed_time=dto.completed_time,
+            recurrence=dto.recurrence,
+            is_reminder_on=(dto.is_reminder_on == BooleanEnum.YES),
+            links=dto.links,
+            is_deleted=(dto.is_deleted == BooleanEnum.YES),
+            last_modified=dto.last_modified,
+            sort=dto.sort,
+            sort_completed=dto.sort_completed,
+            planer_sort=dto.planer_sort,
+            planer_sort_time=dto.planer_sort_time,
+            sort_time=dto.sort_time,
+            all_sort=dto.all_sort,
+            all_sort_completed=dto.all_sort_completed,
+            all_sort_time=dto.all_sort_time,
+        )
+        # Echo the device's own taskId, not the server surrogate.
+        return web.json_response(
+            AddScheduleTaskVO(success=True, task_id=dto.task_id).to_dict()
+        )
+    except ValueError as e:
+        return web.json_response(create_error_response(str(e)).to_dict(), status=400)
+
+
 async def _all_tasks_response(
     request: web.Request, group_id: int | None
 ) -> web.Response:
@@ -171,16 +234,34 @@ async def _all_tasks_response(
 
     tasks_vos = [
         ScheduleTaskInfo(
-            task_id=str(t.task_id),
-            task_list_id=str(t.task_list_id),
+            # Echo the device's own id for device rows; the surrogate PK for CLI rows.
+            task_id=t.device_task_id
+            if t.device_task_id is not None
+            else str(t.task_id),
+            # Ungrouped (device) tasks have no task_list_id; emit null, not "None".
+            task_list_id=(str(t.task_list_id) if t.task_list_id is not None else None),
             title=t.title,
             detail=t.detail,
             status=t.status,
             importance=t.importance,
             due_time=t.due_time,
+            completed_time=t.completed_time,
             recurrence=t.recurrence,
             is_reminder_on=(BooleanEnum.YES if t.is_reminder_on else BooleanEnum.NO),
-            last_modified=t.update_time,
+            # Device's own lastModified if it set one, else server bookkeeping time.
+            last_modified=(
+                t.last_modified if t.last_modified is not None else t.update_time
+            ),
+            links=t.links,
+            is_deleted=(BooleanEnum.YES if t.is_deleted else BooleanEnum.NO),
+            sort=t.sort,
+            sort_completed=t.sort_completed,
+            planer_sort=t.planer_sort,
+            planer_sort_time=t.planer_sort_time,
+            sort_time=t.sort_time,
+            all_sort=t.all_sort,
+            all_sort_completed=t.all_sort_completed,
+            all_sort_time=t.all_sort_time,
         )
         for t in tasks_dos
     ]

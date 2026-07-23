@@ -100,6 +100,104 @@ async def test_task_crud(schedule_service: ScheduleService) -> None:
     assert len(tasks_v3) == 0
 
 
+async def test_upsert_task_device_shape_round_trips(
+    schedule_service: ScheduleService,
+) -> None:
+    """A device-shaped task (string id, ungrouped, rich fields) persists faithfully."""
+    user_id = 777
+    task = await schedule_service.upsert_task(
+        user_id,
+        device_task_id="e704336260dcb1d775a2ebbad1fd6491",
+        title="Make overnight oats",
+        status="completed",
+        completed_time=1740606681928,
+        due_time=1740606876842,
+        last_modified=1740606876843,
+        links="eyJhcHBOYW1lIjoibm90ZSJ9",
+        sort=0,
+        sort_completed=2,
+        planer_sort=0,
+        planer_sort_time=1740606876843,
+        sort_time=1743954561808,
+    )
+
+    # Surrogate PK is generated; the device id lives alongside it, ungrouped.
+    assert task.task_id is not None
+    assert task.device_task_id == "e704336260dcb1d775a2ebbad1fd6491"
+    assert task.task_list_id is None
+    assert task.is_deleted is False
+
+    # Re-read faithfully.
+    tasks = await schedule_service.list_tasks(user_id)
+    assert len(tasks) == 1
+    t = tasks[0]
+    assert t.device_task_id == "e704336260dcb1d775a2ebbad1fd6491"
+    assert t.title == "Make overnight oats"
+    assert t.status == "completed"
+    assert t.completed_time == 1740606681928
+    assert t.last_modified == 1740606876843
+    assert t.links == "eyJhcHBOYW1lIjoibm90ZSJ9"
+    assert t.sort == 0
+    assert t.sort_completed == 2
+    assert t.planer_sort == 0
+    assert t.sort_time == 1743954561808
+
+
+async def test_upsert_task_updates_not_duplicates(
+    schedule_service: ScheduleService,
+) -> None:
+    """Re-pushing the same device task id upserts the existing row."""
+    user_id = 777
+    device_id = "abc123abc123abc123abc123abc12300"
+
+    await schedule_service.upsert_task(
+        user_id, device_task_id=device_id, title="First", status="needsAction"
+    )
+    await schedule_service.upsert_task(
+        user_id, device_task_id=device_id, title="Edited", status="completed"
+    )
+
+    tasks = await schedule_service.list_tasks(user_id)
+    assert len(tasks) == 1
+    assert tasks[0].title == "Edited"
+    assert tasks[0].status == "completed"
+
+
+async def test_upsert_task_delete_tombstones(
+    schedule_service: ScheduleService,
+) -> None:
+    """A device delete (is_deleted=True) tombstones; the task drops from the read."""
+    user_id = 777
+    device_id = "def456def456def456def456def45600"
+
+    await schedule_service.upsert_task(
+        user_id, device_task_id=device_id, title="Doomed"
+    )
+    assert len(await schedule_service.list_tasks(user_id)) == 1
+
+    await schedule_service.upsert_task(
+        user_id, device_task_id=device_id, title="Doomed", is_deleted=True
+    )
+    # Default read hides tombstones (deletion reflected as absence next sync)...
+    assert await schedule_service.list_tasks(user_id) == []
+    # ...but the tombstone row is retained.
+    with_deleted = await schedule_service.list_tasks(user_id, include_deleted=True)
+    assert len(with_deleted) == 1
+    assert with_deleted[0].is_deleted is True
+
+
+async def test_upsert_task_isolation(schedule_service: ScheduleService) -> None:
+    """The same device task id under two users are distinct rows (unique per user)."""
+    device_id = "0000000000000000000000000000ffff"
+    await schedule_service.upsert_task(201, device_task_id=device_id, title="U1")
+    await schedule_service.upsert_task(202, device_task_id=device_id, title="U2")
+
+    u1 = await schedule_service.list_tasks(201)
+    u2 = await schedule_service.list_tasks(202)
+    assert [t.title for t in u1] == ["U1"]
+    assert [t.title for t in u2] == ["U2"]
+
+
 async def test_isolation(schedule_service: ScheduleService) -> None:
     user1 = 101
     user2 = 102

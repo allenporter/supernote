@@ -250,3 +250,134 @@ async def test_device_task_all_endpoint_empty(
     vo = ScheduleTaskAllVO.from_dict(await resp.json())
     assert vo.success is True
     assert vo.schedule_task == []
+
+
+# The exact body a live device pushed to POST /api/file/schedule/task (captured in
+# .scratch/sync-down-diagnosis/assets/14-post-sync-trace.log, which 404'd on HEAD).
+DEVICE_TASK_PUSH = {
+    "taskId": "e704336260dcb1d775a2ebbad1fd6491",
+    "title": "Make overnight oats",
+    "status": "completed",
+    "isDeleted": "N",
+    "isReminderOn": "N",
+    "completedTime": 1740606681928,
+    "dueTime": 1740606876842,
+    "lastModified": 1740606876843,
+    "links": (
+        "eyJhcHBOYW1lIjoibm90ZSIsImZpbGVJZCI6IkYyMDI1MDIyNjIyMTg0NDQ2Njg2Nno4M2pJ"
+        "aGVWN0ZYTCIsImZpbGVQYXRoIjoiL3N0b3JhZ2UvZW11bGF0ZWQvMC9Ob3RlL0hhYml0cy5u"
+        "b3RlIiwicGFnZSI6MywicGFnZUlkIjoiUDIwMjUwMjI2MjIyNDM5NDE1Njg2UThtQ0hTYlRL"
+        "SURkIn0="
+    ),
+    "sort": 0,
+    "sortCompleted": 2,
+    "planerSort": 0,
+    "planerSortTime": 1740606876843,
+    "sortTime": 1743954561808,
+}
+
+
+async def test_device_task_write_round_trips(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """The device's POST /api/file/schedule/task persists and round-trips faithfully.
+
+    Regression: the write route 404'd, so the device could never push planner tasks
+    ("private cloud sync failed"). This asserts the captured device payload persists
+    with its string id, ungrouped, and rich fields intact, and reads back unchanged
+    via task/all.
+    """
+    resp = await client.post(
+        "/api/file/schedule/task", headers=auth_headers, json=DEVICE_TASK_PUSH
+    )
+    assert resp.status == 200
+    vo = AddScheduleTaskVO.from_dict(await resp.json())
+    assert vo.success is True
+    # The ack echoes the DEVICE's task id, not a server surrogate.
+    assert vo.task_id == "e704336260dcb1d775a2ebbad1fd6491"
+
+    # Read back via the device's task/all.
+    resp2 = await client.post(
+        "/api/file/schedule/task/all", headers=auth_headers, json={}
+    )
+    assert resp2.status == 200
+    all_vo = ScheduleTaskAllVO.from_dict(await resp2.json())
+    assert len(all_vo.schedule_task) == 1
+    t = all_vo.schedule_task[0]
+    assert t.task_id == "e704336260dcb1d775a2ebbad1fd6491"
+    assert t.task_list_id is None  # ungrouped
+    assert t.title == "Make overnight oats"
+    assert t.status == "completed"
+    assert t.completed_time == 1740606681928
+    assert t.due_time == 1740606876842
+    assert t.last_modified == 1740606876843  # device clock, verbatim
+    assert t.links == DEVICE_TASK_PUSH["links"]
+    assert t.is_deleted == BooleanEnum.NO
+    assert t.sort == 0
+    assert t.sort_completed == 2
+    assert t.planer_sort == 0
+    assert t.planer_sort_time == 1740606876843
+    assert t.sort_time == 1743954561808
+
+
+async def test_device_task_write_upserts(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Re-pushing the same task id edits the row instead of duplicating it."""
+    await client.post(
+        "/api/file/schedule/task", headers=auth_headers, json=DEVICE_TASK_PUSH
+    )
+    edited = {**DEVICE_TASK_PUSH, "title": "Make overnight oats (edited)"}
+    await client.post("/api/file/schedule/task", headers=auth_headers, json=edited)
+
+    resp = await client.post(
+        "/api/file/schedule/task/all", headers=auth_headers, json={}
+    )
+    all_vo = ScheduleTaskAllVO.from_dict(await resp.json())
+    assert len(all_vo.schedule_task) == 1
+    assert all_vo.schedule_task[0].title == "Make overnight oats (edited)"
+
+
+async def test_device_task_delete_tombstones(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """A device delete arrives as a POST with isDeleted='Y' and drops from task/all."""
+    await client.post(
+        "/api/file/schedule/task", headers=auth_headers, json=DEVICE_TASK_PUSH
+    )
+    deleted = {**DEVICE_TASK_PUSH, "isDeleted": "Y"}
+    await client.post("/api/file/schedule/task", headers=auth_headers, json=deleted)
+
+    resp = await client.post(
+        "/api/file/schedule/task/all", headers=auth_headers, json={}
+    )
+    all_vo = ScheduleTaskAllVO.from_dict(await resp.json())
+    assert all_vo.schedule_task == []
+
+
+async def test_device_and_cli_tasks_coexist(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    authenticated_client: Client,
+) -> None:
+    """CLI-created and device-pushed tasks share the store and both appear in task/all."""
+    schedule = ScheduleClient(authenticated_client)
+    group = await schedule.create_group("Work")
+    assert group.task_list_id is not None
+    await schedule.create_task(int(group.task_list_id), "CLI task")
+
+    await client.post(
+        "/api/file/schedule/task", headers=auth_headers, json=DEVICE_TASK_PUSH
+    )
+
+    resp = await client.post(
+        "/api/file/schedule/task/all", headers=auth_headers, json={}
+    )
+    all_vo = ScheduleTaskAllVO.from_dict(await resp.json())
+    assert sorted(t.title for t in all_vo.schedule_task) == [
+        "CLI task",
+        "Make overnight oats",
+    ]
