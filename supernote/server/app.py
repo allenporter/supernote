@@ -19,7 +19,7 @@ from supernote.server.mcp.auth import create_auth_app
 from supernote.server.mcp.server import create_mcp_server, run_server, set_services
 from supernote.server.utils.auth_utils import get_token_from_request
 
-from . import realtime_capture
+from . import realtime
 from .config import ServerConfig
 from .constants import MAX_UPLOAD_SIZE
 from .db.models.user import UserDO
@@ -391,10 +391,10 @@ def create_app(config: ServerConfig) -> web.Application:
     app.add_routes(summary.routes)
     app.add_routes(extended.routes)
 
-    # THROWAWAY socket.io capture prototype (wayfinder zero-banner-sync ticket 01);
-    # no-op unless SUPERNOTE_SOCKETIO_CAPTURE is set. Registered here so it wins the
-    # /socket.io/ match over the ASGIResource catch-all added later in on_startup.
-    realtime_capture.maybe_register(app)
+    # Device realtime (Engine.IO-v3 / Socket.IO-v2) channel. Registered here so it wins
+    # the /socket.io/ match over the ASGIResource catch-all added later in on_startup
+    # (which would otherwise 500 on the websocket and abort the device's sync).
+    realtime.register(app)
 
     # Serve static frontend files
     static_path = Path(str(importlib.resources.files("supernote.server") / "static"))
