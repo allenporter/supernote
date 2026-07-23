@@ -477,3 +477,143 @@ async def test_device_and_cli_tasks_coexist(
         "CLI task",
         "Make overnight oats",
     ]
+
+
+# A second, distinct device task for exercising true multi-item batches.
+DEVICE_TASK_PUSH_2 = {
+    **DEVICE_TASK_PUSH,
+    "taskId": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+    "title": "Buy oat milk",
+}
+
+
+async def test_device_task_list_batch_multi_item(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """A batch upserts several tasks at once: an edit to an existing row plus a new one.
+
+    The batch route exists to carry *many* tasks in a single sync; every other batch
+    test sends a one-element array, so this guards the accumulate/iterate-in-one-
+    transaction path against a regression that only shows up with >1 item.
+    """
+    # Seed one task via the single-push route.
+    await client.post(
+        "/api/file/schedule/task", headers=auth_headers, json=DEVICE_TASK_PUSH
+    )
+
+    # One batch: edit the seeded task AND create a brand-new one.
+    edited = {**DEVICE_TASK_PUSH, "title": "Make overnight oats (edited)"}
+    resp = await client.put(
+        "/api/file/schedule/task/list",
+        headers=auth_headers,
+        json={"updateScheduleTaskList": [edited, DEVICE_TASK_PUSH_2]},
+    )
+    assert resp.status == 200
+
+    resp2 = await client.post(
+        "/api/file/schedule/task/all", headers=auth_headers, json={}
+    )
+    all_vo = ScheduleTaskAllVO.from_dict(await resp2.json())
+    # Exactly two rows: the edited existing one (no duplicate) and the new one.
+    by_id = {t.task_id: t for t in all_vo.schedule_task}
+    assert len(by_id) == 2
+    assert (
+        by_id["e704336260dcb1d775a2ebbad1fd6491"].title
+        == "Make overnight oats (edited)"
+    )
+    assert by_id["a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"].title == "Buy oat milk"
+
+
+async def test_device_task_list_batch_rolls_back_on_invalid_item(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """One invalid item fails the whole batch atomically — no partial writes.
+
+    A valid new task shares the batch with an over-long-title item; the resulting 400
+    must leave *neither* persisted, so the device never sees a half-applied batch.
+    """
+    good = DEVICE_TASK_PUSH_2
+    bad = {**DEVICE_TASK_PUSH, "title": "x" * 256}  # exceeds MAX_TITLE_LENGTH
+
+    resp = await client.put(
+        "/api/file/schedule/task/list",
+        headers=auth_headers,
+        # `good` is first, so it flushes before `bad` fails — proving the rollback
+        # unwinds an already-applied item, not just the failing one.
+        json={"updateScheduleTaskList": [good, bad]},
+    )
+    assert resp.status == 400
+
+    resp2 = await client.post(
+        "/api/file/schedule/task/all", headers=auth_headers, json={}
+    )
+    all_vo = ScheduleTaskAllVO.from_dict(await resp2.json())
+    assert all_vo.schedule_task == []
+
+
+async def test_device_task_list_batch_skips_malformed_item(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """An item with a blank taskId is skipped; well-formed items in the batch still land.
+
+    (A *missing* taskId is rejected at DTO parse time, since the batch item type requires
+    it; a present-but-empty id is the case the route's skip guard actually handles.)
+    """
+    malformed = {**DEVICE_TASK_PUSH, "taskId": ""}
+
+    resp = await client.put(
+        "/api/file/schedule/task/list",
+        headers=auth_headers,
+        json={"updateScheduleTaskList": [DEVICE_TASK_PUSH_2, malformed]},
+    )
+    assert resp.status == 200
+
+    resp2 = await client.post(
+        "/api/file/schedule/task/all", headers=auth_headers, json={}
+    )
+    all_vo = ScheduleTaskAllVO.from_dict(await resp2.json())
+    # Only the well-formed item was stored; the blank-id item was skipped.
+    assert [t.task_id for t in all_vo.schedule_task] == [
+        "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+    ]
+
+
+async def test_device_task_write_missing_task_id_returns_400(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """A single device push with no taskId is rejected — the upsert has no key to bind to."""
+    no_id = {k: v for k, v in DEVICE_TASK_PUSH.items() if k != "taskId"}
+
+    resp = await client.post(
+        "/api/file/schedule/task", headers=auth_headers, json=no_id
+    )
+    assert resp.status == 400
+
+    # Nothing was stored.
+    resp2 = await client.post(
+        "/api/file/schedule/task/all", headers=auth_headers, json={}
+    )
+    all_vo = ScheduleTaskAllVO.from_dict(await resp2.json())
+    assert all_vo.schedule_task == []
+
+
+async def test_device_task_write_title_too_long_returns_400(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """A single device push whose title exceeds the limit is rejected with 400."""
+    bad = {**DEVICE_TASK_PUSH, "title": "x" * 256}
+
+    resp = await client.post("/api/file/schedule/task", headers=auth_headers, json=bad)
+    assert resp.status == 400
+
+    # The rejected push left no row behind.
+    resp2 = await client.post(
+        "/api/file/schedule/task/all", headers=auth_headers, json={}
+    )
+    all_vo = ScheduleTaskAllVO.from_dict(await resp2.json())
+    assert all_vo.schedule_task == []

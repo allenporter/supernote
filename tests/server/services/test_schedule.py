@@ -211,6 +211,49 @@ async def test_upsert_task_isolation(schedule_service: ScheduleService) -> None:
     assert [t.title for t in u2] == ["U2"]
 
 
+async def test_upsert_tasks_batch_applies_all(
+    schedule_service: ScheduleService,
+) -> None:
+    """A batch upserts every item in one transaction (insert new + edit existing)."""
+    user_id = 888
+    existing = "1111111111111111111111111111aaaa"
+    await schedule_service.upsert_task(user_id, device_task_id=existing, title="First")
+
+    await schedule_service.upsert_tasks(
+        user_id,
+        [
+            {"device_task_id": existing, "title": "First (edited)"},
+            {"device_task_id": "2222222222222222222222222222bbbb", "title": "Second"},
+        ],
+    )
+
+    tasks = await schedule_service.list_tasks(user_id)
+    # The existing row was updated in place (no duplicate); the new row was inserted.
+    assert sorted(t.title for t in tasks) == ["First (edited)", "Second"]
+
+
+async def test_upsert_tasks_batch_is_atomic(
+    schedule_service: ScheduleService,
+) -> None:
+    """A validation error on any item rolls the whole batch back — no partial writes."""
+    user_id = 889
+    with pytest.raises(ValueError):
+        await schedule_service.upsert_tasks(
+            user_id,
+            [
+                {"device_task_id": "3333333333333333333333333333cccc", "title": "Good"},
+                # Over-long title fails validation *after* the good item has flushed.
+                {
+                    "device_task_id": "4444444444444444444444444444dddd",
+                    "title": "x" * 256,
+                },
+            ],
+        )
+
+    # The good item, flushed before the failure, was rolled back with the bad one.
+    assert await schedule_service.list_tasks(user_id) == []
+
+
 async def test_isolation(schedule_service: ScheduleService) -> None:
     user1 = 101
     user2 = 102
