@@ -3,6 +3,7 @@ import time
 from typing import Any, Optional
 
 from sqlalchemy import delete, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from supernote.server.db.models.schedule import ScheduleTaskDO, ScheduleTaskGroupDO
 from supernote.server.db.session import DatabaseSessionManager
@@ -11,6 +12,42 @@ logger = logging.getLogger(__name__)
 
 MAX_TITLE_LENGTH = 255
 MAX_DETAIL_LENGTH = 1 * 1024 * 1024  # 1MB
+
+# Device-planner task fields copied verbatim: same name and type on the wire DTO, the
+# ScheduleTaskDO row, and the outbound ScheduleTaskInfo VO. Kept as one list so the
+# passthrough can't drift across the write path, the store, and the read path. Fields
+# that need a transform are handled explicitly at each site, not here: task_list_id
+# (str<->int), status (default), is_reminder_on / is_deleted (BooleanEnum<->bool), and
+# last_modified's device-clock-else-server-clock fallback on read.
+DEVICE_TASK_PASSTHROUGH_FIELDS = (
+    "detail",
+    "importance",
+    "due_time",
+    "completed_time",
+    "recurrence",
+    "links",
+    "last_modified",
+    "sort",
+    "sort_completed",
+    "planer_sort",
+    "planer_sort_time",
+    "sort_time",
+    "all_sort",
+    "all_sort_completed",
+    "all_sort_time",
+)
+
+
+def _validate_task_text(title: str, detail: str | None) -> None:
+    """Guard task title/detail length, raising ``ValueError`` on overflow.
+
+    Shared by the CLI insert (:meth:`ScheduleService.create_task`) and the device
+    upsert (:meth:`ScheduleService.upsert_task`).
+    """
+    if len(title) > MAX_TITLE_LENGTH:
+        raise ValueError("Title is too long")
+    if detail is not None and len(detail) > MAX_DETAIL_LENGTH:
+        raise ValueError("Detail is too long")
 
 
 class ScheduleService:
@@ -76,10 +113,7 @@ class ScheduleService:
         is_reminder_on: bool = False,
     ) -> ScheduleTaskDO:
         """Create a new task."""
-        if len(title) > MAX_TITLE_LENGTH:
-            raise ValueError("Title is too long")
-        if len(detail) > MAX_DETAIL_LENGTH:
-            raise ValueError("Detail is too long")
+        _validate_task_text(title, detail)
         async with self.session_manager.session() as session:
             task = ScheduleTaskDO(
                 user_id=user_id,
@@ -98,32 +132,58 @@ class ScheduleService:
             await session.refresh(task)
             return task
 
-    async def upsert_task(
+    async def _apply_upsert(
         self,
+        session: AsyncSession,
         user_id: int,
         *,
         device_task_id: str,
         title: str,
         task_list_id: int | None = None,
-        detail: str | None = None,
         status: str = "needsAction",
-        importance: str | None = None,
-        due_time: int | None = None,
-        completed_time: int | None = None,
-        recurrence: str | None = None,
         is_reminder_on: bool = False,
-        links: str | None = None,
         is_deleted: bool = False,
-        last_modified: int | None = None,
-        sort: int | None = None,
-        sort_completed: int | None = None,
-        planer_sort: int | None = None,
-        planer_sort_time: int | None = None,
-        sort_time: int | None = None,
-        all_sort: int | None = None,
-        all_sort_completed: int | None = None,
-        all_sort_time: int | None = None,
+        **passthrough: Any,
     ) -> ScheduleTaskDO:
+        """Insert-or-update one device task within ``session`` (no commit).
+
+        The mutable fields split into the coerced set spelled out here (identity,
+        booleans, the group link) and the verbatim :data:`DEVICE_TASK_PASSTHROUGH_FIELDS`
+        the caller supplies as ``passthrough``. ``task_id``/``user_id``/``device_task_id``
+        are the stable identity and never change. Commit is the caller's job so single
+        and batch writes can pick their own transaction boundary.
+        """
+        _validate_task_text(title, passthrough.get("detail"))
+
+        fields = {
+            "task_list_id": task_list_id,
+            "title": title,
+            "status": status,
+            "is_reminder_on": is_reminder_on,
+            "is_deleted": is_deleted,
+            "update_time": int(time.time() * 1000),
+            **passthrough,
+        }
+
+        stmt = select(ScheduleTaskDO).where(
+            ScheduleTaskDO.user_id == user_id,
+            ScheduleTaskDO.device_task_id == device_task_id,
+        )
+        task = (await session.execute(stmt)).scalar_one_or_none()
+
+        if task is None:
+            task = ScheduleTaskDO(
+                user_id=user_id, device_task_id=device_task_id, **fields
+            )
+            session.add(task)
+        else:
+            for key, value in fields.items():
+                setattr(task, key, value)
+
+        await session.flush()
+        return task
+
+    async def upsert_task(self, user_id: int, **fields: Any) -> ScheduleTaskDO:
         """Upsert a device-authored task, keyed on ``(user_id, device_task_id)``.
 
         This is the device planner's write seam: unlike the CLI's insert-only
@@ -131,58 +191,32 @@ class ScheduleService:
         existing row (edit/complete/delete all arrive this way). A delete is a push
         with ``is_deleted=True`` which tombstones the row rather than removing it. The
         server surrogate ``task_id`` is generated once and never exposed to the device.
+        See :meth:`_apply_upsert` for the ``fields`` contract and :meth:`upsert_tasks`
+        for the atomic batch form.
         """
-        if len(title) > MAX_TITLE_LENGTH:
-            raise ValueError("Title is too long")
-        if detail is not None and len(detail) > MAX_DETAIL_LENGTH:
-            raise ValueError("Detail is too long")
-
-        # Fields that come from the device push; task_id/user_id/device_task_id are the
-        # stable identity and are not part of the mutable set.
-        fields = {
-            "task_list_id": task_list_id,
-            "title": title,
-            "detail": detail,
-            "status": status,
-            "importance": importance,
-            "due_time": due_time,
-            "completed_time": completed_time,
-            "recurrence": recurrence,
-            "is_reminder_on": is_reminder_on,
-            "links": links,
-            "is_deleted": is_deleted,
-            "last_modified": last_modified,
-            "sort": sort,
-            "sort_completed": sort_completed,
-            "planer_sort": planer_sort,
-            "planer_sort_time": planer_sort_time,
-            "sort_time": sort_time,
-            "all_sort": all_sort,
-            "all_sort_completed": all_sort_completed,
-            "all_sort_time": all_sort_time,
-            "update_time": int(time.time() * 1000),
-        }
-
         async with self.session_manager.session() as session:
-            stmt = select(ScheduleTaskDO).where(
-                ScheduleTaskDO.user_id == user_id,
-                ScheduleTaskDO.device_task_id == device_task_id,
-            )
-            task = (await session.execute(stmt)).scalar_one_or_none()
-
-            if task is None:
-                task = ScheduleTaskDO(
-                    user_id=user_id, device_task_id=device_task_id, **fields
-                )
-                session.add(task)
-            else:
-                for key, value in fields.items():
-                    setattr(task, key, value)
-
-            await session.flush()
+            task = await self._apply_upsert(session, user_id, **fields)
             await session.commit()
             await session.refresh(task)
             return task
+
+    async def upsert_tasks(
+        self, user_id: int, items: list[dict[str, Any]]
+    ) -> list[ScheduleTaskDO]:
+        """Upsert a batch of device tasks atomically (single transaction).
+
+        Each item is the same ``fields`` mapping :meth:`upsert_task` takes. The whole
+        batch commits once: if any item fails validation the transaction rolls back and
+        nothing is applied, so the device never sees a half-written batch.
+        """
+        async with self.session_manager.session() as session:
+            tasks = [
+                await self._apply_upsert(session, user_id, **item) for item in items
+            ]
+            await session.commit()
+            for task in tasks:
+                await session.refresh(task)
+            return tasks
 
     async def list_tasks(
         self,

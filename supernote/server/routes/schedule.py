@@ -17,7 +17,10 @@ from supernote.models.schedule import (
     UpdateScheduleTaskListDTO,
     UpdateScheduleTaskVO,
 )
-from supernote.server.services.schedule import ScheduleService
+from supernote.server.services.schedule import (
+    DEVICE_TASK_PASSTHROUGH_FIELDS,
+    ScheduleService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -156,47 +159,30 @@ async def create_task(request: web.Request) -> web.Response:
         return web.json_response(create_error_response(str(e)).to_dict(), status=400)
 
 
-async def _upsert_device_task_from_dto(
-    schedule_service: ScheduleService,
-    user_id: int,
+def _device_task_upsert_kwargs(
     dto: AddScheduleTaskDTO | UpdateScheduleTaskDTO,
-) -> str | None:
-    """Persist one device task DTO through the shared upsert; return the device taskId.
+) -> dict[str, Any] | None:
+    """Coerce one device task DTO into :meth:`ScheduleService.upsert_task` kwargs.
 
     The single-task ``POST /api/file/schedule/task`` and the batch
     ``PUT /api/file/schedule/task/list`` carry the identical task shape (a device string
     ``taskId`` plus the rich fields), so both funnel through here. Returns ``None`` for a
-    malformed item (missing ``taskId``/``title``) so callers can 400 or skip it.
+    malformed item (missing ``taskId``/``title``) so callers can 400 or skip it. The
+    fields needing a wire->store transform are spelled out; the rest ride through
+    verbatim via :data:`DEVICE_TASK_PASSTHROUGH_FIELDS`.
     """
-    task_id = dto.task_id
-    if not task_id or not dto.title:
+    if not dto.task_id or not dto.title:
         return None
 
-    await schedule_service.upsert_task(
-        user_id,
-        device_task_id=task_id,
-        title=dto.title,
-        task_list_id=int(dto.task_list_id) if dto.task_list_id else None,
-        detail=dto.detail,
-        status=dto.status or "needsAction",
-        importance=dto.importance,
-        due_time=dto.due_time,
-        completed_time=dto.completed_time,
-        recurrence=dto.recurrence,
-        is_reminder_on=(dto.is_reminder_on == BooleanEnum.YES),
-        links=dto.links,
-        is_deleted=(dto.is_deleted == BooleanEnum.YES),
-        last_modified=dto.last_modified,
-        sort=dto.sort,
-        sort_completed=dto.sort_completed,
-        planer_sort=dto.planer_sort,
-        planer_sort_time=dto.planer_sort_time,
-        sort_time=dto.sort_time,
-        all_sort=dto.all_sort,
-        all_sort_completed=dto.all_sort_completed,
-        all_sort_time=dto.all_sort_time,
-    )
-    return task_id
+    return {
+        "device_task_id": dto.task_id,
+        "title": dto.title,
+        "task_list_id": int(dto.task_list_id) if dto.task_list_id else None,
+        "status": dto.status or "needsAction",
+        "is_reminder_on": (dto.is_reminder_on == BooleanEnum.YES),
+        "is_deleted": (dto.is_deleted == BooleanEnum.YES),
+        **{name: getattr(dto, name) for name in DEVICE_TASK_PASSTHROUGH_FIELDS},
+    }
 
 
 @routes.post("/api/file/schedule/task")
@@ -224,17 +210,20 @@ async def device_upsert_task(request: web.Request) -> web.Response:
     schedule_service: ScheduleService = request.app["schedule_service"]
     user_id = await request.app["user_service"].get_user_id(user)
 
-    try:
-        task_id = await _upsert_device_task_from_dto(schedule_service, user_id, dto)
-    except ValueError as e:
-        return web.json_response(create_error_response(str(e)).to_dict(), status=400)
-
-    if task_id is None:
+    kwargs = _device_task_upsert_kwargs(dto)
+    if kwargs is None:
         return web.json_response(
             create_error_response("Missing required fields").to_dict(), status=400
         )
+    try:
+        await schedule_service.upsert_task(user_id, **kwargs)
+    except ValueError as e:
+        return web.json_response(create_error_response(str(e)).to_dict(), status=400)
+
     # Echo the device's own taskId, not the server surrogate.
-    return web.json_response(AddScheduleTaskVO(success=True, task_id=task_id).to_dict())
+    return web.json_response(
+        AddScheduleTaskVO(success=True, task_id=kwargs["device_task_id"]).to_dict()
+    )
 
 
 @routes.put("/api/file/schedule/task/list")
@@ -245,8 +234,10 @@ async def device_update_task_list(request: web.Request) -> web.Response:
     ``PUT /api/file/schedule/task/list`` carrying an ``updateScheduleTaskList`` array,
     each item the same shape as a single push. While unregistered this 404'd, so device
     edits never reached the store. Each item upserts on ``(user_id, taskId)`` — the same
-    seam as the single-task route — best-effort: a malformed item is skipped rather than
-    failing the whole batch. Returns a bare success ``BaseResponse`` per the spec.
+    seam as the single-task route. Structurally malformed items (missing ``taskId``) are
+    skipped; the rest apply in one atomic transaction, so a validation failure rolls the
+    whole batch back rather than leaving it half-written. Returns a bare success
+    ``BaseResponse`` per the spec.
     """
     user = request["user"]
     try:
@@ -260,9 +251,13 @@ async def device_update_task_list(request: web.Request) -> web.Response:
     schedule_service: ScheduleService = request.app["schedule_service"]
     user_id = await request.app["user_service"].get_user_id(user)
 
+    items = [
+        kwargs
+        for item in dto.update_schedule_task_list
+        if (kwargs := _device_task_upsert_kwargs(item)) is not None
+    ]
     try:
-        for item in dto.update_schedule_task_list:
-            await _upsert_device_task_from_dto(schedule_service, user_id, item)
+        await schedule_service.upsert_tasks(user_id, items)
     except ValueError as e:
         return web.json_response(create_error_response(str(e)).to_dict(), status=400)
 
@@ -293,27 +288,20 @@ async def _all_tasks_response(
             # Ungrouped (device) tasks have no task_list_id; emit null, not "None".
             task_list_id=(str(t.task_list_id) if t.task_list_id is not None else None),
             title=t.title,
-            detail=t.detail,
             status=t.status,
-            importance=t.importance,
-            due_time=t.due_time,
-            completed_time=t.completed_time,
-            recurrence=t.recurrence,
             is_reminder_on=(BooleanEnum.YES if t.is_reminder_on else BooleanEnum.NO),
+            is_deleted=(BooleanEnum.YES if t.is_deleted else BooleanEnum.NO),
             # Device's own lastModified if it set one, else server bookkeeping time.
             last_modified=(
                 t.last_modified if t.last_modified is not None else t.update_time
             ),
-            links=t.links,
-            is_deleted=(BooleanEnum.YES if t.is_deleted else BooleanEnum.NO),
-            sort=t.sort,
-            sort_completed=t.sort_completed,
-            planer_sort=t.planer_sort,
-            planer_sort_time=t.planer_sort_time,
-            sort_time=t.sort_time,
-            all_sort=t.all_sort,
-            all_sort_completed=t.all_sort_completed,
-            all_sort_time=t.all_sort_time,
+            # The verbatim device fields ride straight through (last_modified above has
+            # its own read fallback, so exclude it from the passthrough).
+            **{
+                name: getattr(t, name)
+                for name in DEVICE_TASK_PASSTHROUGH_FIELDS
+                if name != "last_modified"
+            },
         )
         for t in tasks_dos
     ]
