@@ -66,7 +66,7 @@ class ScheduleService:
     async def create_task(
         self,
         user_id: int,
-        group_id: int,
+        group_id: int | None,
         title: str,
         detail: str = "",
         status: str = "needsAction",

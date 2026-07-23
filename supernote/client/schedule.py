@@ -64,7 +64,7 @@ class ScheduleClient:
 
     async def create_task(
         self,
-        group_id: int,
+        group_id: int | None,
         title: str,
         detail: str | None = None,
         status: str | None = None,
@@ -73,9 +73,13 @@ class ScheduleClient:
         recurrence: str | None = None,
         is_reminder_on: bool = False,
     ) -> AddScheduleTaskVO:
-        """Create a new schedule task."""
+        """Create a new schedule task.
+
+        ``group_id`` may be ``None`` to create an **ungrouped** task, matching the
+        device's task shape (device planner tasks carry no group).
+        """
         dto = AddScheduleTaskDTO(
-            task_list_id=str(group_id),
+            task_list_id=str(group_id) if group_id is not None else None,
             title=title,
             detail=detail,
             status=status,

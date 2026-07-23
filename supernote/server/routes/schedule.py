@@ -128,7 +128,7 @@ async def create_task(request: web.Request) -> web.Response:
             create_error_response(f"Invalid request: {e}").to_dict(), status=400
         )
 
-    if not dto.task_list_id or not dto.title:
+    if not dto.title:
         return web.json_response(
             create_error_response("Missing required fields").to_dict(), status=400
         )
@@ -139,7 +139,8 @@ async def create_task(request: web.Request) -> web.Response:
     try:
         task = await schedule_service.create_task(
             user_id=user_id,
-            group_id=int(dto.task_list_id),
+            # Ungrouped when no taskListId is given, matching the device's task shape.
+            group_id=int(dto.task_list_id) if dto.task_list_id else None,
             title=dto.title,
             detail=dto.detail or "",
             status=dto.status or "needsAction",

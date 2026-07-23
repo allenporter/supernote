@@ -148,6 +148,39 @@ async def test_update_task_fields(authenticated_client: Client) -> None:
     await schedule.delete_group(group_id)
 
 
+async def test_cli_create_ungrouped_task_appears_on_device(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    authenticated_client: Client,
+) -> None:
+    """A CLI task created with no group persists ungrouped and shows in device task/all.
+
+    Parity fix (ticket 06): the CLI used to require a group, so a CLI-authored task
+    couldn't match the device's ungrouped shape. Creating one with no taskListId now
+    succeeds and appears account-wide like a device task.
+    """
+    # CLI create with no group via the bespoke route.
+    resp = await client.post(
+        "/api/schedule/tasks",
+        headers=auth_headers,
+        json={"title": "Ungrouped CLI task"},
+    )
+    assert resp.status == 200
+    vo = AddScheduleTaskVO.from_dict(await resp.json())
+    assert vo.success is True
+    assert vo.task_id is not None
+
+    # It surfaces in the device's account-wide task/all, ungrouped.
+    resp2 = await client.post(
+        "/api/file/schedule/task/all", headers=auth_headers, json={}
+    )
+    all_vo = ScheduleTaskAllVO.from_dict(await resp2.json())
+    assert len(all_vo.schedule_task) == 1
+    t = all_vo.schedule_task[0]
+    assert t.title == "Ungrouped CLI task"
+    assert t.task_list_id is None
+
+
 async def test_device_group_all_endpoint(
     client: TestClient,
     auth_headers: dict[str, str],

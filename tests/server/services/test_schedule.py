@@ -100,6 +100,19 @@ async def test_task_crud(schedule_service: ScheduleService) -> None:
     assert len(tasks_v3) == 0
 
 
+async def test_create_task_ungrouped(schedule_service: ScheduleService) -> None:
+    """The CLI can create an ungrouped task (no group_id), matching the device shape."""
+    user_id = 606
+    task = await schedule_service.create_task(user_id, None, "Loose task")
+    assert task.task_id is not None
+    assert task.task_list_id is None
+    assert task.title == "Loose task"
+
+    # It's listed account-wide (the device's ungrouped read).
+    tasks = await schedule_service.list_tasks(user_id)
+    assert [(t.title, t.task_list_id) for t in tasks] == [("Loose task", None)]
+
+
 async def test_upsert_task_device_shape_round_trips(
     schedule_service: ScheduleService,
 ) -> None:
