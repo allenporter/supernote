@@ -1,4 +1,5 @@
 import pytest
+from aiohttp.test_utils import TestClient
 
 from supernote.client.client import Client
 from supernote.client.summary import SummaryClient
@@ -95,6 +96,35 @@ async def test_summary_crud(summary_client: SummaryClient) -> None:
     assert delete_response.success
 
     # 6. Verify deletion
+    query_response = await summary_client.query_summaries(ids=[summary_id])
+    assert len(query_response.summary_do_list) == 0
+
+
+async def test_delete_summary_accepts_device_delete_verb(
+    summary_client: SummaryClient,
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """The device deletes a summary with the DELETE verb (spec `deleteSummary`).
+
+    Regression (found live in ticket 04): the route was registered POST-only, so the
+    device's DELETE /api/file/delete/summary 404'd and surfaced as "digest sync failed".
+    The web/CLI client still POSTs, so both verbs must work.
+    """
+    add_response = await summary_client.add_summary(
+        AddSummaryDTO(content="doomed summary", data_source="TEST")
+    )
+    summary_id = add_response.id
+    assert summary_id is not None
+
+    # Delete via the DELETE verb, as the device does (JSON body carries the id).
+    resp = await client.delete(
+        "/api/file/delete/summary", headers=auth_headers, json={"id": summary_id}
+    )
+    assert resp.status == 200
+    assert (await resp.json())["success"] is True
+
+    # It's gone.
     query_response = await summary_client.query_summaries(ids=[summary_id])
     assert len(query_response.summary_do_list) == 0
 

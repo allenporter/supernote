@@ -146,9 +146,13 @@ async def handle_update_summary(request: web.Request) -> web.Response:
 
 
 @routes.post("/api/file/delete/summary")
+@routes.delete("/api/file/delete/summary")
 async def handle_delete_summary(request: web.Request) -> web.Response:
-    # Endpoint: POST /api/file/delete/summary
+    # Endpoint: POST or DELETE /api/file/delete/summary
     # Purpose: Delete a summary.
+    # The device sends DELETE (per the OpenAPI spec's `deleteSummary`), which 404'd and
+    # surfaced as "digest sync failed"; the web/CLI SummaryClient sends POST. Both verbs
+    # map to the same handler so neither regresses. (Found live during ticket 04.)
     # Response: BaseResponse
     req_data = DeleteSummaryDTO.from_dict(await request.json())
     user_email = request["user"]
