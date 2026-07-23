@@ -277,19 +277,26 @@ async def device_update_task_list(request: web.Request) -> web.Response:
 
 
 async def _all_tasks_response(
-    request: web.Request, group_id: int | None
+    request: web.Request, group_id: int | None, include_deleted: bool = False
 ) -> web.Response:
     """Build the ScheduleTaskAllVO listing the request user's tasks.
 
     Shared by the bespoke ``GET /api/schedule/tasks`` (CLI, optionally filtered to one
     group via ``taskListId``) and the spec ``POST /api/file/schedule/task/all`` (device,
     account-wide with ``group_id=None``), which return the identical payload.
+
+    ``include_deleted`` controls whether tombstoned rows are returned. The **device** sets
+    it so it receives ``isDeleted='Y'`` tombstones and drops its local copies (without them,
+    a delete looks like "unchanged" in the differential merge and the task resurrects). The
+    **CLI** leaves it off — it wants live tasks only.
     """
     user = request["user"]
     schedule_service: ScheduleService = request.app["schedule_service"]
     user_id = await request.app["user_service"].get_user_id(user)
 
-    tasks_dos = await schedule_service.list_tasks(user_id, group_id)
+    tasks_dos = await schedule_service.list_tasks(
+        user_id, group_id, include_deleted=include_deleted
+    )
 
     tasks_vos = [
         ScheduleTaskInfo(
@@ -325,6 +332,27 @@ async def list_tasks(request: web.Request) -> web.Response:
     return await _all_tasks_response(request, group_id)
 
 
+@routes.delete("/api/file/schedule/task/{task_id}")
+async def device_delete_task(request: web.Request) -> web.Response:
+    """Delete-acknowledgement for a device task (spec route).
+
+    When ``task/all`` returns a tombstone (``isDeleted='Y'``), the device drops its local
+    copy and confirms by ``DELETE /api/file/schedule/task/{taskId}`` — the id the read gave
+    it (a device string id, or a CLI row's surrogate id). While unregistered this 404'd,
+    surfacing as "To-do Sync failed" even though the delete had already propagated. The ack
+    purges the tombstone so ``task/all`` stops re-serving it and the device stops re-acking
+    (retaining it makes the device DELETE the same row on every sync forever — live-observed).
+    Returns success **idempotently**: a re-issued ack for an already-purged task still 200s,
+    so it can never re-raise the banner.
+    """
+    user = request["user"]
+    emitted_id = request.match_info["task_id"]
+    schedule_service: ScheduleService = request.app["schedule_service"]
+    user_id = await request.app["user_service"].get_user_id(user)
+    await schedule_service.purge_acked_task(user_id, emitted_id)
+    return web.json_response(BaseResponse(success=True).to_dict())
+
+
 @routes.post("/api/file/schedule/task/all")
 async def device_list_tasks(request: web.Request) -> web.Response:
     """List all schedule tasks for the device planner sync (spec route).
@@ -335,8 +363,11 @@ async def device_list_tasks(request: web.Request) -> web.Response:
     (``group_id=None`` → tasks across all of the user's groups), unlike the bespoke
     ``GET /api/schedule/tasks`` which can filter to one group. The request body is a
     ``ScheduleTaskDTO`` (pagination / sync tokens); pagination is not yet applied.
+
+    Tombstones are included (``include_deleted=True``): the device consumes ``isDeleted='Y'``
+    rows to remove tasks deleted elsewhere (CLI / another device), which otherwise resurrect.
     """
-    return await _all_tasks_response(request, None)
+    return await _all_tasks_response(request, None, include_deleted=True)
 
 
 @routes.put("/api/schedule/tasks/{id}")

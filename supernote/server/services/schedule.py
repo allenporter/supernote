@@ -2,7 +2,7 @@ import logging
 import time
 from typing import Any, Optional
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from supernote.server.db.models.schedule import ScheduleTaskDO, ScheduleTaskGroupDO
@@ -274,11 +274,52 @@ class ScheduleService:
             result = await session.execute(stmt_get)
             return result.scalar_one_or_none()
 
-    async def delete_task(self, user_id: int, task_id: int) -> bool:
-        """Delete a task."""
+    async def purge_acked_task(self, user_id: int, emitted_id: str) -> bool:
+        """Hard-delete an acked tombstone by the id ``task/all`` emitted for it.
+
+        Once ``task/all`` hands the device a tombstone, the device drops its local copy and
+        confirms by ``DELETE``-ing the task by the id it was given. That id is whatever the
+        read echoed (see :func:`_all_tasks_response`): a **device** row's ``device_task_id``,
+        or — for a **CLI/web**-created row with no device id — its surrogate ``task_id`` as a
+        string. Matching on *either* is what makes the ack converge for both origins: purging
+        the row stops ``task/all`` re-serving the tombstone, so the device stops re-acking it.
+        Without it the tombstone is re-served on every sync and the device DELETEs it forever
+        (live-observed). Returns ``False`` if nothing matched, so the route stays idempotent.
+        """
+        match = [ScheduleTaskDO.device_task_id == emitted_id]
+        # A CLI row has no device id, so task/all echoed its surrogate task_id as a string.
+        if emitted_id.isdigit():
+            match.append(ScheduleTaskDO.task_id == int(emitted_id))
         async with self.session_manager.session() as session:
             stmt = delete(ScheduleTaskDO).where(
-                ScheduleTaskDO.user_id == user_id, ScheduleTaskDO.task_id == task_id
+                ScheduleTaskDO.user_id == user_id, or_(*match)
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            return bool(result.rowcount > 0)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+
+    async def delete_task(self, user_id: int, task_id: int) -> bool:
+        """Soft-delete (tombstone) a task so the deletion reaches the device.
+
+        A hard delete would drop the row entirely, so the device's next differential
+        sync — which only removes what it's *told* was deleted — never sees the deletion
+        and re-pushes its local copy, resurrecting the task. Instead this flips
+        ``is_deleted`` and bumps ``last_modified`` (device-clock semantics) + ``update_time``
+        to *now*, so the tombstone out-versions the copy the device holds and wins the
+        last-writer merge. The CLI's own reads filter tombstones (``include_deleted=False``),
+        so from the CLI's side the task still disappears. Returns ``False`` if no live task
+        matched (already deleted or unknown id).
+        """
+        now_ms = int(time.time() * 1000)
+        async with self.session_manager.session() as session:
+            stmt = (
+                update(ScheduleTaskDO)
+                .where(
+                    ScheduleTaskDO.user_id == user_id,
+                    ScheduleTaskDO.task_id == task_id,
+                    ScheduleTaskDO.is_deleted.is_(False),
+                )
+                .values(is_deleted=True, last_modified=now_ms, update_time=now_ms)
             )
             result = await session.execute(stmt)
             await session.commit()

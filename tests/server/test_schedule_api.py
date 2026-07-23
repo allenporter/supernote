@@ -181,6 +181,131 @@ async def test_cli_create_ungrouped_task_appears_on_device(
     assert t.task_list_id is None
 
 
+async def test_cli_delete_reaches_device_as_tombstone(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    authenticated_client: Client,
+) -> None:
+    """A CLI-deleted task reaches the device as an isDeleted='Y' tombstone (no resurrection).
+
+    The device sync is a last-writer merge: if a delete performed off-device (here via the
+    CLI) is simply *omitted* from the device's task/all, the device reads it as "unchanged"
+    and re-pushes its copy, resurrecting the task. So the device read must surface the
+    tombstone — while the CLI's own read stays live-only.
+    """
+    # CLI creates then deletes a task.
+    resp = await client.post(
+        "/api/schedule/tasks", headers=auth_headers, json={"title": "Doomed"}
+    )
+    assert resp.status == 200
+    task_id = AddScheduleTaskVO.from_dict(await resp.json()).task_id
+    assert task_id is not None
+
+    del_resp = await client.delete(
+        f"/api/schedule/tasks/{task_id}", headers=auth_headers
+    )
+    assert del_resp.status == 200
+
+    # Device task/all surfaces the tombstone so the device drops its local copy.
+    device_resp = await client.post(
+        "/api/file/schedule/task/all", headers=auth_headers, json={}
+    )
+    device_vo = ScheduleTaskAllVO.from_dict(await device_resp.json())
+    assert len(device_vo.schedule_task) == 1
+    tombstone = device_vo.schedule_task[0]
+    assert tombstone.task_id == task_id
+    assert tombstone.is_deleted == BooleanEnum.YES
+    assert tombstone.last_modified is not None
+
+    # The CLI's own read is live-only — the task is gone from its perspective.
+    cli_resp = await client.get("/api/schedule/tasks", headers=auth_headers)
+    cli_vo = ScheduleTaskAllVO.from_dict(await cli_resp.json())
+    assert cli_vo.schedule_task == []
+
+
+async def test_device_delete_ack_purges_and_converges(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """The device acks a task tombstone via DELETE /api/file/schedule/task/{id}.
+
+    Live regression (ticket 08): after task/all handed back an isDeleted='Y' tombstone, the
+    device confirmed the deletion by DELETEing the task by its device id — an unregistered
+    route that 404'd and surfaced as "To-do Sync failed" even though the delete had
+    succeeded. The route now purges the tombstone and returns 200. Purging is what makes the
+    protocol *converge*: task/all stops re-serving the row, so the device stops re-acking it
+    (retaining it makes the device DELETE the same row every sync forever — live-observed).
+    """
+    device_task_id = DEVICE_TASK_PUSH["taskId"]
+    await client.post(
+        "/api/file/schedule/task", headers=auth_headers, json=DEVICE_TASK_PUSH
+    )
+    # Delete elsewhere → tombstone; task/all surfaces it (the device sees isDeleted='Y').
+    await client.post(
+        "/api/file/schedule/task",
+        headers=auth_headers,
+        json={**DEVICE_TASK_PUSH, "isDeleted": "Y"},
+    )
+
+    # The device acknowledges by DELETEing the task by its own string id.
+    ack = await client.delete(
+        f"/api/file/schedule/task/{device_task_id}", headers=auth_headers
+    )
+    assert ack.status == 200
+    assert (await ack.json())["success"] is True
+
+    # Converged: the tombstone is purged, so task/all no longer re-serves it.
+    resp = await client.post(
+        "/api/file/schedule/task/all", headers=auth_headers, json={}
+    )
+    assert ScheduleTaskAllVO.from_dict(await resp.json()).schedule_task == []
+
+    # Idempotent: a repeated ack for the now-gone task still returns 200 (no banner).
+    ack2 = await client.delete(
+        f"/api/file/schedule/task/{device_task_id}", headers=auth_headers
+    )
+    assert ack2.status == 200
+
+
+async def test_cli_delete_ack_by_surrogate_id_purges(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """The device acks a CLI-deleted tombstone by its surrogate id, and it purges.
+
+    A CLI-created task has no device_task_id, so task/all echoes its surrogate task_id as
+    the id string. When the device acks that tombstone it DELETEs by *that* id — not a
+    device id. The purge must resolve it (finding: an ack keyed only on device_task_id
+    silently misses CLI rows, leaving the tombstone re-served and re-acked forever).
+    """
+    resp = await client.post(
+        "/api/schedule/tasks", headers=auth_headers, json={"title": "Doomed"}
+    )
+    task_id = AddScheduleTaskVO.from_dict(await resp.json()).task_id
+    assert task_id is not None
+    await client.delete(f"/api/schedule/tasks/{task_id}", headers=auth_headers)
+
+    # task/all echoes the tombstone under the surrogate id (no device_task_id to use).
+    device_resp = await client.post(
+        "/api/file/schedule/task/all", headers=auth_headers, json={}
+    )
+    tombstone = ScheduleTaskAllVO.from_dict(await device_resp.json()).schedule_task[0]
+    assert tombstone.task_id == task_id
+
+    # The device acks by that surrogate id string → 200, and the row is purged.
+    ack = await client.delete(
+        f"/api/file/schedule/task/{tombstone.task_id}", headers=auth_headers
+    )
+    assert ack.status == 200
+    assert (await ack.json())["success"] is True
+
+    # Converged: task/all no longer re-serves the CLI tombstone.
+    resp2 = await client.post(
+        "/api/file/schedule/task/all", headers=auth_headers, json={}
+    )
+    assert ScheduleTaskAllVO.from_dict(await resp2.json()).schedule_task == []
+
+
 async def test_device_group_all_endpoint(
     client: TestClient,
     auth_headers: dict[str, str],
@@ -377,7 +502,11 @@ async def test_device_task_delete_tombstones(
     client: TestClient,
     auth_headers: dict[str, str],
 ) -> None:
-    """A device delete arrives as a POST with isDeleted='Y' and drops from task/all."""
+    """A device delete arrives as a POST with isDeleted='Y' and is echoed as a tombstone.
+
+    The device read (task/all) surfaces the tombstone rather than hiding it, so a delete
+    reaches every device on the merge instead of resurrecting; the row is retained flagged.
+    """
     await client.post(
         "/api/file/schedule/task", headers=auth_headers, json=DEVICE_TASK_PUSH
     )
@@ -388,7 +517,8 @@ async def test_device_task_delete_tombstones(
         "/api/file/schedule/task/all", headers=auth_headers, json={}
     )
     all_vo = ScheduleTaskAllVO.from_dict(await resp.json())
-    assert all_vo.schedule_task == []
+    assert len(all_vo.schedule_task) == 1
+    assert all_vo.schedule_task[0].is_deleted == BooleanEnum.YES
 
 
 async def test_device_task_list_batch_update(
@@ -435,7 +565,7 @@ async def test_device_task_list_batch_delete_tombstones(
     client: TestClient,
     auth_headers: dict[str, str],
 ) -> None:
-    """A batch item with isDeleted='Y' tombstones and drops from task/all."""
+    """A batch item with isDeleted='Y' tombstones; task/all echoes it flagged deleted."""
     await client.post(
         "/api/file/schedule/task", headers=auth_headers, json=DEVICE_TASK_PUSH
     )
@@ -451,7 +581,9 @@ async def test_device_task_list_batch_delete_tombstones(
         "/api/file/schedule/task/all", headers=auth_headers, json={}
     )
     all_vo = ScheduleTaskAllVO.from_dict(await resp2.json())
-    assert all_vo.schedule_task == []
+    # The device read surfaces the tombstone (isDeleted='Y'), not absence.
+    assert len(all_vo.schedule_task) == 1
+    assert all_vo.schedule_task[0].is_deleted == BooleanEnum.YES
 
 
 async def test_device_and_cli_tasks_coexist(

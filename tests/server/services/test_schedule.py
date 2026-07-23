@@ -231,6 +231,69 @@ async def test_upsert_task_delete_tombstones(
     assert with_deleted[0].is_deleted is True
 
 
+async def test_delete_task_soft_deletes_with_stamp(
+    schedule_service: ScheduleService,
+) -> None:
+    """CLI delete_task tombstones (not hard-deletes) and stamps last_modified.
+
+    A hard delete would drop the row, so the device's differential sync never learns of
+    the deletion and resurrects the task. Instead the row survives as an isDeleted='Y'
+    tombstone with a fresh last_modified, so the device merge removes its local copy.
+    """
+    user_id = 909
+    task = await schedule_service.create_task(user_id, None, "Delete me")
+    assert task.last_modified is None
+
+    deleted = await schedule_service.delete_task(user_id, task.task_id)
+    assert deleted is True
+
+    # CLI/default read hides the tombstone — the task still "disappears" for the CLI.
+    assert await schedule_service.list_tasks(user_id) == []
+
+    # ...but the tombstone is retained and carries a fresh last_modified so it out-versions
+    # whatever copy the device holds (the device read passes include_deleted=True).
+    tombstoned = await schedule_service.list_tasks(user_id, include_deleted=True)
+    assert len(tombstoned) == 1
+    assert tombstoned[0].is_deleted is True
+    assert tombstoned[0].last_modified is not None
+    assert tombstoned[0].last_modified == tombstoned[0].update_time
+
+    # Re-deleting an already-tombstoned task matches no live row.
+    assert await schedule_service.delete_task(user_id, task.task_id) is False
+
+
+async def test_purge_acked_task_resolves_both_id_shapes(
+    schedule_service: ScheduleService,
+) -> None:
+    """The delete-ack purges by whichever id task/all emitted: device id or surrogate id.
+
+    task/all echoes a device row under its device_task_id but a CLI row under its surrogate
+    task_id (it has no device id). The device acks with that id, so the purge must resolve
+    both — otherwise the CLI tombstone is never purged and task/all re-serves it forever,
+    and the device re-acks it every sync (the bug this replaces).
+    """
+    user_id = 911
+
+    # Device row: acked by its device_task_id.
+    device_id = "aaaa1111bbbb2222cccc3333dddd4444"
+    await schedule_service.upsert_task(
+        user_id, device_task_id=device_id, title="Device tombstone", is_deleted=True
+    )
+    assert await schedule_service.purge_acked_task(user_id, device_id) is True
+    # Idempotent: a re-issued ack for the now-gone row is a no-op.
+    assert await schedule_service.purge_acked_task(user_id, device_id) is False
+
+    # CLI row: no device_task_id, so task/all emits str(task_id); the ack arrives as that.
+    cli_task = await schedule_service.create_task(user_id, None, "CLI tombstone")
+    await schedule_service.delete_task(user_id, cli_task.task_id)
+    assert len(await schedule_service.list_tasks(user_id, include_deleted=True)) == 1
+
+    surrogate_id = str(cli_task.task_id)
+    assert await schedule_service.purge_acked_task(user_id, surrogate_id) is True
+    assert await schedule_service.list_tasks(user_id, include_deleted=True) == []
+    assert await schedule_service.purge_acked_task(user_id, surrogate_id) is False
+
+
 async def test_upsert_task_isolation(schedule_service: ScheduleService) -> None:
     """The same device task id under two users are distinct rows (unique per user)."""
     device_id = "0000000000000000000000000000ffff"
