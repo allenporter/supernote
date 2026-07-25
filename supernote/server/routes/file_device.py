@@ -47,7 +47,7 @@ from supernote.server.services.file import (
     FileService,
 )
 from supernote.server.utils.paths import generate_inner_name
-from supernote.server.utils.url_signer import UrlSigner
+from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
@@ -289,9 +289,10 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
         encoded_name = urllib.parse.quote(inner_name)
 
         # Simple Upload URL: /api/oss/upload?path={name}&timestamp={ms}
+        base_url = get_request_base_url(request)
         simple_path = f"/api/oss/upload?path={encoded_name}"
         full_upload_url_path = await url_signer.sign(simple_path, user=request["user"])
-        full_upload_url = f"{request.scheme}://{request.host}{full_upload_url_path}"
+        full_upload_url = f"{base_url}{full_upload_url_path}"
 
         # Extract signature and timestamp using UrlSigner helpers
         signature = UrlSigner.extract_signature(full_upload_url_path)
@@ -303,7 +304,7 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
         # Client will append &uploadId=...&partNumber=...
         part_path = f"/api/oss/upload/part?path={encoded_name}"
         part_upload_url_path = await url_signer.sign(part_path, user=request["user"])
-        part_upload_url = f"{request.scheme}://{request.host}{part_upload_url_path}"
+        part_upload_url = f"{base_url}{part_upload_url_path}"
 
         return web.json_response(
             FileUploadApplyLocalVO(
@@ -396,7 +397,8 @@ async def handle_download_apply(request: web.Request) -> web.Response:
 
         # helper returns: ...?signature=...
         signed_path = await url_signer.sign(path_to_sign, user=user_email)
-        download_url = f"{request.scheme}://{request.host}{signed_path}"
+        base_url = get_request_base_url(request)
+        download_url = f"{base_url}{signed_path}"
 
     except SupernoteError as err:
         return err.to_response()
@@ -548,6 +550,7 @@ async def handle_note_to_png(request: web.Request) -> web.Response:
 
     try:
         results = await file_service.convert_note_to_png(user_email, req_data.id)
+        base_url = get_request_base_url(request)
         png_pages = []
         for res in results:
             # Generate signed URL for each PNG
@@ -555,7 +558,7 @@ async def handle_note_to_png(request: web.Request) -> web.Response:
             # Here storage_key is already the full path within bucket
             path_to_sign = f"/api/oss/download?path={res.storage_key}"
             signed_path = await url_signer.sign(path_to_sign, user=user_email)
-            download_url = f"{request.scheme}://{request.host}{signed_path}"
+            download_url = f"{base_url}{signed_path}"
 
             png_pages.append(PngPageVO(page_no=res.page_no, url=download_url))
 
@@ -584,7 +587,8 @@ async def handle_note_to_pdf(request: web.Request) -> web.Response:
         # Generate signed URL for PDF
         path_to_sign = f"/api/oss/download?path={storage_key}"
         signed_path = await url_signer.sign(path_to_sign, user=user_email)
-        download_url = f"{request.scheme}://{request.host}{signed_path}"
+        base_url = get_request_base_url(request)
+        download_url = f"{base_url}{signed_path}"
 
         return web.json_response(PdfVO(url=download_url).to_dict())
     except SupernoteError as err:

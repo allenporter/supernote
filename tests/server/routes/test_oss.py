@@ -5,6 +5,9 @@ import pytest
 from supernote.client.client import Client
 from supernote.client.device import DeviceClient
 from supernote.client.exceptions import ApiException
+from supernote.models.file_common import FileUploadApplyLocalVO
+
+TEST_USER = "user@example.com"
 
 
 async def test_oss_upload_simple(
@@ -110,3 +113,42 @@ async def test_oss_invalid_range_header(
     with pytest.raises(ApiException) as excinfo:
         await authenticated_client.get(valid_url, headers={"Range": "garbage"})
     assert "400" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("configured_base_url", ["https://notes.example.com/"])
+async def test_upload_url_uses_configured_base_url(
+    authenticated_client: Client,
+) -> None:
+    """A configured base URL is used regardless of the request's host."""
+    payload = {"directoryId": 0, "fileName": "note.pdf", "size": 10, "md5": "deadbeef"}
+    headers = {"Host": "internal-device.local:8080"}
+    vo = await authenticated_client.post_json(
+        "/api/file/upload/apply",
+        FileUploadApplyLocalVO,
+        json=payload,
+        headers=headers,
+    )
+
+    assert vo.full_upload_url is not None
+    assert vo.full_upload_url.startswith(
+        "https://notes.example.com/api/oss/upload?path="
+    )
+
+
+async def test_upload_url_falls_back_to_request_origin(
+    authenticated_client: Client,
+) -> None:
+    """With no configured base URL, the request's own origin (scheme + host) is used."""
+    payload = {"directoryId": 0, "fileName": "note.pdf", "size": 10, "md5": "deadbeef"}
+    headers = {"Host": "device.local:9000"}
+    vo = await authenticated_client.post_json(
+        "/api/file/upload/apply",
+        FileUploadApplyLocalVO,
+        json=payload,
+        headers=headers,
+    )
+
+    assert vo.full_upload_url is not None
+    assert vo.full_upload_url.startswith(
+        "http://device.local:9000/api/oss/upload?path="
+    )

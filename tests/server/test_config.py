@@ -85,6 +85,46 @@ def test_example_config_is_valid() -> None:
     assert config.auth.enable_registration is False
 
 
+def test_configured_base_url_none_when_unset() -> None:
+    """configured_base_url returns None when SUPERNOTE_BASE_URL is not set."""
+    config = ServerConfig()
+    assert config.configured_base_url is None
+
+
+def test_configured_base_url_strips_trailing_slash() -> None:
+    """configured_base_url returns the configured URL without a trailing slash."""
+    config = ServerConfig(_base_url="https://notes.example.com/")
+    assert config.configured_base_url == "https://notes.example.com"
+
+
+def test_base_url_uses_configured_value() -> None:
+    """base_url uses the configured base URL when set."""
+    config = ServerConfig(_base_url="https://notes.example.com/")
+    assert config.base_url == "https://notes.example.com"
+
+
+def test_base_url_falls_back_to_host_and_port() -> None:
+    """base_url falls back to host:port when SUPERNOTE_BASE_URL is unset."""
+    config = ServerConfig(host="127.0.0.1", port=9090)
+    assert config.configured_base_url is None
+    assert config.base_url == "http://127.0.0.1:9090"
+
+
+def test_base_url_fallback_maps_wildcard_host_to_localhost() -> None:
+    """base_url fallback maps the 0.0.0.0 wildcard host to localhost."""
+    config = ServerConfig(host="0.0.0.0", port=8080)
+    assert config.base_url == "http://localhost:8080"
+
+
+def test_configured_base_url_from_env(tmp_path: Path) -> None:
+    """configured_base_url reflects SUPERNOTE_BASE_URL from the environment."""
+    config_dir = tmp_path / "config"
+    with patch.dict(os.environ, {"SUPERNOTE_BASE_URL": "https://env.example.com/"}):
+        config = ServerConfig.load(config_dir)
+        assert config.configured_base_url == "https://env.example.com"
+        assert config.base_url == "https://env.example.com"
+
+
 def test_server_config_proxy_env_vars(tmp_path: Path) -> None:
     """Test that proxy configuration can be set via environment variables."""
     config_dir = tmp_path / "config"

@@ -45,6 +45,7 @@ import uuid
 from typing import Any
 
 import jwt
+from aiohttp import web
 
 from supernote.server.exceptions import InvalidSignature, SignerError
 from supernote.server.services.coordination import CoordinationService
@@ -216,3 +217,15 @@ class UrlSigner:
         parsed = urllib.parse.urlparse(url)
         qs = urllib.parse.parse_qs(parsed.query)
         return qs.get("timestamp", [None])[0]
+
+
+def get_request_base_url(request: web.Request) -> str:
+    """Get the base URL for generating absolute URLs in request handlers.
+
+    Prefers `ServerConfig.configured_base_url` when set (`SUPERNOTE_BASE_URL`),
+    falling back to `f"{request.scheme}://{request.host}"` derived from the request.
+    """
+    config = request.app.get("config")
+    if config and config.configured_base_url:
+        return config.configured_base_url
+    return f"{request.scheme}://{request.host}"
