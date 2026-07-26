@@ -1,6 +1,6 @@
 {
   "template": "https://github.com/allenporter/cookiecutter-python",
-  "commit": "21b1c4d83f68790fef4702cb875dc971584d391e",
+  "commit": "5c5d6228c64ee74fda9a7f678d24ab6018250d0d",
   "checkout": null,
   "context": {
     "cookiecutter": {
@@ -10,8 +10,7 @@
       "project_name": "supernote",
       "description": "Unofficial python library for parsing Supernote notebooks",
       "version": "0.0.1",
-      "_template": "https://github.com/allenporter/cookiecutter-python",
-      "_commit": "21b1c4d83f68790fef4702cb875dc971584d391e"
+      "_template": "https://github.com/allenporter/cookiecutter-python"
     }
   },
   "directory": null
