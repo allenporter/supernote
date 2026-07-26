@@ -1,6 +1,5 @@
 import logging
 import time
-from typing import Optional
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -137,7 +136,7 @@ class VirtualFileSystem:
         await self.db.refresh(new_file)
         return new_file
 
-    async def get_node_by_id(self, user_id: int, node_id: int) -> Optional[UserFileDO]:
+    async def get_node_by_id(self, user_id: int, node_id: int) -> UserFileDO | None:
         stmt = select(UserFileDO).where(
             UserFileDO.user_id == user_id,
             UserFileDO.id == node_id,

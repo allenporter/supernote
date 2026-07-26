@@ -15,8 +15,9 @@ session_manager.close()
 
 """
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator
+from typing import Any
 
 from sqlalchemy import event
 from sqlalchemy.exc import SQLAlchemyError
@@ -79,7 +80,7 @@ class DatabaseSessionManager:
         self._sessionmaker = None
 
     @asynccontextmanager
-    async def session(self) -> AsyncGenerator[AsyncSession, None]:
+    async def session(self) -> AsyncGenerator[AsyncSession]:
         """Get a database session."""
         if self._sessionmaker is None:
             raise DatabaseError("DatabaseSessionManager has been closed")

@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy import delete, select, update
 
@@ -114,7 +114,7 @@ class ScheduleService:
 
     async def update_task(
         self, user_id: int, task_id: int, **kwargs: Any
-    ) -> Optional[ScheduleTaskDO]:
+    ) -> ScheduleTaskDO | None:
         """Update a task."""
         # Clean kwargs to only allow update of specific fields?
         # For simplicity, we assume caller passes valid fields that match DO columns.

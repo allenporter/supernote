@@ -41,7 +41,7 @@ async def test_put_stream(tmp_path: Path) -> None:
     bucket = "test-bucket"
     key = "stream-key"
 
-    async def data_stream() -> AsyncGenerator[bytes, None]:
+    async def data_stream() -> AsyncGenerator[bytes]:
         yield b"Part1"
         yield b"Part2"
 

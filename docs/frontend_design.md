@@ -180,6 +180,7 @@ from fastapi.staticfiles import StaticFiles
 # Mount assets (JS/CSS)
 app.mount("/assets", StaticFiles(directory="web/dist/assets"), name="assets")
 
+
 # Catch-all route for SPA (Standard Pattern)
 @app.get("/{full_path:path}")
 async def serve_app(full_path: str):

@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from google.genai import types
 
@@ -44,8 +43,8 @@ class GeminiOcrModule(ProcessorModule):
         self,
         file_id: int,
         session_manager: DatabaseSessionManager,
-        page_index: Optional[int] = None,
-        page_id: Optional[str] = None,
+        page_index: int | None = None,
+        page_id: str | None = None,
     ) -> bool:
         if page_index is None:
             return False
@@ -75,8 +74,8 @@ class GeminiOcrModule(ProcessorModule):
         self,
         file_id: int,
         session_manager: DatabaseSessionManager,
-        page_index: Optional[int] = None,
-        page_id: Optional[str] = None,
+        page_index: int | None = None,
+        page_id: str | None = None,
         **kwargs: object,
     ) -> None:
         if page_id is None:
@@ -94,8 +93,8 @@ class GeminiOcrModule(ProcessorModule):
             raise ValueError("Gemini API key not configured")
 
         # Get File Info for custom prompt and metadata
-        file_name: Optional[str] = None
-        notebook_create_time: Optional[int] = None
+        file_name: str | None = None
+        notebook_create_time: int | None = None
         async with session_manager.session() as session:
             file_do = await session.get(UserFileDO, file_id)
             if file_do:

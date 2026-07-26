@@ -3,7 +3,7 @@
 import logging
 import secrets
 import time
-from typing import Optional, override
+from typing import override
 from urllib.parse import quote, urlencode, urlparse
 
 from mcp.server.auth.provider import (
@@ -105,7 +105,7 @@ class SupernoteOAuthProvider(
 
     async def load_authorization_code(
         self, client: OAuthClientInformationFull, authorization_code: str
-    ) -> Optional[SupernoteAuthorizationCode]:
+    ) -> SupernoteAuthorizationCode | None:
         """Loads an AuthorizationCode by its code string."""
         key = f"mcp:auth_code:{authorization_code}"
         data = await self._coordination.get_value(key)
@@ -164,7 +164,7 @@ class SupernoteOAuthProvider(
 
     async def load_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: str
-    ) -> Optional[SupernoteRefreshToken]:
+    ) -> SupernoteRefreshToken | None:
         """Loads a RefreshToken by its token string."""
         key = f"mcp:refresh_token:{refresh_token}"
         data = await self._coordination.get_value(key)
@@ -201,7 +201,7 @@ class SupernoteOAuthProvider(
             scope=" ".join(new_access_token.scopes),
         )
 
-    async def load_access_token(self, token: str) -> Optional[SupernoteAccessToken]:
+    async def load_access_token(self, token: str) -> SupernoteAccessToken | None:
         """Loads an access token by its token."""
         # 1. Try to load as an MCP access token from coordination service
         key = f"mcp:access_token:{token}"
@@ -213,7 +213,6 @@ class SupernoteOAuthProvider(
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
         """Revokes an access or refresh token."""
         # TODO: Implement token revocation in UserService/CoordinationService
-        pass
 
 
 def create_auth_app(

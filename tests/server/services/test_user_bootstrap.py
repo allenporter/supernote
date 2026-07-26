@@ -26,7 +26,7 @@ async def test_bootstrap_first_user_is_admin(
     service = UserService(config, coordination_service, session_manager)
 
     # Register first user (should be admin)
-    pw_md5 = hashlib.md5("password".encode()).hexdigest()
+    pw_md5 = hashlib.md5(b"password").hexdigest()
     dto1 = UserRegisterDTO(
         email="admin@example.com", password=pw_md5, user_name="Admin"
     )
@@ -49,7 +49,7 @@ async def test_bootstrap_bypasses_disabled_registration(
     service = UserService(config, coordination_service, session_manager)
 
     # Register first user (should succeed because of bootstrap)
-    pw_md5 = hashlib.md5("password".encode()).hexdigest()
+    pw_md5 = hashlib.md5(b"password").hexdigest()
     dto1 = UserRegisterDTO(
         email="bootstrap@example.com", password=pw_md5, user_name="Bootstrap"
     )
@@ -71,7 +71,7 @@ async def test_admin_create_user_bypass(
     service = UserService(config, coordination_service, session_manager)
 
     # Bootstrap first
-    pw_md5 = hashlib.md5("pw".encode()).hexdigest()
+    pw_md5 = hashlib.md5(b"pw").hexdigest()
     await service.register(
         UserRegisterDTO(email="admin@example.com", password=pw_md5, user_name="Admin")
     )

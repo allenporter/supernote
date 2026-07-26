@@ -1,5 +1,4 @@
 import time
-from typing import Optional
 
 from sqlalchemy import BigInteger, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
@@ -26,13 +25,13 @@ class NotePageContentDO(Base):
     page_id: Mapped[str] = mapped_column(String, nullable=False, default="")
     """The stable unique identifier for the page (from .note file)."""
 
-    content_hash: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     """MD5 hash of the page content (e.g. layers) to detect changes."""
 
-    text_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     """The extracted OCR text for this page."""
 
-    embedding: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    embedding: Mapped[str | None] = mapped_column(Text, nullable=True)
     """JSON string representation of the vector embedding."""
 
     create_time: Mapped[int] = mapped_column(
@@ -74,13 +73,13 @@ class SystemTaskDO(Base):
     )
     """Current status (PENDING, PROCESSING, COMPLETED, FAILED)."""
 
-    data: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    data: Mapped[str | None] = mapped_column(Text, nullable=True)
     """JSON string for task-specific data or output."""
 
     retry_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     """Number of retries."""
 
-    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     """Error message from last failure."""
 
     create_time: Mapped[int] = mapped_column(

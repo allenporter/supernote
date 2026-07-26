@@ -53,7 +53,7 @@ params = {
     "client_id": "https://my-agent-app.com",
     "redirect_uri": "https://my-agent-app.com/callback",
     "scope": "supernote:all",
-    "state": "xyz"
+    "state": "xyz",
 }
 ```
 

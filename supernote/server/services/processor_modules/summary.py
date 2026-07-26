@@ -2,7 +2,6 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
 
 from mashumaro.jsonschema import build_json_schema
 from mashumaro.mixins.json import DataClassJSONMixin
@@ -42,12 +41,12 @@ class SummarySegment(DataClassJSONMixin):
             "description": "A concise summary of the events, tasks, and notes for this period."
         }
     )
-    extracted_dates: List[str] = field(
+    extracted_dates: list[str] = field(
         metadata={
             "description": "List of specific dates derived from the content in ISO 8601 format (YYYY-MM-DD)."
         }
     )
-    page_refs: List[int] = field(
+    page_refs: list[int] = field(
         metadata={
             "description": "List of 1-indexed page numbers typically found in the text as '--- Page X ---'."
         }
@@ -56,7 +55,7 @@ class SummarySegment(DataClassJSONMixin):
 
 @dataclass
 class SummaryResponse(DataClassJSONMixin):
-    segments: List[SummarySegment] = field(
+    segments: list[SummarySegment] = field(
         metadata={
             "description": "List of summary segments extracted from the transcript."
         }
@@ -90,8 +89,8 @@ class SummaryModule(ProcessorModule):
         self,
         file_id: int,
         session_manager: DatabaseSessionManager,
-        page_index: Optional[int] = None,
-        page_id: Optional[str] = None,
+        page_index: int | None = None,
+        page_id: str | None = None,
     ) -> bool:
         """Determines if summary generation is needed."""
         # Summary is a file-level task (global), not page-level.
@@ -110,8 +109,8 @@ class SummaryModule(ProcessorModule):
         self,
         file_id: int,
         session_manager: DatabaseSessionManager,
-        page_index: Optional[int] = None,
-        page_id: Optional[str] = None,
+        page_index: int | None = None,
+        page_id: str | None = None,
         **kwargs: object,
     ) -> None:
         """
@@ -130,7 +129,7 @@ class SummaryModule(ProcessorModule):
                 logger.error(f"File {file_id} not found.")
                 return
 
-            user: Optional[UserDO] = await session.get(UserDO, file_do.user_id)
+            user: UserDO | None = await session.get(UserDO, file_do.user_id)
             if not user or not user.email:
                 logger.error(f"User for file {file_id} not found.")
                 return
