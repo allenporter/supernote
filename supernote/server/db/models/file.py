@@ -1,5 +1,4 @@
 import time
-from typing import Optional
 
 from sqlalchemy import BigInteger, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -36,10 +35,10 @@ class UserFileDO(Base):
     size: Mapped[int] = mapped_column(BigInteger, default=0)
     """File size."""
 
-    md5: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    md5: Mapped[str | None] = mapped_column(String, nullable=True)
     """Content hash."""
 
-    storage_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    storage_key: Mapped[str | None] = mapped_column(String, nullable=True)
     """Physical storage key (inner_name/UUID)."""
 
     is_active: Mapped[str] = mapped_column(String(1), default="Y", nullable=False)

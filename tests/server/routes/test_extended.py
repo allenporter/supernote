@@ -18,7 +18,7 @@ def extended_client(authenticated_client: Client) -> ExtendedClient:
 
 
 @pytest.fixture
-def mock_gemini_service() -> Generator[None, None, None]:
+def mock_gemini_service() -> Generator[None]:
     """Fixture to mock Gemini service."""
     # Mock Gemini Service to avoid network calls
     mock_embedding_response = AsyncMock()
@@ -38,10 +38,9 @@ def mock_gemini_service() -> Generator[None, None, None]:
 
 
 @pytest.fixture(autouse=True)
-def patch_gemini_service(mock_gemini_service: Generator[None, None, None]) -> None:
+def patch_gemini_service(mock_gemini_service: Generator[None]) -> None:
     """Patch the Gemini service in the search service."""
     # This is handled by the mock_gemini_service fixture
-    pass
 
 
 async def test_extended_search(

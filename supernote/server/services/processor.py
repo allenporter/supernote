@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from typing import Any, List, Set
+from typing import Any
 
 from sqlalchemy import delete, select
 
@@ -55,7 +55,7 @@ class ProcessorService:
         self.page_concurrency = page_concurrency
 
         self.queue: asyncio.Queue[int] = asyncio.Queue()  # Queue of file_ids
-        self.processing_files: Set[int] = set()
+        self.processing_files: set[int] = set()
         self.workers: list[asyncio.Task] = []
         self.polling_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
@@ -63,9 +63,9 @@ class ProcessorService:
         self._processing_enabled.set()
 
         # Module registry
-        self.global_pre_modules: List[ProcessorModule] = []
-        self.page_modules: List[ProcessorModule] = []
-        self.global_post_modules: List[ProcessorModule] = []
+        self.global_pre_modules: list[ProcessorModule] = []
+        self.page_modules: list[ProcessorModule] = []
+        self.global_post_modules: list[ProcessorModule] = []
 
     def _update_queue_metrics(self) -> None:
         try:
@@ -418,7 +418,7 @@ class ProcessorService:
                 exc_info=True,
             )
 
-    async def list_system_tasks(self, limit: int = 100) -> List[SystemTaskDO]:
+    async def list_system_tasks(self, limit: int = 100) -> list[SystemTaskDO]:
         """List recent system tasks."""
         async with self.session_manager.session() as session:
             stmt = (

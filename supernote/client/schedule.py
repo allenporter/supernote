@@ -1,5 +1,6 @@
 import time
-from typing import Any, AsyncIterator, Optional
+from collections.abc import AsyncIterator
+from typing import Any
 
 from supernote.models.base import BooleanEnum
 from supernote.models.schedule import (
@@ -89,7 +90,7 @@ class ScheduleClient:
         )
 
     async def list_tasks(
-        self, group_id: Optional[int] = None
+        self, group_id: int | None = None
     ) -> AsyncIterator[ScheduleTaskInfo]:
         """List all schedule tasks."""
         next_page_tokens = None

@@ -126,7 +126,7 @@ def server_config(
 
 
 @pytest.fixture(autouse=True)
-def patch_server_config(server_config: ServerConfig) -> Generator[None, None, None]:
+def patch_server_config(server_config: ServerConfig) -> Generator[None]:
     """Automatically patch server config for all server tests."""
     with patch("supernote.server.config.ServerConfig.load", return_value=server_config):
         yield
@@ -135,7 +135,7 @@ def patch_server_config(server_config: ServerConfig) -> Generator[None, None, No
 @pytest.fixture
 def coordination_service(
     session_manager: DatabaseSessionManager,
-) -> Generator[CoordinationService, None, None]:
+) -> Generator[CoordinationService]:
     """Shared coordination service for tests."""
     coordination_service = SqliteCoordinationService(session_manager)
     with patch(
@@ -212,7 +212,7 @@ async def auth_headers_fixture(
 @pytest.fixture(scope="session")
 async def _session_manager_shared(
     tmp_path_factory: pytest.TempPathFactory,
-) -> AsyncGenerator[DatabaseSessionManager, None]:
+) -> AsyncGenerator[DatabaseSessionManager]:
     """Create a singleton session manager for the entire test session."""
     tmp_dir = tmp_path_factory.mktemp("db")
     db_path = tmp_dir / "test_db.sqlite"
@@ -236,7 +236,7 @@ async def _session_manager_shared(
 @pytest.fixture(name="session_manager")
 async def session_manager_fixture(
     _session_manager_shared: DatabaseSessionManager,
-) -> AsyncGenerator[DatabaseSessionManager, None]:
+) -> AsyncGenerator[DatabaseSessionManager]:
     """Provide a session manager and clean up data after each test."""
 
     with patch(
@@ -263,7 +263,7 @@ async def session_manager_fixture(
 @pytest.fixture
 async def db_session(
     session_manager: DatabaseSessionManager,
-) -> AsyncGenerator[AsyncSession, None]:
+) -> AsyncGenerator[AsyncSession]:
     """Get a database session."""
     async with session_manager.session() as session:
         yield session
@@ -307,7 +307,7 @@ async def client_fixture(
 async def authenticated_client(
     client: TestClient,
     auth_headers: dict[str, str],
-) -> AsyncGenerator[Client, None]:
+) -> AsyncGenerator[Client]:
     """Create an authenticated supernote client."""
 
     token = auth_headers["x-access-token"]
@@ -323,12 +323,12 @@ async def authenticated_client(
 
 
 @pytest.fixture
-def device_client(authenticated_client: Client) -> Generator[DeviceClient, None, None]:
+def device_client(authenticated_client: Client) -> Generator[DeviceClient]:
     """Create a DeviceClient."""
     yield DeviceClient(authenticated_client)
 
 
 @pytest.fixture
-def web_client(authenticated_client: Client) -> Generator[WebClient, None, None]:
+def web_client(authenticated_client: Client) -> Generator[WebClient]:
     """Create a WebClient."""
     yield WebClient(authenticated_client)

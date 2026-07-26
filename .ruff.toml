@@ -1,5 +1,5 @@
 target-version = "py313"
 
 [lint]
+select = ["E", "F", "W", "I"]
 ignore = ["E501"]
-extend-select = ["I"]
