@@ -1,6 +1,9 @@
-import pytest
+from unittest.mock import patch
 
-from supernote.client.client import Client
+import pytest
+from aiohttp.test_utils import TestClient
+
+from supernote.client.exceptions import ApiException
 from supernote.client.summary import SummaryClient
 from supernote.models.summary import (
     AddSummaryDTO,
@@ -9,12 +12,7 @@ from supernote.models.summary import (
     UpdateSummaryDTO,
     UpdateSummaryGroupDTO,
 )
-
-
-@pytest.fixture
-def summary_client(authenticated_client: Client) -> SummaryClient:
-    """Create a SummaryClient."""
-    return SummaryClient(authenticated_client)
+from supernote.server.exceptions import SupernoteError
 
 
 async def test_summary_tags_crud(summary_client: SummaryClient) -> None:
@@ -200,3 +198,131 @@ async def test_advanced_queries(summary_client: SummaryClient) -> None:
     summary = id_response.summary_do_list[0]
     assert summary.id == summary_id
     assert summary.content == "Advanced Test content"
+
+
+async def test_download_summary_handwriting_not_found(
+    summary_client: SummaryClient,
+) -> None:
+    add_dto = AddSummaryDTO(
+        content="No handwriting summary",
+        data_source="TEST",
+    )
+    add_response = await summary_client.add_summary(add_dto)
+    assert add_response.id
+    summary_id = add_response.id
+
+    with pytest.raises(Exception) as exc_info:
+        await summary_client.download_summary(summary_id)
+    assert "404" in str(exc_info.value) or "Handwriting data not found" in str(
+        exc_info.value
+    )
+
+
+async def test_summary_pagination_and_query_options(
+    summary_client: SummaryClient,
+) -> None:
+    resp = await summary_client.query_summaries(parent_uuid="group-xyz", page=2, size=5)
+    assert resp.success
+    assert resp.current_page == 2
+    assert resp.page_size == 5
+
+    group_resp = await summary_client.query_groups(page=3, size=10)
+    group_resp = await summary_client.query_groups(page=3, size=10)
+    assert group_resp.success
+    assert group_resp.current_page == 3
+    assert group_resp.page_size == 10
+
+    hash_query = QuerySummaryDTO(page=4, size=15)
+    hash_resp = await summary_client.query_summary_hash(hash_query)
+    assert hash_resp.success
+    assert hash_resp.current_page == 4
+    assert hash_resp.page_size == 15
+
+
+async def test_summary_route_error_handling(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    endpoints = [
+        ("/api/file/add/summary/tag", {"name": "tag"}),
+        ("/api/file/update/summary/tag", {"id": 1, "name": "tag"}),
+        ("/api/file/delete/summary/tag", {"id": 1}),
+        ("/api/file/query/summary/tag", {}),
+        ("/api/file/add/summary", {"content": "c"}),
+        ("/api/file/update/summary", {"id": 1, "content": "c"}),
+        ("/api/file/delete/summary", {"id": 1}),
+        ("/api/file/query/summary", {}),
+        (
+            "/api/file/add/summary/group",
+            {"name": "g", "uniqueIdentifier": "u", "md5Hash": "h"},
+        ),
+        (
+            "/api/file/update/summary/group",
+            {"id": 1, "name": "g", "uniqueIdentifier": "u", "md5Hash": "h"},
+        ),
+        ("/api/file/delete/summary/group", {"id": 1}),
+        ("/api/file/query/summary/group", {}),
+        ("/api/file/download/summary", {"id": 9999}),
+        ("/api/file/query/summary/hash", {}),
+        ("/api/file/query/summary/id", {}),
+    ]
+
+    endpoint_method_map = {
+        "/api/file/add/summary/tag": "add_tag",
+        "/api/file/update/summary/tag": "update_tag",
+        "/api/file/delete/summary/tag": "delete_tag",
+        "/api/file/query/summary/tag": "list_tags",
+        "/api/file/add/summary": "add_summary",
+        "/api/file/update/summary": "update_summary",
+        "/api/file/delete/summary": "delete_summary",
+        "/api/file/query/summary": "list_summaries",
+        "/api/file/add/summary/group": "add_group",
+        "/api/file/update/summary/group": "update_group",
+        "/api/file/delete/summary/group": "delete_group",
+        "/api/file/query/summary/group": "list_groups",
+        "/api/file/download/summary": "get_summary",
+        "/api/file/query/summary/hash": "list_summary_infos",
+        "/api/file/query/summary/id": "list_summaries_by_id",
+    }
+
+    for ep, payload in endpoints:
+        method_name = endpoint_method_map[ep]
+
+        # SupernoteError path -> 400
+        with patch.object(
+            client.app["summary_service"],
+            method_name,
+            side_effect=SupernoteError("Err", status_code=400),
+        ):
+            resp = await client.post(ep, json=payload, headers=auth_headers)
+            assert resp.status == 400
+
+        # Uncaught Exception path -> 500
+        with patch.object(
+            client.app["summary_service"],
+            method_name,
+            side_effect=Exception("Uncaught"),
+        ):
+            resp = await client.post(ep, json=payload, headers=auth_headers)
+            assert resp.status == 500
+
+
+async def test_upload_apply_summary_error(
+    client: TestClient, summary_client: SummaryClient
+) -> None:
+    with (
+        patch.object(
+            client.app["url_signer"],
+            "sign",
+            side_effect=SupernoteError("Sign error", status_code=400),
+        ),
+        pytest.raises(ApiException),
+    ):
+        await summary_client.upload_apply(file_name="test.txt", equipment_no="eq1")
+
+    with (
+        patch.object(
+            client.app["url_signer"], "sign", side_effect=Exception("Sign fail")
+        ),
+        pytest.raises(ApiException),
+    ):
+        await summary_client.upload_apply(file_name="test.txt", equipment_no="eq1")

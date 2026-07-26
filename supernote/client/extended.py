@@ -1,6 +1,9 @@
 """Client for Extended (Web) APIs."""
 
 from supernote.models.extended import (
+    FileProcessingStatusDTO,
+    FileProcessingStatusVO,
+    SystemTaskListVO,
     WebSearchRequestDTO,
     WebSearchResponseVO,
     WebSummaryListRequestDTO,
@@ -60,4 +63,21 @@ class ExtendedClient:
         )
         return await self._client.post_json(
             "/api/extended/transcript", WebTranscriptResponseVO, json=dto.to_dict()
+        )
+
+    async def get_processing_status(
+        self, file_ids: list[int]
+    ) -> FileProcessingStatusVO:
+        """Query processing status of files (Extension)."""
+        dto = FileProcessingStatusDTO(file_ids=file_ids)
+        return await self._client.post_json(
+            "/api/extended/file/processing/status",
+            FileProcessingStatusVO,
+            json=dto.to_dict(),
+        )
+
+    async def list_system_tasks(self) -> SystemTaskListVO:
+        """List recent system tasks (Extension)."""
+        return await self._client.get_json(
+            "/api/extended/system/tasks", SystemTaskListVO
         )

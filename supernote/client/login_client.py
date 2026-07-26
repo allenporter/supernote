@@ -17,9 +17,12 @@ from supernote.models.auth import (
     SendSmsVO,
     SmsLoginDTO,
     SmsLoginVO,
+    UserCheckDTO,
     UserPreAuthRequest,
     UserPreAuthResponse,
 )
+from supernote.models.base import BaseResponse
+from supernote.models.equipment import BindEquipmentDTO, UnbindEquipmentDTO
 
 from .client import Client
 from .exceptions import ApiException, SmsVerificationRequired
@@ -152,3 +155,37 @@ class LoginClient:
             if "verification code" in str(err):
                 raise SmsVerificationRequired(str(err), random_code_timestamp) from err
             raise
+
+    async def check_user_exists(self, email: str) -> BaseResponse:
+        """Check if a user exists on the server."""
+        payload = UserCheckDTO(email=email).to_dict()
+        return await self._client.post_json(
+            "/api/official/user/check/exists/server", BaseResponse, json=payload
+        )
+
+    async def bind_equipment(
+        self,
+        account: str,
+        equipment_no: str,
+        name: str = "Supernote",
+        total_capacity: str = "32000000",
+        flag: str = "1",
+    ) -> BaseResponse:
+        """Bind a device serial number to the user account."""
+        payload = BindEquipmentDTO(
+            account=account,
+            equipment_no=equipment_no,
+            name=name,
+            total_capacity=total_capacity,
+            flag=flag,
+        ).to_dict()
+        return await self._client.post_json(
+            "/api/terminal/user/bindEquipment", BaseResponse, json=payload
+        )
+
+    async def unlink_equipment(self, equipment_no: str) -> BaseResponse:
+        """Unlink/unbind a device serial number from the account."""
+        payload = UnbindEquipmentDTO(equipment_no=equipment_no).to_dict()
+        return await self._client.post_json(
+            "/api/terminal/equipment/unlink", BaseResponse, json=payload
+        )
