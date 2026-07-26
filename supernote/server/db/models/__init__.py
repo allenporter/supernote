@@ -1,6 +1,6 @@
 """Module for database models."""
 
-from . import (
+from . import (  # noqa: F401
     device,
     file,
     kv,

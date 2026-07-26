@@ -47,8 +47,8 @@ logger = logging.getLogger(__name__)
 
 
 __all__ = [
-    "FileEntity",
     "FileService",
+    "FileEntity",
 ]
 
 

@@ -4,11 +4,11 @@
 
 __all__ = [
     "auth",
-    "base",
-    "equipment",
     "file",
-    "schedule",
-    "summary",
-    "system",
     "user",
+    "equipment",
+    "schedule",
+    "system",
+    "summary",
+    "base",
 ]

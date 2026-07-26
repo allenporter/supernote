@@ -71,7 +71,7 @@ class TaskType(str, BaseEnum):
     def __new__(cls, value: str, friendly_name: str) -> "TaskType":
         obj = str.__new__(cls, value)
         obj._value_ = value
-        obj.friendly_name = friendly_name
+        setattr(obj, "friendly_name", friendly_name)
         return obj
 
     PAGE_HASHING = ("PAGE_HASHING", "hashing")
@@ -131,7 +131,7 @@ class ErrorCode(str, Enum):
     def __new__(cls, code: str, message: str) -> "ErrorCode":
         obj = str.__new__(cls, code)
         obj._value_ = code
-        obj.description = message
+        setattr(obj, "description", message)
         return obj
 
     SUCCESS = ("200", "Success")

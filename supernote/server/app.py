@@ -3,9 +3,8 @@ import importlib.resources
 import json
 import logging
 import time
-from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 import aiohttp_remotes
 from aiohttp import web

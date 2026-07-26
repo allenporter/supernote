@@ -9,6 +9,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import List
 
 # Add project root to sys.path so we can import supernote
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -144,8 +145,8 @@ async def run_ocr_pipeline(
     prompt_loader: PromptLoader,
     custom_type: str,
     out_dir: Path,
-    page_indices: list[int],
-) -> tuple[str, list[str], str]:
+    page_indices: List[int],
+) -> tuple[str, List[str], str]:
     """Extracts specified pages, runs OCR, and saves the aggregated transcript."""
     # Get OCR prompts
     try:
@@ -256,7 +257,7 @@ def save_meta_info(
     summary_model: str,
     ocr_prompt: str,
     summary_prompt: str,
-    page_files: list[str],
+    page_files: List[str],
 ) -> None:
     """Saves run metadata for reproducibility."""
     meta_info = {

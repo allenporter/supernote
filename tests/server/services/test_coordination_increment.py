@@ -38,3 +38,4 @@ async def test_increment_expiry(
 
     # 2. Verify TTL is roughly logic (hard to verify exact value without inspecting DB directly)
     # But we can verify "expired" behavior by mocking time or inserting expired row manually.
+    pass

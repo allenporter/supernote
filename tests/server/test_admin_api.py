@@ -44,7 +44,7 @@ async def setup_users(
     service = UserService(server_config.auth, coordination_service, session_manager)
 
     # Register Admin (Bootstrapping)
-    pw_md5 = hashlib.md5(b"pw").hexdigest()
+    pw_md5 = hashlib.md5("pw".encode()).hexdigest()
     await service.register(
         UserRegisterDTO(email="admin@example.com", password=pw_md5, user_name="Admin")
     )
@@ -115,7 +115,7 @@ async def test_admin_create_user(
     new_user = {
         "email": "newbie@example.com",
         "userName": "Newbie",
-        "password": hashlib.md5(b"password").hexdigest(),
+        "password": hashlib.md5("password".encode()).hexdigest(),
         "countryCode": "1",
     }
 
@@ -136,7 +136,7 @@ def admin_client(authenticated_client: Client) -> AdminClient:
 
 
 async def test_admin_update_password(admin_client: AdminClient) -> None:
-    md5_pwd = hashlib.md5(b"newpass123").hexdigest()
+    md5_pwd = hashlib.md5("newpass123".encode()).hexdigest()
     await admin_client.update_password(md5_pwd)
 
 
@@ -156,7 +156,7 @@ async def test_admin_force_password_reset(
 
     # 1. Reset user password
     target_email = "user@example.com"
-    new_pw = hashlib.md5(b"reset123").hexdigest()
+    new_pw = hashlib.md5("reset123".encode()).hexdigest()
 
     resp = await client.post(
         "/api/admin/users/password",

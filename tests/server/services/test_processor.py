@@ -242,17 +242,15 @@ async def test_page_hashing_orphan_cleanup(
         exists=lambda: True
     )
 
-    with (
-        patch(
-            "supernote.server.services.processor_modules.page_hashing.parse_metadata",
-            return_value=mock_metadata,
-        ),
-        patch(
+    with patch(
+        "supernote.server.services.processor_modules.page_hashing.parse_metadata",
+        return_value=mock_metadata,
+    ):
+        with patch(
             "supernote.server.services.processor_modules.page_hashing._parse_helper",
             return_value=mock_metadata,
-        ),
-    ):
-        await hashing_module.process(file_id, session_manager)
+        ):
+            await hashing_module.process(file_id, session_manager)
 
     async with session_manager.session() as session:
         contents = (

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+from typing import Optional
 
 from sqlalchemy import select, text
 
@@ -22,7 +23,7 @@ async def get_task(
     file_id: int,
     task_type: str,
     key: str,
-) -> SystemTaskDO | None:
+) -> Optional[SystemTaskDO]:
     """Retrieve a SystemTaskDO by file_id, task_type, and key."""
     async with session_manager.session() as session:
         return (
@@ -45,7 +46,7 @@ async def update_task_status(
     task_type: str,
     key: str,
     status: ProcessingStatus,
-    error: str | None = None,
+    error: Optional[str] = None,
 ) -> None:
     """Create or update a SystemTaskDO status atomically with retries for lock conflicts."""
     max_retries = DB_WRITE_MAX_RETRIES

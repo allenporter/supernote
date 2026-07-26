@@ -70,13 +70,11 @@ async def test_error_hash_mismatch_missing_blob(device_client: DeviceClient) -> 
 
 async def test_error_uncaught_exception(device_client: DeviceClient) -> None:
     # Trigger 500 by mocking an internal service to raise Exception
-    with (
-        patch(
-            "supernote.server.services.file.FileService.list_folder",
-            side_effect=Exception("BOOM"),
-        ),
-        pytest.raises(ApiException, match="500"),
+    with patch(
+        "supernote.server.services.file.FileService.list_folder",
+        side_effect=Exception("BOOM"),
     ):
-        await device_client.list_folder(path="/", equipment_no="test")
+        with pytest.raises(ApiException, match="500"):
+            await device_client.list_folder(path="/", equipment_no="test")
         # Check that BOOM is in the message (via inner attribute or re-raising)
         # The current Client implementation puts error_detail in the message.

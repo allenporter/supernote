@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Optional
 
 from mashumaro import field_options
 from mashumaro.config import BaseConfig
@@ -37,17 +38,17 @@ class SearchRequestDTO(DataClassJSONMixin):
     top_n: int = 5
     """Number of results to return (default: 5)."""
 
-    name_filter: str | None = field(
+    name_filter: Optional[str] = field(
         metadata=field_options(alias="nameFilter"), default=None
     )
     """Optional substring filter for notebook filenames."""
 
-    date_after: str | None = field(
+    date_after: Optional[str] = field(
         metadata=field_options(alias="dateAfter"), default=None
     )
     """Filter for notes created after this date (ISO 8601)."""
 
-    date_before: str | None = field(
+    date_before: Optional[str] = field(
         metadata=field_options(alias="dateBefore"), default=None
     )
     """Filter for notes created before this date (ISO 8601)."""
@@ -66,12 +67,12 @@ class TranscriptRequestDTO(DataClassJSONMixin):
     file_id: int = field(metadata=field_options(alias="fileId"))
     """The unique ID of the notebook."""
 
-    start_index: int | None = field(
+    start_index: Optional[int] = field(
         metadata=field_options(alias="startIndex"), default=None
     )
     """Optional 0-based start page index (inclusive)."""
 
-    end_index: int | None = field(
+    end_index: Optional[int] = field(
         metadata=field_options(alias="endIndex"), default=None
     )
     """Optional 0-based end page index (inclusive)."""
@@ -93,7 +94,7 @@ class SearchResultVO(DataClassJSONMixin):
     page_id: str = field(metadata=field_options(alias="pageId"))
     score: float
     text_preview: str = field(metadata=field_options(alias="textPreview"))
-    date: str | None = None
+    date: Optional[str] = None
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -119,7 +120,7 @@ class TranscriptResponseVO(BaseResponse):
     Used by: get_notebook_transcript (MCP)
     """
 
-    transcript: str | None = None
+    transcript: Optional[str] = None
 
     class Config(BaseConfig):
         serialize_by_alias = True

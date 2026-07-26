@@ -15,7 +15,7 @@ from supernote.server.config import ServerConfig
 from supernote.server.db.base import Base
 
 # Import all models so they are registered with Base.metadata
-from supernote.server.db.models import *  # noqa: F403
+from supernote.server.db.models import *  # noqa
 
 # ----------------------------------------------------------------------
 

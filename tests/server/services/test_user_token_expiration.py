@@ -11,7 +11,7 @@ from supernote.server.utils.hashing import hash_with_salt
 async def test_token_expiration_by_equipment(user_service: UserService) -> None:
     """Verify that token expiration depends on equipment type."""
     email = "exp_test@example.com"
-    pw_md5 = hashlib.md5(b"password123").hexdigest()
+    pw_md5 = hashlib.md5("password123".encode()).hexdigest()
     await user_service.register(UserRegisterDTO(email=email, password=pw_md5))
 
     # 1. Login as WEB (Default)

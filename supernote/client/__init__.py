@@ -28,15 +28,15 @@ from .api import Supernote
 from .client import Client
 
 __all__ = [
-    "Client",
     "Supernote",
-    "admin",
-    "auth",
-    "device",
-    "exceptions",
-    "extended",
+    "Client",
     "login_client",
+    "auth",
+    "web",
+    "device",
     "schedule",
     "summary",
-    "web",
+    "exceptions",
+    "extended",
+    "admin",
 ]

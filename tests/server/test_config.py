@@ -10,7 +10,7 @@ from supernote.server.config import ServerConfig
 
 
 @pytest.fixture(autouse=True)
-def patch_server_config() -> Generator[None]:
+def patch_server_config() -> Generator[None, None, None]:
     """Override the autouse fixture from conftest.py to do nothing.
 
     This ensures that ServerConfig.load() runs the real logic instead of returning a mock.

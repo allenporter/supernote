@@ -1,6 +1,7 @@
 import abc
 import logging
 import time
+from typing import Optional
 
 from supernote.models.base import ProcessingStatus
 from supernote.server.db.session import DatabaseSessionManager
@@ -27,6 +28,7 @@ class ProcessorModule(abc.ABC):
     @abc.abstractmethod
     def name(self) -> str:
         """Unique name of the module, used for logging."""
+        pass
 
     @property
     @abc.abstractmethod
@@ -34,9 +36,10 @@ class ProcessorModule(abc.ABC):
         """The Task Type this module handles (e.g., 'PNG', 'OCR').
         Matches the `task_type` column in `f_system_task`.
         """
+        pass
 
     def get_task_key(
-        self, page_index: int | None = None, page_id: str | None = None
+        self, page_index: Optional[int] = None, page_id: Optional[str] = None
     ) -> str:
         """Generate a unique task key for the given file and page.
         Returns 'page_{id}' if page_id exists.
@@ -51,8 +54,8 @@ class ProcessorModule(abc.ABC):
         self,
         file_id: int,
         session_manager: DatabaseSessionManager,
-        page_index: int | None = None,
-        page_id: str | None = None,
+        page_index: Optional[int] = None,
+        page_id: Optional[str] = None,
     ) -> bool:
         """Pre-flight check to determine if the module should execute.
 
@@ -76,8 +79,8 @@ class ProcessorModule(abc.ABC):
         self,
         file_id: int,
         session_manager: DatabaseSessionManager,
-        page_index: int | None = None,
-        page_id: str | None = None,
+        page_index: Optional[int] = None,
+        page_id: Optional[str] = None,
         **kwargs: object,
     ) -> None:
         """Execute the core module logic (CPU/IO intensive work).
@@ -94,13 +97,14 @@ class ProcessorModule(abc.ABC):
                   exceptions, logs the traceback, and sets the `f_system_task`
                   status to `FAILED` with the error message.
         """
+        pass
 
     async def run(
         self,
         file_id: int,
         session_manager: DatabaseSessionManager,
-        page_index: int | None = None,
-        page_id: str | None = None,
+        page_index: Optional[int] = None,
+        page_id: Optional[str] = None,
         **kwargs: object,
     ) -> bool:
         """The entry point for executing a module.

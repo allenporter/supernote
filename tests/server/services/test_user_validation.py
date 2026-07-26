@@ -27,7 +27,7 @@ async def test_register_invalid_email(user_service: UserService) -> None:
         "Abc..123@example.com",
     ]
 
-    pw_md5 = hashlib.md5(b"password").hexdigest()
+    pw_md5 = hashlib.md5("password".encode()).hexdigest()
     for email in invalid_emails:
         try:
             await user_service.register(
@@ -55,7 +55,7 @@ async def test_register_valid_email(user_service: UserService) -> None:
         "firstname-lastname@example.com",
     ]
 
-    pw_md5 = hashlib.md5(b"password").hexdigest()
+    pw_md5 = hashlib.md5("password".encode()).hexdigest()
     for email in valid_emails:
         # Should not raise
         try:

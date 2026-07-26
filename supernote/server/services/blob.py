@@ -1,9 +1,9 @@
 import hashlib
 import secrets
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import AsyncGenerator
 
 import aiofiles
 import aiofiles.os
@@ -23,14 +23,15 @@ class BlobStorage(ABC):
 
     @abstractmethod
     async def put(
-        self, bucket: str, key: str, stream: AsyncGenerator[bytes] | bytes
+        self, bucket: str, key: str, stream: AsyncGenerator[bytes, None] | bytes
     ) -> BlobMetadata:
         """Write blob to storage."""
+        pass
 
     @abstractmethod
     def get(
         self, bucket: str, key: str, start: int | None = None, end: int | None = None
-    ) -> AsyncGenerator[bytes]:
+    ) -> AsyncGenerator[bytes, None]:
         """Read blob content.
 
         Args:
@@ -39,14 +40,17 @@ class BlobStorage(ABC):
             start: Start byte position (inclusive).
             end: End byte position (inclusive).
         """
+        pass
 
     @abstractmethod
     async def delete(self, bucket: str, key: str) -> None:
         """Delete blob."""
+        pass
 
     @abstractmethod
     async def exists(self, bucket: str, key: str) -> bool:
         """Check if blob exists."""
+        pass
 
     @abstractmethod
     async def get_metadata(
@@ -62,10 +66,12 @@ class BlobStorage(ABC):
         Returns:
             BlobMetadata with size and optional content_md5.
         """
+        pass
 
     @abstractmethod
     def get_blob_path(self, bucket: str, key: str) -> Path:
         """Get physical path to the blob (optional, useful for serving files)."""
+        pass
 
 
 class LocalBlobStorage(BlobStorage):
@@ -88,7 +94,7 @@ class LocalBlobStorage(BlobStorage):
         return self.root / clean_bucket / prefix / clean_key
 
     async def put(
-        self, bucket: str, key: str, stream: AsyncGenerator[bytes] | bytes
+        self, bucket: str, key: str, stream: AsyncGenerator[bytes, None] | bytes
     ) -> BlobMetadata:
         """Write blob to storage."""
         blob_path = self._get_path(bucket, key)
@@ -129,7 +135,7 @@ class LocalBlobStorage(BlobStorage):
 
     async def get(
         self, bucket: str, key: str, start: int | None = None, end: int | None = None
-    ) -> AsyncGenerator[bytes]:
+    ) -> AsyncGenerator[bytes, None]:
         """Read blob content."""
         path = self._get_path(bucket, key)
         if not await aiofiles.os.path.exists(path):

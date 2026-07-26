@@ -2,6 +2,7 @@ import asyncio
 import io
 import logging
 from functools import partial
+from typing import Optional
 
 from sqlalchemy import select
 
@@ -44,8 +45,8 @@ class PngConversionModule(ProcessorModule):
         self,
         file_id: int,
         session_manager: DatabaseSessionManager,
-        page_index: int | None = None,
-        page_id: str | None = None,
+        page_index: Optional[int] = None,
+        page_id: Optional[str] = None,
         **kwargs: object,
     ) -> None:
         """

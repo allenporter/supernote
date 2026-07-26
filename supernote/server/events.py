@@ -1,8 +1,7 @@
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Awaitable, Callable, Dict, List, Type
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +9,8 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Event:
     """Base class for all events."""
+
+    pass
 
 
 @dataclass
@@ -36,9 +37,9 @@ class LocalEventBus:
     """A simple in-process event bus using asyncio."""
 
     def __init__(self) -> None:
-        self._subscribers: dict[type[Event], list[EventHandler]] = {}
+        self._subscribers: Dict[Type[Event], List[EventHandler]] = {}
 
-    def subscribe(self, event_type: type[Event], handler: EventHandler) -> None:
+    def subscribe(self, event_type: Type[Event], handler: EventHandler) -> None:
         """Subscribe a handler to an event type."""
         if event_type not in self._subscribers:
             self._subscribers[event_type] = []

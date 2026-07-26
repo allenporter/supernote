@@ -2,6 +2,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
+from typing import List, Optional
 
 import numpy as np
 from sqlalchemy import select
@@ -24,7 +25,7 @@ class SearchResult:
     page_id: str
     score: float
     text_preview: str
-    date: str | None = None
+    date: Optional[str] = None
 
 
 class SearchService:
@@ -45,10 +46,10 @@ class SearchService:
         user_id: int,
         query: str,
         top_n: int = 5,
-        name_filter: str | None = None,
-        date_after: str | None = None,
-        date_before: str | None = None,
-    ) -> list[SearchResult]:
+        name_filter: Optional[str] = None,
+        date_after: Optional[str] = None,
+        date_before: Optional[str] = None,
+    ) -> List[SearchResult]:
         """
         Search for notebook chunks similar to the query.
 
@@ -65,8 +66,8 @@ class SearchService:
             return []
 
         # Parse date filters
-        after_dt: datetime | None = None
-        before_dt: datetime | None = None
+        after_dt: Optional[datetime] = None
+        before_dt: Optional[datetime] = None
         try:
             if date_after:
                 after_dt = datetime.strptime(date_after, "%Y-%m-%d")
@@ -175,10 +176,10 @@ class SearchService:
         self,
         user_id: int,
         file_id: int,
-        page_index: int | None = None,
-        start_index: int | None = None,
-        end_index: int | None = None,
-    ) -> str | None:
+        page_index: Optional[int] = None,
+        start_index: Optional[int] = None,
+        end_index: Optional[int] = None,
+    ) -> Optional[str]:
         """
         Retrieve the transcript for a notebook or a specific page range.
 
