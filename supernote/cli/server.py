@@ -25,29 +25,44 @@ def serve_run(args: argparse.Namespace) -> None:
             # Create system directory for database
             (tmp_path / "system").mkdir(parents=True, exist_ok=True)
 
-            # Set environment variables for the server process
-            os.environ["SUPERNOTE_EPHEMERAL"] = "true"
-            if not os.getenv("SUPERNOTE_PORT"):
-                os.environ["SUPERNOTE_PORT"] = "8080"
-            if not os.getenv("SUPERNOTE_HOST"):
-                os.environ["SUPERNOTE_HOST"] = "127.0.0.1"
-            os.environ["SUPERNOTE_STORAGE_DIR"] = str(tmp_path)
+            env_keys = [
+                "SUPERNOTE_EPHEMERAL",
+                "SUPERNOTE_PORT",
+                "SUPERNOTE_HOST",
+                "SUPERNOTE_STORAGE_DIR",
+            ]
+            old_env = {k: os.environ.get(k) for k in env_keys}
 
-            print(f"Using ephemeral mode with storage directory: {tmp_path}")
-            print(f"Created default user: {DEBUG_EMAIL} / {DEBUG_PASSWORD}")
-            print("Run command to login:")
-            print(
-                "  "
-                + LOGIN_COMMAND.format(
-                    SUPERNOTE_HOST=os.getenv("SUPERNOTE_HOST"),
-                    SUPERNOTE_PORT=os.getenv("SUPERNOTE_PORT"),
-                    DEBUG_EMAIL=DEBUG_EMAIL,
-                    DEBUG_PASSWORD=DEBUG_PASSWORD,
+            try:
+                # Set environment variables for the server process
+                os.environ["SUPERNOTE_EPHEMERAL"] = "true"
+                if not os.getenv("SUPERNOTE_PORT"):
+                    os.environ["SUPERNOTE_PORT"] = "8080"
+                if not os.getenv("SUPERNOTE_HOST"):
+                    os.environ["SUPERNOTE_HOST"] = "127.0.0.1"
+                os.environ["SUPERNOTE_STORAGE_DIR"] = str(tmp_path)
+
+                print(f"Using ephemeral mode with storage directory: {tmp_path}")
+                print(f"Created default user: {DEBUG_EMAIL} / {DEBUG_PASSWORD}")
+                print("Run command to login:")
+                print(
+                    "  "
+                    + LOGIN_COMMAND.format(
+                        SUPERNOTE_HOST=os.getenv("SUPERNOTE_HOST"),
+                        SUPERNOTE_PORT=os.getenv("SUPERNOTE_PORT"),
+                        DEBUG_EMAIL=DEBUG_EMAIL,
+                        DEBUG_PASSWORD=DEBUG_PASSWORD,
+                    )
                 )
-            )
-            print("Run command to test:")
-            print("  " + EXAMPLE_COMMAND)
-            server_app.run(args)
+                print("Run command to test:")
+                print("  " + EXAMPLE_COMMAND)
+                server_app.run(args)
+            finally:
+                for k, v in old_env.items():
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
     else:
         server_app.run(args)
 
