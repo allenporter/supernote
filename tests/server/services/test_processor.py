@@ -113,10 +113,7 @@ async def test_processor_handles_event(processor_service: ProcessorService) -> N
 
 
 async def test_processor_deduplication(processor_service: ProcessorService) -> None:
-    queue_mock = MagicMock()
-    queue_mock.put = AsyncMock()
-    queue_mock.qsize.return_value = 0
-    processor_service.queue = queue_mock  # Mock queue to prevent actual logic
+    processor_service.queue = AsyncMock()  # Mock queue to prevent actual logic
 
     event = NoteUpdatedEvent(file_id=123, user_id=1, file_path="test.note")
 
