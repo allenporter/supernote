@@ -153,3 +153,6 @@ data
 storage
 config/
 private/
+
+# Merge conflict rejects
+*.rej
