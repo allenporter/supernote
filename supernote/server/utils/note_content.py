@@ -1,6 +1,5 @@
 import re
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +9,7 @@ from supernote.server.db.models.note_processing import NotePageContentDO
 
 async def get_page_content_by_id(
     session: AsyncSession, file_id: int, page_id: str
-) -> Optional[NotePageContentDO]:
+) -> NotePageContentDO | None:
     """Retrieve NotePageContentDO by file_id and page_id using an existing session."""
     return (
         (
@@ -48,8 +47,8 @@ def infer_page_date(page_id: str) -> datetime | None:
 def format_page_metadata(
     page_index: int,
     page_id: str,
-    file_name: Optional[str] = None,
-    notebook_create_time: Optional[int] = None,
+    file_name: str | None = None,
+    notebook_create_time: int | None = None,
     include_section_divider: bool = False,
 ) -> str:
     """Formats a consistent metadata block for a notebook page.

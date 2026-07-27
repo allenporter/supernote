@@ -1,7 +1,7 @@
 """Tests for the login flow."""
 
 import hashlib
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 import aiohttp
 import aiohttp.test_utils

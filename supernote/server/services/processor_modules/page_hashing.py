@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from functools import partial
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy import delete, select
 
@@ -53,8 +53,8 @@ class PageHashingModule(ProcessorModule):
         self,
         file_id: int,
         session_manager: DatabaseSessionManager,
-        page_index: Optional[int] = None,
-        page_id: Optional[str] = None,
+        page_index: int | None = None,
+        page_id: str | None = None,
     ) -> bool:
         """Hashing acts as the change detector, so it MUST run every time the file is processed."""
         return True
@@ -63,8 +63,8 @@ class PageHashingModule(ProcessorModule):
         self,
         file_id: int,
         session_manager: DatabaseSessionManager,
-        page_index: Optional[int] = None,
-        page_id: Optional[str] = None,
+        page_index: int | None = None,
+        page_id: str | None = None,
         **kwargs: object,
     ) -> None:
         """Parses the .note file, computes page hashes, and updates NotePageContentDO."""

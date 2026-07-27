@@ -32,7 +32,7 @@ def mcp_url(server_config: ServerConfig) -> str:
 
 
 @pytest.fixture(autouse=True)
-async def setup_service(client: Any) -> AsyncGenerator[None, None]:
+async def setup_service(client: Any) -> AsyncGenerator[None]:
     """Setup the MCP service."""
     yield
 
@@ -74,7 +74,7 @@ async def notebook_file_id(
 
 
 @pytest.fixture
-def mock_gemini_service() -> Generator[None, None, None]:
+def mock_gemini_service() -> Generator[None]:
     """Fixture to mock Gemini service."""
     # 1. Mock Gemini Service to avoid network calls
     mock_embedding_response = AsyncMock()
@@ -96,19 +96,21 @@ def mock_gemini_service() -> Generator[None, None, None]:
 @asynccontextmanager
 async def mcp_session(
     mcp_url: str, auth_headers: dict[str, str]
-) -> AsyncGenerator[ClientSession, None]:
+) -> AsyncGenerator[ClientSession]:
     """Helper context manager for MCP sessions to avoid AnyIO task group leaks in fixtures."""
     async with httpx.AsyncClient(headers=auth_headers) as http_client:
         # Wait a moment for server to be ready
         await asyncio.sleep(0.5)
-        async with streamable_http_client(mcp_url, http_client=http_client) as (
-            read_stream,
-            write_stream,
-            _,
+        async with (
+            streamable_http_client(mcp_url, http_client=http_client) as (
+                read_stream,
+                write_stream,
+                _,
+            ),
+            ClientSession(read_stream, write_stream) as session,
         ):
-            async with ClientSession(read_stream, write_stream) as session:
-                await session.initialize()
-                yield session
+            await session.initialize()
+            yield session
 
 
 async def test_mcp_list_tools(

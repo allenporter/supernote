@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
 
 
-async def _stream_upload_field(field: BodyPartReader) -> AsyncGenerator[bytes, None]:
+async def _stream_upload_field(field: BodyPartReader) -> AsyncGenerator[bytes]:
     """Stream chunks from a multipart field."""
     while True:
         chunk = await field.read_chunk()
@@ -166,7 +166,7 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
                     for i in range(1, params.total_chunks + 1)
                 ]
 
-                async def combined_stream() -> AsyncGenerator[bytes, None]:
+                async def combined_stream() -> AsyncGenerator[bytes]:
                     for source_key in source_keys:
                         async for chunk in blob_storage.get(
                             USER_DATA_BUCKET, source_key

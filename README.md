@@ -227,7 +227,7 @@ You can use the built-in parser outside of the cloud server:
 from supernote.notebook import parse_notebook
 
 note = parse_notebook("journal.note")
-note.to_pdf("journal.pdf") # Multi-layer PDF conversion
+note.to_pdf("journal.pdf")  # Multi-layer PDF conversion
 ```
 
 The notebook parser is a fork of the excellent [supernote-tool](https://github.com/jya-dev/supernote-tool) with updated dependencies and modern type hints.

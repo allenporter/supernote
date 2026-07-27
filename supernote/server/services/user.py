@@ -4,7 +4,6 @@ import re
 import secrets
 import time
 from dataclasses import dataclass, field
-from typing import Optional
 
 import jwt
 from mashumaro.mixins.json import DataClassJSONMixin
@@ -44,7 +43,7 @@ MD5_REGEX = r"^[a-f0-9]{32}$"
 class SessionState(DataClassJSONMixin):
     token: str
     email: str
-    equipment_no: Optional[str] = None
+    equipment_no: str | None = None
     created_at: float = field(default_factory=time.time)
     last_active_at: float = field(default_factory=time.time)
 
@@ -236,10 +235,10 @@ class UserService:
         account: str,
         password_hash: str,
         timestamp: str,
-        equipment_no: Optional[str] = None,
+        equipment_no: str | None = None,
         equipment: Equipment = Equipment.WEB,
-        ip: Optional[str] = None,
-        login_method: Optional[str] = None,
+        ip: str | None = None,
+        login_method: str | None = None,
     ) -> LoginVO | None:
         user = await self._get_user_do(account)
         if not user or not user.is_active:

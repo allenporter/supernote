@@ -1,5 +1,4 @@
 import time
-from typing import Optional
 
 from sqlalchemy import BigInteger, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -49,24 +48,24 @@ class ScheduleTaskDO(Base):
     title: Mapped[str] = mapped_column(String, nullable=False)
     """A summary of the task."""
 
-    detail: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    detail: Mapped[str | None] = mapped_column(String, nullable=True)
     """The task description."""
 
     # Status: 'completed', 'needsAction', etc.
     status: Mapped[str] = mapped_column(String, default="needsAction")
     """The status of the task."""
 
-    importance: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    importance: Mapped[str | None] = mapped_column(String, nullable=True)
     """The importance of the task."""
 
-    due_time: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    due_time: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     """Due time in epoch milliseconds."""
 
-    completed_time: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    completed_time: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     """Completed time in epoch milliseconds."""
 
     # RRule string
-    recurrence: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    recurrence: Mapped[str | None] = mapped_column(String, nullable=True)
     """The recurrence rule for the task."""
 
     is_reminder_on: Mapped[bool] = mapped_column(default=False)

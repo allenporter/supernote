@@ -13,7 +13,6 @@ async def test_rate_limiter_allow(coordination_service: CoordinationService) -> 
     # Check it exists in DB (integration verification)
     # We need to know the bucket logic to verify key
     # But checking if check passes is enough for blackbox.
-    pass
 
 
 async def test_rate_limiter_exceed(coordination_service: CoordinationService) -> None:

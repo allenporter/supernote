@@ -1,6 +1,5 @@
 import json
 import logging
-from typing import Optional
 
 from supernote.server.config import ServerConfig
 from supernote.server.db.session import DatabaseSessionManager
@@ -37,8 +36,8 @@ class GeminiEmbeddingModule(ProcessorModule):
         self,
         file_id: int,
         session_manager: DatabaseSessionManager,
-        page_index: Optional[int] = None,
-        page_id: Optional[str] = None,
+        page_index: int | None = None,
+        page_id: str | None = None,
     ) -> bool:
         if not page_id:
             return False
@@ -65,8 +64,8 @@ class GeminiEmbeddingModule(ProcessorModule):
         self,
         file_id: int,
         session_manager: DatabaseSessionManager,
-        page_index: Optional[int] = None,
-        page_id: Optional[str] = None,
+        page_index: int | None = None,
+        page_id: str | None = None,
         **kwargs: object,
     ) -> None:
         if not page_id:

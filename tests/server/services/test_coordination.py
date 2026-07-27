@@ -1,4 +1,4 @@
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 import freezegun
 import pytest
@@ -13,7 +13,7 @@ TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 
 
 @pytest.fixture
-async def local_coordination_service() -> AsyncGenerator[CoordinationService, None]:
+async def local_coordination_service() -> AsyncGenerator[CoordinationService]:
     """Create a local coordination service for testing."""
     manager = DatabaseSessionManager(TEST_DB_URL)
     assert manager._engine

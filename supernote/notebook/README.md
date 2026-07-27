@@ -54,5 +54,5 @@ For more control, you can use specific converters directly:
 from supernote.notebook import PdfConverter
 
 converter = PdfConverter(notebook)
-pdf_data = converter.convert(0) # Convert specific page
+pdf_data = converter.convert(0)  # Convert specific page
 ```

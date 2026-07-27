@@ -47,8 +47,6 @@ class SupernoteError(Exception):
 class FileError(SupernoteError):
     """Base class for file-related errors."""
 
-    pass
-
 
 class FileNotFound(FileError):
     """Raised when a file or directory is not found."""
@@ -106,8 +104,6 @@ class QuotaExceeded(FileError):
 
 class SummaryError(SupernoteError):
     """Base class for summary-related errors."""
-
-    pass
 
 
 class SummaryNotFound(SummaryError):

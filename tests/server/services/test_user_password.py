@@ -18,8 +18,8 @@ async def test_retrieve_password_success(
 ) -> None:
     # Setup
     email = "forgot@example.com"
-    old_pw = hashlib.md5("old".encode()).hexdigest()
-    new_pw = hashlib.md5("new".encode()).hexdigest()
+    old_pw = hashlib.md5(b"old").hexdigest()
+    new_pw = hashlib.md5(b"new").hexdigest()
 
     # Create user directly in DB
     async with session_manager.session() as session:
@@ -47,6 +47,6 @@ async def test_retrieve_password_invalid_md5(user_service: UserService) -> None:
 
 async def test_retrieve_password_user_not_found(user_service: UserService) -> None:
     result = await user_service.retrieve_password(
-        "nonexistent@example.com", hashlib.md5("pw".encode()).hexdigest()
+        "nonexistent@example.com", hashlib.md5(b"pw").hexdigest()
     )
     assert result is False
