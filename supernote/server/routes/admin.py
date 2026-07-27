@@ -6,6 +6,7 @@ from sqlalchemy import delete, select
 
 from supernote.models.auth import UserVO
 from supernote.models.base import BaseResponse, TaskType, create_error_response
+from supernote.models.system import QueueStatusVO
 from supernote.models.user import UserRegisterDTO
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import SystemTaskDO
@@ -137,7 +138,6 @@ async def handle_start_queue(request: web.Request) -> web.Response:
 async def handle_queue_status(request: web.Request) -> web.Response:
     """Get the queue status."""
     processor_service = request.app["processor_service"]
-    from supernote.models.system import QueueStatusVO
 
     status = QueueStatusVO(
         paused=not processor_service.is_processing_enabled(),

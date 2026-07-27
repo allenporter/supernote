@@ -1,4 +1,5 @@
 import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -9,6 +10,8 @@ from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus, NoteDeletedEvent, NoteUpdatedEvent
+from supernote.server.services.coordination import SqliteCoordinationService
+from supernote.server.services.gemini import GeminiService
 from supernote.server.services.processor import ProcessorService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.services.processor_modules.page_hashing import PageHashingModule
@@ -350,8 +353,6 @@ async def test_start_calls_poll_loop(processor_service: ProcessorService) -> Non
 async def test_recover_stalled_tasks_time_threshold(
     processor_service: ProcessorService, session_manager: DatabaseSessionManager
 ) -> None:
-    import time
-
     now_ms = int(time.time() * 1000)
     stale_ms = now_ms - (600 * 1000)  # 10 mins ago
 
@@ -426,7 +427,6 @@ async def test_page_parallelism(
 
 async def test_gemini_concurrency_limit() -> None:
     max_concurrency = 2
-    from supernote.server.services.gemini import GeminiService
 
     # Use patch to avoid actually calling the API
     with patch("google.genai.Client") as mock_client_cls:
@@ -462,8 +462,6 @@ async def test_processor_pause_resume(
     session_manager: DatabaseSessionManager,
     mock_file_service: MagicMock,
 ) -> None:
-    from supernote.server.services.coordination import SqliteCoordinationService
-
     coordination_service = SqliteCoordinationService(session_manager)
 
     processor_service = ProcessorService(

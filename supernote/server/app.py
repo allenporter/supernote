@@ -11,6 +11,7 @@ import aiohttp_remotes
 from aiohttp import web
 from aiohttp.web_urldispatcher import SystemRoute
 from aiohttp_asgi import ASGIResource
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import select
 from yarl import URL
 
@@ -402,7 +403,6 @@ def create_app(config: ServerConfig) -> web.Application:
     app.router.add_static("/static/", path=static_path, name="static")
 
     if config.metrics_enabled:
-        from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
         @public_route
         async def handle_metrics(request: web.Request) -> web.Response:

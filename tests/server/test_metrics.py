@@ -7,6 +7,7 @@ from prometheus_client import REGISTRY
 
 from supernote.server.app import create_app
 from supernote.server.config import ServerConfig
+from supernote.server.services.gemini import GeminiService
 
 
 async def test_metrics_endpoint(client: TestClient) -> None:
@@ -92,8 +93,6 @@ async def test_db_session_metrics(client: TestClient) -> None:
 
 async def test_gemini_service_metrics() -> None:
     """Verify that GeminiService tracks api call counts and durations."""
-    from supernote.server.services.gemini import GeminiService
-
     gemini = GeminiService(api_key="mock-api-key")
 
     # Mock model API client

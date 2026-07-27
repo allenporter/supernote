@@ -24,7 +24,11 @@ from supernote.server.services.processor_modules.png_conversion import (
 from supernote.server.services.processor_modules.summary import SummaryModule
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
-from supernote.server.utils.paths import get_summary_id, get_transcript_id
+from supernote.server.utils.paths import (
+    get_page_png_path,
+    get_summary_id,
+    get_transcript_id,
+)
 
 
 @pytest.fixture
@@ -164,8 +168,6 @@ async def test_full_processing_pipeline_with_real_file(
 
         # 4. Verify PNGs exist in cache
         for page in pages:
-            from supernote.server.utils.paths import get_page_png_path
-
             png_path = get_page_png_path(file_id, page.page_id)
             assert await blob_storage.exists(CACHE_BUCKET, png_path)
 
