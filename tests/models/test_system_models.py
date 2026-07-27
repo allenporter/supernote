@@ -8,6 +8,7 @@ from supernote.models.system import (
     FileChunkVO,
     FileUploadApplyLocalVO,
     PageDTO,
+    ReferenceInfoVO,
     ReferenceQueryDTO,
     ReferenceRespVO,
 )
@@ -82,8 +83,6 @@ def test_reference_query_dto() -> None:
 
 def test_reference_resp_vo() -> None:
     # Test nested if ReferenceInfoVO works
-    from supernote.models.system import ReferenceInfoVO
-
     info = ReferenceInfoVO(serial="S1", name="N1", value="V1")
     vo = ReferenceRespVO(param_list=[info], random="RND")
 

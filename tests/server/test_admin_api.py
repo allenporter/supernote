@@ -3,12 +3,14 @@ from typing import Any
 
 import jwt
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from supernote.client.admin import AdminClient
 from supernote.client.client import Client
+from supernote.models.base import ProcessingStatus
 from supernote.models.user import UserRegisterDTO
 from supernote.server.config import ServerConfig
+from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.coordination import CoordinationService
@@ -162,10 +164,6 @@ async def test_admin_force_password_reset(
 
     # 2. Verify user can login with new password logic (simulated by checking DB)
     async with session_manager.session() as session:
-        from sqlalchemy import select
-
-        from supernote.server.db.models.user import UserDO
-
         result = await session.execute(
             select(UserDO).where(UserDO.email == target_email)
         )
@@ -241,9 +239,6 @@ async def test_admin_reprocess(
 
     # Insert a dummy SystemTaskDO
     async with session_manager.session() as session:
-        from supernote.models.base import ProcessingStatus
-        from supernote.server.db.models.note_processing import SystemTaskDO
-
         task = SystemTaskDO(
             file_id=999,
             task_type="SUMMARY_GENERATION",
@@ -272,10 +267,6 @@ async def test_admin_reprocess(
 
     # 3. Verify task is deleted in DB
     async with session_manager.session() as session:
-        from sqlalchemy import select
-
-        from supernote.server.db.models.note_processing import SystemTaskDO
-
         result = await session.execute(
             select(SystemTaskDO).where(SystemTaskDO.file_id == 999)
         )

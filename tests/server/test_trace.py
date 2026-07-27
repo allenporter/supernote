@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 from aiohttp.test_utils import TestClient
 
+from supernote.server.app import is_binary_content_type, try_parse_json
+
 
 @pytest.fixture
 def mock_trace_log(tmp_path: Path) -> str:
@@ -55,8 +57,6 @@ async def test_trace_logging(
 
 
 def test_try_parse_json() -> None:
-    from supernote.server.app import try_parse_json
-
     # Valid JSON
     assert try_parse_json('{"a": 1}') == {"a": 1}
     # Invalid JSON
@@ -68,8 +68,6 @@ def test_try_parse_json() -> None:
 
 
 def test_binary_content_type_check() -> None:
-    from supernote.server.app import is_binary_content_type
-
     assert is_binary_content_type("application/octet-stream")
     assert is_binary_content_type("image/png")
     assert is_binary_content_type("application/pdf")

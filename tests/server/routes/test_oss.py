@@ -4,7 +4,7 @@ import pytest
 
 from supernote.client.client import Client
 from supernote.client.device import DeviceClient
-from supernote.client.exceptions import ApiException
+from supernote.client.exceptions import ApiException, ForbiddenException
 from supernote.models.file_common import FileUploadApplyLocalVO
 
 TEST_USER = "user@example.com"
@@ -87,10 +87,6 @@ async def test_oss_invalid_signature(
     tampered_url = parsed._replace(query=tampered_query).geturl()
 
     # Client should raise ForbiddenException (403)
-    import pytest
-
-    from supernote.client.exceptions import ForbiddenException
-
     with pytest.raises(ForbiddenException):
         await authenticated_client.get(tampered_url)
 

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.exceptions import HashMismatch
 from supernote.server.services.blob import LocalBlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.services.user import UserService
@@ -130,8 +131,6 @@ async def test_finish_upload_detects_corruption(
 
     # 2. Try to finish upload with WRONG hash
     # This should raise HashMismatch (or similar)
-    from supernote.server.exceptions import HashMismatch
-
     with pytest.raises(HashMismatch, match="Hash mismatch"):
         await file_service.finish_upload(
             user=user_email,

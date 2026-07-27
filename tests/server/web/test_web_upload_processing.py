@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from supernote.client.web import WebClient
+from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import SystemTaskDO
 
 
@@ -29,8 +30,6 @@ async def test_web_upload_triggers_processing(
 
     for _ in range(max_retries):
         # We need to find the file_id first
-        from supernote.server.db.models.file import UserFileDO
-
         stmt = select(UserFileDO.id).where(UserFileDO.file_name == file_name)
         res = await db_session.execute(stmt)
         file_id = res.scalar()

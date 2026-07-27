@@ -47,7 +47,7 @@ jobs:
 
       - name: Run Ruff Format
         run: |
-          ruff format .
+          ruff format --check .
       - name: Static typing with ty
         run: |
           ty check . --ignore unresolved-import

@@ -1,4 +1,5 @@
 import pytest
+from freezegun import freeze_time
 
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.utils.rate_limit import RateLimiter, RateLimitExceeded
@@ -32,8 +33,6 @@ async def test_rate_limiter_exceed(coordination_service: CoordinationService) ->
 
 
 async def test_rate_limiter_expiry(coordination_service: CoordinationService) -> None:
-    from freezegun import freeze_time
-
     limiter = RateLimiter(coordination_service)
     key = "expiry:test"
     limit = 1

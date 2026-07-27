@@ -88,8 +88,6 @@ class AdminClient:
 
     async def get_queue_status(self) -> QueueStatusVO:
         """Get the background queue processing status."""
-        from supernote.models.system import QueueStatusVO
-
         return await self.client.get_json("/api/admin/queue/status", QueueStatusVO)
 
     async def admin_reprocess(self, task_type: str, file_id: int | None = None) -> None:
