@@ -1,0 +1,9 @@
+# Normalise line endings so a contributor's platform does not affect the diff.
+* text=auto eol=lf
+
+# Binary fixtures: never normalise, never diff line by line.
+*.png binary
+*.jpg binary
+*.ico binary
+*.note binary
+*.sqlite binary
