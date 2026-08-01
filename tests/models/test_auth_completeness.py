@@ -2,6 +2,8 @@
 
 from supernote.models.auth import (
     EmailDTO,
+    LoginDTO,
+    LoginMethod,
     ValidCodeDTO,
 )
 
@@ -18,3 +20,29 @@ def test_valid_code_dto() -> None:
     data = dto.to_dict()
     assert data["validCodeKey"] == "key123"
     assert data["validCode"] == "123456"
+
+
+def test_login_dto_accepts_a_numeric_login_method() -> None:
+    """The Partner apps send loginMethod as a JSON number."""
+    dto = LoginDTO.from_dict(
+        {
+            "account": "user@example.com",
+            "password": "deadbeef",
+            "timestamp": "1785468843354",
+            "loginMethod": 2,
+        }
+    )
+    assert dto.login_method is LoginMethod.EMAIL
+
+
+def test_login_dto_accepts_a_string_login_method() -> None:
+    """The device sends it as a string."""
+    dto = LoginDTO.from_dict(
+        {
+            "account": "user@example.com",
+            "password": "deadbeef",
+            "timestamp": "1785468843354",
+            "loginMethod": "2",
+        }
+    )
+    assert dto.login_method is LoginMethod.EMAIL
