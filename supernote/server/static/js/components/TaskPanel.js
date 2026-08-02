@@ -48,7 +48,7 @@ export default {
 
         // Group Name Map
         const groupNameMap = computed(() => {
-            const map = { '0': 'Inbox' };
+            const map = { '0': 'General' };
             taskGroups.value.forEach(g => {
                 map[g.id] = g.title;
             });
@@ -153,22 +153,6 @@ export default {
             return due.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
         }
 
-        function parseNotebookLink(links) {
-            if (!links) return null;
-            try {
-                const decoded = atob(links);
-                const obj = JSON.parse(decoded);
-                if (obj.path || obj.appName) {
-                    const filename = obj.path ? obj.path.split('/').pop() : 'Notebook';
-                    const pageStr = obj.page ? ` (p. ${obj.page})` : '';
-                    return `📓 ${filename}${pageStr}`;
-                }
-            } catch (e) {
-                return '📓 Linked Notebook';
-            }
-            return '📓 Linked Notebook';
-        }
-
         function selectFilterMode(filter) {
             selectedFilter.value = filter;
             selectedGroupId.value = null;
@@ -211,298 +195,216 @@ export default {
             handleSaveTask,
             handleCreateGroup,
             formatDueDate,
-            parseNotebookLink,
             selectFilterMode,
             selectGroup
         };
     },
     template: `
-    <div class="flex flex-col md:flex-row gap-8">
-        <!-- Sidebar Navigation -->
-        <aside class="w-full md:w-64 flex-shrink-0">
-            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-6">
-                <!-- Filters -->
-                <div>
-                    <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider px-3 mb-2">Tasks</h3>
-                    <nav class="space-y-1">
-                        <button @click="selectFilterMode('all')"
-                            :class="selectedFilter === 'all' && selectedGroupId === null ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-slate-600 hover:bg-slate-50'"
-                            class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-colors">
-                            <span class="flex items-center gap-2.5">
-                                <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
-                                </svg>
-                                All Tasks
-                            </span>
-                            <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{{ openTasksCount }}</span>
-                        </button>
-
-                        <button @click="selectFilterMode('today')"
-                            :class="selectedFilter === 'today' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-slate-600 hover:bg-slate-50'"
-                            class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-colors">
-                            <span class="flex items-center gap-2.5">
-                                <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                                </svg>
-                                Due Today
-                            </span>
-                            <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{{ todayTasksCount }}</span>
-                        </button>
-
-                        <button @click="selectFilterMode('high')"
-                            :class="selectedFilter === 'high' ? 'bg-rose-50 text-rose-700 font-semibold' : 'text-slate-600 hover:bg-slate-50'"
-                            class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-colors">
-                            <span class="flex items-center gap-2.5">
-                                <svg class="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                                </svg>
-                                High Priority
-                            </span>
-                            <span class="text-xs px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-bold">{{ highPriorityCount }}</span>
-                        </button>
-
-                        <button @click="selectFilterMode('completed')"
-                            :class="selectedFilter === 'completed' ? 'bg-slate-100 text-slate-900 font-semibold' : 'text-slate-600 hover:bg-slate-50'"
-                            class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-colors">
-                            <span class="flex items-center gap-2.5">
-                                <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                </svg>
-                                Completed
-                            </span>
-                            <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{{ completedTasksCount }}</span>
-                        </button>
-                    </nav>
+    <div class="flex flex-col md:flex-row gap-6 max-w-6xl mx-auto w-full animate-fade-in">
+        <!-- Sidebar Column: Filters & Task Groups -->
+        <div class="w-full md:w-56 flex-shrink-0 space-y-4">
+            <!-- Filter Modes -->
+            <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-2.5 space-y-0.5">
+                <div class="px-2 py-1">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Filters</span>
                 </div>
 
-                <!-- Task Groups -->
-                <div class="border-t border-slate-100 pt-4">
-                    <div class="flex items-center justify-between px-3 mb-2">
-                        <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Task Groups</h3>
-                        <button @click="showNewGroupModal = true" class="text-indigo-600 hover:text-indigo-800 text-xs font-semibold flex items-center gap-1">
-                            + Add
-                        </button>
-                    </div>
-                    <nav class="space-y-1">
-                        <div v-for="group in taskGroups" :key="group.id" class="group flex items-center justify-between">
-                            <button @click="selectGroup(group.id)"
-                                :class="selectedGroupId === group.id ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-slate-600 hover:bg-slate-50'"
-                                class="flex-grow flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-colors text-left truncate">
-                                <span class="truncate">{{ group.title }}</span>
-                                <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 ml-2">{{ getTaskCountForGroup(group.id) }}</span>
-                            </button>
-                            <button @click.stop="removeGroup(group.id, group.title)" class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600 p-1.5 transition-opacity" title="Delete Group">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                                </svg>
-                            </button>
-                        </div>
-                    </nav>
-                </div>
+                <button @click="selectFilterMode('all')"
+                    :class="selectedFilter === 'all' && selectedGroupId === null ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'"
+                    class="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors">
+                    <span>All Tasks</span>
+                    <span class="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold">{{ openTasksCount }}</span>
+                </button>
+
+                <button @click="selectFilterMode('today')"
+                    :class="selectedFilter === 'today' ? 'bg-emerald-600 text-white font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'"
+                    class="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors">
+                    <span>Due Today</span>
+                    <span class="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold">{{ todayTasksCount }}</span>
+                </button>
+
+                <button @click="selectFilterMode('high')"
+                    :class="selectedFilter === 'high' ? 'bg-rose-600 text-white font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'"
+                    class="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors">
+                    <span>High Priority</span>
+                    <span class="text-[10px] px-1.5 py-0.2 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-bold">{{ highPriorityCount }}</span>
+                </button>
+
+                <button @click="selectFilterMode('completed')"
+                    :class="selectedFilter === 'completed' ? 'bg-slate-700 text-white font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'"
+                    class="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors">
+                    <span>Completed</span>
+                    <span class="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold">{{ completedTasksCount }}</span>
+                </button>
             </div>
-        </aside>
 
-        <!-- Main Tasks View -->
-        <main class="flex-grow">
-            <!-- Header & Action Controls -->
-            <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
-                <div class="relative flex-grow max-w-md">
-                    <input v-model="searchQuery" type="text" placeholder="Search tasks..."
-                        class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all shadow-sm">
-                    <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                    </svg>
-                </div>
-
-                <div class="flex items-center gap-3">
-                    <button @click="openCreateTaskModal"
-                        class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-medium text-sm transition-all shadow-lg shadow-indigo-100">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-                        </svg>
-                        New Task
+            <!-- Task Groups Management Panel -->
+            <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-2.5 space-y-1">
+                <div class="flex items-center justify-between px-2 py-1">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Task Groups</span>
+                    <button @click="showNewGroupModal = true" class="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">
+                        + Add
                     </button>
                 </div>
-            </div>
 
-            <!-- Loading State -->
-            <div v-if="isLoading" class="flex justify-center py-16">
-                <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
-            </div>
+                <div class="space-y-0.5">
+                    <div v-for="group in taskGroups" :key="group.id" class="group flex items-center justify-between">
+                        <button @click="selectGroup(group.id)"
+                            :class="selectedGroupId === group.id ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-bold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'"
+                            class="flex-1 flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors text-left truncate">
+                            <span class="truncate">{{ group.title }}</span>
+                            <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 font-mono ml-1 flex-shrink-0">{{ getTaskCountForGroup(group.id) }}</span>
+                        </button>
 
-            <!-- Empty State -->
-            <div v-else-if="filteredTasks.length === 0" class="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-sm">
-                <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                    </svg>
+                        <!-- Delete Group Button -->
+                        <button @click.stop="removeGroup(group.id, group.title)"
+                            class="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 transition-opacity ml-1 flex-shrink-0" title="Delete Group">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                    </div>
                 </div>
-                <h3 class="text-base font-semibold text-slate-900 mb-1">No tasks found</h3>
-                <p class="text-sm text-slate-500 mb-6">Create a new task to get started on your schedule.</p>
-                <button @click="openCreateTaskModal" class="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-100">
+            </div>
+        </div>
+
+        <!-- Main Task List Column -->
+        <div class="flex-1 min-w-0 space-y-4">
+            <!-- Search & New Task Bar -->
+            <div class="flex items-center justify-between gap-3">
+                <div class="relative flex-1">
+                    <input v-model="searchQuery" type="text" placeholder="Filter tasks by keyword..."
+                        class="w-full pl-8 pr-4 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-slate-100">
+                    <svg class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
+
+                <button @click="openCreateTaskModal"
+                    class="px-3.5 py-1.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 text-xs font-semibold rounded-xl transition-all shadow-sm flex-shrink-0">
                     + New Task
                 </button>
             </div>
 
-            <!-- Task List -->
-            <div v-else class="space-y-3">
+            <!-- Loading State -->
+            <div v-if="isLoading" class="flex justify-center py-16">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+            </div>
+
+            <!-- Empty State -->
+            <div v-else-if="filteredTasks.length === 0" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-12 text-center shadow-sm">
+                <div class="w-10 h-10 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-xl flex items-center justify-center mx-auto mb-3">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+                <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-1">No tasks found</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Create a new task to get started on your schedule.</p>
+                <button @click="openCreateTaskModal" class="inline-flex items-center gap-1.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-3.5 py-1.5 rounded-xl text-xs font-medium hover:bg-slate-800 transition-colors shadow-sm">
+                    + New Task
+                </button>
+            </div>
+
+            <!-- Task Cards -->
+            <div v-else class="space-y-2">
                 <div v-for="task in filteredTasks" :key="task.id"
-                    :class="task.status === 'completed' ? 'opacity-60 bg-slate-50/70 border-slate-200' : 'bg-white border-slate-200 hover:border-indigo-200 shadow-sm hover:shadow-md'"
-                    class="group rounded-2xl border p-4 transition-all flex items-start gap-4">
+                    :class="task.status === 'completed' ? 'opacity-60 bg-slate-50/70 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800' : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-slate-300 shadow-sm'"
+                    class="group rounded-xl border p-3 transition-all flex items-start gap-3">
 
                     <!-- Checkbox -->
                     <button @click="toggleTaskCompleted(task)" class="mt-0.5 flex-shrink-0 transition-transform active:scale-95">
-                        <div v-if="task.status === 'completed'" class="w-5 h-5 bg-indigo-600 text-white rounded-md flex items-center justify-center shadow-sm">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
-                            </svg>
+                        <div v-if="task.status === 'completed'" class="w-4 h-4 bg-indigo-600 text-white rounded flex items-center justify-center shadow-sm">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
                         </div>
-                        <div v-else class="w-5 h-5 border-2 border-slate-300 hover:border-indigo-500 rounded-md transition-colors"></div>
+                        <div v-else class="w-4 h-4 rounded border-2 border-slate-300 dark:border-slate-600 hover:border-indigo-600 transition-colors"></div>
                     </button>
 
-                    <!-- Content -->
-                    <div class="flex-grow min-w-0">
-                        <div class="flex items-center justify-between gap-2 mb-1">
-                            <h4 :class="task.status === 'completed' ? 'line-through text-slate-400' : 'text-slate-900 font-semibold'"
-                                class="text-sm tracking-tight truncate">
+                    <!-- Task Body -->
+                    <div class="flex-grow min-w-0" @click="openEditTaskModal(task)">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span :class="{'line-through text-slate-400 dark:text-slate-500': task.status === 'completed'}"
+                                class="font-semibold text-slate-900 dark:text-slate-100 text-sm cursor-pointer hover:text-indigo-600 transition-colors">
                                 {{ task.title }}
-                            </h4>
+                            </span>
 
                             <!-- Badges -->
-                            <div class="flex items-center gap-2 flex-shrink-0">
-                                <!-- Notebook Page Link Badge -->
-                                <span v-if="parseNotebookLink(task.links)"
-                                    class="text-xs px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 font-medium border border-purple-100">
-                                    {{ parseNotebookLink(task.links) }}
-                                </span>
+                            <span v-if="groupNameMap[task.taskListId]" class="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium">
+                                {{ groupNameMap[task.taskListId] }}
+                            </span>
 
-                                <!-- Group Tag -->
-                                <span v-if="task.taskListId !== '0' && groupNameMap[task.taskListId]"
-                                    class="text-xs px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium border border-slate-200/60">
-                                    {{ groupNameMap[task.taskListId] }}
-                                </span>
+                            <span v-if="task.importance === 'high'" class="text-[10px] px-2 py-0.5 rounded-md bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-bold">
+                                High
+                            </span>
 
-                                <!-- Priority Badge -->
-                                <span v-if="task.importance === 'high'" class="text-xs px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 font-bold border border-rose-100 flex items-center gap-1">
-                                    <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> High
-                                </span>
-                                <span v-else-if="task.importance === 'medium'" class="text-xs px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 font-semibold border border-amber-100 flex items-center gap-1">
-                                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Medium
-                                </span>
-                                <span v-else class="text-xs px-2.5 py-0.5 rounded-full bg-sky-50 text-sky-700 font-medium border border-sky-100">
-                                    Low
-                                </span>
-
-                                <!-- Due Date Chip -->
-                                <span v-if="formatDueDate(task.dueTime)"
-                                    :class="formatDueDate(task.dueTime) === 'Due Today' ? 'bg-emerald-50 text-emerald-700 border-emerald-100 font-semibold' : 'bg-slate-50 text-slate-500 border-slate-200'"
-                                    class="text-xs px-2.5 py-0.5 rounded-full border flex items-center gap-1">
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                                    </svg>
-                                    {{ formatDueDate(task.dueTime) }}
-                                </span>
-                            </div>
+                            <span v-if="formatDueDate(task.dueTime)" class="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-medium flex items-center gap-1">
+                                📅 {{ formatDueDate(task.dueTime) }}
+                            </span>
                         </div>
 
-                        <!-- Detail Text -->
-                        <p v-if="task.detail" class="text-xs text-slate-500 line-clamp-2 mt-0.5">
+                        <p v-if="task.detail" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
                             {{ task.detail }}
                         </p>
                     </div>
 
-                    <!-- Action Buttons -->
-                    <div class="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
-                        <button @click="openEditTaskModal(task)" class="p-1.5 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-slate-100 transition-colors" title="Edit Task">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
-                            </svg>
-                        </button>
-                        <button @click="removeTask(task.id)" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors" title="Delete Task">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                            </svg>
-                        </button>
-                    </div>
+                    <!-- Delete Task Button -->
+                    <button @click.stop="removeTask(task.id)" class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600 p-1 transition-opacity" title="Delete Task">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
                 </div>
             </div>
-        </main>
+        </div>
 
-        <!-- New / Edit Task Modal -->
-        <div v-if="showNewTaskModal" class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm" @click.self="showNewTaskModal = false">
-            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-5 animate-in zoom-in-95">
-                <h3 class="text-lg font-bold text-slate-900">
-                    {{ editingTask ? 'Edit Task' : 'New Task' }}
-                </h3>
+        <!-- New/Edit Task Modal -->
+        <div v-if="showNewTaskModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-[2px]">
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+                <h3 class="text-base font-bold text-slate-900 dark:text-white">{{ editingTask ? 'Edit Task' : 'New Task' }}</h3>
 
-                <div class="space-y-4">
+                <div class="space-y-3 text-sm">
                     <div>
-                        <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Title</label>
-                        <input v-model="taskForm.title" type="text" placeholder="Task title..."
-                            class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all text-sm"
-                            @keyup.enter="handleSaveTask">
+                        <label class="block text-slate-500 mb-1">Title</label>
+                        <input v-model="taskForm.title" type="text" placeholder="Task title..." class="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none text-slate-900 dark:text-slate-100">
                     </div>
 
                     <div>
-                        <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Details</label>
-                        <textarea v-model="taskForm.detail" rows="3" placeholder="Optional notes or details..."
-                            class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all text-sm"></textarea>
+                        <label class="block text-slate-500 mb-1">Details</label>
+                        <textarea v-model="taskForm.detail" rows="2" placeholder="Optional notes..." class="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none text-slate-900 dark:text-slate-100"></textarea>
                     </div>
 
-                    <div class="grid grid-cols-2 gap-4">
+                    <div class="grid grid-cols-2 gap-3">
                         <div>
-                            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Priority</label>
-                            <select v-model="taskForm.importance" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500">
-                                <option value="low">Low Priority</option>
-                                <option value="medium">Medium Priority</option>
-                                <option value="high">High Priority</option>
-                            </select>
-                        </div>
-
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Task Group</label>
-                            <select v-model="taskForm.taskListId" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500">
-                                <option value="0">Inbox (General)</option>
+                            <label class="block text-slate-500 mb-1">Group</label>
+                            <select v-model="taskForm.taskListId" class="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none text-slate-900 dark:text-slate-100">
+                                <option value="0">General</option>
                                 <option v-for="g in taskGroups" :key="g.id" :value="g.id">{{ g.title }}</option>
                             </select>
                         </div>
+                        <div>
+                            <label class="block text-slate-500 mb-1">Priority</label>
+                            <select v-model="taskForm.importance" class="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none text-slate-900 dark:text-slate-100">
+                                <option value="low">Normal</option>
+                                <option value="high">High</option>
+                            </select>
+                        </div>
                     </div>
 
                     <div>
-                        <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Due Date</label>
-                        <input v-model="taskForm.dueDate" type="date"
-                            class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                        <label class="block text-slate-500 mb-1">Due Date</label>
+                        <input v-model="taskForm.dueDate" type="date" class="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none text-slate-900 dark:text-slate-100">
                     </div>
                 </div>
 
-                <div class="flex justify-end gap-3 pt-3 border-t border-slate-100">
-                    <button @click="showNewTaskModal = false" class="px-4 py-2 text-slate-500 hover:text-slate-700 text-sm font-medium">
-                        Cancel
-                    </button>
-                    <button @click="handleSaveTask" :disabled="!taskForm.title.trim()"
-                        class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold shadow-lg shadow-indigo-100 transition-all">
-                        {{ editingTask ? 'Save Changes' : 'Save Task' }}
-                    </button>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button @click="showNewTaskModal = false" class="px-3.5 py-2 text-slate-500 hover:text-slate-800 text-xs font-semibold">Cancel</button>
+                    <button @click="handleSaveTask" class="px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-semibold rounded-xl">Save</button>
                 </div>
             </div>
         </div>
 
         <!-- New Group Modal -->
-        <div v-if="showNewGroupModal" class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm" @click.self="showNewGroupModal = false">
-            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4 animate-in zoom-in-95">
-                <h3 class="text-lg font-bold text-slate-900">Create Task Group</h3>
-                <input v-model="newGroupTitle" type="text" placeholder="Group name (e.g. Projects, Personal)..."
-                    class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm mb-4"
-                    @keyup.enter="handleCreateGroup">
-                <div class="flex justify-end gap-3">
-                    <button @click="showNewGroupModal = false" class="px-4 py-2 text-slate-500 hover:text-slate-700 text-sm font-medium">Cancel</button>
-                    <button @click="handleCreateGroup" :disabled="!newGroupTitle.trim()"
-                        class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold shadow-lg shadow-indigo-100 transition-all">
-                        Create Group
-                    </button>
+        <div v-if="showNewGroupModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-[2px]">
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+                <h3 class="text-sm font-bold text-slate-900 dark:text-white">New Task Group</h3>
+                <input v-model="newGroupTitle" type="text" placeholder="Group name..." class="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none text-slate-900 dark:text-slate-100">
+                <div class="flex justify-end gap-2">
+                    <button @click="showNewGroupModal = false" class="px-3 py-1.5 text-slate-500 text-xs font-semibold">Cancel</button>
+                    <button @click="handleCreateGroup" class="px-4 py-1.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-semibold rounded-xl">Create</button>
                 </div>
             </div>
         </div>
     </div>
     `
-};
+}

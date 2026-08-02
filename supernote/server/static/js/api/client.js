@@ -167,6 +167,27 @@ export async function convertNoteToPng(fileId) {
 }
 
 /**
+ * Fetch transcript for a notebook file.
+ */
+export async function fetchTranscript(fileId) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/extended/transcript', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        },
+        body: JSON.stringify({ fileId: parseInt(fileId) })
+    });
+
+    if (!response.ok) return '';
+    const data = await response.json();
+    return data.transcript || '';
+}
+
+/**
  * Fetch summaries for a file
  * @param {string} fileId
  * @returns {Promise<Array<Object>>}
@@ -195,6 +216,67 @@ export async function fetchSummaries(fileId) {
 
     const data = await response.json();
     return data.summaryDOList || [];
+}
+
+/**
+ * Search files by keyword.
+ */
+export async function searchFiles(keyword) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/file/label/list/search', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        },
+        body: JSON.stringify({ keyword })
+    });
+
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.entries || [];
+}
+
+/**
+ * Perform semantic vector search across notebook embeddings.
+ */
+export async function searchSemantic(query, topN = 5) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/extended/search', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        },
+        body: JSON.stringify({ query, top_n: topN })
+    });
+
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.results || [];
+}
+
+/**
+ * Fetch AI Processing Status & Gemini API Key health.
+ */
+export async function fetchAiStatus() {
+    const currentToken = getToken();
+    const headers = { 'Content-Type': 'application/json' };
+    if (currentToken) headers['x-access-token'] = currentToken;
+
+    const response = await fetch('/api/extended/ai/status', {
+        method: 'GET',
+        headers
+    });
+
+    if (!response.ok) {
+        return { hasApiKey: false, ocrEnabled: false, vectorSearchEnabled: false, model: 'N/A' };
+    }
+    return await response.json();
 }
 
 /**

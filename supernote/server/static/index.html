@@ -4,13 +4,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Supernote Cloud - Web Viewer</title>
+    <title>Supernote Knowledge Hub</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f3ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            900: '#312e81',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/spark-md5/3.0.2/spark-md5.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-    <!-- Import Map for Vue (No Build) -->
     <script type="importmap">
         {
           "imports": {
@@ -20,194 +37,161 @@
     </script>
 </head>
 
-<body class="bg-slate-50 text-slate-900 antialiased min-h-screen">
-    <div id="app" class="flex flex-col min-h-screen" v-cloak>
-        <header class="sticky top-0 z-50 bg-white/70 backdrop-blur-md border-b border-slate-200">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="flex justify-between items-center h-16">
-                    <div class="flex items-center gap-3">
-                        <div
-                            class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-200">
-                            S</div>
-                        <h1 class="text-xl font-semibold tracking-tight">Supernote <span
-                                class="text-indigo-600">Lite</span></h1>
-                    </div>
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 antialiased h-screen overflow-hidden">
+    <div id="app" class="flex h-screen w-full overflow-hidden" v-cloak>
+        <template v-if="isLoggedIn">
+            <!-- Mobile Drawer Overlay Backdrop -->
+            <div v-if="isSidebarOpen" @click="isSidebarOpen = false" class="fixed inset-0 z-30 bg-black/20 md:hidden"></div>
 
-                    <!-- Navigation Tabs -->
-                    <div v-if="isLoggedIn" class="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
-                        <button @click="activeTab = 'files'"
-                            :class="activeTab === 'files' ? 'bg-white text-indigo-700 font-semibold shadow-sm' : 'text-slate-600 hover:text-slate-900 font-medium'"
-                            class="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm transition-all">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
-                            </svg>
-                            Files
-                        </button>
-                        <button @click="activeTab = 'tasks'"
-                            :class="activeTab === 'tasks' ? 'bg-white text-indigo-700 font-semibold shadow-sm' : 'text-slate-600 hover:text-slate-900 font-medium'"
-                            class="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm transition-all">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            Tasks & Schedule
-                        </button>
-                    </div>
+            <!-- Left Sidebar -->
+            <sidebar :active-tab="activeTab" :breadcrumbs="breadcrumbs" :subfolders="folders" :current-directory-id="currentDirectoryId"
+                :is-dark-mode="isDarkMode" :is-open="isSidebarOpen" @close="isSidebarOpen = false"
+                @navigate-tab="activeTab = $event; view = 'grid'"
+                @navigate-folder="navigateFolder($event)" @toggle-theme="toggleTheme"
+                @toggle-system="showSystemPanel = true"></sidebar>
 
-                    <div v-if="isLoggedIn" class="flex items-center gap-4">
-                        <button @click="showSystemPanel = true"
-                            class="text-slate-500 hover:text-slate-700 transition-colors" title="System Status">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <!-- Main Content Area -->
+            <div class="flex-1 flex flex-col h-full overflow-hidden bg-slate-50/60 dark:bg-slate-950/60">
+                <!-- Top Navbar with Unified Search & Account Controls -->
+                <header class="sticky top-0 z-30 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-2.5 flex items-center justify-between gap-4">
+                    <div class="flex items-center gap-3 flex-1 max-w-md">
+                        <button @click="isSidebarOpen = !isSidebarOpen" class="md:hidden p-1 text-slate-500 hover:text-slate-800 rounded-md flex-shrink-0">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                        </button>
+                        <!-- Unified Global Search Input Trigger -->
+                        <button @click="showSearchModal = true"
+                            class="flex items-center gap-2.5 bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-600 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all w-full border border-slate-200 dark:border-slate-700">
+                            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
-                                </path>
+                                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                             </svg>
-                        </button>
-                        <button @click="handleLogout"
-                            class="text-sm font-medium text-slate-500 hover:text-slate-800 transition-colors">
-                            Sign Out
+                            <span class="flex-1 text-left truncate">Search notebooks, transcripts, or tasks...</span>
+                            <kbd class="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-slate-400">⌘K</kbd>
                         </button>
                     </div>
-                </div>
-            </div>
-        </header>
 
-        <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <template v-if="isLoggedIn">
-                <template v-if="activeTab === 'files'">
-                <!-- Breadcrumbs -->
-                <nav
-                    class="flex mb-8 text-sm font-medium text-slate-500 items-center overflow-x-auto whitespace-nowrap pb-2">
-                    <div v-for="(crumb, index) in breadcrumbs" :key="crumb.id" class="flex items-center">
-                        <button @click="navigateTo(index)"
-                            :class="index === breadcrumbs.length - 1 ? 'text-slate-900 font-bold' : 'hover:text-indigo-600 transition-colors'"
-                            class="flex items-center">
-                            <svg v-if="index === 0" class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                <path
-                                    d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z">
-                                </path>
-                            </svg>
-                            {{ crumb.name }}
-                        </button>
-                        <span v-if="index < breadcrumbs.length - 1" class="mx-2 text-slate-300">/</span>
-                    </div>
-                </nav>
-                <!-- Actions Bar -->
-                <div class="flex flex-wrap items-center justify-between gap-4 mb-8">
-                    <div class="flex items-center gap-2">
+                    <!-- Right Controls: Upload & User Account -->
+                    <div class="flex items-center gap-3">
                         <button @click="triggerUpload"
-                            class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-lg shadow-indigo-100">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            class="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                     d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
                             </svg>
                             Upload
                         </button>
-                        <button @click="showNewFolderModal = true"
-                            class="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2 rounded-xl font-medium transition-all">
-                            <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M12 4v16m8-8H4"></path>
-                            </svg>
-                            New Folder
-                        </button>
-                    </div>
 
-                    <div v-if="selectedIds.length > 0" class="flex items-center gap-2 animate-in slide-in-from-right">
-                        <span class="text-sm text-slate-500 font-medium mr-2">{{ selectedIds.length }} selected</span>
-                        <button @click="handleMoveSelected"
-                            class="text-sm bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg transition-colors">
-                            Move
-                        </button>
-                        <button @click="handleDeleteSelected"
-                            class="text-sm bg-rose-50 border border-rose-100 hover:bg-rose-100 text-rose-600 px-3 py-1.5 rounded-lg transition-colors">
-                            Delete
-                        </button>
-                        <button @click="selectedIds = []"
-                            class="text-sm text-slate-400 hover:text-slate-600 underline px-2">
-                            Clear
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Hidden Upload Input -->
-                <input type="file" ref="fileInput" class="hidden" multiple @change="handleFileUpload">
-
-                <!-- New Folder Modal -->
-                <div v-if="showNewFolderModal"
-                    class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
-                    @click.self="showNewFolderModal = false">
-                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
-                        <h3 class="text-lg font-bold text-slate-900 mb-4">Create New Folder</h3>
-                        <input v-model="newFolderName" type="text" placeholder="Folder name"
-                            class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all mb-6"
-                            @keyup.enter="handleCreateFolder">
-                        <div class="flex justify-end gap-3">
-                            <button @click="showNewFolderModal = false"
-                                class="px-4 py-2 text-slate-500 hover:text-slate-700 font-medium">Cancel</button>
-                            <button @click="handleCreateFolder" :disabled="!newFolderName"
-                                class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 transition-all">
-                                Create
+                        <!-- User Account Profile Badge -->
+                        <div class="flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-800 text-xs">
+                            <div class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold flex items-center justify-center text-[11px]">
+                                d
+                            </div>
+                            <span class="hidden sm:inline font-medium text-slate-600 dark:text-slate-300 text-xs">debug@example.com</span>
+                            <button @click="handleLogout"
+                                class="text-xs font-medium text-slate-400 hover:text-rose-600 transition-colors ml-1" title="Sign Out">
+                                Sign Out
                             </button>
                         </div>
                     </div>
-                </div>
+                </header>
 
-                <!-- Error State -->
-                <div v-if="error" class="bg-red-50 text-red-600 p-4 rounded-xl mb-6">
-                    {{ error }}
-                    <div v-if="error === 'Unauthorized'" class="mt-2 text-sm">
-                        Please log in via the CLI or check your token.
-                    </div>
-                </div>
+                <!-- Scrollable Main View -->
+                <main class="flex-grow overflow-y-auto p-6 sm:p-8">
+                    <!-- View 1: AI Dashboard View (Home) -->
+                    <template v-if="activeTab === 'dashboard' && view === 'grid'">
+                        <dashboard-view :recent-notes="recentNotes" :processing-statuses="processingStatuses"
+                            @open-file="openItem($event)" @open-search="showSearchModal = true"
+                            @navigate-tab="activeTab = $event; view = 'grid'"></dashboard-view>
+                    </template>
 
-                <!-- Loading State -->
-                <div v-if="isLoading" class="flex justify-center py-20">
-                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-                </div>
+                    <!-- View 2: File Explorer View -->
+                    <template v-else-if="activeTab === 'explorer' && view === 'grid'">
+                        <div class="max-w-6xl mx-auto w-full space-y-6 animate-fade-in">
+                            <!-- Breadcrumbs & Actions -->
+                            <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+                                <nav class="flex text-sm font-medium text-slate-500 items-center overflow-x-auto whitespace-nowrap">
+                                    <div v-for="(crumb, index) in breadcrumbs" :key="crumb.id" class="flex items-center">
+                                        <button @click="navigateTo(index)"
+                                            :class="index === breadcrumbs.length - 1 ? 'text-slate-900 dark:text-white font-bold' : 'hover:text-indigo-600 transition-colors'"
+                                            class="flex items-center">
+                                            <svg v-if="index === 0" class="w-4 h-4 mr-1 text-indigo-500" fill="currentColor" viewBox="0 0 20 20">
+                                                <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path>
+                                            </svg>
+                                            {{ crumb.name }}
+                                        </button>
+                                        <span v-if="index < breadcrumbs.length - 1" class="mx-2 text-slate-300 dark:text-slate-700">/</span>
+                                    </div>
+                                </nav>
 
-                <!-- Grid View -->
-                <div v-if="view === 'grid' && !isLoading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <!-- Folders -->
-                    <file-card v-for="folder in folders" :key="folder.id" :file="folder"
-                        :is-selected="selectedIds.includes(folder.id)"
-                        :processing-status="processingStatuses[folder.id]" @open="openItem" @select="toggleSelection"
-                        @rename="triggerRename"></file-card>
+                                <div class="flex items-center gap-2">
+                                    <button @click="showNewFolderModal = true"
+                                        class="flex items-center gap-2 bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all">
+                                        + New Folder
+                                    </button>
+                                </div>
+                            </div>
 
-                    <!-- Files -->
-                    <file-card v-for="file in regularFiles" :key="file.id" :file="file"
-                        :is-selected="selectedIds.includes(file.id)" :processing-status="processingStatuses[file.id]"
-                        @open="openItem" @select="toggleSelection" @rename="triggerRename"></file-card>
-                </div>
+                            <!-- Selection Actions Bar -->
+                            <div v-if="selectedIds.length > 0" class="flex items-center gap-2 mb-6 p-3 bg-indigo-50 dark:bg-indigo-950/40 rounded-2xl border border-indigo-200/50">
+                                <span class="text-xs font-bold text-indigo-700 dark:text-indigo-300 mr-2">{{ selectedIds.length }} selected</span>
+                                <button @click="handleMoveSelected" class="text-xs bg-white dark:bg-slate-800 px-3 py-1 rounded-lg border font-bold">Move</button>
+                                <button @click="handleDeleteSelected" class="text-xs bg-rose-50 dark:bg-rose-950 text-rose-600 px-3 py-1 rounded-lg font-bold">Delete</button>
+                                <button @click="selectedIds = []" class="text-xs text-slate-400 underline px-2">Clear</button>
+                            </div>
 
-                <!-- Viewer -->
-                <div v-if="view === 'viewer'" class="min-h-full">
-                    <file-viewer :file="selectedFile" @close="view = 'grid'"></file-viewer>
-                </div>
+                            <!-- File Grid -->
+                            <div v-if="!isLoading" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                                <file-card v-for="folder in folders" :key="folder.id" :file="folder"
+                                    :is-selected="selectedIds.includes(folder.id)"
+                                    :processing-status="processingStatuses[folder.id]" @open="openItem"
+                                    @select="toggleSelection" @rename="triggerRename"></file-card>
 
-                <!-- Modals -->
-                <move-modal v-if="showMoveModal" :item-ids="selectedIds" @close="showMoveModal = false"
-                    @confirm="onConfirmMove"></move-modal>
+                                <file-card v-for="file in regularFiles" :key="file.id" :file="file"
+                                    :is-selected="selectedIds.includes(file.id)"
+                                    :processing-status="processingStatuses[file.id]" @open="openItem"
+                                    @select="toggleSelection" @rename="triggerRename"></file-card>
+                            </div>
+                        </div>
+                    </template>
 
-                <rename-modal v-if="showRenameModal" :item="itemToRename" @close="showRenameModal = false"
-                    @confirm="onConfirmRename"></rename-modal>
-                </template>
+                    <!-- View 3: Extracted Tasks & Schedule View -->
+                    <template v-else-if="activeTab === 'tasks' && view === 'grid'">
+                        <task-panel></task-panel>
+                    </template>
 
-                <!-- Tasks & Schedule Dashboard Panel -->
-                <template v-else-if="activeTab === 'tasks'">
-                    <task-panel></task-panel>
-                </template>
-            </template>
+                    <!-- View 4: Dual-Pane AI Notebook Viewer -->
+                    <template v-if="view === 'viewer'">
+                        <file-viewer :file="selectedFile" @close="view = 'grid'"></file-viewer>
+                    </template>
+                </main>
+            </div>
 
-            <!-- Login Screen -->
-            <template v-else>
+            <!-- Modals & Overlays -->
+            <search-modal v-if="showSearchModal" @close="showSearchModal = false"
+                @select-file="openItem($event)"></search-modal>
+
+            <move-modal v-if="showMoveModal" :item-ids="selectedIds" @close="showMoveModal = false"
+                @confirm="onConfirmMove"></move-modal>
+
+            <rename-modal v-if="showRenameModal" :item="itemToRename" @close="showRenameModal = false"
+                @confirm="onConfirmRename"></rename-modal>
+        </template>
+
+        <!-- Login Screen -->
+        <template v-else>
+            <div class="min-h-screen w-full flex items-center justify-center bg-slate-100 dark:bg-slate-950 p-4">
                 <login-card @login="handleLogin"></login-card>
-            </template>
+            </div>
+        </template>
 
-            <!-- System Panel -->
-            <system-panel v-if="showSystemPanel" @close="showSystemPanel = false"></system-panel>
-        </main>
+        <!-- Hidden Upload Input -->
+        <input type="file" ref="fileInput" class="hidden" multiple @change="handleFileUpload">
+
+        <!-- System Panel -->
+        <system-panel v-if="showSystemPanel" @close="showSystemPanel = false"></system-panel>
     </div>
-    <!-- Load Main Module -->
+
+    <!-- Main JS module -->
     <script type="module" src="/static/js/main.js"></script>
 </body>
 

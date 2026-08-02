@@ -26,7 +26,7 @@ export default {
                                 <span>{{ formatSize(capacity.totalCapacity) }} total</span>
                             </div>
                             <div class="w-full bg-gray-200 rounded-full h-2.5">
-                                <div class="bg-primary-600 h-2.5 rounded-full transition-all duration-500" :style="{ width: usagePercent + '%' }"></div>
+                                <div class="bg-indigo-600 h-2.5 rounded-full transition-all duration-500" :style="{ width: usagePercent + '%' }"></div>
                             </div>
                         </div>
                         <div v-else class="animate-pulse bg-gray-200 h-10 rounded"></div>
@@ -36,7 +36,7 @@ export default {
                     <div>
                         <h3 class="text-lg font-medium text-gray-900 mb-4">Processing Queue</h3>
                         <div v-if="loading" class="flex justify-center p-8">
-                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
                         </div>
 
                         <div v-else-if="error" class="p-4 bg-red-50 text-red-700 rounded-lg">
@@ -86,7 +86,7 @@ export default {
                     <button @click="loadData" class="mr-2 px-4 py-2 bg-white border border-gray-300 rounded shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50">
                         Refresh
                     </button>
-                    <button @click="$emit('close')" class="px-4 py-2 bg-primary-600 border border-transparent rounded shadow-sm text-sm font-medium text-white hover:bg-primary-700">
+                    <button @click="$emit('close')" class="px-4 py-2 bg-indigo-600 border border-transparent rounded shadow-sm text-sm font-medium text-white hover:bg-indigo-700">
                         Close
                     </button>
                 </div>

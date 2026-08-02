@@ -231,3 +231,24 @@ async def handle_extended_transcript(request: web.Request) -> web.Response:
     except Exception as err:
         logger.exception("Error fetching notebook transcript")
         return SupernoteError.uncaught(err).to_response()
+
+
+@routes.get("/api/extended/ai/status")
+async def handle_extended_ai_status(request: web.Request) -> web.Response:
+    # Endpoint: GET /api/extended/ai/status
+    # Purpose: Returns server AI processing configuration and API key health status.
+    config = request.app.get("config")
+    gemini_key = getattr(config, "gemini_api_key", None) if config else None
+    has_api_key = bool(gemini_key and gemini_key.strip())
+
+    return web.json_response(
+        {
+            "success": True,
+            "hasApiKey": has_api_key,
+            "ocrEnabled": has_api_key,
+            "vectorSearchEnabled": has_api_key,
+            "model": getattr(config, "gemini_model", "gemini-1.5-flash")
+            if config
+            else "gemini-1.5-flash",
+        }
+    )

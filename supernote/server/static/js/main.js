@@ -1,6 +1,10 @@
 import { createApp, ref, onMounted, computed } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
 import { useFileSystem } from './composables/useFileSystem.js';
 import { setToken, getToken, login, logout, fetchProcessingStatus } from './api/client.js';
+import Sidebar from './components/Sidebar.js';
+import DashboardView from './components/DashboardView.js';
+import SearchModal from './components/SearchModal.js';
+import TaskPanel from './components/TaskPanel.js';
 import FileCard from './components/FileCard.js';
 import LoginCard from './components/LoginCard.js';
 import FileViewer from './components/FileViewer.js';
@@ -11,6 +15,10 @@ import TaskPanel from './components/TaskPanel.js';
 
 createApp({
     components: {
+        Sidebar,
+        DashboardView,
+        SearchModal,
+        TaskPanel,
         FileCard,
         LoginCard,
         FileViewer,
@@ -26,14 +34,32 @@ createApp({
         const showSystemPanel = ref(false);
         const activeTab = ref('files'); // 'files' | 'tasks'
 
-        // UI State
+        // Theme Mode
+        const isDarkMode = ref(localStorage.getItem('supernote_theme') === 'dark');
+
+        const toggleTheme = () => {
+            isDarkMode.value = !isDarkMode.value;
+            localStorage.setItem('supernote_theme', isDarkMode.value ? 'dark' : 'light');
+            if (isDarkMode.value) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        };
+
+        // Navigation State
+        const activeTab = ref('dashboard'); // 'dashboard' | 'explorer' | 'tasks'
+        const showSearchModal = ref(false);
+        const isSidebarOpen = ref(false);
+
+        // UI Modals State
         const showNewFolderModal = ref(false);
         const newFolderName = ref('');
         const showMoveModal = ref(false);
         const showRenameModal = ref(false);
         const itemToRename = ref(null);
         const selectedIds = ref([]);
-        const processingStatuses = ref({}); // fileId -> status string
+        const processingStatuses = ref({});
 
         // File System
         const {
@@ -55,10 +81,12 @@ createApp({
 
         const folders = computed(() => files.value.filter(f => f.isDirectory));
         const regularFiles = computed(() => files.value.filter(f => !f.isDirectory));
+        const recentNotes = computed(() => files.value.filter(f => f.extension === 'note'));
 
         // Methods
         async function openItem(item) {
             if (item.isDirectory) {
+                activeTab.value = 'explorer';
                 currentDirectoryId.value = item.id;
                 breadcrumbs.value.push({ id: item.id, name: item.name });
                 selectedIds.value = [];
@@ -67,6 +95,18 @@ createApp({
                 selectedFile.value = item;
                 view.value = 'viewer';
             }
+        }
+
+        async function navigateFolder(folder) {
+            activeTab.value = 'explorer';
+            view.value = 'grid';
+            currentDirectoryId.value = folder.id;
+            breadcrumbs.value = [{ id: "0", name: "Cloud" }];
+            if (folder.id !== "0") {
+                breadcrumbs.value.push({ id: folder.id, name: folder.name });
+            }
+            selectedIds.value = [];
+            await loadDirectory(folder.id);
         }
 
         async function navigateTo(index) {
@@ -113,7 +153,7 @@ createApp({
             } catch (e) {
                 alert("Upload failed: " + e.message);
             } finally {
-                event.target.value = ''; // Reset input
+                event.target.value = '';
             }
         }
 
@@ -158,31 +198,7 @@ createApp({
 
         async function resumeSession() {
             const token = getToken();
-            if (!token) {
-                return false;
-            }
-
-            const params = new URLSearchParams(window.location.hash.split('?')[1]);
-            const returnTo = params.get('return_to');
-
-            // Handle OAuth Bridge exchange strictly
-            if (returnTo?.includes('/login-bridge')) {
-                try {
-                    const resp = await fetch(returnTo, {
-                        method: 'POST',
-                        headers: { 'x-access-token': token, 'Accept': 'application/json' }
-                    });
-                    const data = resp.ok ? await resp.json() : null;
-                    if (data?.redirect_url) {
-                        window.location.href = data.redirect_url;
-                        return true;
-                    }
-                } catch (e) {
-                    console.error("Bridge exchange failed", e);
-                }
-            }
-
-            // Normal app session
+            if (!token) return false;
             isLoggedIn.value = true;
             await loadDirectory();
             return true;
@@ -204,16 +220,25 @@ createApp({
         }
 
         onMounted(async () => {
+            if (isDarkMode.value) {
+                document.documentElement.classList.add('dark');
+            }
             await resumeSession();
 
-            // Polling for processing status
+            // Keyboard shortcut ⌘K for search
+            window.addEventListener('keydown', (e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+                    e.preventDefault();
+                    showSearchModal.value = !showSearchModal.value;
+                }
+            });
+
+            // Status Polling
             setInterval(async () => {
                 if (!isLoggedIn.value || isLoading.value || files.value.length === 0) return;
-
                 const noteFileIds = files.value
                     .filter(f => f.extension === 'note')
                     .map(f => parseInt(f.id));
-
                 if (noteFileIds.length === 0) return;
 
                 try {
@@ -225,9 +250,9 @@ createApp({
                         };
                     }
                 } catch (e) {
-                    console.error("Failed to poll status:", e);
+                    console.error("Status poll error:", e);
                 }
-            }, 3000); // Every 3 seconds
+            }, 3000);
         });
 
         return {
@@ -235,20 +260,25 @@ createApp({
             activeTab,
             handleLogin,
             handleLogout,
+            isDarkMode,
+            toggleTheme,
+            activeTab,
+            showSearchModal,
+            isSidebarOpen,
             view,
             files,
             folders,
             regularFiles,
+            recentNotes,
             currentDirectoryId,
             isLoading,
             error,
             breadcrumbs,
             openItem,
+            navigateFolder,
             navigateTo,
             selectedFile,
             showSystemPanel,
-
-            // New States
             showNewFolderModal,
             newFolderName,
             showMoveModal,
@@ -256,8 +286,6 @@ createApp({
             itemToRename,
             selectedIds,
             fileInput,
-
-            // New Methods
             toggleSelection,
             handleCreateFolder,
             triggerUpload,
