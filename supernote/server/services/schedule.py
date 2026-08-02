@@ -98,14 +98,19 @@ class ScheduleService:
             return True
 
     async def delete_group(self, user_id: int, group_id: int) -> bool:
-        """Delete a task group. Returns True if found and deleted."""
-        # For now, simplistic delete.
+        """Delete a task group and cascade delete all contained tasks."""
         async with self.session_manager.session() as session:
-            stmt = delete(ScheduleTaskGroupDO).where(
+            stmt_tasks = delete(ScheduleTaskDO).where(
+                ScheduleTaskDO.user_id == user_id,
+                ScheduleTaskDO.task_list_id == group_id,
+            )
+            await session.execute(stmt_tasks)
+
+            stmt_group = delete(ScheduleTaskGroupDO).where(
                 ScheduleTaskGroupDO.user_id == user_id,
                 ScheduleTaskGroupDO.task_list_id == group_id,
             )
-            result = await session.execute(stmt)
+            result = await session.execute(stmt_group)
             await session.commit()
             return bool(getattr(result, "rowcount", 0) > 0)
 

@@ -115,3 +115,28 @@ async def test_isolation(schedule_service: ScheduleService) -> None:
     # User 1 cannot delete User 2 group
     deleted = await schedule_service.delete_group(user1, g2.task_list_id)
     assert not deleted
+
+
+async def test_delete_group_cascades_contained_tasks(
+    schedule_service: ScheduleService,
+) -> None:
+    """Test that deleting a group automatically cascades and deletes all contained tasks."""
+    user_id = 777
+    group = await schedule_service.create_group(user_id, "Project X")
+
+    task1 = await schedule_service.create_task(user_id, group.task_list_id, "Subtask 1")
+    task2 = await schedule_service.create_task(user_id, group.task_list_id, "Subtask 2")
+    assert task1.task_id is not None
+    assert task2.task_id is not None
+
+    tasks_before = await schedule_service.list_tasks(user_id, group.task_list_id)
+    assert len(tasks_before) == 2
+
+    deleted = await schedule_service.delete_group(user_id, group.task_list_id)
+    assert deleted is True
+
+    groups_after = await schedule_service.list_groups(user_id)
+    assert not any(g.task_list_id == group.task_list_id for g in groups_after)
+
+    tasks_after = await schedule_service.list_tasks(user_id)
+    assert len(tasks_after) == 0

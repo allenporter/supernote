@@ -288,3 +288,26 @@ async def test_list_tasks_filtering_by_group_id(
     # Cleanup
     await schedule.delete_group(group_a_id)
     await schedule.delete_group(group_b_id)
+
+
+async def test_delete_group_cascades_contained_tasks(
+    authenticated_client: Client,
+) -> None:
+    schedule = ScheduleClient(authenticated_client)
+
+    group_vo = await schedule.create_group("Cascade Route Group")
+    assert group_vo.task_list_id is not None
+    group_id = int(group_vo.task_list_id)
+
+    task1_vo = await schedule.create_task(group_id, "Subtask 1")
+    task2_vo = await schedule.create_task(group_id, "Subtask 2")
+    assert task1_vo.task_id is not None
+    assert task2_vo.task_id is not None
+
+    tasks_before = [t async for t in schedule.list_tasks(group_id)]
+    assert len(tasks_before) == 2
+
+    await schedule.delete_group(group_id)
+
+    tasks_after = [t async for t in schedule.list_tasks(group_id)]
+    assert len(tasks_after) == 0
