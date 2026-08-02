@@ -134,6 +134,18 @@ def patch_server_config(server_config: ServerConfig) -> Generator[None]:
         yield
 
 
+@pytest.fixture(autouse=True)
+def patch_run_migrations() -> Generator[None]:
+    """Bypass redundant DB migrations during app startup across tests.
+
+    _session_manager_shared already initializes all database schema tables
+    at session start via create_all_tables(). Full Alembic migration execution
+    is separately verified in tests/server/db/test_migrations.py.
+    """
+    with patch("supernote.server.app.run_migrations"):
+        yield
+
+
 @pytest.fixture
 def coordination_service(
     session_manager: DatabaseSessionManager,
@@ -298,12 +310,8 @@ async def client_fixture(
     coordination_service: SqliteCoordinationService,
 ) -> TestClient:
     """Create a test client for server tests."""
-    # Patch run_migrations during test client setup because _session_manager_shared
-    # already initializes all database schema tables at session start via create_all_tables().
-    # Full Alembic migration execution is separately verified in tests/server/db/test_migrations.py.
-    with patch("supernote.server.app.run_migrations"):
-        app = create_app(server_config)
-        return await aiohttp_client(app)
+    app = create_app(server_config)
+    return await aiohttp_client(app)
 
 
 @pytest.fixture

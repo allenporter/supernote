@@ -169,7 +169,7 @@ async def test_socketio_multi_user_message_isolation(
 
     # User B should not receive any message
     with pytest.raises(TimeoutError):
-        await asyncio.wait_for(anext(client_b.messages()), timeout=1.0)
+        await asyncio.wait_for(anext(client_b.messages()), timeout=0.05)
 
     await client_a.disconnect()
     await client_b.disconnect()

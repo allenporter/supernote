@@ -1,4 +1,5 @@
 import io
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import patch
@@ -18,6 +19,11 @@ from supernote.notebook.decoder import TextElement
 # Find all test note paths dynamically under tests/testdata/
 TEST_DATA_DIR = Path(__file__).parent.parent / "testdata"
 NOTE_PATHS = sorted(TEST_DATA_DIR.glob("**/*.note"))
+
+
+@lru_cache(maxsize=32)
+def get_cached_notebook(note_path_str: str):
+    return load_notebook(note_path_str)
 
 
 class VisualPngSnapshotExtension(PNGImageSnapshotExtension):
@@ -61,7 +67,7 @@ def _serialize_notebook_metadata(notebook) -> dict:
 
 @pytest.mark.parametrize("note_path", NOTE_PATHS, ids=lambda p: p.name)
 def test_notebook_metadata_snapshot(note_path: Path, snapshot) -> None:
-    notebook = load_notebook(str(note_path))
+    notebook = get_cached_notebook(str(note_path))
     metadata_snapshot = _serialize_notebook_metadata(notebook)
 
     # Assert against syrupy snapshot (default text serializer)
@@ -70,7 +76,7 @@ def test_notebook_metadata_snapshot(note_path: Path, snapshot) -> None:
 
 @pytest.mark.parametrize("note_path", NOTE_PATHS, ids=lambda p: p.name)
 def test_notebook_png_snapshots(note_path: Path, snapshot) -> None:
-    notebook = load_notebook(str(note_path))
+    notebook = get_cached_notebook(str(note_path))
     converter = PngConverter(notebook)
     total_pages = notebook.get_total_pages()
 
@@ -91,7 +97,7 @@ def test_notebook_png_snapshots(note_path: Path, snapshot) -> None:
 
 @pytest.mark.parametrize("note_path", NOTE_PATHS, ids=lambda p: p.name)
 def test_notebook_text_snapshots(note_path: Path, snapshot) -> None:
-    notebook = load_notebook(str(note_path))
+    notebook = get_cached_notebook(str(note_path))
     texts = {}
     if notebook.is_realtime_recognition():
         converter = TextConverter(notebook)
