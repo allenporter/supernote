@@ -22,11 +22,11 @@ def verify_handshake_signature(params: SocketHandshakeParams, secret_key: str) -
         secret_key: Server authentication secret key.
 
     Returns:
-        True if the signature is valid or omitted for dev testing, False otherwise.
+        True if the signature is valid, False otherwise.
     """
     if not params.sign:
-        # If signature is not provided, allow connection in lenient dev mode
-        return True
+        logger.warning("Missing signature in Socket.IO handshake")
+        return False
 
     raw = f"{params.token}_{params.type}_{params.random}"
     expected_sign = hashlib.md5(raw.encode("utf-8")).hexdigest()

@@ -68,7 +68,7 @@ def test_verify_handshake_signature_missing_sign() -> None:
         random="rnd123",
         sign="",
     )
-    assert verify_handshake_signature(params, "secret") is True
+    assert verify_handshake_signature(params, "secret") is False
 
 
 def test_verify_handshake_token_valid() -> None:
