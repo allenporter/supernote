@@ -10,23 +10,26 @@ FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures"
 SQLITE_FIXTURES = sorted(FIXTURES_DIR.glob("*.sqlite"))
 
 
-def normalize_sql_line(line: str) -> str:
+def normalize_sql_line(stmt: str) -> str:
     """Normalize floating point numbers and strip trailing whitespace in SQL dump lines."""
 
     def norm_num(m: re.Match[str]) -> str:
         val = float(m.group(0))
         return f"{val:.4f}"
 
-    line = re.sub(r"\b\d+\.\d+(?:e[+-]\d+)?\b", norm_num, line)
-    return line.rstrip()
+    lines = stmt.splitlines()
+    norm_lines = [
+        re.sub(r"\b\d+\.\d+(?:e[+-]\d+)?\b", norm_num, line).rstrip() for line in lines
+    ]
+    return "\n".join(norm_lines)
 
 
 def generate_sql_dump(db_path: Path) -> str:
     """Generate a deterministic SQL dump from a SQLite database file."""
-    conn = sqlite3.connect(db_path)
-    lines = [normalize_sql_line(line) for line in conn.iterdump()]
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    statements = [normalize_sql_line(line) for line in conn.iterdump()]
     conn.close()
-    return "\n".join(lines) + "\n"
+    return "\n".join(statements)
 
 
 @pytest.mark.parametrize("db_path", SQLITE_FIXTURES, ids=lambda p: p.name)

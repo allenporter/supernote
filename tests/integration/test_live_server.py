@@ -1,6 +1,7 @@
 """End-to-end integration tests using out-of-process live server runner."""
 
 import hashlib
+from pathlib import Path
 
 import aiohttp
 import pytest
@@ -10,12 +11,12 @@ from supernote.testing.server_runner import ServerHandle
 
 pytestmark = pytest.mark.integration
 
+TEST_NOTE_PATH = Path("tests/testdata/20251207_221454.note").absolute()
+
 
 @pytest.mark.asyncio
-async def test_fresh_live_server_health_and_admin_user_registration(
-    live_server: ServerHandle,
-) -> None:
-    """Verify fresh live server starts, healthcheck passes, and user registration works."""
+async def test_fresh_live_server_e2e(live_server: ServerHandle, snapshot) -> None:
+    """Verify fresh live server health, admin user registration, SDK login, and CLI commands."""
     assert await live_server.is_healthy()
 
     user_email = "testuser@example.com"
@@ -27,81 +28,21 @@ async def test_fresh_live_server_health_and_admin_user_registration(
         admin_client = live_server.create_admin_client(session)
         await admin_client.register(user_email, password_md5, "Test User")
 
-    # Verify user can log in via Supernote SDK
+    # Verify SDK login and folder listing
     async with await Supernote.login(
         user_email, user_password, host=live_server.base_url
     ) as sn:
         assert sn.token is not None
-        # List root directory over live HTTP socket
         files = await sn.device.list_folder("/")
         assert files is not None
 
-
-@pytest.mark.asyncio
-async def test_migrated_db_live_server(
-    migrated_live_server: ServerHandle,
-) -> None:
-    """Verify live server starts with v1 database, migrates to head, and serves requests."""
-    assert await migrated_live_server.is_healthy()
-    assert migrated_live_server.db_path.exists()
-
-    user_email = "migrated_user@example.com"
-    user_password = "password123"
-    password_md5 = hashlib.md5(user_password.encode("utf-8")).hexdigest()
-
-    # Create admin client pointing to the migrated server instance
-    async with aiohttp.ClientSession() as session:
-        admin_client = migrated_live_server.create_admin_client(session)
-        await admin_client.register(user_email, password_md5, "Migrated User")
-
-    # Verify login works against the migrated database
-    async with await Supernote.login(
-        user_email, user_password, host=migrated_live_server.base_url
-    ) as sn:
-        assert sn.token is not None
-
-
-@pytest.mark.asyncio
-async def test_populated_migrated_db_user_login(
-    populated_migrated_live_server: ServerHandle,
-) -> None:
-    """Verify pre-existing v1 user can log in and access server endpoints after migration."""
-    assert await populated_migrated_live_server.is_healthy()
-
-    # Pre-seeded user credentials in v1 database
-    user_email = "seed_user@example.com"
-    user_password = "seedpassword123"
-
-    # Attempt login without registering (verifying pre-existing account works after migration)
-    async with await Supernote.login(
-        user_email, user_password, host=populated_migrated_live_server.base_url
-    ) as sn:
-        assert sn.token is not None
-        files = await sn.device.list_folder("/")
-        assert files is not None
-
-
-@pytest.mark.asyncio
-async def test_cli_provisioning_and_login(live_server: ServerHandle) -> None:
-    """Verify user provisioning and CLI login/commands in a subprocess."""
-    assert await live_server.is_healthy()
-
-    cli_email = "cliuser@example.com"
-    cli_password = "clipassword123"
-    password_md5 = hashlib.md5(cli_password.encode("utf-8")).hexdigest()
-
-    # Provision user via admin API
-    async with aiohttp.ClientSession() as session:
-        admin_client = live_server.create_admin_client(session)
-        await admin_client.register(cli_email, password_md5, "CLI User")
-
-    # Execute `supernote cloud login` CLI command via async subprocess
+    # Execute `supernote cloud login` CLI command via subprocess
     login_result = await live_server.run_cli(
         "cloud",
         "login",
-        cli_email,
+        user_email,
         "--password",
-        cli_password,
+        user_password,
         "--url",
         live_server.base_url,
     )
@@ -111,3 +52,43 @@ async def test_cli_provisioning_and_login(live_server: ServerHandle) -> None:
     # Execute `supernote cloud ls` CLI command using cached credentials
     ls_result = await live_server.run_cli("cloud", "ls")
     assert ls_result.returncode == 0, f"ls failed: {ls_result.stderr}"
+
+    # Upload test note file via SDK and verify it exists on server
+    assert TEST_NOTE_PATH.exists()
+    async with await Supernote.login(
+        user_email, user_password, host=live_server.base_url
+    ) as sn:
+        await sn.device.upload_content(
+            f"/Note/{TEST_NOTE_PATH.name}",
+            TEST_NOTE_PATH.read_bytes(),
+            equipment_no="WEB",
+        )
+        folder_vo = await sn.device.list_folder("/Note")
+        folder_dict = folder_vo.to_dict()
+        for entry in folder_dict.get("entries", []):
+            entry["id"] = "DYNAMIC_ID"
+            entry["lastUpdateTime"] = 0
+        assert folder_dict == snapshot(name="live_server_note_folder_list")
+
+
+@pytest.mark.asyncio
+async def test_migrated_live_server_e2e(
+    populated_migrated_live_server: ServerHandle, snapshot
+) -> None:
+    """Verify live server starts with legacy v1 DB, migrates to head, and serves pre-existing users."""
+    assert await populated_migrated_live_server.is_healthy()
+    assert populated_migrated_live_server.db_path.exists()
+
+    # Pre-seeded user login (verifying pre-existing v1 account works after migration)
+    seed_email = "seed_user@example.com"
+    seed_password = "seedpassword123"
+    async with await Supernote.login(
+        seed_email, seed_password, host=populated_migrated_live_server.base_url
+    ) as sn:
+        assert sn.token is not None
+        folder_vo = await sn.device.list_folder("/")
+        folder_dict = folder_vo.to_dict()
+        for entry in folder_dict.get("entries", []):
+            entry["id"] = "DYNAMIC_ID"
+            entry["lastUpdateTime"] = 0
+        assert folder_dict == snapshot(name="migrated_live_server_root_folder_list")
