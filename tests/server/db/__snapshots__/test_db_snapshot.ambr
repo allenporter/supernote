@@ -1,0 +1,384 @@
+# serializer version: 1
+# name: test_sqlite_fixture_matches_snapshot[db_v1.sqlite][db_v1_sql_dump]
+  '''
+  BEGIN TRANSACTION;
+  CREATE TABLE alembic_version (
+  	version_num VARCHAR(32) NOT NULL, 
+  	CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)
+  );
+  INSERT INTO "alembic_version" VALUES('0543a383957b');
+  CREATE TABLE devices (
+  	id INTEGER NOT NULL, 
+  	user_id INTEGER NOT NULL, 
+  	equipment_no VARCHAR NOT NULL, 
+  	PRIMARY KEY (id), 
+  	FOREIGN KEY(user_id) REFERENCES users (id)
+  );
+  CREATE TABLE f_capacity (
+  	user_id BIGINT NOT NULL, 
+  	used_capacity BIGINT NOT NULL, 
+  	total_capacity BIGINT NOT NULL, 
+  	PRIMARY KEY (user_id)
+  );
+  CREATE TABLE f_note_page_content (
+  	id BIGINT NOT NULL, 
+  	file_id BIGINT NOT NULL, 
+  	page_index BIGINT NOT NULL, 
+  	page_id VARCHAR NOT NULL, 
+  	content_hash VARCHAR, 
+  	text_content TEXT, 
+  	embedding TEXT, 
+  	create_time BIGINT NOT NULL, 
+  	update_time BIGINT NOT NULL, 
+  	PRIMARY KEY (id), 
+  	CONSTRAINT uq_note_page_content UNIQUE (file_id, page_id)
+  );
+  CREATE TABLE f_recycle_file (
+  	id BIGINT NOT NULL, 
+  	file_id BIGINT NOT NULL, 
+  	user_id BIGINT NOT NULL, 
+  	file_name VARCHAR NOT NULL, 
+  	size BIGINT NOT NULL, 
+  	is_folder VARCHAR(1) NOT NULL, 
+  	delete_time BIGINT NOT NULL, 
+  	PRIMARY KEY (id)
+  );
+  CREATE TABLE f_summary (
+  	id BIGINT NOT NULL, 
+  	user_id BIGINT NOT NULL, 
+  	file_id BIGINT, 
+  	name VARCHAR, 
+  	unique_identifier VARCHAR NOT NULL, 
+  	parent_unique_identifier VARCHAR, 
+  	content TEXT, 
+  	source_path VARCHAR, 
+  	data_source VARCHAR, 
+  	source_type BIGINT, 
+  	is_summary_group BOOLEAN NOT NULL, 
+  	description VARCHAR, 
+  	tags VARCHAR, 
+  	md5_hash VARCHAR, 
+  	extra_metadata TEXT, 
+  	comment_str VARCHAR, 
+  	comment_handwrite_name VARCHAR, 
+  	handwrite_inner_name VARCHAR, 
+  	handwrite_md5 VARCHAR, 
+  	creation_time BIGINT, 
+  	last_modified_time BIGINT, 
+  	is_deleted BOOLEAN NOT NULL, 
+  	create_time BIGINT NOT NULL, 
+  	update_time BIGINT NOT NULL, 
+  	author VARCHAR, 
+  	PRIMARY KEY (id), 
+  	UNIQUE (unique_identifier)
+  );
+  CREATE TABLE f_summary_tag (
+  	id BIGINT NOT NULL, 
+  	user_id BIGINT NOT NULL, 
+  	name VARCHAR NOT NULL, 
+  	unique_identifier VARCHAR NOT NULL, 
+  	create_time BIGINT NOT NULL, 
+  	PRIMARY KEY (id), 
+  	UNIQUE (unique_identifier)
+  );
+  CREATE TABLE f_system_task (
+  	id BIGINT NOT NULL, 
+  	file_id BIGINT NOT NULL, 
+  	task_type VARCHAR NOT NULL, 
+  	"key" VARCHAR NOT NULL, 
+  	status VARCHAR NOT NULL, 
+  	data TEXT, 
+  	retry_count BIGINT NOT NULL, 
+  	last_error TEXT, 
+  	create_time BIGINT NOT NULL, 
+  	update_time BIGINT NOT NULL, 
+  	PRIMARY KEY (id), 
+  	CONSTRAINT uq_system_task UNIQUE (file_id, task_type, "key")
+  );
+  CREATE TABLE f_user_file (
+  	id BIGINT NOT NULL, 
+  	user_id BIGINT NOT NULL, 
+  	directory_id BIGINT NOT NULL, 
+  	file_name VARCHAR NOT NULL, 
+  	is_folder VARCHAR(1) NOT NULL, 
+  	size BIGINT NOT NULL, 
+  	md5 VARCHAR, 
+  	storage_key VARCHAR, 
+  	is_active VARCHAR(1) NOT NULL, 
+  	create_time BIGINT NOT NULL, 
+  	update_time BIGINT NOT NULL, 
+  	PRIMARY KEY (id)
+  );
+  CREATE TABLE key_values (
+  	"key" VARCHAR NOT NULL, 
+  	value VARCHAR NOT NULL, 
+  	expiry FLOAT NOT NULL, 
+  	PRIMARY KEY ("key")
+  );
+  CREATE TABLE login_records (
+  	id INTEGER NOT NULL, 
+  	user_id INTEGER NOT NULL, 
+  	login_method VARCHAR, 
+  	equipment VARCHAR, 
+  	ip VARCHAR, 
+  	create_time VARCHAR NOT NULL, 
+  	PRIMARY KEY (id), 
+  	FOREIGN KEY(user_id) REFERENCES users (id)
+  );
+  CREATE TABLE t_schedule_task (
+  	task_id BIGINT NOT NULL, 
+  	task_list_id BIGINT NOT NULL, 
+  	user_id BIGINT NOT NULL, 
+  	title VARCHAR NOT NULL, 
+  	detail VARCHAR, 
+  	status VARCHAR NOT NULL, 
+  	importance VARCHAR, 
+  	due_time BIGINT, 
+  	completed_time BIGINT, 
+  	recurrence VARCHAR, 
+  	is_reminder_on BOOLEAN NOT NULL, 
+  	create_time BIGINT NOT NULL, 
+  	update_time BIGINT NOT NULL, 
+  	PRIMARY KEY (task_id)
+  );
+  CREATE TABLE t_schedule_task_group (
+  	task_list_id BIGINT NOT NULL, 
+  	user_id BIGINT NOT NULL, 
+  	title VARCHAR NOT NULL, 
+  	create_time BIGINT NOT NULL, 
+  	PRIMARY KEY (task_list_id)
+  );
+  CREATE TABLE users (
+  	id INTEGER NOT NULL, 
+  	email VARCHAR NOT NULL, 
+  	password_md5 VARCHAR NOT NULL, 
+  	is_active BOOLEAN NOT NULL, 
+  	display_name VARCHAR, 
+  	phone VARCHAR, 
+  	avatar VARCHAR, 
+  	total_capacity VARCHAR NOT NULL, 
+  	is_admin BOOLEAN NOT NULL, 
+  	PRIMARY KEY (id)
+  );
+  CREATE INDEX ix_f_note_page_content_file_id ON f_note_page_content (file_id);
+  CREATE INDEX ix_f_summary_file_id ON f_summary (file_id);
+  CREATE INDEX ix_f_summary_parent_unique_identifier ON f_summary (parent_unique_identifier);
+  CREATE INDEX ix_f_summary_user_id ON f_summary (user_id);
+  CREATE INDEX ix_f_summary_tag_user_id ON f_summary_tag (user_id);
+  CREATE INDEX ix_f_system_task_file_id ON f_system_task (file_id);
+  CREATE INDEX ix_f_system_task_task_type ON f_system_task (task_type);
+  CREATE INDEX idx_user_dir_active ON f_user_file (user_id, directory_id, is_active);
+  CREATE INDEX ix_f_user_file_directory_id ON f_user_file (directory_id);
+  CREATE INDEX ix_f_user_file_user_id ON f_user_file (user_id);
+  CREATE INDEX ix_key_values_expiry ON key_values (expiry);
+  CREATE INDEX ix_t_schedule_task_task_list_id ON t_schedule_task (task_list_id);
+  CREATE INDEX ix_t_schedule_task_user_id ON t_schedule_task (user_id);
+  CREATE INDEX ix_t_schedule_task_group_user_id ON t_schedule_task_group (user_id);
+  CREATE UNIQUE INDEX ix_users_email ON users (email);
+  CREATE UNIQUE INDEX ix_devices_equipment_no ON devices (equipment_no);
+  CREATE INDEX ix_devices_user_id ON devices (user_id);
+  CREATE INDEX ix_login_records_create_time ON login_records (create_time);
+  CREATE INDEX ix_login_records_user_id ON login_records (user_id);
+  COMMIT;
+  
+  '''
+# ---
+# name: test_sqlite_fixture_matches_snapshot[db_v1_populated.sqlite][db_v1_populated_sql_dump]
+  '''
+  BEGIN TRANSACTION;
+  CREATE TABLE alembic_version (
+  	version_num VARCHAR(32) NOT NULL, 
+  	CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)
+  );
+  INSERT INTO "alembic_version" VALUES('0543a383957b');
+  CREATE TABLE devices (
+  	id INTEGER NOT NULL, 
+  	user_id INTEGER NOT NULL, 
+  	equipment_no VARCHAR NOT NULL, 
+  	PRIMARY KEY (id), 
+  	FOREIGN KEY(user_id) REFERENCES users (id)
+  );
+  CREATE TABLE f_capacity (
+  	user_id BIGINT NOT NULL, 
+  	used_capacity BIGINT NOT NULL, 
+  	total_capacity BIGINT NOT NULL, 
+  	PRIMARY KEY (user_id)
+  );
+  CREATE TABLE f_note_page_content (
+  	id BIGINT NOT NULL, 
+  	file_id BIGINT NOT NULL, 
+  	page_index BIGINT NOT NULL, 
+  	page_id VARCHAR NOT NULL, 
+  	content_hash VARCHAR, 
+  	text_content TEXT, 
+  	embedding TEXT, 
+  	create_time BIGINT NOT NULL, 
+  	update_time BIGINT NOT NULL, 
+  	PRIMARY KEY (id), 
+  	CONSTRAINT uq_note_page_content UNIQUE (file_id, page_id)
+  );
+  CREATE TABLE f_recycle_file (
+  	id BIGINT NOT NULL, 
+  	file_id BIGINT NOT NULL, 
+  	user_id BIGINT NOT NULL, 
+  	file_name VARCHAR NOT NULL, 
+  	size BIGINT NOT NULL, 
+  	is_folder VARCHAR(1) NOT NULL, 
+  	delete_time BIGINT NOT NULL, 
+  	PRIMARY KEY (id)
+  );
+  CREATE TABLE f_summary (
+  	id BIGINT NOT NULL, 
+  	user_id BIGINT NOT NULL, 
+  	file_id BIGINT, 
+  	name VARCHAR, 
+  	unique_identifier VARCHAR NOT NULL, 
+  	parent_unique_identifier VARCHAR, 
+  	content TEXT, 
+  	source_path VARCHAR, 
+  	data_source VARCHAR, 
+  	source_type BIGINT, 
+  	is_summary_group BOOLEAN NOT NULL, 
+  	description VARCHAR, 
+  	tags VARCHAR, 
+  	md5_hash VARCHAR, 
+  	extra_metadata TEXT, 
+  	comment_str VARCHAR, 
+  	comment_handwrite_name VARCHAR, 
+  	handwrite_inner_name VARCHAR, 
+  	handwrite_md5 VARCHAR, 
+  	creation_time BIGINT, 
+  	last_modified_time BIGINT, 
+  	is_deleted BOOLEAN NOT NULL, 
+  	create_time BIGINT NOT NULL, 
+  	update_time BIGINT NOT NULL, 
+  	author VARCHAR, 
+  	PRIMARY KEY (id), 
+  	UNIQUE (unique_identifier)
+  );
+  CREATE TABLE f_summary_tag (
+  	id BIGINT NOT NULL, 
+  	user_id BIGINT NOT NULL, 
+  	name VARCHAR NOT NULL, 
+  	unique_identifier VARCHAR NOT NULL, 
+  	create_time BIGINT NOT NULL, 
+  	PRIMARY KEY (id), 
+  	UNIQUE (unique_identifier)
+  );
+  CREATE TABLE f_system_task (
+  	id BIGINT NOT NULL, 
+  	file_id BIGINT NOT NULL, 
+  	task_type VARCHAR NOT NULL, 
+  	"key" VARCHAR NOT NULL, 
+  	status VARCHAR NOT NULL, 
+  	data TEXT, 
+  	retry_count BIGINT NOT NULL, 
+  	last_error TEXT, 
+  	create_time BIGINT NOT NULL, 
+  	update_time BIGINT NOT NULL, 
+  	PRIMARY KEY (id), 
+  	CONSTRAINT uq_system_task UNIQUE (file_id, task_type, "key")
+  );
+  CREATE TABLE f_user_file (
+  	id BIGINT NOT NULL, 
+  	user_id BIGINT NOT NULL, 
+  	directory_id BIGINT NOT NULL, 
+  	file_name VARCHAR NOT NULL, 
+  	is_folder VARCHAR(1) NOT NULL, 
+  	size BIGINT NOT NULL, 
+  	md5 VARCHAR, 
+  	storage_key VARCHAR, 
+  	is_active VARCHAR(1) NOT NULL, 
+  	create_time BIGINT NOT NULL, 
+  	update_time BIGINT NOT NULL, 
+  	PRIMARY KEY (id)
+  );
+  INSERT INTO "f_user_file" VALUES(739145975276241739,1,0,'Export','Y',0,NULL,NULL,'Y',1785685333173,1785685333173);
+  INSERT INTO "f_user_file" VALUES(739145975288824103,1,0,'Inbox','Y',0,NULL,NULL,'Y',1785685333177,1785685333177);
+  INSERT INTO "f_user_file" VALUES(739145975297212565,1,0,'Screenshot','Y',0,NULL,NULL,'Y',1785685333179,1785685333179);
+  INSERT INTO "f_user_file" VALUES(739145975305601313,1,0,'NOTE','Y',0,NULL,NULL,'Y',1785685333181,1785685333181);
+  INSERT INTO "f_user_file" VALUES(739145975313990444,1,739145975305601313,'Note','Y',0,NULL,NULL,'Y',1785685333183,1785685333183);
+  INSERT INTO "f_user_file" VALUES(739145975322379074,1,739145975305601313,'MyStyle','Y',0,NULL,NULL,'Y',1785685333185,1785685333185);
+  INSERT INTO "f_user_file" VALUES(739145975330766953,1,0,'DOCUMENT','Y',0,NULL,NULL,'Y',1785685333187,1785685333187);
+  INSERT INTO "f_user_file" VALUES(739145975339156062,1,739145975330766953,'Document','Y',0,NULL,NULL,'Y',1785685333188,1785685333188);
+  INSERT INTO "f_user_file" VALUES(739145975435625196,1,0,'My Notes','Y',0,NULL,NULL,'Y',1785685333212,1785685333212);
+  CREATE TABLE key_values (
+  	"key" VARCHAR NOT NULL, 
+  	value VARCHAR NOT NULL, 
+  	expiry FLOAT NOT NULL, 
+  	PRIMARY KEY ("key")
+  );
+  INSERT INTO "key_values" VALUES('challenge:seed_user@example.com','a1f9e1b7|1785685333194',1785685633.1943);
+  INSERT INTO "key_values" VALUES('rate_limit:login:ip:127.0000.0.1000:29761422','1',1785685453.1976);
+  INSERT INTO "key_values" VALUES('rate_limit:login:account:seed_user@example.com:29761422','1',1785685453.1999);
+  INSERT INTO "key_values" VALUES('session:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzZWVkX3VzZXJAZXhhbXBsZS5jb20iLCJlcXVpcG1lbnRfbm8iOiIiLCJpYXQiOjE3ODU2ODUzMzMsImV4cCI6MTc4NTc3MTczM30.LRKg7a-VXvsZ1M6jypXcANe_9-0qjq9-5i70jPCtYLw','seed_user@example.com|',1785771733.2060);
+  CREATE TABLE login_records (
+  	id INTEGER NOT NULL, 
+  	user_id INTEGER NOT NULL, 
+  	login_method VARCHAR, 
+  	equipment VARCHAR, 
+  	ip VARCHAR, 
+  	create_time VARCHAR NOT NULL, 
+  	PRIMARY KEY (id), 
+  	FOREIGN KEY(user_id) REFERENCES users (id)
+  );
+  INSERT INTO "login_records" VALUES(1,1,'2',NULL,'127.0000.0.1000','2026-08-02T15:42:13.2044');
+  CREATE TABLE t_schedule_task (
+  	task_id BIGINT NOT NULL, 
+  	task_list_id BIGINT NOT NULL, 
+  	user_id BIGINT NOT NULL, 
+  	title VARCHAR NOT NULL, 
+  	detail VARCHAR, 
+  	status VARCHAR NOT NULL, 
+  	importance VARCHAR, 
+  	due_time BIGINT, 
+  	completed_time BIGINT, 
+  	recurrence VARCHAR, 
+  	is_reminder_on BOOLEAN NOT NULL, 
+  	create_time BIGINT NOT NULL, 
+  	update_time BIGINT NOT NULL, 
+  	PRIMARY KEY (task_id)
+  );
+  CREATE TABLE t_schedule_task_group (
+  	task_list_id BIGINT NOT NULL, 
+  	user_id BIGINT NOT NULL, 
+  	title VARCHAR NOT NULL, 
+  	create_time BIGINT NOT NULL, 
+  	PRIMARY KEY (task_list_id)
+  );
+  CREATE TABLE users (
+  	id INTEGER NOT NULL, 
+  	email VARCHAR NOT NULL, 
+  	password_md5 VARCHAR NOT NULL, 
+  	is_active BOOLEAN NOT NULL, 
+  	display_name VARCHAR, 
+  	phone VARCHAR, 
+  	avatar VARCHAR, 
+  	total_capacity VARCHAR NOT NULL, 
+  	is_admin BOOLEAN NOT NULL, 
+  	PRIMARY KEY (id)
+  );
+  INSERT INTO "users" VALUES(1,'seed_user@example.com','b92f4a4dbe3d66796566b285f635399d',1,'Seed User',NULL,NULL,'10737418240',1);
+  CREATE INDEX ix_f_note_page_content_file_id ON f_note_page_content (file_id);
+  CREATE INDEX ix_f_summary_file_id ON f_summary (file_id);
+  CREATE INDEX ix_f_summary_parent_unique_identifier ON f_summary (parent_unique_identifier);
+  CREATE INDEX ix_f_summary_user_id ON f_summary (user_id);
+  CREATE INDEX ix_f_summary_tag_user_id ON f_summary_tag (user_id);
+  CREATE INDEX ix_f_system_task_file_id ON f_system_task (file_id);
+  CREATE INDEX ix_f_system_task_task_type ON f_system_task (task_type);
+  CREATE INDEX idx_user_dir_active ON f_user_file (user_id, directory_id, is_active);
+  CREATE INDEX ix_f_user_file_directory_id ON f_user_file (directory_id);
+  CREATE INDEX ix_f_user_file_user_id ON f_user_file (user_id);
+  CREATE INDEX ix_key_values_expiry ON key_values (expiry);
+  CREATE INDEX ix_t_schedule_task_task_list_id ON t_schedule_task (task_list_id);
+  CREATE INDEX ix_t_schedule_task_user_id ON t_schedule_task (user_id);
+  CREATE INDEX ix_t_schedule_task_group_user_id ON t_schedule_task_group (user_id);
+  CREATE UNIQUE INDEX ix_users_email ON users (email);
+  CREATE UNIQUE INDEX ix_devices_equipment_no ON devices (equipment_no);
+  CREATE INDEX ix_devices_user_id ON devices (user_id);
+  CREATE INDEX ix_login_records_create_time ON login_records (create_time);
+  CREATE INDEX ix_login_records_user_id ON login_records (user_id);
+  COMMIT;
+  
+  '''
+# ---

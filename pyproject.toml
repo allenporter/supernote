@@ -109,6 +109,9 @@ filterwarnings = [
     "ignore:websockets.server.WebSocketServerProtocol is deprecated:DeprecationWarning:uvicorn.protocols.websockets.websockets_impl",
     "ignore:The `route` decorator is deprecated, and will be removed in version 1.0.0:DeprecationWarning:starlette.applications",
 ]
+markers = [
+    "integration: mark test as out-of-process integration test",
+]
 
 [tool.ty.src]
 exclude = [
