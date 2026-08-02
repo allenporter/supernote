@@ -7,6 +7,8 @@ cd "$(dirname "$0")/.."
 
 echo "==> Starting ephemeral server..."
 
+export SUPERNOTE_JWT_SECRET="${SUPERNOTE_JWT_SECRET:-supernote_dev_secret_key}"
+
 if command -v uv >/dev/null 2>&1; then
   uv run supernote serve --ephemeral "$@"
 else
