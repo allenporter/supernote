@@ -98,15 +98,13 @@ async def mcp_session(
 ) -> AsyncGenerator[ClientSession]:
     """Helper context manager for MCP sessions to avoid AnyIO task group leaks in fixtures."""
     async with httpx.AsyncClient(headers=auth_headers) as http_client:
-        async with (
-            streamable_http_client(mcp_url, http_client=cast(Any, http_client)) as (
-                read_stream,
-                write_stream,
-            ),
-            ClientSession(read_stream, write_stream) as session,
-        ):
-            await session.initialize()
-            yield session
+        async with streamable_http_client(
+            mcp_url, http_client=cast(Any, http_client)
+        ) as res:
+            read_stream, write_stream = res[0], res[1]
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                yield session
 
 
 async def test_mcp_list_tools(
