@@ -340,6 +340,7 @@ class UserService:
             return None
 
         return UserVO(
+            user_id=user.id,
             user_name=user.display_name or account,
             email=user.email or account,
             phone=user.phone or "",

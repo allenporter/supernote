@@ -203,6 +203,7 @@ class OSType(str, BaseEnum):
 class UserVO(DataClassJSONMixin):
     """User profile VO."""
 
+    user_id: int = field(metadata=field_options(alias="userId"), default=0)
     user_name: str | None = field(
         metadata=field_options(alias="userName"), default=None
     )
