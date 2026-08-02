@@ -5,7 +5,7 @@ from typing import Any, cast
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.provider import TokenVerifier
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import AnyHttpUrl
 
@@ -191,12 +191,12 @@ async def get_notebook_transcript(
     return TranscriptResponseVO(transcript=transcript).to_dict()
 
 
-def create_mcp_server(issuer_url: str, resource_server_url: str) -> FastMCP:
-    """Create a new FastMCP server instance and register tools."""
+def create_mcp_server(issuer_url: str, resource_server_url: str) -> MCPServer:
+    """Create a new MCPServer instance and register tools."""
     token_verifier = SupernoteTokenVerifier(
         _services["user_service"], _services["coordination_service"]
     )
-    mcp = FastMCP(
+    mcp = MCPServer(
         "Supernote Retrieval",
         auth=AuthSettings(
             issuer_url=AnyHttpUrl(issuer_url),
@@ -210,21 +210,23 @@ def create_mcp_server(issuer_url: str, resource_server_url: str) -> FastMCP:
 
 
 async def run_server(
-    mcp: FastMCP, host: str, port: int, proxy_mode: str | None = None
+    mcp: MCPServer, host: str, port: int, proxy_mode: str | None = None
 ) -> None:
-    """Run the FastMCP server with Streamable HTTP transport."""
-    mcp.settings.host = host
-    mcp.settings.port = port
-
+    """Run the MCPServer with Streamable HTTP transport."""
+    transport_security: TransportSecuritySettings | None = None
     # Relax security for custom host headers (e.g. k8s ingress) only if proxy mode is enabled.
     # This prevents DNS rebinding attacks while allowing operation behind proxies.
     if proxy_mode == "relaxed":
         logger.info(
             f"Proxy mode {proxy_mode} detected. Relaxing MCP transport security."
         )
-        mcp.settings.transport_security = TransportSecuritySettings(
+        transport_security = TransportSecuritySettings(
             enable_dns_rebinding_protection=False,
         )
 
     logger.info(f"Starting MCP server on {host}:{port} using streamable-http...")
-    await mcp.run_streamable_http_async()
+    await mcp.run_streamable_http_async(
+        host=host,
+        port=port,
+        transport_security=transport_security,
+    )

@@ -3,7 +3,7 @@ import logging
 import re
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -99,10 +99,9 @@ async def mcp_session(
     """Helper context manager for MCP sessions to avoid AnyIO task group leaks in fixtures."""
     async with httpx.AsyncClient(headers=auth_headers) as http_client:
         async with (
-            streamable_http_client(mcp_url, http_client=http_client) as (
+            streamable_http_client(mcp_url, http_client=cast(Any, http_client)) as (
                 read_stream,
                 write_stream,
-                _,
             ),
             ClientSession(read_stream, write_stream) as session,
         ):
@@ -181,27 +180,28 @@ async def test_mcp_unauthorized(
     # Use invalid headers
     invalid_headers = {"Authorization": "Bearer invalid-token"}
 
-    # Standard MCP client will fail with 401 during stream connection or initialization
-    with pytest.raises(ExceptionGroup) as err:
+    # Standard MCP client will fail during stream connection or initialization
+    with pytest.raises(ExceptionGroup):
         async with mcp_session(mcp_url, invalid_headers):
             pass
-    assert err.value.exceptions
-    exc = next(iter(err.value.exceptions))
-    assert isinstance(exc, httpx.HTTPStatusError)
-    assert exc.response.status_code == 401
-    assert "www-authenticate" in exc.response.headers
-    auth_header = exc.response.headers["www-authenticate"]
-    assert "error_description=" in auth_header
-    assert "resource_metadata=" in auth_header
 
-    # Extract metadata URL from WWW-Authenticate header
-    match = re.search(r'resource_metadata="([^"]+)"', auth_header)
-    assert match, f"WWW-Authenticate header missing resource_metadata: {auth_header}"
-    metadata_url = match.group(1)
-
-    # Fetch metadata
+    # Direct request returns HTTP 401 with WWW-Authenticate header
     async with httpx.AsyncClient() as client:
+        resp = await client.post(mcp_url, headers=invalid_headers)
+        assert resp.status_code == 401
+        assert "www-authenticate" in resp.headers
+        auth_header = resp.headers["www-authenticate"]
+        assert "error_description=" in auth_header
+        assert "resource_metadata=" in auth_header
+
+        # Extract metadata URL from WWW-Authenticate header
+        match = re.search(r'resource_metadata="([^"]+)"', auth_header)
+        assert match, (
+            f"WWW-Authenticate header missing resource_metadata: {auth_header}"
+        )
+        metadata_url = match.group(1)
+
         meta_response = await client.get(metadata_url)
-    assert meta_response.status_code == 200
-    data = meta_response.json()
-    assert data.get("authorization_servers") == [f"{server_config.base_url}/"]
+        assert meta_response.status_code == 200
+        data = meta_response.json()
+        assert data.get("authorization_servers") == [f"{server_config.base_url}/"]
