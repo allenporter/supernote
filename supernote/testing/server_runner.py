@@ -239,18 +239,7 @@ class ServerRunner:
             **self.custom_env,
         }
 
-        if shutil.which("uv"):
-            cmd = [
-                "uv",
-                "run",
-                "--all-extras",
-                "python3",
-                "-m",
-                "supernote.cli.server",
-                "serve",
-            ]
-        else:
-            cmd = [sys.executable, "-m", "supernote.cli.server", "serve"]
+        cmd = [sys.executable, "-m", "supernote.cli.server", "serve"]
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             env=process_env,

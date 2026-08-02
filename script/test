@@ -13,7 +13,7 @@ if [ ${#PYTEST_ARGS[@]} -eq 0 ]; then
 fi
 
 if command -v uv >/dev/null 2>&1; then
-  uv run --all-extras pytest "${PYTEST_ARGS[@]}"
+  uv run pytest "${PYTEST_ARGS[@]}"
 else
   pytest "${PYTEST_ARGS[@]}"
 fi
