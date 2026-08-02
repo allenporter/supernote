@@ -205,16 +205,7 @@ async def handle_user_query(request: web.Request) -> web.Response:
             status=404,
         )
 
-    token = request.headers.get("x-access-token") or request.headers.get(
-        "authorization", ""
-    ).replace("Bearer ", "")
-    equipment_no = None
-    if token:
-        sess_val = await request.app["coordination_service"].get_value(
-            f"session:{token}"
-        )
-        if sess_val and "|" in sess_val:
-            _, equipment_no = sess_val.split("|", 1)
+    equipment_no = request.get("equipment_no")
 
     return web.json_response(
         UserQueryByIdVO(
