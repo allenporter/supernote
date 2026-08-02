@@ -11,7 +11,6 @@ import FileViewer from './components/FileViewer.js';
 import SystemPanel from './components/SystemPanel.js';
 import MoveModal from './components/MoveModal.js';
 import RenameModal from './components/RenameModal.js';
-import TaskPanel from './components/TaskPanel.js';
 
 createApp({
     components: {
@@ -24,15 +23,13 @@ createApp({
         FileViewer,
         SystemPanel,
         MoveModal,
-        RenameModal,
-        TaskPanel
+        RenameModal
     },
     setup() {
         // Auth State
         const isLoggedIn = ref(false);
         const loginError = ref(null);
         const showSystemPanel = ref(false);
-        const activeTab = ref('files'); // 'files' | 'tasks'
 
         // Theme Mode
         const isDarkMode = ref(localStorage.getItem('supernote_theme') === 'dark');
@@ -257,7 +254,6 @@ createApp({
 
         return {
             isLoggedIn,
-            activeTab,
             handleLogin,
             handleLogout,
             isDarkMode,
