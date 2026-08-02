@@ -34,11 +34,15 @@ Beyond simple storage, Supernote provides an active processing pipeline to incre
 
 ### Web Interface
 
-The integrated frontend allows you to review your notes and AI insights side-by-side.
+The integrated frontend allows you to review your notes, manage task lists, and view AI insights side-by-side.
 
 <p align="center">
   <img src="docs/static-assets/note-synthesis-1.jpg" alt="Note Synthesis View" width="400">
   <img src="docs/static-assets/note-synthesis-2.jpg" alt="Notebook Explorer" width="400">
+</p>
+
+<p align="center">
+  <img src="docs/static-assets/tasks-dashboard.png" alt="Tasks & Schedule Dashboard" width="800">
 </p>
 
 ## Quick Start
