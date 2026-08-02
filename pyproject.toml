@@ -29,6 +29,8 @@ dependencies = [
 [project.optional-dependencies]
 client = [
     "aiohttp",
+    "mashumaro>=3.17",
+    "python-socketio>=5.11.0",
     "requests",
     "tqdm",
 ]
@@ -47,6 +49,7 @@ server = [
   "aiohttp-asgi>=0.6.1",
   "starlette>=0.35.0",
   "prometheus-client>=0.20.0",
+  "python-socketio>=5.11.0",
 ]
 all = ["supernote[client,server]"]
 

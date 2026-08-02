@@ -8,6 +8,7 @@ __all__ = [
     "equipment",
     "file",
     "schedule",
+    "socket",
     "summary",
     "system",
     "user",

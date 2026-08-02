@@ -23,3 +23,4 @@ PyJWT==2.13.0
 # Developer dependencies
 pytest-aiohttp==1.1.1
 freezegun==1.5.5
+python-socketio>=5.11.0

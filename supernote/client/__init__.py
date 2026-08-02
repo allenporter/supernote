@@ -21,6 +21,7 @@ from . import (
     extended,
     login_client,
     schedule,
+    socket,
     summary,
     web,
 )
@@ -37,6 +38,7 @@ __all__ = [
     "extended",
     "login_client",
     "schedule",
+    "socket",
     "summary",
     "web",
 ]
