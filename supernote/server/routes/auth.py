@@ -7,7 +7,9 @@ from supernote.models.auth import (
     RandomCodeDTO,
     RandomCodeVO,
     UserCheckDTO,
+    UserInfo,
     UserQueryByIdVO,
+    UserQueryVO,
 )
 from supernote.models.base import BaseResponse, create_error_response
 from supernote.models.equipment import BindEquipmentDTO, UnbindEquipmentDTO
@@ -179,6 +181,43 @@ async def handle_user_query(request: web.Request) -> web.Response:
     return web.json_response(
         UserQueryByIdVO(
             user=user_vo,
+            is_user=True,
+            equipment_no=request.get("equipment_no"),
+        ).to_dict()
+    )
+
+
+@routes.post("/api/user/query/info")
+@routes.get("/api/user/query/info")
+async def handle_user_query_info(request: web.Request) -> web.Response:
+    # Endpoint: POST / GET /api/user/query/info (OpenAPI Spec: queryUserInfo)
+    # Purpose: Get refined user info object (UserQueryVO) for Supernote apps & device terminals.
+    account = request.get("user")
+    if not account:
+        return web.json_response(
+            create_error_response("Unauthorized").to_dict(), status=401
+        )
+    user_service: UserService = request.app["user_service"]
+    user_vo = await user_service.get_user_profile(str(account))
+    if not user_vo:
+        return web.json_response(
+            create_error_response("User not found").to_dict(),
+            status=404,
+        )
+
+    user_info = UserInfo(
+        user_id=user_vo.user_id,
+        user_name=user_vo.user_name,
+        email=user_vo.email,
+        phone=user_vo.phone,
+        avatars_url=user_vo.avatars_url,
+        total_capacity=user_vo.total_capacity,
+        file_server=user_vo.file_server,
+    )
+
+    return web.json_response(
+        UserQueryVO(
+            user=user_info,
             is_user=True,
             equipment_no=request.get("equipment_no"),
         ).to_dict()
