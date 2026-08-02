@@ -34,7 +34,6 @@ ALLOWLIST_NON_CONFORMING_TESTS = {
     "models/test_summary_models.py",
     "models/test_system_models.py",
     "models/test_user_models_completeness.py",
-    "server/db/models/test_models.py",
     "server/db/test_db_snapshot.py",
     "server/device/test_capacity.py",
     "server/device/test_clobber.py",
