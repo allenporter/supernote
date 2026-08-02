@@ -41,6 +41,15 @@ class BaseEnum(Enum):
                 return member
         raise ValueError(f"Invalid {cls.__name__} value: {value}")
 
+    @classmethod
+    def _missing_(cls, value: object) -> Self | None:
+        """Accept a JSON number where the API spells a code as a string."""
+        text = str(value)
+        for member in cls:
+            if member.value == text:
+                return member
+        return None
+
 
 class BooleanEnum(str, BaseEnum):
     """Boolean enum."""
