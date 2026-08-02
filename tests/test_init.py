@@ -24,45 +24,8 @@ INIT_TEST_NAME = "test_init.py"
 # remove them from this set.
 ALLOWLIST_NON_CONFORMING_TESTS = {
     "client/test_login.py",
-    "integration/test_live_server.py",
-    "models/test_auth_completeness.py",
     "models/test_file.py",
-    "models/test_file_completeness.py",
-    "models/test_log_requests.py",
-    "models/test_user_models_completeness.py",
-    "server/db/test_db_snapshot.py",
-    "server/device/test_capacity.py",
-    "server/device/test_clobber.py",
-    "server/device/test_directory.py",
-    "server/device/test_download.py",
-    "server/device/test_errors.py",
-    "server/device/test_file.py",
-    "server/device/test_file_conversion.py",
-    "server/device/test_listing.py",
-    "server/device/test_move_copy.py",
-    "server/device/test_query.py",
-    "server/device/test_query_repro.py",
-    "server/device/test_sync.py",
-    "server/device/test_upload.py",
-    "server/equipment/test_binding.py",
-    "server/equipment/test_login.py",
-    "server/mcp/test_as_discovery.py",
-    "server/mcp/test_client.py",
-    "server/mcp/test_oauth_flow.py",
     "server/routes/test_system_extended.py",
-    "server/services/processor_modules/test_processor_integration.py",
-    "server/services/test_blob_integration.py",
-    "server/services/test_processor_modules.py",
-    "server/test_trace.py",
-    "server/web/test_capacity.py",
-    "server/web/test_device_vs_web_structure.py",
-    "server/web/test_empty_subdir.py",
-    "server/web/test_listing.py",
-    "server/web/test_recycle.py",
-    "server/web/test_search.py",
-    "server/web/test_system_directories.py",
-    "server/web/test_web_parity.py",
-    "server/web/test_web_upload_processing.py",
 }
 
 
@@ -86,6 +49,7 @@ def test_all_test_files_conform_to_1to1_mapping():
         for t in TEST_ROOT.rglob("*.py")
         if not any(part.startswith(".") for part in t.parts)
         and t.name not in IGNORED_TEST_FILENAMES
+        and not any(part == "integration" for part in t.relative_to(TEST_ROOT).parts)
         and t.relative_to(TEST_ROOT) not in expected_1to1
         and str(t.relative_to(TEST_ROOT)) not in ALLOWLIST_NON_CONFORMING_TESTS
     ]
