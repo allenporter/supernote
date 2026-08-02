@@ -84,9 +84,9 @@ def test_notebook_png_snapshots(note_path: Path, snapshot) -> None:
     for p in range(total_pages):
         img = converter.convert(p)
 
-        # Save image as PNG in-memory bytes
+        # Save image as PNG in-memory bytes with fast compression for testing
         buf = io.BytesIO()
-        img.save(buf, format="PNG")
+        img.save(buf, format="PNG", compress_level=1)
         png_bytes = buf.getvalue()
 
         # Assert bytes against syrupy using the custom visual diff extension

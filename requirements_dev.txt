@@ -17,10 +17,11 @@ google-genai==2.16.0
 mcp==1.29.0
 
 # For user management CLI
-pyyaml>=6.0
+pyyaml==6.0.3
 PyJWT==2.13.0
 
 # Developer dependencies
 pytest-aiohttp==1.1.1
 freezegun==1.5.5
-python-socketio>=5.11.0
+python-socketio==5.16.3
+pytest-xdist==3.8.0
