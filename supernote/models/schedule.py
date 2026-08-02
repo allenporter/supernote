@@ -13,6 +13,7 @@ The following endpoints are supported:
 - /api/file/schedule/sort/{taskListId}
 """
 
+import base64
 from dataclasses import dataclass, field
 
 from mashumaro import field_options
@@ -20,6 +21,42 @@ from mashumaro.config import BaseConfig
 from mashumaro.mixins.json import DataClassJSONMixin
 
 from .base import BaseResponse, BooleanEnum
+
+
+@dataclass
+class ScheduleTaskLinkDTO(DataClassJSONMixin):
+    """Deep-link to a document or notebook page associated with a task/event.
+
+    Stored as a Base64-encoded JSON string in ScheduleTaskInfo.links.
+    """
+
+    app_name: str = field(metadata=field_options(alias="appName"))
+    """Target app: 'Note' or 'Document'"""
+
+    path: str
+    """Relative storage path to document (e.g. '/Note/Planner.note')"""
+
+    page: int
+    """1-indexed page number"""
+
+    file_id: str | None = field(metadata=field_options(alias="fileId"), default=None)
+    """Unique 64-bit file ID"""
+
+    page_id: str | None = field(metadata=field_options(alias="pageId"), default=None)
+    """Unique page layer GUID"""
+
+    def to_b64(self) -> str:
+        """Encode this link object to a Base64 JSON string."""
+        return base64.b64encode(str(self.to_json()).encode("utf-8")).decode("utf-8")
+
+    @classmethod
+    def from_b64(cls, b64_str: str) -> "ScheduleTaskLinkDTO":
+        """Decode a Base64 JSON string to a ScheduleTaskLinkDTO object."""
+        decoded_bytes = base64.b64decode(b64_str)
+        return cls.from_json(decoded_bytes.decode("utf-8"))
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
 
 
 @dataclass

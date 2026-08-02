@@ -71,6 +71,19 @@ class ScheduleTaskDO(Base):
     is_reminder_on: Mapped[bool] = mapped_column(default=False)
     """Whether the task has a reminder."""
 
+    links: Mapped[str | None] = mapped_column(String, nullable=True)
+    """Base64 encoded JSON description of document link."""
+
+    sort: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    sort_completed: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    planer_sort: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    all_sort: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    all_sort_completed: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    sort_time: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    planer_sort_time: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    all_sort_time: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
     create_time: Mapped[int] = mapped_column(
         BigInteger, default=lambda: int(time.time() * 1000)
     )

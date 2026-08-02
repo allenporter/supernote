@@ -1,4 +1,5 @@
 import logging
+from dataclasses import fields
 from typing import Any
 
 from aiohttp import web
@@ -28,6 +29,23 @@ from supernote.server.services.schedule import ScheduleService
 logger = logging.getLogger(__name__)
 
 routes = web.RouteTableDef()
+
+
+def _extract_task_updates(dto: UpdateScheduleTaskDTO) -> dict[str, Any]:
+    """Extract populated update fields from UpdateScheduleTaskDTO into a service dict."""
+    updates: dict[str, Any] = {}
+    for f in fields(dto):
+        if f.name in ("task_id", "last_modified", "is_deleted"):
+            continue
+        val = getattr(dto, f.name)
+        if val is not None:
+            if f.name == "task_list_id":
+                updates["task_list_id"] = int(val)
+            elif f.name == "is_reminder_on":
+                updates["is_reminder_on"] = val == BooleanEnum.YES
+            else:
+                updates[f.name] = val
+    return updates
 
 
 @routes.post("/api/file/schedule/group")
@@ -145,7 +163,7 @@ async def clear_group(request: web.Request) -> web.Response:
         schedule_service: ScheduleService = request.app["schedule_service"]
         user_id = await request.app["user_service"].get_user_id(user)
 
-        await schedule_service.clear_group(user_id, int(dto.task_list_id))
+        await schedule_service.clear_group_tasks(user_id, int(dto.task_list_id))
         return web.json_response(BaseResponse(success=True).to_dict())
     except SupernoteError as err:
         return err.to_response()
@@ -203,6 +221,15 @@ async def create_task(request: web.Request) -> web.Response:
             due_time=dto.due_time,
             recurrence=dto.recurrence,
             is_reminder_on=(dto.is_reminder_on == BooleanEnum.YES),
+            links=dto.links,
+            sort=dto.sort,
+            sort_completed=dto.sort_completed,
+            planer_sort=dto.planer_sort,
+            all_sort=dto.all_sort,
+            all_sort_completed=dto.all_sort_completed,
+            sort_time=dto.sort_time,
+            planer_sort_time=dto.planer_sort_time,
+            all_sort_time=dto.all_sort_time,
         )
         return web.json_response(
             AddScheduleTaskVO(success=True, task_id=str(task.task_id)).to_dict()
@@ -228,24 +255,7 @@ async def update_task(request: web.Request) -> web.Response:
         schedule_service: ScheduleService = request.app["schedule_service"]
         user_id = await request.app["user_service"].get_user_id(user)
 
-        updates: dict[str, Any] = {}
-        if dto.title is not None:
-            updates["title"] = dto.title
-        if dto.detail is not None:
-            updates["detail"] = dto.detail
-        if dto.status is not None:
-            updates["status"] = dto.status
-        if dto.importance is not None:
-            updates["importance"] = dto.importance
-        if dto.due_time is not None:
-            updates["due_time"] = dto.due_time
-        if dto.recurrence is not None:
-            updates["recurrence"] = dto.recurrence
-        if dto.is_reminder_on is not None:
-            updates["is_reminder_on"] = dto.is_reminder_on == BooleanEnum.YES
-        if dto.task_list_id is not None:
-            updates["task_list_id"] = int(dto.task_list_id)
-
+        updates = _extract_task_updates(dto)
         updated_task = await schedule_service.update_task(user_id, task_id, **updates)
         if not updated_task:
             raise SupernoteError("Not found", status_code=404)
@@ -274,22 +284,9 @@ async def batch_update_task_list(request: web.Request) -> web.Response:
         updates_list: list[dict[str, Any]] = []
         for item in dto.update_schedule_task_list:
             if item.task_id:
-                updates: dict[str, Any] = {"task_id": int(item.task_id)}
-                if item.title is not None:
-                    updates["title"] = item.title
-                if item.detail is not None:
-                    updates["detail"] = item.detail
-                if item.status is not None:
-                    updates["status"] = item.status
-                if item.importance is not None:
-                    updates["importance"] = item.importance
-                if item.due_time is not None:
-                    updates["due_time"] = item.due_time
-                if item.recurrence is not None:
-                    updates["recurrence"] = item.recurrence
-                if item.is_reminder_on is not None:
-                    updates["is_reminder_on"] = item.is_reminder_on == BooleanEnum.YES
-                updates_list.append(updates)
+                item_updates = _extract_task_updates(item)
+                item_updates["task_id"] = int(item.task_id)
+                updates_list.append(item_updates)
 
         await schedule_service.batch_update_tasks(user_id, updates_list)
         return web.json_response(BaseResponse(success=True).to_dict())
@@ -353,6 +350,15 @@ async def get_task(request: web.Request) -> web.Response:
                 is_reminder_on=(
                     BooleanEnum.YES if task.is_reminder_on else BooleanEnum.NO
                 ),
+                links=task.links,
+                sort=task.sort,
+                sort_completed=task.sort_completed,
+                planer_sort=task.planer_sort,
+                all_sort=task.all_sort,
+                all_sort_completed=task.all_sort_completed,
+                sort_time=task.sort_time,
+                planer_sort_time=task.planer_sort_time,
+                all_sort_time=task.all_sort_time,
                 last_modified=task.update_time,
             ).to_dict()
         )
@@ -393,6 +399,15 @@ async def list_tasks(request: web.Request) -> web.Response:
                 is_reminder_on=(
                     BooleanEnum.YES if t.is_reminder_on else BooleanEnum.NO
                 ),
+                links=t.links,
+                sort=t.sort,
+                sort_completed=t.sort_completed,
+                planer_sort=t.planer_sort,
+                all_sort=t.all_sort,
+                all_sort_completed=t.all_sort_completed,
+                sort_time=t.sort_time,
+                planer_sort_time=t.planer_sort_time,
+                all_sort_time=t.all_sort_time,
                 last_modified=t.update_time,
             )
             for t in tasks_dos

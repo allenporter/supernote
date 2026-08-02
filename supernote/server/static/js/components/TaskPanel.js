@@ -153,6 +153,22 @@ export default {
             return due.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
         }
 
+        function parseNotebookLink(links) {
+            if (!links) return null;
+            try {
+                const decoded = atob(links);
+                const obj = JSON.parse(decoded);
+                if (obj.path || obj.appName) {
+                    const filename = obj.path ? obj.path.split('/').pop() : 'Notebook';
+                    const pageStr = obj.page ? ` (p. ${obj.page})` : '';
+                    return `📓 ${filename}${pageStr}`;
+                }
+            } catch (e) {
+                return '📓 Linked Notebook';
+            }
+            return '📓 Linked Notebook';
+        }
+
         function selectFilterMode(filter) {
             selectedFilter.value = filter;
             selectedGroupId.value = null;
@@ -195,6 +211,7 @@ export default {
             handleSaveTask,
             handleCreateGroup,
             formatDueDate,
+            parseNotebookLink,
             selectFilterMode,
             selectGroup
         };
@@ -353,6 +370,12 @@ export default {
 
                             <!-- Badges -->
                             <div class="flex items-center gap-2 flex-shrink-0">
+                                <!-- Notebook Page Link Badge -->
+                                <span v-if="parseNotebookLink(task.links)"
+                                    class="text-xs px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 font-medium border border-purple-100">
+                                    {{ parseNotebookLink(task.links) }}
+                                </span>
+
                                 <!-- Group Tag -->
                                 <span v-if="task.taskListId !== '0' && groupNameMap[task.taskListId]"
                                     class="text-xs px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium border border-slate-200/60">

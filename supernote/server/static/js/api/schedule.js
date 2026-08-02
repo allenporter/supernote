@@ -107,6 +107,7 @@ export async function fetchTasks(taskListId = null, pageToken = null, pageSize =
             dueTime: t.dueTime || 0,
             completedTime: t.completedTime || 0,
             isReminderOn: t.isReminderOn === "Y" || t.isReminderOn === true || t.isReminderOn === 1,
+            links: t.links || null,
             createTime: t.createTime || 0,
             updateTime: t.updateTime || 0,
         })),
