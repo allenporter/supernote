@@ -7,9 +7,7 @@ from supernote.models.auth import (
     RandomCodeDTO,
     RandomCodeVO,
     UserCheckDTO,
-    UserInfo,
     UserQueryByIdVO,
-    UserQueryVO,
 )
 from supernote.models.base import BaseResponse, create_error_response
 from supernote.models.equipment import BindEquipmentDTO, UnbindEquipmentDTO
@@ -18,6 +16,8 @@ from supernote.models.user import (
     RetrievePasswordDTO,
     UpdateEmailDTO,
     UpdatePasswordDTO,
+    UserInfo,
+    UserQueryVO,
     UserRegisterDTO,
 )
 from supernote.server.exceptions import SupernoteError
