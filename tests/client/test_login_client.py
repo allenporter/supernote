@@ -1,5 +1,7 @@
 """Tests for supernote.client.login_client module."""
 
+import hashlib
+
 import pytest
 from aiohttp import web
 from pytest_aiohttp import AiohttpClient
@@ -8,7 +10,7 @@ from supernote.client import Client
 from supernote.client.exceptions import ApiException, SmsVerificationRequired
 from supernote.client.hashing import hash_password
 from supernote.client.login_client import LoginClient
-from supernote.models.auth import LoginVO
+from supernote.models.auth import LoginVO, RandomCodeVO
 
 
 async def handler_csrf(request: web.Request) -> web.Response:
@@ -232,3 +234,79 @@ async def test_sms_login_and_request_code(aiohttp_client: AiohttpClient) -> None
     assert recorded_calls[2][1]["telephone"] == "1234567890"
     assert recorded_calls[2][1]["nationcode"] == 1
     assert recorded_calls[2][1]["token"] == "tok-saltpart-1"
+
+
+def sha256_helper(data: str) -> str:
+    return hashlib.sha256(data.encode()).hexdigest()
+
+
+async def test_login_raw_flow(aiohttp_client) -> None:
+    async def handler_random_code(request):
+        return web.json_response(
+            {"success": True, "randomCode": "123456", "timestamp": "1600000000"}
+        )
+
+    async def handler_login_new(request):
+        data = await request.json()
+        expected_hash = sha256_helper("password" + "123456")
+        if data.get("password") == expected_hash:
+            return web.json_response(
+                {"success": True, "token": "new-access-token", "counts": "0"}
+            )
+        return web.json_response({"success": False, "errorMsg": "Invalid password"})
+
+    app = web.Application()
+    app.router.add_get("/api/csrf", handler_csrf)
+    app.router.add_post("/api/official/user/query/random/code", handler_random_code)
+    app.router.add_post("/api/official/user/account/login/new", handler_login_new)
+
+    test_client = await aiohttp_client(app)
+    base_url = str(test_client.make_url(""))
+    client = Client(test_client.session, host=base_url)
+
+    code_resp = await client.post_json(
+        "/api/official/user/query/random/code",
+        RandomCodeVO,
+        json={"account": "test@example.com", "countryCode": 1},
+    )
+    assert code_resp.success
+    assert code_resp.random_code == "123456"
+
+    password_hash = sha256_helper("password" + code_resp.random_code)
+    login_resp = await client.post_json(
+        "/api/official/user/account/login/new",
+        LoginVO,
+        json={
+            "account": "test@example.com",
+            "password": password_hash,
+            "timestamp": code_resp.timestamp,
+            "loginMethod": 1,
+            "countryCode": 1,
+            "equipment": 1,
+            "browser": "Chrome",
+            "language": "en",
+        },
+    )
+    assert login_resp.success
+    assert login_resp.token == "new-access-token"
+
+
+async def test_login_headers(aiohttp_client) -> None:
+    async def handler_headers(request):
+        return web.json_response({"success": True, "data": dict(request.headers)})
+
+    app = web.Application()
+    app.router.add_get("/api/csrf", handler_csrf)
+    app.router.add_post("/api/official/user/account/login/new", handler_headers)
+
+    test_client = await aiohttp_client(app)
+    base_url = str(test_client.make_url(""))
+    client = Client(test_client.session, host=base_url.rstrip("/"))
+
+    response = await client.post(
+        "/api/official/user/account/login/new", json={"some": "payload"}
+    )
+    data = await response.json()
+    headers = data["data"]
+    assert headers.get("Referer") == base_url.rstrip("/")
+    assert headers.get("Origin") == base_url.rstrip("/")

@@ -22,11 +22,7 @@ INIT_TEST_NAME = "test_init.py"
 # Test files that do not currently follow the strict 1:1 path pattern.
 # As test files are renamed or refactored to match 1:1 source module paths,
 # remove them from this set.
-ALLOWLIST_NON_CONFORMING_TESTS = {
-    "client/test_login.py",
-    "models/test_file.py",
-    "server/routes/test_system_extended.py",
-}
+ALLOWLIST_NON_CONFORMING_TESTS = set()
 
 
 def test_package_exports():
