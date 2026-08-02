@@ -238,3 +238,13 @@ Other misc controllers (EmailServerController, SensitiveOperationController, Dic
 *   `GET /api/query/email/config`: Query Email Config
 *   `POST /api/user/query/sensitive/record`: Query Sensitive Op Records
 *   `POST /api/system/base/dictionary/deleteApi`: Query Dictionary
+
+---
+
+## 6. Real-time & WebSockets (Socket.IO)
+
+The Socket.IO service enables real-time messaging, Auto Sync background triggers, schedule updates, and summary synchronizations across Supernote devices and clients.
+
+*   `GET /socket.io/`: Socket.IO Handshake & Real-time Event Channel
+
+For the complete protocol specification, event catalog, and sequence diagrams, see the [Socket.IO API Specification](socket-io.md).
