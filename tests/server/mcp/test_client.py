@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import re
@@ -24,14 +23,14 @@ _LOGGER = logging.getLogger(__name__)
 
 
 @pytest.fixture
-def mcp_url(server_config: ServerConfig) -> str:
+def mcp_url(server_config: ServerConfig, client: Any) -> str:
     """Get the MCP URL."""
     # Ensure host is localhost for security checks
     server_config.host = "127.0.0.1"
     return f"http://{server_config.host}:{server_config.mcp_port}/mcp"
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 async def setup_service(client: Any) -> AsyncGenerator[None]:
     """Setup the MCP service."""
     yield
@@ -99,8 +98,6 @@ async def mcp_session(
 ) -> AsyncGenerator[ClientSession]:
     """Helper context manager for MCP sessions to avoid AnyIO task group leaks in fixtures."""
     async with httpx.AsyncClient(headers=auth_headers) as http_client:
-        # Wait a moment for server to be ready
-        await asyncio.sleep(0.5)
         async with (
             streamable_http_client(mcp_url, http_client=http_client) as (
                 read_stream,

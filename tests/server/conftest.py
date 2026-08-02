@@ -15,7 +15,6 @@ import jwt
 import pytest
 from aiohttp.test_utils import TestClient
 from pytest_aiohttp import AiohttpClient
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import supernote.server.db.models  # noqa: F401
@@ -149,24 +148,24 @@ def coordination_service(
 
 
 @pytest.fixture
-async def test_users() -> list[str]:
+def additional_users() -> list[str]:
+    """Additional test users to create. Can be overridden by test modules."""
+    return []
+
+
+@pytest.fixture
+async def test_users(additional_users: list[str]) -> list[str]:
     """Fixture with test users to create."""
-    return [TEST_USERNAME, "a@example.com"]
+    return [TEST_USERNAME, *additional_users]
 
 
 @pytest.fixture
 async def create_test_user(
     user_service: UserService,
-    session_manager: DatabaseSessionManager,
     test_users: list[str],
 ) -> None:
     """Create the default test user in the database."""
-
     for test_user in test_users:
-        # Ensure clean state
-        if await user_service.check_user_exists(test_user):
-            await user_service.unregister(test_user)
-
         result = await user_service.create_user(
             UserRegisterDTO(
                 email=test_user,
@@ -249,17 +248,14 @@ async def session_manager_fixture(
         yield _session_manager_shared
 
     # Truncate all tables to ensure isolation between tests efficiently
-    # In the future if we have AUTOINCREMENT counters:
-    #   DELETE FROM sqlite_sequence
     async with _session_manager_shared.session() as session:
-        for table in reversed(Base.metadata.sorted_tables):
-            # Wrap in try/except to handle cases where a table in metadata
-            # wasn't created (e.g. import race conditions) or was dropped.
-            try:
-                await session.execute(text(f"DELETE FROM {table.name}"))
-            except Exception:
-                # Warning: Failed to truncate table. This is usually fine if the table doesn't exist.
-                pass
+        delete_sql = "\n".join(
+            f"DELETE FROM {table.name};"
+            for table in reversed(Base.metadata.sorted_tables)
+        )
+        conn = await session.connection()
+        raw_conn = await conn.get_raw_connection()
+        await raw_conn._connection.executescript(delete_sql)
         await session.commit()
 
 
@@ -302,8 +298,12 @@ async def client_fixture(
     coordination_service: SqliteCoordinationService,
 ) -> TestClient:
     """Create a test client for server tests."""
-    app = create_app(server_config)
-    return await aiohttp_client(app)
+    # Patch run_migrations during test client setup because _session_manager_shared
+    # already initializes all database schema tables at session start via create_all_tables().
+    # Full Alembic migration execution is separately verified in tests/server/db/test_migrations.py.
+    with patch("supernote.server.app.run_migrations"):
+        app = create_app(server_config)
+        return await aiohttp_client(app)
 
 
 @pytest.fixture

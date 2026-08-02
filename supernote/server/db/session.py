@@ -63,6 +63,7 @@ class DatabaseSessionManager:
 
         # Enable WAL (Write-Ahead Logging) and Normal synchronous mode for SQLite
         if "sqlite" in host:
+            assert self._engine is not None
 
             @event.listens_for(self._engine.sync_engine, "connect")
             def set_sqlite_pragma(dbapi_connection, connection_record):
