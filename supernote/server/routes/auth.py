@@ -7,6 +7,7 @@ from supernote.models.auth import (
     RandomCodeDTO,
     RandomCodeVO,
     UserCheckDTO,
+    UserQueryByIdVO,
 )
 from supernote.models.base import BaseResponse, create_error_response
 from supernote.models.equipment import (
@@ -18,7 +19,6 @@ from supernote.models.user import (
     LoginRecordDTO,
     RetrievePasswordDTO,
     UserInfo,
-    UserQueryByIdVO,
     UserQueryDTO,
     UserQueryVO,
     UserRegisterDTO,
@@ -205,15 +205,22 @@ async def handle_user_query(request: web.Request) -> web.Response:
             status=404,
         )
 
+    token = request.headers.get("x-access-token") or request.headers.get(
+        "authorization", ""
+    ).replace("Bearer ", "")
+    equipment_no = None
+    if token:
+        sess_val = await request.app["coordination_service"].get_value(
+            f"session:{token}"
+        )
+        if sess_val and "|" in sess_val:
+            _, equipment_no = sess_val.split("|", 1)
+
     return web.json_response(
         UserQueryByIdVO(
-            user_id=1,
-            user_name=user_vo.user_name,
-            email=user_vo.email,
-            telephone=user_vo.phone,
-            avatars_url=user_vo.avatars_url,
-            total_capacity=user_vo.total_capacity,
-            file_server=user_vo.file_server,
+            user=user_vo,
+            is_user=True,
+            equipment_no=equipment_no,
         ).to_dict()
     )
 
