@@ -53,6 +53,7 @@ Execute Playwright script via `run_command`:
 import asyncio
 from playwright.async_api import async_playwright
 
+
 async def run():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
@@ -66,6 +67,7 @@ async def run():
         screenshot_path = "<artifacts_dir>/ui_screenshot.png"
         await page.screenshot(path=screenshot_path)
         await browser.close()
+
 
 asyncio.run(run())
 ```
