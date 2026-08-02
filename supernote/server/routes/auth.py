@@ -18,6 +18,8 @@ from supernote.models.equipment import (
 from supernote.models.user import (
     LoginRecordDTO,
     RetrievePasswordDTO,
+    UpdateEmailDTO,
+    UpdatePasswordDTO,
     UserInfo,
     UserQueryDTO,
     UserQueryVO,
@@ -192,28 +194,29 @@ async def handle_bind_equipment(request: web.Request) -> web.Response:
 async def handle_user_query(request: web.Request) -> web.Response:
     # Endpoint: POST / GET /api/user/query (OpenAPI Spec: queryUserById)
     # Purpose: Get flat user profile details (UserQueryByIdVO).
-    account = request.get("user")
-    if not account:
-        return web.json_response(
-            create_error_response("Unauthorized").to_dict(), status=401
-        )
-    user_service: UserService = request.app["user_service"]
-    user_vo = await user_service.get_user_profile(str(account))
-    if not user_vo:
-        return web.json_response(
-            create_error_response("User not found").to_dict(),
-            status=404,
-        )
+    try:
+        account = request.get("user")
+        if not account:
+            raise SupernoteError("Unauthorized", status_code=401)
 
-    equipment_no = request.get("equipment_no")
+        user_service: UserService = request.app["user_service"]
+        user_vo = await user_service.get_user_profile(str(account))
+        if not user_vo:
+            raise SupernoteError("User not found", status_code=404)
 
-    return web.json_response(
-        UserQueryByIdVO(
-            user=user_vo,
-            is_user=True,
-            equipment_no=equipment_no,
-        ).to_dict()
-    )
+        equipment_no = request.get("equipment_no")
+
+        return web.json_response(
+            UserQueryByIdVO(
+                user=user_vo,
+                is_user=True,
+                equipment_no=equipment_no,
+            ).to_dict()
+        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
 
 @routes.post("/api/user/query/info")
@@ -221,85 +224,48 @@ async def handle_user_query(request: web.Request) -> web.Response:
 async def handle_user_query_info(request: web.Request) -> web.Response:
     # Endpoint: POST / GET /api/user/query/info (OpenAPI Spec: queryUserInfo)
     # Purpose: Get refined user info object (UserQueryVO) for Supernote apps & device terminals.
-    account = request.get("user")
-    if not account:
-        return web.json_response(
-            create_error_response("Unauthorized").to_dict(), status=401
+    try:
+        account = request.get("user")
+        if not account:
+            raise SupernoteError("Unauthorized", status_code=401)
+
+        # Safely parse request body using UserQueryDTO if present
+        dto = UserQueryDTO()
+        if request.can_read_body and request.content_length:
+            try:
+                req_data = await request.json()
+                dto = UserQueryDTO.from_dict(req_data)
+            except Exception:
+                pass
+
+        equipment_no = dto.equipment_no or request.get("equipment_no")
+
+        user_service: UserService = request.app["user_service"]
+        user_vo = await user_service.get_user_profile(str(account))
+        if not user_vo:
+            raise SupernoteError("User not found", status_code=404)
+
+        user_info = UserInfo(
+            user_id=user_vo.user_id,
+            user_name=user_vo.user_name,
+            email=user_vo.email,
+            phone=user_vo.phone,
+            total_capacity=user_vo.total_capacity,
+            file_server=user_vo.file_server,
+            avatars_url=user_vo.avatars_url,
         )
 
-    # Safely parse request body using UserQueryDTO if present
-    dto = UserQueryDTO()
-    if request.can_read_body and request.content_length:
-        try:
-            req_data = await request.json()
-            dto = UserQueryDTO.from_dict(req_data)
-        except Exception:
-            pass
-
-    equipment_no = dto.equipment_no or request.get("equipment_no")
-
-    user_service: UserService = request.app["user_service"]
-    user_vo = await user_service.get_user_profile(str(account))
-    if not user_vo:
         return web.json_response(
-            create_error_response("User not found").to_dict(),
-            status=404,
+            UserQueryVO(
+                user=user_info,
+                is_user=True,
+                equipment_no=equipment_no,
+            ).to_dict()
         )
-
-    user_info = UserInfo(
-        user_id=1,
-        user_name=user_vo.user_name,
-        email=user_vo.email,
-        phone=user_vo.phone,
-        total_capacity=user_vo.total_capacity,
-        file_server=user_vo.file_server,
-        avatars_url=user_vo.avatars_url,
-    )
-
-    return web.json_response(
-        UserQueryVO(
-            user=user_info,
-            is_user=True,
-            equipment_no=equipment_no,
-        ).to_dict()
-    )
-
-
-@routes.post("/api/user/query/info")
-@routes.get("/api/user/query/info")
-async def handle_user_query_info(request: web.Request) -> web.Response:
-    # Endpoint: POST / GET /api/user/query/info (OpenAPI Spec: queryUserInfo)
-    # Purpose: Get refined user info object (UserQueryVO) for Supernote apps & device terminals.
-    account = request.get("user")
-    if not account:
-        return web.json_response(
-            create_error_response("Unauthorized").to_dict(), status=401
-        )
-    user_service: UserService = request.app["user_service"]
-    user_vo = await user_service.get_user_profile(str(account))
-    if not user_vo:
-        return web.json_response(
-            create_error_response("User not found").to_dict(),
-            status=404,
-        )
-
-    user_info = UserInfo(
-        user_id=user_vo.user_id,
-        user_name=user_vo.user_name,
-        email=user_vo.email,
-        phone=user_vo.phone,
-        avatars_url=user_vo.avatars_url,
-        total_capacity=user_vo.total_capacity,
-        file_server=user_vo.file_server,
-    )
-
-    return web.json_response(
-        UserQueryVO(
-            user=user_info,
-            is_user=True,
-            equipment_no=request.get("equipment_no"),
-        ).to_dict()
-    )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
 
 @routes.post("/api/user/register")
