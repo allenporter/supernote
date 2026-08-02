@@ -23,11 +23,6 @@ INIT_TEST_NAME = "test_init.py"
 # As test files are renamed or refactored to match 1:1 source module paths,
 # remove them from this set.
 ALLOWLIST_NON_CONFORMING_TESTS = {
-    "cli/test_admin_cli.py",
-    "cli/test_client_cli.py",
-    "cli/test_main_cli.py",
-    "cli/test_notebook_cli.py",
-    "cli/test_server_cli.py",
     "client/test_login.py",
     "integration/test_live_server.py",
     "models/test_auth_completeness.py",
