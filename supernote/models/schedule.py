@@ -423,6 +423,9 @@ class ScheduleTaskDTO(DataClassJSONMixin):
         /api/file/schedule/task/all (POST)
     """
 
+    task_list_id: str | None = field(
+        metadata=field_options(alias="taskListId"), default=None
+    )
     max_results: str | None = field(
         metadata=field_options(alias="maxResults"), default=None
     )

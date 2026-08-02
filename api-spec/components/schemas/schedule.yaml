@@ -329,6 +329,8 @@ UpdateScheduleTaskListDTO:
 ScheduleTaskDTO:
   type: object
   properties:
+    taskListId:
+      type: string
     maxResults:
       type: string
     nextPageTokens:
