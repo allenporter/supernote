@@ -667,7 +667,7 @@ class QuerySummaryDTO(DataClassJSONMixin):
     )
     """Filter by parent group UUID."""
 
-    ids: list[int] = field(default_factory=list)
+    ids: list[int] | None = field(default=None)
     """Fetch specific summaries by their numeric IDs."""
 
     class Config(BaseConfig):

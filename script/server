@@ -10,7 +10,7 @@ echo "==> Starting ephemeral server..."
 export SUPERNOTE_JWT_SECRET="${SUPERNOTE_JWT_SECRET:-supernote_dev_secret_key}"
 
 if command -v uv >/dev/null 2>&1; then
-  uv run supernote serve --ephemeral "$@"
+  uv run --extra server python3 -m supernote.cli.server serve --ephemeral "$@"
 else
-  supernote serve --ephemeral "$@"
+  python3 -m supernote.cli.server serve --ephemeral "$@"
 fi
