@@ -8,6 +8,7 @@ from typing import Any
 
 import socketio
 
+from supernote.client.exceptions import SupernoteSocketError
 from supernote.models.socket import (
     SocketHandshakeParams,
     SocketIoClientMessage,
@@ -123,7 +124,7 @@ class SupernoteSocketClient:
 
         Raises:
             TimeoutError: If the server does not respond within timeout seconds.
-            RuntimeError: If the server responds with an error or non-'true' payload.
+            SupernoteSocketError: If the server responds with an error or non-'true' payload.
         """
 
         async def _do_check() -> None:
@@ -135,10 +136,10 @@ class SupernoteSocketClient:
                 res = await asyncio.wait_for(self._status_queue.get(), timeout=timeout)
                 if res != "true":
                     if isinstance(res, SocketMessageData):
-                        raise RuntimeError(
+                        raise SupernoteSocketError(
                             f"Server status check failed: code={res.code}, msg={res.msg}"
                         )
-                    raise RuntimeError(f"Unexpected status check reply: {res}")
+                    raise SupernoteSocketError(f"Unexpected status check reply: {res}")
 
         await asyncio.wait_for(_do_check(), timeout=timeout)
 

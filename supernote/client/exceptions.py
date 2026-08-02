@@ -5,6 +5,10 @@ class SupernoteException(Exception):
     """Base exception for supernote cloud."""
 
 
+class SupernoteSocketError(SupernoteException):
+    """Exception raised for Socket.IO connection and status check failures."""
+
+
 class SmsVerificationRequired(SupernoteException):
     """Exception raised when SMS verification is required."""
 
