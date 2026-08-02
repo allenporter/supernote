@@ -335,8 +335,10 @@ class UpdateScheduleTaskDTO(DataClassJSONMixin):
     """
 
     task_id: str = field(metadata=field_options(alias="taskId"))
-    title: str
-    last_modified: int = field(metadata=field_options(alias="lastModified"))
+    title: str | None = None
+    last_modified: int | None = field(
+        metadata=field_options(alias="lastModified"), default=None
+    )
     """Timestamp in milliseconds"""
 
     task_list_id: str | None = field(

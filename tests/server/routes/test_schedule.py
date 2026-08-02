@@ -135,6 +135,29 @@ async def test_update_task_fields(authenticated_client: Client) -> None:
     assert t.due_time == 9999
     assert t.is_reminder_on == BooleanEnum.YES
 
+
+async def test_update_task_partial_payload(authenticated_client: Client) -> None:
+    schedule = ScheduleClient(authenticated_client)
+    group_vo = await schedule.create_group("Partial Update Group")
+    assert group_vo.task_list_id is not None
+    group_id = int(group_vo.task_list_id)
+
+    task_vo = await schedule.create_task(group_id, "Original Title")
+    assert task_vo.task_id is not None
+
+    # Perform raw PUT request omitting lastModified and title
+    resp = await authenticated_client.put(
+        "/api/file/schedule/task",
+        json={"taskId": task_vo.task_id, "status": "completed"},
+    )
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["success"] is True
+
+    tasks = [t async for t in schedule.list_tasks(group_id)]
+    assert tasks[0].status == "completed"
+    assert tasks[0].title == "Original Title"
+
     await schedule.delete_group(group_id)
 
 
