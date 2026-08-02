@@ -15,6 +15,13 @@ IMMUTABLE_SYSTEM_DIRECTORIES = {
 # Category containers (hidden from web API)
 CATEGORY_CONTAINERS = {"NOTE", "DOCUMENT"}
 
+# Explicit mapping of system category subfolders to their parent container
+SYSTEM_CATEGORY_CONTAINER_MAP = {
+    "Note": "NOTE",
+    "MyStyle": "NOTE",
+    "Document": "DOCUMENT",
+}
+
 # Forced order and specific names for web API root (when flatten=True)
 ORDERED_WEB_ROOT = ["Note", "Document"]
 

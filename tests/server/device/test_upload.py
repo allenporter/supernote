@@ -100,3 +100,24 @@ async def test_upload_apply_response_fields(device_client: DeviceClient) -> None
     uuid_part, tail_part = parts
     assert len(uuid_part) == 36  # Standard UUID length
     assert tail_part == "EST"
+
+
+async def test_upload_to_category_path(
+    device_client: DeviceClient,
+) -> None:
+    """Uploading to shorthand category path 'Note/test.note' resolves to NOTE/Note/test.note."""
+    filename = "test_category.note"
+    content = b"content"
+
+    response = await device_client.upload_content(
+        f"Note/{filename}", content, equipment_no="SN_TEST"
+    )
+    assert response.id
+    assert response.name == filename
+
+    # Verify query by ID returns canonical physical path NOTE/Note/test_category.note
+    query_resp = await device_client.query_by_id(
+        file_id=int(response.id), equipment_no="SN_TEST"
+    )
+    assert query_resp.entries_vo
+    assert query_resp.entries_vo.path_display == f"NOTE/Note/{filename}"
