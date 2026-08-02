@@ -322,3 +322,40 @@ async def test_password_retrieve_rate_limit(
         # 6th attempt -> 429
         resp = await client.post(url, json={"email": account, "password": pwd_hash})
         assert resp.status == 429
+
+
+async def test_user_query_routes_and_equipment_no(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    create_test_user: None,
+) -> None:
+    """Test /api/user/query and /api/user/query/info routes with auth and DTO parameters."""
+    # 1. Unauthenticated requests return 401
+    resp = await client.post("/api/user/query", json={})
+    assert resp.status == 401
+    data = await resp.json()
+    assert data["success"] is False
+
+    resp = await client.post("/api/user/query/info", json={})
+    assert resp.status == 401
+    data = await resp.json()
+    assert data["success"] is False
+
+    # 2. Authenticated user query
+    resp = await client.post("/api/user/query", headers=auth_headers, json={})
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["success"] is True
+    assert data["user"]["email"] == "test@example.com"
+
+    # 3. Authenticated user query info with DTO equipmentNo
+    resp = await client.post(
+        "/api/user/query/info",
+        headers=auth_headers,
+        json={"equipmentNo": "EQUIP_999"},
+    )
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["success"] is True
+    assert data["equipmentNo"] == "EQUIP_999"
+    assert data["user"]["email"] == "test@example.com"
