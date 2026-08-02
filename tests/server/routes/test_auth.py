@@ -12,7 +12,10 @@ from supernote.client.exceptions import ApiException, UnauthorizedException
 from supernote.client.login_client import LoginClient
 from supernote.client.web import WebClient
 from supernote.server.config import ServerConfig
+from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import SupernoteError
+from supernote.server.services.coordination import CoordinationService
+from supernote.server.utils.rate_limit import LIMIT_LOGIN_IP_MAX, LIMIT_PW_RESET_MAX
 
 
 async def test_empty_token(
@@ -228,3 +231,94 @@ async def test_query_login_record(
     data = await resp.json()
     assert "data" in data
     assert data["total"] == 0
+
+
+async def test_login_rate_limit(
+    client: Client,
+    session_manager: DatabaseSessionManager,
+    coordination_service: CoordinationService,
+) -> None:
+    # Setup
+    account = "limit@example.com"
+    pwd_hash = hashlib.md5(b"password").hexdigest()
+
+    # URL
+    url = "/api/official/user/account/login/new"
+
+    # Use mocked time to prevent flaky tests crossing time/bucket boundaries
+    with patch(
+        "supernote.server.utils.rate_limit.time.time", return_value=1600000000.0
+    ):
+        # 1. First N attempts should succeed
+        # The rate limiter is checked BEFORE login logic.
+        for i in range(LIMIT_LOGIN_IP_MAX):
+            # Use unique account to avoid hitting account limit (which is lower than IP limit)
+            # We want to test IP limit here.
+            unique_account = f"limit{i}@example.com"
+            resp = await client.post(
+                url,
+                json={
+                    "account": unique_account,
+                    "password": pwd_hash,
+                    "equipmentNo": "TEST",
+                    "timestamp": "1234567890",
+                    "loginMethod": "1",
+                },
+            )
+            if resp.status == 500:
+                text = await resp.text()
+                pytest.fail(f"Login failed with 500 on attempt {i + 1}: {text}")
+
+            assert resp.status in [
+                200,
+                401,
+            ]  # 401 because user might not exist, but NOT 429
+
+        # LIMIT + 1 attempt should be 429
+        resp = await client.post(
+            url,
+            json={
+                "account": account,
+                "password": pwd_hash,
+                "equipmentNo": "TEST",
+                "timestamp": "1234567890",
+                "loginMethod": "1",
+            },
+        )
+        assert resp.status == 429
+        data = await resp.json()
+        assert "Rate limit exceeded" in data["errorMsg"]
+
+
+async def test_password_retrieve_rate_limit(
+    client: Client,
+    session_manager: DatabaseSessionManager,
+    coordination_service: CoordinationService,
+    server_config: ServerConfig,
+) -> None:
+    # Enable remote password reset for this test
+    # client.app is the aiohttp Application
+    server_config.auth.enable_remote_password_reset = True
+
+    # Setup
+    account = "limit_reset@example.com"
+    pwd_hash = hashlib.md5(b"password").hexdigest()
+
+    # URL
+    url = "/api/official/user/retrieve/password"
+
+    # Use mocked time to prevent flaky tests crossing time/bucket boundaries
+    with patch(
+        "supernote.server.utils.rate_limit.time.time", return_value=1600000000.0
+    ):
+        # Limit is 5 per hour
+        for i in range(LIMIT_PW_RESET_MAX):
+            resp = await client.post(url, json={"email": account, "password": pwd_hash})
+            if resp.status == 500:
+                text = await resp.text()
+                pytest.fail(f"Reset failed with 500 on attempt {i + 1}: {text}")
+            assert resp.status in [200, 404]  # 404/200 OK
+
+        # 6th attempt -> 429
+        resp = await client.post(url, json={"email": account, "password": pwd_hash})
+        assert resp.status == 429
