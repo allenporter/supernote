@@ -101,9 +101,16 @@ class ScheduleClient:
         due_time: int | None = None,
         recurrence: str | None = None,
         is_reminder_on: bool = False,
+        links: str | None = None,
+        task_id: str | None = None,
+        sort: int | None = None,
+        sort_completed: int | None = None,
+        planer_sort: int | None = None,
+        all_sort: int | None = None,
     ) -> AddScheduleTaskVO:
         """Create a new schedule task."""
         dto = AddScheduleTaskDTO(
+            task_id=task_id,
             task_list_id=str(group_id),
             title=title,
             detail=detail,
@@ -112,6 +119,11 @@ class ScheduleClient:
             due_time=due_time,
             recurrence=recurrence,
             is_reminder_on=BooleanEnum.of(is_reminder_on),
+            links=links,
+            sort=sort,
+            sort_completed=sort_completed,
+            planer_sort=planer_sort,
+            all_sort=all_sort,
         )
         return await self._client.post_json(
             "/api/file/schedule/task", AddScheduleTaskVO, json=dto.to_dict()
