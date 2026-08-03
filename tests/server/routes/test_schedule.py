@@ -170,9 +170,12 @@ async def test_task_links_and_sort_fields_persistence(
     assert group_vo.task_list_id is not None
     group_id = int(group_vo.task_list_id)
 
-    sample_links = (
-        "eyJhcHBOYW1lIjoiTm90ZSIsInBhdGgiOiIvTm90ZS9QbGFubmVyLm5vdGUiLCJwYWdlIjo1fQ=="
+    link_dto = ScheduleTaskLinkDTO(
+        app_name="Note",
+        path="/Note/Planner.note",
+        page=5,
     )
+    sample_links = link_dto.to_b64()
     create_vo = await schedule.create_task(
         group_id,
         "Linked Notebook Event",
