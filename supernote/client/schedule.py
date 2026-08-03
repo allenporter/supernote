@@ -152,13 +152,15 @@ class ScheduleClient:
         )
 
     async def list_tasks(
-        self, group_id: int | None = None
+        self,
+        group_id: int | None = None,
+        since: int | None = None,
     ) -> AsyncIterator[ScheduleTaskInfo]:
-        """List all schedule tasks.
+        """List all schedule tasks, automatically iterating through all pages.
 
-        This is a generator that yields tasks one by one. It pages
-        through the results using nextPageTokens and yields each task
-        as it is received.
+        Args:
+            group_id: Optional task group ID to filter by.
+            since: Optional nextSyncToken timestamp for incremental delta sync.
 
         Yields:
             ScheduleTaskInfo: A schedule task.
@@ -166,7 +168,9 @@ class ScheduleClient:
         page_token = None
         while True:
             response = await self.get_tasks_all(
-                group_id=group_id, page_token=page_token
+                group_id=group_id,
+                next_sync_token=since,
+                page_token=page_token,
             )
             for item in response.schedule_task:
                 yield item
