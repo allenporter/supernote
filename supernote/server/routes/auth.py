@@ -1,3 +1,5 @@
+import logging
+
 from aiohttp import web
 from mashumaro.exceptions import MissingField
 
@@ -42,6 +44,8 @@ from supernote.server.utils.rate_limit import (
 )
 
 from .decorators import public_route
+
+logger = logging.getLogger(__name__)
 
 routes = web.RouteTableDef()
 
@@ -235,8 +239,8 @@ async def handle_user_query_info(request: web.Request) -> web.Response:
             try:
                 req_data = await request.json()
                 dto = UserQueryDTO.from_dict(req_data)
-            except Exception:
-                pass
+            except Exception as err:
+                logger.debug("Failed to parse UserQueryDTO from request body: %s", err)
 
         equipment_no = dto.equipment_no or request.get("equipment_no")
 
