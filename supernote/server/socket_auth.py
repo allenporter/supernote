@@ -22,13 +22,13 @@ def verify_handshake_signature(params: SocketHandshakeParams, secret_key: str) -
 
     raw = f"{params.token}_{params.type}_{params.random}"
 
-    # Official Ratta protocol pre-shared key (com.ratta.socket.io.SignVerifierSocketIO).
-    # Native mobile app clients speaking the Ratta protocol use this key to generate
-    # Socket.IO handshake signatures.
-    ratta_key = "K+5xFzxbnB1iSZWqmu3Etw=="
-    h_ratta = hmac.new(ratta_key.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256)
-    b64_ratta = base64.b64encode(h_ratta.digest()).decode("utf-8")
-    if params.sign == re.sub(r"[^a-zA-Z0-9]", "", b64_ratta):
+    # Default pre-shared key used by mobile client devices for protocol compatibility.
+    mobile_protocol_key = "K+5xFzxbnB1iSZWqmu3Etw=="
+    h_mobile = hmac.new(
+        mobile_protocol_key.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256
+    )
+    b64_mobile = base64.b64encode(h_mobile.digest()).decode("utf-8")
+    if params.sign == re.sub(r"[^a-zA-Z0-9]", "", b64_mobile):
         return True
 
     # Server secret_key HMAC-SHA256 (hexdigest and base64)
