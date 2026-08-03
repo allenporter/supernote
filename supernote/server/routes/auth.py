@@ -203,12 +203,12 @@ async def handle_user_query(request: web.Request) -> web.Response:
         if not account:
             raise SupernoteError("Unauthorized", status_code=401)
 
+        equipment_no = request.get("equipment_no")
+
         user_service: UserService = request.app["user_service"]
         user_vo = await user_service.get_user_profile(str(account))
         if not user_vo:
             raise SupernoteError("User not found", status_code=404)
-
-        equipment_no = request.get("equipment_no")
 
         return web.json_response(
             UserQueryByIdVO(
