@@ -1,27 +1,19 @@
-import base64
-import hashlib
-import hmac
-import re
-
 import jwt
 
 from supernote.models.socket import SocketHandshakeParams
 from supernote.server.services.user import JWT_ALGORITHM
 from supernote.server.socket_auth import (
-    SOCKET_IO_KEY,
+    compute_handshake_signature,
     verify_handshake_signature,
     verify_handshake_token,
 )
 
 
-def test_verify_handshake_signature_valid() -> None:
+def test_compute_and_verify_handshake_signature_valid() -> None:
     token = "test-token"
     conn_type = "file"
     random_val = "rnd123"
-    raw = f"{token}_{conn_type}_{random_val}"
-    h = hmac.new(SOCKET_IO_KEY.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256)
-    b64_sig = base64.b64encode(h.digest()).decode("utf-8")
-    sign = re.sub(r"[^a-zA-Z0-9]", "", b64_sig)
+    sign = compute_handshake_signature(token, conn_type, random_val)
 
     params = SocketHandshakeParams(
         token=token,

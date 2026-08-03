@@ -17,20 +17,28 @@ logger = logging.getLogger(__name__)
 SOCKET_IO_KEY = "K+5xFzxbnB1iSZWqmu3Etw=="
 
 
+def compute_handshake_signature(
+    token: str,
+    conn_type: str,
+    random_val: str,
+    secret_key: str = SOCKET_IO_KEY,
+) -> str:
+    """Compute HMAC-SHA256 signature for a Socket.IO handshake."""
+    raw = f"{token}_{conn_type}_{random_val}"
+    h = hmac.new(secret_key.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256)
+    b64_sig = base64.b64encode(h.digest()).decode("utf-8")
+    return re.sub(r"[^a-zA-Z0-9]", "", b64_sig)
+
+
 def verify_handshake_signature(params: SocketHandshakeParams) -> bool:
     """Verify the signature parameter provided in a Socket.IO handshake."""
     if not params.sign:
         logger.warning("Missing signature in Socket.IO handshake")
         return False
 
-    raw = f"{params.token}_{params.type}_{params.random}"
-
-    # Verify HMAC-SHA256 signature using the Socket.IO key
-    h_mobile = hmac.new(
-        SOCKET_IO_KEY.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256
+    expected_sign = compute_handshake_signature(
+        params.token, params.type, params.random
     )
-    b64_mobile = base64.b64encode(h_mobile.digest()).decode("utf-8")
-    expected_sign = re.sub(r"[^a-zA-Z0-9]", "", b64_mobile)
     if params.sign == expected_sign:
         return True
 
