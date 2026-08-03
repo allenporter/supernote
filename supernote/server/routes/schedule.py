@@ -205,34 +205,19 @@ async def create_task(request: web.Request) -> web.Response:
         data = await request.json()
         dto = AddScheduleTaskDTO.from_dict(data)
 
-        # Handle title gracefully
-        title = dto.title or data.get("title") or "Untitled Task"
+        if not dto.title:
+            raise SupernoteError("Title is required", status_code=400)
 
-        # Handle group_id gracefully (default to 1 if task_list_id is missing or invalid)
-        group_id = 1
-        if dto.task_list_id:
-            try:
-                group_id = int(dto.task_list_id)
-            except (ValueError, TypeError):
-                group_id = 1
+        group_id = int(dto.task_list_id) if dto.task_list_id else 0
 
         user = request["user"]
         schedule_service: ScheduleService = request.app["schedule_service"]
         user_id = await request.app["user_service"].get_user_id(user)
 
-        # Ensure at least one task group exists for the user
-        groups = await schedule_service.list_groups(user_id)
-        if not groups:
-            await schedule_service.create_group(user_id, "Default")
-            groups = await schedule_service.list_groups(user_id)
-
-        if groups and group_id not in [g.task_list_id for g in groups]:
-            group_id = groups[0].task_list_id
-
         task = await schedule_service.create_task(
             user_id=user_id,
             group_id=group_id,
-            title=title,
+            title=dto.title,
             detail=dto.detail or "",
             status=dto.status or "needsAction",
             importance=dto.importance,
