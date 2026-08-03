@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 MOBILE_PROTOCOL_KEY = "K+5xFzxbnB1iSZWqmu3Etw=="
 
 
-def verify_handshake_signature(params: SocketHandshakeParams, secret_key: str) -> bool:
+def verify_handshake_signature(params: SocketHandshakeParams) -> bool:
     """Verify the signature parameter provided in a Socket.IO handshake."""
     if not params.sign:
         logger.warning("Missing signature in Socket.IO handshake")
@@ -25,24 +25,13 @@ def verify_handshake_signature(params: SocketHandshakeParams, secret_key: str) -
 
     raw = f"{params.token}_{params.type}_{params.random}"
 
+    # Verify HMAC-SHA256 signature using the mobile protocol key
     h_mobile = hmac.new(
         MOBILE_PROTOCOL_KEY.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256
     )
     b64_mobile = base64.b64encode(h_mobile.digest()).decode("utf-8")
-    if params.sign == re.sub(r"[^a-zA-Z0-9]", "", b64_mobile):
-        return True
-
-    # Server secret_key HMAC-SHA256 (hexdigest and base64)
-    h_secret = hmac.new(secret_key.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256)
-    if params.sign == h_secret.hexdigest():
-        return True
-
-    b64_secret = base64.b64encode(h_secret.digest()).decode("utf-8")
-    if params.sign == re.sub(r"[^a-zA-Z0-9]", "", b64_secret):
-        return True
-
-    # Fallback: MD5 hash comparison
-    if params.sign == hashlib.md5(raw.encode("utf-8")).hexdigest():
+    expected_sign = re.sub(r"[^a-zA-Z0-9]", "", b64_mobile)
+    if params.sign == expected_sign:
         return True
 
     logger.warning("Handshake signature mismatch: received=%s", params.sign)

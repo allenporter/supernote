@@ -1,13 +1,14 @@
-"""Tests for Socket.IO handshake authentication functions."""
-
+import base64
 import hashlib
 import hmac
+import re
 
 import jwt
 
 from supernote.models.socket import SocketHandshakeParams
 from supernote.server.services.user import JWT_ALGORITHM
 from supernote.server.socket_auth import (
+    MOBILE_PROTOCOL_KEY,
     verify_handshake_signature,
     verify_handshake_token,
 )
@@ -18,7 +19,11 @@ def test_verify_handshake_signature_valid() -> None:
     conn_type = "file"
     random_val = "rnd123"
     raw = f"{token}_{conn_type}_{random_val}"
-    sign = hashlib.md5(raw.encode("utf-8")).hexdigest()
+    h = hmac.new(
+        MOBILE_PROTOCOL_KEY.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256
+    )
+    b64_sig = base64.b64encode(h.digest()).decode("utf-8")
+    sign = re.sub(r"[^a-zA-Z0-9]", "", b64_sig)
 
     params = SocketHandshakeParams(
         token=token,
@@ -27,27 +32,7 @@ def test_verify_handshake_signature_valid() -> None:
         sign=sign,
     )
 
-    assert verify_handshake_signature(params, "secret") is True
-
-
-def test_verify_handshake_signature_hmac_valid() -> None:
-    token = "test-token"
-    conn_type = "file"
-    random_val = "rnd123"
-    secret_key = "my-secret-key"
-    raw = f"{token}_{conn_type}_{random_val}"
-    sign = hmac.new(
-        secret_key.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256
-    ).hexdigest()
-
-    params = SocketHandshakeParams(
-        token=token,
-        type=conn_type,
-        random=random_val,
-        sign=sign,
-    )
-
-    assert verify_handshake_signature(params, secret_key) is True
+    assert verify_handshake_signature(params) is True
 
 
 def test_verify_handshake_signature_invalid() -> None:
@@ -58,7 +43,7 @@ def test_verify_handshake_signature_invalid() -> None:
         sign="wrong_signature",
     )
 
-    assert verify_handshake_signature(params, "secret") is False
+    assert verify_handshake_signature(params) is False
 
 
 def test_verify_handshake_signature_missing_sign() -> None:
@@ -68,7 +53,7 @@ def test_verify_handshake_signature_missing_sign() -> None:
         random="rnd123",
         sign="",
     )
-    assert verify_handshake_signature(params, "secret") is False
+    assert verify_handshake_signature(params) is False
 
 
 def test_verify_handshake_token_valid() -> None:
