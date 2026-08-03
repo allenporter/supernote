@@ -119,7 +119,7 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_GEMINI_API_KEY`
     """
 
-    gemini_ocr_model: str = "gemini-3-flash-preview"
+    gemini_ocr_model: str = "gemini-3.6-flash"
     """Gemini model to use for OCR.
 
     Env Var: `SUPERNOTE_GEMINI_OCR_MODEL`
