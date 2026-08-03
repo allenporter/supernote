@@ -135,6 +135,22 @@ class ScheduleClient:
             f"/api/file/schedule/task/{task_id}", ScheduleTaskVO
         )
 
+    async def get_tasks_all(
+        self,
+        group_id: int | str | None = None,
+        next_sync_token: int | None = None,
+        page_token: str | None = None,
+    ) -> ScheduleTaskAllVO:
+        """Fetch tasks response object including nextSyncToken and scheduleTask items."""
+        dto = ScheduleTaskDTO(
+            task_list_id=str(group_id) if group_id is not None else None,
+            next_sync_token=next_sync_token,
+            next_page_tokens=page_token,
+        )
+        return await self._client.post_json(
+            "/api/file/schedule/task/all", ScheduleTaskAllVO, json=dto.to_dict()
+        )
+
     async def list_tasks(
         self, group_id: int | None = None
     ) -> AsyncIterator[ScheduleTaskInfo]:
@@ -149,14 +165,9 @@ class ScheduleClient:
         """
         page_token = None
         while True:
-            dto = ScheduleTaskDTO(
-                task_list_id=str(group_id) if group_id else None,
-                next_page_tokens=page_token,
+            response = await self.get_tasks_all(
+                group_id=group_id, page_token=page_token
             )
-            response = await self._client.post_json(
-                "/api/file/schedule/task/all", ScheduleTaskAllVO, json=dto.to_dict()
-            )
-
             for item in response.schedule_task:
                 yield item
 
