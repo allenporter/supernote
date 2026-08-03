@@ -50,6 +50,7 @@ server = [
   "starlette>=0.35.0",
   "prometheus-client>=0.20.0",
   "python-socketio>=5.11.0",
+  "ical>=8.0.0",
 ]
 all = ["supernote[client,server]"]
 
