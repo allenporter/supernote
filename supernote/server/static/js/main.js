@@ -1,4 +1,4 @@
-import { createApp, ref, onMounted, computed } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
+import { createApp, ref, onMounted, computed, watch } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
 import { useFileSystem } from './composables/useFileSystem.js';
 import { setToken, getToken, login, logout, fetchProcessingStatus } from './api/client.js';
 import Sidebar from './components/Sidebar.js';
@@ -11,6 +11,66 @@ import FileViewer from './components/FileViewer.js';
 import SystemPanel from './components/SystemPanel.js';
 import MoveModal from './components/MoveModal.js';
 import RenameModal from './components/RenameModal.js';
+
+function parseUrlHash(hashString) {
+    const raw = hashString || window.location.hash || '';
+    const clean = raw.replace(/^#\/?/, '').trim();
+
+    if (!clean) {
+        return { tab: 'files', view: 'grid', dirId: '0' };
+    }
+
+    if (clean.includes('=')) {
+        const queryPart = clean.includes('?') ? clean.split('?')[1] : clean;
+        const params = new URLSearchParams(queryPart);
+        if (params.has('file')) {
+            return { tab: 'files', view: 'viewer', fileId: params.get('file') };
+        }
+        if (params.has('dir')) {
+            return { tab: 'files', view: 'grid', dirId: params.get('dir') };
+        }
+        if (params.get('tab') === 'tasks') {
+            return { tab: 'tasks', view: 'grid' };
+        }
+    }
+
+    const parts = clean.split('/');
+
+    if (parts[0] === 'tasks') {
+        return { tab: 'tasks', view: 'grid' };
+    }
+
+    if (parts[0] === 'file' && parts[1]) {
+        return { tab: 'files', view: 'viewer', fileId: parts[1] };
+    }
+
+    if ((parts[0] === 'files' || parts[0] === 'explorer') && parts[1] === 'file' && parts[2]) {
+        return { tab: 'files', view: 'viewer', fileId: parts[2] };
+    }
+
+    if ((parts[0] === 'files' || parts[0] === 'explorer') && parts[1]) {
+        return { tab: 'files', view: 'grid', dirId: parts[1] };
+    }
+
+    if (parts[0] === 'files' || parts[0] === 'explorer') {
+        return { tab: 'files', view: 'grid', dirId: '0' };
+    }
+
+    return { tab: 'files', view: 'grid', dirId: '0' };
+}
+
+function buildUrlHash(tab, dirId, viewState, fileObj) {
+    if (tab === 'tasks') {
+        return '#/tasks';
+    }
+    if (viewState === 'viewer' && fileObj && fileObj.id) {
+        return `#/file/${fileObj.id}`;
+    }
+    if (dirId && String(dirId) !== '0') {
+        return `#/files/${dirId}`;
+    }
+    return '#/files';
+}
 
 createApp({
     components: {
@@ -45,7 +105,7 @@ createApp({
         };
 
         // Navigation State
-        const activeTab = ref('dashboard'); // 'dashboard' | 'explorer' | 'tasks'
+        const activeTab = ref('files'); // 'files' | 'explorer' | 'tasks' | 'dashboard'
         const showSearchModal = ref(false);
         const isSidebarOpen = ref(false);
 
@@ -80,12 +140,69 @@ createApp({
         const regularFiles = computed(() => files.value.filter(f => !f.isDirectory));
         const recentNotes = computed(() => files.value.filter(f => f.extension === 'note'));
 
+        // URL Routing Synchronization
+        let isUpdatingFromUrl = false;
+
+        function updateUrl(replace = false) {
+            if (isUpdatingFromUrl) return;
+            const targetHash = buildUrlHash(activeTab.value, currentDirectoryId.value, view.value, selectedFile.value);
+            if (window.location.hash !== targetHash) {
+                if (replace) {
+                    window.history.replaceState(null, '', targetHash);
+                } else {
+                    window.history.pushState(null, '', targetHash);
+                }
+            }
+        }
+
+        async function syncFromUrl(isInitial = false) {
+            const parsed = parseUrlHash(window.location.hash);
+            isUpdatingFromUrl = true;
+            try {
+                if (parsed.tab === 'tasks') {
+                    activeTab.value = 'tasks';
+                    view.value = 'grid';
+                } else {
+                    activeTab.value = 'files';
+                    if (parsed.view === 'viewer' && parsed.fileId) {
+                        view.value = 'viewer';
+                        const existingFile = files.value.find(f => String(f.id) === String(parsed.fileId));
+                        if (existingFile) {
+                            selectedFile.value = existingFile;
+                        } else {
+                            selectedFile.value = {
+                                id: parsed.fileId,
+                                name: `Notebook ${parsed.fileId}`,
+                                extension: 'note'
+                            };
+                        }
+                    } else {
+                        view.value = 'grid';
+                        const targetDirId = parsed.dirId || '0';
+                        if (String(currentDirectoryId.value) !== String(targetDirId) || isInitial || files.value.length === 0) {
+                            currentDirectoryId.value = targetDirId;
+                            await loadDirectory(targetDirId);
+                        }
+                    }
+                }
+            } finally {
+                isUpdatingFromUrl = false;
+            }
+        }
+
+        watch([activeTab, currentDirectoryId, view, () => selectedFile.value?.id], () => {
+            updateUrl();
+        });
+
         // Methods
         async function openItem(item) {
             if (item.isDirectory) {
-                activeTab.value = 'explorer';
-                currentDirectoryId.value = item.id;
-                breadcrumbs.value.push({ id: item.id, name: item.name });
+                activeTab.value = 'files';
+                currentDirectoryId.value = String(item.id);
+                const existingCrumb = breadcrumbs.value.find(c => String(c.id) === String(item.id));
+                if (!existingCrumb) {
+                    breadcrumbs.value.push({ id: String(item.id), name: item.name });
+                }
                 selectedIds.value = [];
                 await loadDirectory(item.id);
             } else {
@@ -95,12 +212,12 @@ createApp({
         }
 
         async function navigateFolder(folder) {
-            activeTab.value = 'explorer';
+            activeTab.value = 'files';
             view.value = 'grid';
-            currentDirectoryId.value = folder.id;
+            currentDirectoryId.value = String(folder.id);
             breadcrumbs.value = [{ id: "0", name: "Cloud" }];
-            if (folder.id !== "0") {
-                breadcrumbs.value.push({ id: folder.id, name: folder.name });
+            if (String(folder.id) !== "0") {
+                breadcrumbs.value.push({ id: String(folder.id), name: folder.name });
             }
             selectedIds.value = [];
             await loadDirectory(folder.id);
@@ -111,6 +228,7 @@ createApp({
             breadcrumbs.value = crumbs;
             const target = crumbs[crumbs.length - 1];
             view.value = 'grid';
+            currentDirectoryId.value = String(target.id);
             selectedIds.value = [];
             await loadDirectory(target.id);
         }
@@ -197,7 +315,6 @@ createApp({
             const token = getToken();
             if (!token) return false;
             isLoggedIn.value = true;
-            await loadDirectory();
             return true;
         }
 
@@ -205,7 +322,11 @@ createApp({
             loginError.value = null;
             try {
                 await login(email, password);
-                await resumeSession();
+                const loggedIn = await resumeSession();
+                if (loggedIn) {
+                    await syncFromUrl(true);
+                    updateUrl(true);
+                }
             } catch (e) {
                 loginError.value = e.message;
                 alert(e.message);
@@ -220,7 +341,14 @@ createApp({
             if (isDarkMode.value) {
                 document.documentElement.classList.add('dark');
             }
-            await resumeSession();
+            const loggedIn = await resumeSession();
+            if (loggedIn) {
+                await syncFromUrl(true);
+                updateUrl(true);
+            }
+
+            window.addEventListener('popstate', () => syncFromUrl());
+            window.addEventListener('hashchange', () => syncFromUrl());
 
             // Keyboard shortcut ⌘K for search
             window.addEventListener('keydown', (e) => {
