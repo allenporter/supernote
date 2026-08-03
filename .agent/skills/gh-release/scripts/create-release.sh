@@ -40,6 +40,11 @@ else
 fi
 
 git add "$FILE_PATH"
+if [ -f "uv.lock" ]; then
+  # Ensure uv.lock version update is also staged if present
+  uv lock || true
+  git add uv.lock
+fi
 git commit -m "chore(release): $VERSION"
 git push
 gh release create "$VERSION" --generate-notes
