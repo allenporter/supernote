@@ -9,7 +9,6 @@ from supernote.models.auth import (
     RandomCodeDTO,
     RandomCodeVO,
     UserCheckDTO,
-    UserQueryByIdVO,
 )
 from supernote.models.base import BaseResponse, create_error_response
 from supernote.models.equipment import (
@@ -23,6 +22,7 @@ from supernote.models.user import (
     UpdateEmailDTO,
     UpdatePasswordDTO,
     UserInfo,
+    UserQueryByIdVO,
     UserQueryDTO,
     UserQueryVO,
     UserRegisterDTO,
@@ -203,8 +203,6 @@ async def handle_user_query(request: web.Request) -> web.Response:
         if not account:
             raise SupernoteError("Unauthorized", status_code=401)
 
-        equipment_no = request.get("equipment_no")
-
         user_service: UserService = request.app["user_service"]
         user_vo = await user_service.get_user_profile(str(account))
         if not user_vo:
@@ -212,9 +210,17 @@ async def handle_user_query(request: web.Request) -> web.Response:
 
         return web.json_response(
             UserQueryByIdVO(
-                user=user_vo,
-                is_user=True,
-                equipment_no=equipment_no,
+                success=True,
+                user_id=user_vo.user_id,
+                user_name=user_vo.user_name,
+                email=user_vo.email,
+                telephone=user_vo.phone,
+                country_code=user_vo.country_code,
+                total_capacity=user_vo.total_capacity,
+                file_server=user_vo.file_server,
+                avatars_url=user_vo.avatars_url,
+                birthday=user_vo.birthday,
+                sex=user_vo.sex,
             ).to_dict()
         )
     except SupernoteError as err:

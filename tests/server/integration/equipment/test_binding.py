@@ -99,4 +99,4 @@ async def test_user_profile_persistence(
     assert data["success"] is True
 
     # Check default profile name from fixture
-    assert data["user"]["userName"] == "Test User"
+    assert data["userName"] == "Test User"

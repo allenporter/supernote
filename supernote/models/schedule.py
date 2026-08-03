@@ -604,8 +604,8 @@ class ScheduleTaskVO(BaseResponse):
         /api/file/schedule/task/{taskId} (GET)
     """
 
-    task_id: int | None = field(metadata=field_options(alias="taskId"), default=None)
-    task_list_id: int | None = field(
+    task_id: str | None = field(metadata=field_options(alias="taskId"), default=None)
+    task_list_id: str | None = field(
         metadata=field_options(alias="taskListId"), default=None
     )
     title: str | None = None

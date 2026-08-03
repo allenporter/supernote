@@ -229,17 +229,6 @@ class UserVO(DataClassJSONMixin):
 
 
 @dataclass
-class UserQueryByIdVO(BaseResponse):
-    """User query response."""
-
-    user: UserVO | None = None
-    is_user: bool = field(metadata=field_options(alias="isUser"), default=False)
-    equipment_no: str | None = field(
-        metadata=field_options(alias="equipmentNo"), default=None
-    )
-
-
-@dataclass
 class SmsLoginDTO(DataClassJSONMixin):
     """Request to login via sms.
 

@@ -1,8 +1,10 @@
 """Authentication and signature verification helpers for Socket.IO connections."""
 
+import base64
 import hashlib
 import hmac
 import logging
+import re
 
 import jwt
 
@@ -13,28 +15,25 @@ logger = logging.getLogger(__name__)
 
 
 def verify_handshake_signature(params: SocketHandshakeParams, secret_key: str) -> bool:
-    """Verify the signature parameter provided in a Socket.IO handshake.
-
-    Formula evaluated: MD5(token + '_' + type + '_' + random)
-
-    Args:
-        params: Handshake parameters received from the client query string.
-        secret_key: Server authentication secret key.
-
-    Returns:
-        True if the signature is valid, False otherwise.
-    """
+    """Verify the signature parameter provided in a Socket.IO handshake."""
     if not params.sign:
         logger.warning("Missing signature in Socket.IO handshake")
         return False
 
     raw = f"{params.token}_{params.type}_{params.random}"
-    expected_sign = hashlib.md5(raw.encode("utf-8")).hexdigest()
 
+    # Official Ratta SocketIO HmacSHA256 signature verification
+    ratta_key = "K+5xFzxbnB1iSZWqmu3Etw=="
+    h = hmac.new(ratta_key.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256)
+    b64_sig = base64.b64encode(h.digest()).decode("utf-8")
+    expected_ratta = re.sub(r"[^a-zA-Z0-9]", "", b64_sig)
+    if params.sign == expected_ratta:
+        return True
+
+    expected_sign = hashlib.md5(raw.encode("utf-8")).hexdigest()
     if params.sign == expected_sign:
         return True
 
-    # Also check HMAC with secret_key as alternative valid signature format
     expected_hmac = hmac.new(
         secret_key.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256
     ).hexdigest()

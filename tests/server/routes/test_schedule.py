@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from aiohttp.test_utils import TestClient
 
@@ -284,26 +286,26 @@ async def test_schedule_group_and_task_routes(
     await schedule.delete_group(group_id)
 
 
-async def test_sort_placeholders_return_501(authenticated_client: Client) -> None:
+async def test_sort_endpoints_return_200(authenticated_client: Client) -> None:
     res_post = await authenticated_client.request(
         "post", "/api/file/schedule/sort", json={}
     )
-    assert res_post.status == 501
+    assert res_post.status == 200
 
     res_put = await authenticated_client.request(
         "put", "/api/file/schedule/sort", json={}
     )
-    assert res_put.status == 501
+    assert res_put.status == 200
 
     res_del = await authenticated_client.request(
         "delete", "/api/file/schedule/sort/123"
     )
-    assert res_del.status == 501
+    assert res_del.status == 200
 
     res_query = await authenticated_client.request(
         "post", "/api/file/query/schedule/sort", json={}
     )
-    assert res_query.status == 501
+    assert res_query.status == 200
 
 
 async def test_batch_update_task_list_transactional_rollback(
@@ -510,5 +512,77 @@ async def test_create_task_with_client_generated_id_and_server_fallback(
     server_task = await schedule.get_task(int(server_task_id))
     assert server_task.success is True
     assert server_task.title == "Web UI Created Task"
+
+    await schedule.delete_group(group_id)
+
+
+async def test_schedule_delta_sync_flow(authenticated_client: Client) -> None:
+    """Test delta sync flow using nextSyncToken."""
+    schedule = ScheduleClient(authenticated_client)
+    group_vo = await schedule.create_group("Delta Sync Group")
+    assert group_vo.task_list_id is not None
+    group_id = int(group_vo.task_list_id)
+
+    # Create initial tasks
+    t1_vo = await schedule.create_task(group_id, "Task 1 Initial")
+    t2_vo = await schedule.create_task(group_id, "Task 2 Initial")
+    assert t1_vo.task_id is not None
+    assert t2_vo.task_id is not None
+
+    # Query with no sync token -> get both tasks back & nextSyncToken
+    res_initial = await authenticated_client.request(
+        "post", "/api/file/schedule/task/all", json={"taskListId": str(group_id)}
+    )
+    assert res_initial.status == 200
+    initial_data = await res_initial.json()
+    assert initial_data["success"] is True
+    initial_tasks = initial_data["scheduleTask"]
+    assert len(initial_tasks) == 2
+    sync_token = initial_data.get("nextSyncToken")
+    assert sync_token is not None
+
+    # Ensure timestamp progression
+    await asyncio.sleep(0.02)
+
+    # Update 1 task, add 1 task
+    await schedule.update_task(int(t1_vo.task_id), title="Task 1 Updated")
+    t3_vo = await schedule.create_task(group_id, "Task 3 New")
+    assert t3_vo.task_id is not None
+
+    # Query back with nextSyncToken -> get updated task & new task (2 tasks)
+    res_delta = await authenticated_client.request(
+        "post",
+        "/api/file/schedule/task/all",
+        json={"taskListId": str(group_id), "nextSyncToken": sync_token},
+    )
+    assert res_delta.status == 200
+    delta_data = await res_delta.json()
+    assert delta_data["success"] is True
+    delta_tasks = delta_data["scheduleTask"]
+    sync_token2 = delta_data.get("nextSyncToken")
+    assert sync_token2 is not None
+    assert sync_token2 >= sync_token
+
+    delta_task_ids = {t["taskId"] for t in delta_tasks}
+    assert t1_vo.task_id in delta_task_ids
+    assert t3_vo.task_id in delta_task_ids
+    assert t2_vo.task_id not in delta_task_ids
+
+    updated_t1 = next(t for t in delta_tasks if t["taskId"] == t1_vo.task_id)
+    assert updated_t1["title"] == "Task 1 Updated"
+
+    # Query again with sync_token2 -> no new changes (0 tasks), nextSyncToken propagated back
+    res_delta2 = await authenticated_client.request(
+        "post",
+        "/api/file/schedule/task/all",
+        json={"taskListId": str(group_id), "nextSyncToken": sync_token2},
+    )
+    assert res_delta2.status == 200
+    delta_data2 = await res_delta2.json()
+    assert delta_data2["success"] is True
+    assert len(delta_data2["scheduleTask"]) == 0
+    sync_token3 = delta_data2.get("nextSyncToken")
+    assert sync_token3 is not None
+    assert sync_token3 >= sync_token2
 
     await schedule.delete_group(group_id)

@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Any, cast
 
 from sqlalchemy import delete, select, update
@@ -217,12 +218,15 @@ class ScheduleService:
         self,
         user_id: int,
         group_id: int | None = None,
+        since: int | None = None,
     ) -> list[ScheduleTaskDO]:
-        """List tasks for a user, optionally filtered by group."""
+        """List tasks for a user, optionally filtered by group and since timestamp."""
         async with self.session_manager.session() as session:
             query = select(ScheduleTaskDO).where(ScheduleTaskDO.user_id == user_id)
             if group_id is not None:
                 query = query.where(ScheduleTaskDO.task_list_id == group_id)
+            if since is not None:
+                query = query.where(ScheduleTaskDO.update_time > since)
 
             query = query.order_by(ScheduleTaskDO.create_time.desc())
             result = await session.execute(query)
@@ -233,6 +237,7 @@ class ScheduleService:
     ) -> ScheduleTaskDO | None:
         """Update a task."""
         updates = {k: v for k, v in kwargs.items() if k in TASK_ALLOWED_UPDATE_FIELDS}
+        updates["update_time"] = int(time.time() * 1000)
 
         async with self.session_manager.session() as session:
             stmt = (

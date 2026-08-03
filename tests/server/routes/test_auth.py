@@ -116,8 +116,8 @@ async def test_user_query(
         await bad_web.query_user()
 
     res = await web_client.query_user()
-    assert res.user is not None
-    assert res.user.user_name == "Test User"
+    assert res.success is True
+    assert res.user_name == "Test User"
 
 
 async def test_user_register_errors_and_success(
@@ -346,7 +346,7 @@ async def test_user_query_routes_and_equipment_no(
     assert resp.status == 200
     data = await resp.json()
     assert data["success"] is True
-    assert data["user"]["email"] == "test@example.com"
+    assert data["email"] == "test@example.com"
 
     # Authenticated user query info with DTO equipmentNo
     resp = await client.post(

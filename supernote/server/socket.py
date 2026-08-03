@@ -52,6 +52,7 @@ class SocketIOServerManager:
         self._sio = socketio.AsyncServer(
             async_mode="aiohttp",
             cors_allowed_origins="*",
+            allow_eio3=True,
             logger=False,
             engineio_logger=False,
         )

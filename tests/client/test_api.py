@@ -8,7 +8,7 @@ from supernote.client import Supernote
 from supernote.client.auth import ConstantAuth
 from supernote.client.device import DeviceClient
 from supernote.client.web import WebClient
-from supernote.models.auth import UserQueryByIdVO
+from supernote.models.user import UserQueryByIdVO
 
 
 async def test_supernote_init() -> None:
@@ -71,12 +71,9 @@ async def test_query_user_success(
         return web.json_response(
             {
                 "success": True,
-                "user": {
-                    "userName": "test-user",
-                    "email": "test@example.com",
-                    "totalCapacity": "100",
-                },
-                "isUser": True,
+                "userName": "test-user",
+                "email": "test@example.com",
+                "totalCapacity": "100",
             }
         )
 
@@ -93,5 +90,4 @@ async def test_query_user_success(
         user_resp = await sn.web.query_user()
         assert isinstance(user_resp, UserQueryByIdVO)
         assert user_resp.success
-        assert user_resp.user is not None
-        assert user_resp.user.user_name == "test-user"
+        assert user_resp.user_name == "test-user"

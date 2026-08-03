@@ -1,6 +1,5 @@
 import hashlib
 
-from supernote.models.auth import UserQueryByIdVO
 from supernote.models.base import BaseResponse
 from supernote.models.file_common import FileUploadApplyLocalVO
 from supernote.models.file_web import (
@@ -27,6 +26,7 @@ from supernote.models.file_web import (
     RecycleFileListVO,
     UploadType,
 )
+from supernote.models.user import UserQueryByIdVO
 
 from .client import Client
 
