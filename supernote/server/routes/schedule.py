@@ -249,8 +249,9 @@ async def create_task(request: web.Request) -> web.Response:
             sort_time=dto.sort_time,
             planer_sort_time=dto.planer_sort_time,
             all_sort_time=dto.all_sort_time,
+            task_id=int(dto.task_id) if dto.task_id else None,
         )
-        task_id_resp = dto.task_id or str(task.task_id)
+        task_id_resp = str(task.task_id)
         return web.json_response(
             AddScheduleTaskVO(success=True, task_id=task_id_resp).to_dict()
         )

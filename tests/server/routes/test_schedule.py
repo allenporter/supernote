@@ -480,3 +480,59 @@ async def test_batch_update_task_list_sort_fields(
     assert t2_data["allSort"] == 200
 
     await schedule.delete_group(group_id)
+
+
+async def test_create_task_with_client_generated_id_and_server_fallback(
+    authenticated_client: Client,
+) -> None:
+    """Test task creation with client-provided taskId and server autoincrement fallback."""
+    schedule = ScheduleClient(authenticated_client)
+    group_vo = await schedule.create_group("ID Test Group")
+    assert group_vo.task_list_id is not None
+    group_id = int(group_vo.task_list_id)
+
+    # Client-provided taskId (offline Supernote device sync)
+    client_custom_id = "9876543210"
+    resp_client = await authenticated_client.post(
+        "/api/file/schedule/task",
+        json={
+            "taskId": client_custom_id,
+            "taskListId": str(group_id),
+            "title": "Offline Created Task",
+        },
+    )
+    assert resp_client.status == 200
+    data_client = await resp_client.json()
+    assert data_client["taskId"] == client_custom_id
+
+    # Verify task is stored under the exact client-generated taskId in DB
+    resp_get = await authenticated_client.get(
+        f"/api/file/schedule/task/{client_custom_id}"
+    )
+    assert resp_get.status == 200
+    get_data = await resp_get.json()
+    assert str(get_data["taskId"]) == client_custom_id
+    assert get_data["title"] == "Offline Created Task"
+
+    # Server-generated taskId fallback (when taskId omitted)
+    resp_server = await authenticated_client.post(
+        "/api/file/schedule/task",
+        json={
+            "taskListId": str(group_id),
+            "title": "Web UI Created Task",
+        },
+    )
+    assert resp_server.status == 200
+    data_server = await resp_server.json()
+    server_task_id = data_server["taskId"]
+    assert server_task_id is not None
+    assert server_task_id != client_custom_id
+
+    resp_get_server = await authenticated_client.get(
+        f"/api/file/schedule/task/{server_task_id}"
+    )
+    assert resp_get_server.status == 200
+    get_data_server = await resp_get_server.json()
+    assert get_data_server["title"] == "Web UI Created Task"
+
+    await schedule.delete_group(group_id)
