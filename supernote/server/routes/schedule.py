@@ -392,13 +392,9 @@ async def list_tasks(request: web.Request) -> web.Response:
         schedule_service: ScheduleService = request.app["schedule_service"]
         user_id = await request.app["user_service"].get_user_id(user)
 
-        # Note: We capture sync_start_time before querying list_tasks to prevent
-        # missing updates occurring concurrently with this request.
-        # Theoretical Race Condition: If a concurrent insert/update is committed with an
-        # old timestamp (e.g. clock drift, offline device sync, or backdated update_time)
-        # after sync_start_time, it may fall behind next_sync_token and be missed in
-        # subsequent delta syncs. Production systems can resolve this using a monotonically
-        # increasing sequence counter (logical clock/Snowflake ID) from CoordinationService.
+        # Capture sync_start_time before querying to prevent missing concurrent updates.
+        # Note: Backdated timestamps from clock drift or offline devices can cause delta sync races;
+        # production systems resolve this via a monotonically increasing sequence counter (logical clock).
         sync_start_time = int(time.time() * 1000)
 
         tasks_dos = await schedule_service.list_tasks(
