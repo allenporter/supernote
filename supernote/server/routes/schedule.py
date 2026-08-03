@@ -381,7 +381,10 @@ async def get_task(request: web.Request) -> web.Response:
 @routes.post("/api/file/schedule/task/all")
 async def list_tasks(request: web.Request) -> web.Response:
     try:
-        data = await request.json() if request.can_read_body else {}
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
         dto = ScheduleTaskDTO.from_dict(data)
         group_id = int(dto.task_list_id) if dto.task_list_id else None
 
