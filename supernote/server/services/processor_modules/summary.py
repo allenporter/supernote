@@ -226,7 +226,7 @@ class SummaryModule(ProcessorModule):
 
                 for seg in segments_data:
                     date_range = seg.get("date_range", "Unknown Date")
-                    text = seg.get("summary", "")
+                    text = seg.get("summary", "").replace("\\n", "\n")
                     dates = seg.get("extracted_dates", [])
                     page_refs = seg.get("page_refs", [])
 

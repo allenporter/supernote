@@ -179,7 +179,7 @@ export async function fetchTranscript(fileId) {
             'Content-Type': 'application/json',
             'x-access-token': currentToken
         },
-        body: JSON.stringify({ fileId: parseInt(fileId) })
+        body: JSON.stringify({ fileId: String(fileId) })
     });
 
     if (!response.ok) return '';
@@ -203,7 +203,7 @@ export async function fetchSummaries(fileId) {
             'x-access-token': currentToken
         },
         // Extension endpoint expects { fileId: ... }
-        body: JSON.stringify({ fileId: fileId })
+        body: JSON.stringify({ fileId: String(fileId) })
     });
 
     if (!response.ok) {
