@@ -22,22 +22,24 @@ def verify_handshake_signature(params: SocketHandshakeParams, secret_key: str) -
 
     raw = f"{params.token}_{params.type}_{params.random}"
 
-    # Official Ratta SocketIO HmacSHA256 signature verification
+    # Official Ratta Partner App mobile client key
     ratta_key = "K+5xFzxbnB1iSZWqmu3Etw=="
-    h = hmac.new(ratta_key.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256)
-    b64_sig = base64.b64encode(h.digest()).decode("utf-8")
-    expected_ratta = re.sub(r"[^a-zA-Z0-9]", "", b64_sig)
-    if params.sign == expected_ratta:
+    h_ratta = hmac.new(ratta_key.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256)
+    b64_ratta = base64.b64encode(h_ratta.digest()).decode("utf-8")
+    if params.sign == re.sub(r"[^a-zA-Z0-9]", "", b64_ratta):
         return True
 
-    expected_sign = hashlib.md5(raw.encode("utf-8")).hexdigest()
-    if params.sign == expected_sign:
+    # Server secret_key HMAC-SHA256 (hexdigest and base64)
+    h_secret = hmac.new(secret_key.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256)
+    if params.sign == h_secret.hexdigest():
         return True
 
-    expected_hmac = hmac.new(
-        secret_key.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256
-    ).hexdigest()
-    if params.sign == expected_hmac:
+    b64_secret = base64.b64encode(h_secret.digest()).decode("utf-8")
+    if params.sign == re.sub(r"[^a-zA-Z0-9]", "", b64_secret):
+        return True
+
+    # Fallback: MD5 hash comparison
+    if params.sign == hashlib.md5(raw.encode("utf-8")).hexdigest():
         return True
 
     logger.warning("Handshake signature mismatch: received=%s", params.sign)
