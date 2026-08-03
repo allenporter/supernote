@@ -13,6 +13,9 @@ from supernote.server.services.user import JWT_ALGORITHM
 
 logger = logging.getLogger(__name__)
 
+# Default pre-shared key used by mobile client devices for protocol compatibility.
+MOBILE_PROTOCOL_KEY = "K+5xFzxbnB1iSZWqmu3Etw=="
+
 
 def verify_handshake_signature(params: SocketHandshakeParams, secret_key: str) -> bool:
     """Verify the signature parameter provided in a Socket.IO handshake."""
@@ -22,10 +25,8 @@ def verify_handshake_signature(params: SocketHandshakeParams, secret_key: str) -
 
     raw = f"{params.token}_{params.type}_{params.random}"
 
-    # Default pre-shared key used by mobile client devices for protocol compatibility.
-    mobile_protocol_key = "K+5xFzxbnB1iSZWqmu3Etw=="
     h_mobile = hmac.new(
-        mobile_protocol_key.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256
+        MOBILE_PROTOCOL_KEY.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256
     )
     b64_mobile = base64.b64encode(h_mobile.digest()).decode("utf-8")
     if params.sign == re.sub(r"[^a-zA-Z0-9]", "", b64_mobile):
