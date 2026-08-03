@@ -196,9 +196,7 @@ class ScheduleTaskInfo(DataClassJSONMixin):
     all_sort_completed: int | None = field(
         metadata=field_options(alias="allSortCompleted"), default=None
     )
-    sort_time: int | None = field(
-        metadata=field_options(alias="sortTime"), default=0
-    )
+    sort_time: int | None = field(metadata=field_options(alias="sortTime"), default=0)
     planer_sort_time: int | None = field(
         metadata=field_options(alias="planerSortTime"), default=0
     )
