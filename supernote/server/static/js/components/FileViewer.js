@@ -1,4 +1,4 @@
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { convertNoteToPng, fetchTranscript, fetchSummaries } from '../api/client.js';
 
 export default {
@@ -38,14 +38,16 @@ export default {
                     fetchSummaries(props.file.id).catch(() => [])
                 ]);
 
-                if (transcriptData && transcriptData.transcript) {
-                    realTranscript.value = transcriptData.transcript;
-                } else if (transcriptData && transcriptData.text) {
-                    realTranscript.value = transcriptData.text;
+                if (typeof transcriptData === 'string') {
+                    realTranscript.value = transcriptData;
+                } else if (transcriptData && (transcriptData.transcript || transcriptData.text)) {
+                    realTranscript.value = transcriptData.transcript || transcriptData.text;
+                } else {
+                    realTranscript.value = '';
                 }
 
                 if (summariesData && Array.isArray(summariesData)) {
-                    realSummaries.value = summariesData;
+                    realSummaries.value = summariesData.filter(s => (s.dataSource || '').toUpperCase() !== 'OCR');
                 }
             } catch (e) {
                 console.error("Failed to load notebook content:", e);
@@ -57,6 +59,14 @@ export default {
         };
 
         onMounted(loadNoteContent);
+        watch(() => props.file?.id, (newId) => {
+            if (newId) loadNoteContent();
+        });
+
+        const formatContent = (str) => {
+            if (!str) return '';
+            return str.replaceAll('\\n', '\n');
+        };
 
         return {
             pages,
@@ -66,65 +76,49 @@ export default {
             activeRightTab,
             isMobileSidePanelOpen,
             realTranscript,
-            realSummaries
+            realSummaries,
+            formatContent
         };
     },
     template: `
     <div class="bg-slate-100 dark:bg-slate-950 h-full flex flex-col overflow-hidden relative transition-colors animate-fade-in">
         <!-- Top Fixed Header -->
         <div class="flex-none bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 sm:px-6 z-20">
-            <div class="flex items-center gap-3 min-w-0">
-                <div class="w-8 h-8 bg-indigo-600 text-white rounded-lg flex items-center justify-center font-bold text-xs shadow-sm flex-shrink-0">
-                    📄
-                </div>
-                <div class="min-w-0">
-                    <h2 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 truncate">
-                        {{ file.name }}
-                    </h2>
-                    <p class="text-[11px] text-slate-400 font-mono">{{ pages.length }} Pages Total</p>
+            <div class="flex items-center space-x-3 min-w-0">
+                <button @click="$emit('close')" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors">
+                    ← Back
+                </button>
+                <div class="truncate">
+                    <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">{{ file?.name || 'Notebook Viewer' }}</h3>
+                    <p class="text-[11px] text-slate-400 font-mono">ID: {{ file?.id }}</p>
                 </div>
             </div>
-
-            <div class="flex items-center gap-2">
-                <!-- Mobile OCR Toggle Button -->
-                <button @click="isMobileSidePanelOpen = !isMobileSidePanelOpen"
-                    class="md:hidden px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 text-xs font-semibold rounded-xl border border-indigo-200/60">
-                    📝 OCR & Insights
-                </button>
-
-                <button @click="$emit('close')"
-                    class="px-3.5 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors border border-slate-200 dark:border-slate-700">
-                    ✕ Close
-                </button>
-            </div>
+            <button @click="isMobileSidePanelOpen = !isMobileSidePanelOpen" class="md:hidden px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-lg text-xs font-semibold">
+                {{ isMobileSidePanelOpen ? 'Hide Insights' : 'Show Insights' }}
+            </button>
         </div>
 
-        <!-- Main Dual Pane Workspace -->
+        <!-- Main Content Area -->
         <div class="flex-1 flex overflow-hidden relative">
-            <!-- Left Pane: Rendered Notebook Canvas (Takes 100% space when mobile side panel is closed) -->
-            <div class="flex-1 overflow-y-auto p-4 sm:p-8 flex flex-col items-center">
-                <div class="max-w-3xl w-full space-y-6">
-                    <!-- Error State -->
-                    <div v-if="error" class="bg-white dark:bg-slate-900 p-12 rounded-2xl shadow-sm text-center border border-slate-200 dark:border-slate-800">
-                        <p class="text-slate-500 dark:text-slate-400 text-sm">{{ error }}</p>
-                    </div>
+            <!-- Left Pane: Canvas Pages -->
+            <div class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+                <div v-if="isLoading" class="flex flex-col items-center justify-center py-20 space-y-3">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                    <p class="text-xs text-slate-400 font-mono">Converting notebook vector pages to HD PNG...</p>
+                </div>
 
-                    <!-- Loading State -->
-                    <div v-if="isLoading" class="flex flex-col items-center justify-center p-20 bg-white dark:bg-slate-900 rounded-2xl shadow-sm">
-                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-3"></div>
-                        <p class="text-slate-500 animate-pulse text-xs">Converting notebook pages...</p>
-                    </div>
+                <div v-else-if="error" class="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 p-4 rounded-xl text-center text-xs text-amber-700 dark:amber-400 max-w-md mx-auto my-12">
+                    {{ error }}
+                </div>
 
-                    <!-- Rendered Note Canvas Pages -->
-                    <div v-if="!isLoading && !error && pages.length > 0" class="space-y-6">
-                        <div v-for="(page, idx) in pages" :key="page.pageNo"
-                            class="bg-white dark:bg-slate-900 rounded-2xl shadow-md border border-slate-200/80 dark:border-slate-800 overflow-hidden">
-                            <div class="border-b border-slate-100 dark:border-slate-800 px-4 py-2 bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center text-xs text-slate-400 font-mono">
-                                <span>Page {{ page.pageNo }} of {{ pages.length }}</span>
-                                <span class="text-indigo-600 dark:text-indigo-400 font-semibold">Dot Grid Canvas</span>
-                            </div>
-                            <img :src="page.url" loading="lazy" class="w-full h-auto block" alt="Handwriting Page" />
+                <div v-else class="max-w-4xl mx-auto space-y-6">
+                    <div v-for="(page, idx) in pages" :key="page.pageNo"
+                        class="bg-white dark:bg-slate-900 rounded-2xl shadow-md border border-slate-200/80 dark:border-slate-800 overflow-hidden">
+                        <div class="border-b border-slate-100 dark:border-slate-800 px-4 py-2 bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center text-xs text-slate-400 font-mono">
+                            <span>Page {{ idx + 1 }} of {{ pages.length }}</span>
+                            <span class="text-indigo-600 dark:text-indigo-400 font-semibold">Dot Grid Canvas</span>
                         </div>
+                        <img :src="page.url" loading="lazy" class="w-full h-auto block" alt="Handwriting Page" />
                     </div>
                 </div>
             </div>
@@ -133,7 +127,6 @@ export default {
             <div v-if="isMobileSidePanelOpen" @click="isMobileSidePanelOpen = false" class="fixed inset-0 z-30 bg-black/30 md:hidden"></div>
 
             <!-- Right Pane: Real OCR Transcript & Summaries -->
-            <!-- Desktop: Fixed Side Panel | Mobile: Slide-Up Bottom Sheet Drawer -->
             <div :class="isMobileSidePanelOpen ? 'translate-y-0' : 'translate-y-full md:translate-y-0'"
                 class="fixed md:static inset-x-0 bottom-0 z-40 md:z-10 h-[65vh] md:h-full w-full md:w-80 lg:w-96 border-t md:border-t-0 md:border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col shadow-2xl md:shadow-none transition-transform duration-200 ease-in-out flex-shrink-0 rounded-t-2xl md:rounded-none">
 
@@ -165,7 +158,7 @@ export default {
 
                     <div v-else-if="realTranscript"
                         class="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 font-mono text-xs text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed select-text">
-                        {{ realTranscript }}
+                        {{ formatContent(realTranscript) }}
                     </div>
 
                     <div v-else class="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-xl border border-slate-200/80 dark:border-slate-800 text-center text-xs text-slate-400">
@@ -182,9 +175,9 @@ export default {
 
                     <div v-if="realSummaries.length > 0" class="space-y-3">
                         <div v-for="s in realSummaries" :key="s.id"
-                            class="p-3 bg-indigo-50/60 dark:bg-indigo-950/40 rounded-xl border border-indigo-100 dark:border-indigo-900/60 text-xs text-slate-800 dark:text-slate-200 leading-relaxed">
-                            <p class="font-bold text-indigo-700 dark:text-indigo-300 mb-1">{{ s.title || 'Summary' }}</p>
-                            {{ s.content || s.summary }}
+                            class="p-3.5 bg-indigo-50/60 dark:bg-indigo-950/40 rounded-xl border border-indigo-100 dark:border-indigo-900/60 text-xs text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
+                            <p v-if="s.title" class="font-bold text-indigo-700 dark:text-indigo-300 mb-1.5">{{ s.title }}</p>
+                            {{ formatContent(s.content || s.summary) }}
                         </div>
                     </div>
 
@@ -196,4 +189,4 @@ export default {
         </div>
     </div>
     `
-}
+};
