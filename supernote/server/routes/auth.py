@@ -233,15 +233,8 @@ async def handle_user_query_info(request: web.Request) -> web.Response:
         if not account:
             raise SupernoteError("Unauthorized", status_code=401)
 
-        # Safely parse request body using UserQueryDTO if present
-        dto = UserQueryDTO()
-        if request.can_read_body and request.content_length:
-            try:
-                req_data = await request.json()
-                dto = UserQueryDTO.from_dict(req_data)
-            except Exception as err:
-                logger.debug("Failed to parse UserQueryDTO from request body: %s", err)
-
+        data = await request.json() if request.content_length else {}
+        dto = UserQueryDTO.from_dict(data)
         equipment_no = dto.equipment_no or request.get("equipment_no")
 
         user_service: UserService = request.app["user_service"]
