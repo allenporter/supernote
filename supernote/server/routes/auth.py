@@ -1,3 +1,5 @@
+import logging
+
 from aiohttp import web
 from mashumaro.exceptions import MissingField
 
@@ -10,13 +12,18 @@ from supernote.models.auth import (
     UserQueryByIdVO,
 )
 from supernote.models.base import BaseResponse, create_error_response
-from supernote.models.equipment import BindEquipmentDTO, UnbindEquipmentDTO
+from supernote.models.equipment import (
+    BindEquipmentDTO,
+    BindStatusVO,
+    UnbindEquipmentDTO,
+)
 from supernote.models.user import (
     LoginRecordDTO,
     RetrievePasswordDTO,
     UpdateEmailDTO,
     UpdatePasswordDTO,
     UserInfo,
+    UserQueryDTO,
     UserQueryVO,
     UserRegisterDTO,
 )
@@ -38,7 +45,27 @@ from supernote.server.utils.rate_limit import (
 
 from .decorators import public_route
 
+logger = logging.getLogger(__name__)
+
 routes = web.RouteTableDef()
+
+
+@routes.post("/api/equipment/bind/status")
+@routes.get("/api/equipment/bind/status")
+@public_route
+async def handle_equipment_bind_status(request: web.Request) -> web.Response:
+    # Endpoint: POST / GET /api/equipment/bind/status
+    # Purpose: Check device bind status.
+    return web.json_response(BindStatusVO(bind_status=True).to_dict())
+
+
+@routes.post("/api/terminal/user/activateEquipment")
+@routes.get("/api/terminal/user/activateEquipment")
+@public_route
+async def handle_activate_equipment(request: web.Request) -> web.Response:
+    # Endpoint: POST / GET /api/terminal/user/activateEquipment
+    # Purpose: Activate equipment.
+    return web.json_response(BaseResponse().to_dict())
 
 
 @routes.post("/api/terminal/equipment/unlink")
@@ -99,10 +126,15 @@ async def handle_random_code(request: web.Request) -> web.Response:
 
 @routes.post("/api/official/user/account/login/new")
 @routes.post("/api/official/user/account/login/equipment")
+@routes.get("/api/official/user/account/login/new")
+@routes.get("/api/official/user/account/login/equipment")
 @public_route
 async def handle_login(request: web.Request) -> web.Response:
-    # Endpoint: POST /api/official/user/account/login/new
-    # Purpose: Login with hashed password
+    # Endpoint: POST / GET /api/official/user/account/login/new
+    # Purpose: Login with hashed password / connectivity check
+    if request.method == "GET":
+        return web.json_response(BaseResponse().to_dict())
+
     user_service: UserService = request.app["user_service"]
     req_data = await request.json()
     login_req = LoginDTO.from_dict(req_data)
@@ -162,29 +194,33 @@ async def handle_bind_equipment(request: web.Request) -> web.Response:
 
 
 @routes.post("/api/user/query")
+@routes.get("/api/user/query")
 async def handle_user_query(request: web.Request) -> web.Response:
-    # Endpoint: POST /api/user/query
-    # Purpose: Get user details.
-    user_service: UserService = request.app["user_service"]
-    account = request.get("user")
-    if not account:
-        return web.json_response(
-            create_error_response("Unauthorized").to_dict(), status=401
-        )
-    user_vo = await user_service.get_user_profile(str(account))
-    if not user_vo:
-        return web.json_response(
-            create_error_response("User not found").to_dict(),
-            status=404,
-        )
+    # Endpoint: POST / GET /api/user/query (OpenAPI Spec: queryUserById)
+    # Purpose: Get flat user profile details (UserQueryByIdVO).
+    try:
+        account = request.get("user")
+        if not account:
+            raise SupernoteError("Unauthorized", status_code=401)
 
-    return web.json_response(
-        UserQueryByIdVO(
-            user=user_vo,
-            is_user=True,
-            equipment_no=request.get("equipment_no"),
-        ).to_dict()
-    )
+        equipment_no = request.get("equipment_no")
+
+        user_service: UserService = request.app["user_service"]
+        user_vo = await user_service.get_user_profile(str(account))
+        if not user_vo:
+            raise SupernoteError("User not found", status_code=404)
+
+        return web.json_response(
+            UserQueryByIdVO(
+                user=user_vo,
+                is_user=True,
+                equipment_no=equipment_no,
+            ).to_dict()
+        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
 
 @routes.post("/api/user/query/info")
@@ -192,36 +228,41 @@ async def handle_user_query(request: web.Request) -> web.Response:
 async def handle_user_query_info(request: web.Request) -> web.Response:
     # Endpoint: POST / GET /api/user/query/info (OpenAPI Spec: queryUserInfo)
     # Purpose: Get refined user info object (UserQueryVO) for Supernote apps & device terminals.
-    account = request.get("user")
-    if not account:
-        return web.json_response(
-            create_error_response("Unauthorized").to_dict(), status=401
-        )
-    user_service: UserService = request.app["user_service"]
-    user_vo = await user_service.get_user_profile(str(account))
-    if not user_vo:
-        return web.json_response(
-            create_error_response("User not found").to_dict(),
-            status=404,
+    try:
+        account = request.get("user")
+        if not account:
+            raise SupernoteError("Unauthorized", status_code=401)
+
+        data = await request.json() if request.content_length else {}
+        dto = UserQueryDTO.from_dict(data)
+        equipment_no = dto.equipment_no or request.get("equipment_no")
+
+        user_service: UserService = request.app["user_service"]
+        user_vo = await user_service.get_user_profile(str(account))
+        if not user_vo:
+            raise SupernoteError("User not found", status_code=404)
+
+        user_info = UserInfo(
+            user_id=user_vo.user_id,
+            user_name=user_vo.user_name,
+            email=user_vo.email,
+            phone=user_vo.phone,
+            total_capacity=user_vo.total_capacity,
+            file_server=user_vo.file_server,
+            avatars_url=user_vo.avatars_url,
         )
 
-    user_info = UserInfo(
-        user_id=user_vo.user_id,
-        user_name=user_vo.user_name,
-        email=user_vo.email,
-        phone=user_vo.phone,
-        avatars_url=user_vo.avatars_url,
-        total_capacity=user_vo.total_capacity,
-        file_server=user_vo.file_server,
-    )
-
-    return web.json_response(
-        UserQueryVO(
-            user=user_info,
-            is_user=True,
-            equipment_no=request.get("equipment_no"),
-        ).to_dict()
-    )
+        return web.json_response(
+            UserQueryVO(
+                user=user_info,
+                is_user=True,
+                equipment_no=equipment_no,
+            ).to_dict()
+        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
 
 
 @routes.post("/api/user/register")

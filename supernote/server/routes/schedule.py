@@ -204,8 +204,11 @@ async def create_task(request: web.Request) -> web.Response:
     try:
         data = await request.json()
         dto = AddScheduleTaskDTO.from_dict(data)
-        if not dto.task_list_id or not dto.title:
-            raise SupernoteError("Missing required fields", status_code=400)
+
+        if not dto.title:
+            raise SupernoteError("Title is required", status_code=400)
+
+        group_id = int(dto.task_list_id) if dto.task_list_id else 0
 
         user = request["user"]
         schedule_service: ScheduleService = request.app["schedule_service"]
@@ -213,14 +216,15 @@ async def create_task(request: web.Request) -> web.Response:
 
         task = await schedule_service.create_task(
             user_id=user_id,
-            group_id=int(dto.task_list_id),
+            group_id=group_id,
             title=dto.title,
             detail=dto.detail or "",
             status=dto.status or "needsAction",
             importance=dto.importance,
             due_time=dto.due_time,
-            recurrence=dto.recurrence,
-            is_reminder_on=(dto.is_reminder_on == BooleanEnum.YES),
+            is_reminder_on=(
+                dto.is_reminder_on == BooleanEnum.YES if dto.is_reminder_on else False
+            ),
             links=dto.links,
             sort=dto.sort,
             sort_completed=dto.sort_completed,
@@ -230,9 +234,11 @@ async def create_task(request: web.Request) -> web.Response:
             sort_time=dto.sort_time,
             planer_sort_time=dto.planer_sort_time,
             all_sort_time=dto.all_sort_time,
+            task_id=int(dto.task_id) if dto.task_id else None,
         )
+        task_id_resp = str(task.task_id)
         return web.json_response(
-            AddScheduleTaskVO(success=True, task_id=str(task.task_id)).to_dict()
+            AddScheduleTaskVO(success=True, task_id=task_id_resp).to_dict()
         )
     except SupernoteError as err:
         return err.to_response()

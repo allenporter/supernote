@@ -161,11 +161,11 @@ export function useSchedule() {
                 valB = b.allSort;
             }
 
-            // 1. If both have explicit sort values, sort by index ascending
+            // If both have explicit sort values, sort by index ascending
             if (valA !== null && valA !== undefined && valB !== null && valB !== undefined) {
                 if (valA !== valB) return valA - valB;
             }
-            // 2. Explicitly sorted items come before unsorted (null) items
+            // Explicitly sorted items come before unsorted (null) items
             if (valA !== null && valA !== undefined && (valB === null || valB === undefined)) {
                 return -1;
             }
@@ -173,12 +173,12 @@ export function useSchedule() {
                 return 1;
             }
 
-            // 3. Fallback: Due time ascending (if present)
+            // Fallback: Due time ascending (if present)
             if (a.dueTime && b.dueTime && a.dueTime !== b.dueTime) {
                 return a.dueTime - b.dueTime;
             }
 
-            // 4. Fallback: Creation time descending (newest first)
+            // Fallback: Creation time descending (newest first)
             return (b.createTime || 0) - (a.createTime || 0);
         });
     });

@@ -170,29 +170,27 @@ async def test_task_links_and_sort_fields_persistence(
     assert group_vo.task_list_id is not None
     group_id = int(group_vo.task_list_id)
 
-    # Perform raw POST with links and planerSort
-    sample_links = (
-        "eyJhcHBOYW1lIjoiTm90ZSIsInBhdGgiOiIvTm90ZS9QbGFubmVyLm5vdGUiLCJwYWdlIjo1fQ=="
+    link_dto = ScheduleTaskLinkDTO(
+        app_name="Note",
+        path="/Note/Planner.note",
+        page=5,
     )
-    resp = await authenticated_client.post(
-        "/api/file/schedule/task",
-        json={
-            "taskListId": str(group_id),
-            "title": "Linked Notebook Event",
-            "links": sample_links,
-            "planerSort": 42,
-        },
+    sample_links = link_dto.to_b64()
+    create_vo = await schedule.create_task(
+        group_id,
+        "Linked Notebook Event",
+        links=sample_links,
+        planer_sort=42,
     )
-    assert resp.status == 200
-    data = await resp.json()
-    task_id = data["taskId"]
+    assert create_vo.success is True
+    assert create_vo.task_id is not None
+    task_id = int(create_vo.task_id)
 
-    # Verify GET task returns links and planerSort
-    resp_get = await authenticated_client.get(f"/api/file/schedule/task/{task_id}")
-    assert resp_get.status == 200
-    get_data = await resp_get.json()
-    assert get_data["links"] == sample_links
-    assert get_data["planerSort"] == 42
+    task_detail = await schedule.get_task(task_id)
+    assert task_detail.success is True
+    assert task_detail.links == sample_links
+    assert task_detail.planer_sort == 42
+
     await schedule.delete_group(group_id)
 
 
@@ -216,29 +214,24 @@ async def test_task_notebook_links_encoding_and_decoding(
     encoded_links = link_dto.to_b64()
 
     # Create task with encoded notebook link
-    resp_create = await authenticated_client.post(
-        "/api/file/schedule/task",
-        json={
-            "taskListId": str(group_id),
-            "title": "Quarterly Planning Meeting",
-            "detail": "Action item created from page 24 of Executive Planner",
-            "importance": "high",
-            "links": encoded_links,
-        },
+    create_vo = await schedule.create_task(
+        group_id,
+        "Quarterly Planning Meeting",
+        detail="Action item created from page 24 of Executive Planner",
+        importance="high",
+        links=encoded_links,
     )
-    assert resp_create.status == 200
-    create_data = await resp_create.json()
-    task_id = create_data["taskId"]
+    assert create_vo.success is True
+    assert create_vo.task_id is not None
+    task_id = int(create_vo.task_id)
 
     # Verify GET task returns exact links string and decodes using ScheduleTaskLinkDTO.from_b64
-    resp_get = await authenticated_client.get(f"/api/file/schedule/task/{task_id}")
-    assert resp_get.status == 200
-    get_data = await resp_get.json()
+    task_detail = await schedule.get_task(task_id)
+    assert task_detail.success is True
+    assert task_detail.links == encoded_links
 
-    retrieved_links = get_data["links"]
-    assert retrieved_links == encoded_links
-
-    decoded_dto = ScheduleTaskLinkDTO.from_b64(retrieved_links)
+    assert task_detail.links is not None
+    decoded_dto = ScheduleTaskLinkDTO.from_b64(task_detail.links)
     assert decoded_dto == link_dto
     assert decoded_dto.app_name == "Note"
     assert decoded_dto.path == "/Note/2026_Executive_Planner.note"
@@ -478,5 +471,44 @@ async def test_batch_update_task_list_sort_fields(
     assert t2_data["sort"] == 2
     assert t2_data["planerSort"] == 20
     assert t2_data["allSort"] == 200
+
+    await schedule.delete_group(group_id)
+
+
+async def test_create_task_with_client_generated_id_and_server_fallback(
+    authenticated_client: Client,
+) -> None:
+    """Test task creation with client-provided taskId and server autoincrement fallback."""
+    schedule = ScheduleClient(authenticated_client)
+    group_vo = await schedule.create_group("ID Test Group")
+    assert group_vo.task_list_id is not None
+    group_id = int(group_vo.task_list_id)
+
+    # Client-provided taskId (offline Supernote device sync)
+    client_custom_id = "9876543210"
+    create_vo = await schedule.create_task(
+        group_id,
+        "Offline Created Task",
+        task_id=client_custom_id,
+    )
+    assert create_vo.success is True
+    assert create_vo.task_id == client_custom_id
+
+    # Verify task is stored under the exact client-generated taskId in DB
+    task_vo = await schedule.get_task(int(client_custom_id))
+    assert task_vo.success is True
+    assert str(task_vo.task_id) == client_custom_id
+    assert task_vo.title == "Offline Created Task"
+
+    # Server-generated taskId fallback (when taskId omitted)
+    server_vo = await schedule.create_task(group_id, "Web UI Created Task")
+    assert server_vo.success is True
+    server_task_id = server_vo.task_id
+    assert server_task_id is not None
+    assert server_task_id != client_custom_id
+
+    server_task = await schedule.get_task(int(server_task_id))
+    assert server_task.success is True
+    assert server_task.title == "Web UI Created Task"
 
     await schedule.delete_group(group_id)

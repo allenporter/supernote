@@ -44,7 +44,9 @@ class CapacityLocalDTO(DataClassJSONMixin):
         /api/file/2/users/get_space_usage
     """
 
-    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -58,7 +60,9 @@ class SynchronousStartLocalDTO(DataClassJSONMixin):
         /api/file/2/files/synchronous/start
     """
 
-    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -87,7 +91,9 @@ class SynchronousEndLocalDTO(DataClassJSONMixin):
         /api/file/2/files/synchronous/end
     """
 
-    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
     flag: str | None = None
     """Synchronization success flag typically a string "true" or "false"."""
 
@@ -117,7 +123,9 @@ class CreateFolderLocalDTO(DataClassJSONMixin):
     """
 
     path: str
-    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
     autorename: bool = False
 
     class Config(BaseConfig):
@@ -160,7 +168,9 @@ class ListFolderV2DTO(DataClassJSONMixin):
     """
 
     path: str
-    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
     recursive: bool = False
 
     class Config(BaseConfig):
@@ -176,7 +186,9 @@ class ListFolderLocalDTO(DataClassJSONMixin):
     """
 
     id: int  # Device uses ID for listing in v3?
-    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
     recursive: bool = False
 
     class Config(BaseConfig):
@@ -207,7 +219,9 @@ class DeleteFolderLocalDTO(DataClassJSONMixin):
     """
 
     id: int
-    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -238,7 +252,9 @@ class FileUploadApplyLocalDTO(DataClassJSONMixin):
     path: str
     file_name: str = field(metadata=field_options(alias="fileName"))
     size: str  # Note: Spec says string
-    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -255,7 +271,9 @@ class FileUploadFinishLocalDTO(DataClassJSONMixin):
     path: str
     file_name: str = field(metadata=field_options(alias="fileName"))
     content_hash: str = field(metadata=field_options(alias="content_hash"))
-    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
     size: str | None = None  # Spec says string
     inner_name: str | None = field(
         metadata=field_options(alias="innerName"), default=None
@@ -299,7 +317,9 @@ class FileDownloadLocalDTO(DataClassJSONMixin):
     id: int
     """File id number from the devices api."""
 
-    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
     """Equipment number."""
 
     class Config(BaseConfig):
@@ -337,7 +357,9 @@ class FileQueryLocalDTO(DataClassJSONMixin):
     """
 
     id: str
-    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -368,7 +390,9 @@ class FileQueryByPathLocalDTO(DataClassJSONMixin):
     """
 
     path: str
-    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -400,7 +424,9 @@ class FileMoveLocalDTO(DataClassJSONMixin):
 
     id: int
     to_path: str = field(metadata=field_options(alias="to_path"))
-    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
     autorename: bool = False
 
     class Config(BaseConfig):
@@ -433,7 +459,9 @@ class FileCopyLocalDTO(DataClassJSONMixin):
 
     id: int
     to_path: str = field(metadata=field_options(alias="to_path"))
-    equipment_no: str = field(metadata=field_options(alias="equipmentNo"))
+    equipment_no: str | None = field(
+        metadata=field_options(alias="equipmentNo"), default=None
+    )
     autorename: bool = False
 
     class Config(BaseConfig):

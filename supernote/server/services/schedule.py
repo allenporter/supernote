@@ -166,6 +166,7 @@ class ScheduleService:
         sort_time: int | None = None,
         planer_sort_time: int | None = None,
         all_sort_time: int | None = None,
+        task_id: int | None = None,
     ) -> ScheduleTaskDO:
         """Create a new task."""
         if len(title) > MAX_TITLE_LENGTH:
@@ -173,26 +174,29 @@ class ScheduleService:
         if len(detail) > MAX_DETAIL_LENGTH:
             raise ValueError("Detail is too long")
         async with self.session_manager.session() as session:
-            task = ScheduleTaskDO(
-                user_id=user_id,
-                task_list_id=group_id,
-                title=title,
-                detail=detail,
-                status=status,
-                importance=importance,
-                due_time=due_time,
-                recurrence=recurrence,
-                is_reminder_on=is_reminder_on,
-                links=links,
-                sort=sort,
-                sort_completed=sort_completed,
-                planer_sort=planer_sort,
-                all_sort=all_sort,
-                all_sort_completed=all_sort_completed,
-                sort_time=sort_time,
-                planer_sort_time=planer_sort_time,
-                all_sort_time=all_sort_time,
-            )
+            kwargs: dict[str, Any] = {
+                "user_id": user_id,
+                "task_list_id": group_id,
+                "title": title,
+                "detail": detail,
+                "status": status,
+                "importance": importance,
+                "due_time": due_time,
+                "recurrence": recurrence,
+                "is_reminder_on": is_reminder_on,
+                "links": links,
+                "sort": sort,
+                "sort_completed": sort_completed,
+                "planer_sort": planer_sort,
+                "all_sort": all_sort,
+                "all_sort_completed": all_sort_completed,
+                "sort_time": sort_time,
+                "planer_sort_time": planer_sort_time,
+                "all_sort_time": all_sort_time,
+            }
+            if task_id is not None:
+                kwargs["task_id"] = task_id
+            task = ScheduleTaskDO(**kwargs)
             session.add(task)
             await session.flush()
             await session.commit()
