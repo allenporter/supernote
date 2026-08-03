@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# script/server-seed: Seed local development server with sample notes and tasks
+
+set -e
+
+cd "$(dirname "$0")/.."
+
+echo "==> Seeding development server..."
+
+if command -v uv >/dev/null 2>&1; then
+  uv run supernote cloud seed "$@"
+else
+  supernote cloud seed "$@"
+fi

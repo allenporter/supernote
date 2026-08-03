@@ -170,11 +170,11 @@ class ScheduleTaskInfo(DataClassJSONMixin):
     importance: str | None = None
     """Task importance level"""
 
-    due_time: int | None = field(metadata=field_options(alias="dueTime"), default=None)
+    due_time: int | None = field(metadata=field_options(alias="dueTime"), default=0)
     """Timestamp in milliseconds"""
 
     completed_time: int | None = field(
-        metadata=field_options(alias="completedTime"), default=None
+        metadata=field_options(alias="completedTime"), default=0
     )
     """Timestamp in milliseconds"""
 
@@ -184,23 +184,21 @@ class ScheduleTaskInfo(DataClassJSONMixin):
     is_deleted: BooleanEnum | None = field(
         metadata=field_options(alias="isDeleted"), default=None
     )
-    sort: int | None = None
+    sort: int | None = 0
     """Sort order index"""
     sort_completed: int | None = field(
-        metadata=field_options(alias="sortCompleted"), default=None
+        metadata=field_options(alias="sortCompleted"), default=0
     )
     planer_sort: int | None = field(
-        metadata=field_options(alias="planerSort"), default=None
+        metadata=field_options(alias="planerSort"), default=0
     )
     all_sort: int | None = field(metadata=field_options(alias="allSort"), default=None)
     all_sort_completed: int | None = field(
         metadata=field_options(alias="allSortCompleted"), default=None
     )
-    sort_time: int | None = field(
-        metadata=field_options(alias="sortTime"), default=None
-    )
+    sort_time: int | None = field(metadata=field_options(alias="sortTime"), default=0)
     planer_sort_time: int | None = field(
-        metadata=field_options(alias="planerSortTime"), default=None
+        metadata=field_options(alias="planerSortTime"), default=0
     )
     all_sort_time: int | None = field(
         metadata=field_options(alias="allSortTime"), default=None
@@ -604,8 +602,8 @@ class ScheduleTaskVO(BaseResponse):
         /api/file/schedule/task/{taskId} (GET)
     """
 
-    task_id: int | None = field(metadata=field_options(alias="taskId"), default=None)
-    task_list_id: int | None = field(
+    task_id: str | None = field(metadata=field_options(alias="taskId"), default=None)
+    task_list_id: str | None = field(
         metadata=field_options(alias="taskListId"), default=None
     )
     title: str | None = None

@@ -24,7 +24,7 @@ export function useSchedule() {
         try {
             const groups = await fetchTaskGroups();
             taskGroups.value = groups.map(g => ({
-                id: String(g.taskListId || g.id),
+                id: String(g.taskListId),
                 title: g.title || "Untitled Group"
             }));
         } catch (e) {

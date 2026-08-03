@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from aiohttp.test_utils import TestClient
 
@@ -284,26 +286,26 @@ async def test_schedule_group_and_task_routes(
     await schedule.delete_group(group_id)
 
 
-async def test_sort_placeholders_return_501(authenticated_client: Client) -> None:
+async def test_sort_endpoints_return_200(authenticated_client: Client) -> None:
     res_post = await authenticated_client.request(
         "post", "/api/file/schedule/sort", json={}
     )
-    assert res_post.status == 501
+    assert res_post.status == 200
 
     res_put = await authenticated_client.request(
         "put", "/api/file/schedule/sort", json={}
     )
-    assert res_put.status == 501
+    assert res_put.status == 200
 
     res_del = await authenticated_client.request(
         "delete", "/api/file/schedule/sort/123"
     )
-    assert res_del.status == 501
+    assert res_del.status == 200
 
     res_query = await authenticated_client.request(
         "post", "/api/file/query/schedule/sort", json={}
     )
-    assert res_query.status == 501
+    assert res_query.status == 200
 
 
 async def test_batch_update_task_list_transactional_rollback(
@@ -510,5 +512,65 @@ async def test_create_task_with_client_generated_id_and_server_fallback(
     server_task = await schedule.get_task(int(server_task_id))
     assert server_task.success is True
     assert server_task.title == "Web UI Created Task"
+
+    await schedule.delete_group(group_id)
+
+
+async def test_schedule_delta_sync_flow(authenticated_client: Client) -> None:
+    """Test delta sync flow using nextSyncToken via ScheduleClient."""
+    schedule = ScheduleClient(authenticated_client)
+    group_vo = await schedule.create_group("Delta Sync Group")
+    assert group_vo.task_list_id is not None
+    group_id = int(group_vo.task_list_id)
+
+    # Create initial tasks
+    t1_vo = await schedule.create_task(group_id, "Task 1 Initial")
+    t2_vo = await schedule.create_task(group_id, "Task 2 Initial")
+    assert t1_vo.task_id is not None
+    assert t2_vo.task_id is not None
+
+    # Query with no sync token -> get both tasks back & nextSyncToken via ScheduleClient
+    initial_vo = await schedule.get_tasks_all(group_id=group_id)
+    assert initial_vo.success is True
+    initial_tasks = initial_vo.schedule_task
+    assert len(initial_tasks) == 2
+    sync_token = initial_vo.next_sync_token
+    assert sync_token is not None
+
+    # Ensure timestamp progression
+    await asyncio.sleep(0.02)
+
+    # Update 1 task, add 1 task
+    await schedule.update_task(int(t1_vo.task_id), title="Task 1 Updated")
+    t3_vo = await schedule.create_task(group_id, "Task 3 New")
+    assert t3_vo.task_id is not None
+
+    # Query back with nextSyncToken -> get updated task & new task (2 tasks)
+    delta_vo = await schedule.get_tasks_all(
+        group_id=group_id, next_sync_token=sync_token
+    )
+    assert delta_vo.success is True
+    delta_tasks = delta_vo.schedule_task
+    sync_token2 = delta_vo.next_sync_token
+    assert sync_token2 is not None
+    assert sync_token2 >= sync_token
+
+    delta_task_ids = {t.task_id for t in delta_tasks}
+    assert t1_vo.task_id in delta_task_ids
+    assert t3_vo.task_id in delta_task_ids
+    assert t2_vo.task_id not in delta_task_ids
+
+    updated_t1 = next(t for t in delta_tasks if t.task_id == t1_vo.task_id)
+    assert updated_t1.title == "Task 1 Updated"
+
+    # Query again with sync_token2 -> no new changes (0 tasks), nextSyncToken propagated back
+    delta_vo2 = await schedule.get_tasks_all(
+        group_id=group_id, next_sync_token=sync_token2
+    )
+    assert delta_vo2.success is True
+    assert len(delta_vo2.schedule_task) == 0
+    sync_token3 = delta_vo2.next_sync_token
+    assert sync_token3 is not None
+    assert sync_token3 >= sync_token2
 
     await schedule.delete_group(group_id)

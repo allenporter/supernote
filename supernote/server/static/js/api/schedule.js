@@ -13,12 +13,13 @@ function getAuthHeaders() {
 }
 
 /**
- * Fetch all task groups.
+ * Fetch all task groups via POST /api/file/schedule/group/all
  */
 export async function fetchTaskGroups() {
-    const response = await fetch('/api/schedule/groups', {
-        method: 'GET',
-        headers: getAuthHeaders()
+    const response = await fetch('/api/file/schedule/group/all', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({})
     });
 
     if (response.status === 401) {
@@ -31,14 +32,14 @@ export async function fetchTaskGroups() {
     }
 
     const data = await response.json();
-    return data.schedule_task_group || data.scheduleTaskGroup || data.taskGroupList || [];
+    return data.scheduleTaskGroup || [];
 }
 
 /**
- * Create a new task group.
+ * Create a new task group via POST /api/file/schedule/group
  */
 export async function createTaskGroup(title) {
-    const response = await fetch('/api/schedule/groups', {
+    const response = await fetch('/api/file/schedule/group', {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ title })
@@ -52,10 +53,10 @@ export async function createTaskGroup(title) {
 }
 
 /**
- * Delete a task group.
+ * Delete a task group via DELETE /api/file/schedule/group/{taskListId}
  */
 export async function deleteTaskGroup(taskListId) {
-    const response = await fetch(`/api/schedule/groups/${taskListId}`, {
+    const response = await fetch(`/api/file/schedule/group/${taskListId}`, {
         method: 'DELETE',
         headers: getAuthHeaders()
     });
@@ -68,17 +69,15 @@ export async function deleteTaskGroup(taskListId) {
 }
 
 /**
- * Fetch all tasks (optionally filtered by taskListId).
+ * Fetch tasks via POST /api/file/schedule/task/all (optionally filtered by taskListId).
  */
 export async function fetchTasks(taskListId = null) {
-    let url = '/api/schedule/tasks';
-    if (taskListId) {
-        url += `?taskListId=${encodeURIComponent(taskListId)}`;
-    }
+    const payload = taskListId ? { taskListId: String(taskListId) } : {};
 
-    const response = await fetch(url, {
-        method: 'GET',
-        headers: getAuthHeaders()
+    const response = await fetch('/api/file/schedule/task/all', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(payload)
     });
 
     if (response.status === 401) {
@@ -91,11 +90,11 @@ export async function fetchTasks(taskListId = null) {
     }
 
     const data = await response.json();
-    const rawTasks = data.schedule_task || data.scheduleTask || data.taskList || [];
+    const rawTasks = data.scheduleTask || [];
 
     return {
         tasks: rawTasks.map(t => ({
-            id: String(t.taskId || t.id),
+            id: String(t.taskId),
             taskListId: String(t.taskListId || "0"),
             title: t.title || "Untitled Task",
             detail: t.detail || "",
@@ -103,24 +102,24 @@ export async function fetchTasks(taskListId = null) {
             importance: t.importance || "low",
             dueTime: t.dueTime || 0,
             completedTime: t.completedTime || 0,
-            isReminderOn: t.isReminderOn === "Y" || t.isReminderOn === true || t.isReminderOn === 1,
+            isReminderOn: t.isReminderOn === "Y" || t.isReminderOn === true,
             links: t.links || null,
             sort: t.sort ?? null,
             sortCompleted: t.sortCompleted ?? null,
             planerSort: t.planerSort ?? null,
             allSort: t.allSort ?? null,
             createTime: t.createTime || 0,
-            updateTime: t.updateTime || 0,
+            updateTime: t.lastModified || 0,
         })),
-        nextPageToken: null
+        nextPageToken: data.nextPageToken || null
     };
 }
 
 /**
- * Create a new task.
+ * Create a new task via POST /api/file/schedule/task
  */
 export async function createScheduleTask(taskData) {
-    const response = await fetch('/api/schedule/tasks', {
+    const response = await fetch('/api/file/schedule/task', {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -142,21 +141,22 @@ export async function createScheduleTask(taskData) {
 }
 
 /**
- * Update an existing task.
+ * Update an existing task via PUT /api/file/schedule/task
  */
 export async function updateScheduleTask(taskData) {
     const taskId = String(taskData.id || taskData.taskId);
-    const response = await fetch(`/api/schedule/tasks/${taskId}`, {
+    const response = await fetch('/api/file/schedule/task', {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify({
+            taskId: taskId,
             taskListId: taskData.taskListId ? String(taskData.taskListId) : undefined,
             title: taskData.title,
             detail: taskData.detail,
             importance: taskData.importance,
             status: taskData.status,
             dueTime: taskData.dueTime,
-            lastModified: taskData.lastModified || Math.floor(Date.now() / 1000),
+            lastModified: taskData.lastModified || Math.floor(Date.now() * 1000),
             isReminderOn: taskData.isReminderOn !== undefined ? (taskData.isReminderOn ? "Y" : "N") : undefined
         })
     });
@@ -169,10 +169,10 @@ export async function updateScheduleTask(taskData) {
 }
 
 /**
- * Delete a task.
+ * Delete a task via DELETE /api/file/schedule/task/{taskId}
  */
 export async function deleteScheduleTask(taskId) {
-    const response = await fetch(`/api/schedule/tasks/${taskId}`, {
+    const response = await fetch(`/api/file/schedule/task/${taskId}`, {
         method: 'DELETE',
         headers: getAuthHeaders()
     });

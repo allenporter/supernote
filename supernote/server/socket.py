@@ -52,6 +52,7 @@ class SocketIOServerManager:
         self._sio = socketio.AsyncServer(
             async_mode="aiohttp",
             cors_allowed_origins="*",
+            allow_eio3=True,
             logger=False,
             engineio_logger=False,
         )
@@ -87,7 +88,7 @@ class SocketIOServerManager:
             secret_key = self.config.auth.secret_key
 
             # Verify handshake signature
-            if not verify_handshake_signature(params, secret_key):
+            if not verify_handshake_signature(params):
                 logger.error(
                     "Socket.IO connect rejected: invalid signature (sid=%s)", sid
                 )

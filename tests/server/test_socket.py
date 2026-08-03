@@ -1,7 +1,6 @@
 """Integration tests for Socket.IO server handler and client interaction."""
 
 import asyncio
-import hashlib
 from collections.abc import AsyncGenerator, Callable
 
 import jwt
@@ -21,18 +20,17 @@ from supernote.server.app import create_app
 from supernote.server.config import ServerConfig
 from supernote.server.services.user import JWT_ALGORITHM
 from supernote.server.socket import SocketIOServerManager
+from supernote.server.socket_auth import compute_handshake_signature
 
 
 def _make_handshake_params(
     token: str, conn_type: str = "file", random_val: str = "12345"
 ) -> SocketHandshakeParams:
-    raw = f"{token}_{conn_type}_{random_val}"
-    sign = hashlib.md5(raw.encode("utf-8")).hexdigest()
     return SocketHandshakeParams(
         token=token,
         type=conn_type,
         random=random_val,
-        sign=sign,
+        sign=compute_handshake_signature(token, conn_type, random_val),
     )
 
 

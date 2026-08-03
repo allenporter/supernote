@@ -8,10 +8,12 @@ import sys
 import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 
 from supernote.client import Supernote, extended
 from supernote.client.auth import ConstantAuth, FileCacheAuth
 from supernote.client.exceptions import SmsVerificationRequired, SupernoteException
+from supernote.client.schedule import ScheduleClient
 from supernote.models.extended import WebSummaryListVO
 
 _LOGGER = logging.getLogger(__name__)
@@ -171,15 +173,11 @@ async def _run_login_sanity_tests(sn: Supernote) -> None:
     try:
         user_resp = await sn.web.query_user()
         print("  ✓ User query successful!")
-        if user_resp.user:
-            user = user_resp.user
-            print(f"    - User Name: {user.user_name}")
-            print(f"    - Email: {user.email}")
-            print(f"    - Country Code: {user.country_code}")
-            if user.file_server:
-                print(f"    - File Server: {user.file_server}")
-        else:
-            print("    - No user information returned")
+        print(f"    - User Name: {user_resp.user_name}")
+        print(f"    - Email: {user_resp.email}")
+        print(f"    - Country Code: {user_resp.country_code}")
+        if user_resp.file_server:
+            print(f"    - File Server: {user_resp.file_server}")
     except SupernoteException as err:
         print(f"  ✗ User query failed: {err}")
     print()
@@ -488,12 +486,168 @@ def subcommand_cloud_search(args) -> None:
     )
 
 
+async def async_cloud_seed(
+    url: str = "http://127.0.0.1:8080",
+    email: str = "debug@example.com",
+    password: str = "password",
+    verbose: bool = False,
+) -> None:
+    """Populate development server with sample notes and schedule tasks."""
+
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    print(f"==> Connecting to server at {url}...")
+    try:
+        sn = await Supernote.login(email, password, host=url)
+    except Exception:
+        print(f"User {email} not found, attempting registration via AdminClient...")
+        import aiohttp  # noqa: PLC0415
+
+        from supernote.client.admin import AdminClient  # noqa: PLC0415
+
+        async with aiohttp.ClientSession() as session:
+            admin_client = AdminClient(session, host=url)
+            await admin_client.register(email, password, "Debug User")
+        sn = await Supernote.login(email, password, host=url)
+
+    async with sn:
+        print(f"✓ Logged in as {email}")
+
+        schedule = ScheduleClient(sn.client)
+
+        print("\n--- Creating Task Groups & Tasks ---")
+
+        # Group 1: Work & Projects
+        g1 = await schedule.create_group("Work & Projects")
+        g1_id = int(g1.task_list_id)
+        print(f"Created Group: Work & Projects (id={g1_id})")
+
+        await schedule.create_task(
+            g1_id,
+            "Finalize Q3 Supernote Architecture Proposal",
+            detail="Review VFS layer and MCP server integration.",
+            status="needsAction",
+            importance="high",
+        )
+        await schedule.create_task(
+            g1_id,
+            "Deploy Partner App Integration",
+            detail="Verify OAuth & API sync flows against server",
+            status="needsAction",
+            importance="high",
+        )
+        await schedule.create_task(
+            g1_id,
+            "Setup CI/CD Pipeline for Supernote",
+            detail="Automate ruff, mypy and pytest runs on PR",
+            status="completed",
+            importance="normal",
+        )
+
+        # Group 2: Personal & Notes
+        g2 = await schedule.create_group("Personal & Notes")
+        g2_id = int(g2.task_list_id)
+        print(f"Created Group: Personal & Notes (id={g2_id})")
+
+        await schedule.create_task(
+            g2_id,
+            "Buy Stylus Replacement Nibs",
+            detail="Check Supernote store for FeelWrite 2 nibs",
+            status="needsAction",
+            importance="normal",
+        )
+        await schedule.create_task(
+            g2_id,
+            "Weekly Journal Review",
+            detail="Review handwritten notes from last week",
+            status="needsAction",
+            importance="high",
+        )
+
+        print("\n--- Creating Cloud Directories & Uploading Files ---")
+        folders = [
+            "/NOTE",
+            "/NOTE/Note",
+            "/NOTE/MyStyle",
+            "/DOCUMENT",
+            "/DOCUMENT/Document",
+            "/EXPORT",
+            "/SCREENSHOT",
+            "/INBOX",
+        ]
+        for folder in folders:
+            try:
+                await sn.device.create_folder(folder, equipment_no="WEB")
+                print(f"Created folder: {folder}")
+            except Exception:
+                pass
+
+        test_notes = [
+            ("tests/testdata/20251207_221454.note", "/NOTE/Note/20251207_221454.note"),
+            ("tests/testdata/philips/test.note", "/NOTE/Note/Meeting_Notes.note"),
+            ("tests/testdata/philips/manta.note", "/NOTE/Note/Project_Ideas.note"),
+            (
+                "tests/testdata/dsummersl/sn2md_20260618.note",
+                "/NOTE/Note/Weekly_Journal.note",
+            ),
+            (
+                "tests/testdata/mmujynya/stroller.note",
+                "/DOCUMENT/Document/Stroller_Specs.note",
+            ),
+            (
+                "tests/testdata/philips/horizontal_1090.note",
+                "/DOCUMENT/Document/Horizontal_Diagram.note",
+            ),
+        ]
+
+        for local_file, remote_path in test_notes:
+            path_obj = Path(local_file)
+            if path_obj.exists():
+                content = path_obj.read_bytes()
+                print(
+                    f"Uploading {local_file} -> {remote_path} ({len(content)} bytes)..."
+                )
+                await sn.device.upload_content(remote_path, content, equipment_no="WEB")
+                print(f"  ✓ Uploaded {remote_path}")
+
+        print("\n=== Server Seed Completed Successfully! ===")
+
+
+def subcommand_cloud_seed(args) -> None:
+    """Handler for cloud-seed subcommand."""
+    asyncio.run(
+        async_cloud_seed(
+            url=args.url,
+            email=args.email,
+            password=args.password,
+            verbose=args.verbose,
+        )
+    )
+
+
 def add_parser(subparsers):
     """Add the cloud subparser to the main subparsers."""
     cloud_parser = subparsers.add_parser("cloud", help="Interact with Supernote Cloud")
-    cloud_subparsers = cloud_parser.add_subparsers(
-        dest="cloud_command", help="Cloud command"
+    cloud_subparsers = cloud_parser.add_subparsers(dest="cloud_command", required=True)
+
+    # 'cloud seed' subcommand
+    parser_seed = cloud_subparsers.add_parser(
+        "seed", help="Seed development server with sample notes and schedule tasks"
     )
+    parser_seed.add_argument(
+        "--url", type=str, default="http://127.0.0.1:8080", help="Server URL"
+    )
+    parser_seed.add_argument(
+        "--email", type=str, default="debug@example.com", help="User email"
+    )
+    parser_seed.add_argument(
+        "--password", type=str, default="password", help="User password"
+    )
+    parser_seed.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    parser_seed.set_defaults(func=subcommand_cloud_seed)
 
     # 'cloud login' subcommand
     parser_login = cloud_subparsers.add_parser(

@@ -1,8 +1,10 @@
 """Authentication and signature verification helpers for Socket.IO connections."""
 
+import base64
 import hashlib
 import hmac
 import logging
+import re
 
 import jwt
 
@@ -11,34 +13,33 @@ from supernote.server.services.user import JWT_ALGORITHM
 
 logger = logging.getLogger(__name__)
 
+# Default pre-shared key used by Socket.IO client devices for protocol compatibility.
+SOCKET_IO_KEY = "K+5xFzxbnB1iSZWqmu3Etw=="
 
-def verify_handshake_signature(params: SocketHandshakeParams, secret_key: str) -> bool:
-    """Verify the signature parameter provided in a Socket.IO handshake.
 
-    Formula evaluated: MD5(token + '_' + type + '_' + random)
+def compute_handshake_signature(
+    token: str,
+    conn_type: str,
+    random_val: str,
+    secret_key: str = SOCKET_IO_KEY,
+) -> str:
+    """Compute HMAC-SHA256 signature for a Socket.IO handshake."""
+    raw = f"{token}_{conn_type}_{random_val}"
+    h = hmac.new(secret_key.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256)
+    b64_sig = base64.b64encode(h.digest()).decode("utf-8")
+    return re.sub(r"[^a-zA-Z0-9]", "", b64_sig)
 
-    Args:
-        params: Handshake parameters received from the client query string.
-        secret_key: Server authentication secret key.
 
-    Returns:
-        True if the signature is valid, False otherwise.
-    """
+def verify_handshake_signature(params: SocketHandshakeParams) -> bool:
+    """Verify the signature parameter provided in a Socket.IO handshake."""
     if not params.sign:
         logger.warning("Missing signature in Socket.IO handshake")
         return False
 
-    raw = f"{params.token}_{params.type}_{params.random}"
-    expected_sign = hashlib.md5(raw.encode("utf-8")).hexdigest()
-
+    expected_sign = compute_handshake_signature(
+        params.token, params.type, params.random
+    )
     if params.sign == expected_sign:
-        return True
-
-    # Also check HMAC with secret_key as alternative valid signature format
-    expected_hmac = hmac.new(
-        secret_key.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256
-    ).hexdigest()
-    if params.sign == expected_hmac:
         return True
 
     logger.warning("Handshake signature mismatch: received=%s", params.sign)

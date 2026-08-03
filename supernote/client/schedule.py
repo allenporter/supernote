@@ -135,28 +135,43 @@ class ScheduleClient:
             f"/api/file/schedule/task/{task_id}", ScheduleTaskVO
         )
 
-    async def list_tasks(
-        self, group_id: int | None = None
-    ) -> AsyncIterator[ScheduleTaskInfo]:
-        """List all schedule tasks.
+    async def get_tasks_all(
+        self,
+        group_id: int | str | None = None,
+        next_sync_token: int | None = None,
+        page_token: str | None = None,
+    ) -> ScheduleTaskAllVO:
+        """Fetch tasks response object including nextSyncToken and scheduleTask items."""
+        dto = ScheduleTaskDTO(
+            task_list_id=str(group_id) if group_id is not None else None,
+            next_sync_token=next_sync_token,
+            next_page_tokens=page_token,
+        )
+        return await self._client.post_json(
+            "/api/file/schedule/task/all", ScheduleTaskAllVO, json=dto.to_dict()
+        )
 
-        This is a generator that yields tasks one by one. It pages
-        through the results using nextPageTokens and yields each task
-        as it is received.
+    async def list_tasks(
+        self,
+        group_id: int | None = None,
+        since: int | None = None,
+    ) -> AsyncIterator[ScheduleTaskInfo]:
+        """List all schedule tasks, automatically iterating through all pages.
+
+        Args:
+            group_id: Optional task group ID to filter by.
+            since: Optional nextSyncToken timestamp for incremental delta sync.
 
         Yields:
             ScheduleTaskInfo: A schedule task.
         """
         page_token = None
         while True:
-            dto = ScheduleTaskDTO(
-                task_list_id=str(group_id) if group_id else None,
-                next_page_tokens=page_token,
+            response = await self.get_tasks_all(
+                group_id=group_id,
+                next_sync_token=since,
+                page_token=page_token,
             )
-            response = await self._client.post_json(
-                "/api/file/schedule/task/all", ScheduleTaskAllVO, json=dto.to_dict()
-            )
-
             for item in response.schedule_task:
                 yield item
 

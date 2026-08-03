@@ -73,8 +73,7 @@ async def test_login_flow(
     assert resp.status == 200
     data = await resp.json()
     assert data["success"] is True
-    assert data["user"]["userName"] == "Test User"
-    assert data["equipmentNo"] == "SN123456"
+    assert data["userName"] == "Test User"
 
     # Verify an invalid token does not work
     resp = await client.post(
@@ -111,5 +110,4 @@ async def test_user_query(client: TestClient, auth_headers: dict[str, str]) -> N
     assert resp.status == 200
     data = await resp.json()
     assert data["success"] is True
-    assert "user" in data
-    assert data["user"]["userName"] == "Test User"
+    assert data["userName"] == "Test User"

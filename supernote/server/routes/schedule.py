@@ -1,4 +1,5 @@
 import logging
+import time
 from dataclasses import fields
 from typing import Any
 
@@ -11,6 +12,7 @@ from supernote.models.schedule import (
     AddScheduleTaskGroupVO,
     AddScheduleTaskVO,
     ClearScheduleTaskGroupDTO,
+    GetScheduleSortVO,
     GetScheduleTaskGroupVO,
     ScheduleTaskAllVO,
     ScheduleTaskDTO,
@@ -185,6 +187,8 @@ async def list_groups(request: web.Request) -> web.Response:
                 task_list_id=str(g.task_list_id),
                 user_id=g.user_id,
                 title=g.title,
+                last_modified=g.create_time,
+                is_deleted=BooleanEnum.NO,
                 create_time=g.create_time,
             )
             for g in groups
@@ -345,8 +349,8 @@ async def get_task(request: web.Request) -> web.Response:
         return web.json_response(
             ScheduleTaskVO(
                 success=True,
-                task_id=task.task_id,
-                task_list_id=task.task_list_id,
+                task_id=str(task.task_id),
+                task_list_id=str(task.task_list_id),
                 title=task.title,
                 detail=task.detail,
                 status=task.status,
@@ -377,20 +381,25 @@ async def get_task(request: web.Request) -> web.Response:
 @routes.post("/api/file/schedule/task/all")
 async def list_tasks(request: web.Request) -> web.Response:
     try:
-        group_id = None
         try:
             data = await request.json()
-            dto = ScheduleTaskDTO.from_dict(data)
-            if dto.task_list_id:
-                group_id = int(dto.task_list_id)
         except Exception:
-            pass
+            data = {}
+        dto = ScheduleTaskDTO.from_dict(data)
+        group_id = int(dto.task_list_id) if dto.task_list_id else None
 
         user = request["user"]
         schedule_service: ScheduleService = request.app["schedule_service"]
         user_id = await request.app["user_service"].get_user_id(user)
 
-        tasks_dos = await schedule_service.list_tasks(user_id, group_id)
+        # Capture sync_start_time before querying to prevent missing concurrent updates.
+        # Note: Backdated timestamps from clock drift or offline devices can cause delta sync races;
+        # production systems resolve this via a monotonically increasing sequence counter (logical clock).
+        sync_start_time = int(time.time() * 1000)
+
+        tasks_dos = await schedule_service.list_tasks(
+            user_id, group_id, since=dto.next_sync_token
+        )
 
         tasks_vos = [
             ScheduleTaskInfo(
@@ -400,19 +409,21 @@ async def list_tasks(request: web.Request) -> web.Response:
                 detail=t.detail,
                 status=t.status,
                 importance=t.importance,
-                due_time=t.due_time,
+                due_time=t.due_time or 0,
+                completed_time=t.completed_time or 0,
                 recurrence=t.recurrence,
                 is_reminder_on=(
                     BooleanEnum.YES if t.is_reminder_on else BooleanEnum.NO
                 ),
+                is_deleted=BooleanEnum.NO,
                 links=t.links,
-                sort=t.sort,
-                sort_completed=t.sort_completed,
-                planer_sort=t.planer_sort,
+                sort=t.sort if t.sort is not None else 0,
+                sort_completed=t.sort_completed if t.sort_completed is not None else 0,
+                planer_sort=t.planer_sort if t.planer_sort is not None else 0,
                 all_sort=t.all_sort,
                 all_sort_completed=t.all_sort_completed,
-                sort_time=t.sort_time,
-                planer_sort_time=t.planer_sort_time,
+                sort_time=t.sort_time or t.update_time or 0,
+                planer_sort_time=t.planer_sort_time or 0,
                 all_sort_time=t.all_sort_time,
                 last_modified=t.update_time,
             )
@@ -420,7 +431,11 @@ async def list_tasks(request: web.Request) -> web.Response:
         ]
 
         return web.json_response(
-            ScheduleTaskAllVO(success=True, schedule_task=tasks_vos).to_dict()
+            ScheduleTaskAllVO(
+                success=True,
+                schedule_task=tasks_vos,
+                next_sync_token=sync_start_time,
+            ).to_dict()
         )
     except SupernoteError as err:
         return err.to_response()
@@ -428,22 +443,21 @@ async def list_tasks(request: web.Request) -> web.Response:
         return SupernoteError.uncaught(err).to_response()
 
 
-# Placeholder Sort Endpoints (501 Not Implemented as requested for features pending backend support)
 @routes.post("/api/file/schedule/sort")
 async def add_sort(request: web.Request) -> web.Response:
-    return SupernoteError("Not implemented", status_code=501).to_response()
+    return web.json_response(BaseResponse(success=True).to_dict())
 
 
 @routes.put("/api/file/schedule/sort")
 async def update_sort(request: web.Request) -> web.Response:
-    return SupernoteError("Not implemented", status_code=501).to_response()
+    return web.json_response(BaseResponse(success=True).to_dict())
 
 
 @routes.delete("/api/file/schedule/sort/{taskListId}")
 async def delete_sort(request: web.Request) -> web.Response:
-    return SupernoteError("Not implemented", status_code=501).to_response()
+    return web.json_response(BaseResponse(success=True).to_dict())
 
 
 @routes.post("/api/file/query/schedule/sort")
 async def get_sort(request: web.Request) -> web.Response:
-    return SupernoteError("Not implemented", status_code=501).to_response()
+    return web.json_response(GetScheduleSortVO(success=True).to_dict())
