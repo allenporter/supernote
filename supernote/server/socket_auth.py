@@ -22,7 +22,9 @@ def verify_handshake_signature(params: SocketHandshakeParams, secret_key: str) -
 
     raw = f"{params.token}_{params.type}_{params.random}"
 
-    # Official Ratta Partner App mobile client key
+    # Official Ratta protocol pre-shared key (com.ratta.socket.io.SignVerifierSocketIO).
+    # Native mobile app clients speaking the Ratta protocol use this key to generate
+    # Socket.IO handshake signatures.
     ratta_key = "K+5xFzxbnB1iSZWqmu3Etw=="
     h_ratta = hmac.new(ratta_key.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256)
     b64_ratta = base64.b64encode(h_ratta.digest()).decode("utf-8")
