@@ -46,3 +46,17 @@ auth:
   # Whether to allow remote password reset via email.
   # When disabled, the public password reset endpoint returns 403.
   enable_remote_password_reset: false
+
+# Outbound webhook dispatch (optional).
+# Sends a signed HTTP POST to each endpoint when a subscribed event occurs,
+# e.g. to trigger a Home Assistant, n8n, or Zapier automation on note sync.
+# webhooks:
+#   enabled: true
+#   endpoints:
+#     - url: "https://n8n.homelab.local/webhook/supernote"
+#       # Shared secret used to HMAC-SHA256 sign each payload. Sent to the
+#       # endpoint in the `X-Supernote-Signature: sha256=<hex>` header so it
+#       # can verify the request came from this server and was not altered.
+#       secret: "CHANGE_ME_TO_A_SECURE_RANDOM_STRING"
+#       events:
+#         - "note.sync_completed"

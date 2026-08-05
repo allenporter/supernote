@@ -53,6 +53,46 @@ class AuthConfig(DataClassYAMLMixin):
 
 
 @dataclass
+class WebhookEndpointConfig(DataClassYAMLMixin):
+    """A single outbound webhook subscriber."""
+
+    url: str = ""
+    """The HTTP(S) endpoint that receives the webhook POST request."""
+
+    secret: str = ""
+    """Shared secret used to HMAC-SHA256 sign the payload.
+
+    Never logged. Sent to receivers via the `X-Supernote-Signature` header so
+    they can verify the payload was not tampered with in transit.
+    """
+
+    events: list[str] = field(default_factory=list)
+    """Event names this endpoint wants to receive, e.g. `note.sync_completed`."""
+
+    class Config(BaseConfig):
+        omit_none = True
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
+
+
+@dataclass
+class WebhookConfig(DataClassYAMLMixin):
+    """Outbound webhook dispatch configuration."""
+
+    enabled: bool = False
+    """Whether outbound webhook dispatch is enabled.
+
+    Env Var: `SUPERNOTE_WEBHOOKS_ENABLED`
+    """
+
+    endpoints: list[WebhookEndpointConfig] = field(default_factory=list)
+    """Configured webhook subscribers."""
+
+    class Config(BaseConfig):
+        omit_none = True
+        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
+
+
+@dataclass
 class ServerConfig(DataClassYAMLMixin):
     host: str = "0.0.0.0"
     """Host to bind the server to.
@@ -154,6 +194,9 @@ BaseConfig
 
     Env Var: `SUPERNOTE_METRICS_PATH`
     """
+
+    webhooks: WebhookConfig = field(default_factory=WebhookConfig)
+    """Outbound webhook dispatch configuration."""
 
     @property
     def configured_base_url(self) -> str | None:
@@ -343,6 +386,12 @@ BaseConfig
         if metrics_path := os.getenv("SUPERNOTE_METRICS_PATH"):
             config.metrics_path = metrics_path
             logger.info(f"Using SUPERNOTE_METRICS_PATH: {config.metrics_path}")
+
+        if os.getenv("SUPERNOTE_WEBHOOKS_ENABLED"):
+            config.webhooks.enabled = _get_bool_env(
+                "SUPERNOTE_WEBHOOKS_ENABLED", config.webhooks.enabled
+            )
+            logger.info(f"Webhooks Enabled: {config.webhooks.enabled}")
 
         if config.trace_log_file is None:
             config.trace_log_file = str(
