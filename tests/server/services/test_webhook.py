@@ -291,3 +291,25 @@ async def test_dispatch_does_not_leak_secret_or_full_signature_in_logs(
         await service.dispatch(EVENT_NOTE_SYNC_COMPLETED, {"event": "x"})
 
     assert "super-secret-value" not in caplog.text
+
+
+async def test_dispatch_never_raises_on_unexpected_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An unexpected error while sending must not reach the caller."""
+    config = WebhookConfig(
+        enabled=True,
+        endpoints=[
+            WebhookEndpointConfig(
+                url="https://example.com/hook",
+                events=[EVENT_NOTE_SYNC_COMPLETED],
+            ),
+        ],
+    )
+    service = WebhookService(config, LocalEventBus())
+
+    # A payload that cannot be serialized fails outside the retried network
+    # errors, so it exercises the unexpected-error path.
+    await service.dispatch(EVENT_NOTE_SYNC_COMPLETED, {"bad": object()})
+
+    assert "TypeError" in caplog.text

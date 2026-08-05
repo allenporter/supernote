@@ -89,9 +89,16 @@ class WebhookService:
         endpoints = [ep for ep in self.config.endpoints if event_name in ep.events]
         if not endpoints:
             return
-        await asyncio.gather(
-            *(self._send(endpoint, event_name, payload) for endpoint in endpoints)
+        results = await asyncio.gather(
+            *(self._send(endpoint, event_name, payload) for endpoint in endpoints),
+            return_exceptions=True,
         )
+        for endpoint, result in zip(endpoints, results, strict=True):
+            if isinstance(result, BaseException):
+                logger.error(
+                    f"Webhook {event_name} to {endpoint.url} raised "
+                    f"{type(result).__name__}: {result}"
+                )
 
     async def _send(
         self,
