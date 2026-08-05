@@ -12,6 +12,19 @@ def get_file_chunk_path(object_name: str, part_number: int) -> str:
     return f"{object_name}.part.{part_number}"
 
 
+def extract_clean_uuid(file_basis: str) -> str:
+    """Extract clean UUID portion from a storage key or path."""
+    raw = (
+        file_basis.replace("-transcript", "")
+        .replace("-summary", "")
+        .rsplit("/", 1)[-1]
+        .split(".")[0]
+    )
+    if len(raw) >= 36 and raw[36:37] == "-":
+        return raw[:36]
+    return raw
+
+
 def get_summary_id(file_basis: str) -> str:
     """Generate a unique identifier for an AI summary."""
     return f"{file_basis}-summary"

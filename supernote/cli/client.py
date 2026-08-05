@@ -5,6 +5,7 @@ import getpass
 import logging
 import os
 import sys
+import time
 import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -14,7 +15,10 @@ from supernote.client import Supernote, extended
 from supernote.client.auth import ConstantAuth, FileCacheAuth
 from supernote.client.exceptions import SmsVerificationRequired, SupernoteException
 from supernote.client.schedule import ScheduleClient
+from supernote.client.socket import SupernoteSocketClient
 from supernote.models.extended import WebSummaryListVO
+from supernote.models.socket import SocketHandshakeParams
+from supernote.server.socket_auth import compute_handshake_signature
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -486,6 +490,115 @@ def subcommand_cloud_search(args) -> None:
     )
 
 
+async def async_cloud_socket(
+    duration: float = 10.0,
+    conn_type: str = "ANDROID",
+    verbose: bool = False,
+) -> None:
+    """Connect to Socket.IO real-time server, verify heartbeat, and listen for events."""
+    setup_logging(verbose)
+    try:
+        auth_data, base_url = load_cached_auth()
+        token = await auth_data.async_get_access_token()
+
+        random_val = str(int(time.time() * 1000))
+        sign = compute_handshake_signature(token, conn_type, random_val)
+
+        params = SocketHandshakeParams(
+            token=token,
+            type=conn_type,
+            random=random_val,
+            sign=sign,
+        )
+
+        print(f"Connecting to Socket.IO server at {base_url}...")
+        print(
+            f"  Handshake parameters: type='{conn_type}', random='{random_val}', sign='{sign[:8]}...'"
+        )
+
+        socket_client = SupernoteSocketClient(base_url)
+        await socket_client.connect(params)
+        print("\033[1;32m[SUCCESS] Connected to Socket.IO real-time server!\033[0m")
+
+        # Test heartbeat ping
+        print("\nTesting heartbeat ping (ratta_ping)...")
+        try:
+            await socket_client.ping(timeout=3.0)
+            print("  Ping: \033[1;32mOK (Received response)\033[0m")
+        except Exception as err:
+            print(f"  Ping failed: {err}")
+
+        # Test status check
+        print("Testing status check (ClientMessage status)...")
+        try:
+            await socket_client.check_status(timeout=3.0)
+            print("  Status check: \033[1;32mOK (Received status confirmation)\033[0m")
+        except Exception as err:
+            print(f"  Status check failed: {err}")
+
+        if duration > 0:
+            print(
+                f"\nListening for Socket.IO push events for {duration} seconds (Press Ctrl+C to stop)..."
+            )
+        else:
+            print(
+                "\nListening for Socket.IO push events indefinitely (Press Ctrl+C to stop)..."
+            )
+        print("=" * 60)
+
+        async def _listen_loop() -> None:
+            async for msg in socket_client.messages():
+                print(
+                    f"\n\033[1;34m[SOCKET EVENT]\033[0m Code: {msg.code}, Type: {msg.msg_type}, Msg: {msg.msg}"
+                )
+                if msg.data:
+                    for item in msg.data:
+                        print(f"  - Action: {item.message_type or item.action}")
+                        if item.equipment_no:
+                            print(f"    Equipment: {item.equipment_no}")
+                        if item.id:
+                            print(f"    Item ID: {item.id}")
+                        if item.file_type:
+                            print(f"    File Type: {item.file_type}")
+                        if item.file_name:
+                            print(f"    File Name: {item.file_name}")
+                        if item.file_path:
+                            print(f"    File Path: {item.file_path}")
+
+        try:
+            if duration > 0:
+                await asyncio.wait_for(_listen_loop(), timeout=duration)
+            else:
+                await _listen_loop()
+        except asyncio.TimeoutError:
+            print(f"\nCompleted listening duration of {duration} seconds.")
+        except KeyboardInterrupt:
+            print("\nListening stopped by user.")
+        finally:
+            await socket_client.disconnect()
+            print("Disconnected cleanly from Socket.IO server.")
+
+    except SupernoteException as err:
+        print(f"Error: {err}")
+        sys.exit(1)
+    except Exception as err:
+        print(f"Unexpected error: {err}")
+        if verbose:
+            traceback.print_exc()
+        sys.exit(1)
+
+
+def subcommand_cloud_socket(args) -> None:
+    """Handler for cloud-socket subcommand."""
+    asyncio.run(
+        async_cloud_socket(
+            duration=args.duration,
+            conn_type=args.type,
+            verbose=args.verbose,
+        )
+    )
+
+
 async def async_cloud_seed(
     url: str = "http://127.0.0.1:8080",
     email: str = "debug@example.com",
@@ -769,3 +882,25 @@ def add_parser(subparsers):
         "-v", "--verbose", action="store_true", help="Enable verbose logging"
     )
     parser_search.set_defaults(func=subcommand_cloud_search)
+
+    # 'cloud socket' subcommand
+    parser_socket = cloud_subparsers.add_parser(
+        "socket",
+        help="Connect to Socket.IO real-time server and listen for push events",
+    )
+    parser_socket.add_argument(
+        "--duration",
+        type=float,
+        default=10.0,
+        help="Duration in seconds to listen for events (0 for indefinite)",
+    )
+    parser_socket.add_argument(
+        "--type",
+        type=str,
+        default="ANDROID",
+        help="Handshake connection type parameter (default: ANDROID)",
+    )
+    parser_socket.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+    parser_socket.set_defaults(func=subcommand_cloud_socket)

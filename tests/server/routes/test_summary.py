@@ -72,6 +72,9 @@ async def test_summary_crud(summary_client: SummaryClient) -> None:
     assert summary.data_source == "TEST"
     assert summary.tags == "test,summary"
     assert summary.metadata == '{"key": "value"}'
+    assert summary.creation_time is not None
+    assert summary.last_modified_time is not None
+    assert summary.md5_hash is not None
 
     # 3. Update the summary
     update_dto = UpdateSummaryDTO(
