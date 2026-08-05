@@ -67,7 +67,10 @@ class WebhookEndpointConfig(DataClassYAMLMixin):
     """
 
     events: list[str] = field(default_factory=list)
-    """Event names this endpoint wants to receive, e.g. `note.sync_completed`."""
+    """Event names this endpoint wants to receive, e.g. `note.sync_completed`.
+
+    If empty (the default), the endpoint receives every event.
+    """
 
     class Config(BaseConfig):
         omit_none = True

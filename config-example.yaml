@@ -58,5 +58,7 @@ auth:
 #       # endpoint in the `X-Supernote-Signature: sha256=<hex>` header so it
 #       # can verify the request came from this server and was not altered.
 #       secret: "CHANGE_ME_TO_A_SECURE_RANDOM_STRING"
+#       # Event names this endpoint wants to receive. Omit (or leave empty)
+#       # to receive every event.
 #       events:
 #         - "note.sync_completed"

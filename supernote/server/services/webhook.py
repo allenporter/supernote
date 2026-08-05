@@ -18,6 +18,8 @@ from typing import Any
 
 import aiohttp
 
+from supernote.models.webhook import NoteSyncCompletedPayload, WebhookFileVO
+
 from ..config import WebhookConfig, WebhookEndpointConfig
 from ..events import Event, LocalEventBus, NoteUpdatedEvent
 
@@ -42,12 +44,6 @@ def sign_payload(secret: str, body: bytes) -> str:
     return f"sha256={digest}"
 
 
-def verify_signature(secret: str, body: bytes, signature: str) -> bool:
-    """Verify a `sha256=<hex>` signature against `body` using constant-time comparison."""
-    expected = sign_payload(secret, body)
-    return hmac.compare_digest(expected, signature)
-
-
 class WebhookService:
     """Dispatches signed outbound webhook notifications for subscribed events."""
 
@@ -69,24 +65,30 @@ class WebhookService:
         """Translate a NoteUpdatedEvent into a note.sync_completed webhook."""
         if not isinstance(event, NoteUpdatedEvent):
             return
-        payload = {
-            "event": EVENT_NOTE_SYNC_COMPLETED,
-            "timestamp": int(time.time()),
-            "user_id": event.user_id,
-            "file": {
-                "id": event.file_id,
-                "path": event.file_path,
-            },
-        }
-        await self.dispatch(EVENT_NOTE_SYNC_COMPLETED, payload)
+        # Note: intentionally does not include event.user_id. It's an
+        # internal database identifier, not something we want to hand to
+        # third-party endpoints. See PR #217 for discussion on how
+        # per-user webhook delivery might work in a future iteration.
+        payload = NoteSyncCompletedPayload(
+            event=EVENT_NOTE_SYNC_COMPLETED,
+            timestamp=int(time.time()),
+            file=WebhookFileVO(id=event.file_id, path=event.file_path),
+        )
+        await self.dispatch(EVENT_NOTE_SYNC_COMPLETED, payload.to_dict())
 
     async def dispatch(self, event_name: str, payload: dict[str, Any]) -> None:
         """Send `payload` to every configured endpoint subscribed to `event_name`.
 
-        Never raises. Endpoints are notified concurrently and independently;
-        one endpoint failing has no effect on delivery to the others.
+        An endpoint with no `events` configured is subscribed to everything
+        (see `WebhookEndpointConfig.events`). Never raises: endpoints are
+        notified concurrently and independently, and one endpoint failing has
+        no effect on delivery to the others.
         """
-        endpoints = [ep for ep in self.config.endpoints if event_name in ep.events]
+        endpoints = [
+            ep
+            for ep in self.config.endpoints
+            if not ep.events or event_name in ep.events
+        ]
         if not endpoints:
             return
         results = await asyncio.gather(
