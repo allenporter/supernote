@@ -1,12 +1,16 @@
 """Library for preparing Gemini Content requests."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
-
-from google.genai import types
+from typing import TYPE_CHECKING
 
 from .note_content import format_page_metadata
 from .prompt_loader import PROMPT_LOADER, PromptId
+
+if TYPE_CHECKING:
+    from google.genai import types
 
 
 @dataclass
@@ -27,6 +31,8 @@ def create_gemini_content(
     page_metadata: PageMetadata,
     png_data: bytes,
 ) -> list[types.Part]:
+    from google.genai import types  # noqa: PLC0415
+
     prompt = PROMPT_LOADER.get_prompt(
         PromptId.OCR_TRANSCRIPTION, custom_type=page_metadata.file_name_basis
     )

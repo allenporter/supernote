@@ -1,7 +1,5 @@
 import logging
 
-from google.genai import types
-
 from supernote.server.config import ServerConfig
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.db.models.file import UserFileDO
@@ -81,6 +79,9 @@ class GeminiOcrModule(ProcessorModule):
         if page_id is None:
             logger.error(f"Page ID required for OCR processing of file {file_id}")
             return
+
+        # Deferred: google-genai is only needed once OCR actually runs.
+        from google.genai import types  # noqa: PLC0415
 
         # Get PNG Content
         png_path = get_page_png_path(file_id, page_id)

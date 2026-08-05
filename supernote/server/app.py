@@ -17,8 +17,6 @@ from yarl import URL
 
 from supernote.models.base import create_error_response
 from supernote.server.db.migrations import run_migrations
-from supernote.server.mcp.auth import create_auth_app
-from supernote.server.mcp.server import create_mcp_server, run_server, set_services
 from supernote.server.utils.auth_utils import get_token_from_request
 
 from .config import ServerConfig
@@ -421,6 +419,16 @@ def create_app(config: ServerConfig) -> web.Application:
 
     # Register Middlewares
     async def on_startup_handler(app: web.Application) -> None:
+        # Deferred: the `mcp` package is a heavy import, so it's only loaded
+        # once the server actually starts up and needs to mount the MCP
+        # Authorization Server / MCP tool server.
+        from supernote.server.mcp.auth import create_auth_app  # noqa: PLC0415
+        from supernote.server.mcp.server import (  # noqa: PLC0415
+            create_mcp_server,
+            run_server,
+            set_services,
+        )
+
         # Configure proxy middleware based on config
         if config.proxy_mode == "strict":
             # XForwardedStrict requires explicit trusted proxy IPs

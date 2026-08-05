@@ -1,12 +1,15 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 import time
-from typing import Any
-
-from google import genai
-from google.genai import types
+from typing import TYPE_CHECKING, Any
 
 from supernote.server.metrics import GEMINI_API_CALLS_TOTAL, GEMINI_API_DURATION_SECONDS
+
+if TYPE_CHECKING:
+    from google import genai
+    from google.genai import types
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +23,11 @@ class GeminiService:
         self._client: genai.Client | None = None
         self._semaphore: asyncio.Semaphore | None = None
         if self.api_key:
+            # Deferred: google-genai is a heavy import (pulls in ~300
+            # transitive modules), so only pay for it when an API key is
+            # actually configured.
+            from google import genai  # noqa: PLC0415
+
             self._client = genai.Client(
                 api_key=self.api_key, http_options={"api_version": "v1alpha"}
             )

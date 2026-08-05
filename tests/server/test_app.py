@@ -4,10 +4,42 @@ These tests verify that the server correctly handles X-Forwarded-* headers
 when deployed behind a reverse proxy, with different proxy modes.
 """
 
+import subprocess
+import sys
+
 import pytest
 from aiohttp.test_utils import TestClient
 
 from supernote.models.file_device import FileUploadApplyLocalDTO
+
+
+def test_import_does_not_load_heavy_optional_dependencies() -> None:
+    """Importing the server bootstrap module should not eagerly import the
+    heavy `mcp` / `google-genai` dependencies (see issue #106).
+
+    `mcp` is only needed once the server actually starts up, and
+    `google-genai` is only needed once a Gemini API key is configured. Run
+    in a subprocess so the check isn't polluted by other tests in this
+    session having already imported these modules.
+    """
+    check = (
+        "import sys; import supernote.server.app; "
+        "loaded = sorted("
+        "m for m in sys.modules "
+        "if m == 'mcp' or m.startswith('mcp.') "
+        "or m == 'google.genai' or m.startswith('google.genai.')"
+        "); "
+        "print(','.join(loaded))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", check],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == "", (
+        f"Heavy dependency modules unexpectedly loaded: {result.stdout.strip()}"
+    )
 
 
 # Test for default proxy mode (disabled)
