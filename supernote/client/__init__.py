@@ -13,6 +13,8 @@ Example:
     sn = Supernote.from_token("your-token", host="http://localhost:8080")
 """
 
+from typing import Any
+
 from . import (
     admin,
     auth,
@@ -21,12 +23,18 @@ from . import (
     extended,
     login_client,
     schedule,
-    socket,
     summary,
     web,
 )
-from .api import Supernote
-from .client import Client
+
+socket: Any = None
+try:
+    from . import socket
+except ImportError:
+    pass
+
+from .api import Supernote  # noqa: E402
+from .client import Client  # noqa: E402
 
 __all__ = [
     "Client",
