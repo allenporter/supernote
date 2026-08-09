@@ -50,6 +50,11 @@ class FileCacheAuth(AbstractAuth):
         """Return a valid access token."""
         return self._access_token or ""
 
+    @property
+    def token(self) -> str:
+        """Return the access token."""
+        return self._access_token or ""
+
     def get_host(self) -> str | None:
         """Return the cached host URL."""
         return self._host
