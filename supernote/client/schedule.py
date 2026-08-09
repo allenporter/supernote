@@ -215,3 +215,21 @@ class ScheduleClient:
     async def delete_task(self, task_id: int) -> None:
         """Delete a schedule task."""
         await self._client.request("delete", f"/api/file/schedule/task/{task_id}")
+
+    async def get_ical_feed(self, group_id: int | str | None = None) -> str:
+        """Get the iCalendar (.ics) feed for the user's tasks.
+
+        Args:
+            group_id: Optional task list group ID to filter by.
+
+        Returns:
+            str: RFC 5545 iCalendar (.ics) text stream.
+        """
+        params: dict[str, str] = {}
+        if group_id is not None:
+            params["taskListId"] = str(group_id)
+
+        resp = await self._client.request(
+            "get", "/api/schedule/feed.ics", params=params
+        )
+        return await resp.text()

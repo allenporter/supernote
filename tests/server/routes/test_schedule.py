@@ -2,6 +2,7 @@ import asyncio
 
 import pytest
 from aiohttp.test_utils import TestClient
+from ical.calendar_stream import IcsCalendarStream
 
 from supernote.client.auth import AbstractAuth
 from supernote.client.client import Client
@@ -573,4 +574,63 @@ async def test_schedule_delta_sync_flow(authenticated_client: Client) -> None:
     assert sync_token3 is not None
     assert sync_token3 >= sync_token2
 
+    await schedule.delete_group(group_id)
+
+
+async def test_ical_feed_unauthorized(client: TestClient) -> None:
+    """Test GET /api/schedule/feed.ics without authentication returns 401."""
+    resp = await client.get("/api/schedule/feed.ics")
+    assert resp.status == 401
+
+
+async def test_ical_feed_auth_via_header(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Test GET /api/schedule/feed.ics with header authentication."""
+    resp = await client.get("/api/schedule/feed.ics", headers=auth_headers)
+    assert resp.status == 200
+    assert "text/calendar" in resp.headers["Content-Type"]
+    assert "inline; filename=" in resp.headers.get("Content-Disposition", "")
+
+    body = await resp.text()
+    assert body.startswith("BEGIN:VCALENDAR")
+    assert "END:VCALENDAR" in body
+
+
+async def test_ical_feed_content_and_filtering(
+    client: TestClient,
+    authenticated_client: Client,
+    auth_headers: dict[str, str],
+) -> None:
+    """Test creating tasks via ScheduleClient and retrieving feed via HTTP GET."""
+    schedule = ScheduleClient(authenticated_client)
+
+    # Populate data via ScheduleClient
+    group_vo = await schedule.create_group("Sprint Tasks")
+    assert group_vo.task_list_id is not None
+    group_id = int(group_vo.task_list_id)
+
+    task1 = await schedule.create_task(
+        group_id,
+        "Implement ICS Route",
+        detail="Add feed.ics endpoint in schedule routes",
+    )
+    assert task1.task_id is not None
+
+    # Query ICS feed via ScheduleClient SDK
+    ics_content = await schedule.get_ical_feed()
+    calendar = IcsCalendarStream.calendar_from_ics(ics_content)
+    assert calendar is not None
+    assert len(calendar.todos) >= 1
+
+    todo = next(t for t in calendar.todos if t.summary == "Implement ICS Route")
+    assert todo.description == "Add feed.ics endpoint in schedule routes"
+
+    # Filter by taskListId query param via ScheduleClient SDK
+    filtered_content = await schedule.get_ical_feed(group_id=group_id)
+    filtered_calendar = IcsCalendarStream.calendar_from_ics(filtered_content)
+    assert len(filtered_calendar.todos) == 1
+
+    # Cleanup
     await schedule.delete_group(group_id)
