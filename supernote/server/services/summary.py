@@ -1,4 +1,6 @@
+import hashlib
 import logging
+import time
 import uuid
 
 from sqlalchemy import and_, select
@@ -37,18 +39,31 @@ def _to_tag_item(do: SummaryTagDO) -> SummaryTagItem:
 
 def _to_summary_info_item(do: SummaryDO) -> SummaryInfoItem:
     """Convert SummaryDO to SummaryInfoItem."""
+    now_ms = int(time.time() * 1000)
+    md5 = do.md5_hash
+    if not md5 and do.content:
+        md5 = hashlib.md5(do.content.encode("utf-8")).hexdigest()
+
     return SummaryInfoItem(
         id=do.id,
         user_id=do.user_id,
-        md5_hash=do.md5_hash,
+        md5_hash=md5,
         handwrite_md5=do.handwrite_md5,
         comment_handwrite_name=do.comment_handwrite_name,
-        last_modified_time=do.last_modified_time,
+        last_modified_time=do.last_modified_time
+        or do.update_time
+        or do.create_time
+        or now_ms,
     )
 
 
 def _to_summary_item(do: SummaryDO) -> SummaryItem:
     """Convert SummaryDO to SummaryItem."""
+    now_ms = int(time.time() * 1000)
+    md5 = do.md5_hash
+    if not md5 and do.content:
+        md5 = hashlib.md5(do.content.encode("utf-8")).hexdigest()
+
     return SummaryItem(
         id=do.id,
         file_id=do.file_id,
@@ -63,14 +78,17 @@ def _to_summary_item(do: SummaryDO) -> SummaryItem:
         is_summary_group=BooleanEnum.of(bool(do.is_summary_group)),
         description=do.description,
         tags=do.tags,
-        md5_hash=do.md5_hash,
+        md5_hash=md5,
         metadata=do.extra_metadata,
         comment_str=do.comment_str,
         comment_handwrite_name=do.comment_handwrite_name,
         handwrite_inner_name=do.handwrite_inner_name,
         handwrite_md5=do.handwrite_md5,
-        creation_time=do.creation_time,
-        last_modified_time=do.last_modified_time,
+        creation_time=do.creation_time or do.create_time or now_ms,
+        last_modified_time=do.last_modified_time
+        or do.update_time
+        or do.create_time
+        or now_ms,
         is_deleted=BooleanEnum.of(bool(do.is_deleted)),
         create_time=do.create_time,
         update_time=do.update_time,
@@ -138,6 +156,10 @@ class SummaryService:
     async def add_summary(self, user_email: str, dto: AddSummaryDTO) -> SummaryItem:
         """Add a new summary."""
         user_id = await self.user_service.get_user_id(user_email)
+        md5 = dto.md5_hash
+        if not md5 and dto.content:
+            md5 = hashlib.md5(dto.content.encode("utf-8")).hexdigest()
+
         async with self.session_manager.session() as session:
             summary_do = SummaryDO(
                 user_id=user_id,
@@ -150,7 +172,7 @@ class SummaryService:
                 source_type=dto.source_type,
                 is_summary_group=False,
                 tags=dto.tags,
-                md5_hash=dto.md5_hash,
+                md5_hash=md5,
                 extra_metadata=dto.metadata,
                 comment_str=dto.comment_str,
                 comment_handwrite_name=dto.comment_handwrite_name,
@@ -175,6 +197,10 @@ class SummaryService:
 
             if dto.content is not None:
                 summary_do.content = dto.content
+                if dto.md5_hash is None:
+                    summary_do.md5_hash = hashlib.md5(
+                        dto.content.encode("utf-8")
+                    ).hexdigest()
             if dto.tags is not None:
                 summary_do.tags = dto.tags
             if dto.metadata is not None:
@@ -237,7 +263,7 @@ class SummaryService:
         async with self.session_manager.session() as session:
             summary_do = SummaryDO(
                 user_id=user_id,
-                unique_identifier=dto.unique_identifier,
+                unique_identifier=dto.unique_identifier or str(uuid.uuid4()),
                 name=dto.name,
                 md5_hash=dto.md5_hash,
                 description=dto.description,
@@ -417,3 +443,29 @@ class SummaryService:
             result = await session.execute(stmt)
             summaries = list(result.scalars().all())
             return [_to_summary_item(s) for s in summaries]
+
+    async def backfill_missing_fields(self) -> int:
+        """Backfill missing md5_hash, creation_time, and last_modified_time for existing summary records."""
+        now_ms = int(time.time() * 1000)
+        async with self.session_manager.session() as session:
+            stmt = select(SummaryDO).where(
+                (SummaryDO.md5_hash.is_(None) & SummaryDO.content.isnot(None))
+                | SummaryDO.creation_time.is_(None)
+                | SummaryDO.last_modified_time.is_(None)
+            )
+            result = await session.execute(stmt)
+            summaries = list(result.scalars().all())
+            count = 0
+            for s in summaries:
+                if not s.creation_time:
+                    s.creation_time = s.create_time or now_ms
+                if not s.last_modified_time:
+                    s.last_modified_time = s.update_time or s.create_time or now_ms
+                if not s.md5_hash and s.content:
+                    s.md5_hash = hashlib.md5(s.content.encode("utf-8")).hexdigest()
+                count += 1
+
+            if count > 0:
+                await session.commit()
+                logger.info("Backfilled missing summary fields for %d records", count)
+            return count
