@@ -39,31 +39,18 @@ def _to_tag_item(do: SummaryTagDO) -> SummaryTagItem:
 
 def _to_summary_info_item(do: SummaryDO) -> SummaryInfoItem:
     """Convert SummaryDO to SummaryInfoItem."""
-    now_ms = int(time.time() * 1000)
-    md5 = do.md5_hash
-    if not md5 and do.content:
-        md5 = hashlib.md5(do.content.encode("utf-8")).hexdigest()
-
     return SummaryInfoItem(
         id=do.id,
         user_id=do.user_id,
-        md5_hash=md5,
+        md5_hash=do.md5_hash,
         handwrite_md5=do.handwrite_md5,
         comment_handwrite_name=do.comment_handwrite_name,
-        last_modified_time=do.last_modified_time
-        or do.update_time
-        or do.create_time
-        or now_ms,
+        last_modified_time=do.last_modified_time or do.update_time or do.create_time,
     )
 
 
 def _to_summary_item(do: SummaryDO) -> SummaryItem:
     """Convert SummaryDO to SummaryItem."""
-    now_ms = int(time.time() * 1000)
-    md5 = do.md5_hash
-    if not md5 and do.content:
-        md5 = hashlib.md5(do.content.encode("utf-8")).hexdigest()
-
     return SummaryItem(
         id=do.id,
         file_id=do.file_id,
@@ -78,17 +65,14 @@ def _to_summary_item(do: SummaryDO) -> SummaryItem:
         is_summary_group=BooleanEnum.of(bool(do.is_summary_group)),
         description=do.description,
         tags=do.tags,
-        md5_hash=md5,
+        md5_hash=do.md5_hash,
         metadata=do.extra_metadata,
         comment_str=do.comment_str,
         comment_handwrite_name=do.comment_handwrite_name,
         handwrite_inner_name=do.handwrite_inner_name,
         handwrite_md5=do.handwrite_md5,
-        creation_time=do.creation_time or do.create_time or now_ms,
-        last_modified_time=do.last_modified_time
-        or do.update_time
-        or do.create_time
-        or now_ms,
+        creation_time=do.creation_time or do.create_time,
+        last_modified_time=do.last_modified_time or do.update_time or do.create_time,
         is_deleted=BooleanEnum.of(bool(do.is_deleted)),
         create_time=do.create_time,
         update_time=do.update_time,
