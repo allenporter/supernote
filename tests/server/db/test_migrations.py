@@ -98,14 +98,23 @@ def test_summary_backfill_migration(migrated_db: str) -> None:
         )
         rows = result.fetchall()
         for row in rows:
-            content, creation_time, last_modified_time, md5_hash = row[1], row[2], row[3], row[4]
+            content, creation_time, last_modified_time, md5_hash = (
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+            )
+            assert creation_time is not None
+            assert last_modified_time is not None
             if content and md5_hash:
                 assert md5_hash == hashlib.md5(content.encode("utf-8")).hexdigest()
 
     engine.dispose()
 
 
-def test_summary_api_fixture_migration_backfill(tmp_path: Path, alembic_config: Config) -> None:
+def test_summary_api_fixture_migration_backfill(
+    tmp_path: Path, alembic_config: Config
+) -> None:
     """Verify that Alembic upgrade head backfills the API-generated legacy fixture."""
     fixture_path = Path("tests/fixtures/db_v1_summary_api.sqlite").absolute()
     db_path = tmp_path / "summary_api_migrated.db"
@@ -118,12 +127,19 @@ def test_summary_api_fixture_migration_backfill(tmp_path: Path, alembic_config: 
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         result = conn.execute(
-            text("SELECT id, content, creation_time, last_modified_time, md5_hash FROM f_summary")
+            text(
+                "SELECT id, content, creation_time, last_modified_time, md5_hash FROM f_summary"
+            )
         )
         rows = result.fetchall()
         assert len(rows) >= 1
         for row in rows:
-            content, creation_time, last_modified_time, md5_hash = row[1], row[2], row[3], row[4]
+            content, creation_time, last_modified_time, md5_hash = (
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+            )
             assert creation_time is not None
             assert last_modified_time is not None
             assert md5_hash == hashlib.md5(content.encode("utf-8")).hexdigest()
