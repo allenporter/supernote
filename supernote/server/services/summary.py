@@ -443,29 +443,3 @@ class SummaryService:
             result = await session.execute(stmt)
             summaries = list(result.scalars().all())
             return [_to_summary_item(s) for s in summaries]
-
-    async def backfill_missing_fields(self) -> int:
-        """Backfill missing md5_hash, creation_time, and last_modified_time for existing summary records."""
-        now_ms = int(time.time() * 1000)
-        async with self.session_manager.session() as session:
-            stmt = select(SummaryDO).where(
-                (SummaryDO.md5_hash.is_(None) & SummaryDO.content.isnot(None))
-                | SummaryDO.creation_time.is_(None)
-                | SummaryDO.last_modified_time.is_(None)
-            )
-            result = await session.execute(stmt)
-            summaries = list(result.scalars().all())
-            count = 0
-            for s in summaries:
-                if not s.creation_time:
-                    s.creation_time = s.create_time or now_ms
-                if not s.last_modified_time:
-                    s.last_modified_time = s.update_time or s.create_time or now_ms
-                if not s.md5_hash and s.content:
-                    s.md5_hash = hashlib.md5(s.content.encode("utf-8")).hexdigest()
-                count += 1
-
-            if count > 0:
-                await session.commit()
-                logger.info("Backfilled missing summary fields for %d records", count)
-            return count
