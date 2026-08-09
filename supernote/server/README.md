@@ -76,7 +76,7 @@ docker run -d \
 
 Supernote Knowledge Hub is built for long-term stability:
 
-- **Database Migrations**: Uses Alembic for seamless schema updates.
+- **Database Migrations**: Uses Alembic for seamless schema and data updates (see [Alembic Migration History & Conventions](../alembic/README.md)).
 - **Background Polling**: Automatically recovers stalled processing tasks.
 - **Integrity Checks**: Periodically verifies file storage consistency.
 - **Storage Quotas**: Manage user storage limits effectively.
