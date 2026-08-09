@@ -1,5 +1,8 @@
 """Tests for the Supernote session API."""
 
+import sys
+from unittest.mock import patch
+
 import aiohttp
 from aiohttp import web
 from pytest_aiohttp import AiohttpClient
@@ -91,3 +94,20 @@ async def test_query_user_success(
         assert isinstance(user_resp, UserQueryByIdVO)
         assert user_resp.success
         assert user_resp.user_name == "test-user"
+
+
+def test_missing_socketio_graceful_handling() -> None:
+    """Test that missing optional python-socketio dependency does not break supernote.client imports."""
+    # Simulate missing socketio module using patch.dict
+    with patch.dict("sys.modules", {"socketio": None}):
+        # Re-import supernote.client.socket and supernote.client
+        if "supernote.client.socket" in sys.modules:
+            del sys.modules["supernote.client.socket"]
+        if "supernote.client" in sys.modules:
+            del sys.modules["supernote.client"]
+
+        import supernote.client  # noqa: PLC0415
+        import supernote.client.api  # noqa: PLC0415
+
+        assert supernote.client.Supernote is not None
+        assert supernote.client.Client is not None
