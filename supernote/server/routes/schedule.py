@@ -26,6 +26,7 @@ from supernote.models.schedule import (
     UpdateScheduleTaskVO,
 )
 from supernote.server.exceptions import SupernoteError
+from supernote.server.services.ical_export import ICalExportService
 from supernote.server.services.schedule import ScheduleService
 
 logger = logging.getLogger(__name__)
@@ -461,3 +462,36 @@ async def delete_sort(request: web.Request) -> web.Response:
 @routes.post("/api/file/query/schedule/sort")
 async def get_sort(request: web.Request) -> web.Response:
     return web.json_response(GetScheduleSortVO(success=True).to_dict())
+
+
+@routes.get("/api/schedule/feed.ics")
+async def get_schedule_feed_ics(request: web.Request) -> web.Response:
+    """Export schedule tasks as RFC 5545 iCalendar VTODO feed (.ics)."""
+    user_email = request["user"]
+    user_service = request.app["user_service"]
+    user_id = await user_service.get_user_id(user_email)
+
+    task_list_id_str = request.query.get("taskListId")
+    task_list_id = (
+        int(task_list_id_str)
+        if task_list_id_str and task_list_id_str.isdigit()
+        else None
+    )
+
+    schedule_service: ScheduleService = request.app["schedule_service"]
+    ical_export_service = ICalExportService(
+        request.app["session_manager"], schedule_service
+    )
+
+    ics_content = await ical_export_service.export_calendar(
+        user_id, task_list_id=task_list_id
+    )
+
+    return web.Response(
+        body=ics_content.encode("utf-8"),
+        content_type="text/calendar",
+        charset="utf-8",
+        headers={
+            "Content-Disposition": 'inline; filename="feed.ics"',
+        },
+    )
