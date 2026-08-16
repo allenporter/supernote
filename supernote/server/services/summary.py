@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import time
 import uuid
 
 from sqlalchemy import and_, select
@@ -143,6 +144,10 @@ class SummaryService:
         if not md5 and dto.content:
             md5 = hashlib.md5(dto.content.encode("utf-8")).hexdigest()
 
+        now_ms = int(time.time() * 1000)
+        creation_time = dto.creation_time or now_ms
+        last_modified_time = dto.last_modified_time or now_ms
+
         async with self.session_manager.session() as session:
             summary_do = SummaryDO(
                 user_id=user_id,
@@ -161,8 +166,8 @@ class SummaryService:
                 comment_handwrite_name=dto.comment_handwrite_name,
                 handwrite_inner_name=dto.handwrite_inner_name,
                 handwrite_md5=dto.handwrite_md5,
-                creation_time=dto.creation_time,
-                last_modified_time=dto.last_modified_time,
+                creation_time=creation_time,
+                last_modified_time=last_modified_time,
                 author=dto.author,
             )
             session.add(summary_do)
