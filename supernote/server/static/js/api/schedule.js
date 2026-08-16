@@ -183,3 +183,45 @@ export async function deleteScheduleTask(taskId) {
 
     return await response.json();
 }
+
+/**
+ * Fetch ICS calendar feed content via GET /api/schedule/feed.ics
+ */
+export async function fetchIcsFeed(taskListId = null) {
+    const headers = getAuthHeaders();
+    const url = taskListId && String(taskListId) !== '0'
+        ? `/api/schedule/feed.ics?taskListId=${encodeURIComponent(taskListId)}`
+        : '/api/schedule/feed.ics';
+
+    const response = await fetch(url, {
+        method: 'GET',
+        headers
+    });
+
+    if (response.status === 401) {
+        logout();
+        throw new Error("Unauthorized");
+    }
+
+    if (!response.ok) {
+        throw new Error(`Failed to fetch ICS feed: ${response.statusText}`);
+    }
+
+    return await response.text();
+}
+
+/**
+ * Trigger direct browser download of the .ics calendar file
+ */
+export async function downloadIcsFeed(taskListId = null, filename = 'tasks.ics') {
+    const content = await fetchIcsFeed(taskListId);
+    const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
