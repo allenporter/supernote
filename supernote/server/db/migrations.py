@@ -8,14 +8,14 @@ import alembic.config
 logger = logging.getLogger(__name__)
 
 
-def run_migrations(db_url: str) -> None:
-    """
-    Run pending database migrations using Alembic.
+def run_migrations(db_url: str, target_revision: str = "head") -> None:
+    """Run pending database migrations using Alembic.
 
     Args:
         db_url: The database connection URL to use for migrations.
                This overrides the url in alembic.ini to ensure we target
                the correct environment (prod, test, etc).
+        target_revision: Revision to migrate to (default: "head").
     """
     # Locate alembic.ini inside the supernote package
     traversable = importlib.resources.files("supernote") / "alembic.ini"
@@ -39,6 +39,6 @@ def run_migrations(db_url: str) -> None:
             db_path = Path(path_str)
             db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    logger.info("Running database migrations...")
-    alembic.command.upgrade(alembic_cfg, "head")
+    logger.info("Running database migrations to %s...", target_revision)
+    alembic.command.upgrade(alembic_cfg, target_revision)
     logger.info("Database migrations complete.")

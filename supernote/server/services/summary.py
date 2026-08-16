@@ -1,4 +1,6 @@
+import hashlib
 import logging
+import time
 import uuid
 
 from sqlalchemy import and_, select
@@ -43,7 +45,7 @@ def _to_summary_info_item(do: SummaryDO) -> SummaryInfoItem:
         md5_hash=do.md5_hash,
         handwrite_md5=do.handwrite_md5,
         comment_handwrite_name=do.comment_handwrite_name,
-        last_modified_time=do.last_modified_time,
+        last_modified_time=do.last_modified_time or do.update_time or do.create_time,
     )
 
 
@@ -69,8 +71,8 @@ def _to_summary_item(do: SummaryDO) -> SummaryItem:
         comment_handwrite_name=do.comment_handwrite_name,
         handwrite_inner_name=do.handwrite_inner_name,
         handwrite_md5=do.handwrite_md5,
-        creation_time=do.creation_time,
-        last_modified_time=do.last_modified_time,
+        creation_time=do.creation_time or do.create_time,
+        last_modified_time=do.last_modified_time or do.update_time or do.create_time,
         is_deleted=BooleanEnum.of(bool(do.is_deleted)),
         create_time=do.create_time,
         update_time=do.update_time,
@@ -138,6 +140,14 @@ class SummaryService:
     async def add_summary(self, user_email: str, dto: AddSummaryDTO) -> SummaryItem:
         """Add a new summary."""
         user_id = await self.user_service.get_user_id(user_email)
+        md5 = dto.md5_hash
+        if not md5 and dto.content:
+            md5 = hashlib.md5(dto.content.encode("utf-8")).hexdigest()
+
+        now_ms = int(time.time() * 1000)
+        creation_time = dto.creation_time or now_ms
+        last_modified_time = dto.last_modified_time or now_ms
+
         async with self.session_manager.session() as session:
             summary_do = SummaryDO(
                 user_id=user_id,
@@ -150,14 +160,14 @@ class SummaryService:
                 source_type=dto.source_type,
                 is_summary_group=False,
                 tags=dto.tags,
-                md5_hash=dto.md5_hash,
+                md5_hash=md5,
                 extra_metadata=dto.metadata,
                 comment_str=dto.comment_str,
                 comment_handwrite_name=dto.comment_handwrite_name,
                 handwrite_inner_name=dto.handwrite_inner_name,
                 handwrite_md5=dto.handwrite_md5,
-                creation_time=dto.creation_time,
-                last_modified_time=dto.last_modified_time,
+                creation_time=creation_time,
+                last_modified_time=last_modified_time,
                 author=dto.author,
             )
             session.add(summary_do)
@@ -175,6 +185,10 @@ class SummaryService:
 
             if dto.content is not None:
                 summary_do.content = dto.content
+                if dto.md5_hash is None:
+                    summary_do.md5_hash = hashlib.md5(
+                        dto.content.encode("utf-8")
+                    ).hexdigest()
             if dto.tags is not None:
                 summary_do.tags = dto.tags
             if dto.metadata is not None:
@@ -237,7 +251,7 @@ class SummaryService:
         async with self.session_manager.session() as session:
             summary_do = SummaryDO(
                 user_id=user_id,
-                unique_identifier=dto.unique_identifier,
+                unique_identifier=dto.unique_identifier or str(uuid.uuid4()),
                 name=dto.name,
                 md5_hash=dto.md5_hash,
                 description=dto.description,

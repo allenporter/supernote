@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import shutil
 from pathlib import Path
 
@@ -74,12 +75,73 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version is not None
+        assert version == "b8e9c0d1e2f3"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
         count = result.scalar()
         assert count is not None
         assert count >= 0
+
+    engine.dispose()
+
+
+def test_summary_backfill_migration(migrated_db: str) -> None:
+    """Verify that summary md5_hash, creation_time, and last_modified_time are backfilled by Alembic."""
+    engine = create_engine(migrated_db)
+    with engine.connect() as conn:
+        # Verify items from db_v1_populated.sqlite were backfilled by Alembic upgrade head
+        result = conn.execute(
+            text(
+                "SELECT id, content, creation_time, last_modified_time, md5_hash FROM f_summary"
+            )
+        )
+        rows = result.fetchall()
+        for row in rows:
+            content, creation_time, last_modified_time, md5_hash = (
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+            )
+            assert creation_time is not None
+            assert last_modified_time is not None
+            if content and md5_hash:
+                assert md5_hash == hashlib.md5(content.encode("utf-8")).hexdigest()
+
+    engine.dispose()
+
+
+def test_summary_api_fixture_migration_backfill(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify that Alembic upgrade head backfills the API-generated legacy fixture."""
+    fixture_path = Path("tests/fixtures/db_v1_summary_api.sqlite").absolute()
+    db_path = tmp_path / "summary_api_migrated.db"
+    shutil.copy(fixture_path, db_path)
+
+    migration_db_url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", migration_db_url)
+    command.upgrade(alembic_config, "head")
+
+    engine = create_engine(migration_db_url)
+    with engine.connect() as conn:
+        result = conn.execute(
+            text(
+                "SELECT id, content, creation_time, last_modified_time, md5_hash FROM f_summary"
+            )
+        )
+        rows = result.fetchall()
+        assert len(rows) >= 1
+        for row in rows:
+            content, creation_time, last_modified_time, md5_hash = (
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+            )
+            assert creation_time is not None
+            assert last_modified_time is not None
+            assert md5_hash == hashlib.md5(content.encode("utf-8")).hexdigest()
 
     engine.dispose()
