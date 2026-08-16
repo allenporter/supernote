@@ -18,7 +18,7 @@ This project is designed to be **fully compatible** with the official Supernote 
 - **⚡ Lightweight Sync**: Runs on a simple, efficient Python/Asyncio stack with SQLite. Consumes ~200MB of idle memory (recommending 300–400MB for notebook processing).
 - **📋 OpenAPI Spec Compliant**: Implements **100% of the community [Supernote OpenAPI specification](api-spec/openapi.yaml)**.
 - **🛡️ Private & Secure**: You own your database and files. Runs locally on your NAS or local server with no external data leakage.
-- **🖥️ Sleek Web UI**: Browse and manage your synchronized notes from any web browser on your network.
+- **🖥️ Sleek Web UI**: Browse notes, manage tasks, and export iCalendar (`.ics`) task feeds for Home Assistant, Apple Calendar, Google Calendar, and Outlook.
 - **📜 Optional AI Synthesis**: If configured with a Gemini API key, it automatically transcribes handwriting and generates summaries (Daily, Weekly, Monthly).
 - **🔍 Optional Semantic Search**: Vectorizes content for concept-based search across all notebooks.
 - **🤖 Agent Ready (MCP)**: Securely connect your notes to AI agents (Claude, Gemini, ChatGPT) via the built-in [Model Context Protocol](https://modelcontextprotocol.io/) server.
@@ -148,6 +148,7 @@ You can access the insights from the MCP server at `http://<your ip:port>/mcp`
 - **Official Protocol Compatibility**: Implements the official **Supernote Private Cloud** protocol for seamless device synchronization. While Ratta's official service provides a robust and managed sync experience, this project allows for local data ownership and custom background processing.
 - **Notebook Parsing**: Native, high-fidelity conversion of `.note` files to PDF, PNG, SVG, or plain text.
 - **Developer API**: Modern `asyncio` client to build your own automation around Supernote data.
+- **iCalendar Feed Export (.ics)**: Preview, copy, and download task feeds in RFC 5545 VTODO `.ics` format for Home Assistant, Apple Calendar, Google Calendar, and Outlook.
 - **Observability**: Built-in request tracing and background task monitoring.
 
 <p align="center">

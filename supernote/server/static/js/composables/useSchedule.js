@@ -6,7 +6,9 @@ import {
     fetchTasks,
     createScheduleTask,
     updateScheduleTask,
-    deleteScheduleTask
+    deleteScheduleTask,
+    fetchIcsFeed,
+    downloadIcsFeed
 } from '../api/schedule.js';
 
 export function useSchedule() {
@@ -204,6 +206,8 @@ export function useSchedule() {
         modifyTask,
         removeTask,
         addGroup,
-        removeGroup
+        removeGroup,
+        fetchIcsFeed,
+        downloadIcsFeed
     };
 }

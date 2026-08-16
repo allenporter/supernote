@@ -22,13 +22,22 @@ export default {
             modifyTask,
             removeTask,
             addGroup,
-            removeGroup
+            removeGroup,
+            fetchIcsFeed,
+            downloadIcsFeed
         } = useSchedule();
 
         // Modals
         const showNewTaskModal = ref(false);
         const showNewGroupModal = ref(false);
+        const showIcsModal = ref(false);
         const editingTask = ref(null);
+
+        // ICS Export State
+        const icsFilterGroupId = ref('all');
+        const icsPreviewContent = ref('');
+        const isIcsLoading = ref(false);
+        const copySuccess = ref(false);
 
         // Form Fields
         const newGroupTitle = ref('');
@@ -45,6 +54,46 @@ export default {
         onMounted(async () => {
             await Promise.all([loadGroups(), loadTasks()]);
         });
+
+        async function openIcsModal() {
+            showIcsModal.value = true;
+            icsFilterGroupId.value = selectedGroupId.value ? String(selectedGroupId.value) : 'all';
+            await refreshIcsPreview();
+        }
+
+        async function refreshIcsPreview() {
+            isIcsLoading.value = true;
+            try {
+                const targetGroupId = icsFilterGroupId.value === 'all' ? null : icsFilterGroupId.value;
+                icsPreviewContent.value = await fetchIcsFeed(targetGroupId);
+            } catch (e) {
+                icsPreviewContent.value = "Error loading ICS feed: " + e.message;
+            } finally {
+                isIcsLoading.value = false;
+            }
+        }
+
+        async function handleDownloadIcs() {
+            try {
+                const targetGroupId = icsFilterGroupId.value === 'all' ? null : icsFilterGroupId.value;
+                const groupObj = taskGroups.value.find(g => String(g.id) === String(targetGroupId));
+                const nameSlug = groupObj ? groupObj.title.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'supernote_tasks';
+                await downloadIcsFeed(targetGroupId, `${nameSlug}.ics`);
+            } catch (e) {
+                alert("Failed to download ICS feed: " + e.message);
+            }
+        }
+
+        async function copyIcsContent() {
+            if (!icsPreviewContent.value) return;
+            try {
+                await navigator.clipboard.writeText(icsPreviewContent.value);
+                copySuccess.value = true;
+                setTimeout(() => { copySuccess.value = false; }, 2500);
+            } catch (e) {
+                alert("Failed to copy to clipboard");
+            }
+        }
 
         // Group Name Map
         const groupNameMap = computed(() => {
@@ -179,9 +228,14 @@ export default {
             groupNameMap,
             getTaskCountForGroup,
 
-            // Modals
+            // Modals & ICS
             showNewTaskModal,
             showNewGroupModal,
+            showIcsModal,
+            icsFilterGroupId,
+            icsPreviewContent,
+            isIcsLoading,
+            copySuccess,
             editingTask,
             taskForm,
             newGroupTitle,
@@ -196,7 +250,11 @@ export default {
             handleCreateGroup,
             formatDueDate,
             selectFilterMode,
-            selectGroup
+            selectGroup,
+            openIcsModal,
+            refreshIcsPreview,
+            handleDownloadIcs,
+            copyIcsContent
         };
     },
     template: `
@@ -282,6 +340,19 @@ export default {
                         </div>
                     </nav>
                 </div>
+
+                <!-- Export ICS Feed Sidebar Link -->
+                <div class="border-t border-slate-100 pt-4">
+                    <button @click="openIcsModal" class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm text-slate-600 hover:bg-slate-50 transition-colors">
+                        <span class="flex items-center gap-2.5 font-medium">
+                            <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                            </svg>
+                            Export .ics Feed
+                        </span>
+                        <span class="text-xs px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-600 font-semibold">iCal</span>
+                    </button>
+                </div>
             </div>
         </aside>
 
@@ -298,6 +369,14 @@ export default {
                 </div>
 
                 <div class="flex items-center gap-3">
+                    <button @click="openIcsModal"
+                        class="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all shadow-sm"
+                        title="Export Calendar Feed (.ics)">
+                        <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                        </svg>
+                        ICS Feed
+                    </button>
                     <button @click="openCreateTaskModal"
                         class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-medium text-sm transition-all shadow-lg shadow-indigo-100">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -477,6 +556,84 @@ export default {
                         class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold shadow-lg shadow-indigo-100 transition-all">
                         Create Group
                     </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ICS Export Modal -->
+        <div v-if="showIcsModal" class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm" @click.self="showIcsModal = false">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xl p-6 space-y-5 animate-in zoom-in-95">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div class="flex items-center gap-3">
+                        <div class="w-9 h-9 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-bold text-slate-900">Export iCalendar (.ics) Feed</h3>
+                            <p class="text-xs text-slate-500">Download or copy RFC 5545 VTODO task feed</p>
+                        </div>
+                    </div>
+                    <button @click="showIcsModal = false" class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">Filter Feed by Task Group</label>
+                        <select v-model="icsFilterGroupId" @change="refreshIcsPreview" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500">
+                            <option value="all">All Task Groups (Complete Feed)</option>
+                            <option v-for="g in taskGroups" :key="g.id" :value="g.id">{{ g.title }}</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <div class="flex items-center justify-between mb-1.5">
+                            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider">ICS Content Preview</label>
+                            <button @click="copyIcsContent" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
+                                <span v-if="copySuccess" class="text-emerald-600 flex items-center gap-1">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
+                                    </svg> Copied!
+                                </span>
+                                <span v-else class="flex items-center gap-1">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
+                                    </svg> Copy Text
+                                </span>
+                            </button>
+                        </div>
+                        <div v-if="isIcsLoading" class="flex justify-center items-center py-12 bg-slate-50 rounded-xl border border-slate-200">
+                            <div class="animate-spin rounded-full h-7 w-7 border-b-2 border-indigo-600"></div>
+                        </div>
+                        <textarea v-else readOnly v-model="icsPreviewContent" rows="8"
+                            class="w-full p-3 font-mono text-xs bg-slate-900 text-slate-200 border border-slate-800 rounded-xl outline-none resize-none leading-relaxed"></textarea>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between pt-3 border-t border-slate-100">
+                    <button @click="showIcsModal = false" class="px-4 py-2 text-slate-500 hover:text-slate-700 text-sm font-medium">
+                        Close
+                    </button>
+                    <div class="flex items-center gap-3">
+                        <button @click="copyIcsContent" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-semibold transition-colors flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                            </svg>
+                            Copy Content
+                        </button>
+                        <button @click="handleDownloadIcs"
+                            class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-lg shadow-indigo-100 transition-all flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                            </svg>
+                            Download .ics
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
