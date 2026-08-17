@@ -129,7 +129,7 @@ class ScheduleClient:
             "/api/file/schedule/task", AddScheduleTaskVO, json=dto.to_dict()
         )
 
-    async def get_task(self, task_id: int) -> ScheduleTaskVO:
+    async def get_task(self, task_id: int | str) -> ScheduleTaskVO:
         """Get details for a single task."""
         return await self._client.get_json(
             f"/api/file/schedule/task/{task_id}", ScheduleTaskVO
