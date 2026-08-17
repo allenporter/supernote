@@ -38,13 +38,13 @@ class ScheduleClient:
             "/api/file/schedule/group", AddScheduleTaskGroupVO, json=dto.to_dict()
         )
 
-    async def get_group(self, group_id: int) -> GetScheduleTaskGroupVO:
+    async def get_group(self, group_id: int | str) -> GetScheduleTaskGroupVO:
         """Get a schedule group by ID."""
         return await self._client.get_json(
             f"/api/file/schedule/group/{group_id}", GetScheduleTaskGroupVO
         )
 
-    async def update_group(self, group_id: int, title: str) -> BaseResponse:
+    async def update_group(self, group_id: int | str, title: str) -> BaseResponse:
         """Update a schedule group."""
         dto = UpdateScheduleTaskGroupDTO(
             task_list_id=str(group_id),
@@ -55,7 +55,7 @@ class ScheduleClient:
             "/api/file/schedule/group", BaseResponse, json=dto.to_dict()
         )
 
-    async def clear_group(self, group_id: int) -> BaseResponse:
+    async def clear_group(self, group_id: int | str) -> BaseResponse:
         """Clear all tasks within a schedule group."""
         dto = ClearScheduleTaskGroupDTO(
             task_list_id=str(group_id), last_modified=int(time.time() * 1000)
@@ -87,13 +87,13 @@ class ScheduleClient:
             if not page_token:
                 break
 
-    async def delete_group(self, group_id: int) -> None:
+    async def delete_group(self, group_id: int | str) -> None:
         """Delete a schedule group."""
         await self._client.request("delete", f"/api/file/schedule/group/{group_id}")
 
     async def create_task(
         self,
-        group_id: int,
+        group_id: int | str,
         title: str,
         detail: str | None = None,
         status: str | None = None,
@@ -129,7 +129,7 @@ class ScheduleClient:
             "/api/file/schedule/task", AddScheduleTaskVO, json=dto.to_dict()
         )
 
-    async def get_task(self, task_id: int) -> ScheduleTaskVO:
+    async def get_task(self, task_id: int | str) -> ScheduleTaskVO:
         """Get details for a single task."""
         return await self._client.get_json(
             f"/api/file/schedule/task/{task_id}", ScheduleTaskVO
@@ -153,7 +153,7 @@ class ScheduleClient:
 
     async def list_tasks(
         self,
-        group_id: int | None = None,
+        group_id: int | str | None = None,
         since: int | None = None,
     ) -> AsyncIterator[ScheduleTaskInfo]:
         """List all schedule tasks, automatically iterating through all pages.
@@ -181,7 +181,7 @@ class ScheduleClient:
 
     async def update_task(
         self,
-        task_id: int,
+        task_id: int | str,
         title: str,
         detail: str | None = None,
         status: str | None = None,
@@ -189,7 +189,7 @@ class ScheduleClient:
         due_time: int | None = None,
         recurrence: str | None = None,
         is_reminder_on: bool | None = None,
-        task_list_id: int | None = None,
+        task_list_id: int | str | None = None,
     ) -> UpdateScheduleTaskVO:
         """Update a task using DTO."""
         is_reminder_on_value: BooleanEnum | None = None
@@ -212,7 +212,7 @@ class ScheduleClient:
             "/api/file/schedule/task", UpdateScheduleTaskVO, json=dto.to_dict()
         )
 
-    async def delete_task(self, task_id: int) -> None:
+    async def delete_task(self, task_id: int | str) -> None:
         """Delete a schedule task."""
         await self._client.request("delete", f"/api/file/schedule/task/{task_id}")
 

@@ -7,17 +7,20 @@ from supernote.server.db.base import Base
 from supernote.server.utils.unique_id import next_id
 
 
+def generate_id_string() -> str:
+    """Generate default unique ID as string."""
+    return str(next_id())
+
+
 class ScheduleTaskGroupDO(Base):
     """Groups of tasks (e.g., 'Inbox', 'Work', 'Personal')."""
 
     __tablename__ = "t_schedule_task_group"
 
-    # In legacy/docs, task_list_id might be a string (UUID) or Int.
-    # Using unique_id Int for consistency, but mapping to String if API requires it.
-    task_list_id: Mapped[int] = mapped_column(
-        BigInteger, primary_key=True, default=next_id
+    task_list_id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=generate_id_string
     )
-    """Unique ID."""
+    """Unique ID string."""
 
     user_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
     """User ID."""
@@ -36,10 +39,12 @@ class ScheduleTaskDO(Base):
 
     __tablename__ = "t_schedule_task"
 
-    task_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, default=next_id)
-    """Unique ID."""
+    task_id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=generate_id_string
+    )
+    """Unique ID string."""
 
-    task_list_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
+    task_list_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
     """Link back to task list."""
 
     user_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)

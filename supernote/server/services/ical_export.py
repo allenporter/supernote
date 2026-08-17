@@ -135,7 +135,7 @@ class ICalExportService:
     async def export_calendar(
         self,
         user_id: int,
-        task_list_id: int | None = None,
+        task_list_id: str | None = None,
     ) -> str:
         """Export user tasks to an RFC 5545 compliant iCalendar (.ics) string."""
         # 1. Fetch group titles map
