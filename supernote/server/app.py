@@ -166,6 +166,26 @@ async def trace_middleware(
 
 
 @web.middleware
+async def socketio_compat_middleware(
+    request: web.Request,
+    handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
+) -> web.StreamResponse:
+    """Normalize Socket.IO / Engine.IO protocol version parameters.
+
+    Legacy clients (such as the official Supernote Partner App) issue Socket.IO connections
+    using Engine.IO v3 (EIO=3 or omitting EIO parameter). Python-engineio 4.x expects EIO=4.
+    Mapping query EIO=3 -> EIO=4 allows legacy clients to establish real-time socket connections.
+    """
+    if request.path.startswith("/socket.io"):
+        eio = request.query.get("EIO")
+        if eio != "4":
+            new_query = request.query.copy()
+            new_query["EIO"] = "4"
+            request = request.clone(rel_url=request.rel_url.with_query(new_query))
+    return await handler(request)
+
+
+@web.middleware
 async def metrics_middleware(
     request: web.Request,
     handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
@@ -435,6 +455,7 @@ def create_app(config: ServerConfig) -> web.Application:
             await aiohttp_remotes.setup(app, aiohttp_remotes.XForwardedRelaxed())
 
         # Register trace and auth middlewares after proxy setup to avoid clone errors
+        app.middlewares.append(socketio_compat_middleware)
         if config.metrics_enabled:
             app.middlewares.append(metrics_middleware)
         app.middlewares.append(trace_middleware)
