@@ -634,3 +634,49 @@ async def test_ical_feed_content_and_filtering(
 
     # Cleanup
     await schedule.delete_group(group_id)
+
+
+async def test_schedule_string_uuid_support(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Verify that non-digit string UUIDs (e.g. Partner App hex IDs) do not cause int() parsing errors."""
+    hex_list_id = "dcf35927c2c7279e3d204f592af6e9ed"
+    hex_task_id = "a1b2c3d4e5f67890123456789abcdef0"
+
+    # 1. Query all tasks with hex taskListId
+    resp = await client.post(
+        "/api/file/schedule/task/all",
+        json={"taskListId": hex_list_id},
+        headers=auth_headers,
+    )
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["success"] is True
+
+    # 2. Add task with hex taskListId & hex taskId
+    resp = await client.post(
+        "/api/file/schedule/task",
+        json={
+            "taskListId": hex_list_id,
+            "taskId": hex_task_id,
+            "title": "Partner App Task",
+            "detail": "Testing string UUID support",
+        },
+        headers=auth_headers,
+    )
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["success"] is True
+    created_task_id = data["taskId"]
+
+    # 3. Query created task with string taskId
+    resp = await client.get(
+        f"/api/file/schedule/task/{created_task_id}",
+        headers=auth_headers,
+    )
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["success"] is True
+    assert data["title"] == "Partner App Task"
+

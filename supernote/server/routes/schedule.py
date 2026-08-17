@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import time
 from dataclasses import fields
@@ -34,6 +35,18 @@ logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
 
 
+def _parse_id_to_int(val: Any) -> int:
+    """Safely parse integer ID or deterministically convert string UUID to integer ID."""
+    if isinstance(val, int):
+        return val
+    if not val:
+        return 0
+    val_str = str(val).strip()
+    if val_str.isdigit() or (val_str.startswith("-") and val_str[1:].isdigit()):
+        return int(val_str)
+    return int(hashlib.md5(val_str.encode("utf-8")).hexdigest()[:15], 16) & 0x7FFFFFFFFFFFFFFF
+
+
 def _extract_task_updates(dto: UpdateScheduleTaskDTO) -> dict[str, Any]:
     """Extract populated update fields from UpdateScheduleTaskDTO into a service dict."""
     updates: dict[str, Any] = {}
@@ -43,7 +56,7 @@ def _extract_task_updates(dto: UpdateScheduleTaskDTO) -> dict[str, Any]:
         val = getattr(dto, f.name)
         if val is not None:
             if f.name == "task_list_id":
-                updates["task_list_id"] = int(val)
+                updates["task_list_id"] = _parse_id_to_int(val)
             elif f.name == "is_reminder_on":
                 updates["is_reminder_on"] = val == BooleanEnum.YES
             else:
@@ -90,7 +103,7 @@ async def update_group(request: web.Request) -> web.Response:
         user_id = await request.app["user_service"].get_user_id(user)
 
         group = await schedule_service.update_group(
-            user_id, int(dto.task_list_id), dto.title
+            user_id, _parse_id_to_int(dto.task_list_id), dto.title
         )
         if not group:
             raise SupernoteError("Not found", status_code=404)
@@ -110,7 +123,7 @@ async def delete_group(request: web.Request) -> web.Response:
         if not group_id_str:
             raise SupernoteError("Missing taskListId", status_code=400)
 
-        group_id = int(group_id_str)
+        group_id = _parse_id_to_int(group_id_str)
         user = request["user"]
         schedule_service: ScheduleService = request.app["schedule_service"]
         user_id = await request.app["user_service"].get_user_id(user)
@@ -137,7 +150,7 @@ async def get_group(request: web.Request) -> web.Response:
         schedule_service: ScheduleService = request.app["schedule_service"]
         user_id = await request.app["user_service"].get_user_id(user)
 
-        group = await schedule_service.get_group(user_id, int(group_id_str))
+        group = await schedule_service.get_group(user_id, _parse_id_to_int(group_id_str))
         if not group:
             raise SupernoteError("Not found", status_code=404)
 
@@ -166,7 +179,7 @@ async def clear_group(request: web.Request) -> web.Response:
         schedule_service: ScheduleService = request.app["schedule_service"]
         user_id = await request.app["user_service"].get_user_id(user)
 
-        await schedule_service.clear_group_tasks(user_id, int(dto.task_list_id))
+        await schedule_service.clear_group_tasks(user_id, _parse_id_to_int(dto.task_list_id))
         return web.json_response(BaseResponse(success=True).to_dict())
     except SupernoteError as err:
         return err.to_response()
@@ -213,7 +226,7 @@ async def create_task(request: web.Request) -> web.Response:
         if not dto.title:
             raise SupernoteError("Title is required", status_code=400)
 
-        group_id = int(dto.task_list_id) if dto.task_list_id else 0
+        group_id = _parse_id_to_int(dto.task_list_id) if dto.task_list_id else 0
 
         user = request["user"]
         schedule_service: ScheduleService = request.app["schedule_service"]
@@ -239,7 +252,7 @@ async def create_task(request: web.Request) -> web.Response:
             sort_time=dto.sort_time,
             planer_sort_time=dto.planer_sort_time,
             all_sort_time=dto.all_sort_time,
-            task_id=int(dto.task_id) if dto.task_id else None,
+            task_id=_parse_id_to_int(dto.task_id) if dto.task_id else None,
         )
         task_id_resp = str(task.task_id)
         return web.json_response(
@@ -261,7 +274,7 @@ async def update_task(request: web.Request) -> web.Response:
         if not dto.task_id:
             raise SupernoteError("Missing taskId", status_code=400)
 
-        task_id = int(dto.task_id)
+        task_id = _parse_id_to_int(dto.task_id)
         user = request["user"]
         schedule_service: ScheduleService = request.app["schedule_service"]
         user_id = await request.app["user_service"].get_user_id(user)
@@ -296,7 +309,7 @@ async def batch_update_task_list(request: web.Request) -> web.Response:
         for item in dto.update_schedule_task_list:
             if item.task_id:
                 item_updates = _extract_task_updates(item)
-                item_updates["task_id"] = int(item.task_id)
+                item_updates["task_id"] = _parse_id_to_int(item.task_id)
                 updates_list.append(item_updates)
 
         await schedule_service.batch_update_tasks(user_id, updates_list)
@@ -316,7 +329,7 @@ async def delete_task(request: web.Request) -> web.Response:
         if not task_id_str:
             raise SupernoteError("Missing taskId", status_code=400)
 
-        task_id = int(task_id_str)
+        task_id = _parse_id_to_int(task_id_str)
         user = request["user"]
         schedule_service: ScheduleService = request.app["schedule_service"]
         user_id = await request.app["user_service"].get_user_id(user)
@@ -343,7 +356,7 @@ async def get_task(request: web.Request) -> web.Response:
         schedule_service: ScheduleService = request.app["schedule_service"]
         user_id = await request.app["user_service"].get_user_id(user)
 
-        task = await schedule_service.get_task(user_id, int(task_id_str))
+        task = await schedule_service.get_task(user_id, _parse_id_to_int(task_id_str))
         if not task:
             raise SupernoteError("Not found", status_code=404)
 
@@ -387,7 +400,7 @@ async def list_tasks(request: web.Request) -> web.Response:
         except Exception:
             data = {}
         dto = ScheduleTaskDTO.from_dict(data)
-        group_id = int(dto.task_list_id) if dto.task_list_id else None
+        group_id = _parse_id_to_int(dto.task_list_id) if dto.task_list_id else None
 
         user = request["user"]
         schedule_service: ScheduleService = request.app["schedule_service"]
@@ -473,8 +486,8 @@ async def get_schedule_feed_ics(request: web.Request) -> web.Response:
 
     task_list_id_str = request.query.get("taskListId")
     task_list_id = (
-        int(task_list_id_str)
-        if task_list_id_str and task_list_id_str.isdigit()
+        _parse_id_to_int(task_list_id_str)
+        if task_list_id_str
         else None
     )
 
