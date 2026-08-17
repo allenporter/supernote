@@ -12,12 +12,15 @@ class ScheduleTaskGroupDO(Base):
 
     __tablename__ = "t_schedule_task_group"
 
-    # In legacy/docs, task_list_id might be a string (UUID) or Int.
-    # Using unique_id Int for consistency, but mapping to String if API requires it.
     task_list_id: Mapped[int] = mapped_column(
         BigInteger, primary_key=True, default=next_id
     )
-    """Unique ID."""
+    """Internal unique integer ID."""
+
+    client_task_list_id: Mapped[str | None] = mapped_column(
+        String, index=True, nullable=True
+    )
+    """Independent external client string ID (e.g. UUID)."""
 
     user_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
     """User ID."""
@@ -30,6 +33,11 @@ class ScheduleTaskGroupDO(Base):
     )
     """Creation time in epoch milliseconds."""
 
+    @property
+    def id(self) -> str:
+        """API task list ID: returns client_task_list_id if present, else str(task_list_id)."""
+        return self.client_task_list_id or str(self.task_list_id)
+
 
 class ScheduleTaskDO(Base):
     """Individual Tasks."""
@@ -37,10 +45,30 @@ class ScheduleTaskDO(Base):
     __tablename__ = "t_schedule_task"
 
     task_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, default=next_id)
-    """Unique ID."""
+    """Internal unique integer ID."""
+
+    client_task_id: Mapped[str | None] = mapped_column(
+        String, index=True, nullable=True
+    )
+    """Independent external client task string ID (e.g. UUID)."""
 
     task_list_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
-    """Link back to task list."""
+    """Link back to task list (internal integer ID)."""
+
+    client_task_list_id: Mapped[str | None] = mapped_column(
+        String, index=True, nullable=True
+    )
+    """Independent external client task list string ID."""
+
+    @property
+    def id(self) -> str:
+        """API task ID: returns client_task_id if present, else str(task_id)."""
+        return self.client_task_id or str(self.task_id)
+
+    @property
+    def group_id(self) -> str:
+        """API task list ID: returns client_task_list_id if present, else str(task_list_id)."""
+        return self.client_task_list_id or str(self.task_list_id)
 
     user_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
     """User ID."""

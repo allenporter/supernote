@@ -2,7 +2,7 @@ import logging
 import time
 from typing import Any, cast
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.engine import CursorResult
 
 from supernote.server.db.models.schedule import ScheduleTaskDO, ScheduleTaskGroupDO
@@ -43,24 +43,27 @@ TASK_ALLOWED_UPDATE_FIELDS: set[str] = TASK_BASE_FIELDS | TASK_SORT_FIELDS | {"l
 class ScheduleService:
     """Schedule service."""
 
-    def __init__(self, session_manager: DatabaseSessionManager):
+    def __init__(self, session_manager: DatabaseSessionManager) -> None:
         """Initialize the schedule service."""
         self.session_manager = session_manager
 
     # Task Group Operations
 
-    async def create_group(self, user_id: int, title: str) -> ScheduleTaskGroupDO:
+    async def create_group(
+        self, user_id: int, title: str, client_task_list_id: str | None = None
+    ) -> ScheduleTaskGroupDO:
         """Create a new task group."""
         if len(title) > MAX_TITLE_LENGTH:
             raise ValueError("Title is too long")
         async with self.session_manager.session() as session:
-            group = ScheduleTaskGroupDO(user_id=user_id, title=title)
+            kwargs: dict[str, Any] = {"user_id": user_id, "title": title}
+            if client_task_list_id is not None:
+                kwargs["client_task_list_id"] = client_task_list_id
+            group = ScheduleTaskGroupDO(**kwargs)
             session.add(group)
             # Flush to generate ID
             await session.flush()
-            # Commit to persist
             await session.commit()
-            # Refresh to get defaults if any
             await session.refresh(group)
             return group
 
@@ -76,29 +79,35 @@ class ScheduleService:
             return list(result.scalars().all())
 
     async def get_group(
-        self, user_id: int, group_id: int
+        self, user_id: int, group_id: str
     ) -> ScheduleTaskGroupDO | None:
         """Get a task group by ID."""
         async with self.session_manager.session() as session:
             stmt = select(ScheduleTaskGroupDO).where(
                 ScheduleTaskGroupDO.user_id == user_id,
-                ScheduleTaskGroupDO.task_list_id == group_id,
+                or_(
+                    ScheduleTaskGroupDO.client_task_list_id == group_id,
+                    ScheduleTaskGroupDO.task_list_id == group_id,
+                ),
             )
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
     async def update_group(
-        self, user_id: int, group_id: int, title: str
+        self, user_id: int, group_id: str, title: str
     ) -> ScheduleTaskGroupDO | None:
         """Update a task group title."""
         if len(title) > MAX_TITLE_LENGTH:
             raise ValueError("Title is too long")
         async with self.session_manager.session() as session:
+            if not (group := await self.get_group(user_id, group_id)):
+                return None
+
             stmt = (
                 update(ScheduleTaskGroupDO)
                 .where(
                     ScheduleTaskGroupDO.user_id == user_id,
-                    ScheduleTaskGroupDO.task_list_id == group_id,
+                    ScheduleTaskGroupDO.task_list_id == group.task_list_id,
                 )
                 .values(title=title)
                 .execution_options(synchronize_session="fetch")
@@ -109,37 +118,54 @@ class ScheduleService:
             # Retrieve updated
             stmt_get = select(ScheduleTaskGroupDO).where(
                 ScheduleTaskGroupDO.user_id == user_id,
-                ScheduleTaskGroupDO.task_list_id == group_id,
+                ScheduleTaskGroupDO.task_list_id == group.task_list_id,
             )
             result = await session.execute(stmt_get)
             return result.scalar_one_or_none()
 
-    async def delete_group(self, user_id: int, group_id: int) -> bool:
+    async def delete_group(self, user_id: int, group_id: str) -> bool:
         """Delete a task group and cascade delete all contained tasks."""
         async with self.session_manager.session() as session:
+            if not (group := await self.get_group(user_id, group_id)):
+                return False
+
             # First cascade delete all tasks in the group
+            task_conds = [ScheduleTaskDO.task_list_id == group.task_list_id]
+            if group.client_task_list_id:
+                task_conds.append(
+                    ScheduleTaskDO.client_task_list_id == group.client_task_list_id
+                )
+
             stmt_tasks = delete(ScheduleTaskDO).where(
-                ScheduleTaskDO.user_id == user_id,
-                ScheduleTaskDO.task_list_id == group_id,
+                ScheduleTaskDO.user_id == user_id, or_(*task_conds)
             )
             await session.execute(stmt_tasks)
 
             # Then delete the group itself
             stmt_group = delete(ScheduleTaskGroupDO).where(
                 ScheduleTaskGroupDO.user_id == user_id,
-                ScheduleTaskGroupDO.task_list_id == group_id,
+                ScheduleTaskGroupDO.task_list_id == group.task_list_id,
             )
             result = await session.execute(stmt_group)
             await session.commit()
 
             return bool(getattr(result, "rowcount", 0) > 0)
 
-    async def clear_group_tasks(self, user_id: int, group_id: int) -> bool:
+    async def clear_group_tasks(self, user_id: int, group_id: str) -> bool:
         """Clear all tasks from a task group without deleting the group."""
         async with self.session_manager.session() as session:
+            if not (group := await self.get_group(user_id, group_id)):
+                return False
+
+            # Clear all tasks from the group without deleting the group
+            task_conds = [ScheduleTaskDO.task_list_id == group.task_list_id]
+            if group.client_task_list_id:
+                task_conds.append(
+                    ScheduleTaskDO.client_task_list_id == group.client_task_list_id
+                )
+
             stmt = delete(ScheduleTaskDO).where(
-                ScheduleTaskDO.user_id == user_id,
-                ScheduleTaskDO.task_list_id == group_id,
+                ScheduleTaskDO.user_id == user_id, or_(*task_conds)
             )
             result = await session.execute(stmt)
             await session.commit()
@@ -150,7 +176,7 @@ class ScheduleService:
     async def create_task(
         self,
         user_id: int,
-        group_id: int,
+        group_id: str,
         title: str,
         detail: str = "",
         status: str = "needsAction",
@@ -167,7 +193,7 @@ class ScheduleService:
         sort_time: int | None = None,
         planer_sort_time: int | None = None,
         all_sort_time: int | None = None,
-        task_id: int | None = None,
+        task_id: str | None = None,
     ) -> ScheduleTaskDO:
         """Create a new task."""
         if len(title) > MAX_TITLE_LENGTH:
@@ -175,9 +201,20 @@ class ScheduleService:
         if len(detail) > MAX_DETAIL_LENGTH:
             raise ValueError("Detail is too long")
         async with self.session_manager.session() as session:
+            if group := await self.get_group(user_id, group_id):
+                int_group_id = group.task_list_id
+                client_group_id = group.client_task_list_id
+            elif group_id.isdigit():
+                int_group_id = int(group_id)
+                client_group_id = None
+            else:
+                int_group_id = 0
+                client_group_id = group_id
+
             kwargs: dict[str, Any] = {
                 "user_id": user_id,
-                "task_list_id": group_id,
+                "task_list_id": int_group_id,
+                "client_task_list_id": client_group_id,
                 "title": title,
                 "detail": detail,
                 "status": status,
@@ -196,20 +233,28 @@ class ScheduleService:
                 "all_sort_time": all_sort_time,
             }
             if task_id is not None:
-                kwargs["task_id"] = task_id
+                if task_id.isdigit():
+                    kwargs["task_id"] = int(task_id)
+                else:
+                    kwargs["client_task_id"] = task_id
+
             task = ScheduleTaskDO(**kwargs)
             session.add(task)
+            # Flush to generate ID
             await session.flush()
             await session.commit()
             await session.refresh(task)
             return task
 
-    async def get_task(self, user_id: int, task_id: int) -> ScheduleTaskDO | None:
+    async def get_task(self, user_id: int, task_id: str) -> ScheduleTaskDO | None:
         """Get a task by ID."""
         async with self.session_manager.session() as session:
             stmt = select(ScheduleTaskDO).where(
                 ScheduleTaskDO.user_id == user_id,
-                ScheduleTaskDO.task_id == task_id,
+                or_(
+                    ScheduleTaskDO.client_task_id == task_id,
+                    ScheduleTaskDO.task_id == task_id,
+                ),
             )
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
@@ -217,14 +262,20 @@ class ScheduleService:
     async def list_tasks(
         self,
         user_id: int,
-        group_id: int | None = None,
+        group_id: str | None = None,
         since: int | None = None,
     ) -> list[ScheduleTaskDO]:
         """List tasks for a user, optionally filtered by group and since timestamp."""
         async with self.session_manager.session() as session:
             query = select(ScheduleTaskDO).where(ScheduleTaskDO.user_id == user_id)
             if group_id is not None:
-                query = query.where(ScheduleTaskDO.task_list_id == group_id)
+                query = query.where(
+                    or_(
+                        ScheduleTaskDO.client_task_list_id == group_id,
+                        ScheduleTaskDO.task_list_id == group_id,
+                    )
+                )
+
             if since is not None:
                 query = query.where(ScheduleTaskDO.update_time > since)
 
@@ -233,17 +284,21 @@ class ScheduleService:
             return list(result.scalars().all())
 
     async def update_task(
-        self, user_id: int, task_id: int, **kwargs: Any
+        self, user_id: int, task_id: str, **kwargs: Any
     ) -> ScheduleTaskDO | None:
         """Update a task."""
         updates = {k: v for k, v in kwargs.items() if k in TASK_ALLOWED_UPDATE_FIELDS}
         updates["update_time"] = int(time.time() * 1000)
 
         async with self.session_manager.session() as session:
+            if not (task := await self.get_task(user_id, task_id)):
+                return None
+
             stmt = (
                 update(ScheduleTaskDO)
                 .where(
-                    ScheduleTaskDO.user_id == user_id, ScheduleTaskDO.task_id == task_id
+                    ScheduleTaskDO.user_id == user_id,
+                    ScheduleTaskDO.task_id == task.task_id,
                 )
                 .values(**updates)
                 .execution_options(synchronize_session="fetch")
@@ -253,7 +308,8 @@ class ScheduleService:
 
             # Retrieve updated
             stmt_get = select(ScheduleTaskDO).where(
-                ScheduleTaskDO.user_id == user_id, ScheduleTaskDO.task_id == task_id
+                ScheduleTaskDO.user_id == user_id,
+                ScheduleTaskDO.task_id == task.task_id,
             )
             result = await session.execute(stmt_get)
             return result.scalar_one_or_none()
@@ -264,15 +320,19 @@ class ScheduleService:
         """Batch update tasks atomically in a single transaction."""
         async with self.session_manager.session() as session:
             for item in updates_list:
-                task_id = item.get("task_id")
-                if not task_id:
+                if not (task_id := item.get("task_id")):
                     continue
-                title = item.get("title")
-                if title is not None and len(title) > MAX_TITLE_LENGTH:
+                if (title := item.get("title")) is not None and len(
+                    title
+                ) > MAX_TITLE_LENGTH:
                     raise ValueError("Title is too long")
-                detail = item.get("detail")
-                if detail is not None and len(detail) > MAX_DETAIL_LENGTH:
+                if (detail := item.get("detail")) is not None and len(
+                    detail
+                ) > MAX_DETAIL_LENGTH:
                     raise ValueError("Detail is too long")
+
+                if not (task := await self.get_task(user_id, str(task_id))):
+                    raise ValueError(f"Task {task_id} not found")
 
                 updates = {
                     k: v
@@ -286,21 +346,23 @@ class ScheduleService:
                     update(ScheduleTaskDO)
                     .where(
                         ScheduleTaskDO.user_id == user_id,
-                        ScheduleTaskDO.task_id == task_id,
+                        ScheduleTaskDO.task_id == task.task_id,
                     )
                     .values(**updates)
                 )
-                res = await session.execute(stmt)
-                if getattr(res, "rowcount", 0) == 0:
-                    raise ValueError(f"Task {task_id} not found")
+                await session.execute(stmt)
             await session.commit()
             return True
 
-    async def delete_task(self, user_id: int, task_id: int) -> bool:
+    async def delete_task(self, user_id: int, task_id: str) -> bool:
         """Delete a task."""
         async with self.session_manager.session() as session:
+            if not (task := await self.get_task(user_id, task_id)):
+                return False
+
             stmt = delete(ScheduleTaskDO).where(
-                ScheduleTaskDO.user_id == user_id, ScheduleTaskDO.task_id == task_id
+                ScheduleTaskDO.user_id == user_id,
+                ScheduleTaskDO.task_id == task.task_id,
             )
             result = cast(CursorResult[Any], await session.execute(stmt))
             await session.commit()

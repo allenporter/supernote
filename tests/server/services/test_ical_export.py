@@ -46,7 +46,7 @@ async def test_export_calendar_tasks_roundtrip(
     """Test creating tasks and verifying iCal export round-trip parsing."""
     user_id = 888
     group = await schedule_service.create_group(user_id, "Project Alpha")
-    group_id = group.task_list_id
+    group_id = group.id
 
     # Create test tasks
     task1 = await schedule_service.create_task(
@@ -65,9 +65,7 @@ async def test_export_calendar_tasks_roundtrip(
         detail="Run schema migrations first",
         status="completed",
     )
-    await schedule_service.update_task(
-        user_id, task2.task_id, completed_time=1722646800000
-    )
+    await schedule_service.update_task(user_id, task2.id, completed_time=1722646800000)
 
     # Export calendar for user
     ics_text = await ical_export_service.export_calendar(user_id)
@@ -89,7 +87,7 @@ async def test_export_calendar_tasks_roundtrip(
     assert todo1.description == "Check iCal export implementation"
     assert todo1.categories == ["Project Alpha"]
     assert todo1.priority == 1
-    assert todo1.uid == f"supernote-task-{task1.task_id}@supernote"
+    assert todo1.uid == f"supernote-task-{task1.id}@supernote"
 
 
 async def test_export_calendar_task_list_filtering(
@@ -101,12 +99,12 @@ async def test_export_calendar_task_list_filtering(
     group_a = await schedule_service.create_group(user_id, "Work")
     group_b = await schedule_service.create_group(user_id, "Personal")
 
-    await schedule_service.create_task(user_id, group_a.task_list_id, "Work Task")
-    await schedule_service.create_task(user_id, group_b.task_list_id, "Personal Task")
+    await schedule_service.create_task(user_id, group_a.id, "Work Task")
+    await schedule_service.create_task(user_id, group_b.id, "Personal Task")
 
     # Export only Group A
     ics_text_a = await ical_export_service.export_calendar(
-        user_id, task_list_id=group_a.task_list_id
+        user_id, task_list_id=group_a.id
     )
     calendar_a = IcsCalendarStream.calendar_from_ics(ics_text_a)
     assert len(calendar_a.todos) == 1

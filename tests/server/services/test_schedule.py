@@ -25,7 +25,7 @@ async def test_group_crud(schedule_service: ScheduleService) -> None:
     assert any(g.task_list_id == group.task_list_id for g in groups)
 
     # Delete
-    deleted = await schedule_service.delete_group(user_id, group.task_list_id)
+    deleted = await schedule_service.delete_group(user_id, group.id)
     assert deleted
 
     groups_after = await schedule_service.list_groups(user_id)
@@ -55,7 +55,7 @@ async def test_group_names_are_not_unique(schedule_service: ScheduleService) -> 
     assert group1.task_list_id != group2.task_list_id
 
     # Delete the first group
-    deleted = await schedule_service.delete_group(user_id, group1.task_list_id)
+    deleted = await schedule_service.delete_group(user_id, group1.id)
     assert deleted
 
     # List groups again
@@ -70,19 +70,19 @@ async def test_task_crud(schedule_service: ScheduleService) -> None:
     group = await schedule_service.create_group(user_id, "Inbox")
 
     # Create Task
-    task = await schedule_service.create_task(user_id, group.task_list_id, "Buy Milk")
+    task = await schedule_service.create_task(user_id, group.id, "Buy Milk")
     assert task.task_id is not None
     assert task.title == "Buy Milk"
     assert task.status == "needsAction"
 
     # List Tasks
-    tasks = await schedule_service.list_tasks(user_id, group.task_list_id)
+    tasks = await schedule_service.list_tasks(user_id, group.id)
     assert len(tasks) == 1
     assert tasks[0].task_id == task.task_id
 
     # Update Task
     updated = await schedule_service.update_task(
-        user_id, task.task_id, status="completed", title="Buy Milk & Bread"
+        user_id, task.id, status="completed", title="Buy Milk & Bread"
     )
     assert updated is not None
     assert updated.status == "completed"
@@ -93,7 +93,7 @@ async def test_task_crud(schedule_service: ScheduleService) -> None:
     assert tasks_v2[0].title == "Buy Milk & Bread"
 
     # Delete Task
-    deleted = await schedule_service.delete_task(user_id, task.task_id)
+    deleted = await schedule_service.delete_task(user_id, task.id)
     assert deleted
 
     tasks_v3 = await schedule_service.list_tasks(user_id)
@@ -113,7 +113,7 @@ async def test_isolation(schedule_service: ScheduleService) -> None:
     assert l1[0].task_list_id == g1.task_list_id
 
     # User 1 cannot delete User 2 group
-    deleted = await schedule_service.delete_group(user1, g2.task_list_id)
+    deleted = await schedule_service.delete_group(user1, g2.id)
     assert not deleted
 
 
@@ -124,15 +124,15 @@ async def test_delete_group_cascades_contained_tasks(
     user_id = 777
     group = await schedule_service.create_group(user_id, "Project X")
 
-    task1 = await schedule_service.create_task(user_id, group.task_list_id, "Subtask 1")
-    task2 = await schedule_service.create_task(user_id, group.task_list_id, "Subtask 2")
+    task1 = await schedule_service.create_task(user_id, group.id, "Subtask 1")
+    task2 = await schedule_service.create_task(user_id, group.id, "Subtask 2")
     assert task1.task_id is not None
     assert task2.task_id is not None
 
-    tasks_before = await schedule_service.list_tasks(user_id, group.task_list_id)
+    tasks_before = await schedule_service.list_tasks(user_id, group.id)
     assert len(tasks_before) == 2
 
-    deleted = await schedule_service.delete_group(user_id, group.task_list_id)
+    deleted = await schedule_service.delete_group(user_id, group.id)
     assert deleted is True
 
     groups_after = await schedule_service.list_groups(user_id)

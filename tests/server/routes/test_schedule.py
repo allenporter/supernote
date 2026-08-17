@@ -39,12 +39,12 @@ async def test_schedule_flow(authenticated_client: Client) -> None:
     group_vo = await schedule.create_group("My Projects")
     assert isinstance(group_vo, AddScheduleTaskGroupVO)
     assert group_vo.task_list_id is not None
-    group_id = int(group_vo.task_list_id)
+    group_id = group_vo.task_list_id
 
     # List Groups
     groups = [g async for g in schedule.list_groups()]
     assert len(groups) == 1
-    my_group = next((g for g in groups if str(g.task_list_id) == str(group_id)), None)
+    my_group = next((g for g in groups if g.task_list_id == group_id), None)
     assert my_group is not None
     assert my_group.title == "My Projects"
     assert isinstance(my_group, ScheduleTaskGroupItem)
@@ -59,14 +59,14 @@ async def test_schedule_flow(authenticated_client: Client) -> None:
     )
     assert isinstance(task_vo, AddScheduleTaskVO)
     assert task_vo.task_id is not None
-    task_id = int(task_vo.task_id)
+    task_id = task_vo.task_id
 
     # List Tasks
     tasks = [t async for t in schedule.list_tasks(group_id)]
     assert len(tasks) == 1
     task = tasks[0]
-    assert str(task.task_id) == str(task_id)
-    assert str(task.task_list_id) == str(group_id)
+    assert task.task_id == task_id
+    assert task.task_list_id == group_id
     assert task.title == "Finish Refactor"
     assert task.is_reminder_on == BooleanEnum.NO
 
@@ -75,7 +75,7 @@ async def test_schedule_flow(authenticated_client: Client) -> None:
         task_id, title="Finish Refactor", status="completed", is_reminder_on=True
     )
     assert isinstance(update_vo, UpdateScheduleTaskVO)
-    assert str(update_vo.task_id) == str(task_id)
+    assert update_vo.task_id == task_id
 
     # Verify update
     tasks_after = [t async for t in schedule.list_tasks(group_id)]
@@ -98,13 +98,13 @@ async def test_update_task_fields(authenticated_client: Client) -> None:
     schedule = ScheduleClient(authenticated_client)
     group_vo = await schedule.create_group("Update Test Group")
     assert group_vo.task_list_id is not None
-    group_id = int(group_vo.task_list_id)
+    group_id = group_vo.task_list_id
 
     task_vo = await schedule.create_task(
         group_id, "Original Title", detail="Original Detail", due_time=1000
     )
     assert task_vo.task_id is not None
-    task_id = int(task_vo.task_id)
+    task_id = task_vo.task_id
 
     await schedule.update_task(task_id, title="Updated Title")
     tasks = [t async for t in schedule.list_tasks(group_id)]
@@ -144,7 +144,7 @@ async def test_update_task_partial_payload(authenticated_client: Client) -> None
     schedule = ScheduleClient(authenticated_client)
     group_vo = await schedule.create_group("Partial Update Group")
     assert group_vo.task_list_id is not None
-    group_id = int(group_vo.task_list_id)
+    group_id = group_vo.task_list_id
 
     task_vo = await schedule.create_task(group_id, "Original Title")
     assert task_vo.task_id is not None
@@ -171,7 +171,7 @@ async def test_task_links_and_sort_fields_persistence(
     schedule = ScheduleClient(authenticated_client)
     group_vo = await schedule.create_group("Links Test Group")
     assert group_vo.task_list_id is not None
-    group_id = int(group_vo.task_list_id)
+    group_id = group_vo.task_list_id
 
     link_dto = ScheduleTaskLinkDTO(
         app_name="Note",
@@ -187,7 +187,7 @@ async def test_task_links_and_sort_fields_persistence(
     )
     assert create_vo.success is True
     assert create_vo.task_id is not None
-    task_id = int(create_vo.task_id)
+    task_id = create_vo.task_id
 
     task_detail = await schedule.get_task(task_id)
     assert task_detail.success is True
@@ -204,7 +204,7 @@ async def test_task_notebook_links_encoding_and_decoding(
     schedule = ScheduleClient(authenticated_client)
     group_vo = await schedule.create_group("Notebook Links Group")
     assert group_vo.task_list_id is not None
-    group_id = int(group_vo.task_list_id)
+    group_id = group_vo.task_list_id
 
     # Construct explicit Supernote notebook link using ScheduleTaskLinkDTO
     link_dto = ScheduleTaskLinkDTO(
@@ -226,7 +226,7 @@ async def test_task_notebook_links_encoding_and_decoding(
     )
     assert create_vo.success is True
     assert create_vo.task_id is not None
-    task_id = int(create_vo.task_id)
+    task_id = create_vo.task_id
 
     # Verify GET task returns exact links string and decodes using ScheduleTaskLinkDTO.from_b64
     task_detail = await schedule.get_task(task_id)
@@ -253,13 +253,13 @@ async def test_schedule_group_and_task_routes(
     # Create Group
     group_vo = await schedule.create_group("Group Alpha")
     assert group_vo.task_list_id is not None
-    group_id = int(group_vo.task_list_id)
+    group_id = group_vo.task_list_id
 
     # Get Group Details
     group_detail = await schedule.get_group(group_id)
     assert group_detail.success is True
     assert group_detail.title == "Group Alpha"
-    assert str(group_detail.task_list_id) == str(group_id)
+    assert group_detail.task_list_id == group_id
 
     # Update Group Title
     up_res = await schedule.update_group(group_id, "Group Alpha Updated")
@@ -270,7 +270,7 @@ async def test_schedule_group_and_task_routes(
     # Create Task & Get Task
     task_vo = await schedule.create_task(group_id, "Task Beta", detail="Beta detail")
     assert task_vo.task_id is not None
-    task_id = int(task_vo.task_id)
+    task_id = task_vo.task_id
 
     task_detail = await schedule.get_task(task_id)
     assert task_detail.success is True
@@ -316,28 +316,28 @@ async def test_batch_update_task_list_transactional_rollback(
 
     group_vo = await schedule.create_group("Batch Test Group")
     assert group_vo.task_list_id is not None
-    group_id = int(group_vo.task_list_id)
+    group_id = group_vo.task_list_id
 
     task1_vo = await schedule.create_task(group_id, "Task 1", detail="Detail 1")
     task2_vo = await schedule.create_task(group_id, "Task 2", detail="Detail 2")
     assert task1_vo.task_id is not None
     assert task2_vo.task_id is not None
 
-    task1_id = int(task1_vo.task_id)
-    task2_id = int(task2_vo.task_id)
+    task1_id = task1_vo.task_id
+    task2_id = task2_vo.task_id
 
     # Batch update where Task 1 is valid, but Task 2 exceeds MAX_TITLE_LENGTH
     invalid_title = "A" * 300
     batch_payload = {
-        "taskListId": str(group_id),
+        "taskListId": group_id,
         "updateScheduleTaskList": [
             {
-                "taskId": str(task1_id),
+                "taskId": task1_id,
                 "title": "Task 1 Updated",
                 "lastModified": 1000,
             },
             {
-                "taskId": str(task2_id),
+                "taskId": task2_id,
                 "title": invalid_title,
                 "lastModified": 1000,
             },
@@ -368,8 +368,8 @@ async def test_list_tasks_filtering_by_group_id(
     group_b_vo = await schedule.create_group("Group B")
     assert group_a_vo.task_list_id is not None
     assert group_b_vo.task_list_id is not None
-    group_a_id = int(group_a_vo.task_list_id)
-    group_b_id = int(group_b_vo.task_list_id)
+    group_a_id = group_a_vo.task_list_id
+    group_b_id = group_b_vo.task_list_id
 
     task_a_vo = await schedule.create_task(group_a_id, "Task in Group A")
     task_b_vo = await schedule.create_task(group_b_id, "Task in Group B")
@@ -404,7 +404,7 @@ async def test_delete_group_cascades_contained_tasks(
 
     group_vo = await schedule.create_group("Cascade Route Group")
     assert group_vo.task_list_id is not None
-    group_id = int(group_vo.task_list_id)
+    group_id = group_vo.task_list_id
 
     task1_vo = await schedule.create_task(group_id, "Subtask 1")
     task2_vo = await schedule.create_task(group_id, "Subtask 2")
@@ -426,7 +426,7 @@ async def test_batch_update_task_list_sort_fields(
     schedule = ScheduleClient(authenticated_client)
     group_vo = await schedule.create_group("Sort Batch Group")
     assert group_vo.task_list_id is not None
-    group_id = int(group_vo.task_list_id)
+    group_id = group_vo.task_list_id
 
     task1_vo = await schedule.create_task(group_id, "Task 101")
     task2_vo = await schedule.create_task(group_id, "Task 102")
@@ -485,7 +485,7 @@ async def test_create_task_with_client_generated_id_and_server_fallback(
     schedule = ScheduleClient(authenticated_client)
     group_vo = await schedule.create_group("ID Test Group")
     assert group_vo.task_list_id is not None
-    group_id = int(group_vo.task_list_id)
+    group_id = group_vo.task_list_id
 
     # Client-provided taskId (offline Supernote device sync)
     client_custom_id = "9876543210"
@@ -498,9 +498,9 @@ async def test_create_task_with_client_generated_id_and_server_fallback(
     assert create_vo.task_id == client_custom_id
 
     # Verify task is stored under the exact client-generated taskId in DB
-    task_vo = await schedule.get_task(int(client_custom_id))
+    task_vo = await schedule.get_task(client_custom_id)
     assert task_vo.success is True
-    assert str(task_vo.task_id) == client_custom_id
+    assert task_vo.task_id == client_custom_id
     assert task_vo.title == "Offline Created Task"
 
     # Server-generated taskId fallback (when taskId omitted)
@@ -510,7 +510,7 @@ async def test_create_task_with_client_generated_id_and_server_fallback(
     assert server_task_id is not None
     assert server_task_id != client_custom_id
 
-    server_task = await schedule.get_task(int(server_task_id))
+    server_task = await schedule.get_task(server_task_id)
     assert server_task.success is True
     assert server_task.title == "Web UI Created Task"
 
@@ -522,7 +522,7 @@ async def test_schedule_delta_sync_flow(authenticated_client: Client) -> None:
     schedule = ScheduleClient(authenticated_client)
     group_vo = await schedule.create_group("Delta Sync Group")
     assert group_vo.task_list_id is not None
-    group_id = int(group_vo.task_list_id)
+    group_id = group_vo.task_list_id
 
     # Create initial tasks
     t1_vo = await schedule.create_task(group_id, "Task 1 Initial")
@@ -542,7 +542,8 @@ async def test_schedule_delta_sync_flow(authenticated_client: Client) -> None:
     await asyncio.sleep(0.02)
 
     # Update 1 task, add 1 task
-    await schedule.update_task(int(t1_vo.task_id), title="Task 1 Updated")
+    assert t1_vo.task_id is not None
+    await schedule.update_task(t1_vo.task_id, title="Task 1 Updated")
     t3_vo = await schedule.create_task(group_id, "Task 3 New")
     assert t3_vo.task_id is not None
 
@@ -609,7 +610,7 @@ async def test_ical_feed_content_and_filtering(
     # Populate data via ScheduleClient
     group_vo = await schedule.create_group("Sprint Tasks")
     assert group_vo.task_list_id is not None
-    group_id = int(group_vo.task_list_id)
+    group_id = str(group_vo.task_list_id)
 
     task1 = await schedule.create_task(
         group_id,
@@ -634,3 +635,37 @@ async def test_ical_feed_content_and_filtering(
 
     # Cleanup
     await schedule.delete_group(group_id)
+
+
+async def test_schedule_string_uuid_support(authenticated_client: Client) -> None:
+    """Verify schedule routes handle string UUIDs sent by Partner App and Android clients."""
+    schedule = ScheduleClient(authenticated_client)
+
+    string_group_id = "dcf35927c2c7279e3d204f592af6e9ed"
+    string_task_id = "a1b2c3d4e5f678901234567890abcdef"
+
+    # Create task with string UUIDs
+    resp = await schedule.create_task(
+        group_id=string_group_id,
+        title="Partner App Sync Task",
+        task_id=string_task_id,
+    )
+    assert resp.success is True
+    assert resp.task_id == string_task_id
+
+    # Retrieve all tasks and verify string UUID is preserved verbatim
+    all_tasks_vo = await schedule.get_tasks_all(group_id=string_group_id)
+    assert all_tasks_vo.success is True
+    matching_task = next(
+        (t for t in all_tasks_vo.schedule_task if t.task_id == string_task_id), None
+    )
+    assert matching_task is not None
+    assert matching_task.task_list_id == string_group_id
+
+    # Get single task
+    task_vo = await schedule.get_task(string_task_id)
+    assert task_vo.success is True
+    assert task_vo.task_id == string_task_id
+
+    # Delete task
+    await schedule.delete_task(string_task_id)

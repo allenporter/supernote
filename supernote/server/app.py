@@ -166,6 +166,19 @@ async def trace_middleware(
 
 
 @web.middleware
+async def socketio_compat_middleware(
+    request: web.Request,
+    handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
+) -> web.StreamResponse:
+    """Rewrite Socket.IO requests query parameters from EIO=3 (Engine.IO v3) to EIO=4 for protocol compatibility."""
+    if request.path.startswith("/socket.io/") and request.query.get("EIO") == "3":
+        new_query = dict(request.query)
+        new_query["EIO"] = "4"
+        request = request.clone(rel_url=request.rel_url.with_query(new_query))
+    return await handler(request)
+
+
+@web.middleware
 async def metrics_middleware(
     request: web.Request,
     handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
@@ -435,6 +448,7 @@ def create_app(config: ServerConfig) -> web.Application:
             await aiohttp_remotes.setup(app, aiohttp_remotes.XForwardedRelaxed())
 
         # Register trace and auth middlewares after proxy setup to avoid clone errors
+        app.middlewares.append(socketio_compat_middleware)
         if config.metrics_enabled:
             app.middlewares.append(metrics_middleware)
         app.middlewares.append(trace_middleware)

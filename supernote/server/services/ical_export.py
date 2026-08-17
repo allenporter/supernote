@@ -29,7 +29,7 @@ def map_importance_to_priority(importance: str | None) -> int | None:
     """Map Supernote task importance to RFC 5545 priority (1-9)."""
     if not importance:
         return None
-    imp_lower = str(importance).lower()
+    imp_lower = importance.lower()
     if imp_lower in ("high", "1"):
         return 1
     if imp_lower in ("normal", "medium", "5"):
@@ -66,7 +66,7 @@ def task_to_vtodo(
     group_title: str | None = None,
 ) -> Todo:
     """Convert a Supernote schedule task object to an ical.todo.Todo object."""
-    task_id = str(task.task_id) if task.task_id is not None else "unknown"
+    task_id = getattr(task, "id", None) or getattr(task, "task_id", None) or "unknown"
     uid = f"supernote-task-{task_id}@supernote"
 
     # Status mapping
@@ -135,12 +135,15 @@ class ICalExportService:
     async def export_calendar(
         self,
         user_id: int,
-        task_list_id: int | None = None,
+        task_list_id: str | None = None,
     ) -> str:
         """Export user tasks to an RFC 5545 compliant iCalendar (.ics) string."""
-        # 1. Fetch group titles map
+        # 1. Fetch group titles map (indexed by both DO.id and DO.task_list_id)
         groups = await self.schedule_service.list_groups(user_id)
-        groups_map = {g.task_list_id: g.title for g in groups}
+        groups_map: dict[str | int, str] = {}
+        for g in groups:
+            groups_map[g.id] = g.title
+            groups_map[g.task_list_id] = g.title
 
         # 2. Fetch tasks for user
         tasks = await self.schedule_service.list_tasks(user_id, group_id=task_list_id)
@@ -149,7 +152,9 @@ class ICalExportService:
         calendar = Calendar()
         for task in tasks:
             group_title = (
-                groups_map.get(task.task_list_id) if task.task_list_id else None
+                groups_map.get(task.group_id) or groups_map.get(task.task_list_id)
+                if task.task_list_id
+                else None
             )
             todo = task_to_vtodo(task, group_title=group_title)
             calendar.todos.append(todo)

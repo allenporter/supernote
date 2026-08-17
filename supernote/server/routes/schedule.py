@@ -43,7 +43,7 @@ def _extract_task_updates(dto: UpdateScheduleTaskDTO) -> dict[str, Any]:
         val = getattr(dto, f.name)
         if val is not None:
             if f.name == "task_list_id":
-                updates["task_list_id"] = int(val)
+                updates["task_list_id"] = val
             elif f.name == "is_reminder_on":
                 updates["is_reminder_on"] = val == BooleanEnum.YES
             else:
@@ -65,9 +65,7 @@ async def create_group(request: web.Request) -> web.Response:
 
         group = await schedule_service.create_group(user_id, dto.title)
         return web.json_response(
-            AddScheduleTaskGroupVO(
-                success=True, task_list_id=str(group.task_list_id)
-            ).to_dict()
+            AddScheduleTaskGroupVO(success=True, task_list_id=group.id).to_dict()
         )
     except SupernoteError as err:
         return err.to_response()
@@ -89,10 +87,9 @@ async def update_group(request: web.Request) -> web.Response:
         schedule_service: ScheduleService = request.app["schedule_service"]
         user_id = await request.app["user_service"].get_user_id(user)
 
-        group = await schedule_service.update_group(
-            user_id, int(dto.task_list_id), dto.title
-        )
-        if not group:
+        if not await schedule_service.update_group(
+            user_id, dto.task_list_id, dto.title
+        ):
             raise SupernoteError("Not found", status_code=404)
         return web.json_response(BaseResponse(success=True).to_dict())
     except SupernoteError as err:
@@ -106,17 +103,14 @@ async def update_group(request: web.Request) -> web.Response:
 @routes.delete("/api/file/schedule/group/{taskListId}")
 async def delete_group(request: web.Request) -> web.Response:
     try:
-        group_id_str = request.match_info.get("taskListId")
-        if not group_id_str:
+        if not (group_id := request.match_info.get("taskListId")):
             raise SupernoteError("Missing taskListId", status_code=400)
 
-        group_id = int(group_id_str)
         user = request["user"]
         schedule_service: ScheduleService = request.app["schedule_service"]
         user_id = await request.app["user_service"].get_user_id(user)
 
-        success = await schedule_service.delete_group(user_id, group_id)
-        if not success:
+        if not await schedule_service.delete_group(user_id, group_id):
             raise SupernoteError("Not found", status_code=404)
 
         return web.json_response(BaseResponse(success=True).to_dict())
@@ -129,22 +123,20 @@ async def delete_group(request: web.Request) -> web.Response:
 @routes.get("/api/file/schedule/group/{taskListId}")
 async def get_group(request: web.Request) -> web.Response:
     try:
-        group_id_str = request.match_info.get("taskListId")
-        if not group_id_str:
+        if not (group_id := request.match_info.get("taskListId")):
             raise SupernoteError("Missing taskListId", status_code=400)
 
         user = request["user"]
         schedule_service: ScheduleService = request.app["schedule_service"]
         user_id = await request.app["user_service"].get_user_id(user)
 
-        group = await schedule_service.get_group(user_id, int(group_id_str))
-        if not group:
+        if not (group := await schedule_service.get_group(user_id, group_id)):
             raise SupernoteError("Not found", status_code=404)
 
         return web.json_response(
             GetScheduleTaskGroupVO(
                 success=True,
-                task_list_id=str(group.task_list_id),
+                task_list_id=group.id,
                 user_id=group.user_id,
                 title=group.title,
                 create_time=group.create_time,
@@ -161,12 +153,14 @@ async def clear_group(request: web.Request) -> web.Response:
     try:
         data = await request.json()
         dto = ClearScheduleTaskGroupDTO.from_dict(data)
+        if not dto.task_list_id:
+            raise SupernoteError("Missing taskListId", status_code=400)
 
         user = request["user"]
         schedule_service: ScheduleService = request.app["schedule_service"]
         user_id = await request.app["user_service"].get_user_id(user)
 
-        await schedule_service.clear_group_tasks(user_id, int(dto.task_list_id))
+        await schedule_service.clear_group_tasks(user_id, dto.task_list_id)
         return web.json_response(BaseResponse(success=True).to_dict())
     except SupernoteError as err:
         return err.to_response()
@@ -185,7 +179,7 @@ async def list_groups(request: web.Request) -> web.Response:
 
         items = [
             ScheduleTaskGroupItem(
-                task_list_id=str(g.task_list_id),
+                task_list_id=g.id,
                 user_id=g.user_id,
                 title=g.title,
                 last_modified=g.create_time,
@@ -213,7 +207,7 @@ async def create_task(request: web.Request) -> web.Response:
         if not dto.title:
             raise SupernoteError("Title is required", status_code=400)
 
-        group_id = int(dto.task_list_id) if dto.task_list_id else 0
+        group_id = dto.task_list_id or "0"
 
         user = request["user"]
         schedule_service: ScheduleService = request.app["schedule_service"]
@@ -239,11 +233,10 @@ async def create_task(request: web.Request) -> web.Response:
             sort_time=dto.sort_time,
             planer_sort_time=dto.planer_sort_time,
             all_sort_time=dto.all_sort_time,
-            task_id=int(dto.task_id) if dto.task_id else None,
+            task_id=dto.task_id,
         )
-        task_id_resp = str(task.task_id)
         return web.json_response(
-            AddScheduleTaskVO(success=True, task_id=task_id_resp).to_dict()
+            AddScheduleTaskVO(success=True, task_id=task.id).to_dict()
         )
     except SupernoteError as err:
         return err.to_response()
@@ -261,20 +254,20 @@ async def update_task(request: web.Request) -> web.Response:
         if not dto.task_id:
             raise SupernoteError("Missing taskId", status_code=400)
 
-        task_id = int(dto.task_id)
         user = request["user"]
         schedule_service: ScheduleService = request.app["schedule_service"]
         user_id = await request.app["user_service"].get_user_id(user)
 
         updates = _extract_task_updates(dto)
-        updated_task = await schedule_service.update_task(user_id, task_id, **updates)
-        if not updated_task:
+        if not (
+            updated_task := await schedule_service.update_task(
+                user_id, dto.task_id, **updates
+            )
+        ):
             raise SupernoteError("Not found", status_code=404)
 
         return web.json_response(
-            UpdateScheduleTaskVO(
-                success=True, task_id=str(updated_task.task_id)
-            ).to_dict()
+            UpdateScheduleTaskVO(success=True, task_id=updated_task.id).to_dict()
         )
     except SupernoteError as err:
         return err.to_response()
@@ -296,7 +289,7 @@ async def batch_update_task_list(request: web.Request) -> web.Response:
         for item in dto.update_schedule_task_list:
             if item.task_id:
                 item_updates = _extract_task_updates(item)
-                item_updates["task_id"] = int(item.task_id)
+                item_updates["task_id"] = item.task_id
                 updates_list.append(item_updates)
 
         await schedule_service.batch_update_tasks(user_id, updates_list)
@@ -312,17 +305,14 @@ async def batch_update_task_list(request: web.Request) -> web.Response:
 @routes.delete("/api/file/schedule/task/{taskId}")
 async def delete_task(request: web.Request) -> web.Response:
     try:
-        task_id_str = request.match_info.get("taskId")
-        if not task_id_str:
+        if not (task_id := request.match_info.get("taskId")):
             raise SupernoteError("Missing taskId", status_code=400)
 
-        task_id = int(task_id_str)
         user = request["user"]
         schedule_service: ScheduleService = request.app["schedule_service"]
         user_id = await request.app["user_service"].get_user_id(user)
 
-        success = await schedule_service.delete_task(user_id, task_id)
-        if not success:
+        if not await schedule_service.delete_task(user_id, task_id):
             raise SupernoteError("Not found", status_code=404)
 
         return web.json_response(BaseResponse(success=True).to_dict())
@@ -335,23 +325,21 @@ async def delete_task(request: web.Request) -> web.Response:
 @routes.get("/api/file/schedule/task/{taskId}")
 async def get_task(request: web.Request) -> web.Response:
     try:
-        task_id_str = request.match_info.get("taskId")
-        if not task_id_str:
+        if not (task_id := request.match_info.get("taskId")):
             raise SupernoteError("Missing taskId", status_code=400)
 
         user = request["user"]
         schedule_service: ScheduleService = request.app["schedule_service"]
         user_id = await request.app["user_service"].get_user_id(user)
 
-        task = await schedule_service.get_task(user_id, int(task_id_str))
-        if not task:
+        if not (task := await schedule_service.get_task(user_id, task_id)):
             raise SupernoteError("Not found", status_code=404)
 
         return web.json_response(
             ScheduleTaskVO(
                 success=True,
-                task_id=str(task.task_id),
-                task_list_id=str(task.task_list_id),
+                task_id=task.id,
+                task_list_id=task.group_id,
                 title=task.title,
                 detail=task.detail,
                 status=task.status,
@@ -387,7 +375,7 @@ async def list_tasks(request: web.Request) -> web.Response:
         except Exception:
             data = {}
         dto = ScheduleTaskDTO.from_dict(data)
-        group_id = int(dto.task_list_id) if dto.task_list_id else None
+        group_id = dto.task_list_id
 
         user = request["user"]
         schedule_service: ScheduleService = request.app["schedule_service"]
@@ -404,8 +392,8 @@ async def list_tasks(request: web.Request) -> web.Response:
 
         tasks_vos = [
             ScheduleTaskInfo(
-                task_id=str(t.task_id),
-                task_list_id=str(t.task_list_id),
+                task_id=t.id,
+                task_list_id=t.group_id,
                 title=t.title,
                 detail=t.detail,
                 status=t.status,
@@ -471,12 +459,7 @@ async def get_schedule_feed_ics(request: web.Request) -> web.Response:
     user_service = request.app["user_service"]
     user_id = await user_service.get_user_id(user_email)
 
-    task_list_id_str = request.query.get("taskListId")
-    task_list_id = (
-        int(task_list_id_str)
-        if task_list_id_str and task_list_id_str.isdigit()
-        else None
-    )
+    task_list_id = request.query.get("taskListId")
 
     schedule_service: ScheduleService = request.app["schedule_service"]
     ical_export_service = ICalExportService(

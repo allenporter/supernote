@@ -38,16 +38,16 @@ class ScheduleClient:
             "/api/file/schedule/group", AddScheduleTaskGroupVO, json=dto.to_dict()
         )
 
-    async def get_group(self, group_id: int) -> GetScheduleTaskGroupVO:
+    async def get_group(self, group_id: str) -> GetScheduleTaskGroupVO:
         """Get a schedule group by ID."""
         return await self._client.get_json(
             f"/api/file/schedule/group/{group_id}", GetScheduleTaskGroupVO
         )
 
-    async def update_group(self, group_id: int, title: str) -> BaseResponse:
+    async def update_group(self, group_id: str, title: str) -> BaseResponse:
         """Update a schedule group."""
         dto = UpdateScheduleTaskGroupDTO(
-            task_list_id=str(group_id),
+            task_list_id=group_id,
             title=title,
             last_modified=int(time.time() * 1000),
         )
@@ -55,10 +55,10 @@ class ScheduleClient:
             "/api/file/schedule/group", BaseResponse, json=dto.to_dict()
         )
 
-    async def clear_group(self, group_id: int) -> BaseResponse:
+    async def clear_group(self, group_id: str) -> BaseResponse:
         """Clear all tasks within a schedule group."""
         dto = ClearScheduleTaskGroupDTO(
-            task_list_id=str(group_id), last_modified=int(time.time() * 1000)
+            task_list_id=group_id, last_modified=int(time.time() * 1000)
         )
         return await self._client.post_json(
             "/api/file/schedule/group/clear", BaseResponse, json=dto.to_dict()
@@ -87,13 +87,13 @@ class ScheduleClient:
             if not page_token:
                 break
 
-    async def delete_group(self, group_id: int) -> None:
+    async def delete_group(self, group_id: str) -> None:
         """Delete a schedule group."""
         await self._client.request("delete", f"/api/file/schedule/group/{group_id}")
 
     async def create_task(
         self,
-        group_id: int,
+        group_id: str,
         title: str,
         detail: str | None = None,
         status: str | None = None,
@@ -111,7 +111,7 @@ class ScheduleClient:
         """Create a new schedule task."""
         dto = AddScheduleTaskDTO(
             task_id=task_id,
-            task_list_id=str(group_id),
+            task_list_id=group_id,
             title=title,
             detail=detail,
             status=status,
@@ -137,13 +137,13 @@ class ScheduleClient:
 
     async def get_tasks_all(
         self,
-        group_id: int | str | None = None,
+        group_id: str | None = None,
         next_sync_token: int | None = None,
         page_token: str | None = None,
     ) -> ScheduleTaskAllVO:
         """Fetch tasks response object including nextSyncToken and scheduleTask items."""
         dto = ScheduleTaskDTO(
-            task_list_id=str(group_id) if group_id is not None else None,
+            task_list_id=group_id,
             next_sync_token=next_sync_token,
             next_page_tokens=page_token,
         )
@@ -153,7 +153,7 @@ class ScheduleClient:
 
     async def list_tasks(
         self,
-        group_id: int | None = None,
+        group_id: str | None = None,
         since: int | None = None,
     ) -> AsyncIterator[ScheduleTaskInfo]:
         """List all schedule tasks, automatically iterating through all pages.
@@ -181,7 +181,7 @@ class ScheduleClient:
 
     async def update_task(
         self,
-        task_id: int,
+        task_id: str,
         title: str,
         detail: str | None = None,
         status: str | None = None,
@@ -189,7 +189,7 @@ class ScheduleClient:
         due_time: int | None = None,
         recurrence: str | None = None,
         is_reminder_on: bool | None = None,
-        task_list_id: int | None = None,
+        task_list_id: str | None = None,
     ) -> UpdateScheduleTaskVO:
         """Update a task using DTO."""
         is_reminder_on_value: BooleanEnum | None = None
@@ -197,7 +197,7 @@ class ScheduleClient:
             is_reminder_on_value = BooleanEnum.of(is_reminder_on)
 
         dto = UpdateScheduleTaskDTO(
-            task_id=str(task_id),
+            task_id=task_id,
             title=title,
             detail=detail,
             status=status,
@@ -205,18 +205,18 @@ class ScheduleClient:
             due_time=due_time,
             recurrence=recurrence,
             is_reminder_on=is_reminder_on_value,
-            task_list_id=str(task_list_id) if task_list_id else None,
+            task_list_id=task_list_id,
             last_modified=int(time.time() * 1000),
         )
         return await self._client.put_json(
             "/api/file/schedule/task", UpdateScheduleTaskVO, json=dto.to_dict()
         )
 
-    async def delete_task(self, task_id: int) -> None:
+    async def delete_task(self, task_id: str) -> None:
         """Delete a schedule task."""
         await self._client.request("delete", f"/api/file/schedule/task/{task_id}")
 
-    async def get_ical_feed(self, group_id: int | str | None = None) -> str:
+    async def get_ical_feed(self, group_id: str | None = None) -> str:
         """Get the iCalendar (.ics) feed for the user's tasks.
 
         Args:
@@ -227,7 +227,7 @@ class ScheduleClient:
         """
         params: dict[str, str] = {}
         if group_id is not None:
-            params["taskListId"] = str(group_id)
+            params["taskListId"] = group_id
 
         resp = await self._client.request(
             "get", "/api/schedule/feed.ics", params=params
