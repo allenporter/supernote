@@ -7,7 +7,7 @@ pre-commit==4.6.2
 pytest-cov==7.1.0
 pytest==9.1.1
 ruff==0.16.4
-syrupy==5.5.3
+syrupy==6.0.0
 
 
 aiohttp==3.14.3
