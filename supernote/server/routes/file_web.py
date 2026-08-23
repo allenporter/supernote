@@ -2,7 +2,7 @@ import logging
 import urllib.parse
 import uuid
 from pathlib import Path
-from typing import TypeVar
+from typing import Protocol, TypeVar
 
 from aiohttp import web
 
@@ -47,14 +47,22 @@ from supernote.server.services.file import (
     FileEntity,
     FileService,
     FolderDetail,
-    RecycleEntity,
 )
 from supernote.server.utils.url_signer import get_request_base_url
 
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
 
-_T = TypeVar("_T", bound=(FileEntity | RecycleEntity))
+
+class _SortableItem(Protocol):
+    name: str
+    size: int
+
+    @property
+    def sort_time(self) -> int: ...
+
+
+_T = TypeVar("_T", bound=_SortableItem)
 
 
 def _sort_and_page(
