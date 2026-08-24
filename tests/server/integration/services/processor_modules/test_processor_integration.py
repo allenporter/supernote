@@ -26,6 +26,7 @@ from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 from supernote.server.utils.paths import (
     get_page_png_path,
+    get_summary_group_id,
     get_summary_id,
     get_transcript_id,
 )
@@ -171,8 +172,28 @@ async def test_full_processing_pipeline_with_real_file(
             png_path = get_page_png_path(file_id, page.page_id)
             assert await blob_storage.exists(CACHE_BUCKET, png_path)
 
-        # 5. Verify Summary existence via API
+        # 5. Verify Summary and SummaryGroup existence via API
         summary_client = SummaryClient(authenticated_client)
+
+        group_uuid = get_summary_group_id(storage_key)
+        transcript_uuid = get_transcript_id(storage_key)
+        summary_uuid = get_summary_id(storage_key)
+
+        # Query groups
+        group_response = await summary_client.query_groups()
+        assert group_response.success
+        group = next(
+            (
+                g
+                for g in group_response.summary_do_list
+                if g.unique_identifier == group_uuid
+            ),
+            None,
+        )
+        assert group is not None, (
+            f"Group {group_uuid} not found in {group_response.summary_do_list}"
+        )
+        assert group.name == "real.note"
 
         # Query all summaries
         query_response = await summary_client.query_summaries()
@@ -181,9 +202,6 @@ async def test_full_processing_pipeline_with_real_file(
         assert len(summaries) >= 2  # At least transcript and AI summary
 
         # Find our specific summaries by unique identifier
-        transcript_uuid = get_transcript_id(storage_key)
-        summary_uuid = get_summary_id(storage_key)
-
         transcript = next(
             (s for s in summaries if s.unique_identifier == transcript_uuid), None
         )
@@ -197,6 +215,10 @@ async def test_full_processing_pipeline_with_real_file(
         assert ai_summary is not None, (
             f"AI Summary {summary_uuid} not found in {summaries}"
         )
+
+        # Check parent group linkage
+        assert transcript.parent_unique_identifier == group_uuid
+        assert ai_summary.parent_unique_identifier == group_uuid
 
         # Check transcript content
         assert transcript.content is not None

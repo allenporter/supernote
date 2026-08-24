@@ -183,12 +183,18 @@ class SummaryService:
             if not summary_do:
                 raise SummaryNotFound(f"Summary with ID {dto.id} not found")
 
+            if dto.parent_unique_identifier is not None:
+                summary_do.parent_unique_identifier = dto.parent_unique_identifier
             if dto.content is not None:
                 summary_do.content = dto.content
                 if dto.md5_hash is None:
                     summary_do.md5_hash = hashlib.md5(
                         dto.content.encode("utf-8")
                     ).hexdigest()
+            if dto.source_path is not None:
+                summary_do.source_path = dto.source_path
+            if dto.data_source is not None:
+                summary_do.data_source = dto.data_source
             if dto.tags is not None:
                 summary_do.tags = dto.tags
             if dto.metadata is not None:

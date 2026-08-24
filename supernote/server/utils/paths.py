@@ -17,6 +17,11 @@ def get_summary_id(file_basis: str) -> str:
     return f"{file_basis}-summary"
 
 
+def get_summary_group_id(file_basis: str) -> str:
+    """Generate a unique identifier for a summary group."""
+    return f"{file_basis}-group"
+
+
 def get_transcript_id(file_basis: str) -> str:
     """Generate a unique identifier for an OCR transcript."""
     return f"{file_basis}-transcript"

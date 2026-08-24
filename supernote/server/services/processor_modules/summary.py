@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
@@ -10,7 +11,9 @@ from sqlalchemy import select
 from supernote.models.summary import (
     METADATA_SEGMENTS,
     AddSummaryDTO,
+    AddSummaryGroupDTO,
     UpdateSummaryDTO,
+    UpdateSummaryGroupDTO,
 )
 from supernote.server.config import ServerConfig
 from supernote.server.db.models.file import UserFileDO
@@ -22,7 +25,11 @@ from supernote.server.services.gemini import GeminiService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.services.summary import SummaryService
 from supernote.server.utils.note_content import format_page_metadata
-from supernote.server.utils.paths import get_summary_id, get_transcript_id
+from supernote.server.utils.paths import (
+    get_summary_group_id,
+    get_summary_id,
+    get_transcript_id,
+)
 from supernote.server.utils.prompt_loader import PROMPT_LOADER, PromptId
 
 logger = logging.getLogger(__name__)
@@ -137,6 +144,9 @@ class SummaryModule(ProcessorModule):
 
             # 2. Key Generation
             file_basis = file_do.storage_key or str(file_do.id)
+            group_uuid = get_summary_group_id(file_basis)
+            group_name = Path(file_do.file_name).name
+            group_md5 = hashlib.md5(group_name.encode("utf-8")).hexdigest()
             summary_uuid = get_summary_id(file_basis)
             transcript_uuid = get_transcript_id(file_basis)
 
@@ -169,7 +179,17 @@ class SummaryModule(ProcessorModule):
 
         full_text = "\n\n".join(text_parts)
 
-        # 4. Generate Transcript Summary (Preserve existing functionality)
+        # 4. Upsert Summary Group for the notebook
+        await self._upsert_group(
+            user_email,
+            AddSummaryGroupDTO(
+                unique_identifier=group_uuid,
+                name=group_name,
+                md5_hash=group_md5,
+            ),
+        )
+
+        # 5. Generate Transcript Summary (Preserve existing functionality)
         # Store the raw aggregated text as a 'transcript' summary type first
         # This is a good baseline to have.
         await self._upsert_summary(
@@ -177,13 +197,14 @@ class SummaryModule(ProcessorModule):
             AddSummaryDTO(
                 file_id=file_id,
                 unique_identifier=transcript_uuid,
+                parent_unique_identifier=group_uuid,
                 content=full_text,
                 data_source="OCR",
                 source_path=file_do.file_name,
             ),
         )
 
-        # 5. Generate AI Summary using Gemini
+        # 6. Generate AI Summary using Gemini
         # Determine prompt based on filename/type
         custom_type = Path(file_do.file_name).stem.lower()
 
@@ -270,12 +291,36 @@ class SummaryModule(ProcessorModule):
             AddSummaryDTO(
                 file_id=file_id,
                 unique_identifier=summary_uuid,
+                parent_unique_identifier=group_uuid,
                 content=ai_summary,
                 data_source="GEMINI",
                 source_path=file_do.file_name,
                 metadata=metadata_str,
             ),
         )
+
+    async def _upsert_group(self, user_email: str, dto: AddSummaryGroupDTO) -> None:
+        """Helper to either add or update a summary group based on its unique identifier."""
+        if not dto.unique_identifier:
+            logger.error("Cannot upsert summary group without a unique identifier")
+            return
+
+        existing = await self.summary_service.get_summary_by_uuid(
+            user_email, dto.unique_identifier
+        )
+        if existing and existing.id is not None:
+            await self.summary_service.update_group(
+                user_email,
+                UpdateSummaryGroupDTO(
+                    id=existing.id,
+                    unique_identifier=dto.unique_identifier,
+                    name=dto.name,
+                    md5_hash=dto.md5_hash,
+                    description=dto.description,
+                ),
+            )
+        else:
+            await self.summary_service.add_group(user_email, dto)
 
     async def _upsert_summary(self, user_email: str, dto: AddSummaryDTO) -> None:
         """Helper to either add or update a summary based on its unique identifier."""
@@ -291,6 +336,7 @@ class SummaryModule(ProcessorModule):
                 user_email,
                 UpdateSummaryDTO(
                     id=existing.id,
+                    parent_unique_identifier=dto.parent_unique_identifier,
                     content=dto.content,
                     data_source=dto.data_source,
                     source_path=dto.source_path,

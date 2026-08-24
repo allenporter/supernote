@@ -4,10 +4,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy import select
 
+from supernote.models.base import BooleanEnum
 from supernote.models.summary import (
     METADATA_SEGMENTS,
     AddSummaryDTO,
+    AddSummaryGroupDTO,
     SummaryItem,
+    UpdateSummaryGroupDTO,
 )
 from supernote.server.config import ServerConfig
 from supernote.server.db.models.file import UserFileDO
@@ -17,7 +20,11 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.summary import SummaryModule
 from supernote.server.services.summary import SummaryService
-from supernote.server.utils.paths import get_summary_id, get_transcript_id
+from supernote.server.utils.paths import (
+    get_summary_group_id,
+    get_summary_id,
+    get_transcript_id,
+)
 from supernote.server.utils.prompt_loader import PromptId
 
 
@@ -27,6 +34,8 @@ def mock_summary_service() -> MagicMock:
     service.get_summary_by_uuid = AsyncMock(return_value=None)
     service.add_summary = AsyncMock()
     service.update_summary = AsyncMock()
+    service.add_group = AsyncMock()
+    service.update_group = AsyncMock()
     return service
 
 
@@ -132,22 +141,32 @@ async def test_summary_success(
         assert "Page 2 text" in kwargs["contents"]
         assert "Generate" in kwargs["contents"]
 
-    # 1. Transcript Upsert
+    # 1. Group Upsert
+    group_call = mock_summary_service.add_group.call_args_list[0]
+    assert group_call.args[0] == user_email
+    dto_group = group_call.args[1]
+    assert isinstance(dto_group, AddSummaryGroupDTO)
+    assert dto_group.unique_identifier == get_summary_group_id(storage_key)
+    assert dto_group.name == "real.note"
+
+    # 2. Transcript Upsert
     transcript_call = mock_summary_service.add_summary.call_args_list[0]
     assert transcript_call.args[0] == user_email
     dto = transcript_call.args[1]
     assert isinstance(dto, AddSummaryDTO)
     assert dto.unique_identifier == get_transcript_id(storage_key)
+    assert dto.parent_unique_identifier == get_summary_group_id(storage_key)
     assert dto.content is not None
     assert "Page 1 text" in dto.content
     assert "Page 2 text" in dto.content
     assert dto.data_source == "OCR"
 
-    # 2. AI Summary Upsert
+    # 3. AI Summary Upsert
     ai_call = mock_summary_service.add_summary.call_args_list[1]
     assert ai_call.args[0] == user_email
     dto_ai = ai_call.args[1]
     assert dto_ai.unique_identifier == get_summary_id(storage_key)
+    assert dto_ai.parent_unique_identifier == get_summary_group_id(storage_key)
     assert "## 2023-10-27" in dto_ai.content
     assert "AI Summary Output" in dto_ai.content
     assert dto_ai.data_source == "GEMINI"
@@ -157,7 +176,7 @@ async def test_summary_success(
     meta = json.loads(dto_ai.metadata)
     assert meta[METADATA_SEGMENTS][0]["page_refs"] == [1, 2]
 
-    # 3. Check Task Status
+    # 4. Check Task Status
     async with session_manager.session() as session:
         task = (
             (
@@ -225,19 +244,39 @@ async def test_summary_idempotency_update(
     )
     mock_gemini_service.generate_content.return_value = mock_response
 
-    # Mock Existing Summary
+    # Mock Existing Group & Summary
+    existing_group = SummaryItem(
+        id=10,
+        unique_identifier=get_summary_group_id(storage_key),
+        name="update.note",
+        is_summary_group=BooleanEnum.YES,
+    )
     existing_summary = SummaryItem(id=11, unique_identifier=get_summary_id(storage_key))
-    # 1st call (transcript): return None -> calls add_summary
-    # 2nd call (ai summary): return existing -> calls update_summary
-    mock_summary_service.get_summary_by_uuid.side_effect = [None, existing_summary]
+    # 1st call (group): return existing -> calls update_group
+    # 2nd call (transcript): return None -> calls add_summary
+    # 3rd call (ai summary): return existing -> calls update_summary
+    mock_summary_service.get_summary_by_uuid.side_effect = [
+        existing_group,
+        None,
+        existing_summary,
+    ]
 
     # Run module
     await summary_module.run(file_id, session_manager)
+
+    # Group should be updated
+    mock_summary_service.update_group.assert_called_once()
+    update_group_dto = mock_summary_service.update_group.call_args.args[1]
+    assert isinstance(update_group_dto, UpdateSummaryGroupDTO)
+    assert update_group_dto.id == 10
+    assert update_group_dto.unique_identifier == get_summary_group_id(storage_key)
+    assert update_group_dto.name == "update.note"
 
     # Transcript should be added
     mock_summary_service.add_summary.assert_called_once()
     transcript_dto = mock_summary_service.add_summary.call_args.args[1]
     assert transcript_dto.unique_identifier == get_transcript_id(storage_key)
+    assert transcript_dto.parent_unique_identifier == get_summary_group_id(storage_key)
 
     # AI Summary should be updated
     mock_summary_service.update_summary.assert_called_once()
@@ -248,6 +287,7 @@ async def test_summary_idempotency_update(
     update_dto = update_call.args[1]
 
     assert update_dto.id == existing_summary.id
+    assert update_dto.parent_unique_identifier == get_summary_group_id(storage_key)
     assert "## 2023-10-28 (Pages 3, 4)" in update_dto.content
     assert "New AI Summary" in update_dto.content
 
@@ -300,9 +340,16 @@ async def test_summary_transcript_with_dates(
     # Run full module lifecycle
     await summary_module.run(file_id, session_manager)
 
-    # Verify Transcript contains date and metadata
+    # Verify Group was created
+    mock_summary_service.add_group.assert_called_once()
+    group_dto = mock_summary_service.add_group.call_args.args[1]
+    assert group_dto.unique_identifier == get_summary_group_id(storage_key)
+    assert group_dto.name == "dates.note"
+
+    # Verify Transcript contains date and metadata and parent_unique_identifier
     transcript_call = mock_summary_service.add_summary.call_args_list[0]
     dto = transcript_call.args[1]
+    assert dto.parent_unique_identifier == get_summary_group_id(storage_key)
     assert "--- Page 1 ---" in dto.content
     assert "Page ID: P20231027120000abc" in dto.content
     assert "Page Date (Inferred): 2023-10-27" in dto.content
