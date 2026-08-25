@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 import logging
 import time
@@ -20,7 +18,7 @@ class GeminiService:
     def __init__(self, api_key: str | None, max_concurrency: int = 5) -> None:
         self.api_key = api_key
         self.max_concurrency = max_concurrency
-        self._client: genai.Client | None = None
+        self._client: "genai.Client | None" = None
         self._semaphore: asyncio.Semaphore | None = None
         if self.api_key:
             # Deferred: google-genai is a heavy import (pulls in ~300
@@ -46,8 +44,8 @@ class GeminiService:
         self,
         model: str,
         contents: Any,
-        config: types.GenerateContentConfigOrDict | None = None,
-    ) -> types.GenerateContentResponse:
+        config: "types.GenerateContentConfigOrDict | None" = None,
+    ) -> "types.GenerateContentResponse":
         """Asynchronously generate content using the Gemini API."""
         if self._client is None:
             raise ValueError("Gemini API key not configured")
@@ -77,8 +75,8 @@ class GeminiService:
         self,
         model: str,
         contents: Any,
-        config: types.EmbedContentConfigOrDict | None = None,
-    ) -> types.EmbedContentResponse:
+        config: "types.EmbedContentConfigOrDict | None" = None,
+    ) -> "types.EmbedContentResponse":
         """Asynchronously generate embeddings using the Gemini API."""
         if self._client is None:
             raise ValueError("Gemini API key not configured")
