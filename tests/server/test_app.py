@@ -4,10 +4,40 @@ These tests verify that the server correctly handles X-Forwarded-* headers
 when deployed behind a reverse proxy, with different proxy modes.
 """
 
+import subprocess
+import sys
+
 import pytest
 from aiohttp.test_utils import TestClient
 
 from supernote.models.file_device import FileUploadApplyLocalDTO
+
+
+def test_import_does_not_load_google_genai() -> None:
+    """Importing the server bootstrap module should not eagerly import
+    `google-genai` (see issue #106).
+
+    `google-genai` is only needed once a Gemini API key is configured. Run
+    in a subprocess so the check isn't polluted by other tests in this
+    session having already imported the module.
+    """
+    check = (
+        "import sys; import supernote.server.app; "
+        "loaded = sorted("
+        "m for m in sys.modules "
+        "if m == 'google.genai' or m.startswith('google.genai.')"
+        "); "
+        "print(','.join(loaded))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", check],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == "", (
+        f"google-genai modules unexpectedly loaded: {result.stdout.strip()}"
+    )
 
 
 # Test for default proxy mode (disabled)
