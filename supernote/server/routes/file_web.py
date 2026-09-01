@@ -15,6 +15,8 @@ from supernote.models.file_web import (
     CapacityVO,
     EntriesVO,
     FileDeleteDTO,
+    FileDownloadDTO,
+    FileDownloadUrlVO,
     FileLabelSearchDTO,
     FileLabelSearchVO,
     FileListQueryDTO,
@@ -48,7 +50,7 @@ from supernote.server.services.file import (
     FileService,
     FolderDetail,
 )
-from supernote.server.utils.url_signer import get_request_base_url
+from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
@@ -248,6 +250,46 @@ async def handle_path_query(request: web.Request) -> web.Response:
                 id_path = "/".join(id_parts[1:])
 
         response = FilePathQueryVO(path=path, id_path=id_path)
+        return web.json_response(response.to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
+
+
+@routes.post("/api/file/download/url")
+async def handle_download_url(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/file/download/url
+    # Purpose: Get a signed download URL for a stored file (Web).
+    # Response: FileDownloadUrlVO
+
+    req_data = FileDownloadDTO.from_dict(await request.json())
+    user_email = request["user"]
+    file_service: FileService = request.app["file_service"]
+    url_signer: UrlSigner = request.app["url_signer"]
+
+    try:
+        info = await file_service.get_file_info_by_id(user_email, req_data.id)
+        if not info:
+            return web.json_response(
+                BaseResponse(success=False, error_msg="File not found").to_dict(),
+                status=404,
+            )
+        if info.is_folder:
+            return web.json_response(
+                BaseResponse(success=False, error_msg="Not a file").to_dict(),
+                status=400,
+            )
+
+        # The same signed handle the device is given. The bytes are served by
+        # /api/oss/download, which streams and honours Range, so the browser
+        # fetches the file directly instead of this process buffering a
+        # notebook to hand it over.
+        path_to_sign = f"/api/oss/download?path={info.id}"
+        signed_path = await url_signer.sign(path_to_sign, user=user_email)
+        download_url = f"{get_request_base_url(request)}{signed_path}"
+
+        response = FileDownloadUrlVO(url=download_url, md5=info.md5 or "")
         return web.json_response(response.to_dict())
     except SupernoteError as err:
         return err.to_response()
