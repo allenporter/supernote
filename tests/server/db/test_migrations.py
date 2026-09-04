@@ -75,7 +75,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "d1e2f3a4b5c6"
+        assert version == "68964804740d"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))

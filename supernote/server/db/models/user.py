@@ -11,6 +11,8 @@ class UserDO(Base):
     """User database model."""
 
     __tablename__ = "users"
+    # User ids should not be recycled
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     email: Mapped[str] = mapped_column(String, unique=True, index=True)
