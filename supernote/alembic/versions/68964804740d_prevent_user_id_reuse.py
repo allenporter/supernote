@@ -51,8 +51,7 @@ def upgrade() -> None:
     current = int(
         bind.execute(
             text(
-                "SELECT COALESCE(MAX(seq), 0) FROM sqlite_sequence "
-                "WHERE name = 'users'"
+                "SELECT COALESCE(MAX(seq), 0) FROM sqlite_sequence WHERE name = 'users'"
             )
         ).scalar_one()
     )
