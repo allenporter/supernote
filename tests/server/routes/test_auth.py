@@ -15,6 +15,7 @@ from supernote.server.config import ServerConfig
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import SupernoteError
 from supernote.server.services.coordination import CoordinationService
+from supernote.server.services.user import UserService
 from supernote.server.utils.rate_limit import LIMIT_LOGIN_IP_MAX, LIMIT_PW_RESET_MAX
 
 
@@ -164,10 +165,73 @@ async def test_user_register_errors_and_success(
     )
 
 
+class SimpleTokenAuth(AbstractAuth):
+    def __init__(self, token: str):
+        self.token = token
+
+    async def async_get_access_token(self) -> str:
+        return self.token
+
+
 async def test_user_unregister(
+    client: TestClient,
+    web_client: WebClient,
     admin_client: AdminClient,
+    login_client: LoginClient,
+    user_service: UserService,
 ) -> None:
+    """Test user unregister lifecycle and verify user ID / file isolation."""
+    user1_id = await user_service.get_user_id("test@example.com")
+
+    # User 1 creates a folder and uploads a file
+    folder = await web_client.create_folder(parent_id=0, name="User1PrivateFolder")
+    folder_id = int(folder.id)
+    await web_client.upload_file(
+        parent_id=folder_id, name="secret.txt", content=b"user1 secret"
+    )
+
+    res1 = await web_client.list_query(directory_id=folder_id)
+    assert len(res1.user_file_vo_list) == 1
+    assert res1.user_file_vo_list[0].file_name == "secret.txt"
+
+    # User 1 deletes their account
     await admin_client.unregister()
+
+    # User 2 registers
+    base_url = str(client.make_url(""))
+    unauth_client = Client(client.session, host=base_url)
+    unauth_admin = AdminClient(unauth_client)
+
+    pwd = "password123"
+    pwd_md5 = hashlib.md5(pwd.encode("utf-8")).hexdigest()
+    await unauth_admin.register("user2@example.com", pwd_md5, "User 2")
+
+    user2_id = await user_service.get_user_id("user2@example.com")
+
+    # User 2 logs in
+    user2_token = await login_client.login("user2@example.com", pwd)
+    user2_authed_client = Client(
+        client.session, auth=SimpleTokenAuth(user2_token), host=base_url
+    )
+    user2_web = WebClient(user2_authed_client)
+
+    root_listing = await user2_web.list_query(directory_id=0)
+    folder_names = [f.file_name for f in root_listing.user_file_vo_list]
+
+    res2 = await user2_web.list_query(directory_id=folder_id)
+    user2_files = [f.file_name for f in res2.user_file_vo_list]
+
+    # TODO: https://github.com/allenporter/supernote/pull/240
+    # Currently, SQLite recycles the ROWID of deleted users, and unregister() does not
+    # cascade delete user files from f_user_file. This causes a newly registered user
+    # to obtain the deleted user's ID and inherit access to their files.
+    # When PR #240 adds autoincrementing IDs, update these assertions to:
+    # assert user1_id != user2_id
+    # assert "User1PrivateFolder" not in folder_names
+    # assert len(user2_files) == 0
+    assert user1_id == user2_id
+    assert "User1PrivateFolder" in folder_names
+    assert user2_files == ["secret.txt"]
 
 
 async def test_update_password_and_email(
