@@ -8,8 +8,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     SUPERNOTE_HOST=0.0.0.0 \
     SUPERNOTE_PORT=8080
 
-# Create a non-root user
-RUN groupadd -g 1000 -r supernote && useradd -u 1000 -r -g supernote supernote
+# Create a non-root user with a home directory
+RUN groupadd -g 1000 -r supernote && useradd -u 1000 -r -g supernote -m -d /home/supernote supernote
 
 # Install system dependencies for SQL Lite CLI
 RUN apt-get update && \
