@@ -174,3 +174,17 @@ async def test_upload_url_with_port_in_forwarded_host(
     assert full_upload_url.startswith("http://localhost:9888"), (
         f"Got URL: {full_upload_url}"
     )
+
+
+async def test_static_frontend_sha256_fallback(client: TestClient) -> None:
+    """Verify that index.html and client.js include fallback for SHA-256 in insecure contexts."""
+    resp = await client.get("/")
+    assert resp.status == 200
+    html = await resp.text()
+    assert "js-sha256" in html
+
+    resp = await client.get("/static/js/api/client.js")
+    assert resp.status == 200
+    js = await resp.text()
+    assert "crypto.subtle" in js
+    assert "window.sha256" in js

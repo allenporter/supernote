@@ -72,12 +72,18 @@ export async function login(email, password) {
     return loginData;
 }
 
-// Helper: SHA-256 using Web Crypto API
+// Helper: SHA-256 using Web Crypto API with fallback for non-secure contexts (e.g. plain HTTP on LAN IP)
 async function sha256(message) {
-    const msgBuffer = new TextEncoder().encode(message);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    if (window.crypto && window.crypto.subtle) {
+        const msgBuffer = new TextEncoder().encode(message);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    if (typeof window.sha256 === 'function') {
+        return window.sha256(message);
+    }
+    throw new Error("SHA-256 is not available. Please access via HTTPS/localhost or ensure js-sha256 is loaded.");
 }
 
 /**
