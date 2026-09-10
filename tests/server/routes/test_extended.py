@@ -52,14 +52,17 @@ def patch_gemini_service(mock_gemini_service: Generator[None]) -> None:
 async def test_extended_search(
     extended_client: ExtendedClient,
     session_manager: DatabaseSessionManager,
+    test_user_id: int,
 ) -> None:
     # 1. Seed some search data
-    user_id = 1
     file_id = 101
     async with session_manager.session() as session:
         session.add(
             UserFileDO(
-                id=file_id, user_id=user_id, file_name="SearchTest.note", directory_id=0
+                id=file_id,
+                user_id=test_user_id,
+                file_name="SearchTest.note",
+                directory_id=0,
             )
         )
         session.add(
@@ -84,14 +87,17 @@ async def test_extended_search_with_mock(
     extended_client: ExtendedClient,
     session_manager: DatabaseSessionManager,
     client: Any,  # TestClient from aiohttp
+    test_user_id: int,
 ) -> None:
     # 1. Seed data
-    user_id = 1
     file_id = 101
     async with session_manager.session() as session:
         session.add(
             UserFileDO(
-                id=file_id, user_id=user_id, file_name="Fox.note", directory_id=0
+                id=file_id,
+                user_id=test_user_id,
+                file_name="Fox.note",
+                directory_id=0,
             )
         )
         session.add(
