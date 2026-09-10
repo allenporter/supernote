@@ -189,6 +189,15 @@ async def create_test_user(
         assert result.is_active
 
 
+@pytest.fixture
+async def test_user_id(
+    create_test_user: None,
+    user_service: UserService,
+) -> int:
+    """Return the database ID assigned to the default test user."""
+    return await user_service.get_user_id(TEST_USERNAME)
+
+
 @pytest.fixture(name="auth_headers")
 async def auth_headers_fixture(
     server_config: ServerConfig,

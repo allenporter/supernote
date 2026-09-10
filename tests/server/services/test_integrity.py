@@ -92,15 +92,13 @@ async def test_integrity_check(
 
 async def test_integrity_orphans(
     integrity_service: IntegrityService,
-    create_test_user: None,
+    test_user_id: int,
     db_session: AsyncSession,
 ) -> None:
     """Verify integrity check detects orphaned files."""
-    user_id = 1
-
-    # Create the user manually
+    # Create an orphaned VFS entry for the default test user
     file_do = UserFileDO(
-        user_id=user_id,
+        user_id=test_user_id,
         file_name="orphan.txt",
         is_folder="N",
         directory_id=9999,  # Invalid
@@ -109,18 +107,17 @@ async def test_integrity_orphans(
     db_session.add(file_do)
     await db_session.commit()
 
-    report = await integrity_service.verify_user_storage(user_id)
+    report = await integrity_service.verify_user_storage(test_user_id)
     assert report.orphans == 1
 
 
 async def test_integrity_hash_mismatch(
     integrity_service: IntegrityService,
     blob_storage: LocalBlobStorage,
-    create_test_user: None,
+    test_user_id: int,
     db_session: AsyncSession,
 ) -> None:
     """Verify integrity check detects hash mismatch."""
-    user_id = 1
     content = b"content"
 
     # Create a new blob
@@ -130,7 +127,7 @@ async def test_integrity_hash_mismatch(
     # Create VFS entry with WRONG MD5
     bad_md5 = "00000000000000000000000000000000"
     file_do = UserFileDO(
-        user_id=user_id,
+        user_id=test_user_id,
         file_name="bad_hash.txt",
         is_folder="N",
         directory_id=0,
@@ -143,7 +140,7 @@ async def test_integrity_hash_mismatch(
     await db_session.commit()
 
     # Verify
-    report = await integrity_service.verify_user_storage(user_id)
+    report = await integrity_service.verify_user_storage(test_user_id)
     assert report.hash_mismatch == 1
     # 8 Default folders are OK
     assert report.ok == 8
@@ -154,11 +151,10 @@ async def test_integrity_hash_mismatch(
 async def test_integrity_basic(
     integrity_service: IntegrityService,
     blob_storage: LocalBlobStorage,
-    create_test_user: None,
+    test_user_id: int,
 ) -> None:
     """Verify basic integrity check with no issues."""
-    user_id = 1
-    report = await integrity_service.verify_user_storage(user_id)
+    report = await integrity_service.verify_user_storage(test_user_id)
 
     assert report.orphans == 0
     assert report.missing_blob == 0

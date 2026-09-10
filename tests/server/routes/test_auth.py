@@ -221,17 +221,9 @@ async def test_user_unregister(
     res2 = await user2_web.list_query(directory_id=folder_id)
     user2_files = [f.file_name for f in res2.user_file_vo_list]
 
-    # TODO: https://github.com/allenporter/supernote/pull/240
-    # Currently, SQLite recycles the ROWID of deleted users, and unregister() does not
-    # cascade delete user files from f_user_file. This causes a newly registered user
-    # to obtain the deleted user's ID and inherit access to their files.
-    # When PR #240 adds autoincrementing IDs, update these assertions to:
-    # assert user1_id != user2_id
-    # assert "User1PrivateFolder" not in folder_names
-    # assert len(user2_files) == 0
-    assert user1_id == user2_id
-    assert "User1PrivateFolder" in folder_names
-    assert user2_files == ["secret.txt"]
+    assert user1_id != user2_id
+    assert "User1PrivateFolder" not in folder_names
+    assert len(user2_files) == 0
 
 
 async def test_update_password_and_email(
