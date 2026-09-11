@@ -11,8 +11,9 @@ RUN groupadd -g 1000 -r supernote && useradd -u 1000 -r -m -g supernote supernot
 
 WORKDIR /app
 
-# Built from this fork's own source (striimusMiska/supernote) instead of the
-# PyPI release, so the local Apple Vision OCR / Ollama embedding modules are
+# Built from this fork's own source
+# (striimusMiska/supernote-private-cloud-apple-ocr) instead of the PyPI
+# release, so the local Apple Vision OCR / Ollama embedding modules are
 # included — see docker-compose.yml's build.context, which points this at
 # the repo root. Build from a pinned commit/tag checkout, not a moving
 # `main` branch, so the deployed image is reproducible.
