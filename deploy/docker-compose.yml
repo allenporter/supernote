@@ -11,17 +11,9 @@
 # funnel` (public internet) by mistake.
 services:
   supernote-server:
-    # Built from this fork's own source (repo root, one level up from
-    # deploy/) instead of PyPI, so the local OCR/embedding modules below are
-    # included. Pin the checkout to a specific commit/tag before building —
-    # don't build a moving `main` — see README "Deploy".
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
+    build: .
     container_name: supernote-server
     restart: unless-stopped
-    depends_on:
-      - ollama
     env_file:
       - .env
     environment:
@@ -30,16 +22,9 @@ services:
       SUPERNOTE_STORAGE_DIR: /data
       # Set in .env as the HTTPS Tailscale Serve URLs (:8443/:8444) — plain
       # http://<tailscale-ip> URLs fail server startup with "Issuer URL must
-      # be HTTPS" (confirmed on supernote[server]==0.20.0; unrelated to which
-      # source the image is built from).
+      # be HTTPS" on supernote[server]==0.20.0.
       SUPERNOTE_BASE_URL: ${SUPERNOTE_BASE_URL}
       SUPERNOTE_MCP_BASE_URL: ${SUPERNOTE_MCP_BASE_URL}
-      # Local OCR (Mac, issue #1) + local embeddings (this compose network's
-      # own ollama service) — replaces the Gemini OCR/embedding path. See
-      # README "OCR and semantic search architecture".
-      SUPERNOTE_APPLE_VISION_OCR_URL: ${APPLE_VISION_OCR_URL}
-      SUPERNOTE_OLLAMA_BASE_URL: http://ollama:11434
-      SUPERNOTE_OLLAMA_EMBEDDING_MODEL: bge-m3
     volumes:
       - ./storage:/data
       # Overlaid on top of the line above so config.yaml lives at the
@@ -52,13 +37,3 @@ services:
       # MCP server (8081) — same two audiences.
       - "127.0.0.1:8081:8081"
       - "${TAILSCALE_IP}:8081:8081"
-
-  ollama:
-    image: ollama/ollama
-    container_name: supernote-ollama
-    restart: unless-stopped
-    volumes:
-      - ./ollama-data:/root/.ollama
-    # No ports published — internal-only, reachable at http://ollama:11434
-    # via Docker's own DNS from supernote-server on this compose network.
-    # Same "don't bind wider than needed" posture as supernote-server above.
