@@ -1,0 +1,6 @@
+.venv/
+.vendor/
+bin/
+logs/
+__pycache__/
+*.pyc
