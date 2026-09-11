@@ -1,0 +1,7 @@
+# Lite mode: no gemini_api_key set, so OCR/summaries/semantic search are off.
+# Host, port, storage_dir, base_url, and the JWT secret are all supplied via
+# environment variables in docker-compose.yml / .env instead of here, so this
+# file only needs to hold settings that don't have an env var override.
+
+auth:
+  enable_registration: false

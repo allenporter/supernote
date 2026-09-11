@@ -1,0 +1,39 @@
+# Ports are bound to explicit IPs (loopback + this box's Tailscale address)
+# rather than 0.0.0.0. Docker inserts its own iptables rules ahead of ufw, so
+# a ufw "allow only from tailscale0" rule can silently not apply — binding the
+# published port to a specific IP avoids that trap entirely: the socket never
+# exists on the public interface in the first place.
+#
+# On top of that, the direct :8080/:8081 bindings are fronted by `tailscale
+# serve` on :8443/:8444 (HTTPS), because the server's MCP OAuth code rejects
+# a non-HTTPS issuer URL — see README "Deploy" step 2. `tailscale serve`
+# publishes tailnet-only by default; make sure nobody swaps in `tailscale
+# funnel` (public internet) by mistake.
+services:
+  supernote-server:
+    build: .
+    container_name: supernote-server
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      SUPERNOTE_HOST: 0.0.0.0
+      SUPERNOTE_PORT: 8080
+      SUPERNOTE_STORAGE_DIR: /data
+      # Set in .env as the HTTPS Tailscale Serve URLs (:8443/:8444) — plain
+      # http://<tailscale-ip> URLs fail server startup with "Issuer URL must
+      # be HTTPS" on supernote[server]==0.20.0.
+      SUPERNOTE_BASE_URL: ${SUPERNOTE_BASE_URL}
+      SUPERNOTE_MCP_BASE_URL: ${SUPERNOTE_MCP_BASE_URL}
+    volumes:
+      - ./storage:/data
+      # Overlaid on top of the line above so config.yaml lives at the
+      # SUPERNOTE_CONFIG_DIR the Dockerfile sets (/data/config).
+      - ./config-template:/data/config
+    ports:
+      # Web UI / sync API (8080) — [REDACTED-AGENT] on this box, plus Nomad + Mac over Tailscale.
+      - "127.0.0.1:8080:8080"
+      - "${TAILSCALE_IP}:8080:8080"
+      # MCP server (8081) — same two audiences.
+      - "127.0.0.1:8081:8081"
+      - "${TAILSCALE_IP}:8081:8081"
