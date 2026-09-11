@@ -1,7 +1,7 @@
 """add client_task_id and client_task_list_id columns to schedule tables
 
 Revision ID: d1e2f3a4b5c6
-Revises: b8e9c0d1e2f3
+Revises: c9a8b7c6d5e4
 Create Date: 2026-08-17 00:47:00.000000
 
 """
@@ -13,7 +13,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "d1e2f3a4b5c6"
-down_revision: Union[str, None] = "b8e9c0d1e2f3"
+down_revision: Union[str, None] = "c9a8b7c6d5e4"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
