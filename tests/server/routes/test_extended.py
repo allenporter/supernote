@@ -1,6 +1,6 @@
 from collections.abc import Generator
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 from aiohttp.test_utils import TestClient
@@ -24,29 +24,26 @@ def extended_client(authenticated_client: Client) -> ExtendedClient:
 
 
 @pytest.fixture
-def mock_gemini_service() -> Generator[None]:
-    """Fixture to mock Gemini service."""
-    # Mock Gemini Service to avoid network calls
-    mock_embedding_response = AsyncMock()
-    mock_embedding_response.embeddings = [AsyncMock(values=[1.0, 0.0, 0.0])]
-
+def mock_ollama_service() -> Generator[None]:
+    """Fixture to mock Ollama service used for query-time embeddings."""
+    # Mock Ollama Service to avoid network calls
     with (
         patch(
-            "supernote.server.services.gemini.GeminiService.is_configured",
+            "supernote.server.services.ollama.OllamaService.is_configured",
             return_value=True,
         ),
         patch(
-            "supernote.server.services.gemini.GeminiService.embed_content",
-            return_value=mock_embedding_response,
+            "supernote.server.services.ollama.OllamaService.embed",
+            return_value=[1.0, 0.0, 0.0],
         ),
     ):
         yield
 
 
 @pytest.fixture(autouse=True)
-def patch_gemini_service(mock_gemini_service: Generator[None]) -> None:
-    """Patch the Gemini service in the search service."""
-    # This is handled by the mock_gemini_service fixture
+def patch_ollama_service(mock_ollama_service: Generator[None]) -> None:
+    """Patch the Ollama service in the search service."""
+    # This is handled by the mock_ollama_service fixture
 
 
 async def test_extended_search(
@@ -112,7 +109,7 @@ async def test_extended_search_with_mock(
         await session.commit()
 
     # 2. Call API
-    # The Gemini service is mocked globally by mock_gemini_service
+    # The Ollama service is mocked globally by mock_ollama_service
     resp = await extended_client.search(query="fox")
 
     assert resp.success

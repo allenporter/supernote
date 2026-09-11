@@ -380,7 +380,7 @@ def create_app(config: ServerConfig) -> web.Application:
     summary_service = SummaryService(user_service, session_manager)
     app["summary_service"] = summary_service
 
-    search_service = SearchService(session_manager, gemini_service, config)
+    search_service = SearchService(session_manager, ollama_service, config)
     app["search_service"] = search_service
 
     app["sync_locks"] = {}  # user -> (equipment_no, expiry_time)
