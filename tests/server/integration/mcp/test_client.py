@@ -141,6 +141,7 @@ async def test_mcp_search_notebook_chunks(
         assert "results" in res_data
         assert len(res_data["results"]) > 0
         assert res_data["results"][0].get("textPreview") == "This is a test note."
+        assert res_data["results"][0].get("fileId") == str(notebook_file_id)
 
 
 async def test_mcp_get_notebook_transcript(
@@ -155,7 +156,7 @@ async def test_mcp_get_notebook_transcript(
     async with mcp_session(mcp_url, headers) as session:
         transcript_result = await session.call_tool(
             "get_notebook_transcript",
-            arguments={"file_id": notebook_file_id},
+            arguments={"file_id": str(notebook_file_id)},
             meta={"token": token},
         )
         assert transcript_result.content

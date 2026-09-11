@@ -63,8 +63,13 @@ class TranscriptRequestDTO(DataClassJSONMixin):
     Used by: get_notebook_transcript (MCP)
     """
 
-    file_id: int = field(metadata=field_options(alias="fileId"))
-    """The unique ID of the notebook."""
+    file_id: str = field(metadata=field_options(alias="fileId"))
+    """The unique ID of the notebook, as a string.
+
+    File IDs are 63-bit integers, past the 2^53 safe-integer range most
+    JSON/JS-based clients use — sent as a JSON number they silently lose
+    precision on round-trip, so this is a string on the wire instead.
+    """
 
     start_index: int | None = field(
         metadata=field_options(alias="startIndex"), default=None
@@ -87,7 +92,8 @@ class SearchResultVO(DataClassJSONMixin):
     Used by: search_notebook_chunks (MCP)
     """
 
-    file_id: int = field(metadata=field_options(alias="fileId"))
+    file_id: str = field(metadata=field_options(alias="fileId"))
+    """The unique ID of the notebook, as a string — see TranscriptRequestDTO.file_id."""
     file_name: str = field(metadata=field_options(alias="fileName"))
     page_index: int = field(metadata=field_options(alias="pageIndex"))
     page_id: str = field(metadata=field_options(alias="pageId"))
