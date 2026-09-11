@@ -125,6 +125,54 @@ def test_configured_base_url_from_env(tmp_path: Path) -> None:
         assert config.base_url == "https://env.example.com"
 
 
+def test_server_config_webhooks_default_disabled(tmp_path: Path) -> None:
+    """Webhooks are disabled with no endpoints by default."""
+    config_dir = tmp_path / "config"
+    config = ServerConfig.load(config_dir)
+
+    assert config.webhooks.enabled is False
+    assert config.webhooks.endpoints == []
+
+
+def test_server_config_load_webhooks_from_file(tmp_path: Path) -> None:
+    """Webhook endpoints are parsed from the config file."""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    config_file = config_dir / "config.yaml"
+
+    data = {
+        "webhooks": {
+            "enabled": True,
+            "endpoints": [
+                {
+                    "url": "https://n8n.homelab.local/webhook/supernote",
+                    "secret": "hmac-secret-key",
+                    "events": ["note.sync_completed"],
+                }
+            ],
+        }
+    }
+    with open(config_file, "w") as f:
+        yaml.safe_dump(data, f)
+
+    config = ServerConfig.load(config_dir)
+
+    assert config.webhooks.enabled is True
+    assert len(config.webhooks.endpoints) == 1
+    endpoint = config.webhooks.endpoints[0]
+    assert endpoint.url == "https://n8n.homelab.local/webhook/supernote"
+    assert endpoint.secret == "hmac-secret-key"
+    assert endpoint.events == ["note.sync_completed"]
+
+
+def test_server_config_webhooks_enabled_env_var_override(tmp_path: Path) -> None:
+    """SUPERNOTE_WEBHOOKS_ENABLED overrides the config file value."""
+    config_dir = tmp_path / "config"
+    with patch.dict(os.environ, {"SUPERNOTE_WEBHOOKS_ENABLED": "true"}):
+        config = ServerConfig.load(config_dir)
+        assert config.webhooks.enabled is True
+
+
 def test_server_config_proxy_env_vars(tmp_path: Path) -> None:
     """Test that proxy configuration can be set via environment variables."""
     config_dir = tmp_path / "config"
