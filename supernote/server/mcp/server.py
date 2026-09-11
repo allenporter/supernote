@@ -135,7 +135,7 @@ async def search_notebook_chunks(
 
     vo_list = [
         SearchResultVO(
-            file_id=r.file_id,
+            file_id=str(r.file_id),
             file_name=r.file_name,
             page_index=r.page_index,
             page_id=r.page_id,
@@ -151,7 +151,7 @@ async def search_notebook_chunks(
 
 async def get_notebook_transcript(
     ctx: Context,
-    file_id: int,
+    file_id: str,
     start_index: int | None = None,
     end_index: int | None = None,
 ) -> dict[str, Any]:
@@ -159,7 +159,8 @@ async def get_notebook_transcript(
     Retrieve the full transcript or a page range for a notebook.
 
     Args:
-        file_id: The ID of the notebook.
+        file_id: The ID of the notebook, as a string (see
+            TranscriptRequestDTO.file_id for why this isn't a JSON number).
         start_index: 0-based start page index (inclusive).
         end_index: 0-based end page index (inclusive).
     """
@@ -176,9 +177,17 @@ async def get_notebook_transcript(
             ErrorCode.UNAUTHORIZED,
         ).to_dict()
 
+    try:
+        file_id_int = int(file_id)
+    except ValueError:
+        return create_error_response(
+            f"Invalid file_id: {file_id!r} is not a valid integer.",
+            ErrorCode.BAD_REQUEST,
+        ).to_dict()
+
     transcript = await search_service.get_transcript(
         user_id=user_id,
-        file_id=file_id,
+        file_id=file_id_int,
         start_index=start_index,
         end_index=end_index,
     )
