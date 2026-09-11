@@ -137,6 +137,12 @@ BaseConfig
     Env Var: `SUPERNOTE_GEMINI_MAX_CONCURRENCY`
     """
 
+    apple_vision_ocr_url: str | None = None
+    """Base URL of the visionocr-service microservice used for local OCR.
+
+    Env Var: `SUPERNOTE_APPLE_VISION_OCR_URL`
+    """
+
     ollama_base_url: str | None = None
     """Base URL of a self-hosted Ollama instance used for local embeddings.
 
@@ -341,6 +347,12 @@ BaseConfig
                 )
             except ValueError:
                 pass
+
+        if apple_vision_ocr_url := os.getenv("SUPERNOTE_APPLE_VISION_OCR_URL"):
+            config.apple_vision_ocr_url = apple_vision_ocr_url
+            logger.info(
+                f"Using SUPERNOTE_APPLE_VISION_OCR_URL: {config.apple_vision_ocr_url}"
+            )
 
         if ollama_base_url := os.getenv("SUPERNOTE_OLLAMA_BASE_URL"):
             config.ollama_base_url = ollama_base_url
