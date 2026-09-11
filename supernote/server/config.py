@@ -137,6 +137,18 @@ BaseConfig
     Env Var: `SUPERNOTE_GEMINI_MAX_CONCURRENCY`
     """
 
+    ollama_base_url: str | None = None
+    """Base URL of a self-hosted Ollama instance used for local embeddings.
+
+    Env Var: `SUPERNOTE_OLLAMA_BASE_URL`
+    """
+
+    ollama_embedding_model: str = "bge-m3"
+    """Ollama model to use for Embeddings.
+
+    Env Var: `SUPERNOTE_OLLAMA_EMBEDDING_MODEL`
+    """
+
     prompts_dir: str | None = None
     """Directory where custom Gemini prompts are located.
 
@@ -329,6 +341,16 @@ BaseConfig
                 )
             except ValueError:
                 pass
+
+        if ollama_base_url := os.getenv("SUPERNOTE_OLLAMA_BASE_URL"):
+            config.ollama_base_url = ollama_base_url
+            logger.info(f"Using SUPERNOTE_OLLAMA_BASE_URL: {config.ollama_base_url}")
+
+        if ollama_embedding_model := os.getenv("SUPERNOTE_OLLAMA_EMBEDDING_MODEL"):
+            config.ollama_embedding_model = ollama_embedding_model
+            logger.info(
+                f"Using SUPERNOTE_OLLAMA_EMBEDDING_MODEL: {config.ollama_embedding_model}"
+            )
 
         if prompts_dir := os.getenv("SUPERNOTE_PROMPTS_DIR"):
             config.prompts_dir = prompts_dir
