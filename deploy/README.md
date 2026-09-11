@@ -1,17 +1,17 @@
 # Supernote Private Cloud — deployment
 
 Self-hosted [Supernote Private Cloud](https://support.supernote.com/Whats-New/setting-up-your-own-supernote-private-cloud-beta)
-server, built from [striimusMiska/supernote](https://github.com/striimusMiska/supernote)
+server, built from [striimusMiska/supernote-private-cloud-apple-ocr](https://github.com/striimusMiska/supernote-private-cloud-apple-ocr)
 (a fork of [allenporter/supernote](https://github.com/allenporter/supernote)),
-deployed on the [REDACTED-HOST] box where the [REDACTED-AGENT] agent lives, reachable only over
-the existing Tailscale tunnel. OCR transcription and semantic search run
+meant to run on a small always-on box (VPS, NAS, home server) reachable only
+over a Tailscale tunnel. OCR transcription and semantic search run
 locally — no Gemini key needed for those, see "OCR and semantic search
 architecture" below. AI summaries are a separate, still-optional feature;
 add `SUPERNOTE_GEMINI_API_KEY` later to turn those on.
 
 ## Deploy
 
-1. On the [REDACTED-HOST] box, find its Tailscale address:
+1. On the server, find its Tailscale address:
    ```bash
    tailscale ip -4
    ```
@@ -20,8 +20,8 @@ add `SUPERNOTE_GEMINI_API_KEY` later to turn those on.
    from this checkout (build context is the repo root, one level above
    `deploy/`):
    ```bash
-   git clone https://github.com/striimusMiska/supernote.git
-   cd supernote
+   git clone https://github.com/striimusMiska/supernote-private-cloud-apple-ocr.git
+   cd supernote-private-cloud-apple-ocr
    git checkout <pinned-tag-or-commit>
    cd deploy
    ```
@@ -40,7 +40,7 @@ add `SUPERNOTE_GEMINI_API_KEY` later to turn those on.
      every restart, which silently logs out the Nomad's sync and any MCP
      OAuth session each time the container restarts.
    - `APPLE_VISION_OCR_URL` — the Mac's Tailscale IP + port 8090, where
-     `visionocr-service` (issue #1) listens.
+     `visionocr-service` listens.
    Configure Tailscale Serve before starting the container:
    ```bash
    tailscale serve --bg --https=8443 http://127.0.0.1:8080
@@ -83,7 +83,7 @@ add `SUPERNOTE_GEMINI_API_KEY` later to turn those on.
 
 ## Connect the Nomad
 
-The tablet isn't on the same LAN as the [REDACTED-HOST] box, so it needs to join the
+The tablet isn't on the same LAN as the server, so it needs to join the
 tailnet too:
 
 1. On the Nomad: **Settings → Security & Privacy → Sideloading** → enable.
@@ -105,8 +105,6 @@ The server exposes an MCP endpoint on port 8081 with two tools:
 and embeddings have run over synced pages — see "OCR and semantic search
 architecture" below.
 
-- **[REDACTED-AGENT]** (same box): `https://<node>.<tailnet>.ts.net:8444/mcp` with
-  `auth: oauth` in `~/.[REDACTED-AGENT]/config.yaml` / `[REDACTED-AGENT] mcp add --auth oauth`.
 - **Claude Desktop / Claude Code** (your Mac, over Tailscale):
   `https://<node>.<tailnet>.ts.net:8444/mcp`, either via the `mcp-proxy` wrapper (see
   the [upstream MCP docs](https://github.com/allenporter/supernote/blob/main/docs/mcp.md))
@@ -161,7 +159,7 @@ architecture" below.
 OCR transcription and semantic search no longer go through Gemini — both
 run locally instead:
 
-- **OCR** runs on [REDACTED-NAME]'s Mac via `visionocr-service` (issue #1), a small
+- **OCR** runs on a Mac on your network via `visionocr-service`, a small
   HTTP wrapper around Apple's Vision framework. The server calls it at
   `APPLE_VISION_OCR_URL` (the Mac's Tailscale IP, port 8090) to populate
   `text_content` for each synced page — this alone is what
@@ -194,7 +192,7 @@ run locally instead:
   from `supernote-server` over the compose network's internal DNS. Don't add
   a `ports:` entry to it.
 - Verify from your Mac with Tailscale disconnected that
-  `curl http://<[REDACTED-HOST]-public-ip>:8080` times out.
+  `curl http://<server-public-ip>:8080` times out.
 - The `tailscale serve` commands above publish tailnet-only by default —
   don't substitute `tailscale funnel`, which exposes to the public internet
   and would undo the whole point of this setup.

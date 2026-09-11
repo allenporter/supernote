@@ -1,8 +1,14 @@
-# Supernote Private Cloud & Knowledge Hub
+# Supernote Private Cloud with Apple OCR
 
-**A lightweight, self-hosted private cloud server and optional AI intelligence layer for your Ratta Supernote.**
+**A lightweight, self-hosted private cloud server and optional AI intelligence layer for your Ratta Supernote — with handwriting transcription and semantic search running entirely on your own hardware, no cloud AI key required.**
 
-This toolkit is a self-hosted, SQLite-based implementation of the **Supernote Private Cloud** protocol. It provides a simple and resource-efficient sync server with a minimal resource footprint (typically ~200MB idle memory, and 300–400MB to process large notebooks). It implements **100% of the community [Supernote OpenAPI Specification](api-spec/openapi.yaml)**, and can optionally be enhanced with an **AI-driven synthesis engine**—transforming your handwritten notes into structured, searchable knowledge using Google Gemini.
+This is a fork of [allenporter/supernote](https://github.com/allenporter/supernote), a self-hosted, SQLite-based implementation of the **Supernote Private Cloud** protocol. It provides a simple and resource-efficient sync server with a minimal resource footprint (typically ~200MB idle memory, and 300–400MB to process large notebooks). It implements **100% of the community [Supernote OpenAPI Specification](api-spec/openapi.yaml)**, and can optionally be enhanced with an **AI-driven synthesis engine**—transforming your handwritten notes into structured, searchable knowledge.
+
+This fork replaces the upstream project's Gemini-based OCR and embedding pipeline with a fully local stack:
+
+- **[Apple Vision](https://developer.apple.com/documentation/vision) OCR** (via [`visionocr-service`](visionocr-service/), a small HTTP wrapper run on a Mac) transcribes handwriting instead of Gemini Vision.
+- **[Ollama](https://ollama.com/)** (`bge-m3`) generates embeddings for semantic search instead of Gemini's embedding API.
+- Gemini remains available, opt-in, for AI-generated summaries only (`SUPERNOTE_GEMINI_API_KEY`) — see [Customizing AI Prompts](#customizing-ai-prompts) below.
 
 <p align="center">
   <img src="docs/static-assets/hero-overview.jpg" alt="Supernote Overview" width="800">
@@ -11,16 +17,17 @@ This toolkit is a self-hosted, SQLite-based implementation of the **Supernote Pr
 [![Documentation](https://img.shields.io/badge/docs-manual-blue.svg)](https://allenporter.github.io/supernote/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-## Why Supernote Private Cloud & Knowledge Hub?
+## Why Supernote Private Cloud with Apple OCR?
 
 This project is designed to be **fully compatible** with the official Supernote Private Cloud protocol, serving as a lightweight alternative that operates on a single SQLite database and runs comfortably on low-power NAS setups and home lab servers:
 
 - **⚡ Lightweight Sync**: Runs on a simple, efficient Python/Asyncio stack with SQLite. Consumes ~200MB of idle memory (recommending 300–400MB for notebook processing).
 - **📋 OpenAPI Spec Compliant**: Implements **100% of the community [Supernote OpenAPI specification](api-spec/openapi.yaml)**.
-- **🛡️ Private & Secure**: You own your database and files. Runs locally on your NAS or local server with no external data leakage.
+- **🛡️ Private & Secure**: You own your database and files. Runs locally on your NAS or local server with no external data leakage — OCR and embeddings run on your own hardware, not a third-party API.
 - **🖥️ Sleek Web UI**: Browse notes, manage tasks, and export iCalendar (`.ics`) task feeds for Home Assistant, Apple Calendar, Google Calendar, and Outlook.
-- **📜 Optional AI Synthesis**: If configured with a Gemini API key, it automatically transcribes handwriting and generates summaries (Daily, Weekly, Monthly).
-- **🔍 Optional Semantic Search**: Vectorizes content for concept-based search across all notebooks.
+- **✍️ Local OCR**: Handwriting transcription runs on-device via Apple's Vision framework ([`visionocr-service`](visionocr-service/)) — no API key, no per-page cost, no images leaving your network.
+- **🔍 Local Semantic Search**: Vectorizes content via a self-hosted Ollama instance for concept-based search across all notebooks.
+- **📜 Optional AI Summaries**: If configured with a Gemini API key, it can additionally generate summaries (Daily, Weekly, Monthly).
 - **🤖 Agent Ready (MCP)**: Securely connect your notes to AI agents (Claude, Gemini, ChatGPT) via the built-in [Model Context Protocol](https://modelcontextprotocol.io/) server.
 
 ## Synthesis & AI in Action
@@ -28,9 +35,9 @@ This project is designed to be **fully compatible** with the official Supernote 
 Beyond simple storage, Supernote provides an active processing pipeline to increase the utility of your notes:
 
 1.  **Sync**: Your device uploads `.note` files using the official Private Cloud protocol.
-2.  **Transcribe**: The server extract pages and use Gemini Vision to OCR your handwriting.
+2.  **Transcribe**: The server extracts pages and uses local Apple Vision OCR to transcribe your handwriting.
 3.  **Synthesize**: AI Analyzers review your journals to find tasks, themes, and summaries.
-4.  **Index**: Every word is vectorized, enabling semantic search across your entire library.
+4.  **Index**: Every word is embedded via a local Ollama model, enabling semantic search across your entire library.
 
 ### Web Interface
 
@@ -74,28 +81,28 @@ No API keys or external services required. Runs locally with SQLite.
       supernote
     ```
 
-#### Option B: AI & Knowledge Hub (With Gemini)
-Enables handwriting transcription, summarization, and semantic search. Requires a Google Gemini API Key.
+#### Option B: AI & Knowledge Hub (Local Apple Vision OCR + Ollama)
+Enables handwriting transcription and semantic search, running entirely on your own
+hardware — no cloud AI key required:
 
-*   **Using Python**:
-    ```bash
-    export SUPERNOTE_GEMINI_API_KEY="your-gemini-api-key"
-    pip install "supernote[all]"
-    supernote serve
-    ```
-*   **Using Docker**:
-    ```bash
-    # Build the docker image locally
-    docker build -t supernote .
+- **OCR**: point `SUPERNOTE_APPLE_VISION_OCR_URL` at a running
+  [`visionocr-service`](visionocr-service/) instance (a small HTTP wrapper around Apple's
+  Vision framework — install it on any Mac on your network).
+- **Embeddings / semantic search**: point `SUPERNOTE_OLLAMA_BASE_URL` at a running
+  [Ollama](https://ollama.com/) instance serving the `bge-m3` model (or set
+  `SUPERNOTE_OLLAMA_EMBEDDING_MODEL` to another embedding model of your choice).
 
-    # Run the container with your Gemini API key
-    docker run -d \
-      -p 8080:8080 \
-      -v $(pwd)/storage:/data \
-      -e SUPERNOTE_GEMINI_API_KEY="your-gemini-api-key" \
-      --name supernote-server \
-      supernote
-    ```
+```bash
+export SUPERNOTE_APPLE_VISION_OCR_URL="http://<mac-ip>:8090/ocr"
+export SUPERNOTE_OLLAMA_BASE_URL="http://<ollama-host>:11434"
+pip install "supernote[all]"
+supernote serve
+```
+
+See [`deploy/README.md`](deploy/README.md) for a full Docker Compose stack
+(`supernote-server` + `ollama`, plus `visionocr-service` running separately on a Mac),
+including Tailscale-based network isolation. AI-generated summaries are a separate,
+still-optional feature layered on top — set `SUPERNOTE_GEMINI_API_KEY` to enable those.
 
 ### 2. Bootstrap Your User
 
@@ -239,7 +246,9 @@ The notebook parser is a fork of the excellent [supernote-tool](https://github.c
 
 ## Customizing AI Prompts
 
-You can customize the prompts used for Gemini OCR (transcription) and Summarization by pointing the server to a custom prompts directory.
+If you enable Gemini (for OCR or Summarization), you can customize the prompts it's given
+by pointing the server to a custom prompts directory. Apple Vision OCR is a local, prompt-free
+recognizer and isn't affected by these templates.
 
 ### 1. Configuration
 Set the custom prompts directory using either:
@@ -295,20 +304,20 @@ This project is in support of the amazing [Ratta Supernote](https://supernote.co
 
 While the official Supernote Private Cloud by Ratta provides a production-grade managed sync experience, this toolkit offers a highly efficient self-hosted alternative with opt-in AI enhancement.
 
-| Capability | Official Private Cloud (Ratta) | Supernote Private Cloud (This Project) |
+| Capability | Official Private Cloud (Ratta) | Supernote Private Cloud with Apple OCR (This Project) |
 |------------|-------------------------------|-----------------------------|
 | **Core Sync** | ✅ Robust & Validated | ✅ Fully Compatible (100% OpenAPI compliant) |
 | **Memory Footprint**| ⚠️ High (~2 GB+ RAM required) | **⚡ Low (~300–400MB active)** |
-| **AI Analysis** | Basic OCR (Device-side) | **Optional: Gemini-powered Transcriptions & Synthesis** |
-| **Search** | Path/Filename | **Optional: Semantic Concept Search** |
+| **AI Analysis** | Basic OCR (Device-side) | **Optional: Local Apple Vision OCR + AI Synthesis** |
+| **Search** | Path/Filename | **Optional: Local Semantic Concept Search (Ollama)** |
 | **Stack** | Java / Spring Boot + Redis + MariaDB | Python / Asyncio + SQLite |
 | **Database** | Heavy MariaDB Instance | **Single SQLite File** |
 
 **This toolkit is a great fit if:**
 - You want a **lightweight, resource-friendly** private cloud that runs easily on a basic NAS or low-power server.
 - You want **100% compliance** with the local OpenAPI sync protocols.
-- You want **AI-generated summaries** and insights from your notebooks (optional).
-- You want to perform **semantic searches** across your entire handwriting library (optional).
+- You want **handwriting transcription and semantic search** that run entirely on your own hardware, with no cloud AI key or per-page cost (optional).
+- You want **AI-generated summaries** and insights from your notebooks on top of that (optional, via Gemini).
 - You want to integrate your notes into local scripts via a Python API or CLI.
 - You want to use the **Model Context Protocol (MCP)** to [chat with your notes](docs/mcp.md) using AI agents.
 

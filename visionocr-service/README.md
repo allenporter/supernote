@@ -3,12 +3,12 @@
 A small always-on HTTP wrapper around
 [bytefer/macos-vision-ocr](https://github.com/bytefer/macos-vision-ocr) (a
 Swift CLI using Apple's Vision framework), so the `supernote-server` fork
-running elsewhere (e.g. the [REDACTED-HOST] box) can get local, free OCR for note
+running elsewhere (e.g. a VPS or NAS) can get local, free OCR for note
 page images instead of calling Gemini. Runs as a `launchd` agent on this Mac,
 reachable over Tailscale.
 
-See `master-plan.md` (repo root) for how this fits into the bigger
-local-OCR/embeddings plan.
+See the root [README](../README.md) for how this fits into the bigger
+local-OCR/embeddings architecture.
 
 ## Prerequisites
 

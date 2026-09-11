@@ -46,7 +46,8 @@ services:
       # SUPERNOTE_CONFIG_DIR the Dockerfile sets (/data/config).
       - ./config-template:/data/config
     ports:
-      # Web UI / sync API (8080) — [REDACTED-AGENT] on this box, plus Nomad + Mac over Tailscale.
+      # Web UI / sync API (8080) — reachable from the Nomad + the Mac running
+      # visionocr-service, both over Tailscale.
       - "127.0.0.1:8080:8080"
       - "${TAILSCALE_IP}:8080:8080"
       # MCP server (8081) — same two audiences.
