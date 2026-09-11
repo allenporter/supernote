@@ -43,9 +43,10 @@ from .services.blob import LocalBlobStorage
 from .services.coordination import SqliteCoordinationService
 from .services.file import FileService
 from .services.gemini import GeminiService
+from .services.ollama import OllamaService
 from .services.processor import ProcessorService
-from .services.processor_modules.gemini_embedding import GeminiEmbeddingModule
 from .services.processor_modules.gemini_ocr import GeminiOcrModule
+from .services.processor_modules.ollama_embedding import OllamaEmbeddingModule
 from .services.processor_modules.page_hashing import PageHashingModule
 from .services.processor_modules.png_conversion import PngConversionModule
 from .services.processor_modules.summary import SummaryModule
@@ -361,6 +362,11 @@ def create_app(config: ServerConfig) -> web.Application:
     )
     app["gemini_service"] = gemini_service
 
+    ollama_service = OllamaService(
+        config.ollama_base_url, config.ollama_embedding_model
+    )
+    app["ollama_service"] = ollama_service
+
     if config.prompts_dir:
         PROMPT_LOADER.configure(Path(config.prompts_dir))
 
@@ -385,8 +391,8 @@ def create_app(config: ServerConfig) -> web.Application:
         ocr=GeminiOcrModule(
             file_service=file_service, config=config, gemini_service=gemini_service
         ),
-        embedding=GeminiEmbeddingModule(
-            file_service=file_service, config=config, gemini_service=gemini_service
+        embedding=OllamaEmbeddingModule(
+            file_service=file_service, config=config, ollama_service=ollama_service
         ),
         summary=SummaryModule(
             file_service=file_service,

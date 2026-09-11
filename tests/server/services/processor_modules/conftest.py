@@ -8,6 +8,7 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.services.gemini import GeminiService
+from supernote.server.services.ollama import OllamaService
 from supernote.server.services.user import UserService
 
 
@@ -48,5 +49,32 @@ def gemini_service(server_config_gemini: ServerConfig) -> GeminiService:
 @pytest.fixture
 def mock_gemini_service() -> MagicMock:
     service = MagicMock(spec=GeminiService)
+    service.is_configured = True
+    return service
+
+
+@pytest.fixture
+def server_config_ollama(tmp_path: Path) -> ServerConfig:
+    conf = ServerConfig(
+        auth=AuthConfig(secret_key="secret"),
+        storage_dir=str(tmp_path),
+        # db_url is a property, not an init arg. We mock session_manager anyway.
+    )
+    conf.ollama_base_url = "http://ollama:11434"
+    conf.ollama_embedding_model = "bge-m3"
+    return conf
+
+
+@pytest.fixture
+def ollama_service(server_config_ollama: ServerConfig) -> OllamaService:
+    return OllamaService(
+        base_url=server_config_ollama.ollama_base_url,
+        model=server_config_ollama.ollama_embedding_model,
+    )
+
+
+@pytest.fixture
+def mock_ollama_service() -> MagicMock:
+    service = MagicMock(spec=OllamaService)
     service.is_configured = True
     return service
