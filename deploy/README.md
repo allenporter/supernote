@@ -1,11 +1,13 @@
 # Supernote Private Cloud — deployment
 
 Self-hosted [Supernote Private Cloud](https://support.supernote.com/Whats-New/setting-up-your-own-supernote-private-cloud-beta)
-server, using [allenporter/supernote](https://github.com/allenporter/supernote),
+server, built from [striimusMiska/supernote](https://github.com/striimusMiska/supernote)
+(a fork of [allenporter/supernote](https://github.com/allenporter/supernote)),
 deployed on the [REDACTED-HOST] box where the [REDACTED-AGENT] agent lives, reachable only over
-the existing Tailscale tunnel. Lite mode for now — no Gemini key, so no OCR/
-summaries/semantic search yet, just sync + raw file access. Add
-`SUPERNOTE_GEMINI_API_KEY` later to turn those on.
+the existing Tailscale tunnel. OCR transcription and semantic search run
+locally — no Gemini key needed for those, see "OCR and semantic search
+architecture" below. AI summaries are a separate, still-optional feature;
+add `SUPERNOTE_GEMINI_API_KEY` later to turn those on.
 
 ## Deploy
 
@@ -13,7 +15,17 @@ summaries/semantic search yet, just sync + raw file access. Add
    ```bash
    tailscale ip -4
    ```
-2. Copy this directory to the box, then create `.env`:
+2. Clone the fork onto the box, at a pinned tag/commit — not a moving
+   `main` — since `docker compose build` here builds `supernote-server`
+   from this checkout (build context is the repo root, one level above
+   `deploy/`):
+   ```bash
+   git clone https://github.com/striimusMiska/supernote.git
+   cd supernote
+   git checkout <pinned-tag-or-commit>
+   cd deploy
+   ```
+   Then create `.env`:
    ```bash
    cp .env.example .env
    ```
@@ -27,6 +39,8 @@ summaries/semantic search yet, just sync + raw file access. Add
      never regenerate it. Without this, the server picks a random secret on
      every restart, which silently logs out the Nomad's sync and any MCP
      OAuth session each time the container restarts.
+   - `APPLE_VISION_OCR_URL` — the Mac's Tailscale IP + port 8090, where
+     `visionocr-service` (issue #1) listens.
    Configure Tailscale Serve before starting the container:
    ```bash
    tailscale serve --bg --https=8443 http://127.0.0.1:8080
@@ -37,6 +51,11 @@ summaries/semantic search yet, just sync + raw file access. Add
    ```bash
    docker compose up -d --build
    docker compose logs -f supernote-server   # confirm it's listening
+   ```
+   Then pull the embedding model into the new `ollama` service (one-time;
+   the named volume persists it across restarts):
+   ```bash
+   docker compose exec ollama ollama pull bge-m3
    ```
 4. Create your admin account:
    ```bash
@@ -82,9 +101,9 @@ tailnet too:
 ## Connect agents (MCP)
 
 The server exposes an MCP endpoint on port 8081 with two tools:
-`search_notebook_chunks` and `get_notebook_transcript`. In lite mode these
-have nothing to return yet (no OCR/embeddings) — wire them up now so it's
-ready the moment AI mode is turned on.
+`search_notebook_chunks` and `get_notebook_transcript`. Both work once OCR
+and embeddings have run over synced pages — see "OCR and semantic search
+architecture" below.
 
 - **[REDACTED-AGENT]** (same box): `https://<node>.<tailnet>.ts.net:8444/mcp` with
   `auth: oauth` in `~/.[REDACTED-AGENT]/config.yaml` / `[REDACTED-AGENT] mcp add --auth oauth`.
@@ -137,6 +156,32 @@ ready the moment AI mode is turned on.
   4. `curl` that `redirect_url` (or open it in a browser) — it hits Claude
      Code's local loopback listener directly and completes the login.
 
+## OCR and semantic search architecture
+
+OCR transcription and semantic search no longer go through Gemini — both
+run locally instead:
+
+- **OCR** runs on [REDACTED-NAME]'s Mac via `visionocr-service` (issue #1), a small
+  HTTP wrapper around Apple's Vision framework. The server calls it at
+  `APPLE_VISION_OCR_URL` (the Mac's Tailscale IP, port 8090) to populate
+  `text_content` for each synced page — this alone is what
+  `get_notebook_transcript` needs.
+- **Embeddings** run via the `ollama` service added to `docker-compose.yml`
+  (image `ollama/ollama`, `bge-m3` model), reachable only from
+  `supernote-server` at `http://ollama:11434` over the compose network's own
+  DNS — no port is published to the host or Tailscale. This populates the
+  `embedding` column that `search_notebook_chunks` does cosine similarity
+  over, and also embeds the query itself at search time.
+- This **replaces** the Gemini-based OCR/embedding path entirely. Gemini
+  (`SUPERNOTE_GEMINI_API_KEY`) is now only relevant if/when AI summaries
+  (`SummaryModule`) get turned on separately — see "Upgrading to AI mode
+  later" below.
+- Operational tradeoff: OCR only works while the Mac is awake and
+  `visionocr-service` is running. When it's not reachable, the OCR task for
+  that page fails and the server's existing stalled-task recovery retries
+  it automatically (every 5 min) — no manual intervention needed once the
+  Mac is reachable again.
+
 ## Security notes
 
 - Ports are bound to `127.0.0.1` and `${TAILSCALE_IP}` explicitly in
@@ -145,6 +190,9 @@ ready the moment AI mode is turned on.
   `0.0.0.0:8080:8080` and rely on a `ufw` rule instead: Docker inserts its own
   iptables rules ahead of ufw's, so a ufw allow/deny rule can silently fail to
   apply to a container's published port.
+- The `ollama` service publishes **no** ports at all — it's reachable only
+  from `supernote-server` over the compose network's internal DNS. Don't add
+  a `ports:` entry to it.
 - Verify from your Mac with Tailscale disconnected that
   `curl http://<[REDACTED-HOST]-public-ip>:8080` times out.
 - The `tailscale serve` commands above publish tailnet-only by default —
@@ -153,5 +201,7 @@ ready the moment AI mode is turned on.
 
 ## Upgrading to AI mode later
 
-Set `SUPERNOTE_GEMINI_API_KEY` in `.env`, then `docker compose up -d` to
-restart with it picked up. No other config changes needed.
+OCR/embeddings/search are already on by default (see above) — this section
+is now only about AI-generated summaries. Set `SUPERNOTE_GEMINI_API_KEY` in
+`.env`, then `docker compose up -d` to restart with it picked up. No other
+config changes needed.
