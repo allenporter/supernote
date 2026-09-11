@@ -39,13 +39,17 @@ from .routes import (
     system,
 )
 from .routes.decorators import public_route
+from .services.apple_vision_ocr import AppleVisionOcrService
 from .services.blob import LocalBlobStorage
 from .services.coordination import SqliteCoordinationService
 from .services.file import FileService
 from .services.gemini import GeminiService
 from .services.ollama import OllamaService
 from .services.processor import ProcessorService
-from .services.processor_modules.gemini_ocr import GeminiOcrModule
+from .services.processor_modules.apple_vision_ocr import AppleVisionOcrModule
+
+# Kept unregistered so it can be swapped back in without re-adding the import.
+from .services.processor_modules.gemini_ocr import GeminiOcrModule  # noqa: F401
 from .services.processor_modules.ollama_embedding import OllamaEmbeddingModule
 from .services.processor_modules.page_hashing import PageHashingModule
 from .services.processor_modules.png_conversion import PngConversionModule
@@ -367,6 +371,9 @@ def create_app(config: ServerConfig) -> web.Application:
     )
     app["ollama_service"] = ollama_service
 
+    apple_vision_ocr_service = AppleVisionOcrService(config.apple_vision_ocr_url)
+    app["apple_vision_ocr_service"] = apple_vision_ocr_service
+
     if config.prompts_dir:
         PROMPT_LOADER.configure(Path(config.prompts_dir))
 
@@ -388,8 +395,10 @@ def create_app(config: ServerConfig) -> web.Application:
     processor_service.register_modules(
         hashing=PageHashingModule(file_service=file_service),
         png=PngConversionModule(file_service=file_service),
-        ocr=GeminiOcrModule(
-            file_service=file_service, config=config, gemini_service=gemini_service
+        ocr=AppleVisionOcrModule(
+            file_service=file_service,
+            config=config,
+            apple_vision_ocr_service=apple_vision_ocr_service,
         ),
         embedding=OllamaEmbeddingModule(
             file_service=file_service, config=config, ollama_service=ollama_service

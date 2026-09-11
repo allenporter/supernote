@@ -1,0 +1,102 @@
+import logging
+
+from supernote.server.config import ServerConfig
+from supernote.server.constants import CACHE_BUCKET
+from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.services.apple_vision_ocr import AppleVisionOcrService
+from supernote.server.services.file import FileService
+from supernote.server.services.processor_modules import ProcessorModule
+from supernote.server.utils.note_content import get_page_content_by_id
+from supernote.server.utils.paths import get_page_png_path
+
+logger = logging.getLogger(__name__)
+
+
+class AppleVisionOcrModule(ProcessorModule):
+    """Module responsible for extracting text from note pages using Apple Vision OCR."""
+
+    def __init__(
+        self,
+        file_service: FileService,
+        config: ServerConfig,
+        apple_vision_ocr_service: AppleVisionOcrService,
+    ) -> None:
+        self.file_service = file_service
+        self.config = config
+        self.apple_vision_ocr_service = apple_vision_ocr_service
+
+    @property
+    def name(self) -> str:
+        return "AppleVisionOcrModule"
+
+    @property
+    def task_type(self) -> str:
+        return "OCR_EXTRACTION"
+
+    async def run_if_needed(
+        self,
+        file_id: int,
+        session_manager: DatabaseSessionManager,
+        page_index: int | None = None,
+        page_id: str | None = None,
+    ) -> bool:
+        if page_index is None:
+            return False
+
+        if not self.apple_vision_ocr_service.is_configured:
+            return False
+
+        if not await super().run_if_needed(
+            file_id, session_manager, page_index, page_id
+        ):
+            return False
+
+        if not page_id:
+            return False
+
+        # Check if PNG exists (Prerequisite)
+        png_path = get_page_png_path(file_id, page_id)
+        if not await self.file_service.blob_storage.exists(CACHE_BUCKET, png_path):
+            logger.warning(
+                f"PNG prerequisite not met for OCR of {file_id} page {page_id}"
+            )
+            return False
+
+        return True
+
+    async def process(
+        self,
+        file_id: int,
+        session_manager: DatabaseSessionManager,
+        page_index: int | None = None,
+        page_id: str | None = None,
+        **kwargs: object,
+    ) -> None:
+        if page_id is None:
+            logger.error(f"Page ID required for OCR processing of file {file_id}")
+            return
+
+        # Get PNG Content
+        png_path = get_page_png_path(file_id, page_id)
+        png_data = b""
+        async for chunk in self.file_service.blob_storage.get(CACHE_BUCKET, png_path):
+            png_data += chunk
+
+        # Call Apple Vision OCR API
+        if not self.apple_vision_ocr_service.is_configured:
+            raise ValueError("Apple Vision OCR base URL not configured")
+
+        text_content = await self.apple_vision_ocr_service.extract_text(png_data)
+
+        # Save Result
+        async with session_manager.session() as session:
+            content = await get_page_content_by_id(session, file_id, page_id)
+            if content:
+                content.text_content = text_content
+            else:
+                logger.warning(
+                    f"NotePageContentDO missing for {file_id} page {page_id} during OCR"
+                )
+            await session.commit()
+
+        logger.info(f"Completed OCR for file {file_id} page {page_id}")
