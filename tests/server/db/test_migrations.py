@@ -8,6 +8,8 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
 
+from supernote.server.db.migrations import run_migrations
+
 
 @pytest.fixture
 def alembic_config() -> Config:
@@ -143,5 +145,47 @@ def test_summary_api_fixture_migration_backfill(
             assert creation_time is not None
             assert last_modified_time is not None
             assert md5_hash == hashlib.md5(content.encode("utf-8")).hexdigest()
+
+    engine.dispose()
+
+
+def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
+    """Verify that a v0.20.0 database stamped with orphaned revision c9a8b7c6d5e4 heals and upgrades to head."""
+    fixture_path = Path("tests/fixtures/db_v0_20_0_schedule.sqlite").absolute()
+    db_path = tmp_path / "v0_20_0_healed.db"
+    shutil.copy(fixture_path, db_path)
+
+    migration_db_url = f"sqlite:///{db_path}"
+    run_migrations(migration_db_url, "head")
+
+    engine = create_engine(migration_db_url)
+    with engine.connect() as conn:
+        version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+        assert version == "68964804740d"
+
+        # Verify task columns and types
+        tasks = conn.execute(
+            text(
+                "SELECT task_id, task_list_id, title, status, client_task_id FROM t_schedule_task ORDER BY task_id"
+            )
+        ).fetchall()
+        assert len(tasks) == 3
+        for row in tasks:
+            assert isinstance(row[0], int)
+            assert isinstance(row[1], int)
+
+        titles = [row[2] for row in tasks]
+        assert "Buy Milk Before Upgrade" in titles
+        assert "Schedule Dentist Appointment" in titles
+        assert "Task Created in v0.20.0" in titles
+
+        # Verify group columns and types
+        groups = conn.execute(
+            text(
+                "SELECT task_list_id, title, client_task_list_id FROM t_schedule_task_group"
+            )
+        ).fetchall()
+        assert len(groups) >= 1
+        assert isinstance(groups[0][0], int)
 
     engine.dispose()

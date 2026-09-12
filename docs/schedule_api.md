@@ -92,7 +92,7 @@ Every mutating API call (`create`, `update`, `delete`, `clear` on groups, tasks,
 
 ## 4. Client SDK Abstraction Strategy (`ScheduleClient`)
 
-The Python SDK ([supernote/client/schedule.py](../supernote/client/schedule.py)) provides a high-level, Pythonic interface. 
+The Python SDK ([supernote/client/schedule.py](../supernote/client/schedule.py)) provides a high-level, Pythonic interface.
 
 While non-spec `/api/schedule/*` server routes are removed, **the Python SDK method signatures remain clean abstractions**:
 
