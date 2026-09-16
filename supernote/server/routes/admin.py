@@ -5,17 +5,35 @@ from mashumaro.exceptions import MissingField
 from sqlalchemy import delete, select
 
 from supernote.models.auth import UserVO
-from supernote.models.base import BaseResponse, TaskType, create_error_response
+from supernote.models.base import (
+    BaseResponse,
+    ProcessingStatus,
+    TaskType,
+    create_error_response,
+)
+from supernote.models.extended import HermesSummaryRetryVO, SystemTaskVO
+from supernote.models.summary import UpdateSummaryDTO
 from supernote.models.system import QueueStatusVO
 from supernote.models.user import UserRegisterDTO
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import SystemTaskDO
+from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus, NoteUpdatedEvent
 from supernote.server.exceptions import SupernoteError
+from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
+from supernote.server.utils.paths import get_hermes_summary_id
+from supernote.server.utils.tasks import get_task, update_task_status
 
 routes = web.RouteTableDef()
+
+# Matches HermesSummaryModule.task_type/get_task_key() in
+# supernote/server/services/processor_modules/hermes_summary.py. Hermes
+# summary generation is a file-level (not per-page) task, so its key is
+# always "global".
+HERMES_SUMMARY_TASK_TYPE = "HERMES_SUMMARY_GENERATION"
+HERMES_SUMMARY_TASK_KEY = "global"
 
 
 def require_admin(
@@ -196,3 +214,90 @@ async def handle_reprocess(request: web.Request) -> web.Response:
         )
 
     return web.json_response(BaseResponse().to_dict())
+
+
+@routes.post("/api/admin/notes/{file_id}/hermes-summary/retry")
+@require_admin
+async def handle_hermes_summary_retry(request: web.Request) -> web.Response:
+    """Manually rerun Hermes summary generation for one note (Admin only).
+
+    Useful when OCR corrections or user feedback (e.g. a manual OCR fix)
+    should trigger a fresh interpretation without waiting for the next
+    `.note` sync to change the file's content hash on its own.
+    """
+    file_id_str = request.match_info.get("file_id")
+    try:
+        file_id = int(file_id_str) if file_id_str is not None else None
+    except ValueError:
+        file_id = None
+    if file_id is None:
+        return web.json_response(
+            create_error_response("Invalid file_id").to_dict(), status=400
+        )
+
+    session_manager: DatabaseSessionManager = request.app["session_manager"]
+    summary_service: SummaryService = request.app["summary_service"]
+    processor_service = request.app["processor_service"]
+
+    async with session_manager.session() as session:
+        file_do = await session.get(UserFileDO, file_id)
+        if not file_do:
+            return web.json_response(
+                create_error_response("File not found").to_dict(), status=404
+            )
+        user = await session.get(UserDO, file_do.user_id)
+        user_email = user.email if user else None
+        file_basis = file_do.storage_key or str(file_do.id)
+
+    # HermesSummaryModule doesn't gate on this task's COMPLETED status the
+    # way other modules do -- its `run_if_needed()` always re-checks, and
+    # `process()` separately decides whether to actually call Hermes by
+    # comparing a source hash against the one stored in the *existing Hermes
+    # summary row's* `extra_metadata` (never in `f_system_task`; see
+    # `HermesSummaryModule.process()`). So resetting the task row alone
+    # would NOT force a fresh Hermes call when the underlying OCR text is
+    # unchanged -- we also have to clear the stored hash on the summary
+    # itself so the next run's hash comparison misses and regenerates.
+    if user_email:
+        hermes_uuid = get_hermes_summary_id(file_basis)
+        existing_summary = await summary_service.get_summary_by_uuid(
+            user_email, hermes_uuid
+        )
+        if existing_summary and existing_summary.id is not None:
+            await summary_service.update_summary(
+                user_email,
+                UpdateSummaryDTO(id=existing_summary.id, metadata="{}"),
+            )
+
+    # Reset (or create) the task row to PENDING with no error, so the
+    # response reflects a freshly-queued state rather than a stale
+    # COMPLETED/FAILED one.
+    await update_task_status(
+        session_manager,
+        file_id,
+        HERMES_SUMMARY_TASK_TYPE,
+        HERMES_SUMMARY_TASK_KEY,
+        ProcessingStatus.PENDING,
+    )
+
+    await processor_service.enqueue_file(file_id)
+
+    task = await get_task(
+        session_manager, file_id, HERMES_SUMMARY_TASK_TYPE, HERMES_SUMMARY_TASK_KEY
+    )
+    task_vo = None
+    if task:
+        task_vo = SystemTaskVO(
+            id=task.id,
+            file_id=task.file_id,
+            task_type=task.task_type,
+            key=task.key,
+            status=ProcessingStatus(task.status),
+            retry_count=task.retry_count,
+            last_error=task.last_error,
+            update_time=task.update_time,
+        )
+
+    return web.json_response(
+        HermesSummaryRetryVO(file_id=file_id, task=task_vo).to_dict()
+    )

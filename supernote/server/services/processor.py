@@ -188,9 +188,20 @@ class ProcessorService:
         if not isinstance(event, NoteUpdatedEvent):
             return
         logger.info(f"Received update for note: {event.file_id} ({event.file_path})")
-        if event.file_id not in self.processing_files:
-            self.processing_files.add(event.file_id)
-            await self.queue.put(event.file_id)
+        await self.enqueue_file(event.file_id)
+
+    async def enqueue_file(self, file_id: int) -> None:
+        """Enqueue a file for (re-)processing.
+
+        Public counterpart to the enqueue step in `handle_note_updated`, for
+        callers that already know the file exists but don't have (or don't
+        want to synthesize) a full `NoteUpdatedEvent` -- e.g. the admin
+        manual-retry endpoints. A no-op if the file is already queued/in
+        flight.
+        """
+        if file_id not in self.processing_files:
+            self.processing_files.add(file_id)
+            await self.queue.put(file_id)
             self._update_queue_metrics()
 
     async def handle_note_deleted(self, event: Event) -> None:

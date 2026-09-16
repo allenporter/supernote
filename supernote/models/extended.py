@@ -95,6 +95,25 @@ class SystemTaskListVO(BaseResponse):
         serialize_by_alias = True
 
 
+@dataclass(kw_only=True)
+class HermesSummaryRetryVO(BaseResponse):
+    """Response VO for the admin Hermes summary manual retry endpoint.
+
+    Used by: POST /api/admin/notes/{file_id}/hermes-summary/retry
+    """
+
+    file_id: int = field(metadata=field_options(alias="fileId"), default=0)
+    """The ID of the file whose Hermes summary was queued for retry."""
+
+    task: SystemTaskVO | None = None
+    """Current state of the HERMES_SUMMARY_GENERATION task for the file,
+    immediately after invalidation (i.e. reset to PENDING with no error).
+    """
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
 @dataclass
 class FileProcessingStatusDTO(DataClassJSONMixin):
     """Request model for querying processing status of files.

@@ -1,8 +1,11 @@
 import hashlib
+import json
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import jwt
 import pytest
+from aiohttp.test_utils import TestClient
 from sqlalchemy import delete, select
 
 from supernote.client.admin import AdminClient
@@ -10,11 +13,14 @@ from supernote.client.client import Client
 from supernote.models.base import ProcessingStatus
 from supernote.models.user import UserRegisterDTO
 from supernote.server.config import ServerConfig
+from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import SystemTaskDO
+from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import JWT_ALGORITHM, UserService
+from supernote.server.utils.paths import get_hermes_summary_id
 
 
 @pytest.fixture
@@ -280,3 +286,191 @@ async def test_admin_reprocess(
         headers=admin_headers,
     )
     assert resp.status == 400
+
+
+async def _get_admin_user_id(session_manager: DatabaseSessionManager) -> int:
+    """Helper to fetch the bootstrapped admin's numeric user ID."""
+    async with session_manager.session() as session:
+        result = await session.execute(
+            select(UserDO).where(UserDO.email == "admin@example.com")
+        )
+        return result.scalar_one().id
+
+
+async def test_admin_hermes_summary_retry_happy_path(
+    client: TestClient,
+    session_manager: DatabaseSessionManager,
+    coordination_service: CoordinationService,
+    server_config: ServerConfig,
+    admin_headers: dict[str, str],
+) -> None:
+    """A stale COMPLETED task + Hermes summary hash both get invalidated, and
+    the file is re-enqueued, when retried.
+    """
+    await setup_users(session_manager, coordination_service, server_config)
+    admin_user_id = await _get_admin_user_id(session_manager)
+
+    file_id = 5001
+    storage_key = "storage-key-5001"
+    hermes_uuid = get_hermes_summary_id(storage_key)
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=admin_user_id,
+                file_name="notebook.note",
+                storage_key=storage_key,
+                directory_id=0,
+            )
+        )
+        session.add(
+            SystemTaskDO(
+                file_id=file_id,
+                task_type="HERMES_SUMMARY_GENERATION",
+                key="global",
+                status=ProcessingStatus.COMPLETED,
+                last_error=None,
+                update_time=12345,
+            )
+        )
+        # A previously-generated Hermes summary whose stored source hash
+        # would otherwise make HermesSummaryModule.process() skip
+        # regeneration on the next run, since that hash (not the task's
+        # COMPLETED status) is what actually gates it.
+        session.add(
+            SummaryDO(
+                user_id=admin_user_id,
+                file_id=file_id,
+                unique_identifier=hermes_uuid,
+                data_source="HERMES_INTERPRETATION",
+                content="Old interpretation",
+                extra_metadata=json.dumps({"source_hash": "stale-hash"}),
+            )
+        )
+        await session.commit()
+
+    with patch.object(
+        client.app["processor_service"], "enqueue_file", new=AsyncMock()
+    ) as mock_enqueue:
+        resp = await client.post(
+            f"/api/admin/notes/{file_id}/hermes-summary/retry",
+            headers=admin_headers,
+        )
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["fileId"] == file_id
+        assert data["task"]["status"] == "PENDING"
+        assert data["task"]["lastError"] is None
+        mock_enqueue.assert_awaited_once_with(file_id)
+
+    async with session_manager.session() as session:
+        result = await session.execute(
+            select(SystemTaskDO)
+            .where(SystemTaskDO.file_id == file_id)
+            .where(SystemTaskDO.task_type == "HERMES_SUMMARY_GENERATION")
+        )
+        task = result.scalar_one()
+        assert task.status == ProcessingStatus.PENDING
+        assert task.last_error is None
+
+        result = await session.execute(
+            select(SummaryDO).where(SummaryDO.unique_identifier == hermes_uuid)
+        )
+        summary = result.scalar_one()
+        # Content (used as a context hint for the next Hermes call) is kept...
+        assert summary.content == "Old interpretation"
+        # ...but the stale source hash is cleared so the next pipeline run
+        # actually regenerates instead of short-circuiting on a hash match.
+        assert json.loads(summary.extra_metadata or "{}").get("source_hash") is None
+
+
+async def test_admin_hermes_summary_retry_no_prior_task(
+    client: TestClient,
+    session_manager: DatabaseSessionManager,
+    coordination_service: CoordinationService,
+    server_config: ServerConfig,
+    admin_headers: dict[str, str],
+) -> None:
+    """A file with no prior Hermes task still succeeds and gets enqueued."""
+    await setup_users(session_manager, coordination_service, server_config)
+    admin_user_id = await _get_admin_user_id(session_manager)
+
+    file_id = 5002
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=admin_user_id,
+                file_name="fresh.note",
+                storage_key="storage-key-5002",
+                directory_id=0,
+            )
+        )
+        await session.commit()
+
+    with patch.object(
+        client.app["processor_service"], "enqueue_file", new=AsyncMock()
+    ) as mock_enqueue:
+        resp = await client.post(
+            f"/api/admin/notes/{file_id}/hermes-summary/retry",
+            headers=admin_headers,
+        )
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["task"]["status"] == "PENDING"
+        assert data["task"]["lastError"] is None
+        mock_enqueue.assert_awaited_once_with(file_id)
+
+
+async def test_admin_hermes_summary_retry_nonexistent_file(
+    client: Client,
+    session_manager: DatabaseSessionManager,
+    coordination_service: CoordinationService,
+    server_config: ServerConfig,
+    admin_headers: dict[str, str],
+) -> None:
+    """Retrying a nonexistent file_id returns 404."""
+    await setup_users(session_manager, coordination_service, server_config)
+
+    resp = await client.post(
+        "/api/admin/notes/999999999/hermes-summary/retry",
+        headers=admin_headers,
+    )
+    assert resp.status == 404
+
+
+async def test_admin_hermes_summary_retry_permission(
+    client: Client,
+    session_manager: DatabaseSessionManager,
+    coordination_service: CoordinationService,
+    server_config: ServerConfig,
+    admin_headers: dict[str, str],
+    user_headers: dict[str, str],
+) -> None:
+    """Access control matches other admin routes: 401 anon, 403 non-admin."""
+    await setup_users(session_manager, coordination_service, server_config)
+    admin_user_id = await _get_admin_user_id(session_manager)
+
+    file_id = 5003
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=admin_user_id,
+                file_name="permissions.note",
+                storage_key="storage-key-5003",
+                directory_id=0,
+            )
+        )
+        await session.commit()
+
+    path = f"/api/admin/notes/{file_id}/hermes-summary/retry"
+
+    # Anon should fail
+    resp = await client.post(path)
+    assert resp.status == 401
+
+    # Non-admin should fail
+    resp = await client.post(path, headers=user_headers)
+    assert resp.status == 403
