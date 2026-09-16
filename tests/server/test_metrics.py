@@ -25,6 +25,12 @@ async def test_metrics_endpoint(client: TestClient) -> None:
     # Should contain our custom metrics
     assert "supernote_http_requests_total" in body
 
+    # Should contain the Hermes summary metrics registered for #4.
+    assert "supernote_hermes_summary_started_total" in body
+    assert "supernote_hermes_summary_completed_total" in body
+    assert "supernote_hermes_summary_failed_total" in body
+    assert "supernote_hermes_summary_duration_seconds" in body
+
 
 async def test_http_request_tracking(client: TestClient) -> None:
     """Verify that HTTP requests increment the request counters."""

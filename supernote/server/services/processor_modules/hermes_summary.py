@@ -20,6 +20,12 @@ from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.metrics import (
+    HERMES_SUMMARY_COMPLETED_TOTAL,
+    HERMES_SUMMARY_DURATION_SECONDS,
+    HERMES_SUMMARY_FAILED_TOTAL,
+    HERMES_SUMMARY_STARTED_TOTAL,
+)
 from supernote.server.services.file import FileService
 from supernote.server.services.hermes_summary import HermesSummaryService
 from supernote.server.services.processor_modules import ProcessorModule
@@ -202,45 +208,74 @@ class HermesSummaryModule(ProcessorModule):
             )
             return
 
-        # Ensure the summary group exists -- HermesSummaryModule must work
-        # even when SummaryModule (Gemini) never ran (e.g. disabled/unconfigured).
-        await self.summary_service.upsert_group(
-            user_email,
-            AddSummaryGroupDTO(
-                unique_identifier=group_uuid,
-                name=group_name,
-                md5_hash=group_md5,
-            ),
-        )
+        # From here on we are genuinely attempting a Hermes call, so this is
+        # where "started" begins -- the earlier no-op/skip returns above
+        # (missing OCR text, unchanged source hash) never reach this point
+        # and intentionally do not count as a start attempt.
+        transcript_chars = len(full_text)
+        HERMES_SUMMARY_STARTED_TOTAL.inc()
+        start_time = time.perf_counter()
+        try:
+            # Ensure the summary group exists -- HermesSummaryModule must work
+            # even when SummaryModule (Gemini) never ran (e.g. disabled/unconfigured).
+            await self.summary_service.upsert_group(
+                user_email,
+                AddSummaryGroupDTO(
+                    unique_identifier=group_uuid,
+                    name=group_name,
+                    md5_hash=group_md5,
+                ),
+            )
 
-        # No try/except here: exceptions bubble up so the base class's `run()`
-        # marks the task FAILED (with the error message) and it becomes
-        # eligible for automatic retry, per the ProcessorModule contract.
-        interpretation = await self.hermes_summary_service.generate_interpretation(
-            file_id=file_id,
-            file_name=file_do.file_name,
-            transcript=full_text,
-            page_count=len(pages),
-            existing_context_hint=existing.content if existing else None,
-        )
-
-        metadata_str = json.dumps(
-            {
-                METADATA_SOURCE_HASH: source_hash,
-                METADATA_GENERATED_AT: int(time.time() * 1000),
-                METADATA_PAGE_COUNT: len(pages),
-            }
-        )
-
-        await self.summary_service.upsert_summary(
-            user_email,
-            AddSummaryDTO(
+            # No try/except around the Hermes call itself: exceptions bubble
+            # up so the base class's `run()` marks the task FAILED (with the
+            # error message) and it becomes eligible for automatic retry, per
+            # the ProcessorModule contract. The try/except here only tracks
+            # metrics/logs around that -- it always re-raises.
+            interpretation = await self.hermes_summary_service.generate_interpretation(
                 file_id=file_id,
-                unique_identifier=hermes_uuid,
-                parent_unique_identifier=group_uuid,
-                content=interpretation,
-                data_source="HERMES_INTERPRETATION",
-                source_path=file_do.file_name,
-                metadata=metadata_str,
-            ),
-        )
+                file_name=file_do.file_name,
+                transcript=full_text,
+                page_count=len(pages),
+                existing_context_hint=existing.content if existing else None,
+            )
+
+            metadata_str = json.dumps(
+                {
+                    METADATA_SOURCE_HASH: source_hash,
+                    METADATA_GENERATED_AT: int(time.time() * 1000),
+                    METADATA_PAGE_COUNT: len(pages),
+                }
+            )
+
+            await self.summary_service.upsert_summary(
+                user_email,
+                AddSummaryDTO(
+                    file_id=file_id,
+                    unique_identifier=hermes_uuid,
+                    parent_unique_identifier=group_uuid,
+                    content=interpretation,
+                    data_source="HERMES_INTERPRETATION",
+                    source_path=file_do.file_name,
+                    metadata=metadata_str,
+                ),
+            )
+        except Exception as e:
+            HERMES_SUMMARY_FAILED_TOTAL.inc()
+            logger.error(
+                "Hermes summary generation failed for "
+                f"file_id={file_id} file_name={file_do.file_name!r} "
+                f"page_count={len(pages)} transcript_chars={transcript_chars} "
+                f"source_hash={source_hash}: reason={e}"
+            )
+            raise
+        else:
+            HERMES_SUMMARY_COMPLETED_TOTAL.inc()
+            logger.info(
+                "Completed Hermes summary generation for "
+                f"file_id={file_id} file_name={file_do.file_name!r} "
+                f"page_count={len(pages)} transcript_chars={transcript_chars} "
+                f"source_hash={source_hash} unique_identifier={hermes_uuid}"
+            )
+        finally:
+            HERMES_SUMMARY_DURATION_SECONDS.observe(time.perf_counter() - start_time)

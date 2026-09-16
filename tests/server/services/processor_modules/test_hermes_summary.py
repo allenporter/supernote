@@ -9,10 +9,12 @@ issue.
 """
 
 import json
+import logging
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from prometheus_client import REGISTRY
 from sqlalchemy import select
 
 from supernote.models.summary import AddSummaryDTO, AddSummaryGroupDTO
@@ -416,3 +418,211 @@ async def test_hermes_summary_disabled_is_noop(
 
     hermes_uuid = get_hermes_summary_id(storage_key)
     assert await _get_summary_rows(session_manager, hermes_uuid) == []
+
+
+def _counter_value(name: str) -> float:
+    return REGISTRY.get_sample_value(name) or 0.0
+
+
+def _histogram_count(name: str) -> float:
+    return REGISTRY.get_sample_value(f"{name}_count") or 0.0
+
+
+async def test_hermes_summary_metrics_and_logs_on_success(
+    hermes_module: HermesSummaryModule,
+    session_manager: DatabaseSessionManager,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    user_id = 505
+    user_email = "hermes-metrics-ok@example.com"
+    file_id = 5006
+    storage_key = "hermes_key_6"
+
+    await _setup_file(
+        session_manager,
+        file_id,
+        user_id,
+        user_email,
+        storage_key,
+        "metrics-ok.note",
+        FIXTURE_TEXT,
+    )
+
+    started_before = _counter_value("supernote_hermes_summary_started_total")
+    completed_before = _counter_value("supernote_hermes_summary_completed_total")
+    failed_before = _counter_value("supernote_hermes_summary_failed_total")
+    duration_count_before = _histogram_count(
+        "supernote_hermes_summary_duration_seconds"
+    )
+
+    with caplog.at_level(logging.INFO):
+        result = await hermes_module.run(file_id, session_manager)
+    assert result is True
+
+    assert _counter_value("supernote_hermes_summary_started_total") == (
+        started_before + 1.0
+    )
+    assert _counter_value("supernote_hermes_summary_completed_total") == (
+        completed_before + 1.0
+    )
+    assert _counter_value("supernote_hermes_summary_failed_total") == failed_before
+    assert _histogram_count("supernote_hermes_summary_duration_seconds") == (
+        duration_count_before + 1.0
+    )
+
+    hermes_uuid = get_hermes_summary_id(storage_key)
+    success_records = [
+        r for r in caplog.records if "Completed Hermes summary generation" in r.message
+    ]
+    assert len(success_records) == 1
+    message = success_records[0].message
+    assert f"file_id={file_id}" in message
+    assert "metrics-ok.note" in message
+    assert "page_count=1" in message
+    assert "transcript_chars=" in message
+    assert "source_hash=" in message
+    assert f"unique_identifier={hermes_uuid}" in message
+
+    # The raw transcript content must never be logged.
+    full_log_text = "\n".join(r.message for r in caplog.records)
+    assert FIXTURE_TEXT not in full_log_text
+    assert "S4rah" not in full_log_text
+
+
+async def test_hermes_summary_metrics_and_logs_on_failure(
+    hermes_module: HermesSummaryModule,
+    session_manager: DatabaseSessionManager,
+    mock_hermes_summary_service: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    user_id = 506
+    user_email = "hermes-metrics-fail@example.com"
+    file_id = 5007
+    storage_key = "hermes_key_7"
+
+    await _setup_file(
+        session_manager,
+        file_id,
+        user_id,
+        user_email,
+        storage_key,
+        "metrics-fail.note",
+        FIXTURE_TEXT,
+    )
+
+    mock_hermes_summary_service.generate_interpretation.side_effect = (
+        HermesSummaryProcessError(1, "hermes cli exploded")
+    )
+
+    started_before = _counter_value("supernote_hermes_summary_started_total")
+    completed_before = _counter_value("supernote_hermes_summary_completed_total")
+    failed_before = _counter_value("supernote_hermes_summary_failed_total")
+    duration_count_before = _histogram_count(
+        "supernote_hermes_summary_duration_seconds"
+    )
+
+    with caplog.at_level(logging.INFO):
+        result = await hermes_module.run(file_id, session_manager)
+    assert result is False
+
+    assert _counter_value("supernote_hermes_summary_started_total") == (
+        started_before + 1.0
+    )
+    assert (
+        _counter_value("supernote_hermes_summary_completed_total") == completed_before
+    )
+    assert (
+        _counter_value("supernote_hermes_summary_failed_total") == failed_before + 1.0
+    )
+    assert _histogram_count("supernote_hermes_summary_duration_seconds") == (
+        duration_count_before + 1.0
+    )
+
+    failure_records = [
+        r for r in caplog.records if "Hermes summary generation failed" in r.message
+    ]
+    assert len(failure_records) == 1
+    message = failure_records[0].message
+    assert f"file_id={file_id}" in message
+    assert "metrics-fail.note" in message
+    assert "page_count=1" in message
+    assert "source_hash=" in message
+    assert "hermes cli exploded" in message
+
+    # The raw transcript content must never be logged, even on failure.
+    full_log_text = "\n".join(r.message for r in caplog.records)
+    assert FIXTURE_TEXT not in full_log_text
+    assert "S4rah" not in full_log_text
+
+
+async def test_hermes_summary_rerun_unchanged_does_not_increment_started(
+    hermes_module: HermesSummaryModule,
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """A hash-unchanged skip run must not count as a 'started' attempt."""
+    user_id = 507
+    user_email = "hermes-started-skip@example.com"
+    file_id = 5008
+    storage_key = "hermes_key_8"
+
+    await _setup_file(
+        session_manager,
+        file_id,
+        user_id,
+        user_email,
+        storage_key,
+        "started-skip.note",
+        FIXTURE_TEXT,
+    )
+
+    started_before = _counter_value("supernote_hermes_summary_started_total")
+
+    # First run genuinely attempts a Hermes call.
+    await hermes_module.run(file_id, session_manager)
+    assert _counter_value("supernote_hermes_summary_started_total") == (
+        started_before + 1.0
+    )
+
+    # Second run hits the unchanged-source-hash skip and must not increment.
+    await hermes_module.run(file_id, session_manager)
+    assert _counter_value("supernote_hermes_summary_started_total") == (
+        started_before + 1.0
+    )
+
+
+async def test_hermes_summary_disabled_does_not_increment_started(
+    file_service: FileService,
+    server_config_hermes_disabled: ServerConfig,
+    mock_hermes_summary_service: MagicMock,
+    summary_service: SummaryService,
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """A disabled-flag skip run must not count as a 'started' attempt."""
+    module = HermesSummaryModule(
+        file_service=file_service,
+        config=server_config_hermes_disabled,
+        hermes_summary_service=mock_hermes_summary_service,
+        summary_service=summary_service,
+    )
+
+    user_id = 508
+    user_email = "hermes-started-disabled@example.com"
+    file_id = 5009
+    storage_key = "hermes_key_9"
+
+    await _setup_file(
+        session_manager,
+        file_id,
+        user_id,
+        user_email,
+        storage_key,
+        "started-disabled.note",
+        FIXTURE_TEXT,
+    )
+
+    started_before = _counter_value("supernote_hermes_summary_started_total")
+
+    result = await module.run(file_id, session_manager)
+    assert result is True
+
+    assert _counter_value("supernote_hermes_summary_started_total") == started_before

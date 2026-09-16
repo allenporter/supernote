@@ -61,6 +61,27 @@ GEMINI_API_DURATION_SECONDS: Histogram = Histogram(
     ["operation"],
 )
 
+# Hermes summary metrics
+HERMES_SUMMARY_STARTED_TOTAL: Counter = Counter(
+    "supernote_hermes_summary_started_total",
+    "Total number of Hermes summary generation attempts started.",
+)
+
+HERMES_SUMMARY_COMPLETED_TOTAL: Counter = Counter(
+    "supernote_hermes_summary_completed_total",
+    "Total number of Hermes summary generations completed successfully.",
+)
+
+HERMES_SUMMARY_FAILED_TOTAL: Counter = Counter(
+    "supernote_hermes_summary_failed_total",
+    "Total number of Hermes summary generation failures.",
+)
+
+HERMES_SUMMARY_DURATION_SECONDS: Histogram = Histogram(
+    "supernote_hermes_summary_duration_seconds",
+    "Latency of Hermes summary generation attempts in seconds.",
+)
+
 # Database metrics
 DB_SESSIONS_ACTIVE: Gauge = Gauge(
     "supernote_db_sessions_active",
