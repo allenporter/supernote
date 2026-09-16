@@ -12,8 +12,6 @@ from supernote.models.summary import (
     METADATA_SEGMENTS,
     AddSummaryDTO,
     AddSummaryGroupDTO,
-    UpdateSummaryDTO,
-    UpdateSummaryGroupDTO,
 )
 from supernote.server.config import ServerConfig
 from supernote.server.db.models.file import UserFileDO
@@ -180,7 +178,7 @@ class SummaryModule(ProcessorModule):
         full_text = "\n\n".join(text_parts)
 
         # 4. Upsert Summary Group for the notebook
-        await self._upsert_group(
+        await self.summary_service.upsert_group(
             user_email,
             AddSummaryGroupDTO(
                 unique_identifier=group_uuid,
@@ -192,7 +190,7 @@ class SummaryModule(ProcessorModule):
         # 5. Generate Transcript Summary (Preserve existing functionality)
         # Store the raw aggregated text as a 'transcript' summary type first
         # This is a good baseline to have.
-        await self._upsert_summary(
+        await self.summary_service.upsert_summary(
             user_email,
             AddSummaryDTO(
                 file_id=file_id,
@@ -286,7 +284,7 @@ class SummaryModule(ProcessorModule):
                 logger.error(f"Failed to parse JSON response for file {file_id}")
                 ai_summary = response.text
 
-        await self._upsert_summary(
+        await self.summary_service.upsert_summary(
             user_email,
             AddSummaryDTO(
                 file_id=file_id,
@@ -298,50 +296,3 @@ class SummaryModule(ProcessorModule):
                 metadata=metadata_str,
             ),
         )
-
-    async def _upsert_group(self, user_email: str, dto: AddSummaryGroupDTO) -> None:
-        """Helper to either add or update a summary group based on its unique identifier."""
-        if not dto.unique_identifier:
-            logger.error("Cannot upsert summary group without a unique identifier")
-            return
-
-        existing = await self.summary_service.get_summary_by_uuid(
-            user_email, dto.unique_identifier
-        )
-        if existing and existing.id is not None:
-            await self.summary_service.update_group(
-                user_email,
-                UpdateSummaryGroupDTO(
-                    id=existing.id,
-                    unique_identifier=dto.unique_identifier,
-                    name=dto.name,
-                    md5_hash=dto.md5_hash,
-                    description=dto.description,
-                ),
-            )
-        else:
-            await self.summary_service.add_group(user_email, dto)
-
-    async def _upsert_summary(self, user_email: str, dto: AddSummaryDTO) -> None:
-        """Helper to either add or update a summary based on its unique identifier."""
-        if not dto.unique_identifier:
-            logger.error("Cannot upsert summary without a unique identifier")
-            return
-
-        existing = await self.summary_service.get_summary_by_uuid(
-            user_email, dto.unique_identifier
-        )
-        if existing and existing.id is not None:
-            await self.summary_service.update_summary(
-                user_email,
-                UpdateSummaryDTO(
-                    id=existing.id,
-                    parent_unique_identifier=dto.parent_unique_identifier,
-                    content=dto.content,
-                    data_source=dto.data_source,
-                    source_path=dto.source_path,
-                    metadata=dto.metadata,
-                ),
-            )
-        else:
-            await self.summary_service.add_summary(user_email, dto)

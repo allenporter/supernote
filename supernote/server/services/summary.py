@@ -251,6 +251,49 @@ class SummaryService:
             summaries = list(result.scalars().all())
             return [_to_summary_item(s) for s in summaries]
 
+    async def upsert_group(self, user_email: str, dto: AddSummaryGroupDTO) -> None:
+        """Add or update a summary group based on its unique identifier."""
+        if not dto.unique_identifier:
+            logger.error("Cannot upsert summary group without a unique identifier")
+            return
+
+        existing = await self.get_summary_by_uuid(user_email, dto.unique_identifier)
+        if existing and existing.id is not None:
+            await self.update_group(
+                user_email,
+                UpdateSummaryGroupDTO(
+                    id=existing.id,
+                    unique_identifier=dto.unique_identifier,
+                    name=dto.name,
+                    md5_hash=dto.md5_hash,
+                    description=dto.description,
+                ),
+            )
+        else:
+            await self.add_group(user_email, dto)
+
+    async def upsert_summary(self, user_email: str, dto: AddSummaryDTO) -> None:
+        """Add or update a summary based on its unique identifier."""
+        if not dto.unique_identifier:
+            logger.error("Cannot upsert summary without a unique identifier")
+            return
+
+        existing = await self.get_summary_by_uuid(user_email, dto.unique_identifier)
+        if existing and existing.id is not None:
+            await self.update_summary(
+                user_email,
+                UpdateSummaryDTO(
+                    id=existing.id,
+                    parent_unique_identifier=dto.parent_unique_identifier,
+                    content=dto.content,
+                    data_source=dto.data_source,
+                    source_path=dto.source_path,
+                    metadata=dto.metadata,
+                ),
+            )
+        else:
+            await self.add_summary(user_email, dto)
+
     async def add_group(self, user_email: str, dto: AddSummaryGroupDTO) -> SummaryItem:
         """Add a new summary group."""
         user_id = await self.user_service.get_user_id(user_email)

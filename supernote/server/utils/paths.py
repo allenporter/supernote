@@ -27,6 +27,11 @@ def get_transcript_id(file_basis: str) -> str:
     return f"{file_basis}-transcript"
 
 
+def get_hermes_summary_id(file_basis: str) -> str:
+    """Generate a unique identifier for a Hermes interpretation summary."""
+    return f"{file_basis}-hermes-summary"
+
+
 def get_conversion_png_path(
     user_id: int, file_id: int, page_index: int, file_md5: str
 ) -> str:

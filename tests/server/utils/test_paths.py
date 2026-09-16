@@ -6,6 +6,7 @@ from supernote.server.utils.paths import (
     get_conversion_pdf_path,
     get_conversion_png_path,
     get_file_chunk_path,
+    get_hermes_summary_id,
     get_page_png_path,
     get_summary_group_id,
     get_summary_id,
@@ -31,6 +32,26 @@ def test_get_summary_group_id() -> None:
 
 def test_get_transcript_id() -> None:
     assert get_transcript_id("file_key") == "file_key-transcript"
+
+
+def test_get_hermes_summary_id() -> None:
+    assert get_hermes_summary_id("file_key") == "file_key-hermes-summary"
+
+
+def test_get_hermes_summary_id_is_deterministic() -> None:
+    assert get_hermes_summary_id("file_key") == get_hermes_summary_id("file_key")
+
+
+def test_get_hermes_summary_id_differs_from_other_ids() -> None:
+    file_basis = "file_key"
+    hermes_id = get_hermes_summary_id(file_basis)
+    assert hermes_id != get_summary_id(file_basis)
+    assert hermes_id != get_transcript_id(file_basis)
+    assert hermes_id != get_summary_group_id(file_basis)
+
+
+def test_get_hermes_summary_id_differs_for_different_inputs() -> None:
+    assert get_hermes_summary_id("file_key_a") != get_hermes_summary_id("file_key_b")
 
 
 def test_get_conversion_png_path() -> None:
