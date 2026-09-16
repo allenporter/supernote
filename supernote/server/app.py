@@ -44,12 +44,14 @@ from .services.blob import LocalBlobStorage
 from .services.coordination import SqliteCoordinationService
 from .services.file import FileService
 from .services.gemini import GeminiService
+from .services.hermes_summary import HermesSummaryService
 from .services.ollama import OllamaService
 from .services.processor import ProcessorService
 from .services.processor_modules.apple_vision_ocr import AppleVisionOcrModule
 
 # Kept unregistered so it can be swapped back in without re-adding the import.
 from .services.processor_modules.gemini_ocr import GeminiOcrModule  # noqa: F401
+from .services.processor_modules.hermes_summary import HermesSummaryModule
 from .services.processor_modules.ollama_embedding import OllamaEmbeddingModule
 from .services.processor_modules.page_hashing import PageHashingModule
 from .services.processor_modules.png_conversion import PngConversionModule
@@ -374,6 +376,15 @@ def create_app(config: ServerConfig) -> web.Application:
     apple_vision_ocr_service = AppleVisionOcrService(config.apple_vision_ocr_url)
     app["apple_vision_ocr_service"] = apple_vision_ocr_service
 
+    hermes_summary_service = HermesSummaryService(
+        command=config.hermes_summary_command,
+        timeout_seconds=config.hermes_summary_timeout_seconds,
+        model=config.hermes_summary_model,
+        workdir=config.hermes_summary_workdir,
+        language=config.hermes_summary_language,
+    )
+    app["hermes_summary_service"] = hermes_summary_service
+
     if config.prompts_dir:
         PROMPT_LOADER.configure(Path(config.prompts_dir))
 
@@ -409,6 +420,14 @@ def create_app(config: ServerConfig) -> web.Application:
             gemini_service=gemini_service,
             summary_service=summary_service,
         ),
+        extra_post_modules=[
+            HermesSummaryModule(
+                file_service=file_service,
+                config=config,
+                hermes_summary_service=hermes_summary_service,
+                summary_service=summary_service,
+            ),
+        ],
     )
 
     # Register routes

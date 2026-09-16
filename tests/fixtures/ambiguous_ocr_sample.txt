@@ -1,0 +1,26 @@
+Weekly Planning Notes
+
+Monday
+- Reviewed the quarterly budget draft with the finance team.
+- Agreed to move the vendor renewal deadline to the end of the month.
+- Action item: send the updated timeline to the whole team before Friday.
+
+Tuesday
+- Sync with the design group about the new onboarding flow.
+- Decided the first milestone will cover sign-up and account setup only.
+- Ne3d t0 f0ll0w up w1th S4rah ab0ut the draft c0ntract bef0re we s1gn it.
+- Follow-up scheduled for next week to review feedback from early testers.
+
+Wednesday
+- Nothing major; caught up on email and cleared the backlog of small tasks.
+- Noted a recurring complaint about slow page loads on the reports screen.
+
+Thursday
+- Planning session for next quarter's roadmap.
+- Two candidate themes: reliability improvements and new integrations.
+- Team leaned toward reliability improvements as the higher priority.
+
+Friday
+- Wrap-up call with the whole team to confirm next steps.
+- Circulated the updated timeline as promised on Monday.
+- Reminder: the vendor renewal deadline is now the last business day of the month.

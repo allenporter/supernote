@@ -84,11 +84,18 @@ class ProcessorService:
         ocr: ProcessorModule,
         embedding: ProcessorModule,
         summary: ProcessorModule,
+        extra_post_modules: list[ProcessorModule] | None = None,
     ) -> None:
-        """Register processing modules in logical order."""
+        """Register processing modules in logical order.
+
+        `extra_post_modules` registers additional global post-processing
+        modules (e.g. `HermesSummaryModule`) that run after `summary`. It is
+        optional and defaults to none, so existing call sites that only pass
+        the original five modules keep their original behavior unchanged.
+        """
         self.global_pre_modules = [hashing]
         self.page_modules = [png, ocr, embedding]
-        self.global_post_modules = [summary]
+        self.global_post_modules = [summary, *(extra_post_modules or [])]
         logger.info("Registered all processor modules.")
 
     async def start(self) -> None:

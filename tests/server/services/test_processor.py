@@ -387,6 +387,56 @@ async def test_recover_stalled_tasks_time_threshold(
     assert await processor_service.queue.get() == 10
 
 
+async def test_register_modules_with_extra_post_modules(
+    processor_service: ProcessorService,
+) -> None:
+    """Extra post modules (e.g. HermesSummaryModule) can be registered
+    alongside `summary` without changing the meaning of existing call sites.
+    """
+    hashing = MagicMock(spec=ProcessorModule)
+    png = MagicMock(spec=ProcessorModule)
+    ocr = MagicMock(spec=ProcessorModule)
+    embedding = MagicMock(spec=ProcessorModule)
+    summary = MagicMock(spec=ProcessorModule)
+    hermes = MagicMock(spec=ProcessorModule)
+
+    processor_service.register_modules(
+        hashing=hashing,
+        png=png,
+        ocr=ocr,
+        embedding=embedding,
+        summary=summary,
+        extra_post_modules=[hermes],
+    )
+
+    assert processor_service.global_pre_modules == [hashing]
+    assert processor_service.page_modules == [png, ocr, embedding]
+    # Order matters: summary (Gemini) before the extra post module (Hermes).
+    assert processor_service.global_post_modules == [summary, hermes]
+
+
+async def test_register_modules_without_extra_post_modules_unchanged(
+    processor_service: ProcessorService,
+) -> None:
+    """Existing call sites that omit `extra_post_modules` keep the original
+    single-post-module behavior."""
+    hashing = MagicMock(spec=ProcessorModule)
+    png = MagicMock(spec=ProcessorModule)
+    ocr = MagicMock(spec=ProcessorModule)
+    embedding = MagicMock(spec=ProcessorModule)
+    summary = MagicMock(spec=ProcessorModule)
+
+    processor_service.register_modules(
+        hashing=hashing,
+        png=png,
+        ocr=ocr,
+        embedding=embedding,
+        summary=summary,
+    )
+
+    assert processor_service.global_post_modules == [summary]
+
+
 async def test_page_parallelism(
     processor_service: ProcessorService, session_manager: DatabaseSessionManager
 ) -> None:
