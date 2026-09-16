@@ -173,6 +173,52 @@ BaseConfig
     Env Var: `SUPERNOTE_METRICS_PATH`
     """
 
+    hermes_summary_enabled: bool = False
+    """Whether the Hermes-powered interpretation summary feature is enabled.
+
+    Env Var: `SUPERNOTE_HERMES_SUMMARY_ENABLED`
+    """
+
+    hermes_summary_command: str = "hermes chat -q"
+    """Shell command used to invoke the Hermes Agent CLI for interpretation summaries.
+
+    The command is split into argv and executed directly (never via a shell), so
+    arbitrary OCR content passed as the prompt cannot be shell-injected.
+
+    Env Var: `SUPERNOTE_HERMES_SUMMARY_COMMAND`
+    """
+
+    hermes_summary_timeout_seconds: int = 180
+    """Timeout, in seconds, for a single Hermes summary subprocess call.
+
+    Env Var: `SUPERNOTE_HERMES_SUMMARY_TIMEOUT_SECONDS`
+    """
+
+    hermes_summary_model: str | None = None
+    """Optional model name/identifier to request from the Hermes Agent CLI.
+
+    Env Var: `SUPERNOTE_HERMES_SUMMARY_MODEL`
+    """
+
+    hermes_summary_workdir: str | None = None
+    """Working directory the Hermes Agent CLI subprocess is run from.
+
+    This is whatever path the operator's own Hermes installation expects; there is
+    no fixed default.
+
+    Env Var: `SUPERNOTE_HERMES_SUMMARY_WORKDIR`
+    """
+
+    hermes_summary_language: str | None = None
+    """Language the Hermes interpretation summary should be written in.
+
+    If unset, the prompt asks Hermes to respond in the same language as the OCR
+    transcript. If set (e.g. to a locale string like "fi" or "English"), the
+    prompt requests that language explicitly.
+
+    Env Var: `SUPERNOTE_HERMES_SUMMARY_LANGUAGE`
+    """
+
     @property
     def configured_base_url(self) -> str | None:
         """Get the explicitly configured base URL, or None if unset.
@@ -377,6 +423,50 @@ BaseConfig
         if metrics_path := os.getenv("SUPERNOTE_METRICS_PATH"):
             config.metrics_path = metrics_path
             logger.info(f"Using SUPERNOTE_METRICS_PATH: {config.metrics_path}")
+
+        if os.getenv("SUPERNOTE_HERMES_SUMMARY_ENABLED"):
+            config.hermes_summary_enabled = _get_bool_env(
+                "SUPERNOTE_HERMES_SUMMARY_ENABLED", config.hermes_summary_enabled
+            )
+            logger.info(f"Hermes Summary Enabled: {config.hermes_summary_enabled}")
+
+        if hermes_summary_command := os.getenv("SUPERNOTE_HERMES_SUMMARY_COMMAND"):
+            config.hermes_summary_command = hermes_summary_command
+            logger.info(
+                f"Using SUPERNOTE_HERMES_SUMMARY_COMMAND: {config.hermes_summary_command}"
+            )
+
+        if hermes_summary_timeout_seconds := os.getenv(
+            "SUPERNOTE_HERMES_SUMMARY_TIMEOUT_SECONDS"
+        ):
+            try:
+                config.hermes_summary_timeout_seconds = int(
+                    hermes_summary_timeout_seconds
+                )
+                logger.info(
+                    "Using SUPERNOTE_HERMES_SUMMARY_TIMEOUT_SECONDS: "
+                    f"{config.hermes_summary_timeout_seconds}"
+                )
+            except ValueError:
+                pass
+
+        if hermes_summary_model := os.getenv("SUPERNOTE_HERMES_SUMMARY_MODEL"):
+            config.hermes_summary_model = hermes_summary_model
+            logger.info(
+                f"Using SUPERNOTE_HERMES_SUMMARY_MODEL: {config.hermes_summary_model}"
+            )
+
+        if hermes_summary_workdir := os.getenv("SUPERNOTE_HERMES_SUMMARY_WORKDIR"):
+            config.hermes_summary_workdir = hermes_summary_workdir
+            logger.info(
+                f"Using SUPERNOTE_HERMES_SUMMARY_WORKDIR: {config.hermes_summary_workdir}"
+            )
+
+        if hermes_summary_language := os.getenv("SUPERNOTE_HERMES_SUMMARY_LANGUAGE"):
+            config.hermes_summary_language = hermes_summary_language
+            logger.info(
+                f"Using SUPERNOTE_HERMES_SUMMARY_LANGUAGE: {config.hermes_summary_language}"
+            )
 
         if config.trace_log_file is None:
             config.trace_log_file = str(
