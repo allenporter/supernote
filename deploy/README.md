@@ -1,7 +1,7 @@
 # Supernote Private Cloud — deployment
 
 Self-hosted [Supernote Private Cloud](https://support.supernote.com/Whats-New/setting-up-your-own-supernote-private-cloud-beta)
-server, built from [striimusMiska/supernote-private-cloud-apple-ocr](https://github.com/striimusMiska/supernote-private-cloud-apple-ocr)
+server, built from this repository's source checkout
 (a fork of [allenporter/supernote](https://github.com/allenporter/supernote)),
 meant to run on a small always-on box (VPS, NAS, home server) reachable only
 over a Tailscale tunnel. OCR transcription and semantic search run
@@ -20,8 +20,8 @@ add `SUPERNOTE_GEMINI_API_KEY` later to turn those on.
    from this checkout (build context is the repo root, one level above
    `deploy/`):
    ```bash
-   git clone https://github.com/striimusMiska/supernote-private-cloud-apple-ocr.git
-   cd supernote-private-cloud-apple-ocr
+   git clone <repository-url> supernote-private-cloud
+   cd supernote-private-cloud
    git checkout <pinned-tag-or-commit>
    cd deploy
    ```
