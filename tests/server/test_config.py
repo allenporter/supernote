@@ -71,6 +71,33 @@ def test_server_config_env_var_override(tmp_path: Path) -> None:
         assert config.port == 5555
 
 
+def test_server_config_recycle_bin_cleanup_defaults(tmp_path: Path) -> None:
+    """Test recycle bin cleanup config defaults."""
+    config_dir = tmp_path / "config"
+    config = ServerConfig.load(config_dir)
+
+    assert config.recycle_bin_cleanup_enabled is True
+    assert config.recycle_bin_cleanup_retention_days == 30
+    assert config.recycle_bin_cleanup_interval_seconds == 86400
+
+
+def test_server_config_recycle_bin_cleanup_env_var_override(tmp_path: Path) -> None:
+    """Test that recycle bin cleanup environment variables override defaults."""
+    config_dir = tmp_path / "config"
+    with patch.dict(
+        os.environ,
+        {
+            "SUPERNOTE_RECYCLE_BIN_CLEANUP_ENABLED": "false",
+            "SUPERNOTE_RECYCLE_BIN_CLEANUP_RETENTION_DAYS": "7",
+            "SUPERNOTE_RECYCLE_BIN_CLEANUP_INTERVAL_SECONDS": "3600",
+        },
+    ):
+        config = ServerConfig.load(config_dir)
+        assert config.recycle_bin_cleanup_enabled is False
+        assert config.recycle_bin_cleanup_retention_days == 7
+        assert config.recycle_bin_cleanup_interval_seconds == 3600
+
+
 def test_example_config_is_valid() -> None:
     """Ensure config-example.yaml can be loaded by ServerConfig."""
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))

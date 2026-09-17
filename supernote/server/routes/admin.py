@@ -11,7 +11,11 @@ from supernote.models.base import (
     TaskType,
     create_error_response,
 )
-from supernote.models.extended import HermesSummaryRetryVO, SystemTaskVO
+from supernote.models.extended import (
+    HermesSummaryRetryVO,
+    RecycleBinCleanupRunVO,
+    SystemTaskVO,
+)
 from supernote.models.summary import UpdateSummaryDTO
 from supernote.models.system import QueueStatusVO
 from supernote.models.user import UserRegisterDTO
@@ -214,6 +218,21 @@ async def handle_reprocess(request: web.Request) -> web.Response:
         )
 
     return web.json_response(BaseResponse().to_dict())
+
+
+@routes.post("/api/admin/recycle-bin/cleanup/run")
+@require_admin
+async def handle_recycle_bin_cleanup_run(request: web.Request) -> web.Response:
+    """Manually run the recycle bin cleanup job now (Admin only).
+
+    Purges recycle bin entries older than the configured retention window
+    immediately, rather than waiting for the next scheduled run.
+    """
+    recycle_bin_cleanup_service = request.app["recycle_bin_cleanup_service"]
+    purged_count = await recycle_bin_cleanup_service.run_once()
+    return web.json_response(
+        RecycleBinCleanupRunVO(purged_count=purged_count).to_dict()
+    )
 
 
 @routes.post("/api/admin/notes/{file_id}/hermes-summary/retry")

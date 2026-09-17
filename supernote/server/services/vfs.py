@@ -1,7 +1,7 @@
 import logging
 import time
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from supernote.server.constants import (
@@ -196,13 +196,19 @@ class VirtualFileSystem:
         if not node:
             return False
 
-        # TODO: Handle recursive soft delete for folders?
-        # For now, just mark the node.
+        now_ms = int(time.time() * 1000)
+
+        # Cascade to descendants so folder contents don't remain "active"
+        # underneath an inactive parent. Only the folder itself gets a recycle
+        # bin entry; descendants are implicitly part of it and are found via
+        # `_collect_descendants` when the entry is restored or purged.
+        if node.is_folder == "Y":
+            for descendant, _ in await self.list_recursive(user_id, node.id):
+                descendant.is_active = "N"
 
         node.is_active = "N"
 
         # Create recycle bin entry
-        now_ms = int(time.time() * 1000)
         recycle = RecycleFileDO(
             user_id=user_id,
             file_id=node.id,
@@ -469,6 +475,8 @@ class VirtualFileSystem:
         if (recycle_entry := result.scalar_one_or_none()) is None:
             return False
 
+        now_ms = int(time.time() * 1000)
+
         # Get original node
         node_stmt = select(UserFileDO).where(
             UserFileDO.user_id == user_id, UserFileDO.id == recycle_entry.file_id
@@ -478,24 +486,105 @@ class VirtualFileSystem:
             node.is_active = "Y"
             # TODO: Lets add common functions for getting the current now_ms so we can
             # fake out update time in tests etc.
-            node.update_time = int(time.time() * 1000)
+            node.update_time = now_ms
+
+            # Cascade restore to descendants that were marked inactive when
+            # this folder was soft-deleted (see delete_node).
+            if node.is_folder == "Y":
+                for descendant in await self._collect_descendants(user_id, node.id):
+                    descendant.is_active = "Y"
+                    descendant.update_time = now_ms
 
         await self.db.delete(recycle_entry)
         await self.db.commit()
         return True
 
+    async def _collect_descendants(
+        self, user_id: int, parent_id: int
+    ) -> list[UserFileDO]:
+        """Collect all descendant nodes of a directory, regardless of active state.
+
+        Unlike `list_recursive`, this does not filter on `is_active`, so it can
+        find nodes that are already soft-deleted (e.g. when restoring or
+        purging a folder that was deleted while active).
+        """
+        descendants: list[UserFileDO] = []
+        stmt = select(UserFileDO).where(
+            UserFileDO.user_id == user_id,
+            UserFileDO.directory_id == parent_id,
+        )
+        result = await self.db.execute(stmt)
+        for child in result.scalars().all():
+            descendants.append(child)
+            if child.is_folder == "Y":
+                descendants.extend(await self._collect_descendants(user_id, child.id))
+        return descendants
+
+    async def _purge_recycle_entries(
+        self, entries: list[RecycleFileDO]
+    ) -> list[UserFileDO]:
+        """Permanently delete the given recycle bin entries and their underlying
+        file/folder records (recursively, for folders).
+
+        Returns the purged non-folder nodes so the caller can delete their blob
+        storage content and publish deletion events.
+        """
+        purged_files: list[UserFileDO] = []
+        seen_ids: set[int] = set()
+
+        for entry in entries:
+            nodes_to_delete: list[UserFileDO] = []
+            node_stmt = select(UserFileDO).where(
+                UserFileDO.user_id == entry.user_id, UserFileDO.id == entry.file_id
+            )
+            node_result = await self.db.execute(node_stmt)
+            if node := node_result.scalar_one_or_none():
+                nodes_to_delete.append(node)
+                if node.is_folder == "Y":
+                    nodes_to_delete.extend(
+                        await self._collect_descendants(entry.user_id, node.id)
+                    )
+
+            for candidate in nodes_to_delete:
+                if candidate.id in seen_ids:
+                    continue
+                seen_ids.add(candidate.id)
+                if candidate.is_folder == "N":
+                    purged_files.append(candidate)
+                await self.db.delete(candidate)
+
+            await self.db.delete(entry)
+
+        await self.db.commit()
+        return purged_files
+
     async def purge_recycle(
         self, user_id: int, recycle_ids: list[int] | None = None
-    ) -> None:
-        """Permanently delete items from recycle bin."""
+    ) -> list[UserFileDO]:
+        """Permanently delete items from recycle bin for a specific user.
 
-        stmt = delete(RecycleFileDO).where(RecycleFileDO.user_id == user_id)
+        This removes the recycle bin index entries *and* the underlying
+        `UserFileDO` row(s) (including all descendants, for folders). Returns
+        the purged non-folder nodes so the caller can delete their blob
+        storage content and publish deletion events.
+        """
+        stmt = select(RecycleFileDO).where(RecycleFileDO.user_id == user_id)
         if recycle_ids:
             stmt = stmt.where(RecycleFileDO.id.in_(recycle_ids))
+        result = await self.db.execute(stmt)
+        entries = list(result.scalars().all())
+        return await self._purge_recycle_entries(entries)
 
-        await self.db.execute(stmt)
-        # TODO: Also delete UserFileDO? For now, VFS "active='N'" nodes remain.
-        await self.db.commit()
+    async def purge_expired_recycle(self, cutoff_ms: int) -> list[UserFileDO]:
+        """Permanently delete recycle bin entries (across all users) whose
+        `delete_time` is older than the given cutoff (epoch ms).
+
+        Used by the scheduled recycle bin cleanup job.
+        """
+        stmt = select(RecycleFileDO).where(RecycleFileDO.delete_time < cutoff_ms)
+        result = await self.db.execute(stmt)
+        entries = list(result.scalars().all())
+        return await self._purge_recycle_entries(entries)
 
     async def search_files(self, user_id: int, keyword: str) -> list[UserFileDO]:
         """Search for active files/folders by keyword (case-insensitive)."""

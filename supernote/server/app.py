@@ -41,6 +41,7 @@ from .routes import (
 from .routes.decorators import public_route
 from .services.apple_vision_ocr import AppleVisionOcrService
 from .services.blob import LocalBlobStorage
+from .services.cleanup import RecycleBinCleanupService
 from .services.coordination import SqliteCoordinationService
 from .services.file import FileService
 from .services.gemini import GeminiService
@@ -402,6 +403,14 @@ def create_app(config: ServerConfig) -> web.Application:
     )
     app["processor_service"] = processor_service
 
+    recycle_bin_cleanup_service = RecycleBinCleanupService(
+        file_service,
+        retention_days=config.recycle_bin_cleanup_retention_days,
+        interval_seconds=config.recycle_bin_cleanup_interval_seconds,
+        enabled=config.recycle_bin_cleanup_enabled,
+    )
+    app["recycle_bin_cleanup_service"] = recycle_bin_cleanup_service
+
     # Register modules
     processor_service.register_modules(
         hashing=PageHashingModule(file_service=file_service),
@@ -515,6 +524,7 @@ def create_app(config: ServerConfig) -> web.Application:
 
         logger.info("Starting background services...")
         await processor_service.start()
+        await recycle_bin_cleanup_service.start()
         logger.info("Startup sequence complete.")
 
         app["mcp_task"] = mcp_task
@@ -530,6 +540,7 @@ def create_app(config: ServerConfig) -> web.Application:
                 pass
 
         await processor_service.stop()
+        await recycle_bin_cleanup_service.stop()
         await session_manager.close()
 
     app.on_shutdown.append(on_shutdown_handler)

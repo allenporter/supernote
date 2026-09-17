@@ -13,13 +13,14 @@ from supernote.client.client import Client
 from supernote.models.base import ProcessingStatus
 from supernote.models.user import UserRegisterDTO
 from supernote.server.config import ServerConfig
-from supernote.server.db.models.file import UserFileDO
+from supernote.server.db.models.file import RecycleFileDO, UserFileDO
 from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import JWT_ALGORITHM, UserService
+from supernote.server.services.vfs import VirtualFileSystem
 from supernote.server.utils.paths import get_hermes_summary_id
 
 
@@ -472,5 +473,87 @@ async def test_admin_hermes_summary_retry_permission(
     assert resp.status == 401
 
     # Non-admin should fail
+    resp = await client.post(path, headers=user_headers)
+    assert resp.status == 403
+
+
+async def test_admin_recycle_bin_cleanup_run_purges_expired_entries(
+    client: TestClient,
+    session_manager: DatabaseSessionManager,
+    coordination_service: CoordinationService,
+    server_config: ServerConfig,
+    admin_headers: dict[str, str],
+) -> None:
+    """The manual cleanup trigger purges only entries past the retention window."""
+    await setup_users(session_manager, coordination_service, server_config)
+    admin_user_id = await _get_admin_user_id(session_manager)
+
+    async with session_manager.session() as session:
+        vfs = VirtualFileSystem(session)
+        old_file = await vfs.create_or_update_file(
+            admin_user_id,
+            0,
+            "old.note",
+            size=1,
+            md5="h1",
+            storage_key="cleanup-old-key",
+        )
+        await vfs.delete_node(admin_user_id, old_file.id)
+
+        new_file = await vfs.create_or_update_file(
+            admin_user_id,
+            0,
+            "new.note",
+            size=1,
+            md5="h2",
+            storage_key="cleanup-new-key",
+        )
+        await vfs.delete_node(admin_user_id, new_file.id)
+
+        # Backdate only the "old" entry past the configured retention window.
+        result = await session.execute(
+            select(RecycleFileDO).where(RecycleFileDO.file_id == old_file.id)
+        )
+        old_entry = result.scalar_one()
+        old_entry.delete_time -= (
+            (server_config.recycle_bin_cleanup_retention_days + 1) * 86400 * 1000
+        )
+        await session.commit()
+
+    resp = await client.post(
+        "/api/admin/recycle-bin/cleanup/run", headers=admin_headers
+    )
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["purgedCount"] == 1
+
+    async with session_manager.session() as session:
+        result = await session.execute(
+            select(UserFileDO).where(UserFileDO.id == old_file.id)
+        )
+        assert result.scalar_one_or_none() is None
+
+        result = await session.execute(
+            select(UserFileDO).where(UserFileDO.id == new_file.id)
+        )
+        assert result.scalar_one_or_none() is not None
+
+
+async def test_admin_recycle_bin_cleanup_run_permission(
+    client: TestClient,
+    session_manager: DatabaseSessionManager,
+    coordination_service: CoordinationService,
+    server_config: ServerConfig,
+    admin_headers: dict[str, str],
+    user_headers: dict[str, str],
+) -> None:
+    """Access control matches other admin routes: 401 anon, 403 non-admin."""
+    await setup_users(session_manager, coordination_service, server_config)
+
+    path = "/api/admin/recycle-bin/cleanup/run"
+
+    resp = await client.post(path)
+    assert resp.status == 401
+
     resp = await client.post(path, headers=user_headers)
     assert resp.status == 403

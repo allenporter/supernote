@@ -82,6 +82,23 @@ HERMES_SUMMARY_DURATION_SECONDS: Histogram = Histogram(
     "Latency of Hermes summary generation attempts in seconds.",
 )
 
+# Recycle bin cleanup metrics
+RECYCLE_BIN_CLEANUP_RUNS_TOTAL: Counter = Counter(
+    "supernote_recycle_bin_cleanup_runs_total",
+    "Total number of scheduled recycle bin cleanup job runs.",
+    ["status"],
+)
+
+RECYCLE_BIN_CLEANUP_ITEMS_PURGED_TOTAL: Counter = Counter(
+    "supernote_recycle_bin_cleanup_items_purged_total",
+    "Total number of files permanently purged by the recycle bin cleanup job.",
+)
+
+RECYCLE_BIN_CLEANUP_DURATION_SECONDS: Histogram = Histogram(
+    "supernote_recycle_bin_cleanup_duration_seconds",
+    "Latency of recycle bin cleanup job runs in seconds.",
+)
+
 # Database metrics
 DB_SESSIONS_ACTIVE: Gauge = Gauge(
     "supernote_db_sessions_active",

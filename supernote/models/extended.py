@@ -114,6 +114,20 @@ class HermesSummaryRetryVO(BaseResponse):
         serialize_by_alias = True
 
 
+@dataclass(kw_only=True)
+class RecycleBinCleanupRunVO(BaseResponse):
+    """Response VO for the admin manual recycle bin cleanup trigger endpoint.
+
+    Used by: POST /api/admin/recycle-bin/cleanup/run
+    """
+
+    purged_count: int = field(metadata=field_options(alias="purgedCount"), default=0)
+    """Number of files permanently purged by this run."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
 @dataclass
 class FileProcessingStatusDTO(DataClassJSONMixin):
     """Request model for querying processing status of files.

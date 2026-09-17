@@ -219,6 +219,30 @@ BaseConfig
     Env Var: `SUPERNOTE_HERMES_SUMMARY_LANGUAGE`
     """
 
+    recycle_bin_cleanup_enabled: bool = True
+    """Whether the scheduled recycle bin cleanup job is enabled.
+
+    When enabled, recycle bin entries older than
+    `recycle_bin_cleanup_retention_days` are permanently purged automatically.
+
+    Env Var: `SUPERNOTE_RECYCLE_BIN_CLEANUP_ENABLED`
+    """
+
+    recycle_bin_cleanup_retention_days: int = 30
+    """How many days a deleted file/folder stays in the recycle bin before the
+    scheduled cleanup job permanently purges it. Operator-defined; adjust to
+    taste.
+
+    Env Var: `SUPERNOTE_RECYCLE_BIN_CLEANUP_RETENTION_DAYS`
+    """
+
+    recycle_bin_cleanup_interval_seconds: int = 86400
+    """How often, in seconds, the recycle bin cleanup job runs. Defaults to
+    once a day.
+
+    Env Var: `SUPERNOTE_RECYCLE_BIN_CLEANUP_INTERVAL_SECONDS`
+    """
+
     @property
     def configured_base_url(self) -> str | None:
         """Get the explicitly configured base URL, or None if unset.
@@ -467,6 +491,43 @@ BaseConfig
             logger.info(
                 f"Using SUPERNOTE_HERMES_SUMMARY_LANGUAGE: {config.hermes_summary_language}"
             )
+
+        if os.getenv("SUPERNOTE_RECYCLE_BIN_CLEANUP_ENABLED"):
+            config.recycle_bin_cleanup_enabled = _get_bool_env(
+                "SUPERNOTE_RECYCLE_BIN_CLEANUP_ENABLED",
+                config.recycle_bin_cleanup_enabled,
+            )
+            logger.info(
+                f"Recycle Bin Cleanup Enabled: {config.recycle_bin_cleanup_enabled}"
+            )
+
+        if recycle_bin_cleanup_retention_days := os.getenv(
+            "SUPERNOTE_RECYCLE_BIN_CLEANUP_RETENTION_DAYS"
+        ):
+            try:
+                config.recycle_bin_cleanup_retention_days = int(
+                    recycle_bin_cleanup_retention_days
+                )
+                logger.info(
+                    "Using SUPERNOTE_RECYCLE_BIN_CLEANUP_RETENTION_DAYS: "
+                    f"{config.recycle_bin_cleanup_retention_days}"
+                )
+            except ValueError:
+                pass
+
+        if recycle_bin_cleanup_interval_seconds := os.getenv(
+            "SUPERNOTE_RECYCLE_BIN_CLEANUP_INTERVAL_SECONDS"
+        ):
+            try:
+                config.recycle_bin_cleanup_interval_seconds = int(
+                    recycle_bin_cleanup_interval_seconds
+                )
+                logger.info(
+                    "Using SUPERNOTE_RECYCLE_BIN_CLEANUP_INTERVAL_SECONDS: "
+                    f"{config.recycle_bin_cleanup_interval_seconds}"
+                )
+            except ValueError:
+                pass
 
         if config.trace_log_file is None:
             config.trace_log_file = str(
