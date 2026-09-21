@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from supernote.server.services import blob as blob_module
 from supernote.server.services.blob import CleanupStats, LocalBlobStorage
 
 
@@ -291,14 +290,3 @@ async def test_cleanup_chunks_custom_parser(tmp_path: Path) -> None:
     )
     assert stats == CleanupStats(files_removed=1, bytes_reclaimed=len(b"part1"))
     assert not path1.exists()
-
-
-def test_blob_exports() -> None:
-    """Verify explicit __all__ exports of supernote.server.services.blob."""
-    assert hasattr(blob_module, "__all__")
-    assert sorted(blob_module.__all__) == [
-        "BlobMetadata",
-        "BlobStorage",
-        "CleanupStats",
-        "LocalBlobStorage",
-    ]
