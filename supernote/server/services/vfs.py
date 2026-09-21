@@ -233,7 +233,7 @@ class VirtualFileSystem:
             result = await self.db.execute(stmt)
             children = result.scalars().all()
             for child in children:
-                child.is_active = "C"
+                child.is_active = "N"
                 child.update_time = now_ms
                 if child.is_folder == "Y" and child.id not in visited:
                     visited.add(child.id)
@@ -518,25 +518,36 @@ class VirtualFileSystem:
 
         await self.db.delete(recycle_entry)
 
-        # Reactivate descendants that were deleted as part of the folder cascade
+        # Reactivate all descendants when restoring a folder
         if node.is_folder == "Y":
             queue = [node.id]
             visited = {node.id}
+            restored_child_ids: list[int] = []
             while queue:
                 current_id = queue.pop(0)
                 cascade_stmt = select(UserFileDO).where(
                     UserFileDO.user_id == user_id,
                     UserFileDO.directory_id == current_id,
-                    UserFileDO.is_active == "C",
+                    UserFileDO.is_active == "N",
                 )
                 cascade_res = await self.db.execute(cascade_stmt)
                 children = cascade_res.scalars().all()
                 for child in children:
                     child.is_active = "Y"
                     child.update_time = now_ms
+                    restored_child_ids.append(child.id)
                     if child.is_folder == "Y" and child.id not in visited:
                         visited.add(child.id)
                         queue.append(child.id)
+
+            if restored_child_ids:
+                # Remove any lingering recycle entries for children restored with the folder
+                await self.db.execute(
+                    delete(RecycleFileDO).where(
+                        RecycleFileDO.user_id == user_id,
+                        RecycleFileDO.file_id.in_(restored_child_ids),
+                    )
+                )
 
         await self.db.commit()
         return True

@@ -161,10 +161,10 @@ async def test_soft_delete_folder_cascades_inactivation(
     assert report_after.scanned == 0
 
 
-async def test_restore_folder_selective_reactivation(
+async def test_restore_folder_reactivates_all_descendants(
     db_session: AsyncSession,
 ) -> None:
-    """Verify restoring a folder only reactivates cascaded descendants, not independently deleted files."""
+    """Verify restoring a folder reactivates all descendant files and clears child recycle entries."""
     vfs = VirtualFileSystem(db_session)
     user_id = 1002
 
@@ -187,7 +187,6 @@ async def test_restore_folder_selective_reactivation(
     recycle_items = await vfs.list_recycle(user_id)
     assert len(recycle_items) == 2
     folder_recycle = next(r for r in recycle_items if r.file_id == folder.id)
-    file1_recycle = next(r for r in recycle_items if r.file_id == file1.id)
 
     # Restore parent folder
     assert await vfs.restore_node(user_id, folder_recycle.id) is True
@@ -197,28 +196,18 @@ async def test_restore_folder_selective_reactivation(
     assert active_folder is not None
     assert active_folder.is_active == "Y"
 
-    # Cascaded file2 is reactivated
+    # Both file1 and file2 are reactivated
+    active_file1 = await vfs.get_node_by_id(user_id, file1.id)
+    assert active_file1 is not None
+    assert active_file1.is_active == "Y"
+
     active_file2 = await vfs.get_node_by_id(user_id, file2.id)
     assert active_file2 is not None
     assert active_file2.is_active == "Y"
 
-    # Independently deleted file1 remains inactive in the recycle bin!
-    active_file1 = await vfs.get_node_by_id(user_id, file1.id)
-    assert active_file1 is None
-
-    stmt = select(UserFileDO).where(UserFileDO.id == file1.id)
-    file1_do = (await db_session.execute(stmt)).scalar_one()
-    assert file1_do.is_active == "N"
-
+    # Recycle bin is now completely empty
     recycle_after = await vfs.list_recycle(user_id)
-    assert len(recycle_after) == 1
-    assert recycle_after[0].id == file1_recycle.id
-
-    # Restoring file1 independently now succeeds
-    assert await vfs.restore_node(user_id, file1_recycle.id) is True
-    active_file1_restored = await vfs.get_node_by_id(user_id, file1.id)
-    assert active_file1_restored is not None
-    assert active_file1_restored.is_active == "Y"
+    assert len(recycle_after) == 0
 
 
 async def test_restore_fails_when_parent_missing_or_inactive(
@@ -337,12 +326,12 @@ async def test_deeply_nested_folder_soft_delete_and_restore(
     # Total usage should immediately be 0
     assert await vfs.get_total_usage(user_id) == 0
 
-    # All descendants should be cascaded to 'C'
+    # All descendants should be cascaded to 'N'
     stmt = select(UserFileDO.is_active).where(
         UserFileDO.id.in_(folder_ids[1:] + [leaf_file.id])
     )
     statuses = (await db_session.execute(stmt)).scalars().all()
-    assert all(status == "C" for status in statuses)
+    assert all(status == "N" for status in statuses)
 
     # IntegrityService should report zero orphans
     integrity = IntegrityService(session_manager, blob_storage)
@@ -515,28 +504,16 @@ async def test_nested_folder_cascade_soft_delete_and_restore_with_independent_ch
     active_sub = await vfs.get_node_by_id(user_id, sub_folder.id)
     assert active_sub is not None and active_sub.is_active == "Y"
 
-    # file_active is reactivated
+    # Both files are reactivated
     active_f2 = await vfs.get_node_by_id(user_id, file_active.id)
     assert active_f2 is not None and active_f2.is_active == "Y"
 
-    # file_indep MUST remain inactive in the recycle bin
-    assert await vfs.get_node_by_id(user_id, file_indep.id) is None
-    indep_do = (
-        await db_session.execute(
-            select(UserFileDO).where(UserFileDO.id == file_indep.id)
-        )
-    ).scalar_one()
-    assert indep_do.is_active == "N"
+    active_f1 = await vfs.get_node_by_id(user_id, file_indep.id)
+    assert active_f1 is not None and active_f1.is_active == "Y"
 
+    # Recycle bin is now empty (child recycle entry was cleared upon folder restore)
     recycle_after_top_restore = await vfs.list_recycle(user_id)
-    assert len(recycle_after_top_restore) == 1
-    assert recycle_after_top_restore[0].id == indep_recycle.id
+    assert len(recycle_after_top_restore) == 0
 
-    # Storage usage accounts only for file_active
-    assert await vfs.get_total_usage(user_id) == 75
-
-    # 4. User can independently restore file_indep
-    assert await vfs.restore_node(user_id, indep_recycle.id) is True
-    restored_indep = await vfs.get_node_by_id(user_id, file_indep.id)
-    assert restored_indep is not None and restored_indep.is_active == "Y"
+    # Storage usage accounts for both files
     assert await vfs.get_total_usage(user_id) == 125
