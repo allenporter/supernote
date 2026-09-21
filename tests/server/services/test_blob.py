@@ -205,8 +205,8 @@ async def test_cleanup_staging(tmp_path: Path) -> None:
     assert non_tmp_file.exists()
 
 
-async def test_cleanup_chunks_session_grouping(tmp_path: Path) -> None:
-    """Verify cleanup_chunks groups by base object and checks latest chunk mtime."""
+async def test_cleanup_chunks_expiration(tmp_path: Path) -> None:
+    """Verify cleanup_chunks prunes chunks older than ttl_seconds while preserving recent ones."""
     storage = LocalBlobStorage(tmp_path)
     bucket = "user-data"
 
@@ -216,11 +216,11 @@ async def test_cleanup_chunks_session_grouping(tmp_path: Path) -> None:
     path_a1 = storage.get_blob_path(bucket, "abandoned.note.part.1")
     path_a2 = storage.get_blob_path(bucket, "abandoned.note.part.2")
 
-    # Put chunks for active upload B
-    await storage.put(bucket, "active.note.part.1", b"chunk b1")
-    await storage.put(bucket, "active.note.part.2", b"chunk b2")
-    path_b1 = storage.get_blob_path(bucket, "active.note.part.1")
-    path_b2 = storage.get_blob_path(bucket, "active.note.part.2")
+    # Put chunks for upload B (part 1 old, part 2 recent)
+    await storage.put(bucket, "mixed.note.part.1", b"chunk b1")
+    await storage.put(bucket, "mixed.note.part.2", b"chunk b2")
+    path_b1 = storage.get_blob_path(bucket, "mixed.note.part.1")
+    path_b2 = storage.get_blob_path(bucket, "mixed.note.part.2")
 
     # Put normal file
     await storage.put(bucket, "normal.note", b"normal file content")
@@ -231,7 +231,7 @@ async def test_cleanup_chunks_session_grouping(tmp_path: Path) -> None:
     os.utime(path_a1, (now - 7200, now - 7200))
     os.utime(path_a2, (now - 7000, now - 7000))
 
-    # Active upload B: part 1 is old, but part 2 is recent (e.g. uploaded 10s ago)
+    # Upload B: part 1 is old, but part 2 is recent (e.g. uploaded 10s ago)
     os.utime(path_b1, (now - 7200, now - 7200))
     os.utime(path_b2, (now - 10, now - 10))
 
@@ -240,14 +240,16 @@ async def test_cleanup_chunks_session_grouping(tmp_path: Path) -> None:
 
     stats = await storage.cleanup_chunks(bucket, ttl_seconds=3600)
 
-    # Both parts of abandoned.note should be pruned
-    assert stats.files_removed == 2
-    assert stats.bytes_reclaimed == len(b"chunk a1") + len(b"chunk a2")
+    # Chunks older than 3600s should be pruned (a1, a2, and b1)
+    assert stats.files_removed == 3
+    assert stats.bytes_reclaimed == len(b"chunk a1") + len(b"chunk a2") + len(
+        b"chunk b1"
+    )
     assert not path_a1.exists()
     assert not path_a2.exists()
+    assert not path_b1.exists()
 
-    # Active upload B must NOT be pruned (even part 1 is preserved)
-    assert path_b1.exists()
+    # Recent chunk b2 must NOT be pruned
     assert path_b2.exists()
 
     # Normal file must NOT be pruned

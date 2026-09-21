@@ -346,50 +346,44 @@ class LocalBlobStorage(BlobStorage):
             return stats
 
         now = time.time()
-        chunks_by_object: dict[str, list[tuple[Path, float, int]]] = {}
-
+        logger.debug(
+            "Scanning bucket directory %s for chunk files older than %.1fs",
+            bucket_dir,
+            ttl_seconds,
+        )
         try:
             for root, _, files in os.walk(bucket_dir):
                 for filename in files:
-                    object_name = chunk_parser(filename)
-                    if not object_name:
+                    if not chunk_parser(filename):
                         continue
                     file_path = Path(root) / filename
                     try:
                         stat = file_path.stat()
-                        chunks_by_object.setdefault(object_name, []).append(
-                            (file_path, stat.st_mtime, stat.st_size)
-                        )
+                        age = now - stat.st_mtime
+                        if age >= ttl_seconds:
+                            logger.debug(
+                                "Removing expired chunk file %s (age=%.1fs, size=%d bytes)",
+                                file_path,
+                                age,
+                                stat.st_size,
+                            )
+                            os.remove(file_path)
+                            stats.files_removed += 1
+                            stats.bytes_reclaimed += stat.st_size
                     except FileNotFoundError:
                         continue
                     except OSError as e:
-                        logger.warning("Failed to stat chunk file %s: %s", file_path, e)
+                        logger.warning(
+                            "Failed to remove abandoned chunk %s: %s", file_path, e
+                        )
         except OSError as e:
             logger.warning("Failed to scan bucket directory %s: %s", bucket_dir, e)
             return stats
 
-        for parts in chunks_by_object.values():
-            if not parts:
-                continue
-            latest_mtime = max(mtime for _, mtime, _ in parts)
-            if now - latest_mtime < ttl_seconds:
-                continue
-
-            logger.debug(
-                "Removing %d abandoned chunk(s) (idle=%.1fs)",
-                len(parts),
-                now - latest_mtime,
-            )
-            for file_path, _, size in parts:
-                try:
-                    os.remove(file_path)
-                    stats.files_removed += 1
-                    stats.bytes_reclaimed += size
-                except FileNotFoundError:
-                    continue
-                except OSError as e:
-                    logger.warning(
-                        "Failed to remove abandoned chunk %s: %s", file_path, e
-                    )
-
+        logger.debug(
+            "Chunk cleanup completed for %s: %d file(s) removed, %d byte(s) reclaimed",
+            bucket_dir,
+            stats.files_removed,
+            stats.bytes_reclaimed,
+        )
         return stats
