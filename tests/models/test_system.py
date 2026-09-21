@@ -1,5 +1,7 @@
 """Tests for System data models."""
 
+import pytest
+
 from supernote.models.system import (
     DictionaryQueryDTO,
     DictionaryVO,
@@ -116,6 +118,18 @@ def test_recycle_bin_cleanup_dto() -> None:
     from_snake = RecycleBinCleanupDTO.from_dict({"retention_days": 7, "batch_size": 25})
     assert from_snake.retention_days == 7
     assert from_snake.batch_size == 25
+
+    # Validation: negative retention_days
+    with pytest.raises(ValueError, match="retention_days cannot be negative"):
+        RecycleBinCleanupDTO(retention_days=-1)
+    with pytest.raises(ValueError, match="retention_days cannot be negative"):
+        RecycleBinCleanupDTO.from_dict({"retentionDays": -1})
+
+    # Validation: non-positive batch_size
+    with pytest.raises(ValueError, match="batch_size must be positive"):
+        RecycleBinCleanupDTO(batch_size=0)
+    with pytest.raises(ValueError, match="batch_size must be positive"):
+        RecycleBinCleanupDTO.from_dict({"batchSize": -5})
 
 
 def test_recycle_bin_cleanup_vo() -> None:

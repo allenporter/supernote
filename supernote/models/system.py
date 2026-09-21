@@ -471,6 +471,12 @@ class RecycleBinCleanupDTO(DataClassJSONMixin):
     )
     """Optional batch size limit for purge operations."""
 
+    def __post_init__(self) -> None:
+        if self.retention_days is not None and self.retention_days < 0:
+            raise ValueError("retention_days cannot be negative")
+        if self.batch_size is not None and self.batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+
     class Config(BaseConfig):
         allow_deserialization_not_by_alias = True
         serialize_by_alias = True

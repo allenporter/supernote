@@ -212,34 +212,21 @@ async def handle_recycle_bin_cleanup(request: web.Request) -> web.Response:
         "recycle_bin_cleanup_service"
     ]
 
-    dto = RecycleBinCleanupDTO()
-    if request.can_read_body:
-        try:
-            body = await request.json()
-            if body is not None:
-                dto = RecycleBinCleanupDTO.from_dict(body)
-        except (json.JSONDecodeError, ValueError, TypeError):
-            return web.json_response(
-                create_error_response("Invalid request payload").to_dict(),
-                status=400,
-            )
-
-    if dto.retention_days is not None and dto.retention_days < 0:
+    try:
+        data = await request.json() if request.content_length else {}
+        dto = RecycleBinCleanupDTO.from_dict(data)
+    except (json.JSONDecodeError, ValueError, TypeError) as err:
         return web.json_response(
-            create_error_response("retention_days cannot be negative").to_dict(),
-            status=400,
-        )
-    if dto.batch_size is not None and dto.batch_size <= 0:
-        return web.json_response(
-            create_error_response("batch_size must be positive").to_dict(),
+            create_error_response(str(err) or "Invalid request payload").to_dict(),
             status=400,
         )
 
     stats = await cleanup_service.run_cleanup(
         retention_days=dto.retention_days, batch_size=dto.batch_size
     )
-    response = RecycleBinCleanupVO(
-        purged_count=stats.purged_count,
-        bytes_freed=stats.bytes_freed,
+    return web.json_response(
+        RecycleBinCleanupVO(
+            purged_count=stats.purged_count,
+            bytes_freed=stats.bytes_freed,
+        ).to_dict()
     )
-    return web.json_response(response.to_dict())
