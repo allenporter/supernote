@@ -271,6 +271,11 @@ class LocalBlobStorage(BlobStorage):
     def _cleanup_staging_sync(self, temp_dir: Path, ttl_seconds: float) -> CleanupStats:
         stats = CleanupStats()
         now = time.time()
+        logger.debug(
+            "Scanning staging directory %s for temporary files older than %.1fs",
+            temp_dir,
+            ttl_seconds,
+        )
         try:
             with os.scandir(temp_dir) as entries:
                 for entry in entries:
@@ -278,7 +283,14 @@ class LocalBlobStorage(BlobStorage):
                         continue
                     try:
                         stat = entry.stat()
-                        if now - stat.st_mtime >= ttl_seconds:
+                        age = now - stat.st_mtime
+                        if age >= ttl_seconds:
+                            logger.debug(
+                                "Removing expired staging file %s (age=%.1fs, size=%d bytes)",
+                                entry.path,
+                                age,
+                                stat.st_size,
+                            )
                             os.remove(entry.path)
                             stats.files_removed += 1
                             stats.bytes_reclaimed += stat.st_size
@@ -286,12 +298,18 @@ class LocalBlobStorage(BlobStorage):
                         continue
                     except OSError as e:
                         logger.warning(
-                            f"Failed to remove staging file {entry.path}: {e}"
+                            "Failed to remove staging file %s: %s", entry.path, e
                         )
         except FileNotFoundError:
             pass
         except OSError as e:
-            logger.warning(f"Failed to scan temp staging directory {temp_dir}: {e}")
+            logger.warning("Failed to scan temp staging directory %s: %s", temp_dir, e)
+        logger.debug(
+            "Staging cleanup completed for %s: %d file(s) removed, %d byte(s) reclaimed",
+            temp_dir,
+            stats.files_removed,
+            stats.bytes_reclaimed,
+        )
         return stats
 
     async def cleanup_chunks(
@@ -345,9 +363,9 @@ class LocalBlobStorage(BlobStorage):
                     except FileNotFoundError:
                         continue
                     except OSError as e:
-                        logger.warning(f"Failed to stat chunk file {file_path}: {e}")
+                        logger.warning("Failed to stat chunk file %s: %s", file_path, e)
         except OSError as e:
-            logger.warning(f"Failed to scan bucket directory {bucket_dir}: {e}")
+            logger.warning("Failed to scan bucket directory %s: %s", bucket_dir, e)
             return stats
 
         for parts in chunks_by_object.values():
@@ -357,6 +375,11 @@ class LocalBlobStorage(BlobStorage):
             if now - latest_mtime < ttl_seconds:
                 continue
 
+            logger.debug(
+                "Removing %d abandoned chunk(s) (idle=%.1fs)",
+                len(parts),
+                now - latest_mtime,
+            )
             for file_path, _, size in parts:
                 try:
                     os.remove(file_path)
@@ -365,6 +388,8 @@ class LocalBlobStorage(BlobStorage):
                 except FileNotFoundError:
                     continue
                 except OSError as e:
-                    logger.warning(f"Failed to remove abandoned chunk {file_path}: {e}")
+                    logger.warning(
+                        "Failed to remove abandoned chunk %s: %s", file_path, e
+                    )
 
         return stats
