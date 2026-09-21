@@ -1,3 +1,4 @@
+import json
 from collections.abc import Awaitable, Callable
 
 from aiohttp import web
@@ -6,13 +7,14 @@ from sqlalchemy import delete, select
 
 from supernote.models.auth import UserVO
 from supernote.models.base import BaseResponse, TaskType, create_error_response
-from supernote.models.system import QueueStatusVO
+from supernote.models.system import QueueStatusVO, RecycleBinCleanupVO
 from supernote.models.user import UserRegisterDTO
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus, NoteUpdatedEvent
 from supernote.server.exceptions import SupernoteError
+from supernote.server.services.recycle_cleanup import RecycleBinCleanupService
 from supernote.server.services.user import UserService
 
 routes = web.RouteTableDef()
@@ -196,3 +198,48 @@ async def handle_reprocess(request: web.Request) -> web.Response:
         )
 
     return web.json_response(BaseResponse().to_dict())
+
+
+@routes.post("/api/admin/recycle-bin/cleanup/run")
+@require_admin
+async def handle_recycle_bin_cleanup(request: web.Request) -> web.Response:
+    """Trigger recycle bin cleanup on-demand (Admin only)."""
+    cleanup_service: RecycleBinCleanupService = request.app[
+        "recycle_bin_cleanup_service"
+    ]
+
+    retention_days = None
+    batch_size = None
+    if request.can_read_body:
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                if "retention_days" in body:
+                    retention_days = int(body["retention_days"])
+                if "batch_size" in body:
+                    batch_size = int(body["batch_size"])
+        except (json.JSONDecodeError, ValueError, TypeError):
+            return web.json_response(
+                create_error_response("Invalid request payload").to_dict(),
+                status=400,
+            )
+
+    if retention_days is not None and retention_days < 0:
+        return web.json_response(
+            create_error_response("retention_days cannot be negative").to_dict(),
+            status=400,
+        )
+    if batch_size is not None and batch_size <= 0:
+        return web.json_response(
+            create_error_response("batch_size must be positive").to_dict(),
+            status=400,
+        )
+
+    stats = await cleanup_service.run_cleanup(
+        retention_days=retention_days, batch_size=batch_size
+    )
+    response = RecycleBinCleanupVO(
+        purged_count=stats.purged_count,
+        bytes_freed=stats.bytes_freed,
+    )
+    return web.json_response(response.to_dict())

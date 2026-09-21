@@ -6,11 +6,16 @@ when deployed behind a reverse proxy, with different proxy modes.
 
 import subprocess
 import sys
+from typing import Any
+from unittest.mock import patch
 
 import pytest
 from aiohttp.test_utils import TestClient
 
 from supernote.models.file_device import FileUploadApplyLocalDTO
+from supernote.server import app as app_module
+from supernote.server.app import create_app
+from supernote.server.config import ServerConfig
 
 
 def test_import_does_not_load_google_genai() -> None:
@@ -188,3 +193,137 @@ async def test_static_frontend_sha256_fallback(client: TestClient) -> None:
     js = await resp.text()
     assert "crypto.subtle" in js
     assert "window.sha256" in js
+
+
+def test_app_exports() -> None:
+    """Verify explicit __all__ exports of supernote.server.app."""
+    assert hasattr(app_module, "__all__")
+    expected = [
+        "bootstrap_ephemeral_user",
+        "create_app",
+        "create_coordination_service",
+        "create_db_session_manager",
+        "is_binary_content_type",
+        "jwt_auth_middleware",
+        "metrics_middleware",
+        "run",
+        "socketio_compat_middleware",
+        "trace_middleware",
+        "try_parse_json",
+    ]
+    assert sorted(app_module.__all__) == sorted(expected)
+    for name in expected:
+        assert hasattr(app_module, name)
+
+
+async def test_app_cleanup_service_di(server_config: ServerConfig) -> None:
+    """Verify StorageCleanupService receives primitive config parameters and FileService is initialized without storage_root."""
+    server_config.storage_cleanup_interval_seconds = 7200
+    server_config.storage_temp_ttl_seconds = 172800
+
+    app = create_app(server_config)
+
+    file_service = app["file_service"]
+    assert file_service is not None
+    assert not hasattr(file_service, "storage_root")
+
+    cleanup_service = app["storage_cleanup_service"]
+    assert cleanup_service is not None
+    assert cleanup_service.interval_seconds == 7200
+    assert cleanup_service.temp_ttl_seconds == 172800
+
+
+async def test_storage_cleanup_lifespan_enabled(
+    server_config: ServerConfig,
+    aiohttp_client: Any,
+) -> None:
+    """Verify StorageCleanupService starts and stops cleanly with app lifespan when enabled."""
+    server_config.storage_cleanup_enabled = True
+    app = create_app(server_config)
+    cleanup_service = app["storage_cleanup_service"]
+
+    with (
+        patch.object(
+            cleanup_service, "start", wraps=cleanup_service.start
+        ) as mock_start,
+        patch.object(cleanup_service, "stop", wraps=cleanup_service.stop) as mock_stop,
+    ):
+        client = await aiohttp_client(app)
+        mock_start.assert_awaited_once()
+        assert cleanup_service._polling_task is not None
+        assert not cleanup_service._polling_task.done()
+
+        await client.close()
+        mock_stop.assert_awaited_once()
+        assert cleanup_service._polling_task is None
+
+
+async def test_storage_cleanup_lifespan_disabled(
+    server_config: ServerConfig,
+    aiohttp_client: Any,
+) -> None:
+    """Verify StorageCleanupService is not started or stopped when storage_cleanup_enabled is False."""
+    server_config.storage_cleanup_enabled = False
+    app = create_app(server_config)
+    cleanup_service = app["storage_cleanup_service"]
+
+    with (
+        patch.object(
+            cleanup_service, "start", wraps=cleanup_service.start
+        ) as mock_start,
+        patch.object(cleanup_service, "stop", wraps=cleanup_service.stop) as mock_stop,
+    ):
+        client = await aiohttp_client(app)
+        mock_start.assert_not_called()
+        assert cleanup_service._polling_task is None
+
+        await client.close()
+        mock_stop.assert_not_called()
+
+
+async def test_recycle_bin_cleanup_lifespan_enabled(
+    server_config: ServerConfig,
+    aiohttp_client: Any,
+) -> None:
+    """Verify RecycleBinCleanupService starts and stops cleanly with app lifespan when enabled."""
+    server_config.recycle_bin_cleanup_enabled = True
+    app = create_app(server_config)
+    cleanup_service = app["recycle_bin_cleanup_service"]
+
+    with (
+        patch.object(
+            cleanup_service, "start", wraps=cleanup_service.start
+        ) as mock_start,
+        patch.object(cleanup_service, "stop", wraps=cleanup_service.stop) as mock_stop,
+    ):
+        client = await aiohttp_client(app)
+        mock_start.assert_awaited_once()
+        assert cleanup_service._polling_task is not None
+        assert not cleanup_service._polling_task.done()
+
+        await client.close()
+        mock_stop.assert_awaited_once()
+        assert cleanup_service._polling_task is None
+
+
+async def test_recycle_bin_cleanup_lifespan_disabled(
+    server_config: ServerConfig,
+    aiohttp_client: Any,
+) -> None:
+    """Verify RecycleBinCleanupService is not started or stopped when recycle_bin_cleanup_enabled is False."""
+    server_config.recycle_bin_cleanup_enabled = False
+    app = create_app(server_config)
+    cleanup_service = app["recycle_bin_cleanup_service"]
+
+    with (
+        patch.object(
+            cleanup_service, "start", wraps=cleanup_service.start
+        ) as mock_start,
+        patch.object(cleanup_service, "stop", wraps=cleanup_service.stop) as mock_stop,
+    ):
+        client = await aiohttp_client(app)
+        mock_start.assert_not_called()
+        assert cleanup_service._polling_task is None
+
+        await client.close()
+        mock_stop.assert_not_called()

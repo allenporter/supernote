@@ -8,6 +8,7 @@ from sqlalchemy import select
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
+from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus, NoteDeletedEvent, NoteUpdatedEvent
 from supernote.server.services.coordination import SqliteCoordinationService
@@ -159,6 +160,14 @@ async def test_handle_note_deleted_cleanup(
                 file_id=file_id, task_type="OCR", key="page_0", status="COMPLETED"
             )
         )
+        session.add(
+            SummaryDO(
+                user_id=1,
+                file_id=file_id,
+                unique_identifier="summary_delete_test",
+                content="test content",
+            )
+        )
         await session.commit()
 
     # Trigger deletion event
@@ -187,8 +196,18 @@ async def test_handle_note_deleted_cleanup(
             .scalars()
             .all()
         )
+        summaries = (
+            (
+                await session.execute(
+                    select(SummaryDO).where(SummaryDO.file_id == file_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert len(contents) == 0
         assert len(tasks) == 0
+        assert len(summaries) == 0
 
     # Verify Blobs are deleted
     mock_file_service.blob_storage.delete.assert_any_call(

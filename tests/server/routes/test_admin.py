@@ -89,17 +89,17 @@ async def test_admin_list_users_permission(
     """Test access control for listing users."""
     await setup_users(session_manager, coordination_service, server_config)
 
-    # 1. Admin should succeed
+    # Admin should succeed
     resp = await client.get("/api/admin/users", headers=admin_headers)
     assert resp.status == 200
     data = await resp.json()
     assert len(data) >= 2
 
-    # 2. Normal user should fail
+    # Normal user should fail
     resp = await client.get("/api/admin/users", headers=user_headers)
     assert resp.status == 403
 
-    # 3. Anon should fail
+    # Anon should fail
     resp = await client.get("/api/admin/users")
     assert resp.status == 401
 
@@ -151,7 +151,7 @@ async def test_admin_force_password_reset(
     """Test admin force-resetting a user's password."""
     await setup_users(session_manager, coordination_service, server_config)
 
-    # 1. Reset user password
+    # Reset user password
     target_email = "user@example.com"
     new_pw = hashlib.md5(b"reset123").hexdigest()
 
@@ -162,7 +162,7 @@ async def test_admin_force_password_reset(
     )
     assert resp.status == 200
 
-    # 2. Verify user can login with new password logic (simulated by checking DB)
+    # Verify user can login with new password logic (simulated by checking DB)
     async with session_manager.session() as session:
         result = await session.execute(
             select(UserDO).where(UserDO.email == target_email)
@@ -183,7 +183,7 @@ async def test_admin_queue_control(
     """Test stopping, starting, and getting queue status."""
     await setup_users(session_manager, coordination_service, server_config)
 
-    # 1. Access control tests
+    # Access control tests
     # Non-admin status get should fail
     resp = await client.get("/api/admin/queue/status", headers=user_headers)
     assert resp.status == 403
@@ -196,7 +196,7 @@ async def test_admin_queue_control(
     resp = await client.post("/api/admin/queue/start", headers=user_headers)
     assert resp.status == 403
 
-    # 2. Admin functionality tests
+    # Admin functionality tests
     # Admin status should succeed, default should be running (paused=False)
     resp = await client.get("/api/admin/queue/status", headers=admin_headers)
     assert resp.status == 200
@@ -249,7 +249,7 @@ async def test_admin_reprocess(
         session.add(task)
         await session.commit()
 
-    # 1. Non-admin should fail (403)
+    # Non-admin should fail (403)
     resp = await client.post(
         "/api/admin/reprocess",
         json={"task_type": "summary", "file_id": 999},
@@ -257,7 +257,7 @@ async def test_admin_reprocess(
     )
     assert resp.status == 403
 
-    # 2. Admin should succeed (200)
+    # Admin should succeed (200)
     resp = await client.post(
         "/api/admin/reprocess",
         json={"task_type": "summary", "file_id": 999},
@@ -265,7 +265,7 @@ async def test_admin_reprocess(
     )
     assert resp.status == 200
 
-    # 3. Verify task is deleted in DB
+    # Verify task is deleted in DB
     async with session_manager.session() as session:
         result = await session.execute(
             select(SystemTaskDO).where(SystemTaskDO.file_id == 999)
@@ -273,10 +273,62 @@ async def test_admin_reprocess(
         tasks = result.scalars().all()
         assert len(tasks) == 0
 
-    # 4. Admin with invalid task type should fail (400)
+    # Admin with invalid task type should fail (400)
     resp = await client.post(
         "/api/admin/reprocess",
         json={"task_type": "invalid_type", "file_id": 999},
         headers=admin_headers,
+    )
+    assert resp.status == 400
+
+
+async def test_admin_recycle_bin_cleanup_authorization_and_run(
+    client: Client,
+    session_manager: DatabaseSessionManager,
+    coordination_service: CoordinationService,
+    server_config: ServerConfig,
+    admin_headers: dict[str, Any],
+    user_headers: dict[str, Any],
+) -> None:
+    """Verify POST /api/admin/recycle-bin/cleanup/run requires admin auth, validates input, and returns stats."""
+    await setup_users(session_manager, coordination_service, server_config)
+
+    # Unauthenticated request should fail (401)
+    resp = await client.post("/api/admin/recycle-bin/cleanup/run")
+    assert resp.status == 401
+
+    # Non-admin request should fail (403)
+    resp = await client.post(
+        "/api/admin/recycle-bin/cleanup/run",
+        headers=user_headers,
+    )
+    assert resp.status == 403
+
+    # Admin request should succeed (200) and return full-structure purged_count and bytes_freed
+    resp = await client.post(
+        "/api/admin/recycle-bin/cleanup/run",
+        headers=admin_headers,
+    )
+    assert resp.status == 200
+    data = await resp.json()
+    assert data == {
+        "success": True,
+        "purged_count": 0,
+        "bytes_freed": 0,
+    }
+
+    # Negative retention_days should return 400
+    resp = await client.post(
+        "/api/admin/recycle-bin/cleanup/run",
+        headers=admin_headers,
+        json={"retention_days": -1},
+    )
+    assert resp.status == 400
+
+    # Non-positive batch_size should return 400
+    resp = await client.post(
+        "/api/admin/recycle-bin/cleanup/run",
+        headers=admin_headers,
+        json={"batch_size": 0},
     )
     assert resp.status == 400

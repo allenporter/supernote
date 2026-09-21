@@ -8,6 +8,7 @@ from supernote.models.system import (
     FileChunkVO,
     FileUploadApplyLocalVO,
     PageDTO,
+    RecycleBinCleanupVO,
     ReferenceInfoVO,
     ReferenceQueryDTO,
     ReferenceRespVO,
@@ -92,3 +93,29 @@ def test_reference_resp_vo() -> None:
 
     vo2 = ReferenceRespVO.from_dict(data)
     assert vo2.param_list[0].name == "N1"
+
+
+def test_recycle_bin_cleanup_vo() -> None:
+    """Verify RecycleBinCleanupVO default attributes and full-structure serialization roundtrip."""
+    default_vo = RecycleBinCleanupVO()
+    assert default_vo.success is True
+    assert default_vo.purged_count == 0
+    assert default_vo.bytes_freed == 0
+    assert default_vo.to_dict() == {
+        "success": True,
+        "purged_count": 0,
+        "bytes_freed": 0,
+    }
+
+    custom_vo = RecycleBinCleanupVO(purged_count=12, bytes_freed=4096)
+    data = custom_vo.to_dict()
+    assert data == {
+        "success": True,
+        "purged_count": 12,
+        "bytes_freed": 4096,
+    }
+
+    deserialized = RecycleBinCleanupVO.from_dict(data)
+    assert deserialized.success is True
+    assert deserialized.purged_count == 12
+    assert deserialized.bytes_freed == 4096

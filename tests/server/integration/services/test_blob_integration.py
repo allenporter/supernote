@@ -1,5 +1,4 @@
 import hashlib
-from pathlib import Path
 
 import pytest
 from sqlalchemy import select
@@ -17,12 +16,11 @@ from supernote.server.utils.paths import generate_inner_name
 
 @pytest.fixture
 def file_service(
-    storage_root: Path,
     blob_storage: LocalBlobStorage,
     user_service: UserService,
     session_manager: DatabaseSessionManager,
 ) -> FileService:
-    return FileService(storage_root, blob_storage, user_service, session_manager)
+    return FileService(blob_storage, user_service, session_manager)
 
 
 async def test_blob_kv_separation(

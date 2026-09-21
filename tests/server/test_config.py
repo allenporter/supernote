@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
+from supernote.server import config as config_module
 from supernote.server.config import ServerConfig
 
 
@@ -139,3 +140,136 @@ def test_server_config_proxy_env_vars(tmp_path: Path) -> None:
         assert config.proxy_mode == "strict"
         # The list should be parsed from the comma-separated string
         assert config.trusted_proxies == ["10.0.0.1", "10.0.0.2"]
+
+
+def test_storage_cleanup_defaults() -> None:
+    """Verify default values for storage cleanup settings in ServerConfig."""
+    config = ServerConfig()
+    assert config.storage_cleanup_enabled is True
+    assert config.storage_cleanup_interval_seconds == 3600
+    assert config.storage_temp_ttl_seconds == 86400
+
+
+def test_storage_cleanup_config_load_from_file(tmp_path: Path) -> None:
+    """Verify loading storage cleanup settings from yaml config file."""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    config_file = config_dir / "config.yaml"
+
+    data = {
+        "storage_cleanup_enabled": False,
+        "storage_cleanup_interval_seconds": 1800,
+        "storage_temp_ttl_seconds": 7200,
+    }
+    with open(config_file, "w") as f:
+        yaml.safe_dump(data, f)
+
+    config = ServerConfig.load(config_dir)
+    assert config.storage_cleanup_enabled is False
+    assert config.storage_cleanup_interval_seconds == 1800
+    assert config.storage_temp_ttl_seconds == 7200
+
+
+def test_storage_cleanup_env_var_overrides(tmp_path: Path) -> None:
+    """Verify environment variables override storage cleanup config file settings."""
+    config_dir = tmp_path / "config"
+    with patch.dict(
+        os.environ,
+        {
+            "SUPERNOTE_STORAGE_CLEANUP_ENABLED": "false",
+            "SUPERNOTE_STORAGE_CLEANUP_INTERVAL_SECONDS": "7200",
+            "SUPERNOTE_STORAGE_TEMP_TTL_SECONDS": "14400",
+        },
+    ):
+        config = ServerConfig.load(config_dir)
+        assert config.storage_cleanup_enabled is False
+        assert config.storage_cleanup_interval_seconds == 7200
+        assert config.storage_temp_ttl_seconds == 14400
+
+
+def test_storage_cleanup_invalid_env_vars_fallback(tmp_path: Path) -> None:
+    """Verify non-integer environment variables fall back to default values gracefully."""
+    config_dir = tmp_path / "config"
+    with patch.dict(
+        os.environ,
+        {
+            "SUPERNOTE_STORAGE_CLEANUP_INTERVAL_SECONDS": "not_an_int",
+            "SUPERNOTE_STORAGE_TEMP_TTL_SECONDS": "also_invalid",
+        },
+    ):
+        config = ServerConfig.load(config_dir)
+        assert config.storage_cleanup_interval_seconds == 3600
+        assert config.storage_temp_ttl_seconds == 86400
+
+
+def test_recycle_bin_cleanup_defaults() -> None:
+    """Verify default values for recycle bin cleanup settings in ServerConfig."""
+    config = ServerConfig()
+    assert config.recycle_bin_cleanup_enabled is True
+    assert config.recycle_bin_retention_days == 30
+    assert config.recycle_bin_cleanup_interval_seconds == 86400
+    assert config.recycle_bin_cleanup_batch_size == 100
+
+
+def test_recycle_bin_cleanup_config_load_from_file(tmp_path: Path) -> None:
+    """Verify loading recycle bin cleanup settings from yaml config file."""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    config_file = config_dir / "config.yaml"
+
+    data = {
+        "recycle_bin_cleanup_enabled": False,
+        "recycle_bin_retention_days": 60,
+        "recycle_bin_cleanup_interval_seconds": 43200,
+        "recycle_bin_cleanup_batch_size": 50,
+    }
+    with open(config_file, "w") as f:
+        yaml.safe_dump(data, f)
+
+    config = ServerConfig.load(config_dir)
+    assert config.recycle_bin_cleanup_enabled is False
+    assert config.recycle_bin_retention_days == 60
+    assert config.recycle_bin_cleanup_interval_seconds == 43200
+    assert config.recycle_bin_cleanup_batch_size == 50
+
+
+def test_recycle_bin_cleanup_env_var_overrides(tmp_path: Path) -> None:
+    """Verify environment variables override recycle bin cleanup config file settings."""
+    config_dir = tmp_path / "config"
+    with patch.dict(
+        os.environ,
+        {
+            "SUPERNOTE_RECYCLE_BIN_CLEANUP_ENABLED": "false",
+            "SUPERNOTE_RECYCLE_BIN_RETENTION_DAYS": "15",
+            "SUPERNOTE_RECYCLE_BIN_CLEANUP_INTERVAL_SECONDS": "3600",
+            "SUPERNOTE_RECYCLE_BIN_CLEANUP_BATCH_SIZE": "20",
+        },
+    ):
+        config = ServerConfig.load(config_dir)
+        assert config.recycle_bin_cleanup_enabled is False
+        assert config.recycle_bin_retention_days == 15
+        assert config.recycle_bin_cleanup_interval_seconds == 3600
+        assert config.recycle_bin_cleanup_batch_size == 20
+
+
+def test_recycle_bin_cleanup_invalid_env_vars_fallback(tmp_path: Path) -> None:
+    """Verify non-integer environment variables fall back to default values gracefully."""
+    config_dir = tmp_path / "config"
+    with patch.dict(
+        os.environ,
+        {
+            "SUPERNOTE_RECYCLE_BIN_RETENTION_DAYS": "invalid",
+            "SUPERNOTE_RECYCLE_BIN_CLEANUP_INTERVAL_SECONDS": "bad_int",
+            "SUPERNOTE_RECYCLE_BIN_CLEANUP_BATCH_SIZE": "not_a_number",
+        },
+    ):
+        config = ServerConfig.load(config_dir)
+        assert config.recycle_bin_retention_days == 30
+        assert config.recycle_bin_cleanup_interval_seconds == 86400
+        assert config.recycle_bin_cleanup_batch_size == 100
+
+
+def test_server_config_exports() -> None:
+    """Verify explicit __all__ exports of supernote.server.config."""
+    assert hasattr(config_module, "__all__")
+    assert sorted(config_module.__all__) == ["AuthConfig", "ServerConfig"]

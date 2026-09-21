@@ -10,6 +10,11 @@ from mashumaro.mixins.yaml import DataClassYAMLMixin
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "AuthConfig",
+    "ServerConfig",
+]
+
 
 def _get_bool_env(name: str, default: bool) -> bool:
     """Get a boolean value from an environment variable."""
@@ -155,6 +160,48 @@ BaseConfig
     Env Var: `SUPERNOTE_METRICS_PATH`
     """
 
+    storage_cleanup_enabled: bool = True
+    """Whether to enable periodic cleanup of temp staging files and abandoned upload chunks.
+
+    Env Var: `SUPERNOTE_STORAGE_CLEANUP_ENABLED`
+    """
+
+    storage_cleanup_interval_seconds: int = 3600
+    """Interval in seconds between cleanup runs.
+
+    Env Var: `SUPERNOTE_STORAGE_CLEANUP_INTERVAL_SECONDS`
+    """
+
+    storage_temp_ttl_seconds: int = 86400
+    """Time-to-live in seconds before staging files and abandoned chunks are pruned.
+
+    Env Var: `SUPERNOTE_STORAGE_TEMP_TTL_SECONDS`
+    """
+
+    recycle_bin_cleanup_enabled: bool = True
+    """Whether to enable periodic automated cleanup of expired recycle bin items.
+
+    Env Var: `SUPERNOTE_RECYCLE_BIN_CLEANUP_ENABLED`
+    """
+
+    recycle_bin_retention_days: int = 30
+    """Retention window in days before recycle bin items are permanently purged.
+
+    Env Var: `SUPERNOTE_RECYCLE_BIN_RETENTION_DAYS`
+    """
+
+    recycle_bin_cleanup_interval_seconds: int = 86400
+    """Interval in seconds between recycle bin cleanup sweeps.
+
+    Env Var: `SUPERNOTE_RECYCLE_BIN_CLEANUP_INTERVAL_SECONDS`
+    """
+
+    recycle_bin_cleanup_batch_size: int = 100
+    """Batch size for bounded recycle bin purging to prevent DB locking.
+
+    Env Var: `SUPERNOTE_RECYCLE_BIN_CLEANUP_BATCH_SIZE`
+    """
+
     @property
     def configured_base_url(self) -> str | None:
         """Get the explicitly configured base URL, or None if unset.
@@ -228,7 +275,7 @@ BaseConfig
             except Exception as e:
                 logger.warning(f"Failed to load config file {config_file}: {e}")
 
-        # 4. JWT Secret priority: Env > Config > Random(in-memory only)
+        # JWT Secret priority: Env > Config > Random(in-memory only)
         env_secret = os.getenv("SUPERNOTE_JWT_SECRET")
         if env_secret:
             logger.info("Using SUPERNOTE_JWT_SECRET")
@@ -343,6 +390,72 @@ BaseConfig
         if metrics_path := os.getenv("SUPERNOTE_METRICS_PATH"):
             config.metrics_path = metrics_path
             logger.info(f"Using SUPERNOTE_METRICS_PATH: {config.metrics_path}")
+
+        if os.getenv("SUPERNOTE_STORAGE_CLEANUP_ENABLED"):
+            config.storage_cleanup_enabled = _get_bool_env(
+                "SUPERNOTE_STORAGE_CLEANUP_ENABLED", config.storage_cleanup_enabled
+            )
+            logger.info(f"Storage Cleanup Enabled: {config.storage_cleanup_enabled}")
+
+        if storage_cleanup_interval := os.getenv(
+            "SUPERNOTE_STORAGE_CLEANUP_INTERVAL_SECONDS"
+        ):
+            try:
+                config.storage_cleanup_interval_seconds = int(storage_cleanup_interval)
+                logger.info(
+                    f"Using SUPERNOTE_STORAGE_CLEANUP_INTERVAL_SECONDS: {config.storage_cleanup_interval_seconds}"
+                )
+            except ValueError:
+                pass
+
+        if storage_temp_ttl := os.getenv("SUPERNOTE_STORAGE_TEMP_TTL_SECONDS"):
+            try:
+                config.storage_temp_ttl_seconds = int(storage_temp_ttl)
+                logger.info(
+                    f"Using SUPERNOTE_STORAGE_TEMP_TTL_SECONDS: {config.storage_temp_ttl_seconds}"
+                )
+            except ValueError:
+                pass
+
+        if os.getenv("SUPERNOTE_RECYCLE_BIN_CLEANUP_ENABLED"):
+            config.recycle_bin_cleanup_enabled = _get_bool_env(
+                "SUPERNOTE_RECYCLE_BIN_CLEANUP_ENABLED",
+                config.recycle_bin_cleanup_enabled,
+            )
+            logger.info(
+                f"Recycle Bin Cleanup Enabled: {config.recycle_bin_cleanup_enabled}"
+            )
+
+        if retention_days := os.getenv("SUPERNOTE_RECYCLE_BIN_RETENTION_DAYS"):
+            try:
+                config.recycle_bin_retention_days = int(retention_days)
+                logger.info(
+                    f"Using SUPERNOTE_RECYCLE_BIN_RETENTION_DAYS: {config.recycle_bin_retention_days}"
+                )
+            except ValueError:
+                pass
+
+        if recycle_cleanup_interval := os.getenv(
+            "SUPERNOTE_RECYCLE_BIN_CLEANUP_INTERVAL_SECONDS"
+        ):
+            try:
+                config.recycle_bin_cleanup_interval_seconds = int(
+                    recycle_cleanup_interval
+                )
+                logger.info(
+                    f"Using SUPERNOTE_RECYCLE_BIN_CLEANUP_INTERVAL_SECONDS: {config.recycle_bin_cleanup_interval_seconds}"
+                )
+            except ValueError:
+                pass
+
+        if recycle_batch_size := os.getenv("SUPERNOTE_RECYCLE_BIN_CLEANUP_BATCH_SIZE"):
+            try:
+                config.recycle_bin_cleanup_batch_size = int(recycle_batch_size)
+                logger.info(
+                    f"Using SUPERNOTE_RECYCLE_BIN_CLEANUP_BATCH_SIZE: {config.recycle_bin_cleanup_batch_size}"
+                )
+            except ValueError:
+                pass
 
         if config.trace_log_file is None:
             config.trace_log_file = str(

@@ -449,3 +449,18 @@ class QueueStatusVO(BaseResponse):
         metadata=field_options(alias="processingFiles"), default_factory=list
     )
     """List of file IDs currently being processed."""
+
+
+@dataclass(kw_only=True)
+class RecycleBinCleanupVO(BaseResponse):
+    """Recycle bin cleanup response.
+
+    Used by:
+        /api/admin/recycle-bin/cleanup/run (POST)
+    """
+
+    purged_count: int = 0
+    """Number of items purged from the recycle bin."""
+
+    bytes_freed: int = 0
+    """Total storage bytes freed."""
