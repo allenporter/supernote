@@ -332,3 +332,35 @@ async def test_admin_recycle_bin_cleanup_authorization_and_run(
         json={"batch_size": 0},
     )
     assert resp.status == 400
+
+    # Valid camelCase payload should succeed (200)
+    resp = await client.post(
+        "/api/admin/recycle-bin/cleanup/run",
+        headers=admin_headers,
+        json={"retentionDays": 10, "batchSize": 20},
+    )
+    assert resp.status == 200
+
+    # Valid snake_case payload should succeed (200)
+    resp = await client.post(
+        "/api/admin/recycle-bin/cleanup/run",
+        headers=admin_headers,
+        json={"retention_days": 10, "batch_size": 20},
+    )
+    assert resp.status == 200
+
+    # Invalid field type should return 400
+    resp = await client.post(
+        "/api/admin/recycle-bin/cleanup/run",
+        headers=admin_headers,
+        json={"retention_days": "not_a_number"},
+    )
+    assert resp.status == 400
+
+    # Non-dict JSON payload should return 400
+    resp = await client.post(
+        "/api/admin/recycle-bin/cleanup/run",
+        headers=admin_headers,
+        json=[1, 2, 3],
+    )
+    assert resp.status == 400

@@ -2,7 +2,11 @@ import logging
 
 from supernote.client.client import Client
 from supernote.models.base import BaseResponse
-from supernote.models.system import QueueStatusVO, RecycleBinCleanupVO
+from supernote.models.system import (
+    QueueStatusVO,
+    RecycleBinCleanupDTO,
+    RecycleBinCleanupVO,
+)
 from supernote.models.user import (
     RetrievePasswordDTO,
     UpdateEmailDTO,
@@ -107,14 +111,12 @@ class AdminClient:
         self, retention_days: int | None = None, batch_size: int | None = None
     ) -> RecycleBinCleanupVO:
         """Trigger recycle bin cleanup on-demand."""
-        payload: dict[str, int] = {}
-        if retention_days is not None:
-            payload["retention_days"] = retention_days
-        if batch_size is not None:
-            payload["batch_size"] = batch_size
-
+        dto = RecycleBinCleanupDTO(
+            retention_days=retention_days,
+            batch_size=batch_size,
+        )
         return await self.client.post_json(
             "/api/admin/recycle-bin/cleanup/run",
             RecycleBinCleanupVO,
-            json=payload,
+            json=dto.to_dict(),
         )

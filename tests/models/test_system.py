@@ -8,6 +8,7 @@ from supernote.models.system import (
     FileChunkVO,
     FileUploadApplyLocalVO,
     PageDTO,
+    RecycleBinCleanupDTO,
     RecycleBinCleanupVO,
     ReferenceInfoVO,
     ReferenceQueryDTO,
@@ -93,6 +94,28 @@ def test_reference_resp_vo() -> None:
 
     vo2 = ReferenceRespVO.from_dict(data)
     assert vo2.param_list[0].name == "N1"
+
+
+def test_recycle_bin_cleanup_dto() -> None:
+    """Verify RecycleBinCleanupDTO serialization and deserialization with aliases."""
+    default_dto = RecycleBinCleanupDTO()
+    assert default_dto.retention_days is None
+    assert default_dto.batch_size is None
+    assert default_dto.to_dict() == {}
+
+    custom_dto = RecycleBinCleanupDTO(retention_days=15, batch_size=50)
+    data = custom_dto.to_dict()
+    assert data == {"retentionDays": 15, "batchSize": 50}
+
+    # Deserialization by alias (camelCase)
+    from_alias = RecycleBinCleanupDTO.from_dict({"retentionDays": 30, "batchSize": 100})
+    assert from_alias.retention_days == 30
+    assert from_alias.batch_size == 100
+
+    # Deserialization not by alias (snake_case)
+    from_snake = RecycleBinCleanupDTO.from_dict({"retention_days": 7, "batch_size": 25})
+    assert from_snake.retention_days == 7
+    assert from_snake.batch_size == 25
 
 
 def test_recycle_bin_cleanup_vo() -> None:

@@ -7,7 +7,11 @@ from sqlalchemy import delete, select
 
 from supernote.models.auth import UserVO
 from supernote.models.base import BaseResponse, TaskType, create_error_response
-from supernote.models.system import QueueStatusVO, RecycleBinCleanupVO
+from supernote.models.system import (
+    QueueStatusVO,
+    RecycleBinCleanupDTO,
+    RecycleBinCleanupVO,
+)
 from supernote.models.user import UserRegisterDTO
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import SystemTaskDO
@@ -208,35 +212,31 @@ async def handle_recycle_bin_cleanup(request: web.Request) -> web.Response:
         "recycle_bin_cleanup_service"
     ]
 
-    retention_days = None
-    batch_size = None
+    dto = RecycleBinCleanupDTO()
     if request.can_read_body:
         try:
             body = await request.json()
-            if isinstance(body, dict):
-                if "retention_days" in body:
-                    retention_days = int(body["retention_days"])
-                if "batch_size" in body:
-                    batch_size = int(body["batch_size"])
+            if body is not None:
+                dto = RecycleBinCleanupDTO.from_dict(body)
         except (json.JSONDecodeError, ValueError, TypeError):
             return web.json_response(
                 create_error_response("Invalid request payload").to_dict(),
                 status=400,
             )
 
-    if retention_days is not None and retention_days < 0:
+    if dto.retention_days is not None and dto.retention_days < 0:
         return web.json_response(
             create_error_response("retention_days cannot be negative").to_dict(),
             status=400,
         )
-    if batch_size is not None and batch_size <= 0:
+    if dto.batch_size is not None and dto.batch_size <= 0:
         return web.json_response(
             create_error_response("batch_size must be positive").to_dict(),
             status=400,
         )
 
     stats = await cleanup_service.run_cleanup(
-        retention_days=retention_days, batch_size=batch_size
+        retention_days=dto.retention_days, batch_size=dto.batch_size
     )
     response = RecycleBinCleanupVO(
         purged_count=stats.purged_count,

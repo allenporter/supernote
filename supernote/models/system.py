@@ -14,6 +14,8 @@ The following endpoints are supported:
 - /api/system/base/reference/deleteApi
 - /api/system/base/reference/param
 - /api/official/system/base/param
+- /api/admin/queue/status
+- /api/admin/recycle-bin/cleanup/run
 """
 
 from dataclasses import dataclass, field
@@ -449,6 +451,30 @@ class QueueStatusVO(BaseResponse):
         metadata=field_options(alias="processingFiles"), default_factory=list
     )
     """List of file IDs currently being processed."""
+
+
+@dataclass
+class RecycleBinCleanupDTO(DataClassJSONMixin):
+    """Recycle bin cleanup request parameters.
+
+    Used by:
+        /api/admin/recycle-bin/cleanup/run (POST)
+    """
+
+    retention_days: int | None = field(
+        metadata=field_options(alias="retentionDays"), default=None
+    )
+    """Optional retention window in days to override default policy."""
+
+    batch_size: int | None = field(
+        metadata=field_options(alias="batchSize"), default=None
+    )
+    """Optional batch size limit for purge operations."""
+
+    class Config(BaseConfig):
+        allow_deserialization_not_by_alias = True
+        serialize_by_alias = True
+        omit_none = True
 
 
 @dataclass(kw_only=True)

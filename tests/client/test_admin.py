@@ -200,7 +200,7 @@ async def test_admin_client_endpoints(aiohttp_client: AiohttpClient) -> None:
     )
     req, data = recorded_requests[-1]
     assert req == "recycle_bin_cleanup"
-    assert data == {"retention_days": 15, "batch_size": 50}
+    assert data == {"retentionDays": 15, "batchSize": 50}
     assert isinstance(cleanup_res_custom, RecycleBinCleanupVO)
     assert cleanup_res_custom.success is True
     assert cleanup_res_custom.purged_count == 8
