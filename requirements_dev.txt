@@ -1,6 +1,6 @@
 -e .[all]
 coverage==7.16.1
-ty==0.0.82
+ty==0.0.83
 pdoc==16.0.0
 pip==26.2.1
 pre-commit==4.6.2
