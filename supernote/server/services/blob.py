@@ -1,12 +1,20 @@
+import asyncio
 import hashlib
+import logging
+import os
 import secrets
+import time
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 import aiofiles
 import aiofiles.os
+
+from supernote.server.utils.paths import parse_file_chunk_name
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -16,6 +24,19 @@ class BlobMetadata:
     content_type: str | None = None
     content_md5: str | None = None
     size: int = 0
+
+
+@dataclass
+class CleanupStats:
+    """Statistics for storage cleanup operations."""
+
+    files_removed: int = 0
+    bytes_reclaimed: int = 0
+
+    def merge(self, other: "CleanupStats") -> None:
+        """Merge stats from another cleanup operation."""
+        self.files_removed += other.files_removed
+        self.bytes_reclaimed += other.bytes_reclaimed
 
 
 class BlobStorage(ABC):
@@ -66,6 +87,36 @@ class BlobStorage(ABC):
     @abstractmethod
     def get_blob_path(self, bucket: str, key: str) -> Path:
         """Get physical path to the blob (optional, useful for serving files)."""
+
+    @abstractmethod
+    async def cleanup_staging(self, ttl_seconds: float) -> CleanupStats:
+        """Remove orphaned staging files older than ttl_seconds.
+
+        Args:
+            ttl_seconds: Maximum age in seconds before a staging file is considered abandoned.
+
+        Returns:
+            CleanupStats detailing files removed and bytes reclaimed.
+        """
+
+    @abstractmethod
+    async def cleanup_chunks(
+        self,
+        bucket: str,
+        ttl_seconds: float,
+        chunk_parser: Callable[[str], str | None] | None = None,
+    ) -> CleanupStats:
+        """Remove abandoned multipart chunk files older than ttl_seconds.
+
+        Args:
+            bucket: Bucket name containing the chunks.
+            ttl_seconds: Maximum age in seconds before an upload session is considered abandoned.
+            chunk_parser: Optional callable mapping a chunk filename to its base object name.
+                Defaults to standard multipart chunk wire parser.
+
+        Returns:
+            CleanupStats detailing files removed and bytes reclaimed.
+        """
 
 
 class LocalBlobStorage(BlobStorage):
@@ -206,3 +257,133 @@ class LocalBlobStorage(BlobStorage):
     def get_blob_path(self, bucket: str, key: str) -> Path:
         """Get physical path to the blob."""
         return self._get_path(bucket, key)
+
+    async def cleanup_staging(self, ttl_seconds: float) -> CleanupStats:
+        """Remove orphaned staging files older than ttl_seconds."""
+        temp_dir = self.root / "temp"
+        if not await aiofiles.os.path.exists(temp_dir):
+            return CleanupStats()
+
+        return await asyncio.to_thread(
+            self._cleanup_staging_sync, temp_dir, ttl_seconds
+        )
+
+    def _cleanup_staging_sync(self, temp_dir: Path, ttl_seconds: float) -> CleanupStats:
+        stats = CleanupStats()
+        now = time.time()
+        logger.debug(
+            "Scanning staging directory %s for temporary files older than %.1fs",
+            temp_dir,
+            ttl_seconds,
+        )
+        try:
+            with os.scandir(temp_dir) as entries:
+                for entry in entries:
+                    if not entry.name.endswith(".tmp") or not entry.is_file():
+                        continue
+                    try:
+                        stat = entry.stat()
+                        age = now - stat.st_mtime
+                        if age >= ttl_seconds:
+                            logger.debug(
+                                "Removing expired staging file %s (age=%.1fs, size=%d bytes)",
+                                entry.path,
+                                age,
+                                stat.st_size,
+                            )
+                            os.remove(entry.path)
+                            stats.files_removed += 1
+                            stats.bytes_reclaimed += stat.st_size
+                    except FileNotFoundError:
+                        continue
+                    except OSError as e:
+                        logger.warning(
+                            "Failed to remove staging file %s: %s", entry.path, e
+                        )
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            logger.warning("Failed to scan temp staging directory %s: %s", temp_dir, e)
+        logger.debug(
+            "Staging cleanup completed for %s: %d file(s) removed, %d byte(s) reclaimed",
+            temp_dir,
+            stats.files_removed,
+            stats.bytes_reclaimed,
+        )
+        return stats
+
+    async def cleanup_chunks(
+        self,
+        bucket: str,
+        ttl_seconds: float,
+        chunk_parser: Callable[[str], str | None] | None = None,
+    ) -> CleanupStats:
+        """Remove abandoned multipart chunk files older than ttl_seconds."""
+        clean_bucket = Path(bucket).name
+        if not clean_bucket or clean_bucket in (".", ".."):
+            return CleanupStats()
+
+        bucket_dir = self.root / clean_bucket
+        if not (
+            await aiofiles.os.path.exists(bucket_dir)
+            and await aiofiles.os.path.isdir(bucket_dir)
+        ):
+            return CleanupStats()
+
+        parser = chunk_parser or parse_file_chunk_name
+        return await asyncio.to_thread(
+            self._cleanup_chunks_sync, bucket_dir, ttl_seconds, parser
+        )
+
+    def _cleanup_chunks_sync(
+        self,
+        bucket_dir: Path,
+        ttl_seconds: float,
+        chunk_parser: Callable[[str], str | None],
+    ) -> CleanupStats:
+        stats = CleanupStats()
+        if not bucket_dir.is_dir():
+            return stats
+
+        now = time.time()
+        logger.debug(
+            "Scanning bucket directory %s for chunk files older than %.1fs",
+            bucket_dir,
+            ttl_seconds,
+        )
+        try:
+            for root, _, files in os.walk(bucket_dir):
+                for filename in files:
+                    if not chunk_parser(filename):
+                        continue
+                    file_path = Path(root) / filename
+                    try:
+                        stat = file_path.stat()
+                        age = now - stat.st_mtime
+                        if age >= ttl_seconds:
+                            logger.debug(
+                                "Removing expired chunk file %s (age=%.1fs, size=%d bytes)",
+                                file_path,
+                                age,
+                                stat.st_size,
+                            )
+                            os.remove(file_path)
+                            stats.files_removed += 1
+                            stats.bytes_reclaimed += stat.st_size
+                    except FileNotFoundError:
+                        continue
+                    except OSError as e:
+                        logger.warning(
+                            "Failed to remove abandoned chunk %s: %s", file_path, e
+                        )
+        except OSError as e:
+            logger.warning("Failed to scan bucket directory %s: %s", bucket_dir, e)
+            return stats
+
+        logger.debug(
+            "Chunk cleanup completed for %s: %d file(s) removed, %d byte(s) reclaimed",
+            bucket_dir,
+            stats.files_removed,
+            stats.bytes_reclaimed,
+        )
+        return stats

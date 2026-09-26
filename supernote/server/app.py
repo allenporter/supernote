@@ -49,8 +49,10 @@ from .services.processor_modules.gemini_ocr import GeminiOcrModule
 from .services.processor_modules.page_hashing import PageHashingModule
 from .services.processor_modules.png_conversion import PngConversionModule
 from .services.processor_modules.summary import SummaryModule
+from .services.recycle_cleanup import RecycleBinCleanupService
 from .services.schedule import ScheduleService
 from .services.search import SearchService
+from .services.storage_cleanup import StorageCleanupService
 from .services.summary import SummaryService
 from .services.user import UserService
 from .socket import setup_socketio
@@ -60,6 +62,21 @@ from .utils.rate_limit import RateLimiter
 from .utils.url_signer import UrlSigner
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "bootstrap_ephemeral_user",
+    "create_app",
+    "create_coordination_service",
+    "create_db_session_manager",
+    "is_binary_content_type",
+    "jwt_auth_middleware",
+    "metrics_middleware",
+    "run",
+    "socketio_compat_middleware",
+    "trace_middleware",
+    "try_parse_json",
+]
+
 
 TRUNCATE_BODY_LOG = 10 * 1024
 
@@ -346,7 +363,6 @@ def create_app(config: ServerConfig) -> web.Application:
 
     user_service = UserService(config.auth, coordination_service, session_manager)
     file_service = FileService(
-        config.storage_root,
         blob_storage,
         user_service,
         session_manager,
@@ -377,6 +393,21 @@ def create_app(config: ServerConfig) -> web.Application:
         event_bus, session_manager, file_service, summary_service, coordination_service
     )
     app["processor_service"] = processor_service
+
+    storage_cleanup_service = StorageCleanupService(
+        blob_storage,
+        interval_seconds=config.storage_cleanup_interval_seconds,
+        temp_ttl_seconds=config.storage_temp_ttl_seconds,
+    )
+    app["storage_cleanup_service"] = storage_cleanup_service
+
+    recycle_bin_cleanup_service = RecycleBinCleanupService(
+        file_service,
+        retention_days=config.recycle_bin_retention_days,
+        interval_seconds=config.recycle_bin_cleanup_interval_seconds,
+        batch_size=config.recycle_bin_cleanup_batch_size,
+    )
+    app["recycle_bin_cleanup_service"] = recycle_bin_cleanup_service
 
     # Register modules
     processor_service.register_modules(
@@ -481,6 +512,10 @@ def create_app(config: ServerConfig) -> web.Application:
 
         logger.info("Starting background services...")
         await processor_service.start()
+        if config.storage_cleanup_enabled:
+            await storage_cleanup_service.start()
+        if config.recycle_bin_cleanup_enabled:
+            await recycle_bin_cleanup_service.start()
         logger.info("Startup sequence complete.")
 
         app["mcp_task"] = mcp_task
@@ -494,6 +529,12 @@ def create_app(config: ServerConfig) -> web.Application:
                 await mcp_task
             except asyncio.CancelledError:
                 pass
+
+        if config.recycle_bin_cleanup_enabled:
+            await recycle_bin_cleanup_service.stop()
+
+        if config.storage_cleanup_enabled:
+            await storage_cleanup_service.stop()
 
         await processor_service.stop()
         await session_manager.close()
