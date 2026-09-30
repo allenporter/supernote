@@ -5,7 +5,9 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from supernote.server.constants import (
+    CASE_VARIANT_SYSTEM_ROOTS,
     SYSTEM_CATEGORY_CONTAINER_MAP,
+    SYSTEM_ROOT_DIRECTORIES,
 )
 from supernote.server.db.models.file import RecycleFileDO, UserFileDO
 from supernote.server.exceptions import FileAlreadyExists, InvalidPath
@@ -27,6 +29,9 @@ class VirtualFileSystem:
         Checks direct children at root (directory_id=0) first. If not found and the segment
         matches a known category subfolder (Note, MyStyle, Document), checks inside its
         explicit parent container (NOTE or DOCUMENT).
+
+        Export, Inbox and Screenshot at the root are matched ignoring case, the
+        same rule used when creating them.
         """
         stmt = select(UserFileDO).where(
             UserFileDO.user_id == user_id,
@@ -36,6 +41,9 @@ class VirtualFileSystem:
         )
         result = await self.db.execute(stmt)
         if node := result.scalar_one_or_none():
+            return node
+
+        if node := await self._existing_system_directory(user_id, 0, segment):
             return node
 
         if target_container := SYSTEM_CATEGORY_CONTAINER_MAP.get(segment):
@@ -61,6 +69,59 @@ class VirtualFileSystem:
 
         return None
 
+    async def _existing_system_directory(
+        self, user_id: int, parent_id: int, name: str
+    ) -> UserFileDO | None:
+        """Find an existing Export, Inbox or Screenshot root folder, ignoring case.
+
+        The firmware creates these in capitals. Other folder names stay
+        case-sensitive.
+        """
+        if parent_id != 0:
+            return None
+
+        folded = name.casefold()
+        if not any(d.casefold() == folded for d in CASE_VARIANT_SYSTEM_ROOTS):
+            return None
+
+        stmt = select(UserFileDO).where(
+            UserFileDO.user_id == user_id,
+            UserFileDO.directory_id == parent_id,
+            func.lower(UserFileDO.file_name) == folded,
+            UserFileDO.is_active == "Y",
+            UserFileDO.is_folder == "Y",
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().first()
+
+    async def is_system_directory(self, user_id: int, node: UserFileDO) -> bool:
+        """Whether `node` is a folder a Supernote device requires.
+
+        These are Export, Inbox and Screenshot at the root, and Note, MyStyle and
+        Document inside the NOTE and DOCUMENT containers. The same names
+        elsewhere are ordinary folders.
+        """
+        if node.is_folder != "Y":
+            return False
+
+        name = node.file_name
+        if node.directory_id == 0:
+            folded = name.casefold()
+            return name in SYSTEM_ROOT_DIRECTORIES or any(
+                d.casefold() == folded for d in CASE_VARIANT_SYSTEM_ROOTS
+            )
+
+        container = SYSTEM_CATEGORY_CONTAINER_MAP.get(name)
+        if container is None:
+            return False
+
+        parent_node = await self.get_node_by_id(user_id, node.directory_id)
+        return (
+            parent_node is not None
+            and parent_node.directory_id == 0
+            and parent_node.file_name == container
+        )
+
     async def create_directory(
         self, user_id: int, parent_id: int, name: str
     ) -> UserFileDO:
@@ -75,6 +136,10 @@ class VirtualFileSystem:
         )
         result = await self.db.execute(stmt)
         existing = result.scalar_one_or_none()
+
+        if existing is None:
+            existing = await self._existing_system_directory(user_id, parent_id, name)
+
         if existing:
             # TODO: Determine what the API semantic are and if we should
             # raise an error or not. This requires auditing the client code

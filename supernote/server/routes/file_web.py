@@ -39,7 +39,6 @@ from supernote.models.file_web import (
 )
 from supernote.server.constants import (
     CATEGORY_CONTAINERS,
-    IMMUTABLE_SYSTEM_DIRECTORIES,
     ORDERED_WEB_ROOT,
 )
 from supernote.server.exceptions import SupernoteError
@@ -449,8 +448,6 @@ async def handle_folder_list_query(request: web.Request) -> web.Response:
                         child.entity.parent_id = 0  # View adjustment
                         folder_details.append(child)
                 else:
-                    if detail.entity.name not in IMMUTABLE_SYSTEM_DIRECTORIES:
-                        detail.entity.name = detail.entity.name.capitalize()
                     folder_details.append(detail)
 
         folder_details.sort(key=_root_sort_key)
