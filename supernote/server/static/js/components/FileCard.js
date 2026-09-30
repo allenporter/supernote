@@ -1,11 +1,24 @@
 import { ref, onMounted } from 'vue';
-import { convertNoteToPng } from '../api/client.js';
+import { convertNoteToPng, downloadFile } from '../api/client.js';
 
 export default {
     props: ['file', 'isSelected', 'processingStatus'],
     emits: ['open', 'select', 'rename'],
     setup(props) {
         const coverUrl = ref(null);
+        const downloading = ref(false);
+
+        const download = async () => {
+            if (downloading.value) return;
+            downloading.value = true;
+            try {
+                await downloadFile(props.file.id);
+            } catch (e) {
+                alert("Failed to download: " + e.message);
+            } finally {
+                downloading.value = false;
+            }
+        };
 
         const loadCover = async () => {
             if (props.file && props.file.extension === 'note') {
@@ -22,7 +35,7 @@ export default {
 
         onMounted(loadCover);
 
-        return { coverUrl };
+        return { coverUrl, downloading, download };
     },
     methods: {
         formatSize(bytes) {
@@ -89,9 +102,14 @@ export default {
                     <template v-else>{{ file.extension ? file.extension.toUpperCase() : 'FILE' }}<span v-if="formatSize(file.size)"> · {{ formatSize(file.size) }}</span></template>
                 </p>
             </div>
-            <button @click.stop="$emit('rename', file)" class="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors opacity-0 group-hover:opacity-100">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-            </button>
+            <div class="flex items-center gap-0.5 shrink-0">
+                <button v-if="!file.isDirectory" @click.stop="download" :disabled="downloading" :title="downloading ? 'Preparing download…' : 'Download'" class="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50 disabled:cursor-wait">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"></path></svg>
+                </button>
+                <button @click.stop="$emit('rename', file)" class="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors opacity-0 group-hover:opacity-100">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                </button>
+            </div>
         </div>
     </div>
     `

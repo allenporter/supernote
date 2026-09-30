@@ -5,6 +5,8 @@ from supernote.models.file_common import FileUploadApplyLocalVO
 from supernote.models.file_web import (
     CapacityVO,
     FileDeleteDTO,
+    FileDownloadDTO,
+    FileDownloadUrlVO,
     FileLabelSearchDTO,
     FileLabelSearchVO,
     FileListQueryDTO,
@@ -111,6 +113,13 @@ class WebClient:
         dto = FileLabelSearchDTO(keyword=keyword, equipment_no=equipment_no)
         return await self._client.post_json(
             "/api/file/label/list/search", FileLabelSearchVO, json=dto.to_dict()
+        )
+
+    async def download_url(self, id: int) -> FileDownloadUrlVO:
+        """Get a signed download URL for a file."""
+        dto = FileDownloadDTO(id=id)
+        return await self._client.post_json(
+            "/api/file/download/url", FileDownloadUrlVO, json=dto.to_dict()
         )
 
     async def create_folder(self, parent_id: int, name: str) -> FolderVO:
