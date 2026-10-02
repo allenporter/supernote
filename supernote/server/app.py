@@ -53,6 +53,7 @@ from .services.schedule import ScheduleService
 from .services.search import SearchService
 from .services.summary import SummaryService
 from .services.user import UserService
+from .services.webhook import WebhookService
 from .socket import setup_socketio
 from .utils.hashing import get_md5_hash
 from .utils.prompt_loader import PROMPT_LOADER
@@ -378,6 +379,9 @@ def create_app(config: ServerConfig) -> web.Application:
     )
     app["processor_service"] = processor_service
 
+    webhook_service = WebhookService(config.webhooks, event_bus)
+    app["webhook_service"] = webhook_service
+
     # Register modules
     processor_service.register_modules(
         hashing=PageHashingModule(file_service=file_service),
@@ -481,6 +485,7 @@ def create_app(config: ServerConfig) -> web.Application:
 
         logger.info("Starting background services...")
         await processor_service.start()
+        webhook_service.start()
         logger.info("Startup sequence complete.")
 
         app["mcp_task"] = mcp_task
