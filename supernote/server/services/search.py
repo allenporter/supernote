@@ -104,6 +104,7 @@ class SearchService:
                 select(NotePageContentDO, UserFileDO.file_name)
                 .join(UserFileDO, UserFileDO.id == NotePageContentDO.file_id)
                 .where(UserFileDO.user_id == user_id)
+                .where(UserFileDO.is_active == "Y")
                 .where(NotePageContentDO.embedding.isnot(None))
             )
 
