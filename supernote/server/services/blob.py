@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import re
 import secrets
 import time
 from abc import ABC, abstractmethod
@@ -15,6 +16,13 @@ import aiofiles.os
 from supernote.server.utils.paths import parse_file_chunk_name
 
 logger = logging.getLogger(__name__)
+
+_BUCKET_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*$")
+
+
+def _is_valid_bucket_name(bucket: str) -> bool:
+    """Validate bucket name conforms to safe identifier rules."""
+    return bool(bucket and _BUCKET_NAME_RE.match(bucket))
 
 
 @dataclass
@@ -127,16 +135,34 @@ class LocalBlobStorage(BlobStorage):
 
     def __init__(self, storage_root: Path) -> None:
         """Create a local blob storage instance."""
-        self.root = storage_root
+        self.root = storage_root.resolve()
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _get_path(self, bucket: str, key: str) -> Path:
         """Get physical path to the blob."""
-        # Clean inputs to prevent traversal
-        clean_bucket = Path(bucket).name
-        clean_key = Path(key).name
+        if not _is_valid_bucket_name(bucket):
+            raise ValueError(f"Invalid bucket name: {bucket!r}")
+
+        if not key or "\x00" in key:
+            raise ValueError(f"Invalid blob key: {key!r}")
+
+        key_path = Path(key)
+        if key_path.is_absolute() or ".." in key_path.parts:
+            raise ValueError(f"Path traversal detected in key: {key!r}")
+
+        clean_key = key_path.name
+        if not clean_key or clean_key in (".", ".."):
+            raise ValueError(f"Invalid blob key: {key!r}")
+
         prefix = clean_key[:2] if len(clean_key) >= 2 else "misc"
-        return self.root / clean_bucket / prefix / clean_key
+        blob_path = self.root / bucket / prefix / clean_key
+
+        # Final containment check: ensure canonical path is strictly inside self.root
+        resolved_path = blob_path.resolve()
+        if not resolved_path.is_relative_to(self.root):
+            raise ValueError(f"Path traversal escape detected: {bucket}/{key}")
+
+        return blob_path
 
     async def put(
         self, bucket: str, key: str, stream: AsyncGenerator[bytes] | bytes
@@ -319,11 +345,13 @@ class LocalBlobStorage(BlobStorage):
         chunk_parser: Callable[[str], str | None] | None = None,
     ) -> CleanupStats:
         """Remove abandoned multipart chunk files older than ttl_seconds."""
-        clean_bucket = Path(bucket).name
-        if not clean_bucket or clean_bucket in (".", ".."):
+        if not _is_valid_bucket_name(bucket):
             return CleanupStats()
 
-        bucket_dir = self.root / clean_bucket
+        bucket_dir = self.root / bucket
+        if not bucket_dir.resolve().is_relative_to(self.root):
+            return CleanupStats()
+
         if not (
             await aiofiles.os.path.exists(bucket_dir)
             and await aiofiles.os.path.isdir(bucket_dir)

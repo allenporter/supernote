@@ -292,3 +292,104 @@ async def test_cleanup_chunks_custom_parser(tmp_path: Path) -> None:
     )
     assert stats == CleanupStats(files_removed=1, bytes_reclaimed=len(b"part1"))
     assert not path1.exists()
+
+
+@pytest.mark.parametrize(
+    "bad_bucket",
+    [
+        "..",
+        ".",
+        "../..",
+        "../../etc",
+        "/etc",
+        "/etc/passwd",
+        ".hidden",
+        "bucket.",
+        "a..b",
+        "foo/bar",
+        "foo\\bar",
+        "foo\x00bar",
+        "",
+        "   ",
+    ],
+)
+async def test_path_traversal_bucket_jailbreak_prevention(
+    tmp_path: Path, bad_bucket: str
+) -> None:
+    """Verify malicious bucket strings cannot escape storage root or perform path traversal."""
+    storage = LocalBlobStorage(tmp_path)
+    safe_key = "valid-key-123"
+
+    with pytest.raises(ValueError, match="Invalid bucket name"):
+        storage.get_blob_path(bad_bucket, safe_key)
+
+    with pytest.raises(ValueError, match="Invalid bucket name"):
+        await storage.put(bad_bucket, safe_key, b"exploit")
+
+    with pytest.raises(ValueError, match="Invalid bucket name"):
+        await storage.exists(bad_bucket, safe_key)
+
+    with pytest.raises(ValueError, match="Invalid bucket name"):
+        async for _ in storage.get(bad_bucket, safe_key):
+            pass
+
+    with pytest.raises(ValueError, match="Invalid bucket name"):
+        await storage.delete(bad_bucket, safe_key)
+
+    with pytest.raises(ValueError, match="Invalid bucket name"):
+        await storage.get_metadata(bad_bucket, safe_key)
+
+
+@pytest.mark.parametrize(
+    "bad_key",
+    [
+        "..",
+        ".",
+        "../..",
+        "../../etc/passwd",
+        "/etc/passwd",
+        "foo/../../bar",
+        "foo/../bar",
+        "key\x00evil",
+        "",
+    ],
+)
+async def test_path_traversal_key_jailbreak_prevention(
+    tmp_path: Path, bad_key: str
+) -> None:
+    """Verify malicious key strings cannot escape storage root or perform path traversal."""
+    storage = LocalBlobStorage(tmp_path)
+    safe_bucket = "test-bucket"
+
+    with pytest.raises(ValueError):
+        storage.get_blob_path(safe_bucket, bad_key)
+
+    with pytest.raises(ValueError):
+        await storage.put(safe_bucket, bad_key, b"exploit")
+
+    with pytest.raises(ValueError):
+        await storage.exists(safe_bucket, bad_key)
+
+    with pytest.raises(ValueError):
+        async for _ in storage.get(safe_bucket, bad_key):
+            pass
+
+    with pytest.raises(ValueError):
+        await storage.delete(safe_bucket, bad_key)
+
+    with pytest.raises(ValueError):
+        await storage.get_metadata(safe_bucket, bad_key)
+
+
+async def test_storage_root_containment_invariant(tmp_path: Path) -> None:
+    """Verify physical files are strictly created inside the storage root directory."""
+    storage = LocalBlobStorage(tmp_path)
+    bucket = "secure-bucket"
+    key = "normal-key-abc"
+
+    await storage.put(bucket, key, b"safe content")
+    blob_path = storage.get_blob_path(bucket, key)
+
+    assert blob_path.is_file()
+    assert blob_path.resolve().is_relative_to(tmp_path.resolve())
+    assert tmp_path.resolve() in blob_path.resolve().parents
