@@ -98,6 +98,70 @@ async def test_search_chunks_success(
     assert results[1].score < 0.01
 
 
+async def test_search_chunks_inactive_file(
+    search_service: SearchService,
+    session_manager: DatabaseSessionManager,
+    mock_gemini_service: MagicMock,
+) -> None:
+    # Setup Data
+    user_id = 1
+    active_file_id = 101
+    deleted_file_id = 102
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=active_file_id,
+                user_id=user_id,
+                file_name="Active.note",
+                directory_id=0,
+                is_active="Y",
+            )
+        )
+        session.add(
+            UserFileDO(
+                id=deleted_file_id,
+                user_id=user_id,
+                file_name="Deleted.note",
+                directory_id=0,
+                is_active="N",
+            )
+        )
+
+        session.add(
+            NotePageContentDO(
+                file_id=active_file_id,
+                page_index=0,
+                page_id="p0",
+                text_content="Cats are active pets.",
+                embedding=json.dumps([1.0, 0.0, 0.0]),
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=deleted_file_id,
+                page_index=0,
+                page_id="p0",
+                text_content="Cats were deleted pets.",
+                embedding=json.dumps([1.0, 0.0, 0.0]),
+            )
+        )
+        await session.commit()
+
+    # Mock Gemini Embedding
+    mock_response = MagicMock()
+    mock_embedding = MagicMock()
+    mock_embedding.values = [1.0, 0.0, 0.0]
+    mock_response.embeddings = [mock_embedding]
+    mock_gemini_service.embed_content.return_value = mock_response
+
+    results = await search_service.search_chunks(user_id=user_id, query="cats", top_n=5)
+
+    assert len(results) == 1
+    assert results[0].file_id == active_file_id
+    assert results[0].file_name == "Active.note"
+
+
 async def test_search_chunks_with_name_filter(
     search_service: SearchService,
     session_manager: DatabaseSessionManager,
