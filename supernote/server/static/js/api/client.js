@@ -582,3 +582,51 @@ export async function fetchProcessingStatus(fileIds) {
         statusMap: data.statusMap
     };
 }
+
+/**
+ * Get a signed download URL for a stored file.
+ */
+export async function fetchDownloadUrl(fileId) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/file/download/url', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        },
+        body: JSON.stringify({ id: fileId })
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            logout();
+            throw new Error("Unauthorized");
+        }
+        throw new Error(`Download failed: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    if (!data.url) throw new Error("No download URL returned");
+    return data.url;
+}
+
+/**
+ * Trigger a browser download of a stored file.
+ *
+ * Navigates to the signed URL rather than fetching the bytes into a Blob the
+ * way the .ics export does: a notebook can be hundreds of megabytes, and this
+ * way the browser streams it to disk with a progress bar and the server never
+ * holds it in memory. The signature carries the identity, so no header is
+ * needed on the request that actually moves the file.
+ */
+export async function downloadFile(fileId) {
+    const url = await fetchDownloadUrl(fileId);
+    const link = document.createElement('a');
+    link.href = url;
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
