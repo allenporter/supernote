@@ -251,9 +251,14 @@ async def handle_oss_download(request: web.Request) -> web.StreamResponse:
             return web.json_response(
                 create_error_response("Blob not found").to_dict(), status=404
             )
-        metadata = await file_service.blob_storage.get_metadata(
-            USER_DATA_BUCKET, storage_key
-        )
+        try:
+            metadata = await file_service.blob_storage.get_metadata(
+                USER_DATA_BUCKET, storage_key
+            )
+        except (FileNotFoundError, ValueError):
+            return web.json_response(
+                create_error_response("Blob not found").to_dict(), status=404
+            )
         file_size = metadata.size
         file_name = Path(storage_key).name
 
@@ -309,7 +314,7 @@ async def handle_oss_download(request: web.Request) -> web.StreamResponse:
         async for chunk in stream:
             await response.write(chunk)
 
-    except FileNotFoundError:
+    except (FileNotFoundError, ValueError):
         return web.json_response(
             create_error_response("Blob not found").to_dict(), status=404
         )

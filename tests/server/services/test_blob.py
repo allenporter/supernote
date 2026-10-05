@@ -309,6 +309,10 @@ async def test_cleanup_chunks_custom_parser(tmp_path: Path) -> None:
         "foo/bar",
         "foo\\bar",
         "foo\x00bar",
+        "temp",
+        "system",
+        "TEMP",
+        "SYSTEM",
         "",
         "   ",
     ],
@@ -326,8 +330,7 @@ async def test_path_traversal_bucket_jailbreak_prevention(
     with pytest.raises(ValueError, match="Invalid bucket name"):
         await storage.put(bad_bucket, safe_key, b"exploit")
 
-    with pytest.raises(ValueError, match="Invalid bucket name"):
-        await storage.exists(bad_bucket, safe_key)
+    assert not await storage.exists(bad_bucket, safe_key)
 
     with pytest.raises(ValueError, match="Invalid bucket name"):
         async for _ in storage.get(bad_bucket, safe_key):
@@ -367,8 +370,7 @@ async def test_path_traversal_key_jailbreak_prevention(
     with pytest.raises(ValueError):
         await storage.put(safe_bucket, bad_key, b"exploit")
 
-    with pytest.raises(ValueError):
-        await storage.exists(safe_bucket, bad_key)
+    assert not await storage.exists(safe_bucket, bad_key)
 
     with pytest.raises(ValueError):
         async for _ in storage.get(safe_bucket, bad_key):
@@ -393,3 +395,15 @@ async def test_storage_root_containment_invariant(tmp_path: Path) -> None:
     assert blob_path.is_file()
     assert blob_path.resolve().is_relative_to(tmp_path.resolve())
     assert tmp_path.resolve() in blob_path.resolve().parents
+
+
+async def test_cleanup_chunks_reserved_and_root_safety(tmp_path: Path) -> None:
+    """Verify cleanup_chunks safely ignores reserved bucket names and root escapes."""
+    storage = LocalBlobStorage(tmp_path)
+
+    # Reserved buckets like "temp" or "system" should be no-ops
+    stats_temp = await storage.cleanup_chunks("temp", 3600)
+    assert stats_temp == CleanupStats(files_removed=0, bytes_reclaimed=0)
+
+    stats_system = await storage.cleanup_chunks("system", 3600)
+    assert stats_system == CleanupStats(files_removed=0, bytes_reclaimed=0)

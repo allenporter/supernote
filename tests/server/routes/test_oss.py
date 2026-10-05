@@ -3,12 +3,14 @@ import urllib.parse
 
 import pytest
 from aiohttp import FormData
+from aiohttp.test_utils import TestClient
 
 from supernote.client.client import Client
 from supernote.client.device import DeviceClient
 from supernote.client.exceptions import ApiException, ForbiddenException
 from supernote.models.file_common import FileUploadApplyLocalVO
 from supernote.models.system import FileChunkVO, UploadFileVO
+from supernote.server.utils.url_signer import UrlSigner
 
 TEST_USER = "user@example.com"
 
@@ -349,3 +351,18 @@ async def test_oss_upload_part_consumption_logic(
     assert resp_fail.status == 403
     text = await resp_fail.text()
     assert "Token invalid" in text
+
+
+async def test_oss_file_download_traversal_returns_404(
+    client: TestClient,
+) -> None:
+    """Verify malformed/traversal storage keys return 404 instead of 500."""
+    url_signer: UrlSigner = client.app["url_signer"]
+    signed_url = await url_signer.sign(
+        "/api/oss/download?path=../../etc/passwd", user=TEST_USER
+    )
+    resp = await client.get(signed_url)
+    assert resp.status == 404
+    data = await resp.json()
+    assert data["success"] is False
+    assert data["errorMsg"] == "Blob not found"

@@ -17,12 +17,18 @@ from supernote.server.utils.paths import parse_file_chunk_name
 
 logger = logging.getLogger(__name__)
 
+RESERVED_BUCKET_NAMES = frozenset({"temp", "system"})
+
 _BUCKET_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*$")
 
 
 def _is_valid_bucket_name(bucket: str) -> bool:
-    """Validate bucket name conforms to safe identifier rules."""
-    return bool(bucket and _BUCKET_NAME_RE.match(bucket))
+    """Validate bucket name conforms to safe identifier rules and is not reserved."""
+    return bool(
+        bucket
+        and bucket.lower() not in RESERVED_BUCKET_NAMES
+        and _BUCKET_NAME_RE.match(bucket)
+    )
 
 
 @dataclass
@@ -246,7 +252,11 @@ class LocalBlobStorage(BlobStorage):
 
     async def exists(self, bucket: str, key: str) -> bool:
         """Check if blob exists."""
-        return bool(await aiofiles.os.path.exists(self._get_path(bucket, key)))
+        try:
+            path = self._get_path(bucket, key)
+        except ValueError:
+            return False
+        return bool(await aiofiles.os.path.exists(path))
 
     async def get_metadata(
         self, bucket: str, key: str, include_md5: bool = False
@@ -349,7 +359,8 @@ class LocalBlobStorage(BlobStorage):
             return CleanupStats()
 
         bucket_dir = self.root / bucket
-        if not bucket_dir.resolve().is_relative_to(self.root):
+        resolved_dir = bucket_dir.resolve()
+        if resolved_dir == self.root or not resolved_dir.is_relative_to(self.root):
             return CleanupStats()
 
         if not (
