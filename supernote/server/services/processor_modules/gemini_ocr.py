@@ -5,29 +5,29 @@ from supernote.server.constants import CACHE_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
-from supernote.server.services.gemini import GeminiService
+from supernote.server.services.llm import LLMService
 from supernote.server.services.processor_modules import ProcessorModule
-from supernote.server.utils.gemini_content import PageMetadata, create_gemini_content
 from supernote.server.utils.note_content import (
     get_page_content_by_id,
 )
+from supernote.server.utils.ocr_prompt import PageMetadata, create_ocr_prompt
 from supernote.server.utils.paths import get_page_png_path
 
 logger = logging.getLogger(__name__)
 
 
 class GeminiOcrModule(ProcessorModule):
-    """Module responsible for extracting text from note pages using Gemini OCR."""
+    """Module responsible for extracting text from note pages using a vision model."""
 
     def __init__(
         self,
         file_service: FileService,
         config: ServerConfig,
-        gemini_service: GeminiService,
+        llm_service: LLMService,
     ) -> None:
         self.file_service = file_service
         self.config = config
-        self.gemini_service = gemini_service
+        self.llm_service = llm_service
 
     @property
     def name(self) -> str:
@@ -47,7 +47,7 @@ class GeminiOcrModule(ProcessorModule):
         if page_index is None:
             return False
 
-        if not self.gemini_service.is_configured:
+        if not self.llm_service.is_configured:
             return False
 
         if not await super().run_if_needed(
@@ -80,18 +80,14 @@ class GeminiOcrModule(ProcessorModule):
             logger.error(f"Page ID required for OCR processing of file {file_id}")
             return
 
-        # Deferred: google-genai is only needed once OCR actually runs.
-        from google.genai import types  # noqa: PLC0415
-
         # Get PNG Content
         png_path = get_page_png_path(file_id, page_id)
         png_data = b""
         async for chunk in self.file_service.blob_storage.get(CACHE_BUCKET, png_path):
             png_data += chunk
 
-        # Call Gemini API
-        if not self.gemini_service.is_configured:
-            raise ValueError("Gemini API key not configured")
+        if not self.llm_service.is_configured:
+            raise ValueError("LLM service not configured")
 
         # Get File Info for custom prompt and metadata
         file_name: str | None = None
@@ -108,19 +104,9 @@ class GeminiOcrModule(ProcessorModule):
             page_id=page_id,
             notebook_create_time=notebook_create_time,
         )
-        model_id = self.config.gemini_ocr_model
-        parts = create_gemini_content(page_metadata, png_data)
-        response = await self.gemini_service.generate_content(
-            model=model_id,
-            contents=[
-                types.Content(
-                    parts=parts,
-                )
-            ],
-            config={"media_resolution": types.MediaResolution.MEDIA_RESOLUTION_HIGH},
+        text_content = await self.llm_service.generate(
+            create_ocr_prompt(page_metadata), image_png=png_data
         )
-
-        text_content = response.text if response.text else ""
 
         # Save Result
         async with session_manager.session() as session:

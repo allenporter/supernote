@@ -60,7 +60,7 @@ async def test_full_processing_pipeline_with_real_file(
     blob_storage: BlobStorage,
     test_note_path: Path,
     server_config_gemini: MagicMock,
-    mock_gemini_service: MagicMock,
+    mock_llm_service: MagicMock,
     authenticated_client: Client,
     user_service: UserService,
 ) -> None:
@@ -92,17 +92,17 @@ async def test_full_processing_pipeline_with_real_file(
     # Register real modules (mostly)
     hashing = PageHashingModule(processor_service.file_service)
     png = PngConversionModule(processor_service.file_service)
-    # Mock Gemini modules because they need API keys
+    # Mock the LLM service because the modules need a configured backend
     ocr = GeminiOcrModule(
-        processor_service.file_service, server_config_gemini, mock_gemini_service
+        processor_service.file_service, server_config_gemini, mock_llm_service
     )
     embedding = GeminiEmbeddingModule(
-        processor_service.file_service, server_config_gemini, mock_gemini_service
+        processor_service.file_service, server_config_gemini, mock_llm_service
     )
     summary = SummaryModule(
         file_service=processor_service.file_service,
         config=server_config_gemini,
-        gemini_service=mock_gemini_service,
+        llm_service=mock_llm_service,
         summary_service=processor_service.summary_service,
     )
 
@@ -114,14 +114,9 @@ async def test_full_processing_pipeline_with_real_file(
         summary=summary,
     )
 
-    # Mock Gemini responses
-    mock_response = MagicMock()
-    mock_response.text = "Handwritten text content"
-    mock_gemini_service.generate_content.return_value = mock_response
-
-    mock_embed = MagicMock()
-    mock_embed.values = [0.1, 0.2, 0.3]
-    mock_gemini_service.embed_content.return_value = MagicMock(embeddings=[mock_embed])
+    # Mock LLM responses
+    mock_llm_service.generate.return_value = "Handwritten text content"
+    mock_llm_service.embed.return_value = [0.1, 0.2, 0.3]
 
     # Execute Pipeline
     await processor_service.process_file(file_id)

@@ -1,5 +1,5 @@
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiohttp.test_utils import TestClient
@@ -93,10 +93,14 @@ async def test_db_session_metrics(client: TestClient) -> None:
 
 async def test_gemini_service_metrics() -> None:
     """Verify that GeminiService tracks api call counts and durations."""
-    gemini = GeminiService(api_key="mock-api-key")
+    gemini = GeminiService(
+        api_key="mock-api-key",
+        generation_model="gemini-3-flash-preview",
+        embedding_model="gemini-embedding-001",
+    )
 
     # Mock model API client
-    mock_response = AsyncMock()
+    mock_response = MagicMock(text="ok")
     gemini._client = AsyncMock()
     gemini._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
     gemini._client.aio.models.embed_content = AsyncMock(return_value=mock_response)
@@ -109,7 +113,7 @@ async def test_gemini_service_metrics() -> None:
         or 0.0
     )
 
-    await gemini.generate_content(model="gemini-3-flash-preview", contents="hello")
+    await gemini.generate("hello")
 
     after_calls = (
         REGISTRY.get_sample_value(
@@ -133,7 +137,7 @@ async def test_gemini_service_metrics() -> None:
     )
 
     with pytest.raises(Exception):
-        await gemini.generate_content(model="gemini-3-flash-preview", contents="hello")
+        await gemini.generate("hello")
 
     after_fail_calls = (
         REGISTRY.get_sample_value(

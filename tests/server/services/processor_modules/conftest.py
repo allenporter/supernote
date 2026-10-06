@@ -7,7 +7,7 @@ from supernote.server.config import AuthConfig, ServerConfig
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
-from supernote.server.services.gemini import GeminiService
+from supernote.server.services.llm import LLMService
 from supernote.server.services.user import UserService
 
 
@@ -41,12 +41,7 @@ def server_config_gemini(tmp_path: Path) -> ServerConfig:
 
 
 @pytest.fixture
-def gemini_service(server_config_gemini: ServerConfig) -> GeminiService:
-    return GeminiService(api_key=server_config_gemini.gemini_api_key)
-
-
-@pytest.fixture
-def mock_gemini_service() -> MagicMock:
-    service = MagicMock(spec=GeminiService)
+def mock_llm_service() -> MagicMock:
+    service = MagicMock(spec=LLMService)
     service.is_configured = True
     return service
