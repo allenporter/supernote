@@ -18,7 +18,6 @@ from supernote.notebook import (
 from supernote.server.constants import (
     CACHE_BUCKET,
     CATEGORY_CONTAINERS,
-    IMMUTABLE_SYSTEM_DIRECTORIES,
     USER_DATA_BUCKET,
 )
 from supernote.server.exceptions import (
@@ -508,7 +507,7 @@ class FileService:
             if not node:
                 # Preferring this instead of idempotency for now
                 raise FileNotFound(f"Node {id} not found for user {email}")
-            if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
+            if await vfs.is_system_directory(user_id, node):
                 raise AccessDenied(f"Cannot delete system directory: {node.file_name}")
 
             path_display = await vfs.get_full_path(user_id, node.id)
@@ -548,7 +547,7 @@ class FileService:
                         )
 
                 # Immutability check
-                if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
+                if await vfs.is_system_directory(user_id, node):
                     raise AccessDenied(
                         f"Cannot delete system directory: {node.file_name}"
                     )
@@ -586,7 +585,7 @@ class FileService:
                     raise FileNotFound(f"Source item {item_id} not found")
 
                 # Immutability check
-                if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
+                if await vfs.is_system_directory(user_id, node):
                     raise AccessDenied(
                         f"Cannot move system directory: {node.file_name}"
                     )
@@ -612,7 +611,7 @@ class FileService:
                 raise FileNotFound(f"Source item {item_id} not found")
 
             # Immutability check
-            if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
+            if await vfs.is_system_directory(user_id, node):
                 raise AccessDenied(f"Cannot move system directory: {node.file_name}")
 
             # Resolve destination parent
@@ -666,7 +665,7 @@ class FileService:
 
                 # Check immutability? Usually copy is allowed, but let's be safe.
                 # Actually device API copy_item blocks it too.
-                if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
+                if await vfs.is_system_directory(user_id, node):
                     raise AccessDenied(
                         f"Cannot copy system directory: {node.file_name}"
                     )
@@ -693,7 +692,7 @@ class FileService:
                 raise FileNotFound(f"Source {id} not found")
 
             # Immutability check
-            if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
+            if await vfs.is_system_directory(user_id, node):
                 raise AccessDenied(f"Cannot copy system directory: {node.file_name}")
 
             # Resolve destination parent
@@ -741,7 +740,7 @@ class FileService:
                 raise FileNotFound("Source not found")
 
             # Immutability check
-            if node.file_name in IMMUTABLE_SYSTEM_DIRECTORIES:
+            if await vfs.is_system_directory(user_id, node):
                 raise AccessDenied(f"Cannot rename system directory: {node.file_name}")
 
             # Check if name already exists in same directory

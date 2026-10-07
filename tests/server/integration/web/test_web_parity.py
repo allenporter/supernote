@@ -129,7 +129,7 @@ async def test_web_folder_list_query_spec(web_client: WebClient) -> None:
     await web_client.create_folder(parent_id=0, name="ParentFolder")
     root_res = await web_client.folder_list_query(directory_id=0, id_list=[])
     parent_vo = next(
-        f for f in root_res.folder_vo_list if f.file_name == "Parentfolder"
+        f for f in root_res.folder_vo_list if f.file_name == "ParentFolder"
     )
     parent_id = int(parent_vo.id)
     assert parent_vo.empty == "Y"
@@ -138,7 +138,7 @@ async def test_web_folder_list_query_spec(web_client: WebClient) -> None:
     await web_client.create_folder(parent_id=parent_id, name="SubFolder")
     root_res_2 = await web_client.folder_list_query(directory_id=0, id_list=[])
     parent_vo_2 = next(
-        f for f in root_res_2.folder_vo_list if f.file_name == "Parentfolder"
+        f for f in root_res_2.folder_vo_list if f.file_name == "ParentFolder"
     )
     assert parent_vo_2.empty == "N"
 
