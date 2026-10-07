@@ -4,7 +4,7 @@ import re
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from typing import Any, cast
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -73,20 +73,16 @@ async def notebook_file_id(
 
 
 @pytest.fixture
-def mock_gemini_service() -> Generator[None]:
-    """Fixture to mock Gemini service."""
-    # 1. Mock Gemini Service to avoid network calls
-    mock_embedding_response = AsyncMock()
-    mock_embedding_response.embeddings = [AsyncMock(values=[0.1] * 768)]
-
+def mock_llm_service() -> Generator[None]:
+    """Fixture to mock the LLM service to avoid network calls."""
     with (
         patch(
             "supernote.server.services.gemini.GeminiService.is_configured",
             return_value=True,
         ),
         patch(
-            "supernote.server.services.gemini.GeminiService.embed_content",
-            return_value=mock_embedding_response,
+            "supernote.server.services.gemini.GeminiService.embed",
+            return_value=[0.1] * 768,
         ),
     ):
         yield
@@ -111,7 +107,7 @@ async def test_mcp_list_tools(
     mcp_url: str,
     auth_headers: dict[str, str],
     notebook_file_id: int,
-    mock_gemini_service: Any,
+    mock_llm_service: Any,
 ) -> None:
     """Integrated test for listing MCP tools which does not require auth."""
     async with mcp_session(mcp_url, auth_headers) as session:
@@ -125,7 +121,7 @@ async def test_mcp_search_notebook_chunks(
     mcp_url: str,
     auth_headers: dict[str, str],
     notebook_file_id: int,
-    mock_gemini_service: Any,
+    mock_llm_service: Any,
 ) -> None:
     """Integrated test for searching notebook chunks."""
     token = auth_headers["x-access-token"]
@@ -150,7 +146,7 @@ async def test_mcp_get_notebook_transcript(
     mcp_url: str,
     auth_headers: dict[str, str],
     notebook_file_id: int,
-    mock_gemini_service: Any,
+    mock_llm_service: Any,
 ) -> None:
     """Integrated test for getting a notebook transcript."""
     token = auth_headers["x-access-token"]
@@ -171,7 +167,7 @@ async def test_mcp_get_notebook_transcript(
 async def test_mcp_unauthorized(
     mcp_url: str,
     notebook_file_id: int,
-    mock_gemini_service: Any,
+    mock_llm_service: Any,
     server_config: ServerConfig,
 ) -> None:
     """Integrated test for MCP tools with invalid authentication."""

@@ -113,6 +113,15 @@ class ServerConfig(DataClassYAMLMixin):
 
     auth: AuthConfig = field(default_factory=AuthConfig)
 
+    llm_provider: str = "gemini"
+    """Model backend for OCR, summaries and embeddings: `gemini` or `openai`.
+
+    `openai` works with any OpenAI-compatible server (Ollama, llama.cpp, vLLM,
+    LM Studio, OpenAI itself), configured with the `openai_*` settings.
+
+    Env Var: `SUPERNOTE_LLM_PROVIDER`
+    """
+
     gemini_api_key: str | None = None
     """Google Gemini API Key for OCR and Embeddings.
 
@@ -137,8 +146,48 @@ BaseConfig
     Env Var: `SUPERNOTE_GEMINI_MAX_CONCURRENCY`
     """
 
+    openai_base_url: str | None = None
+    """Base URL of an OpenAI-compatible API, including the version path.
+
+    For example `http://localhost:11434/v1` for Ollama.
+
+    Env Var: `SUPERNOTE_OPENAI_BASE_URL`
+    """
+
+    openai_api_key: str | None = None
+    """API key for the OpenAI-compatible API. Optional for most local servers.
+
+    Env Var: `SUPERNOTE_OPENAI_API_KEY`
+    """
+
+    openai_model: str | None = None
+    """Vision-capable chat model used for OCR and summaries.
+
+    Env Var: `SUPERNOTE_OPENAI_MODEL`
+    """
+
+    openai_embedding_model: str | None = None
+    """Model used for embeddings.
+
+    Env Var: `SUPERNOTE_OPENAI_EMBEDDING_MODEL`
+    """
+
+    openai_embedding_base_url: str | None = None
+    """Base URL for embeddings, if served separately. Defaults to `openai_base_url`.
+
+    Env Var: `SUPERNOTE_OPENAI_EMBEDDING_BASE_URL`
+    """
+
+    openai_max_concurrency: int = 1
+    """Maximum number of concurrent OpenAI-compatible API calls.
+
+    Defaults to 1 because local servers usually process one request at a time.
+
+    Env Var: `SUPERNOTE_OPENAI_MAX_CONCURRENCY`
+    """
+
     prompts_dir: str | None = None
-    """Directory where custom Gemini prompts are located.
+    """Directory where custom OCR and summary prompts are located.
 
     Env Var: `SUPERNOTE_PROMPTS_DIR`
     """
@@ -305,6 +354,10 @@ BaseConfig
             config.trusted_proxies = [p.strip() for p in val.split(",") if p.strip()]
             logger.info(f"Using SUPERNOTE_TRUSTED_PROXIES: {config.trusted_proxies}")
 
+        if llm_provider := os.getenv("SUPERNOTE_LLM_PROVIDER"):
+            config.llm_provider = llm_provider
+            logger.info(f"Using SUPERNOTE_LLM_PROVIDER: {config.llm_provider}")
+
         if gemini_api_key := os.getenv("SUPERNOTE_GEMINI_API_KEY"):
             config.gemini_api_key = gemini_api_key
             logger.info(
@@ -326,6 +379,43 @@ BaseConfig
                 config.gemini_max_concurrency = int(gemini_max_concurrency)
                 logger.info(
                     f"Using SUPERNOTE_GEMINI_MAX_CONCURRENCY: {config.gemini_max_concurrency}"
+                )
+            except ValueError:
+                pass
+
+        if openai_base_url := os.getenv("SUPERNOTE_OPENAI_BASE_URL"):
+            config.openai_base_url = openai_base_url
+            logger.info(f"Using SUPERNOTE_OPENAI_BASE_URL: {config.openai_base_url}")
+
+        if openai_api_key := os.getenv("SUPERNOTE_OPENAI_API_KEY"):
+            config.openai_api_key = openai_api_key
+            logger.info(
+                f"Using SUPERNOTE_OPENAI_API_KEY: xxx...{config.openai_api_key[-3:]}"
+            )
+
+        if openai_model := os.getenv("SUPERNOTE_OPENAI_MODEL"):
+            config.openai_model = openai_model
+            logger.info(f"Using SUPERNOTE_OPENAI_MODEL: {config.openai_model}")
+
+        if openai_embedding_model := os.getenv("SUPERNOTE_OPENAI_EMBEDDING_MODEL"):
+            config.openai_embedding_model = openai_embedding_model
+            logger.info(
+                f"Using SUPERNOTE_OPENAI_EMBEDDING_MODEL: {config.openai_embedding_model}"
+            )
+
+        if openai_embedding_base_url := os.getenv(
+            "SUPERNOTE_OPENAI_EMBEDDING_BASE_URL"
+        ):
+            config.openai_embedding_base_url = openai_embedding_base_url
+            logger.info(
+                f"Using SUPERNOTE_OPENAI_EMBEDDING_BASE_URL: {config.openai_embedding_base_url}"
+            )
+
+        if openai_max_concurrency := os.getenv("SUPERNOTE_OPENAI_MAX_CONCURRENCY"):
+            try:
+                config.openai_max_concurrency = int(openai_max_concurrency)
+                logger.info(
+                    f"Using SUPERNOTE_OPENAI_MAX_CONCURRENCY: {config.openai_max_concurrency}"
                 )
             except ValueError:
                 pass

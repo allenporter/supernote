@@ -97,6 +97,28 @@ Enables handwriting transcription, summarization, and semantic search. Requires 
       supernote
     ```
 
+#### Option C: AI & Knowledge Hub (With a Local or OpenAI-Compatible Model)
+Uses any server that implements the OpenAI API instead of Gemini, e.g. [Ollama](https://ollama.com/), llama.cpp, vLLM, LM Studio or OpenAI itself. Your notes never leave your network when the model runs locally.
+
+You need a **vision-capable chat model** for OCR and summaries, and an **embedding model** for semantic search.
+
+```bash
+export SUPERNOTE_LLM_PROVIDER="openai"
+export SUPERNOTE_OPENAI_BASE_URL="http://localhost:11434/v1"   # Ollama
+export SUPERNOTE_OPENAI_MODEL="gemma3:27b"                     # vision model for OCR + summaries
+export SUPERNOTE_OPENAI_EMBEDDING_MODEL="nomic-embed-text"
+# Optional:
+# export SUPERNOTE_OPENAI_API_KEY="..."                 # required by hosted APIs, ignored by most local servers
+# export SUPERNOTE_OPENAI_EMBEDDING_BASE_URL="..."      # if embeddings are served elsewhere
+# export SUPERNOTE_OPENAI_MAX_CONCURRENCY=1             # parallel requests (default 1)
+supernote serve
+```
+
+When running the server in Docker, use `http://host.docker.internal:11434/v1` (or your host's address) to reach a model server on the host.
+
+> [!NOTE]
+> Embeddings from different models are not comparable. If you switch the embedding model (or provider) after notes were processed, existing pages must be re-embedded before semantic search returns useful results.
+
 ### 2. Bootstrap Your User
 
 Once the server is running, register your administrator account:

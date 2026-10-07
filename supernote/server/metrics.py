@@ -61,6 +61,19 @@ GEMINI_API_DURATION_SECONDS: Histogram = Histogram(
     ["operation"],
 )
 
+# OpenAI-compatible API metrics
+OPENAI_API_CALLS_TOTAL: Counter = Counter(
+    "supernote_openai_api_calls_total",
+    "Total number of OpenAI-compatible API calls.",
+    ["operation", "status"],
+)
+
+OPENAI_API_DURATION_SECONDS: Histogram = Histogram(
+    "supernote_openai_api_duration_seconds",
+    "Latency of OpenAI-compatible API calls in seconds.",
+    ["operation"],
+)
+
 # Database metrics
 DB_SESSIONS_ACTIVE: Gauge = Gauge(
     "supernote_db_sessions_active",

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Evaluate Gemini OCR and Summary prompts on a Supernote notebook."""
+"""Evaluate OCR and Summary prompts on a Supernote notebook."""
 
 import argparse
 import asyncio
+import dataclasses
 import io
 import json
 import os
@@ -13,12 +14,12 @@ from pathlib import Path
 # Add project root to sys.path so we can import supernote
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from google.genai import types
 from mashumaro.jsonschema import build_json_schema
 
 from supernote.notebook import Notebook, PngConverter, load_notebook
 from supernote.server.config import ServerConfig
-from supernote.server.services.gemini import GeminiService
+from supernote.server.services.llm import LLMService
+from supernote.server.services.llm_provider import create_llm_service
 from supernote.server.services.processor_modules.summary import SummaryResponse
 from supernote.server.utils.note_content import format_page_metadata
 from supernote.server.utils.prompt_loader import PromptId, PromptLoader
@@ -26,7 +27,7 @@ from supernote.server.utils.prompt_loader import PromptId, PromptLoader
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate Gemini OCR and Summary prompts on a Supernote notebook."
+        description="Evaluate OCR and Summary prompts on a Supernote notebook."
     )
     parser.add_argument(
         "--notebook", type=str, required=True, help="Path to the .note file."
@@ -53,7 +54,7 @@ def parse_args() -> argparse.Namespace:
         "--api-key",
         type=str,
         default=None,
-        help="Gemini API Key (overrides env SUPERNOTE_GEMINI_API_KEY).",
+        help="Gemini API Key (overrides env SUPERNOTE_GEMINI_API_KEY). Only used with the gemini provider.",
     )
     parser.add_argument(
         "--ocr-model", type=str, default=None, help="OCR model override."
@@ -77,8 +78,7 @@ def parse_args() -> argparse.Namespace:
 
 
 async def run_ocr_for_page(
-    gemini_service: GeminiService,
-    model: str,
+    llm_service: LLMService,
     page_idx: int,
     notebook: Notebook,
     notebook_path: Path,
@@ -114,18 +114,7 @@ async def run_ocr_for_page(
 
     print(f"Running OCR on Page {page_idx + 1} (ID: {page_id})...")
 
-    parts = [
-        types.Part.from_text(text=full_ocr_prompt),
-        types.Part.from_bytes(data=png_data, mime_type="image/png"),
-    ]
-
-    response = await gemini_service.generate_content(
-        model=model,
-        contents=[types.Content(parts=parts)],
-        config={"media_resolution": types.MediaResolution.MEDIA_RESOLUTION_HIGH},
-    )
-
-    text_content = response.text if response.text else ""
+    text_content = await llm_service.generate(full_ocr_prompt, image_png=png_data)
     formatted_page_transcript = f"{metadata_block}\n{text_content}"
 
     # Save individual page transcript
@@ -137,8 +126,7 @@ async def run_ocr_for_page(
 
 
 async def run_ocr_pipeline(
-    gemini_service: GeminiService,
-    model: str,
+    llm_service: LLMService,
     notebook: Notebook,
     notebook_path: Path,
     prompt_loader: PromptLoader,
@@ -163,8 +151,7 @@ async def run_ocr_pipeline(
 
     for page_idx in page_indices:
         page_transcript, rel_img_path = await run_ocr_for_page(
-            gemini_service=gemini_service,
-            model=model,
+            llm_service=llm_service,
             page_idx=page_idx,
             notebook=notebook,
             notebook_path=notebook_path,
@@ -182,8 +169,7 @@ async def run_ocr_pipeline(
 
 
 async def run_summary_pipeline(
-    gemini_service: GeminiService,
-    model: str,
+    llm_service: LLMService,
     full_transcript: str,
     prompt_loader: PromptLoader,
     custom_type: str,
@@ -205,16 +191,9 @@ async def run_summary_pipeline(
     print("Running Summary Generation...")
     schema = build_json_schema(SummaryResponse).to_dict()
 
-    summary_response = await gemini_service.generate_content(
-        model=model,
-        contents=full_summary_prompt,
-        config={
-            "response_mime_type": "application/json",
-            "response_json_schema": schema,
-        },
+    summary_text = (
+        await llm_service.generate(full_summary_prompt, json_schema=schema) or "{}"
     )
-
-    summary_text = summary_response.text if summary_response.text else "{}"
     (out_dir / "summary_raw.json").write_text(summary_text, encoding="utf-8")
 
     # Format summary markdown
@@ -279,25 +258,38 @@ async def main_async() -> None:
     # Initialize configuration
     config = ServerConfig.load()
 
-    # Determine api key
-    api_key = (
-        args.api_key or os.getenv("SUPERNOTE_GEMINI_API_KEY") or config.gemini_api_key
-    )
-    if not api_key:
-        print(
-            "Error: Gemini API Key is required. Please set SUPERNOTE_GEMINI_API_KEY, use --api-key, or configure gemini_api_key in config/config.yaml.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    provider = config.llm_provider.strip().lower()
+    model_field = "openai_model" if provider == "openai" else "gemini_ocr_model"
 
-    ocr_model = args.ocr_model or config.gemini_ocr_model
+    if provider == "gemini":
+        config.gemini_api_key = (
+            args.api_key
+            or os.getenv("SUPERNOTE_GEMINI_API_KEY")
+            or config.gemini_api_key
+        )
+
+    ocr_model = args.ocr_model or getattr(config, model_field) or ""
     summary_model = args.summary_model or ocr_model
 
+    print(f"Provider: {provider}")
     print(f"OCR Model: {ocr_model}")
     print(f"Summary Model: {summary_model}")
 
-    # Initialize Gemini service
-    gemini_service = GeminiService(api_key=api_key)
+    ocr_service = create_llm_service(
+        dataclasses.replace(config, **{model_field: ocr_model})
+    )
+    summary_service = create_llm_service(
+        dataclasses.replace(config, **{model_field: summary_model})
+    )
+    if not ocr_service.is_configured:
+        print(
+            "Error: the LLM provider is not configured. For gemini set "
+            "SUPERNOTE_GEMINI_API_KEY or use --api-key; for openai set "
+            "SUPERNOTE_OPENAI_BASE_URL, SUPERNOTE_OPENAI_MODEL and "
+            "SUPERNOTE_OPENAI_EMBEDDING_MODEL.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # Set up prompt loader
     if args.prompt_dir:
@@ -364,8 +356,7 @@ async def main_async() -> None:
 
     # Run OCR pipeline
     full_transcript, page_files, ocr_prompt = await run_ocr_pipeline(
-        gemini_service=gemini_service,
-        model=ocr_model,
+        llm_service=ocr_service,
         notebook=notebook,
         notebook_path=notebook_path,
         prompt_loader=prompt_loader,
@@ -376,8 +367,7 @@ async def main_async() -> None:
 
     # Run Summary pipeline
     _, summary_prompt = await run_summary_pipeline(
-        gemini_service=gemini_service,
-        model=summary_model,
+        llm_service=summary_service,
         full_transcript=full_transcript,
         prompt_loader=prompt_loader,
         custom_type=custom_type,

@@ -1,7 +1,6 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from google.genai import types
 from sqlalchemy import select
 
 from supernote.server.config import ServerConfig
@@ -20,12 +19,12 @@ from supernote.server.utils.prompt_loader import PromptId
 def gemini_ocr_module(
     file_service: FileService,
     server_config_gemini: ServerConfig,
-    mock_gemini_service: MagicMock,
+    mock_llm_service: MagicMock,
 ) -> GeminiOcrModule:
     return GeminiOcrModule(
         file_service=file_service,
         config=server_config_gemini,
-        gemini_service=mock_gemini_service,
+        llm_service=mock_llm_service,
     )
 
 
@@ -33,7 +32,7 @@ async def test_process_ocr_success(
     gemini_ocr_module: GeminiOcrModule,
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
-    mock_gemini_service: MagicMock,
+    mock_llm_service: MagicMock,
 ) -> None:
     # Setup Data
     user_id = 100
@@ -69,13 +68,10 @@ async def test_process_ocr_success(
         session.add(content)
         await session.commit()
 
-    # Mock Gemini API Response
-    mock_response = MagicMock()
-    mock_response.text = "Handwritten text content"
-    mock_gemini_service.generate_content.return_value = mock_response
+    mock_llm_service.generate.return_value = "Handwritten text content"
 
     # Mock PromptLoader
-    with patch("supernote.server.utils.gemini_content.PROMPT_LOADER") as mock_loader:
+    with patch("supernote.server.utils.ocr_prompt.PROMPT_LOADER") as mock_loader:
         mock_loader.get_prompt.return_value = "Transcribe this page."
 
         # Run full module lifecycle
@@ -90,21 +86,12 @@ async def test_process_ocr_success(
         )
 
     # Verify API Call
-    call_args = mock_gemini_service.generate_content.call_args
+    call_args = mock_llm_service.generate.call_args
     assert call_args is not None
-    _, kwargs = call_args
-    assert kwargs["model"] == "gemini-2.0-flash-exp"
-
-    content_obj = kwargs["contents"][0]
-    parts = content_obj.parts
-    assert len(parts) == 2
-    assert "Transcribe this page." in parts[0].text
-    assert "Notebook Filename: real.note" in parts[0].text
-    assert parts[1].inline_data.data == png_content
-    # Verify config passed
-    assert kwargs["config"] == {
-        "media_resolution": types.MediaResolution.MEDIA_RESOLUTION_HIGH
-    }
+    (prompt,), kwargs = call_args
+    assert "Transcribe this page." in prompt
+    assert "Notebook Filename: real.note" in prompt
+    assert kwargs == {"image_png": png_content}
 
     # Verify DB Updates
     async with session_manager.session() as session:
@@ -145,10 +132,10 @@ async def test_process_ocr_success(
 async def test_ocr_run_if_needed_disabled(
     gemini_ocr_module: GeminiOcrModule,
     session_manager: DatabaseSessionManager,
-    mock_gemini_service: MagicMock,
+    mock_llm_service: MagicMock,
 ) -> None:
     # Disable Gemini
-    mock_gemini_service.is_configured = False
+    mock_llm_service.is_configured = False
 
     # Should return False
     assert (
@@ -169,7 +156,7 @@ async def test_ocr_with_inferred_date(
     gemini_ocr_module: GeminiOcrModule,
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
-    mock_gemini_service: MagicMock,
+    mock_llm_service: MagicMock,
 ) -> None:
     # Setup Data
     file_id = 123
@@ -186,22 +173,17 @@ async def test_ocr_with_inferred_date(
         session.add(NotePageContentDO(file_id=file_id, page_index=0, page_id=page_id))
         await session.commit()
 
-    # Mock Gemini
-    mock_response = MagicMock()
-    mock_response.text = "OCR text"
-    mock_gemini_service.generate_content.return_value = mock_response
+    mock_llm_service.generate.return_value = "OCR text"
 
     # Mock PromptLoader
-    with patch("supernote.server.utils.gemini_content.PROMPT_LOADER") as mock_loader:
+    with patch("supernote.server.utils.ocr_prompt.PROMPT_LOADER") as mock_loader:
         mock_loader.get_prompt.return_value = "Prompt"
         await gemini_ocr_module.run(
             file_id, session_manager, page_index=0, page_id=page_id
         )
 
     # Verify Prompt
-    call_args = mock_gemini_service.generate_content.call_args
-    _, kwargs = call_args
-    prompt_text = kwargs["contents"][0].parts[0].text
+    (prompt_text,), _ = mock_llm_service.generate.call_args
     assert "--- Page 1 ---" in prompt_text
     assert "Notebook Filename: test.note" in prompt_text
     assert "Page ID: P20231027123456" in prompt_text
