@@ -1,3 +1,4 @@
+import json
 from collections.abc import Awaitable, Callable
 
 from aiohttp import web
@@ -6,13 +7,18 @@ from sqlalchemy import delete, select
 
 from supernote.models.auth import UserVO
 from supernote.models.base import BaseResponse, TaskType, create_error_response
-from supernote.models.system import QueueStatusVO
+from supernote.models.system import (
+    QueueStatusVO,
+    RecycleBinCleanupDTO,
+    RecycleBinCleanupVO,
+)
 from supernote.models.user import UserRegisterDTO
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus, NoteUpdatedEvent
 from supernote.server.exceptions import SupernoteError
+from supernote.server.services.recycle_cleanup import RecycleBinCleanupService
 from supernote.server.services.user import UserService
 
 routes = web.RouteTableDef()
@@ -196,3 +202,31 @@ async def handle_reprocess(request: web.Request) -> web.Response:
         )
 
     return web.json_response(BaseResponse().to_dict())
+
+
+@routes.post("/api/admin/recycle-bin/cleanup/run")
+@require_admin
+async def handle_recycle_bin_cleanup(request: web.Request) -> web.Response:
+    """Trigger recycle bin cleanup on-demand (Admin only)."""
+    cleanup_service: RecycleBinCleanupService = request.app[
+        "recycle_bin_cleanup_service"
+    ]
+
+    try:
+        data = await request.json() if request.content_length else {}
+        dto = RecycleBinCleanupDTO.from_dict(data)
+    except (json.JSONDecodeError, ValueError, TypeError) as err:
+        return web.json_response(
+            create_error_response(str(err) or "Invalid request payload").to_dict(),
+            status=400,
+        )
+
+    stats = await cleanup_service.run_cleanup(
+        retention_days=dto.retention_days, batch_size=dto.batch_size
+    )
+    return web.json_response(
+        RecycleBinCleanupVO(
+            purged_count=stats.purged_count,
+            bytes_freed=stats.bytes_freed,
+        ).to_dict()
+    )

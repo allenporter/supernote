@@ -48,7 +48,7 @@ from supernote.client.auth import ConstantAuth
 from supernote.client.client import Client
 
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_HEALTH_CHECK_TIMEOUT = 15.0
+DEFAULT_HEALTH_CHECK_TIMEOUT = 30.0
 DEFAULT_HEALTH_CHECK_INTERVAL = 0.1
 DEFAULT_PROCESS_STOP_TIMEOUT = 5.0
 

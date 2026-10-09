@@ -57,6 +57,17 @@ class FileNotFound(FileError):
         super().__init__(message, error_code, status_code=404)
 
 
+class ParentNotFound(FileNotFound):
+    """Raised when a parent directory does not exist or is inactive during restoration."""
+
+    def __init__(
+        self,
+        message: str = "Parent directory is missing",
+        error_code: str | ErrorCode = ErrorCode.PATH_NOT_FOUND,
+    ):
+        super().__init__(message, error_code=error_code)
+
+
 class FileAlreadyExists(FileError):
     """Raised when a file or directory already exists."""
 

@@ -181,20 +181,16 @@ class FileService:
 
     def __init__(
         self,
-        storage_root: Path,
         blob_storage: BlobStorage,
         user_service: UserService,
         session_manager: DatabaseSessionManager,
         event_bus: LocalEventBus | None = None,
     ) -> None:
         """Initialize the file service."""
-        self.storage_root = storage_root
         self.blob_storage = blob_storage
-        self.temp_dir = storage_root / "temp"
         self.user_service = user_service
         self.session_manager = session_manager
         self.event_bus = event_bus
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
 
     async def list_folder(
         self, user: str, path_str: str, recursive: bool = False
@@ -827,31 +823,105 @@ class FileService:
 
         return recycle_files
 
+    async def purge_recycle(
+        self,
+        user_id: int | None = None,
+        recycle_ids: list[int] | None = None,
+        older_than_ms: int | None = None,
+        limit: int | None = None,
+    ) -> tuple[int, int]:
+        """Permanently purge items from recycle bin with reference-counted blob cleanup and event publishing.
+
+        Returns:
+            Tuple of (purged_count, bytes_freed).
+        """
+        async with self.session_manager.session() as session:
+            vfs = VirtualFileSystem(session)
+            purged_nodes, recycle_entries = await vfs.purge_recycle(
+                user_id=user_id,
+                recycle_ids=recycle_ids,
+                older_than_ms=older_than_ms,
+                limit=limit,
+            )
+            if not recycle_entries and not purged_nodes:
+                return 0, 0
+
+            purged_count = len(recycle_entries)
+
+            # Physical storage blobs in the user data bucket must only be deleted
+            # when no surviving file records reference the storage key.
+            keys_to_check = {
+                n.storage_key
+                for n in purged_nodes
+                if n.is_folder == "N" and n.storage_key
+            }
+
+            blobs_to_delete: list[str] = []
+            keys_list = list(keys_to_check)
+            surviving_keys: set[str] = set()
+            for i in range(0, len(keys_list), 500):
+                chunk = keys_list[i : i + 500]
+                stmt = (
+                    select(UserFileDO.storage_key)
+                    .where(UserFileDO.storage_key.in_(chunk))
+                    .group_by(UserFileDO.storage_key)
+                )
+                surviving_chunk = (await session.execute(stmt)).scalars().all()
+                surviving_keys.update(k for k in surviving_chunk if k is not None)
+
+            for storage_key in keys_to_check:
+                if storage_key not in surviving_keys:
+                    blobs_to_delete.append(storage_key)
+
+        # Delete blobs outside the DB session
+        bytes_freed = 0
+        deleted_keys: set[str] = set()
+        for blob_key in blobs_to_delete:
+            if blob_key in deleted_keys:
+                continue
+            deleted_keys.add(blob_key)
+            blob_size = 0
+            try:
+                meta = await self.blob_storage.get_metadata(USER_DATA_BUCKET, blob_key)
+                blob_size = meta.size
+            except (FileNotFoundError, OSError):
+                blob_size = 0
+            try:
+                await self.blob_storage.delete(USER_DATA_BUCKET, blob_key)
+                bytes_freed += blob_size
+            except (FileNotFoundError, OSError) as e:
+                logger.warning(f"Failed to delete blob {blob_key}: {e}")
+
+        # Publish NoteDeletedEvent for permanently purged .note files
+        published_ids: set[int] = set()
+        if self.event_bus:
+            for node in purged_nodes:
+                if (
+                    node.is_folder == "N"
+                    and node.file_name.endswith(".note")
+                    and node.id not in published_ids
+                ):
+                    published_ids.add(node.id)
+                    await self.event_bus.publish(
+                        NoteDeletedEvent(file_id=node.id, user_id=node.user_id)
+                    )
+            for entry in recycle_entries:
+                if (
+                    entry.is_folder == "N"
+                    and entry.file_name.endswith(".note")
+                    and entry.file_id not in published_ids
+                ):
+                    published_ids.add(entry.file_id)
+                    await self.event_bus.publish(
+                        NoteDeletedEvent(file_id=entry.file_id, user_id=entry.user_id)
+                    )
+
+        return purged_count, bytes_freed
+
     async def delete_from_recycle(self, user: str, id_list: list[int]) -> None:
         """Permanently delete items from recycle bin for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
-        async with self.session_manager.session() as session:
-            vfs = VirtualFileSystem(session)
-            # Fetch recycle nodes before deletion to get their names/types for event emission
-            # We must query RecycleFileDO because id_list are recycle_bin_ids
-            stmt = select(RecycleFileDO).where(
-                RecycleFileDO.user_id == user_id, RecycleFileDO.id.in_(id_list)
-            )
-            result = await session.execute(stmt)
-            nodes_to_delete = result.scalars().all()
-
-            await vfs.purge_recycle(user_id, id_list)
-
-            if self.event_bus:
-                for node in nodes_to_delete:
-                    # Only emit for actual files, not folders, or if it was a note
-                    if node.is_folder == BooleanEnum.NO and node.file_name.endswith(
-                        ".note"
-                    ):
-                        # node.file_id is the original File ID
-                        await self.event_bus.publish(
-                            NoteDeletedEvent(file_id=node.file_id, user_id=user_id)
-                        )
+        await self.purge_recycle(user_id=user_id, recycle_ids=id_list)
 
     async def revert_from_recycle(self, user: str, id_list: list[int]) -> None:
         """Restore items from recycle bin for a specific user using VFS."""
@@ -864,9 +934,7 @@ class FileService:
     async def clear_recycle(self, user: str) -> None:
         """Empty the recycle bin for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
-        async with self.session_manager.session() as session:
-            vfs = VirtualFileSystem(session)
-            await vfs.purge_recycle(user_id)
+        await self.purge_recycle(user_id=user_id)
 
     async def search_files(self, user: str, keyword: str) -> list[FileEntity]:
         """Search for files matching the keyword in user's storage.

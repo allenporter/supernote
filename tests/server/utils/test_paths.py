@@ -10,6 +10,7 @@ from supernote.server.utils.paths import (
     get_summary_group_id,
     get_summary_id,
     get_transcript_id,
+    parse_file_chunk_name,
 )
 
 
@@ -19,6 +20,17 @@ def test_get_page_png_path() -> None:
 
 def test_get_file_chunk_path() -> None:
     assert get_file_chunk_path("file_obj", 2) == "file_obj.part.2"
+
+
+def test_parse_file_chunk_name() -> None:
+    assert parse_file_chunk_name("file_obj.part.2") == "file_obj"
+    assert (
+        parse_file_chunk_name("user_data/uuid-123.pdf.part.10")
+        == "user_data/uuid-123.pdf"
+    )
+    assert parse_file_chunk_name("regular_file.txt") is None
+    assert parse_file_chunk_name("invalid.part.notanumber") is None
+    assert parse_file_chunk_name(".part.1") is None
 
 
 def test_get_summary_id() -> None:

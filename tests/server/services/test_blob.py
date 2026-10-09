@@ -1,10 +1,12 @@
 import hashlib
+import os
+import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
 import pytest
 
-from supernote.server.services.blob import LocalBlobStorage
+from supernote.server.services.blob import CleanupStats, LocalBlobStorage
 
 
 async def test_put_get_blob(tmp_path: Path) -> None:
@@ -174,3 +176,234 @@ async def test_get_range_large(tmp_path: Path) -> None:
     data = b"".join(chunks)
     assert len(data) == 5
     assert data == b"xxyyy"
+
+
+async def test_cleanup_staging(tmp_path: Path) -> None:
+    """Verify cleanup_staging removes only staging files older than TTL."""
+    storage = LocalBlobStorage(tmp_path)
+    temp_dir = tmp_path / "temp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+
+    now = time.time()
+    stale_file = temp_dir / "stale.tmp"
+    stale_file.write_bytes(b"stale staging data")
+    os.utime(stale_file, (now - 5000, now - 5000))
+
+    fresh_file = temp_dir / "fresh.tmp"
+    fresh_file.write_bytes(b"fresh staging data")
+    os.utime(fresh_file, (now - 100, now - 100))
+
+    non_tmp_file = temp_dir / "other.log"
+    non_tmp_file.write_bytes(b"log data")
+    os.utime(non_tmp_file, (now - 5000, now - 5000))
+
+    stats = await storage.cleanup_staging(ttl_seconds=3600)
+    assert stats.files_removed == 1
+    assert stats.bytes_reclaimed == len(b"stale staging data")
+    assert not stale_file.exists()
+    assert fresh_file.exists()
+    assert non_tmp_file.exists()
+
+
+async def test_cleanup_chunks_expiration(tmp_path: Path) -> None:
+    """Verify cleanup_chunks prunes chunks older than ttl_seconds while preserving recent ones."""
+    storage = LocalBlobStorage(tmp_path)
+    bucket = "user-data"
+
+    # Put chunks for abandoned upload A
+    await storage.put(bucket, "abandoned.note.part.1", b"chunk a1")
+    await storage.put(bucket, "abandoned.note.part.2", b"chunk a2")
+    path_a1 = storage.get_blob_path(bucket, "abandoned.note.part.1")
+    path_a2 = storage.get_blob_path(bucket, "abandoned.note.part.2")
+
+    # Put chunks for upload B (part 1 old, part 2 recent)
+    await storage.put(bucket, "mixed.note.part.1", b"chunk b1")
+    await storage.put(bucket, "mixed.note.part.2", b"chunk b2")
+    path_b1 = storage.get_blob_path(bucket, "mixed.note.part.1")
+    path_b2 = storage.get_blob_path(bucket, "mixed.note.part.2")
+
+    # Put normal file
+    await storage.put(bucket, "normal.note", b"normal file content")
+    path_normal = storage.get_blob_path(bucket, "normal.note")
+
+    now = time.time()
+    # Abandoned upload A: both chunks old
+    os.utime(path_a1, (now - 7200, now - 7200))
+    os.utime(path_a2, (now - 7000, now - 7000))
+
+    # Upload B: part 1 is old, but part 2 is recent (e.g. uploaded 10s ago)
+    os.utime(path_b1, (now - 7200, now - 7200))
+    os.utime(path_b2, (now - 10, now - 10))
+
+    # Normal file is old
+    os.utime(path_normal, (now - 7200, now - 7200))
+
+    stats = await storage.cleanup_chunks(bucket, ttl_seconds=3600)
+
+    # Chunks older than 3600s should be pruned (a1, a2, and b1)
+    assert stats.files_removed == 3
+    assert stats.bytes_reclaimed == len(b"chunk a1") + len(b"chunk a2") + len(
+        b"chunk b1"
+    )
+    assert not path_a1.exists()
+    assert not path_a2.exists()
+    assert not path_b1.exists()
+
+    # Recent chunk b2 must NOT be pruned
+    assert path_b2.exists()
+
+    # Normal file must NOT be pruned
+    assert path_normal.exists()
+
+
+async def test_cleanup_chunks_bucket_safety(tmp_path: Path) -> None:
+    """Verify cleanup_chunks safely handles empty, root, and non-directory bucket strings."""
+    storage = LocalBlobStorage(tmp_path)
+    stats_empty = await storage.cleanup_chunks("", 3600)
+    assert stats_empty == CleanupStats(files_removed=0, bytes_reclaimed=0)
+
+    stats_slash = await storage.cleanup_chunks("/", 3600)
+    assert stats_slash == CleanupStats(files_removed=0, bytes_reclaimed=0)
+
+    stats_dots = await storage.cleanup_chunks("../..", 3600)
+    assert stats_dots == CleanupStats(files_removed=0, bytes_reclaimed=0)
+
+    # Non-existent bucket
+    stats_missing = await storage.cleanup_chunks("nonexistent_bucket", 3600)
+    assert stats_missing == CleanupStats(files_removed=0, bytes_reclaimed=0)
+
+
+async def test_cleanup_chunks_custom_parser(tmp_path: Path) -> None:
+    """Verify cleanup_chunks accepts a custom chunk parser callable."""
+    storage = LocalBlobStorage(tmp_path)
+    bucket = "custom-bucket"
+    await storage.put(bucket, "doc-part-1.tmp", b"part1")
+    path1 = storage.get_blob_path(bucket, "doc-part-1.tmp")
+    now = time.time()
+    os.utime(path1, (now - 5000, now - 5000))
+
+    def custom_parser(name: str) -> str | None:
+        if name.startswith("doc-part-"):
+            return "doc"
+        return None
+
+    stats = await storage.cleanup_chunks(
+        bucket, ttl_seconds=3600, chunk_parser=custom_parser
+    )
+    assert stats == CleanupStats(files_removed=1, bytes_reclaimed=len(b"part1"))
+    assert not path1.exists()
+
+
+@pytest.mark.parametrize(
+    "bad_bucket",
+    [
+        "..",
+        ".",
+        "../..",
+        "../../etc",
+        "/etc",
+        "/etc/passwd",
+        ".hidden",
+        "bucket.",
+        "a..b",
+        "foo/bar",
+        "foo\\bar",
+        "foo\x00bar",
+        "temp",
+        "system",
+        "TEMP",
+        "SYSTEM",
+        "",
+        "   ",
+    ],
+)
+async def test_path_traversal_bucket_jailbreak_prevention(
+    tmp_path: Path, bad_bucket: str
+) -> None:
+    """Verify malicious bucket strings cannot escape storage root or perform path traversal."""
+    storage = LocalBlobStorage(tmp_path)
+    safe_key = "valid-key-123"
+
+    with pytest.raises(ValueError, match="Invalid bucket name"):
+        storage.get_blob_path(bad_bucket, safe_key)
+
+    with pytest.raises(ValueError, match="Invalid bucket name"):
+        await storage.put(bad_bucket, safe_key, b"exploit")
+
+    assert not await storage.exists(bad_bucket, safe_key)
+
+    with pytest.raises(ValueError, match="Invalid bucket name"):
+        async for _ in storage.get(bad_bucket, safe_key):
+            pass
+
+    with pytest.raises(ValueError, match="Invalid bucket name"):
+        await storage.delete(bad_bucket, safe_key)
+
+    with pytest.raises(ValueError, match="Invalid bucket name"):
+        await storage.get_metadata(bad_bucket, safe_key)
+
+
+@pytest.mark.parametrize(
+    "bad_key",
+    [
+        "..",
+        ".",
+        "../..",
+        "../../etc/passwd",
+        "/etc/passwd",
+        "foo/../../bar",
+        "foo/../bar",
+        "key\x00evil",
+        "",
+    ],
+)
+async def test_path_traversal_key_jailbreak_prevention(
+    tmp_path: Path, bad_key: str
+) -> None:
+    """Verify malicious key strings cannot escape storage root or perform path traversal."""
+    storage = LocalBlobStorage(tmp_path)
+    safe_bucket = "test-bucket"
+
+    with pytest.raises(ValueError):
+        storage.get_blob_path(safe_bucket, bad_key)
+
+    with pytest.raises(ValueError):
+        await storage.put(safe_bucket, bad_key, b"exploit")
+
+    assert not await storage.exists(safe_bucket, bad_key)
+
+    with pytest.raises(ValueError):
+        async for _ in storage.get(safe_bucket, bad_key):
+            pass
+
+    with pytest.raises(ValueError):
+        await storage.delete(safe_bucket, bad_key)
+
+    with pytest.raises(ValueError):
+        await storage.get_metadata(safe_bucket, bad_key)
+
+
+async def test_storage_root_containment_invariant(tmp_path: Path) -> None:
+    """Verify physical files are strictly created inside the storage root directory."""
+    storage = LocalBlobStorage(tmp_path)
+    bucket = "secure-bucket"
+    key = "normal-key-abc"
+
+    await storage.put(bucket, key, b"safe content")
+    blob_path = storage.get_blob_path(bucket, key)
+
+    assert blob_path.is_file()
+    assert blob_path.resolve().is_relative_to(tmp_path.resolve())
+    assert tmp_path.resolve() in blob_path.resolve().parents
+
+
+async def test_cleanup_chunks_reserved_and_root_safety(tmp_path: Path) -> None:
+    """Verify cleanup_chunks safely ignores reserved bucket names and root escapes."""
+    storage = LocalBlobStorage(tmp_path)
+
+    # Reserved buckets like "temp" or "system" should be no-ops
+    stats_temp = await storage.cleanup_chunks("temp", 3600)
+    assert stats_temp == CleanupStats(files_removed=0, bytes_reclaimed=0)
+
+    stats_system = await storage.cleanup_chunks("system", 3600)
+    assert stats_system == CleanupStats(files_removed=0, bytes_reclaimed=0)

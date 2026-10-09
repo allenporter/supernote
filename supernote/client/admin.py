@@ -2,7 +2,11 @@ import logging
 
 from supernote.client.client import Client
 from supernote.models.base import BaseResponse
-from supernote.models.system import QueueStatusVO
+from supernote.models.system import (
+    QueueStatusVO,
+    RecycleBinCleanupDTO,
+    RecycleBinCleanupVO,
+)
 from supernote.models.user import (
     RetrievePasswordDTO,
     UpdateEmailDTO,
@@ -102,3 +106,17 @@ class AdminClient:
             json=payload,
         )
         logger.info(f"Triggered reprocessing of '{task_type}' tasks")
+
+    async def run_recycle_bin_cleanup(
+        self, retention_days: int | None = None, batch_size: int | None = None
+    ) -> RecycleBinCleanupVO:
+        """Trigger recycle bin cleanup on-demand."""
+        dto = RecycleBinCleanupDTO(
+            retention_days=retention_days,
+            batch_size=batch_size,
+        )
+        return await self.client.post_json(
+            "/api/admin/recycle-bin/cleanup/run",
+            RecycleBinCleanupVO,
+            json=dto.to_dict(),
+        )

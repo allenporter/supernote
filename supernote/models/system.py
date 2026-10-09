@@ -14,6 +14,8 @@ The following endpoints are supported:
 - /api/system/base/reference/deleteApi
 - /api/system/base/reference/param
 - /api/official/system/base/param
+- /api/admin/queue/status
+- /api/admin/recycle-bin/cleanup/run
 """
 
 from dataclasses import dataclass, field
@@ -449,3 +451,48 @@ class QueueStatusVO(BaseResponse):
         metadata=field_options(alias="processingFiles"), default_factory=list
     )
     """List of file IDs currently being processed."""
+
+
+@dataclass
+class RecycleBinCleanupDTO(DataClassJSONMixin):
+    """Recycle bin cleanup request parameters.
+
+    Used by:
+        /api/admin/recycle-bin/cleanup/run (POST)
+    """
+
+    retention_days: int | None = field(
+        metadata=field_options(alias="retentionDays"), default=None
+    )
+    """Optional retention window in days to override default policy."""
+
+    batch_size: int | None = field(
+        metadata=field_options(alias="batchSize"), default=None
+    )
+    """Optional batch size limit for purge operations."""
+
+    def __post_init__(self) -> None:
+        if self.retention_days is not None and self.retention_days < 0:
+            raise ValueError("retention_days cannot be negative")
+        if self.batch_size is not None and self.batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+
+    class Config(BaseConfig):
+        allow_deserialization_not_by_alias = True
+        serialize_by_alias = True
+        omit_none = True
+
+
+@dataclass(kw_only=True)
+class RecycleBinCleanupVO(BaseResponse):
+    """Recycle bin cleanup response.
+
+    Used by:
+        /api/admin/recycle-bin/cleanup/run (POST)
+    """
+
+    purged_count: int = 0
+    """Number of items purged from the recycle bin."""
+
+    bytes_freed: int = 0
+    """Total storage bytes freed."""
