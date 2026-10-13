@@ -123,3 +123,4 @@ exclude = [
 [tool.ty.rules]
 unused-type-ignore-comment = "ignore"
 unresolved-import = "ignore"
+invalid-attribute-override = "ignore"
