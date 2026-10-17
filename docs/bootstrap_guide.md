@@ -72,6 +72,8 @@ For production, it is recommended to set secrets via environment:
 - `SUPERNOTE_JWT_SECRET`: The secret key for signing tokens.
 - `SUPERNOTE_ENABLE_REGISTRATION`: "true" or "false".
 - `SUPERNOTE_GEMINI_API_KEY`: API key for AI processing features.
+- `SUPERNOTE_LLM_PROVIDER`: `gemini` (default) or `openai` for any OpenAI-compatible server.
+- `SUPERNOTE_OPENAI_BASE_URL`, `SUPERNOTE_OPENAI_MODEL`, `SUPERNOTE_OPENAI_EMBEDDING_MODEL`: Endpoint and models when using the `openai` provider (see the README).
 
 You can control registration behavior in your `config.yaml`:
 

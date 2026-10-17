@@ -18,19 +18,19 @@ from supernote.server.services.processor_modules.gemini_embedding import (
 def gemini_embedding_module(
     file_service: FileService,
     server_config_gemini: ServerConfig,
-    mock_gemini_service: MagicMock,
+    mock_llm_service: MagicMock,
 ) -> GeminiEmbeddingModule:
     return GeminiEmbeddingModule(
         file_service=file_service,
         config=server_config_gemini,
-        gemini_service=mock_gemini_service,
+        llm_service=mock_llm_service,
     )
 
 
 async def test_process_embedding_success(
     gemini_embedding_module: GeminiEmbeddingModule,
     session_manager: DatabaseSessionManager,
-    mock_gemini_service: MagicMock,
+    mock_llm_service: MagicMock,
 ) -> None:
     # Setup Data
     user_id = 100
@@ -60,12 +60,7 @@ async def test_process_embedding_success(
         session.add(content)
         await session.commit()
 
-    # Mock Gemini API Response
-    mock_response = MagicMock()
-    mock_embedding = MagicMock()
-    mock_embedding.values = [0.1, 0.2, 0.3]
-    mock_response.embeddings = [mock_embedding]
-    mock_gemini_service.embed_content.return_value = mock_response
+    mock_llm_service.embed.return_value = [0.1, 0.2, 0.3]
 
     # Run full module lifecycle
     await gemini_embedding_module.run(
@@ -74,11 +69,7 @@ async def test_process_embedding_success(
 
     # Verifications
     # Verify API Call
-    call_args = mock_gemini_service.embed_content.call_args
-    assert call_args is not None
-    _, kwargs = call_args
-    assert kwargs["model"] == "text-embedding-004"
-    assert kwargs["contents"] == "This is the text to embed."
+    mock_llm_service.embed.assert_awaited_once_with("This is the text to embed.")
 
     # Verify DB Updates
     async with session_manager.session() as session:
@@ -121,10 +112,10 @@ async def test_process_embedding_success(
 async def test_embedding_run_if_needed_disabled(
     gemini_embedding_module: GeminiEmbeddingModule,
     session_manager: DatabaseSessionManager,
-    mock_gemini_service: MagicMock,
+    mock_llm_service: MagicMock,
 ) -> None:
     # Disable Gemini
-    mock_gemini_service.is_configured = False
+    mock_llm_service.is_configured = False
 
     # Should return False
     assert (

@@ -430,7 +430,12 @@ async def test_gemini_concurrency_limit() -> None:
 
     # Use patch to avoid actually calling the API
     with patch("google.genai.Client") as mock_client_cls:
-        service = GeminiService(api_key="fake-key", max_concurrency=max_concurrency)
+        service = GeminiService(
+            api_key="fake-key",
+            generation_model="model",
+            embedding_model="embedding-model",
+            max_concurrency=max_concurrency,
+        )
         mock_client = mock_client_cls.return_value
         service._client = mock_client
 
@@ -443,13 +448,13 @@ async def test_gemini_concurrency_limit() -> None:
             max_active_seen = max(max_active_seen, active_calls)
             try:
                 await asyncio.sleep(0.1)
-                return MagicMock()
+                return MagicMock(text="ok")
             finally:
                 active_calls -= 1
 
         mock_client.aio.models.generate_content = AsyncMock(side_effect=slow_call)
 
-        tasks = [service.generate_content("model", "content") for _ in range(4)]
+        tasks = [service.generate("content") for _ in range(4)]
         await asyncio.gather(*tasks)
 
         assert max_active_seen == 2, (

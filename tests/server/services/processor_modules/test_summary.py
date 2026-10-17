@@ -2,6 +2,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from mashumaro.jsonschema import build_json_schema
 from sqlalchemy import select
 
 from supernote.models.base import BooleanEnum
@@ -18,7 +19,10 @@ from supernote.server.db.models.note_processing import NotePageContentDO, System
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
-from supernote.server.services.processor_modules.summary import SummaryModule
+from supernote.server.services.processor_modules.summary import (
+    SummaryModule,
+    SummaryResponse,
+)
 from supernote.server.services.summary import SummaryService
 from supernote.server.utils.paths import (
     get_summary_group_id,
@@ -43,13 +47,13 @@ def mock_summary_service() -> MagicMock:
 def summary_module(
     file_service: FileService,
     server_config_gemini: ServerConfig,
-    mock_gemini_service: MagicMock,
+    mock_llm_service: MagicMock,
     mock_summary_service: MagicMock,
 ) -> SummaryModule:
     return SummaryModule(
         file_service=file_service,
         config=server_config_gemini,
-        gemini_service=mock_gemini_service,
+        llm_service=mock_llm_service,
         summary_service=mock_summary_service,
     )
 
@@ -57,7 +61,7 @@ def summary_module(
 async def test_summary_success(
     summary_module: SummaryModule,
     session_manager: DatabaseSessionManager,
-    mock_gemini_service: MagicMock,
+    mock_llm_service: MagicMock,
     mock_summary_service: MagicMock,
 ) -> None:
     # Setup Data
@@ -100,10 +104,9 @@ async def test_summary_success(
         session.add(p2)
         await session.commit()
 
-    # Mock Gemini AI Response
-    mock_response = MagicMock()
+    # Mock LLM Response
     # Return valid JSON matching the new segmented schema
-    mock_response.text = json.dumps(
+    mock_llm_service.generate.return_value = json.dumps(
         {
             "segments": [
                 {
@@ -115,7 +118,6 @@ async def test_summary_success(
             ]
         }
     )
-    mock_gemini_service.generate_content.return_value = mock_response
 
     # Mock PromptLoader
     with patch(
@@ -133,13 +135,14 @@ async def test_summary_success(
             PromptId.SUMMARY_GENERATION, custom_type="real"
         )
 
-        # Verify Gemini called with populated prompt
-        call_args = mock_gemini_service.generate_content.call_args
+        # Verify LLM called with populated prompt
+        call_args = mock_llm_service.generate.call_args
         assert call_args is not None
-        _, kwargs = call_args
-        assert "Page 1 text" in kwargs["contents"]
-        assert "Page 2 text" in kwargs["contents"]
-        assert "Generate" in kwargs["contents"]
+        (prompt,), kwargs = call_args
+        assert "Page 1 text" in prompt
+        assert "Page 2 text" in prompt
+        assert "Generate" in prompt
+        assert kwargs == {"json_schema": build_json_schema(SummaryResponse).to_dict()}
 
     # 1. Group Upsert
     group_call = mock_summary_service.add_group.call_args_list[0]
@@ -197,7 +200,7 @@ async def test_summary_success(
 async def test_summary_idempotency_update(
     summary_module: SummaryModule,
     session_manager: DatabaseSessionManager,
-    mock_gemini_service: MagicMock,
+    mock_llm_service: MagicMock,
     mock_summary_service: MagicMock,
 ) -> None:
     # Setup Data
@@ -228,9 +231,8 @@ async def test_summary_idempotency_update(
         )
         await session.commit()
 
-    # Mock Gemini
-    mock_response = MagicMock()
-    mock_response.text = json.dumps(
+    # Mock LLM
+    mock_llm_service.generate.return_value = json.dumps(
         {
             "segments": [
                 {
@@ -242,7 +244,6 @@ async def test_summary_idempotency_update(
             ]
         }
     )
-    mock_gemini_service.generate_content.return_value = mock_response
 
     # Mock Existing Group & Summary
     existing_group = SummaryItem(
@@ -300,7 +301,7 @@ async def test_summary_idempotency_update(
 async def test_summary_transcript_with_dates(
     summary_module: SummaryModule,
     session_manager: DatabaseSessionManager,
-    mock_gemini_service: MagicMock,
+    mock_llm_service: MagicMock,
     mock_summary_service: MagicMock,
 ) -> None:
     # Setup Data
@@ -332,10 +333,8 @@ async def test_summary_transcript_with_dates(
         )
         await session.commit()
 
-    # Mock Gemini (minimal)
-    mock_response = MagicMock()
-    mock_response.text = json.dumps({"segments": []})
-    mock_gemini_service.generate_content.return_value = mock_response
+    # Mock LLM (minimal)
+    mock_llm_service.generate.return_value = json.dumps({"segments": []})
 
     # Run full module lifecycle
     await summary_module.run(file_id, session_manager)

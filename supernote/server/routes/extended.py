@@ -25,6 +25,7 @@ from supernote.models.extended import (
 )
 from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.exceptions import SupernoteError
+from supernote.server.services.llm import LLMService
 from supernote.server.services.search import SearchService
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
@@ -237,16 +238,15 @@ async def handle_extended_transcript(request: web.Request) -> web.Response:
 async def handle_extended_ai_status(request: web.Request) -> web.Response:
     # Endpoint: GET /api/extended/ai/status
     # Purpose: Returns server AI processing configuration and API key health status.
-    config = request.app.get("config")
-    gemini_key = getattr(config, "gemini_api_key", None) if config else None
-    has_api_key = bool(gemini_key and gemini_key.strip())
+    llm_service: LLMService = request.app["llm_service"]
+    configured = llm_service.is_configured
 
     return web.json_response(
         {
             "success": True,
-            "hasApiKey": has_api_key,
-            "ocrEnabled": has_api_key,
-            "vectorSearchEnabled": has_api_key,
-            "model": getattr(config, "gemini_ocr_model", None) if config else None,
+            "hasApiKey": configured,
+            "ocrEnabled": configured,
+            "vectorSearchEnabled": configured,
+            "model": llm_service.generation_model,
         }
     )

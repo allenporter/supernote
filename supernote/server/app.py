@@ -42,7 +42,7 @@ from .routes.decorators import public_route
 from .services.blob import LocalBlobStorage
 from .services.coordination import SqliteCoordinationService
 from .services.file import FileService
-from .services.gemini import GeminiService
+from .services.llm_provider import create_llm_service
 from .services.processor import ProcessorService
 from .services.processor_modules.gemini_embedding import GeminiEmbeddingModule
 from .services.processor_modules.gemini_ocr import GeminiOcrModule
@@ -356,10 +356,8 @@ def create_app(config: ServerConfig) -> web.Application:
     app["file_service"] = file_service
     app["url_signer"] = UrlSigner(config.auth.secret_key, coordination_service)
     app["schedule_service"] = ScheduleService(session_manager)
-    gemini_service = GeminiService(
-        config.gemini_api_key, max_concurrency=config.gemini_max_concurrency
-    )
-    app["gemini_service"] = gemini_service
+    llm_service = create_llm_service(config)
+    app["llm_service"] = llm_service
 
     if config.prompts_dir:
         PROMPT_LOADER.configure(Path(config.prompts_dir))
@@ -367,7 +365,7 @@ def create_app(config: ServerConfig) -> web.Application:
     summary_service = SummaryService(user_service, session_manager)
     app["summary_service"] = summary_service
 
-    search_service = SearchService(session_manager, gemini_service, config)
+    search_service = SearchService(session_manager, llm_service, config)
     app["search_service"] = search_service
 
     app["sync_locks"] = {}  # user -> (equipment_no, expiry_time)
@@ -383,15 +381,15 @@ def create_app(config: ServerConfig) -> web.Application:
         hashing=PageHashingModule(file_service=file_service),
         png=PngConversionModule(file_service=file_service),
         ocr=GeminiOcrModule(
-            file_service=file_service, config=config, gemini_service=gemini_service
+            file_service=file_service, config=config, llm_service=llm_service
         ),
         embedding=GeminiEmbeddingModule(
-            file_service=file_service, config=config, gemini_service=gemini_service
+            file_service=file_service, config=config, llm_service=llm_service
         ),
         summary=SummaryModule(
             file_service=file_service,
             config=config,
-            gemini_service=gemini_service,
+            llm_service=llm_service,
             summary_service=summary_service,
         ),
     )
