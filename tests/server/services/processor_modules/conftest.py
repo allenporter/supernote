@@ -13,13 +13,11 @@ from supernote.server.services.user import UserService
 
 @pytest.fixture
 def file_service(
-    storage_root: Path,
     blob_storage: BlobStorage,
     user_service: UserService,
     session_manager: DatabaseSessionManager,
 ) -> FileService:
     return FileService(
-        storage_root=storage_root,
         blob_storage=blob_storage,
         user_service=user_service,
         session_manager=session_manager,

@@ -1,5 +1,8 @@
 import os
+import re
 import uuid
+
+CHUNK_PATTERN = re.compile(r"^(.+)\.part\.(\d+)$")
 
 
 def get_page_png_path(file_id: int, page_id: str) -> str:
@@ -10,6 +13,12 @@ def get_page_png_path(file_id: int, page_id: str) -> str:
 def get_file_chunk_path(object_name: str, part_number: int) -> str:
     """Generate a storage path for a file chunk."""
     return f"{object_name}.part.{part_number}"
+
+
+def parse_file_chunk_name(filename: str) -> str | None:
+    """Extract base object name from a multipart chunk filename."""
+    match = CHUNK_PATTERN.match(filename)
+    return match.group(1) if match else None
 
 
 def get_summary_id(file_basis: str) -> str:
