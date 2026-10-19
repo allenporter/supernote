@@ -11,10 +11,15 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from supernote.server.config import ServerConfig
 
 __all__ = [
     "ConcurrencyLimitedOcrModel",
     "OcrModel",
+    "create_ocr_model",
 ]
 
 
@@ -49,3 +54,21 @@ class ConcurrencyLimitedOcrModel(OcrModel):
     async def extract_text(self, png_data: bytes, prompt: str) -> str:
         async with self._semaphore:
             return await self._model.extract_text(png_data, prompt)
+
+
+def create_ocr_model(config: ServerConfig) -> OcrModel | None:
+    """Create the configured `OcrModel` wrapped with concurrency limiting."""
+    if not config.gemini_api_key or not config.gemini_api_key.strip():
+        return None
+
+    from supernote.server.ai.models.gemini.ocr import (  # noqa: PLC0415
+        create_ocr_model as create_gemini_ocr_model,
+    )
+
+    model = create_gemini_ocr_model(config)
+    if model is None:
+        return None
+    # TODO(#301): Generalize `gemini_max_concurrency` across AI providers.
+    return ConcurrencyLimitedOcrModel(
+        model, max_concurrency=config.gemini_max_concurrency
+    )

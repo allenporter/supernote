@@ -3,9 +3,26 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
+from unittest.mock import patch
 
 from supernote.server.ai.models.fake.ocr import FakeOcrModel
-from supernote.server.ai.models.ocr import ConcurrencyLimitedOcrModel
+from supernote.server.ai.models.ocr import ConcurrencyLimitedOcrModel, create_ocr_model
+from supernote.server.config import AuthConfig, ServerConfig
+
+
+def test_create_ocr_model(tmp_path: Path) -> None:
+    config = ServerConfig(
+        auth=AuthConfig(secret_key="secret"),
+        storage_dir=str(tmp_path),
+    )
+    assert create_ocr_model(config) is None
+
+    with patch("google.genai.Client"):
+        config.gemini_api_key = "test-key"
+        model = create_ocr_model(config)
+        assert isinstance(model, ConcurrencyLimitedOcrModel)
+        assert model.model_id == config.gemini_ocr_model
 
 
 async def test_concurrency_limited_ocr_model() -> None:

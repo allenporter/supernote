@@ -2,13 +2,32 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 
 from supernote.server.ai.models.embedding import (
     ConcurrencyLimitedEmbeddingModel,
     EmbeddingTaskType,
+    create_embedding_model,
 )
 from supernote.server.ai.models.fake.embedding import FakeEmbeddingModel
+from supernote.server.config import AuthConfig, ServerConfig
+
+
+def test_create_embedding_model(tmp_path: Path) -> None:
+    config = ServerConfig(
+        auth=AuthConfig(secret_key="secret"),
+        storage_dir=str(tmp_path),
+    )
+    assert create_embedding_model(config) is None
+
+    with patch("google.genai.Client"):
+        config.gemini_api_key = "test-key"
+        model = create_embedding_model(config)
+        assert isinstance(model, ConcurrencyLimitedEmbeddingModel)
+        assert model.model_id == config.gemini_embedding_model
 
 
 async def test_concurrency_limited_embedding_model() -> None:

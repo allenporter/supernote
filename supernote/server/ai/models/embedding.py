@@ -12,11 +12,16 @@ import asyncio
 import math
 from abc import ABC, abstractmethod
 from enum import StrEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from supernote.server.config import ServerConfig
 
 __all__ = [
     "ConcurrencyLimitedEmbeddingModel",
     "EmbeddingModel",
     "EmbeddingTaskType",
+    "create_embedding_model",
 ]
 
 
@@ -76,3 +81,21 @@ class ConcurrencyLimitedEmbeddingModel(EmbeddingModel):
     ) -> list[float]:
         async with self._semaphore:
             return await self._model._embed(text, task_type=task_type)
+
+
+def create_embedding_model(config: ServerConfig) -> EmbeddingModel | None:
+    """Create the configured `EmbeddingModel` wrapped with concurrency limiting."""
+    if not config.gemini_api_key or not config.gemini_api_key.strip():
+        return None
+
+    from supernote.server.ai.models.gemini.embedding import (  # noqa: PLC0415
+        create_embedding_model as create_gemini_embedding_model,
+    )
+
+    model = create_gemini_embedding_model(config)
+    if model is None:
+        return None
+    # TODO(#301): Generalize `gemini_max_concurrency` across AI providers.
+    return ConcurrencyLimitedEmbeddingModel(
+        model, max_concurrency=config.gemini_max_concurrency
+    )

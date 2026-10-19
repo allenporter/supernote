@@ -189,6 +189,7 @@ BaseConfig
     Env Var: `SUPERNOTE_GEMINI_EMBEDDING_MODEL`
     """
 
+    # TODO(#301): Generalize `gemini_max_concurrency` to a provider-agnostic AI concurrency setting.
     gemini_max_concurrency: int = 5
     """Maximum number of concurrent Gemini API calls.
 
