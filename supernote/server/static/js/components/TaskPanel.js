@@ -109,24 +109,37 @@ export default {
         }
 
         const todayTasksCount = computed(() => {
-            const now = Math.floor(Date.now() / 1000);
-            const oneDaySeconds = 86400;
-            return tasks.value.filter(t => t.dueTime && Math.abs(t.dueTime - now) <= oneDaySeconds && t.status !== 'completed').length;
+            const todayStr = new Date().toDateString();
+            return tasks.value.filter(t => {
+                if (!t.dueTime || t.status === 'completed') return false;
+                const dueMs = t.dueTime < 1e11 ? t.dueTime * 1000 : t.dueTime;
+                return new Date(dueMs).toDateString() === todayStr;
+            }).length;
         });
 
         const completedTasksCount = computed(() => {
             return tasks.value.filter(t => t.status === 'completed').length;
         });
 
+        function toLocalDateInputValue(dateObj) {
+            const year = dateObj.getFullYear();
+            const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const day = String(dateObj.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
         function openCreateTaskModal() {
             editingTask.value = null;
+            const defaultDueDate = selectedFilter.value === 'today'
+                ? toLocalDateInputValue(new Date())
+                : '';
             taskForm.value = {
                 id: null,
                 taskListId: selectedGroupId.value ? String(selectedGroupId.value) : '0',
                 title: '',
                 detail: '',
                 importance: 'low',
-                dueDate: '',
+                dueDate: defaultDueDate,
                 status: 'needsAction'
             };
             showNewTaskModal.value = true;
@@ -136,8 +149,9 @@ export default {
             editingTask.value = task;
             let formattedDate = '';
             if (task.dueTime) {
-                const dateObj = new Date(task.dueTime * 1000);
-                formattedDate = dateObj.toISOString().split('T')[0];
+                const dueMs = task.dueTime < 1e11 ? task.dueTime * 1000 : task.dueTime;
+                const dateObj = new Date(dueMs);
+                formattedDate = toLocalDateInputValue(dateObj);
             }
 
             taskForm.value = {
@@ -158,7 +172,7 @@ export default {
             let epochDue = 0;
             if (taskForm.value.dueDate) {
                 const parsedDate = new Date(taskForm.value.dueDate + 'T12:00:00Z');
-                epochDue = Math.floor(parsedDate.getTime() / 1000);
+                epochDue = parsedDate.getTime();
             }
 
             const payload = {
@@ -189,7 +203,8 @@ export default {
 
         function formatDueDate(dueTime) {
             if (!dueTime) return null;
-            const due = new Date(dueTime * 1000);
+            const dueMs = dueTime < 1e11 ? dueTime * 1000 : dueTime;
+            const due = new Date(dueMs);
             const now = new Date();
 
             const isToday = due.toDateString() === now.toDateString();

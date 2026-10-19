@@ -156,7 +156,7 @@ export async function updateScheduleTask(taskData) {
             importance: taskData.importance,
             status: taskData.status,
             dueTime: taskData.dueTime,
-            lastModified: taskData.lastModified || Math.floor(Date.now() * 1000),
+            lastModified: taskData.lastModified || Date.now(),
             isReminderOn: taskData.isReminderOn !== undefined ? (taskData.isReminderOn ? "Y" : "N") : undefined
         })
     });

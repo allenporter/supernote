@@ -937,3 +937,61 @@ async def test_task_update_preserves_last_modified_and_clears_nullable_fields(
 
     await schedule.delete_task(task_id)
     await schedule.delete_group(group_id)
+
+
+async def test_schedule_13_digit_millisecond_timestamp_precision(
+    authenticated_client: Client,
+) -> None:
+    """Verify 13-digit millisecond timestamps precision for dueTime and lastModified."""
+    schedule = ScheduleClient(authenticated_client)
+
+    create_due_time = 1775649600000
+    update_due_time = 1775617843699
+    update_last_modified = 1775617843699
+
+    create_resp = await authenticated_client.post(
+        "/api/file/schedule/task",
+        json={
+            "taskListId": "0",
+            "title": "Millisecond Timestamp Precision Task",
+            "dueTime": create_due_time,
+        },
+    )
+    assert create_resp.status == 200
+    create_data = await create_resp.json()
+    assert create_data["success"] is True
+    task_id = str(create_data["taskId"])
+
+    get_res = await authenticated_client.get(f"/api/file/schedule/task/{task_id}")
+    assert get_res.status == 200
+    task_data = await get_res.json()
+    assert task_data["dueTime"] == create_due_time
+
+    list_res = await authenticated_client.post(
+        "/api/file/schedule/task/all",
+        json={"taskListId": "0"},
+    )
+    assert list_res.status == 200
+    list_data = await list_res.json()
+    task_item = next(
+        t for t in list_data["scheduleTask"] if str(t["taskId"]) == task_id
+    )
+    assert task_item["dueTime"] == create_due_time
+
+    update_resp = await authenticated_client.put(
+        "/api/file/schedule/task",
+        json={
+            "taskId": task_id,
+            "dueTime": update_due_time,
+            "lastModified": update_last_modified,
+        },
+    )
+    assert update_resp.status == 200
+
+    updated_get = await authenticated_client.get(f"/api/file/schedule/task/{task_id}")
+    assert updated_get.status == 200
+    updated_data = await updated_get.json()
+    assert updated_data["dueTime"] == update_due_time
+    assert updated_data["lastModified"] >= 1_000_000_000_000
+
+    await schedule.delete_task(task_id)

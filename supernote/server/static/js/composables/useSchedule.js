@@ -125,9 +125,10 @@ export function useSchedule() {
 
             // Quick Filters
             if (selectedFilter.value === 'today') {
-                const now = Math.floor(Date.now() / 1000);
-                const oneDaySeconds = 86400;
-                if (!task.dueTime || Math.abs(task.dueTime - now) > oneDaySeconds) return false;
+                if (!task.dueTime) return false;
+                const dueMs = task.dueTime < 1e11 ? task.dueTime * 1000 : task.dueTime;
+                const isToday = new Date(dueMs).toDateString() === new Date().toDateString();
+                if (!isToday) return false;
             } else if (selectedFilter.value === 'high') {
                 if (task.importance !== 'high') return false;
             } else if (selectedFilter.value === 'completed') {
