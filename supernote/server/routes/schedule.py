@@ -223,6 +223,8 @@ async def create_task(request: web.Request) -> web.Response:
             status=dto.status or "needsAction",
             importance=dto.importance,
             due_time=dto.due_time,
+            completed_time_ms=dto.completed_time,
+            recurrence=dto.recurrence,
             is_reminder_on=(
                 dto.is_reminder_on == BooleanEnum.YES if dto.is_reminder_on else False
             ),
@@ -236,6 +238,7 @@ async def create_task(request: web.Request) -> web.Response:
             planer_sort_time=dto.planer_sort_time,
             all_sort_time=dto.all_sort_time,
             task_id=dto.task_id,
+            last_modified_ms=dto.last_modified,
         )
         return web.json_response(
             AddScheduleTaskVO(success=True, task_id=task.task_id).to_dict()
@@ -347,10 +350,12 @@ async def get_task(request: web.Request) -> web.Response:
                 status=task.status,
                 importance=task.importance,
                 due_time=task.due_time,
+                completed_time=task.completed_time,
                 recurrence=task.recurrence,
                 is_reminder_on=(
                     BooleanEnum.YES if task.is_reminder_on else BooleanEnum.NO
                 ),
+                is_deleted=BooleanEnum.NO,
                 links=task.links,
                 sort=task.sort,
                 sort_completed=task.sort_completed,
@@ -413,7 +418,7 @@ async def list_tasks(request: web.Request) -> web.Response:
                 planer_sort=t.planer_sort if t.planer_sort is not None else 0,
                 all_sort=t.all_sort,
                 all_sort_completed=t.all_sort_completed,
-                sort_time=t.sort_time or t.update_time or 0,
+                sort_time=t.sort_time if t.sort_time is not None else 0,
                 planer_sort_time=t.planer_sort_time or 0,
                 all_sort_time=t.all_sort_time,
                 last_modified=t.update_time,

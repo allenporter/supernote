@@ -690,3 +690,47 @@ async def test_clear_group_without_last_modified(
     assert tasks_vo.schedule_task == []
 
     await schedule.delete_group(group_vo.task_list_id)
+
+
+async def test_task_create_preserves_recurrence_and_completed_time(
+    authenticated_client: Client,
+) -> None:
+    """Verify creating a task preserves recurrence and completedTime."""
+    schedule = ScheduleClient(authenticated_client)
+    group_vo = await schedule.create_group("Task Fields Group")
+    assert group_vo.task_list_id is not None
+
+    task_vo = await schedule.create_task(
+        group_vo.task_list_id,
+        "Recurring Completed Task",
+        status="completed",
+        recurrence="FREQ=WEEKLY;INTERVAL=1",
+        completed_time_ms=1710000000000,
+    )
+    assert task_vo.task_id is not None
+
+    detail = await schedule.get_task(task_vo.task_id)
+    assert detail.recurrence == "FREQ=WEEKLY;INTERVAL=1"
+    assert detail.completed_time == 1710000000000
+
+    await schedule.delete_group(group_vo.task_list_id)
+
+
+async def test_task_create_defaults_sort_time_to_zero(
+    authenticated_client: Client,
+) -> None:
+    """Verify listing tasks defaults omitted sortTime to 0 instead of server clock."""
+    schedule = ScheduleClient(authenticated_client)
+    group_vo = await schedule.create_group("Default Sort Time Group")
+    assert group_vo.task_list_id is not None
+
+    task_vo = await schedule.create_task(
+        group_vo.task_list_id, "Task With Default Sort Time"
+    )
+    assert task_vo.task_id is not None
+
+    all_vo = await schedule.get_tasks_all(group_id=group_vo.task_list_id)
+    matching = next(t for t in all_vo.schedule_task if t.task_id == task_vo.task_id)
+    assert matching.sort_time == 0
+
+    await schedule.delete_group(group_vo.task_list_id)

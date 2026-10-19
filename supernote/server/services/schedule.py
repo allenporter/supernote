@@ -169,6 +169,7 @@ class ScheduleService:
         status: str = "needsAction",
         importance: str | None = None,
         due_time: int | None = None,
+        completed_time_ms: int | None = None,
         recurrence: str | None = None,
         is_reminder_on: bool = False,
         links: str | None = None,
@@ -181,6 +182,7 @@ class ScheduleService:
         planer_sort_time: int | None = None,
         all_sort_time: int | None = None,
         task_id: str | None = None,
+        last_modified_ms: int | None = None,
     ) -> ScheduleTaskDO:
         """Create a new task."""
         if len(title) > MAX_TITLE_LENGTH:
@@ -196,6 +198,7 @@ class ScheduleService:
                 "status": status,
                 "importance": importance,
                 "due_time": due_time,
+                "completed_time": completed_time_ms,
                 "recurrence": recurrence,
                 "is_reminder_on": is_reminder_on,
                 "links": links,
@@ -208,6 +211,8 @@ class ScheduleService:
                 "planer_sort_time": planer_sort_time,
                 "all_sort_time": all_sort_time,
             }
+            if last_modified_ms is not None:
+                kwargs["update_time"] = last_modified_ms
             if task_id is not None:
                 kwargs["task_id"] = task_id
 

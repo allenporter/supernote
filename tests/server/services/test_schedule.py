@@ -196,3 +196,21 @@ async def test_batch_update_tasks_updates_timestamp_for_since_filter(
     assert updated_task1.update_time > sync_token
     delta_tasks = await schedule_service.list_tasks(user_id, since=sync_token)
     assert [t.task_id for t in delta_tasks] == [task1.task_id]
+
+
+async def test_create_task_completed_time_and_last_modified(
+    schedule_service: ScheduleService,
+) -> None:
+    """Test creating a task with completed_time_ms and last_modified_ms."""
+    user_id = 555
+    group = await schedule_service.create_group(user_id, "Timestamps Group")
+    task = await schedule_service.create_task(
+        user_id,
+        group.task_list_id,
+        "Done Task",
+        status="completed",
+        completed_time_ms=1710000000000,
+        last_modified_ms=1710000005000,
+    )
+    assert task.completed_time == 1710000000000
+    assert task.update_time == 1710000005000
