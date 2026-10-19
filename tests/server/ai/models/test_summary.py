@@ -54,6 +54,18 @@ def test_create_summary_model_gemini_provider() -> None:
         assert ai_model.model_id == "gemini-custom-summary"
 
 
+def test_create_summary_model_openai_provider() -> None:
+    ai_config = ServerConfig(
+        ai=AiConfig(
+            providers={"openai": ProviderConfig(base_url="http://localhost:11434/v1")},
+            summary=ModelConfig(provider="openai", model="gemma", max_concurrency=1),
+        )
+    )
+    ai_model = create_summary_model(ai_config)
+    assert isinstance(ai_model, ConcurrencyLimitedSummaryModel)
+    assert ai_model.model_id == "gemma"
+
+
 def test_create_summary_model_fake_provider() -> None:
     fake_config = ServerConfig(
         ai=AiConfig(

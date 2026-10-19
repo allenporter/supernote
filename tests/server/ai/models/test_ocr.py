@@ -52,6 +52,18 @@ def test_create_ocr_model_gemini_provider() -> None:
         assert ai_model.model_id == "gemini-custom-ocr"
 
 
+def test_create_ocr_model_openai_provider() -> None:
+    ai_config = ServerConfig(
+        ai=AiConfig(
+            providers={"openai": ProviderConfig(base_url="http://localhost:11434/v1")},
+            ocr=ModelConfig(provider="openai", model="gemma-vision", max_concurrency=1),
+        )
+    )
+    ai_model = create_ocr_model(ai_config)
+    assert isinstance(ai_model, ConcurrencyLimitedOcrModel)
+    assert ai_model.model_id == "gemma-vision"
+
+
 def test_create_ocr_model_fake_provider() -> None:
     fake_config = ServerConfig(
         ai=AiConfig(

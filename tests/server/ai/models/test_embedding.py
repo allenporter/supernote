@@ -55,6 +55,20 @@ def test_create_embedding_model_gemini_provider() -> None:
         assert ai_model.model_id == "gemini-custom-embed"
 
 
+def test_create_embedding_model_openai_provider() -> None:
+    ai_config = ServerConfig(
+        ai=AiConfig(
+            providers={"openai": ProviderConfig(base_url="http://localhost:11434/v1")},
+            embedding=ModelConfig(
+                provider="openai", model="nomic-embed-text", max_concurrency=1
+            ),
+        )
+    )
+    ai_model = create_embedding_model(ai_config)
+    assert isinstance(ai_model, ConcurrencyLimitedEmbeddingModel)
+    assert ai_model.model_id == "nomic-embed-text"
+
+
 def test_create_embedding_model_fake_provider() -> None:
     fake_config = ServerConfig(
         ai=AiConfig(

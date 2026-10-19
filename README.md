@@ -97,6 +97,11 @@ Enables handwriting transcription, summarization, and semantic search. Requires 
       supernote
     ```
 
+#### Option C: AI & Knowledge Hub (With a Local Model)
+Runs the same features against a model server on your own hardware, such as [Ollama](https://ollama.com/), llama.cpp, vLLM or LM Studio, so your notes never leave your network. You need a vision-capable chat model for OCR and summaries, and an embedding model for search. Configure the `openai` provider in `config/config.yaml` (`/data/config/config.yaml` in Docker) as described in the [server AI configuration](supernote/server/README.md#ai-configuration).
+
+When the server runs in Docker and Ollama runs on the host, use `http://host.docker.internal:11434/v1` as the `base_url` (on Linux, also pass `--add-host=host.docker.internal:host-gateway`).
+
 ### 2. Bootstrap Your User
 
 Once the server is running, register your administrator account:
