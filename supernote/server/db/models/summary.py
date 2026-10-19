@@ -1,6 +1,6 @@
 import time
 
-from sqlalchemy import BigInteger, String, Text
+from sqlalchemy import BigInteger, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from supernote.server.db.base import Base
@@ -11,11 +11,16 @@ class SummaryDO(Base):
     """Database model for both Summaries and Summary Groups."""
 
     __tablename__ = "f_summary"
+    __table_args__ = (
+        UniqueConstraint("user_id", "unique_identifier", name="uq_f_summary_user_uuid"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, default=next_id)
     """Internal database ID."""
 
-    user_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, index=True, nullable=False
+    )
     """Owner user ID."""
 
     file_id: Mapped[int | None] = mapped_column(BigInteger, index=True, nullable=True)
@@ -24,7 +29,7 @@ class SummaryDO(Base):
     name: Mapped[str | None] = mapped_column(String, nullable=True)
     """Display name of the summary or group."""
 
-    unique_identifier: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    unique_identifier: Mapped[str] = mapped_column(String, nullable=False)
     """Client-provided UUID for syncing."""
 
     parent_unique_identifier: Mapped[str | None] = mapped_column(
@@ -100,17 +105,24 @@ class SummaryTagDO(Base):
     """Database model for Summary Tags."""
 
     __tablename__ = "f_summary_tag"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "unique_identifier", name="uq_f_summary_tag_user_uuid"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, default=next_id)
     """Internal database ID."""
 
-    user_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, index=True, nullable=False
+    )
     """Owner user ID."""
 
     name: Mapped[str] = mapped_column(String, nullable=False)
     """Tag display name."""
 
-    unique_identifier: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    unique_identifier: Mapped[str] = mapped_column(String, nullable=False)
     """Tag UUID used for syncing."""
 
     create_time: Mapped[int] = mapped_column(

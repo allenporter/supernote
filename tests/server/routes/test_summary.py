@@ -12,6 +12,7 @@ from supernote.models.summary import (
     UpdateSummaryDTO,
     UpdateSummaryGroupDTO,
 )
+from supernote.models.user import UserRegisterDTO
 from supernote.server.exceptions import SupernoteError
 
 
@@ -335,3 +336,47 @@ async def test_upload_apply_summary_error(
         pytest.raises(ApiException),
     ):
         await summary_client.upload_apply(file_name="test.txt", equipment_no="eq1")
+
+
+async def test_summary_uuid_scoped_per_user(client: TestClient) -> None:
+    """Verify two users can create summaries and groups with the same unique_identifier without collision."""
+    user_service = client.app["user_service"]
+    summary_service = client.app["summary_service"]
+
+    user_a = "user_a@example.com"
+    user_b = "user_b@example.com"
+    await user_service.register(UserRegisterDTO(email=user_a, password="a" * 32))
+    await user_service.register(UserRegisterDTO(email=user_b, password="b" * 32))
+
+    shared_summary_uuid = "00000000-1111-2222-3333-444444444444"
+    shared_group_uuid = "00000000-1111-2222-3333-555555555555"
+
+    item_a = await summary_service.add_summary(
+        user_a,
+        AddSummaryDTO(unique_identifier=shared_summary_uuid, content="User A summary"),
+    )
+    item_b = await summary_service.add_summary(
+        user_b,
+        AddSummaryDTO(unique_identifier=shared_summary_uuid, content="User B summary"),
+    )
+    assert item_a.unique_identifier == shared_summary_uuid
+    assert item_b.unique_identifier == shared_summary_uuid
+    assert item_a.content == "User A summary"
+    assert item_b.content == "User B summary"
+
+    grp_a = await summary_service.add_group(
+        user_a,
+        AddSummaryGroupDTO(
+            unique_identifier=shared_group_uuid, name="Group A", md5_hash="ha"
+        ),
+    )
+    grp_b = await summary_service.add_group(
+        user_b,
+        AddSummaryGroupDTO(
+            unique_identifier=shared_group_uuid, name="Group B", md5_hash="hb"
+        ),
+    )
+    assert grp_a.unique_identifier == shared_group_uuid
+    assert grp_b.unique_identifier == shared_group_uuid
+    assert grp_a.name == "Group A"
+    assert grp_b.name == "Group B"

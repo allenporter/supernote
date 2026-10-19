@@ -78,7 +78,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "f1a2b3c4d5e6"
+        assert version == "a2b3c4d5e6f7"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -162,7 +162,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "f1a2b3c4d5e6"
+        assert version == "a2b3c4d5e6f7"
 
         # Verify task columns and types
         tasks = conn.execute(
@@ -638,4 +638,60 @@ def test_make_schedule_task_list_id_nullable_migration(
             ("t3", "grp-1"),
         ]
 
+    engine.dispose()
+
+
+def test_scope_summary_unique_identifier_by_user_migration(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify migration a2b3c4d5e6f7 scopes f_summary and f_summary_tag unique_identifier and primary key by user_id."""
+    db_path = tmp_path / "summary_user_scope.db"
+    shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+    command.upgrade(alembic_config, "a2b3c4d5e6f7")
+
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        # Two different users can insert rows with the same id and unique_identifier
+        conn.execute(
+            text(
+                "INSERT INTO f_summary "
+                "(id, user_id, unique_identifier, is_summary_group, is_deleted, create_time, update_time) "
+                "VALUES "
+                "(500, 1, 'shared-uuid', 0, 0, 1000, 1000), "
+                "(500, 2, 'shared-uuid', 0, 0, 1000, 1000)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO f_summary_tag "
+                "(id, user_id, name, unique_identifier, create_time) "
+                "VALUES "
+                "(600, 1, 'Work', 'shared-tag-uuid', 1000), "
+                "(600, 2, 'Work', 'shared-tag-uuid', 1000)"
+            )
+        )
+
+    with engine.connect() as conn:
+        summary_count = conn.execute(
+            text(
+                "SELECT count(*) FROM f_summary WHERE unique_identifier = 'shared-uuid'"
+            )
+        ).scalar()
+        assert summary_count == 2
+
+        tag_count = conn.execute(
+            text(
+                "SELECT count(*) FROM f_summary_tag WHERE unique_identifier = 'shared-tag-uuid'"
+            )
+        ).scalar()
+        assert tag_count == 2
+
+    # Clean up user 2's colliding rows before testing downgrade to global uniqueness
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM f_summary WHERE user_id = 2"))
+        conn.execute(text("DELETE FROM f_summary_tag WHERE user_id = 2"))
+
+    command.downgrade(alembic_config, "f1a2b3c4d5e6")
     engine.dispose()
