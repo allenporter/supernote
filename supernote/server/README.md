@@ -66,7 +66,7 @@ ai:
     model: embeddinggemma
     max_concurrency: 1
 ```
-Embeddings from different models are not comparable, so after changing the embedding model run `supernote admin reprocess --type embedding`.
+Changing the embedding model re-embeds existing pages automatically.
 
 #### Outbound Webhooks
 To send non-blocking HTTP `POST` notifications on server events (e.g., to Home Assistant, n8n, or Zapier), configure `webhooks` in `config/config.yaml` (or enable via `SUPERNOTE_WEBHOOKS_ENABLED=true`):
