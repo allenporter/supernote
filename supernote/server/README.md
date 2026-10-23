@@ -46,6 +46,28 @@ ai:
     max_concurrency: 5
 ```
 
+To run the models locally instead, use the `openai` provider with any server that implements the OpenAI API (e.g. Ollama, llama.cpp, vLLM, LM Studio). OCR needs a vision-capable chat model. Providers can be mixed per capability.
+```yaml
+ai:
+  providers:
+    openai:
+      base_url: "http://localhost:11434/v1"  # Ollama; omit for api.openai.com
+      # api_key: "sk-..."                    # required for hosted OpenAI
+  ocr:
+    provider: openai
+    model: gemma3:27b
+    max_concurrency: 1
+  summary:
+    provider: openai
+    model: gemma3:27b
+    max_concurrency: 1
+  embedding:
+    provider: openai
+    model: embeddinggemma
+    max_concurrency: 1
+```
+Changing the embedding model re-embeds existing pages automatically.
+
 #### Outbound Webhooks
 To send non-blocking HTTP `POST` notifications on server events (e.g., to Home Assistant, n8n, or Zapier), configure `webhooks` in `config/config.yaml` (or enable via `SUPERNOTE_WEBHOOKS_ENABLED=true`):
 ```yaml

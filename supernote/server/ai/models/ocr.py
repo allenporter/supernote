@@ -69,6 +69,12 @@ def create_ocr_model(config: ServerConfig) -> OcrModel | None:
         )
 
         model = create_gemini_ocr_model(config)
+    elif model_cfg.provider == "openai":
+        from supernote.server.ai.models.openai.ocr import (  # noqa: PLC0415
+            create_ocr_model as create_openai_ocr_model,
+        )
+
+        model = create_openai_ocr_model(config)
     elif model_cfg.provider == "fake":
         from supernote.server.ai.models.fake.ocr import (  # noqa: PLC0415
             create_ocr_model as create_fake_ocr_model,

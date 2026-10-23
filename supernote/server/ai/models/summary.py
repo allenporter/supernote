@@ -69,6 +69,12 @@ def create_summary_model(config: ServerConfig) -> SummaryModel | None:
         )
 
         model = create_gemini_summary_model(config)
+    elif model_cfg.provider == "openai":
+        from supernote.server.ai.models.openai.summary import (  # noqa: PLC0415
+            create_summary_model as create_openai_summary_model,
+        )
+
+        model = create_openai_summary_model(config)
     elif model_cfg.provider == "fake":
         from supernote.server.ai.models.fake.summary import (  # noqa: PLC0415
             create_summary_model as create_fake_summary_model,

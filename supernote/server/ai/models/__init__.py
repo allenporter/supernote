@@ -22,5 +22,6 @@ __all__ = [
     "fake",
     "gemini",
     "ocr",
+    "openai",
     "summary",
 ]

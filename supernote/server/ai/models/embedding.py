@@ -96,6 +96,12 @@ def create_embedding_model(config: ServerConfig) -> EmbeddingModel | None:
         )
 
         model = create_gemini_embedding_model(config)
+    elif model_cfg.provider == "openai":
+        from supernote.server.ai.models.openai.embedding import (  # noqa: PLC0415
+            create_embedding_model as create_openai_embedding_model,
+        )
+
+        model = create_openai_embedding_model(config)
     elif model_cfg.provider == "fake":
         from supernote.server.ai.models.fake.embedding import (  # noqa: PLC0415
             create_embedding_model as create_fake_embedding_model,
