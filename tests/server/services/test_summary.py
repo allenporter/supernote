@@ -3,6 +3,7 @@
 import hashlib
 import math
 from dataclasses import replace
+from unittest.mock import patch
 
 import pytest
 
@@ -15,8 +16,11 @@ from supernote.models.summary import (
     UpdateSummaryGroupDTO,
 )
 from supernote.models.user import UserRegisterDTO
+from supernote.server.constants import USER_DATA_BUCKET
+from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import SummaryNotFound
+from supernote.server.services.blob import BlobStorage
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 
@@ -27,10 +31,15 @@ USER_EMAIL = "test@example.com"
 async def summary_service(
     user_service: UserService,
     session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
 ) -> SummaryService:
     """Create a SummaryService bound to the test session manager with a registered test user."""
     await user_service.register(UserRegisterDTO(email=USER_EMAIL, password="a" * 32))
-    return SummaryService(user_service=user_service, session_manager=session_manager)
+    return SummaryService(
+        user_service=user_service,
+        session_manager=session_manager,
+        blob_storage=blob_storage,
+    )
 
 
 async def test_tag_crud_and_not_found_errors(
@@ -319,3 +328,110 @@ async def test_pagination_and_unpaginated_queries(
             )
             == []
         )
+
+
+async def test_delete_user_data_purges_summaries_tags_and_isolated_blobs(
+    summary_service: SummaryService,
+    user_service: UserService,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    """Verify delete_user_data deletes target user's records and exclusive blobs while preserving cross-tenant blobs."""
+    other_email = "other@example.com"
+    await user_service.register(UserRegisterDTO(email=other_email, password="b" * 32))
+    u1_id = await user_service.get_user_id(USER_EMAIL)
+    u2_id = await user_service.get_user_id(other_email)
+
+    u1_exclusive_hw = "u1-exclusive-hw"
+    shared_hw = "shared-summary-hw"
+    u2_file_blob = "u2-file-storage-key"
+
+    await blob_storage.put(USER_DATA_BUCKET, u1_exclusive_hw, b"u1-hw")
+    await blob_storage.put(USER_DATA_BUCKET, shared_hw, b"shared-hw")
+    await blob_storage.put(USER_DATA_BUCKET, u2_file_blob, b"u2-file")
+
+    await summary_service.add_tag(USER_EMAIL, "U1 Tag")
+    await summary_service.add_tag(other_email, "U2 Tag")
+
+    await summary_service.add_summary(
+        USER_EMAIL,
+        AddSummaryDTO(
+            unique_identifier="u1-s1",
+            content="U1 exclusive",
+            handwrite_inner_name=u1_exclusive_hw,
+        ),
+    )
+    await summary_service.add_summary(
+        USER_EMAIL,
+        AddSummaryDTO(
+            unique_identifier="u1-s2",
+            content="U1 referencing shared hw",
+            handwrite_inner_name=shared_hw,
+        ),
+    )
+    await summary_service.add_summary(
+        USER_EMAIL,
+        AddSummaryDTO(
+            unique_identifier="u1-s3",
+            content="U1 referencing u2 file key",
+            handwrite_inner_name=u2_file_blob,
+        ),
+    )
+    await summary_service.add_summary(
+        USER_EMAIL,
+        AddSummaryDTO(
+            unique_identifier="u1-s4",
+            content="U1 malformed hw key",
+            handwrite_inner_name="x",
+        ),
+    )
+    await summary_service.add_summary(
+        other_email,
+        AddSummaryDTO(
+            unique_identifier="u2-s1",
+            content="U2 summary",
+            handwrite_inner_name=shared_hw,
+        ),
+    )
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                user_id=u2_id,
+                directory_id=0,
+                file_name="u2.txt",
+                is_folder="N",
+                storage_key=u2_file_blob,
+            )
+        )
+        await session.commit()
+
+    # Transient OSError during blob deletion preserves DB metadata so retry finishes cleanup
+    orig_delete = blob_storage.delete
+    calls = 0
+
+    async def flaky_delete(bucket: str, key: str) -> None:
+        nonlocal calls
+        calls += 1
+        if key == u1_exclusive_hw and calls == 1:
+            raise OSError("Simulated transient storage failure")
+        await orig_delete(bucket, key)
+
+    with (
+        patch.object(blob_storage, "delete", side_effect=flaky_delete),
+        pytest.raises(OSError, match="Simulated transient storage failure"),
+    ):
+        await summary_service.delete_user_data(u1_id)
+
+    # Metadata is still intact after transient failure; retry completes idempotently
+    assert len(await summary_service.list_summaries(USER_EMAIL)) == 4
+    await summary_service.delete_user_data(u1_id)
+
+    assert await summary_service.list_tags(USER_EMAIL) == []
+    assert await summary_service.list_summaries(USER_EMAIL) == []
+    assert len(await summary_service.list_tags(other_email)) == 1
+    assert len(await summary_service.list_summaries(other_email)) == 1
+
+    assert not await blob_storage.exists(USER_DATA_BUCKET, u1_exclusive_hw)
+    assert await blob_storage.exists(USER_DATA_BUCKET, shared_hw)
+    assert await blob_storage.exists(USER_DATA_BUCKET, u2_file_blob)
