@@ -378,3 +378,75 @@ async def test_oss_upload_part_consumption_logic(
     assert resp_fail.status == 403
     text = await resp_fail.text()
     assert "Token invalid" in text
+
+
+async def test_oss_upload_part_retry_final_chunk_and_out_of_order_merge(
+    device_client: DeviceClient,
+    client: Client,
+) -> None:
+    """Verify failed final chunk can be retried and out-of-order chunks merge only when complete."""
+    filename = "oss_retry_and_out_of_order.txt"
+    content = b"Part1-" + b"Part2"
+    equipment_no = "TEST"
+
+    full_path = f"/{filename}"
+    apply_vo = await device_client.upload_apply(
+        file_name=filename, path=full_path, size=len(content), equipment_no=equipment_no
+    )
+    assert apply_vo.part_upload_url
+    assert apply_vo.inner_name
+    parsed = urllib.parse.urlparse(apply_vo.part_upload_url)
+    relative_url = f"{parsed.path}?{parsed.query}"
+    upload_id = "test_retry_ooo_id"
+
+    params1 = {
+        "uploadId": upload_id,
+        "partNumber": 1,
+        "totalChunks": 2,
+    }
+    params2 = {
+        "uploadId": upload_id,
+        "partNumber": 2,
+        "totalChunks": 2,
+    }
+
+    # 1. Simulate failed attempt on final chunk (part 2 of 2) with missing/bad multipart body
+    resp_bad = await client.post(
+        relative_url,
+        data=b"not-multipart",
+        params=params2,
+        headers={"Content-Type": "text/plain"},
+    )
+    assert resp_bad.status == 400
+
+    # 2. Upload part 2 of 2 first (out-of-order: part 1 is not uploaded yet)
+    # Should succeed without consuming nonce or merging yet
+    data2 = FormData()
+    data2.add_field("file", b"Part2", filename=filename)
+    resp2 = await client.post(relative_url, data=data2, params=params2, headers={})
+    assert resp2.status == 200
+
+    # 3. Upload part 1 of 2; now both chunks 1 and 2 exist, so merge happens and nonce is consumed
+    data1 = FormData()
+    data1.add_field("file", b"Part1-", filename=filename)
+    resp1 = await client.post(relative_url, data=data1, params=params1, headers={})
+    assert resp1.status == 200
+
+    # 4. Finish upload and verify merged content
+    await device_client.upload_finish(
+        file_name=filename,
+        path="/",
+        content_hash=hashlib.md5(content).hexdigest(),
+        inner_name=apply_vo.inner_name,
+        equipment_no=equipment_no,
+    )
+    downloaded = await device_client.download_content(path=full_path)
+    assert downloaded == content
+
+    # 5. Nonce is now consumed
+    data_after = FormData()
+    data_after.add_field("file", b"extra", filename=filename)
+    resp_after = await client.post(
+        relative_url, data=data_after, params=params1, headers={}
+    )
+    assert resp_after.status == 403

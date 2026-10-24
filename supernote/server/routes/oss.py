@@ -43,7 +43,7 @@ async def handle_oss_upload(request: web.Request) -> web.Response:
 
     logger.debug("OSS Upload Headers: %s", dict(request.headers))
     try:
-        payload = await url_signer.verify(request.path_qs)
+        payload = await url_signer.verify(request.path_qs, consume=False)
     except SupernoteError as err:
         return err.to_response()
 
@@ -75,6 +75,10 @@ async def handle_oss_upload(request: web.Request) -> web.Response:
         metadata = await blob_storage.put(
             USER_DATA_BUCKET, object_name, _stream_upload_field(field)
         )
+        try:
+            await url_signer.verify(request.path_qs, consume=True)
+        except SupernoteError as err:
+            return err.to_response()
         logger.info(
             f"Received OSS upload for {object_name} (user: {user_email}): {metadata.size} bytes, MD5: {metadata.content_md5}"
         )
@@ -115,13 +119,8 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
             create_error_response("Missing path", "E400").to_dict(), status=400
         )
 
-    # Determine if this is the last chunk to consume the nonce
-    should_consume = False
-    if params.total_chunks and params.part_number == params.total_chunks:
-        should_consume = True
-
     try:
-        payload = await url_signer.verify(request.path_qs, consume=should_consume)
+        payload = await url_signer.verify(request.path_qs, consume=False)
     except SupernoteError as err:
         return err.to_response()
 
@@ -157,14 +156,17 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
 
         # Implicit Merge Logic (for Device Compatibility)
         if params.total_chunks:
-            if params.part_number == params.total_chunks:
+            source_keys = [
+                get_file_chunk_path(params.path, i)
+                for i in range(1, params.total_chunks + 1)
+            ]
+            existing_checks = await asyncio.gather(
+                *[blob_storage.exists(USER_DATA_BUCKET, key) for key in source_keys]
+            )
+            if all(existing_checks):
                 logger.info(
                     f"Implicitly merging {params.total_chunks} chunks for {params.path}"
                 )
-                source_keys = [
-                    get_file_chunk_path(params.path, i)
-                    for i in range(1, params.total_chunks + 1)
-                ]
 
                 async def combined_stream() -> AsyncGenerator[bytes]:
                     for source_key in source_keys:
@@ -180,6 +182,10 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
                 await asyncio.gather(
                     *[blob_storage.delete(USER_DATA_BUCKET, key) for key in source_keys]
                 )
+                try:
+                    await url_signer.verify(request.path_qs, consume=True)
+                except SupernoteError as err:
+                    return err.to_response()
 
         # Return FileChunkVO with chunk MD5
         resp_vo = FileChunkVO(
