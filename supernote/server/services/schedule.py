@@ -369,3 +369,20 @@ class ScheduleService:
             result = cast(CursorResult[Any], await session.execute(stmt))
             await session.commit()
             return bool(result.rowcount > 0)
+
+    async def delete_user_data(self, user_id: int) -> None:
+        """Permanently delete all schedule tasks and task groups for a user.
+
+        WARNING: This permanently deletes all ScheduleTaskDO and ScheduleTaskGroupDO
+        records for `user_id`.
+        """
+        async with self.session_manager.session() as session:
+            await session.execute(
+                delete(ScheduleTaskDO).where(ScheduleTaskDO.user_id == user_id)
+            )
+            await session.execute(
+                delete(ScheduleTaskGroupDO).where(
+                    ScheduleTaskGroupDO.user_id == user_id
+                )
+            )
+            await session.commit()

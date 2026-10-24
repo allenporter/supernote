@@ -288,3 +288,22 @@ async def test_move_task_between_groups_and_inbox(
     back_in_inbox = await schedule_service.get_task(user_id, inbox_task.task_id)
     assert back_in_inbox is not None
     assert back_in_inbox.task_list_id is None
+
+
+async def test_delete_user_data_isolates_tenants(
+    schedule_service: ScheduleService,
+) -> None:
+    """Verify delete_user_data purges all groups and tasks for target user only."""
+    u1_group = await schedule_service.create_group(101, "U1 Group")
+    await schedule_service.create_task(101, u1_group.task_list_id, "U1 Task")
+    await schedule_service.create_task(101, None, "U1 Inbox")
+
+    u2_group = await schedule_service.create_group(202, "U2 Group")
+    await schedule_service.create_task(202, u2_group.task_list_id, "U2 Task")
+
+    await schedule_service.delete_user_data(101)
+
+    assert await schedule_service.list_groups(101) == []
+    assert await schedule_service.list_tasks(101) == []
+    assert len(await schedule_service.list_groups(202)) == 1
+    assert len(await schedule_service.list_tasks(202)) == 1

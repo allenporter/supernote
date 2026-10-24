@@ -4,7 +4,7 @@ import time
 import uuid
 from typing import Any
 
-from sqlalchemy import ColumnElement, Select, and_, func, select
+from sqlalchemy import ColumnElement, Select, and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from supernote.models.base import BooleanEnum
@@ -19,9 +19,12 @@ from supernote.models.summary import (
     UpdateSummaryDTO,
     UpdateSummaryGroupDTO,
 )
+from supernote.server.constants import USER_DATA_BUCKET
+from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.summary import SummaryDO, SummaryTagDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import SummaryNotFound
+from supernote.server.services.blob import BlobStorage
 from supernote.server.services.user import UserService
 
 logger = logging.getLogger(__name__)
@@ -90,10 +93,12 @@ class SummaryService:
         self,
         user_service: UserService,
         session_manager: DatabaseSessionManager,
+        blob_storage: BlobStorage | None = None,
     ) -> None:
         """Initialize the summary service."""
         self.user_service = user_service
         self.session_manager = session_manager
+        self.blob_storage = blob_storage
 
     async def add_tag(self, user_email: str, name: str) -> SummaryTagItem:
         """Add a new summary tag."""
@@ -497,3 +502,62 @@ class SummaryService:
             result = await session.execute(stmt)
             summaries = list(result.scalars().all())
             return [_to_summary_item(s) for s in summaries]
+
+    async def delete_user_data(self, user_id: int) -> None:
+        """Permanently delete all summaries, summary tags, and unreferenced handwriting blobs for a user.
+
+        WARNING: This permanently deletes all SummaryDO and SummaryTagDO records for
+        `user_id` and removes any referenced handwriting blobs in `USER_DATA_BUCKET`
+        that are not referenced by any surviving summary or file.
+        """
+        async with self.session_manager.session() as session:
+            hw_stmt = select(SummaryDO.handwrite_inner_name).where(
+                SummaryDO.user_id == user_id,
+                SummaryDO.handwrite_inner_name.is_not(None),
+            )
+            candidate_keys = {
+                k for k in (await session.execute(hw_stmt)).scalars().all() if k
+            }
+            await session.execute(delete(SummaryDO).where(SummaryDO.user_id == user_id))
+            await session.execute(
+                delete(SummaryTagDO).where(SummaryTagDO.user_id == user_id)
+            )
+
+            blobs_to_delete: set[str] = set()
+            if candidate_keys and self.blob_storage is not None:
+                surviving_hw = {
+                    k
+                    for k in (
+                        await session.execute(
+                            select(SummaryDO.handwrite_inner_name)
+                            .where(SummaryDO.handwrite_inner_name.in_(candidate_keys))
+                            .group_by(SummaryDO.handwrite_inner_name)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                    if k is not None
+                }
+                surviving_files = {
+                    k
+                    for k in (
+                        await session.execute(
+                            select(UserFileDO.storage_key)
+                            .where(UserFileDO.storage_key.in_(candidate_keys))
+                            .group_by(UserFileDO.storage_key)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                    if k is not None
+                }
+                blobs_to_delete = candidate_keys - surviving_hw - surviving_files
+
+            await session.commit()
+
+        if self.blob_storage is not None:
+            for blob_key in blobs_to_delete:
+                try:
+                    await self.blob_storage.delete(USER_DATA_BUCKET, blob_key)
+                except (FileNotFoundError, OSError, ValueError) as e:
+                    logger.warning(f"Failed to delete summary blob {blob_key}: {e}")
