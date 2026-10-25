@@ -139,9 +139,13 @@ async def test_add_user_failure(
 async def test_list_users_success(
     cli_env: CliServerEnv, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    admin_id = await cli_env.user_service.get_user_id(ADMIN_EMAIL)
+    assert admin_id is not None
+
     await list_users_async(cli_env.url)
 
     captured = capsys.readouterr()
+    assert str(admin_id) in captured.out
     assert ADMIN_EMAIL in captured.out
     assert "Test User" in captured.out
 

@@ -56,17 +56,16 @@ async def add_user_async(
 async def list_users_async(url: str | None = None):
     """Async implementation of list users."""
     async with create_session(url) as session:
-        client = session.client
+        admin_client = AdminClient(session.client)
         try:
-            resp = await client.get("/api/admin/users")
-            users = await resp.json()
+            users = await admin_client.list_users()
 
             print(f"\nTotal Users: {len(users)}\n")
-            print(f"{'Email':<30} {'Name':<20} {'Capacity':<10}")
-            print("-" * 65)
+            print(f"{'ID':<20} {'Email':<30} {'Name':<20} {'Capacity':<10}")
+            print("-" * 85)
             for u in users:
                 print(
-                    f"{u.get('email', 'N/A'):<30} {u.get('userName', 'N/A'):<20} {u.get('totalCapacity', '0'):<10}"
+                    f"{u.user_id:<20} {u.email or 'N/A':<30} {u.user_name or 'N/A':<20} {u.total_capacity:<10}"
                 )
 
         except Exception as e:

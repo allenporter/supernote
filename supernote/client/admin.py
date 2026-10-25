@@ -1,6 +1,7 @@
 import logging
 
 from supernote.client.client import Client
+from supernote.models.auth import UserVO
 from supernote.models.base import BaseResponse
 from supernote.models.extended import SystemTaskListVO
 from supernote.models.system import IntegrityReportVO, QueueStatusVO
@@ -71,6 +72,12 @@ class AdminClient:
             "/api/official/user/retrieve/password", BaseResponse, json=dto.to_dict()
         )
         logger.info(f"Password reset for {email}")
+
+    async def list_users(self) -> list[UserVO]:
+        """List all users through the admin API."""
+        resp = await self.client.get("/api/admin/users")
+        data = await resp.json()
+        return [UserVO.from_dict(item) for item in data]
 
     async def admin_create_user(
         self, email: str, password: str, username: str | None = None
