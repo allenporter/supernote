@@ -1459,3 +1459,37 @@ async def test_socketio_client_channels_and_error_handling_via_server(
         await socket_client.check_status(timeout=1.0)
 
     await socket_client.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_socketio_ratta_ping_without_payload(
+    socketio_server: TestServer,
+) -> None:
+    """Devices emit `ratta_ping` and `ClientMessage` with no arguments or extra positional args."""
+    user_service: UserService = socketio_server.app["user_service"]
+    user_id = "test@example.com"
+    token = await user_service.create_session(user_id)
+    params = _make_handshake_params(token)
+
+    url = (
+        f"http://{socketio_server.host}:{socketio_server.port}/socket.io/"
+        f"?EIO=4&transport=websocket&token={params.token}&sign={params.sign}"
+        f"&random={params.random}&type={params.type}"
+    )
+
+    async with aiohttp.ClientSession() as session:
+        async with session.ws_connect(url) as ws:
+            assert (await ws.receive_str()).startswith("0{")
+            await ws.send_str("40")
+            assert (await ws.receive_str()).startswith("40")
+
+            await ws.send_str('42["ratta_ping"]')
+            assert await ws.receive_str() == '42["ratta_ping","Received"]'
+
+            await ws.send_str('42["ratta_ping","extra1","extra2"]')
+            assert await ws.receive_str() == '42["ratta_ping","Received"]'
+
+            await ws.send_str('42["ClientMessage"]')
+
+            await ws.send_str('42["ClientMessage","status","extra1"]')
+            assert await ws.receive_str() == '42["ServerMessage","true"]'
