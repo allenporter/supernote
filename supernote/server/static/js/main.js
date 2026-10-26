@@ -1,7 +1,7 @@
 import { createApp, ref, onMounted, computed, watch, nextTick } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
 import { useFileSystem } from './composables/useFileSystem.js';
 import { useToast } from './composables/useToast.js';
-import { setToken, getToken, login, logout, fetchProcessingStatus, fetchPathInfo } from './api/client.js';
+import { setToken, getToken, login, logout, fetchProcessingStatus, fetchPathInfo, connectSocket } from './api/client.js';
 import Sidebar from './components/Sidebar.js';
 import DashboardView from './components/DashboardView.js';
 import SearchModal from './components/SearchModal.js';
@@ -586,6 +586,7 @@ createApp({
             const token = getToken();
             if (!token) return false;
             isLoggedIn.value = true;
+            connectSocket();
             return true;
         }
 
@@ -620,6 +621,10 @@ createApp({
 
             window.addEventListener('popstate', () => syncFromUrl());
             window.addEventListener('hashchange', () => syncFromUrl());
+            window.addEventListener('supernote:file-sync', () => {
+                if (!isLoggedIn.value) return;
+                loadDirectory(currentDirectoryId.value || '0');
+            });
 
             // Keyboard shortcut ⌘K for search
             window.addEventListener('keydown', (e) => {

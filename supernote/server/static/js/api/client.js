@@ -3,6 +3,116 @@
  */
 
 let authToken = localStorage.getItem('supernote_token');
+let socketInstance = null;
+const SOCKET_IO_KEY = 'K+5xFzxbnB1iSZWqmu3Etw==';
+
+function arrayBufferToBase64Alnum(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary).replace(/[^a-zA-Z0-9]/g, '');
+}
+
+export async function computeSocketSignature(token, connType, randomVal) {
+    const raw = `${token}_${connType}_${randomVal}`;
+    if (window.crypto && window.crypto.subtle) {
+        const enc = new TextEncoder();
+        const cryptoKey = await window.crypto.subtle.importKey(
+            'raw',
+            enc.encode(SOCKET_IO_KEY),
+            { name: 'HMAC', hash: 'SHA-256' },
+            false,
+            ['sign']
+        );
+        const sigBuffer = await window.crypto.subtle.sign('HMAC', cryptoKey, enc.encode(raw));
+        return arrayBufferToBase64Alnum(sigBuffer);
+    }
+    if (window.sha256 && window.sha256.hmac && typeof window.sha256.hmac.arrayBuffer === 'function') {
+        const sigBuffer = window.sha256.hmac.arrayBuffer(SOCKET_IO_KEY, raw);
+        return arrayBufferToBase64Alnum(sigBuffer);
+    }
+    throw new Error('HMAC-SHA256 is not available.');
+}
+
+function parseSocketPayload(raw) {
+    if (!raw) return null;
+    if (typeof raw === 'object') return raw;
+    if (typeof raw === 'string') {
+        if (raw === 'true' || raw === 'Received') return null;
+        try {
+            return JSON.parse(raw);
+        } catch (e) {
+            return null;
+        }
+    }
+    return null;
+}
+
+export async function connectSocket() {
+    const token = getToken();
+    if (!token || typeof window.io !== 'function') return null;
+    if (socketInstance && socketInstance.connected) return socketInstance;
+    if (socketInstance) {
+        socketInstance.disconnect();
+        socketInstance = null;
+    }
+
+    try {
+        const connType = 'WEB';
+        const randomVal = String(Date.now());
+        const sign = await computeSocketSignature(token, connType, randomVal);
+        const socket = window.io('/', {
+            path: '/socket.io',
+            query: {
+                token,
+                type: connType,
+                random: randomVal,
+                sign
+            },
+            transports: ['polling', 'websocket']
+        });
+
+        socket.on('ServerMessage', (data) => {
+            const parsed = parseSocketPayload(data);
+            if (!parsed) return;
+            if (String(parsed.code) === '403') {
+                disconnectSocket();
+                return;
+            }
+            socket.emit('ClientMessage', 'Received');
+            window.dispatchEvent(new CustomEvent('supernote:file-sync', { detail: parsed }));
+        });
+
+        socket.on('to-do', (data) => {
+            const parsed = parseSocketPayload(data);
+            if (!parsed) return;
+            socket.emit('to-do', 'Received');
+            window.dispatchEvent(new CustomEvent('supernote:task-sync', { detail: parsed }));
+        });
+
+        socket.on('digest', (data) => {
+            const parsed = parseSocketPayload(data);
+            if (!parsed) return;
+            socket.emit('digest', 'Received');
+            window.dispatchEvent(new CustomEvent('supernote:digest-sync', { detail: parsed }));
+        });
+
+        socketInstance = socket;
+        return socket;
+    } catch (e) {
+        console.error('Failed to connect Socket.IO:', e);
+        return null;
+    }
+}
+
+export function disconnectSocket() {
+    if (socketInstance) {
+        socketInstance.disconnect();
+        socketInstance = null;
+    }
+}
 
 export function setToken(token) {
     authToken = token;
@@ -17,6 +127,7 @@ export async function logout() {
     const token = authToken;
     authToken = null;
     localStorage.removeItem('supernote_token');
+    disconnectSocket();
     if (token) {
         try {
             await fetch('/api/user/logout', {

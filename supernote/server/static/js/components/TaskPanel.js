@@ -1,4 +1,4 @@
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { useSchedule } from '../composables/useSchedule.js';
 import { showToast } from '../composables/useToast.js';
 
@@ -52,8 +52,17 @@ export default {
             status: 'needsAction'
         });
 
+        function handleTaskSyncEvent() {
+            Promise.all([loadGroups(), loadTasks()]).catch(() => {});
+        }
+
         onMounted(async () => {
+            window.addEventListener('supernote:task-sync', handleTaskSyncEvent);
             await Promise.all([loadGroups(), loadTasks()]);
+        });
+
+        onUnmounted(() => {
+            window.removeEventListener('supernote:task-sync', handleTaskSyncEvent);
         });
 
         async function openIcsModal() {

@@ -1,4 +1,4 @@
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { convertNoteToPng, fetchTranscript, fetchSummaries, fetchDownloadUrl, downloadFile } from '../api/client.js';
 import { showToast } from '../composables/useToast.js';
 
@@ -161,7 +161,61 @@ export default {
             }
         };
 
-        onMounted(loadFileContent);
+        const refreshInsights = async () => {
+            if (!props.file) return;
+            isLoadingTranscript.value = true;
+            try {
+                const [transcriptData, summariesData] = await Promise.all([
+                    fetchTranscript(props.file.id).catch(() => null),
+                    fetchSummaries(props.file.id).catch(() => [])
+                ]);
+
+                if (typeof transcriptData === 'string') {
+                    realTranscript.value = transcriptData;
+                } else if (transcriptData && (transcriptData.transcript || transcriptData.text)) {
+                    realTranscript.value = transcriptData.transcript || transcriptData.text;
+                } else {
+                    realTranscript.value = '';
+                }
+
+                if (summariesData && Array.isArray(summariesData)) {
+                    realSummaries.value = summariesData.filter(s => (s.dataSource || '').toUpperCase() !== 'OCR');
+                }
+            } finally {
+                isLoadingTranscript.value = false;
+            }
+        };
+
+        const handleDigestSync = () => {
+            refreshInsights();
+        };
+
+        const handleFileSync = (event) => {
+            if (!props.file) return;
+            const entries = event?.detail?.data;
+            if (Array.isArray(entries)) {
+                const matchesFile = entries.some(item =>
+                    String(item.id) === String(props.file.id) ||
+                    String(item.newId) === String(props.file.id) ||
+                    item.messageType === 'STARTSYNC'
+                );
+                if (matchesFile) {
+                    loadFileContent();
+                }
+            } else {
+                loadFileContent();
+            }
+        };
+
+        onMounted(() => {
+            window.addEventListener('supernote:digest-sync', handleDigestSync);
+            window.addEventListener('supernote:file-sync', handleFileSync);
+            loadFileContent();
+        });
+        onUnmounted(() => {
+            window.removeEventListener('supernote:digest-sync', handleDigestSync);
+            window.removeEventListener('supernote:file-sync', handleFileSync);
+        });
         watch(() => props.file?.id, (newId) => {
             if (newId) loadFileContent();
         });
