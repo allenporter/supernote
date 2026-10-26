@@ -328,7 +328,9 @@ export async function convertNoteToPng(fileId) {
 }
 
 /**
- * Fetch transcript for a notebook file.
+ * Fetch per-page OCR transcripts for a notebook file.
+ * @param {string|number} fileId
+ * @returns {Promise<Array<{pageIndex: number, pageId: string, text: string|null, date: string|null}>>}
  */
 export async function fetchTranscript(fileId) {
     const currentToken = getToken();
@@ -343,9 +345,14 @@ export async function fetchTranscript(fileId) {
         body: JSON.stringify({ fileId: String(fileId) })
     });
 
-    if (!response.ok) return '';
+    if (response.status === 401) {
+        logout();
+        throw new Error("Unauthorized");
+    }
+
+    if (!response.ok) return [];
     const data = await response.json();
-    return data.transcript || '';
+    return Array.isArray(data.pages) ? data.pages : [];
 }
 
 /**

@@ -9,6 +9,7 @@ from supernote.client.exceptions import ApiException
 from supernote.client.extended import ExtendedClient
 from supernote.client.summary import SummaryClient
 from supernote.models.base import ProcessingStatus
+from supernote.models.extended import PageTranscriptVO
 from supernote.models.summary import AddSummaryDTO
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
 from supernote.server.db.models.file import UserFileDO
@@ -40,7 +41,6 @@ async def test_extended_search(
     session_manager: DatabaseSessionManager,
     test_user_id: int,
 ) -> None:
-    # 1. Seed some search data
     file_id = 101
     async with session_manager.session() as session:
         session.add(
@@ -55,10 +55,20 @@ async def test_extended_search(
             NotePageContentDO(
                 file_id=file_id,
                 page_index=0,
-                page_id="p0",
+                page_id="P20231027120000abc",
                 text_content="The quick brown fox jumps over the lazy dog.",
                 # Mock embedding [1, 0, 0] for simplicity in SQL
                 embedding="[1.0, 0.0, 0.0]",
+                embedding_model="fake-embedding-v1",
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=1,
+                page_id="p1",
+                text_content="Second page content.",
+                embedding="[0.0, 1.0, 0.0]",
                 embedding_model="fake-embedding-v1",
             )
         )
@@ -66,8 +76,33 @@ async def test_extended_search(
 
     resp = await extended_client.get_transcript(file_id=file_id)
     assert resp.success
-    assert resp.transcript is not None
-    assert "quick brown fox" in resp.transcript
+    assert resp.pages == [
+        PageTranscriptVO(
+            page_index=0,
+            page_id="P20231027120000abc",
+            text="The quick brown fox jumps over the lazy dog.",
+            date="2023-10-27",
+        ),
+        PageTranscriptVO(
+            page_index=1,
+            page_id="p1",
+            text="Second page content.",
+            date=None,
+        ),
+    ]
+
+    range_resp = await extended_client.get_transcript(
+        file_id=file_id, start_index=1, end_index=1
+    )
+    assert range_resp.success
+    assert range_resp.pages == [
+        PageTranscriptVO(
+            page_index=1,
+            page_id="p1",
+            text="Second page content.",
+            date=None,
+        ),
+    ]
 
 
 async def test_extended_search_with_mock(
@@ -76,7 +111,6 @@ async def test_extended_search_with_mock(
     client: Any,  # TestClient from aiohttp
     test_user_id: int,
 ) -> None:
-    # 1. Seed data
     file_id = 101
     async with session_manager.session() as session:
         session.add(
@@ -99,7 +133,6 @@ async def test_extended_search_with_mock(
         )
         await session.commit()
 
-    # 2. Call API
     # The Gemini service is mocked globally by mock_gemini_service
     resp = await extended_client.search(query="fox")
 
@@ -402,7 +435,7 @@ async def test_extended_transcript_invalid_dto_and_errors(
     with (
         patch.object(
             client.app["search_service"],
-            "get_transcript",
+            "get_page_transcripts",
             side_effect=Exception("Transcript crash"),
         ),
         pytest.raises(ApiException),

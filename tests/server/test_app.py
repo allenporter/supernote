@@ -205,6 +205,15 @@ async def test_static_frontend_sha256_fallback(client: TestClient) -> None:
     assert "supernote:task-sync" in js
     assert "supernote:file-sync" in js
     assert "supernote:digest-sync" in js
+    assert "Array.isArray(data.pages)" in js
+
+    viewer_resp = await client.get("/static/js/components/FileViewer.js")
+    assert viewer_resp.status == 200
+    viewer_js = await viewer_resp.text()
+    assert "transcriptPages" in viewer_js
+    assert "activePageIndex" in viewer_js
+    assert "IntersectionObserver" in viewer_js
+    assert "scrollToCanvasPage" in viewer_js
 
 
 @pytest.mark.parametrize(

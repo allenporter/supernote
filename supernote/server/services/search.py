@@ -35,6 +35,14 @@ class NotebookInfo:
     update_time: int
 
 
+@dataclass
+class PageTranscript:
+    page_index: int
+    page_id: str
+    text: str | None = None
+    date: str | None = None
+
+
 class SearchService:
     """Service for semantic search across notebook content."""
 
@@ -198,32 +206,22 @@ class SearchService:
                 )
                 continue
 
-        # 4. Rank and Limit
         results.sort(key=lambda x: x.score, reverse=True)
         return results[:top_n]
 
-    async def get_transcript(
+    async def _fetch_notebook_pages(
         self,
         user_id: int,
         file_id: int,
         page_index: int | None = None,
         start_index: int | None = None,
         end_index: int | None = None,
-    ) -> str | None:
-        """
-        Retrieve the transcript for a notebook or a specific page range.
-
-        Args:
-            user_id: The ID of the user performing the retrieval.
-            file_id: The ID of the notebook.
-            page_index: Optional 0-based page index. If provided, returns raw text for this page.
-            start_index: Optional 0-based start page index (inclusive).
-            end_index: Optional 0-based end page index (inclusive).
-        """
+    ) -> tuple[UserFileDO, list[NotePageContentDO]] | None:
         async with self.session_manager.session() as session:
-            # Verify ownership
             stmt = select(UserFileDO).where(
-                UserFileDO.id == file_id, UserFileDO.user_id == user_id
+                UserFileDO.id == file_id,
+                UserFileDO.user_id == user_id,
+                UserFileDO.is_active == "Y",
             )
             result = await session.execute(stmt)
             file_do = result.scalar_one_or_none()
@@ -233,9 +231,6 @@ class SearchService:
                 )
                 return None
 
-            file_name = file_do.file_name
-
-            # Fetch content
             content_stmt = select(NotePageContentDO).where(
                 NotePageContentDO.file_id == file_id
             )
@@ -255,10 +250,42 @@ class SearchService:
                 content_stmt = content_stmt.order_by(NotePageContentDO.page_index)
 
             content_result = await session.execute(content_stmt)
-            pages = content_result.scalars().all()
+            pages = list(content_result.scalars().all())
 
-        if not pages:
+        if not pages or not any(p.text_content for p in pages):
             return None
+
+        return file_do, pages
+
+    async def get_transcript(
+        self,
+        user_id: int,
+        file_id: int,
+        page_index: int | None = None,
+        start_index: int | None = None,
+        end_index: int | None = None,
+    ) -> str | None:
+        """
+        Retrieve the transcript for a notebook or a specific page range.
+
+        Args:
+            user_id: The ID of the user performing the retrieval.
+            file_id: The ID of the notebook.
+            page_index: Optional 0-based page index. If provided, returns raw text for this page.
+            start_index: Optional 0-based start page index (inclusive).
+            end_index: Optional 0-based end page index (inclusive).
+        """
+        fetched = await self._fetch_notebook_pages(
+            user_id=user_id,
+            file_id=file_id,
+            page_index=page_index,
+            start_index=start_index,
+            end_index=end_index,
+        )
+        if fetched is None:
+            return None
+
+        file_do, pages = fetched
 
         # Backward compatibility: raw text for single page index
         if page_index is not None:
@@ -271,10 +298,41 @@ class SearchService:
                 metadata = format_page_metadata(
                     page_index=p.page_index,
                     page_id=p.page_id,
-                    file_name=file_name,
+                    file_name=file_do.file_name,
                     notebook_create_time=file_do.create_time,
                     include_section_divider=True,
                 )
                 text_parts.append(f"{metadata}\n{p.text_content}")
 
         return "\n\n".join(text_parts)
+
+    async def get_page_transcripts(
+        self,
+        user_id: int,
+        file_id: int,
+        start_index: int | None = None,
+        end_index: int | None = None,
+    ) -> list[PageTranscript]:
+        """Retrieve structured per-page transcripts for a notebook or page range."""
+        fetched = await self._fetch_notebook_pages(
+            user_id=user_id,
+            file_id=file_id,
+            start_index=start_index,
+            end_index=end_index,
+        )
+        if fetched is None:
+            return []
+
+        _, pages = fetched
+        results: list[PageTranscript] = []
+        for p in pages:
+            page_date = infer_page_date(p.page_id)
+            results.append(
+                PageTranscript(
+                    page_index=p.page_index,
+                    page_id=p.page_id,
+                    text=p.text_content,
+                    date=page_date.strftime("%Y-%m-%d") if page_date else None,
+                )
+            )
+        return results

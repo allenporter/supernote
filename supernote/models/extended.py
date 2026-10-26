@@ -193,10 +193,23 @@ class WebTranscriptRequestDTO(DataClassJSONMixin):
 
 
 @dataclass
+class PageTranscriptVO(DataClassJSONMixin):
+    """VO for a single page transcript in a notebook."""
+
+    page_index: int = field(metadata=field_options(alias="pageIndex"))
+    page_id: str = field(metadata=field_options(alias="pageId"))
+    text: str | None = None
+    date: str | None = None
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
 class WebTranscriptResponseVO(BaseResponse):
     """Response VO for transcript retrieval (Web Extension)."""
 
-    transcript: str | None = None
+    pages: list[PageTranscriptVO] = field(default_factory=list)
 
     class Config(BaseConfig):
         serialize_by_alias = True

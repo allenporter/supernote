@@ -7,7 +7,7 @@ from supernote.server.ai.models.fake.embedding import FakeEmbeddingModel
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.services.search import SearchService
+from supernote.server.services.search import PageTranscript, SearchService
 
 
 @pytest.fixture
@@ -270,6 +270,100 @@ async def test_get_transcript(
     assert "Page 1 content." not in range_trans
     assert "--- Page 2 ---" in range_trans
     assert "Page ID: P20231028120000def" in range_trans
+
+    # Structured per-page transcripts
+    page_transcripts = await search_service.get_page_transcripts(
+        user_id=user_id, file_id=file_id
+    )
+    assert page_transcripts == [
+        PageTranscript(
+            page_index=0,
+            page_id="P20231027120000abc",
+            text="Page 1 content.",
+            date="2023-10-27",
+        ),
+        PageTranscript(
+            page_index=1,
+            page_id="P20231028120000def",
+            text="Page 2 content.",
+            date="2023-10-28",
+        ),
+    ]
+
+    # Structured per-page transcripts with range filter
+    range_pages = await search_service.get_page_transcripts(
+        user_id=user_id, file_id=file_id, start_index=1, end_index=1
+    )
+    assert range_pages == [
+        PageTranscript(
+            page_index=1,
+            page_id="P20231028120000def",
+            text="Page 2 content.",
+            date="2023-10-28",
+        ),
+    ]
+
+    # Unauthorized structured per-page transcripts
+    assert await search_service.get_page_transcripts(user_id=99, file_id=file_id) == []
+
+    # Soft-deleted notebook and unprocessed notebook (no OCR text yet)
+    deleted_file_id = 102
+    unprocessed_file_id = 103
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=deleted_file_id,
+                    user_id=user_id,
+                    file_name="Deleted.note",
+                    directory_id=0,
+                    is_active="N",
+                ),
+                NotePageContentDO(
+                    file_id=deleted_file_id,
+                    page_index=0,
+                    page_id="p0",
+                    text_content="Deleted content",
+                ),
+                UserFileDO(
+                    id=unprocessed_file_id,
+                    user_id=user_id,
+                    file_name="Pending.note",
+                    directory_id=0,
+                    is_active="Y",
+                ),
+                NotePageContentDO(
+                    file_id=unprocessed_file_id,
+                    page_index=0,
+                    page_id="p0",
+                    text_content=None,
+                ),
+            ]
+        )
+        await session.commit()
+
+    assert (
+        await search_service.get_transcript(user_id=user_id, file_id=deleted_file_id)
+        is None
+    )
+    assert (
+        await search_service.get_page_transcripts(
+            user_id=user_id, file_id=deleted_file_id
+        )
+        == []
+    )
+    assert (
+        await search_service.get_transcript(
+            user_id=user_id, file_id=unprocessed_file_id
+        )
+        is None
+    )
+    assert (
+        await search_service.get_page_transcripts(
+            user_id=user_id, file_id=unprocessed_file_id
+        )
+        == []
+    )
 
 
 async def test_search_chunks_with_date_filter_inferred(

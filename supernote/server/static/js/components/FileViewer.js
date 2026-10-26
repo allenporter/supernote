@@ -1,4 +1,4 @@
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { convertNoteToPng, fetchTranscript, fetchSummaries, fetchDownloadUrl, downloadFile } from '../api/client.js';
 import { showToast } from '../composables/useToast.js';
 
@@ -21,9 +21,17 @@ export default {
 
         const activeRightTab = ref('transcription'); // 'transcription' | 'insights'
         const isMobileSidePanelOpen = ref(false);
-        const realTranscript = ref('');
+        const transcriptPages = ref([]);
+        const activePageIndex = ref(0);
         const realSummaries = ref([]);
         const isLoadingTranscript = ref(false);
+
+        const leftScrollPane = ref(null);
+        const transcriptScrollPane = ref(null);
+        let pageObserver = null;
+        let isProgrammaticScroll = false;
+        let programmaticScrollTimer = null;
+        let activeLoadSeq = 0;
 
         const fileExt = computed(() => {
             if (!props.file) return '';
@@ -46,10 +54,157 @@ export default {
         const showSidePanel = computed(() => {
             return (
                 fileCategory.value === 'note' ||
-                Boolean(realTranscript.value) ||
+                transcriptPages.value.length > 0 ||
                 realSummaries.value.length > 0
             );
         });
+
+        const normalizeTranscriptPages = (rawPages) => {
+            if (!Array.isArray(rawPages)) return [];
+            return rawPages.map((p, idx) => ({
+                pageIndex: typeof p.pageIndex === 'number'
+                    ? p.pageIndex
+                    : (typeof p.page_index === 'number' ? p.page_index : idx),
+                pageId: p.pageId || p.page_id || `page-${idx}`,
+                text: p.text ?? '',
+                date: p.date || null
+            }));
+        };
+
+        const armProgrammaticScrollRelease = () => {
+            if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer);
+            programmaticScrollTimer = setTimeout(() => {
+                isProgrammaticScroll = false;
+                programmaticScrollTimer = null;
+            }, 180);
+        };
+
+        const scrollTranscriptToPage = (pageIndex) => {
+            const pane = transcriptScrollPane.value;
+            if (!pane) return;
+            const cardEl = pane.querySelector(`[data-transcript-page="${pageIndex}"]`);
+            if (!cardEl) return;
+
+            if (pane.scrollHeight > pane.clientHeight) {
+                const paneRect = pane.getBoundingClientRect();
+                const cardRect = cardEl.getBoundingClientRect();
+                if (cardRect.top < paneRect.top + 8 || cardRect.bottom > paneRect.bottom - 8) {
+                    const targetTop = pane.scrollTop + (cardRect.top - paneRect.top) - 16;
+                    pane.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+                }
+            } else if (typeof cardEl.scrollIntoView === 'function') {
+                cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        };
+
+        const scrollToCanvasPage = (pageIndex) => {
+            activePageIndex.value = pageIndex;
+            const pane = leftScrollPane.value;
+            if (!pane) return;
+            const pageEl = pane.querySelector(`[data-page-index="${pageIndex}"]`);
+            if (!pageEl) return;
+
+            isProgrammaticScroll = true;
+            armProgrammaticScrollRelease();
+
+            if (pane.scrollHeight > pane.clientHeight) {
+                const paneRect = pane.getBoundingClientRect();
+                const elRect = pageEl.getBoundingClientRect();
+                const targetTop = pane.scrollTop + (elRect.top - paneRect.top) - 16;
+                pane.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+            } else if (typeof pageEl.scrollIntoView === 'function') {
+                pageEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        };
+
+        const updateActivePageFromScroll = () => {
+            if (isProgrammaticScroll) {
+                armProgrammaticScrollRelease();
+                return;
+            }
+            if (!leftScrollPane.value) return;
+            const pane = leftScrollPane.value;
+            const paneRect = pane.getBoundingClientRect();
+            const cards = pane.querySelectorAll('[data-page-index]');
+            if (!cards.length) return;
+
+            let bestIdx = activePageIndex.value;
+            let bestScore = -Infinity;
+
+            cards.forEach((card) => {
+                const idx = Number(card.getAttribute('data-page-index'));
+                if (Number.isNaN(idx)) return;
+                const rect = card.getBoundingClientRect();
+                const visibleTop = Math.max(rect.top, paneRect.top);
+                const visibleBottom = Math.min(rect.bottom, paneRect.bottom);
+                const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+                if (visibleHeight > 0) {
+                    const topOffset = Math.max(0, visibleTop - paneRect.top);
+                    const score = visibleHeight - topOffset * 0.25;
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestIdx = idx;
+                    }
+                }
+            });
+
+            if (bestScore > -Infinity && bestIdx !== activePageIndex.value) {
+                activePageIndex.value = bestIdx;
+                scrollTranscriptToPage(bestIdx);
+            }
+        };
+
+        const teardownPageObserver = () => {
+            if (pageObserver) {
+                pageObserver.disconnect();
+                pageObserver = null;
+            }
+        };
+
+        const setupPageObserver = async () => {
+            teardownPageObserver();
+            await nextTick();
+            if (!leftScrollPane.value || typeof IntersectionObserver === 'undefined') return;
+            const cards = leftScrollPane.value.querySelectorAll('[data-page-index]');
+            if (!cards.length) return;
+
+            pageObserver = new IntersectionObserver(
+                (entries) => {
+                    if (isProgrammaticScroll) return;
+                    let updated = false;
+                    if (leftScrollPane.value) {
+                        const paneRect = leftScrollPane.value.getBoundingClientRect();
+                        if (paneRect.height > 0) {
+                            updateActivePageFromScroll();
+                            updated = true;
+                        }
+                    }
+                    if (!updated) {
+                        let bestEntry = null;
+                        for (const entry of entries) {
+                            if (entry.isIntersecting) {
+                                if (!bestEntry || entry.intersectionRatio > bestEntry.intersectionRatio) {
+                                    bestEntry = entry;
+                                }
+                            }
+                        }
+                        if (bestEntry) {
+                            const idx = Number(bestEntry.target.getAttribute('data-page-index'));
+                            if (!Number.isNaN(idx) && idx !== activePageIndex.value) {
+                                activePageIndex.value = idx;
+                                scrollTranscriptToPage(idx);
+                            }
+                        }
+                    }
+                },
+                {
+                    root: leftScrollPane.value,
+                    threshold: [0, 0.15, 0.3, 0.5, 0.75, 1.0]
+                }
+            );
+
+            cards.forEach((card) => pageObserver.observe(card));
+        };
 
         const loadingMessage = computed(() => {
             switch (fileCategory.value) {
@@ -88,12 +243,15 @@ export default {
 
         const loadFileContent = async () => {
             if (!props.file) return;
+            const seq = ++activeLoadSeq;
 
+            teardownPageObserver();
             pages.value = [];
             previewUrl.value = null;
             textContent.value = '';
             isTextTooLarge.value = false;
-            realTranscript.value = '';
+            transcriptPages.value = [];
+            activePageIndex.value = 0;
             realSummaries.value = [];
             isLoading.value = true;
             error.value = null;
@@ -103,12 +261,15 @@ export default {
             try {
                 if (category === 'note') {
                     const pngPages = await convertNoteToPng(props.file.id);
+                    if (seq !== activeLoadSeq) return;
                     pages.value = pngPages;
                 } else if (category === 'image') {
                     const signedUrl = await fetchDownloadUrl(props.file.id);
+                    if (seq !== activeLoadSeq) return;
                     previewUrl.value = signedUrl;
                 } else if (category === 'pdf') {
                     const signedUrl = await fetchDownloadUrl(props.file.id);
+                    if (seq !== activeLoadSeq) return;
                     previewUrl.value = signedUrl.includes('?') ? `${signedUrl}&inline=1` : `${signedUrl}?inline=1`;
                 } else if (category === 'text') {
                     const fileSize = Number(props.file.size || 0);
@@ -116,6 +277,7 @@ export default {
                         isTextTooLarge.value = true;
                     } else {
                         const signedUrl = await fetchDownloadUrl(props.file.id);
+                        if (seq !== activeLoadSeq) return;
                         const resp = await fetch(signedUrl);
                         if (!resp.ok) {
                             throw new Error(`Failed to fetch text file (${resp.status})`);
@@ -127,62 +289,63 @@ export default {
                             }
                             isTextTooLarge.value = true;
                         } else {
-                            textContent.value = await resp.text();
+                            const txt = await resp.text();
+                            if (seq !== activeLoadSeq) return;
+                            textContent.value = txt;
                         }
                     }
                 }
 
                 // Fetch real OCR transcript & summaries from extended APIs
                 isLoadingTranscript.value = true;
-                const [transcriptData, summariesData] = await Promise.all([
-                    fetchTranscript(props.file.id).catch(() => null),
+                const [rawPages, summariesData] = await Promise.all([
+                    fetchTranscript(props.file.id).catch(() => []),
                     fetchSummaries(props.file.id).catch(() => [])
                 ]);
+                if (seq !== activeLoadSeq) return;
 
-                if (typeof transcriptData === 'string') {
-                    realTranscript.value = transcriptData;
-                } else if (transcriptData && (transcriptData.transcript || transcriptData.text)) {
-                    realTranscript.value = transcriptData.transcript || transcriptData.text;
-                } else {
-                    realTranscript.value = '';
-                }
+                transcriptPages.value = normalizeTranscriptPages(rawPages);
 
                 if (summariesData && Array.isArray(summariesData)) {
                     realSummaries.value = summariesData.filter(s => (s.dataSource || '').toUpperCase() !== 'OCR');
                 }
             } catch (e) {
+                if (seq !== activeLoadSeq) return;
                 console.error("Failed to load file content:", e);
                 error.value = category === 'note'
                     ? "Failed to render notebook pages."
                     : `Failed to load file preview: ${e.message || 'Unknown error'}`;
             } finally {
-                isLoading.value = false;
-                isLoadingTranscript.value = false;
+                if (seq === activeLoadSeq) {
+                    isLoading.value = false;
+                    isLoadingTranscript.value = false;
+                    if (category === 'note' && pages.value.length > 0) {
+                        await setupPageObserver();
+                    }
+                }
             }
         };
 
         const refreshInsights = async () => {
             if (!props.file) return;
+            const seq = activeLoadSeq;
             isLoadingTranscript.value = true;
             try {
-                const [transcriptData, summariesData] = await Promise.all([
-                    fetchTranscript(props.file.id).catch(() => null),
+                const [rawPages, summariesData] = await Promise.all([
+                    fetchTranscript(props.file.id).catch(() => []),
                     fetchSummaries(props.file.id).catch(() => [])
                 ]);
+                if (seq !== activeLoadSeq) return;
 
-                if (typeof transcriptData === 'string') {
-                    realTranscript.value = transcriptData;
-                } else if (transcriptData && (transcriptData.transcript || transcriptData.text)) {
-                    realTranscript.value = transcriptData.transcript || transcriptData.text;
-                } else {
-                    realTranscript.value = '';
-                }
+                transcriptPages.value = normalizeTranscriptPages(rawPages);
 
                 if (summariesData && Array.isArray(summariesData)) {
                     realSummaries.value = summariesData.filter(s => (s.dataSource || '').toUpperCase() !== 'OCR');
                 }
             } finally {
-                isLoadingTranscript.value = false;
+                if (seq === activeLoadSeq) {
+                    isLoadingTranscript.value = false;
+                }
             }
         };
 
@@ -215,9 +378,16 @@ export default {
         onUnmounted(() => {
             window.removeEventListener('supernote:digest-sync', handleDigestSync);
             window.removeEventListener('supernote:file-sync', handleFileSync);
+            teardownPageObserver();
+            if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer);
         });
         watch(() => props.file?.id, (newId) => {
             if (newId) loadFileContent();
+        });
+        watch(activeRightTab, (tab) => {
+            if (tab === 'transcription') {
+                nextTick(() => scrollTranscriptToPage(activePageIndex.value));
+            }
         });
 
         const formatContent = (str) => {
@@ -242,13 +412,18 @@ export default {
             isLoadingTranscript,
             activeRightTab,
             isMobileSidePanelOpen,
-            realTranscript,
+            transcriptPages,
+            activePageIndex,
+            leftScrollPane,
+            transcriptScrollPane,
+            scrollToCanvasPage,
+            updateActivePageFromScroll,
             realSummaries,
             formatContent
         };
     },
     template: `
-    <div class="bg-slate-100 dark:bg-slate-950 h-full flex flex-col overflow-hidden relative transition-colors animate-fade-in">
+    <div class="bg-slate-100 dark:bg-slate-950 h-[calc(100vh-12rem)] min-h-[540px] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col overflow-hidden relative transition-colors animate-fade-in">
         <!-- Top Fixed Header -->
         <div class="flex-none bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 sm:px-6 z-20">
             <div class="flex items-center space-x-3 min-w-0">
@@ -279,7 +454,7 @@ export default {
         <!-- Main Content Area -->
         <div class="flex-1 flex overflow-hidden relative">
             <!-- Left / Main Pane: Document Viewport -->
-            <div class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 flex flex-col">
+            <div ref="leftScrollPane" @scroll.passive="updateActivePageFromScroll" class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 flex flex-col">
                 <div v-if="isLoading" class="flex flex-col items-center justify-center py-20 space-y-3 my-auto">
                     <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
                     <p class="text-xs text-slate-400 font-mono">{{ loadingMessage }}</p>
@@ -304,13 +479,15 @@ export default {
                     </div>
 
                     <div v-else class="max-w-4xl w-full mx-auto space-y-6">
-                        <div v-for="(page, idx) in pages" :key="page.pageNo"
-                            class="bg-white dark:bg-slate-900 rounded-2xl shadow-md border border-slate-200/80 dark:border-slate-800 overflow-hidden">
+                        <div v-for="(page, idx) in pages" :key="page.pageNo ?? idx"
+                            :data-page-index="idx"
+                            :class="activePageIndex === idx ? 'ring-2 ring-indigo-500/40 border-indigo-400 dark:border-indigo-500' : 'border-slate-200/80 dark:border-slate-800'"
+                            class="bg-white dark:bg-slate-900 rounded-2xl shadow-md border overflow-hidden transition-all">
                             <div class="border-b border-slate-100 dark:border-slate-800 px-4 py-2 bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center text-xs text-slate-400 font-mono">
                                 <span>Page {{ idx + 1 }} of {{ pages.length }}</span>
                                 <span class="text-indigo-600 dark:text-indigo-400 font-semibold">Dot Grid Canvas</span>
                             </div>
-                            <img :src="page.url" loading="lazy" class="w-full h-auto block" alt="Handwriting Page" />
+                            <img :src="page.url" loading="lazy" class="w-full h-auto block" alt="Handwriting Page" @load="updateActivePageFromScroll" />
                         </div>
                     </div>
                 </template>
@@ -414,9 +591,14 @@ export default {
                 </div>
 
                 <!-- Tab 1: Real OCR Transcript -->
-                <div v-if="activeRightTab === 'transcription'" class="p-4 flex-1 overflow-y-auto space-y-3">
+                <div v-if="activeRightTab === 'transcription'" ref="transcriptScrollPane" class="p-4 flex-1 overflow-y-auto space-y-3">
                     <div class="flex items-center justify-between">
-                        <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Gemini Vision OCR</span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Gemini Vision OCR</span>
+                            <span v-if="transcriptPages.length > 0" class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                                {{ transcriptPages.length }} {{ transcriptPages.length === 1 ? 'page' : 'pages' }}
+                            </span>
+                        </div>
                         <button @click="isMobileSidePanelOpen = false" class="md:hidden text-xs text-slate-400 hover:text-slate-700">Done ✕</button>
                     </div>
 
@@ -425,9 +607,46 @@ export default {
                         Fetching OCR transcript...
                     </div>
 
-                    <div v-else-if="realTranscript"
-                        class="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 font-mono text-xs text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed select-text">
-                        {{ formatContent(realTranscript) }}
+                    <div v-else-if="transcriptPages.length > 0" class="space-y-3">
+                        <div v-for="pageItem in transcriptPages" :key="pageItem.pageId || pageItem.pageIndex"
+                            :data-transcript-page="pageItem.pageIndex"
+                            :class="activePageIndex === pageItem.pageIndex
+                                ? 'border-indigo-500 dark:border-indigo-400 ring-1 ring-indigo-500/30 bg-indigo-50/30 dark:bg-indigo-950/30'
+                                : 'border-slate-200/80 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50'"
+                            class="rounded-xl border overflow-hidden transition-all">
+                            <button v-if="pages.length > 0" type="button"
+                                @click="scrollToCanvasPage(pageItem.pageIndex)"
+                                class="w-full px-3.5 py-2 border-b border-slate-200/60 dark:border-slate-800 flex items-center justify-between text-left hover:bg-indigo-50/60 dark:hover:bg-indigo-950/50 transition-colors cursor-pointer">
+                                <div class="flex items-center gap-2">
+                                    <span :class="activePageIndex === pageItem.pageIndex
+                                        ? 'bg-indigo-600 text-white'
+                                        : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'"
+                                        class="px-2 py-0.5 rounded-md text-[11px] font-bold font-mono transition-colors">
+                                        Page {{ pageItem.pageIndex + 1 }}
+                                    </span>
+                                    <span v-if="pageItem.date" class="text-[11px] text-slate-400 font-mono">
+                                        {{ pageItem.date }}
+                                    </span>
+                                </div>
+                                <span class="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400">
+                                    {{ activePageIndex === pageItem.pageIndex ? 'Active' : 'Jump to page →' }}
+                                </span>
+                            </button>
+                            <div v-else class="w-full px-3.5 py-2 border-b border-slate-200/60 dark:border-slate-800 flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <span class="px-2 py-0.5 rounded-md text-[11px] font-bold font-mono bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                                        Page {{ pageItem.pageIndex + 1 }}
+                                    </span>
+                                    <span v-if="pageItem.date" class="text-[11px] text-slate-400 font-mono">
+                                        {{ pageItem.date }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="p-3.5 font-mono text-xs text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed select-text">
+                                <template v-if="pageItem.text">{{ formatContent(pageItem.text) }}</template>
+                                <span v-else class="italic text-slate-400 font-sans">No text recognized on this page.</span>
+                            </div>
+                        </div>
                     </div>
 
                     <div v-else class="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-xl border border-slate-200/80 dark:border-slate-800 text-center text-xs text-slate-400">
