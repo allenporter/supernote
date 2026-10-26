@@ -584,6 +584,13 @@ async def test_verify_full_disk_two_way_checks(
         get_conversion_pdf_path(test_user_id, active_note.id, note_meta.content_md5),
         b"pdf",
     )
+    await blob_storage.put(
+        CACHE_BUCKET,
+        get_conversion_pdf_path(
+            test_user_id, active_note.id, note_meta.content_md5, [0]
+        ),
+        b"pdf page",
+    )
 
     clean_report = await integrity_service.verify_full_disk()
     assert clean_report.issues == []
@@ -594,6 +601,10 @@ async def test_verify_full_disk_two_way_checks(
     # Now plant unreferenced blobs in both buckets and global DB orphans
     await blob_storage.put(USER_DATA_BUCKET, "orphan-user-blob.bin", b"stray")
     await blob_storage.put(CACHE_BUCKET, "999999/pages/P1.png", b"stray-png")
+    stale_selection = get_conversion_pdf_path(
+        test_user_id, active_note.id, "stale_md5", [0]
+    )
+    await blob_storage.put(CACHE_BUCKET, stale_selection, b"stale")
 
     db_session.add_all(
         [
@@ -643,10 +654,10 @@ async def test_verify_full_disk_two_way_checks(
 
     dirty_report = await integrity_service.verify_full_disk()
     assert dirty_report.ok == 11
-    assert dirty_report.scanned == 11 + 8
+    assert dirty_report.scanned == 11 + 9
     assert dirty_report.issue_counts == {
         IntegrityIssueType.ORPHAN: 6,
-        IntegrityIssueType.UNREFERENCED_BLOB: 2,
+        IntegrityIssueType.UNREFERENCED_BLOB: 3,
     }
     assert {
         i.file_name
@@ -655,4 +666,5 @@ async def test_verify_full_disk_two_way_checks(
     } == {
         "orphan-user-blob.bin",
         "999999/pages/P1.png",
+        stale_selection,
     }

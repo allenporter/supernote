@@ -96,10 +96,11 @@ class BlobStorage(ABC):
         """Get physical path to the blob (optional, useful for serving files)."""
 
     @abstractmethod
-    async def list_blobs(self, bucket: str) -> list[str]:
+    async def list_blobs(self, bucket: str, prefix: str = "") -> list[str]:
         """Return sorted logical keys of all stored blobs in the given bucket.
 
-        Excludes temporary staging files and unmerged multipart `.part.N` chunks.
+        Only keys starting with `prefix` are returned. Excludes temporary staging
+        files and unmerged multipart `.part.N` chunks.
         """
 
     @abstractmethod
@@ -262,12 +263,12 @@ class LocalBlobStorage(BlobStorage):
         """Get physical path to the blob."""
         return self._get_path(bucket, key)
 
-    async def list_blobs(self, bucket: str) -> list[str]:
+    async def list_blobs(self, bucket: str, prefix: str = "") -> list[str]:
         """Return sorted logical keys of all stored blobs in the given bucket."""
-        return await asyncio.to_thread(self._list_blobs_sync, bucket)
+        return await asyncio.to_thread(self._list_blobs_sync, bucket, prefix)
 
-    def _list_blobs_sync(self, bucket: str) -> list[str]:
-        return sorted(key for key, _ in self._iter_bucket_files(bucket))
+    def _list_blobs_sync(self, bucket: str, prefix: str = "") -> list[str]:
+        return sorted(key for key, _ in self._iter_bucket_files(bucket, prefix))
 
     async def list_blob_sizes(self, bucket: str) -> list[tuple[str, int]]:
         """Return sorted `(key, size_bytes)` pairs for all stored blobs in `bucket`."""
@@ -284,7 +285,9 @@ class LocalBlobStorage(BlobStorage):
         entries.sort(key=lambda item: item[0])
         return entries
 
-    def _iter_bucket_files(self, bucket: str) -> Iterator[tuple[str, Path]]:
+    def _iter_bucket_files(
+        self, bucket: str, prefix: str = ""
+    ) -> Iterator[tuple[str, Path]]:
         clean_bucket = Path(bucket).name
         if not clean_bucket or clean_bucket in {".", "..", "temp"}:
             return
@@ -296,16 +299,35 @@ class LocalBlobStorage(BlobStorage):
         ):
             return
 
-        for shard_dir in bucket_dir.iterdir():
-            if not shard_dir.is_dir():
+        # Keys are sharded by their first two characters, so a longer prefix
+        # narrows the walk to one directory inside one shard.
+        if len(prefix) >= 2:
+            shard_dir = (bucket_dir / prefix[:2]).resolve()
+            if shard_dir.parent != bucket_dir:
+                return
+            shard_dirs = [shard_dir]
+            start_rel = prefix.rpartition("/")[0]
+        else:
+            shard_dirs = [
+                resolved
+                for d in bucket_dir.iterdir()
+                if d.is_dir() and (resolved := d.resolve()).parent == bucket_dir
+            ]
+            start_rel = ""
+
+        for shard_dir in shard_dirs:
+            start_dir = (shard_dir / start_rel).resolve()
+            if not start_dir.is_relative_to(shard_dir) or not start_dir.is_dir():
                 continue
-            for root, _, files in os.walk(shard_dir):
+            for root, _, files in os.walk(start_dir):
                 root_path = Path(root)
                 for filename in files:
                     if parse_file_chunk_name(filename) is not None:
                         continue
                     file_path = root_path / filename
-                    yield file_path.relative_to(shard_dir).as_posix(), file_path
+                    key = file_path.relative_to(shard_dir).as_posix()
+                    if key.startswith(prefix):
+                        yield key, file_path
 
     async def cleanup(self) -> CleanupStats:
         """Remove expired temporary staging files and abandoned upload chunks."""
