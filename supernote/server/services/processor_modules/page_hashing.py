@@ -209,13 +209,20 @@ class PageHashingModule(ProcessorModule):
                     )
 
             if any_page_changed:
-                # Delete the COMPLETED summary checkpoint so SummaryModule.run_if_needed()
-                # returns True during the global post-processing stage (and during
-                # missing-task recovery if interrupted) to regenerate the notebook summary.
+                # Delete the COMPLETED global post-processing checkpoints so
+                # SummaryModule and TaskExtractionModule re-run during the global
+                # post-processing stage (and during missing-task recovery if interrupted).
                 await session.execute(
                     delete(SystemTaskDO)
                     .where(SystemTaskDO.file_id == file_id)
-                    .where(SystemTaskDO.task_type == TaskType.SUMMARY_GENERATION.value)
+                    .where(
+                        SystemTaskDO.task_type.in_(
+                            [
+                                TaskType.SUMMARY_GENERATION.value,
+                                TaskType.TASK_EXTRACTION.value,
+                            ]
+                        )
+                    )
                 )
 
             await session.commit()

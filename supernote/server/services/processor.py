@@ -15,7 +15,12 @@ from supernote.server.metrics import (
 
 from ..constants import CACHE_BUCKET, DEFAULT_PAGE_CONCURRENCY
 from ..db.models.file import UserFileDO
-from ..db.models.note_processing import NotePageContentDO, SystemTaskDO
+from ..db.models.note_processing import (
+    NotePageContentDO,
+    NoteTaskSyncDO,
+    SystemTaskDO,
+)
+from ..db.models.schedule import ScheduleTaskDO
 from ..db.models.summary import SummaryDO
 from ..db.session import DatabaseSessionManager
 from ..events import (
@@ -25,6 +30,7 @@ from ..events import (
     NoteDeletedEvent,
     NoteProcessingCompletedEvent,
     NoteUpdatedEvent,
+    ScheduleUpdatedEvent,
     SyncCompletedEvent,
 )
 from ..services.file import FileService
@@ -87,11 +93,14 @@ class ProcessorService:
         ocr: ProcessorModule | None = None,
         embedding: ProcessorModule | None = None,
         summary: ProcessorModule | None = None,
+        task_extraction: ProcessorModule | None = None,
     ) -> None:
         """Register processing modules in logical order."""
         self.global_pre_modules = [hashing]
         self.page_modules = [m for m in (png, ocr, embedding) if m is not None]
-        self.global_post_modules = [m for m in (summary,) if m is not None]
+        self.global_post_modules = [
+            m for m in (summary, task_extraction) if m is not None
+        ]
         logger.info("Registered all processor modules.")
 
     async def start(self) -> None:
@@ -242,6 +251,36 @@ class ProcessorService:
             await session.execute(
                 delete(SystemTaskDO).where(SystemTaskDO.file_id == file_id)
             )
+            # Clean up any open schedule tasks extracted from this notebook
+            active_task_rows = (
+                await session.execute(
+                    select(
+                        NoteTaskSyncDO.user_id,
+                        NoteTaskSyncDO.schedule_task_id,
+                    ).where(
+                        NoteTaskSyncDO.file_id == file_id,
+                        NoteTaskSyncDO.sync_status == "ACTIVE",
+                        NoteTaskSyncDO.schedule_task_id.is_not(None),
+                    )
+                )
+            ).all()
+            schedule_users_to_notify: set[int] = set()
+            if active_task_rows:
+                task_ids_to_delete = [
+                    tid for _, tid in active_task_rows if tid is not None
+                ]
+                if task_ids_to_delete:
+                    del_res = await session.execute(
+                        delete(ScheduleTaskDO).where(
+                            ScheduleTaskDO.task_id.in_(task_ids_to_delete),
+                            ScheduleTaskDO.status == "needsAction",
+                        )
+                    )
+                    if getattr(del_res, "rowcount", 0) > 0:
+                        schedule_users_to_notify = {uid for uid, _ in active_task_rows}
+            await session.execute(
+                delete(NoteTaskSyncDO).where(NoteTaskSyncDO.file_id == file_id)
+            )
             await session.execute(delete(SummaryDO).where(SummaryDO.file_id == file_id))
             if parent_uuids:
                 surviving_parent_stmt = (
@@ -277,6 +316,9 @@ class ProcessorService:
                         )
                     )
             await session.commit()
+
+        for notify_uid in schedule_users_to_notify:
+            await self.event_bus.publish(ScheduleUpdatedEvent(user_id=notify_uid))
 
         await self.file_service.cleanup_unreferenced_blobs(candidate_blob_keys)
 
