@@ -17,6 +17,7 @@ from supernote.notebook import (
     SvgConverter,
     TextConverter,
     VisibilityOverlay,
+    exceptions,
     fileformat,
     load_notebook,
 )
@@ -200,6 +201,49 @@ def test_get_layer_visibility_base64() -> None:
     visibility = converter._get_layer_visibility(MockPage())
 
     assert visibility == {"MAINLAYER": True}
+
+
+def test_get_layer_visibility_raw_json() -> None:
+    raw_layer_info = '[{"layerId": 0, "isBackgroundLayer": false, "isVisible": true}]'
+
+    class MockPage:
+        def get_layer_info(self):
+            return raw_layer_info
+
+    class DummyNotebook:
+        pass
+
+    converter = ImageConverter(DummyNotebook())
+
+    visibility = converter._get_layer_visibility(MockPage())
+
+    assert visibility == {"MAINLAYER": True}
+
+
+@pytest.mark.parametrize(
+    "layer_info",
+    [
+        "!!!not-base64!!!",  # malformed base64
+        base64.b64encode(b"\xff\xfe\x00bad").decode(),  # base64 of non-UTF-8 bytes
+        base64.b64encode(b"just a string").decode(),  # base64 of non-JSON text
+        "not json at all {{{",  # neither JSON nor decodable base64 JSON
+    ],
+)
+def test_get_layer_visibility_malformed_payload(layer_info: str) -> None:
+    class MockPage:
+        def __init__(self, info):
+            self._info = info
+
+        def get_layer_info(self):
+            return self._info
+
+    class DummyNotebook:
+        pass
+
+    converter = ImageConverter(DummyNotebook())
+
+    with pytest.raises(exceptions.ParserException, match="invalid layer info payload"):
+        converter._get_layer_visibility(MockPage(layer_info))
 
 
 # --- SVG Converter Tests ---

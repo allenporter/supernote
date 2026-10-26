@@ -15,6 +15,7 @@
 """Converter classes."""
 
 import base64
+import binascii
 import json
 import re
 from enum import Enum, auto
@@ -228,8 +229,16 @@ class ImageConverter:
         except json.decoder.JSONDecodeError:
             # Newer Supernote firmwares (Chauvet 3.25.39 and later) encode the layer info JSON
             # payload in base64. If parsing raw JSON fails, decode the base64 string and retry.
-            info = base64.b64decode(info).decode()
-            info_array = json.loads(info)
+            # A payload that is neither valid JSON nor valid base64-encoded JSON is a corrupt
+            # layer info blob, so report it as a typed parser error instead of leaking the
+            # raw decode failure (binascii.Error, UnicodeDecodeError, JSONDecodeError).
+            try:
+                info = base64.b64decode(info).decode()
+                info_array = json.loads(info)
+            except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+                raise exceptions.ParserException(
+                    f"invalid layer info payload: {exc}"
+                ) from exc
         for layer in info_array:
             is_bg_layer = layer.get("isBackgroundLayer")
             layer_id = layer.get("layerId")
