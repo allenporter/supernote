@@ -220,12 +220,8 @@ class ImageConverter:
             raise exceptions.DecoderException(f"Unsupported bit depth: {bpp}")
         return img
 
-    def _get_layer_visibility(self, page):
-        visibility = {}
-        info = page.get_layer_info()
-        if info is None:
-            # pass to the process of getting visibility for mark file
-            return self._get_mark_layer_visibility(page)
+    @staticmethod
+    def _parse_layer_info(info: str) -> list[dict]:
         try:
             info_array = json.loads(info)
         except json.decoder.JSONDecodeError:
@@ -235,12 +231,27 @@ class ImageConverter:
             # layer info blob, so report it as a typed parser error instead of leaking the
             # raw decode failure (binascii.Error, UnicodeDecodeError, JSONDecodeError).
             try:
-                info = base64.b64decode(info).decode()
-                info_array = json.loads(info)
+                decoded_info = base64.b64decode(info).decode()
+                info_array = json.loads(decoded_info)
             except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
                 raise exceptions.ParserException(
                     f"invalid layer info payload: {exc}"
                 ) from exc
+        if not isinstance(info_array, list) or not all(
+            isinstance(layer, dict) for layer in info_array
+        ):
+            raise exceptions.ParserException(
+                "invalid layer info payload: expected a JSON list of layer objects"
+            )
+        return info_array
+
+    def _get_layer_visibility(self, page):
+        visibility = {}
+        info = page.get_layer_info()
+        if info is None:
+            # pass to the process of getting visibility for mark file
+            return self._get_mark_layer_visibility(page)
+        info_array = self._parse_layer_info(info)
         for layer in info_array:
             is_bg_layer = layer.get("isBackgroundLayer")
             layer_id = layer.get("layerId")
