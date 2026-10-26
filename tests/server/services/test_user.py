@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import time
 
 import jwt
 import pytest
@@ -765,3 +766,104 @@ async def test_jwt_secret_key_explicit_config_takes_precedence(
     token = await service.create_session(email)
     decoded = jwt.decode(token, "explicit-secret", algorithms=["HS256"])
     assert decoded["sub"] == email
+
+
+async def test_legacy_session_token_migration_and_revocation(
+    user_service: UserService,
+    coordination_service: CoordinationService,
+    server_config: ServerConfig,
+) -> None:
+    """Verify pre-#270 legacy session tokens without user_id are transparently migrated and revocable."""
+    email = "legacy_user@example.com"
+    pw_md5 = hashlib.md5(b"password123").hexdigest()
+    user = await user_service.register(UserRegisterDTO(email=email, password=pw_md5))
+    equipment_no = "SN-LEGACY-001"
+    now = int(time.time())
+    ttl = 10 * 365 * 24 * 3600
+
+    def mint_legacy_token(eq_no: str, jti: str) -> str:
+        payload = {
+            "sub": email,
+            "equipment_no": eq_no,
+            "iat": now,
+            "exp": now + ttl,
+            "jti": jti,
+        }
+        return jwt.encode(payload, server_config.auth.secret_key, algorithm="HS256")
+
+    # 1. Verify legacy token migrates key in coordination_service and deletes session:{token}
+    legacy_token_1 = mint_legacy_token(equipment_no, "legacy-1")
+    legacy_key_1 = f"session:{legacy_token_1}"
+    migrated_key_1 = user_service._session_key(user.id, equipment_no, legacy_token_1)
+    await coordination_service.set_value(
+        legacy_key_1, f"{email}|{equipment_no}", ttl=ttl
+    )
+
+    state_1 = await user_service.verify_token(legacy_token_1)
+    assert state_1 is not None
+    assert state_1.user_id == user.id
+    assert state_1.email == email
+    assert state_1.equipment_no == equipment_no
+    assert state_1.token == legacy_token_1
+    assert await coordination_service.get_value(legacy_key_1) is None
+    assert await coordination_service.get_value(migrated_key_1) is not None
+
+    # 2. Verify a second call with the same legacy token succeeds from the migrated key
+    state_1_again = await user_service.verify_token(legacy_token_1)
+    assert state_1_again is not None
+    assert state_1_again.user_id == user.id
+    assert state_1_again.email == email
+    assert state_1_again.equipment_no == equipment_no
+
+    # 3. Verify revoke_equipment_sessions invalidates the migrated legacy token
+    await user_service.revoke_equipment_sessions(user.id, equipment_no)
+    assert await user_service.verify_token(legacy_token_1) is None
+
+    # 4. Verify revoke_user_sessions invalidates a migrated legacy token
+    legacy_token_2 = mint_legacy_token(equipment_no, "legacy-2")
+    await coordination_service.set_value(
+        f"session:{legacy_token_2}", f"{email}|{equipment_no}", ttl=ttl
+    )
+    assert await user_service.verify_token(legacy_token_2) is not None
+    await user_service.revoke_user_sessions(user.id)
+    assert await user_service.verify_token(legacy_token_2) is None
+
+    # 5. Verify logout(token) invalidates both unmigrated and migrated legacy tokens
+    legacy_token_unmigrated = mint_legacy_token(equipment_no, "legacy-3")
+    await coordination_service.set_value(
+        f"session:{legacy_token_unmigrated}", f"{email}|{equipment_no}", ttl=ttl
+    )
+    await user_service.logout(legacy_token_unmigrated)
+    assert await user_service.verify_token(legacy_token_unmigrated) is None
+
+    legacy_token_migrated = mint_legacy_token(equipment_no, "legacy-4")
+    await coordination_service.set_value(
+        f"session:{legacy_token_migrated}", f"{email}|{equipment_no}", ttl=ttl
+    )
+    assert await user_service.verify_token(legacy_token_migrated) is not None
+    await user_service.logout(legacy_token_migrated)
+    assert await user_service.verify_token(legacy_token_migrated) is None
+
+    # 6. Verify mismatched legacy session state or missing user is rejected
+    legacy_token_mismatch = mint_legacy_token(equipment_no, "legacy-5")
+    await coordination_service.set_value(
+        f"session:{legacy_token_mismatch}", f"{email}|OTHER-EQ", ttl=ttl
+    )
+    assert await user_service.verify_token(legacy_token_mismatch) is None
+
+    missing_user_token = jwt.encode(
+        {
+            "sub": "nonexistent@example.com",
+            "equipment_no": equipment_no,
+            "iat": now,
+            "exp": now + ttl,
+        },
+        server_config.auth.secret_key,
+        algorithm="HS256",
+    )
+    await coordination_service.set_value(
+        f"session:{missing_user_token}",
+        f"nonexistent@example.com|{equipment_no}",
+        ttl=ttl,
+    )
+    assert await user_service.verify_token(missing_user_token) is None

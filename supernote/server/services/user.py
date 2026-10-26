@@ -150,11 +150,21 @@ class UserService:
 
         user_id = payload.get("user_id")
         equipment_no = payload.get("equipment_no")
-        if type(user_id) is not int or not isinstance(equipment_no, str):
+        if type(user_id) is int and isinstance(equipment_no, str):
+            await self._coordination_service.delete_value(
+                self._session_key(user_id, equipment_no, token)
+            )
             return
-        await self._coordination_service.delete_value(
-            self._session_key(user_id, equipment_no, token)
-        )
+
+        if user_id is None:
+            await self._coordination_service.delete_value(f"session:{token}")
+            sub = payload.get("sub")
+            if isinstance(sub, str) and sub and isinstance(equipment_no, str):
+                user = await self.get_user_by_email(sub)
+                if user:
+                    await self._coordination_service.delete_value(
+                        self._session_key(user.id, equipment_no, token)
+                    )
 
     @staticmethod
     def _to_user_vo(user: UserDO) -> UserVO:
@@ -552,11 +562,19 @@ class UserService:
         if (
             not isinstance(sub, str)
             or not sub
-            or type(user_id) is not int
             or not isinstance(equipment_no, str)
+            or (type(user_id) is not int and user_id is not None)
         ):
             logger.warning("Token missing or malformed required claims")
             return None
+
+        if user_id is None:
+            return await self._verify_and_migrate_legacy_token(
+                token=token,
+                sub=sub,
+                equipment_no=equipment_no,
+                exp=payload.get("exp"),
+            )
 
         session_key = self._session_key(user_id, equipment_no, token)
         session_val = await self._coordination_service.get_value(session_key)
@@ -583,6 +601,69 @@ class UserService:
             logger.warning("Token user invalid or inactive for user_id=%s", user_id)
             return None
 
+        return session_state
+
+    async def _verify_and_migrate_legacy_token(
+        self,
+        token: str,
+        sub: str,
+        equipment_no: str,
+        exp: object,
+    ) -> SessionState | None:
+        """Verify a pre-#270 JWT without user_id and transparently migrate its session key."""
+        user = await self.get_user_by_email(sub)
+        if not user or not user.is_active:
+            logger.warning("Legacy token user invalid or inactive for sub=%s", sub)
+            return None
+
+        resolved_user_id = user.id
+        session_key = self._session_key(resolved_user_id, equipment_no, token)
+        session_val = await self._coordination_service.get_value(session_key)
+        if session_val:
+            try:
+                session_state = SessionState.from_json(session_val)
+            except (ValueError, TypeError, KeyError) as err:
+                logger.warning("Invalid persisted session state: %s", err)
+                return None
+
+            if (
+                session_state.user_id != resolved_user_id
+                or session_state.email != sub
+                or (session_state.equipment_no or "") != equipment_no
+            ):
+                logger.warning(
+                    "Persisted session state mismatch for user_id=%s", resolved_user_id
+                )
+                return None
+
+            return session_state
+
+        legacy_key = f"session:{token}"
+        legacy_val = await self._coordination_service.get_value(legacy_key)
+        if not legacy_val:
+            logger.warning("Session not found in coordination service: %s", token[:10])
+            return None
+
+        legacy_email, sep, legacy_eq = legacy_val.partition("|")
+        if legacy_email != sub or (legacy_eq if sep else "") != equipment_no:
+            logger.warning("Persisted legacy session mismatch for sub=%s", sub)
+            return None
+
+        session_state = SessionState(
+            token=token,
+            email=user.email,
+            user_id=resolved_user_id,
+            equipment_no=equipment_no or None,
+        )
+        ttl = (
+            max(1, int(exp - time.time()))
+            if isinstance(exp, (int, float)) and not isinstance(exp, bool)
+            else self._config.device_expiration_hours * 3600
+        )
+        await self._coordination_service.set_value(
+            session_key, str(session_state.to_json()), ttl=ttl
+        )
+        await self._coordination_service.delete_value(legacy_key)
         return session_state
 
     async def get_user_profile(self, account: str) -> UserVO | None:
