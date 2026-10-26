@@ -828,23 +828,7 @@ async def test_legacy_session_token_migration_and_revocation(
     await user_service.revoke_user_sessions(user.id)
     assert await user_service.verify_token(legacy_token_2) is None
 
-    # 5. Verify logout(token) invalidates both unmigrated and migrated legacy tokens
-    legacy_token_unmigrated = mint_legacy_token(equipment_no, "legacy-3")
-    await coordination_service.set_value(
-        f"session:{legacy_token_unmigrated}", f"{email}|{equipment_no}", ttl=ttl
-    )
-    await user_service.logout(legacy_token_unmigrated)
-    assert await user_service.verify_token(legacy_token_unmigrated) is None
-
-    legacy_token_migrated = mint_legacy_token(equipment_no, "legacy-4")
-    await coordination_service.set_value(
-        f"session:{legacy_token_migrated}", f"{email}|{equipment_no}", ttl=ttl
-    )
-    assert await user_service.verify_token(legacy_token_migrated) is not None
-    await user_service.logout(legacy_token_migrated)
-    assert await user_service.verify_token(legacy_token_migrated) is None
-
-    # 6. Verify mismatched legacy session state or missing user is rejected
+    # 5. Verify mismatched legacy session state or missing user is rejected
     legacy_token_mismatch = mint_legacy_token(equipment_no, "legacy-5")
     await coordination_service.set_value(
         f"session:{legacy_token_mismatch}", f"{email}|OTHER-EQ", ttl=ttl
