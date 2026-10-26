@@ -1,18 +1,10 @@
 """Unit tests for the Bullet Journal rapid-logging and checkbox task parser."""
 
-from datetime import datetime, timezone
-
 from supernote.server.utils.task_parser import (
     ExtractedTaskState,
-    infer_date_from_filename,
-    infer_date_from_header,
     normalize_task_title,
     parse_page_tasks,
 )
-
-
-def _utc_ms(year: int, month: int, day: int) -> int:
-    return int(datetime(year, month, day, tzinfo=timezone.utc).timestamp() * 1000)
 
 
 def test_normalize_task_title() -> None:
@@ -40,7 +32,6 @@ o 10:00 AM Team standup event
 Plain paragraph text
 """
     tasks = parse_page_tasks(transcript)
-    expected_due = _utc_ms(2026, 10, 26)
 
     assert len(tasks) == 12
 
@@ -49,7 +40,6 @@ Plain paragraph text
     t1 = by_title["Incomplete bullet task"]
     assert t1.state == ExtractedTaskState.INCOMPLETE
     assert not t1.is_starred
-    assert t1.inferred_due_time == expected_due
 
     t2 = by_title["Starred critical task"]
     assert t2.state == ExtractedTaskState.INCOMPLETE
@@ -141,59 +131,6 @@ o 2:00 PM Architecture review
     second = tasks[1]
     assert second.raw_title == "Follow up with design"
     assert second.detail == "- Ask about dark mode icons"
-
-
-def test_multi_day_headers_and_date_inference() -> None:
-    transcript = """# 2026-10-26 Monday
-• Monday task one
-• Submit report by 2026-11-01
-
-2026-10-27 Tuesday
-• Tuesday task one
-"""
-    tasks = parse_page_tasks(
-        transcript,
-        page_id="P20261001090000abc",
-        file_name="Daily.note",
-    )
-    assert len(tasks) == 3
-    assert tasks[0].raw_title == "Monday task one"
-    assert tasks[0].inferred_due_time == _utc_ms(2026, 10, 26)
-
-    # Task mentioning a date in its title is still parsed as a task, not a header
-    assert tasks[1].raw_title == "Submit report by 2026-11-01"
-    assert tasks[1].inferred_due_time == _utc_ms(2026, 10, 26)
-
-    assert tasks[2].raw_title == "Tuesday task one"
-    assert tasks[2].inferred_due_time == _utc_ms(2026, 10, 27)
-
-
-def test_fallback_dates_from_filename_and_page_id() -> None:
-    # Filename takes precedence over page_id when no header is in text
-    tasks_from_filename = parse_page_tasks(
-        "• Review sprint backlog",
-        page_id="P20261001090000abc",
-        file_name="2026-10-28_sprint.note",
-    )
-    assert len(tasks_from_filename) == 1
-    assert tasks_from_filename[0].inferred_due_time == _utc_ms(2026, 10, 28)
-
-    # Falls back to page_id when filename has no date
-    tasks_from_page_id = parse_page_tasks(
-        "• Review sprint backlog",
-        page_id="P20261029090000abc",
-        file_name="Work.note",
-    )
-    assert len(tasks_from_page_id) == 1
-    assert tasks_from_page_id[0].inferred_due_time == _utc_ms(2026, 10, 29)
-
-
-def test_infer_date_from_header_and_filename_formats() -> None:
-    assert infer_date_from_header("# Oct 26, 2026") == _utc_ms(2026, 10, 26)
-    assert infer_date_from_header("## 26 October 2026") == _utc_ms(2026, 10, 26)
-    assert infer_date_from_header("10/26/2026 (Mon)") == _utc_ms(2026, 10, 26)
-    assert infer_date_from_header("• 2026-10-26 is not a header") is None
-    assert infer_date_from_filename("20261026_daily.note") == _utc_ms(2026, 10, 26)
 
 
 def test_same_page_deduplication_merges_latest_state_and_details() -> None:

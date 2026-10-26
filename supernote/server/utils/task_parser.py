@@ -2,17 +2,11 @@
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from enum import Enum
-from pathlib import PurePath
-
-from supernote.server.utils.note_content import infer_page_date
 
 __all__ = [
     "ExtractedPageTask",
     "ExtractedTaskState",
-    "infer_date_from_filename",
-    "infer_date_from_header",
     "normalize_task_title",
     "parse_page_tasks",
 ]
@@ -37,7 +31,6 @@ class ExtractedPageTask:
     state: ExtractedTaskState
     is_starred: bool = False
     detail: str | None = None
-    inferred_due_time: int | None = None
     line_number: int = 0
 
 
@@ -59,7 +52,7 @@ _SIGNIFIER_STRIKETHROUGH_RE = re.compile(
     r"^(?P<star>\*\s+)?(?:[•X><]|-\s*\[[ xX]\]|\[[ xX]\])\s+~~\s*(?P<title>.+?)\s*~~\s*$"
 )
 
-# Active task line patterns (unindented or single leading space):
+# Active task line patterns (unindented):
 # Supports optional "* " critical signifier followed by:
 #   - "• " (incomplete rapid-logging task)
 #   - "- [ ] " or "[ ] " (incomplete checkbox)
@@ -76,192 +69,12 @@ _TASK_LINE_RE = re.compile(
     r")\s+(?P<title>.+?)\s*$"
 )
 
-# Date header patterns
-_ISO_DATE_RE = re.compile(
-    r"(?<!\d)(?P<year>20\d{2})[-/.](?P<month>0?[1-9]|1[0-2])[-/.](?P<day>0?[1-9]|[12]\d|3[01])(?!\d)"
-)
-_US_SLASH_DATE_RE = re.compile(
-    r"(?<!\d)(?P<month>0?[1-9]|1[0-2])/(?P<day>0?[1-9]|[12]\d|3[01])/(?P<year>20\d{2})(?!\d)"
-)
-_COMPACT_FILENAME_DATE_RE = re.compile(
-    r"(?<!\d)(?P<year>20\d{2})(?P<month>0[1-9]|1[0-2])(?P<day>0[1-9]|[12]\d|3[01])(?!\d)"
-)
-
-_MONTH_NAMES = {
-    "jan": 1,
-    "january": 1,
-    "feb": 2,
-    "february": 2,
-    "mar": 3,
-    "march": 3,
-    "apr": 4,
-    "april": 4,
-    "may": 5,
-    "jun": 6,
-    "june": 6,
-    "jul": 7,
-    "july": 7,
-    "aug": 8,
-    "august": 8,
-    "sep": 9,
-    "sept": 9,
-    "september": 9,
-    "oct": 10,
-    "october": 10,
-    "nov": 11,
-    "november": 11,
-    "dec": 12,
-    "december": 12,
-}
-
-_MONTH_NAME_PATTERN = "|".join(_MONTH_NAMES.keys())
-_NAMED_MONTH_FIRST_RE = re.compile(
-    rf"\b(?P<month>{_MONTH_NAME_PATTERN})\.?\s+(?P<day>0?[1-9]|[12]\d|3[01])(?:st|[nr]d|th)?,?\s+(?P<year>20\d{{2}})\b",
-    re.IGNORECASE,
-)
-_DAY_FIRST_NAMED_MONTH_RE = re.compile(
-    rf"\b(?P<day>0?[1-9]|[12]\d|3[01])(?:st|[nr]d|th)?\s+(?P<month>{_MONTH_NAME_PATTERN})\.?,?\s+(?P<year>20\d{{2}})\b",
-    re.IGNORECASE,
-)
-_WEEKDAYS = {
-    "mon",
-    "monday",
-    "tue",
-    "tues",
-    "tuesday",
-    "wed",
-    "wednesday",
-    "thu",
-    "thurs",
-    "thursday",
-    "fri",
-    "friday",
-    "sat",
-    "saturday",
-    "sun",
-    "sunday",
-}
-
-
-def _to_utc_epoch_ms(year: int, month: int, day: int) -> int | None:
-    """Convert a calendar date to UTC start-of-day epoch milliseconds."""
-    try:
-        dt = datetime(year, month, day, tzinfo=timezone.utc)
-        return int(dt.timestamp() * 1000)
-    except ValueError:
-        return None
-
 
 def normalize_task_title(title: str) -> str:
     """Normalize a task title for idempotent matching across OCR runs and page migrations."""
     cleaned = _WHITESPACE_RE.sub(" ", title.strip())
     cleaned = _TRAILING_PUNCT_RE.sub("", cleaned).strip()
     return cleaned.lower()
-
-
-def infer_date_from_filename(file_name: str | None) -> int | None:
-    """Extract a UTC start-of-day timestamp (ms) from a notebook filename if present."""
-    if not file_name:
-        return None
-    stem = PurePath(file_name).stem
-
-    iso_match = _ISO_DATE_RE.search(stem)
-    if iso_match:
-        return _to_utc_epoch_ms(
-            int(iso_match.group("year")),
-            int(iso_match.group("month")),
-            int(iso_match.group("day")),
-        )
-
-    compact_match = _COMPACT_FILENAME_DATE_RE.search(stem)
-    if compact_match:
-        return _to_utc_epoch_ms(
-            int(compact_match.group("year")),
-            int(compact_match.group("month")),
-            int(compact_match.group("day")),
-        )
-
-    return None
-
-
-def infer_date_from_header(line: str) -> int | None:
-    """Extract a UTC start-of-day timestamp (ms) if `line` is a page or section date header.
-
-    Recognizes Markdown headings (`# 2026-10-26`, `## Oct 26, 2026`) as well as
-    standalone short date header lines (`2026-10-26 Monday`, `October 26, 2026`).
-    Does not match task, note, or event lines that happen to mention a date inside prose.
-    """
-    stripped = line.strip()
-    if not stripped:
-        return None
-
-    is_markdown_heading = stripped.startswith("#")
-    candidate = stripped.lstrip("#").strip()
-    if not candidate:
-        return None
-
-    # Never treat a rapid-logging bullet, note, event, or strikethrough line as a date header
-    if not is_markdown_heading:
-        if re.match(r"^(?:\*\s+)?(?:[•X><o-]|~~|\[\s*\]|\[[xX]\])(?:\s|$)", candidate):
-            return None
-        # Standalone non-heading date headers must be concise (e.g. "2026-10-26 Monday")
-        if len(candidate) > 40:
-            return None
-
-    matched_span: tuple[int, int] | None = None
-    epoch_ms: int | None = None
-
-    for pattern, parser in (
-        (
-            _ISO_DATE_RE,
-            lambda m: _to_utc_epoch_ms(
-                int(m.group("year")), int(m.group("month")), int(m.group("day"))
-            ),
-        ),
-        (
-            _NAMED_MONTH_FIRST_RE,
-            lambda m: _to_utc_epoch_ms(
-                int(m.group("year")),
-                _MONTH_NAMES[m.group("month").lower().rstrip(".")],
-                int(m.group("day")),
-            ),
-        ),
-        (
-            _DAY_FIRST_NAMED_MONTH_RE,
-            lambda m: _to_utc_epoch_ms(
-                int(m.group("year")),
-                _MONTH_NAMES[m.group("month").lower().rstrip(".")],
-                int(m.group("day")),
-            ),
-        ),
-        (
-            _US_SLASH_DATE_RE,
-            lambda m: _to_utc_epoch_ms(
-                int(m.group("year")), int(m.group("month")), int(m.group("day"))
-            ),
-        ),
-    ):
-        match = pattern.search(candidate)
-        if match:
-            epoch_ms = parser(match)
-            matched_span = match.span()
-            break
-
-    if epoch_ms is None or matched_span is None:
-        return None
-
-    if is_markdown_heading:
-        return epoch_ms
-
-    # For non-heading lines, ensure the rest of the line is only weekday names or punctuation
-    remainder = (
-        candidate[: matched_span[0]] + " " + candidate[matched_span[1] :]
-    ).strip()
-    tokens = [t.lower() for t in re.split(r"[\s,()\-–—:|/]+", remainder) if t]
-    if all(tok in _WEEKDAYS for tok in tokens):
-        return epoch_ms
-
-    return None
 
 
 def _parse_task_line(line: str) -> tuple[str, ExtractedTaskState, bool] | None:
@@ -330,34 +143,18 @@ def _parse_task_line(line: str) -> tuple[str, ExtractedTaskState, bool] | None:
     return raw_title, state, is_starred
 
 
-def parse_page_tasks(
-    text_content: str | None,
-    page_id: str | None = None,
-    file_name: str | None = None,
-    use_page_id_date: bool = True,
-) -> list[ExtractedPageTask]:
+def parse_page_tasks(text_content: str | None) -> list[ExtractedPageTask]:
     """Parse a page's OCR Markdown transcript into structured rapid-logging tasks.
 
     Features:
     - Extracts incomplete (`•`, `- [ ]`, `[ ]`), completed (`X`, `- [x]`),
       migrated (`>`, `<`), starred (`* •`), and cancelled (`~~...~~`) tasks.
     - Attaches indented child lines (2+ leading spaces or tab) to the parent task's `detail`.
-    - Tracks date headers (`# 2026-10-26`, `Oct 26, 2026`, etc.) across the page, falling
-      back to filename date or `page_id` date when present.
     - Deduplicates tasks that share the same `normalized_title` on the same page by keeping
       the latest state and merging details.
     """
     if not text_content:
         return []
-
-    # Determine baseline fallback date from filename or page_id
-    current_due_time = infer_date_from_filename(file_name)
-    if current_due_time is None and use_page_id_date and page_id:
-        inferred_dt = infer_page_date(page_id)
-        if inferred_dt is not None:
-            current_due_time = _to_utc_epoch_ms(
-                inferred_dt.year, inferred_dt.month, inferred_dt.day
-            )
 
     tasks: list[ExtractedPageTask] = []
     active_task: ExtractedPageTask | None = None
@@ -393,13 +190,6 @@ def parse_page_tasks(
         # Unindented line: flush any accumulated details for the previous task
         _flush_active_details()
 
-        # Check if this line is a date header
-        header_due_time = infer_date_from_header(raw_line)
-        if header_due_time is not None:
-            current_due_time = header_due_time
-            active_task = None
-            continue
-
         # Check if this line is a task
         parsed = _parse_task_line(raw_line)
         if parsed is not None:
@@ -411,7 +201,6 @@ def parse_page_tasks(
                 state=state,
                 is_starred=is_starred,
                 detail=None,
-                inferred_due_time=current_due_time,
                 line_number=line_idx,
             )
             tasks.append(task)
@@ -432,8 +221,6 @@ def parse_page_tasks(
             existing.raw_title = task.raw_title
             existing.state = task.state
             existing.is_starred = existing.is_starred or task.is_starred
-            if task.inferred_due_time is not None:
-                existing.inferred_due_time = task.inferred_due_time
             if task.detail:
                 existing.detail = (
                     f"{existing.detail}\n{task.detail}"
