@@ -213,8 +213,10 @@ class ImageConverter:
             img = Image.frombytes("LA", size, bitmap)
         elif bpp == 16:
             img = Image.frombytes("I;16", size, bitmap)
-        else:
+        elif bpp == 8:
             img = Image.frombytes("L", size, bitmap)
+        else:
+            raise exceptions.DecoderException(f"Unsupported bit depth: {bpp}")
         return img
 
     def _get_layer_visibility(self, page):
