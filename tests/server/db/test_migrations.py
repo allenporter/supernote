@@ -85,7 +85,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "a2b3c4d5e6f7"
+        assert version == "c3d4e5f6a7b8"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -181,7 +181,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "a2b3c4d5e6f7"
+        assert version == "c3d4e5f6a7b8"
 
         # Verify task columns and types
         tasks = conn.execute(
@@ -713,4 +713,52 @@ def test_scope_summary_unique_identifier_by_user_migration(
         conn.execute(text("DELETE FROM f_summary_tag WHERE user_id = 2"))
 
     command.downgrade(alembic_config, "f1a2b3c4d5e6")
+    engine.dispose()
+
+
+def test_seed_sync_initialized_for_existing_users_migration(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify migration c3d4e5f6a7b8 seeds sync:initialized:{user_id} only for users with active files."""
+    db_path = tmp_path / "seed_sync_initialized.db"
+    shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+    command.upgrade(alembic_config, "a2b3c4d5e6f7")
+
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM f_user_file"))
+        conn.execute(text("DELETE FROM key_values WHERE key LIKE 'sync:initialized:%'"))
+        # User 10 has active files
+        # User 20 has only folders
+        # User 30 has only inactive files
+        conn.execute(
+            text(
+                "INSERT INTO f_user_file "
+                "(id, user_id, directory_id, file_name, is_folder, size, md5, storage_key, is_active, create_time, update_time) "
+                "VALUES "
+                "(9101, 10, 0, 'NOTE', 'Y', 0, NULL, NULL, 'Y', 0, 0), "
+                "(9102, 10, 9101, 'a.note', 'N', 100, 'm1', 'k1', 'Y', 0, 0), "
+                "(9103, 10, 9101, 'b.note', 'N', 200, 'm2', 'k2', 'Y', 0, 0), "
+                "(9201, 20, 0, 'NOTE', 'Y', 0, NULL, NULL, 'Y', 0, 0), "
+                "(9301, 30, 0, 'deleted.note', 'N', 100, 'm3', 'k3', 'N', 0, 0)"
+            )
+        )
+
+    command.upgrade(alembic_config, "c3d4e5f6a7b8")
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT key, value, expiry FROM key_values "
+                "WHERE key LIKE 'sync:initialized:%' ORDER BY key"
+            )
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0][0] == "sync:initialized:10"
+        assert rows[0][1] == "1"
+        assert rows[0][2] > 0
+
+    command.downgrade(alembic_config, "a2b3c4d5e6f7")
     engine.dispose()
