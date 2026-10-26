@@ -2,6 +2,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 from urllib.parse import urlsplit
 
 from mashumaro.config import TO_DICT_ADD_OMIT_NONE_FLAG, BaseConfig
@@ -583,6 +584,11 @@ class ServerConfig(DataClassYAMLMixin):
             config.trace_log_file = str(
                 Path(config.storage_dir) / "system" / "trace.log"
             )
+
+        if not config_file.exists():
+            logger.info(f"Saving config to {config_file}")
+            config_file.parent.mkdir(parents=True, exist_ok=True)
+            config_file.write_text(cast(str, config.to_yaml()))
 
         return config
 
