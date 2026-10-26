@@ -425,9 +425,12 @@ def build_site(output_dir: Path) -> None:
                 shutil.rmtree(dst_assets)
             shutil.copytree(src_assets, dst_assets)
 
-    print(
-        f"Built {len(all_modules)} documentation pages in {output_dir.relative_to(ROOT_DIR)}/"
+    display_dir = (
+        output_dir.relative_to(ROOT_DIR)
+        if output_dir.is_relative_to(ROOT_DIR)
+        else output_dir
     )
+    print(f"Built {len(all_modules)} documentation pages in {display_dir}/")
 
 
 def main() -> int:
