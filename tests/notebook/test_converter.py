@@ -30,6 +30,43 @@ from supernote.notebook.color import (
 )
 from supernote.notebook.converter import build_visibility_overlay
 from supernote.notebook.decoder import TextElement
+from supernote.notebook.exceptions import DecoderException
+
+
+@pytest.mark.parametrize("bpp", [0, 7, 12])
+def test_image_converter_rejects_unsupported_bit_depth(bpp: int) -> None:
+    class Notebook:
+        def get_width(self):
+            return 1
+
+        def get_height(self):
+            return 1
+
+    class Decoder:
+        def decode(self, binary, width, height, **kwargs):
+            return b"\x00", (1, 1), bpp
+
+    converter = ImageConverter(Notebook())
+    with pytest.raises(DecoderException, match=f"{bpp}"):
+        converter._create_image_from_decoder(Decoder(), b"unused")
+
+
+def test_image_converter_accepts_eight_bit_grayscale() -> None:
+    class Notebook:
+        def get_width(self):
+            return 1
+
+        def get_height(self):
+            return 1
+
+    class Decoder:
+        def decode(self, binary, width, height, **kwargs):
+            return b"\x80", (1, 1), 8
+
+    img = ImageConverter(Notebook())._create_image_from_decoder(Decoder(), b"unused")
+    assert img.mode == "L"
+    assert img.getpixel((0, 0)) == 128
+
 
 # Find all test note paths dynamically under tests/testdata/
 TEST_DATA_DIR = Path(__file__).parent.parent / "testdata"

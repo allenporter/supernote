@@ -4,6 +4,7 @@ import { fetchFiles, createFolder, deleteItems, moveItems, renameItem, uploadFil
 export function useFileSystem() {
     const files = ref([]);
     const currentDirectoryId = ref("0");
+    const loadedDirectoryId = ref(null);
     const isLoading = ref(false);
     const error = ref(null);
     let activeLoadSeq = 0;
@@ -18,9 +19,11 @@ export function useFileSystem() {
             if (seq !== activeLoadSeq) return;
             files.value = result;
             currentDirectoryId.value = targetId;
+            loadedDirectoryId.value = targetId;
         } catch (e) {
             if (seq !== activeLoadSeq) return;
             console.error(e);
+            loadedDirectoryId.value = null;
             if (e.message === "Unauthorized") {
                 error.value = "Unauthorized";
             } else {
@@ -108,6 +111,7 @@ export function useFileSystem() {
     return {
         files,
         currentDirectoryId,
+        loadedDirectoryId,
         isLoading,
         error,
         loadDirectory,

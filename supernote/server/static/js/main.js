@@ -172,6 +172,7 @@ createApp({
         const {
             files,
             currentDirectoryId,
+            loadedDirectoryId,
             isLoading,
             error,
             loadDirectory,
@@ -255,8 +256,8 @@ createApp({
             if (activeTab.value === 'system') {
                 activeTab.value = 'files';
             }
-            if (!isInitial && files.value.length > 0) return;
             const targetDirId = String(currentDirectoryId.value || '0');
+            if (!isInitial && loadedDirectoryId.value === targetDirId) return;
             await Promise.all([
                 loadDirectory(targetDirId),
                 syncBreadcrumbsForDirectory(targetDirId, seq)
@@ -330,7 +331,7 @@ createApp({
 
             const dirChanged = String(currentDirectoryId.value) !== targetDirId;
             const lastCrumbId = String(breadcrumbs.value[breadcrumbs.value.length - 1]?.id || '0');
-            if (!dirChanged && !isInitial && files.value.length > 0) {
+            if (!dirChanged && !isInitial && loadedDirectoryId.value === targetDirId) {
                 if (lastCrumbId !== targetDirId) {
                     await syncBreadcrumbsForDirectory(targetDirId, seq);
                 }
@@ -400,14 +401,13 @@ createApp({
         });
 
         // Methods
-        function switchTab(tab) {
+        async function switchTab(tab) {
             showSystemPanel.value = false;
             systemOpenedFromHistory = false;
             activeTab.value = tab;
-            if (tab === 'files' || tab === 'explorer') {
-                view.value = 'grid';
-                selectedFile.value = null;
+            if (tab === 'files' || tab === 'explorer' || tab === 'dashboard') {
                 viewerOpenedFromHistory = false;
+                await restoreDirectoryState(String(currentDirectoryId.value || '0'), false, ++activeSyncSeq);
             }
         }
 
@@ -416,7 +416,7 @@ createApp({
             showSystemPanel.value = true;
         }
 
-        function closeSystemPanel() {
+        async function closeSystemPanel() {
             if (systemOpenedFromHistory && inAppHistoryDepth > 0) {
                 systemOpenedFromHistory = false;
                 window.history.back();
@@ -425,13 +425,15 @@ createApp({
             systemOpenedFromHistory = false;
             urlSyncDepth++;
             showSystemPanel.value = false;
-            nextTick(() => {
-                urlSyncDepth--;
-                updateUrl(true);
-            });
+            await nextTick();
+            urlSyncDepth--;
+            updateUrl(true);
+            if ((activeTab.value === 'files' || activeTab.value === 'explorer' || activeTab.value === 'dashboard') && view.value === 'grid') {
+                await restoreDirectoryState(String(currentDirectoryId.value || '0'), false, ++activeSyncSeq);
+            }
         }
 
-        function closeViewer() {
+        async function closeViewer() {
             if (viewerOpenedFromHistory && inAppHistoryDepth > 0) {
                 viewerOpenedFromHistory = false;
                 window.history.back();
@@ -441,10 +443,10 @@ createApp({
             urlSyncDepth++;
             view.value = 'grid';
             selectedFile.value = null;
-            nextTick(() => {
-                urlSyncDepth--;
-                updateUrl(true);
-            });
+            await nextTick();
+            urlSyncDepth--;
+            updateUrl(true);
+            await restoreDirectoryState(String(currentDirectoryId.value || '0'), false, ++activeSyncSeq);
         }
 
         async function openItem(item) {
