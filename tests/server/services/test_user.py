@@ -819,12 +819,14 @@ async def test_legacy_session_token_migration_and_revocation(
     await user_service.revoke_equipment_sessions(user.id, equipment_no)
     assert await user_service.verify_token(legacy_token_1) is None
 
-    # 4. Verify revoke_user_sessions invalidates a migrated legacy token
-    legacy_token_2 = mint_legacy_token(equipment_no, "legacy-2")
+    # 4. Verify revoke_user_sessions invalidates a migrated legacy token (including empty equipment_no)
+    legacy_token_2 = mint_legacy_token("", "legacy-2")
     await coordination_service.set_value(
-        f"session:{legacy_token_2}", f"{email}|{equipment_no}", ttl=ttl
+        f"session:{legacy_token_2}", f"{email}|", ttl=ttl
     )
-    assert await user_service.verify_token(legacy_token_2) is not None
+    state_2 = await user_service.verify_token(legacy_token_2)
+    assert state_2 is not None
+    assert state_2.equipment_no is None
     await user_service.revoke_user_sessions(user.id)
     assert await user_service.verify_token(legacy_token_2) is None
 

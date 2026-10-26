@@ -570,10 +570,22 @@ class UserService:
             return None
 
         if claims.user_id is None:
-            return await self._verify_and_migrate_legacy_token(token, claims)
+            user = await self.get_user_by_email(claims.sub)
+            if not user or not user.is_active:
+                logger.warning(
+                    "Legacy token user invalid or inactive for sub=%s", claims.sub
+                )
+                return None
+            user_id = user.id
+        else:
+            user_id = claims.user_id
 
-        session_key = self._session_key(claims.user_id, claims.equipment_no, token)
+        session_key = self._session_key(user_id, claims.equipment_no, token)
         session_val = await self._coordination_service.get_value(session_key)
+        if not session_val and claims.user_id is None:
+            session_val = await self._migrate_legacy_session(
+                token, user_id, claims, session_key
+            )
         if not session_val:
             logger.warning("Session not found in coordination service: %s", token[:10])
             return None
@@ -585,63 +597,32 @@ class UserService:
             return None
 
         if (
-            session_state.user_id != claims.user_id
+            session_state.user_id != user_id
             or session_state.email != claims.sub
             or (session_state.equipment_no or "") != claims.equipment_no
         ):
-            logger.warning(
-                "Persisted session state mismatch for user_id=%s", claims.user_id
-            )
+            logger.warning("Persisted session state mismatch for user_id=%s", user_id)
             return None
 
-        user = await self._get_user_by_id(claims.user_id)
-        if not user or not user.is_active or user.email != claims.sub:
-            logger.warning(
-                "Token user invalid or inactive for user_id=%s", claims.user_id
-            )
-            return None
+        if claims.user_id is not None:
+            user = await self._get_user_by_id(user_id)
+            if not user or not user.is_active or user.email != claims.sub:
+                logger.warning("Token user invalid or inactive for user_id=%s", user_id)
+                return None
 
         return session_state
 
-    async def _verify_and_migrate_legacy_token(
+    async def _migrate_legacy_session(
         self,
         token: str,
+        user_id: int,
         claims: TokenClaims,
-    ) -> SessionState | None:
-        """Verify a pre-#270 JWT without user_id and transparently migrate its session key."""
-        user = await self.get_user_by_email(claims.sub)
-        if not user or not user.is_active:
-            logger.warning(
-                "Legacy token user invalid or inactive for sub=%s", claims.sub
-            )
-            return None
-
-        resolved_user_id = user.id
-        session_key = self._session_key(resolved_user_id, claims.equipment_no, token)
-        session_val = await self._coordination_service.get_value(session_key)
-        if session_val:
-            try:
-                session_state = SessionState.from_json(session_val)
-            except (ValueError, TypeError, KeyError) as err:
-                logger.warning("Invalid persisted session state: %s", err)
-                return None
-
-            if (
-                session_state.user_id != resolved_user_id
-                or session_state.email != claims.sub
-                or (session_state.equipment_no or "") != claims.equipment_no
-            ):
-                logger.warning(
-                    "Persisted session state mismatch for user_id=%s", resolved_user_id
-                )
-                return None
-
-            return session_state
-
+        session_key: str,
+    ) -> str | None:
+        """Migrate a pre-#270 legacy session:{token} entry to session_key if valid."""
         legacy_key = f"session:{token}"
         legacy_val = await self._coordination_service.get_value(legacy_key)
         if not legacy_val:
-            logger.warning("Session not found in coordination service: %s", token[:10])
             return None
 
         legacy_email, sep, legacy_eq = legacy_val.partition("|")
@@ -654,8 +635,8 @@ class UserService:
 
         session_state = SessionState(
             token=token,
-            email=user.email,
-            user_id=resolved_user_id,
+            email=claims.sub,
+            user_id=user_id,
             equipment_no=claims.equipment_no or None,
         )
         ttl = (
@@ -663,11 +644,10 @@ class UserService:
             if claims.exp is not None
             else self._config.device_expiration_hours * 3600
         )
-        await self._coordination_service.set_value(
-            session_key, str(session_state.to_json()), ttl=ttl
-        )
+        serialized = str(session_state.to_json())
+        await self._coordination_service.set_value(session_key, serialized, ttl=ttl)
         await self._coordination_service.delete_value(legacy_key)
-        return session_state
+        return serialized
 
     async def get_user_profile(self, account: str) -> UserVO | None:
         user = await self.get_user_by_email(account)
