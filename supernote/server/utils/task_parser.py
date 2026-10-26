@@ -156,17 +156,8 @@ def parse_page_tasks(text_content: str | None) -> list[ExtractedPageTask]:
     if not text_content:
         return []
 
-    tasks: list[ExtractedPageTask] = []
+    deduped_by_key: dict[str, ExtractedPageTask] = {}
     active_task: ExtractedPageTask | None = None
-    active_details: list[str] = []
-
-    def _flush_active_details() -> None:
-        nonlocal active_task, active_details
-        if active_task is not None and active_details:
-            existing = active_task.detail.splitlines() if active_task.detail else []
-            combined = existing + active_details
-            active_task.detail = "\n".join(combined)
-        active_details = []
 
     for line_idx, raw_line in enumerate(text_content.splitlines(), start=1):
         if not raw_line.strip():
@@ -179,54 +170,44 @@ def parse_page_tasks(text_content: str | None) -> list[ExtractedPageTask]:
         if is_indented:
             if active_task is not None:
                 # Preserve relative indentation beyond the first 2 spaces / 1 tab
-                if raw_line.startswith("\t"):
-                    cleaned_detail = raw_line[1:].rstrip()
-                else:
-                    cleaned_detail = raw_line[2:].rstrip()
+                cleaned_detail = (
+                    raw_line[1:].rstrip()
+                    if raw_line.startswith("\t")
+                    else raw_line[2:].rstrip()
+                )
                 if cleaned_detail.strip():
-                    active_details.append(cleaned_detail)
+                    active_task.detail = (
+                        f"{active_task.detail}\n{cleaned_detail}"
+                        if active_task.detail
+                        else cleaned_detail
+                    )
             continue
 
-        # Unindented line: flush any accumulated details for the previous task
-        _flush_active_details()
-
-        # Check if this line is a task
+        # Check if this unindented line is a task
         parsed = _parse_task_line(raw_line)
         if parsed is not None:
             raw_title, state, is_starred = parsed
             norm_title = normalize_task_title(raw_title)
-            task = ExtractedPageTask(
-                raw_title=raw_title,
-                normalized_title=norm_title,
-                state=state,
-                is_starred=is_starred,
-                detail=None,
-                line_number=line_idx,
-            )
-            tasks.append(task)
-            active_task = task
+            existing = deduped_by_key.get(norm_title)
+            if existing is None:
+                task = ExtractedPageTask(
+                    raw_title=raw_title,
+                    normalized_title=norm_title,
+                    state=state,
+                    is_starred=is_starred,
+                    detail=None,
+                    line_number=line_idx,
+                )
+                deduped_by_key[norm_title] = task
+                active_task = task
+            else:
+                existing.raw_title = raw_title
+                existing.state = state
+                existing.is_starred = existing.is_starred or is_starred
+                existing.line_number = line_idx
+                active_task = existing
         else:
             # Top-level non-task line (e.g. "- Note", "o Event", heading, paragraph)
             active_task = None
-
-    _flush_active_details()
-
-    # Deduplicate tasks with identical normalized_title on the same page
-    deduped_by_key: dict[str, ExtractedPageTask] = {}
-    for task in tasks:
-        existing = deduped_by_key.get(task.normalized_title)
-        if existing is None:
-            deduped_by_key[task.normalized_title] = task
-        else:
-            existing.raw_title = task.raw_title
-            existing.state = task.state
-            existing.is_starred = existing.is_starred or task.is_starred
-            if task.detail:
-                existing.detail = (
-                    f"{existing.detail}\n{task.detail}"
-                    if existing.detail
-                    else task.detail
-                )
-            existing.line_number = task.line_number
 
     return list(deduped_by_key.values())
