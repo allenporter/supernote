@@ -1,260 +1,160 @@
-# API Data Model for Supernote (Private) Cloud Server.
+# API Data Models for Supernote (Private) Cloud
 
-This module describes the data models used by the Supernote Private Cloud API. These
-models serve as a reference for both client and server implementations looking
-to interoperate with the Supernote Private Cloud API. While this may also work
-with the Supernote hosted cloud public API, it is not intended to be used there
-to not put load on Supernote API servers.
+This package (`supernote.models`) defines the shared wire-format Data Transfer Objects (DTOs) and Value Objects (VOs) used by both the `supernote.client` SDK and the `supernote.server` self-hosted Private Cloud implementation.
 
-We've described the sections of the system in terms of "Controllers" and shared
-responsibilities to have a common mental model for how the system works.
-
-## 1. Authentication & User Management
-
-See `supernote.models.auth` and `supernote.models.user` for more information
-on the data models related to these API endpoints.
-
-### Login & Logout
-
-The LoginController is the main controller for handling user login and logout requests.
-
-*   `POST /api/official/user/account/login/new`: Account Login
-*   `POST /api/official/user/account/login/equipment`: Device Token Login
-*   `POST /api/user/sms/login`: SMS Login
-*   `POST /api/user/logout`: Logout
-*   `POST /api/user/query/loginRecord`: Query Login History
-*   `POST /api/user/query/token`: Validate/Query Token
-*   `POST /api/official/user/query/random/code`: Get Random Code (for login crypto)
-
-### User Profile
-
-The UserController is the main controller for handling user profile requests.
-
-*   `POST /api/user/check/exists`: Check User Exists
-*   `POST /api/official/user/check/exists/server`: Check User Exists (Server Aware)
-*   `POST /api/user/query`: Query Current User (Internal)
-*   `POST /api/user/query/info`: Query User Info
-*   `POST /api/user/update`: Update User Info
-*   `POST /api/user/update/name`: Update Nickname
-*   `POST /api/user/query/all`: Query All Users
-*   `PUT /api/user/freeze`: Freeze/Unfreeze Account
-*   `POST /api/user/query/one`: Query Single User
-*   `GET /api/user/query/user/{userId}`: Query User by ID
-
-### Registration
-
-The UserRegisterController is the main controller for handling user registration requests.
-
-*   `POST /api/user/register`: User Registration
-*   `POST /api/user/account/clear`: Delete Account (**WARNING**: permanently deletes the user account and all cloud files, blobs, recycle bin items, summaries, schedule tasks, and active sessions)
-
-### Password & Security
-
-The PasswordController is the main controller for handling password and security requests.
-
-*   `POST /api/official/user/retrieve/password`: Retrieve Password
-*   `PUT /api/user/password`: Change Password
-
-### Validation Codes
-
-The ValidCodeController is the main controller for handling validation code requests.
-
-*   `POST /api/user/mail/validcode`: Send Email Validation Code
-*   `POST /api/user/check/validcode`: Verify Code
-*   `GET /api/base/pic/code`: Get Graphic Verification Code
-
-### Account Settings
-
-The AccountController is the main controller for handling account settings requests.
-
-*   `PUT /api/user/email`: Update Email Address
+> [!NOTE]
+> While these models match the official Supernote Private Cloud protocol, they are designed for self-hosted servers and local tooling rather than placing automated load on Ratta's hosted public cloud.
 
 ---
 
-## 2. File Management (Web & General)
+## Serialization Architecture
 
-See `supernote.models.file_web` for more information on the data models related to these API endpoints.
+All request DTOs and response VOs are Python `@dataclass` models backed by `mashumaro` (`DataClassJSONMixin` / `DataClassORJSONMixin` compatible):
 
-### Web File Operations
+* **CamelCase Wire Aliasing**: Python fields use `snake_case` with `field(metadata=field_options(alias="camelCase"))` and `serialize_by_alias = True` in `BaseConfig` so serialized JSON matches the exact camelCase keys expected by Supernote hardware firmware and the web UI.
+* **Unified Response Envelope (`supernote.models.base.BaseResponse`)**: All server API responses inherit from `supernote.models.base.BaseResponse`, carrying `success: bool`, `error_code: str | None` (`errorCode`), and `error_msg: str | None` (`errorMsg`), plus shared enums (`ErrorCode`, `BooleanEnum`, `ProcessingStatus`, `TaskType`).
 
-The FileLocalWebController is the main controller for handling web file operations requests.
-
-*   `POST /api/file/list/query`: List Files & Folders
-*   `POST /api/file/folder/list/query`: List Folders Only
-*   `POST /api/file/capacity/query`: Query Storage Usage
-*   `POST /api/file/delete`: Delete File/Folder
-*   `POST /api/file/folder/add`: Create New Folder
-*   `POST /api/file/move`: Move File/Folder
-*   `POST /api/file/copy`: Copy File/Folder
-*   `POST /api/file/rename`: Rename File/Folder
-*   `POST /api/file/list/search`: Search Files
-*   `POST /api/file/path/query`: Get File Path Info
-*   **Recycle Bin:**
-    *   `POST /api/file/recycle/list/query`: List Recycle Bin
-    *   `POST /api/file/recycle/clear`: Empty Recycle Bin
-    *   `POST /api/file/recycle/delete`: Permanently Delete
-    *   `POST /api/file/recycle/revert`: Restore File
-*   **Upload/Download:**
-    *   `POST /api/file/download/url`: Get Download URL
-    *   `POST /api/file/upload/apply`: Request Upload
-    *   `POST /api/file/upload/finish`: Complete Upload
-
-### Basic File Ops
-
-The FileController is the main controller for handling basic file operations requests.
-
-*   `POST /api/file/add/folder/file/deleteApi`: Add Folder/File (Desktop)
-*   `POST /api/file/2/files/query/deleteApi`: Query File (Dropbox style)
-*   `POST /api/file/2/files`: Query File by Path
-
-### File Search
-
-The FileSearchController is the main controller for handling file search requests.
-
-*   `POST /api/file/label/list/search`: Search by Label/Name
-
-### Terminal Specific
-
-The TerminalFileUploadController is the main controller for handling terminal file upload requests.
-
-*   `POST /api/file/terminal/upload/apply`: Terminal Upload Request
-*   `POST /api/file/terminal/upload/finish`: Terminal Upload Complete
+| Submodule | Primary Scope | Key Classes |
+| :--- | :--- | :--- |
+| `supernote.models.base` | Base response envelope & shared enums | `BaseResponse`, `ErrorCode`, `BooleanEnum`, `ProcessingStatus`, `TaskType`, `create_error_response` |
+| `supernote.models.auth` | Challenge-response, SMS, and token authentication | `RandomCodeDTO`, `RandomCodeVO`, `LoginDTO`, `LoginVO`, `SmsLoginDTO`, `QueryTokenVO` |
+| `supernote.models.user` | User accounts, registration, and profile queries | `UserRegisterDTO`, `UserInfoVO`, `UserQueryByIdVO`, `UpdatePasswordDTO`, `RetrievePasswordDTO` |
+| `supernote.models.file_common` | Shared file/folder entries and upload grant VOs | `EntriesVO`, `FileUploadApplyLocalVO`, `FileSortOrder`, `FileSortSequence`, `UploadType` |
+| `supernote.models.file_web` | Web UI directory listing, search, and recycle bin | `FileListQueryDTO`, `FileListQueryVO`, `UserFileVO`, `RecycleFileListVO`, `FilePathQueryVO` |
+| `supernote.models.file_device` | Hardware V2/V3 sync, path queries, and PNG/PDF conversion | `ListFolderV2DTO`, `ListFolderLocalVO`, `FileUploadApplyLocalDTO`, `NoteToPngVO`, `NoteToPdfVO` |
+| `supernote.models.schedule` | To-Do task groups, tasks, and recurrence payloads | `ScheduleTaskGroupItem`, `ScheduleTaskInfo`, `AddScheduleTaskDTO`, `UpdateScheduleTaskListDTO` |
+| `supernote.models.summary` | Handwritten/AI summaries, summary groups, and tags | `SummaryItem`, `SummaryGroupItem`, `AddSummaryDTO`, `QuerySummaryVO`, `QuerySummaryMD5HashVO` |
+| `supernote.models.extended` | Self-hosted semantic search, transcripts, and task status | `WebSearchRequestDTO`, `WebSearchResponseVO`, `WebTranscriptResponseVO`, `FileProcessingStatusVO` |
+| `supernote.models.webhook` | Outbound HMAC-signed webhook event payloads | `WebhookPayload`, `WebhookFileVO`, `EVENT_NOTE_SYNC_COMPLETED`, `EVENT_NOTE_PROCESSING_COMPLETED` |
+| `supernote.models.socket` | Real-time Socket.IO events (`FILE-SYN`, `TASK-SYN`, `DIGEST-SYN`) | `SocketHandshakeParams`, `SocketIoClientMessage`, `SocketMessageData`, `SocketTaskMessageData` |
+| `supernote.models.equipment` | Hardware device activation and binding | `ActivateEquipmentDTO`, `BindEquipmentDTO`, `UnbindEquipmentDTO`, `UserEquipmentVO` |
+| `supernote.models.system` | OSS multipart chunks, queue status, and storage integrity | `FileChunkVO`, `UploadFileVO`, `QueueStatusVO`, `IntegrityReportVO`, `ReferenceSysParamDTO` |
 
 ---
 
-## 3. Cloud/NAS Synchronization (Device API)
+## 1. Authentication & User Management (`supernote.models.auth`, `supernote.models.user`)
 
-The FileLocalController is the main controller for handling cloud/nas synchronization requests.
+Models in `supernote.models.auth` and `supernote.models.user` back account login, challenge-response hashing, SMS verification, and user profile management (handled on the server by `supernote.server.routes.auth` and `supernote.server.routes.user`, and consumed by `supernote.client.login_client.LoginClient` and `supernote.client.admin.AdminClient`).
 
-See `supernote.models.file_device` for more information on the data models related to these API endpoints.
+### Login & Token Validation
+* `POST /api/official/user/query/random/code` — Request challenge nonce (`RandomCodeDTO` -> `RandomCodeVO`)
+* `POST /api/official/user/account/login/new` — Account password login (`LoginDTO` -> `LoginVO`)
+* `POST /api/official/user/account/login/equipment` — Hardware device login (`LoginDTO` -> `LoginVO`)
+* `POST /api/user/sms/validcode` & `POST /api/user/sms/login` — SMS code request & login (`SendSmsDTO` -> `SendSmsVO`, `SmsLoginDTO` -> `SmsLoginVO`)
+* `POST /api/user/query/token` — Validate active JWT token (`QueryTokenDTO` -> `QueryTokenVO`)
+* `POST /api/user/logout` — Invalidate session (`BaseResponse`)
 
-### Sync Handshake
-
-The FileLocalController is the main controller for handling cloud/nas synchronization requests.
-
-*   `POST /api/file/2/files/synchronous/start`: Start Sync Session
-*   `POST /api/file/2/files/synchronous/end`: End Sync Session
-
-### Device File Operations
-
-The FileLocalController is the main controller for handling cloud/nas synchronization requests.
-
-*   `POST /api/file/2/files/create_folder_v2`: Create Folder
-*   `POST /api/file/2/files/list_folder`: List Folder (V2)
-*   `POST /api/file/3/files/list_folder_v3`: List Folder (V3)
-*   `POST /api/file/3/files/delete_folder_v3`: Delete Folder/File
-*   `POST /api/file/3/files/query_v3`: Query File
-*   `POST /api/file/3/files/query/by/path_v3`: Query File by Path
-*   `POST /api/file/3/files/move_v3`: Move File
-*   `POST /api/file/3/files/copy_v3`: Copy File
-*   `POST /api/file/2/users/get_space_usage`: Check Capacity
-
-### Device Upload/Download
-
-The FileLocalController is the main controller for handling cloud/nas synchronization requests.
-
-*   `POST /api/file/3/files/upload/apply`: Upload Request
-*   `POST /api/file/2/files/upload/finish`: Upload Finish
-*   `POST /api/file/3/files/download_v3`: Download Request
-
-### File Conversion
-
-The FileLocalController is the main controller for handling cloud/nas synchronization requests.
-
-*   `POST /api/file/note/to/pdf`: Convert Note to PDF
-*   `POST /api/file/note/to/png`: Convert Note to PNG
-*   `POST /api/file/pdfwithmark/to/pdf`: Convert PDF with Mark to PDF
-
-### Connectivity
-
-The FileLocalController is the main controller for handling cloud/nas synchronization requests.
-
-*   `GET /api/file/query/server`: Ping Server
+### User Profile, Registration & Security
+* `POST /api/user/register` — Register user (`UserRegisterDTO` -> `BaseResponse`)
+* `POST /api/user/account/clear` — Permanently delete user account and all cloud data (`BaseResponse`)
+* `POST /api/user/query` & `GET /api/user/query/user/{userId}` — Query user profile (`UserQueryVO`, `UserQueryByIdVO`)
+* `POST /api/user/update` — Update profile attributes (`UpdateUserDTO` -> `BaseResponse`)
+* `PUT /api/user/password` & `POST /api/official/user/retrieve/password` — Change or reset password (`UpdatePasswordDTO`, `RetrievePasswordDTO`)
+* `PUT /api/user/email` — Update email address (`UpdateEmailDTO` -> `BaseResponse`)
 
 ---
 
-## 4. Advanced Features
+## 2. Web File Management (`supernote.models.file_web`, `supernote.models.file_common`)
 
-### Sharing
+Models in `supernote.models.file_web` and `supernote.models.file_common` support the ID-based directory hierarchy, recycle bin, and 3-step file uploads used by the browser UI and `supernote.client.web.WebClient`.
 
-The ShareController is the main controller for handling sharing requests.
-
-*   `POST /api/file/share/record/add`: Create Share Record
-
-### Scheduling & Calendar
-
-The ScheduleController is the main controller for handling scheduling and calendar requests.
-
-See `supernote.models.schedule` module for more information on the data models
-related to these API endpoints.
-
-
-*   **Groups:**
-    *   `POST /api/file/schedule/group`: Add Group
-    *   `PUT /api/file/schedule/group`: Update Group
-    *   `DELETE /api/file/schedule/group/{taskListId}`: Delete Group
-    *   `POST /api/file/schedule/group/clear`: Clear Group
-    *   `GET /api/file/schedule/group/{taskListId}`: Get Group
-    *   `POST /api/file/schedule/group/all`: Get All Groups
-*   **Tasks:**
-    *   `POST /api/file/schedule/task`: Add Task
-    *   `PUT /api/file/schedule/task`: Update Task
-    *   `PUT /api/file/schedule/task/list`: Batch Update Tasks
-    *   `DELETE /api/file/schedule/task/{taskId}`: Delete Task
-    *   `GET /api/file/schedule/task/{taskId}`: Get Task
-    *   `POST /api/file/schedule/task/all`: Get All Tasks
-*   **Sorting:**
-    *   `POST /api/file/schedule/sort`: Add Sort
-    *   `PUT /api/file/schedule/sort`: Update Sort
-    *   `DELETE /api/file/schedule/sort/{taskListId}`: Delete Sort
-    *   `POST /api/file/query/schedule/sort`: Get Sort
-
-### Summaries & Tags
-
-The SummaryController is the main controller for handling summaries and tags requests.
-
-*   `POST /api/file/add/summary/tag`: Add Tag
-*   `PUT /api/file/update/summary/tag`: Update Tag
-*   `DELETE /api/file/delete/summary/tag`: Delete Tag
-*   `GET /api/file/query/summary/tag`: Query Tags
-*   `POST /api/file/add/summary`: Add Summary
-*   `PUT /api/file/update/summary`: Update Summary
-*   `DELETE /api/file/delete/summary`: Delete Summary
-*   `POST /api/file/query/summary`: Query Summaries
-*   `POST /api/file/download/summary`: Download Summary
-*   `POST /api/file/upload/apply/summary`: Upload Summary
+* **Directory & Path Queries**:
+  * `POST /api/file/list/query` (`FileListQueryDTO` -> `FileListQueryVO` containing `UserFileVO` items)
+  * `POST /api/file/folder/list/query` (`FolderListQueryDTO` -> `FolderListQueryVO` containing `FolderVO` items)
+  * `POST /api/file/path/query` (`FilePathQueryDTO` -> `FilePathQueryVO`)
+  * `POST /api/file/capacity/query` (`CapacityVO`)
+* **Mutations & Search**:
+  * `POST /api/file/folder/add` (`FolderAddDTO`), `POST /api/file/rename` (`FileReNameDTO`), `POST /api/file/move` & `POST /api/file/copy` (`FileMoveAndCopyDTO`), `POST /api/file/delete` (`FileDeleteDTO`)
+  * `POST /api/file/label/list/search` (`FileLabelSearchDTO` -> `FileLabelSearchVO`)
+* **Recycle Bin**:
+  * `POST /api/file/recycle/list/query` (`RecycleFileListDTO` -> `RecycleFileListVO`)
+  * `POST /api/file/recycle/revert`, `POST /api/file/recycle/delete` (`RecycleFileDTO`), `POST /api/file/recycle/clear`
+* **Upload & Download**:
+  * `POST /api/file/upload/apply` (`FileUploadApplyDTO` -> `FileUploadApplyLocalVO`)
+  * `POST /api/file/upload/finish` (`FileUploadFinishDTO` -> `BaseResponse`)
+  * `POST /api/file/download/url` (`FileDownloadDTO` -> `FileDownloadUrlVO`)
 
 ---
 
-## 5. System & Infrastructure
+## 3. Hardware Device Synchronization (`supernote.models.file_device`)
 
-### Equipment Management
+Models in `supernote.models.file_device` implement the V2/V3 path- and ID-based synchronization protocol used by Supernote tablets and `supernote.client.device.DeviceClient`.
 
-The EquipmentController is the main controller for handling equipment management requests.
+* **Sync Session Locks**:
+  * `POST /api/file/2/files/synchronous/start` (`SynchronousStartLocalDTO` -> `SynchronousStartLocalVO`)
+  * `POST /api/file/2/files/synchronous/end` (`SynchronousEndLocalDTO` -> `SynchronousEndLocalVO`)
+* **V2/V3 File & Folder Operations**:
+  * `POST /api/file/2/files/list_folder` & `POST /api/file/3/files/list_folder_v3` (`ListFolderLocalDTO`, `ListFolderV2DTO` -> `ListFolderLocalVO` with `EntriesVO`)
+  * `POST /api/file/2/files/create_folder_v2` (`CreateFolderLocalDTO` -> `CreateFolderLocalVO`)
+  * `POST /api/file/3/files/delete_folder_v3` (`DeleteFolderLocalDTO` -> `DeleteFolderLocalVO`)
+  * `POST /api/file/3/files/query_v3` (`FileQueryLocalDTO` -> `FileQueryLocalVO`)
+  * `POST /api/file/3/files/query/by/path_v3` (`FileQueryByPathLocalDTO` -> `FileQueryByPathLocalVO`)
+  * `POST /api/file/3/files/move_v3` (`FileMoveLocalDTO` -> `FileMoveLocalVO`) & `POST /api/file/3/files/copy_v3` (`FileCopyLocalDTO` -> `FileCopyLocalVO`)
+  * `POST /api/file/2/users/get_space_usage` (`CapacityLocalDTO` -> `CapacityLocalVO`)
+* **Device Upload, Download & Conversion**:
+  * `POST /api/file/3/files/upload/apply` (`FileUploadApplyLocalDTO` -> `FileUploadApplyLocalVO`)
+  * `POST /api/file/2/files/upload/finish` (`FileUploadFinishLocalDTO` -> `FileUploadFinishLocalVO`)
+  * `POST /api/file/3/files/download_v3` (`FileDownloadLocalDTO` -> `FileDownloadLocalVO`)
+  * `POST /api/file/note/to/png` (`PngDTO` -> `NoteToPngVO`) & `POST /api/file/note/to/pdf` (`PdfDTO` -> `NoteToPdfVO`)
 
-*   `POST /api/terminal/user/activateEquipment`: Activate Device
-*   `POST /api/terminal/user/bindEquipment`: Bind Device
-*   `POST /api/terminal/equipment/unlink`: Unbind Device
-*   `POST /api/equipment/bind/status`: Check Bind Status
-*   `POST /api/equipment/query/user/equipment/deleteApi`: Query Equipment List
-*   `POST /api/equipment/query/by/equipmentno`: Query by Serial No
-*   `GET /api/equipment/query/by/{userId}`: Query by User ID
+---
 
-### OSS (Object Storage)
+## 4. Schedule & To-Do Tasks (`supernote.models.schedule`)
 
-The OssLocalController is the main controller for handling object storage requests.
+Models in `supernote.models.schedule` represent task groups (`ScheduleTaskGroupItem`) and tasks (`ScheduleTaskInfo`), consumed by `supernote.client.schedule.ScheduleClient`. See `supernote.guides.schedule_api` for the complete Schedule API and `.ics` feed specification.
 
-*   `POST /api/oss/generate/upload/url`: Get Upload URL
-*   `POST /api/oss/upload`: Upload File
-*   `POST /api/oss/upload/part`: Multipart Upload
-*   `POST /api/oss/generate/download/url`: Get Download URL
-*   `GET /api/oss/download`: Download File
+* **Task Groups**: `AddScheduleTaskGroupDTO` -> `AddScheduleTaskGroupVO`, `UpdateScheduleTaskGroupDTO`, `ClearScheduleTaskGroupDTO`, `ScheduleTaskGroupDTO` -> `ScheduleTaskGroupVO`, `GetScheduleTaskGroupVO`
+* **Tasks**: `AddScheduleTaskDTO` -> `AddScheduleTaskVO`, `UpdateScheduleTaskDTO` -> `UpdateScheduleTaskVO`, `UpdateScheduleTaskListDTO` (batch updates), `ScheduleTaskDTO` -> `ScheduleTaskAllVO`, `ScheduleTaskVO`
+* **Sort Ordering**: `ScheduleSortDTO`, `UpdateScheduleSortDTO`, `QueryScheduleSortDTO` -> `ScheduleSortVO`
 
-### Configuration & Logs
+---
 
-Other misc controllers (EmailServerController, SensitiveOperationController, DictionaryController)
+## 5. Summaries & Tags (`supernote.models.summary`)
 
-*   `POST /api/save/email/config`: Save Email Config
-*   `GET /api/query/email/config`: Query Email Config
-*   `POST /api/user/query/sensitive/record`: Query Sensitive Op Records
-*   `POST /api/system/base/dictionary/deleteApi`: Query Dictionary
+Models in `supernote.models.summary` represent device-authored handwritten digests and server-synthesized AI summaries (`SummaryItem`), summary groups (`SummaryGroupItem`), and tags (`SummaryTagItem`), consumed by `supernote.client.summary.SummaryClient`. See `supernote.guides.summary_api` for detailed workflow documentation.
+
+* **Tags**: `AddSummaryTagDTO` -> `AddSummaryTagVO`, `UpdateSummaryTagDTO`, `DeleteSummaryTagDTO`, `QuerySummaryTagVO`
+* **Summary Groups**: `AddSummaryGroupDTO` -> `AddSummaryGroupVO`, `UpdateSummaryGroupDTO`, `DeleteSummaryGroupDTO`, `QuerySummaryGroupDTO` -> `QuerySummaryGroupVO`, `QuerySummaryMD5HashVO`
+* **Summaries**: `AddSummaryDTO` -> `AddSummaryVO`, `UpdateSummaryDTO`, `DeleteSummaryDTO`, `QuerySummaryDTO` -> `QuerySummaryVO`, `QuerySummaryByIdVO`, `UploadSummaryApplyDTO` -> `UploadSummaryApplyVO`, `DownloadSummaryDTO` -> `DownloadSummaryVO`
+
+---
+
+## 6. Server Extensions & Semantic Search (`supernote.models.extended`)
+
+Models in `supernote.models.extended` power the custom `/api/extended/*` intelligence endpoints on the self-hosted server, consumed by `supernote.client.extended.ExtendedClient` and `supernote.client.admin.AdminClient`. See `supernote.guides.note_processing_design` for the background pipeline architecture.
+
+* **Hybrid Semantic Search** (`POST /api/extended/search`): `WebSearchRequestDTO` (query text, `top_k`, `name_filter`, `date_after`, `date_before`) -> `WebSearchResponseVO` (list of `SearchResultChunkVO` with `file_id`, `file_path`, `page_index`, `page_id`, `score`, `text_preview`, `UpdatedDate`)
+* **OCR Page Transcripts** (`POST /api/extended/file/transcript`): `WebTranscriptRequestDTO` (optional `start_index` / `end_index`) -> `WebTranscriptResponseVO` (`transcript` and per-page `PageTranscriptVO` list)
+* **Web Summaries** (`POST /api/extended/file/summary/list`): `WebSummaryListRequestDTO` -> `WebSummaryListVO`
+* **Processing Status & System Tasks**: `FileProcessingStatusDTO` -> `FileProcessingStatusVO` (`POST /api/extended/file/status`) and `SystemTaskListVO` (`GET /api/extended/system/tasks`)
+
+---
+
+## 7. Outbound Webhooks (`supernote.models.webhook`)
+
+Models in `supernote.models.webhook` define the JSON payloads dispatched by `supernote.server.services.webhook.WebhookService` when a `.note` file completes synchronization or background AI processing:
+
+* **Event Constants**: `EVENT_NOTE_SYNC_COMPLETED` (`"note.sync_completed"`) and `EVENT_NOTE_PROCESSING_COMPLETED` (`"note.processing_completed"`)
+* **Payloads**: `WebhookPayload` (`event`, `timestamp`, `user_id`, and `file: WebhookFileVO` containing `id`, `name`, and `path`)
+
+See `supernote.guides.webhooks_and_integrations` for HMAC-SHA256 signature verification (`X-Supernote-Signature`) and consumer examples.
+
+---
+
+## 8. Real-Time Socket.IO Events (`supernote.models.socket`)
+
+Models in `supernote.models.socket` define the real-time event protocol between the server's `/socket.io` namespace and connected clients (`supernote.client.socket.SupernoteSocketClient`):
+
+* **Handshake & Authentication**: `SocketHandshakeParams` (`token`, `timeStamp`, `equipment`, `equipmentNo`, `userId`, `version`, `sign`)
+* **Message Envelope**: `SocketIoClientMessage` (`code: SocketIoMessageCode`, `msg_type: SocketIoMessageType`, `equipment_no`, `data`), `SocketIoEvent`, and `SocketIoAction`
+* **Typed Event Payloads**:
+  * `FILE-SYN`: `SocketMessageData` (file/folder creation, modification, deletion, and rename notifications)
+  * `TASK-SYN`: `SocketTaskMessageData` (schedule task and group synchronization prompts)
+  * `DIGEST-SYN`: `SocketDigestMessageData` (summary/digest synchronization notifications)
+
+---
+
+## 9. Equipment & System Infrastructure (`supernote.models.equipment`, `supernote.models.system`)
+
+* **Equipment Management (`supernote.models.equipment`)**: Hardware activation and binding DTOs/VOs (`ActivateEquipmentDTO`, `BindEquipmentDTO`, `UnbindEquipmentDTO`, `QueryEquipmentDTO`, `UserEquipmentDTO` -> `UserEquipmentVO`).
+* **System, OSS & Integrity (`supernote.models.system`)**: Local OSS single/multipart upload models (`UploadFileVO`, `FileChunkParams`, `FileChunkVO`), background processor queue status (`QueueStatusVO`), and two-way storage integrity reports (`IntegrityReportVO`, `MissingBlobVO`, `SizeMismatchVO`, `OrphanFileVO`).

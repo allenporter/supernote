@@ -1,3 +1,12 @@
+"""Public system discovery, health check, and device capability routes.
+
+Exposes unauthenticated endpoints (`@public_route`) used by Supernote tablets and load
+balancers to verify server availability and protocol limits:
+- `GET /api/health`: Lightweight liveness probe.
+- `POST /api/official/system/base/param`: Returns `ReferenceRespVO` (`DEFAULT_PARAMS`) when a device probes whether the host is a valid Supernote Private Cloud instance.
+- `GET /api/csrftoken`: Issues a random `X-XSRF-TOKEN` header for initial login handshakes.
+"""
+
 import secrets
 
 from aiohttp import web

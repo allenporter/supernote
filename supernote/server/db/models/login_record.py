@@ -1,3 +1,9 @@
+"""ORM model (`LoginRecordDO`) for user authentication audit logs (`login_records` table).
+
+Records login timestamps, client IP addresses, authentication methods, and equipment
+identifiers for each login event in `supernote.server.services.user.UserService`.
+"""
+
 from sqlalchemy import ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 

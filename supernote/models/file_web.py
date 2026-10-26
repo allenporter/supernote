@@ -1,3 +1,13 @@
+"""Data models for the Supernote Web UI file management and recycle bin APIs.
+
+This module defines request DTOs and response VOs for ID-based directory queries (`FileListQueryDTO`,
+`FileListQueryVO`, `UserFileVO`, `FolderListQueryDTO`, `FolderListQueryVO`), breadcrumb resolution
+(`FilePathQueryDTO`, `FilePathQueryVO`), file mutations (`FolderAddDTO`, `FileReNameDTO`,
+`FileMoveAndCopyDTO`, `FileDeleteDTO`), keyword search (`FileLabelSearchDTO`, `FileLabelSearchVO`),
+and recycle bin management (`RecycleFileListDTO`, `RecycleFileListVO`, `RecycleFileDTO`). Consumed by
+`supernote.client.web.WebClient`.
+"""
+
 from dataclasses import dataclass, field
 
 from mashumaro import field_options

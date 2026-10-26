@@ -1,3 +1,10 @@
+"""Fixed-window counter rate limiter backed by `supernote.server.services.coordination.CoordinationService`.
+
+`RateLimiter` enforces per-IP and per-account request thresholds on authentication and
+password reset endpoints in `supernote.server.routes.auth`, raising
+`supernote.server.exceptions.RateLimitExceeded` when a window limit is exceeded.
+"""
+
 import time
 
 from supernote.models.base import ErrorCode

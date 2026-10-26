@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Classes for Suernote file format.
+"""Domain model classes and constants for the Supernote `.note` binary format.
 
-The Supernote file format relies on a "Footer-first" parsing strategy.
-The last 4 bytes of the file (the "Tail") contain the offset to the Footer Block.
-The Footer Block then contains references (offsets) to all other metadata blocks
-(Pages, Titles, Keywords, etc.) and the Header Block.
+The Supernote file format relies on a "Footer-first" parsing strategy: the last 4 bytes of the
+file (the "Tail") store the byte offset of the Footer Block, which indexes all metadata blocks
+(`Page`, `Layer`, `Title`, `Keyword`, `Link`, `Cover`, and the Header Block). This module defines
+the in-memory `Notebook` and `SupernoteMetadata` structures populated by `supernote.notebook.parser`.
+See `supernote.notebook` and `supernote.guides.notebook_spec` for format specifications.
 """
 
 import json

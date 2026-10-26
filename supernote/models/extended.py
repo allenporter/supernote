@@ -1,7 +1,11 @@
-"""Module for server-specific extension models.
+"""Data models for self-hosted server intelligence extensions (`/api/extended/*`).
 
-These are for APIs that are not part of the standard API offering, specific
-to our new server.
+This module defines request DTOs and response VOs for features specific to the self-hosted Supernote
+server, including hybrid semantic search (`WebSearchRequestDTO`, `WebSearchResponseVO`,
+`SearchResultChunkVO`), page OCR transcripts (`WebTranscriptRequestDTO`, `WebTranscriptResponseVO`,
+`PageTranscriptVO`), AI summary listings (`WebSummaryListRequestDTO`, `WebSummaryListVO`), and
+background task inspection (`FileProcessingStatusDTO`, `FileProcessingStatusVO`, `SystemTaskVO`,
+`SystemTaskListVO`). Consumed by `supernote.client.extended.ExtendedClient`.
 """
 
 from dataclasses import dataclass, field

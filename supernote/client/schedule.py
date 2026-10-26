@@ -1,3 +1,12 @@
+"""Schedule and To-Do task management client (`ScheduleClient`).
+
+This module provides `supernote.client.schedule.ScheduleClient` for managing task groups
+(`create_group`, `list_groups`, `list_all_groups`, `delete_group`), individual and batch tasks
+(`create_task`, `list_tasks`, `list_all_tasks`, `update_task`, `batch_update_tasks`, `delete_task`),
+and RFC 5545 `.ics` calendar feeds (`get_ical_feed`). Request and response payloads are modeled in
+`supernote.models.schedule`. See `supernote.client` and `supernote.guides.schedule_api` for details.
+"""
+
 import time
 from collections.abc import AsyncIterator
 

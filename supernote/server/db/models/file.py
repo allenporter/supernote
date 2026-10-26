@@ -1,3 +1,12 @@
+"""ORM models (`UserFileDO` and `RecycleFileDO`) for the Virtual File System.
+
+`UserFileDO` (`f_user_file`) stores the per-user hierarchical directory tree (`directory_id`),
+file metadata, MD5 checksums, and content-addressable blob keys (`storage_key` in
+`USER_DATA_BUCKET`). `RecycleFileDO` (`f_recycle_file`) stores soft-deleted entries subject
+to the 30-day retention window (`RECYCLE_RETENTION_MS`). Managed by
+`supernote.server.services.vfs.VirtualFileSystem` and `supernote.server.services.file.FileService`.
+"""
+
 import time
 
 from sqlalchemy import BigInteger, Index, String

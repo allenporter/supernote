@@ -273,7 +273,9 @@ async def listen_events(host: str, token: str) -> None:
 
 from . import (
     admin,
+    api,
     auth,
+    client,
     device,
     exceptions,
     extended,
@@ -290,7 +292,9 @@ __all__ = [
     "Client",
     "Supernote",
     "admin",
+    "api",
     "auth",
+    "client",
     "device",
     "exceptions",
     "extended",

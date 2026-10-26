@@ -1,4 +1,11 @@
-"""Main CLI entry point."""
+"""Top-level `supernote` CLI dispatcher and lazy subparser loader.
+
+This module defines `main()`, the entry point for the `supernote` command-line executable. It
+lazily loads the four subcommand modules (`supernote.cli.notebook`, `supernote.cli.client`,
+`supernote.cli.server`, and `supernote.cli.admin`) so that lightweight commands (like `supernote notebook`)
+still work even when optional extras (`[client]` or `[server]`) are not installed.
+See `supernote.cli` and `supernote.guides.cli_reference` for full command usage.
+"""
 
 import argparse
 import importlib

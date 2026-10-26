@@ -1,4 +1,13 @@
-"""Socket.IO server manager and event handling for Supernote server."""
+"""Socket.IO real-time server manager (`setup_socketio`) and device push broadcaster.
+
+Attaches an `AsyncServer` (`/socket.io/`) to the `aiohttp` application in
+`supernote.server.app.create_app`, authenticates client handshakes via
+`supernote.server.socket_auth.verify_handshake_signature` and
+`supernote.server.services.user.UserService`, responds to device heartbeat pings
+(`ratta_ping`), and subscribes to `supernote.server.events.LocalEventBus` to broadcast
+file, summary (`digestMessage`), and task (`scheduleTaskMessage`) change notifications
+to connected hardware tablets and Web UI sessions.
+"""
 
 import logging
 import time

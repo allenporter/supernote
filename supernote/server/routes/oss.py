@@ -1,4 +1,14 @@
-"""Handlers for the object storage service."""
+"""Local Object Storage Service (OSS) routes (`/api/oss/*`) for signed binary transfers.
+
+Implements HMAC-signed (`supernote.server.utils.url_signer.UrlSigner`) upload and download
+endpoints that emulate the cloud object storage layer expected by Supernote devices and the
+Web UI:
+- `POST /api/oss/upload`: Single-shot multipart file upload to `USER_DATA_BUCKET`.
+- `POST /api/oss/upload/part` and `POST /api/oss/upload/complete`: Chunked multipart upload assembly.
+- `GET /api/oss/download`: Byte-range streaming downloads from `USER_DATA_BUCKET` (`supernote.server.services.blob.BlobStorage`).
+- `GET /api/oss/cache`: Signed delivery of cached PNGs and converted PDFs from `CACHE_BUCKET`.
+- `POST /api/oss/summary/upload` and `GET /api/oss/summary/download`: Summary handwriting blob transfer.
+"""
 
 import asyncio
 import logging

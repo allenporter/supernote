@@ -1,3 +1,14 @@
+"""CRUD, group hierarchy, and tag management service for notebook summaries.
+
+`SummaryService` manages `SummaryDO` (both summary groups and individual AI/handwritten
+summaries) and `SummaryTagDO` records, enforces soft-delete retention windows
+(`purge_expired_summaries`), and emits `SummaryUpsertedEvent`, `SummaryDeletedEvent`,
+and `BlobCleanupEvent` onto `supernote.server.events.LocalEventBus`. Used by
+`supernote.server.routes.summary`, `supernote.server.routes.extended`, and
+`supernote.server.services.processor_modules.summary.SummaryModule`.
+See `supernote.guides.summary_api`.
+"""
+
 import hashlib
 import logging
 import time
