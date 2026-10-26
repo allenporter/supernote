@@ -2,6 +2,7 @@
 
 import logging
 import time
+from datetime import timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -17,6 +18,7 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.services.schedule import ScheduleService
+from supernote.server.utils.note_content import infer_page_date
 from supernote.server.utils.task_parser import (
     ExtractedPageTask,
     ExtractedTaskState,
@@ -49,6 +51,14 @@ def _build_link_b64(
         task_title=task_title,
     )
     return dto.to_b64()
+
+
+def _infer_page_due_time_ms(page_id: str) -> int | None:
+    """Convert the date inferred from `page_id` into UTC start-of-day epoch milliseconds."""
+    inferred_dt = infer_page_date(page_id)
+    if inferred_dt is None:
+        return None
+    return int(inferred_dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
 
 
 class TaskExtractionModule(ProcessorModule):
@@ -165,14 +175,13 @@ class TaskExtractionModule(ProcessorModule):
             or f"/Note/{file_name}"
         )
 
-        parsed_pages: list[tuple[NotePageContentDO, list[ExtractedPageTask]]] = [
+        parsed_pages: list[
+            tuple[NotePageContentDO, int | None, list[ExtractedPageTask]]
+        ] = [
             (
                 page,
-                parse_page_tasks(
-                    page.text_content,
-                    page_id=page.page_id,
-                    file_name=file_name,
-                ),
+                _infer_page_due_time_ms(page.page_id),
+                parse_page_tasks(page.text_content),
             )
             for page in pages
         ]
@@ -200,7 +209,7 @@ class TaskExtractionModule(ProcessorModule):
             # ------------------------------------------------------------------
             # Phase 1: Reconcile existing per-page rows on their own page
             # ------------------------------------------------------------------
-            for page, extracted_tasks in parsed_pages:
+            for page, page_due_time, extracted_tasks in parsed_pages:
                 for extracted in extracted_tasks:
                     key = (page.page_id, extracted.normalized_title)
                     seen_page_keys.add(key)
@@ -294,9 +303,9 @@ class TaskExtractionModule(ProcessorModule):
                         updates["importance"] = new_importance
                         sync_row.last_importance = new_importance
 
-                    if extracted.inferred_due_time != sync_row.last_due_time:
-                        updates["due_time"] = extracted.inferred_due_time
-                        sync_row.last_due_time = extracted.inferred_due_time
+                    if page_due_time != sync_row.last_due_time:
+                        updates["due_time"] = page_due_time
+                        sync_row.last_due_time = page_due_time
 
                     new_links = _build_link_b64(
                         file_path, file_id, page, extracted.raw_title
@@ -315,7 +324,7 @@ class TaskExtractionModule(ProcessorModule):
             # ------------------------------------------------------------------
             # Phase 2: New page appearances & cross-page migrations
             # ------------------------------------------------------------------
-            for page, extracted_tasks in parsed_pages:
+            for page, page_due_time, extracted_tasks in parsed_pages:
                 for extracted in extracted_tasks:
                     key = (page.page_id, extracted.normalized_title)
                     if key in handled_in_phase1:
@@ -382,8 +391,8 @@ class TaskExtractionModule(ProcessorModule):
                             else claimed_candidate.last_importance
                         )
                         merged_due_time = (
-                            extracted.inferred_due_time
-                            if extracted.inferred_due_time is not None
+                            page_due_time
+                            if page_due_time is not None
                             else claimed_candidate.last_due_time
                         )
 
@@ -477,7 +486,7 @@ class TaskExtractionModule(ProcessorModule):
                         detail=extracted.detail or "",
                         status="needsAction",
                         importance=importance,
-                        due_time=extracted.inferred_due_time,
+                        due_time=page_due_time,
                         links=links_b64,
                     )
 
@@ -495,7 +504,7 @@ class TaskExtractionModule(ProcessorModule):
                             last_ocr_state=extracted.state.value,
                             last_detail=extracted.detail,
                             last_importance=importance,
-                            last_due_time=extracted.inferred_due_time,
+                            last_due_time=page_due_time,
                             create_time=now_ms,
                             update_time=now_ms,
                         )
@@ -509,7 +518,7 @@ class TaskExtractionModule(ProcessorModule):
                         sync_row.last_ocr_state = extracted.state.value
                         sync_row.last_detail = extracted.detail
                         sync_row.last_importance = importance
-                        sync_row.last_due_time = extracted.inferred_due_time
+                        sync_row.last_due_time = page_due_time
                         sync_row.update_time = now_ms
 
             # ------------------------------------------------------------------

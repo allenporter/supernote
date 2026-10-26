@@ -145,7 +145,7 @@ async def test_bullet_journal_migration_and_superseded_tombstone(
             NotePageContentDO(
                 file_id=file_id,
                 page_index=0,
-                page_id="P_MON",
+                page_id="P20261026090000MON",
                 content_hash="h1",
                 text_content="# 2026-10-26\n• Call Bob\n  - Ask about contract\n",
             )
@@ -164,7 +164,7 @@ async def test_bullet_journal_migration_and_superseded_tombstone(
             await session.execute(
                 select(NotePageContentDO).where(
                     NotePageContentDO.file_id == file_id,
-                    NotePageContentDO.page_id == "P_MON",
+                    NotePageContentDO.page_id == "P20261026090000MON",
                 )
             )
         ).scalar_one()
@@ -186,7 +186,7 @@ async def test_bullet_journal_migration_and_superseded_tombstone(
             NotePageContentDO(
                 file_id=file_id,
                 page_index=1,
-                page_id="P_TUE",
+                page_id="P20261027090000TUE",
                 content_hash="h2",
                 text_content="# 2026-10-27\n• Call Bob\n",
             )
@@ -207,7 +207,7 @@ async def test_bullet_journal_migration_and_superseded_tombstone(
     assert migrated.links is not None
     link = ScheduleTaskLinkDTO.from_b64(migrated.links)
     assert link.page == 2
-    assert link.page_id == "P_TUE"
+    assert link.page_id == "P20261027090000TUE"
 
     # Verify Page 1's NoteTaskSyncDO row is tombstoned as SUPERSEDED and Page 2 is ACTIVE
     async with session_manager.session() as session:
@@ -223,9 +223,9 @@ async def test_bullet_journal_migration_and_superseded_tombstone(
             .all()
         )
         assert len(sync_rows) == 2
-        assert sync_rows[0].page_id == "P_MON"
+        assert sync_rows[0].page_id == "P20261026090000MON"
         assert sync_rows[0].sync_status == "SUPERSEDED"
-        assert sync_rows[1].page_id == "P_TUE"
+        assert sync_rows[1].page_id == "P20261027090000TUE"
         assert sync_rows[1].sync_status == "ACTIVE"
 
     # Step 4: Re-syncing again does not duplicate or revert link to Page 1
