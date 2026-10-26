@@ -71,6 +71,7 @@ class ProcessorService:
 
         self.queue: asyncio.Queue[int] = asyncio.Queue()  # Queue of file_ids
         self.processing_files: set[int] = set()
+        self._file_locks: dict[int, asyncio.Lock] = {}
         self.workers: list[asyncio.Task] = []
         self.polling_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
@@ -510,6 +511,15 @@ class ProcessorService:
         task_types: set[TaskType] | None = None,
     ) -> bool:
         """Orchestrate the processing pipeline (or a subset of task_types) for a single file."""
+        lock = self._file_locks.setdefault(file_id, asyncio.Lock())
+        async with lock:
+            return await self._process_file_locked(file_id, task_types=task_types)
+
+    async def _process_file_locked(
+        self,
+        file_id: int,
+        task_types: set[TaskType] | None = None,
+    ) -> bool:
         logger.info(f"Processing file {file_id}...")
 
         if not self.global_pre_modules:
