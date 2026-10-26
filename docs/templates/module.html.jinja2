@@ -1,0 +1,180 @@
+{% extends "default/module.html.jinja2" %}
+
+{% block title %}
+    {%- if module.modulename == "supernote" -%}
+        Supernote Private Cloud & Knowledge Hub — Documentation
+    {%- elif module.modulename in nav_page_titles -%}
+        {{ nav_page_titles[module.modulename] }} — Supernote Documentation
+    {%- else -%}
+        {{ module.modulename }} — Supernote API Reference
+    {%- endif -%}
+{% endblock %}
+
+{% block nav %}
+    {% set rootprefix = "../" * module.modulename.count(".") if module else "" %}
+
+    <div class="sn-brand">
+        <a href="{{ rootprefix }}supernote.html" class="sn-brand-link">
+            <span class="sn-brand-icon">📓</span>
+            <div class="sn-brand-text">
+                <span class="sn-brand-title">Supernote</span>
+                <span class="sn-brand-subtitle">Private Cloud &amp; SDK</span>
+            </div>
+        </a>
+    </div>
+
+    {% block search_box %}
+        {{ super() }}
+    {% endblock %}
+
+    {% set toc_html = module.docstring | to_markdown | to_html | attr("toc_html") %}
+
+    <div class="sn-nav-sections">
+        {# Overview link #}
+        <ul class="sn-nav-list sn-nav-top">
+            <li class="{{ 'active' if module.modulename == 'supernote' else '' }}">
+                <a href="{{ rootprefix }}supernote.html" class="sn-nav-item {{ 'current' if module.modulename == 'supernote' else '' }}">
+                    Overview &amp; Quick Start
+                </a>
+                {% if module.modulename == "supernote" and toc_html %}
+                    <div class="sn-inline-toc">
+                        {{ toc_html | safe }}
+                    </div>
+                {% endif %}
+            </li>
+        </ul>
+
+        {# Guide Sections #}
+        {% for section in nav_guide_sections %}
+            <div class="sn-nav-group">
+                <h2 class="sn-nav-heading">{{ section.title }}</h2>
+                <ul class="sn-nav-list">
+                    {% for item in section["items"] if item.module in all_modules %}
+                        {% set is_current = (module.modulename == item.module) %}
+                        <li class="{{ 'active' if is_current else '' }}">
+                            <a href="{{ rootprefix }}{{ item.module.replace('.', '/') }}.html"
+                               class="sn-nav-item {{ 'current' if is_current else '' }}">
+                                {{ item.title }}
+                            </a>
+                            {% if is_current and toc_html %}
+                                <div class="sn-inline-toc">
+                                    {{ toc_html | safe }}
+                                </div>
+                            {% endif %}
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endfor %}
+
+        {# Python Packages & API Reference Tree #}
+        <div class="sn-nav-group">
+            <h2 class="sn-nav-heading">Python Packages &amp; API</h2>
+            <ul class="sn-nav-list sn-api-tree">
+                {% for pkg in nav_api_packages if pkg.module in all_modules %}
+                    {% set is_pkg_active = (module.modulename == pkg.module or module.modulename.startswith(pkg.module + ".")) %}
+                    {% set is_pkg_current = (module.modulename == pkg.module) %}
+                    <li class="sn-tree-node {{ 'expanded' if is_pkg_active else '' }}">
+                        <div class="sn-tree-row">
+                            <a href="{{ rootprefix }}{{ pkg.module.replace('.', '/') }}.html"
+                               class="sn-nav-item sn-pkg-link {{ 'current' if is_pkg_current else ('active-branch' if is_pkg_active else '') }}">
+                                <span class="sn-pkg-label">{{ pkg.title }}</span>
+                                <code class="sn-pkg-code">{{ pkg.short }}</code>
+                            </a>
+                        </div>
+                        {% if is_pkg_current and toc_html %}
+                            <div class="sn-inline-toc">
+                                {{ toc_html | safe }}
+                            </div>
+                        {% endif %}
+                        {% set pkg_mod = all_modules.get(pkg.module) %}
+                        {% if is_pkg_active and pkg_mod and pkg_mod.submodules %}
+                            <ul class="sn-subnav-list">
+                                {% for sub in pkg_mod.submodules if sub.fullname in all_modules and not sub.name.startswith("_") %}
+                                    {% set is_sub_current = (module.modulename == sub.fullname) %}
+                                    {% set is_sub_active = (is_sub_current or module.modulename.startswith(sub.fullname + ".")) %}
+                                    <li>
+                                        <a href="{{ rootprefix }}{{ sub.fullname.replace('.', '/') }}.html"
+                                           class="sn-subnav-item {{ 'current' if is_sub_current else ('active-branch' if is_sub_active else '') }}">
+                                            {{ sub.name }}
+                                        </a>
+                                        {% if is_sub_active and sub.submodules %}
+                                            <ul class="sn-subnav-list sn-subnav-level2">
+                                                {% for sub2 in sub.submodules if sub2.fullname in all_modules and not sub2.name.startswith("_") %}
+                                                    {% set is_sub2_current = (module.modulename == sub2.fullname) %}
+                                                    <li>
+                                                        <a href="{{ rootprefix }}{{ sub2.fullname.replace('.', '/') }}.html"
+                                                           class="sn-subnav-item {{ 'current' if is_sub2_current else '' }}">
+                                                            {{ sub2.name }}
+                                                        </a>
+                                                    </li>
+                                                {% endfor %}
+                                            </ul>
+                                        {% endif %}
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        {# On-page Table of Contents & API Members for deeper API modules #}
+        {% set is_guide = module.modulename.startswith("supernote.guides") %}
+        {% if not is_guide and module.modulename != "supernote" %}
+            {% if toc_html and module.modulename not in ["supernote.server", "supernote.client", "supernote.notebook", "supernote.models", "supernote.cli"] %}
+                <div class="sn-nav-group">
+                    <h2 class="sn-nav-heading">On This Page</h2>
+                    <div class="sn-inline-toc">
+                        {{ toc_html | safe }}
+                    </div>
+                </div>
+            {% endif %}
+            {% if module.members %}
+                {% set members_html = nav_members(module.members.values()) | trim %}
+                {% if members_html and members_html != '<ul class="memberlist"></ul>' %}
+                    <div class="sn-nav-group">
+                        <h2 class="sn-nav-heading">API Symbols</h2>
+                        {{ members_html | safe }}
+                    </div>
+                {% endif %}
+            {% endif %}
+        {% endif %}
+    </div>
+
+    {% block nav_footer %}
+        {{ super() }}
+    {% endblock %}
+
+    {% block attribution %}
+        {{ super() }}
+    {% endblock %}
+{% endblock nav %}
+
+{% block module_info %}
+    {% set is_guide = module.modulename.startswith("supernote.guides") %}
+    {% set is_home = (module.modulename == "supernote") %}
+    <section class="module-info {{ 'sn-guide-page' if (is_guide or is_home) else 'sn-api-page' }}">
+        {% block edit_button %}
+            {% if edit_url %}
+                <a class="pdoc-button git-button" href="{{ edit_url }}">Edit on GitHub</a>
+            {% endif %}
+        {% endblock %}
+        {% if not is_guide and not is_home %}
+            {{ module_name() }}
+        {% elif is_guide and module.modulename != "supernote.guides" %}
+            <div class="sn-guide-breadcrumb">
+                <a href="{{ '../' * module.modulename.count('.') }}supernote.html">Documentation</a>
+                <span>/</span>
+                <span>{{ nav_page_titles.get(module.modulename, module.name) }}</span>
+            </div>
+        {% endif %}
+        {{ docstring(module) }}
+        {% if not is_guide and not is_home %}
+            {{ view_source_state(module) }}
+            {{ view_source_button(module) }}
+            {{ view_source_code(module) }}
+        {% endif %}
+    </section>
+{% endblock %}

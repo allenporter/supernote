@@ -6,10 +6,16 @@ operations provided by the server.
 
 __all__ = [
     "blob",
+    "conversion",
     "coordination",
     "file",
-    "state",
-    "storage",
+    "ical_export",
+    "integrity",
+    "processor",
+    "processor_modules",
+    "schedule",
+    "search",
+    "summary",
     "user",
     "vfs",
     "webhook",

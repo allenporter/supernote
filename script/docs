@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# script/docs: Build multi-level documentation site with pdoc
+
+set -e
+
+cd "$(dirname "$0")/.."
+
+echo "==> Building documentation with pdoc..."
+
+if command -v uv >/dev/null 2>&1; then
+  uv run --no-sync python script/build_docs.py "$@"
+else
+  python3 script/build_docs.py "$@"
+fi

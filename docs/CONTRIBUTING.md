@@ -17,9 +17,9 @@ This project uses `pytest` and `pytest-asyncio` for testing.
 
 ### Typing & Data Models
 
-- **Dataclasses**: Use standard Python `dataclasses`.
+- **Dataclasses**: Use standard Python `dataclasses` with `DataClassORJSONMixin`.
 - **Serialization**: Use `mashumaro`.
-- **Strictness**: Define explicit types for all DTOs in `supernote/server/models/`.
+- **Strictness**: Define explicit types for all DTOs in `supernote.models`.
 
 ### Server Architecture
 
@@ -50,6 +50,7 @@ This script will initialize a virtual environment using `uv`, install dependenci
 | `script/update` | Pulls latest changes and re-runs bootstrap. |
 | `script/test` | Runs the full test suite using `pytest`. |
 | `script/lint` | Runs linters and style checks via `pre-commit`. |
+| `script/docs` | Builds or live-serves the multi-level `pdoc` documentation site (`./script/docs -o site/` or `./script/docs --serve`). |
 | `script/server` | Starts an ephemeral development server. |
 
 ---
