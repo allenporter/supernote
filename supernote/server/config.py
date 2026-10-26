@@ -1,9 +1,7 @@
 import logging
 import os
-import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
 from urllib.parse import urlsplit
 
 from mashumaro.config import TO_DICT_ADD_OMIT_NONE_FLAG, BaseConfig
@@ -414,17 +412,16 @@ class ServerConfig(DataClassYAMLMixin):
             except Exception as e:
                 logger.warning(f"Failed to load config file {config_file}: {e}")
 
-        # 4. JWT Secret priority: Env > Config > Random(in-memory only)
+        # 4. JWT Secret priority: Env > Config > Database (CoordinationService)
         env_secret = os.getenv("SUPERNOTE_JWT_SECRET")
         if env_secret:
             logger.info("Using SUPERNOTE_JWT_SECRET")
             config.auth.secret_key = env_secret
 
         if not config.auth.secret_key:
-            logger.warning(
-                "No JWT secret key configured. Using a temporary in-memory key."
+            logger.info(
+                "No JWT secret key configured; will use persistent database key."
             )
-            config.auth.secret_key = secrets.token_hex(32)
 
         # Apply other env var overrides
         if os.getenv("SUPERNOTE_HOST"):
@@ -586,11 +583,6 @@ class ServerConfig(DataClassYAMLMixin):
             config.trace_log_file = str(
                 Path(config.storage_dir) / "system" / "trace.log"
             )
-
-        if not config_file.exists():
-            logger.info(f"Saving config to {config_file}")
-            config_file.parent.mkdir(parents=True, exist_ok=True)
-            config_file.write_text(cast(str, config.to_yaml()))
 
         return config
 

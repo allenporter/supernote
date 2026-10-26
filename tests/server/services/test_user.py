@@ -19,7 +19,7 @@ from supernote.server.config import AuthConfig, ServerConfig
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.coordination import CoordinationService
-from supernote.server.services.user import UserService
+from supernote.server.services.user import JWT_SECRET_KEY, UserService
 from supernote.server.utils.hashing import hash_with_salt
 
 
@@ -703,3 +703,65 @@ async def test_check_user_server_and_registration(user_service: UserService) -> 
         error_code="E0018",
         error_msg="User not found",
     )
+
+
+async def test_jwt_secret_key_persisted_in_database_across_restarts(
+    session_manager: DatabaseSessionManager,
+    coordination_service: CoordinationService,
+) -> None:
+    """When AuthConfig.secret_key is empty, UserService generates and persists system:jwt_secret_key across restarts."""
+    service1 = UserService(
+        AuthConfig(secret_key="", enable_registration=True),
+        coordination_service,
+        session_manager,
+    )
+    pw_md5 = hashlib.md5(b"password123").hexdigest()
+    email = "persist_jwt@example.com"
+    await service1.register(UserRegisterDTO(email=email, password=pw_md5))
+
+    token = await service1.create_session(email, equipment_no="SN-PERSIST")
+    persisted_secret = await coordination_service.get_value(JWT_SECRET_KEY)
+    assert persisted_secret is not None
+    assert len(persisted_secret) == 64
+    assert await service1.get_secret_key() == persisted_secret
+
+    # Simulate a server restart with a fresh AuthConfig(secret_key="") sharing the same DB / CoordinationService
+    service2 = UserService(
+        AuthConfig(secret_key="", enable_registration=True),
+        coordination_service,
+        session_manager,
+    )
+    assert await service2.get_secret_key() == persisted_secret
+
+    state = await service2.verify_token(token)
+    assert state is not None
+    assert state.email == email
+    assert state.equipment_no == "SN-PERSIST"
+
+    # Logout via the second instance also decodes and revokes the token using the persisted secret
+    await service2.logout(token)
+    assert await service2.verify_token(token) is None
+
+
+async def test_jwt_secret_key_explicit_config_takes_precedence(
+    session_manager: DatabaseSessionManager,
+    coordination_service: CoordinationService,
+) -> None:
+    """Explicit AuthConfig.secret_key takes precedence over system:jwt_secret_key in CoordinationService."""
+    await coordination_service.set_value(JWT_SECRET_KEY, "db-secret-key", ttl=3600)
+
+    service = UserService(
+        AuthConfig(secret_key="explicit-secret", enable_registration=True),
+        coordination_service,
+        session_manager,
+    )
+    assert await service.get_secret_key() == "explicit-secret"
+    assert await coordination_service.get_value(JWT_SECRET_KEY) == "db-secret-key"
+
+    pw_md5 = hashlib.md5(b"password123").hexdigest()
+    email = "explicit_jwt@example.com"
+    await service.register(UserRegisterDTO(email=email, password=pw_md5))
+
+    token = await service.create_session(email)
+    decoded = jwt.decode(token, "explicit-secret", algorithms=["HS256"])
+    assert decoded["sub"] == email

@@ -37,8 +37,9 @@ from .vfs import VirtualFileSystem
 
 RANDOM_CODE_TTL = datetime.timedelta(minutes=5)
 UNIQUE_MACHINE_ID_KEY = "system:unique_machine_id"
+JWT_SECRET_KEY = "system:jwt_secret_key"
 # CoordinationService requires a numeric expiry (defaults to 1 year if omitted);
-# use a 100-year TTL for server-lifetime keys (unique_machine_id and sold_out_count).
+# use a 100-year TTL for server-lifetime keys (unique_machine_id, jwt_secret_key, and sold_out_count).
 UNIQUE_MACHINE_ID_TTL = 100 * 365 * 24 * 3600
 SOLD_OUT_KEY_PREFIX = "user:sold_out_count:"
 
@@ -81,6 +82,21 @@ class UserService:
         self._coordination_service = coordination_service
         self._session_manager = session_manager
 
+    async def get_secret_key(self) -> str:
+        """Return the JWT secret key, generating and persisting one in CoordinationService if unconfigured."""
+        if self._config.secret_key:
+            return self._config.secret_key
+        secret = await self._coordination_service.get_value(JWT_SECRET_KEY)
+        if not secret:
+            secret = secrets.token_hex(32)
+            await self._coordination_service.set_value(
+                JWT_SECRET_KEY,
+                secret,
+                ttl=UNIQUE_MACHINE_ID_TTL,
+            )
+        self._config.secret_key = secret
+        return secret
+
     @staticmethod
     def _sold_out_key(account: str) -> str:
         """Build the CoordinationService key for tracking account deletion count."""
@@ -120,10 +136,11 @@ class UserService:
         """Revoke a single session token."""
         if not token:
             return
+        secret_key = await self.get_secret_key()
         try:
             payload = jwt.decode(
                 token,
-                self._config.secret_key,
+                secret_key,
                 algorithms=[JWT_ALGORITHM],
                 options={"verify_exp": False},
             )
@@ -503,7 +520,8 @@ class UserService:
             "exp": now + ttl,
             "jti": secrets.token_hex(8),
         }
-        token = jwt.encode(payload, self._config.secret_key, algorithm=JWT_ALGORITHM)
+        secret_key = await self.get_secret_key()
+        token = jwt.encode(payload, secret_key, algorithm=JWT_ALGORITHM)
 
         session_state = SessionState(
             token=token,
@@ -521,10 +539,9 @@ class UserService:
         """Verify token against JWT signature, persisted session state, and active user record."""
         if not token:
             return None
+        secret_key = await self.get_secret_key()
         try:
-            payload = jwt.decode(
-                token, self._config.secret_key, algorithms=[JWT_ALGORITHM]
-            )
+            payload = jwt.decode(token, secret_key, algorithms=[JWT_ALGORITHM])
         except jwt.PyJWTError as err:
             logger.warning("Token verification failed: %s", err)
             return None

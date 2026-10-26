@@ -223,7 +223,6 @@ def create_app(config: ServerConfig) -> web.Application:
     app["user_service"] = user_service
     app["file_service"] = file_service
     app["integrity_service"] = IntegrityService(session_manager, blob_storage)
-    app["url_signer"] = UrlSigner(config.auth.secret_key, coordination_service)
     app["schedule_service"] = ScheduleService(session_manager, event_bus)
     ocr_model = create_ocr_model(config)
     summary_model = create_summary_model(config)
@@ -342,6 +341,9 @@ def create_app(config: ServerConfig) -> web.Application:
 
         logger.info("Running database migrations...")
         await asyncio.to_thread(run_migrations, config.db_url, config=config)
+
+        secret_key = await user_service.get_secret_key()
+        app["url_signer"] = UrlSigner(secret_key, coordination_service)
 
         if config.ephemeral:
             await bootstrap_ephemeral_user(app)

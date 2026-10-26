@@ -25,14 +25,15 @@ def patch_server_config() -> Generator[None]:
 
 
 def test_server_config_defaults(tmp_path: Path) -> None:
-    """Test loading configuration with defaults."""
+    """Test loading configuration with defaults (does not write config.yaml to disk)."""
     config_dir = tmp_path / "config"
     config = ServerConfig.load(config_dir)
 
     assert config.host == "0.0.0.0"
     assert config.port == 8080
     assert config.storage_dir == "storage"
-    assert config.auth.secret_key != ""  # Should be generated in-memory
+    assert config.auth.secret_key == ""
+    assert not (config_dir / "config.yaml").exists()
 
 
 def test_server_config_load_from_file(tmp_path: Path) -> None:
