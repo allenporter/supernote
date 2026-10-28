@@ -47,6 +47,7 @@ from .services.processor_modules.ocr import OcrModule
 from .services.processor_modules.page_hashing import PageHashingModule
 from .services.processor_modules.png_conversion import PngConversionModule
 from .services.processor_modules.summary import SummaryModule
+from .services.processor_modules.task_extraction import TaskExtractionModule
 from .services.schedule import ScheduleService
 from .services.search import SearchService
 from .services.summary import SummaryService
@@ -271,6 +272,11 @@ def create_app(config: ServerConfig) -> web.Application:
             file_service=file_service,
             summary_service=summary_service,
             summary_model=summary_model,
+        ),
+        task_extraction=TaskExtractionModule(
+            file_service=file_service,
+            schedule_service=app["schedule_service"],
+            enabled=ocr_model is not None,
         ),
     )
 
