@@ -1,3 +1,14 @@
+"""Stage 1 of the `.note` processing pipeline: page-level change detection (`TaskType.PAGE_HASHING`).
+
+`PageHashingModule` parses binary `.note` metadata via `supernote.notebook.parser.parse_metadata`,
+computes an MD5 digest per page (`PAGEID`), and reconciles
+`supernote.server.db.models.note_processing.NotePageContentDO` rows. When a page is
+added, modified, moved, or deleted, downstream per-page task checkpoints (`SystemTaskDO`)
+and the file-level `SUMMARY_GENERATION` checkpoint are selectively invalidated so
+unchanged pages are never re-rendered or re-transcribed.
+See `supernote.guides.note_processing_design`.
+"""
+
 import asyncio
 import logging
 from functools import partial

@@ -1,4 +1,11 @@
-"""Supernote session wrapper."""
+"""High-level `Supernote` session facade and authentication entry point.
+
+This module defines `supernote.client.api.Supernote` (re-exported as `supernote.client.Supernote`),
+an async context manager that coordinates `aiohttp.ClientSession` lifecycle, token authentication
+(`Supernote.login`, `Supernote.from_token`, `Supernote.from_auth`), and convenient properties for
+`supernote.client.device.DeviceClient`, `supernote.client.web.WebClient`, and
+`supernote.client.login_client.LoginClient`. See `supernote.client` for end-to-end SDK usage examples.
+"""
 
 from typing import Self
 

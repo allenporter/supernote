@@ -1,3 +1,18 @@
+"""Asynchronous 5-stage `.note` processing pipeline orchestrator and recovery loop.
+
+`ProcessorService` subscribes to `NoteUpdatedEvent`, `SyncCompletedEvent`, and
+`NoteDeletedEvent` on `supernote.server.events.LocalEventBus` and runs registered
+`supernote.server.services.processor_modules.ProcessorModule` stages in order:
+1. Global Pre-Stage: `PageHashingModule`
+2. Per-Page Stage (parallel): `PngConversionModule` -> `OcrModule` -> `EmbeddingModule`
+3. Global Post-Stage: `SummaryModule`
+
+Includes startup recovery (`recover_tasks`), missing/version-outdated task discovery
+(`recover_missing_tasks`), a 5-minute stalled-task polling loop, and publish of
+`NoteProcessingCompletedEvent`. See `supernote.guides.note_processing_design` and
+`supernote.guides.mcp`.
+"""
+
 import asyncio
 import logging
 import time

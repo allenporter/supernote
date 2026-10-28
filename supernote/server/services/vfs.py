@@ -1,3 +1,12 @@
+"""Transactional SQLite-backed Virtual File System (`VirtualFileSystem`).
+
+`VirtualFileSystem` implements path resolution, directory creation, atomic move/copy,
+recycle bin soft-deletion (`RecycleFileDO`), and system directory protection
+(`NOTE`, `DOCUMENT`, `EXPORT`, `INBOX`, `SCREENSHOT`) over `supernote.server.db.models.file.UserFileDO`
+rows without mirroring folders on the physical filesystem. Wrapped by
+`supernote.server.services.file.FileService`. See `supernote.guides.architecture`.
+"""
+
 import logging
 import time
 from collections.abc import Sequence

@@ -1,4 +1,11 @@
-"""Socket.IO data models and protocol enums for real-time messaging."""
+"""Socket.IO data models, handshake parameters, and protocol enums for real-time messaging.
+
+This module defines the signed connection handshake (`SocketHandshakeParams`), real-time message
+envelope (`SocketIoClientMessage`), protocol enums (`SocketIoEvent`, `SocketIoAction`,
+`SocketIoMessageType`, `SocketIoMessageCode`), and typed event payloads (`SocketMessageData` for
+`FILE-SYN`, `SocketTaskMessageData` for `TASK-SYN`, and `SocketDigestMessageData` for `DIGEST-SYN`).
+Consumed by `supernote.client.socket.SupernoteSocketClient`.
+"""
 
 from dataclasses import dataclass, field
 from enum import IntEnum

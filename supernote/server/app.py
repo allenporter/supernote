@@ -1,3 +1,17 @@
+"""Main `aiohttp` application factory, middleware stack, and lifecycle hooks.
+
+`create_app` wires together all domain services (`supernote.server.services`), HTTP route
+tables (`supernote.server.routes`), Socket.IO real-time server (`supernote.server.socket`),
+and the optional OAuth 2.1 + Streamable HTTP Model Context Protocol server
+(`supernote.server.mcp`) from a resolved `supernote.server.config.ServerConfig`.
+
+During `on_startup`, the server configures proxy header handling (`aiohttp_remotes`),
+runs Alembic migrations (`supernote.server.db.migrations.run_migrations`), mounts the
+MCP Authorization Server on the main HTTP port (`8080`) and the MCP Resource Server on
+`mcp_port` (`8081`), and starts background workers (`ProcessorService`, `WebhookService`).
+See `supernote.guides.bootstrap_guide` and `supernote.guides.architecture`.
+"""
+
 import asyncio
 import importlib.resources
 import logging

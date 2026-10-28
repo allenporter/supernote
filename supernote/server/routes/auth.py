@@ -1,3 +1,13 @@
+"""Authentication, user profile, and device binding HTTP routes (`/api/official/user/*`).
+
+Implements the challenge-response login handshake (`handle_random_code`, `handle_login`),
+Admin-First public registration (`handle_register`), password/email updates, login history,
+CSRF token issuance, and hardware equipment binding (`bind_equipment`, `unbind_equipment`,
+`query_user_equipment`). Delegates account and JWT session operations to
+`supernote.server.services.user.UserService` and enforces brute-force protection via
+`supernote.server.utils.rate_limit.RateLimiter`. See `supernote.guides.bootstrap_guide`.
+"""
+
 import logging
 
 from aiohttp import web

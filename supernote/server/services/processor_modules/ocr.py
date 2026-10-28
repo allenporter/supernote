@@ -1,3 +1,12 @@
+"""Stage 3 of the `.note` processing pipeline: vision-model OCR extraction (`TaskType.OCR_EXTRACTION`).
+
+`OcrModule` loads the cached page PNG from `CACHE_BUCKET`, formats a notebook-aware
+transcription prompt via `supernote.server.ai.prompts.format_ocr_prompt` (routing custom
+prompts through `supernote.server.utils.prompt_loader.PROMPT_LOADER`), and invokes
+`supernote.server.ai.models.ocr.OcrModel.extract_text`. The resulting Markdown transcript
+is saved to `NotePageContentDO.text_content`. See `supernote.guides.mcp`.
+"""
+
 import logging
 
 from supernote.models.base import TaskType

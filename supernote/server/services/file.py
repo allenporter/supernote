@@ -1,3 +1,14 @@
+"""High-level file, folder, and recycle bin orchestration service.
+
+`FileService` coordinates metadata operations in `supernote.server.services.vfs.VirtualFileSystem`
+with physical blob lifecycle management in `supernote.server.services.blob.BlobStorage`
+and quota checks in `supernote.server.services.user.UserService`. When `.note` files or
+VFS entries are created, updated, moved, or deleted, `FileService` publishes domain
+events (`NoteUpdatedEvent`, `NoteDeletedEvent`, `VfsItemCreatedEvent`, `BlobCleanupEvent`)
+onto `supernote.server.events.LocalEventBus` so background processing and Socket.IO
+clients stay synchronized. See `supernote.guides.architecture`.
+"""
+
 import logging
 import time
 from dataclasses import dataclass

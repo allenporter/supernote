@@ -1,7 +1,12 @@
-"""Module for server-specific extension routes.
+"""Knowledge Hub extension routes (`/api/extended/*`) for search, transcripts, and AI status.
 
-These are for APIs that are not part of the standard API offering, specific
-to our new server.
+Exposes non-device HTTP endpoints consumed by the Web UI and `supernote.client.extended.ExtendedClient`:
+- `POST /api/extended/search`: Semantic vector search across notebook pages via `supernote.server.services.search.SearchService`.
+- `POST /api/extended/transcript`: Full or page-range OCR transcript retrieval.
+- `POST /api/extended/summary/list`: Notebook summaries and transcripts for a given `file_id`.
+- `POST /api/extended/file/status` and `GET /api/extended/system/tasks`: Per-file and global pipeline task statuses (`SystemTaskDO`) and active AI capability flags.
+
+See `supernote.guides.mcp` and `supernote.guides.note_processing_design`.
 """
 
 import json

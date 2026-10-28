@@ -1,4 +1,14 @@
-"""iCalendar export service for converting tasks into RFC 5545 VTODO feeds."""
+"""iCalendar export service for converting Supernote schedule tasks into RFC 5545 `VTODO` feeds.
+
+`ICalExportService` queries task groups and tasks via
+`supernote.server.services.schedule.ScheduleService` and maps each task (`ScheduleTaskDO`)
+into an `ical.todo.Todo` component (`task_to_vtodo`), preserving status, priority,
+recurrence rules (`RRULE`), task group categories, and decoded `.note` page deep-links
+(`supernote.models.schedule.ScheduleTaskLinkDTO`).
+
+Exposed at `GET /api/schedule/feed.ics` by `supernote.server.routes.schedule`.
+See `supernote.guides.webhooks_and_integrations` and `supernote.guides.schedule_api`.
+"""
 
 import binascii
 import logging

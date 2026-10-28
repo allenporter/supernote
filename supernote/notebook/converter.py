@@ -12,7 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Converter classes."""
+"""Page and notebook converters for rendering `.note` files to PNG, SVG, PDF, and text.
+
+This module defines `ImageConverter` (`PngConverter`), `SvgConverter`, `PdfConverter`, and
+`TextConverter`, along with layer visibility configuration (`VisibilityOverlay`,
+`build_visibility_overlay`). Converters composite decompressed layer bitmaps using
+`supernote.notebook.decoder` and `supernote.notebook.color.ColorPalette`, vectorize strokes via
+`potrace` for SVG/PDF, or extract realtime handwriting recognition blocks (`RECOGNTEXT`).
+See `supernote.notebook` and `supernote.guides.notebook_spec`.
+"""
 
 import base64
 import binascii

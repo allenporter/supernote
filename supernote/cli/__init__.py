@@ -1,1 +1,3 @@
-"""Supernote command line tool."""
+"""
+.. include:: ../../docs/cli_reference.md
+"""

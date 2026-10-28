@@ -1,3 +1,13 @@
+"""Data models for the Supernote V2/V3 Hardware Device Synchronization API.
+
+This module defines request DTOs and response VOs for path-based and ID-based device sync operations
+(`/api/file/2/*` and `/api/file/3/*`), including folder listings (`ListFolderLocalDTO`, `ListFolderV2DTO`,
+`ListFolderLocalVO`), 3-step device uploads/downloads (`FileUploadApplyLocalDTO`, `FileUploadFinishLocalDTO`,
+`FileDownloadLocalDTO`), sync session locks (`SynchronousStartLocalDTO`, `SynchronousEndLocalDTO`), and
+server-side `.note` conversions (`PngDTO`, `NoteToPngVO`, `PdfDTO`, `NoteToPdfVO`). Consumed by
+`supernote.client.device.DeviceClient`.
+"""
+
 from dataclasses import dataclass, field
 
 from mashumaro import field_options

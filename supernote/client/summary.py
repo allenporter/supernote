@@ -1,4 +1,11 @@
-"""Client for Summary APIs."""
+"""Summary, summary group, and tag synchronization client (`SummaryClient`).
+
+This module provides `supernote.client.summary.SummaryClient` for CRUD and binary synchronization
+of device-authored and AI-generated summaries (`add_summary`, `update_summary`, `delete_summary`,
+`query_summaries`, `upload_summary_apply`, `download_summary`), summary groups (`add_summary_group`,
+`query_summary_groups`, `query_summary_md5_hash`), and tags (`add_tag`, `query_tags`). Models are
+defined in `supernote.models.summary`. See `supernote.client` and `supernote.guides.summary_api`.
+"""
 
 from supernote.models.summary import (
     AddSummaryDTO,

@@ -1,3 +1,12 @@
+"""Stage 4 of the `.note` processing pipeline: page vector embedding generation (`TaskType.EMBEDDING_GENERATION`).
+
+`EmbeddingModule` reads the OCR transcript from `NotePageContentDO.text_content`, calls
+`supernote.server.ai.models.embedding.EmbeddingModel.embed` with `EmbeddingTaskType.RETRIEVAL_DOCUMENT`,
+and stores the vector and `model_id` on `NotePageContentDO`. Because `EmbeddingModule.version`
+returns `embedding_model.model_id`, changing `ai.embedding.model` in `ServerConfig`
+automatically triggers background re-embedding of all pages. See `supernote.guides.mcp`.
+"""
+
 import json
 import logging
 

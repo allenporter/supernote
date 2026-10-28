@@ -1,4 +1,11 @@
-"""Library for accessing backups in Supenote Cloud."""
+"""Low-level async HTTP/JSON transport and OSS object storage upload helper.
+
+This module provides `supernote.client.client.Client` (re-exported as `supernote.client.Client`),
+which wraps `aiohttp.ClientSession` to handle automatic CSRF token acquisition (`X-XSRF-TOKEN`),
+authenticated `x-access-token` injection via `supernote.client.auth.AbstractAuth`, typed response
+deserialization into `supernote.models.base.BaseResponse` subclasses, and single-part or chunked
+multipart binary uploads (`_upload_to_oss`). See `supernote.client` for high-level session usage.
+"""
 
 import hashlib
 import logging

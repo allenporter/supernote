@@ -1,4 +1,10 @@
-"""Library for authentication."""
+"""Authentication token providers for the Supernote HTTP client.
+
+This module defines the `supernote.client.auth.AbstractAuth` interface consumed by
+`supernote.client.client.Client` and `supernote.client.Supernote.from_auth`, along with concrete
+implementations for static in-memory tokens (`ConstantAuth`) and local disk-cached tokens
+(`FileCacheAuth`, stored in `~/.cache/supernote.pkl`).
+"""
 
 import logging
 import os

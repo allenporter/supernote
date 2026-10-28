@@ -1,3 +1,13 @@
+"""Data Transfer Objects (DTOs), Value Objects (VOs), and OAuth token models for MCP.
+
+Defines the request/response schemas serialized by the MCP tools in
+`supernote.server.mcp.server` (`ListNotebooksRequestDTO`, `ListNotebooksResponseVO`,
+`SearchRequestDTO`, `SearchResponseVO`, `TranscriptRequestDTO`, `TranscriptResponseVO`)
+as well as the user-scoped OAuth 2.1 token models (`SupernoteAuthorizationCode`,
+`SupernoteAccessToken`, `SupernoteRefreshToken`) used by `supernote.server.mcp.auth`.
+See `supernote.guides.mcp`.
+"""
+
 from dataclasses import dataclass, field
 
 from mashumaro import field_options
@@ -13,14 +23,20 @@ from supernote.models.base import BaseResponse
 
 
 class SupernoteAuthorizationCode(AuthorizationCode):
+    """OAuth 2.1 authorization code associated with a Supernote user account."""
+
     user_id: str
 
 
 class SupernoteAccessToken(AccessToken):
+    """OAuth 2.1 access token associated with a Supernote user account."""
+
     user_id: str
 
 
 class SupernoteRefreshToken(RefreshToken):
+    """OAuth 2.1 refresh token associated with a Supernote user account."""
+
     user_id: str
 
 

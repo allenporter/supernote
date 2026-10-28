@@ -12,7 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Library-specific exception classes."""
+"""Exception hierarchy for the `supernote.notebook` parsing and conversion library.
+
+This module defines `SupernoteLibException` and specialized subclasses raised during `.note`
+parsing (`ParserException`, `UnsupportedFileFormat`), bitmap/text decompression (`DecoderException`,
+`UnknownDecodeProtocol`), and binary reconstruction (`ManipulatorException`,
+`GeneratedFileValidationException`). See `supernote.notebook` for usage context.
+"""
 
 
 class SupernoteLibException(Exception):

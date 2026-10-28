@@ -1,4 +1,9 @@
-"""Notebook CLI commands."""
+"""CLI subcommands (`supernote notebook`) for offline `.note` conversion and inspection.
+
+This module implements the `convert`, `analyze`, `merge`, and `reconstruct` subcommands under
+`supernote notebook`, wrapping the core `supernote.notebook` parsing, rendering, and binary
+manipulation APIs for command-line use. See `supernote.cli` and `supernote.guides.cli_reference`.
+"""
 
 # Copyright (c) 2020 jya
 #

@@ -1,4 +1,11 @@
-"""Prometheus metrics definition module for Supernote Private Cloud Server."""
+"""Prometheus metrics definitions for HTTP requests, database sessions, and pipeline tasks.
+
+Defines `Counter`, `Gauge`, and `Histogram` collectors exposed at `ServerConfig.metrics_path`
+(`/metrics` by default) in `supernote.server.app.create_app`, tracking HTTP request
+latency (`HTTP_REQUEST_DURATION_SECONDS`), background queue depth (`PROCESSOR_QUEUE_SIZE`),
+per-module task execution (`PROCESSOR_TASKS_TOTAL`), and active SQLite sessions
+(`DB_SESSIONS_ACTIVE`). See `supernote.guides.configuration`.
+"""
 
 from prometheus_client import Counter, Gauge, Histogram
 

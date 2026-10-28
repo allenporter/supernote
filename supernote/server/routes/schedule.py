@@ -1,3 +1,13 @@
+"""Schedule task group, task CRUD, sort order, and iCalendar `.ics` HTTP routes.
+
+Serves both the official Supernote device/Partner App task synchronization protocol
+(`/api/file/schedule/group*`, `/api/file/schedule/task*`, `/api/file/schedule/sort*`)
+backed by `supernote.server.services.schedule.ScheduleService` and `supernote.models.schedule`,
+and the RFC 5545 `VTODO` calendar feed endpoint (`GET /api/schedule/feed.ics`) backed by
+`supernote.server.services.ical_export.ICalExportService`.
+See `supernote.guides.schedule_api` and `supernote.guides.webhooks_and_integrations`.
+"""
+
 import logging
 import time
 from dataclasses import fields
