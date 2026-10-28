@@ -21,8 +21,9 @@ The Footer Block then contains references (offsets) to all other metadata blocks
 """
 
 import json
+from typing import Any
 
-ParamsBlock = dict[str, str | list[str]]
+ParamsBlock = dict[str, Any]
 
 #### Constants
 
@@ -49,13 +50,20 @@ KEY_LINKS = "__links__"
 class SupernoteMetadata:
     """Represents Supernote file structure."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        type: str | None = None,
+        signature: str | None = None,
+        header: dict[str, str] | None = None,
+        footer: dict[str, Any] | None = None,
+        pages: list[ParamsBlock] | None = None,
+    ) -> None:
         self.__note = {
-            KEY_TYPE: None,
-            KEY_SIGNATURE: None,
-            KEY_HEADER: None,
-            KEY_FOOTER: None,
-            KEY_PAGES: None,
+            KEY_TYPE: type,
+            KEY_SIGNATURE: signature,
+            KEY_HEADER: header,
+            KEY_FOOTER: footer,
+            KEY_PAGES: pages,
         }
 
     @property
@@ -143,15 +151,21 @@ class SupernoteMetadata:
 
 class Notebook:
     def __init__(
-        self, metadata: SupernoteMetadata, page_number: int | None = None
+        self,
+        metadata: SupernoteMetadata,
+        page_number: int | None = None,
+        page_width: int | None = None,
+        page_height: int | None = None,
     ) -> None:
         self.metadata = metadata
         self.loaded_page_number = page_number
-        self.page_width = PAGE_WIDTH
-        self.page_height = PAGE_HEIGHT
-        if self.metadata.header.get("APPLY_EQUIPMENT") == "N5":
-            self.page_width = A5X2_PAGE_WIDTH
-            self.page_height = A5X2_PAGE_HEIGHT
+        default_width = PAGE_WIDTH
+        default_height = PAGE_HEIGHT
+        if self.metadata.header and self.metadata.header.get("APPLY_EQUIPMENT") == "N5":
+            default_width = A5X2_PAGE_WIDTH
+            default_height = A5X2_PAGE_HEIGHT
+        self.page_width = page_width if page_width is not None else default_width
+        self.page_height = page_height if page_height is not None else default_height
         self.type = metadata.type
         self.signature = metadata.signature
         self.cover = Cover()
@@ -225,8 +239,8 @@ class Notebook:
 
 
 class Cover:
-    def __init__(self) -> None:
-        self.content: bytes | None = None
+    def __init__(self, content: bytes | None = None) -> None:
+        self.content: bytes | None = content
 
     def set_content(self, content: bytes | None):
         self.content = content
@@ -236,9 +250,11 @@ class Cover:
 
 
 class Keyword:
-    def __init__(self, keyword_info: dict[str, str]) -> None:
+    def __init__(
+        self, keyword_info: dict[str, str], content: bytes | None = None
+    ) -> None:
         self.metadata = keyword_info
-        self.content: bytes | None = None
+        self.content: bytes | None = content
         self.page_number = int(self.metadata["KEYWORDPAGE"]) - 1
 
     def set_content(self, content: bytes | None):
@@ -265,10 +281,15 @@ class Keyword:
 
 
 class Title:
-    def __init__(self, title_info: dict[str, str]) -> None:
+    def __init__(
+        self,
+        title_info: dict[str, str],
+        content: bytes | None = None,
+        page_number: int = 0,
+    ) -> None:
         self.metadata = title_info
-        self.content: bytes | None = None
-        self.page_number = 0
+        self.content: bytes | None = content
+        self.page_number = page_number
 
     def set_content(self, content: bytes | None):
         self.content = content
@@ -297,10 +318,15 @@ class Link:
     DIRECTION_OUT = 0  # Outgoing link (from this page)
     DIRECTION_IN = 1  # Incoming link (to this page)
 
-    def __init__(self, link_info: dict[str, str]) -> None:
+    def __init__(
+        self,
+        link_info: dict[str, str],
+        content: bytes | None = None,
+        page_number: int = 0,
+    ) -> None:
         self.metadata = link_info
-        self.content: bytes | None = None
-        self.page_number = 0
+        self.content: bytes | None = content
+        self.page_number = page_number
 
     def set_content(self, content: bytes | None):
         self.content = content
@@ -363,12 +389,19 @@ class Page:
             self.ORIENTATION_HORIZONTAL_270,
         )
 
-    def __init__(self, page_info: ParamsBlock) -> None:
+    def __init__(
+        self,
+        page_info: ParamsBlock,
+        content: bytes | None = None,
+        totalpath: bytes | None = None,
+        recogn_file: bytes | None = None,
+        recogn_text: bytes | None = None,
+    ) -> None:
         self.metadata = page_info
-        self.content: bytes | None = None
-        self.totalpath = None
-        self.recogn_file = None
-        self.recogn_text = None
+        self.content: bytes | None = content
+        self.totalpath = totalpath
+        self.recogn_file = recogn_file
+        self.recogn_text = recogn_text
         self.layers: list[Layer] = []
         layer_supported = page_info.get(KEY_LAYERS) is not None
         if layer_supported:
@@ -458,9 +491,9 @@ class Page:
 
 
 class Layer:
-    def __init__(self, layer_info):
+    def __init__(self, layer_info, content: bytes | None = None):
         self.metadata = layer_info
-        self.content = None
+        self.content = content
 
     def set_content(self, content):
         self.content = content

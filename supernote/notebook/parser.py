@@ -443,13 +443,13 @@ class SupernoteParser:
             map(lambda addr: self._parse_page_block(stream, addr), page_addresses)
         )
 
-        metadata = fileformat.SupernoteMetadata()
-        metadata.type = filetype
-        metadata.signature = signature
-        metadata.header = header
-        metadata.footer = footer
-        metadata.pages = pages
-        return metadata
+        return fileformat.SupernoteMetadata(
+            type=filetype,
+            signature=signature,
+            header=header,
+            footer=footer,
+            pages=pages,
+        )
 
     def _parse_filetype(self, fobj: FileObj) -> str:
         fobj.seek(0, os.SEEK_SET)

@@ -381,7 +381,7 @@ class TextDecoder(BaseDecoder):
     """Decoder for text."""
 
     def decode(
-        self, data: bytes, palette=None, all_blank=False, horizontal=False
+        self, data: bytes | None, palette=None, all_blank=False, horizontal=False
     ) -> list[TextElement] | None:
         """Extract text from a realtime recognition data with spatial ordering.
 
