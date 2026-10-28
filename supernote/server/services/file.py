@@ -21,7 +21,7 @@ from supernote.server.exceptions import (
     HashMismatch,
     InvalidPath,
 )
-from supernote.server.utils.paths import get_conversion_pdf_path
+from supernote.server.utils.paths import get_conversion_pdf_prefix
 
 from ..db.models.file import RecycleFileDO, UserFileDO
 from ..db.models.summary import SummaryDO
@@ -534,11 +534,11 @@ class FileService:
     async def _delete_conversion_blobs(
         self, user_id: int, file_id: int, file_md5: str
     ) -> None:
-        """Delete cached on-demand PDF conversion blob for a specific file MD5."""
-        pdf_key = get_conversion_pdf_path(
+        """Delete cached on-demand PDF conversion blobs for a specific file MD5."""
+        prefix = get_conversion_pdf_prefix(
             user_id=user_id, file_id=file_id, file_md5=file_md5
         )
-        if await self.blob_storage.exists(CACHE_BUCKET, pdf_key):
+        for pdf_key in await self.blob_storage.list_blobs(CACHE_BUCKET, prefix):
             try:
                 await self.blob_storage.delete(CACHE_BUCKET, pdf_key)
             except (FileNotFoundError, OSError) as e:

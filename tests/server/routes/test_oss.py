@@ -489,6 +489,27 @@ async def test_oss_png_and_pdf_routes_require_matching_signed_path_and_ownership
         == 'attachment; filename="oss_route_note.pdf"'
     )
 
+    # A page selection is signed with its pages and served from its own blob
+    pages_vo = await device_client.note_to_pdf(file_id, [0])
+    assert pages_vo.url is not None
+    parsed_pages = urllib.parse.urlparse(pages_vo.url)
+    assert parsed_pages.path == f"/api/oss/pdf/{file_id}"
+    assert urllib.parse.parse_qs(parsed_pages.query)["pages"] == ["0"]
+    resp_pages = await client.get(
+        f"{parsed_pages.path}?{parsed_pages.query}", headers={}
+    )
+    assert resp_pages.status == HTTPStatus.OK
+    resp_full = await client.get(f"{parsed_pdf.path}?{parsed_pdf.query}", headers={})
+    assert resp_full.status == HTTPStatus.OK
+
+    bad_pages_url = await url_signer.sign(
+        f"/api/oss/pdf/{file_id}?pages=first",
+        user="test@example.com",
+        single_use=False,
+    )
+    resp_bad_pages = await client.get(bad_pages_url, headers={})
+    assert resp_bad_pages.status == HTTPStatus.BAD_REQUEST
+
     # Using a PNG signature on the PDF endpoint (or another page) is rejected
     tampered_path = f"/api/oss/pdf/{file_id}?{parsed_png.query}"
     resp_tampered = await client.get(tampered_path, headers={})

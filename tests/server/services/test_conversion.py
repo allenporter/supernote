@@ -22,6 +22,10 @@ from supernote.server.services.user import UserService
 from supernote.server.utils.paths import get_conversion_pdf_path
 
 
+async def _read(blob_storage: BlobStorage, key: str) -> bytes:
+    return b"".join([chunk async for chunk in blob_storage.get(CACHE_BUCKET, key)])
+
+
 @pytest.fixture
 def conversion_service(
     storage_root: Path,
@@ -127,12 +131,23 @@ async def test_convert_note_to_pdf_and_resolve(
 
     assert await conversion_service.get_note_pdf(user_email, file_id) is None
 
+    await conversion_service.convert_note_to_pdf(user_email, file_id, page_no_list=[])
+    full_key = get_conversion_pdf_path(test_user_id, file_id, "md5_5002")
+    full_pdf = await _read(blob_storage, full_key)
+
+    # A page selection is stored apart from the full export it must not replace
+    assert await conversion_service.get_note_pdf(user_email, file_id, [0]) is None
     await conversion_service.convert_note_to_pdf(user_email, file_id, page_no_list=[0])
 
-    expected_key = get_conversion_pdf_path(test_user_id, file_id, "md5_5002")
-    blob = await conversion_service.get_note_pdf(user_email, file_id)
-    assert blob == ConvertedBlob(
-        storage_key=expected_key,
+    assert await conversion_service.get_note_pdf(user_email, file_id) == ConvertedBlob(
+        storage_key=full_key,
+        file_name="Project_Plan.pdf",
+    )
+    assert await _read(blob_storage, full_key) == full_pdf
+    assert await conversion_service.get_note_pdf(
+        user_email, file_id, [0]
+    ) == ConvertedBlob(
+        storage_key=get_conversion_pdf_path(test_user_id, file_id, "md5_5002", [0]),
         file_name="Project_Plan.pdf",
     )
 

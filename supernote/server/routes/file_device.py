@@ -654,6 +654,9 @@ async def handle_note_to_pdf(request: web.Request) -> web.Response:
 
         # Generate signed URL for converted PDF
         path_to_sign = f"/api/oss/pdf/{req_data.id}"
+        if req_data.page_no_list:
+            pages = ",".join(str(page_no) for page_no in req_data.page_no_list)
+            path_to_sign += f"?pages={pages}"
         signed_path = await url_signer.sign(
             path_to_sign, user=user_email, single_use=False
         )

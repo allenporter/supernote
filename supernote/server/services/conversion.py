@@ -150,11 +150,16 @@ class ConversionService:
             _convert_note_to_pdf_sync, blob_content, page_no_list
         )
         pdf_storage_key = get_conversion_pdf_path(
-            user_id=user_id, file_id=file_id, file_md5=node.md5
+            user_id=user_id,
+            file_id=file_id,
+            file_md5=node.md5,
+            page_no_list=page_no_list,
         )
         await self.blob_storage.put(CACHE_BUCKET, pdf_storage_key, pdf_bytes)
 
-    async def get_note_pdf(self, user: str, file_id: int) -> ConvertedBlob | None:
+    async def get_note_pdf(
+        self, user: str, file_id: int, page_no_list: list[int] | None = None
+    ) -> ConvertedBlob | None:
         """Resolve the CACHE_BUCKET blob and user-friendly filename for a converted note PDF."""
         resolved = await self._get_note_node_or_none(user, file_id)
         if not resolved:
@@ -164,7 +169,10 @@ class ConversionService:
             return None
 
         pdf_storage_key = get_conversion_pdf_path(
-            user_id=user_id, file_id=file_id, file_md5=node.md5
+            user_id=user_id,
+            file_id=file_id,
+            file_md5=node.md5,
+            page_no_list=page_no_list,
         )
         if not await self.blob_storage.exists(CACHE_BUCKET, pdf_storage_key):
             return None

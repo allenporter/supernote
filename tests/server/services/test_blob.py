@@ -371,6 +371,13 @@ async def test_list_blobs_returns_logical_keys_and_skips_chunks(
 
     assert await storage.list_blobs("cache") == sorted([png_key, pdf_key])
 
+    other_pdf_key = get_conversion_pdf_path(user_id=7, file_id=43, file_md5="deadbeef")
+    await storage.put("cache", other_pdf_key, b"pdf")
+    assert await storage.list_blobs("cache", "conversions/7/42/") == [pdf_key]
+    assert await storage.list_blobs("cache", "42/") == [png_key]
+    assert await storage.list_blobs("cache", "c") == sorted([pdf_key, other_pdf_key])
+    assert await storage.list_blobs("cache", "conversions/8/") == []
+
 
 async def test_put_stream_error_cleans_up_temp_file(tmp_path: Path) -> None:
     """Verify put() cleans up temporary staging file and re-raises when stream fails."""

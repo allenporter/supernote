@@ -95,10 +95,11 @@ class BlobStorage(ABC):
         """Get physical path to the blob (optional, useful for serving files)."""
 
     @abstractmethod
-    async def list_blobs(self, bucket: str) -> list[str]:
+    async def list_blobs(self, bucket: str, prefix: str = "") -> list[str]:
         """Return sorted logical keys of all stored blobs in the given bucket.
 
-        Excludes temporary staging files and unmerged multipart `.part.N` chunks.
+        Only keys starting with `prefix` are returned. Excludes temporary staging
+        files and unmerged multipart `.part.N` chunks.
         """
 
     @abstractmethod
@@ -242,27 +243,38 @@ class LocalBlobStorage(BlobStorage):
         """Get physical path to the blob."""
         return self._get_path(bucket, key)
 
-    async def list_blobs(self, bucket: str) -> list[str]:
+    async def list_blobs(self, bucket: str, prefix: str = "") -> list[str]:
         """Return sorted logical keys of all stored blobs in the given bucket."""
-        return await asyncio.to_thread(self._list_blobs_sync, bucket)
+        return await asyncio.to_thread(self._list_blobs_sync, bucket, prefix)
 
-    def _list_blobs_sync(self, bucket: str) -> list[str]:
+    def _list_blobs_sync(self, bucket: str, prefix: str = "") -> list[str]:
         clean_bucket = Path(bucket).name
         bucket_dir = (self.root / clean_bucket).resolve()
         if not bucket_dir.is_relative_to(self.root) or not bucket_dir.is_dir():
             return []
 
+        # Keys are sharded by their first two characters, so a longer prefix
+        # narrows the walk to one directory inside one shard.
+        if len(prefix) >= 2:
+            shard_dirs = [bucket_dir / prefix[:2]]
+            start_rel = prefix.rpartition("/")[0]
+        else:
+            shard_dirs = list(bucket_dir.iterdir())
+            start_rel = ""
+
         keys: list[str] = []
-        for shard_dir in bucket_dir.iterdir():
-            if not shard_dir.is_dir():
+        for shard_dir in shard_dirs:
+            start_dir = (shard_dir / start_rel).resolve()
+            if not start_dir.is_relative_to(shard_dir) or not start_dir.is_dir():
                 continue
-            for root, _, files in os.walk(shard_dir):
+            for root, _, files in os.walk(start_dir):
                 root_path = Path(root)
                 for filename in files:
                     if parse_file_chunk_name(filename) is not None:
                         continue
-                    file_path = root_path / filename
-                    keys.append(file_path.relative_to(shard_dir).as_posix())
+                    key = (root_path / filename).relative_to(shard_dir).as_posix()
+                    if key.startswith(prefix):
+                        keys.append(key)
         keys.sort()
         return keys
 

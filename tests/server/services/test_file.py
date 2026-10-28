@@ -374,6 +374,10 @@ async def test_overwrite_file_cleans_up_stale_conversion_blobs(
     )
     await blob_storage.put(CACHE_BUCKET, pdf_v1, b"pdf bytes")
     assert await blob_storage.exists(CACHE_BUCKET, pdf_v1) is True
+    pdf_v1_pages = get_conversion_pdf_path(
+        user_id=test_user_id, file_id=entity_v1.id, file_md5=md5_v1, page_no_list=[1]
+    )
+    await blob_storage.put(CACHE_BUCKET, pdf_v1_pages, b"pdf page bytes")
 
     # Overwrite with v2 (different MD5)
     content_v2 = b"note content v2"
@@ -385,6 +389,7 @@ async def test_overwrite_file_cleans_up_stale_conversion_blobs(
     )
 
     assert await blob_storage.exists(CACHE_BUCKET, pdf_v1) is False
+    assert await blob_storage.exists(CACHE_BUCKET, pdf_v1_pages) is False
 
 
 async def test_overwrite_same_md5_deletes_superseded_blob_but_preserves_conversions(
