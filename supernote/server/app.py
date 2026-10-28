@@ -22,7 +22,7 @@ from .ai.models.summary import create_summary_model
 from .config import AuthConfig, ServerConfig
 from .constants import MAX_UPLOAD_SIZE
 from .db.session import DatabaseSessionManager
-from .events import LocalEventBus
+from .events import LocalEventBus, NoteDeletedEvent
 from .metrics import HTTP_REQUEST_DURATION_SECONDS, HTTP_REQUESTS_TOTAL
 from .routes import (
     admin,
@@ -47,10 +47,12 @@ from .services.processor_modules.ocr import OcrModule
 from .services.processor_modules.page_hashing import PageHashingModule
 from .services.processor_modules.png_conversion import PngConversionModule
 from .services.processor_modules.summary import SummaryModule
+from .services.processor_modules.vocabulary import VocabularyHarvestModule
 from .services.schedule import ScheduleService
 from .services.search import SearchService
 from .services.summary import SummaryService
 from .services.user import UserService
+from .services.vocabulary import VocabularyService
 from .services.webhook import WebhookService
 from .socket import setup_socketio
 from .trace import trace_middleware
@@ -260,10 +262,20 @@ def create_app(config: ServerConfig) -> web.Application:
     png_enabled = (ocr_model is not None) or (
         config.web_enabled and config.web_notebook_preview
     )
+    vocabulary_service = VocabularyService(session_manager)
+    app["vocabulary_service"] = vocabulary_service
+    event_bus.subscribe(NoteDeletedEvent, vocabulary_service.handle_note_deleted)
     processor_service.register_modules(
         hashing=PageHashingModule(file_service=file_service),
+        vocabulary=VocabularyHarvestModule(
+            file_service=file_service, vocabulary_service=vocabulary_service
+        ),
         png=PngConversionModule(file_service=file_service) if png_enabled else None,
-        ocr=OcrModule(file_service=file_service, ocr_model=ocr_model),
+        ocr=OcrModule(
+            file_service=file_service,
+            ocr_model=ocr_model,
+            vocabulary_service=vocabulary_service,
+        ),
         embedding=EmbeddingModule(
             file_service=file_service, embedding_model=embedding_model
         ),

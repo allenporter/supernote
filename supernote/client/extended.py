@@ -1,9 +1,15 @@
 """Client for Extended (Web) APIs."""
 
+from supernote.models.base import BaseResponse
 from supernote.models.extended import (
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
     SystemTaskListVO,
+    VocabularyAddDTO,
+    VocabularyListDTO,
+    VocabularyListVO,
+    VocabularyMoveDTO,
+    VocabularyTermIdDTO,
     WebSearchRequestDTO,
     WebSearchResponseVO,
     WebSummaryListRequestDTO,
@@ -80,4 +86,43 @@ class ExtendedClient:
         """List recent system tasks (Extension)."""
         return await self._client.get_json(
             "/api/extended/system/tasks", SystemTaskListVO
+        )
+
+    async def list_vocabulary(
+        self, include_suppressed: bool = False
+    ) -> VocabularyListVO:
+        """List vocabulary terms used in transcription prompts (Extension)."""
+        dto = VocabularyListDTO(include_suppressed=include_suppressed)
+        return await self._client.post_json(
+            "/api/extended/vocabulary/list", VocabularyListVO, json=dto.to_dict()
+        )
+
+    async def add_vocabulary(
+        self, terms: list[str], scope_id: int = 0
+    ) -> VocabularyListVO:
+        """Add vocabulary terms for every notebook, or one folder or notebook (Extension)."""
+        dto = VocabularyAddDTO(terms=terms, scope_id=scope_id)
+        return await self._client.post_json(
+            "/api/extended/vocabulary/add", VocabularyListVO, json=dto.to_dict()
+        )
+
+    async def move_vocabulary(self, term_id: int, scope_id: int) -> VocabularyListVO:
+        """Apply a vocabulary term to a different scope (Extension)."""
+        dto = VocabularyMoveDTO(id=term_id, scope_id=scope_id)
+        return await self._client.post_json(
+            "/api/extended/vocabulary/move", VocabularyListVO, json=dto.to_dict()
+        )
+
+    async def delete_vocabulary(self, term_id: int) -> BaseResponse:
+        """Remove a vocabulary term (Extension)."""
+        dto = VocabularyTermIdDTO(id=term_id)
+        return await self._client.post_json(
+            "/api/extended/vocabulary/delete", BaseResponse, json=dto.to_dict()
+        )
+
+    async def restore_vocabulary(self, term_id: int) -> VocabularyListVO:
+        """Bring back a removed harvested vocabulary term (Extension)."""
+        dto = VocabularyTermIdDTO(id=term_id)
+        return await self._client.post_json(
+            "/api/extended/vocabulary/restore", VocabularyListVO, json=dto.to_dict()
         )

@@ -9,6 +9,7 @@ from . import (
     schedule,
     summary,
     user,
+    vocabulary,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "schedule",
     "summary",
     "user",
+    "vocabulary",
 ]

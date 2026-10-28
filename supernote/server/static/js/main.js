@@ -12,6 +12,7 @@ import FileViewer from './components/FileViewer.js';
 import SystemPanel from './components/SystemPanel.js';
 import MoveModal from './components/MoveModal.js';
 import RenameModal from './components/RenameModal.js';
+import SettingsView from './components/SettingsView.js';
 
 const SYSTEM_ROOT_UPPER = new Set(['EXPORT', 'INBOX', 'SCREENSHOT']);
 
@@ -55,6 +56,9 @@ export function parseUrlHash(hashString) {
         if (params.get('tab') === 'tasks' || params.get('view') === 'tasks') {
             return { tab: 'tasks', view: 'grid', dirId: '0', showSystem: false };
         }
+        if (params.get('tab') === 'settings' || params.get('view') === 'settings') {
+            return { tab: 'settings', view: 'grid', dirId: '0', showSystem: false };
+        }
         if (params.has('file')) {
             return {
                 tab: 'files',
@@ -82,6 +86,10 @@ export function parseUrlHash(hashString) {
 
     if (parts[0] === 'tasks') {
         return { tab: 'tasks', view: 'grid', dirId: '0', showSystem: false };
+    }
+
+    if (parts[0] === 'settings') {
+        return { tab: 'settings', view: 'grid', dirId: '0', showSystem: false };
     }
 
     if (parts[0] === 'file' && parts[1]) {
@@ -114,6 +122,9 @@ export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false)
     if (tab === 'tasks') {
         return '#/tasks';
     }
+    if (tab === 'settings') {
+        return '#/settings';
+    }
     if (viewState === 'viewer' && fileObj && fileObj.id) {
         return `#/file/${fileObj.id}`;
     }
@@ -134,7 +145,8 @@ createApp({
         FileViewer,
         SystemPanel,
         MoveModal,
-        RenameModal
+        RenameModal,
+        SettingsView
     },
     setup() {
         const { toasts, showToast, dismissToast } = useToast();
@@ -158,7 +170,7 @@ createApp({
         };
 
         // Navigation State
-        const activeTab = ref('files'); // 'files' | 'explorer' | 'tasks' | 'dashboard'
+        const activeTab = ref('files'); // 'files' | 'explorer' | 'tasks' | 'dashboard' | 'settings'
         const showSearchModal = ref(false);
         const isSidebarOpen = ref(false);
 
@@ -377,8 +389,8 @@ createApp({
                 showSystemPanel.value = false;
                 systemOpenedFromHistory = false;
 
-                if (parsed.tab === 'tasks') {
-                    activeTab.value = 'tasks';
+                if (parsed.tab === 'tasks' || parsed.tab === 'settings') {
+                    activeTab.value = parsed.tab;
                     view.value = 'grid';
                     selectedFile.value = null;
                     viewerOpenedFromHistory = false;

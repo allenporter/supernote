@@ -11,7 +11,7 @@ from aiohttp import web
 from mashumaro.exceptions import InvalidFieldValue, MissingField
 from sqlalchemy import select
 
-from supernote.models.base import ProcessingStatus
+from supernote.models.base import BaseResponse, ProcessingStatus
 from supernote.models.extended import (
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
@@ -19,6 +19,12 @@ from supernote.models.extended import (
     SearchResultVO,
     SystemTaskListVO,
     SystemTaskVO,
+    VocabularyAddDTO,
+    VocabularyListDTO,
+    VocabularyListVO,
+    VocabularyMoveDTO,
+    VocabularyTermIdDTO,
+    VocabularyTermVO,
     WebSearchRequestDTO,
     WebSearchResponseVO,
     WebSummaryListRequestDTO,
@@ -36,6 +42,7 @@ from supernote.server.exceptions import SupernoteError
 from supernote.server.services.search import SearchService
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
+from supernote.server.services.vocabulary import VocabularyService, VocabularyTerm
 
 logger = logging.getLogger(__name__)
 
@@ -303,3 +310,133 @@ async def handle_extended_ai_status(request: web.Request) -> web.Response:
             "model": model,
         }
     )
+
+
+_INVALID_REQUEST_ERRORS = (
+    json.JSONDecodeError,
+    ValueError,
+    TypeError,
+    KeyError,
+    MissingField,
+    InvalidFieldValue,
+)
+
+
+def _term_vo(term: VocabularyTerm) -> VocabularyTermVO:
+    return VocabularyTermVO(
+        id=str(term.id),
+        term=term.term,
+        scope_id=str(term.scope_id),
+        scope_path=term.scope_path,
+        source=term.source,
+        create_time=term.create_time,
+        is_suppressed=term.is_suppressed,
+        origin_file_id=str(term.origin_file_id) if term.origin_file_id else None,
+        origin_name=term.origin_name,
+    )
+
+
+def _terms_response(terms: list[VocabularyTerm]) -> web.Response:
+    return web.json_response(
+        VocabularyListVO(terms=[_term_vo(t) for t in terms]).to_dict()
+    )
+
+
+@routes.post("/api/extended/vocabulary/list")
+async def handle_vocabulary_list(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/vocabulary/list
+    # Purpose: List the terms transcription prompts prefer for this user.
+    try:
+        req_dto = VocabularyListDTO.from_dict(
+            await request.json() if request.can_read_body else {}
+        )
+    except _INVALID_REQUEST_ERRORS as e:
+        return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
+
+    user_service: UserService = request.app["user_service"]
+    vocabulary_service: VocabularyService = request.app["vocabulary_service"]
+    user_id = await user_service.get_user_id(request["user"])
+    terms = await vocabulary_service.list_terms(
+        user_id, include_suppressed=req_dto.include_suppressed
+    )
+    return _terms_response(terms)
+
+
+@routes.post("/api/extended/vocabulary/add")
+async def handle_vocabulary_add(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/vocabulary/add
+    # Purpose: Add terms for every notebook, or for one folder or notebook.
+    try:
+        req_dto = VocabularyAddDTO.from_dict(await request.json())
+    except _INVALID_REQUEST_ERRORS as e:
+        return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
+
+    user_service: UserService = request.app["user_service"]
+    vocabulary_service: VocabularyService = request.app["vocabulary_service"]
+    user_id = await user_service.get_user_id(request["user"])
+    try:
+        terms = await vocabulary_service.add_terms(
+            user_id, req_dto.terms, scope_id=req_dto.scope_id
+        )
+    except SupernoteError as err:
+        return err.to_response()
+    except ValueError as e:
+        return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
+    return _terms_response(terms)
+
+
+@routes.post("/api/extended/vocabulary/move")
+async def handle_vocabulary_move(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/vocabulary/move
+    # Purpose: Apply a term to a different folder, notebook, or every notebook.
+    try:
+        req_dto = VocabularyMoveDTO.from_dict(await request.json())
+    except _INVALID_REQUEST_ERRORS as e:
+        return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
+
+    user_service: UserService = request.app["user_service"]
+    vocabulary_service: VocabularyService = request.app["vocabulary_service"]
+    user_id = await user_service.get_user_id(request["user"])
+    try:
+        term = await vocabulary_service.move_term(user_id, req_dto.id, req_dto.scope_id)
+    except SupernoteError as err:
+        return err.to_response()
+    return _terms_response([term])
+
+
+@routes.post("/api/extended/vocabulary/delete")
+async def handle_vocabulary_delete(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/vocabulary/delete
+    # Purpose: Remove a term. A harvested term stays removed on later harvests.
+    try:
+        req_dto = VocabularyTermIdDTO.from_dict(await request.json())
+    except _INVALID_REQUEST_ERRORS as e:
+        return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
+
+    user_service: UserService = request.app["user_service"]
+    vocabulary_service: VocabularyService = request.app["vocabulary_service"]
+    user_id = await user_service.get_user_id(request["user"])
+    try:
+        await vocabulary_service.remove_term(user_id, req_dto.id)
+    except SupernoteError as err:
+        return err.to_response()
+    return web.json_response(BaseResponse().to_dict())
+
+
+@routes.post("/api/extended/vocabulary/restore")
+async def handle_vocabulary_restore(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/vocabulary/restore
+    # Purpose: Bring back a removed harvested term.
+    try:
+        req_dto = VocabularyTermIdDTO.from_dict(await request.json())
+    except _INVALID_REQUEST_ERRORS as e:
+        return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
+
+    user_service: UserService = request.app["user_service"]
+    vocabulary_service: VocabularyService = request.app["vocabulary_service"]
+    user_id = await user_service.get_user_id(request["user"])
+    try:
+        term = await vocabulary_service.restore_term(user_id, req_dto.id)
+    except SupernoteError as err:
+        return err.to_response()
+    return _terms_response([term])

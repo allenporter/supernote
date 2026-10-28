@@ -9,7 +9,10 @@ from supernote.client.exceptions import ApiException
 from supernote.client.extended import ExtendedClient
 from supernote.client.summary import SummaryClient
 from supernote.models.base import ProcessingStatus
-from supernote.models.extended import PageTranscriptVO
+from supernote.models.extended import (
+    PageTranscriptVO,
+    VocabularySource,
+)
 from supernote.models.summary import AddSummaryDTO
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
 from supernote.server.db.models.file import UserFileDO
@@ -17,6 +20,7 @@ from supernote.server.db.models.note_processing import NotePageContentDO, System
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import SupernoteError
 from supernote.server.services.user import UserService
+from supernote.server.services.vocabulary import VocabularyService
 
 
 @pytest.fixture
@@ -453,3 +457,91 @@ async def test_extended_ai_status(extended_client: ExtendedClient) -> None:
         "vectorSearchEnabled": True,
         "model": "fake-ocr-v1",
     }
+
+
+async def test_vocabulary_add_list_delete(
+    extended_client: ExtendedClient,
+) -> None:
+    added = await extended_client.add_vocabulary(["Lovelace", "Babbage"])
+    assert [(t.term, t.scope_id, t.scope_path, t.source) for t in added.terms] == [
+        ("Lovelace", "0", "", VocabularySource.MANUAL),
+        ("Babbage", "0", "", VocabularySource.MANUAL),
+    ]
+    assert all(t.create_time > 0 for t in added.terms)
+
+    listed = await extended_client.list_vocabulary()
+    assert listed.terms == added.terms
+
+    await extended_client.delete_vocabulary(int(added.terms[0].id))
+    listed = await extended_client.list_vocabulary(include_suppressed=True)
+    assert listed.terms == [added.terms[1]]
+
+
+async def test_vocabulary_move_and_restore(
+    extended_client: ExtendedClient,
+    session_manager: DatabaseSessionManager,
+    user_service: UserService,
+) -> None:
+    user_id = await user_service.get_user_id("test@example.com")
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=7001,
+                user_id=user_id,
+                directory_id=0,
+                file_name="Work",
+                is_folder="Y",
+            )
+        )
+        session.add(
+            UserFileDO(
+                id=7002, user_id=user_id, directory_id=7001, file_name="Plan.note"
+            )
+        )
+        await session.commit()
+    [term] = (await extended_client.add_vocabulary(["Kestrel"])).terms
+
+    [moved] = (await extended_client.move_vocabulary(int(term.id), 7001)).terms
+    assert (moved.id, moved.scope_id, moved.scope_path) == (term.id, "7001", "Work")
+
+    with pytest.raises(ApiException, match="404"):
+        await extended_client.restore_vocabulary(int(term.id))
+
+    await VocabularyService(session_manager).harvest(user_id, 7002, ["Osprey"])
+    harvested = next(
+        t for t in (await extended_client.list_vocabulary()).terms if t.term == "Osprey"
+    )
+    assert (harvested.source, harvested.origin_file_id, harvested.origin_name) == (
+        VocabularySource.HARVEST,
+        "7002",
+        "Plan.note",
+    )
+    await extended_client.delete_vocabulary(int(harvested.id))
+    [removed] = [
+        t
+        for t in (await extended_client.list_vocabulary(include_suppressed=True)).terms
+        if t.is_suppressed
+    ]
+    assert removed.id == harvested.id
+    [restored] = (await extended_client.restore_vocabulary(int(harvested.id))).terms
+    assert restored == harvested
+
+
+async def test_vocabulary_errors(extended_client: ExtendedClient) -> None:
+    with pytest.raises(ApiException, match="404"):
+        await extended_client.delete_vocabulary(12345)
+    with pytest.raises(ApiException, match="404"):
+        await extended_client.move_vocabulary(12345, 0)
+    with pytest.raises(ApiException, match="404"):
+        await extended_client.add_vocabulary(["Lovelace"], scope_id=12345)
+    with pytest.raises(ApiException, match="400"):
+        await extended_client.add_vocabulary([""])
+    for path in (
+        "/api/extended/vocabulary/list",
+        "/api/extended/vocabulary/add",
+        "/api/extended/vocabulary/move",
+        "/api/extended/vocabulary/delete",
+        "/api/extended/vocabulary/restore",
+    ):
+        with pytest.raises(ApiException, match="400"):
+            await extended_client._client.post(path, data="not json")

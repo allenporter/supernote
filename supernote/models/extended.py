@@ -10,7 +10,7 @@ from mashumaro import field_options
 from mashumaro.config import BaseConfig
 from mashumaro.mixins.json import DataClassJSONMixin
 
-from supernote.models.base import BaseResponse, ProcessingStatus
+from supernote.models.base import BaseEnum, BaseResponse, ProcessingStatus
 from supernote.models.summary import SummaryItem
 
 
@@ -210,6 +210,109 @@ class WebTranscriptResponseVO(BaseResponse):
     """Response VO for transcript retrieval (Web Extension)."""
 
     pages: list[PageTranscriptVO] = field(default_factory=list)
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+class VocabularySource(str, BaseEnum):
+    """Where a vocabulary term came from."""
+
+    MANUAL = "manual"
+    HARVEST = "harvest"
+
+
+@dataclass
+class VocabularyTermVO(DataClassJSONMixin):
+    """A vocabulary term.
+
+    IDs are strings, as in `UserFileVO`, because they exceed the integers a
+    JavaScript client can represent exactly.
+    """
+
+    id: str
+    term: str
+    scope_id: str = field(metadata=field_options(alias="scopeId"))
+    """Folder or notebook ID the term applies to; "0" for every notebook."""
+
+    scope_path: str = field(metadata=field_options(alias="scopePath"))
+    """Folder or notebook path the term applies to; empty for every notebook."""
+
+    source: VocabularySource
+    create_time: int = field(metadata=field_options(alias="createTime"))
+    """Creation time in epoch milliseconds."""
+
+    is_suppressed: bool = field(
+        metadata=field_options(alias="isSuppressed"), default=False
+    )
+    """A removed harvested term, listed only when asked for."""
+
+    origin_file_id: str | None = field(
+        metadata=field_options(alias="originFileId"), default=None
+    )
+    """Notebook a harvested term was first found in."""
+
+    origin_name: str | None = field(
+        metadata=field_options(alias="originName"), default=None
+    )
+    """File name of the origin notebook, if it still exists."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class VocabularyListDTO(DataClassJSONMixin):
+    """Request DTO for listing vocabulary terms (Web Extension)."""
+
+    include_suppressed: bool = field(
+        metadata=field_options(alias="includeSuppressed"), default=False
+    )
+    """Also list removed harvested terms, so they can be restored."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class VocabularyListVO(BaseResponse):
+    """Response VO listing vocabulary terms (Web Extension)."""
+
+    terms: list[VocabularyTermVO] = field(default_factory=list)
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class VocabularyAddDTO(DataClassJSONMixin):
+    """Request DTO for adding vocabulary terms (Web Extension)."""
+
+    terms: list[str]
+    scope_id: int = field(metadata=field_options(alias="scopeId"), default=0)
+    """Folder or notebook ID the terms apply to; 0 for every notebook."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class VocabularyMoveDTO(DataClassJSONMixin):
+    """Request DTO for applying a term to a different scope (Web Extension)."""
+
+    id: int
+    scope_id: int = field(metadata=field_options(alias="scopeId"))
+    """Folder or notebook ID the term should apply to; 0 for every notebook."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class VocabularyTermIdDTO(DataClassJSONMixin):
+    """Request DTO naming one vocabulary term, to remove or restore (Web Extension)."""
+
+    id: int
 
     class Config(BaseConfig):
         serialize_by_alias = True

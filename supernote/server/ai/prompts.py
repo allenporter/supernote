@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,15 @@ __all__ = [
     "get_summary_json_schema",
     "parse_summary_response",
 ]
+
+# Both halves are needed: preferring a listed spelling fixes names a model has
+# no prior for, and the second sentence stops the list becoming a source of
+# inserted words.
+_VOCABULARY_CLAUSE = (
+    "These names and terms may appear in the text: {terms}. "
+    "If a handwritten word closely matches one of them, prefer that spelling. "
+    "Never insert one of these terms where the handwriting does not support it."
+)
 
 _CODE_FENCE = re.compile(r"^```[a-zA-Z]*\s*\n(.*?)\n?```\s*$", re.DOTALL)
 
@@ -91,9 +101,13 @@ def format_ocr_prompt(
     page_metadata: PageMetadata,
     *,
     custom_type: str | None = None,
+    vocabulary: Sequence[str] = (),
     prompt_loader: PromptLoader = PROMPT_LOADER,
 ) -> str:
-    """Format the full OCR prompt including page metadata header and template."""
+    """Format the full OCR prompt including page metadata header and template.
+
+    `vocabulary` lists spellings the writer uses, nearest scope first.
+    """
     resolved_custom_type = (
         custom_type if custom_type is not None else page_metadata.file_name_basis
     )
@@ -107,7 +121,10 @@ def format_ocr_prompt(
         notebook_create_time=page_metadata.notebook_create_time,
         include_section_divider=True,
     )
-    return f"{metadata_block}\n\n{prompt}"
+    if not vocabulary:
+        return f"{metadata_block}\n\n{prompt}"
+    clause = _VOCABULARY_CLAUSE.format(terms=", ".join(vocabulary))
+    return f"{metadata_block}\n\n{prompt}\n\n{clause}"
 
 
 def format_summary_prompt(

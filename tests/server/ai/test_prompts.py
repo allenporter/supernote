@@ -35,6 +35,32 @@ def test_format_ocr_prompt_with_inferred_date(tmp_path: Path) -> None:
     assert "Transcribe this page." in prompt
 
 
+def test_format_ocr_prompt_with_vocabulary(tmp_path: Path) -> None:
+    ocr_dir = tmp_path / "ocr" / "common"
+    ocr_dir.mkdir(parents=True)
+    (ocr_dir / "prompt.md").write_text("Transcribe this page.", encoding="utf-8")
+    page_metadata = PageMetadata(
+        file_name="Plan.note",
+        page_index=0,
+        page_id="P1",
+        notebook_create_time=None,
+    )
+    loader = PromptLoader(tmp_path)
+
+    plain = format_ocr_prompt(page_metadata, prompt_loader=loader)
+    assert "may appear in the text" not in plain
+
+    prompt = format_ocr_prompt(
+        page_metadata, vocabulary=["Lovelace", "ks-tilt"], prompt_loader=loader
+    )
+    assert prompt.startswith(plain)
+    assert prompt.endswith(
+        "These names and terms may appear in the text: Lovelace, ks-tilt. "
+        "If a handwritten word closely matches one of them, prefer that spelling. "
+        "Never insert one of these terms where the handwriting does not support it."
+    )
+
+
 def test_format_summary_prompt_and_schema(tmp_path: Path) -> None:
     daily_dir = tmp_path / "summary" / "daily"
     daily_dir.mkdir(parents=True)

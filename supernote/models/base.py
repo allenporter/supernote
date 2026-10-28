@@ -87,6 +87,7 @@ class TaskType(str, BaseEnum):
     PNG_CONVERSION = ("PNG_CONVERSION", "png")
     OCR_EXTRACTION = ("OCR_EXTRACTION", "ocr")
     EMBEDDING_GENERATION = ("EMBEDDING_GENERATION", "embedding")
+    VOCABULARY_HARVEST = ("VOCABULARY_HARVEST", "vocabulary")
     SUMMARY_GENERATION = ("SUMMARY_GENERATION", "summary")
 
     @classmethod

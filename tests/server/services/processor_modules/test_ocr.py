@@ -9,6 +9,7 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.ocr import OcrModule
+from supernote.server.services.vocabulary import VocabularyService
 from supernote.server.utils.paths import get_page_png_path
 
 
@@ -115,3 +116,42 @@ async def test_ocr_run_if_needed_disabled(
 
     # run() should still return True (skipped success)
     assert await module.run(1, session_manager, page_index=0, page_id="p0") is True
+
+
+async def test_process_ocr_includes_vocabulary(
+    file_service: FileService,
+    fake_ocr_model: FakeOcrModel,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    vocabulary_service = VocabularyService(session_manager)
+    ocr_module = OcrModule(
+        file_service=file_service,
+        ocr_model=fake_ocr_model,
+        vocabulary_service=vocabulary_service,
+    )
+    user_id = 100
+    file_id = 1001
+    await blob_storage.put(CACHE_BUCKET, get_page_png_path(file_id, "p0"), b"png")
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key="k",
+                file_name="real.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id, page_index=0, page_id="p0", content_hash="h"
+            )
+        )
+        await session.commit()
+    await vocabulary_service.add_terms(user_id, ["Lovelace"])
+
+    await ocr_module.run(file_id, session_manager, page_index=0, page_id="p0")
+
+    [(_, prompt)] = fake_ocr_model.calls
+    assert "These names and terms may appear in the text: Lovelace." in prompt

@@ -139,6 +139,17 @@ class TaskGroupNotFound(ScheduleError):
         super().__init__(message, error_code, status_code=400)
 
 
+class VocabularyError(SupernoteError):
+    """Base class for vocabulary-related errors."""
+
+
+class VocabularyTermNotFound(VocabularyError):
+    """Raised when a vocabulary term does not exist."""
+
+    def __init__(self, message: str, error_code: str | ErrorCode = ErrorCode.NOT_FOUND):
+        super().__init__(message, error_code, status_code=404)
+
+
 class InvalidSignature(SupernoteError):
     """Raised when a URL signature is invalid or expired."""
 

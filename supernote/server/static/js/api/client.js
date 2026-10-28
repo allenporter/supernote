@@ -792,3 +792,57 @@ export async function downloadFile(fileId) {
     link.click();
     document.body.removeChild(link);
 }
+
+async function postVocabulary(action, body = {}) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch(`/api/extended/vocabulary/${action}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        },
+        body: JSON.stringify(body)
+    });
+
+    if (response.status === 401) {
+        logout();
+        throw new Error("Unauthorized");
+    }
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.errorMsg || data.error || `Vocabulary ${action} failed: ${response.statusText}`);
+    }
+    return data;
+}
+
+/**
+ * List vocabulary terms, including removed harvested ones.
+ * @returns {Promise<{terms: Array<{id: number, term: string, scopeId: number, scopePath: string, source: string, createTime: number, isSuppressed: boolean, originFileId: number|null, originName: string|null}>}>}
+ */
+export async function fetchVocabulary() {
+    return postVocabulary('list', { includeSuppressed: true });
+}
+
+/** Add terms for every notebook (scopeId 0), or one folder or notebook. */
+export async function addVocabulary(terms, scopeId = 0) {
+    return postVocabulary('add', { terms, scopeId });
+}
+
+/** Apply a term to a different folder, notebook, or every notebook (scopeId 0). */
+export async function moveVocabulary(id, scopeId) {
+    return postVocabulary('move', { id, scopeId });
+}
+
+/** Remove a term; a harvested one stays removed on later harvests. */
+export async function deleteVocabulary(id) {
+    return postVocabulary('delete', { id });
+}
+
+/** Bring back a removed harvested term. */
+export async function restoreVocabulary(id) {
+    return postVocabulary('restore', { id });
+}
+
