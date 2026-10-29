@@ -5,8 +5,10 @@ from pathlib import Path
 import pytest
 from aiohttp.test_utils import TestClient
 
+from supernote.server.config import parse_log_level
 from supernote.server.trace import (
     is_binary_content_type,
+    redact_request_line,
     redact_url,
     sanitize_body,
     sanitize_headers,
@@ -87,6 +89,8 @@ def test_sanitize_headers_and_redact_url() -> None:
         "X-Access-Token": "secret_jwt",
         "Authorization": "Bearer secret",
         "Cookie": "sid=123",
+        "channel": "secret_jwt_EQ123_1699999999",
+        "Channel": "Another.JWT_EQ999_1",
         "Location": "https://client.example.com/cb?code=oauth_secret&state=123",
         "Referer": "https://app.example.com/?Token=ref_tok",
         "Content-Type": "application/json",
@@ -95,6 +99,8 @@ def test_sanitize_headers_and_redact_url() -> None:
         "X-Access-Token": "***",
         "Authorization": "***",
         "Cookie": "***",
+        "channel": "***",
+        "Channel": "***",
         "Location": "https://client.example.com/cb?code=***&state=123",
         "Referer": "https://app.example.com/?Token=***",
         "Content-Type": "application/json",
@@ -293,3 +299,25 @@ async def test_trace_logging_unsafe_mode_preserves_raw_tokens(
         unsafe_entry["request"]["headers"].get("x-access-token") == "debug_header_token"
     )
     assert unsafe_entry["request"]["body"]["password"] == "debug_raw_password_hash"
+
+
+def test_redact_request_line_for_access_log() -> None:
+    """Access-log request lines and bare path_qs must redact token/sign."""
+    assert (
+        redact_request_line(
+            "GET /socket.io/?EIO=4&token=device_jwt&sign=sio_sig HTTP/1.1"
+        )
+        == "GET /socket.io/?EIO=4&token=***&sign=*** HTTP/1.1"
+    )
+    assert (
+        redact_url("/socket.io/?EIO=4&token=device_jwt&sign=sio_sig")
+        == "/socket.io/?EIO=4&token=***&sign=***"
+    )
+
+
+def test_parse_log_level_names() -> None:
+    assert parse_log_level("debug") == "DEBUG"
+    assert parse_log_level("WARNING") == "WARNING"
+    assert parse_log_level("nope") == "INFO"
+    assert parse_log_level(None) == "INFO"
+    assert parse_log_level("bogus", default="ERROR") == "ERROR"

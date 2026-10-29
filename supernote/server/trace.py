@@ -20,7 +20,7 @@ TRUNCATE_BODY_LOG = 10 * 1024
 
 REDACTED_VALUE = "***"
 REDACTED_HEADER_KEYS = frozenset(
-    {"x-access-token", "authorization", "cookie", "set-cookie"}
+    {"x-access-token", "authorization", "cookie", "set-cookie", "channel"}
 )
 URL_HEADER_KEYS = frozenset({"location", "referer"})
 REDACTED_URL_QUERY_KEYS = frozenset(
@@ -120,6 +120,42 @@ def redact_url(url: URL | str) -> str:
         return str(u.with_query(query)) if redacted else url_str
     except Exception:
         return url_str
+
+
+def redact_request_line(request_line: str) -> str:
+    """Redact sensitive query parameters in an access-log request line or URL."""
+    parts = request_line.split(" ")
+    if len(parts) >= 2 and parts[0].isalpha():
+        method, target, *rest = parts
+        return " ".join((method, redact_url(target), *rest))
+    return redact_url(request_line)
+
+
+class _RequestWithRedactedQuery:
+    """Request view whose path and query are safe to write to the access log."""
+
+    def __init__(self, request: Any) -> None:
+        self._request = request
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._request, name)
+
+    @property
+    def path_qs(self) -> str:
+        return redact_url(self._request.path_qs)
+
+
+class RedactingAccessLogger(web.AccessLogger):
+    """Access logger that redacts sensitive query parameters in the request line.
+
+    aiohttp binds ``%r`` to ``AccessLogger._format_r``, which reads ``path_qs``.
+    Wrapping the request redacts that value for the stock formatter.
+    """
+
+    def log(self, request: Any, response: Any, time: float) -> None:
+        if request is not None:
+            request = _RequestWithRedactedQuery(request)
+        super().log(request, response, time)
 
 
 def sanitize_headers(headers: dict[str, Any]) -> dict[str, Any]:

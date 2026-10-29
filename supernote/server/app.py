@@ -1,6 +1,7 @@
 import asyncio
 import importlib.resources
 import logging
+import os
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -19,7 +20,7 @@ from supernote.server.utils.auth_utils import get_token_from_request
 from .ai.models.embedding import create_embedding_model
 from .ai.models.ocr import create_ocr_model
 from .ai.models.summary import create_summary_model
-from .config import AuthConfig, ServerConfig
+from .config import AuthConfig, ServerConfig, parse_log_level
 from .constants import MAX_UPLOAD_SIZE
 from .db.session import DatabaseSessionManager
 from .events import LocalEventBus
@@ -53,7 +54,7 @@ from .services.summary import SummaryService
 from .services.user import UserService
 from .services.webhook import WebhookService
 from .socket import setup_socketio
-from .trace import trace_middleware
+from .trace import RedactingAccessLogger, trace_middleware
 from .utils.hashing import get_md5_hash
 from .utils.prompt_loader import PROMPT_LOADER
 from .utils.rate_limit import RateLimiter
@@ -417,9 +418,14 @@ async def bootstrap_ephemeral_user(app: web.Application) -> None:
 
 
 def run(args: Any) -> None:
-    # Robust logging setup
+    # Apply SUPERNOTE_LOG_LEVEL before load so startup logs honor it.
+    # load() then applies yaml or env, and the root logger follows that result.
     FORMAT = "%(asctime)s %(levelname)-8s [%(name)s] %(message)s"
-    logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
+    logging.basicConfig(
+        level=parse_log_level(os.getenv("SUPERNOTE_LOG_LEVEL")),
+        format=FORMAT,
+        force=True,
+    )
 
     # Suppress noisy library logs
     logging.getLogger("aiosqlite").setLevel(logging.INFO)
@@ -427,6 +433,7 @@ def run(args: Any) -> None:
 
     config_dir = getattr(args, "config_dir", None)
     config = ServerConfig.load(config_dir)
+    logging.getLogger().setLevel(parse_log_level(config.log_level))
     app = create_app(config)
 
     # Standard access log format for aiohttp
@@ -438,4 +445,5 @@ def run(args: Any) -> None:
         port=config.port,
         access_log=logging.getLogger("aiohttp.access"),
         access_log_format=ACCESS_LOG_FORMAT,
+        access_log_class=RedactingAccessLogger,
     )
