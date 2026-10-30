@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from supernote.server.ai.models.embedding import (
+    ConcurrencyLimitedEmbeddingModel,
+    create_embedding_model,
+)
 from supernote.server.ai.models.fake.summary import FakeSummaryModel
+from supernote.server.ai.models.openai.embedding import OpenAIEmbeddingModel
+from supernote.server.ai.models.openai.summary import OpenAISummaryModel
 from supernote.server.ai.models.summary import (
     ConcurrencyLimitedSummaryModel,
     create_summary_model,
@@ -100,3 +106,41 @@ async def test_concurrency_limited_summary_model() -> None:
     result = await wrapped.summarize("TRANSCRIPT:\nHello")
     assert wrapped.model_id == "fake-summary-v1"
     assert len(result.segments) == 1
+
+
+def test_create_summary_model_named_openai_providers() -> None:
+    """Summary and embedding can use two different OpenAI-compatible servers."""
+    config = ServerConfig(
+        ai=AiConfig(
+            providers={
+                "ollama": ProviderConfig(
+                    type="openai", base_url="http://localhost:11434/v1"
+                ),
+                "llamacpp": ProviderConfig(
+                    type="openai", base_url="http://localhost:8080/v1"
+                ),
+            },
+            summary=ModelConfig(provider="ollama", model="gemma3:27b"),
+            embedding=ModelConfig(provider="llamacpp", model="embeddinggemma"),
+        )
+    )
+    model = create_summary_model(config)
+    assert isinstance(model, ConcurrencyLimitedSummaryModel)
+    assert isinstance(model._model, OpenAISummaryModel)
+    assert model._model._backend._base_url == "http://localhost:11434/v1"
+
+    embedding = create_embedding_model(config)
+    assert isinstance(embedding, ConcurrencyLimitedEmbeddingModel)
+    assert isinstance(embedding._model, OpenAIEmbeddingModel)
+    assert embedding._model._backend._base_url == "http://localhost:8080/v1"
+
+
+def test_create_summary_model_unknown_provider_type() -> None:
+    config = ServerConfig(
+        ai=AiConfig(
+            providers={"mine": ProviderConfig(type="unknown")},
+            summary=ModelConfig(provider="mine", model="some-model"),
+        )
+    )
+    with pytest.raises(ValueError, match="provider type: 'unknown'"):
+        create_summary_model(config)

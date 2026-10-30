@@ -119,6 +119,13 @@ class ProviderConfig(DataClassYAMLMixin):
     base_url: str | None = None
     """Optional custom base URL for the provider (e.g. local Ollama or vLLM server)."""
 
+    type: str | None = None
+    """Backend implementation (`'gemini'`, `'openai'`, `'fake'`). Defaults to the entry's name.
+
+    Set it to configure several entries of one kind, e.g. two OpenAI-compatible
+    servers named `ollama` and `llamacpp`.
+    """
+
     class Config(BaseConfig):
         omit_none = True
         code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
@@ -129,7 +136,7 @@ class ModelConfig(DataClassYAMLMixin):
     """Configuration for a task-specific AI model (`ocr`, `summary`, `embedding`)."""
 
     provider: str = "gemini"
-    """Name of the provider entry in `ai.providers` (e.g. `'gemini'`, `'openai'`, `'mistral'`)."""
+    """Name of the provider entry in `ai.providers` (e.g. `'gemini'`, `'openai'`, `'ollama'`)."""
 
     model: str = ""
     """Provider-specific model identifier (e.g. `'gemini-3.6-flash'`)."""
@@ -165,6 +172,13 @@ class AiConfig(DataClassYAMLMixin):
 
     embedding: ModelConfig | None = None
     """Model configuration for page embedding generation."""
+
+    def provider_type(self, name: str) -> str:
+        """Return the backend implementation for the `ai.providers` entry `name`."""
+        provider_cfg = self.providers.get(name)
+        if provider_cfg is not None and provider_cfg.type:
+            return provider_cfg.type
+        return name
 
     class Config(BaseConfig):
         omit_none = True

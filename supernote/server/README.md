@@ -86,6 +86,24 @@ ai:
 ```
 Changing the embedding model re-embeds existing pages automatically.
 
+A provider entry's type defaults to its name. To use more than one server of the same kind, give each entry its own name and a `type`, then point each capability at an entry by name:
+```yaml
+ai:
+  providers:
+    ollama:
+      type: openai
+      base_url: "http://localhost:11434/v1"
+    llamacpp:
+      type: openai
+      base_url: "http://localhost:8080/v1"
+  summary:
+    provider: ollama
+    model: gemma3:27b
+  embedding:
+    provider: llamacpp
+    model: embeddinggemma
+```
+
 #### Outbound Webhooks
 To send non-blocking HTTP `POST` notifications on server events (e.g., to Home Assistant, n8n, or Zapier), configure `webhooks` in `config/config.yaml` (or enable via `SUPERNOTE_WEBHOOKS_ENABLED=true`):
 ```yaml

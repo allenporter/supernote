@@ -115,9 +115,10 @@ class GeminiBackend:
 
 def create_gemini_backend(
     providers: Mapping[str, ProviderConfig],
+    name: str = "gemini",
 ) -> GeminiBackend | None:
     """Create a `GeminiBackend` from configured providers, or `None` if unconfigured."""
-    provider_cfg = providers.get("gemini")
+    provider_cfg = providers.get(name)
     if (
         provider_cfg is None
         or not provider_cfg.api_key

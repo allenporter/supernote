@@ -110,3 +110,14 @@ async def test_connection_error_raises_ai_error_and_records_metric() -> None:
 
     after = REGISTRY.get_sample_value("supernote_openai_api_calls_total", labels)
     assert after == (before or 0.0) + 1.0
+
+
+def test_create_openai_backend_named_entry() -> None:
+    providers = {
+        "openai": ProviderConfig(base_url="http://localhost:11434/v1"),
+        "llamacpp": ProviderConfig(type="openai", base_url="http://localhost:8080/v1"),
+    }
+    backend = create_openai_backend(providers, "llamacpp")
+    assert isinstance(backend, OpenAIBackend)
+    assert backend._base_url == "http://localhost:8080/v1"
+    assert create_openai_backend(providers, "missing") is None

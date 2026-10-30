@@ -425,3 +425,43 @@ def test_server_config_trace_log_flags(tmp_path: Path) -> None:
         loaded = ServerConfig.load(config_dir)
         assert loaded.trace_log_file == custom_trace
         assert loaded.trace_log_unsafe is True
+
+
+def test_ai_provider_type_defaults_to_entry_name() -> None:
+    """An entry's backend type is its `type`, or else its name."""
+    ai = AiConfig(
+        providers={
+            "openai": ProviderConfig(base_url="http://localhost:11434/v1"),
+            "llamacpp": ProviderConfig(
+                type="openai", base_url="http://localhost:8080/v1"
+            ),
+        }
+    )
+    assert ai.provider_type("openai") == "openai"
+    assert ai.provider_type("llamacpp") == "openai"
+    assert ai.provider_type("gemini") == "gemini"
+
+
+def test_server_config_load_named_ai_providers(tmp_path: Path) -> None:
+    """Two entries of one type load from config.yaml under their own names."""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    data = {
+        "ai": {
+            "providers": {
+                "ollama": {"type": "openai", "base_url": "http://localhost:11434/v1"},
+                "llamacpp": {"type": "openai", "base_url": "http://localhost:8080/v1"},
+            },
+            "summary": {"provider": "ollama", "model": "gemma3:27b"},
+            "embedding": {"provider": "llamacpp", "model": "embeddinggemma"},
+        }
+    }
+    with open(config_dir / "config.yaml", "w") as f:
+        yaml.safe_dump(data, f)
+
+    config = ServerConfig.load(config_dir)
+
+    assert config.ai.providers["ollama"] == ProviderConfig(
+        type="openai", base_url="http://localhost:11434/v1"
+    )
+    assert config.ai.provider_type("llamacpp") == "openai"

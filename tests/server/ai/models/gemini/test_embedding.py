@@ -7,7 +7,11 @@ import pytest
 from supernote.server.ai.base import AIError
 from supernote.server.ai.models.embedding import EmbeddingTaskType
 from supernote.server.ai.models.gemini.backend import GeminiBackend
-from supernote.server.ai.models.gemini.embedding import GeminiEmbeddingModel
+from supernote.server.ai.models.gemini.embedding import (
+    GeminiEmbeddingModel,
+    create_embedding_model,
+)
+from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
 
 from .conftest import FakeGeminiServer
 
@@ -46,3 +50,17 @@ async def test_gemini_embedding_model(
             "This is the text to embed.",
             task_type=EmbeddingTaskType.RETRIEVAL_QUERY,
         )
+
+
+def test_create_embedding_model() -> None:
+    assert create_embedding_model(ServerConfig()) is None
+
+    config = ServerConfig(
+        ai=AiConfig(
+            providers={"work": ProviderConfig(type="gemini", api_key="work-key")},
+            embedding=ModelConfig(provider="work", model="gemini-custom"),
+        )
+    )
+    model = create_embedding_model(config)
+    assert isinstance(model, GeminiEmbeddingModel)
+    assert model.model_id == "gemini-custom"

@@ -115,13 +115,14 @@ class OpenAIBackend:
 
 def create_openai_backend(
     providers: Mapping[str, ProviderConfig],
+    name: str = "openai",
 ) -> OpenAIBackend | None:
     """Create an `OpenAIBackend` from configured providers, or `None` if unconfigured.
 
     A provider entry needs a `base_url` (e.g. a local Ollama server) or an
     `api_key` (hosted OpenAI at `DEFAULT_BASE_URL`).
     """
-    provider_cfg = providers.get("openai")
+    provider_cfg = providers.get(name)
     if provider_cfg is None:
         return None
     base_url = (provider_cfg.base_url or "").strip()
