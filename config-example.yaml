@@ -7,6 +7,10 @@
 host: 0.0.0.0
 port: 8080
 
+# Root log level. Unknown names fall back to INFO.
+# Override with the SUPERNOTE_LOG_LEVEL environment variable.
+# log_level: INFO
+
 # Directory where uploaded files and databases will be stored.
 storage_dir: storage
 

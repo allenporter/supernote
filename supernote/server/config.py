@@ -11,6 +11,21 @@ from mashumaro.mixins.yaml import DataClassYAMLMixin
 logger = logging.getLogger(__name__)
 
 
+def parse_log_level(level: str | None, *, default: str = "INFO") -> str:
+    """Return a stdlib log level name.
+
+    Matching is case-insensitive. Unknown or empty values fall back to
+    ``default``, then to INFO.
+    """
+    for candidate in (level, default, "INFO"):
+        if not candidate:
+            continue
+        name = candidate.strip().upper()
+        if name and isinstance(logging.getLevelName(name), int):
+            return name
+    return "INFO"
+
+
 def _get_bool_env(name: str, default: bool) -> bool:
     """Get a boolean value from an environment variable."""
     val = os.getenv(name)
@@ -183,6 +198,14 @@ class ServerConfig(DataClassYAMLMixin):
     """Port to bind the server to.
 
     Env Var: `SUPERNOTE_PORT`
+    """
+
+    log_level: str = "INFO"
+    """Root logger level name (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+
+    Unknown names fall back to INFO.
+
+    Env Var: `SUPERNOTE_LOG_LEVEL`
     """
 
     mcp_enabled: bool = True
@@ -435,6 +458,23 @@ class ServerConfig(DataClassYAMLMixin):
                 logger.info(f"Using SUPERNOTE_PORT: {config.port}")
             except ValueError:
                 pass
+
+        configured_level = config.log_level
+        config.log_level = parse_log_level(configured_level)
+        if configured_level and configured_level.strip().upper() != config.log_level:
+            logger.warning(
+                f"Invalid log_level {configured_level!r}; using {config.log_level}"
+            )
+
+        if raw_level := os.getenv("SUPERNOTE_LOG_LEVEL"):
+            parsed_level = parse_log_level(raw_level)
+            if raw_level.strip().upper() != parsed_level:
+                logger.warning(
+                    f"Invalid SUPERNOTE_LOG_LEVEL {raw_level!r}; using {parsed_level}"
+                )
+            else:
+                logger.info(f"Using SUPERNOTE_LOG_LEVEL: {parsed_level}")
+            config.log_level = parsed_level
 
         if os.getenv("SUPERNOTE_MCP_ENABLED"):
             config.mcp_enabled = _get_bool_env(
