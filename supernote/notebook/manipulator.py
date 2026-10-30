@@ -83,7 +83,7 @@ def reconstruct(notebook):
     expected_signature = parser.SupernoteXParser.SN_SIGNATURES[
         -1
     ]  # latest supported signature
-    metadata = notebook.get_metadata()
+    metadata = notebook.get_required_metadata()
     if metadata.signature != expected_signature:
         raise ValueError(
             f"Only latest file format version is supported ({metadata.signature} != {expected_signature})"
@@ -118,8 +118,8 @@ def reconstruct(notebook):
 def merge(notebook1, notebook2):
     """Merge multiple notebooks to one."""
     # TODO: support non-X series
-    metadata1 = notebook1.get_metadata()
-    metadata2 = notebook2.get_metadata()
+    metadata1 = notebook1.get_required_metadata()
+    metadata2 = notebook2.get_required_metadata()
     expected_signature = parser.SupernoteXParser.SN_SIGNATURES[
         -1
     ]  # latest supported signature
@@ -174,19 +174,19 @@ def merge(notebook1, notebook2):
 
 
 def _pack_type(builder, notebook):
-    metadata = notebook.get_metadata()
+    metadata = notebook.get_required_metadata()
     builder.append("__type__", metadata.type.encode("ascii"), skip_block_size=True)
 
 
 def _pack_signature(builder, notebook):
-    metadata = notebook.get_metadata()
+    metadata = notebook.get_required_metadata()
     builder.append(
         "__signature__", metadata.signature.encode("ascii"), skip_block_size=True
     )
 
 
 def _pack_header(builder, notebook):
-    metadata = notebook.get_metadata()
+    metadata = notebook.get_required_metadata()
     header_block = _construct_metadata_block(metadata.header)
     builder.append("__header__", header_block)
 

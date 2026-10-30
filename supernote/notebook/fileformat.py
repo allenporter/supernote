@@ -22,9 +22,9 @@ The Footer Block then contains references (offsets) to all other metadata blocks
 
 import json
 
-ParamsBlock = dict[str, str | list[str]]
+from .exceptions import ParserException
 
-#### Constants
+ParamsBlock = dict[str, str | list[str]]
 
 PAGE_HEIGHT = 1872
 PAGE_WIDTH = 1404
@@ -177,6 +177,14 @@ class Notebook:
 
     def get_metadata(self) -> SupernoteMetadata:
         return self.metadata
+
+    def get_required_metadata(self) -> SupernoteMetadata:
+        metadata = self.get_metadata()
+        if metadata is None:
+            raise ParserException("notebook metadata is missing")
+        if metadata.pages is None:
+            raise ParserException("notebook metadata pages are missing")
+        return metadata
 
     def get_width(self) -> int:
         return self.page_width

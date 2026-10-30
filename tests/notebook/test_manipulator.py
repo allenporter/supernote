@@ -451,3 +451,60 @@ def test_find_background_content_from_page() -> None:
 
     bg_content = _find_background_content_from_page(real_page2)
     assert bg_content is not None
+
+
+def test_get_required_metadata_returns_parsed_signature_and_pages() -> None:
+    notebook = load_notebook(str(SAMPLE_NOTE_PATH))
+    metadata = notebook.get_required_metadata()
+    assert metadata.signature == "SN_FILE_VER_20230015"
+    assert metadata.pages is not None and len(metadata.pages) == 1
+
+
+def test_get_required_metadata_allows_empty_page_list() -> None:
+    metadata = fileformat.SupernoteMetadata()
+    metadata.type = "NOTE"
+    metadata.signature = "SN_FILE_VER_20230015"
+    metadata.header = {}
+    metadata.footer = {}
+    metadata.pages = []
+    notebook = fileformat.Notebook(metadata)
+    required = notebook.get_required_metadata()
+    assert required.signature == "SN_FILE_VER_20230015"
+    assert required.pages == []
+
+
+def test_get_required_metadata_rejects_missing_metadata() -> None:
+    notebook = load_notebook(str(SAMPLE_NOTE_PATH))
+    object.__setattr__(notebook, "metadata", None)
+    with pytest.raises(
+        exceptions.ParserException, match="notebook metadata is missing"
+    ):
+        notebook.get_required_metadata()
+
+
+def test_get_required_metadata_rejects_missing_pages() -> None:
+    notebook = load_notebook(str(SAMPLE_NOTE_PATH))
+    notebook.get_metadata().pages = None
+    with pytest.raises(
+        exceptions.ParserException, match="notebook metadata pages are missing"
+    ):
+        notebook.get_required_metadata()
+
+
+def test_reconstruct_rejects_missing_metadata() -> None:
+    notebook = load_notebook(str(SAMPLE_NOTE_PATH))
+    object.__setattr__(notebook, "metadata", None)
+    with pytest.raises(
+        exceptions.ParserException, match="notebook metadata is missing"
+    ):
+        reconstruct(notebook)
+
+
+def test_merge_rejects_missing_pages() -> None:
+    notebook1 = _prepare_notebook_for_reconstruct(load_notebook(str(SAMPLE_NOTE_PATH)))
+    notebook2 = _prepare_notebook_for_reconstruct(load_notebook(str(SAMPLE_NOTE_PATH)))
+    notebook2.get_metadata().pages = None
+    with pytest.raises(
+        exceptions.ParserException, match="notebook metadata pages are missing"
+    ):
+        merge(notebook1, notebook2)
