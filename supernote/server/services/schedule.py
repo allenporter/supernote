@@ -1,3 +1,13 @@
+"""Schedule and task management service for Supernote hardware and Web UI clients.
+
+`ScheduleService` manages task groups (`ScheduleTaskGroupDO`) and tasks (`ScheduleTaskDO`),
+enforcing client-supplied or server-generated IDs, atomic all-or-nothing batch updates,
+cascade soft-deletes, and `nextSyncToken` delta queries. Mutations publish
+`ScheduleUpdatedEvent` onto `supernote.server.events.LocalEventBus` for real-time Socket.IO
+push notifications. Used by `supernote.server.routes.schedule` and
+`supernote.server.services.ical_export.ICalExportService`. See `supernote.guides.schedule_api`.
+"""
+
 import logging
 import time
 from typing import Any, cast

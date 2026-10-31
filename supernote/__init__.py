@@ -6,6 +6,7 @@ import importlib
 from typing import Any
 
 __all__ = [
+    "cli",
     "client",
     "models",
     "notebook",
@@ -15,6 +16,8 @@ __all__ = [
 
 def __getattr__(name: str) -> Any:
     """Lazily import top-level subpackages on first attribute access (PEP 562).
+
+    @private
 
     Python executes `supernote/__init__.py` whenever any subpackage (such as
     `supernote.server`, `supernote.client`, or `supernote.notebook`) is imported.

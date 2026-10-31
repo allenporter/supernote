@@ -1,3 +1,13 @@
+"""Two-way storage integrity verification between SQLite VFS records and blob storage.
+
+`IntegrityService` audits `UserFileDO`, `RecycleFileDO`, `SummaryDO`, `NotePageContentDO`,
+and `SystemTaskDO` against physical blobs in `USER_DATA_BUCKET` and `CACHE_BUCKET`
+(`supernote.server.services.blob.BlobStorage`). It detects missing blobs, size/MD5
+mismatches, invalid storage keys, orphan blobs on disk, and broken VFS parent chains,
+returning structured `supernote.models.system.IntegrityReportVO` diagnostics with
+remediation hints. Invoked via `supernote.server.routes.admin` (`supernote admin integrity`).
+"""
+
 import logging
 from collections import defaultdict
 

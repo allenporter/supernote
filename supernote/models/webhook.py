@@ -1,7 +1,9 @@
-"""Data models for outbound webhook payloads.
+"""Data models and event constants for outbound HMAC-signed webhook payloads.
 
-See :mod:`supernote.server.services.webhook` for the dispatcher that builds
-and signs these payloads before sending them to configured endpoints.
+This module defines `WebhookPayload`, `WebhookFileVO`, and event type constants
+(`EVENT_NOTE_SYNC_COMPLETED`, `EVENT_NOTE_PROCESSING_COMPLETED`) dispatched when a `.note` file
+finishes syncing or completes background OCR/AI processing. See `supernote.models` and
+`supernote.guides.webhooks_and_integrations` for payload schemas and signature verification.
 """
 
 from dataclasses import dataclass

@@ -1,3 +1,11 @@
+"""Helpers for querying `NotePageContentDO`, inferring dates from `PAGEID`, and formatting page headers.
+
+Provides `get_page_content_by_id`, `infer_page_date` (which extracts `YYYY-MM-DD` timestamps
+embedded in Supernote `P<YYYYMMDDHHMMSS>...` page identifiers), and `format_page_metadata`
+used by `supernote.server.ai.prompts`, `supernote.server.services.processor_modules.summary.SummaryModule`,
+and `supernote.server.services.search.SearchService`.
+"""
+
 import re
 from datetime import datetime
 

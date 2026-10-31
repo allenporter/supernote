@@ -1,3 +1,12 @@
+"""Externalized Markdown prompt loader (`PromptLoader`) and notebook-stem prompt routing.
+
+Loads built-in or user-overridden (`ServerConfig.prompts_dir` / `SUPERNOTE_PROMPTS_DIR`)
+prompts for `ocr` (`PromptId.OCR_TRANSCRIPTION`) and `summary` (`PromptId.SUMMARY_GENERATION`).
+When a notebook is processed, `PromptLoader.get_prompt` combines `common/*.md` with either
+a matching `<notebook_stem>/*.md` directory (e.g. `daily/` for `Daily.note`) or `default/*.md`.
+Used by `supernote.server.ai.prompts`. See `supernote.guides.mcp`.
+"""
+
 import enum
 import importlib.resources
 import logging

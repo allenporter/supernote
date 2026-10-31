@@ -12,7 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Utility classes."""
+"""Internal compatibility wrappers for legacy Supernote `.note` metadata quirks.
+
+This module provides `WorkaroundPageWrapper`, a `supernote.notebook.fileformat.Page` wrapper used
+by `supernote.notebook.converter` and `supernote.notebook.manipulator` to normalize duplicate
+`"MAINLAYER"` layer names found in older firmware files back into `"MAINLAYER"`, `"LAYER1"`,
+`"LAYER2"`, `"LAYER3"`, and `"BGLAYER"`. See `supernote.notebook`.
+"""
 
 from typing import Self
 

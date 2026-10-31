@@ -1,3 +1,14 @@
+"""ORM models (`NotePageContentDO` and `SystemTaskDO`) for the `.note` processing pipeline.
+
+- `NotePageContentDO` (`f_note_page_content`): Stores per-page layer MD5 hashes (`content_hash`),
+  OCR transcripts (`text_content`), and JSON-serialized vector embeddings (`embedding`, `embedding_model`)
+  queried by `supernote.server.services.search.SearchService`.
+- `SystemTaskDO` (`f_system_task`): Tracks per-file and per-page execution checkpoints
+  (`ProcessingStatus`), retry counts, and task versions across `supernote.server.services.processor.ProcessorService`.
+
+See `supernote.guides.note_processing_design`.
+"""
+
 import time
 
 from sqlalchemy import BigInteger, String, Text, UniqueConstraint

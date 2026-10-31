@@ -1,3 +1,13 @@
+"""Administrative and system maintenance client (`AdminClient`).
+
+This module provides `supernote.client.admin.AdminClient` for user account administration
+(`register`, `update_password`, `reset_password`, `admin_create_user`, `admin_list_users`),
+background processor queue control (`get_queue_status`, `stop_queue`, `start_queue`), system task
+inspection (`list_tasks`), note reprocessing (`admin_reprocess`), and two-way storage integrity
+verification (`verify_integrity`). See `supernote.client`, `supernote.models.system`, and
+`supernote.guides.cli_reference`.
+"""
+
 import logging
 
 from supernote.client.client import Client

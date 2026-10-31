@@ -1,11 +1,12 @@
 """Outbound webhook dispatch for server events.
 
-Listens on the internal :class:`~supernote.server.events.LocalEventBus` and,
-for every configured endpoint subscribed to a given event name, sends a
-signed HTTP POST notification. Delivery is best-effort: a slow or failing
-endpoint is logged and skipped, it never raises back into the caller and
-never blocks or delays the operation that triggered the event (e.g. a
-device sync request).
+Listens on the internal `supernote.server.events.LocalEventBus` and,
+for every configured endpoint subscribed to a given event name (`note.sync_completed`,
+`note.processing_completed`), sends an HMAC-SHA256 signed HTTP `POST` notification
+(`X-Supernote-Signature`, `X-Supernote-Event`) with payload models from
+`supernote.models.webhook`. Delivery is best-effort with bounded concurrency and retry
+backoff: a slow or failing endpoint is logged and skipped, never blocking device sync.
+See `supernote.guides.webhooks_and_integrations` and `supernote.guides.configuration`.
 """
 
 import asyncio

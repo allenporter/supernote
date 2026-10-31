@@ -1,4 +1,11 @@
-"""HTTP request/response trace logging middleware and credential redaction helpers."""
+"""Structured HTTP request/response trace logging middleware and credential redaction.
+
+`trace_middleware` writes JSON Lines records of incoming HTTP requests and outgoing
+responses to `ServerConfig.trace_log_file` (`<storage_dir>/system/trace.log` by default).
+Unless `ServerConfig.trace_log_unsafe` is enabled, sensitive headers (`x-access-token`,
+`authorization`, `cookie`), query parameters (`signature`, `token`, `code`), and JSON
+credential fields are automatically redacted (`***`). See `supernote.guides.configuration`.
+"""
 
 import asyncio
 import json

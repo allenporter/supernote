@@ -1,4 +1,10 @@
-"""Module for API base classes."""
+"""Base response envelope (`BaseResponse`), error codes, and shared enumerations.
+
+This module defines `BaseResponse` (the `mashumaro` `DataClassJSONMixin` base class inherited by all
+Supernote API response VOs), `create_error_response`, and core protocol enums (`BaseEnum`,
+`BooleanEnum`, `ErrorCode`, `ProcessingStatus`, `TaskType`). All models configure
+`serialize_by_alias = True` to preserve camelCase wire compatibility. See `supernote.models`.
+"""
 
 from dataclasses import dataclass, field
 from enum import Enum

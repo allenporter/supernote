@@ -12,7 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Color classes."""
+"""Color palettes and mode constants for `.note` bitmap decoding and rendering.
+
+This module defines `ColorPalette`, `DEFAULT_COLORPALETTE`, `DEFAULT_RGB_COLORPALETTE`, and color
+mode constants (`MODE_GRAYSCALE`, `MODE_RGB`) used by `supernote.notebook.decoder` and
+`supernote.notebook.converter` to map encoded stroke color codes (`0x61`–`0x68`, `0x9D`, `0xC9`,
+etc.) to grayscale or RGB pixel values. See `supernote.notebook` for custom palette examples.
+"""
 
 # color mode
 MODE_GRAYSCALE = "grayscale"

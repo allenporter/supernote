@@ -1,4 +1,11 @@
-"""Admin CLI commands."""
+"""CLI subcommands (`supernote admin`) for server administration and queue maintenance.
+
+This module implements the `supernote admin` command group built on `supernote.client.admin.AdminClient`,
+including user lifecycle management (`user add`, `user list`, `user reset-password`), background
+processor queue control (`queue status`, `queue stop`, `queue start`), task inspection (`tasks`),
+note reprocessing (`reprocess`), and two-way storage integrity checks (`verify-integrity`).
+See `supernote.cli` and `supernote.guides.cli_reference`.
+"""
 
 import asyncio
 import getpass

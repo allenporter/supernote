@@ -1,55 +1,80 @@
-# Supernote Private Cloud Server
+# Supernote Private Cloud & Knowledge Hub (`supernote.server`)
 
-This package provides a self-hosted implementation of the Supernote Cloud server, enhanced with AI-powered insights, a modern Web UI, and robust background processing.
+`supernote.server` is an asynchronous (`aiohttp` + `SQLAlchemy` + `SQLite`) self-hosted implementation of the **Supernote Private Cloud** protocol, extended with a 5-stage background `.note` processing pipeline, a single-page Web UI, signed outbound webhooks, RFC 5545 iCalendar task feeds, and a Streamable HTTP **Model Context Protocol (MCP)** server.
 
-## Core Features
+---
 
--   **Seamless Sync**: Implements the native Supernote sync protocol.
--   **AI Synthesis**: Automatically transcribes handwriting and identifies key insights using Google Gemini.
--   **Knowledge Exploration**: Cross-notebook semantic search and web-based file browsing.
--   **Private & Local**: Store your notes and metadata on your own infrastructure.
+## Architecture Overview
 
-## Getting Started
+```mermaid
+flowchart LR
+    Device["Supernote Tablet\n(Nomad / Manta / A5X)"] <-->|Sync + Socket.IO :8080| App["aiohttp Application\n(supernote.server.app)"]
+    WebUI["Web UI / CLI"] <-->|REST + Socket.IO :8080| App
+    Agent["MCP Client\n(Claude / Cursor)"] <-->|OAuth 2.1 :8080\nStreamable HTTP :8081/mcp| MCP["MCP Server\n(supernote.server.mcp)"]
 
-See the main [README.md](../../README.md) for a quick start guide.
+    App --> VFS["FileService & LocalBlobStorage"]
+    App --> Sched["ScheduleService & ICalExportService"]
+    App --> Bus["LocalEventBus"]
+    Bus --> Proc["ProcessorService\n(Hashing -> PNG -> OCR -> Embedding -> Summary)"]
+    Bus --> WH["WebhookService\n(HMAC-SHA256 HTTP POST)"]
+    MCP --> Search["SearchService\n(Vector Similarity + Transcripts)"]
+```
 
-### Prerequisites
+### Package Structure
 
--   A Supernote device (Nomad, A5 X, A6 X, etc.)
--   Python 3.13+ or Docker.
--   (Recommended) **Gemini API Key** for OCR and Summarization.
+| Subpackage / Module | Responsibility |
+| :--- | :--- |
+| `supernote.server.app` | Application factory (`supernote.server.app.create_app`), middleware stack (proxy headers, Socket.IO Engine.IO v3/v4 compatibility, Prometheus metrics, structured trace logging, JWT verification), and lifecycle hooks. |
+| `supernote.server.config` | Strongly-typed YAML and `SUPERNOTE_*` environment configuration (`supernote.server.config.ServerConfig`, `supernote.server.config.AuthConfig`, `supernote.server.config.AiConfig`, `supernote.server.config.WebhookConfig`). |
+| `supernote.server.routes` | HTTP route handlers for hardware device sync (`file_device`), Web UI file APIs (`file_web`), local OSS signed blob transfer (`oss`), schedule/tasks (`schedule`), summaries (`summary`), search (`extended`), authentication (`auth`), and admin operations (`admin`). |
+| `supernote.server.services` | Core domain services: `supernote.server.services.file.FileService` (transactional VFS), `supernote.server.services.blob.LocalBlobStorage` (content-addressable storage), `supernote.server.services.processor.ProcessorService` (5-stage `.note` pipeline), `supernote.server.services.search.SearchService`, `supernote.server.services.schedule.ScheduleService`, `supernote.server.services.ical_export.ICalExportService`, `supernote.server.services.webhook.WebhookService`, and `supernote.server.services.integrity.IntegrityService`. |
+| `supernote.server.ai` | Provider-agnostic AI interfaces (`supernote.server.ai.models.ocr.OcrModel`, `supernote.server.ai.models.summary.SummaryModel`, `supernote.server.ai.models.embedding.EmbeddingModel`), prompt formatting (`supernote.server.ai.prompts`), and Google Gemini / OpenAI-compatible implementations. |
+| `supernote.server.mcp` | OAuth 2.1 / IndieAuth Authorization Server (`supernote.server.mcp.auth`) and Streamable HTTP MCP Resource Server (`supernote.server.mcp.server`) exposing `list_notebooks`, `search_notebook_chunks`, and `get_notebook_transcript`. |
+| `supernote.server.db` | Async SQLAlchemy 2.0 session management (`supernote.server.db.session.DatabaseSessionManager`), ORM models (`UserDO`, `UserFileDO`, `NotePageContentDO`, `SystemTaskDO`, `SummaryDO`, `ScheduleTaskDO`), and Alembic migrations. |
 
-### Configuration
+---
 
-The server is configured via `config/config.yaml` or environment variables.
+## Deployment Modes & Memory Footprint
 
-For a comprehensive reference, see the [ServerConfig documentation](https://allenporter.github.io/supernote/supernote/server.html#ServerConfig).
-
-#### Full vs. Bare Sync Mode (Memory Footprint)
-
-| Mode | Idle RAM | Peak Active RAM | Description |
+| Mode | Idle RAM | Peak Active RAM | Configuration |
 | :--- | :---: | :---: | :--- |
-| **Bare Sync Server** | **~133 MB** | **~135 MB** | Device sync only; disables Web UI, background PNG rendering, and MCP server. |
-| **Full Knowledge Hub (Default)** | **~160 MB** | **~310 MB** | Enables Web UI, notebook page rendering, MCP server, and optional AI pipeline. |
+| **Bare Sync Server** | **~133 MB** | **~135 MB** | `web_enabled: false`, `mcp_enabled: false` (`SUPERNOTE_WEB_ENABLED=false`, `SUPERNOTE_MCP_ENABLED=false`). Hardware sync & task sync only. |
+| **Full Knowledge Hub (Default)** | **~160 MB** | **~310 MB** | Enables Web UI (`/`), background `.note` page PNG rasterization, MCP server (`:8081/mcp`), and optional AI pipeline. |
 
-To run in **Bare Sync Mode** (ideal for low-memory VPS instances or Raspberry Pi setups where only device synchronization is needed), disable `mcp_enabled` and `web_enabled` in `config/config.yaml`:
-```yaml
-mcp_enabled: false
-web_enabled: false
-```
-Or via environment variables:
+---
+
+## Quick Start
+
+### 1. Start the Server
+
 ```bash
-export SUPERNOTE_MCP_ENABLED=false
-export SUPERNOTE_WEB_ENABLED=false
+# Start on 0.0.0.0:8080 (MCP on :8081)
+supernote serve
+
+# Or start an isolated ephemeral test instance (pre-seeds debug@example.com / password)
+supernote serve --ephemeral
 ```
 
-#### AI Configuration
-Configure AI providers and per-capability models (`ocr`, `summary`, `embedding`) in `config/config.yaml` (omitting any capability you want disabled):
+### 2. Bootstrap the Admin User
+
+`supernote.server` uses an **Admin-First** bootstrap model: when zero users exist in SQLite, the first registered account automatically receives administrator privileges and locks public registration.
+
+```bash
+supernote admin --url http://localhost:8080 user add you@example.com --name "Admin"
+supernote cloud login you@example.com --url http://localhost:8080
+```
+
+### 3. Configure AI & Webhooks (`config/config.yaml`)
+
+See `supernote.server.config.ServerConfig` for all options. Example using Google Gemini or a local OpenAI-compatible server (Ollama, vLLM, LM Studio):
+
 ```yaml
 ai:
   providers:
     gemini:
-      api_key: "your-api-key"
+      api_key: "your-gemini-api-key"
+    openai:
+      base_url: "http://localhost:11434/v1" # Ollama
   ocr:
     provider: gemini
     model: gemini-3.6-flash
@@ -62,106 +87,23 @@ ai:
     provider: gemini
     model: gemini-embedding-001
     max_concurrency: 5
-```
 
-To run the models locally instead, use the `openai` provider with any server that implements the OpenAI API (e.g. Ollama, llama.cpp, vLLM, LM Studio). OCR needs a vision-capable chat model. Providers can be mixed per capability.
-```yaml
-ai:
-  providers:
-    openai:
-      base_url: "http://localhost:11434/v1"  # Ollama; omit for api.openai.com
-      # api_key: "sk-..."                    # required for hosted OpenAI
-  ocr:
-    provider: openai
-    model: gemma3:27b
-    max_concurrency: 1
-  summary:
-    provider: openai
-    model: gemma3:27b
-    max_concurrency: 1
-  embedding:
-    provider: openai
-    model: embeddinggemma
-    max_concurrency: 1
-```
-Changing the embedding model re-embeds existing pages automatically.
-
-#### Outbound Webhooks
-To send non-blocking HTTP `POST` notifications on server events (e.g., to Home Assistant, n8n, or Zapier), configure `webhooks` in `config/config.yaml` (or enable via `SUPERNOTE_WEBHOOKS_ENABLED=true`):
-```yaml
 webhooks:
   enabled: true
   endpoints:
     - url: "https://n8n.homelab.local/webhook/supernote"
-      user: "user@example.com"
-      secret: "CHANGE_ME_TO_A_SECURE_RANDOM_STRING"
+      user: "you@example.com"
+      secret: "replace-with-random-secret"
       events:
         - "note.sync_completed"
-```
-Each delivery includes `X-Supernote-Event` and (when `secret` is set) `X-Supernote-Signature: sha256=<hex>` headers with a JSON payload (see [`supernote.models.webhook`](https://allenporter.github.io/supernote/supernote/models/webhook.html) and [`supernote.server.services.webhook`](https://allenporter.github.io/supernote/supernote/server/services/webhook.html)).
-
-### Running the Server
-
-Start the server using the unified `supernote` CLI:
-
-```bash
-# Start the server on port 8080
-supernote serve
+        - "note.processing_completed"
 ```
 
-To override settings via environment:
+---
 
-```bash
-export SUPERNOTE_PORT=8080
-export SUPERNOTE_HOST=0.0.0.0
-supernote serve
-```
+## Documentation & Guides
 
-### Running with Docker
-
-```bash
-# Build the image
-docker build -t supernote .
-
-# Run the container
-docker run -d \
-  -p 8080:8080 \
-  -v $(pwd)/storage:/storage \
-  -e SUPERNOTE_GEMINI_API_KEY="your-key" \
-  --name supernote-server \
-  supernote serve
-```
-
-### Connecting Your Device
-
-1. Review the [official Private Cloud setup guide](https://support.supernote.com/Whats-New/setting-up-your-own-supernote-private-cloud-beta).
-2. Ensure your Supernote device and server are on the same Wi-Fi network.
-3. On your Supernote device, go to **Settings** > **Sync** > **Supernote Cloud**.
-4. Select **Private Cloud** and enter your server's IP and port (e.g., `192.168.1.100:8080`).
-5. Attempt to login using the credentials created via `supernote admin user add`.
-6. Configure folders to sync (e.g., `Note`, `Document`, `EXPORT`) in **Settings** > **Drive** > **Private Cloud**.
-
-## Robustness & Maintenance
-
-Supernote Knowledge Hub is built for long-term stability:
-
-- **Database Migrations**: Uses Alembic for seamless schema and data updates (see [Alembic Migration History & Conventions](../alembic/README.md)).
-- **Background Polling**: Automatically recovers stalled processing tasks.
-- **Integrity Checks**: Periodically verifies file storage consistency.
-- **Storage Quotas**: Manage user storage limits effectively.
-
-## Debugging & Tracing
-
-The server logs all incoming requests to `storage/system/server_trace.log`:
-
-```bash
-tail -f storage/system/server_trace.log
-```
-
-## Development
-
-- **Entry Point**: `supernote/server/app.py`
-- **Tests**: `tests/server/`
-- **Ephemeral Mode**: Run `supernote serve --ephemeral` for a transient, pre-configured test instance.
-
-For contribution guidelines, see [CONTRIBUTING.md](../docs/CONTRIBUTING.md).
+- **[Self-Hosting & Quickstart Guide](../../docs/bootstrap_guide.md)**: Deployment modes, Docker Compose, Admin-First bootstrap, physical Supernote tablet setup, Nginx/Caddy reverse proxy configuration, and safe SQLite + blob backups.
+- **[Configuration Reference](../../docs/configuration.md)**: Complete reference for `config/config.yaml`, `SUPERNOTE_*` environment variables, and priority resolution.
+- **[AI Pipeline, Custom Prompts & MCP Server](../../docs/mcp.md)**: How the 5-stage processing pipeline works, mixing cloud/local models, filename-based custom prompts (`prompts_dir`), and connecting Claude Desktop or Cursor via OAuth 2.1 + MCP.
+- **[Webhooks, Calendar (`.ics`) & Home Assistant Integrations](../../docs/webhooks_and_integrations.md)**: Subscribing to `/api/schedule/feed.ics` `VTODO` feeds, configuring outbound webhooks, verifying `X-Supernote-Signature` HMAC-SHA256 headers, and Home Assistant automations.

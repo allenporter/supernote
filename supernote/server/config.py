@@ -1,3 +1,18 @@
+"""Typed server configuration models and environment variable resolution.
+
+Defines `ServerConfig` along with nested configuration dataclasses (`AuthConfig`,
+`AiConfig`, `ProviderConfig`, `ModelConfig`, `WebhookConfig`, `WebhookEndpointConfig`)
+serialized via `mashumaro` YAML mixins.
+
+`ServerConfig.load` resolves settings in priority order:
+1. `SUPERNOTE_*` environment variables (highest priority)
+2. `config/config.yaml` (or `<SUPERNOTE_CONFIG_DIR>/config.yaml`)
+3. Dataclass defaults and persistent SQLite coordination keys (fallback)
+
+For a complete table of YAML keys and environment variables, see
+`supernote.guides.configuration` and `supernote.guides.bootstrap_guide`.
+"""
+
 import logging
 import os
 from dataclasses import dataclass, field

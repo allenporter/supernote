@@ -1,3 +1,12 @@
+"""ORM models (`ScheduleTaskGroupDO` and `ScheduleTaskDO`) for tasks and task lists.
+
+Persists user task lists (`t_schedule_task_group`) and individual schedule tasks
+(`t_schedule_task`) including status, importance, due/completed timestamps, RFC 5545
+recurrence rules, base64-encoded `.note` page links, and sort indexes. Managed by
+`supernote.server.services.schedule.ScheduleService` and exported by
+`supernote.server.services.ical_export.ICalExportService`. See `supernote.guides.schedule_api`.
+"""
+
 import time
 
 from sqlalchemy import BigInteger, String

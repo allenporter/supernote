@@ -1,4 +1,11 @@
-"""Client for Extended (Web) APIs."""
+"""Self-hosted server intelligence extension client (`ExtendedClient`).
+
+This module provides `supernote.client.extended.ExtendedClient` for querying custom `/api/extended/*`
+endpoints exposed by the self-hosted Supernote server, including hybrid semantic search (`search`),
+OCR page transcripts (`get_transcript`), AI synthesis summaries (`list_summaries`), per-file
+processing status (`get_processing_status`), and global task state (`list_system_tasks`). See
+`supernote.models.extended`, `supernote.client`, and `supernote.guides.note_processing_design`.
+"""
 
 from supernote.models.extended import (
     FileProcessingStatusDTO,

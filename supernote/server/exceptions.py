@@ -1,4 +1,10 @@
-"""Module for centralized exception handling."""
+"""Domain exception hierarchy (`SupernoteError`) and HTTP error response serialization.
+
+Defines `SupernoteError` and its subclasses (`FileNotFound`, `FileAlreadyExists`,
+`InvalidPath`, `AccessDenied`, `RateLimitExceeded`, `TaskGroupNotFound`, `SummaryNotFound`,
+`DatabaseError`), mapping domain failures to protocol-compliant `supernote.models.base.ErrorCode`
+values and `aiohttp.web.Response` JSON payloads via `SupernoteError.to_response`.
+"""
 
 import logging
 from typing import Self

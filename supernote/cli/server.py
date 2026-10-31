@@ -1,3 +1,11 @@
+"""CLI subcommands (`supernote server`) for launching the self-hosted Private Cloud server.
+
+This module implements `supernote server serve`, supporting persistent production deployments,
+config directory resolution (`--config-dir`, `--host`, `--port`), and zero-config `--ephemeral`
+sandbox sessions backed by temporary storage and pre-seeded debug credentials.
+See `supernote.cli` and `supernote.guides.cli_reference` for server startup flags.
+"""
+
 import argparse
 import logging
 import os

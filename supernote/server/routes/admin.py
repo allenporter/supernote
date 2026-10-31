@@ -1,3 +1,15 @@
+"""Administrative HTTP API routes (`/api/admin/*`) guarded by `require_admin`.
+
+Serves administrator endpoints consumed by the `supernote admin` CLI (`supernote.cli.admin`)
+and Web UI admin dashboard:
+- `GET /api/admin/users` and `POST /api/admin/users`: List and provision user accounts via `supernote.server.services.user.UserService`.
+- `POST /api/admin/users/reset-password`: Reset user passwords.
+- `GET /api/admin/queue/status`, `POST /api/admin/queue/stop`, `POST /api/admin/queue/start`: Inspect, pause, and resume `supernote.server.services.processor.ProcessorService`.
+- `POST /api/admin/notes/reprocess`: Clear `SystemTaskDO` checkpoints and re-enqueue `.note` files.
+- `GET /api/admin/tasks`: Query recent or failed background processing tasks.
+- `POST /api/admin/integrity`: Run VFS and blob consistency checks via `supernote.server.services.integrity.IntegrityService`.
+"""
+
 from collections.abc import Awaitable, Callable
 
 from aiohttp import web

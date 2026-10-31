@@ -1,18 +1,19 @@
-"""Database session manager.
+"""Asynchronous SQLAlchemy 2.0 session manager with SQLite WAL and PRAGMA tuning.
 
-You may create a session manager then use it like this:
+`DatabaseSessionManager` manages an `AsyncEngine` (`sqlite+aiosqlite`) configured with
+`PRAGMA journal_mode=WAL`, `PRAGMA synchronous=NORMAL`, and `PRAGMA busy_timeout`,
+exposing an `@asynccontextmanager` `session()` helper that tracks active session metrics
+(`supernote.server.metrics.DB_SESSIONS_ACTIVE`) and rolls back automatically on error:
 
-```
+```python
 session_manager = DatabaseSessionManager("sqlite+aiosqlite:///supernote.db")
-session_manager.connect()
 
 async with session_manager.session() as session:
-    session.add(User(username="user", password="password"))
+    session.add(UserDO(email="user@example.com", password_md5="..."))
     await session.commit()
 
-session_manager.close()
+await session_manager.close()
 ```
-
 """
 
 from collections.abc import AsyncGenerator

@@ -1,3 +1,13 @@
+"""Stage 5 of the `.note` processing pipeline: transcript aggregation and AI summarization (`TaskType.SUMMARY_GENERATION`).
+
+After all pages of a `.note` file have completed OCR, `SummaryModule` assembles the full
+page-annotated transcript (`data_source="OCR"`), formats a notebook-specific prompt via
+`supernote.server.ai.prompts.format_summary_prompt`, calls
+`supernote.server.ai.models.summary.SummaryModel.summarize`, and upserts both the transcript
+and date-grouped Markdown summary into `supernote.server.services.summary.SummaryService`.
+See `supernote.guides.mcp` and `supernote.guides.summary_api`.
+"""
+
 import hashlib
 import json
 import logging

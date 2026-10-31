@@ -1,4 +1,11 @@
-"""Socket.IO client for Supernote real-time communication."""
+"""Async Socket.IO client (`SupernoteSocketClient`) for real-time Supernote events.
+
+This module implements `supernote.client.socket.SupernoteSocketClient`, which connects to the
+server's `/socket.io` namespace using signed handshake parameters (`SocketHandshakeParams`),
+supports active heartbeat checks (`ping`, `check_status`), and yields real-time `FILE-SYN`,
+`TASK-SYN`, and `DIGEST-SYN` push notifications via the `messages()` async iterator. Event models
+are defined in `supernote.models.socket`; see `supernote.client` for usage examples.
+"""
 
 import asyncio
 import json

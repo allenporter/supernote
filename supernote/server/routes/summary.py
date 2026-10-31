@@ -1,3 +1,14 @@
+"""Summary group, summary item, and summary tag HTTP routes (`/api/file/*/summary*`).
+
+Implements the Supernote summary synchronization protocol (`supernote.models.summary`)
+for both AI-generated syntheses and device-authored handwritten summaries, including
+tag CRUD (`/api/file/summary/tag*`), summary group CRUD (`/api/file/summary/group*`),
+summary item CRUD (`/api/file/add/summary`, `/api/file/modify/summary`, `/api/file/delete/summary`,
+`/api/file/query/summary*`), and signed binary upload/download URL generation for
+handwriting blobs. Delegates persistence and event emission to
+`supernote.server.services.summary.SummaryService`. See `supernote.guides.summary_api`.
+"""
+
 import logging
 import urllib.parse
 from collections.abc import Awaitable, Callable

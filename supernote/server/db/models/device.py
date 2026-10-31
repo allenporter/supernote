@@ -1,3 +1,10 @@
+"""ORM model (`DeviceDO`) for hardware equipment bindings (`devices` table).
+
+Maps physical Supernote device serial numbers (`equipment_no`) to `UserDO.id` accounts,
+managed by `supernote.server.services.user.UserService` and exposed via
+`supernote.server.routes.auth`.
+"""
+
 from sqlalchemy import ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 

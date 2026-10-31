@@ -1,3 +1,10 @@
+"""ORM model (`UserDO`) for user accounts, roles, and storage quotas (`users` table).
+
+Stores user credentials (`password_md5`), profile attributes, storage capacity limits
+(`DEFAULT_QUOTA` = 10 GB), and administrator status (`is_admin`). Managed by
+`supernote.server.services.user.UserService`.
+"""
+
 from sqlalchemy import Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 

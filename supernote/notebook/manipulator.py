@@ -12,7 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Note manipulator classes."""
+"""Binary `.note` manipulation, merging, and reconstruction utilities.
+
+This module provides `merge`, `reconstruct`, and `NotebookBuilder` for non-destructively combining
+multi-page `.note` archives or rebuilding valid binary `.note` streams from a
+`supernote.notebook.fileformat.SupernoteMetadata` structure while recalculating block byte offsets
+and verifying structural integrity. See `supernote.notebook` and `supernote.guides.notebook_spec`.
+"""
 
 import io
 import re

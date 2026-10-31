@@ -1,4 +1,11 @@
-"""Client CLI commands."""
+"""CLI subcommands (`supernote cloud`) for interacting with a Supernote Cloud server.
+
+This module implements the `supernote cloud` command group, including authentication (`login`,
+`sms-login`, `register`), file operations (`ls`, `mkdir`, `upload`, `download`, `rm`, `mv`, `cp`,
+`info`, `recycle`), server-side conversions (`png`, `pdf`), search and AI insights (`search`,
+`transcript`, `summary`), schedule tasks (`schedule`), and real-time event streaming (`listen`,
+`ping-socket`) via `supernote.client`. See `supernote.cli` and `supernote.guides.cli_reference`.
+"""
 
 import asyncio
 import getpass

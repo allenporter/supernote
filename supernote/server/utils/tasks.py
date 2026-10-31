@@ -1,3 +1,10 @@
+"""Database checkpoint helpers (`get_task`, `update_task_status`) for `SystemTaskDO`.
+
+Used by `supernote.server.services.processor_modules.ProcessorModule` to read and atomically
+upsert per-file and per-page pipeline task states (`ProcessingStatus`) with SQLite write-retry
+backoff (`DB_WRITE_MAX_RETRIES`). See `supernote.guides.note_processing_design`.
+"""
+
 import asyncio
 import logging
 import time
