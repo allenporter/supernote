@@ -27,15 +27,17 @@ from . import color, exceptions
 
 
 class BaseDecoder:
-    """Abstract decoder class."""
+    """Abstract bitmap decoder class."""
 
     def decode(
         self,
         data: bytes,
+        page_width: int,
+        page_height: int,
         palette: color.ColorPalette | None = None,
         all_blank: bool = False,
         horizontal: bool = False,
-    ):
+    ) -> tuple[bytes, tuple[int, int], int]:
         raise NotImplementedError("subclasses must implement decode method")
 
 
@@ -52,13 +54,13 @@ class FlateDecoder(BaseDecoder):
 
     def decode(
         self,
-        data,
-        page_width,
-        page_height,
-        palette=None,
-        all_blank=False,
-        horizontal=False,
-    ):
+        data: bytes,
+        page_width: int,
+        page_height: int,
+        palette: color.ColorPalette | None = None,
+        all_blank: bool = False,
+        horizontal: bool = False,
+    ) -> tuple[bytes, tuple[int, int], int]:
         """Uncompress bitmap data.
 
         Parameters
@@ -141,13 +143,13 @@ class RattaRleDecoder(BaseDecoder):
 
     def decode(
         self,
-        data,
-        page_width,
-        page_height,
-        palette=None,
-        all_blank=False,
-        horizontal=False,
-    ):
+        data: bytes,
+        page_width: int,
+        page_height: int,
+        palette: color.ColorPalette | None = None,
+        all_blank: bool = False,
+        horizontal: bool = False,
+    ) -> tuple[bytes, tuple[int, int], int]:
         """Uncompress bitmap data.
 
         Parameters
@@ -332,13 +334,13 @@ class PngDecoder(BaseDecoder):
 
     def decode(
         self,
-        data,
-        page_width,
-        page_height,
-        palette=None,
-        all_blank=False,
-        horizontal=False,
-    ):
+        data: bytes,
+        page_width: int,
+        page_height: int,
+        palette: color.ColorPalette | None = None,
+        all_blank: bool = False,
+        horizontal: bool = False,
+    ) -> tuple[bytes, tuple[int, int], int]:
         """Uncompress bitmap data.
 
         Parameters
@@ -377,11 +379,15 @@ class TextElement:
     y: int
 
 
-class TextDecoder(BaseDecoder):
+class TextDecoder:
     """Decoder for text."""
 
     def decode(
-        self, data: bytes, palette=None, all_blank=False, horizontal=False
+        self,
+        data: bytes | None,
+        palette: color.ColorPalette | None = None,
+        all_blank: bool = False,
+        horizontal: bool = False,
     ) -> list[TextElement] | None:
         """Extract text from a realtime recognition data with spatial ordering.
 

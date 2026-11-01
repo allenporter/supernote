@@ -114,7 +114,6 @@ markers = [
 
 [tool.ty.src]
 exclude = [
-    "supernote/notebook/",
     "supernote/cli/",
 ]
 

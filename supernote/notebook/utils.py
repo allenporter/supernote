@@ -26,9 +26,9 @@ class WorkaroundPageWrapper(fileformat.Page):
         super().__init__(page_info)
         self._override_layer_name()
 
-    @staticmethod
-    def from_page(page: fileformat.Page) -> Self:
-        wrapped_page = WorkaroundPageWrapper(page.metadata)
+    @classmethod
+    def from_page(cls, page: fileformat.Page) -> Self:
+        wrapped_page = cls(page.metadata)
         # copy contents from the original page object
         wrapped_page.set_content(page.get_content())
         wrapped_page.set_totalpath(page.get_totalpath())

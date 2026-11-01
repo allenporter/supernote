@@ -448,7 +448,7 @@ class PdfConverter:
 
     def _create_image_list(
         self, converter: ImageConverter, page_indices: int | list[int]
-    ) -> list[tuple[int, Image]]:
+    ) -> list[tuple[int, Image.Image]]:
         imglist = []
         if isinstance(page_indices, int):
             if page_indices < 0:
@@ -466,7 +466,7 @@ class PdfConverter:
     def _create_pdf(
         self,
         buf: BytesIO,
-        imglist: list[tuple[int, Image]],
+        imglist: list[tuple[int, Image.Image]],
         renderer_class: type[ImgPageRenderer],
         enable_link: bool,
         enable_keyword: bool,
