@@ -131,3 +131,81 @@ def test_page_metadata_accessors_and_guards() -> None:
     page.metadata["RECOGNSTATUS"] = "bad"
     with pytest.raises(exceptions.ParserException, match="invalid page RECOGNSTATUS"):
         page.get_recogn_status()
+
+    with pytest.raises(IndexError, match="layer number out of range"):
+        page.get_layer(0)
+
+
+def test_notebook_n5_dimensions_and_page_bounds() -> None:
+    n5_notebook = Notebook(
+        _make_metadata(header={"FILE_TYPE": "NOTE", "APPLY_EQUIPMENT": "N5"})
+    )
+    assert (n5_notebook.get_width(), n5_notebook.get_height()) == (
+        fileformat.A5X2_PAGE_WIDTH,
+        fileformat.A5X2_PAGE_HEIGHT,
+    )
+
+    with pytest.raises(IndexError, match="page number out of range"):
+        n5_notebook.get_page(0)
+
+
+def test_cover_keyword_title_link_and_layer_constructor_initialization() -> None:
+    cover = fileformat.Cover(content=b"cover-bytes")
+    assert cover.get_content() == b"cover-bytes"
+
+    kw = Keyword(
+        {
+            "KEYWORDPAGE": "2",
+            "KEYWORDRECTORI": "10,20,30,40",
+            "KEYWORDRECT": "10,20,30,40",
+            "KEYWORD": "hello",
+        },
+        content=b"kw-bytes",
+    )
+    assert kw.get_content() == b"kw-bytes"
+    assert kw.get_page_number() == 1
+    assert kw.get_position_string() == "0020"
+    assert kw.get_keyword() == "hello"
+    assert kw.get_rect() == (10, 20, 40, 60)
+
+    title = fileformat.Title(
+        {"TITLERECTORI": "10,20,30,40", "TITLE": "Heading"},
+        content=b"title-bytes",
+        page_number=3,
+    )
+    assert title.get_content() == b"title-bytes"
+    assert title.get_page_number() == 3
+    assert title.get_position_string() == "00200010"
+
+    link = fileformat.Link(
+        {
+            "LINKTYPE": "0",
+            "LINKINOUT": "0",
+            "LINKRECT": "5,15,25,35",
+            "LINKTIMESTAMP": "987654321",
+            "LINKFILE": "encoded_path",
+            "LINKFILEID": "F123",
+            "PAGEID": "P456",
+        },
+        content=b"link-bytes",
+        page_number=2,
+    )
+    assert link.get_content() == b"link-bytes"
+    assert link.get_page_number() == 2
+    assert link.get_type() == fileformat.Link.TYPE_PAGE_LINK
+    assert link.get_inout() == fileformat.Link.DIRECTION_OUT
+    assert link.get_position_string() == "0015000500350025"
+    assert link.get_rect() == (5, 15, 30, 50)
+    assert link.get_timestamp() == "987654321"
+    assert link.get_filepath() == "encoded_path"
+    assert link.get_fileid() == "F123"
+    assert link.get_pageid() == "P456"
+
+    layer = fileformat.Layer(
+        {"LAYERNAME": "MAINLAYER", "LAYERPROTOCOL": "RATTA_RLE", "LAYERTYPE": "MARK"},
+        content=b"layer-bytes",
+    )
+    assert layer.get_content() == b"layer-bytes"
+    assert layer.get_name() == "MAINLAYER"
+    assert layer.get_protocol() == "RATTA_RLE"
+    assert layer.get_type() == "MARK"

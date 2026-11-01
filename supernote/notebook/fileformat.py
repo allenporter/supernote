@@ -252,8 +252,8 @@ class Notebook:
 
 
 class Cover:
-    def __init__(self) -> None:
-        self.content: bytes | None = None
+    def __init__(self, content: bytes | None = None) -> None:
+        self.content: bytes | None = content
 
     def set_content(self, content: bytes | None):
         self.content = content
@@ -263,11 +263,11 @@ class Cover:
 
 
 class Keyword:
-    def __init__(self, keyword_info: ParamsBlock) -> None:
+    def __init__(self, keyword_info: ParamsBlock, content: bytes | None = None) -> None:
         if not isinstance(keyword_info, dict):
             raise exceptions.ParserException("invalid keyword metadata")
         self.metadata = keyword_info
-        self.content: bytes | None = None
+        self.content: bytes | None = content
         raw_page = self.metadata.get("KEYWORDPAGE")
         if not isinstance(raw_page, (str, int)):
             raise exceptions.ParserException("missing KEYWORDPAGE in keyword metadata")
@@ -302,10 +302,15 @@ class Keyword:
 
 
 class Title:
-    def __init__(self, title_info: dict[str, str]) -> None:
+    def __init__(
+        self,
+        title_info: dict[str, str],
+        content: bytes | None = None,
+        page_number: int = 0,
+    ) -> None:
         self.metadata = title_info
-        self.content: bytes | None = None
-        self.page_number = 0
+        self.content: bytes | None = content
+        self.page_number = page_number
 
     def set_content(self, content: bytes | None):
         self.content = content
@@ -334,10 +339,15 @@ class Link:
     DIRECTION_OUT = 0  # Outgoing link (from this page)
     DIRECTION_IN = 1  # Incoming link (to this page)
 
-    def __init__(self, link_info: dict[str, str]) -> None:
+    def __init__(
+        self,
+        link_info: dict[str, str],
+        content: bytes | None = None,
+        page_number: int = 0,
+    ) -> None:
         self.metadata = link_info
-        self.content: bytes | None = None
-        self.page_number = 0
+        self.content: bytes | None = content
+        self.page_number = page_number
 
     def set_content(self, content: bytes | None):
         self.content = content
@@ -400,14 +410,21 @@ class Page:
             self.ORIENTATION_HORIZONTAL_270,
         )
 
-    def __init__(self, page_info: ParamsBlock) -> None:
+    def __init__(
+        self,
+        page_info: ParamsBlock,
+        content: bytes | None = None,
+        totalpath: bytes | None = None,
+        recogn_file: bytes | None = None,
+        recogn_text: bytes | None = None,
+    ) -> None:
         if not isinstance(page_info, dict):
             raise exceptions.ParserException("invalid page metadata")
         self.metadata = page_info
-        self.content: bytes | None = None
-        self.totalpath: bytes | None = None
-        self.recogn_file: bytes | None = None
-        self.recogn_text: bytes | None = None
+        self.content: bytes | None = content
+        self.totalpath: bytes | None = totalpath
+        self.recogn_file: bytes | None = recogn_file
+        self.recogn_text: bytes | None = recogn_text
         self.layers: list[Layer] = []
         layers = page_info.get(KEY_LAYERS)
         if isinstance(layers, list):
@@ -512,9 +529,9 @@ class Page:
 
 
 class Layer:
-    def __init__(self, layer_info):
+    def __init__(self, layer_info: ParamsBlock, content: bytes | None = None) -> None:
         self.metadata = layer_info
-        self.content = None
+        self.content: bytes | None = content
 
     def set_content(self, content):
         self.content = content
