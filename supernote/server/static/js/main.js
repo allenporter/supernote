@@ -38,6 +38,13 @@ function buildCrumbsFromPathInfo(info) {
     return crumbs;
 }
 
+function parsePageParam(params) {
+    if (!params || !params.has('page')) return null;
+    const rawPage = Number.parseInt(params.get('page'), 10);
+    if (Number.isNaN(rawPage) || rawPage < 1) return 0;
+    return rawPage - 1;
+}
+
 export function parseUrlHash(hashString) {
     const raw = hashString !== undefined ? hashString : (window.location.hash || window.location.search || '');
     const clean = raw.replace(/^[#?]\/?/, '').trim();
@@ -46,9 +53,20 @@ export function parseUrlHash(hashString) {
         return { tab: 'files', view: 'grid', dirId: '0', showSystem: false };
     }
 
-    if (clean.includes('=')) {
-        const queryPart = clean.includes('?') ? clean.split('?')[1] : clean;
-        const params = new URLSearchParams(queryPart);
+    let pathPart = clean;
+    let params = null;
+    const qIdx = clean.indexOf('?');
+    if (qIdx !== -1) {
+        pathPart = clean.slice(0, qIdx);
+        params = new URLSearchParams(clean.slice(qIdx + 1));
+    } else if (clean.includes('=') && !clean.includes('/')) {
+        pathPart = '';
+        params = new URLSearchParams(clean);
+    }
+
+    const pageIndex = parsePageParam(params);
+
+    if (params) {
         if (params.get('tab') === 'system' || params.get('view') === 'system') {
             return { tab: 'system', view: 'grid', dirId: params.get('dir') || '0', showSystem: true };
         }
@@ -61,6 +79,7 @@ export function parseUrlHash(hashString) {
                 view: 'viewer',
                 fileId: params.get('file'),
                 dirId: params.get('dir') || null,
+                pageIndex,
                 showSystem: false
             };
         }
@@ -74,7 +93,7 @@ export function parseUrlHash(hashString) {
         }
     }
 
-    const parts = clean.split('/').filter(Boolean);
+    const parts = pathPart.split('/').filter(Boolean);
 
     if (parts[0] === 'system') {
         return { tab: 'system', view: 'grid', dirId: '0', showSystem: true };
@@ -85,15 +104,15 @@ export function parseUrlHash(hashString) {
     }
 
     if (parts[0] === 'file' && parts[1]) {
-        return { tab: 'files', view: 'viewer', fileId: parts[1], showSystem: false };
+        return { tab: 'files', view: 'viewer', fileId: parts[1], pageIndex, showSystem: false };
     }
 
     if ((parts[0] === 'files' || parts[0] === 'explorer') && parts[1] === 'file' && parts[2]) {
-        return { tab: 'files', view: 'viewer', fileId: parts[2], showSystem: false };
+        return { tab: 'files', view: 'viewer', fileId: parts[2], pageIndex, showSystem: false };
     }
 
     if ((parts[0] === 'files' || parts[0] === 'explorer') && parts[2] === 'file' && parts[3]) {
-        return { tab: 'files', view: 'viewer', dirId: parts[1], fileId: parts[3], showSystem: false };
+        return { tab: 'files', view: 'viewer', dirId: parts[1], fileId: parts[3], pageIndex, showSystem: false };
     }
 
     if ((parts[0] === 'files' || parts[0] === 'explorer' || parts[0] === 'folder') && parts[1]) {
@@ -107,7 +126,7 @@ export function parseUrlHash(hashString) {
     return { tab: 'files', view: 'grid', dirId: '0', showSystem: false };
 }
 
-export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false) {
+export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false, pageIndex = null) {
     if (showSystem || tab === 'system') {
         return '#/system';
     }
@@ -115,6 +134,9 @@ export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false)
         return '#/tasks';
     }
     if (viewState === 'viewer' && fileObj && fileObj.id) {
+        if (typeof pageIndex === 'number' && pageIndex > 0) {
+            return `#/file/${fileObj.id}?page=${pageIndex + 1}`;
+        }
         return `#/file/${fileObj.id}`;
     }
     if (dirId && String(dirId) !== '0') {
@@ -188,6 +210,8 @@ createApp({
 
         const view = ref('grid');
         const selectedFile = ref(null);
+        const selectedPageIndex = ref(null);
+        const selectedPageJumpSeq = ref(0);
         const breadcrumbs = ref([{ id: "0", name: "Cloud" }]);
 
         const folders = computed(() => files.value.filter(f => f.isDirectory));
@@ -195,7 +219,7 @@ createApp({
         const recentNotes = computed(() => files.value.filter(f => f.extension === 'note'));
 
         // URL Routing Synchronization
-        const ROUTING_QUERY_KEYS = ['dir', 'folder', 'file', 'tab', 'view'];
+        const ROUTING_QUERY_KEYS = ['dir', 'folder', 'file', 'tab', 'view', 'page'];
         let urlSyncDepth = 0;
         let activeSyncSeq = 0;
         let lastSyncedHash = '';
@@ -239,7 +263,8 @@ createApp({
                 currentDirectoryId.value,
                 view.value,
                 selectedFile.value,
-                showSystemPanel.value
+                showSystemPanel.value,
+                selectedPageIndex.value
             );
             lastSyncedHash = targetHash;
             const stripQuery = hasRoutingQueryParams(window.location.search);
@@ -330,6 +355,7 @@ createApp({
         async function restoreDirectoryState(targetDirId, isInitial, seq) {
             view.value = 'grid';
             selectedFile.value = null;
+            selectedPageIndex.value = null;
             selectedIds.value = [];
 
             const dirChanged = String(currentDirectoryId.value) !== targetDirId;
@@ -381,12 +407,17 @@ createApp({
                     activeTab.value = 'tasks';
                     view.value = 'grid';
                     selectedFile.value = null;
+                    selectedPageIndex.value = null;
                     viewerOpenedFromHistory = false;
                     return;
                 }
 
                 activeTab.value = 'files';
                 if (parsed.view === 'viewer' && parsed.fileId) {
+                    selectedPageIndex.value = typeof parsed.pageIndex === 'number' ? parsed.pageIndex : null;
+                    if (typeof parsed.pageIndex === 'number') {
+                        selectedPageJumpSeq.value++;
+                    }
                     await restoreViewerState(String(parsed.fileId), seq);
                     return;
                 }
@@ -399,7 +430,7 @@ createApp({
             }
         }
 
-        watch([activeTab, currentDirectoryId, view, () => selectedFile.value?.id, showSystemPanel], () => {
+        watch([activeTab, currentDirectoryId, view, () => selectedFile.value?.id, selectedPageIndex, showSystemPanel], () => {
             updateUrl();
         });
 
@@ -446,6 +477,7 @@ createApp({
             urlSyncDepth++;
             view.value = 'grid';
             selectedFile.value = null;
+            selectedPageIndex.value = null;
             await nextTick();
             urlSyncDepth--;
             updateUrl(true);
@@ -457,6 +489,7 @@ createApp({
                 activeTab.value = 'files';
                 view.value = 'grid';
                 selectedFile.value = null;
+                selectedPageIndex.value = null;
                 viewerOpenedFromHistory = false;
                 currentDirectoryId.value = String(item.id);
                 const existingIndex = breadcrumbs.value.findIndex(c => String(c.id) === String(item.id));
@@ -468,7 +501,20 @@ createApp({
                 selectedIds.value = [];
                 await loadDirectory(item.id);
             } else {
+                const targetPage = typeof item.pageIndex === 'number' ? item.pageIndex : null;
+                if (
+                    view.value === 'viewer' &&
+                    String(selectedFile.value?.id) === String(item.id)
+                ) {
+                    selectedPageIndex.value = targetPage ?? 0;
+                    selectedPageJumpSeq.value++;
+                    return;
+                }
                 viewerOpenedFromHistory = true;
+                selectedPageIndex.value = targetPage;
+                if (targetPage !== null) {
+                    selectedPageJumpSeq.value++;
+                }
                 selectedFile.value = item;
                 view.value = 'viewer';
             }
@@ -682,6 +728,8 @@ createApp({
             navigateFolder,
             navigateTo,
             selectedFile,
+            selectedPageIndex,
+            selectedPageJumpSeq,
             showSystemPanel,
             showNewFolderModal,
             newFolderName,

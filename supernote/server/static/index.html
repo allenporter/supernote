@@ -183,7 +183,8 @@
 
                 <!-- Viewer -->
                 <div v-if="view === 'viewer'" class="min-h-full">
-                    <file-viewer :file="selectedFile" @close="closeViewer"></file-viewer>
+                    <file-viewer :file="selectedFile" :initial-page="selectedPageIndex"
+                        :page-jump-seq="selectedPageJumpSeq" @close="closeViewer"></file-viewer>
                 </div>
 
                 <!-- Modals -->
