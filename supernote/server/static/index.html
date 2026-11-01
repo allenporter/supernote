@@ -188,6 +188,18 @@
                         @open="openItem" @select="toggleSelection" @rename="triggerRename"></file-card>
                 </div>
 
+                <!-- Directory Pagination Footer -->
+                <div v-if="view === 'grid' && !isLoading && totalItemCount > 50"
+                    class="mt-8 flex flex-col items-center gap-3">
+                    <p class="text-xs font-medium text-slate-400">
+                        Showing {{ visibleItemCount }} of {{ totalItemCount }} items
+                    </p>
+                    <button v-if="hasMoreItems" @click="loadMoreItems" type="button"
+                        class="px-5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-sm font-medium shadow-sm transition-all">
+                        Load More
+                    </button>
+                </div>
+
                 <!-- Viewer -->
                 <div v-if="view === 'viewer'" class="min-h-full">
                     <file-viewer :file="selectedFile" :initial-page="selectedPageIndex"

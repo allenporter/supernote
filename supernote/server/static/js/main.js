@@ -196,8 +196,26 @@ createApp({
         const selectedPageJumpSeq = ref(0);
         const breadcrumbs = ref([{ id: "0", name: "Cloud" }]);
 
-        const folders = computed(() => files.value.filter(f => f.isDirectory));
-        const regularFiles = computed(() => files.value.filter(f => !f.isDirectory));
+        const GRID_PAGE_SIZE = 50;
+        const visibleLimit = ref(GRID_PAGE_SIZE);
+        watch(currentDirectoryId, () => {
+            visibleLimit.value = GRID_PAGE_SIZE;
+        });
+
+        const allFolders = computed(() => files.value.filter(f => f.isDirectory));
+        const allRegularFiles = computed(() => files.value.filter(f => !f.isDirectory));
+        const folders = computed(() => allFolders.value.slice(0, visibleLimit.value));
+        const regularFiles = computed(() => {
+            const remaining = Math.max(0, visibleLimit.value - folders.value.length);
+            return allRegularFiles.value.slice(0, remaining);
+        });
+        const totalItemCount = computed(() => files.value.length);
+        const visibleItemCount = computed(() => folders.value.length + regularFiles.value.length);
+        const hasMoreItems = computed(() => visibleItemCount.value < totalItemCount.value);
+
+        function loadMoreItems() {
+            visibleLimit.value += GRID_PAGE_SIZE;
+        }
 
         // URL Routing Synchronization
         const ROUTING_QUERY_KEYS = ['dir', 'folder', 'file', 'tab', 'view', 'page'];
@@ -708,6 +726,10 @@ createApp({
             files,
             folders,
             regularFiles,
+            totalItemCount,
+            visibleItemCount,
+            hasMoreItems,
+            loadMoreItems,
             currentDirectoryId,
             isLoading,
             error,
