@@ -437,7 +437,7 @@ export async function searchSemantic(query, topN = 5) {
 }
 
 /**
- * Fetch AI Processing Status & Gemini API Key health.
+ * Fetch server AI processing configuration status.
  */
 export async function fetchAiStatus() {
     const currentToken = getToken();
@@ -449,8 +449,12 @@ export async function fetchAiStatus() {
         headers
     });
 
+    if (response.status === 401) {
+        logout();
+        throw new Error("Unauthorized");
+    }
     if (!response.ok) {
-        return { hasApiKey: false, ocrEnabled: false, vectorSearchEnabled: false, model: 'N/A' };
+        return { hasApiKey: false, ocrEnabled: false, vectorSearchEnabled: false, model: null };
     }
     return await response.json();
 }

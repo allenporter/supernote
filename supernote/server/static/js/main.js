@@ -2,8 +2,6 @@ import { createApp, ref, onMounted, computed, watch, nextTick } from 'https://un
 import { useFileSystem } from './composables/useFileSystem.js';
 import { useToast } from './composables/useToast.js';
 import { setToken, getToken, login, logout, fetchProcessingStatus, fetchPathInfo, connectSocket } from './api/client.js';
-import Sidebar from './components/Sidebar.js';
-import DashboardView from './components/DashboardView.js';
 import SearchModal from './components/SearchModal.js';
 import TaskPanel from './components/TaskPanel.js';
 import FileCard from './components/FileCard.js';
@@ -147,8 +145,6 @@ export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false,
 
 createApp({
     components: {
-        Sidebar,
-        DashboardView,
         SearchModal,
         TaskPanel,
         FileCard,
@@ -166,23 +162,9 @@ createApp({
         const loginError = ref(null);
         const showSystemPanel = ref(false);
 
-        // Theme Mode
-        const isDarkMode = ref(localStorage.getItem('supernote_theme') === 'dark');
-
-        const toggleTheme = () => {
-            isDarkMode.value = !isDarkMode.value;
-            localStorage.setItem('supernote_theme', isDarkMode.value ? 'dark' : 'light');
-            if (isDarkMode.value) {
-                document.documentElement.classList.add('dark');
-            } else {
-                document.documentElement.classList.remove('dark');
-            }
-        };
-
         // Navigation State
-        const activeTab = ref('files'); // 'files' | 'explorer' | 'tasks' | 'dashboard'
+        const activeTab = ref('files'); // 'files' | 'tasks'
         const showSearchModal = ref(false);
-        const isSidebarOpen = ref(false);
 
         // UI Modals State
         const showNewFolderModal = ref(false);
@@ -216,7 +198,6 @@ createApp({
 
         const folders = computed(() => files.value.filter(f => f.isDirectory));
         const regularFiles = computed(() => files.value.filter(f => !f.isDirectory));
-        const recentNotes = computed(() => files.value.filter(f => f.extension === 'note'));
 
         // URL Routing Synchronization
         const ROUTING_QUERY_KEYS = ['dir', 'folder', 'file', 'tab', 'view', 'page'];
@@ -311,8 +292,8 @@ createApp({
                 if (allCrumbs.length <= 1) {
                     selectedFile.value = {
                         id: targetFileId,
-                        name: `Notebook ${targetFileId}`,
-                        extension: 'note'
+                        name: `File ${targetFileId}`,
+                        extension: ''
                     };
                     view.value = 'viewer';
                     return;
@@ -323,7 +304,7 @@ createApp({
                 const parentDirId = String(folderCrumbs[folderCrumbs.length - 1].id);
                 const ext = fileCrumb.name.includes('.')
                     ? fileCrumb.name.split('.').pop().toLowerCase()
-                    : 'note';
+                    : '';
 
                 breadcrumbs.value = folderCrumbs;
                 currentDirectoryId.value = parentDirId;
@@ -345,8 +326,8 @@ createApp({
                 console.error("Failed to resolve file path info:", e);
                 selectedFile.value = {
                     id: targetFileId,
-                    name: `Notebook ${targetFileId}`,
-                    extension: 'note'
+                    name: `File ${targetFileId}`,
+                    extension: ''
                 };
                 view.value = 'viewer';
             }
@@ -439,7 +420,7 @@ createApp({
             showSystemPanel.value = false;
             systemOpenedFromHistory = false;
             activeTab.value = tab;
-            if (tab === 'files' || tab === 'explorer' || tab === 'dashboard') {
+            if (tab === 'files') {
                 viewerOpenedFromHistory = false;
                 await restoreDirectoryState(String(currentDirectoryId.value || '0'), false, ++activeSyncSeq);
             }
@@ -462,7 +443,7 @@ createApp({
             await nextTick();
             urlSyncDepth--;
             updateUrl(true);
-            if ((activeTab.value === 'files' || activeTab.value === 'explorer' || activeTab.value === 'dashboard') && view.value === 'grid') {
+            if (activeTab.value === 'files' && view.value === 'grid') {
                 await restoreDirectoryState(String(currentDirectoryId.value || '0'), false, ++activeSyncSeq);
             }
         }
@@ -673,9 +654,6 @@ createApp({
         }
 
         onMounted(async () => {
-            if (isDarkMode.value) {
-                document.documentElement.classList.add('dark');
-            }
             const loggedIn = await resumeSession();
             if (loggedIn) {
                 await syncFromUrl(true);
@@ -724,16 +702,12 @@ createApp({
             isLoggedIn,
             handleLogin,
             handleLogout,
-            isDarkMode,
-            toggleTheme,
             activeTab,
             showSearchModal,
-            isSidebarOpen,
             view,
             files,
             folders,
             regularFiles,
-            recentNotes,
             currentDirectoryId,
             isLoading,
             error,

@@ -1,4 +1,4 @@
-import { fetchSystemTasks, fetchCapacity } from '../api/client.js';
+import { fetchSystemTasks, fetchCapacity, fetchAiStatus } from '../api/client.js';
 
 export default {
     name: 'SystemPanel',
@@ -30,6 +30,32 @@ export default {
                             </div>
                         </div>
                         <div v-else class="animate-pulse bg-gray-200 h-10 rounded"></div>
+                    </div>
+
+                    <!-- AI Pipeline Status -->
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <h3 class="text-lg font-medium text-gray-900 mb-3">AI Pipeline</h3>
+                        <div v-if="aiStatus" class="flex flex-wrap gap-3 text-sm">
+                            <div class="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-gray-200">
+                                <span class="text-gray-600 font-medium">OCR:</span>
+                                <span v-if="aiStatus.ocrEnabled" class="px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                                    Enabled<template v-if="aiStatus.model"> ({{ aiStatus.model }})</template>
+                                </span>
+                                <span v-else class="px-2 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-600">
+                                    Disabled
+                                </span>
+                            </div>
+                            <div class="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-gray-200">
+                                <span class="text-gray-600 font-medium">Semantic Search:</span>
+                                <span v-if="aiStatus.vectorSearchEnabled" class="px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                                    Enabled
+                                </span>
+                                <span v-else class="px-2 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-600">
+                                    Disabled
+                                </span>
+                            </div>
+                        </div>
+                        <div v-else class="animate-pulse bg-gray-200 h-9 rounded"></div>
                     </div>
 
                     <!-- Tasks -->
@@ -98,7 +124,8 @@ export default {
             loading: true,
             error: null,
             tasks: [],
-            capacity: null
+            capacity: null,
+            aiStatus: null
         }
     },
     computed: {
@@ -115,9 +142,10 @@ export default {
             this.loading = true;
             this.error = null;
             try {
-                const [tasksResult, capacityResult] = await Promise.all([
+                const [tasksResult, capacityResult, aiStatusResult] = await Promise.all([
                     fetchSystemTasks(),
-                    fetchCapacity()
+                    fetchCapacity(),
+                    fetchAiStatus()
                 ]);
 
                 if (tasksResult.success) {
@@ -128,6 +156,7 @@ export default {
 
                 // Capacity result is the VO directly, typically
                 this.capacity = capacityResult;
+                this.aiStatus = aiStatusResult;
             } catch (e) {
                 this.error = e.message;
             } finally {

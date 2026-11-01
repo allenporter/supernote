@@ -57,7 +57,7 @@ export default {
             </form>
         </div>
         <div class="bg-slate-50 p-4 text-center text-xs text-slate-400 border-t border-slate-100">
-            Supernote Private Cloud Server
+            Supernote Cloud
         </div>
     </div>
     `

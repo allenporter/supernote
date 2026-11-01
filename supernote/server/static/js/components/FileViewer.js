@@ -1,5 +1,5 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
-import { convertNoteToPng, fetchTranscript, fetchSummaries, fetchDownloadUrl, downloadFile } from '../api/client.js';
+import { convertNoteToPng, fetchTranscript, fetchSummaries, fetchAiStatus, fetchDownloadUrl, downloadFile } from '../api/client.js';
 import { showToast } from '../composables/useToast.js';
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
@@ -24,6 +24,7 @@ export default {
         const transcriptPages = ref([]);
         const activePageIndex = ref(0);
         const realSummaries = ref([]);
+        const aiStatus = ref(null);
         const isLoadingTranscript = ref(false);
 
         const leftScrollPane = ref(null);
@@ -429,6 +430,9 @@ export default {
             window.addEventListener('wheel', clearPendingTargetPage, { passive: true });
             window.addEventListener('touchstart', clearPendingTargetPage, { passive: true });
             window.addEventListener('pointerdown', clearPendingTargetPage, { passive: true });
+            fetchAiStatus().then((status) => {
+                aiStatus.value = status;
+            }).catch(() => {});
             loadFileContent();
         });
         onUnmounted(() => {
@@ -487,6 +491,7 @@ export default {
             scrollToCanvasPage,
             updateActivePageFromScroll,
             realSummaries,
+            aiStatus,
             formatContent
         };
     },
@@ -661,9 +666,14 @@ export default {
                 <!-- Tab 1: Real OCR Transcript -->
                 <div v-if="activeRightTab === 'transcription'" ref="transcriptScrollPane" class="p-4 flex-1 overflow-y-auto space-y-3">
                     <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-2">
-                            <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Gemini Vision OCR</span>
-                            <span v-if="transcriptPages.length > 0" class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0">OCR Transcript</span>
+                            <span v-if="aiStatus?.ocrEnabled && aiStatus?.model"
+                                class="px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-[10px] font-mono text-indigo-600 dark:text-indigo-400 truncate"
+                                :title="aiStatus.model">
+                                {{ aiStatus.model }}
+                            </span>
+                            <span v-if="transcriptPages.length > 0" class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-mono text-slate-500 dark:text-slate-400 shrink-0">
                                 {{ transcriptPages.length }} {{ transcriptPages.length === 1 ? 'page' : 'pages' }}
                             </span>
                         </div>
@@ -718,7 +728,12 @@ export default {
                     </div>
 
                     <div v-else class="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-xl border border-slate-200/80 dark:border-slate-800 text-center text-xs text-slate-400">
-                        No OCR transcript found for this notebook yet. Ensure background processor is running or Gemini API key is configured.
+                        <template v-if="aiStatus && !aiStatus.ocrEnabled">
+                            No OCR transcript available. OCR is not enabled on this server.
+                        </template>
+                        <template v-else>
+                            No OCR transcript found for this notebook yet. Background processing may still be running, or the pages contain no handwriting.
+                        </template>
                     </div>
                 </div>
 
