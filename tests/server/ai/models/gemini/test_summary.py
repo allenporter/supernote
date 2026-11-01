@@ -8,12 +8,16 @@ import pytest
 
 from supernote.server.ai.base import AIError
 from supernote.server.ai.models.gemini.backend import GeminiBackend
-from supernote.server.ai.models.gemini.summary import GeminiSummaryModel
+from supernote.server.ai.models.gemini.summary import (
+    GeminiSummaryModel,
+    create_summary_model,
+)
 from supernote.server.ai.prompts import (
     SummaryResponse,
     SummarySegment,
     format_summary_prompt,
 )
+from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
 
 from .conftest import FakeGeminiServer
 
@@ -88,3 +92,17 @@ async def test_gemini_summary_model_invalid_json(
     fake_gemini.text = invalid_payload
     with pytest.raises(AIError, match="Failed to parse"):
         await summary_model.summarize("Page 1 text")
+
+
+def test_create_summary_model() -> None:
+    assert create_summary_model(ServerConfig()) is None
+
+    config = ServerConfig(
+        ai=AiConfig(
+            providers={"work": ProviderConfig(type="gemini", api_key="work-key")},
+            summary=ModelConfig(provider="work", model="gemini-custom"),
+        )
+    )
+    model = create_summary_model(config)
+    assert isinstance(model, GeminiSummaryModel)
+    assert model.model_id == "gemini-custom"

@@ -63,26 +63,27 @@ def create_ocr_model(config: ServerConfig) -> OcrModel | None:
         return None
 
     model: OcrModel | None
-    if model_cfg.provider == "gemini":
+    provider_type = config.ai.provider_type(model_cfg.provider)
+    if provider_type == "gemini":
         from supernote.server.ai.models.gemini.ocr import (  # noqa: PLC0415
             create_ocr_model as create_gemini_ocr_model,
         )
 
         model = create_gemini_ocr_model(config)
-    elif model_cfg.provider == "openai":
+    elif provider_type == "openai":
         from supernote.server.ai.models.openai.ocr import (  # noqa: PLC0415
             create_ocr_model as create_openai_ocr_model,
         )
 
         model = create_openai_ocr_model(config)
-    elif model_cfg.provider == "fake":
+    elif provider_type == "fake":
         from supernote.server.ai.models.fake.ocr import (  # noqa: PLC0415
             create_ocr_model as create_fake_ocr_model,
         )
 
         model = create_fake_ocr_model(config)
     else:
-        raise ValueError(f"Unsupported OCR model provider: {model_cfg.provider!r}")
+        raise ValueError(f"Unsupported OCR model provider type: {provider_type!r}")
 
     if model is None:
         return None

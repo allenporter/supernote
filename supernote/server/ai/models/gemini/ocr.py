@@ -52,7 +52,9 @@ class GeminiOcrModel(OcrModel):
 def create_ocr_model(config: ServerConfig) -> OcrModel | None:
     """Create a `GeminiOcrModel` from `ServerConfig`, or `None` if unconfigured."""
     model_cfg = config.ai.ocr
-    backend = create_gemini_backend(config.ai.providers)
-    if model_cfg is None or backend is None:
+    if model_cfg is None:
+        return None
+    backend = create_gemini_backend(config.ai.providers, model_cfg.provider)
+    if backend is None:
         return None
     return GeminiOcrModel(backend, model_cfg.model)

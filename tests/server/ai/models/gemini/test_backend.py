@@ -91,3 +91,11 @@ def test_gemini_backend_track_api_call_preserves_ai_error_and_unexpected_bugs(
     with pytest.raises(AttributeError, match="unexpected bug"):
         with gemini_backend._track_api_call("generate_content"):
             raise AttributeError("unexpected bug")
+
+
+def test_create_gemini_backend_named_entry() -> None:
+    providers = {"work": ProviderConfig(type="gemini", api_key="work-key")}
+    backend = create_gemini_backend(providers, "work")
+    assert isinstance(backend, GeminiBackend)
+    assert backend._api_key == "work-key"
+    assert create_gemini_backend(providers) is None

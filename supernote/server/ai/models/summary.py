@@ -63,26 +63,27 @@ def create_summary_model(config: ServerConfig) -> SummaryModel | None:
         return None
 
     model: SummaryModel | None
-    if model_cfg.provider == "gemini":
+    provider_type = config.ai.provider_type(model_cfg.provider)
+    if provider_type == "gemini":
         from supernote.server.ai.models.gemini.summary import (  # noqa: PLC0415
             create_summary_model as create_gemini_summary_model,
         )
 
         model = create_gemini_summary_model(config)
-    elif model_cfg.provider == "openai":
+    elif provider_type == "openai":
         from supernote.server.ai.models.openai.summary import (  # noqa: PLC0415
             create_summary_model as create_openai_summary_model,
         )
 
         model = create_openai_summary_model(config)
-    elif model_cfg.provider == "fake":
+    elif provider_type == "fake":
         from supernote.server.ai.models.fake.summary import (  # noqa: PLC0415
             create_summary_model as create_fake_summary_model,
         )
 
         model = create_fake_summary_model(config)
     else:
-        raise ValueError(f"Unsupported summary model provider: {model_cfg.provider!r}")
+        raise ValueError(f"Unsupported summary model provider type: {provider_type!r}")
 
     if model is None:
         return None
