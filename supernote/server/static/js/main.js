@@ -1,7 +1,8 @@
 import { createApp, ref, onMounted, computed, watch, nextTick } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
 import { useFileSystem } from './composables/useFileSystem.js';
+import { useProcessingStatus } from './composables/useProcessingStatus.js';
 import { useToast } from './composables/useToast.js';
-import { setToken, getToken, login, logout, fetchProcessingStatus, fetchPathInfo, connectSocket } from './api/client.js';
+import { setToken, getToken, login, logout, fetchPathInfo, connectSocket } from './api/client.js';
 import SearchModal from './components/SearchModal.js';
 import TaskPanel from './components/TaskPanel.js';
 import FileCard from './components/FileCard.js';
@@ -173,7 +174,6 @@ createApp({
         const showRenameModal = ref(false);
         const itemToRename = ref(null);
         const selectedIds = ref([]);
-        const processingStatuses = ref({});
 
         // File System
         const {
@@ -653,6 +653,13 @@ createApp({
             logout();
         }
 
+        const { processingStatuses } = useProcessingStatus({
+            files,
+            isLoggedIn,
+            activeTab,
+            view
+        });
+
         onMounted(async () => {
             const loggedIn = await resumeSession();
             if (loggedIn) {
@@ -675,27 +682,6 @@ createApp({
                     showSearchModal.value = !showSearchModal.value;
                 }
             });
-
-            // Status Polling
-            setInterval(async () => {
-                if (!isLoggedIn.value || isLoading.value || files.value.length === 0) return;
-                const noteFileIds = files.value
-                    .filter(f => f.extension === 'note')
-                    .map(f => parseInt(f.id));
-                if (noteFileIds.length === 0) return;
-
-                try {
-                    const result = await fetchProcessingStatus(noteFileIds);
-                    if (result.success) {
-                        processingStatuses.value = {
-                            ...processingStatuses.value,
-                            ...result.statusMap
-                        };
-                    }
-                } catch (e) {
-                    console.error("Status poll error:", e);
-                }
-            }, 3000);
         });
 
         return {
