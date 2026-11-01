@@ -1,4 +1,3 @@
-import logging
 import time
 from typing import Any, cast
 
@@ -9,8 +8,6 @@ from supernote.server.db.models.schedule import ScheduleTaskDO, ScheduleTaskGrou
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus, ScheduleUpdatedEvent
 from supernote.server.exceptions import TaskGroupNotFound
-
-logger = logging.getLogger(__name__)
 
 MAX_TITLE_LENGTH = 255
 MAX_DETAIL_LENGTH = 1 * 1024 * 1024  # 1MB

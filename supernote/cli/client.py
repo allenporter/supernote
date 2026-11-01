@@ -20,8 +20,6 @@ from supernote.models.extended import WebSummaryListVO
 from supernote.models.socket import SocketHandshakeParams
 from supernote.server.socket_auth import compute_handshake_signature
 
-_LOGGER = logging.getLogger(__name__)
-
 
 def load_cached_auth(url: str | None = None) -> tuple[FileCacheAuth, str]:
     """Load cached credentials."""

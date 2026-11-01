@@ -587,7 +587,9 @@ class UserService:
                 token, user_id, claims, session_key
             )
         if not session_val:
-            logger.warning("Session not found in coordination service: %s", token[:10])
+            logger.warning(
+                "Session not found in coordination service for user_id=%s", user_id
+            )
             return None
 
         try:

@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import urllib.parse
 from http import HTTPStatus
 from pathlib import Path
@@ -502,3 +503,26 @@ async def test_oss_png_and_pdf_routes_require_matching_signed_path_and_ownership
     )
     resp_other = await client.get(other_user_url, headers={})
     assert resp_other.status == HTTPStatus.NOT_FOUND
+
+
+async def test_oss_upload_routes_do_not_log_request_headers(
+    client: Client,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verify OSS upload and part routes do not dump request headers/tokens to application logs."""
+    raw_token = "raw_oss_access_token_secret"
+    raw_channel = "raw_oss_channel_jwt_SN123_1700000000"
+    headers = {
+        "x-access-token": raw_token,
+        "channel": raw_channel,
+    }
+
+    with caplog.at_level(logging.DEBUG, logger="supernote.server"):
+        await client.post("/api/oss/upload?path=x", headers=headers)
+        await client.post(
+            "/api/oss/upload/part?uploadId=u1&partNumber=1&path=x", headers=headers
+        )
+
+    logged = "\n".join(r.getMessage() for r in caplog.records)
+    assert raw_token not in logged
+    assert raw_channel not in logged

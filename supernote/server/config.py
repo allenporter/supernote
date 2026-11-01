@@ -10,6 +10,19 @@ from mashumaro.mixins.yaml import DataClassYAMLMixin
 
 logger = logging.getLogger(__name__)
 
+VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
+
+
+def _normalize_log_level(level_name: str) -> str:
+    """Validate and return an uppercase standard log level name."""
+    normalized = level_name.strip().upper()
+    if normalized not in VALID_LOG_LEVELS:
+        raise ValueError(
+            f"Invalid log level {level_name!r}; expected one of: "
+            f"{', '.join(VALID_LOG_LEVELS)}"
+        )
+    return normalized
+
 
 def _get_bool_env(name: str, default: bool) -> bool:
     """Get a boolean value from an environment variable."""
@@ -30,10 +43,16 @@ class AuthConfig(DataClassYAMLMixin):
     """
 
     expiration_hours: int = 24
-    """JWT expiration time in hours."""
+    """JWT expiration time in hours.
+
+    Env Var: `SUPERNOTE_JWT_EXPIRATION_HOURS`
+    """
 
     device_expiration_hours: int = 87600
-    """JWT expiration time for devices in hours (default: 10 years)."""
+    """JWT expiration time for devices in hours (default: 10 years).
+
+    Env Var: `SUPERNOTE_DEVICE_EXPIRATION_HOURS`
+    """
 
     enable_registration: bool = False
     """When disabled, registration is only allowed if there are no users in the system.
@@ -208,6 +227,12 @@ class ServerConfig(DataClassYAMLMixin):
     Used for RFC 9728 discovery if the server is behind a proxy.
     """
 
+    log_level: str = "INFO"
+    """Server logging level (DEBUG, INFO, WARNING, ERROR).
+
+    Env Var: `SUPERNOTE_LOG_LEVEL`
+    """
+
     trace_log_file: str | None = None
     """Path to trace log file.
 
@@ -217,7 +242,7 @@ class ServerConfig(DataClassYAMLMixin):
     """
 
     trace_log_unsafe: bool = False
-    """Whether to disable credential and token redaction in the trace log for debugging.
+    """Whether to disable credential and token redaction across trace and access logs.
 
     Env Var: `SUPERNOTE_TRACE_LOG_UNSAFE`
     """
@@ -310,6 +335,7 @@ class ServerConfig(DataClassYAMLMixin):
     """
 
     def __post_init__(self) -> None:
+        self.log_level = _normalize_log_level(self.log_level)
         self._sync_legacy_gemini_config()
 
     def _sync_legacy_gemini_config(self) -> None:
@@ -486,6 +512,28 @@ class ServerConfig(DataClassYAMLMixin):
                 f"Remote Password Reset Enabled: {config.auth.enable_remote_password_reset}"
             )
 
+        if raw_exp := os.getenv("SUPERNOTE_JWT_EXPIRATION_HOURS"):
+            try:
+                exp_val = int(raw_exp)
+                if exp_val > 0:
+                    config.auth.expiration_hours = exp_val
+                    logger.info(
+                        f"Using SUPERNOTE_JWT_EXPIRATION_HOURS: {config.auth.expiration_hours}"
+                    )
+            except ValueError:
+                pass
+
+        if raw_dev_exp := os.getenv("SUPERNOTE_DEVICE_EXPIRATION_HOURS"):
+            try:
+                dev_exp_val = int(raw_dev_exp)
+                if dev_exp_val > 0:
+                    config.auth.device_expiration_hours = dev_exp_val
+                    logger.info(
+                        f"Using SUPERNOTE_DEVICE_EXPIRATION_HOURS: {config.auth.device_expiration_hours}"
+                    )
+            except ValueError:
+                pass
+
         if os.getenv("SUPERNOTE_PROXY_MODE"):
             config.proxy_mode = os.getenv("SUPERNOTE_PROXY_MODE")
             logger.info(f"Using SUPERNOTE_PROXY_MODE: {config.proxy_mode}")
@@ -570,9 +618,13 @@ class ServerConfig(DataClassYAMLMixin):
             )
             logger.info(f"Web Notebook Preview: {config.web_notebook_preview}")
 
-        if trace_log_file := os.getenv("SUPERNOTE_TRACE_LOG_FILE"):
+        if raw_log_level := os.getenv("SUPERNOTE_LOG_LEVEL"):
+            config.log_level = _normalize_log_level(raw_log_level)
+            logger.info(f"Using SUPERNOTE_LOG_LEVEL: {config.log_level}")
+
+        if (trace_log_file := os.getenv("SUPERNOTE_TRACE_LOG_FILE")) is not None:
             config.trace_log_file = trace_log_file
-            logger.info(f"Using SUPERNOTE_TRACE_LOG_FILE: {config.trace_log_file}")
+            logger.info(f"Using SUPERNOTE_TRACE_LOG_FILE: {config.trace_log_file!r}")
 
         if os.getenv("SUPERNOTE_TRACE_LOG_UNSAFE"):
             config.trace_log_unsafe = _get_bool_env(

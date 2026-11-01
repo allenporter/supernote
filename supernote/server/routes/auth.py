@@ -1,5 +1,3 @@
-import logging
-
 from aiohttp import web
 from mashumaro.exceptions import MissingField
 
@@ -46,8 +44,6 @@ from supernote.server.utils.rate_limit import (
 )
 
 from .decorators import public_route
-
-logger = logging.getLogger(__name__)
 
 routes = web.RouteTableDef()
 

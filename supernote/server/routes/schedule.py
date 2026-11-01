@@ -1,4 +1,3 @@
-import logging
 import time
 from dataclasses import fields
 from typing import Any
@@ -28,8 +27,6 @@ from supernote.models.schedule import (
 from supernote.server.exceptions import SupernoteError
 from supernote.server.services.ical_export import ICalExportService
 from supernote.server.services.schedule import ScheduleService
-
-logger = logging.getLogger(__name__)
 
 routes = web.RouteTableDef()
 

@@ -412,6 +412,7 @@ def test_server_config_trace_log_flags(tmp_path: Path) -> None:
     """Verify trace_log_file and trace_log_unsafe defaults and env overrides."""
     config = ServerConfig()
     assert config.trace_log_unsafe is False
+    assert config.log_level == "INFO"
 
     config_dir = tmp_path / "config"
     custom_trace = str(tmp_path / "custom_trace.log")
@@ -425,3 +426,35 @@ def test_server_config_trace_log_flags(tmp_path: Path) -> None:
         loaded = ServerConfig.load(config_dir)
         assert loaded.trace_log_file == custom_trace
         assert loaded.trace_log_unsafe is True
+
+    empty_dir = tmp_path / "config_empty_trace"
+    with patch.dict(os.environ, {"SUPERNOTE_TRACE_LOG_FILE": ""}):
+        disabled_trace = ServerConfig.load(empty_dir)
+        assert disabled_trace.trace_log_file == ""
+
+
+def test_server_config_log_level_and_token_expiration_env_overrides(
+    tmp_path: Path,
+) -> None:
+    """Verify log_level and JWT/device token expiration env overrides and validation."""
+    assert ServerConfig(log_level="debug").log_level == "DEBUG"
+    assert ServerConfig(log_level=" info ").log_level == "INFO"
+    assert ServerConfig(log_level="error").log_level == "ERROR"
+
+    for invalid_level in ("VERBOSE", "WARN", "CRITICAL"):
+        with pytest.raises(ValueError, match="Invalid log level"):
+            ServerConfig(log_level=invalid_level)
+
+    config_dir = tmp_path / "config"
+    with patch.dict(
+        os.environ,
+        {
+            "SUPERNOTE_LOG_LEVEL": "warning",
+            "SUPERNOTE_JWT_EXPIRATION_HOURS": "12",
+            "SUPERNOTE_DEVICE_EXPIRATION_HOURS": "720",
+        },
+    ):
+        loaded = ServerConfig.load(config_dir)
+        assert loaded.log_level == "WARNING"
+        assert loaded.auth.expiration_hours == 12
+        assert loaded.auth.device_expiration_hours == 720

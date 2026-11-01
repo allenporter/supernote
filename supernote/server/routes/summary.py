@@ -1,4 +1,3 @@
-import logging
 import urllib.parse
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -39,7 +38,6 @@ from supernote.server.services.summary import (
 from supernote.server.utils.paths import generate_inner_name
 from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
-logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
 
 

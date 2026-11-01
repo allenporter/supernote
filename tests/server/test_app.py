@@ -4,10 +4,13 @@ These tests verify that the server correctly handles X-Forwarded-* headers
 when deployed behind a reverse proxy, with different proxy modes.
 """
 
+import argparse
 import dataclasses
+import logging
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 from aiohttp.test_utils import TestClient
@@ -15,12 +18,17 @@ from pytest_aiohttp import AiohttpClient
 from sqlalchemy import delete, select
 
 from supernote.models.file_device import FileUploadApplyLocalDTO
-from supernote.server.app import bootstrap_ephemeral_user, create_app
+from supernote.server.app import (
+    bootstrap_ephemeral_user,
+    create_app,
+    run,
+)
 from supernote.server.config import ServerConfig
 from supernote.server.db.models.user import UserDO
 from supernote.server.services.processor_modules.png_conversion import (
     PngConversionModule,
 )
+from supernote.server.trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger
 
 
 def test_import_does_not_load_google_genai() -> None:
@@ -339,3 +347,60 @@ async def test_toast_static_asset_served(client: TestClient) -> None:
     assert index_resp.status == 200
     html_text = await index_resp.text()
     assert "toast in toasts" in html_text
+
+
+def test_run_configures_default_info_level_and_sanitized_access_logger(
+    monkeypatch: pytest.MonkeyPatch,
+    server_config: ServerConfig,
+) -> None:
+    """Verify run() defaults root logging to INFO and wires SanitizedAccessLogger into web.run_app."""
+    monkeypatch.delenv("SUPERNOTE_LOG_LEVEL", raising=False)
+    cfg = dataclasses.replace(server_config, log_level="INFO")
+    monkeypatch.setattr(ServerConfig, "load", lambda _dir=None: cfg)
+
+    captured_kwargs: dict[str, Any] = {}
+
+    def fake_run_app(app: Any, **kwargs: Any) -> None:
+        captured_kwargs["app"] = app
+        captured_kwargs.update(kwargs)
+
+    monkeypatch.setattr("supernote.server.app.web.run_app", fake_run_app)
+
+    run(argparse.Namespace(config_dir=None))
+
+    assert logging.getLogger().level == logging.INFO
+    assert logging.getLogger("aiosqlite").level == logging.INFO
+    assert logging.getLogger("asyncio").level == logging.INFO
+    assert captured_kwargs["access_log_class"] is SanitizedAccessLogger
+    assert captured_kwargs["access_log_format"] == ACCESS_LOG_FORMAT
+
+
+def test_run_respects_config_and_env_log_level(
+    monkeypatch: pytest.MonkeyPatch,
+    server_config: ServerConfig,
+) -> None:
+    """Verify run() applies config.log_level while keeping noisy library loggers at INFO+."""
+    monkeypatch.setattr("supernote.server.app.web.run_app", lambda *_a, **_kw: None)
+
+    try:
+        monkeypatch.delenv("SUPERNOTE_LOG_LEVEL", raising=False)
+        debug_cfg = dataclasses.replace(server_config, log_level="DEBUG")
+        monkeypatch.setattr(ServerConfig, "load", lambda _dir=None: debug_cfg)
+
+        run(argparse.Namespace(config_dir=None))
+        assert logging.getLogger().level == logging.DEBUG
+        assert logging.getLogger("aiosqlite").level == logging.INFO
+        assert logging.getLogger("asyncio").level == logging.INFO
+
+        monkeypatch.setenv("SUPERNOTE_LOG_LEVEL", "WARNING")
+        warn_cfg = dataclasses.replace(server_config, log_level="WARNING")
+        monkeypatch.setattr(ServerConfig, "load", lambda _dir=None: warn_cfg)
+
+        run(argparse.Namespace(config_dir=None))
+        assert logging.getLogger().level == logging.WARNING
+        assert logging.getLogger("aiosqlite").level == logging.WARNING
+        assert logging.getLogger("asyncio").level == logging.WARNING
+    finally:
+        logging.getLogger().setLevel(logging.INFO)
+        logging.getLogger("aiosqlite").setLevel(logging.INFO)
+        logging.getLogger("asyncio").setLevel(logging.INFO)

@@ -1,4 +1,3 @@
-import logging
 import urllib.parse
 from pathlib import Path
 from typing import Protocol, TypeVar
@@ -53,7 +52,6 @@ from supernote.server.services.file import (
 from supernote.server.utils.paths import generate_inner_name
 from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
-logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
 
 

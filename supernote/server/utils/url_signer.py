@@ -38,7 +38,6 @@ Usage example:
 """
 
 import datetime
-import logging
 import time
 import urllib.parse
 import uuid
@@ -49,8 +48,6 @@ from aiohttp import web
 
 from supernote.server.exceptions import InvalidSignature, SignerError
 from supernote.server.services.coordination import CoordinationService
-
-logger = logging.getLogger(__name__)
 
 DEFAULT_EXPIRATION = datetime.timedelta(minutes=15)
 

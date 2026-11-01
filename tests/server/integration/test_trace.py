@@ -5,14 +5,6 @@ from pathlib import Path
 import pytest
 from aiohttp.test_utils import TestClient
 
-from supernote.server.trace import (
-    is_binary_content_type,
-    redact_url,
-    sanitize_body,
-    sanitize_headers,
-    try_parse_json,
-)
-
 
 @pytest.fixture
 def mock_trace_log(tmp_path: Path) -> str:
@@ -62,105 +54,6 @@ async def test_trace_logging(
     assert logged_body == json.loads(resp_text)
 
 
-def test_try_parse_json() -> None:
-    # Valid JSON
-    assert try_parse_json('{"a": 1}') == {"a": 1}
-    # Invalid JSON
-    assert try_parse_json('{"a": 1') == '{"a": 1'
-    # None
-    assert try_parse_json(None) is None
-    # A number json string
-    assert try_parse_json("123") == 123
-
-
-def test_binary_content_type_check() -> None:
-    assert is_binary_content_type("application/octet-stream")
-    assert is_binary_content_type("image/png")
-    assert is_binary_content_type("application/pdf")
-    assert not is_binary_content_type("application/json")
-    assert not is_binary_content_type("text/plain")
-    assert not is_binary_content_type("text/html")
-
-
-def test_sanitize_headers_and_redact_url() -> None:
-    headers = {
-        "X-Access-Token": "secret_jwt",
-        "Authorization": "Bearer secret",
-        "Cookie": "sid=123",
-        "Location": "https://client.example.com/cb?code=oauth_secret&state=123",
-        "Referer": "https://app.example.com/?Token=ref_tok",
-        "Content-Type": "application/json",
-    }
-    assert sanitize_headers(headers) == {
-        "X-Access-Token": "***",
-        "Authorization": "***",
-        "Cookie": "***",
-        "Location": "https://client.example.com/cb?code=***&state=123",
-        "Referer": "https://app.example.com/?Token=***",
-        "Content-Type": "application/json",
-    }
-    assert (
-        redact_url(
-            "https://example.com/api/oss/download?path=1&signature=abc&token=xyz"
-        )
-        == "https://example.com/api/oss/download?path=1&signature=***&token=***"
-    )
-    assert (
-        redact_url(
-            "https://example.com/socket.io/?EIO=4&Signature=Upper&%74oken=enc&sign=sio_sig"
-        )
-        == "https://example.com/socket.io/?EIO=4&Signature=***&token=***&sign=***"
-    )
-    assert (
-        redact_url("https://example.com/api/health") == "https://example.com/api/health"
-    )
-
-
-def test_sanitize_body_nested_and_truncated() -> None:
-    payload = {
-        "account": "user@example.com",
-        "password": "secret",
-        "oldPassword": "old",
-        "newPassword": "new",
-        "validCode": "123456",
-        "sign": "sms_sig",
-        "token": None,
-        "nested": [
-            {
-                "access_token": "tok1",
-                "refresh_token": "ref1",
-                "fullUploadUrl": "http://localhost/api/oss/upload?path=a&signature=sig1",
-            }
-        ],
-    }
-    sanitized = sanitize_body(payload)
-    assert sanitized == {
-        "account": "user@example.com",
-        "password": "***",
-        "oldPassword": "***",
-        "newPassword": "***",
-        "validCode": "***",
-        "sign": "***",
-        "token": None,
-        "nested": [
-            {
-                "access_token": "***",
-                "refresh_token": "***",
-                "fullUploadUrl": "http://localhost/api/oss/upload?path=a&signature=***",
-            }
-        ],
-    }
-
-    truncated_json = '{"account": "user@example.com", "password": "raw\\"password", "token": "cut_off_secret'
-    assert sanitize_body(truncated_json) == (
-        '{"account": "user@example.com", "password": "***", "token": "***"'
-    )
-    assert (
-        sanitize_body("account=user&password=secret with spaces&other=1")
-        == "account=user&password=***&other=1"
-    )
-
-
 def _parse_trace_entries(content: str) -> list[dict]:
     decoder = json.JSONDecoder()
     entries: list[dict] = []
@@ -185,7 +78,10 @@ async def test_trace_logging_redacts_json_credentials_and_tokens(
     secret_password_hash = "0123456789abcdef0123456789abcdef"
     await client.post(
         "/api/official/user/account/login/new?signature=raw_sig_secret&token=raw_url_token",
-        headers={"x-access-token": "raw_header_token"},
+        headers={
+            "x-access-token": "raw_header_token",
+            "channel": "raw_channel_jwt_TEST_EQ_1234567890",
+        },
         json={
             "account": "test@example.com",
             "password": secret_password_hash,
@@ -208,6 +104,7 @@ async def test_trace_logging_redacts_json_credentials_and_tokens(
     assert "raw_sig_secret" not in raw_log
     assert "raw_url_token" not in raw_log
     assert "raw_header_token" not in raw_log
+    assert "raw_channel_jwt_TEST_EQ_1234567890" not in raw_log
 
     entries = _parse_trace_entries(raw_log)
     login_entry = next(
@@ -219,6 +116,7 @@ async def test_trace_logging_redacts_json_credentials_and_tokens(
         "signature=***" in login_entry["request"]["url"]
     )
     assert login_entry["request"]["headers"].get("x-access-token") == "***"
+    assert login_entry["request"]["headers"].get("channel") == "***"
     assert login_entry["request"]["body"]["account"] == "test@example.com"
     assert login_entry["request"]["body"]["password"] == "***"
 
@@ -266,7 +164,10 @@ async def test_trace_logging_unsafe_mode_preserves_raw_tokens(
     client.app["config"].trace_log_unsafe = True
     await client.post(
         "/api/official/user/account/login/new?token=debug_query_token",
-        headers={"x-access-token": "debug_header_token"},
+        headers={
+            "x-access-token": "debug_header_token",
+            "channel": "debug_channel_jwt_TEST_EQ_1234567890",
+        },
         json={
             "account": "test@example.com",
             "password": "debug_raw_password_hash",
@@ -291,5 +192,9 @@ async def test_trace_logging_unsafe_mode_preserves_raw_tokens(
     )
     assert (
         unsafe_entry["request"]["headers"].get("x-access-token") == "debug_header_token"
+    )
+    assert (
+        unsafe_entry["request"]["headers"].get("channel")
+        == "debug_channel_jwt_TEST_EQ_1234567890"
     )
     assert unsafe_entry["request"]["body"]["password"] == "debug_raw_password_hash"

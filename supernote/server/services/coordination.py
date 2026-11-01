@@ -1,4 +1,3 @@
-import logging
 import time
 from abc import ABC, abstractmethod
 
@@ -6,8 +5,6 @@ from sqlalchemy import delete, select, text
 
 from supernote.server.db.models.kv import KeyValueDO
 from supernote.server.db.session import DatabaseSessionManager
-
-logger = logging.getLogger(__name__)
 
 DEFAULT_TTL = 31536000  # 1 year in seconds
 

@@ -10,9 +10,13 @@ port: 8080
 # Directory where uploaded files and databases will be stored.
 storage_dir: storage
 
-# Optional: Path to trace log file for debugging (default: storage/system/trace.log)
+# Logging verbosity: DEBUG, INFO, WARNING, ERROR (env: SUPERNOTE_LOG_LEVEL)
+# log_level: INFO
+
+# Optional: Path to trace log file for debugging (default: storage/system/trace.log).
+# Set to "" to disable writing HTTP traces to disk.
 # trace_log_file: storage/system/trace.log
-# trace_log_unsafe: false # Set to true to log unredacted tokens/credentials in trace.log for debugging
+# trace_log_unsafe: false # Set to true to log unredacted tokens/credentials across trace and access logs
 
 # Proxy header handling mode (optional, defaults to 'relaxed')
 # - 'relaxed': Trust the immediate upstream proxy (suitable for Docker/local setups)
@@ -36,8 +40,12 @@ auth:
   # You can generate one using `openssl rand -hex 32` or similar tools.
   secret_key: "CHANGE_ME_TO_A_SECURE_RANDOM_STRING"
 
-  # Token expiration time in hours.
+  # Token expiration time in hours (env: SUPERNOTE_JWT_EXPIRATION_HOURS).
   expiration_hours: 168 # 7 days
+
+  # Device JWT expiration time in hours (default: 87600 / 10 years; env: SUPERNOTE_DEVICE_EXPIRATION_HOURS).
+  # Note: Supernote devices prompt the user to re-authenticate when a device token expires.
+  # device_expiration_hours: 87600
 
   # Whether to allow public registration.
   # If false, users must be created via the admin CLI.

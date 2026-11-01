@@ -1,14 +1,9 @@
 import argparse
-import logging
 import os
 import tempfile
 from pathlib import Path
 
 from supernote.server import app as server_app
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format="%(message)s")
-logger = logging.getLogger("supernote-cli")
 
 # For ephemeral mode
 DEBUG_EMAIL = "debug@example.com"

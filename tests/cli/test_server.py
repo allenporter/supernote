@@ -55,7 +55,12 @@ def test_add_parser_and_parse_args() -> None:
     add_parser(subparsers)
 
     parsed = parser.parse_args(
-        ["serve", "--config-dir", "/tmp/myconfig", "--ephemeral"]
+        [
+            "serve",
+            "--config-dir",
+            "/tmp/myconfig",
+            "--ephemeral",
+        ]
     )
     assert parsed.command == "serve"
     assert parsed.config_dir == "/tmp/myconfig"

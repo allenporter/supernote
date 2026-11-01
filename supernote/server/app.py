@@ -1,6 +1,7 @@
 import asyncio
 import importlib.resources
 import logging
+import os
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -53,7 +54,7 @@ from .services.summary import SummaryService
 from .services.user import UserService
 from .services.webhook import WebhookService
 from .socket import setup_socketio
-from .trace import trace_middleware
+from .trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger, trace_middleware
 from .utils.hashing import get_md5_hash
 from .utils.prompt_loader import PROMPT_LOADER
 from .utils.rate_limit import RateLimiter
@@ -417,25 +418,30 @@ async def bootstrap_ephemeral_user(app: web.Application) -> None:
 
 
 def run(args: Any) -> None:
-    # Robust logging setup
     FORMAT = "%(asctime)s %(levelname)-8s [%(name)s] %(message)s"
-    logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
-
-    # Suppress noisy library logs
-    logging.getLogger("aiosqlite").setLevel(logging.INFO)
-    logging.getLogger("asyncio").setLevel(logging.INFO)
+    env_level = getattr(
+        logging,
+        os.getenv("SUPERNOTE_LOG_LEVEL", "INFO").strip().upper(),
+        logging.INFO,
+    )
+    logging.basicConfig(level=env_level, format=FORMAT, force=True)
 
     config_dir = getattr(args, "config_dir", None)
     config = ServerConfig.load(config_dir)
-    app = create_app(config)
 
-    # Standard access log format for aiohttp
-    ACCESS_LOG_FORMAT = '%a %t "%r" %s %b "%{Referer}i" "%{User-Agent}i" (%Tf)'
+    level = getattr(logging, config.log_level)
+    logging.getLogger().setLevel(level)
+    noisy_level = max(level, logging.INFO)
+    logging.getLogger("aiosqlite").setLevel(noisy_level)
+    logging.getLogger("asyncio").setLevel(noisy_level)
+
+    app = create_app(config)
 
     web.run_app(
         app,
         host=config.host,
         port=config.port,
+        access_log_class=SanitizedAccessLogger,
         access_log=logging.getLogger("aiohttp.access"),
         access_log_format=ACCESS_LOG_FORMAT,
     )

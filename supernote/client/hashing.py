@@ -1,9 +1,6 @@
 """Module for hashing utilities."""
 
 import hashlib
-import logging
-
-logger = logging.getLogger(__name__)
 
 
 def _sha256_string(s: str) -> str:

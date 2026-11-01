@@ -150,13 +150,44 @@ Supernote Knowledge Hub is built for long-term stability:
 - **Integrity Checks**: Periodically verifies file storage consistency.
 - **Storage Quotas**: Manage user storage limits effectively.
 
-## Debugging & Tracing
+## Security: Rotating Keys & Revoking Tokens
 
-The server logs all incoming requests to `storage/system/server_trace.log`:
+If an access token or signing secret may have been exposed (for example, in older log files prior to upgrading), you can invalidate active credentials at three levels:
+
+### 1. Rotate the Server-Wide JWT Signing Key (Invalidates All Tokens Globally)
+Generate a new 256-bit secret and configure it via `SUPERNOTE_JWT_SECRET` (or `auth.secret_key` in `config/config.yaml`), then restart the server:
 
 ```bash
-tail -f storage/system/server_trace.log
+export SUPERNOTE_JWT_SECRET="$(openssl rand -hex 32)"
 ```
+
+`SUPERNOTE_JWT_SECRET` and `auth.secret_key` take precedence over the auto-generated database key (`system:jwt_secret_key`). Restarting with a new secret immediately invalidates all previously issued device, web, CLI, and signed OSS URL tokens across every user. Devices and web clients will prompt to sign in again.
+
+### 2. Revoke All Tokens for a Single User
+Every JWT is validated against persisted session state in `CoordinationService`. Changing or resetting a user's password immediately revokes all active web, CLI, and device sessions for that user without affecting other accounts:
+
+```bash
+supernote admin --url http://localhost:8080 user reset-password user@example.com
+```
+
+### 3. Revoke a Single Device's Token
+Signing out and signing back in on the Supernote tablet (**Settings** > **My Account** > **Sign Out**) revokes all prior session tokens bound to that device (`equipmentNo`).
+
+### 4. Tighten Token Lifetimes & Purge Old Logs
+- Configure shorter token lifetimes via `SUPERNOTE_DEVICE_EXPIRATION_HOURS` (`auth.device_expiration_hours`, default `87600`) and `SUPERNOTE_JWT_EXPIRATION_HOURS` (`auth.expiration_hours`, default `24`).
+- After rotating keys, truncate or delete historical trace logs (`: > storage/system/trace.log`) and rotate container or systemd logs.
+
+## Logging, Debugging & Tracing
+
+By default, the server logs at `INFO` level and automatically redacts credentials, cookies, JWT headers (`x-access-token`, `authorization`, `channel`), and sensitive URL query parameters (`token`, `sign`, `signature`, `code`) across `storage/system/trace.log` and HTTP access logs.
+
+- **Inspect redacted HTTP request/response traces**:
+  ```bash
+  tail -f storage/system/trace.log
+  ```
+- **Disable disk trace logging**: Set `SUPERNOTE_TRACE_LOG_FILE=""` (or `trace_log_file: ""` in `config/config.yaml`).
+- **Change log verbosity**: Set `SUPERNOTE_LOG_LEVEL=DEBUG` (or `log_level: DEBUG` in `config/config.yaml`). Supported levels: `DEBUG`, `INFO`, `WARNING`, `ERROR`.
+- **Log unredacted requests for protocol debugging**: Set `SUPERNOTE_TRACE_LOG_UNSAFE=true` (or `trace_log_unsafe: true` in `config/config.yaml`) to disable redaction across `trace.log` and HTTP access logs. Turn this off and rotate logs once debugging is complete.
 
 ## Development
 

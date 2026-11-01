@@ -1,6 +1,5 @@
 """An OAuth Authorization server for Supernote MCP."""
 
-import logging
 import secrets
 import time
 from typing import override
@@ -34,8 +33,6 @@ from .models import (
     SupernoteAuthorizationCode,
     SupernoteRefreshToken,
 )
-
-_LOGGER = logging.getLogger(__name__)
 
 
 class SupernoteOAuthClientInformationFull(OAuthClientInformationFull):

@@ -1,5 +1,4 @@
 import hashlib
-import logging
 import time
 import uuid
 from typing import Any
@@ -32,8 +31,6 @@ from supernote.server.events import (
 )
 from supernote.server.exceptions import SummaryNotFound
 from supernote.server.services.user import UserService
-
-logger = logging.getLogger(__name__)
 
 DEFAULT_SUMMARY_PAGE_SIZE = 20
 
