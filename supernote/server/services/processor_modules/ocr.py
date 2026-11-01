@@ -8,6 +8,7 @@ from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
+from supernote.server.services.vocabulary import VocabularyService
 from supernote.server.utils.note_content import get_page_content_by_id
 from supernote.server.utils.paths import get_page_png_path
 
@@ -21,9 +22,11 @@ class OcrModule(ProcessorModule):
         self,
         file_service: FileService,
         ocr_model: OcrModel | None,
+        vocabulary_service: VocabularyService | None = None,
     ) -> None:
         self.file_service = file_service
         self.ocr_model = ocr_model
+        self.vocabulary_service = vocabulary_service
 
     @property
     def name(self) -> str:
@@ -93,11 +96,19 @@ class OcrModule(ProcessorModule):
         # Get File Info for custom prompt and metadata
         file_name: str | None = None
         notebook_create_time: int | None = None
+        user_id: int | None = None
         async with session_manager.session() as session:
             file_do = await session.get(UserFileDO, file_id)
             if file_do:
                 file_name = file_do.file_name
                 notebook_create_time = file_do.create_time
+                user_id = file_do.user_id
+
+        vocabulary: list[str] = []
+        if self.vocabulary_service and user_id is not None:
+            vocabulary = await self.vocabulary_service.terms_for_notebook(
+                user_id, file_id
+            )
 
         page_metadata = PageMetadata(
             file_name=file_name,
@@ -105,7 +116,7 @@ class OcrModule(ProcessorModule):
             page_id=page_id,
             notebook_create_time=notebook_create_time,
         )
-        prompt = format_ocr_prompt(page_metadata)
+        prompt = format_ocr_prompt(page_metadata, vocabulary=vocabulary)
         text_content = await self.ocr_model.extract_text(png_data, prompt)
 
         # Save Result

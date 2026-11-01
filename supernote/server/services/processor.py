@@ -83,13 +83,14 @@ class ProcessorService:
     def register_modules(
         self,
         hashing: ProcessorModule,
+        vocabulary: ProcessorModule | None = None,
         png: ProcessorModule | None = None,
         ocr: ProcessorModule | None = None,
         embedding: ProcessorModule | None = None,
         summary: ProcessorModule | None = None,
     ) -> None:
         """Register processing modules in logical order."""
-        self.global_pre_modules = [hashing]
+        self.global_pre_modules = [m for m in (hashing, vocabulary) if m is not None]
         self.page_modules = [m for m in (png, ocr, embedding) if m is not None]
         self.global_post_modules = [m for m in (summary,) if m is not None]
         logger.info("Registered all processor modules.")
