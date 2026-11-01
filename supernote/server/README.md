@@ -84,6 +84,16 @@ ai:
     model: embeddinggemma
     max_concurrency: 1
 ```
+
+On macOS (`pip install "supernote[server,apple]"`), you can also use Apple's built-in on-device `Vision` framework for local OCR with no API key or model server required (`vision-accurate` or `vision-fast`), optionally paired with `gemini` or `openai` for summaries and embeddings:
+```yaml
+ai:
+  ocr:
+    provider: apple
+    model: vision-accurate
+    max_concurrency: 2
+```
+
 Changing the embedding model re-embeds existing pages automatically.
 
 A provider entry's type defaults to its name. To use more than one server of the same kind, give each entry its own name and a `type`, then point each capability at an entry by name:

@@ -74,6 +74,19 @@ OPENAI_API_DURATION_SECONDS: Histogram = Histogram(
     ["operation"],
 )
 
+# Local Apple AI metrics
+APPLE_AI_CALLS_TOTAL: Counter = Counter(
+    "supernote_apple_ai_calls_total",
+    "Total number of local Apple AI calls.",
+    ["operation", "status"],
+)
+
+APPLE_AI_DURATION_SECONDS: Histogram = Histogram(
+    "supernote_apple_ai_duration_seconds",
+    "Latency of local Apple AI calls in seconds.",
+    ["operation"],
+)
+
 # Database metrics
 DB_SESSIONS_ACTIVE: Gauge = Gauge(
     "supernote_db_sessions_active",

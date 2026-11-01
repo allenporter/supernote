@@ -139,7 +139,7 @@ class ProviderConfig(DataClassYAMLMixin):
     """Optional custom base URL for the provider (e.g. local Ollama or vLLM server)."""
 
     type: str | None = None
-    """Backend implementation (`'gemini'`, `'openai'`, `'fake'`). Defaults to the entry's name.
+    """Backend implementation (`'gemini'`, `'openai'`, `'apple'`, `'fake'`). Defaults to the entry's name.
 
     Set it to configure several entries of one kind, e.g. two OpenAI-compatible
     servers named `ollama` and `llamacpp`.
