@@ -19,6 +19,8 @@ from supernote.models.extended import (
     SearchResultVO,
     SystemTaskListVO,
     SystemTaskVO,
+    WebNoteCoverRequestDTO,
+    WebNoteCoverVO,
     WebSearchRequestDTO,
     WebSearchResponseVO,
     WebSummaryListRequestDTO,
@@ -33,9 +35,11 @@ from supernote.server.config import ServerConfig
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.exceptions import SupernoteError
+from supernote.server.services.conversion import ConversionService
 from supernote.server.services.search import SearchService
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
+from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -303,3 +307,42 @@ async def handle_extended_ai_status(request: web.Request) -> web.Response:
             "model": model,
         }
     )
+
+
+@routes.post("/api/extended/file/note/cover")
+async def handle_extended_note_cover(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/file/note/cover
+    # Purpose: Convert/fetch only the first page (page 0) PNG for lightweight explorer thumbnails.
+    user_email = request["user"]
+    try:
+        data = await request.json()
+        req_dto = WebNoteCoverRequestDTO.from_dict(data)
+    except (json.JSONDecodeError, MissingField, InvalidFieldValue, ValueError) as err:
+        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
+
+    config: ServerConfig = request.app["config"]
+    if not (config.web_enabled and config.web_notebook_preview):
+        return web.json_response(WebNoteCoverVO(url=None).to_dict())
+
+    conversion_service: ConversionService = request.app["conversion_service"]
+    url_signer: UrlSigner = request.app["url_signer"]
+
+    try:
+        page_numbers = await conversion_service.convert_note_to_png(
+            user_email, req_dto.file_id, page_indices={0}
+        )
+        if not page_numbers:
+            return web.json_response(WebNoteCoverVO(url=None).to_dict())
+
+        page_no = page_numbers[0]
+        path_to_sign = f"/api/oss/png/{req_dto.file_id}/{page_no}"
+        signed_path = await url_signer.sign(
+            path_to_sign, user=user_email, single_use=False
+        )
+        download_url = f"{get_request_base_url(request)}{signed_path}"
+        return web.json_response(WebNoteCoverVO(url=download_url).to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        logger.exception("Error fetching note cover preview")
+        return SupernoteError.uncaught(err).to_response()

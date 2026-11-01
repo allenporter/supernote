@@ -1,5 +1,5 @@
-import { ref, computed, onMounted, watch } from 'vue';
-import { convertNoteToPng, fetchDownloadUrl, downloadFile } from '../api/client.js';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { fetchNoteCover, fetchDownloadUrl, downloadFile } from '../api/client.js';
 import { showToast } from '../composables/useToast.js';
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg']);
@@ -9,8 +9,12 @@ export default {
     props: ['file', 'isSelected', 'processingStatus'],
     emits: ['open', 'select', 'rename'],
     setup(props) {
+        const cardRef = ref(null);
         const coverUrl = ref(null);
         const downloading = ref(false);
+        const isInViewport = ref(false);
+        let visibilityObserver = null;
+        let activeCoverSeq = 0;
 
         const fileExt = computed(() => {
             if (!props.file) return '';
@@ -42,32 +46,75 @@ export default {
             }
         };
 
+        const teardownObserver = () => {
+            if (visibilityObserver) {
+                visibilityObserver.disconnect();
+                visibilityObserver = null;
+            }
+        };
+
         const loadCover = async () => {
-            coverUrl.value = null;
-            if (!props.file || props.file.isDirectory) return;
+            const seq = ++activeCoverSeq;
+            if (!props.file || props.file.isDirectory) {
+                coverUrl.value = null;
+                return;
+            }
             const ext = fileExt.value;
-            if (ext === 'note') {
-                try {
-                    const pages = await convertNoteToPng(props.file.id);
-                    if (pages && pages.length > 0) {
-                        coverUrl.value = pages[0].url;
-                    }
-                } catch (e) {
-                    // Fallback to vector icon
+            if (ext !== 'note' && !IMAGE_EXTENSIONS.has(ext)) {
+                coverUrl.value = null;
+                return;
+            }
+            if (!isInViewport.value) return;
+
+            const targetId = props.file.id;
+            try {
+                const resolvedUrl = ext === 'note'
+                    ? await fetchNoteCover(targetId)
+                    : await fetchDownloadUrl(targetId);
+                if (seq === activeCoverSeq && String(props.file?.id) === String(targetId)) {
+                    coverUrl.value = resolvedUrl;
                 }
-            } else if (IMAGE_EXTENSIONS.has(ext)) {
-                try {
-                    coverUrl.value = await fetchDownloadUrl(props.file.id);
-                } catch (e) {
-                    // Fallback to vector icon
+            } catch (e) {
+                if (seq === activeCoverSeq) {
+                    coverUrl.value = null;
                 }
             }
         };
 
-        onMounted(loadCover);
-        watch(() => props.file?.id, loadCover);
+        const observeCardVisibility = () => {
+            teardownObserver();
+            if (typeof IntersectionObserver !== 'function' || !cardRef.value) {
+                isInViewport.value = true;
+                loadCover();
+                return;
+            }
+            visibilityObserver = new IntersectionObserver(
+                (entries) => {
+                    if (entries.some((entry) => entry.isIntersecting)) {
+                        isInViewport.value = true;
+                        teardownObserver();
+                        loadCover();
+                    }
+                },
+                { rootMargin: '200px' }
+            );
+            visibilityObserver.observe(cardRef.value);
+        };
 
-        return { coverUrl, downloading, download, fileExt, iconType };
+        onMounted(observeCardVisibility);
+        onUnmounted(teardownObserver);
+        watch(() => props.file?.id, () => {
+            coverUrl.value = null;
+            isInViewport.value = false;
+            observeCardVisibility();
+        });
+        watch(() => props.processingStatus, (newStatus, oldStatus) => {
+            if (newStatus === 'COMPLETED' && oldStatus && oldStatus !== 'COMPLETED' && !coverUrl.value) {
+                loadCover();
+            }
+        });
+
+        return { cardRef, coverUrl, downloading, download, fileExt, iconType };
     },
     methods: {
         formatSize(bytes) {
@@ -79,7 +126,7 @@ export default {
         }
     },
     template: `
-    <div class="group file-card bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer overflow-hidden flex flex-col relative" :class="{'ring-2 ring-indigo-500 bg-indigo-50/30 dark:bg-indigo-950/30': isSelected}">
+    <div ref="cardRef" class="group file-card bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer overflow-hidden flex flex-col relative" :class="{'ring-2 ring-indigo-500 bg-indigo-50/30 dark:bg-indigo-950/30': isSelected}">
         <!-- Selection Checkbox -->
         <div class="absolute top-3 left-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity" :class="{'opacity-100': isSelected}">
             <input type="checkbox" :checked="isSelected" @change.stop="$emit('select', file.id)" class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
@@ -91,7 +138,7 @@ export default {
             @click.stop="$emit('open', file)">
 
             <!-- Cover image thumbnail if loaded -->
-            <img v-if="coverUrl" :src="coverUrl" class="w-full h-full object-cover object-top transition-transform group-hover:scale-105" alt="Cover Preview" />
+            <img v-if="coverUrl" :src="coverUrl" loading="lazy" decoding="async" class="w-full h-full object-cover object-top transition-transform group-hover:scale-105" alt="Cover Preview" />
 
             <!-- Default Vector Icons if no cover image -->
             <template v-else>

@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -14,6 +15,7 @@ from supernote.models.extended import PageTranscriptVO
 from supernote.models.summary import AddSummaryDTO
 from supernote.server.ai.models.embedding import EmbeddingTaskType
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
+from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
@@ -518,3 +520,68 @@ async def test_extended_ai_status(extended_client: ExtendedClient) -> None:
         "vectorSearchEnabled": True,
         "model": "fake-ocr-v1",
     }
+
+
+async def test_extended_note_cover_converts_only_first_page(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    assert client.app is not None
+    blob_storage = client.app["blob_storage"]
+    conversion_service = client.app["conversion_service"]
+    file_id = 9101
+    storage_key = "cover_test_9101.note"
+    multipage_note = Path("tests/testdata/mmujynya/stroller.note")
+
+    await blob_storage.put(USER_DATA_BUCKET, storage_key, multipage_note.read_bytes())
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=test_user_id,
+                directory_id=0,
+                file_name="CoverOnly.note",
+                is_folder="N",
+                storage_key=storage_key,
+                md5="md5_cover_9101",
+            )
+        )
+        await session.commit()
+
+    resp = await client.post(
+        "/api/extended/file/note/cover",
+        json={"fileId": str(file_id)},
+        headers=auth_headers,
+    )
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["success"] is True
+    assert data["url"] is not None
+    assert f"/api/oss/png/{file_id}/0?" in data["url"]
+
+    # Page 1 was NOT eagerly converted
+    assert (
+        await conversion_service.get_note_png_page("test@example.com", file_id, 1)
+        is None
+    )
+
+    # Signed URL downloads valid PNG bytes
+    rel_url = "/" + data["url"].split("/", 3)[3]
+    png_resp = await client.get(rel_url)
+    assert png_resp.status == 200
+    png_bytes = await png_resp.read()
+    assert png_bytes.startswith(b"\x89PNG")
+
+    # When web_notebook_preview is disabled, cover endpoint returns url=None
+    client.app["config"].web_notebook_preview = False
+    disabled_resp = await client.post(
+        "/api/extended/file/note/cover",
+        json={"fileId": str(file_id)},
+        headers=auth_headers,
+    )
+    assert disabled_resp.status == 200
+    disabled_data = await disabled_resp.json()
+    assert disabled_data["success"] is True
+    assert disabled_data["url"] is None

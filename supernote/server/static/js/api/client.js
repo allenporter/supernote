@@ -804,3 +804,30 @@ export async function downloadFile(fileId) {
     link.click();
     document.body.removeChild(link);
 }
+
+/**
+ * Fetch a lightweight single-page cover preview URL (page 0) for a notebook.
+ * @param {string|number} fileId
+ * @returns {Promise<string|null>}
+ */
+export async function fetchNoteCover(fileId) {
+    const currentToken = getToken();
+    if (!currentToken) throw new Error("Unauthorized");
+
+    const response = await fetch('/api/extended/file/note/cover', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-access-token': currentToken
+        },
+        body: JSON.stringify({ fileId: String(fileId) })
+    });
+
+    if (response.status === 401) {
+        logout();
+        throw new Error("Unauthorized");
+    }
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.url || null;
+}

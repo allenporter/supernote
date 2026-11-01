@@ -213,3 +213,24 @@ class WebTranscriptResponseVO(BaseResponse):
 
     class Config(BaseConfig):
         serialize_by_alias = True
+
+
+@dataclass
+class WebNoteCoverRequestDTO(DataClassJSONMixin):
+    """Request DTO for retrieving a single-page cover preview URL for a notebook."""
+
+    file_id: int = field(metadata=field_options(alias="fileId"))
+    """The unique ID of the notebook."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class WebNoteCoverVO(BaseResponse):
+    """Response VO for single-page notebook cover preview URL."""
+
+    url: str | None = None
+
+    class Config(BaseConfig):
+        serialize_by_alias = True

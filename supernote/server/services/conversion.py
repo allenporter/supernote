@@ -83,13 +83,19 @@ class ConversionService:
                 return None
             return user_id, node
 
-    async def convert_note_to_png(self, user: str, file_id: int) -> list[int]:
-        """Ensure all pages of a note are converted to PNG in CACHE_BUCKET and return page numbers."""
+    async def convert_note_to_png(
+        self,
+        user: str,
+        file_id: int,
+        page_indices: set[int] | None = None,
+    ) -> list[int]:
+        """Ensure requested (or all) pages of a note are converted to PNG in CACHE_BUCKET and return page numbers."""
         await self._get_required_note_node(user, file_id)
 
         if not await self.processor_service.process_file(
             file_id,
             task_types={TaskType.PAGE_HASHING, TaskType.PNG_CONVERSION},
+            page_indices=page_indices,
         ):
             raise FileError(f"Failed to convert note file {file_id} to PNG")
 
@@ -102,6 +108,8 @@ class ConversionService:
                 )
                 .order_by(NotePageContentDO.page_index)
             )
+            if page_indices is not None:
+                stmt = stmt.where(NotePageContentDO.page_index.in_(page_indices))
             return list((await session.execute(stmt)).scalars().all())
 
     async def get_note_png_page(

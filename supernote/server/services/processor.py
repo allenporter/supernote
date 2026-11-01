@@ -466,8 +466,9 @@ class ProcessorService:
         self,
         file_id: int,
         task_types: set[TaskType] | None = None,
+        page_indices: set[int] | None = None,
     ) -> bool:
-        """Orchestrate the processing pipeline (or a subset of task_types) for a single file."""
+        """Orchestrate the processing pipeline (or a subset of task_types/page_indices) for a single file."""
         logger.info(f"Processing file {file_id}...")
 
         if not self.global_pre_modules:
@@ -487,7 +488,8 @@ class ProcessorService:
         post_modules = [
             m
             for m in self.global_post_modules
-            if task_types is None or m.task_type in task_types
+            if (task_types is None or m.task_type in task_types)
+            and page_indices is None
         ]
 
         # Pipeline Stage: Global Pre-processing (Hashing)
@@ -506,6 +508,8 @@ class ProcessorService:
                     .where(NotePageContentDO.file_id == file_id)
                     .order_by(NotePageContentDO.page_index)
                 )
+                if page_indices is not None:
+                    stmt = stmt.where(NotePageContentDO.page_index.in_(page_indices))
                 result = await session.execute(stmt)
                 pages = result.all()  # List of (index, id) tuples
 
@@ -535,7 +539,7 @@ class ProcessorService:
             if not await module.run(file_id, self.session_manager):
                 post_ok = False
 
-        if task_types is None:
+        if task_types is None and page_indices is None:
             await self._publish_processing_completed(file_id)
 
         return all_pages_ok and post_ok
