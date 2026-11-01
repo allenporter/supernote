@@ -193,7 +193,6 @@ def test_merge_mismatched_header_property() -> None:
     notebook2 = _prepare_notebook_for_reconstruct(load_notebook(str(SAMPLE_NOTE_PATH)))
 
     metadata2 = notebook2.get_metadata()
-    assert metadata2.header is not None
     metadata2.header["DEVICE_DPI"] = "999"
     with pytest.raises(
         ValueError, match="<DEVICE_DPI> property must be same between merging files"
@@ -232,7 +231,6 @@ def test_notebook_page_addition() -> None:
     notebook = _prepare_notebook_for_reconstruct(load_notebook(str(SAMPLE_NOTE_PATH)))
     orig_pages = notebook.get_total_pages()
     meta = notebook.get_metadata()
-    assert meta.pages is not None
 
     # Duplicate first page and add to pages list & metadata
     first_page = copy.deepcopy(notebook.get_page(0))
@@ -258,7 +256,6 @@ def test_notebook_page_deletion() -> None:
     assert orig_pages > 1
 
     meta = multi_page_nb.get_metadata()
-    assert meta.pages is not None
 
     # Delete first page
     multi_page_nb.pages.pop(0)
@@ -277,7 +274,6 @@ def test_notebook_page_reordering() -> None:
 
     assert multi_page_nb.get_total_pages() >= 2
     meta = multi_page_nb.get_metadata()
-    assert meta.pages is not None
 
     # Swap first two pages
     multi_page_nb.pages[0], multi_page_nb.pages[1] = (
@@ -451,3 +447,55 @@ def test_find_background_content_from_page() -> None:
 
     bg_content = _find_background_content_from_page(real_page2)
     assert bg_content is not None
+
+
+def test_reconstruct_and_merge_reject_missing_metadata() -> None:
+    notebook1 = _prepare_notebook_for_reconstruct(load_notebook(str(SAMPLE_NOTE_PATH)))
+    notebook2 = _prepare_notebook_for_reconstruct(load_notebook(str(SAMPLE_NOTE_PATH)))
+    object.__setattr__(notebook2, "metadata", None)
+
+    with pytest.raises(
+        exceptions.ParserException, match="notebook metadata is missing"
+    ):
+        reconstruct(notebook2)
+
+    with pytest.raises(
+        exceptions.ParserException, match="notebook metadata is missing"
+    ):
+        merge(notebook1, notebook2)
+
+
+def test_reconstruct_is_idempotent_and_preserves_page_layers_metadata() -> None:
+    notebook = _prepare_notebook_for_reconstruct(load_notebook(str(SAMPLE_NOTE_PATH)))
+    first_bytes = reconstruct(notebook)
+    second_bytes = reconstruct(notebook)
+    assert first_bytes == second_bytes
+    assert fileformat.KEY_LAYERS in notebook.get_page(0).metadata
+
+
+def test_reconstruct_handles_empty_named_layer_and_user_style_without_md5() -> None:
+    notebook = _prepare_notebook_for_reconstruct(load_notebook(str(SAMPLE_NOTE_PATH)))
+    page = notebook.get_page(0)
+    page.metadata["PAGESTYLE"] = "user_custom"
+    page.metadata.pop("PAGESTYLEMD5", None)
+
+    # Named layer with None bitmap content should pack as LAYERBITMAP=0
+    layer1 = page.get_layer(1)
+    layer1.metadata["LAYERNAME"] = "LAYER1"
+    layer1.metadata["LAYERPROTOCOL"] = "RATTA_RLE"
+    layer1.metadata["LAYERTYPE"] = "NOTE"
+    layer1.set_content(None)
+
+    reconstructed_bytes = reconstruct(notebook)
+    reloaded = load(io.BytesIO(reconstructed_bytes))
+    assert reloaded.get_page(0).get_layer(1).get_content() is None
+
+
+def test_reconstruct_rejects_page_missing_pagestyle() -> None:
+    notebook = _prepare_notebook_for_reconstruct(load_notebook(str(SAMPLE_NOTE_PATH)))
+    notebook.get_page(0).metadata.pop("PAGESTYLE", None)
+
+    with pytest.raises(
+        exceptions.ManipulatorException, match="page 0 metadata is missing PAGESTYLE"
+    ):
+        reconstruct(notebook)

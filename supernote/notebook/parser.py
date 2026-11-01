@@ -229,7 +229,29 @@ def _get_content_at_address(fobj: FileObj, address: int) -> bytes | None:
     return fobj.read(block_length)
 
 
-def _get_cover_address(metadata):
+def _parse_int_value(value: object, field_name: str) -> int:
+    if not isinstance(value, (str, int)):
+        raise exceptions.ParserException(
+            f"missing or invalid integer parameter {field_name!r}"
+        )
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise exceptions.ParserException(
+            f"invalid integer parameter {field_name!r}: {value!r}"
+        ) from exc
+
+
+def _parse_address_list(params: ParamsBlock, key: str) -> list[int]:
+    raw = params.get(key)
+    if raw is None:
+        raise exceptions.ParserException(f"missing address parameter {key!r}")
+    if isinstance(raw, list):
+        return [_parse_int_value(item, key) for item in raw]
+    return [_parse_int_value(raw, key)]
+
+
+def _get_cover_address(metadata: fileformat.SupernoteMetadata) -> int:
     """Returns cover address.
 
     Returns
@@ -238,15 +260,13 @@ def _get_cover_address(metadata):
         cover address
     """
     if "COVER_2" in metadata.footer:
-        address = int(metadata.footer["COVER_2"])
-    elif "COVER_1" in metadata.footer:
-        address = int(metadata.footer["COVER_1"])
-    else:
-        address = 0
-    return address
+        return _parse_int_value(metadata.footer["COVER_2"], "COVER_2")
+    if "COVER_1" in metadata.footer:
+        return _parse_int_value(metadata.footer["COVER_1"], "COVER_1")
+    return 0
 
 
-def _get_keyword_address(keyword):
+def _get_keyword_address(keyword: fileformat.Keyword) -> int:
     """Returns keyword content address.
 
     Returns
@@ -254,10 +274,10 @@ def _get_keyword_address(keyword):
     int
         keyword content address
     """
-    return int(keyword.metadata["KEYWORDSITE"])
+    return _parse_int_value(keyword.metadata.get("KEYWORDSITE"), "KEYWORDSITE")
 
 
-def _get_title_address(title):
+def _get_title_address(title: fileformat.Title) -> int:
     """Returns title content address.
 
     Returns
@@ -265,10 +285,10 @@ def _get_title_address(title):
     int
         title content address
     """
-    return int(title.metadata["TITLEBITMAP"])
+    return _parse_int_value(title.metadata.get("TITLEBITMAP"), "TITLEBITMAP")
 
 
-def _get_link_address(link):
+def _get_link_address(link: fileformat.Link) -> int:
     """Returns link content address.
 
     Returns
@@ -276,10 +296,12 @@ def _get_link_address(link):
     int
         link content address
     """
-    return int(link.metadata["LINKBITMAP"])
+    return _parse_int_value(link.metadata.get("LINKBITMAP"), "LINKBITMAP")
 
 
-def _get_bitmap_address(metadata, page_number):
+def _get_bitmap_address(
+    metadata: fileformat.SupernoteMetadata, page_number: int
+) -> list[int]:
     """Returns bitmap address of the given page number.
 
     Returns
@@ -287,17 +309,21 @@ def _get_bitmap_address(metadata, page_number):
     list of int
         bitmap address
     """
-    addresses = []
-    layer_supported = metadata.is_layer_supported(page_number)
-    if layer_supported:
-        for layer in range(5):  # TODO: use constant
-            address = metadata.pages[page_number][fileformat.KEY_LAYERS][layer].get(
-                "LAYERBITMAP"
+    page_info = metadata.pages[page_number]
+    if metadata.is_layer_supported(page_number):
+        layers = page_info.get(fileformat.KEY_LAYERS)
+        if not isinstance(layers, list):
+            raise exceptions.ParserException("invalid page layers metadata")
+        addresses: list[int] = []
+        for layer_info in layers:
+            if not isinstance(layer_info, dict):
+                raise exceptions.ParserException("invalid layer metadata entry")
+            address = layer_info.get("LAYERBITMAP")
+            addresses.append(
+                0 if address is None else _parse_int_value(address, "LAYERBITMAP")
             )
-            addresses.append(0 if address is None else int(address))
-    else:
-        addresses.append(int(metadata.pages[page_number]["DATA"]))
-    return addresses
+        return addresses
+    return [_parse_int_value(page_info.get("DATA"), "DATA")]
 
 
 def _get_totalpath_address(
@@ -310,14 +336,15 @@ def _get_totalpath_address(
     int
         total path address
     """
-    if "TOTALPATH" in metadata.pages[page_number]:
-        address = int(metadata.pages[page_number]["TOTALPATH"])
-    else:
-        address = 0
-    return address
+    page_info = metadata.pages[page_number]
+    if "TOTALPATH" in page_info:
+        return _parse_int_value(page_info["TOTALPATH"], "TOTALPATH")
+    return 0
 
 
-def _get_recogn_file_address(metadata, page_number):
+def _get_recogn_file_address(
+    metadata: fileformat.SupernoteMetadata, page_number: int
+) -> int:
     """Returns recogn file address of the given page number.
 
     Returns
@@ -325,14 +352,15 @@ def _get_recogn_file_address(metadata, page_number):
     int
         recogn file address
     """
-    if "RECOGNFILE" in metadata.pages[page_number]:
-        address = int(metadata.pages[page_number]["RECOGNFILE"])
-    else:
-        address = 0
-    return address
+    page_info = metadata.pages[page_number]
+    if "RECOGNFILE" in page_info:
+        return _parse_int_value(page_info["RECOGNFILE"], "RECOGNFILE")
+    return 0
 
 
-def _get_recogn_text_address(metadata, page_number):
+def _get_recogn_text_address(
+    metadata: fileformat.SupernoteMetadata, page_number: int
+) -> int:
     """Returns recogn text address of the given page number.
 
     Returns
@@ -340,24 +368,23 @@ def _get_recogn_text_address(metadata, page_number):
     int
         recogn text address
     """
-    if "RECOGNTEXT" in metadata.pages[page_number]:
-        address = int(metadata.pages[page_number]["RECOGNTEXT"])
-    else:
-        address = 0
-    return address
+    page_info = metadata.pages[page_number]
+    if "RECOGNTEXT" in page_info:
+        return _parse_int_value(page_info["RECOGNTEXT"], "RECOGNTEXT")
+    return 0
 
 
-def _get_page_number_from_footer_property(footer, prefix):
-    keys = filter(lambda k: k.startswith(prefix), footer.keys())
-    page_numbers = []
-    for k in keys:
-        if type(footer[k]) is list:
-            for _ in range(len(footer[k])):
-                page_numbers.append(int(k[6:10]) - 1)
-        else:
-            page_numbers.append(
-                int(k[6:10]) - 1
-            )  # e.g. get '0123' from 'TITLE_01234567'
+def _get_page_number_from_footer_property(
+    footer: ParamsBlock, prefix: str
+) -> list[int]:
+    page_numbers: list[int] = []
+    for k, value in footer.items():
+        if not k.startswith(prefix):
+            continue
+        # e.g. get '0123' from 'TITLE_01234567'
+        page_num = _parse_int_value(k[6:10], k) - 1
+        count = len(value) if isinstance(value, list) else 1
+        page_numbers.extend([page_num] * count)
     return page_numbers
 
 
@@ -443,18 +470,27 @@ class SupernoteParser:
             map(lambda addr: self._parse_page_block(stream, addr), page_addresses)
         )
 
-        metadata = fileformat.SupernoteMetadata()
-        metadata.type = filetype
-        metadata.signature = signature
-        metadata.header = header
-        metadata.footer = footer
-        metadata.pages = pages
-        return metadata
+        return fileformat.SupernoteMetadata(
+            type=filetype,
+            signature=signature,
+            header=header,
+            footer=footer,
+            pages=pages,
+        )
 
     def _parse_filetype(self, fobj: FileObj) -> str:
         fobj.seek(0, os.SEEK_SET)
-        filetype = fobj.read(4).decode()
-        return filetype
+        raw = fobj.read(4)
+        if len(raw) < 4:
+            raise exceptions.UnsupportedFileFormat(
+                "stream too short to contain file type"
+            )
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise exceptions.UnsupportedFileFormat(
+                f"invalid file type header: {exc}"
+            ) from exc
 
     def _find_matching_signature(self, fobj: FileObj) -> str | None:
         """Reads signature from file object and returns matching signature.
@@ -504,8 +540,7 @@ class SupernoteParser:
         int
             header address
         """
-        header_address = int(footer.get("FILE_FEATURE"))
-        return header_address
+        return _parse_int_value(footer.get("FILE_FEATURE"), "FILE_FEATURE")
 
     def _get_page_addresses(self, footer: ParamsBlock) -> list[int]:
         """Returns list of page addresses.
@@ -520,11 +555,7 @@ class SupernoteParser:
         list of int
             list of page address
         """
-        if type(footer.get("PAGE")) is list:
-            page_addresses = list(map(lambda a: int(a), footer.get("PAGE")))
-        else:
-            page_addresses = [int(footer.get("PAGE"))]
-        return page_addresses
+        return _parse_address_list(footer, "PAGE")
 
     def _parse_page_block(self, fobj: FileObj, address: int) -> ParamsBlock:
         """Returns parameters in a page block.
@@ -563,8 +594,13 @@ class SupernoteParser:
         contents = _get_content_at_address(fobj, address)
         if contents is None:
             return {}
-        params = self._extract_parameters(contents.decode())
-        return params
+        try:
+            decoded = contents.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise exceptions.ParserException(
+                f"invalid UTF-8 metadata block at address {address}: {exc}"
+            ) from exc
+        return self._extract_parameters(decoded)
 
     def _extract_parameters(self, metadata: str) -> ParamsBlock:
         """Returns dict of parameters extracted from metadata.
@@ -625,73 +661,66 @@ class SupernoteXParser(SupernoteParser):
     ]
     LAYER_KEYS = ["MAINLAYER", "LAYER1", "LAYER2", "LAYER3", "BGLAYER"]
 
-    def _parse_footer_block(self, fobj, address):
+    def _parse_footer_block(self, fobj: FileObj, address: int) -> ParamsBlock:
         footer = super()._parse_metadata_block(fobj, address)
         # parse keywords
         keyword_addresses = self._get_keyword_addresses(footer)
-        keywords = list(
-            map(lambda addr: self._parse_keyword_block(fobj, addr), keyword_addresses)
-        )
+        keywords = [self._parse_keyword_block(fobj, addr) for addr in keyword_addresses]
         if keywords:
             # Workaround: Replacing keyword content due to inaccurate parsing.
             for keyword in keywords:
-                addr = int(keyword["KEYWORDSITE"])
+                addr = _parse_int_value(keyword.get("KEYWORDSITE"), "KEYWORDSITE")
                 content = _get_content_at_address(fobj, addr)
-                keyword["KEYWORD"] = content.decode()
+                if content is None:
+                    keyword["KEYWORD"] = ""
+                else:
+                    try:
+                        keyword["KEYWORD"] = content.decode("utf-8")
+                    except UnicodeDecodeError as exc:
+                        raise exceptions.ParserException(
+                            f"invalid UTF-8 keyword content at address {addr}: {exc}"
+                        ) from exc
             footer[fileformat.KEY_KEYWORDS] = keywords
         # parse titles
         title_addresses = self._get_title_addresses(footer)
-        titles = list(
-            map(lambda addr: self._parse_title_block(fobj, addr), title_addresses)
-        )
+        titles = [self._parse_title_block(fobj, addr) for addr in title_addresses]
         if titles:
             footer[fileformat.KEY_TITLES] = titles
         # parse links
         link_addresses = self._get_link_addresses(footer)
-        links = list(
-            map(lambda addr: self._parse_link_block(fobj, addr), link_addresses)
-        )
+        links = [self._parse_link_block(fobj, addr) for addr in link_addresses]
         if links:
             footer[fileformat.KEY_LINKS] = links
         return footer
 
-    def _get_keyword_addresses(self, footer):
-        keyword_keys = filter(lambda k: k.startswith("KEYWORD_"), footer.keys())
-        keyword_addresses = []
-        for k in keyword_keys:
-            if type(footer[k]) is list:
-                keyword_addresses.extend(list(map(int, footer[k])))
-            else:
-                keyword_addresses.append(int(footer[k]))
+    def _get_keyword_addresses(self, footer: ParamsBlock) -> list[int]:
+        keyword_addresses: list[int] = []
+        for k in footer:
+            if k.startswith("KEYWORD_"):
+                keyword_addresses.extend(_parse_address_list(footer, k))
         return keyword_addresses
 
-    def _parse_keyword_block(self, fobj, address):
+    def _parse_keyword_block(self, fobj: FileObj, address: int) -> ParamsBlock:
         return self._parse_metadata_block(fobj, address)
 
-    def _get_title_addresses(self, footer):
-        title_keys = filter(lambda k: k.startswith("TITLE_"), footer.keys())
-        title_addresses = []
-        for k in title_keys:
-            if type(footer[k]) is list:
-                title_addresses.extend(list(map(int, footer[k])))
-            else:
-                title_addresses.append(int(footer[k]))
+    def _get_title_addresses(self, footer: ParamsBlock) -> list[int]:
+        title_addresses: list[int] = []
+        for k in footer:
+            if k.startswith("TITLE_"):
+                title_addresses.extend(_parse_address_list(footer, k))
         return title_addresses
 
-    def _parse_title_block(self, fobj, address):
+    def _parse_title_block(self, fobj: FileObj, address: int) -> ParamsBlock:
         return self._parse_metadata_block(fobj, address)
 
-    def _get_link_addresses(self, footer):
-        link_keys = filter(lambda k: k.startswith("LINK"), footer.keys())
-        link_addresses = []
-        for k in link_keys:
-            if type(footer[k]) is list:
-                link_addresses.extend(list(map(int, footer[k])))
-            else:
-                link_addresses.append(int(footer[k]))
+    def _get_link_addresses(self, footer: ParamsBlock) -> list[int]:
+        link_addresses: list[int] = []
+        for k in footer:
+            if k.startswith("LINK"):
+                link_addresses.extend(_parse_address_list(footer, k))
         return link_addresses
 
-    def _parse_link_block(self, fobj, address):
+    def _parse_link_block(self, fobj: FileObj, address: int) -> ParamsBlock:
         return self._parse_metadata_block(fobj, address)
 
     def _get_page_addresses(self, footer: ParamsBlock) -> list[int]:
@@ -707,11 +736,9 @@ class SupernoteXParser(SupernoteParser):
         list of int
             list of page address
         """
-        page_keys = filter(lambda k: k.startswith("PAGE"), footer.keys())
-        page_addresses = list(map(lambda k: int(footer[k]), page_keys))
-        return page_addresses
+        return [_parse_int_value(footer[k], k) for k in footer if k.startswith("PAGE")]
 
-    def _parse_page_block(self, fobj, address):
+    def _parse_page_block(self, fobj: FileObj, address: int) -> ParamsBlock:
         """Returns parameters in a page block.
 
         Parameters
@@ -728,13 +755,11 @@ class SupernoteXParser(SupernoteParser):
         """
         page_info = super()._parse_page_block(fobj, address)
         layer_addresses = self._get_layer_addresses(page_info)
-        layers = list(
-            map(lambda addr: self._parse_layer_block(fobj, addr), layer_addresses)
-        )
+        layers = [self._parse_layer_block(fobj, addr) for addr in layer_addresses]
         page_info[fileformat.KEY_LAYERS] = layers
         return page_info
 
-    def _get_layer_addresses(self, page_info):
+    def _get_layer_addresses(self, page_info: ParamsBlock) -> list[int]:
         """Returns list of layer addresses.
 
         Parameters
@@ -747,9 +772,9 @@ class SupernoteXParser(SupernoteParser):
         list of int
             list of layer address
         """
-        layer_keys = filter(lambda k: k in self.LAYER_KEYS, page_info)
-        layer_addresses = list(map(lambda k: int(page_info[k]), layer_keys))
-        return layer_addresses
+        return [
+            _parse_int_value(page_info[k], k) for k in page_info if k in self.LAYER_KEYS
+        ]
 
     def _parse_layer_block(self, fobj, address):
         """Returns parameters in a layer block.

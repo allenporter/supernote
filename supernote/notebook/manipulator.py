@@ -30,17 +30,18 @@ class NotebookBuilder:
         return self.total_size
 
     def get_block_address(self, label):
-        if type(self.toc.get(label)) is list:
-            address = self.toc.get(label)[0]  # use first one
+        entry = self.toc.get(label)
+        if isinstance(entry, list):
+            address = entry[0]  # use first one
         else:
-            address = self.toc.get(label)
+            address = entry
         return address if address is not None else 0
 
     def get_duplicate_block_address_list(self, label):
-        if type(self.toc.get(label)) is list:
-            return self.toc.get(label)
-        else:
-            return [self.toc.get(label)]
+        entry = self.toc.get(label)
+        if isinstance(entry, list):
+            return entry
+        return [entry]
 
     def get_labels(self):
         return self.toc.keys()
@@ -111,7 +112,7 @@ def reconstruct(notebook):
     except Exception as e:
         raise exceptions.GeneratedFileValidationException(
             f"generated file fails validation: {e}"
-        )
+        ) from e
     return reconstructed_binary
 
 
@@ -169,7 +170,7 @@ def merge(notebook1, notebook2):
     except Exception as e:
         raise exceptions.GeneratedFileValidationException(
             f"generated file fails validation: {e}"
-        )
+        ) from e
     return merged_binary
 
 
@@ -208,7 +209,7 @@ def _pack_keywords(builder, notebook, offset=0):
         content = keyword.get_content()
         if content is not None:
             builder.append(f"KEYWORD_{id}", content, allow_duplicate=True)
-            keyword_metadata = keyword.metadata
+            keyword_metadata = dict(keyword.metadata)
             keyword_metadata["KEYWORDPAGE"] = page_number
             address_list = builder.get_duplicate_block_address_list(f"KEYWORD_{id}")
             if len(address_list) == 1:
@@ -234,7 +235,7 @@ def _pack_titles(builder, notebook, offset=0):
         content = title.get_content()
         if content is not None:
             builder.append(f"TITLE_{id}", content, allow_duplicate=True)
-            title_metadata = title.metadata
+            title_metadata = dict(title.metadata)
             address_list = builder.get_duplicate_block_address_list(f"TITLE_{id}")
             if len(address_list) == 1:
                 title_metadata["TITLEBITMAP"] = str(address_list[0])
@@ -259,7 +260,7 @@ def _pack_links(builder, notebook, offset=0):
         content = link.get_content()
         if content is not None:
             builder.append(f"LINKO_{id}", content, allow_duplicate=True)
-            link_metadata = link.metadata
+            link_metadata = dict(link.metadata)
             address_list = builder.get_duplicate_block_address_list(f"LINKO_{id}")
             if len(address_list) == 1:
                 link_metadata["LINKBITMAP"] = str(address_list[0])
@@ -271,15 +272,25 @@ def _pack_links(builder, notebook, offset=0):
             )
 
 
+def _resolve_page_style(page: fileformat.Page, page_index: int) -> str:
+    style = page.get_style()
+    if not style:
+        raise exceptions.ManipulatorException(
+            f"page {page_index} metadata is missing PAGESTYLE"
+        )
+    if style.startswith("user_"):
+        style += page.get_style_hash()
+    return style
+
+
 def _pack_backgrounds(builder, notebook):
     for i in range(notebook.get_total_pages()):
         page = notebook.get_page(i)
-        style = page.get_style()
-        if style.startswith("user_"):
-            style += page.get_style_hash()
         content = _find_background_content_from_page(page)
-        if content is not None:
-            builder.append(f"STYLE_{style}", content)
+        if content is None:
+            continue
+        style = _resolve_page_style(page, i)
+        builder.append(f"STYLE_{style}", content)
 
 
 def _pack_pages(builder, notebook, offset=0):
@@ -294,10 +305,8 @@ def _pack_pages(builder, notebook, offset=0):
             if layer_name is None:
                 continue
             if layer_name == "BGLAYER":
-                style = page.get_style()
-                if style.startswith("user_"):
-                    style += page.get_style_hash()
-                layer_metadata = layer.metadata
+                style = _resolve_page_style(page, i)
+                layer_metadata = dict(layer.metadata)
                 layer_metadata["LAYERNAME"] = layer_name
                 layer_metadata["LAYERBITMAP"] = str(
                     builder.get_block_address(f"STYLE_{style}")
@@ -308,8 +317,11 @@ def _pack_pages(builder, notebook, offset=0):
                 )
             else:
                 content = layer.get_content()
-                builder.append(f"PAGE{page_number}/{layer_name}/LAYERBITMAP", content)
-                layer_metadata = layer.metadata
+                if content is not None:
+                    builder.append(
+                        f"PAGE{page_number}/{layer_name}/LAYERBITMAP", content
+                    )
+                layer_metadata = dict(layer.metadata)
                 layer_metadata["LAYERNAME"] = layer_name
                 layer_metadata["LAYERBITMAP"] = str(
                     builder.get_block_address(
@@ -325,8 +337,8 @@ def _pack_pages(builder, notebook, offset=0):
         if totalpath_block is not None:
             builder.append(f"PAGE{page_number}/TOTALPATH", totalpath_block)
         # page metadata
-        page_metadata = page.metadata
-        del page_metadata["__layers__"]
+        page_metadata = dict(page.metadata)
+        page_metadata.pop(fileformat.KEY_LAYERS, None)
         for prop in ["MAINLAYER", "LAYER1", "LAYER2", "LAYER3", "BGLAYER"]:
             address = builder.get_block_address(f"PAGE{page_number}/{prop}/metadata")
             page_metadata[prop] = address
@@ -410,9 +422,9 @@ def _construct_metadata_block(info):
 
 
 def _find_background_content_from_page(page):
-    page = utils.WorkaroundPageWrapper.from_page(page)
     if not page.is_layer_supported():
         return None
+    page = utils.WorkaroundPageWrapper.from_page(page)
     layers = page.get_layers()
     for layer in layers:
         if layer.get_name() == "BGLAYER":
