@@ -100,3 +100,74 @@ class SystemTaskDO(Base):
     __table_args__ = (
         UniqueConstraint("file_id", "task_type", "key", name="uq_system_task"),
     )
+
+
+class NoteTaskSyncDO(Base):
+    """Per-page extraction state and tombstone tracking for handwritten tasks."""
+
+    __tablename__ = "f_note_task_sync"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, default=next_id)
+    """Internal database ID."""
+
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, index=True, nullable=False
+    )
+    """The numeric ID of the owning user."""
+
+    file_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
+    """The numeric ID of the source .note file."""
+
+    page_id: Mapped[str] = mapped_column(String, nullable=False, default="")
+    """The page ID where this task line appeared."""
+
+    page_index: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    """The 0-based index of the page in the note."""
+
+    normalized_title: Mapped[str] = mapped_column(String, nullable=False)
+    """Normalized task title key for idempotent matching."""
+
+    raw_title: Mapped[str] = mapped_column(String, nullable=False)
+    """Display title extracted from handwriting."""
+
+    schedule_task_id: Mapped[str | None] = mapped_column(
+        String, index=True, nullable=True
+    )
+    """Foreign reference to ScheduleTaskDO.task_id."""
+
+    sync_status: Mapped[str] = mapped_column(String, default="ACTIVE", nullable=False)
+    """Sync lifecycle state: ACTIVE, SUPERSEDED, DELETED_REMOTE, CANCELLED, ERASED."""
+
+    last_ocr_state: Mapped[str] = mapped_column(String, nullable=False)
+    """Last extracted OCR symbol state (INCOMPLETE, COMPLETED, MIGRATED_FORWARD, MIGRATED_SCHEDULED, CANCELLED)."""
+
+    last_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    """Last synced indented child notes."""
+
+    last_importance: Mapped[str | None] = mapped_column(String, nullable=True)
+    """Last synced importance level ('high' or None)."""
+
+    last_due_time: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    """Last synced inferred due timestamp (ms)."""
+
+    create_time: Mapped[int] = mapped_column(
+        BigInteger, default=lambda: int(time.time() * 1000)
+    )
+    """System creation timestamp."""
+
+    update_time: Mapped[int] = mapped_column(
+        BigInteger,
+        default=lambda: int(time.time() * 1000),
+        onupdate=lambda: int(time.time() * 1000),
+    )
+    """System update timestamp."""
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "file_id",
+            "page_id",
+            "normalized_title",
+            name="uq_note_task_sync",
+        ),
+    )
