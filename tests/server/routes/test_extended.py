@@ -1,3 +1,4 @@
+import json
 from typing import Any
 from unittest.mock import patch
 
@@ -11,6 +12,7 @@ from supernote.client.summary import SummaryClient
 from supernote.models.base import ProcessingStatus
 from supernote.models.extended import PageTranscriptVO
 from supernote.models.summary import AddSummaryDTO
+from supernote.server.ai.models.embedding import EmbeddingTaskType
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
@@ -140,6 +142,69 @@ async def test_extended_search_with_mock(
     assert len(resp.results) > 0
     assert resp.results[0].file_id == file_id
     assert "quick brown fox" in resp.results[0].text_preview
+
+
+async def test_extended_search_raw_camelcase_json_contract(
+    client: TestClient,
+    extended_client: ExtendedClient,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    """Verify /api/extended/search honors camelCase topN and returns camelCase result keys."""
+    assert client.app is not None
+    query_vec = await client.app["embedding_model"].embed(
+        "deep-dive", EmbeddingTaskType.RETRIEVAL_QUERY
+    )
+    opposite_vec = [-v for v in query_vec]
+
+    file_id = 102
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=test_user_id,
+                file_name="Architecture.note",
+                directory_id=0,
+            )
+        )
+        session.add_all(
+            [
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="P20250115100000abc",
+                    text_content="Page one overview.",
+                    embedding=json.dumps(opposite_vec),
+                    embedding_model="fake-embedding-v1",
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=2,
+                    page_id="P20250116100000def",
+                    text_content="Page three deep-dive.",
+                    embedding=json.dumps(query_vec),
+                    embedding_model="fake-embedding-v1",
+                ),
+            ]
+        )
+        await session.commit()
+
+    raw_resp = await extended_client._client.post(
+        "/api/extended/search",
+        json={"query": "deep-dive", "topN": 1},
+    )
+    assert raw_resp.status == 200
+    payload = await raw_resp.json()
+    assert payload["success"] is True
+    assert len(payload["results"]) == 1
+    hit = payload["results"][0]
+    assert hit["fileId"] == file_id
+    assert hit["fileName"] == "Architecture.note"
+    assert hit["pageIndex"] == 2
+    assert hit["pageId"] == "P20250116100000def"
+    assert hit["textPreview"] == "Page three deep-dive."
+    assert hit["date"] == "2025-01-16"
+    assert isinstance(hit["score"], float)
 
 
 async def test_extended_transcript_not_found(

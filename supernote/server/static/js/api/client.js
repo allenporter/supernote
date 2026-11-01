@@ -402,6 +402,10 @@ export async function searchFiles(keyword) {
         body: JSON.stringify({ keyword })
     });
 
+    if (response.status === 401) {
+        logout();
+        throw new Error("Unauthorized");
+    }
     if (!response.ok) return [];
     const data = await response.json();
     return data.entries || [];
@@ -420,9 +424,13 @@ export async function searchSemantic(query, topN = 5) {
             'Content-Type': 'application/json',
             'x-access-token': currentToken
         },
-        body: JSON.stringify({ query, top_n: topN })
+        body: JSON.stringify({ query, topN })
     });
 
+    if (response.status === 401) {
+        logout();
+        throw new Error("Unauthorized");
+    }
     if (!response.ok) return [];
     const data = await response.json();
     return data.results || [];

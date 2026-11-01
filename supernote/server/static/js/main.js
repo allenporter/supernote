@@ -499,6 +499,23 @@ createApp({
             await loadDirectory(target.id);
         }
 
+        async function handleSearchSelectFile(item) {
+            if (!item) return;
+            showSystemPanel.value = false;
+            systemOpenedFromHistory = false;
+            if (item.isDirectory) {
+                await navigateFolder(item);
+                return;
+            }
+            activeTab.value = 'files';
+            const existingFile = files.value.find(f => String(f.id) === String(item.id));
+            await openItem(existingFile ? { ...existingFile, pageIndex: item.pageIndex } : item);
+        }
+
+        async function handleSearchSelectTask() {
+            await switchTab('tasks');
+        }
+
         // Selection
         function toggleSelection(id) {
             const index = selectedIds.value.indexOf(id);
@@ -626,9 +643,10 @@ createApp({
                 loadDirectory(currentDirectoryId.value || '0');
             });
 
-            // Keyboard shortcut ⌘K for search
+            // Keyboard shortcut ⌘K / Ctrl+K for search
             window.addEventListener('keydown', (e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+                if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+                    if (!isLoggedIn.value) return;
                     e.preventDefault();
                     showSearchModal.value = !showSearchModal.value;
                 }
@@ -702,7 +720,9 @@ createApp({
             processingStatuses,
             toasts,
             showToast,
-            dismissToast
+            dismissToast,
+            handleSearchSelectFile,
+            handleSearchSelectTask
         };
     }
 }).mount('#app');
