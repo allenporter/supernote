@@ -558,7 +558,6 @@ export default {
                             class="bg-white dark:bg-slate-900 rounded-2xl shadow-md border overflow-hidden transition-all">
                             <div class="border-b border-slate-100 dark:border-slate-800 px-4 py-2 bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center text-xs text-slate-400 font-mono">
                                 <span>Page {{ idx + 1 }} of {{ pages.length }}</span>
-                                <span class="text-indigo-600 dark:text-indigo-400 font-semibold">Dot Grid Canvas</span>
                             </div>
                             <img :src="page.url" loading="lazy" class="w-full h-auto block" alt="Handwriting Page" @load="updateActivePageFromScroll" />
                         </div>

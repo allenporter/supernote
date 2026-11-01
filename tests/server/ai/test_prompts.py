@@ -10,6 +10,10 @@ from supernote.server.ai.prompts import (
     format_summary_prompt,
     get_summary_json_schema,
 )
+from supernote.server.utils.note_content import (
+    format_page_style,
+    normalize_page_style_type,
+)
 from supernote.server.utils.prompt_loader import PromptLoader
 
 
@@ -53,3 +57,33 @@ def test_format_summary_prompt_and_schema(tmp_path: Path) -> None:
     schema = get_summary_json_schema()
     assert schema["type"] == "object"
     assert "segments" in schema["properties"]
+
+
+def test_format_page_style_and_style_prompt_fallback(tmp_path: Path) -> None:
+    assert format_page_style("style_5mm_dots") == "5mm Dots"
+    assert format_page_style("style_four_quadrant_method") == "Four Quadrant Method"
+    assert format_page_style("style_h_8mm_ruled_line_a5x2") == "8mm Ruled Line"
+    assert format_page_style("style_white_a5x2") == "Blank Canvas"
+    assert format_page_style("user_Cornell_Notes") == "Custom: Cornell Notes"
+    assert normalize_page_style_type("user_Daily") == "daily"
+
+    quadrant_dir = tmp_path / "ocr" / "four_quadrant_method"
+    quadrant_dir.mkdir(parents=True)
+    (quadrant_dir / "prompt.md").write_text(
+        "Preserve all four quadrants.", encoding="utf-8"
+    )
+    default_dir = tmp_path / "ocr" / "default"
+    default_dir.mkdir(parents=True)
+    (default_dir / "prompt.md").write_text("Default OCR prompt.", encoding="utf-8")
+
+    loader = PromptLoader(tmp_path)
+    page_metadata = PageMetadata(
+        file_name="20260618_Meeting.note",
+        page_index=0,
+        page_id="P20260618120000abc",
+        notebook_create_time=None,
+        page_style="style_four_quadrant_method",
+    )
+    prompt = format_ocr_prompt(page_metadata, prompt_loader=loader)
+    assert "Page Style: Four Quadrant Method" in prompt
+    assert "Preserve all four quadrants." in prompt

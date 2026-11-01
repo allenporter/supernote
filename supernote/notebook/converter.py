@@ -219,25 +219,7 @@ class ImageConverter:
         return img
 
     def _get_layer_visibility(self, page: fileformat.Page) -> dict[str, bool]:
-        entries = page.metadata.layer_info
-        if entries is None:
-            # pass to the process of getting visibility for mark file
-            return self._get_mark_layer_visibility(page)
-        visibility: dict[str, bool] = {
-            entry.layer_key: entry.is_visible for entry in entries
-        }
-        # some old files don't include MAINLAYER info, so we set MAINLAYER visible
-        if visibility.get("MAINLAYER") is None:
-            visibility["MAINLAYER"] = True
-        return visibility
-
-    def _get_mark_layer_visibility(self, page):
-        visibility = {}
-        layers = page.get_layers()
-        for layer in layers:
-            name = layer.get_name()
-            visibility[name] = layer.get_type() == "MARK"
-        return visibility
+        return page.get_layer_visibility()
 
     def find_decoder(self, page, highres_grayscale=False):
         """Returns a proper decoder for the given page.

@@ -1,6 +1,9 @@
 import json
+import zlib
+from pathlib import Path
 from typing import Any, cast
 
+import numpy as np
 import pytest
 
 from supernote.notebook import (
@@ -8,8 +11,10 @@ from supernote.notebook import (
     Notebook,
     Page,
     SupernoteMetadata,
+    decoder,
     exceptions,
     fileformat,
+    load,
 )
 
 
@@ -231,3 +236,112 @@ def test_layer_constructor_initialization() -> None:
     assert layer.get_name() == "MAINLAYER"
     assert layer.get_protocol() == "RATTA_RLE"
     assert layer.get_type() == "MARK"
+
+
+def test_page_has_ink_and_style(test_note_path: Path, test_data_dir: Path) -> None:
+    # 20251207_221454.note is a 1-page blank dot-grid notebook
+    with test_note_path.open("rb") as fd:
+        blank_nb = load(fd)
+    blank_page = blank_nb.get_page(0)
+    assert blank_page.get_style() == "style_5mm_dots"
+    assert blank_page.has_ink() is False
+
+    # sn2md_20260618.note has visible handwriting on a four_quadrant_method template
+    written_path = test_data_dir / "dsummersl" / "sn2md_20260618.note"
+    with written_path.open("rb") as fd:
+        written_nb = load(fd, policy="loose")
+    written_page = written_nb.get_page(0)
+    assert written_page.get_style() == "style_four_quadrant_method"
+    assert written_page.has_ink() is True
+
+    # Hidden layer with strokes should not count as visible ink
+    hidden_layer_page = fileformat.Page(
+        {
+            "PAGEID": "P20250101000000abc",
+            "PAGESTYLE": "style_white",
+            "LAYERSEQ": "LAYER1,MAINLAYER,BGLAYER",
+            "LAYERINFO": '[{"layerId":0,"isBackgroundLayer":false,"isVisible":true},'
+            '{"layerId":1,"isBackgroundLayer":false,"isVisible":false},'
+            '{"layerId":3,"isBackgroundLayer":true,"isVisible":true}]',
+            fileformat.KEY_LAYERS: [
+                {"LAYERNAME": "MAINLAYER", "LAYERPROTOCOL": "RATTA_RLE"},
+                {"LAYERNAME": "LAYER1", "LAYERPROTOCOL": "RATTA_RLE"},
+                {"LAYERNAME": "LAYER2", "LAYERPROTOCOL": "RATTA_RLE"},
+                {"LAYERNAME": "LAYER3", "LAYERPROTOCOL": "RATTA_RLE"},
+                {"LAYERNAME": "BGLAYER", "LAYERPROTOCOL": "RATTA_RLE"},
+            ],
+        }
+    )
+    hidden_layer_page.get_layer(0).set_content(
+        bytes([decoder.RattaRleDecoder.COLORCODE_BACKGROUND, 0xFF])
+    )
+    hidden_layer_page.get_layer(1).set_content(
+        bytes([decoder.RattaRleDecoder.COLORCODE_BLACK, 0x05])
+    )
+    assert hidden_layer_page.has_ink() is False
+
+    # Textbox content marks page as non-blank even with transparent RLE
+    textbox_page = fileformat.Page(
+        {
+            "PAGEID": "P20250101000001abc",
+            "PAGESTYLE": "style_white",
+            "PAGETEXTBOX": "1234",
+            "PROTOCOL": "RATTA_RLE",
+        }
+    )
+    textbox_page.set_content(
+        bytes([decoder.RattaRleDecoder.COLORCODE_BACKGROUND, 0xFF])
+    )
+    assert textbox_page.has_ink() is True
+
+
+def test_page_has_ink_flate_and_non_layered_edge_cases() -> None:
+    # Duplicate MAINLAYER remapping + missing layer name + SN_ASA_COMPRESS full buffer
+    blank_flate_buf = np.full(
+        (
+            decoder.FlateDecoder.INTERNAL_PAGE_WIDTH,
+            decoder.FlateDecoder.INTERNAL_PAGE_HEIGHT,
+        ),
+        decoder.FlateDecoder.COLORCODE_BACKGROUND,
+        dtype=np.uint16,
+    )
+    # Put non-background values in the 16-column right margin that FlateDecoder strips
+    blank_flate_buf[:, -16:] = 0x0000
+    compressed_blank = zlib.compress(blank_flate_buf.tobytes())
+
+    flate_page = fileformat.Page(
+        {
+            "PAGEID": "P20250101000002abc",
+            "LAYERINFO": "none",
+            fileformat.KEY_LAYERS: [
+                {
+                    "LAYERNAME": "MAINLAYER",
+                    "LAYERPROTOCOL": "SN_ASA_COMPRESS",
+                    "LAYERTYPE": "MARK",
+                },
+                {
+                    "LAYERNAME": "MAINLAYER",
+                    "LAYERPROTOCOL": "SN_ASA_COMPRESS",
+                    "LAYERTYPE": "BACKGROUND",
+                },
+                {"LAYERPROTOCOL": "RATTA_RLE"},
+            ],
+        }
+    )
+    flate_page.get_layer(0).set_content(compressed_blank)
+    flate_page.get_layer(1).set_content(bytes([0x00, 0x05]))
+    assert flate_page.has_ink() is False
+
+    # Corrupt SN_ASA_COMPRESS raises DecoderException
+    corrupt_flate = fileformat.Page({"PROTOCOL": "SN_ASA_COMPRESS"})
+    corrupt_flate.set_content(b"not-zlib")
+    with pytest.raises(
+        exceptions.DecoderException, match="failed to decompress bitmap"
+    ):
+        corrupt_flate.has_ink()
+
+    # Unknown protocol with non-empty data conservatively returns True; empty returns False
+    unknown_page = fileformat.Page({"PROTOCOL": "FUTURE_CODEC"})
+    assert unknown_page.has_ink() is False
+    unknown_page.set_content(b"\x01\x02")
+    assert unknown_page.has_ink() is True

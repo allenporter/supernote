@@ -55,6 +55,8 @@ async def test_process_ocr_success(
             page_index=page_index,
             page_id="p0",
             content_hash="somehash",
+            page_style="style_four_quadrant_method",
+            has_ink=True,
         )
         session.add(content)
         await session.commit()
@@ -67,6 +69,7 @@ async def test_process_ocr_success(
     assert "--- Page 1 ---" in called_prompt
     assert "Notebook Filename: real.note" in called_prompt
     assert "Page ID: p0" in called_prompt
+    assert "Page Style: Four Quadrant Method" in called_prompt
 
     # Verify DB Updates
     async with session_manager.session() as session:
@@ -115,3 +118,57 @@ async def test_ocr_run_if_needed_disabled(
 
     # run() should still return True (skipped success)
     assert await module.run(1, session_manager, page_index=0, page_id="p0") is True
+
+
+async def test_process_ocr_skips_llm_for_blank_page(
+    ocr_module: OcrModule,
+    session_manager: DatabaseSessionManager,
+    fake_ocr_model: FakeOcrModel,
+) -> None:
+    file_id = 1005
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=100,
+                storage_key="blank_key",
+                file_name="blank.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="P20251207221500abc",
+                content_hash="blankhash",
+                page_style="style_5mm_dots",
+                has_ink=False,
+            )
+        )
+        await session.commit()
+
+    assert (
+        await ocr_module.run(
+            file_id, session_manager, page_index=0, page_id="P20251207221500abc"
+        )
+        is True
+    )
+    assert fake_ocr_model.calls == []
+
+    async with session_manager.session() as session:
+        content = (
+            await session.execute(
+                select(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
+            )
+        ).scalar_one()
+        assert content.text_content == ""
+
+        task = (
+            await session.execute(
+                select(SystemTaskDO)
+                .where(SystemTaskDO.file_id == file_id)
+                .where(SystemTaskDO.task_type == "OCR_EXTRACTION")
+            )
+        ).scalar_one()
+        assert task.status == "COMPLETED"

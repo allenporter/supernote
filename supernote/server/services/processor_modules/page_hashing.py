@@ -5,8 +5,8 @@ from functools import partial
 from sqlalchemy import delete, select
 
 from supernote.models.base import TaskType
-from supernote.notebook import SupernoteMetadata
-from supernote.notebook.parser import parse_metadata
+from supernote.notebook.fileformat import Notebook
+from supernote.notebook.parser import load_notebook
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
@@ -19,9 +19,8 @@ from supernote.server.utils.paths import get_page_png_path, is_valid_page_id
 logger = logging.getLogger(__name__)
 
 
-def _parse_helper(path: str) -> SupernoteMetadata:
-    with open(path, "rb") as f:
-        return parse_metadata(f)
+def _parse_helper(path: str) -> Notebook:
+    return load_notebook(path, policy="loose")
 
 
 class PageHashingModule(ProcessorModule):
@@ -49,6 +48,10 @@ class PageHashingModule(ProcessorModule):
     @property
     def task_type(self) -> TaskType:
         return TaskType.PAGE_HASHING
+
+    @property
+    def version(self) -> str | None:
+        return "v2"
 
     async def run_if_needed(
         self,
@@ -100,9 +103,10 @@ class PageHashingModule(ProcessorModule):
 
         # Parse .note file in thread pool
         loop = asyncio.get_running_loop()
-        metadata = await loop.run_in_executor(
+        notebook = await loop.run_in_executor(
             None, partial(_parse_helper, str(abs_path))
         )
+        metadata = notebook.get_metadata()
 
         # Iterate pages and update DB
         total_pages = metadata.get_total_pages()
@@ -122,15 +126,22 @@ class PageHashingModule(ProcessorModule):
 
             for i in range(total_pages):
                 page_info = metadata.pages[i]
-                page_id = page_info.page_id
+                raw_page_id = page_info.page_id
 
-                if not isinstance(page_id, str) or not is_valid_page_id(page_id):
+                if not isinstance(raw_page_id, str) or not is_valid_page_id(
+                    raw_page_id
+                ):
                     logger.warning(
                         f"Page {i} of file {file_id} has missing or invalid PAGEID."
                     )
                     continue
 
+                page_id = raw_page_id
                 current_page_ids.add(page_id)
+
+                page_obj = notebook.get_page(i)
+                page_style = page_obj.get_style()
+                has_ink = page_obj.has_ink()
 
                 # Canonical wire-dictionary string representation of page metadata for hashing
                 page_hash_input = str(page_info.to_wire_dict())
@@ -139,6 +150,8 @@ class PageHashingModule(ProcessorModule):
                 if page_id in existing_map:
                     # UPDATE path
                     row = existing_map[page_id]
+                    row.page_style = page_style
+                    row.has_ink = has_ink
 
                     # Check for Move (Index Changed)
                     if row.page_index != i:
@@ -178,6 +191,8 @@ class PageHashingModule(ProcessorModule):
                         page_index=i,
                         page_id=page_id,
                         content_hash=current_hash,
+                        page_style=page_style,
+                        has_ink=has_ink,
                         text_content=None,
                         embedding=None,
                         embedding_model=None,

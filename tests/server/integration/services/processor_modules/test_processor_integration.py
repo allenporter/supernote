@@ -59,25 +59,26 @@ async def test_full_processing_pipeline_with_real_file(
     processor_service: ProcessorService,
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
-    test_note_path: Path,
+    test_data_dir: Path,
     fake_ocr_model: FakeOcrModel,
     fake_embedding_model: FakeEmbeddingModel,
     fake_summary_model: FakeSummaryModel,
     authenticated_client: Client,
     user_service: UserService,
 ) -> None:
-    """Full integration test using a real .note file."""
+    """Full integration test using a real handwritten .note file."""
 
     # Setup Data
     user_email = "test@example.com"
     user_id = await user_service.get_user_id(user_email)
     file_id = 999
     storage_key = "test_integration_note"
+    written_note_path = test_data_dir / "dsummersl" / "sn2md_20260618.note"
 
-    if not test_note_path.exists():
-        pytest.skip(f"Test file not found at {test_note_path}")
+    if not written_note_path.exists():
+        pytest.skip(f"Test file not found at {written_note_path}")
 
-    file_content = test_note_path.read_bytes()
+    file_content = written_note_path.read_bytes()
     await blob_storage.put(USER_DATA_BUCKET, storage_key, file_content)
 
     async with session_manager.session() as session:
@@ -139,9 +140,14 @@ async def test_full_processing_pipeline_with_real_file(
 
         for page in pages:
             assert page.content_hash is not None
+            assert page.page_style == "style_four_quadrant_method"
+            assert page.has_ink is True
             assert page.text_content is not None
             assert page.text_content.startswith("Transcribed (")
             assert page.embedding is not None
+
+        assert len(fake_ocr_model.calls) == total_pages
+        assert "Page Style: Four Quadrant Method" in fake_ocr_model.calls[0][1]
 
         tasks = (
             (
@@ -214,6 +220,7 @@ async def test_full_processing_pipeline_with_real_file(
         # Check transcript content
         assert transcript.content is not None
         assert "Transcribed (" in transcript.content
+        assert "Page Style: Four Quadrant Method" in transcript.content
         assert transcript.data_source == "OCR"
 
         # Check AI summary content
@@ -231,3 +238,85 @@ async def test_full_processing_pipeline_with_real_file(
         ]
 
     print(f"Integration test passed with {total_pages} pages processed.")
+
+
+async def test_full_processing_pipeline_skips_ai_for_blank_note(
+    processor_service: ProcessorService,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    test_note_path: Path,
+    fake_ocr_model: FakeOcrModel,
+    fake_embedding_model: FakeEmbeddingModel,
+    fake_summary_model: FakeSummaryModel,
+    test_user_id: int,
+) -> None:
+    """Blank .note pages render PNGs and mark tasks COMPLETED while skipping paid AI calls."""
+    user_id = test_user_id
+    file_id = 1000
+    storage_key = "test_blank_note"
+
+    await blob_storage.put(USER_DATA_BUCKET, storage_key, test_note_path.read_bytes())
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key=storage_key,
+                file_name="blank.note",
+                directory_id=0,
+                is_active="Y",
+            )
+        )
+        await session.commit()
+
+    processor_service.register_modules(
+        hashing=PageHashingModule(processor_service.file_service),
+        png=PngConversionModule(processor_service.file_service),
+        ocr=OcrModule(processor_service.file_service, fake_ocr_model),
+        embedding=EmbeddingModule(processor_service.file_service, fake_embedding_model),
+        summary=SummaryModule(
+            file_service=processor_service.file_service,
+            summary_service=processor_service.summary_service,
+            summary_model=fake_summary_model,
+        ),
+    )
+
+    await processor_service.process_file(file_id)
+
+    assert fake_ocr_model.calls == []
+    assert fake_embedding_model.calls == []
+    assert fake_summary_model.calls == []
+
+    async with session_manager.session() as session:
+        pages = (
+            (
+                await session.execute(
+                    select(NotePageContentDO).where(
+                        NotePageContentDO.file_id == file_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(pages) == 1
+        assert pages[0].page_style == "style_5mm_dots"
+        assert pages[0].has_ink is False
+        assert pages[0].text_content == ""
+        assert pages[0].embedding is None
+
+        tasks = (
+            (
+                await session.execute(
+                    select(SystemTaskDO).where(SystemTaskDO.file_id == file_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        completed_tasks = [t for t in tasks if t.status == "COMPLETED"]
+        assert len(completed_tasks) == 5
+
+    # Missing-task recovery must NOT re-enqueue completed blank notebooks
+    await processor_service.recover_missing_tasks()
+    assert file_id not in processor_service.processing_files

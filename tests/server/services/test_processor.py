@@ -839,7 +839,8 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
         # File 9102: Missing OCR_EXTRACTION task -> needs OCR backfill
         # File 9103: Has EMBEDDING_GENERATION with data="old-model" -> needs embedding backfill
         # File 9104: Missing SUMMARY_GENERATION task -> needs summary backfill
-        for fid in (9101, 9102, 9103, 9104):
+        # File 9105: Has unversioned HASHING task (data=None) -> needs HASHING v2 backfill
+        for fid in (9101, 9102, 9103, 9104, 9105):
             session.add(
                 UserFileDO(
                     id=fid,
@@ -864,6 +865,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                     task_type="HASHING",
                     key="global",
                     status="COMPLETED",
+                    data=None if fid == 9105 else "v2",
                 )
             )
 
@@ -930,6 +932,26 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                     status="COMPLETED",
                     data="new-model",
                 ),
+                # 9105: Complete for downstream modules, but HASHING data=None
+                SystemTaskDO(
+                    file_id=9105,
+                    task_type="OCR_EXTRACTION",
+                    key="page_p0",
+                    status="COMPLETED",
+                ),
+                SystemTaskDO(
+                    file_id=9105,
+                    task_type="EMBEDDING_GENERATION",
+                    key="page_p0",
+                    status="COMPLETED",
+                    data="new-model",
+                ),
+                SystemTaskDO(
+                    file_id=9105,
+                    task_type="SUMMARY_GENERATION",
+                    key="global",
+                    status="COMPLETED",
+                ),
             ]
         )
         await session.commit()
@@ -937,7 +959,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
     await processor_service.recover_missing_tasks()
 
     assert 9101 not in processor_service.processing_files
-    assert {9102, 9103, 9104}.issubset(processor_service.processing_files)
+    assert {9102, 9103, 9104, 9105}.issubset(processor_service.processing_files)
 
 
 async def test_sync_completed_event_enqueues_new_and_updated_notes(
@@ -970,6 +992,7 @@ async def test_sync_completed_event_enqueues_new_and_updated_notes(
                     task_type=TaskType.PAGE_HASHING,
                     key="global",
                     status="COMPLETED",
+                    data="v2",
                 ),
                 # Up-to-date note -> skip
                 UserFileDO(
@@ -985,6 +1008,7 @@ async def test_sync_completed_event_enqueues_new_and_updated_notes(
                     task_type=TaskType.PAGE_HASHING,
                     key="global",
                     status="COMPLETED",
+                    data="v2",
                 ),
                 # Brand-new note for test_user_id (no tasks yet) -> enqueue
                 UserFileDO(

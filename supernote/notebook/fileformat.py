@@ -20,10 +20,13 @@ references all other metadata blocks (Header, Pages, Titles, Keywords, Links).
 Wire-level metadata blocks and enums live in `supernote.notebook.schema`.
 """
 
+import zlib
 from collections.abc import Mapping
 from typing import Any
 
-from . import exceptions
+import numpy as np
+
+from . import decoder, exceptions
 from .schema import (
     KEY_FOOTER,
     KEY_HEADER,
@@ -398,6 +401,61 @@ class Page:
     def get_layer_order(self) -> list[str]:
         return [str(item) for item in self.metadata.layer_seq]
 
+    def get_layer_visibility(self) -> dict[str, bool]:
+        """Return visibility state keyed by layer name (`MAINLAYER`, `LAYER1`..`3`, `BGLAYER`)."""
+        entries = self.metadata.layer_info
+        if entries is None:
+            visibility: dict[str, bool] = {}
+            mainlayer_visited = False
+            for layer in self.get_layers():
+                name = layer.get_name()
+                if not isinstance(name, str):
+                    continue
+                if mainlayer_visited and name == "MAINLAYER":
+                    name = "BGLAYER"
+                elif name == "MAINLAYER":
+                    mainlayer_visited = True
+                visibility[name] = layer.get_type() == "MARK"
+            return visibility
+
+        visibility = {entry.layer_key: entry.is_visible for entry in entries}
+        # Some old files don't include MAINLAYER info, so default MAINLAYER to visible.
+        if visibility.get("MAINLAYER") is None:
+            visibility["MAINLAYER"] = True
+        return visibility
+
+    def has_ink(self) -> bool:
+        """Return True if this page contains visible foreground ink or text box content."""
+        if self.metadata.page_textbox_address > 0:
+            return True
+
+        if self.is_layer_supported():
+            visibility = self.get_layer_visibility()
+            layers_by_name: dict[str, Layer] = {}
+            mainlayer_visited = False
+            for layer in self.get_layers():
+                name = layer.get_name()
+                if not isinstance(name, str):
+                    continue
+                if mainlayer_visited and name == "MAINLAYER":
+                    name = "BGLAYER"
+                elif name == "MAINLAYER":
+                    mainlayer_visited = True
+                layers_by_name[name] = layer
+
+            layer_names = self.get_layer_order() or list(layers_by_name.keys())
+            for layer_name in layer_names:
+                if layer_name == "BGLAYER" or not visibility.get(layer_name):
+                    continue
+                layer = layers_by_name.get(layer_name)
+                if layer is None:
+                    continue
+                if _bitmap_has_ink(layer.get_content(), layer.get_protocol()):
+                    return True
+            return False
+
+        return _bitmap_has_ink(self.get_content(), self.get_protocol())
+
     def set_totalpath(self, totalpath: bytes | None) -> None:
         self.totalpath = totalpath
 
@@ -462,6 +520,39 @@ class Layer:
             if self.metadata.layer_type is not None
             else None
         )
+
+
+def _bitmap_has_ink(data: bytes | None, protocol: str | None) -> bool:
+    """Return True if compressed bitmap bytes contain any non-transparent pixel."""
+    if not data:
+        return False
+    if protocol == "RATTA_RLE":
+        return any(
+            b != decoder.RattaRleDecoder.COLORCODE_BACKGROUND for b in data[0::2]
+        )
+    if protocol == "SN_ASA_COMPRESS":
+        try:
+            raw = zlib.decompress(data)
+        except zlib.error as err:
+            raise exceptions.DecoderException(
+                f"failed to decompress bitmap: {err}"
+            ) from err
+        expected_len = (
+            decoder.FlateDecoder.INTERNAL_PAGE_WIDTH
+            * decoder.FlateDecoder.INTERNAL_PAGE_HEIGHT
+            * 2
+        )
+        pixels = np.frombuffer(raw, dtype=np.uint16)
+        if len(raw) == expected_len:
+            pixels = pixels.reshape(
+                (
+                    decoder.FlateDecoder.INTERNAL_PAGE_WIDTH,
+                    decoder.FlateDecoder.INTERNAL_PAGE_HEIGHT,
+                )
+            )[:, :-16]
+        return bool(np.any(pixels != decoder.FlateDecoder.COLORCODE_BACKGROUND))
+    # Unknown protocol: conservatively treat non-empty bitmap as containing ink.
+    return True
 
 
 __all__ = [

@@ -157,11 +157,54 @@ class SummaryModule(ProcessorModule):
                     page_id=p.page_id or "",
                     file_name=file_do.file_name,
                     notebook_create_time=file_do.create_time,
+                    page_style=p.page_style,
                     include_section_divider=True,
                 )
                 text_parts.append(f"{metadata}\n{p.text_content}")
 
         full_text = "\n\n".join(text_parts)
+
+        if not full_text.strip():
+            existing_group = await self.summary_service.get_summary_by_uuid(
+                user_email, group_uuid
+            )
+            if not existing_group:
+                logger.info(
+                    f"All pages in file {file_id} are blank; skipping summary generation."
+                )
+                return
+            await self._upsert_group(
+                user_email,
+                AddSummaryGroupDTO(
+                    unique_identifier=group_uuid,
+                    name=group_name,
+                    md5_hash=group_md5,
+                ),
+            )
+            await self._upsert_summary(
+                user_email,
+                AddSummaryDTO(
+                    file_id=file_id,
+                    unique_identifier=transcript_uuid,
+                    parent_unique_identifier=group_uuid,
+                    content="",
+                    data_source="OCR",
+                    source_path=file_do.file_name,
+                ),
+            )
+            await self._upsert_summary(
+                user_email,
+                AddSummaryDTO(
+                    file_id=file_id,
+                    unique_identifier=summary_uuid,
+                    parent_unique_identifier=group_uuid,
+                    content="No summary generated.",
+                    data_source=self.summary_model.model_id,
+                    source_path=file_do.file_name,
+                    metadata=None,
+                ),
+            )
+            return
 
         await self._upsert_group(
             user_email,

@@ -85,7 +85,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "c3d4e5f6a7b8"
+        assert version == "d5e6f7a8b9c0"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -181,7 +181,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "c3d4e5f6a7b8"
+        assert version == "d5e6f7a8b9c0"
 
         # Verify task columns and types
         tasks = conn.execute(
@@ -761,4 +761,55 @@ def test_seed_sync_initialized_for_existing_users_migration(
         assert rows[0][2] > 0
 
     command.downgrade(alembic_config, "a2b3c4d5e6f7")
+    engine.dispose()
+
+
+def test_add_page_style_and_has_ink_to_note_page_content_migration(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify migration d5e6f7a8b9c0 adds nullable page_style and has_ink columns to f_note_page_content."""
+    db_path = tmp_path / "page_context_columns.db"
+    shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+    command.upgrade(alembic_config, "c3d4e5f6a7b8")
+
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO f_note_page_content "
+                "(id, file_id, page_index, page_id, content_hash, text_content, create_time, update_time) "
+                "VALUES (9501, 2001, 0, 'P20250101000000', 'h0', 'existing ocr', 0, 0)"
+            )
+        )
+
+    command.upgrade(alembic_config, "d5e6f7a8b9c0")
+
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                "SELECT page_style, has_ink, text_content FROM f_note_page_content WHERE id = 9501"
+            )
+        ).fetchone()
+        assert row is not None
+        assert tuple(row) == (None, None, "existing ocr")
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE f_note_page_content "
+                "SET page_style = 'style_5mm_dots', has_ink = 0 "
+                "WHERE id = 9501"
+            )
+        )
+
+    with engine.connect() as conn:
+        updated = conn.execute(
+            text("SELECT page_style, has_ink FROM f_note_page_content WHERE id = 9501")
+        ).fetchone()
+        assert updated is not None
+        assert tuple(updated) == ("style_5mm_dots", 0)
+
+    command.downgrade(alembic_config, "c3d4e5f6a7b8")
     engine.dispose()

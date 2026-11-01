@@ -194,12 +194,23 @@ class WebTranscriptRequestDTO(DataClassJSONMixin):
 
 @dataclass
 class PageTranscriptVO(DataClassJSONMixin):
-    """VO for a single page transcript in a notebook."""
+    """VO for a single page's OCR transcript in a notebook.
+
+    Used by `POST /api/extended/transcript`, which returns OCR text per page
+    (and 404 when no page in the requested range has transcribed text yet).
+    """
 
     page_index: int = field(metadata=field_options(alias="pageIndex"))
+    """0-based index of the page in the notebook."""
+
     page_id: str = field(metadata=field_options(alias="pageId"))
+    """Stable unique page identifier from the `.note` file (e.g. 'P20231027120000abc')."""
+
     text: str | None = None
+    """Extracted OCR text for the page, or `None` if unprocessed."""
+
     date: str | None = None
+    """Inferred ISO date (`YYYY-MM-DD`) parsed from `page_id`, if present."""
 
     class Config(BaseConfig):
         serialize_by_alias = True

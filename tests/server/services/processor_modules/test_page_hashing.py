@@ -76,6 +76,8 @@ async def test_process_with_real_file(
         assert first_page is not None
         assert first_page.content_hash is not None
         assert len(first_page.content_hash) > 0
+        assert first_page.page_style == "style_5mm_dots"
+        assert first_page.has_ink is False
 
         # Capture the hash to verify change detection later
         original_hash = first_page.content_hash
@@ -95,6 +97,7 @@ async def test_process_with_real_file(
 
         assert task is not None
         assert task.status == "COMPLETED"
+        assert task.data == "v2"
 
     # Test Change Detection (Simulated)
     # Since we can't easily edit the binary .note file to change content,
@@ -350,3 +353,74 @@ async def test_page_hashing_marks_task_failed_on_missing_or_corrupt_file(
             ).scalar_one()
             assert task.status == "FAILED"
             assert task.last_error is not None
+
+
+async def test_page_hashing_backfills_style_and_ink_without_invalidating_ocr(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    test_data_dir: Path,
+) -> None:
+    """Re-hashing an unchanged note populates page_style and has_ink while keeping OCR intact."""
+    file_id = 1003
+    note_path = test_data_dir / "philips" / "a5x-2.14.28.note"
+    await blob_storage.put(USER_DATA_BUCKET, "lined_key", note_path.read_bytes())
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=1,
+                storage_key="lined_key",
+                file_name="lined.note",
+                directory_id=0,
+            )
+        )
+        await session.commit()
+
+    await page_hashing_module.run(file_id, session_manager)
+
+    async with session_manager.session() as session:
+        page = (
+            await session.execute(
+                select(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
+            )
+        ).scalar_one()
+        assert page.page_style == "user_Lined"
+        assert page.has_ink is True
+
+        # Simulate pre-existing legacy row before migration backfill
+        page.page_style = None
+        page.has_ink = None
+        page.text_content = "Existing transcribed text"
+        session.add(
+            SystemTaskDO(
+                file_id=file_id,
+                task_type="OCR_EXTRACTION",
+                key=f"page_{page.page_id}",
+                status="COMPLETED",
+            )
+        )
+        await session.commit()
+
+    await page_hashing_module.process(file_id, session_manager)
+
+    async with session_manager.session() as session:
+        page = (
+            await session.execute(
+                select(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
+            )
+        ).scalar_one()
+        assert page.page_style == "user_Lined"
+        assert page.has_ink is True
+        assert page.text_content == "Existing transcribed text"
+
+        ocr_task = (
+            await session.execute(
+                select(SystemTaskDO)
+                .where(SystemTaskDO.file_id == file_id)
+                .where(SystemTaskDO.task_type == "OCR_EXTRACTION")
+            )
+        ).scalar_one_or_none()
+        assert ocr_task is not None
+        assert ocr_task.status == "COMPLETED"

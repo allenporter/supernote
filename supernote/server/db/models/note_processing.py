@@ -1,6 +1,6 @@
 import time
 
-from sqlalchemy import BigInteger, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from supernote.models.base import ProcessingStatus
@@ -27,6 +27,12 @@ class NotePageContentDO(Base):
 
     content_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     """MD5 hash of the page content (e.g. layers) to detect changes."""
+
+    page_style: Mapped[str | None] = mapped_column(String, nullable=True)
+    """Raw PAGESTYLE identifier from the .note page ('style_*' built-in or 'user_*' custom template)."""
+
+    has_ink: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    """True if visible foreground layers contain non-background pixels or PAGETEXTBOX text; False if blank; None if unhashed."""
 
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     """The extracted OCR text for this page."""
