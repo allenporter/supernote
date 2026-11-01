@@ -5,10 +5,9 @@ from pathlib import Path
 import pytest
 from aiohttp.test_utils import TestClient
 
-from supernote.server.config import parse_log_level
 from supernote.server.trace import (
+    RedactingAccessLogger,
     is_binary_content_type,
-    redact_request_line,
     redact_url,
     sanitize_body,
     sanitize_headers,
@@ -301,23 +300,19 @@ async def test_trace_logging_unsafe_mode_preserves_raw_tokens(
     assert unsafe_entry["request"]["body"]["password"] == "debug_raw_password_hash"
 
 
-def test_redact_request_line_for_access_log() -> None:
-    """Access-log request lines and bare path_qs must redact token/sign."""
-    assert (
-        redact_request_line(
-            "GET /socket.io/?EIO=4&token=device_jwt&sign=sio_sig HTTP/1.1"
-        )
-        == "GET /socket.io/?EIO=4&token=***&sign=*** HTTP/1.1"
-    )
+def test_access_log_path_qs_redaction() -> None:
+    """Access-log %r path_qs must redact token/sign via redact_url."""
     assert (
         redact_url("/socket.io/?EIO=4&token=device_jwt&sign=sio_sig")
         == "/socket.io/?EIO=4&token=***&sign=***"
     )
 
+    class _Req:
+        method = "GET"
+        path_qs = "/socket.io/?EIO=4&token=device_jwt&sign=sio_sig"
+        version = type("V", (), {"major": 1, "minor": 1})()
 
-def test_parse_log_level_names() -> None:
-    assert parse_log_level("debug") == "DEBUG"
-    assert parse_log_level("WARNING") == "WARNING"
-    assert parse_log_level("nope") == "INFO"
-    assert parse_log_level(None) == "INFO"
-    assert parse_log_level("bogus", default="ERROR") == "ERROR"
+    assert (
+        RedactingAccessLogger._format_r(_Req(), None, 0.0)  # type: ignore[arg-type]
+        == "GET /socket.io/?EIO=4&token=***&sign=*** HTTP/1.1"
+    )

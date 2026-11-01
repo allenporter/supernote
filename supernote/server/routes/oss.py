@@ -16,7 +16,6 @@ from supernote.server.exceptions import SupernoteError
 from supernote.server.services.blob import STREAM_CHUNK_SIZE, BlobStorage
 from supernote.server.services.conversion import ConversionService
 from supernote.server.services.file import FileService
-from supernote.server.trace import sanitize_headers
 from supernote.server.utils.paths import get_file_chunk_path
 from supernote.server.utils.url_signer import UrlSigner
 
@@ -45,7 +44,7 @@ async def handle_oss_upload(request: web.Request) -> web.Response:
     url_signer: UrlSigner = request.app["url_signer"]
     blob_storage: BlobStorage = request.app["blob_storage"]
 
-    logger.debug("OSS Upload Headers: %s", sanitize_headers(dict(request.headers)))
+    logger.debug("OSS Upload Headers: %s", dict(request.headers))
     try:
         payload = await url_signer.verify(request.path_qs)
     except SupernoteError as err:
@@ -105,7 +104,7 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
     url_signer: UrlSigner = request.app["url_signer"]
     blob_storage: BlobStorage = request.app["blob_storage"]
 
-    logger.debug("OSS Upload Part Headers: %s", sanitize_headers(dict(request.headers)))
+    logger.debug("OSS Upload Part Headers: %s", dict(request.headers))
     query_dict = dict(request.query)
     try:
         params = FileChunkParams.from_dict(query_dict)

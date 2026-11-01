@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from aiohttp import web
+from aiohttp.web_request import BaseRequest
+from aiohttp.web_response import StreamResponse
 from yarl import URL
 
 from .config import ServerConfig
@@ -122,40 +124,23 @@ def redact_url(url: URL | str) -> str:
         return url_str
 
 
-def redact_request_line(request_line: str) -> str:
-    """Redact sensitive query parameters in an access-log request line or URL."""
-    parts = request_line.split(" ")
-    if len(parts) >= 2 and parts[0].isalpha():
-        method, target, *rest = parts
-        return " ".join((method, redact_url(target), *rest))
-    return redact_url(request_line)
-
-
-class _RequestWithRedactedQuery:
-    """Request view whose path and query are safe to write to the access log."""
-
-    def __init__(self, request: Any) -> None:
-        self._request = request
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._request, name)
-
-    @property
-    def path_qs(self) -> str:
-        return redact_url(self._request.path_qs)
-
-
 class RedactingAccessLogger(web.AccessLogger):
     """Access logger that redacts sensitive query parameters in the request line.
 
-    aiohttp binds ``%r`` to ``AccessLogger._format_r``, which reads ``path_qs``.
-    Wrapping the request redacts that value for the stock formatter.
+    Overrides ``_format_r`` (the ``%r`` atom) so the stock access-log format
+    never writes raw ``token`` / ``sign`` query values.
     """
 
-    def log(self, request: Any, response: Any, time: float) -> None:
-        if request is not None:
-            request = _RequestWithRedactedQuery(request)
-        super().log(request, response, time)
+    @staticmethod
+    def _format_r(request: BaseRequest, response: StreamResponse, time: float) -> str:
+        if request is None:
+            return "-"
+        return "{} {} HTTP/{}.{}".format(
+            request.method,
+            redact_url(request.path_qs),
+            request.version.major,
+            request.version.minor,
+        )
 
 
 def sanitize_headers(headers: dict[str, Any]) -> dict[str, Any]:
