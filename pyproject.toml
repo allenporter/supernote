@@ -50,6 +50,9 @@ server = [
   "python-socketio>=5.11.0",
   "ical>=8.0.0",
 ]
+apple = [
+  "pyobjc-framework-Vision>=10.0; sys_platform == 'darwin'",
+]
 all = ["supernote[client,server]"]
 
 [project.urls]
