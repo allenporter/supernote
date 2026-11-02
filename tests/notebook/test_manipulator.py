@@ -17,6 +17,11 @@ from supernote.notebook.manipulator import (
     reconstruct,
 )
 from supernote.notebook.parser import SupernoteXParser
+from supernote.notebook.schema import (
+    LayerName,
+    LayerProtocol,
+    LayerType,
+)
 
 # --- NotebookBuilder Tests ---
 
@@ -182,7 +187,7 @@ def test_merge_mismatched_header_property(
     notebook1 = reconstructable_notebook_factory()
     notebook2 = reconstructable_notebook_factory()
 
-    notebook2.get_metadata().header["DEVICE_DPI"] = "999"
+    notebook2.get_metadata().header.device_dpi = 999
     with pytest.raises(
         ValueError, match="<DEVICE_DPI> property must be same between merging files"
     ):
@@ -256,9 +261,9 @@ def test_notebook_page_reordering(
     meta = multi_page_nb.get_metadata()
 
     # Set distinct page IDs and stroke payloads before swapping
-    multi_page_nb.pages[0].metadata["PAGEID"] = "PAGE_ZERO"
+    multi_page_nb.pages[0].metadata.page_id = "PAGE_ZERO"
     multi_page_nb.pages[0].set_totalpath(b"STROKE_ZERO")
-    multi_page_nb.pages[1].metadata["PAGEID"] = "PAGE_ONE"
+    multi_page_nb.pages[1].metadata.page_id = "PAGE_ONE"
     multi_page_nb.pages[1].set_totalpath(b"STROKE_ONE")
 
     multi_page_nb.pages[0], multi_page_nb.pages[1] = (
@@ -296,8 +301,8 @@ def test_notebook_layer_changes_and_stroke_manipulation(
             if layer.get_name() != "BGLAYER":
                 layer.set_content(b"MODIFIED_LAYER_CONTENT")
 
-    page.metadata["PAGESTYLE"] = "user_custom_style"
-    page.metadata["PAGESTYLEMD5"] = "1234567890abcdef"
+    page.metadata.style = "user_custom_style"
+    page.metadata.style_md5 = "1234567890abcdef"
 
     reconstructed_bytes = reconstruct(reconstructable_notebook)
     reloaded = load(io.BytesIO(reconstructed_bytes))
@@ -442,7 +447,7 @@ def test_find_background_content_from_page(
     real_page = notebook.get_page(0)
     for layer in real_page.get_layers():
         if layer.get_name() == "BGLAYER":
-            layer.metadata["LAYERNAME"] = "OTHERLAYER"
+            layer.metadata.name = "OTHERLAYER"
 
     assert _find_background_content_from_page(real_page) is None
 
@@ -475,21 +480,21 @@ def test_reconstruct_is_idempotent_and_preserves_page_layers_metadata(
     first_bytes = reconstruct(reconstructable_notebook)
     second_bytes = reconstruct(reconstructable_notebook)
     assert first_bytes == second_bytes
-    assert fileformat.KEY_LAYERS in reconstructable_notebook.get_page(0).metadata
+    assert reconstructable_notebook.get_page(0).metadata.layers is not None
 
 
 def test_reconstruct_handles_empty_named_layer_and_user_style_without_md5(
     reconstructable_notebook: fileformat.Notebook,
 ) -> None:
     page = reconstructable_notebook.get_page(0)
-    page.metadata["PAGESTYLE"] = "user_custom"
-    page.metadata.pop("PAGESTYLEMD5", None)
+    page.metadata.style = "user_custom"
+    page.metadata.style_md5 = None
 
     # Named layer with None bitmap content should pack as LAYERBITMAP=0
     layer1 = page.get_layer(1)
-    layer1.metadata["LAYERNAME"] = "LAYER1"
-    layer1.metadata["LAYERPROTOCOL"] = "RATTA_RLE"
-    layer1.metadata["LAYERTYPE"] = "NOTE"
+    layer1.metadata.name = LayerName.LAYER1
+    layer1.metadata.protocol = LayerProtocol.RATTA_RLE
+    layer1.metadata.layer_type = LayerType.NOTE
     layer1.set_content(None)
 
     reconstructed_bytes = reconstruct(reconstructable_notebook)
@@ -500,7 +505,7 @@ def test_reconstruct_handles_empty_named_layer_and_user_style_without_md5(
 def test_reconstruct_rejects_page_missing_pagestyle(
     reconstructable_notebook: fileformat.Notebook,
 ) -> None:
-    reconstructable_notebook.get_page(0).metadata.pop("PAGESTYLE", None)
+    reconstructable_notebook.get_page(0).metadata.style = None
 
     with pytest.raises(
         exceptions.ManipulatorException, match="page 0 metadata is missing PAGESTYLE"

@@ -1,12 +1,12 @@
 """Shared fixtures and fakes for notebook tests."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from supernote.notebook import fileformat, load_notebook
+from supernote.notebook import fileformat, load_notebook, schema
 from supernote.notebook.parser import SupernoteXParser
 
 TEST_DATA_DIR = Path(__file__).parent.parent / "testdata"
@@ -66,9 +66,9 @@ def make_notebook() -> Callable[..., fileformat.Notebook]:
     def _make(
         *,
         signature: str = LATEST_SIG,
-        header: dict[str, str] | None = None,
-        pages: list[fileformat.ParamsBlock] | None = None,
-        footer: dict[str, Any] | None = None,
+        header: schema.HeaderMetadata | Mapping[str, Any] | None = None,
+        pages: Sequence[schema.PageMetadata | Mapping[str, Any]] | None = None,
+        footer: schema.FooterMetadata | Mapping[str, Any] | None = None,
         width: int | None = None,
         height: int | None = None,
     ) -> fileformat.Notebook:

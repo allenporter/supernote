@@ -16,6 +16,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from . import exceptions, schema
 from .color import MODE_RGB, ColorPalette
 from .converter import (
     ImageConverter,
@@ -32,11 +33,11 @@ from .fileformat import (
     Link,
     Notebook,
     Page,
-    SupernoteMetadata,
     Title,
 )
 from .manipulator import merge, reconstruct
 from .parser import load, load_notebook, parse_metadata
+from .schema import SupernoteMetadata
 
 # Alias for convenience
 parse_notebook = load_notebook
@@ -58,10 +59,12 @@ __all__ = [
     "TextConverter",
     "Title",
     "VisibilityOverlay",
+    "exceptions",
     "load",
     "load_notebook",
     "merge",
     "parse_metadata",
     "parse_notebook",
     "reconstruct",
+    "schema",
 ]

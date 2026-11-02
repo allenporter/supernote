@@ -83,9 +83,9 @@ def _serialize_notebook_metadata(notebook: fileformat.Notebook) -> dict:
         "width": notebook.get_width(),
         "height": notebook.get_height(),
         "total_pages": notebook.get_total_pages(),
-        "keywords": [kw.metadata for kw in notebook.get_keywords()],
-        "titles": [t.metadata for t in notebook.get_titles()],
-        "links": [link.metadata for link in notebook.get_links()],
+        "keywords": [kw.metadata.to_wire_dict() for kw in notebook.get_keywords()],
+        "titles": [t.metadata.to_wire_dict() for t in notebook.get_titles()],
+        "links": [link.metadata.to_wire_dict() for link in notebook.get_links()],
     }
 
 
@@ -333,9 +333,8 @@ def test_get_layer_visibility_malformed_payload(
     layer_info: str, make_notebook: Callable[..., fileformat.Notebook]
 ) -> None:
     converter = ImageConverter(make_notebook())
-    page = fileformat.Page({"LAYERINFO": layer_info})
-
     with pytest.raises(exceptions.ParserException, match="invalid layer info payload"):
+        page = fileformat.Page({"LAYERINFO": layer_info})
         converter._get_layer_visibility(page)
 
 
@@ -450,7 +449,7 @@ def test_pdf_converter_keywords_and_landscape() -> None:
 
 def test_pdf_converter_links(sample_notebook: fileformat.Notebook) -> None:
     page0 = sample_notebook.get_page(0)
-    page0.metadata["PAGEID"] = "P0001"
+    page0.metadata.page_id = "P0001"
 
     web_url_b64 = base64.b64encode(b"https://example.com").decode()
     l_internal = fileformat.Link(

@@ -1,11 +1,11 @@
 import asyncio
 import logging
 from functools import partial
-from typing import Any
 
 from sqlalchemy import delete, select
 
 from supernote.models.base import TaskType
+from supernote.notebook import SupernoteMetadata
 from supernote.notebook.parser import parse_metadata
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
@@ -19,7 +19,7 @@ from supernote.server.utils.paths import get_page_png_path, is_valid_page_id
 logger = logging.getLogger(__name__)
 
 
-def _parse_helper(path: str) -> Any:
+def _parse_helper(path: str) -> SupernoteMetadata:
     with open(path, "rb") as f:
         return parse_metadata(f)
 
@@ -122,7 +122,7 @@ class PageHashingModule(ProcessorModule):
 
             for i in range(total_pages):
                 page_info = metadata.pages[i]
-                page_id = page_info.get("PAGEID")
+                page_id = page_info.page_id
 
                 if not isinstance(page_id, str) or not is_valid_page_id(page_id):
                     logger.warning(
@@ -132,8 +132,8 @@ class PageHashingModule(ProcessorModule):
 
                 current_page_ids.add(page_id)
 
-                # Canonical string representation of page metadata for hashing
-                page_hash_input = str(page_info)
+                # Canonical wire-dictionary string representation of page metadata for hashing
+                page_hash_input = str(page_info.to_wire_dict())
                 current_hash = get_md5_hash(page_hash_input)
 
                 if page_id in existing_map:
