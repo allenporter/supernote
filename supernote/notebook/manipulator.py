@@ -87,15 +87,25 @@ class NotebookBuilder:
         print(f"# toc = {self.toc}")
 
 
+SUPPORTED_RECONSTRUCT_SIGNATURES = frozenset(parser.SupernoteXParser.SN_SIGNATURES[-2:])
+
+_VALIDATION_ERRORS = (
+    exceptions.SupernoteLibException,
+    ValueError,
+    TypeError,
+    KeyError,
+    IndexError,
+    RuntimeError,
+    OSError,
+)
+
+
 def reconstruct(notebook: fileformat.Notebook) -> bytes:
     """Reconstruct a notebook binary from its in-memory representation."""
-    expected_signature = parser.SupernoteXParser.SN_SIGNATURES[
-        -1
-    ]  # latest supported signature
     metadata = notebook.metadata
-    if metadata.signature != expected_signature:
+    if metadata.signature not in SUPPORTED_RECONSTRUCT_SIGNATURES:
         raise ValueError(
-            f"Only latest file format version is supported ({metadata.signature} != {expected_signature})"
+            f"Only latest file format version is supported ({metadata.signature} not in {sorted(SUPPORTED_RECONSTRUCT_SIGNATURES)})"
         )
 
     builder = NotebookBuilder()
@@ -117,7 +127,7 @@ def reconstruct(notebook: fileformat.Notebook) -> bytes:
         stream = io.BytesIO(reconstructed_binary)
         xparser = parser.SupernoteXParser()
         _ = xparser.parse_stream(stream)
-    except Exception as e:
+    except _VALIDATION_ERRORS as e:
         raise exceptions.GeneratedFileValidationException(
             f"generated file fails validation: {e}"
         ) from e
@@ -129,12 +139,9 @@ def merge(notebook1: fileformat.Notebook, notebook2: fileformat.Notebook) -> byt
     # TODO: support non-X series
     metadata1 = notebook1.metadata
     metadata2 = notebook2.metadata
-    expected_signature = parser.SupernoteXParser.SN_SIGNATURES[
-        -1
-    ]  # latest supported signature
-    if metadata1.signature != expected_signature:
+    if metadata1.signature not in SUPPORTED_RECONSTRUCT_SIGNATURES:
         raise ValueError(
-            f"Only latest file format version is supported ({metadata1.signature} != {expected_signature})"
+            f"Only latest file format version is supported ({metadata1.signature} not in {sorted(SUPPORTED_RECONSTRUCT_SIGNATURES)})"
         )
     if metadata1.signature != metadata2.signature:
         raise ValueError(
@@ -175,7 +182,7 @@ def merge(notebook1: fileformat.Notebook, notebook2: fileformat.Notebook) -> byt
         stream = io.BytesIO(merged_binary)
         xparser = parser.SupernoteXParser()
         _ = xparser.parse_stream(stream)
-    except Exception as e:
+    except _VALIDATION_ERRORS as e:
         raise exceptions.GeneratedFileValidationException(
             f"generated file fails validation: {e}"
         ) from e
@@ -338,10 +345,16 @@ def _pack_pages(
                 builder.append(
                     f"PAGE{page_number}/{layer_name}/metadata", layer_metadata_block
                 )
-        # totalpath
+        # totalpath and RTR recognition streams
         totalpath_block = wrapped_page.totalpath
         if totalpath_block is not None:
             builder.append(f"PAGE{page_number}/TOTALPATH", totalpath_block)
+        recogn_file_block = wrapped_page.recogn_file
+        if recogn_file_block is not None:
+            builder.append(f"PAGE{page_number}/RECOGNFILE", recogn_file_block)
+        recogn_text_block = wrapped_page.recogn_text
+        if recogn_text_block is not None:
+            builder.append(f"PAGE{page_number}/RECOGNTEXT", recogn_text_block)
         # page metadata
         page_metadata = wrapped_page.metadata.to_params()
         for prop in schema.X_SERIES_LAYER_KEYS:
@@ -352,6 +365,14 @@ def _pack_pages(
         page_metadata["TOTALPATH"] = str(
             builder.get_block_address(f"PAGE{page_number}/TOTALPATH")
         )
+        if "RECOGNFILE" in page_metadata or recogn_file_block is not None:
+            page_metadata["RECOGNFILE"] = str(
+                builder.get_block_address(f"PAGE{page_number}/RECOGNFILE")
+            )
+        if "RECOGNTEXT" in page_metadata or recogn_text_block is not None:
+            page_metadata["RECOGNTEXT"] = str(
+                builder.get_block_address(f"PAGE{page_number}/RECOGNTEXT")
+            )
         page_metadata_block = _construct_metadata_block(page_metadata)
         builder.append(f"PAGE{page_number}/metadata", page_metadata_block)
 
