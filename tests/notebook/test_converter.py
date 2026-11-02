@@ -313,6 +313,84 @@ def test_image_converter_layered_page_omitted_layer_protocol_and_custom_png_bg(
         converter.convert(0)
 
 
+def test_image_converter_layer_protocol_png_inkhub_bg_and_horizontal(
+    make_notebook: Callable[..., fileformat.Notebook],
+) -> None:
+    bg_buf = io.BytesIO()
+    Image.new("RGB", (3, 2), color=(180, 190, 200)).save(bg_buf, format="PNG")
+    landscape_bg_png = bg_buf.getvalue()
+
+    fg_png_buf = io.BytesIO()
+    fg_img = Image.new("RGBA", (3, 2), color=(0, 0, 0, 0))
+    fg_img.putpixel((2, 1), (12, 34, 56, 255))
+    fg_img.save(fg_png_buf, format="PNG")
+    fg_png = fg_png_buf.getvalue()
+
+    layer_info = (
+        '[{"layerId": -1, "isBackgroundLayer": true, "isVisible": true}, '
+        '{"layerId": 0, "isBackgroundLayer": false, "isVisible": true}, '
+        '{"layerId": 1, "isBackgroundLayer": false, "isVisible": true}]'
+    )
+    notebook = make_notebook(
+        width=2,
+        height=3,
+        signature="SN_FILE_VER_20260016",
+        pages=[
+            {
+                "PAGEID": "P1",
+                "PAGESTYLE": "inkhub_planner_template",
+                "ORIENTATION": "1090",
+                "LAYERINFO": layer_info.replace(":", "#"),
+                "LAYERSEQ": "LAYER1,MAINLAYER,BGLAYER",
+                fileformat.KEY_LAYERS: [
+                    {"LAYERNAME": "MAINLAYER", "LAYERPROTOCOL": "PNG"},
+                    {"LAYERNAME": "LAYER1", "LAYERPROTOCOL": "PNG"},
+                    {"LAYERNAME": "BGLAYER", "LAYERPROTOCOL": "PNG"},
+                ],
+            }
+        ],
+    )
+    page = notebook.page(0)
+    # MAINLAYER has LAYERPROTOCOL:PNG quirk with X2 RATTA_RLE bytes (pixel (0,0) dark gray, rest transparent)
+    page.layer(0).content = bytes(
+        [
+            decoder_mod.RattaRleX2Decoder.COLORCODE_DARK_GRAY,
+            0,
+            decoder_mod.RattaRleX2Decoder.COLORCODE_BACKGROUND,
+            4,
+        ]
+    )
+    # LAYER1 has actual RGBA PNG content with a single opaque pixel at (2, 1)
+    page.layer(1).content = fg_png
+    # BGLAYER has non-user_ PAGESTYLE ("inkhub_planner_template") + landscape PNG bytes
+    page.layer(2).content = landscape_bg_png
+
+    converter = ImageConverter(notebook)
+    rendered = converter.convert(0)
+    assert rendered.size == (3, 2)
+    assert rendered.getpixel((0, 0)) == (
+        color.DARK_GRAY,
+        color.DARK_GRAY,
+        color.DARK_GRAY,
+    )
+    assert rendered.getpixel((1, 0)) == (180, 190, 200)
+    assert rendered.getpixel((2, 1)) == (12, 34, 56)
+
+    # Non-layered page with PNG protocol or PNG signature also resolves PngDecoder
+    nonlayered_nb = make_notebook(
+        width=3,
+        height=2,
+        pages=[{"PAGEID": "P_PNG", "PROTOCOL": "PNG"}],
+    )
+    nonlayered_nb.page(0).content = landscape_bg_png
+    nonlayered_converter = ImageConverter(nonlayered_nb)
+    assert isinstance(
+        nonlayered_converter.find_decoder(nonlayered_nb.page(0)),
+        decoder_mod.PngDecoder,
+    )
+    assert nonlayered_converter.convert(0).size == (3, 2)
+
+
 @pytest.mark.parametrize(
     ("layer_info", "expected_visibility"),
     [

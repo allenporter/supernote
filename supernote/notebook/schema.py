@@ -138,6 +138,9 @@ class LayerProtocol(StrEnum):
     SN_ASA_COMPRESS = "SN_ASA_COMPRESS"
     """Legacy zlib/flate-compressed `uint16` bitmap stream (A5 series)."""
 
+    PNG = "PNG"
+    """Raw PNG image stream (used on custom and InkHub `BGLAYER` templates)."""
+
 
 class LayerType(StrEnum):
     """Layer content category recorded in `<LAYERTYPE:...>`."""
@@ -788,7 +791,7 @@ class LayerMetadata:
     """`<LAYERNAME>` — Slot identifier (`MAINLAYER`, `LAYER1..3`, `BGLAYER`)."""
 
     protocol: LayerProtocol | str | None = None
-    """`<LAYERPROTOCOL>` — Bitmap compression codec (`RATTA_RLE`, `SN_ASA_COMPRESS`)."""
+    """`<LAYERPROTOCOL>` — Bitmap compression codec (`RATTA_RLE`, `SN_ASA_COMPRESS`, `PNG`)."""
 
     layer_type: LayerType | str | None = None
     """`<LAYERTYPE>` — Layer content kind (`NOTE`, `MARK`, or `BACKGROUND`)."""

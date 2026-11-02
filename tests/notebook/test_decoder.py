@@ -190,6 +190,17 @@ def test_png_decoder_rejects_mismatched_dimensions(sample_png_bytes: bytes) -> N
         png_decoder.decode(sample_png_bytes, 5, 3)
 
 
+def test_png_decoder_horizontal_and_corrupt_payload(sample_png_bytes: bytes) -> None:
+    png_decoder = decoder.PngDecoder()
+    bitmap, size, bpp = png_decoder.decode(sample_png_bytes, 3, 4, horizontal=True)
+    assert size == (4, 3)
+    assert bpp == 32
+    assert len(bitmap) == 4 * 3 * 4
+
+    with pytest.raises(exceptions.DecoderException, match="failed to decode PNG"):
+        png_decoder.decode(b"not-valid-png", 4, 3)
+
+
 def test_text_decoder_returns_none_for_none_input() -> None:
     text_decoder = decoder.TextDecoder()
     assert text_decoder.decode(None) is None

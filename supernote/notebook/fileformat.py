@@ -24,10 +24,12 @@ import base64
 import binascii
 import zlib
 from collections.abc import Mapping, Sequence
+from io import BytesIO
 from typing import Any
 from warnings import deprecated
 
 import numpy as np
+from PIL import Image, UnidentifiedImageError
 
 from . import decoder, exceptions
 from .schema import (
@@ -925,8 +927,27 @@ class Layer:
 
     @property
     def protocol(self) -> LayerProtocol | str | None:
-        """Bitmap compression protocol (`RATTA_RLE`, `SN_ASA_COMPRESS`)."""
+        """Bitmap compression protocol (`RATTA_RLE`, `SN_ASA_COMPRESS`, `PNG`)."""
         return self.metadata.protocol
+
+    @property
+    def bitmap_protocol(self) -> LayerProtocol | str:
+        """Effective bitmap codec for `content`, resolving PNG signatures and firmware `LAYERPROTOCOL` quirks.
+
+        Supernote firmware has two metadata quirks around PNG templates:
+        - `BGLAYER` often stores raw PNG bytes while `<LAYERPROTOCOL>` is set to
+          `RATTA_RLE` or omitted (`None`), including on non-`user_*` templates.
+        - Firmware sometimes stamps `<LAYERPROTOCOL:PNG>` onto foreground layers
+          (`MAINLAYER`, `LAYER1..3`) even though foreground handwriting layers
+          store `RATTA_RLE` streams.
+        """
+        if self.content is not None and self.content.startswith(decoder.PNG_SIGNATURE):
+            return LayerProtocol.PNG
+        if self.name != LayerName.BGLAYER and self.protocol == LayerProtocol.PNG:
+            return LayerProtocol.RATTA_RLE
+        if self.protocol is not None:
+            return self.protocol
+        return LayerProtocol.RATTA_RLE
 
     @property
     def layer_type(self) -> LayerType | str | None:
@@ -936,7 +957,7 @@ class Layer:
     @property
     def has_ink(self) -> bool:
         """`True` if this layer's compressed bitmap contains any non-transparent pixel."""
-        return _bitmap_has_ink(self.content, self.protocol)
+        return _bitmap_has_ink(self.content, self.bitmap_protocol)
 
     @property
     def has_vector_graph(self) -> bool:
@@ -968,6 +989,14 @@ def _bitmap_has_ink(data: bytes | None, protocol: LayerProtocol | str | None) ->
     """Return `True` if compressed bitmap bytes contain any non-transparent pixel."""
     if not data:
         return False
+    if protocol == LayerProtocol.PNG or data.startswith(decoder.PNG_SIGNATURE):
+        try:
+            with Image.open(BytesIO(data)) as img:
+                return any(img.convert("RGBA").getchannel("A").tobytes())
+        except (UnidentifiedImageError, OSError) as err:
+            raise exceptions.DecoderException(
+                f"failed to decode PNG bitmap: {err}"
+            ) from err
     if protocol == LayerProtocol.RATTA_RLE:
         return any(
             b != decoder.RattaRleDecoder.COLORCODE_BACKGROUND for b in data[0::2]

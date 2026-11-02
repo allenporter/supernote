@@ -21,9 +21,11 @@ from dataclasses import dataclass
 from io import BytesIO
 
 import numpy as np
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 from . import color, exceptions
+
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
 class BaseDecoder:
@@ -361,13 +363,20 @@ class PngDecoder(BaseDecoder):
         int
             bit per pixel
         """
-        with Image.open(BytesIO(data)) as img:
-            width, height = img.size
-            if width != page_width or height != page_height:
-                raise exceptions.DecoderException(
-                    f"invalid size = ({width}, {height}), expected = ({page_width}, {page_height})"
-                )
-            bitmap = img.convert("RGBA").tobytes()
+        if horizontal:
+            page_height, page_width = (page_width, page_height)
+        try:
+            with Image.open(BytesIO(data)) as img:
+                width, height = img.size
+                if width != page_width or height != page_height:
+                    raise exceptions.DecoderException(
+                        f"invalid size = ({width}, {height}), expected = ({page_width}, {page_height})"
+                    )
+                bitmap = img.convert("RGBA").tobytes()
+        except (UnidentifiedImageError, OSError) as err:
+            raise exceptions.DecoderException(
+                f"failed to decode PNG bitmap: {err}"
+            ) from err
         return bitmap, (page_width, page_height), 32
 
 
