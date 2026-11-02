@@ -160,7 +160,7 @@ See [`supernote/notebook/schema.py`](../supernote/notebook/schema.py) for comple
 | `APPLY_EQUIPMENT` | `EquipmentType` | `A5`, `A5X`, `A6X`, `N5` (A5 X2 Manta), `N6` (A6 X2 Nomad) |
 | `ORIENTATION` | `PageOrientation` | `1000` (vertical), `1090` (horizontal 90°), `1180` (vertical 180°), `1270` (horizontal 270°) |
 | `RECOGNSTATUS` | `RecognitionStatus` | `0` (none), `1` (done — `RECOGNTEXT` ready), `2` (running) |
-| `LAYERPROTOCOL` / `PROTOCOL` | `LayerProtocol` | `RATTA_RLE`, `SN_ASA_COMPRESS` |
+| `LAYERPROTOCOL` / `PROTOCOL` | `LayerProtocol` | `RATTA_RLE`, `SN_ASA_COMPRESS`, `PNG` |
 | `LAYERTYPE` | `LayerType` | `NOTE`, `MARK`, `BACKGROUND` |
 | `LINKTYPE` | `LinkType` | `0` (page link), `1` (file link), `2` (document link), `4` (web URL) |
 | `LINKINOUT` | `LinkDirection` | `0` (outgoing), `1` (incoming) |
@@ -195,9 +195,9 @@ Zlib-compressed `uint16_le` bitmap used on legacy A5 pages and older backgrounds
 2. Reshapes to `(1404, 1888)`, rotates 90° clockwise, and trims the bottom 16 padding rows to yield `(1404, 1872)`.
 3. Maps `uint16` color keys: `0x0000` (Black), `0x2104` (Dark Gray), `0xE1E2` (Gray), `0xFFFF` (White/Background).
 
-### 3. Custom Background PNGs (`PngDecoder`)
+### 3. Background PNGs (`PngDecoder`)
 
-When a page uses a custom template (`PAGESTYLE` starting with `user_`), `BGLAYER`'s `LAYERBITMAP` block stores raw PNG bytes matching the notebook's `(width, height)` canvas, decoded directly via Pillow (`PngDecoder`).
+When a page uses a custom (`user_*`) or InkHub/plugin PNG template, `BGLAYER`'s `LAYERBITMAP` block stores raw PNG bytes (`\x89PNG\r\n\x1a\n...`) matching the page canvas dimensions (`(width, height)` in portrait or `(height, width)` in landscape), decoded directly via Pillow (`PngDecoder`). Firmware may record `<LAYERPROTOCOL:PNG>`, `<LAYERPROTOCOL:RATTA_RLE>`, or omit `<LAYERPROTOCOL>` on PNG `BGLAYER` blocks, and occasionally stamps `<LAYERPROTOCOL:PNG>` onto foreground `MAINLAYER` blocks whose `LAYERBITMAP` remains `RATTA_RLE`; `Layer.bitmap_protocol` resolves the effective codec from the PNG file signature and layer slot.
 
 ### 4. Embedded Recognition Text (`TextDecoder`)
 

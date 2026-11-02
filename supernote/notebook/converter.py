@@ -142,19 +142,11 @@ class ImageConverter:
             )
             if all_blank:
                 continue
-            custom_bg = (
-                layer_name == "BGLAYER"
-                and page_style is not None
-                and page_style.startswith("user_")
+            decoder = self.find_decoder(
+                layer,
+                highres_grayscale,
+                default_protocol=schema.LayerProtocol.RATTA_RLE,
             )
-            if custom_bg:
-                decoder: Decoder.BaseDecoder = Decoder.PngDecoder()
-            else:
-                decoder = self.find_decoder(
-                    layer,
-                    highres_grayscale,
-                    default_protocol=schema.LayerProtocol.RATTA_RLE,
-                )
             plt = default_palette if layer_name == "BGLAYER" else palette
             img_layer = self._create_image_from_decoder(
                 decoder,
@@ -166,8 +158,13 @@ class ImageConverter:
             if layer_name == "BGLAYER":
                 # convert transparent to white for custom template
                 img_layer = self._whiten_transparent(img_layer)
-            mask_src = img_layer if img_layer.mode == "L" else img_layer.convert("L")
-            mask = mask_src.point(_NON_TRANSPARENT_LUT, mode="1")
+            if img_layer.mode == "RGBA":
+                mask = img_layer.getchannel("A")
+            else:
+                mask_src = (
+                    img_layer if img_layer.mode == "L" else img_layer.convert("L")
+                )
+                mask = mask_src.point(_NON_TRANSPARENT_LUT, mode="1")
             flatten_img.paste(img_layer, None, mask)
         return flatten_img
 
@@ -228,6 +225,24 @@ class ImageConverter:
     def _get_layer_visibility(self, page: fileformat.Page) -> dict[str, bool]:
         return page.layer_visibility
 
+    @staticmethod
+    def _resolve_protocol(
+        target: fileformat.Page | fileformat.Layer,
+        default_protocol: str | None = None,
+    ) -> str | None:
+        if isinstance(target, fileformat.Layer):
+            if target.protocol is None and (
+                target.content is None
+                or not target.content.startswith(Decoder.PNG_SIGNATURE)
+            ):
+                return default_protocol
+            return target.bitmap_protocol
+        if target.content is not None and target.content.startswith(
+            Decoder.PNG_SIGNATURE
+        ):
+            return schema.LayerProtocol.PNG
+        return target.protocol if target.protocol is not None else default_protocol
+
     def find_decoder(
         self,
         page,
@@ -235,18 +250,16 @@ class ImageConverter:
         default_protocol: str | None = None,
     ):
         """Return the bitmap decoder for `page` (or `Layer`), falling back to `default_protocol` when `<LAYERPROTOCOL>` is omitted."""
-        protocol = page.protocol if page.protocol is not None else default_protocol
-        if protocol == "SN_ASA_COMPRESS":
+        protocol = self._resolve_protocol(page, default_protocol)
+        if protocol == schema.LayerProtocol.SN_ASA_COMPRESS:
             return Decoder.FlateDecoder()
-        elif protocol == "RATTA_RLE":
+        if protocol == schema.LayerProtocol.RATTA_RLE:
             if highres_grayscale:
                 return Decoder.RattaRleX2Decoder()
-            else:
-                return Decoder.RattaRleDecoder()
-        else:
-            raise exceptions.UnknownDecodeProtocol(
-                f"unknown decode protocol: {protocol}"
-            )
+            return Decoder.RattaRleDecoder()
+        if protocol == schema.LayerProtocol.PNG:
+            return Decoder.PngDecoder()
+        raise exceptions.UnknownDecodeProtocol(f"unknown decode protocol: {protocol}")
 
 
 class SvgConverter:

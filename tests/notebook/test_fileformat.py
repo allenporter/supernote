@@ -1,4 +1,5 @@
 import base64
+import io
 import json
 import zlib
 from pathlib import Path
@@ -6,6 +7,7 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
+from PIL import Image
 
 from supernote.notebook import (
     Cover,
@@ -781,3 +783,58 @@ def test_bitmap_has_ink_flate_and_edge_cases() -> None:
     assert unknown_page.has_ink is False
     unknown_page.content = b"\x01\x02"
     assert unknown_page.has_ink is True
+
+
+def test_layer_bitmap_protocol_and_png_has_ink() -> None:
+    transparent_buf = io.BytesIO()
+    Image.new("RGBA", (2, 2), (0, 0, 0, 0)).save(transparent_buf, format="PNG")
+    transparent_png = transparent_buf.getvalue()
+
+    opaque_buf = io.BytesIO()
+    Image.new("RGBA", (2, 2), (10, 20, 30, 255)).save(opaque_buf, format="PNG")
+    opaque_png = opaque_buf.getvalue()
+
+    blank_rle = bytes([decoder.RattaRleDecoder.COLORCODE_BACKGROUND, 3])
+    ink_rle = bytes([decoder.RattaRleDecoder.COLORCODE_BLACK, 3])
+
+    # BGLAYER storing PNG bytes resolves to PNG even when LAYERPROTOCOL is RATTA_RLE or omitted
+    bg_png_rle_tag = Layer(
+        {"LAYERNAME": "BGLAYER", "LAYERPROTOCOL": "RATTA_RLE"},
+        content=opaque_png,
+    )
+    assert bg_png_rle_tag.protocol == LayerProtocol.RATTA_RLE
+    assert bg_png_rle_tag.bitmap_protocol == LayerProtocol.PNG
+    assert bg_png_rle_tag.has_ink is True
+
+    # Transparent PNG reports has_ink False
+    fg_transparent_png = Layer(
+        {"LAYERNAME": "MAINLAYER", "LAYERPROTOCOL": "PNG"},
+        content=transparent_png,
+    )
+    assert fg_transparent_png.bitmap_protocol == LayerProtocol.PNG
+    assert fg_transparent_png.has_ink is False
+
+    # Foreground layer with firmware LAYERPROTOCOL:PNG quirk on RATTA_RLE bytes resolves to RATTA_RLE
+    fg_rle_with_png_tag = Layer(
+        {"LAYERNAME": "MAINLAYER", "LAYERPROTOCOL": "PNG"},
+        content=blank_rle,
+    )
+    assert fg_rle_with_png_tag.protocol == LayerProtocol.PNG
+    assert fg_rle_with_png_tag.bitmap_protocol == LayerProtocol.RATTA_RLE
+    assert fg_rle_with_png_tag.has_ink is False
+    fg_rle_with_png_tag.content = ink_rle
+    assert fg_rle_with_png_tag.has_ink is True
+
+    # Omitted LAYERPROTOCOL on foreground layer defaults to RATTA_RLE
+    fg_omitted_proto = Layer({"LAYERNAME": "MAINLAYER"}, content=blank_rle)
+    assert fg_omitted_proto.bitmap_protocol == LayerProtocol.RATTA_RLE
+    assert fg_omitted_proto.has_ink is False
+
+    # Corrupt PNG bytes with LAYERPROTOCOL:PNG raise DecoderException
+    corrupt_png_bg = Layer(
+        {"LAYERNAME": "BGLAYER", "LAYERPROTOCOL": "PNG"},
+        content=b"corrupt-png-bytes",
+    )
+    assert corrupt_png_bg.bitmap_protocol == LayerProtocol.PNG
+    with pytest.raises(exceptions.DecoderException, match="failed to decode PNG"):
+        _ = corrupt_png_bg.has_ink

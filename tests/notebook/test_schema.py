@@ -386,6 +386,17 @@ def test_layer_metadata_roundtrips_wire_dict() -> None:
     assert layer.bitmap_address == 447
     assert layer.to_wire_dict() == layer_raw
 
+    png_layer_raw = {
+        "LAYERTYPE": "BACKGROUND",
+        "LAYERPROTOCOL": "PNG",
+        "LAYERNAME": "BGLAYER",
+        "LAYERBITMAP": "1024",
+    }
+    png_layer = LayerMetadata.from_params(png_layer_raw)
+    assert png_layer.protocol == LayerProtocol.PNG
+    assert isinstance(png_layer.protocol, LayerProtocol)
+    assert png_layer.to_wire_dict() == png_layer_raw
+
 
 def test_keyword_metadata_computes_zero_based_page_index_and_roundtrips() -> None:
     kw_raw = {
