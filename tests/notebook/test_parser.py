@@ -56,8 +56,8 @@ def _build_x_stream(
 
 def test_load_notebook_valid_and_single_page(test_note_path: Path) -> None:
     notebook = load_notebook(test_note_path, page_number=0)
-    assert notebook.get_total_pages() >= 1
-    assert notebook.get_page(0) is not None
+    assert notebook.total_pages >= 1
+    assert notebook.page(0) is not None
 
 
 @pytest.mark.parametrize(
@@ -99,7 +99,7 @@ def test_parse_metadata_allows_zero_pages_and_rejects_invalid_page_addresses() -
     zero_page_stream = _build_x_stream()
     metadata = parse_metadata(zero_page_stream)
     assert metadata.pages == []
-    assert metadata.get_total_pages() == 0
+    assert metadata.total_pages == 0
 
     invalid_page_stream = _build_x_stream(footer_extra=b"<PAGE1:not_an_int>")
     with pytest.raises(exceptions.ParserException, match="PAGE1"):
@@ -315,11 +315,11 @@ def test_original_supernote_a5_parser_and_nonlayered_load() -> None:
     )
 
     notebook = load(stream)
-    assert notebook.get_signature() == SupernoteParser.SN_SIGNATURES[0]
-    assert notebook.get_total_pages() == 2
-    assert notebook.get_cover().get_content() == b"COVER_1_BYTES"
-    assert notebook.get_page(0).is_layer_supported() is False
-    assert notebook.get_page(0).get_content() == b"RAW_PAGE_BITMAP"
-    assert notebook.get_page(1).get_content() is None
-    assert notebook.get_metadata().header.apply_equipment == EquipmentType.A5
-    assert notebook.get_metadata().footer.extra["EXTRA"] == ["v1", "v2", "v3"]
+    assert notebook.signature == SupernoteParser.SN_SIGNATURES[0]
+    assert notebook.total_pages == 2
+    assert notebook.cover.content == b"COVER_1_BYTES"
+    assert notebook.page(0).is_layer_supported() is False
+    assert notebook.page(0).content == b"RAW_PAGE_BITMAP"
+    assert notebook.page(1).content is None
+    assert notebook.metadata.header.apply_equipment == EquipmentType.A5
+    assert notebook.metadata.footer.extra["EXTRA"] == ["v1", "v2", "v3"]

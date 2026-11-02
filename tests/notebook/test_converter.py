@@ -35,6 +35,7 @@ from supernote.notebook.color import (
 from supernote.notebook.converter import build_visibility_overlay
 from supernote.notebook.decoder import TextElement
 from supernote.notebook.exceptions import DecoderException
+from supernote.notebook.schema import RecognitionStatus
 
 from .conftest import (
     HORIZONTAL_NOTE_PATH,
@@ -78,14 +79,14 @@ class VisualPngSnapshotExtension(PNGImageSnapshotExtension):
 def _serialize_notebook_metadata(notebook: fileformat.Notebook) -> dict:
     """Extract structural metadata that is serializable and useful for regression checks."""
     return {
-        "type": notebook.get_type(),
-        "signature": notebook.get_signature(),
-        "width": notebook.get_width(),
-        "height": notebook.get_height(),
-        "total_pages": notebook.get_total_pages(),
-        "keywords": [kw.metadata.to_wire_dict() for kw in notebook.get_keywords()],
-        "titles": [t.metadata.to_wire_dict() for t in notebook.get_titles()],
-        "links": [link.metadata.to_wire_dict() for link in notebook.get_links()],
+        "type": notebook.type,
+        "signature": notebook.signature,
+        "width": notebook.width,
+        "height": notebook.height,
+        "total_pages": notebook.total_pages,
+        "keywords": [kw.metadata.to_wire_dict() for kw in notebook.keywords],
+        "titles": [t.metadata.to_wire_dict() for t in notebook.titles],
+        "links": [link.metadata.to_wire_dict() for link in notebook.links],
     }
 
 
@@ -100,7 +101,7 @@ def test_notebook_metadata_snapshot(note_path: Path, snapshot) -> None:
 def test_notebook_png_snapshots(note_path: Path, snapshot) -> None:
     notebook = get_cached_notebook(str(note_path))
     converter = PngConverter(notebook)
-    total_pages = notebook.get_total_pages()
+    total_pages = notebook.total_pages
 
     for p in range(total_pages):
         img = converter.convert(p)
@@ -120,7 +121,7 @@ def test_notebook_text_snapshots(note_path: Path, snapshot) -> None:
     texts = {}
     if notebook.is_realtime_recognition():
         converter = TextConverter(notebook)
-        total_pages = notebook.get_total_pages()
+        total_pages = notebook.total_pages
 
         for p in range(total_pages):
             texts[f"page_{p}"] = converter.convert(p)
@@ -201,9 +202,7 @@ def test_image_converter_nonlayered_page_and_find_decoder(
     assert blank_img.getpixel((0, 0)) == color.TRANSPARENT
 
     # Non-layered page with RATTA_RLE content decodes via RattaRleDecoder
-    notebook.get_page(0).set_content(
-        bytes([decoder_mod.RattaRleDecoder.COLORCODE_BLACK, 3])
-    )
+    notebook.page(0).content = bytes([decoder_mod.RattaRleDecoder.COLORCODE_BLACK, 3])
     decoded_img = converter.convert(0)
     assert decoded_img.mode == "L"
     assert decoded_img.size == (2, 2)
@@ -211,10 +210,10 @@ def test_image_converter_nonlayered_page_and_find_decoder(
 
     # find_decoder returns FlateDecoder for SN_ASA_COMPRESS and raises on unknown protocol
     assert isinstance(
-        converter.find_decoder(notebook.get_page(1)), decoder_mod.FlateDecoder
+        converter.find_decoder(notebook.page(1)), decoder_mod.FlateDecoder
     )
     with pytest.raises(exceptions.UnknownDecodeProtocol, match="UNKNOWN_PROTO"):
-        converter.find_decoder(notebook.get_page(2))
+        converter.find_decoder(notebook.page(2))
 
 
 def test_image_converter_special_white_style_and_visibility_overlay(
@@ -244,16 +243,12 @@ def test_image_converter_special_white_style_and_visibility_overlay(
             }
         ],
     )
-    page = notebook.get_page(0)
-    page.get_layer(0).set_content(
-        bytes([decoder_mod.RattaRleDecoder.COLORCODE_BLACK, 3])
-    )
+    page = notebook.page(0)
+    page.layer(0).content = bytes([decoder_mod.RattaRleDecoder.COLORCODE_BLACK, 3])
     # LAYER1 is visible in LAYERINFO but has None content -> skipped cleanly
-    page.get_layer(1).set_content(None)
+    page.layer(1).content = None
     # BGLAYER with style_white and SPECIAL_WHITE_STYLE_BLOCK_SIZE (0x140E) is skipped as all_blank
-    page.get_layer(4).set_content(
-        b"\x00" * ImageConverter.SPECIAL_WHITE_STYLE_BLOCK_SIZE
-    )
+    page.layer(4).content = b"\x00" * ImageConverter.SPECIAL_WHITE_STYLE_BLOCK_SIZE
 
     converter = ImageConverter(notebook)
     overlay = build_visibility_overlay(
@@ -350,7 +345,7 @@ def test_text_converter_formatting(
             {"PAGEID": "P1", "RECOGNSTATUS": str(fileformat.Page.RECOGNSTATUS_DONE)}
         ],
     )
-    notebook.get_page(0).set_recogn_text(b"dummy_binary")
+    notebook.page(0).recogn_text = b"dummy_binary"
 
     elements = [
         TextElement(label="Hello", y=10),
@@ -376,21 +371,14 @@ def test_text_converter_edge_cases(sample_notebook: fileformat.Notebook) -> None
     assert converter.convert(0) is None
 
     # status != RECOGNSTATUS_DONE
-    with patch.object(sample_notebook, "is_realtime_recognition", return_value=True):
-        with patch.object(
-            sample_notebook.get_page(0), "get_recogn_status", return_value=0
-        ):
-            assert converter.convert(0) is None
+    sample_notebook.metadata.header.file_recogn_type = 1
+    sample_notebook.page(0).metadata.recogn_status = RecognitionStatus.NONE
+    assert converter.convert(0) is None
 
     # decode returns None
-    with patch.object(sample_notebook, "is_realtime_recognition", return_value=True):
-        with patch.object(
-            sample_notebook.get_page(0), "get_recogn_status", return_value=1
-        ):
-            with patch(
-                "supernote.notebook.decoder.TextDecoder.decode", return_value=None
-            ):
-                assert converter.convert(0) is None
+    sample_notebook.page(0).metadata.recogn_status = RecognitionStatus.DONE
+    with patch("supernote.notebook.decoder.TextDecoder.decode", return_value=None):
+        assert converter.convert(0) is None
 
 
 # --- SVG Converter Tests ---
@@ -448,7 +436,7 @@ def test_pdf_converter_keywords_and_landscape() -> None:
 
 
 def test_pdf_converter_links(sample_notebook: fileformat.Notebook) -> None:
-    page0 = sample_notebook.get_page(0)
+    page0 = sample_notebook.page(0)
     page0.metadata.page_id = "P0001"
 
     web_url_b64 = base64.b64encode(b"https://example.com").decode()
@@ -459,7 +447,7 @@ def test_pdf_converter_links(sample_notebook: fileformat.Notebook) -> None:
             "LINKRECT": "10,20,30,40",
             "LINKTIMESTAMP": "12345",
             "LINKFILE": "test.note",
-            "LINKFILEID": str(sample_notebook.get_fileid()),
+            "LINKFILEID": str(sample_notebook.file_id),
             "PAGEID": "P0001",
         },
         page_number=0,
@@ -498,7 +486,7 @@ def test_pdf_converter_links(sample_notebook: fileformat.Notebook) -> None:
             "LINKRECT": "10,20,30,40",
             "LINKTIMESTAMP": "12345",
             "LINKFILE": "test.note",
-            "LINKFILEID": str(sample_notebook.get_fileid()),
+            "LINKFILEID": str(sample_notebook.file_id),
             "PAGEID": "P0001",
         },
         page_number=99,

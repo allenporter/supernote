@@ -1,7 +1,7 @@
 import copy
 import io
 from collections.abc import Callable
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
@@ -96,18 +96,15 @@ def test_reconstruct_valid_notebook(
     assert len(reconstructed_bytes) > 0
 
     reloaded_notebook = load(io.BytesIO(reconstructed_bytes))
-    assert (
-        reloaded_notebook.get_total_pages()
-        == reconstructable_notebook.get_total_pages()
-    )
-    assert reloaded_notebook.get_width() == reconstructable_notebook.get_width()
-    assert reloaded_notebook.get_height() == reconstructable_notebook.get_height()
+    assert reloaded_notebook.total_pages == reconstructable_notebook.total_pages
+    assert reloaded_notebook.width == reconstructable_notebook.width
+    assert reloaded_notebook.height == reconstructable_notebook.height
 
 
 def test_reconstruct_unsupported_signature(
     sample_notebook: fileformat.Notebook,
 ) -> None:
-    sample_notebook.get_metadata().signature = "SN_SIGNATURE_OLD"
+    sample_notebook.signature = "SN_SIGNATURE_OLD"
     with pytest.raises(
         ValueError, match="Only latest file format version is supported"
     ):
@@ -138,10 +135,7 @@ def test_merge_valid_notebooks(
     merged_bytes = merge(notebook1, notebook2)
 
     merged_notebook = load(io.BytesIO(merged_bytes))
-    assert (
-        merged_notebook.get_total_pages()
-        == notebook1.get_total_pages() + notebook2.get_total_pages()
-    )
+    assert merged_notebook.total_pages == notebook1.total_pages + notebook2.total_pages
 
 
 def test_merge_unsupported_signature(
@@ -149,7 +143,7 @@ def test_merge_unsupported_signature(
 ) -> None:
     notebook1 = reconstructable_notebook_factory()
     notebook2 = reconstructable_notebook_factory()
-    notebook1.get_metadata().signature = "OLD_SIG"
+    notebook1.signature = "OLD_SIG"
     with pytest.raises(
         ValueError, match="Only latest file format version is supported"
     ):
@@ -161,7 +155,7 @@ def test_merge_mismatched_signatures(
 ) -> None:
     notebook1 = reconstructable_notebook_factory()
     notebook2 = reconstructable_notebook_factory()
-    notebook2.get_metadata().signature = "SN_SIGNATURE_OTHER"
+    notebook2.signature = "SN_SIGNATURE_OTHER"
     with pytest.raises(
         ValueError, match="File signature must be same between merging files"
     ):
@@ -173,12 +167,13 @@ def test_merge_exceeds_max_pages(
 ) -> None:
     notebook1 = reconstructable_notebook_factory()
     notebook2 = reconstructable_notebook_factory()
-    with patch.object(notebook1, "get_total_pages", return_value=5000):
-        with patch.object(notebook2, "get_total_pages", return_value=5000):
-            with pytest.raises(
-                ValueError, match="The total number of pages are limited to 9999"
-            ):
-                merge(notebook1, notebook2)
+    with patch.object(
+        fileformat.Notebook, "total_pages", new_callable=PropertyMock, return_value=5000
+    ):
+        with pytest.raises(
+            ValueError, match="The total number of pages are limited to 9999"
+        ):
+            merge(notebook1, notebook2)
 
 
 def test_merge_mismatched_header_property(
@@ -187,7 +182,7 @@ def test_merge_mismatched_header_property(
     notebook1 = reconstructable_notebook_factory()
     notebook2 = reconstructable_notebook_factory()
 
-    notebook2.get_metadata().header.device_dpi = 999
+    notebook2.metadata.header.device_dpi = 999
     with pytest.raises(
         ValueError, match="<DEVICE_DPI> property must be same between merging files"
     ):
@@ -215,10 +210,10 @@ def test_merge_validation_failure(
 def test_notebook_page_addition(
     reconstructable_notebook: fileformat.Notebook,
 ) -> None:
-    orig_pages = reconstructable_notebook.get_total_pages()
-    meta = reconstructable_notebook.get_metadata()
+    orig_pages = reconstructable_notebook.total_pages
+    meta = reconstructable_notebook.metadata
 
-    first_page = copy.deepcopy(reconstructable_notebook.get_page(0))
+    first_page = copy.deepcopy(reconstructable_notebook.page(0))
     first_meta_page = copy.deepcopy(meta.pages[0])
 
     reconstructable_notebook.pages.append(first_page)
@@ -226,7 +221,7 @@ def test_notebook_page_addition(
 
     reconstructed_bytes = reconstruct(reconstructable_notebook)
     reloaded = load(io.BytesIO(reconstructed_bytes))
-    assert reloaded.get_total_pages() == orig_pages + 1
+    assert reloaded.total_pages == orig_pages + 1
 
 
 def test_notebook_page_deletion(
@@ -237,16 +232,16 @@ def test_notebook_page_deletion(
     merged_bytes = merge(notebook1, notebook2)
     multi_page_nb = load(io.BytesIO(merged_bytes))
 
-    orig_pages = multi_page_nb.get_total_pages()
+    orig_pages = multi_page_nb.total_pages
     assert orig_pages > 1
 
-    meta = multi_page_nb.get_metadata()
+    meta = multi_page_nb.metadata
     multi_page_nb.pages.pop(0)
     meta.pages.pop(0)
 
     reconstructed_bytes = reconstruct(multi_page_nb)
     reloaded = load(io.BytesIO(reconstructed_bytes))
-    assert reloaded.get_total_pages() == orig_pages - 1
+    assert reloaded.total_pages == orig_pages - 1
 
 
 def test_notebook_page_reordering(
@@ -257,14 +252,14 @@ def test_notebook_page_reordering(
     merged_bytes = merge(notebook1, notebook2)
     multi_page_nb = load(io.BytesIO(merged_bytes))
 
-    assert multi_page_nb.get_total_pages() >= 2
-    meta = multi_page_nb.get_metadata()
+    assert multi_page_nb.total_pages >= 2
+    meta = multi_page_nb.metadata
 
     # Set distinct page IDs and stroke payloads before swapping
     multi_page_nb.pages[0].metadata.page_id = "PAGE_ZERO"
-    multi_page_nb.pages[0].set_totalpath(b"STROKE_ZERO")
+    multi_page_nb.pages[0].totalpath = b"STROKE_ZERO"
     multi_page_nb.pages[1].metadata.page_id = "PAGE_ONE"
-    multi_page_nb.pages[1].set_totalpath(b"STROKE_ONE")
+    multi_page_nb.pages[1].totalpath = b"STROKE_ONE"
 
     multi_page_nb.pages[0], multi_page_nb.pages[1] = (
         multi_page_nb.pages[1],
@@ -277,10 +272,10 @@ def test_notebook_page_reordering(
 
     reconstructed_bytes = reconstruct(multi_page_nb)
     reloaded = load(io.BytesIO(reconstructed_bytes))
-    assert reloaded.get_total_pages() == multi_page_nb.get_total_pages()
+    assert reloaded.total_pages == multi_page_nb.total_pages
     assert [
-        (reloaded.get_page(0).get_pageid(), reloaded.get_page(0).get_totalpath()),
-        (reloaded.get_page(1).get_pageid(), reloaded.get_page(1).get_totalpath()),
+        (reloaded.page(0).page_id, reloaded.page(0).totalpath),
+        (reloaded.page(1).page_id, reloaded.page(1).totalpath),
     ] == [
         ("PAGE_ONE", b"STROKE_ONE"),
         ("PAGE_ZERO", b"STROKE_ZERO"),
@@ -290,23 +285,23 @@ def test_notebook_page_reordering(
 def test_notebook_layer_changes_and_stroke_manipulation(
     reconstructable_notebook: fileformat.Notebook,
 ) -> None:
-    page = reconstructable_notebook.get_page(0)
+    page = reconstructable_notebook.page(0)
 
     fake_stroke_data = b"STROKE_PATH_BINARY_DATA_TEST"
-    page.set_totalpath(fake_stroke_data)
-    assert page.get_totalpath() == fake_stroke_data
+    page.totalpath = fake_stroke_data
+    assert page.totalpath == fake_stroke_data
 
     if page.is_layer_supported():
-        for layer in page.get_layers():
-            if layer.get_name() != "BGLAYER":
-                layer.set_content(b"MODIFIED_LAYER_CONTENT")
+        for layer in page.layers:
+            if layer.name != "BGLAYER":
+                layer.content = b"MODIFIED_LAYER_CONTENT"
 
     page.metadata.style = "user_custom_style"
     page.metadata.style_md5 = "1234567890abcdef"
 
     reconstructed_bytes = reconstruct(reconstructable_notebook)
     reloaded = load(io.BytesIO(reconstructed_bytes))
-    assert reloaded.get_page(0).get_totalpath() == fake_stroke_data
+    assert reloaded.page(0).totalpath == fake_stroke_data
 
 
 def test_notebook_keywords_titles_links_packing(
@@ -407,30 +402,21 @@ def test_notebook_keywords_titles_links_packing(
     )
 
     reconstructable_notebook.links = [l1, l2, l_far]
-    reconstructable_notebook.get_cover().set_content(b"COVER_2_IMAGE_DATA")
+    reconstructable_notebook.cover.content = b"COVER_2_IMAGE_DATA"
 
     reconstructed_bytes = reconstruct(reconstructable_notebook)
     reloaded = load(io.BytesIO(reconstructed_bytes))
 
-    assert reloaded.get_cover().get_content() == b"COVER_2_IMAGE_DATA"
-    assert [
-        (kw.get_page_number(), kw.get_keyword(), kw.get_rect())
-        for kw in reloaded.get_keywords()
-    ] == [
+    assert reloaded.cover.content == b"COVER_2_IMAGE_DATA"
+    assert [(kw.page_number, kw.keyword, kw.rect) for kw in reloaded.keywords] == [
         (0, "KW_CONTENT_1", (10, 20, 40, 60)),
         (0, "KW_CONTENT_2", (10, 20, 40, 60)),
     ]
-    assert [
-        (t.get_page_number(), t.get_position_string(), t.get_content())
-        for t in reloaded.get_titles()
-    ] == [
+    assert [(t.page_number, t.position_string, t.content) for t in reloaded.titles] == [
         (0, "00200010", b"TITLE_CONTENT_1"),
         (0, "00200010", b"TITLE_CONTENT_2"),
     ]
-    assert [
-        (link.get_page_number(), link.get_rect(), link.get_content())
-        for link in reloaded.get_links()
-    ] == [
+    assert [(link.page_number, link.rect, link.content) for link in reloaded.links] == [
         (0, (10, 20, 40, 60), b"LINK_CONTENT_1"),
         (0, (10, 20, 40, 60), b"LINK_CONTENT_2"),
     ]
@@ -444,15 +430,15 @@ def test_find_background_content_from_page(
     assert _find_background_content_from_page(mock_page) is None
 
     notebook = reconstructable_notebook_factory()
-    real_page = notebook.get_page(0)
-    for layer in real_page.get_layers():
-        if layer.get_name() == "BGLAYER":
+    real_page = notebook.page(0)
+    for layer in real_page.layers:
+        if layer.name == "BGLAYER":
             layer.metadata.name = "OTHERLAYER"
 
     assert _find_background_content_from_page(real_page) is None
 
     notebook2 = reconstructable_notebook_factory()
-    real_page2 = notebook2.get_page(0)
+    real_page2 = notebook2.page(0)
     assert _find_background_content_from_page(real_page2) is not None
 
 
@@ -461,7 +447,7 @@ def test_reconstruct_and_merge_reject_missing_metadata(
 ) -> None:
     notebook1 = reconstructable_notebook_factory()
     notebook2 = reconstructable_notebook_factory()
-    object.__setattr__(notebook2, "metadata", None)
+    object.__setattr__(notebook2, "_metadata", None)
 
     with pytest.raises(
         exceptions.ParserException, match="notebook metadata is missing"
@@ -480,32 +466,32 @@ def test_reconstruct_is_idempotent_and_preserves_page_layers_metadata(
     first_bytes = reconstruct(reconstructable_notebook)
     second_bytes = reconstruct(reconstructable_notebook)
     assert first_bytes == second_bytes
-    assert reconstructable_notebook.get_page(0).metadata.layers is not None
+    assert reconstructable_notebook.page(0).metadata.layers is not None
 
 
 def test_reconstruct_handles_empty_named_layer_and_user_style_without_md5(
     reconstructable_notebook: fileformat.Notebook,
 ) -> None:
-    page = reconstructable_notebook.get_page(0)
+    page = reconstructable_notebook.page(0)
     page.metadata.style = "user_custom"
     page.metadata.style_md5 = None
 
     # Named layer with None bitmap content should pack as LAYERBITMAP=0
-    layer1 = page.get_layer(1)
+    layer1 = page.layer(1)
     layer1.metadata.name = LayerName.LAYER1
     layer1.metadata.protocol = LayerProtocol.RATTA_RLE
     layer1.metadata.layer_type = LayerType.NOTE
-    layer1.set_content(None)
+    layer1.content = None
 
     reconstructed_bytes = reconstruct(reconstructable_notebook)
     reloaded = load(io.BytesIO(reconstructed_bytes))
-    assert reloaded.get_page(0).get_layer(1).get_content() is None
+    assert reloaded.page(0).layer(1).content is None
 
 
 def test_reconstruct_rejects_page_missing_pagestyle(
     reconstructable_notebook: fileformat.Notebook,
 ) -> None:
-    reconstructable_notebook.get_page(0).metadata.style = None
+    reconstructable_notebook.page(0).metadata.style = None
 
     with pytest.raises(
         exceptions.ManipulatorException, match="page 0 metadata is missing PAGESTYLE"

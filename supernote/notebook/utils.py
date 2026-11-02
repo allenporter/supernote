@@ -34,16 +34,16 @@ class WorkaroundPageWrapper(fileformat.Page):
     def from_page(cls, page: fileformat.Page) -> Self:
         wrapped_page = cls(page.metadata)
         # copy contents from the original page object
-        wrapped_page.set_content(page.get_content())
-        wrapped_page.set_totalpath(page.get_totalpath())
-        for i, layer in enumerate(page.get_layers()):
-            wrapped_page.get_layer(i).set_content(layer.get_content())
+        wrapped_page.content = page.content
+        wrapped_page.totalpath = page.totalpath
+        for i, layer in enumerate(page.layers):
+            wrapped_page.layer(i).content = layer.content
         return wrapped_page
 
     def _override_layer_name(self) -> None:
         mainlayer_visited = False
-        for layer in self.get_layers():
-            name = layer.get_name()
+        for layer in self.layers:
+            name = layer.name
             if name is None:
                 continue
             if mainlayer_visited and name == schema.LayerName.MAINLAYER:
