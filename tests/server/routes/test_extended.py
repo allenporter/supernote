@@ -359,19 +359,22 @@ async def test_handle_list_system_tasks_excludes_other_users_tasks(
 
 async def test_file_processing_status(
     client: TestClient,
+    auth_headers: dict[str, str],
     extended_client: ExtendedClient,
     session_manager: DatabaseSessionManager,
     test_user_id: int,
 ) -> None:
     # Invalid DTO
-    with pytest.raises(ApiException):
-        await extended_client._client.post(
-            "/api/extended/file/processing/status",
-            json={"invalid": "payload"},
-        )
+    bad_resp = await client.post(
+        "/api/extended/file/processing/status",
+        json={"invalid": "payload"},
+        headers=auth_headers,
+    )
+    assert bad_resp.status == 400
 
+    snowflake_id = 772252421643567298
     async with session_manager.session() as session:
-        for fid in (10, 20, 30, 40):
+        for fid in (10, 20, 30, 40, 60, snowflake_id):
             session.add(
                 UserFileDO(
                     id=fid,
@@ -399,22 +402,46 @@ async def test_file_processing_status(
         session.add(
             SystemTaskDO(file_id=40, task_type="PNG", key="p0", status="PENDING")
         )
+        # 64-bit Snowflake ID (> Number.MAX_SAFE_INTEGER in JS, sent as string)
+        session.add(
+            SystemTaskDO(
+                file_id=snowflake_id, task_type="OCR", key="p0", status="PROCESSING"
+            )
+        )
         await session.commit()
 
-    res = await extended_client.get_processing_status(file_ids=[10, 20, 30, 40, 50])
+    assert client.app is not None
+    empty_res = await extended_client.get_processing_status(file_ids=[])
+    assert empty_res.success
+    assert empty_res.status_map == {}
+
+    res = await extended_client.get_processing_status(file_ids=[10, 20, 30, 40, 50, 60])
     assert res.success
-    status_map = res.status_map
-    assert status_map["10"] == ProcessingStatus.FAILED
-    assert status_map["20"] == ProcessingStatus.PROCESSING
-    assert status_map["30"] == ProcessingStatus.COMPLETED
-    assert status_map["40"] == ProcessingStatus.PENDING
-    assert status_map["50"] == ProcessingStatus.NONE
+    assert res.status_map == {
+        "10": ProcessingStatus.FAILED,
+        "20": ProcessingStatus.PROCESSING,
+        "30": ProcessingStatus.COMPLETED,
+        "40": ProcessingStatus.PENDING,
+        "50": ProcessingStatus.NONE,
+        "60": ProcessingStatus.NONE,
+    }
+
+    raw_resp = await client.post(
+        "/api/extended/file/processing/status",
+        json={"fileIds": [str(snowflake_id)]},
+        headers=auth_headers,
+    )
+    assert raw_resp.status == 200
+    assert await raw_resp.json() == {
+        "success": True,
+        "statusMap": {str(snowflake_id): "PROCESSING"},
+    }
 
     with (
         patch.object(
-            client.app["session_manager"],
-            "session",
-            side_effect=Exception("Session fail"),
+            client.app["processor_service"],
+            "get_file_processing_statuses",
+            side_effect=RuntimeError("Service fail"),
         ),
         pytest.raises(ApiException),
     ):

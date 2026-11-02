@@ -620,3 +620,58 @@ class ProcessorService:
             stmt = stmt.order_by(SystemTaskDO.update_time.desc()).limit(limit)
             result = await session.execute(stmt)
             return list(result.scalars().all())
+
+    def _resolve_file_status(
+        self, file_id: int, tasks: list[SystemTaskDO]
+    ) -> ProcessingStatus:
+        """Aggregate task rows and active queue membership into a single file status."""
+        if file_id in self.processing_files:
+            if any(t.status == ProcessingStatus.PROCESSING for t in tasks):
+                return ProcessingStatus.PROCESSING
+            return ProcessingStatus.PENDING
+        if not tasks:
+            return ProcessingStatus.NONE
+        if any(t.status == ProcessingStatus.FAILED for t in tasks):
+            return ProcessingStatus.FAILED
+        if any(t.status == ProcessingStatus.PROCESSING for t in tasks):
+            return ProcessingStatus.PROCESSING
+        if all(t.status == ProcessingStatus.COMPLETED for t in tasks):
+            return ProcessingStatus.COMPLETED
+        return ProcessingStatus.PENDING
+
+    async def get_file_processing_statuses(
+        self,
+        user_id: int,
+        file_ids: list[int],
+    ) -> dict[int, ProcessingStatus]:
+        """Return aggregated processing status for each requested file owned by user_id."""
+        if not file_ids:
+            return {}
+
+        async with self.session_manager.session() as session:
+            owned_rows = await session.execute(
+                select(UserFileDO.id).where(
+                    UserFileDO.user_id == user_id,
+                    UserFileDO.id.in_(file_ids),
+                )
+            )
+            owned_file_ids = set(owned_rows.scalars().all())
+
+            tasks_by_file: dict[int, list[SystemTaskDO]] = {
+                fid: [] for fid in owned_file_ids
+            }
+            if owned_file_ids:
+                task_rows = await session.execute(
+                    select(SystemTaskDO).where(SystemTaskDO.file_id.in_(owned_file_ids))
+                )
+                for task in task_rows.scalars().all():
+                    tasks_by_file[task.file_id].append(task)
+
+        return {
+            file_id: (
+                self._resolve_file_status(file_id, tasks_by_file[file_id])
+                if file_id in owned_file_ids
+                else ProcessingStatus.NONE
+            )
+            for file_id in file_ids
+        }

@@ -9,7 +9,6 @@ import logging
 
 from aiohttp import web
 from mashumaro.exceptions import InvalidFieldValue, MissingField
-from sqlalchemy import select
 
 from supernote.models.base import ProcessingStatus
 from supernote.models.extended import (
@@ -33,10 +32,9 @@ from supernote.server.ai.models.embedding import EmbeddingModel
 from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.ai.models.summary import SummaryModel
 from supernote.server.config import ServerConfig
-from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.exceptions import SupernoteError
 from supernote.server.services.conversion import ConversionService
+from supernote.server.services.processor import ProcessorService
 from supernote.server.services.search import SearchService
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
@@ -86,7 +84,7 @@ async def handle_list_system_tasks(request: web.Request) -> web.Response:
     # Purpose: Extended API to list system tasks for the control panel.
     user_email = request["user"]
     user_service: UserService = request.app["user_service"]
-    processor_service = request.app["processor_service"]
+    processor_service: ProcessorService = request.app["processor_service"]
 
     user_id = await user_service.get_user_id(user_email)
     if not user_id:
@@ -123,51 +121,29 @@ async def handle_file_processing_status(request: web.Request) -> web.Response:
     try:
         data = await request.json()
         req_dto = FileProcessingStatusDTO.from_dict(data)
-    except Exception as e:
+    except (
+        json.JSONDecodeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        MissingField,
+        InvalidFieldValue,
+    ) as e:
         return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
 
     user_service: UserService = request.app["user_service"]
-    session_manager = request.app["session_manager"]
+    processor_service: ProcessorService = request.app["processor_service"]
 
     user_id = await user_service.get_user_id(user_email)
     if not user_id:
         return web.json_response({"error": "User not found"}, status=404)
 
     try:
-        status_map = {}
-        async with session_manager.session() as session:
-            for file_id in req_dto.file_ids:
-                # Aggregate tasks for this file belonging to the requesting user
-                stmt = (
-                    select(SystemTaskDO)
-                    .join(UserFileDO, SystemTaskDO.file_id == UserFileDO.id)
-                    .where(
-                        SystemTaskDO.file_id == file_id,
-                        UserFileDO.user_id == user_id,
-                    )
-                )
-                result = await session.execute(stmt)
-                tasks = result.scalars().all()
-
-                if not tasks:
-                    status_map[str(file_id)] = ProcessingStatus.NONE
-                    continue
-
-                # Logic:
-                # If any FAILED -> FAILED
-                # If any PROCESSING -> PROCESSING
-                # If all COMPLETED -> COMPLETED
-                # Else -> PENDING
-
-                if any(t.status == ProcessingStatus.FAILED for t in tasks):
-                    status_map[str(file_id)] = ProcessingStatus.FAILED
-                elif any(t.status == ProcessingStatus.PROCESSING for t in tasks):
-                    status_map[str(file_id)] = ProcessingStatus.PROCESSING
-                elif all(t.status == ProcessingStatus.COMPLETED for t in tasks):
-                    status_map[str(file_id)] = ProcessingStatus.COMPLETED
-                else:
-                    status_map[str(file_id)] = ProcessingStatus.PENDING
-
+        statuses = await processor_service.get_file_processing_statuses(
+            user_id=user_id,
+            file_ids=req_dto.file_ids,
+        )
+        status_map = {str(fid): status for fid, status in statuses.items()}
         return web.json_response(
             FileProcessingStatusVO(status_map=status_map).to_dict()
         )

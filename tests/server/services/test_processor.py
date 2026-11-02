@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
-from supernote.models.base import TaskType
+from supernote.models.base import ProcessingStatus, TaskType
 from supernote.server.ai.models.fake.embedding import FakeEmbeddingModel
 from supernote.server.ai.models.fake.ocr import FakeOcrModel
 from supernote.server.ai.models.fake.summary import FakeSummaryModel
@@ -1028,3 +1028,82 @@ async def test_sync_completed_event_enqueues_new_and_updated_notes(
     assert 9201 not in processor_service.processing_files
     assert 9204 not in processor_service.processing_files
     assert {entity.id, 9203}.issubset(processor_service.processing_files)
+
+
+async def test_get_file_processing_statuses(
+    processor_service: ProcessorService,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    """Verify batched file processing status aggregation, ownership scoping, and queue overrides."""
+    assert await processor_service.get_file_processing_statuses(test_user_id, []) == {}
+
+    other_user_id = test_user_id + 999
+    async with session_manager.session() as session:
+        for fid in (10, 20, 30, 40, 60):
+            session.add(
+                UserFileDO(
+                    id=fid,
+                    user_id=test_user_id,
+                    file_name=f"Note{fid}.note",
+                    directory_id=0,
+                )
+            )
+        session.add(
+            UserFileDO(
+                id=77,
+                user_id=other_user_id,
+                file_name="OtherUser.note",
+                directory_id=0,
+            )
+        )
+        session.add_all(
+            [
+                SystemTaskDO(file_id=10, task_type="PNG", key="p0", status="FAILED"),
+                SystemTaskDO(file_id=10, task_type="OCR", key="p0", status="COMPLETED"),
+                SystemTaskDO(
+                    file_id=20, task_type="PNG", key="p0", status="PROCESSING"
+                ),
+                SystemTaskDO(file_id=30, task_type="PNG", key="p0", status="COMPLETED"),
+                SystemTaskDO(file_id=40, task_type="PNG", key="p0", status="PENDING"),
+                SystemTaskDO(file_id=77, task_type="PNG", key="p0", status="FAILED"),
+            ]
+        )
+        await session.commit()
+
+    statuses = await processor_service.get_file_processing_statuses(
+        user_id=test_user_id,
+        file_ids=[10, 20, 30, 40, 50, 60, 77],
+    )
+    assert statuses == {
+        10: ProcessingStatus.FAILED,
+        20: ProcessingStatus.PROCESSING,
+        30: ProcessingStatus.COMPLETED,
+        40: ProcessingStatus.PENDING,
+        50: ProcessingStatus.NONE,
+        60: ProcessingStatus.NONE,
+        77: ProcessingStatus.NONE,
+    }
+
+    # Enqueue files via the public NoteUpdatedEvent handler (workers not started):
+    # - 60 has no SystemTaskDO rows yet -> PENDING
+    # - 30 was previously COMPLETED and is now re-queued -> PENDING
+    # - 20 already has an active PROCESSING task -> PROCESSING
+    for fid in (20, 30, 60):
+        await processor_service.handle_note_updated(
+            NoteUpdatedEvent(
+                file_id=fid,
+                user_id=test_user_id,
+                file_path=f"/Note/Note{fid}.note",
+            )
+        )
+
+    queued_statuses = await processor_service.get_file_processing_statuses(
+        user_id=test_user_id,
+        file_ids=[20, 30, 60],
+    )
+    assert queued_statuses == {
+        20: ProcessingStatus.PROCESSING,
+        30: ProcessingStatus.PENDING,
+        60: ProcessingStatus.PENDING,
+    }
