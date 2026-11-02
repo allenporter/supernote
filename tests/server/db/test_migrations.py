@@ -764,46 +764,39 @@ def test_seed_sync_initialized_for_existing_users_migration(
     engine.dispose()
 
 
-def test_add_note_metadata_and_page_signals_migration(
+def test_add_note_and_page_metadata_tables_migration(
     tmp_path: Path, alembic_config: Config
 ) -> None:
-    """Verify migration d5e6f7a8b9c0 creates f_note_metadata and adds page signals cleanly."""
-    db_path = tmp_path / "note_metadata_signals.db"
+    """Verify migration d5e6f7a8b9c0 creates f_note_metadata and f_note_page_metadata cleanly."""
+    db_path = tmp_path / "note_metadata_tables.db"
     shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
     url = f"sqlite:///{db_path}"
     alembic_config.set_main_option("sqlalchemy.url", url)
     command.upgrade(alembic_config, "c3d4e5f6a7b8")
 
     engine = create_engine(url)
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                "INSERT INTO f_note_page_content "
-                "(id, file_id, page_index, page_id, content_hash, text_content, create_time, update_time) "
-                "VALUES (9501, 1001, 0, 'P20260101000000abc', 'h0', 'existing ocr', 0, 0)"
-            )
-        )
-
     command.upgrade(alembic_config, "d5e6f7a8b9c0")
 
     with engine.begin() as conn:
-        row = conn.execute(
-            text(
-                "SELECT page_style, has_ink, has_drawables, text_content "
-                "FROM f_note_page_content WHERE id = 9501"
-            )
-        ).fetchone()
-        assert row is not None
-        assert tuple(row) == (None, None, None, "existing ocr")
-
         conn.execute(
             text(
                 "INSERT INTO f_note_metadata "
                 "(user_id, file_id, native_file_id, file_type, equipment, signature, "
                 "width, height, total_pages, recogn_language, is_realtime_recognition, "
-                "metadata_json, create_time, update_time) "
+                "header_json, footer_json, create_time, update_time) "
                 "VALUES (1, 1001, 'F1001', 'note', 'N5', 'SN_FILE_VER_20230015', "
-                "1920, 2560, 1, 'en_US', 1, '{}', 100, 100)"
+                "1920, 2560, 1, 'en_US', 1, '{}', '{}', 100, 100)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO f_note_page_metadata "
+                "(user_id, file_id, page_index, page_id, page_style, style_hash, "
+                "orientation, recogn_status, has_ink, has_drawables, has_textbox, "
+                "has_vector_graph, has_content, page_json, keywords_json, titles_json, "
+                "links_json, create_time, update_time) "
+                "VALUES (1, 1001, 0, 'P20260101000000abc', 'style_5mm_dots', NULL, "
+                "'1000', 0, 1, 1, 0, 0, 1, '{}', '[]', '[]', '[]', 100, 100)"
             )
         )
         meta_row = conn.execute(
@@ -815,17 +808,23 @@ def test_add_note_metadata_and_page_signals_migration(
         assert meta_row is not None
         assert tuple(meta_row) == ("F1001", "N5", 1)
 
+        page_row = conn.execute(
+            text(
+                "SELECT page_id, page_style, has_ink, has_drawables, has_content "
+                "FROM f_note_page_metadata WHERE user_id = 1 AND file_id = 1001 AND page_index = 0"
+            )
+        ).fetchone()
+        assert page_row is not None
+        assert tuple(page_row) == (
+            "P20260101000000abc",
+            "style_5mm_dots",
+            1,
+            1,
+            1,
+        )
+
     command.downgrade(alembic_config, "c3d4e5f6a7b8")
     with engine.connect() as conn:
-        cols = {
-            r[1]
-            for r in conn.execute(
-                text("PRAGMA table_info(f_note_page_content)")
-            ).fetchall()
-        }
-        assert "page_style" not in cols
-        assert "has_ink" not in cols
-        assert "has_drawables" not in cols
         tables = {
             r[0]
             for r in conn.execute(
@@ -833,5 +832,6 @@ def test_add_note_metadata_and_page_signals_migration(
             ).fetchall()
         }
         assert "f_note_metadata" not in tables
+        assert "f_note_page_metadata" not in tables
 
     engine.dispose()

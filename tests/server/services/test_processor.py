@@ -16,6 +16,7 @@ from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NoteMetadataDO,
     NotePageContentDO,
+    NotePageMetadataDO,
     SystemTaskDO,
 )
 from supernote.server.db.models.summary import SummaryDO
@@ -188,8 +189,31 @@ async def test_handle_note_deleted_cleanup(
                 file_id=file_id,
                 file_type="note",
                 total_pages=2,
-                metadata_json="{}",
+                header_json="{}",
+                footer_json="{}",
             )
+        )
+        session.add_all(
+            [
+                NotePageMetadataDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="p0",
+                    has_ink=True,
+                    has_drawables=True,
+                    has_content=True,
+                ),
+                NotePageMetadataDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    page_index=1,
+                    page_id="p1",
+                    has_ink=True,
+                    has_drawables=True,
+                    has_content=True,
+                ),
+            ]
         )
         session.add(
             NotePageContentDO(
@@ -284,6 +308,18 @@ async def test_handle_note_deleted_cleanup(
     # Verify DB records for file_id and its now-empty group are gone, while shared group & surviving child remain
     async with session_manager.session() as session:
         assert await session.get(NoteMetadataDO, (test_user_id, file_id)) is None
+        page_metas = (
+            (
+                await session.execute(
+                    select(NotePageMetadataDO).where(
+                        NotePageMetadataDO.file_id == file_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(page_metas) == 0
         contents = (
             (
                 await session.execute(
@@ -1147,14 +1183,14 @@ async def test_get_file_processing_statuses(
     }
 
 
-async def test_get_note_metadata(
+async def test_get_note_and_page_metadata(
     processor_service: ProcessorService,
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
     file_service: FileService,
     test_user_id: int,
 ) -> None:
-    """Verify get_note_metadata returns structured notebook + page metadata and enforces ownership."""
+    """Verify get_note_metadata and get_note_page_metadata return separated notebook/page metadata and enforce ownership."""
     hashing = PageHashingModule(file_service=file_service)
 
     # Legacy pre-PAGEID note with keywords + titles (philips/test.note),
@@ -1206,7 +1242,31 @@ async def test_get_note_metadata(
                     file_id=504,
                     file_type="note",
                     total_pages=1,
-                    metadata_json="not-json",
+                    header_json="not-json",
+                    footer_json="{}",
+                ),
+                NotePageMetadataDO(
+                    user_id=test_user_id,
+                    file_id=504,
+                    page_index=0,
+                    page_id="p0",
+                    page_json="not-json",
+                ),
+                UserFileDO(
+                    id=507,
+                    user_id=test_user_id,
+                    file_name="ListHeader.note",
+                    storage_key="list_header_key",
+                    directory_id=0,
+                    is_active="Y",
+                ),
+                NoteMetadataDO(
+                    user_id=test_user_id,
+                    file_id=507,
+                    file_type="note",
+                    total_pages=1,
+                    header_json="[]",
+                    footer_json="{}",
                 ),
                 UserFileDO(
                     id=505,
@@ -1229,7 +1289,18 @@ async def test_get_note_metadata(
     assert await processor_service.get_note_metadata(test_user_id + 1, 501) is None
     assert await processor_service.get_note_metadata(test_user_id, 503) is None
     assert await processor_service.get_note_metadata(test_user_id, 504) is None
+    assert await processor_service.get_note_metadata(test_user_id, 507) is None
 
+    assert await processor_service.get_note_page_metadata(test_user_id, 99999) is None
+    assert await processor_service.get_note_page_metadata(test_user_id + 1, 501) is None
+    assert await processor_service.get_note_page_metadata(test_user_id, 503) is None
+
+    # Corrupt page_json gracefully falls back to five_star == []
+    corrupt_pages = await processor_service.get_note_page_metadata(test_user_id, 504)
+    assert corrupt_pages is not None
+    assert corrupt_pages.pages[0].five_star == []
+
+    # Legacy pre-PAGEID note (501) gets concrete True booleans on NotePageMetadataDO!
     vo_501 = await processor_service.get_note_metadata(test_user_id, 501)
     assert vo_501 is not None
     assert vo_501.file_id == 501
@@ -1237,25 +1308,39 @@ async def test_get_note_metadata(
     assert vo_501.total_pages == 2
     assert len(vo_501.keywords) == 2
     assert len(vo_501.titles) == 2
-    assert len(vo_501.pages) == 2
-    assert vo_501.pages[0].has_ink is None
-    assert vo_501.pages[0].has_drawables is None
-    assert vo_501.pages[0].has_content is True
-    assert vo_501.pages[0].style_label == "8mm Ruled Line"
+
+    pages_501 = await processor_service.get_note_page_metadata(test_user_id, 501)
+    assert pages_501 is not None
+    assert len(pages_501.pages) == 2
+    assert pages_501.pages[0].has_ink is True
+    assert pages_501.pages[0].has_drawables is True
+    assert pages_501.pages[0].has_content is True
+    assert pages_501.pages[0].style_label == "8mm Ruled Line"
 
     vo_502 = await processor_service.get_note_metadata(test_user_id, 502)
     assert vo_502 is not None
     assert len(vo_502.links) == 8
     assert any(lk.target is not None for lk in vo_502.links)
-    assert vo_502.pages[0].has_ink is True
-    assert vo_502.pages[0].has_drawables is True
-    assert vo_502.pages[0].has_content is True
 
-    vo_505 = await processor_service.get_note_metadata(test_user_id, 505)
-    assert vo_505 is not None
-    assert [p.has_ink for p in vo_505.pages] == [True, False, True]
-    assert [p.has_drawables for p in vo_505.pages] == [True, False, True]
-    assert [p.has_content for p in vo_505.pages] == [True, False, True]
+    pages_502 = await processor_service.get_note_page_metadata(test_user_id, 502)
+    assert pages_502 is not None
+    assert pages_502.pages[0].has_ink is True
+    assert pages_502.pages[0].has_drawables is True
+    assert pages_502.pages[0].has_content is True
+    assert len(pages_502.pages[0].links) > 0
+
+    pages_505 = await processor_service.get_note_page_metadata(test_user_id, 505)
+    assert pages_505 is not None
+    assert [p.has_ink for p in pages_505.pages] == [True, False, True]
+    assert [p.has_drawables for p in pages_505.pages] == [True, False, True]
+    assert [p.has_content for p in pages_505.pages] == [True, False, True]
+
+    sliced_505 = await processor_service.get_note_page_metadata(
+        test_user_id, 505, start_index=1, end_index=2
+    )
+    assert sliced_505 is not None
+    assert sliced_505.total_pages == 3
+    assert [p.page_index for p in sliced_505.pages] == [1, 2]
 
 
 async def test_process_file_serializes_same_file_concurrency(

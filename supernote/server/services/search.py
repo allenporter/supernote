@@ -9,9 +9,16 @@ from sqlalchemy import select
 from supernote.server.ai.base import AIError
 from supernote.server.ai.models.embedding import EmbeddingModel, EmbeddingTaskType
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.db.models.note_processing import (
+    NotePageContentDO,
+    NotePageMetadataDO,
+)
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.utils.note_content import format_page_metadata, infer_page_date
+from supernote.server.utils.note_content import (
+    extract_page_keyword_texts,
+    format_page_metadata,
+    infer_page_date,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -291,16 +298,39 @@ class SearchService:
         if page_index is not None:
             return pages[0].text_content
 
+        page_indices = [p.page_index for p in pages]
+        async with self.session_manager.session() as session:
+            page_meta_rows = (
+                (
+                    await session.execute(
+                        select(NotePageMetadataDO).where(
+                            NotePageMetadataDO.user_id == user_id,
+                            NotePageMetadataDO.file_id == file_id,
+                            NotePageMetadataDO.page_index.in_(page_indices),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        page_meta_by_index = {pm.page_index: pm for pm in page_meta_rows}
+
         # Aggregated transcript with metadata
         text_parts = []
         for p in pages:
             if p.text_content:
+                pm = page_meta_by_index.get(p.page_index)
                 metadata = format_page_metadata(
                     page_index=p.page_index,
                     page_id=p.page_id,
                     file_name=file_do.file_name,
                     notebook_create_time=file_do.create_time,
-                    page_style=p.page_style,
+                    page_style=pm.page_style if pm is not None else None,
+                    keywords=(
+                        extract_page_keyword_texts(pm.keywords_json)
+                        if pm is not None
+                        else None
+                    ),
                     include_section_divider=True,
                 )
                 text_parts.append(f"{metadata}\n{p.text_content}")

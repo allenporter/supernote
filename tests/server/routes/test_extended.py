@@ -697,6 +697,8 @@ async def test_extended_note_metadata_endpoint_and_errors(
     # Before PageHashingModule runs -> 404
     with pytest.raises(ApiException):
         await extended_client.get_note_metadata(file_id=file_id)
+    with pytest.raises(ApiException):
+        await extended_client.get_note_page_metadata(file_id=file_id)
 
     hashing = PageHashingModule(file_service=file_service)
     assert await hashing.run(file_id, session_manager) is True
@@ -706,25 +708,42 @@ async def test_extended_note_metadata_endpoint_and_errors(
     assert meta_vo.file_id == file_id
     assert meta_vo.total_pages == 3
     assert len(meta_vo.titles) == 4
-    assert meta_vo.pages[0].has_ink is True
-    assert meta_vo.pages[0].has_drawables is True
-    assert meta_vo.pages[0].has_content is True
 
-    # Browser-style string fileId wire payload
-    str_resp = await client.post(
-        "/api/extended/file/note/metadata",
-        json={"fileId": str(file_id)},
-        headers=auth_headers,
-    )
-    assert str_resp.status == 200
+    page_meta_vo = await extended_client.get_note_page_metadata(file_id=file_id)
+    assert page_meta_vo.success is True
+    assert page_meta_vo.file_id == file_id
+    assert page_meta_vo.total_pages == 3
+    assert len(page_meta_vo.pages) == 3
+    assert page_meta_vo.pages[0].has_ink is True
+    assert page_meta_vo.pages[0].has_drawables is True
+    assert page_meta_vo.pages[0].has_content is True
 
-    # Invalid DTO -> 400
-    bad_resp = await client.post(
-        "/api/extended/file/note/metadata",
-        json={"invalid": "payload"},
-        headers=auth_headers,
+    sliced_vo = await extended_client.get_note_page_metadata(
+        file_id=file_id, start_index=1, end_index=2
     )
-    assert bad_resp.status == 400
+    assert sliced_vo.success is True
+    assert sliced_vo.total_pages == 3
+    assert [p.page_index for p in sliced_vo.pages] == [1, 2]
+
+    # Browser-style string fileId wire payload on both endpoints
+    for route_path in (
+        "/api/extended/file/note/metadata",
+        "/api/extended/file/note/page/metadata",
+    ):
+        str_resp = await client.post(
+            route_path,
+            json={"fileId": str(file_id)},
+            headers=auth_headers,
+        )
+        assert str_resp.status == 200
+
+        # Invalid DTO -> 400
+        bad_resp = await client.post(
+            route_path,
+            json={"invalid": "payload"},
+            headers=auth_headers,
+        )
+        assert bad_resp.status == 400
 
     # User not found -> 404
     with (
@@ -732,6 +751,11 @@ async def test_extended_note_metadata_endpoint_and_errors(
         pytest.raises(ApiException),
     ):
         await extended_client.get_note_metadata(file_id=file_id)
+    with (
+        patch.object(user_service, "get_user_id", return_value=None),
+        pytest.raises(ApiException),
+    ):
+        await extended_client.get_note_page_metadata(file_id=file_id)
 
     # Uncaught exception -> 500
     with (
@@ -743,3 +767,12 @@ async def test_extended_note_metadata_endpoint_and_errors(
         pytest.raises(ApiException),
     ):
         await extended_client.get_note_metadata(file_id=file_id)
+    with (
+        patch.object(
+            client.app["processor_service"],
+            "get_note_page_metadata",
+            side_effect=RuntimeError("page metadata boom"),
+        ),
+        pytest.raises(ApiException),
+    ):
+        await extended_client.get_note_page_metadata(file_id=file_id)

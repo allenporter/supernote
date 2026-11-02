@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import time
 from functools import partial
@@ -13,12 +14,14 @@ from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NoteMetadataDO,
     NotePageContentDO,
+    NotePageMetadataDO,
     SystemTaskDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.utils.hashing import get_md5_hash
+from supernote.server.utils.note_content import keyword_to_vo, link_to_vo, title_to_vo
 from supernote.server.utils.paths import get_page_png_path, is_valid_page_id
 
 logger = logging.getLogger(__name__)
@@ -32,7 +35,9 @@ class PageHashingModule(ProcessorModule):
     """Module responsible for detecting changes in .note files at the page level.
 
     This module performs the following:
-    - Parses the binary .note file using `SupernoteParser`.
+    - Parses the binary .note file using `load_notebook(..., policy="loose")`.
+    - Persists notebook-level metadata (`NoteMetadataDO`) and per-page structural/ink
+      metadata (`NotePageMetadataDO`) across all pages `0..total_pages - 1`.
     - Computes a unique MD5 hash for each page based on its layer metadata.
     - Updates the `NotePageContentDO` table:
         - Creates entries for new pages.
@@ -76,12 +81,10 @@ class PageHashingModule(ProcessorModule):
         page_id: str | None = None,
         **kwargs: object,
     ) -> None:
-        """Parses the .note file, computes page hashes, and updates NotePageContentDO."""
+        """Parses the .note file, persists metadata, computes page hashes, and updates NotePageContentDO."""
         logger.info(f"Starting PageHashingModule for file_id={file_id}")
 
-        # Resolve file path
         async with session_manager.session() as session:
-            # Get UserFileDO to find owner & storage key
             result = await session.execute(
                 select(UserFileDO).where(UserFileDO.id == file_id)
             )
@@ -96,9 +99,6 @@ class PageHashingModule(ProcessorModule):
                 logger.error(f"File {file_id} has no storage_key")
                 return
 
-        # Construct real OS path via BlobStorage (No DB access needed here)
-        # This assumes LocalBlobStorage. For S3, we'd need to stream,
-        # but SupernoteParser currently expects a file path.
         abs_path = self.file_service.blob_storage.get_blob_path(
             USER_DATA_BUCKET, storage_key
         )
@@ -116,7 +116,8 @@ class PageHashingModule(ProcessorModule):
         total_pages = metadata.total_pages
         equipment = metadata.header.apply_equipment
         equipment_str = str(equipment) if equipment is not None else None
-        metadata_json = metadata.to_json()
+        header_json = json.dumps(metadata.header.to_wire_dict(), ensure_ascii=False)
+        footer_json = json.dumps(metadata.footer.to_wire_dict(), ensure_ascii=False)
 
         now = int(time.time() * 1000)
         async with session_manager.session() as session:
@@ -134,7 +135,8 @@ class PageHashingModule(ProcessorModule):
                     total_pages=total_pages,
                     recogn_language=metadata.header.file_recogn_language,
                     is_realtime_recognition=notebook.is_realtime_recognition(),
-                    metadata_json=metadata_json,
+                    header_json=header_json,
+                    footer_json=footer_json,
                     create_time=now,
                     update_time=now,
                 )
@@ -150,111 +152,164 @@ class PageHashingModule(ProcessorModule):
                         "total_pages": total_pages,
                         "recogn_language": metadata.header.file_recogn_language,
                         "is_realtime_recognition": notebook.is_realtime_recognition(),
-                        "metadata_json": metadata_json,
+                        "header_json": header_json,
+                        "footer_json": footer_json,
                         "update_time": now,
                     },
                 )
             )
             await session.execute(upsert_meta)
 
+            for i in range(total_pages):
+                page_info = metadata.pages[i]
+                page_obj = notebook.pages[i]
+                raw_page_id = page_info.page_id or ""
+                style_hash = page_obj.style_hash or None
+                orientation = str(page_obj.orientation)
+                recogn_status = int(page_obj.recogn_status)
+                page_json = json.dumps(page_info.to_wire_dict(), ensure_ascii=False)
+                keywords_json = json.dumps(
+                    [keyword_to_vo(kw).to_dict() for kw in page_obj.keywords],
+                    ensure_ascii=False,
+                )
+                titles_json = json.dumps(
+                    [title_to_vo(t).to_dict() for t in page_obj.titles],
+                    ensure_ascii=False,
+                )
+                links_json = json.dumps(
+                    [link_to_vo(lk).to_dict() for lk in page_obj.links],
+                    ensure_ascii=False,
+                )
+
+                upsert_page_meta = (
+                    sqlite_insert(NotePageMetadataDO)
+                    .values(
+                        user_id=user_id,
+                        file_id=file_id,
+                        page_index=i,
+                        page_id=raw_page_id,
+                        page_style=page_obj.style,
+                        style_hash=style_hash,
+                        orientation=orientation,
+                        recogn_status=recogn_status,
+                        has_ink=page_obj.has_ink,
+                        has_drawables=page_obj.has_drawables,
+                        has_textbox=page_obj.has_textbox,
+                        has_vector_graph=page_obj.has_vector_graph,
+                        has_content=page_obj.has_content,
+                        page_json=page_json,
+                        keywords_json=keywords_json,
+                        titles_json=titles_json,
+                        links_json=links_json,
+                        create_time=now,
+                        update_time=now,
+                    )
+                    .on_conflict_do_update(
+                        index_elements=["user_id", "file_id", "page_index"],
+                        set_={
+                            "page_id": raw_page_id,
+                            "page_style": page_obj.style,
+                            "style_hash": style_hash,
+                            "orientation": orientation,
+                            "recogn_status": recogn_status,
+                            "has_ink": page_obj.has_ink,
+                            "has_drawables": page_obj.has_drawables,
+                            "has_textbox": page_obj.has_textbox,
+                            "has_vector_graph": page_obj.has_vector_graph,
+                            "has_content": page_obj.has_content,
+                            "page_json": page_json,
+                            "keywords_json": keywords_json,
+                            "titles_json": titles_json,
+                            "links_json": links_json,
+                            "update_time": now,
+                        },
+                    )
+                )
+                await session.execute(upsert_page_meta)
+
+            await session.execute(
+                delete(NotePageMetadataDO).where(
+                    NotePageMetadataDO.user_id == user_id,
+                    NotePageMetadataDO.file_id == file_id,
+                    NotePageMetadataDO.page_index >= total_pages,
+                )
+            )
+
             if not metadata.pages:
                 await session.commit()
                 return
 
-            # 1. Fetch all existing pages for this file and map by page_id
             existing_pages = await session.execute(
                 select(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
             )
             existing_map = {p.page_id: p for p in existing_pages.scalars().all()}
 
-            # Track which page_ids are present in the current file
             current_page_ids = set()
             any_page_changed = False
 
             for i in range(total_pages):
                 page_info = metadata.pages[i]
-                page_id = page_info.page_id
+                page_id_val = page_info.page_id
 
-                if not isinstance(page_id, str) or not is_valid_page_id(page_id):
+                if not isinstance(page_id_val, str) or not is_valid_page_id(
+                    page_id_val
+                ):
                     logger.warning(
                         f"Page {i} of file {file_id} has missing or invalid PAGEID."
                     )
                     continue
 
-                current_page_ids.add(page_id)
+                current_page_ids.add(page_id_val)
 
-                page_obj = notebook.pages[i]
-                page_style = page_obj.style
-                has_ink = page_obj.has_ink
-                has_drawables = page_obj.has_drawables
-
-                # Canonical wire-dictionary string representation of page metadata for hashing
                 page_hash_input = str(page_info.to_wire_dict())
                 current_hash = get_md5_hash(page_hash_input)
 
-                if page_id in existing_map:
-                    # UPDATE path
-                    row = existing_map[page_id]
-                    row.page_style = page_style
-                    row.has_ink = has_ink
-                    row.has_drawables = has_drawables
+                if page_id_val in existing_map:
+                    row = existing_map[page_id_val]
 
-                    # Check for Move (Index Changed)
                     if row.page_index != i:
                         logger.info(
-                            f"Page {page_id} moved from {row.page_index} to {i}"
+                            f"Page {page_id_val} moved from {row.page_index} to {i}"
                         )
                         row.page_index = i
                         any_page_changed = True
 
-                    # Check for Content Change
                     if row.content_hash != current_hash:
                         logger.info(
-                            f"Page {page_id} (idx {i}) changed. Resetting content."
+                            f"Page {page_id_val} (idx {i}) changed. Resetting content."
                         )
                         row.content_hash = current_hash
-                        row.text_content = None  # Clear OCR
-                        row.embedding = None  # Clear Embedding
+                        row.text_content = None
+                        row.embedding = None
                         row.embedding_model = None
                         any_page_changed = True
 
-                        # SystemTaskDO rows act as completion checkpoints; deleting
-                        # the page's task rows causes downstream page modules (PNG,
-                        # OCR, Embedding) to see no COMPLETED record in run_if_needed()
-                        # and re-process this page.
-                        page_task_key = f"page_{page_id}"
+                        page_task_key = f"page_{page_id_val}"
                         await session.execute(
                             delete(SystemTaskDO)
                             .where(SystemTaskDO.file_id == file_id)
                             .where(SystemTaskDO.key == page_task_key)
                         )
                 else:
-                    # INSERT path
-                    logger.info(f"New page {page_id} at index {i} detected.")
+                    logger.info(f"New page {page_id_val} at index {i} detected.")
                     any_page_changed = True
                     new_content = NotePageContentDO(
                         file_id=file_id,
                         page_index=i,
-                        page_id=page_id,
+                        page_id=page_id_val,
                         content_hash=current_hash,
-                        page_style=page_style,
-                        has_ink=has_ink,
-                        has_drawables=has_drawables,
                         text_content=None,
                         embedding=None,
                         embedding_model=None,
                     )
                     session.add(new_content)
 
-            # 2. Handle Deletions
-            # Any page_id in existing_map but NOT in current_page_ids is deleted
             for pid, row in existing_map.items():
                 if pid not in current_page_ids:
                     logger.info(f"Page {pid} deleted (was at {row.page_index}).")
                     any_page_changed = True
                     await session.delete(row)
 
-                    # Cleanup Blobs
                     png_path = get_page_png_path(file_id, pid)
                     try:
                         await self.file_service.blob_storage.delete(
@@ -263,7 +318,6 @@ class PageHashingModule(ProcessorModule):
                     except (FileNotFoundError, OSError) as e:
                         logger.warning(f"Failed to delete orphan PNG {pid}: {e}")
 
-                    # Cleanup Tasks
                     await session.execute(
                         delete(SystemTaskDO)
                         .where(SystemTaskDO.file_id == file_id)
@@ -271,9 +325,6 @@ class PageHashingModule(ProcessorModule):
                     )
 
             if any_page_changed:
-                # Delete the COMPLETED summary checkpoint so SummaryModule.run_if_needed()
-                # returns True during the global post-processing stage (and during
-                # missing-task recovery if interrupted) to regenerate the notebook summary.
                 await session.execute(
                     delete(SystemTaskDO)
                     .where(SystemTaskDO.file_id == file_id)

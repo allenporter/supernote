@@ -5,7 +5,10 @@ import pytest
 from supernote.server.ai.models.embedding import EmbeddingTaskType
 from supernote.server.ai.models.fake.embedding import FakeEmbeddingModel
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.db.models.note_processing import (
+    NotePageContentDO,
+    NotePageMetadataDO,
+)
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.search import PageTranscript, SearchService
 
@@ -222,13 +225,22 @@ async def test_get_transcript(
             )
         )
 
-        # Two pages with date-encoded IDs
+        # Two pages with date-encoded IDs and persisted NotePageMetadataDO
+        session.add(
+            NotePageMetadataDO(
+                user_id=user_id,
+                file_id=file_id,
+                page_index=0,
+                page_id="P20231027120000abc",
+                page_style="style_5mm_dots",
+                keywords_json=json.dumps([{"pageNumber": 1, "text": "Sprint"}]),
+            )
+        )
         session.add(
             NotePageContentDO(
                 file_id=file_id,
                 page_index=0,
                 page_id="P20231027120000abc",
-                page_style="style_5mm_dots",
                 text_content="Page 1 content.",
             )
         )
@@ -252,6 +264,7 @@ async def test_get_transcript(
     assert "Page ID: P20231027120000abc" in transcript
     assert "Page Date (Inferred): 2023-10-27" in transcript
     assert "Page Style: 5mm Dots" in transcript
+    assert "Page Keywords: Sprint" in transcript
     assert "Page Date (Inferred): 2023-10-28" in transcript
 
     # Specific page

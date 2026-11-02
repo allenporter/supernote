@@ -13,7 +13,11 @@ from supernote.server.ai.base import AIError
 from supernote.server.ai.models.fake.summary import FakeSummaryModel
 from supernote.server.ai.prompts import SummarySegment
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
+from supernote.server.db.models.note_processing import (
+    NotePageContentDO,
+    NotePageMetadataDO,
+    SystemTaskDO,
+)
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
@@ -474,17 +478,27 @@ async def test_summary_skips_blank_note_and_clears_when_previously_summarized(
                 directory_id=0,
             )
         )
-        session.add(
-            NotePageContentDO(
-                file_id=file_id,
-                page_index=0,
-                page_id="p0",
-                content_hash="h_blank",
-                page_style="style_5mm_dots",
-                has_ink=False,
-                has_drawables=False,
-                text_content="",
-            )
+        session.add_all(
+            [
+                NotePageMetadataDO(
+                    user_id=user_id,
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="p0",
+                    page_style="style_5mm_dots",
+                    has_ink=False,
+                    has_drawables=False,
+                    has_content=False,
+                    keywords_json=json.dumps([{"pageNumber": 1, "text": "Todo"}]),
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="p0",
+                    content_hash="h_blank",
+                    text_content="",
+                ),
+            ]
         )
         await session.commit()
 
@@ -511,6 +525,7 @@ async def test_summary_skips_blank_note_and_clears_when_previously_summarized(
     await summary_module.process(file_id, session_manager)
     assert len(fake_summary_model.calls) == 1
     assert "Page Style: 5mm Dots" in fake_summary_model.calls[0]
+    assert "Page Keywords: Todo" in fake_summary_model.calls[0]
     fake_summary_model.calls.clear()
 
     async with session_manager.session() as session:

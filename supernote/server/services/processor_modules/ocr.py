@@ -5,28 +5,25 @@ from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.ai.prompts import PageMetadata, format_ocr_prompt
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NoteMetadataDO, NotePageContentDO
+from supernote.server.db.models.note_processing import NotePageMetadataDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.utils.note_content import (
-    extract_keywords_by_page_index,
+    extract_page_keyword_texts,
     get_page_content_by_id,
+    get_page_metadata_for_page,
 )
 from supernote.server.utils.paths import get_page_png_path
 
 logger = logging.getLogger(__name__)
 
 
-def _is_blank_page(content: NotePageContentDO | None) -> bool:
-    """Return True when page signals confirm there are no visible drawables to transcribe."""
-    if content is None:
+def _is_blank_page(page_meta: NotePageMetadataDO | None) -> bool:
+    """Return True when persisted page metadata confirms there are no drawables to transcribe."""
+    if page_meta is None:
         return False
-    if content.has_drawables is not None:
-        return not content.has_drawables
-    if content.has_ink is not None:
-        return not content.has_ink
-    return False
+    return not page_meta.has_drawables
 
 
 class OcrModule(ProcessorModule):
@@ -71,8 +68,10 @@ class OcrModule(ProcessorModule):
             return False
 
         async with session_manager.session() as session:
-            content = await get_page_content_by_id(session, file_id, page_id)
-            if _is_blank_page(content):
+            page_meta = await get_page_metadata_for_page(
+                session, file_id, page_id=page_id, page_index=page_index
+            )
+            if _is_blank_page(page_meta):
                 return True
 
         # Check if PNG exists (Prerequisite)
@@ -100,7 +99,6 @@ class OcrModule(ProcessorModule):
         if self.ocr_model is None:
             raise ValueError("OCR model not configured")
 
-        # Get File Info & Page Context (drawables/ink, page_style, keywords)
         file_name: str | None = None
         notebook_create_time: int | None = None
         page_style: str | None = None
@@ -108,29 +106,30 @@ class OcrModule(ProcessorModule):
         resolved_index = page_index or 0
         async with session_manager.session() as session:
             content = await get_page_content_by_id(session, file_id, page_id)
-            if content is not None and _is_blank_page(content):
-                content.text_content = ""
-                await session.commit()
+            if content is not None:
+                resolved_index = content.page_index
+
+            page_meta = await get_page_metadata_for_page(
+                session, file_id, page_id=page_id, page_index=resolved_index
+            )
+            if _is_blank_page(page_meta):
+                if content is not None:
+                    content.text_content = ""
+                    await session.commit()
                 logger.info(
                     f"Skipping OCR LLM call for blank page {page_id} of file {file_id}"
                 )
                 return
-            if content is not None:
-                page_style = content.page_style
-                resolved_index = content.page_index
+
+            if page_meta is not None:
+                page_style = page_meta.page_style
+                page_keywords = extract_page_keyword_texts(page_meta.keywords_json)
 
             file_do = await session.get(UserFileDO, file_id)
             if file_do:
                 file_name = file_do.file_name
                 notebook_create_time = file_do.create_time
-                meta_do = await session.get(NoteMetadataDO, (file_do.user_id, file_id))
-                if meta_do is not None:
-                    keywords_by_page = extract_keywords_by_page_index(
-                        meta_do.metadata_json
-                    )
-                    page_keywords = keywords_by_page.get(resolved_index, [])
 
-        # Get PNG Content
         png_path = get_page_png_path(file_id, page_id)
         chunks = [
             chunk
@@ -151,7 +150,6 @@ class OcrModule(ProcessorModule):
         prompt = format_ocr_prompt(page_metadata)
         text_content = await self.ocr_model.extract_text(png_data, prompt)
 
-        # Save Result
         async with session_manager.session() as session:
             content = await get_page_content_by_id(session, file_id, page_id)
             if content:

@@ -23,6 +23,8 @@ from supernote.models.extended import (
     WebNoteCoverVO,
     WebNoteMetadataRequestDTO,
     WebNoteMetadataVO,
+    WebNotePageMetadataRequestDTO,
+    WebNotePageMetadataVO,
     WebSearchRequestDTO,
     WebSearchResponseVO,
     WebSummaryListRequestDTO,
@@ -334,7 +336,7 @@ async def handle_extended_note_cover(request: web.Request) -> web.Response:
 @routes.post("/api/extended/file/note/metadata")
 async def handle_extended_note_metadata(request: web.Request) -> web.Response:
     # Endpoint: POST /api/extended/file/note/metadata
-    # Purpose: Return structured notebook and per-page metadata (ink, drawables, style, outline, keywords, links).
+    # Purpose: Return structured notebook-level metadata (device, dimensions, recognition, outline, keywords, links).
     user_email = request["user"]
     try:
         data = await request.json()
@@ -371,4 +373,49 @@ async def handle_extended_note_metadata(request: web.Request) -> web.Response:
         return web.json_response(metadata_vo.to_dict())
     except Exception as err:
         logger.exception("Error fetching notebook metadata")
+        return SupernoteError.uncaught(err).to_response()
+
+
+@routes.post("/api/extended/file/note/page/metadata")
+async def handle_extended_note_page_metadata(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/file/note/page/metadata
+    # Purpose: Return structured per-page metadata (ink, drawables, style, orientation, stars, annotations) with optional slicing.
+    user_email = request["user"]
+    try:
+        data = await request.json()
+        req_dto = WebNotePageMetadataRequestDTO.from_dict(data)
+    except (
+        json.JSONDecodeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        MissingField,
+        InvalidFieldValue,
+    ) as err:
+        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
+
+    user_service: UserService = request.app["user_service"]
+    processor_service: ProcessorService = request.app["processor_service"]
+
+    user_id = await user_service.get_user_id(user_email)
+    if not user_id:
+        return web.json_response({"error": "User not found"}, status=404)
+
+    try:
+        page_metadata_vo: (
+            WebNotePageMetadataVO | None
+        ) = await processor_service.get_note_page_metadata(
+            user_id=user_id,
+            file_id=req_dto.file_id,
+            start_index=req_dto.start_index,
+            end_index=req_dto.end_index,
+        )
+        if page_metadata_vo is None:
+            return web.json_response(
+                {"error": f"No metadata found for notebook {req_dto.file_id}"},
+                status=404,
+            )
+        return web.json_response(page_metadata_vo.to_dict())
+    except Exception as err:
+        logger.exception("Error fetching notebook page metadata")
         return SupernoteError.uncaught(err).to_response()

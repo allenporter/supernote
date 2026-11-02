@@ -199,8 +199,6 @@ async def test_embedding_skips_blank_text_and_clears_stale_embedding(
                 page_index=0,
                 page_id="p_blank",
                 content_hash="h_blank",
-                has_ink=False,
-                has_drawables=False,
                 text_content="",
                 embedding="[0.1, 0.2]",
                 embedding_model="stale-model",

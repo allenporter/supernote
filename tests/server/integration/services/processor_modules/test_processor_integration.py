@@ -11,7 +11,12 @@ from supernote.server.ai.models.fake.ocr import FakeOcrModel
 from supernote.server.ai.models.fake.summary import FakeSummaryModel
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
+from supernote.server.db.models.note_processing import (
+    NoteMetadataDO,
+    NotePageContentDO,
+    NotePageMetadataDO,
+    SystemTaskDO,
+)
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus, NoteProcessingCompletedEvent
 from supernote.server.services.blob import BlobStorage
@@ -139,11 +144,30 @@ async def test_full_processing_pipeline_with_real_file(
         assert len(pages) > 0
         total_pages = len(pages)
 
+        note_meta = await session.get(NoteMetadataDO, (user_id, file_id))
+        assert note_meta is not None
+        assert note_meta.total_pages == total_pages
+
+        page_metas = (
+            (
+                await session.execute(
+                    select(NotePageMetadataDO)
+                    .where(NotePageMetadataDO.file_id == file_id)
+                    .order_by(NotePageMetadataDO.page_index)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(page_metas) == total_pages
+        for pm in page_metas:
+            assert pm.page_style == "style_four_quadrant_method"
+            assert pm.has_ink is True
+            assert pm.has_drawables is True
+            assert pm.has_content is True
+
         for page in pages:
             assert page.content_hash is not None
-            assert page.page_style == "style_four_quadrant_method"
-            assert page.has_ink is True
-            assert page.has_drawables is True
             assert page.text_content is not None
             assert page.text_content.startswith("Transcribed (")
             assert page.embedding is not None
@@ -229,10 +253,14 @@ async def test_full_processing_pipeline_with_real_file(
         meta_vo = await ext_client.get_note_metadata(file_id=file_id)
         assert meta_vo.file_id == file_id
         assert meta_vo.total_pages == total_pages
-        assert meta_vo.pages[0].has_ink is True
-        assert meta_vo.pages[0].has_drawables is True
-        assert meta_vo.pages[0].has_content is True
-        assert meta_vo.pages[0].style_label == "Four Quadrant Method"
+
+        page_meta_vo = await ext_client.get_note_page_metadata(file_id=file_id)
+        assert page_meta_vo.file_id == file_id
+        assert page_meta_vo.total_pages == total_pages
+        assert page_meta_vo.pages[0].has_ink is True
+        assert page_meta_vo.pages[0].has_drawables is True
+        assert page_meta_vo.pages[0].has_content is True
+        assert page_meta_vo.pages[0].style_label == "Four Quadrant Method"
 
         # Check AI summary content
         assert ai_summary.content is not None
@@ -300,6 +328,23 @@ async def test_full_processing_pipeline_skips_ai_for_blank_note(
     assert fake_summary_model.calls == []
 
     async with session_manager.session() as session:
+        page_metas = (
+            (
+                await session.execute(
+                    select(NotePageMetadataDO).where(
+                        NotePageMetadataDO.file_id == file_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(page_metas) == 1
+        assert page_metas[0].page_style == "style_5mm_dots"
+        assert page_metas[0].has_ink is False
+        assert page_metas[0].has_drawables is False
+        assert page_metas[0].has_content is False
+
         pages = (
             (
                 await session.execute(
@@ -312,9 +357,6 @@ async def test_full_processing_pipeline_skips_ai_for_blank_note(
             .all()
         )
         assert len(pages) == 1
-        assert pages[0].page_style == "style_5mm_dots"
-        assert pages[0].has_ink is False
-        assert pages[0].has_drawables is False
         assert pages[0].text_content == ""
         assert pages[0].embedding is None
 
@@ -332,10 +374,12 @@ async def test_full_processing_pipeline_skips_ai_for_blank_note(
 
     ext_client = ExtendedClient(authenticated_client)
     meta_vo = await ext_client.get_note_metadata(file_id=file_id)
-    assert meta_vo.pages[0].has_ink is False
-    assert meta_vo.pages[0].has_drawables is False
-    assert meta_vo.pages[0].has_content is False
-    assert meta_vo.pages[0].style_label == "5mm Dots"
+    assert meta_vo.total_pages == 1
+    page_meta_vo = await ext_client.get_note_page_metadata(file_id=file_id)
+    assert page_meta_vo.pages[0].has_ink is False
+    assert page_meta_vo.pages[0].has_drawables is False
+    assert page_meta_vo.pages[0].has_content is False
+    assert page_meta_vo.pages[0].style_label == "5mm Dots"
 
     # Missing-task recovery must NOT re-enqueue completed blank notebooks
     await processor_service.recover_missing_tasks()

@@ -18,6 +18,8 @@ from supernote.models.extended import (
     WebNoteCoverVO,
     WebNoteMetadataRequestDTO,
     WebNoteMetadataVO,
+    WebNotePageMetadataRequestDTO,
+    WebNotePageMetadataVO,
     WebSearchRequestDTO,
     WebSearchResponseVO,
     WebSummaryListRequestDTO,
@@ -234,6 +236,15 @@ def test_web_note_metadata_models() -> None:
     assert req.to_dict() == {"fileId": 77}
     assert WebNoteMetadataRequestDTO.from_dict({"fileId": "77"}) == req
 
+    page_req = WebNotePageMetadataRequestDTO(file_id=77, start_index=0, end_index=4)
+    assert page_req.to_dict() == {"fileId": 77, "startIndex": 0, "endIndex": 4}
+    assert (
+        WebNotePageMetadataRequestDTO.from_dict(
+            {"fileId": "77", "startIndex": 0, "endIndex": 4}
+        )
+        == page_req
+    )
+
     rect = NoteRectVO(left=10, top=20, right=110, bottom=60)
     kw = NoteKeywordVO(page_number=0, text="stroller", rect=rect)
     title = NoteTitleVO(page_number=0, level=1, style="1000254", rect=rect)
@@ -247,25 +258,6 @@ def test_web_note_metadata_models() -> None:
         target_page_id="P20260101000000xyz",
         target_page_number=None,
         rect=rect,
-    )
-    page = NotePageMetadataVO(
-        page_index=0,
-        page_id="P20260101000000abc",
-        date="2026-01-01",
-        style="style_5mm_dots",
-        style_label="5mm Dots",
-        style_hash=None,
-        orientation="1000",
-        recogn_status=1,
-        has_ink=True,
-        has_drawables=True,
-        has_textbox=False,
-        has_vector_graph=False,
-        has_content=True,
-        five_star=["100,200,50,50"],
-        keywords=[kw],
-        titles=[title],
-        links=[link],
     )
     vo = WebNoteMetadataVO(
         file_id=77,
@@ -281,7 +273,6 @@ def test_web_note_metadata_models() -> None:
         keywords=[kw],
         titles=[title],
         links=[link],
-        pages=[page],
     )
     data = vo.to_dict()
     assert data == {
@@ -326,6 +317,36 @@ def test_web_note_metadata_models() -> None:
                 "rect": {"left": 10, "top": 20, "right": 110, "bottom": 60},
             }
         ],
+    }
+    assert WebNoteMetadataVO.from_dict(data) == vo
+
+    page = NotePageMetadataVO(
+        page_index=0,
+        page_id="P20260101000000abc",
+        date="2026-01-01",
+        style="style_5mm_dots",
+        style_label="5mm Dots",
+        style_hash=None,
+        orientation="1000",
+        recogn_status=1,
+        has_ink=True,
+        has_drawables=True,
+        has_textbox=False,
+        has_vector_graph=False,
+        has_content=True,
+        five_star=["100,200,50,50"],
+        keywords=[kw],
+        titles=[title],
+        links=[link],
+    )
+    page_vo = WebNotePageMetadataVO(file_id=77, total_pages=1, pages=[page])
+    page_data = page_vo.to_dict()
+    assert page_data == {
+        "success": True,
+        "errorCode": None,
+        "errorMsg": None,
+        "fileId": 77,
+        "totalPages": 1,
         "pages": [
             {
                 "pageIndex": 0,
@@ -373,4 +394,4 @@ def test_web_note_metadata_models() -> None:
             }
         ],
     }
-    assert WebNoteMetadataVO.from_dict(data) == vo
+    assert WebNotePageMetadataVO.from_dict(page_data) == page_vo

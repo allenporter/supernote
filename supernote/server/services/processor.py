@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import time
 from collections.abc import AsyncGenerator
@@ -9,19 +10,13 @@ from sqlalchemy import delete, or_, select
 
 from supernote.models.base import ProcessingStatus, TaskType
 from supernote.models.extended import (
-    NoteKeywordVO,
-    NoteLinkVO,
     NotePageMetadataVO,
-    NoteRectVO,
-    NoteTitleVO,
     WebNoteMetadataVO,
+    WebNotePageMetadataVO,
 )
 from supernote.notebook import (
-    Keyword,
-    Link,
     Notebook,
     SupernoteMetadata,
-    Title,
 )
 from supernote.notebook import (
     exceptions as notebook_exceptions,
@@ -41,6 +36,7 @@ from ..db.models.file import UserFileDO
 from ..db.models.note_processing import (
     NoteMetadataDO,
     NotePageContentDO,
+    NotePageMetadataDO,
     SystemTaskDO,
 )
 from ..db.models.summary import SummaryDO
@@ -57,51 +53,19 @@ from ..events import (
 from ..services.file import FileService
 from ..services.processor_modules import ProcessorModule
 from ..services.summary import SummaryService
-from ..utils.note_content import format_page_style, infer_page_date
+from ..utils.note_content import (
+    format_page_style,
+    infer_page_date,
+    keyword_to_vo,
+    link_to_vo,
+    parse_keywords_json,
+    parse_links_json,
+    parse_titles_json,
+    title_to_vo,
+)
 from ..utils.paths import get_page_png_path
 
 logger = logging.getLogger(__name__)
-
-
-def _rect_to_vo(bbox: tuple[int, int, int, int] | None) -> NoteRectVO | None:
-    if bbox is None:
-        return None
-    left, top, right, bottom = bbox
-    return NoteRectVO(left=left, top=top, right=right, bottom=bottom)
-
-
-def _keyword_to_vo(kw: Keyword) -> NoteKeywordVO:
-    bbox = kw.rect if kw.metadata.rect is not None else None
-    return NoteKeywordVO(
-        page_number=kw.page_number,
-        text=kw.keyword or "",
-        rect=_rect_to_vo(bbox),
-    )
-
-
-def _title_to_vo(title: Title) -> NoteTitleVO:
-    bbox = title.rect if title.metadata.rect is not None else None
-    return NoteTitleVO(
-        page_number=title.page_number,
-        level=title.level,
-        style=title.style,
-        rect=_rect_to_vo(bbox),
-    )
-
-
-def _link_to_vo(link: Link) -> NoteLinkVO:
-    bbox = link.rect if link.metadata.rect is not None else None
-    return NoteLinkVO(
-        page_number=link.page_number,
-        link_type=int(link.link_type),
-        direction=int(link.direction),
-        style=link.metadata.style,
-        target=link.target,
-        target_file_id=link.file_id,
-        target_page_id=link.page_id,
-        target_page_number=link.metadata.obj_page,
-        rect=_rect_to_vo(bbox),
-    )
 
 
 class ProcessorService:
@@ -308,6 +272,9 @@ class ProcessorService:
 
             await session.execute(
                 delete(NoteMetadataDO).where(NoteMetadataDO.file_id == file_id)
+            )
+            await session.execute(
+                delete(NotePageMetadataDO).where(NotePageMetadataDO.file_id == file_id)
             )
             await session.execute(
                 delete(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
@@ -780,7 +747,7 @@ class ProcessorService:
         user_id: int,
         file_id: int,
     ) -> WebNoteMetadataVO | None:
-        """Return structured notebook and per-page metadata for an active .note file owned by user_id."""
+        """Return structured notebook-level metadata for an active .note file owned by user_id."""
         async with self.session_manager.session() as session:
             file_row = (
                 await session.execute(
@@ -798,86 +765,30 @@ class ProcessorService:
             if meta_do is None:
                 return None
 
-            content_rows = list(
-                (
-                    await session.execute(
-                        select(NotePageContentDO)
-                        .where(NotePageContentDO.file_id == file_id)
-                        .order_by(NotePageContentDO.page_index)
-                    )
-                )
-                .scalars()
-                .all()
-            )
-
         try:
-            notebook = Notebook(SupernoteMetadata.from_json(meta_do.metadata_json))
-        except (ValueError, TypeError, notebook_exceptions.ParserException) as err:
+            header_dict = json.loads(meta_do.header_json)
+            footer_dict = json.loads(meta_do.footer_json)
+            if not isinstance(header_dict, dict) or not isinstance(footer_dict, dict):
+                raise ValueError("header_json and footer_json must be JSON objects")
+            notebook = Notebook(
+                SupernoteMetadata(
+                    type=meta_do.file_type or "note",
+                    signature=meta_do.signature or "",
+                    header=header_dict,
+                    footer=footer_dict,
+                    pages=[],
+                )
+            )
+        except (
+            json.JSONDecodeError,
+            ValueError,
+            TypeError,
+            notebook_exceptions.ParserException,
+        ) as err:
             logger.error(
                 f"Failed to deserialize persisted NoteMetadataDO for file {file_id}: {err}"
             )
             return None
-
-        content_by_page_id = {row.page_id: row for row in content_rows if row.page_id}
-        content_by_index = {row.page_index: row for row in content_rows}
-
-        page_vos: list[NotePageMetadataVO] = []
-        for idx, page_obj in enumerate(notebook.pages):
-            page_id = page_obj.page_id or ""
-            content_row = (
-                content_by_page_id.get(page_id) if page_id else None
-            ) or content_by_index.get(idx)
-
-            has_ink = content_row.has_ink if content_row is not None else None
-            has_drawables = (
-                content_row.has_drawables if content_row is not None else None
-            )
-            style = (
-                content_row.page_style
-                if content_row is not None and content_row.page_style is not None
-                else page_obj.style
-            )
-
-            page_keywords = [_keyword_to_vo(kw) for kw in page_obj.keywords]
-            page_titles = [_title_to_vo(t) for t in page_obj.titles]
-            page_links = [_link_to_vo(lk) for lk in page_obj.links]
-            has_annotations = (
-                bool(page_keywords)
-                or bool(page_titles)
-                or any(
-                    lk.direction == notebook_schema.LinkDirection.OUT
-                    for lk in page_obj.links
-                )
-            )
-            if has_drawables is not None:
-                has_content: bool | None = has_drawables or has_annotations
-            elif has_annotations:
-                has_content = True
-            else:
-                has_content = None
-
-            inferred_dt = infer_page_date(page_id)
-            page_vos.append(
-                NotePageMetadataVO(
-                    page_index=idx,
-                    page_id=page_id,
-                    date=inferred_dt.strftime("%Y-%m-%d") if inferred_dt else None,
-                    style=style,
-                    style_label=format_page_style(style),
-                    style_hash=page_obj.style_hash or None,
-                    orientation=str(page_obj.orientation),
-                    recogn_status=int(page_obj.recogn_status),
-                    has_ink=has_ink,
-                    has_drawables=has_drawables,
-                    has_textbox=page_obj.has_textbox,
-                    has_vector_graph=page_obj.has_vector_graph,
-                    has_content=has_content,
-                    five_star=list(page_obj.metadata.five_star),
-                    keywords=page_keywords,
-                    titles=page_titles,
-                    links=page_links,
-                )
-            )
 
         return WebNoteMetadataVO(
             file_id=file_id,
@@ -890,8 +801,92 @@ class ProcessorService:
             total_pages=meta_do.total_pages,
             recogn_language=meta_do.recogn_language,
             realtime_recognition=meta_do.is_realtime_recognition,
-            keywords=[_keyword_to_vo(kw) for kw in notebook.keywords],
-            titles=[_title_to_vo(t) for t in notebook.titles],
-            links=[_link_to_vo(lk) for lk in notebook.links],
+            keywords=[keyword_to_vo(kw) for kw in notebook.keywords],
+            titles=[title_to_vo(t) for t in notebook.titles],
+            links=[link_to_vo(lk) for lk in notebook.links],
+        )
+
+    async def get_note_page_metadata(
+        self,
+        user_id: int,
+        file_id: int,
+        start_index: int | None = None,
+        end_index: int | None = None,
+    ) -> WebNotePageMetadataVO | None:
+        """Return structured per-page metadata for an active .note file (or page slice) owned by user_id."""
+        async with self.session_manager.session() as session:
+            file_row = (
+                await session.execute(
+                    select(UserFileDO).where(
+                        UserFileDO.id == file_id,
+                        UserFileDO.user_id == user_id,
+                        UserFileDO.is_active == "Y",
+                    )
+                )
+            ).scalar_one_or_none()
+            if file_row is None:
+                return None
+
+            meta_do = await session.get(NoteMetadataDO, (user_id, file_id))
+            if meta_do is None:
+                return None
+
+            page_stmt = select(NotePageMetadataDO).where(
+                NotePageMetadataDO.user_id == user_id,
+                NotePageMetadataDO.file_id == file_id,
+            )
+            if start_index is not None:
+                page_stmt = page_stmt.where(
+                    NotePageMetadataDO.page_index >= start_index
+                )
+            if end_index is not None:
+                page_stmt = page_stmt.where(NotePageMetadataDO.page_index <= end_index)
+            page_stmt = page_stmt.order_by(NotePageMetadataDO.page_index)
+
+            page_rows = list((await session.execute(page_stmt)).scalars().all())
+
+        page_vos: list[NotePageMetadataVO] = []
+        for pm in page_rows:
+            five_star: list[str] = []
+            try:
+                raw_page = json.loads(pm.page_json)
+                if isinstance(raw_page, dict):
+                    five_star = list(
+                        notebook_schema.PageMetadata.from_params(raw_page).five_star
+                    )
+            except (
+                json.JSONDecodeError,
+                ValueError,
+                TypeError,
+                notebook_exceptions.ParserException,
+            ):
+                five_star = []
+
+            inferred_dt = infer_page_date(pm.page_id)
+            page_vos.append(
+                NotePageMetadataVO(
+                    page_index=pm.page_index,
+                    page_id=pm.page_id,
+                    date=inferred_dt.strftime("%Y-%m-%d") if inferred_dt else None,
+                    style=pm.page_style,
+                    style_label=format_page_style(pm.page_style),
+                    style_hash=pm.style_hash,
+                    orientation=pm.orientation,
+                    recogn_status=pm.recogn_status,
+                    has_ink=pm.has_ink,
+                    has_drawables=pm.has_drawables,
+                    has_textbox=pm.has_textbox,
+                    has_vector_graph=pm.has_vector_graph,
+                    has_content=pm.has_content,
+                    five_star=five_star,
+                    keywords=parse_keywords_json(pm.keywords_json),
+                    titles=parse_titles_json(pm.titles_json),
+                    links=parse_links_json(pm.links_json),
+                )
+            )
+
+        return WebNotePageMetadataVO(
+            file_id=file_id,
+            total_pages=meta_do.total_pages,
             pages=page_vos,
         )

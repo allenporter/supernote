@@ -8,6 +8,7 @@ from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NoteMetadataDO,
     NotePageContentDO,
+    NotePageMetadataDO,
     SystemTaskDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
@@ -105,7 +106,12 @@ async def test_process_with_real_file(
         assert note_meta is not None
         assert note_meta.file_type == "note"
         assert note_meta.total_pages == len(pages)
-        assert note_meta.metadata_json != ""
+        assert note_meta.header_json != "{}"
+        assert note_meta.footer_json != "{}"
+
+        page_meta_0 = await session.get(NotePageMetadataDO, (user_id, file_id, 0))
+        assert page_meta_0 is not None
+        assert page_meta_0.page_json != "{}"
 
     # Test Change Detection (Simulated)
     # Since we can't easily edit the binary .note file to change content,
@@ -207,20 +213,29 @@ async def test_process_with_real_file(
 
     extra_page_index = len(pages) + 5  # Safely out of bounds
     async with session_manager.session() as session:
-        extra_page = NotePageContentDO(
-            file_id=file_id,
-            page_index=extra_page_index,
-            page_id="trash_id",
-            content_hash="trash",
+        session.add_all(
+            [
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=extra_page_index,
+                    page_id="trash_id",
+                    content_hash="trash",
+                ),
+                NotePageMetadataDO(
+                    user_id=user_id,
+                    file_id=file_id,
+                    page_index=extra_page_index,
+                    page_id="trash_id",
+                ),
+            ]
         )
-        session.add(extra_page)
         await session.commit()
 
     # Run process again
     await page_hashing_module.process(file_id, session_manager)
 
     async with session_manager.session() as session:
-        # Verify extra page is gone
+        # Verify extra page is gone from both tables
         missing_page = (
             (
                 await session.execute(
@@ -232,8 +247,11 @@ async def test_process_with_real_file(
             .scalars()
             .first()
         )
-
         assert missing_page is None
+        assert (
+            await session.get(NotePageMetadataDO, (user_id, file_id, extra_page_index))
+            is None
+        )
 
         # Verify original pages still there
         current_pages = (
@@ -368,7 +386,7 @@ async def test_page_hashing_persists_metadata_and_ink_signals(
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
 ) -> None:
-    """Verify PageHashingModule persists NoteMetadataDO and per-page style, has_ink, and has_drawables."""
+    """Verify PageHashingModule persists NoteMetadataDO and NotePageMetadataDO without disturbing OCR cache."""
     pdf_template_path = (
         TEST_DATA_DIR / "nelinory" / "A5X_TestNote_With_Pdf_Template.note"
     )
@@ -401,44 +419,54 @@ async def test_page_hashing_persists_metadata_and_ink_signals(
         assert meta.width == 1404
         assert meta.height == 1872
 
-        rows = list(
+        page_metas = list(
             (
                 await session.execute(
-                    select(NotePageContentDO)
-                    .where(NotePageContentDO.file_id == file_id)
-                    .order_by(NotePageContentDO.page_index)
+                    select(NotePageMetadataDO)
+                    .where(NotePageMetadataDO.file_id == file_id)
+                    .order_by(NotePageMetadataDO.page_index)
                 )
             )
             .scalars()
             .all()
         )
         assert [
-            (r.page_index, r.page_style, r.has_ink, r.has_drawables) for r in rows
+            (r.page_index, r.page_style, r.has_ink, r.has_drawables, r.has_content)
+            for r in page_metas
         ] == [
-            (0, "user_pdf_Pdf_Template_1", True, True),
-            (1, "user_pdf_Pdf_Template_2", False, False),
-            (2, "user_pdf_Pdf_Template_3", True, True),
+            (0, "user_pdf_Pdf_Template_1", True, True, True),
+            (1, "user_pdf_Pdf_Template_2", False, False, False),
+            (2, "user_pdf_Pdf_Template_3", True, True, True),
         ]
 
-        # Simulate legacy row missing signals with unchanged content_hash:
-        # re-running backfills page_style/has_ink/has_drawables without clearing text_content.
-        rows[0].page_style = None
-        rows[0].has_ink = None
-        rows[0].has_drawables = None
-        rows[0].text_content = "preserved ocr"
-        await session.commit()
-
-    assert await page_hashing_module.run(file_id, session_manager) is True
-
-    async with session_manager.session() as session:
-        refreshed = (
+        # Simulate stale NotePageMetadataDO signals with unchanged content_hash:
+        # re-running refreshes NotePageMetadataDO without clearing NotePageContentDO.text_content.
+        page_metas[0].page_style = None
+        page_metas[0].has_ink = False
+        page_metas[0].has_drawables = False
+        content_0 = (
             await session.execute(
                 select(NotePageContentDO)
                 .where(NotePageContentDO.file_id == file_id)
                 .where(NotePageContentDO.page_index == 0)
             )
         ).scalar_one()
-        assert refreshed.page_style == "user_pdf_Pdf_Template_1"
-        assert refreshed.has_ink is True
-        assert refreshed.has_drawables is True
-        assert refreshed.text_content == "preserved ocr"
+        content_0.text_content = "preserved ocr"
+        await session.commit()
+
+    assert await page_hashing_module.run(file_id, session_manager) is True
+
+    async with session_manager.session() as session:
+        refreshed_meta = await session.get(NotePageMetadataDO, (user_id, file_id, 0))
+        assert refreshed_meta is not None
+        assert refreshed_meta.page_style == "user_pdf_Pdf_Template_1"
+        assert refreshed_meta.has_ink is True
+        assert refreshed_meta.has_drawables is True
+        refreshed_content = (
+            await session.execute(
+                select(NotePageContentDO)
+                .where(NotePageContentDO.file_id == file_id)
+                .where(NotePageContentDO.page_index == 0)
+            )
+        ).scalar_one()
+        assert refreshed_content.text_content == "preserved ocr"

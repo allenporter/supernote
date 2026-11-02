@@ -58,8 +58,11 @@ class NoteMetadataDO(Base):
     )
     """True when real-time handwriting recognition is enabled."""
 
-    metadata_json: Mapped[str] = mapped_column(Text, nullable=False)
-    """Lossless JSON serialization of SupernoteMetadata."""
+    header_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    """Lossless JSON serialization of HeaderMetadata wire dictionary."""
+
+    footer_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    """Lossless JSON serialization of FooterMetadata wire dictionary."""
 
     create_time: Mapped[int] = mapped_column(
         BigInteger, default=lambda: int(time.time() * 1000)
@@ -82,8 +85,90 @@ class NoteMetadataDO(Base):
     )
 
 
+class NotePageMetadataDO(Base):
+    """Persisted per-page structural metadata, ink/drawable signals, and annotations."""
+
+    __tablename__ = "f_note_page_metadata"
+
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, nullable=False)
+    """Owner user ID."""
+
+    file_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, index=True, nullable=False
+    )
+    """The numeric ID of the source file."""
+
+    page_index: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
+    """The 0-based index of the page in the notebook."""
+
+    page_id: Mapped[str] = mapped_column(String, default="", nullable=False)
+    """Stable unique page identifier (<PAGEID>), or empty string on legacy firmware."""
+
+    page_style: Mapped[str | None] = mapped_column(String, nullable=True)
+    """Raw Supernote PAGESTYLE template identifier (e.g. 'style_5mm_dots')."""
+
+    style_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    """Custom background template MD5 hash (<PAGESTYLEMD5>), if present."""
+
+    orientation: Mapped[str] = mapped_column(String, default="1000", nullable=False)
+    """Page orientation code ('1000', '1090', '1180', '1270')."""
+
+    recogn_status: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    """On-device handwriting recognition status (<RECOGNSTATUS>)."""
+
+    has_ink: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    """Whether any visible foreground layer on the page contains non-transparent ink."""
+
+    has_drawables: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    """Whether the page contains visible foreground ink, text boxes, or vector graphics."""
+
+    has_textbox: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    """Whether the page contains text box data (<PAGETEXTBOX> > 0)."""
+
+    has_vector_graph: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    """Whether any visible foreground layer references vector graphics (<LAYERVECTORGRAPH> > 0)."""
+
+    has_content: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    """Whether the page has foreground drawables or user-authored keywords, titles, or outgoing links."""
+
+    page_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    """Lossless JSON serialization of PageMetadata wire dictionary."""
+
+    keywords_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    """JSON list of NoteKeywordVO dicts anchored to this page."""
+
+    titles_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    """JSON list of NoteTitleVO dicts anchored to this page."""
+
+    links_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    """JSON list of NoteLinkVO dicts anchored to this page."""
+
+    create_time: Mapped[int] = mapped_column(
+        BigInteger, default=lambda: int(time.time() * 1000)
+    )
+    """System creation timestamp."""
+
+    update_time: Mapped[int] = mapped_column(
+        BigInteger,
+        default=lambda: int(time.time() * 1000),
+        onupdate=lambda: int(time.time() * 1000),
+    )
+    """System update timestamp."""
+
+    __table_args__ = (
+        Index(
+            "ix_f_note_page_metadata_user_file_page_id",
+            "user_id",
+            "file_id",
+            "page_id",
+        ),
+    )
+
+
 class NotePageContentDO(Base):
-    """Cache for page-level content (OCR text, embeddings, and structural signals)."""
+    """Cache for page-level content (OCR text, embeddings)."""
 
     __tablename__ = "f_note_page_content"
 
@@ -101,15 +186,6 @@ class NotePageContentDO(Base):
 
     content_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     """MD5 hash of the page content (e.g. layers) to detect changes."""
-
-    page_style: Mapped[str | None] = mapped_column(String, nullable=True)
-    """Raw Supernote PAGESTYLE template identifier (e.g. 'style_5mm_dots')."""
-
-    has_ink: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    """Whether any visible foreground layer on the page contains non-transparent ink."""
-
-    has_drawables: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    """Whether the page contains visible foreground ink, text boxes, or vector graphics."""
 
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     """The extracted OCR text for this page."""

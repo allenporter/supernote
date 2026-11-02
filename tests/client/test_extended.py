@@ -126,6 +126,16 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
                 "keywords": [],
                 "titles": [],
                 "links": [],
+            }
+        )
+
+    async def handle_note_page_metadata(request: web.Request) -> web.Response:
+        recorded.append((request.method, request.path, await request.json()))
+        return web.json_response(
+            {
+                "success": True,
+                "fileId": 10,
+                "totalPages": 1,
                 "pages": [
                     {
                         "pageIndex": 0,
@@ -162,6 +172,9 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
     app.router.add_get("/api/extended/ai/status", handle_ai_status)
     app.router.add_post("/api/extended/file/note/cover", handle_note_cover)
     app.router.add_post("/api/extended/file/note/metadata", handle_note_metadata)
+    app.router.add_post(
+        "/api/extended/file/note/page/metadata", handle_note_page_metadata
+    )
 
     test_client = await aiohttp_client(app)
     base_client = Client(
@@ -206,9 +219,16 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
     assert meta_vo.file_id == 10
     assert meta_vo.native_file_id == "F10"
     assert meta_vo.equipment == "N5"
-    assert len(meta_vo.pages) == 1
-    assert meta_vo.pages[0].has_ink is True
-    assert meta_vo.pages[0].style_label == "5mm Dots"
+    assert meta_vo.total_pages == 1
+
+    page_meta_vo = await ext.get_note_page_metadata(
+        file_id=10, start_index=0, end_index=0
+    )
+    assert page_meta_vo.file_id == 10
+    assert page_meta_vo.total_pages == 1
+    assert len(page_meta_vo.pages) == 1
+    assert page_meta_vo.pages[0].has_ink is True
+    assert page_meta_vo.pages[0].style_label == "5mm Dots"
 
     assert recorded == [
         ("POST", "/api/extended/file/summary/list", {"fileId": 10}),
@@ -233,4 +253,9 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
         ("GET", "/api/extended/ai/status", None),
         ("POST", "/api/extended/file/note/cover", {"fileId": 10}),
         ("POST", "/api/extended/file/note/metadata", {"fileId": 10}),
+        (
+            "POST",
+            "/api/extended/file/note/page/metadata",
+            {"fileId": 10, "startIndex": 0, "endIndex": 0},
+        ),
     ]

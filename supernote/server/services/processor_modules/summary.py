@@ -16,14 +16,17 @@ from supernote.models.summary import (
 from supernote.server.ai.models.summary import SummaryModel
 from supernote.server.ai.prompts import format_summary_prompt
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NoteMetadataDO, NotePageContentDO
+from supernote.server.db.models.note_processing import (
+    NotePageContentDO,
+    NotePageMetadataDO,
+)
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.services.summary import SummaryService
 from supernote.server.utils.note_content import (
-    extract_keywords_by_page_index,
+    extract_page_keyword_texts,
     format_page_metadata,
 )
 from supernote.server.utils.paths import (
@@ -146,10 +149,19 @@ class SummaryModule(ProcessorModule):
             )
             result = await session.execute(stmt)
             pages = result.scalars().all()
-            meta_do = await session.get(NoteMetadataDO, (file_do.user_id, file_id))
-            keywords_by_page = extract_keywords_by_page_index(
-                meta_do.metadata_json if meta_do is not None else None
+            page_meta_rows = (
+                (
+                    await session.execute(
+                        select(NotePageMetadataDO).where(
+                            NotePageMetadataDO.user_id == file_do.user_id,
+                            NotePageMetadataDO.file_id == file_id,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
             )
+            page_meta_by_index = {pm.page_index: pm for pm in page_meta_rows}
 
         if not pages:
             logger.info(f"No OCR pages found for file {file_id}. Skipping summary.")
@@ -159,13 +171,18 @@ class SummaryModule(ProcessorModule):
         text_parts = []
         for p in pages:
             if p.text_content:
+                pm = page_meta_by_index.get(p.page_index)
                 metadata = format_page_metadata(
                     page_index=p.page_index,
                     page_id=p.page_id or "",
                     file_name=file_do.file_name,
                     notebook_create_time=file_do.create_time,
-                    page_style=p.page_style,
-                    keywords=keywords_by_page.get(p.page_index),
+                    page_style=pm.page_style if pm is not None else None,
+                    keywords=(
+                        extract_page_keyword_texts(pm.keywords_json)
+                        if pm is not None
+                        else None
+                    ),
                     include_section_divider=True,
                 )
                 text_parts.append(f"{metadata}\n{p.text_content}")

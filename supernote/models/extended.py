@@ -279,10 +279,31 @@ class WebAiStatusVO(BaseResponse):
 
 @dataclass
 class WebNoteMetadataRequestDTO(DataClassJSONMixin):
-    """Request DTO for retrieving structured notebook and per-page metadata."""
+    """Request DTO for retrieving structured notebook-level metadata."""
 
     file_id: int = field(metadata=field_options(alias="fileId"))
     """The unique ID of the notebook."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class WebNotePageMetadataRequestDTO(DataClassJSONMixin):
+    """Request DTO for retrieving per-page metadata for a notebook or page range."""
+
+    file_id: int = field(metadata=field_options(alias="fileId"))
+    """The unique ID of the notebook."""
+
+    start_index: int | None = field(
+        metadata=field_options(alias="startIndex"), default=None
+    )
+    """Optional 0-based start page index (inclusive)."""
+
+    end_index: int | None = field(
+        metadata=field_options(alias="endIndex"), default=None
+    )
+    """Optional 0-based end page index (inclusive)."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -366,17 +387,15 @@ class NotePageMetadataVO(DataClassJSONMixin):
     )
     orientation: str = "1000"
     recogn_status: int = field(metadata=field_options(alias="recognStatus"), default=0)
-    has_ink: bool | None = field(metadata=field_options(alias="hasInk"), default=None)
-    has_drawables: bool | None = field(
-        metadata=field_options(alias="hasDrawables"), default=None
+    has_ink: bool = field(metadata=field_options(alias="hasInk"), default=False)
+    has_drawables: bool = field(
+        metadata=field_options(alias="hasDrawables"), default=False
     )
     has_textbox: bool = field(metadata=field_options(alias="hasTextbox"), default=False)
     has_vector_graph: bool = field(
         metadata=field_options(alias="hasVectorGraph"), default=False
     )
-    has_content: bool | None = field(
-        metadata=field_options(alias="hasContent"), default=None
-    )
+    has_content: bool = field(metadata=field_options(alias="hasContent"), default=False)
     five_star: list[str] = field(
         metadata=field_options(alias="fiveStar"), default_factory=list
     )
@@ -390,7 +409,7 @@ class NotePageMetadataVO(DataClassJSONMixin):
 
 @dataclass
 class WebNoteMetadataVO(BaseResponse):
-    """Response VO for structured notebook and per-page metadata.
+    """Response VO for structured notebook-level metadata.
 
     Used by: POST /api/extended/file/note/metadata
     """
@@ -416,6 +435,20 @@ class WebNoteMetadataVO(BaseResponse):
     keywords: list[NoteKeywordVO] = field(default_factory=list)
     titles: list[NoteTitleVO] = field(default_factory=list)
     links: list[NoteLinkVO] = field(default_factory=list)
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class WebNotePageMetadataVO(BaseResponse):
+    """Response VO for structured per-page metadata.
+
+    Used by: POST /api/extended/file/note/page/metadata
+    """
+
+    file_id: int = field(metadata=field_options(alias="fileId"), default=0)
+    total_pages: int = field(metadata=field_options(alias="totalPages"), default=0)
     pages: list[NotePageMetadataVO] = field(default_factory=list)
 
     class Config(BaseConfig):
