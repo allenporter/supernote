@@ -1,250 +1,230 @@
 # Supernote Notebook Format Specification
 
-This document describes the binary format of Supernote `.note` files and provides guidelines for building processing systems (e.g., Knowledge Bases, Indexers) that consume them.
+This document specifies the binary framing, metadata block encoding, bitmap compression protocols, and server indexing conventions for Supernote `.note` and `.mark` files.
+
+For the authoritative catalog of all wire `<KEY:VALUE>` tags, enum values, sentinel rules, and Python domain models, see:
+- **Wire-format dataclasses & enums**: [`supernote/notebook/schema.py`](../supernote/notebook/schema.py)
+- **Loaded domain objects**: [`supernote/notebook/fileformat.py`](../supernote/notebook/fileformat.py)
+- **Stream parsers**: [`supernote/notebook/parser.py`](../supernote/notebook/parser.py)
+- **Bitmap & text decoders**: [`supernote/notebook/decoder.py`](../supernote/notebook/decoder.py)
+- **Notebook reconstruction & merging**: [`supernote/notebook/manipulator.py`](../supernote/notebook/manipulator.py)
+
+---
 
 ## File Structure Overview
 
-A `.note` file is a binary file composed of a **Header**, a sequence of **Metadata Blocks** and **Data Blocks**, and a **Footer**.
+A Supernote file is an append-friendly binary container read via a **footer-first** parsing strategy:
 
-The file structure relies heavily on a "Footer-first" parsing strategy:
-1.  **Signature**: The file starts with a signature (magic bytes).
-2.  **Tail**: The last 4 bytes of the file contain the absolute byte offset of the **Footer Block**.
-3.  **Footer**: Contains global metadata and references (offsets) to all other essential blocks (Pages, Titles, Keywords, etc.).
+1. **Prefix & Signature**: Identifies the container family (`note` / `mark`) and format version at byte `0`.
+2. **Length-Prefixed Blocks**: Every metadata block and binary payload block (bitmaps, vector paths, keywords, recognition data) is framed as `[uint32_le byte_length][payload]`. An offset of `0` in any metadata tag means the block is absent.
+3. **Footer Block**: Directory of byte offsets pointing to the Header (`FILE_FEATURE`), per-page metadata blocks, cover bitmaps, style templates, keywords, titles, and links.
+4. **Trailing Sentinel & Footer Pointer**:
+   - **X-Series & X2 (`SN_FILE_VER_...`)**: Ends with the 4-byte ASCII literal `"tail"` (`0x74 0x61 0x69 0x6c`) followed by the final 4-byte `uint32_le` absolute byte offset of the Footer Block.
+   - **Legacy A5 (`SN_FILE_ASA_...`)**: Ends directly with the 4-byte `uint32_le` absolute byte offset of the Footer Block (no `"tail"` marker and no 4-byte file-type prefix).
 
 ```text
-+-----------------------+ 0x00
-| Signature             |
-+-----------------------+
-| Header Block          |
-+-----------------------+
-| ... Data Blocks ...   |
-| (Layers, Bitmaps)     |
-+-----------------------+
-| ... Metadata Blocks...|
-| (Pages, Links, etc.)  |
-+-----------------------+
-| Footer Block          |
-+-----------------------+ <--- Tail points here
-| Tail (4 bytes)        |
-+-----------------------+ EOF
+X-Series / X2 Container Layout
++------------------------------------------+ 0x00
+| File Type ("note" or "mark", 4 bytes)    |
++------------------------------------------+ 0x04
+| Format Signature (20 bytes)              |
+| e.g. "SN_FILE_VER_20230015"              |
++------------------------------------------+ 0x18 (24)
+| Header Block       [uint32 len][<K:V>..] | <--- Footer FILE_FEATURE points here
++------------------------------------------+
+| Binary & Metadata Blocks                 |
+| - Cover / Style / Layer Bitmaps          |
+| - Layer Metadata Blocks                  |
+| - Vector Stroke Blocks (TOTALPATH)       |
+| - Keyword / Title / Link Blocks          |
+| - Page Metadata Blocks                   | <--- Footer PAGE1..N point here
++------------------------------------------+
+| Footer Block       [uint32 len][<K:V>..] | <--- Trailing offset points here
++------------------------------------------+ EOF - 8
+| Sentinel ("tail", 4 bytes)               |
++------------------------------------------+ EOF - 4
+| Footer Offset (uint32_le, 4 bytes)       |
++------------------------------------------+ EOF
 ```
 
-### Signature
-The file begins with a versioned string, e.g., `SN_FILE_VER_20230015`.
-- **Legacy**: `SN_FILE_ASA_...` (offset 0)
-- **X-Series**: `SN_FILE_VER_...` (offset 4, preceded by 4 bytes of file type info)
+### Signatures & Device Dimensions
 
-## Metadata Blocks
+| Generation | Prefix (`0x00`) | Signature | Canvas (`W x H`) | Notes |
+| :--- | :--- | :--- | :--- | :--- |
+| **Original A5** | *(none)* | `SN_FILE_ASA_20190529` | `1404 x 1872` | Single-layer pages (`DATA` + `PROTOCOL`), no `"tail"` sentinel |
+| **X-Series (A5 X / A6 X)** | `note` / `mark` | `SN_FILE_VER_20200001` – `20210010` | `1404 x 1872` | 5-layer pages (`MAINLAYER`, `LAYER1..3`, `BGLAYER`) |
+| **X2 Nomad (`N6`)** | `note` / `mark` | `SN_FILE_VER_20230015` | `1404 x 1872` | Extended X2 grayscale RLE palette (`>= 20230015`) |
+| **X2 Manta (`N5`)** | `note` / `mark` | `SN_FILE_VER_20230015` | `1920 x 2560` | Selected when Header `APPLY_EQUIPMENT` is `N5` |
 
-All metadata blocks (Header, Footer, Page Info) follow a Tag-Length-Value-like structure but store data as a sequence of Key-Value pairs wrapped in brackets.
+---
 
-**Format**: `<KEY:VALUE>`
+## Metadata Block Wire Syntax
 
-Example:
+All metadata blocks encode UTF-8 sequences of angle-bracketed `<KEY:VALUE>` tags parsed by `extract_parameters()` and serialized by `encode_parameters()` in [`schema.py`](../supernote/notebook/schema.py):
+
+- **Block Framing**: Each block starts with a 4-byte little-endian `uint32` byte length, followed by `byte_length` UTF-8 bytes of `<KEY:VALUE>` pairs.
+- **Repeated Keys**: When the same key appears multiple times in one block (for example, multiple keywords sharing a row key in the Footer, or repeated `PAGE` entries in legacy A5 footers), values are preserved in order as a `list[str]`.
+- **Sentinels**: Optional string or digest fields commonly use `"none"` or `"0"` on the wire when unset; block pointer fields use `"0"` when no target block is written.
+- **Rectangle Coordinates**: Geometry tags (`KEYWORDRECT`, `TITLERECT`, `LINKRECT`, and their `*ORI` counterparts) store comma-separated `left,top,width,height` integers (`Rect` in [`schema.py`](../supernote/notebook/schema.py)).
+
+---
+
+## Core Metadata Blocks
+
+Every block below maps 1:1 to a typed dataclass in [`supernote/notebook/schema.py`](../supernote/notebook/schema.py), which preserves unknown future firmware tags in `.extra` and supports lossless wire round-tripping via `.to_params()` / `.to_wire_dict()`.
+
+### 1. Header Block (`HeaderMetadata`)
+
+Referenced by `FILE_FEATURE` in the Footer. Stores notebook-wide identity, hardware model (`APPLY_EQUIPMENT`), DPI, template defaults, and real-time handwriting recognition settings (`FILE_RECOGN_TYPE=1`).
+
+<!-- schema: HeaderMetadata -->
 ```text
-<FILE_TYPE:NOTE><PAGE:1><DEVICE_DPI:0>
+<FILE_TYPE:NOTE><APPLY_EQUIPMENT:N6><FILE_ID:F202512072214597017338I6OJBpDccy1><FILE_RECOGN_TYPE:0><DEVICE_DPI:0><SOFT_DPI:0><FILE_PARSE_TYPE:0><RATTA_ETMD:0>
 ```
 
-**Parsing Rules**:
-- Blocks are length-prefixed (4 bytes, little-endian).
-- Content is a string of bracketed pairs.
-- Duplicate keys (e.g., multiple `LAYERBITMAP` entries) are aggregated into lists.
+### 2. Footer Block (`FooterMetadata`)
 
-## Core Components
+Located via the final 4-byte offset at EOF. Indexes all top-level blocks using positional and prefix-addressed keys:
 
-### Header
-Pointed to by the Footer's `FILE_FEATURE` key. Contains file-level attributes:
-- `FILE_ID`: Unique identifier for the file (Critical for identity).
-- `FILE_RECOGN_TYPE`: Indicates if real-time text recognition is enabled (`1`).
+- **`FILE_FEATURE`**: Byte offset of the `HeaderMetadata` block.
+- **Pages**: `PAGE1`, `PAGE2`, ..., `PAGE<N>` (1-based) in X-series containers; repeated `PAGE` tags in legacy A5 containers.
+- **Covers**: `COVER_0` (built-in cover), `COVER_1` (legacy A5 cover), or `COVER_2` (custom X-series cover bitmap).
+- **Styles**: `STYLE_<style_name>` (or `STYLE_<style_name><md5>` for custom `user_*` templates).
+- **Keywords**: `KEYWORD_<page4><top4>` — 1-based 4-digit page number + 4-digit zero-padded `KEYWORDRECTORI.top`.
+- **Titles**: `TITLE_<page4><top4><left4>` — 1-based 4-digit page number + 8-digit `<top4><left4>` from `TITLERECTORI`.
+- **Links**: `LINKO_<page4><top4><left4><height4><width4>` (outgoing) and `LINKI_...` (incoming), using 1-based 4-digit page number + 16-digit `LINKRECT` geometry.
 
-**Example**:
+<!-- schema: FooterMetadata -->
 ```text
-<APPLY_EQUIPMENT:N6><FILE_TYPE:NOTE><FILE_ID:F20231207221454><FILE_RECOGN_TYPE:1>
+<FILE_FEATURE:24><PAGE1:1148><PAGE2:2410><COVER_2:0><STYLE_style_white:312><KEYWORD_00010020:916><TITLE_000100570121:589><LINKO_00010060005000800070:900><DIRTY:0>
 ```
 
-### Pages
-The Footer contains a `PAGE` key with a list of offsets to **Page Blocks**.
-Each **Page Block** describes the state of a single page:
-- `PAGEID`: Unique identifier for the page.
-- `RECOGNSTATUS`: Status of handwriting recognition (0=None, 1=Done, 2=Running).
-- `RECOGNTEXT`: Offset to the binary block containing recognized text.
-- `LAYERS`: List of offsets to **Layer Blocks**.
+### 3. Page Block (`PageMetadata`)
 
-**Example**:
+Each `PAGE<N>` footer pointer addresses a `PageMetadata` block describing page identity (`PAGEID`), orientation (`ORIENTATION`), background template (`PAGESTYLE` / `PAGESTYLEMD5`), vector strokes (`TOTALPATH`), recognition status/streams (`RECOGNSTATUS`, `RECOGNTEXT`, `RECOGNFILE`), and layer slots (`MAINLAYER`, `LAYER1`, `LAYER2`, `LAYER3`, `BGLAYER`):
+
+<!-- schema: PageMetadata -->
 ```text
-<PAGEID:P202312072214540><RECOGNSTATUS:0><LAYERS:330><LAYERS:6798>
+<PAGEID:P202512072214597028199Q3d9fcB25s><PAGESTYLE:style_white><PAGESTYLEMD5:0><ORIENTATION:1000><MAINLAYER:612><LAYER1:0><LAYER2:0><LAYER3:0><BGLAYER:840><LAYERINFO:[{"layerId"#0,"name"#"Main layer","isBackgroundLayer"#false,"isAllowAdd"#false,"isCurrentLayer"#true,"isVisible"#true,"isDeleted"#false,"isAllowUp"#false,"isAllowDown"#false}]><LAYERSEQ:MAINLAYER,BGLAYER><TOTALPATH:1020><RECOGNSTATUS:0><RECOGNTEXT:0><RECOGNFILE:0>
 ```
 
-### Layers
-A page consists of multiple layers, typically:
-- `BGLAYER`: Background template.
-- `MAINLAYER`: The primary handwriting layer.
-- `LAYER[1-3]`: Additional layers.
+#### `LAYERINFO` Encoding Variants
+`LAYERINFO` stores a JSON array of per-layer visibility descriptors (`LayerVisibility` in [`schema.py`](../supernote/notebook/schema.py)):
+- **Hash-escaped JSON (older Chauvet)**: Replaces JSON `:` separators with `#` so colons do not collide with the `<KEY:VALUE>` parser.
+- **Base64 JSON (Chauvet 3.25.39+)**: Base64-encodes the UTF-8 JSON array so user-defined layer names containing `#` or `:` round-trip safely.
+- **`none` Sentinel**: Used in `.mark` annotation files, where visibility falls back to showing layers with `LAYERTYPE == "MARK"`.
 
-Each **Layer Block** defines:
-- `LAYERBITMAP`: Offset to the compressed bitmap data.
-- `LAYERPROTOCOL`: Compression algorithm used (e.g., `RATTA_RLE`, `SN_ASA_COMPRESS`).
+### 4. Layer Block (`LayerMetadata`)
 
-**Example**:
+Each non-zero layer offset on a page (`MAINLAYER`, `LAYER1..3`, `BGLAYER`) points to a `LayerMetadata` block specifying the layer's slot name, compression protocol, and compressed bitmap address (`LAYERBITMAP`):
+
+<!-- schema: LayerMetadata -->
 ```text
-<LAYERNAME:BGLAYER><LAYERPROTOCOL:SN_ASA_COMPRESS><LAYERBITMAP:330>
+<LAYERTYPE:NOTE><LAYERPROTOCOL:RATTA_RLE><LAYERNAME:MAINLAYER><LAYERPATH:0><LAYERBITMAP:447><LAYERVECTORGRAPH:0><LAYERRECOGN:0>
 ```
 
-## Binary Protocols
+### 5. Keyword, Title & Link Blocks (`KeywordMetadata`, `TitleMetadata`, `LinkMetadata`)
 
-Handwriting data is stored as bitmaps compressed with specific protocols.
+Specialty index entries pointed to by the Footer store bounding-box geometry and payload pointers:
 
-### RATTA_RLE / RATTA_RLE_X2
-Run-Length Encoding optimized for e-ink handwriting.
-- Encodes color indices and run lengths.
-- **Colors**: Maps byte values to predefined colors (Black, White, Gray, Dark Gray).
-- **Control bytes**:
-    - `0xFF`: Special marker for long runs (e.g., blank lines).
-    - High-bit set bytes indicate encoded runs vs. literal sequences.
+- **Keyword (`KeywordMetadata`)**: Note that `<KEYWORDPAGE>` is **1-based** on the wire (`KeywordMetadata.page_index` normalizes it to 0-based in Python). `KEYWORDSITE` points to the raw UTF-8 keyword string block.
 
-### SN_ASA_COMPRESS
-Zlib-compressed bitmap data.
-- Used in older files or specific contexts.
-- Decompresses to a raw bitmap of `uint16` color codes.
+<!-- schema: KeywordMetadata -->
+```text
+<KEYWORDSEQNO:0><KEYWORDPAGE:1><KEYWORDRECT:10,20,30,40><KEYWORDRECTORI:10,20,30,40><KEYWORDSITE:916><KEYWORDLEN:7><KEYWORD:ks-tilt>
+```
 
-## Encoding & Creation (Inverse Protocols)
+- **Title (`TitleMetadata`)**: Heading outline metadata with a rasterized stroke preview bitmap at `TITLEBITMAP`.
 
-To programmatically create valid `.note` files (e.g., generating calendars or reports), you must implement the *encoder* logic, which reverses the read steps defined in `decoder.py`.
+<!-- schema: TitleMetadata -->
+```text
+<TITLESEQNO:0><TITLELEVEL:1><TITLERECT:121,100,341,93><TITLERECTORI:121,57,341,180><TITLEBITMAP:589><TITLEPROTOCOL:RATTA_RLE><TITLESTYLE:1000254>
+```
 
-### 1. SN_ASA_COMPRESS (Zlib) Encoder
-Typically used for **BGLAYER** (Backgrounds).
+- **Link (`LinkMetadata`)**: Internal page jump (`LINKTYPE=0`), cross-file link (`LINKTYPE=1`), or web URL (`LINKTYPE=4`, with `LINKFILE` base64-encoded).
 
-**Algorithm**:
-1.  **Input**: A grayscale image of size `Width=1404`, `Height=1872`.
-2.  **Padding**: Append **16 empty rows** to the bottom. New size `(1404, 1888)`.
-3.  **Rotation**: Rotate the image **90° Counter-Clockwise**. New size `(1888, 1404)`.
-4.  **Formatting**:
-    - Flatten the pixels.
-    - Convert each pixel to a **Little-Endian 16-bit Key**.
-    - **Color Keys**:
-        - Black: `0x0000`
-        - Dark Gray: `0x2104`
-        - Gray: `0xE1E2`
-        - White (Transparent): `0xFFFF`
-5.  **Compression**: Compress the byte array using **Zlib**.
+<!-- schema: LinkMetadata -->
+```text
+<LINKTYPE:4><LINKINOUT:0><LINKRECT:50,60,70,80><LINKRECTORI:50,60,70,80><LINKTIMESTAMP:12345><LINKFILE:aHR0cHM6Ly9leGFtcGxlLmNvbQ==><LINKFILEID:none><PAGEID:none><LINKBITMAP:900><LINKPROTO:RATTA_RLE><LINKSTYLE:style_link>
+```
 
-### 2. RATTA_RLE Encoder
-Typically used for **MAINLAYER** (Handwriting) and `LAYER1-3`.
+---
 
-**Structure**:
-Stream of `[ColorByte, LengthByte]` pairs.
+## Enumerated Wire Values
 
-**Color Mapping**:
-- Black: `0x61`
-- White/Transparent: `0x62`
-- Dark Gray: `0x63`
-- Gray: `0x64`
-- *Note*: X2 Series adds more colors, but these are sufficient for basic content.
+See [`supernote/notebook/schema.py`](../supernote/notebook/schema.py) for complete enum definitions (`FileType`, `EquipmentType`, `LayerName`, `LayerProtocol`, `LayerType`, `PageOrientation`, `RecognitionStatus`, `LinkType`, `LinkDirection`).
 
-**Length Encoding Logic**:
-The `LengthByte` typically encodes `count - 1`.
-- **Short Run (1-128)**:
-    - Encode `L = count - 1`.
-    - Emit `[Color, L]`.
-- **Long Loop (Extension)**:
-    - If `LengthByte >= 128` (High bit set), it serves as a multiplier for the *next* block of the *same color*.
-    - Logic: `TotalLength = 1 + NextL + (((PrevL & 0x7F) + 1) << 7)`
-- **Special Marker (0xFF)**:
-    - `[Color, 0xFF]` represents a run of **16384** pixels (0x4000).
-    - Use this for efficiently clearing large empty areas.
+| Wire Tag | Enum Class | Values |
+| :--- | :--- | :--- |
+| `FILE_TYPE` | `FileType` | `NOTE` (notebook), `MARK` (document annotation sidecar) |
+| `APPLY_EQUIPMENT` | `EquipmentType` | `A5`, `A5X`, `A6X`, `N5` (A5 X2 Manta), `N6` (A6 X2 Nomad) |
+| `ORIENTATION` | `PageOrientation` | `1000` (vertical), `1090` (horizontal 90°), `1180` (vertical 180°), `1270` (horizontal 270°) |
+| `RECOGNSTATUS` | `RecognitionStatus` | `0` (none), `1` (done — `RECOGNTEXT` ready), `2` (running) |
+| `LAYERPROTOCOL` / `PROTOCOL` | `LayerProtocol` | `RATTA_RLE`, `SN_ASA_COMPRESS` |
+| `LAYERTYPE` | `LayerType` | `NOTE`, `MARK`, `BACKGROUND` |
+| `LINKTYPE` | `LinkType` | `0` (page link), `1` (file link), `4` (web URL) |
+| `LINKINOUT` | `LinkDirection` | `0` (outgoing), `1` (incoming) |
 
-## Deep Dive: Headers & Enums
+---
 
-### Valid Field Values
+## Binary Payloads & Compression Protocols
 
-**`FILE_TYPE`** (Header)
-- `NOTE`: Standard notebook file.
+### 1. `RATTA_RLE` & X2 High-Res Grayscale (`RattaRleDecoder` / `RattaRleX2Decoder`)
 
-**`RECOGNSTATUS`** (Page)
-- `0` (None): No recognition performed.
-- `1` (Done): Recognition complete. `RECOGNTEXT` block should be present.
-- `2` (Running): Recognition is currently in progress (avoid processing).
+Used for `MAINLAYER`, `LAYER1..3`, built-in `BGLAYER` styles on modern firmware, and title/link bitmaps. Encodes a stream of `[color_code, length_byte]` byte pairs in [`decoder.py`](../supernote/notebook/decoder.py):
 
-**`ORIENTATION`** (Page)
-- `1000`: Vertical (Portrait).
-- `1090`: Horizontal (Landscape).
+- **Color Codes (`RattaRleDecoder`)**:
+  - `0x61`: Black
+  - `0x62`: Background / Transparent
+  - `0x63`: Dark Gray (`0x9D` on X2 `SN_FILE_VER_20230015+`; `0x63` retained for compatibility)
+  - `0x64`: Gray (`0xC9` on X2 `SN_FILE_VER_20230015+`; `0x64` retained for compatibility)
+  - `0x65`: White
+  - `0x66`: Marker Black
+  - `0x67`: Marker Dark Gray (`0x9E` on X2)
+  - `0x68`: Marker Gray (`0xCA` on X2)
+  - On X2 notebooks (`signature >= SN_FILE_VER_20230015`), unmapped byte codes represent literal 8-bit grayscale intensities.
+- **Run-Length Rules**:
+  - **Short run (`length_byte < 0x80`)**: Emits `length_byte + 1` pixels (`1..128`).
+  - **Special blank marker (`length_byte == 0xFF`)**: Emits `16384` (`0x4000`) pixels (`1024` when `all_blank` hint applies).
+  - **Extended run (`length_byte & 0x80 != 0`, `!= 0xFF`)**: Holds `(prev_color, prev_len)`. If the next pair has the same `color_code`, emits `1 + next_len + (((prev_len & 0x7F) + 1) << 7)` pixels; otherwise flushes `((prev_len & 0x7F) + 1) << 7` pixels of `prev_color` first. At EOF, any held run is bit-shifted via `_adjust_tail_length` to fill the remaining scanline gap.
 
-**`LINKTYPE`** (Link)
-- `0`: Page Link (Internal jump).
-- `1`: File Link (Jump to another `.note` or `.pdf`).
-- `4`: Web Link (URL).
+### 2. `SN_ASA_COMPRESS` (`FlateDecoder`)
 
-### Layer Structure
+Zlib-compressed `uint16_le` bitmap used on legacy A5 pages and older backgrounds:
+1. Decompresses via `zlib` to `1404 * 1888 * 2` bytes (`uint16_le`).
+2. Reshapes to `(1404, 1888)`, rotates 90° clockwise, and trims the bottom 16 padding rows to yield `(1404, 1872)`.
+3. Maps `uint16` color keys: `0x0000` (Black), `0x2104` (Dark Gray), `0xE1E2` (Gray), `0xFFFF` (White/Background).
 
-A **Page Block** references layers via the `LAYERS` key (list of offsets) or explicit named keys in X-series.
+### 3. Custom Background PNGs (`PngDecoder`)
 
-**Standard Layers**:
-1.  **`BGLAYER`**: The background template (grid, lines, or custom PNG).
-    - Often refers to a shared `STYLE_...` block to save space.
-2.  **`MAINLAYER`**: The primary layer where the user writes.
-3.  **`LAYER1` - `LAYER3`**: Additional layers for overlaying content.
+When a page uses a custom template (`PAGESTYLE` starting with `user_`), `BGLAYER`'s `LAYERBITMAP` block stores raw PNG bytes matching the notebook's `(width, height)` canvas, decoded directly via Pillow (`PngDecoder`).
 
-**Layer Protocol**:
-Each layer defines its own compression protocol (`LAYERPROTOCOL`). It is common for `BGLAYER` to use `SN_ASA_COMPRESS` (or just be a raw PNG reference) while `MAINLAYER` uses `RATTA_RLE`.
+### 4. Embedded Recognition Text (`TextDecoder`)
+
+When `FILE_RECOGN_TYPE == 1` and `RECOGNSTATUS == 1`, `RECOGNTEXT` points to a length-prefixed block containing **base64-encoded UTF-8 JSON** (`{"elements": [{"type": "Text", "label": "...", "words": [{"bounding-box": {"y": ...}}]}]}`), decoded and spatially ordered by `TextDecoder` in [`decoder.py`](../supernote/notebook/decoder.py).
+
+---
 
 ## Processing System Guidelines
 
-When building systems to index or process Supernote files (e.g., for RAG or Knowledge Bases), follow these guidelines:
+When building indexing, search, or sync pipelines (such as the server modules in [`page_hashing.py`](../supernote/server/services/processor_modules/page_hashing.py)):
 
-### 1. Identity & Stability
-- **Files**: Do NOT use the filename as the primary key. Use the `Header.FILE_ID`. This ID persists across renames.
-- **Pages**: Use `Page.PAGEID` to address specific pages. Page numbers can change if pages are inserted/deleted, but `PAGEID` stays with the content.
-
-### 2. Change Detection (Incremental Indexing)
-- **File Level**: Check the `Footer` metadata or total file size/modtime.
-- **Page Level**: Construct a hash of the Page Block metadata (which includes layer pointers and dirty flags).
-    - If the Page Block hash changes, the content (handwriting or recognition) has likely changed.
-    - Supernote files are append-only for new data but may rewrite metadata blocks. A "hashing module" is essential for efficient re-processing.
-
-### 3. Text Extraction Strategies
-You have two paths for extracting text.
+1. **Stable Identity**:
+   - **Notebook Level**: Key by `HeaderMetadata.file_id` (`Notebook.file_id`) rather than file path so renames and moves preserve history.
+   - **Page Level**: Key by `PageMetadata.page_id` (`Page.page_id`) rather than 0-based page index so page insertions, deletions, and reordering do not orphan cached artifacts.
+2. **Deterministic Page Change Detection**:
+   - [`PageHashingModule`](../supernote/server/services/processor_modules/page_hashing.py) hashes the wire-serialized `PageMetadata` (`page.to_wire_dict()`, stripping volatile recognition keys) together with each referenced binary block (`LAYERBITMAP`, `DATA`, `TOTALPATH`).
+   - Do **not** alter `PageMetadata.to_wire_dict()` key ordering or value formatting without migrating stored `NotePageContentDO.content_hash` digests, or existing deployments will unnecessarily re-render and re-OCR unchanged pages.
+3. **Text Extraction Strategy**:
 
 > [!IMPORTANT]
-> **Architecture Decision**: This project exclusively uses the **Slow Path (OCR)** strategy. We have found that modern LLM-based OCR (e.g., Gemini) provides significantly higher quality transcription than the device's embedded `RECOGNTEXT`. Therefore, we skip parsing the `RECOGNTEXT` block entirely.
+> **Architecture Decision**: The Supernote server pipeline uses the **Rendered Vision OCR** path (rendering layered pages to PNG and transcribing via vision LLMs) rather than relying on device-generated `RECOGNTEXT`, ensuring consistent transcription across Standard (non-real-time) notebooks, diagrams, and mixed handwriting.
 
-**Fast Path (Metadata) [NOT USED]**
-- Check `Page.RECOGNTEXT` address.
-- If present (>0), read the binary block and decode using `TextDecoder` (Protobuf/JSON based).
-- **Pros**: Instant, no heavy compute.
-- **Cons**: Only available if the user enabled "Real-time Recognition" and the device has processed it. Quality varies.
+---
 
-**Slow Path (OCR) [SELECTED]**
-- If `RECOGNTEXT` is missing, you must render the page.
-- decode `LAYERBITMAP` data using the appropriate protocol (`RATTA_RLE`).
-- Flatten layers (Background + Main + Layers) into a PNG.
-- Pass the PNG to an external OCR engine (e.g., Gemini Flash, Tesseract).
-- **Pros**: Works on all files and drawings.
-- **Cons**: Expensive, slow.
+## Writing & Reconstruction Caveats
 
-### 4. Vector vs. Raster
-- **Raster**: `LAYERBITMAP` (what you see).
-- **Vector**: `TOTALPATH` (available in some versions).
-    - `TOTALPATH` contains the raw stylus strokes (x, y, pressure).
-    - Useful for high-fidelity SVG generation or analyzing stroke order.
-    - **Note**: `parser.py` currently focuses on Raster decoding.
+[`reconstruct()` and `merge()`](../supernote/notebook/manipulator.py) rebuild valid latest-signature (`SN_FILE_VER_20230015`) `.note` streams and validate the result through `SupernoteXParser.parse_stream()`. Keep the following device constraints in mind when synthesizing notebooks programmatically:
 
-## Specialty Data
-
-- **Keywords**: Defined in Footer (`KEYWORD_...`). Links a specific rectangle on a page to a text label.
-- **Links**: Defined in Footer (`LINK...`). Can be internal (jump to page) or external (web/file).
-
-## Unverified Areas / Risks
-
-While the read-path is well understood, the following areas contain uncertainties for *writing* new files:
-
-- **`TOTALPATH` Vector Data**:
-    - The `TOTALPATH` block contains vector stroke data (pressure, tilt, etc.).
-    - Use Case: High-fidelity SVG export and handwriting recognition.
-    - **Risk**: Programmatically generated files usually lack this data (raster only). The device *should* handle missing `TOTALPATH` gracefully (rendering the raster `MAINLAYER`), but this is not fully verified on all firmware versions.
-- **`RECOGNTEXT` Generation**:
-    - The format of the `RECOGNTEXT` block (protobuf/json hybrid) is complex and not fully documented.
-    - **Risk**: You cannot easily "inject" recognized text into a new notebook. Files created programmatically should set `RECOGNSTATUS=0` effectively disabling search/recognition features for that content until the device re-indexes it (if it does).
-- **Magic Header Values**:
-    - `RATTA_ETMD`: Observed value `0` in A5X/A6X files (X-Series). Likely related to "Electro-Magnetic Touch Device" or model parameters.
-    - Fields like this and various DPI settings in the header have opaque values.
-    - **Recommendation**: When creating a file, **copy the Header block** from a known-good "Template" file of the same device type (A5X/A6X) rather than synthesising it from scratch.
+- **`TOTALPATH` Vector Strokes**: Supernote firmware uses `TOTALPATH` for stroke-level erasing, lasso selection, and on-device re-recognition. Raster-only generated pages (`TOTALPATH=0`) display as bitmaps on `MAINLAYER` / `BGLAYER` but strokes are not individually editable on the device.
+- **Opaque Header Parameters**: Hardware calibration tags such as `RATTA_ETMD`, `IS_OLD_APPLY_EQUIPMENT`, and `ANTIALIASING_CONVERT` carry device-specific values; prefer cloning `HeaderMetadata` from a template notebook matching the target `EquipmentType` rather than inventing values from scratch.
