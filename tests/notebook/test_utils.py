@@ -45,9 +45,7 @@ def test_workaround_page_wrapper_from_page_copies_page_and_layer_contents() -> N
             {"LAYERNAME": "BGLAYER", "LAYERPROTOCOL": "RATTA_RLE"},
         ],
     }
-    page = fileformat.Page(page_info)
-    page.set_content(b"page-bytes")
-    page.set_totalpath(b"path-bytes")
+    page = fileformat.Page(page_info, content=b"page-bytes", totalpath=b"path-bytes")
     page.get_layer(0).set_content(b"main-bytes")
     page.get_layer(1).set_content(b"bg-bytes")
 

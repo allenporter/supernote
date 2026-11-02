@@ -77,6 +77,15 @@ def test_flate_decoder_rejects_wrong_uncompressed_length() -> None:
     with pytest.raises(exceptions.DecoderException, match="uncompressed bitmap length"):
         flate_decoder.decode(short_compressed, 1404, 1872)
 
+    expected_bytes = (
+        flate_decoder.INTERNAL_PAGE_WIDTH
+        * flate_decoder.INTERNAL_PAGE_HEIGHT
+        * np.dtype(np.uint16).itemsize
+    )
+    bomb_compressed = zlib.compress(b"\x00" * (expected_bytes * 4))
+    with pytest.raises(exceptions.DecoderException, match="uncompressed bitmap length"):
+        flate_decoder.decode(bomb_compressed, 1404, 1872)
+
 
 def test_ratta_rle_decoder_grayscale() -> None:
     rle = decoder.RattaRleDecoder()
