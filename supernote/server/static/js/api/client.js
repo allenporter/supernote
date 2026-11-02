@@ -212,10 +212,22 @@ async function sha256(message) {
     throw new Error("SHA-256 is not available. Please access via HTTPS/localhost or ensure js-sha256 is loaded.");
 }
 
-/**
- * Fetch files for a given directory.
- */
-export async function fetchFiles(directoryId = "0", pageNo = 1, pageSize = 50) {
+const DEFAULT_FILE_PAGE_SIZE = 100;
+const MAX_DIRECTORY_PAGES = 100;
+
+function mapUserFileVO(file) {
+    const isDirectory = file.isFolder === "Y" || file.isFolder === true || file.isFolder === 1;
+    return {
+        id: file.id,
+        name: file.fileName,
+        isDirectory,
+        size: file.size,
+        updatedAt: file.updateTime,
+        extension: isDirectory ? null : getExtension(file.fileName)
+    };
+}
+
+async function fetchFilesPage(directoryId, pageNo, pageSize) {
     const headers = {
         'Content-Type': 'application/json'
     };
@@ -247,17 +259,28 @@ export async function fetchFiles(directoryId = "0", pageNo = 1, pageSize = 50) {
         throw new Error(`Failed to fetch files: ${response.statusText}`);
     }
 
-    const data = await response.json();
+    return await response.json();
+}
 
-    // Map backend VO to frontend interface
-    return (data.userFileVOList || []).map(file => ({
-        id: file.id,
-        name: file.fileName,
-        isDirectory: file.isFolder === "Y" || file.isFolder === true || file.isFolder === 1,
-        size: file.size,
-        updatedAt: file.updateTime,
-        extension: file.isFolder === "Y" ? null : getExtension(file.fileName)
-    }));
+/**
+ * Fetch all files and folders for a given directory across pages.
+ */
+export async function fetchFiles(directoryId = "0", pageSize = DEFAULT_FILE_PAGE_SIZE) {
+    const firstPage = await fetchFilesPage(directoryId, 1, pageSize);
+    const items = (firstPage.userFileVOList || []).map(mapUserFileVO);
+    const totalPages = Math.min(
+        MAX_DIRECTORY_PAGES,
+        Math.max(1, Number(firstPage.pages) || 1)
+    );
+
+    for (let pageNo = 2; pageNo <= totalPages; pageNo++) {
+        const nextPage = await fetchFilesPage(directoryId, pageNo, pageSize);
+        const pageItems = nextPage.userFileVOList || [];
+        if (pageItems.length === 0) break;
+        items.push(...pageItems.map(mapUserFileVO));
+    }
+
+    return items;
 }
 
 /**
