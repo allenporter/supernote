@@ -1,97 +1,49 @@
-# Project Roadmap
+# Project Roadmap & Prioritization Strategy
 
-This document outlines the path to making Supernote Private Cloud a reliable "daily driver." Priorities are shifted to focus on **Operational Readiness** (can I run it safely?) and **Data Safety** (will I lose my notes?) before adding new features.
+This document outlines the strategic direction and prioritization rubric for **Supernote Private Cloud & Knowledge Hub**.
 
-## Phase 1: Operational Readiness ("Daily Driver")
-*Goal: Securely deploy the server for personal daily use.*
+> **Live Execution Queue**: Individual features, bugs, and refactors are tracked directly in **[GitHub Issues](https://github.com/allenporter/supernote/issues)** rather than static checkboxes here so status never drifts when PRs merge:
+> - 🔥 **[P1 — Next Up & Critical](https://github.com/allenporter/supernote/issues?q=is%3Aopen+is%3Aissue+label%3Ap1)** *(Data safety, correctness bugs, active focus)*
+> - 🤖 **[Agent-Ready Queue (`p1` + `agent-ready`)](https://github.com/allenporter/supernote/issues?q=is%3Aopen+is%3Aissue+label%3Ap1+label%3Aagent-ready)** *(Well-scoped tasks ready to pick up)*
+> - 📋 **[P2 — Planned Roadmap](https://github.com/allenporter/supernote/issues?q=is%3Aopen+is%3Aissue+label%3Ap2)** *(Core feature & quality backlog)*
+> - 🧭 **[Needs Design (`needs-design`)](https://github.com/allenporter/supernote/issues?q=is%3Aopen+is%3Aissue+label%3Aneeds-design)** *(Open architectural proposals)*
+> - 🧊 **[P3 — Icebox / Long-Horizon](https://github.com/allenporter/supernote/issues?q=is%3Aopen+is%3Aissue+label%3Ap3)** *(Larger protocol extensions & future bets)*
 
-- [x] **Bootstrap & Deployment Guide**:
-    - Document standard secure setup (Docker/Kubernetes).
-    - Define how to handle registration/secrets securely in a self-hosted context.
-- [x] **SSL/TLS Support**:
-    - Document reverse proxy setup (Nginx/Traefik) for secure HTTPS connections (essential for real device usage).
-- [x] **Web UI Compatibility**:
-    - Verify server works against the official Supernote Web UI container (ultimate compatibility check).
-- [x] **Dockerization**:
-    - (Done) Basic Dockerfile exists. Verified with the bootstrap guide.
-- [x] **Security & Identity**:
-    - [x] Security review for all the auth and user flows.
-    - [x] Understand reset password semantics and how it works securely.
-    - [x] Abuse protection (e.g. tracking error counts, rate limiting).
-- [x] **Documentation**:
-    - [x] Refresh stale README.md and update examples.
+---
 
-## Phase 2: Safety & Integrity ("Trustworthy Storage")
-*Goal: Ensure data is never lost, corrupted, or leaked.*
+## Prioritization Rubric
 
-- [x] **Hard Per-User Isolation**:
-    - Enforce strict storage separation per user to prevent cross-contamination.
-- [ ] **Temp File Cleanup (TTL)**:
-    - Implement background task to clean up stale uploads/chunks in `storage/temp`.
-- [ ] **Capacity & Quota Enforcement**:
-    - Implement actual storage quota checks based on user limits.
-    - Implement proper quota allocation values and understand `AllocationVO`.
-- [x] **Finalize Legacy Cleanup**:
-    - Remove all dependencies on legacy `StorageService`.
-    - Audit use of `file_server`, `inner name`, and `bucket` fields for consistency.
-- [x] **Data Integrity & Typing**:
-    - [x] Email address canonicalization for unique identity.
-    - [x] Typed "password" object (MD5 vs raw strings).
-    - [x] Typed "hash" objects (MD5, SHA256) for integrity checks.
-- [x] **Sync Safety**:
-    - Review use of "syn" field to prevent data loss during synchronization.
-- [x] **Recycle Bin Support**:
-    - Implement soft-delete and recovery via Web API.
+When triaging issues or choosing what to build next, we prioritize in this order:
 
-## Phase 3: Usability & Tooling
-*Goal: Improve the experience of managing and debugging the server.*
+1. **Data Safety, Security & Sync Trust (`p1`)**: Never lose, corrupt, or leak user notes. Soft-delete recovery, overwrite protection, strict per-user isolation, account-deletion cleanup, and auth/token hardening always come first.
+2. **Device Protocol & `.note` Format Fidelity (`p1`–`p2`)**: Maintain 100% compatibility with physical Supernote firmware (including Chauvet `3.31+` plugins/transforms), native `.note` structures (`FILE_ID`, `TITLESTYLE`/`TITLEBITMAP`, `Link`s, `Keywords`), and `api-spec/openapi.yaml`.
+3. **High-Leverage Daily UX & AI Quality (`p1`–`p2`)**: Fast, low-memory Web UI browsing, accurate OCR (device keyword vocabulary, human edit preservation, blank-page skip), searchable vector PDF exports, and cost-efficient local/cloud AI providers.
+4. **Open PKM & Agent Ecosystem (`p2`)**: Composable primitives (MCP tools/OAuth, scoped App Tokens, incremental sync cursors, Digest exports) that let companion apps like Obsidian, Home Assistant, Readwise, and iOS/macOS viewers integrate cleanly without coupling server internals to external schemas.
+5. **Long-Horizon Protocol Extensions (`p3`)**: Full standalone protocol surfaces (e.g., two-way CalDAV, WebDAV, multi-notebook RAG chat) once core storage, structure, and sync primitives are rock-solid.
 
-- [x] **CLI Improvements**:
-    - Expand CLI to support filesystem operations (upload, download, list, move, delete) via `supernote cloud`.
-- [x] **Observability**:
-    - Add trace logging to inspect server state.
-- [x] **Architecture & Client Refactoring**:
-    - [x] Reconcile Client libraries (reconcile `Supernote` with specific APIs).
-    - [x] File vs Device APIs: Organize routes and models by API type; bridge gaps.
+---
 
-## Phase 4: Intelligence & AI
-*Goal: Unlock the value of your notes with OCR and AI.*
+## Strategic Phases
 
-- [x] **OCR Pipeline**:
-    - [x] Implement background processing to extract text from `.note` files.
-- [x] **Full-Text Search**:
-    - [x] Index OCR'd text to allow searching note contents (not just filenames).
-- [x] **AI Summarization**:
-    - [x] Generate summaries of notes or daily roll-ups using LLMs (Gemini).
+### Phase 1: Operational Readiness ("Daily Driver") — ✅ Complete
+Secure, lightweight single-container deployment (~135–160MB idle RAM) with SQLite, reverse-proxy TLS docs, official Supernote Web UI & device protocol compatibility, rate limiting, and token redaction across logs.
 
-## Phase 5: Advanced Features & Compatibility
-*Goal: Feature parity and wider device support.*
+### Phase 2: Safety & Integrity ("Trustworthy Storage") — 🔄 Active Hardening
+- **Completed**: Per-user storage isolation, content-addressed `BlobStorage` with opportunistic TTL temp/chunk cleanup, typed hash/password models, and backend Recycle Bin soft-delete (`RecycleFileDO`).
+- **Focus Areas** ([`storage-sync`](https://github.com/allenporter/supernote/labels/storage-sync), [`security`](https://github.com/allenporter/supernote/labels/security)):
+  - Web UI Recycle Bin recovery view, per-user storage quota enforcement, full artifact purge on account deletion, and bounded file version history to protect against multi-device overwrite accidents or NAS ransomware.
 
-- [x] **Schedule/Calendar**:
-    - [x] Handle cascade delete of tasks.
-- [x] **MCP Integration**:
-    - [x] Expose Supernote data via Model Context Protocol.
-- [ ] **Core Logic Separation**:
-    - Decouple `aiohttp` handlers to allow embedding in Home Assistant.
+### Phase 3: Notebook Structure, Web UI & Document Workflows — 🔄 Active Focus
+- **Completed**: `supernote cloud` CLI operations, Prometheus metrics & trace logging, scroll-synced per-page OCR transcripts, lazy cover thumbnails, and notebook page deep-linking.
+- **Focus Areas** ([`notebook`](https://github.com/allenporter/supernote/labels/notebook), [`web-ui`](https://github.com/allenporter/supernote/labels/web-ui)):
+  - Native `.note` structural persistence (`FILE_ID`, cross-note/page/web `Link`s, `TITLESTYLE` hierarchy, and `TITLEBITMAP` heading OCR), Web UI Metadata & Outline tab, searchable PDF export with TOC bookmarks, `.pdf.mark` & `.spd` format support, and Chauvet `3.31+` compatibility.
 
+### Phase 4: Intelligence & Human-in-the-Loop AI — 🔄 Active Focus
+- **Completed**: Background OCR, daily/notebook summarization, semantic vector search, and pluggable Gemini + local OpenAI-compatible (Ollama / llama.cpp / vLLM) providers.
+- **Focus Areas** ([`ai`](https://github.com/allenporter/supernote/labels/ai)):
+  - Scoped OCR vocabulary harvested from device keywords, non-destructive human transcript edits (`user_text` vs `ocr_text`), handwritten Digest marginalia OCR, multi-provider & Vertex AI / Gemini Flex cost optimization, and Web UI prompt management.
 
-### Testing & Quality
-- [x] **Test Coverage**:
-    - Upload flow with various chunk sizes.
-    - Fix invalid assertions (path_display).
-    - Expand general coverage (currently 300+ tests).
-- [ ] **Static Analysis**:
-    - Fix Mypy errors for `supernote/notebook/` and `supernote/cli/`.
-- [x] **Error Handling**:
-    - Define `ErrorCode` as an enum and use the `error_code` field uniformly.
-    - Improve handling of specific backend errors (e.g., SQLAlchemy) to avoid leaking details.
-- [x] **Test Structure Refactor**:
-    - Reorganize tests to match module structure.
-
-### Refactoring
-- [ ] **VFS Semantics**:
-    - Clarify generic `soft_delete` and recursive copy logic.
-- [ ] **Code Cleanup**:
-    - Remove dead code in `CoordinationService`.
-- [ ] **Multi-host Client Authentication**:
-    - Update `FileCacheAuth` and `Client` to support multiple hosts simultaneously.
+### Phase 5: Companion Ecosystem, MCP & Schedule — 📋 Planned
+- **Completed**: Built-in MCP server with OAuth 2.1, schedule task sync, and RFC 5545 `.ics` VTODO export.
+- **Focus Areas** ([`mcp`](https://github.com/allenporter/supernote/labels/mcp), [`schedule`](https://github.com/allenporter/supernote/labels/schedule)):
+  - OAuth consent card & scoped Bearer App Tokens for headless MCP agents and companion apps, cursor-based incremental change feed (`/api/extended/sync/changes`) for two-way Obsidian/PKM sync, handwritten task extraction, recurring task overrides, `/INBOX` article delivery, and future CalDAV/WebDAV surfaces.

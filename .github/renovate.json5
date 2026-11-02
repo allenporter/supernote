@@ -7,6 +7,9 @@
   assignees: [
     'allenporter',
   ],
+  labels: [
+    'dependencies',
+  ],
   packageRules: [
     {
       description: 'Silent automerge for minor, patch, pin, and digest updates',
