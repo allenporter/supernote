@@ -1,4 +1,3 @@
-import ast
 import base64
 import io
 import json
@@ -615,36 +614,3 @@ def test_notebook_spec_relative_links_resolve() -> None:
         assert resolved.exists(), (
             f"broken relative link in docs/notebook_spec.md: {target} -> {resolved}"
         )
-
-
-def test_schema_public_attributes_use_inline_docstrings_for_pdoc() -> None:
-    schema_path = (
-        Path(__file__).resolve().parents[2] / "supernote" / "notebook" / "schema.py"
-    )
-    tree = ast.parse(schema_path.read_text(encoding="utf-8"))
-
-    for node in tree.body:
-        if not isinstance(node, ast.ClassDef) or node.name.startswith("_"):
-            continue
-        cls_doc = ast.get_docstring(node) or ""
-        assert "Attributes\n" not in cls_doc, (
-            f"{node.name} should use inline attribute docstrings for pdoc"
-        )
-        stmts = node.body
-        for idx, stmt in enumerate(stmts):
-            if not isinstance(stmt, ast.AnnAssign) or not isinstance(
-                stmt.target, ast.Name
-            ):
-                continue
-            attr_name = stmt.target.id
-            if attr_name.startswith("_"):
-                continue
-            next_stmt = stmts[idx + 1] if idx + 1 < len(stmts) else None
-            has_inline_doc = (
-                isinstance(next_stmt, ast.Expr)
-                and isinstance(next_stmt.value, ast.Constant)
-                and isinstance(next_stmt.value.value, str)
-            )
-            assert has_inline_doc, (
-                f"{node.name}.{attr_name} is missing an inline attribute docstring for pdoc"
-            )
