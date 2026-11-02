@@ -234,22 +234,7 @@ class ImageConverter:
         highres_grayscale=False,
         default_protocol: str | None = None,
     ):
-        """Returns a proper decoder for the given page or layer.
-
-        Parameters
-        ----------
-        page : Page or Layer
-            page or layer object
-        highres_grayscale : bool
-            whether X2 extended grayscale palette applies
-        default_protocol : str | None
-            fallback codec when `<LAYERPROTOCOL>` is omitted on a layered X-series layer
-
-        Returns
-        -------
-        subclass of BaseDecoder
-            a decoder
-        """
+        """Return the bitmap decoder for `page` (or `Layer`), falling back to `default_protocol` when `<LAYERPROTOCOL>` is omitted."""
         protocol = page.protocol if page.protocol is not None else default_protocol
         if protocol == "SN_ASA_COMPRESS":
             return Decoder.FlateDecoder()

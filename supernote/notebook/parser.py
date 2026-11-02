@@ -39,20 +39,8 @@ def parse_metadata(stream: FileObj, policy: str = "strict") -> schema.SupernoteM
     """Parses a Supernote binary stream and returns a typed `SupernoteMetadata` tree.
 
     Policy:
-    - 'strict': raise exception for unknown signature (default)
-    - 'loose': try to parse for unknown signature
-
-    Parameters
-    ----------
-    stream : file-like object
-        Supernote binary stream
-    policy : str
-        Signature check policy
-
-    Returns
-    -------
-    SupernoteMetadata
-        Parsed metadata object
+    - `'strict'`: raise exception for unknown signature (default)
+    - `'loose'`: try to parse for unknown signature
     """
     try:
         x_parser = SupernoteXParser()
@@ -81,24 +69,10 @@ def load(
     """Creates a `Notebook` object from a Supernote binary stream.
 
     Policy:
-    - 'strict': raise exception for unknown signature (default)
-    - 'loose': try to parse for unknown signature
+    - `'strict'`: raise exception for unknown signature (default)
+    - `'loose'`: try to parse for unknown signature
 
-    Parameters
-    ----------
-    stream : file-like object
-        Supernote binary stream
-    metadata : SupernoteMetadata | None
-        Optional pre-parsed metadata object
-    policy : str
-        Signature check policy
-    page_number : int | None
-        Optional single 0-based page index to load instead of all pages
-
-    Returns
-    -------
-    Notebook
-        Loaded notebook object
+    Pass `page_number` (0-based) to load bitmaps for a single page instead of all pages.
     """
     if metadata is None:
         metadata = parse_metadata(stream, policy)
@@ -175,24 +149,10 @@ def load_notebook(
     """Creates a `Notebook` object from a Supernote file path.
 
     Policy:
-    - 'strict': raise exception for unknown signature (default)
-    - 'loose': try to parse for unknown signature
+    - `'strict'`: raise exception for unknown signature (default)
+    - `'loose'`: try to parse for unknown signature
 
-    Parameters
-    ----------
-    file_name : str | os.PathLike[str]
-        File path
-    metadata : SupernoteMetadata | None
-        Optional pre-parsed metadata object
-    policy : str
-        Signature check policy
-    page_number : int | None
-        Optional single 0-based page index to load instead of all pages
-
-    Returns
-    -------
-    Notebook
-        Loaded notebook object
+    Pass `page_number` (0-based) to load bitmaps for a single page instead of all pages.
     """
     with open(file_name, "rb") as f:
         return load(f, metadata, policy, page_number=page_number)
