@@ -30,13 +30,19 @@ def extended_client(authenticated_client: Client) -> ExtendedClient:
 
 
 @pytest.fixture
-def server_config(server_config: ServerConfig) -> ServerConfig:
-    """Configure fake AI models for extended route tests."""
-    server_config.ai = AiConfig(
+def ai_config() -> AiConfig:
+    """Default AI configuration for extended route tests."""
+    return AiConfig(
         ocr=ModelConfig(provider="fake", model="fake-ocr-v1"),
         summary=ModelConfig(provider="fake", model="fake-summary-v1"),
         embedding=ModelConfig(provider="fake", model="fake-embedding-v1"),
     )
+
+
+@pytest.fixture
+def server_config(server_config: ServerConfig, ai_config: AiConfig) -> ServerConfig:
+    """Configure fake AI models for extended route tests."""
+    server_config.ai = ai_config
     return server_config
 
 
@@ -545,8 +551,51 @@ async def test_extended_ai_status(extended_client: ExtendedClient) -> None:
     assert status.success is True
     assert status.has_api_key is True
     assert status.ocr_enabled is True
+    assert status.ocr_model == "fake-ocr-v1"
+    assert status.summary_enabled is True
+    assert status.summary_model == "fake-summary-v1"
     assert status.vector_search_enabled is True
+    assert status.embedding_model == "fake-embedding-v1"
     assert status.model == "fake-ocr-v1"
+
+
+@pytest.mark.parametrize("ai_config", [AiConfig()])
+async def test_extended_ai_status_disabled(extended_client: ExtendedClient) -> None:
+    status = await extended_client.get_ai_status()
+    assert status.success is True
+    assert status.has_api_key is False
+    assert status.ocr_enabled is False
+    assert status.ocr_model is None
+    assert status.summary_enabled is False
+    assert status.summary_model is None
+    assert status.vector_search_enabled is False
+    assert status.embedding_model is None
+    assert status.model is None
+
+
+@pytest.mark.parametrize(
+    "ai_config",
+    [
+        AiConfig(
+            ocr=None,
+            summary=ModelConfig(provider="fake", model="ollama-summary-v1"),
+            embedding=None,
+        )
+    ],
+)
+async def test_extended_ai_status_mixed_keyless_provider(
+    extended_client: ExtendedClient,
+) -> None:
+    status = await extended_client.get_ai_status()
+    assert status.success is True
+    assert status.has_api_key is True
+    assert status.ocr_enabled is False
+    assert status.ocr_model is None
+    assert status.summary_enabled is True
+    assert status.summary_model == "ollama-summary-v1"
+    assert status.vector_search_enabled is False
+    assert status.embedding_model is None
+    assert status.model == "ollama-summary-v1"
 
 
 async def test_extended_note_cover_converts_only_first_page(

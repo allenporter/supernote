@@ -245,8 +245,20 @@ class WebAiStatusVO(BaseResponse):
 
     has_api_key: bool = field(metadata=field_options(alias="hasApiKey"), default=False)
     ocr_enabled: bool = field(metadata=field_options(alias="ocrEnabled"), default=False)
+    ocr_model: str | None = field(
+        metadata=field_options(alias="ocrModel"), default=None
+    )
+    summary_enabled: bool = field(
+        metadata=field_options(alias="summaryEnabled"), default=False
+    )
+    summary_model: str | None = field(
+        metadata=field_options(alias="summaryModel"), default=None
+    )
     vector_search_enabled: bool = field(
         metadata=field_options(alias="vectorSearchEnabled"), default=False
+    )
+    embedding_model: str | None = field(
+        metadata=field_options(alias="embeddingModel"), default=None
     )
     model: str | None = None
 

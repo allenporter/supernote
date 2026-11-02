@@ -179,11 +179,31 @@ def test_web_note_cover_models() -> None:
 
 
 def test_web_ai_status_model() -> None:
+    default_vo = WebAiStatusVO()
+    assert default_vo.to_dict() == {
+        "success": True,
+        "errorCode": None,
+        "errorMsg": None,
+        "hasApiKey": False,
+        "ocrEnabled": False,
+        "ocrModel": None,
+        "summaryEnabled": False,
+        "summaryModel": None,
+        "vectorSearchEnabled": False,
+        "embeddingModel": None,
+        "model": None,
+    }
+    assert WebAiStatusVO.from_dict(default_vo.to_dict()) == default_vo
+
     vo = WebAiStatusVO(
         has_api_key=True,
         ocr_enabled=True,
+        ocr_model="apple-vision",
+        summary_enabled=True,
+        summary_model="gemini-2.5-flash",
         vector_search_enabled=False,
-        model="fake-ocr-v1",
+        embedding_model=None,
+        model="apple-vision",
     )
     data = vo.to_dict()
     assert data == {
@@ -192,7 +212,11 @@ def test_web_ai_status_model() -> None:
         "errorMsg": None,
         "hasApiKey": True,
         "ocrEnabled": True,
+        "ocrModel": "apple-vision",
+        "summaryEnabled": True,
+        "summaryModel": "gemini-2.5-flash",
         "vectorSearchEnabled": False,
-        "model": "fake-ocr-v1",
+        "embeddingModel": None,
+        "model": "apple-vision",
     }
     assert WebAiStatusVO.from_dict(data) == vo

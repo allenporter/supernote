@@ -477,7 +477,17 @@ export async function fetchAiStatus() {
         throw new Error("Unauthorized");
     }
     if (!response.ok) {
-        return { hasApiKey: false, ocrEnabled: false, vectorSearchEnabled: false, model: null };
+        return {
+            success: false,
+            hasApiKey: false,
+            ocrEnabled: false,
+            ocrModel: null,
+            summaryEnabled: false,
+            summaryModel: null,
+            vectorSearchEnabled: false,
+            embeddingModel: null,
+            model: null,
+        };
     }
     return await response.json();
 }

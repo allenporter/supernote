@@ -90,8 +90,12 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
                 "success": True,
                 "hasApiKey": True,
                 "ocrEnabled": True,
+                "ocrModel": "apple-vision",
+                "summaryEnabled": True,
+                "summaryModel": "ollama/qwen2.5",
                 "vectorSearchEnabled": False,
-                "model": "gemini-ocr",
+                "embeddingModel": None,
+                "model": "apple-vision",
             }
         )
 
@@ -145,8 +149,12 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
     ai_vo = await ext.get_ai_status()
     assert ai_vo.has_api_key is True
     assert ai_vo.ocr_enabled is True
+    assert ai_vo.ocr_model == "apple-vision"
+    assert ai_vo.summary_enabled is True
+    assert ai_vo.summary_model == "ollama/qwen2.5"
     assert ai_vo.vector_search_enabled is False
-    assert ai_vo.model == "gemini-ocr"
+    assert ai_vo.embedding_model is None
+    assert ai_vo.model == "apple-vision"
 
     cover_vo = await ext.get_note_cover(file_id=10)
     assert cover_vo.url == "http://127.0.0.1/api/oss/png/10/0?sig=abc"

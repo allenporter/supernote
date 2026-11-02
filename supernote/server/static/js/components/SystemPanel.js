@@ -39,7 +39,16 @@ export default {
                             <div class="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-gray-200">
                                 <span class="text-gray-600 font-medium">OCR:</span>
                                 <span v-if="aiStatus.ocrEnabled" class="px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                                    Enabled<template v-if="aiStatus.model"> ({{ aiStatus.model }})</template>
+                                    Enabled<template v-if="aiStatus.ocrModel || aiStatus.model"> ({{ aiStatus.ocrModel || aiStatus.model }})</template>
+                                </span>
+                                <span v-else class="px-2 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-600">
+                                    Disabled
+                                </span>
+                            </div>
+                            <div class="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-gray-200">
+                                <span class="text-gray-600 font-medium">Summarization:</span>
+                                <span v-if="aiStatus.summaryEnabled" class="px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                                    Enabled<template v-if="aiStatus.summaryModel"> ({{ aiStatus.summaryModel }})</template>
                                 </span>
                                 <span v-else class="px-2 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-600">
                                     Disabled
@@ -48,7 +57,7 @@ export default {
                             <div class="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-gray-200">
                                 <span class="text-gray-600 font-medium">Semantic Search:</span>
                                 <span v-if="aiStatus.vectorSearchEnabled" class="px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                                    Enabled
+                                    Enabled<template v-if="aiStatus.embeddingModel"> ({{ aiStatus.embeddingModel }})</template>
                                 </span>
                                 <span v-else class="px-2 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-600">
                                     Disabled
