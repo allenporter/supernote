@@ -217,9 +217,16 @@ class Rect:
     """Axis-aligned rectangle encoded on the wire as `<left>,<top>,<width>,<height>`."""
 
     left: int
+    """Left X coordinate in pixels."""
+
     top: int
+    """Top Y coordinate in pixels."""
+
     width: int
+    """Rectangle width in pixels."""
+
     height: int
+    """Rectangle height in pixels."""
 
     @property
     def right(self) -> int:
@@ -266,14 +273,31 @@ class LayerVisibility:
     """Decoded layer descriptor from a page `<LAYERINFO:...>` array."""
 
     layer_id: int
+    """Layer identifier (`-1` or `0` with `is_background_layer=True` for `BGLAYER`, `0` for `MAINLAYER`, `1..3` for `LAYER1..3`)."""
+
     is_background_layer: bool
+    """Whether this entry describes `BGLAYER`."""
+
     is_visible: bool
+    """Whether this layer is currently visible."""
+
     name: str | None = None
+    """User-facing layer display name."""
+
     is_allow_add: bool = False
+    """Whether a layer can be added relative to this slot."""
+
     is_current_layer: bool = False
+    """Whether this layer was selected as active on the device."""
+
     is_deleted: bool = False
+    """Whether this layer slot is marked deleted/unused."""
+
     is_allow_up: bool = False
+    """Whether this layer can move up in the compositing order."""
+
     is_allow_down: bool = False
+    """Whether this layer can move down in the compositing order."""
 
     @property
     def layer_key(self) -> str:
@@ -548,81 +572,77 @@ def _put_int_default(
 
 @dataclass
 class HeaderMetadata:
-    """File-level `<FILE_FEATURE>` header block metadata.
-
-    Attributes
-    ----------
-    file_type : FileType | str | None
-        `<FILE_TYPE>` — Notebook container kind (`NOTE` or `MARK`).
-    apply_equipment : EquipmentType | str | None
-        `<APPLY_EQUIPMENT>` — Device model (`A5X`, `A6X`, `N5`, `N6`).
-    is_old_apply_equipment : int | None
-        `<IS_OLD_APPLY_EQUIPMENT>` — Legacy equipment migration flag (`0` or `1`).
-    file_id : str | None
-        `<FILE_ID>` — Stable device-generated notebook identifier persisting across renames.
-    file_parse_type : int | None
-        `<FILE_PARSE_TYPE>` — Firmware parser version flag.
-    file_recogn_type : int | None
-        `<FILE_RECOGN_TYPE>` — Recognition mode (`0` standard, `1` real-time recognition).
-    file_recogn_language : str | None
-        `<FILE_RECOGN_LANGUAGE>` — Recognition locale (e.g. `en_US`, `tr_TR`), `None` if `"none"`.
-    device_dpi : int | None
-        `<DEVICE_DPI>` — Hardware display DPI metadata.
-    soft_dpi : int | None
-        `<SOFT_DPI>` — Software rendering DPI metadata.
-    ratta_etmd : int | None
-        `<RATTA_ETMD>` — Electromagnetic touch/digitizer model parameter.
-    app_version : str | None
-        `<APP_VERSION>` — Note app version string.
-    module_label : str | None
-        `<MODULE_LABEL>` — Module feature label (e.g. `SNFILE_FEATURE`), `None` if `"none"`.
-    original_style : str | None
-        `<ORIGINAL_STYLE>` — Default template style name, `None` if `"none"`.
-    original_style_md5 : str | None
-        `<ORIGINAL_STYLEMD5>` — MD5 digest for custom default template, `None` if `"0"`.
-    pdf_style : str | None
-        `<PDFSTYLE>` — Associated PDF template style, `None` if `"none"`.
-    pdf_style_md5 : str | None
-        `<PDFSTYLEMD5>` — MD5 digest for PDF template style, `None` if `"0"`.
-    style_usage_type : int | None
-        `<STYLEUSAGETYPE>` — Template usage mode flag (`0` built-in, `1` image, `2` PDF).
-    final_operation_page : int | None
-        `<FINALOPERATION_PAGE>` — Last active 1-based page number on device.
-    final_operation_layer : int | None
-        `<FINALOPERATION_LAYER>` — Last active layer index on device.
-    highlight_info : str | None
-        `<HIGHLIGHTINFO>` — Highlight state flag/payload.
-    horizontal_check : int | None
-        `<HORIZONTAL_CHECK>` — Orientation check flag.
-    antialiasing_convert : int | None
-        `<ANTIALIASING_CONVERT>` — Stroke antialiasing conversion level.
-    extra : RawParamsBlock
-        Forward-compatible map of any unrecognized `<KEY:VALUE>` header tags.
-    """
+    """File-level `<FILE_FEATURE>` header block metadata."""
 
     file_type: FileType | str | None = None
+    """`<FILE_TYPE>` — Notebook container kind (`NOTE` or `MARK`)."""
+
     apply_equipment: EquipmentType | str | None = None
+    """`<APPLY_EQUIPMENT>` — Device model (`A5X`, `A6X`, `N5`, `N6`)."""
+
     is_old_apply_equipment: int | None = None
+    """`<IS_OLD_APPLY_EQUIPMENT>` — Legacy equipment migration flag (`0` or `1`)."""
+
     file_id: str | None = None
+    """`<FILE_ID>` — Stable device-generated notebook identifier persisting across renames."""
+
     file_parse_type: int | None = None
+    """`<FILE_PARSE_TYPE>` — Firmware parser version flag."""
+
     file_recogn_type: int | None = None
+    """`<FILE_RECOGN_TYPE>` — Recognition mode (`0` standard, `1` real-time recognition)."""
+
     file_recogn_language: str | None = None
+    """`<FILE_RECOGN_LANGUAGE>` — Recognition locale (e.g. `en_US`, `tr_TR`), `None` if `"none"`."""
+
     device_dpi: int | None = None
+    """`<DEVICE_DPI>` — Hardware display DPI metadata."""
+
     soft_dpi: int | None = None
+    """`<SOFT_DPI>` — Software rendering DPI metadata."""
+
     ratta_etmd: int | None = None
+    """`<RATTA_ETMD>` — Electromagnetic touch/digitizer model parameter."""
+
     app_version: str | None = None
+    """`<APP_VERSION>` — Note app version string."""
+
     module_label: str | None = None
+    """`<MODULE_LABEL>` — Module feature label (e.g. `SNFILE_FEATURE`), `None` if `"none"`."""
+
     original_style: str | None = None
+    """`<ORIGINAL_STYLE>` — Default template style name, `None` if `"none"`."""
+
     original_style_md5: str | None = None
+    """`<ORIGINAL_STYLEMD5>` — MD5 digest for custom default template, `None` if `"0"`."""
+
     pdf_style: str | None = None
+    """`<PDFSTYLE>` — Associated PDF template style, `None` if `"none"`."""
+
     pdf_style_md5: str | None = None
+    """`<PDFSTYLEMD5>` — MD5 digest for PDF template style, `None` if `"0"`."""
+
     style_usage_type: int | None = None
+    """`<STYLEUSAGETYPE>` — Template usage mode flag (`0` built-in, `1` image, `2` PDF)."""
+
     final_operation_page: int | None = None
+    """`<FINALOPERATION_PAGE>` — Last active 1-based page number on device."""
+
     final_operation_layer: int | None = None
+    """`<FINALOPERATION_LAYER>` — Last active layer index on device."""
+
     highlight_info: str | None = None
+    """`<HIGHLIGHTINFO>` — Highlight state flag/payload."""
+
     horizontal_check: int | None = None
+    """`<HORIZONTAL_CHECK>` — Orientation check flag."""
+
     antialiasing_convert: int | None = None
+    """`<ANTIALIASING_CONVERT>` — Stroke antialiasing conversion level."""
+
     extra: RawParamsBlock = field(default_factory=dict)
+    """Forward-compatible map of any unrecognized `<KEY:VALUE>` header tags."""
+
     _wire_keys: tuple[str, ...] = field(default=(), repr=False, compare=False)
 
     _KNOWN_KEYS = frozenset(
@@ -749,36 +769,32 @@ class HeaderMetadata:
 
 @dataclass
 class LayerMetadata:
-    """Layer block metadata referenced from a page's `MAINLAYER` / `LAYER1..3` / `BGLAYER` slot.
-
-    Attributes
-    ----------
-    name : LayerName | str | None
-        `<LAYERNAME>` — Slot identifier (`MAINLAYER`, `LAYER1..3`, `BGLAYER`).
-    protocol : LayerProtocol | str | None
-        `<LAYERPROTOCOL>` — Bitmap compression codec (`RATTA_RLE`, `SN_ASA_COMPRESS`).
-    layer_type : LayerType | str | None
-        `<LAYERTYPE>` — Layer content kind (`NOTE` or `MARK`).
-    bitmap_address : int
-        `<LAYERBITMAP>` — Byte offset to compressed layer bitmap (`0` if empty).
-    path_address : int
-        `<LAYERPATH>` — Byte offset to per-layer stroke vector data (`0` if empty).
-    recogn_address : int
-        `<LAYERRECOGN>` — Byte offset to per-layer recognition data (`0` if empty).
-    vector_graph_address : int
-        `<LAYERVECTORGRAPH>` — Byte offset to vector graphics payload (`0` if empty).
-    extra : RawParamsBlock
-        Forward-compatible map of any unrecognized `<KEY:VALUE>` layer tags.
-    """
+    """Layer block metadata referenced from a page's `MAINLAYER` / `LAYER1..3` / `BGLAYER` slot."""
 
     name: LayerName | str | None = None
+    """`<LAYERNAME>` — Slot identifier (`MAINLAYER`, `LAYER1..3`, `BGLAYER`)."""
+
     protocol: LayerProtocol | str | None = None
+    """`<LAYERPROTOCOL>` — Bitmap compression codec (`RATTA_RLE`, `SN_ASA_COMPRESS`)."""
+
     layer_type: LayerType | str | None = None
+    """`<LAYERTYPE>` — Layer content kind (`NOTE`, `MARK`, or `BACKGROUND`)."""
+
     bitmap_address: int = 0
+    """`<LAYERBITMAP>` — Byte offset to compressed layer bitmap (`0` if empty)."""
+
     path_address: int = 0
+    """`<LAYERPATH>` — Byte offset to per-layer stroke vector data (`0` if empty)."""
+
     recogn_address: int = 0
+    """`<LAYERRECOGN>` — Byte offset to per-layer recognition data (`0` if empty)."""
+
     vector_graph_address: int = 0
+    """`<LAYERVECTORGRAPH>` — Byte offset to vector graphics payload (`0` if empty)."""
+
     extra: RawParamsBlock = field(default_factory=dict)
+    """Forward-compatible map of any unrecognized `<KEY:VALUE>` layer tags."""
+
     _wire_keys: tuple[str, ...] = field(default=(), repr=False, compare=False)
 
     _KNOWN_KEYS = frozenset(
@@ -842,36 +858,32 @@ class LayerMetadata:
 
 @dataclass
 class KeywordMetadata:
-    """Keyword index block metadata referenced from a footer `KEYWORD_<page4><y4>` tag.
-
-    Attributes
-    ----------
-    page_index : int
-        0-based page index derived from 1-based `<KEYWORDPAGE>`.
-    keyword : str | None
-        `<KEYWORD>` — Decoded UTF-8 keyword text.
-    keyword_len : int | None
-        `<KEYWORDLEN>` — Recorded character/byte length of the keyword.
-    rect : Rect | None
-        `<KEYWORDRECT>` — Cropped keyword bounding rectangle on the page.
-    rect_original : Rect | None
-        `<KEYWORDRECTORI>` — Original selection rectangle (used in footer index key).
-    seq_no : int | None
-        `<KEYWORDSEQNO>` — Keyword sequence number.
-    site_address : int
-        `<KEYWORDSITE>` — Byte offset to raw UTF-8 keyword text data block.
-    extra : RawParamsBlock
-        Forward-compatible map of any unrecognized `<KEY:VALUE>` keyword tags.
-    """
+    """Keyword index block metadata referenced from a footer `KEYWORD_<page4><y4>` tag."""
 
     page_index: int = 0
+    """0-based page index derived from 1-based `<KEYWORDPAGE>`."""
+
     keyword: str | None = None
+    """`<KEYWORD>` — Decoded UTF-8 keyword text."""
+
     keyword_len: int | None = None
+    """`<KEYWORDLEN>` — Recorded character/byte length of the keyword."""
+
     rect: Rect | None = None
+    """`<KEYWORDRECT>` — Cropped keyword bounding rectangle on the page."""
+
     rect_original: Rect | None = None
+    """`<KEYWORDRECTORI>` — Original selection rectangle (used in footer index key)."""
+
     seq_no: int | None = None
+    """`<KEYWORDSEQNO>` — Keyword sequence number."""
+
     site_address: int = 0
+    """`<KEYWORDSITE>` — Byte offset to raw UTF-8 keyword text data block."""
+
     extra: RawParamsBlock = field(default_factory=dict)
+    """Forward-compatible map of any unrecognized `<KEY:VALUE>` keyword tags."""
+
     _wire_keys: tuple[str, ...] = field(default=(), repr=False, compare=False)
 
     _KNOWN_KEYS = frozenset(
@@ -948,39 +960,35 @@ class KeywordMetadata:
 
 @dataclass
 class TitleMetadata:
-    """Heading/outline block metadata referenced from a footer `TITLE_<page4><pos>` tag.
-
-    Attributes
-    ----------
-    page_index : int
-        0-based page index extracted from the footer `TITLE_<page4>...` key.
-    bitmap_address : int
-        `<TITLEBITMAP>` — Byte offset to RLE-compressed title stroke bitmap.
-    level : int | None
-        `<TITLELEVEL>` — Heading hierarchy level (`1`..`N`).
-    protocol : LayerProtocol | str | None
-        `<TITLEPROTOCOL>` — Bitmap compression codec (typically `RATTA_RLE`).
-    rect : Rect | None
-        `<TITLERECT>` — Tight bounding rectangle of the title strokes.
-    rect_original : Rect | None
-        `<TITLERECTORI>` — Original title region rectangle.
-    seq_no : int | None
-        `<TITLESEQNO>` — Title sequence number.
-    style : str | None
-        `<TITLESTYLE>` — Encoded visual style code (e.g. `1000254`).
-    extra : RawParamsBlock
-        Forward-compatible map of any unrecognized `<KEY:VALUE>` title tags.
-    """
+    """Heading/outline block metadata referenced from a footer `TITLE_<page4><pos>` tag."""
 
     page_index: int = 0
+    """0-based page index extracted from the footer `TITLE_<page4>...` key."""
+
     bitmap_address: int = 0
+    """`<TITLEBITMAP>` — Byte offset to RLE-compressed title stroke bitmap."""
+
     level: int | None = None
+    """`<TITLELEVEL>` — Heading hierarchy level (`1`..`N`)."""
+
     protocol: LayerProtocol | str | None = None
+    """`<TITLEPROTOCOL>` — Bitmap compression codec (typically `RATTA_RLE`)."""
+
     rect: Rect | None = None
+    """`<TITLERECT>` — Tight bounding rectangle of the title strokes."""
+
     rect_original: Rect | None = None
+    """`<TITLERECTORI>` — Original title region rectangle."""
+
     seq_no: int | None = None
+    """`<TITLESEQNO>` — Title sequence number."""
+
     style: str | None = None
+    """`<TITLESTYLE>` — Encoded visual style code (e.g. `1000254`)."""
+
     extra: RawParamsBlock = field(default_factory=dict)
+    """Forward-compatible map of any unrecognized `<KEY:VALUE>` title tags."""
+
     _wire_keys: tuple[str, ...] = field(default=(), repr=False, compare=False)
 
     _KNOWN_KEYS = frozenset(
@@ -1043,75 +1051,71 @@ class TitleMetadata:
 
 @dataclass
 class LinkMetadata:
-    """Hyperlink block metadata referenced from a footer `LINK*` tag.
-
-    Attributes
-    ----------
-    page_index : int
-        0-based source page index extracted from the footer `LINKO_<page4>...` key.
-    link_type : LinkType | int
-        `<LINKTYPE>` — Link target kind (`0` page, `1` file, `2` document, `4` web URL).
-    direction : LinkDirection | int
-        `<LINKINOUT>` — Link direction (`0` outgoing, `1` incoming).
-    rect : Rect | None
-        `<LINKRECT>` — Active link hotspot rectangle on the page.
-    rect_original : Rect | None
-        `<LINKRECTORI>` — Original link stroke selection rectangle if present.
-    timestamp : str | None
-        `<LINKTIMESTAMP>` — Link creation/modification timestamp string.
-    file_path : str | None
-        `<LINKFILE>` — Base64-encoded target file path or URL.
-    file_id : str | None
-        `<LINKFILEID>` — Target Supernote `<FILE_ID>`, or `None` when wire value is `"none"`.
-    page_id : str | None
-        `<PAGEID>` — Target Supernote `<PAGEID>`, or `None` when wire value is `"none"`.
-    obj_page : int | None
-        `<OBJPAGE>` — Target/object page number recorded by firmware (`0` when not page-specific).
-    bitmap_address : int
-        `<LINKBITMAP>` — Byte offset to link visual indicator bitmap (`0` if empty).
-    protocol : LayerProtocol | str | None
-        `<LINKPROTOCAL>` (or `<LINKPROTO>`) — Optional bitmap compression codec for the link indicator.
-    style : str | None
-        `<LINKSTYLE>` — Optional visual style descriptor for the link indicator.
-    font_size : str | None
-        `<FONTSIZE>` — Font size string for typeset text/digest links (e.g. `"0"` or `"40.000000"`).
-    font_path : str | None
-        `<FONTPATH>` — Base64-encoded font path for typeset links, or `None` when `"none"`.
-    full_text : str | None
-        `<FULLTEXT>` — Base64-encoded full text label for typeset links, or `None` when `"none"`.
-    show_text : str | None
-        `<SHOWTEXT>` — Base64-encoded display label for typeset links, or `None` when `"none"`.
-    anti : int | None
-        `<ANTI>` — Anti-aliasing flag on typeset text links (`0` or `1`).
-    bold : int | None
-        `<BOLD>` — Bold style flag on typeset text links (`0` or `1`).
-    italic : int | None
-        `<ITALIC>` — Italic style flag on typeset text links (`0` or `1`).
-    extra : RawParamsBlock
-        Forward-compatible map of any unrecognized `<KEY:VALUE>` link tags.
-    """
+    """Hyperlink block metadata referenced from a footer `LINK*` tag."""
 
     page_index: int = 0
+    """0-based source page index extracted from the footer `LINKO_<page4>...` key."""
+
     link_type: LinkType | int = LinkType.PAGE
+    """`<LINKTYPE>` — Link target kind (`0` page, `1` file, `2` document, `4` web URL)."""
+
     direction: LinkDirection | int = LinkDirection.OUT
+    """`<LINKINOUT>` — Link direction (`0` outgoing, `1` incoming)."""
+
     rect: Rect | None = None
+    """`<LINKRECT>` — Active link hotspot rectangle on the page."""
+
     rect_original: Rect | None = None
+    """`<LINKRECTORI>` — Original link stroke selection rectangle if present."""
+
     timestamp: str | None = None
+    """`<LINKTIMESTAMP>` — Link creation/modification timestamp string."""
+
     file_path: str | None = None
+    """`<LINKFILE>` — Base64-encoded target file path or URL."""
+
     file_id: str | None = None
+    """`<LINKFILEID>` — Target Supernote `<FILE_ID>`, or `None` when wire value is `"none"`."""
+
     page_id: str | None = None
+    """`<PAGEID>` — Target Supernote `<PAGEID>`, or `None` when wire value is `"none"`."""
+
     obj_page: int | None = None
+    """`<OBJPAGE>` — Target/object page number recorded by firmware (`0` when not page-specific)."""
+
     bitmap_address: int = 0
+    """`<LINKBITMAP>` — Byte offset to link visual indicator bitmap (`0` if empty)."""
+
     protocol: LayerProtocol | str | None = None
+    """`<LINKPROTOCAL>` (or `<LINKPROTO>`) — Optional bitmap compression codec for the link indicator."""
+
     style: str | None = None
+    """`<LINKSTYLE>` — Optional visual style descriptor for the link indicator."""
+
     font_size: str | None = None
+    """`<FONTSIZE>` — Font size string for typeset text/digest links (e.g. `"0"` or `"40.000000"`)."""
+
     font_path: str | None = None
+    """`<FONTPATH>` — Base64-encoded font path for typeset links, or `None` when `"none"`."""
+
     full_text: str | None = None
+    """`<FULLTEXT>` — Base64-encoded full text label for typeset links, or `None` when `"none"`."""
+
     show_text: str | None = None
+    """`<SHOWTEXT>` — Base64-encoded display label for typeset links, or `None` when `"none"`."""
+
     anti: int | None = None
+    """`<ANTI>` — Anti-aliasing flag on typeset text links (`0` or `1`)."""
+
     bold: int | None = None
+    """`<BOLD>` — Bold style flag on typeset text links (`0` or `1`)."""
+
     italic: int | None = None
+    """`<ITALIC>` — Italic style flag on typeset text links (`0` or `1`)."""
+
     extra: RawParamsBlock = field(default_factory=dict)
+    """Forward-compatible map of any unrecognized `<KEY:VALUE>` link tags."""
+
     _wire_keys: tuple[str, ...] = field(default=(), repr=False, compare=False)
 
     _KNOWN_KEYS = frozenset(
@@ -1237,99 +1241,95 @@ class LinkMetadata:
 
 @dataclass
 class PageMetadata:
-    """Per-page metadata block referenced from a footer `PAGE` or `PAGE<N>` tag.
-
-    Attributes
-    ----------
-    page_id : str | None
-        `<PAGEID>` — Stable device-generated page identifier.
-    style : str | None
-        `<PAGESTYLE>` — Built-in (`style_*`) or custom (`user_*`) template name.
-    style_md5 : str | None
-        `<PAGESTYLEMD5>` — MD5 digest for custom `user_*` templates, `None` when `"0"`.
-    orientation : PageOrientation | str
-        `<ORIENTATION>` — Page rotation (`1000`, `1090`, `1180`, `1270`).
-    main_layer_address : int
-        `<MAINLAYER>` — Byte offset to `MAINLAYER` metadata block.
-    layer1_address : int
-        `<LAYER1>` — Byte offset to `LAYER1` metadata block.
-    layer2_address : int
-        `<LAYER2>` — Byte offset to `LAYER2` metadata block.
-    layer3_address : int
-        `<LAYER3>` — Byte offset to `LAYER3` metadata block.
-    bg_layer_address : int
-        `<BGLAYER>` — Byte offset to `BGLAYER` metadata block.
-    layer_info : list[LayerVisibility] | None
-        `<LAYERINFO>` — Eagerly decoded layer visibility/metadata array (`None` if `"none"`).
-    layer_seq : list[LayerName | str]
-        `<LAYERSEQ>` — Ordered layer compositing sequence (top-to-bottom).
-    layer_switch : int | None
-        `<LAYERSWITCH>` — Layer feature state flag.
-    totalpath_address : int
-        `<TOTALPATH>` — Byte offset to vector stroke data block (`0` if absent).
-    recogn_status : RecognitionStatus | int
-        `<RECOGNSTATUS>` — Handwriting recognition status (`0` none, `1` done, `2` running).
-    recogn_text_address : int
-        `<RECOGNTEXT>` — Byte offset to base64 JSON recognition text block (`0` if absent).
-    recogn_file_address : int
-        `<RECOGNFILE>` — Byte offset to binary MyScript recognition `.ak` data (`0` if absent).
-    recogn_file_status : int | None
-        `<RECOGNFILESTATUS>` — Recognition file readiness flag (`0` or `1`).
-    recogn_type : int | None
-        `<RECOGNTYPE>` — Page-level recognition mode flag.
-    recogn_language : str | None
-        `<RECOGNLANGUAGE>` — Page-level recognition locale, `None` when `"none"`.
-    disable : str | None
-        `<DISABLE>` — Disabled feature flags, `None` when `"none"`.
-    external_link_info_address : int
-        `<EXTERNALLINKINFO>` — Byte offset to external link table (`0` if absent).
-    id_table_address : int
-        `<IDTABLE>` — Byte offset to stroke/object ID table (`0` if absent).
-    page_textbox_address : int
-        `<PAGETEXTBOX>` — Byte offset to text box data (`0` if absent).
-    thumbnail_type : int | None
-        `<THUMBNAILTYPE>` — Thumbnail format flag.
-    five_star : list[str]
-        `<FIVESTAR>` — 5-pointed star mark geometry descriptors (`"x1,y1,...,x5,y5,flag"`).
-    data_address : int | None
-        `<DATA>` — Legacy A5 non-layered page bitmap offset (`None` on X-series pages).
-    protocol : LayerProtocol | str | None
-        `<PROTOCOL>` — Legacy A5 non-layered page compression codec.
-    layers : list[LayerMetadata] | None
-        Parsed `LayerMetadata` blocks for X-series pages, or `None` for non-layered A5 pages.
-    extra : RawParamsBlock
-        Forward-compatible map of any unrecognized `<KEY:VALUE>` page tags.
-    """
+    """Per-page metadata block referenced from a footer `PAGE` or `PAGE<N>` tag."""
 
     page_id: str | None = None
+    """`<PAGEID>` — Stable device-generated page identifier."""
+
     style: str | None = None
+    """`<PAGESTYLE>` — Built-in (`style_*`) or custom (`user_*`) template name."""
+
     style_md5: str | None = None
+    """`<PAGESTYLEMD5>` — MD5 digest for custom `user_*` templates, `None` when `"0"`."""
+
     orientation: PageOrientation | str = PageOrientation.VERTICAL
+    """`<ORIENTATION>` — Page rotation (`1000`, `1090`, `1180`, `1270`)."""
+
     main_layer_address: int = 0
+    """`<MAINLAYER>` — Byte offset to `MAINLAYER` metadata block."""
+
     layer1_address: int = 0
+    """`<LAYER1>` — Byte offset to `LAYER1` metadata block."""
+
     layer2_address: int = 0
+    """`<LAYER2>` — Byte offset to `LAYER2` metadata block."""
+
     layer3_address: int = 0
+    """`<LAYER3>` — Byte offset to `LAYER3` metadata block."""
+
     bg_layer_address: int = 0
+    """`<BGLAYER>` — Byte offset to `BGLAYER` metadata block."""
+
     layer_info: list[LayerVisibility] | None = None
+    """`<LAYERINFO>` — Eagerly decoded layer visibility/metadata array (`None` if `"none"`)."""
+
     layer_seq: list[LayerName | str] = field(default_factory=list)
+    """`<LAYERSEQ>` — Ordered layer compositing sequence (top-to-bottom)."""
+
     layer_switch: int | None = None
+    """`<LAYERSWITCH>` — Layer feature state flag."""
+
     totalpath_address: int = 0
+    """`<TOTALPATH>` — Byte offset to vector stroke data block (`0` if absent)."""
+
     recogn_status: RecognitionStatus | int = RecognitionStatus.NONE
+    """`<RECOGNSTATUS>` — Handwriting recognition status (`0` none, `1` done, `2` running)."""
+
     recogn_text_address: int = 0
+    """`<RECOGNTEXT>` — Byte offset to base64 JSON recognition text block (`0` if absent)."""
+
     recogn_file_address: int = 0
+    """`<RECOGNFILE>` — Byte offset to binary MyScript recognition `.ak` data (`0` if absent)."""
+
     recogn_file_status: int | None = None
+    """`<RECOGNFILESTATUS>` — Recognition file readiness flag (`0` or `1`)."""
+
     recogn_type: int | None = None
+    """`<RECOGNTYPE>` — Page-level recognition mode flag."""
+
     recogn_language: str | None = None
+    """`<RECOGNLANGUAGE>` — Page-level recognition locale, `None` when `"none"`."""
+
     disable: str | None = None
+    """`<DISABLE>` — Disabled feature flags, `None` when `"none"`."""
+
     external_link_info_address: int = 0
+    """`<EXTERNALLINKINFO>` — Byte offset to external link table (`0` if absent)."""
+
     id_table_address: int = 0
+    """`<IDTABLE>` — Byte offset to stroke/object ID table (`0` if absent)."""
+
     page_textbox_address: int = 0
+    """`<PAGETEXTBOX>` — Byte offset to text box data (`0` if absent)."""
+
     thumbnail_type: int | None = None
+    """`<THUMBNAILTYPE>` — Thumbnail format flag."""
+
     five_star: list[str] = field(default_factory=list)
+    """`<FIVESTAR>` — 5-pointed star mark geometry descriptors (`"x1,y1,...,x5,y5,flag"`)."""
+
     data_address: int | None = None
+    """`<DATA>` — Legacy A5 non-layered page bitmap offset (`None` on X-series pages)."""
+
     protocol: LayerProtocol | str | None = None
+    """`<PROTOCOL>` — Legacy A5 non-layered page compression codec."""
+
     layers: list[LayerMetadata] | None = None
+    """Parsed `LayerMetadata` blocks for X-series pages, or `None` for non-layered A5 pages."""
+
     extra: RawParamsBlock = field(default_factory=dict)
+    """Forward-compatible map of any unrecognized `<KEY:VALUE>` page tags."""
+
     _wire_keys: tuple[str, ...] = field(default=(), repr=False, compare=False)
     _wire_layer_info: tuple[str, tuple[LayerVisibility, ...]] | None = field(
         default=None, repr=False, compare=False
@@ -1565,54 +1565,50 @@ class PageMetadata:
 
 @dataclass
 class FooterMetadata:
-    """File-level footer directory block pointed to by the trailing 4-byte file offset.
-
-    Attributes
-    ----------
-    file_feature_address : int | None
-        `<FILE_FEATURE>` — Byte offset to the `HeaderMetadata` block.
-    page_addresses : dict[str, int]
-        `PAGE1..N` — Mapping of X-series page keys to page metadata block byte offsets.
-    legacy_page_addresses : list[int]
-        `<PAGE>` — Ordered list of page metadata block offsets for legacy A5 files.
-    cover_addresses : dict[str, int]
-        `COVER_0..2` — Mapping of cover slot keys to cover bitmap byte offsets.
-    style_addresses : dict[str, list[int]]
-        `STYLE_*` — Mapping of template style keys to shared style bitmap offsets.
-    pdf_style_list_address : int | None
-        `<PDFSTYLELIST>` — Byte offset to comma-separated base64 PDF template style names block.
-    keyword_addresses : dict[str, list[int]]
-        `KEYWORD_*` — Mapping of positional keyword keys to keyword metadata block offsets.
-    title_addresses : dict[str, list[int]]
-        `TITLE_*` — Mapping of positional title keys to title metadata block offsets.
-    link_addresses : dict[str, list[int]]
-        `LINK*` — Mapping of positional link keys to link metadata block offsets.
-    dirty : int | None
-        `<DIRTY>` — Notebook dirty/sync state counter.
-    keywords : list[KeywordMetadata]
-        Parsed `KeywordMetadata` blocks referenced by `keyword_addresses`.
-    titles : list[TitleMetadata]
-        Parsed `TitleMetadata` blocks referenced by `title_addresses`.
-    links : list[LinkMetadata]
-        Parsed `LinkMetadata` blocks referenced by `link_addresses`.
-    extra : RawParamsBlock
-        Forward-compatible map of any unrecognized `<KEY:VALUE>` footer tags.
-    """
+    """File-level footer directory block pointed to by the trailing 4-byte file offset."""
 
     file_feature_address: int | None = None
+    """`<FILE_FEATURE>` — Byte offset to the `HeaderMetadata` block."""
+
     page_addresses: dict[str, int] = field(default_factory=dict)
+    """`PAGE1..N` — Mapping of X-series page keys to page metadata block byte offsets."""
+
     legacy_page_addresses: list[int] = field(default_factory=list)
+    """`<PAGE>` — Ordered list of page metadata block offsets for legacy A5 files."""
+
     cover_addresses: dict[str, int] = field(default_factory=dict)
+    """`COVER_0..2` — Mapping of cover slot keys to cover bitmap byte offsets."""
+
     style_addresses: dict[str, list[int]] = field(default_factory=dict)
+    """`STYLE_*` — Mapping of template style keys to shared style bitmap offsets."""
+
     pdf_style_list_address: int | None = None
+    """`<PDFSTYLELIST>` — Byte offset to comma-separated base64 PDF template style names block."""
+
     keyword_addresses: dict[str, list[int]] = field(default_factory=dict)
+    """`KEYWORD_*` — Mapping of positional keyword keys to keyword metadata block offsets."""
+
     title_addresses: dict[str, list[int]] = field(default_factory=dict)
+    """`TITLE_*` — Mapping of positional title keys to title metadata block offsets."""
+
     link_addresses: dict[str, list[int]] = field(default_factory=dict)
+    """`LINK*` — Mapping of positional link keys to link metadata block offsets."""
+
     dirty: int | None = None
+    """`<DIRTY>` — Notebook dirty/sync state counter."""
+
     keywords: list[KeywordMetadata] = field(default_factory=list)
+    """Parsed `KeywordMetadata` blocks referenced by `keyword_addresses`."""
+
     titles: list[TitleMetadata] = field(default_factory=list)
+    """Parsed `TitleMetadata` blocks referenced by `title_addresses`."""
+
     links: list[LinkMetadata] = field(default_factory=list)
+    """Parsed `LinkMetadata` blocks referenced by `link_addresses`."""
+
     extra: RawParamsBlock = field(default_factory=dict)
+    """Forward-compatible map of any unrecognized `<KEY:VALUE>` footer tags."""
+
     _wire_keys: tuple[str, ...] = field(default=(), repr=False, compare=False)
 
     @property

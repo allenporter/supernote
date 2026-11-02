@@ -78,17 +78,23 @@ class Notebook:
     ) -> None:
         self._metadata = metadata
         self.metadata = metadata
-        self.loaded_page_number = page_number
+        self.loaded_page_number: int | None = page_number
+        """Single 0-based page index when partially loaded via `page_number`, else `None`."""
         self.page_width = PAGE_WIDTH
         self.page_height = PAGE_HEIGHT
         if self._metadata.header.apply_equipment == EquipmentType.N5:
             self.page_width = A5X2_PAGE_WIDTH
             self.page_height = A5X2_PAGE_HEIGHT
-        self.cover = Cover()
+        self.cover: Cover = Cover()
+        """Loaded notebook cover bitmap (`Cover`)."""
         self.keywords: list[Keyword] = [Keyword(k) for k in metadata.footer.keywords]
+        """Notebook-wide keyword index entries (`list[Keyword]`)."""
         self.titles: list[Title] = [Title(t) for t in metadata.footer.titles]
+        """Notebook-wide heading/outline entries (`list[Title]`)."""
         self.links: list[Link] = [Link(link) for link in metadata.footer.links]
+        """Notebook-wide hyperlink entries (`list[Link]`)."""
         self.pages: list[Page] = []
+        """Ordered list of `Page` objects in the notebook."""
         for idx, page_info in enumerate(metadata.pages):
             if not isinstance(page_info, PageMetadata):
                 raise exceptions.ParserException("invalid page metadata entry")
@@ -227,6 +233,7 @@ class Cover:
 
     def __init__(self, content: bytes | None = None) -> None:
         self.content: bytes | None = content
+        """Raw cover bitmap payload bytes, or `None` if no custom cover is set."""
 
     @deprecated("Assign to Cover.content instead")
     def set_content(self, content: bytes | None) -> None:
@@ -240,6 +247,12 @@ class Cover:
 class Keyword:
     """Loaded keyword entry combining `KeywordMetadata` and raw keyword bytes."""
 
+    metadata: KeywordMetadata
+    """Typed `KeywordMetadata` wire block."""
+
+    content: bytes | None
+    """Raw UTF-8 keyword payload bytes at `<KEYWORDSITE>`."""
+
     def __init__(
         self,
         keyword_info: KeywordMetadata | Mapping[str, Any],
@@ -251,7 +264,7 @@ class Keyword:
             self.metadata = KeywordMetadata.from_params(keyword_info)
         else:
             raise exceptions.ParserException("invalid keyword metadata")
-        self.content: bytes | None = content
+        self.content = content
 
     @property
     def page_number(self) -> int:
@@ -311,6 +324,12 @@ class Keyword:
 class Title:
     """Loaded heading/outline entry combining `TitleMetadata` and stroke bitmap bytes."""
 
+    metadata: TitleMetadata
+    """Typed `TitleMetadata` wire block."""
+
+    content: bytes | None
+    """Compressed title preview bitmap bytes at `<TITLEBITMAP>`."""
+
     def __init__(
         self,
         title_info: TitleMetadata | Mapping[str, Any],
@@ -323,7 +342,7 @@ class Title:
             self.metadata = TitleMetadata.from_params(title_info)
         else:
             raise exceptions.ParserException("invalid title metadata")
-        self.content: bytes | None = content
+        self.content = content
         if page_number is not None:
             self.metadata.page_index = page_number
 
@@ -402,6 +421,12 @@ class Link:
     DIRECTION_OUT = LinkDirection.OUT.value  # Outgoing link (from this page)
     DIRECTION_IN = LinkDirection.IN.value  # Incoming link (to this page)
 
+    metadata: LinkMetadata
+    """Typed `LinkMetadata` wire block."""
+
+    content: bytes | None
+    """Compressed link indicator bitmap bytes at `<LINKBITMAP>`."""
+
     def __init__(
         self,
         link_info: LinkMetadata | Mapping[str, Any],
@@ -414,7 +439,7 @@ class Link:
             self.metadata = LinkMetadata.from_params(link_info)
         else:
             raise exceptions.ParserException("invalid link metadata")
-        self.content: bytes | None = content
+        self.content = content
         if page_number is not None:
             self.metadata.page_index = page_number
 
@@ -553,6 +578,24 @@ class Page:
         PageOrientation.HORIZONTAL_270.value
     )  # Landscape flipped
 
+    metadata: PageMetadata
+    """Typed `PageMetadata` wire block."""
+
+    content: bytes | None
+    """Legacy A5 single-layer page bitmap bytes at `<DATA>`, or `None` on X-series pages."""
+
+    totalpath: bytes | None
+    """Raw vector stroke data bytes at `<TOTALPATH>`, or `None` if absent."""
+
+    recogn_file: bytes | None
+    """Binary MyScript `.ak` recognition payload at `<RECOGNFILE>`, or `None` if absent."""
+
+    recogn_text: bytes | None
+    """Base64-encoded JSON recognition text payload at `<RECOGNTEXT>`, or `None` if absent."""
+
+    layers: list["Layer"]
+    """Ordered `Layer` objects for X-series multi-layer pages."""
+
     def __init__(
         self,
         page_info: PageMetadata | Mapping[str, Any],
@@ -573,18 +616,16 @@ class Page:
             self.metadata = PageMetadata.from_params(page_info)
         else:
             raise exceptions.ParserException("invalid page metadata")
-        self.content: bytes | None = content
-        self.totalpath: bytes | None = totalpath
-        self.recogn_file: bytes | None = recogn_file
-        self.recogn_text: bytes | None = recogn_text
+        self.content = content
+        self.totalpath = totalpath
+        self.recogn_file = recogn_file
+        self.recogn_text = recogn_text
         self._page_index: int | None = page_number
         self._notebook: Notebook | None = notebook
         self._keywords: list[Keyword] = list(keywords) if keywords is not None else []
         self._titles: list[Title] = list(titles) if titles is not None else []
         self._links: list[Link] = list(links) if links is not None else []
-        self.layers: list[Layer] = [
-            Layer(layer_meta) for layer_meta in (self.metadata.layers or [])
-        ]
+        self.layers = [Layer(layer_meta) for layer_meta in (self.metadata.layers or [])]
 
     @property
     def page_number(self) -> int | None:
@@ -858,6 +899,12 @@ class Page:
 class Layer:
     """Loaded layer combining `LayerMetadata` and compressed layer bitmap bytes."""
 
+    metadata: LayerMetadata
+    """Typed `LayerMetadata` wire block."""
+
+    content: bytes | None
+    """Compressed layer bitmap payload bytes at `<LAYERBITMAP>`, or `None` if empty."""
+
     def __init__(
         self,
         layer_info: LayerMetadata | Mapping[str, Any],
@@ -869,7 +916,7 @@ class Layer:
             self.metadata = LayerMetadata.from_params(layer_info)
         else:
             raise exceptions.ParserException("invalid layer metadata")
-        self.content: bytes | None = content
+        self.content = content
 
     @property
     def name(self) -> LayerName | str | None:
