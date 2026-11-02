@@ -45,7 +45,14 @@ def test_workaround_page_wrapper_from_page_copies_page_and_layer_contents() -> N
             {"LAYERNAME": "BGLAYER", "LAYERPROTOCOL": "RATTA_RLE"},
         ],
     }
-    page = fileformat.Page(page_info, content=b"page-bytes", totalpath=b"path-bytes")
+    kw = fileformat.Keyword({"KEYWORDPAGE": "1", "KEYWORD": "tag"})
+    page = fileformat.Page(
+        page_info,
+        content=b"page-bytes",
+        totalpath=b"path-bytes",
+        page_number=0,
+        keywords=[kw],
+    )
     page.layer(0).content = b"main-bytes"
     page.layer(1).content = b"bg-bytes"
 
@@ -53,6 +60,8 @@ def test_workaround_page_wrapper_from_page_copies_page_and_layer_contents() -> N
     assert isinstance(wrapped, utils.WorkaroundPageWrapper)
     assert wrapped.content == b"page-bytes"
     assert wrapped.totalpath == b"path-bytes"
+    assert wrapped.page_number == 0
+    assert wrapped.keywords == [kw]
     assert [layer.content for layer in wrapped.layers] == [
         b"main-bytes",
         b"bg-bytes",

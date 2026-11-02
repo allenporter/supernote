@@ -20,11 +20,16 @@ references all other metadata blocks (Header, Pages, Titles, Keywords, Links).
 Wire-level metadata blocks and enums live in `supernote.notebook.schema`.
 """
 
-from collections.abc import Mapping
+import base64
+import binascii
+import zlib
+from collections.abc import Mapping, Sequence
 from typing import Any
 from warnings import deprecated
 
-from . import exceptions
+import numpy as np
+
+from . import decoder, exceptions
 from .schema import (
     KEY_FOOTER,
     KEY_HEADER,
@@ -84,10 +89,10 @@ class Notebook:
         self.titles: list[Title] = [Title(t) for t in metadata.footer.titles]
         self.links: list[Link] = [Link(link) for link in metadata.footer.links]
         self.pages: list[Page] = []
-        for page_info in metadata.pages:
+        for idx, page_info in enumerate(metadata.pages):
             if not isinstance(page_info, PageMetadata):
                 raise exceptions.ParserException("invalid page metadata entry")
-            self.pages.append(Page(page_info))
+            self.pages.append(Page(page_info, page_number=idx, notebook=self))
 
     @property
     def metadata(self) -> SupernoteMetadata:
@@ -332,6 +337,28 @@ class Title:
         self.metadata.page_index = value
 
     @property
+    def level(self) -> int | None:
+        """Heading hierarchy level (`<TITLELEVEL>`)."""
+        return self.metadata.level
+
+    @property
+    def style(self) -> str | None:
+        """Encoded visual heading style (`<TITLESTYLE>`, e.g. `'1000254'`)."""
+        return self.metadata.style
+
+    @property
+    def protocol(self) -> LayerProtocol | str | None:
+        """Bitmap compression protocol (`<TITLEPROTOCOL>`)."""
+        return self.metadata.protocol
+
+    @property
+    def rect(self) -> tuple[int, int, int, int]:
+        """Bounding box `(left, top, right, bottom)` in page coordinates."""
+        if self.metadata.rect is None:
+            raise exceptions.ParserException("missing TITLERECT in title metadata")
+        return self.metadata.rect.bbox
+
+    @property
     def position_string(self) -> str:
         """8-digit `<top4><left4>` coordinate suffix used in footer `TITLE_<page4><pos8>` keys."""
         if self.metadata.rect_original is None:
@@ -435,6 +462,20 @@ class Link:
         return self.metadata.file_path
 
     @property
+    def target(self) -> str | None:
+        """Decoded UTF-8 target file path or URL from `<LINKFILE>`, or `None` if unset."""
+        raw = self.file_path
+        if not raw or raw == "none":
+            return None
+        try:
+            decoded = base64.b64decode(raw, validate=True).decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError):
+            return raw
+        if decoded and all(ch.isprintable() for ch in decoded):
+            return decoded
+        return raw
+
+    @property
     def file_id(self) -> str | None:
         """Target notebook `<FILE_ID>` (`<LINKFILEID>`), or `None` if unset."""
         return self.metadata.file_id
@@ -518,6 +559,12 @@ class Page:
         totalpath: bytes | None = None,
         recogn_file: bytes | None = None,
         recogn_text: bytes | None = None,
+        *,
+        page_number: int | None = None,
+        notebook: "Notebook | None" = None,
+        keywords: Sequence[Keyword] | None = None,
+        titles: Sequence[Title] | None = None,
+        links: Sequence[Link] | None = None,
     ) -> None:
         if isinstance(page_info, PageMetadata):
             self.metadata = page_info
@@ -529,9 +576,19 @@ class Page:
         self.totalpath: bytes | None = totalpath
         self.recogn_file: bytes | None = recogn_file
         self.recogn_text: bytes | None = recogn_text
+        self._page_index: int | None = page_number
+        self._notebook: Notebook | None = notebook
+        self._keywords: list[Keyword] = list(keywords) if keywords is not None else []
+        self._titles: list[Title] = list(titles) if titles is not None else []
+        self._links: list[Link] = list(links) if links is not None else []
         self.layers: list[Layer] = [
             Layer(layer_meta) for layer_meta in (self.metadata.layers or [])
         ]
+
+    @property
+    def page_number(self) -> int | None:
+        """0-based index of this page within its owning `Notebook`, or `None` if standalone."""
+        return self._page_index
 
     @property
     def page_id(self) -> str | None:
@@ -579,6 +636,132 @@ class Page:
     def orientation(self) -> PageOrientation | str:
         """Page orientation code (`PageOrientation`)."""
         return self.metadata.orientation
+
+    def _layers_by_slot(self) -> dict[str, "Layer"]:
+        layers_by_name: dict[str, Layer] = {}
+        mainlayer_visited = False
+        for layer in self.layers:
+            if layer.name is None:
+                continue
+            name = str(layer.name)
+            if mainlayer_visited and name == LayerName.MAINLAYER:
+                name = LayerName.BGLAYER.value
+            elif name == LayerName.MAINLAYER:
+                mainlayer_visited = True
+            layers_by_name[name] = layer
+        return layers_by_name
+
+    @property
+    def layer_visibility(self) -> dict[str, bool]:
+        """Layer visibility map keyed by slot name (`MAINLAYER`, `LAYER1`..`3`, `BGLAYER`)."""
+        entries = self.metadata.layer_info
+        if entries is None:
+            return {
+                name: layer.layer_type == LayerType.MARK
+                for name, layer in self._layers_by_slot().items()
+            }
+        visibility = {entry.layer_key: entry.is_visible for entry in entries}
+        # Some old files don't include MAINLAYER info, so default MAINLAYER to visible.
+        if visibility.get(LayerName.MAINLAYER) is None:
+            visibility[LayerName.MAINLAYER.value] = True
+        return visibility
+
+    @property
+    def has_ink(self) -> bool:
+        """`True` if any visible foreground layer (or legacy page bitmap) contains non-transparent pixels."""
+        if not self.is_layer_supported():
+            return _bitmap_has_ink(self.content, self.protocol)
+        visibility = self.layer_visibility
+        layers_by_name = self._layers_by_slot()
+        layer_names = self.layer_order or list(layers_by_name.keys())
+        for name in layer_names:
+            if name == LayerName.BGLAYER or not visibility.get(name):
+                continue
+            layer = layers_by_name.get(name)
+            if layer is not None and layer.has_ink:
+                return True
+        return False
+
+    @property
+    def has_hidden_ink(self) -> bool:
+        """`True` if any hidden foreground layer contains non-transparent pixels."""
+        if not self.is_layer_supported():
+            return False
+        visibility = self.layer_visibility
+        layers_by_name = self._layers_by_slot()
+        layer_names = self.layer_order or list(layers_by_name.keys())
+        for name in layer_names:
+            if name == LayerName.BGLAYER or visibility.get(name):
+                continue
+            layer = layers_by_name.get(name)
+            if layer is not None and layer.has_ink:
+                return True
+        return False
+
+    @property
+    def has_textbox(self) -> bool:
+        """`True` if this page contains text box data (`<PAGETEXTBOX>` > 0)."""
+        return self.metadata.page_textbox_address > 0
+
+    @property
+    def has_vector_graph(self) -> bool:
+        """`True` if any visible foreground layer references vector graphics data (`<LAYERVECTORGRAPH>` > 0)."""
+        if not self.is_layer_supported():
+            return False
+        visibility = self.layer_visibility
+        layers_by_name = self._layers_by_slot()
+        layer_names = self.layer_order or list(layers_by_name.keys())
+        for name in layer_names:
+            if name == LayerName.BGLAYER or not visibility.get(name):
+                continue
+            layer = layers_by_name.get(name)
+            if layer is not None and layer.has_vector_graph:
+                return True
+        return False
+
+    @property
+    def has_drawables(self) -> bool:
+        """`True` if this page has visible foreground ink, text boxes, or vector graphics."""
+        return self.has_ink or self.has_textbox or self.has_vector_graph
+
+    @property
+    def keywords(self) -> list[Keyword]:
+        """Keywords anchored to this page."""
+        if self._notebook is not None and self._page_index is not None:
+            return [
+                kw
+                for kw in self._notebook.keywords
+                if kw.page_number == self._page_index
+            ]
+        return list(self._keywords)
+
+    @property
+    def titles(self) -> list[Title]:
+        """Heading/outline entries anchored to this page."""
+        if self._notebook is not None and self._page_index is not None:
+            return [
+                t for t in self._notebook.titles if t.page_number == self._page_index
+            ]
+        return list(self._titles)
+
+    @property
+    def links(self) -> list[Link]:
+        """Hyperlink entries anchored to this page."""
+        if self._notebook is not None and self._page_index is not None:
+            return [
+                lk for lk in self._notebook.links if lk.page_number == self._page_index
+            ]
+        return list(self._links)
+
+    @property
+    def has_content(self) -> bool:
+        """`True` if this page has foreground drawables or user-authored keywords, titles, or outgoing links."""
+        return (
+            self.has_drawables
+            or bool(self.keywords)
+            or bool(self.titles)
+            or any(lk.direction == LinkDirection.OUT for lk in self.links)
+        )
 
     def layer(self, number: int) -> "Layer":
         """Return the `Layer` at 0-based `number`."""
@@ -702,6 +885,16 @@ class Layer:
         """Layer content kind (`NOTE` or `MARK`)."""
         return self.metadata.layer_type
 
+    @property
+    def has_ink(self) -> bool:
+        """`True` if this layer's compressed bitmap contains any non-transparent pixel."""
+        return _bitmap_has_ink(self.content, self.protocol)
+
+    @property
+    def has_vector_graph(self) -> bool:
+        """`True` if this layer references vector graphics data (`<LAYERVECTORGRAPH>` > 0)."""
+        return self.metadata.vector_graph_address > 0
+
     @deprecated("Assign to Layer.content instead")
     def set_content(self, content: bytes | None) -> None:
         self.content = content
@@ -721,6 +914,39 @@ class Layer:
     @deprecated("Use Layer.layer_type instead")
     def get_type(self) -> str | None:
         return str(self.layer_type) if self.layer_type is not None else None
+
+
+def _bitmap_has_ink(data: bytes | None, protocol: LayerProtocol | str | None) -> bool:
+    """Return `True` if compressed bitmap bytes contain any non-transparent pixel."""
+    if not data:
+        return False
+    if protocol == LayerProtocol.RATTA_RLE:
+        return any(
+            b != decoder.RattaRleDecoder.COLORCODE_BACKGROUND for b in data[0::2]
+        )
+    if protocol == LayerProtocol.SN_ASA_COMPRESS:
+        try:
+            raw = zlib.decompress(data)
+        except zlib.error as err:
+            raise exceptions.DecoderException(
+                f"failed to decompress bitmap: {err}"
+            ) from err
+        expected_len = (
+            decoder.FlateDecoder.INTERNAL_PAGE_WIDTH
+            * decoder.FlateDecoder.INTERNAL_PAGE_HEIGHT
+            * 2
+        )
+        pixels = np.frombuffer(raw, dtype=np.uint16)
+        if len(raw) == expected_len:
+            pixels = pixels.reshape(
+                (
+                    decoder.FlateDecoder.INTERNAL_PAGE_WIDTH,
+                    decoder.FlateDecoder.INTERNAL_PAGE_HEIGHT,
+                )
+            )[:, :-16]
+        return bool(np.any(pixels != decoder.FlateDecoder.COLORCODE_BACKGROUND))
+    # Unknown protocol: conservatively treat non-empty bitmap as containing ink.
+    return True
 
 
 __all__ = [

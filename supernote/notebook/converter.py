@@ -221,24 +221,7 @@ class ImageConverter:
         return img
 
     def _get_layer_visibility(self, page: fileformat.Page) -> dict[str, bool]:
-        entries = page.metadata.layer_info
-        if entries is None:
-            # pass to the process of getting visibility for mark file
-            return self._get_mark_layer_visibility(page)
-        visibility: dict[str, bool] = {
-            entry.layer_key: entry.is_visible for entry in entries
-        }
-        # some old files don't include MAINLAYER info, so we set MAINLAYER visible
-        if visibility.get("MAINLAYER") is None:
-            visibility["MAINLAYER"] = True
-        return visibility
-
-    def _get_mark_layer_visibility(self, page: fileformat.Page) -> dict[str, bool]:
-        visibility: dict[str, bool] = {}
-        for layer in page.layers:
-            if layer.name is not None:
-                visibility[str(layer.name)] = layer.layer_type == "MARK"
-        return visibility
+        return page.layer_visibility
 
     def find_decoder(self, page, highres_grayscale=False):
         """Returns a proper decoder for the given page.
@@ -447,7 +430,6 @@ class PdfConverter:
         enable_keyword: bool,
     ) -> None:
         c = canvas.Canvas(buf, pagesize=self.pagesize)
-        keywords = self.note.keywords
         for page_idx, img in imglist:
             page = self.note.page(page_idx)
             pageid = page.page_id
@@ -459,30 +441,27 @@ class PdfConverter:
             renderer = renderer_class(img, pagesize)
             renderer.draw(c)
             if enable_keyword:
-                found = []
-                for keyword in keywords:
-                    if keyword.page_number == page_idx:
-                        found.append(keyword)
-                for i in found:
+                for keyword in page.keywords:
                     try:
                         c.bookmarkPage(pageid)
-                        scaled_rect = self._calc_link_rect(i.rect, renderer.get_scale())
-                        c.textAnnotation(i.keyword, scaled_rect)
+                        scaled_rect = self._calc_link_rect(
+                            keyword.rect, renderer.get_scale()
+                        )
+                        c.textAnnotation(keyword.keyword, scaled_rect)
                     except Exception:
                         continue
             if enable_link:
                 pageid = page.page_id
                 if pageid is not None:
                     c.bookmarkPage(pageid)
-                    self._add_links(c, page_idx, renderer.get_scale())
+                    self._add_links(c, page, renderer.get_scale())
             c.showPage()
         c.save()
 
-    def _add_links(self, cvs, page_number, scale):
-        links = self.note.links
-        for link in links:
-            if link.page_number != page_number:
-                continue
+    def _add_links(
+        self, cvs: canvas.Canvas, page: fileformat.Page, scale: tuple[float, float]
+    ) -> None:
+        for link in page.links:
             if link.direction == fileformat.Link.DIRECTION_IN:
                 # ignore income link
                 continue
@@ -494,9 +473,8 @@ class PdfConverter:
                     scaled_rect = self._calc_link_rect(link.rect, scale)
                     cvs.linkAbsolute("Link", tag, scaled_rect)
             elif link_type == fileformat.Link.TYPE_WEB_LINK:
-                encoded_url = link.file_path
-                if encoded_url is not None:
-                    url = base64.b64decode(encoded_url).decode()
+                url = link.target
+                if url is not None:
                     scaled_rect = self._calc_link_rect(link.rect, scale)
                     cvs.linkURL(url, scaled_rect)
 

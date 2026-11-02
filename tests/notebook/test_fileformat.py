@@ -1,6 +1,10 @@
+import base64
 import json
+import zlib
+from pathlib import Path
 from typing import Any, cast
 
+import numpy as np
 import pytest
 
 from supernote.notebook import (
@@ -12,8 +16,10 @@ from supernote.notebook import (
     Page,
     SupernoteMetadata,
     Title,
+    decoder,
     exceptions,
     fileformat,
+    load,
 )
 from supernote.notebook.schema import (
     LayerName,
@@ -551,3 +557,227 @@ def test_layer_deprecated_accessors() -> None:
         assert layer.get_protocol() == "RATTA_RLE"  # ty: ignore[deprecated]
     with pytest.deprecated_call():
         assert layer.get_type() == "NOTE"  # ty: ignore[deprecated]
+
+
+def test_title_extended_properties_and_rect_validation() -> None:
+    title = Title(
+        {
+            "TITLELEVEL": "2",
+            "TITLESTYLE": "1157254",
+            "TITLEPROTOCOL": "RATTA_RLE",
+            "TITLERECT": "121,100,341,93",
+            "TITLERECTORI": "121,57,341,180",
+        },
+        page_number=1,
+    )
+    assert title.level == 2
+    assert title.style == "1157254"
+    assert title.protocol == LayerProtocol.RATTA_RLE
+    assert title.rect == (121, 100, 462, 193)
+
+    no_rect = Title({"TITLELEVEL": "1"})
+    with pytest.raises(exceptions.ParserException, match="missing TITLERECT"):
+        _ = no_rect.rect
+
+
+def test_link_target_decoding() -> None:
+    url_b64 = base64.b64encode(b"https://example.com/docs").decode("ascii")
+    web_link = Link({"LINKTYPE": "4", "LINKFILE": url_b64})
+    assert web_link.target == "https://example.com/docs"
+
+    path_b64 = base64.b64encode(b"/user/Document/Note/Plan.note").decode("ascii")
+    file_link = Link({"LINKTYPE": "1", "LINKFILE": path_b64})
+    assert file_link.target == "/user/Document/Note/Plan.note"
+
+    assert Link({"LINKTYPE": "0"}).target is None
+    assert Link({"LINKTYPE": "0", "LINKFILE": "none"}).target is None
+    # Non-base64 literal strings fall back cleanly
+    assert Link({"LINKTYPE": "0", "LINKFILE": "plain.note"}).target == "plain.note"
+    # Base64 that decodes to non-printable bytes falls back to raw string
+    assert Link({"LINKTYPE": "0", "LINKFILE": "AAAA"}).target == "AAAA"
+
+
+def test_page_ink_drawables_and_annotations_on_real_notebooks(
+    test_note_path: Path, test_data_dir: Path
+) -> None:
+    # 20251207_221454.note is a 1-page blank dot-grid notebook
+    with test_note_path.open("rb") as fd:
+        blank_nb = load(fd)
+    blank_page = blank_nb.page(0)
+    assert blank_page.page_number == 0
+    assert blank_page.style == "style_5mm_dots"
+    assert blank_page.has_ink is False
+    assert blank_page.has_hidden_ink is False
+    assert blank_page.has_textbox is False
+    assert blank_page.has_vector_graph is False
+    assert blank_page.has_drawables is False
+    assert blank_page.has_content is False
+
+    # sn2md_20260618.note has visible handwriting on a four_quadrant_method template
+    written_path = test_data_dir / "dsummersl" / "sn2md_20260618.note"
+    with written_path.open("rb") as fd:
+        written_nb = load(fd, policy="loose")
+    written_page = written_nb.page(0)
+    assert written_page.style == "style_four_quadrant_method"
+    assert written_page.has_ink is True
+    assert written_page.has_drawables is True
+    assert written_page.has_content is True
+
+    # philips/test.note has both keywords and titles anchored to specific pages
+    annotated_path = test_data_dir / "philips" / "test.note"
+    with annotated_path.open("rb") as fd:
+        annotated_nb = load(fd, policy="loose")
+    assert sum(len(p.keywords) for p in annotated_nb.pages) == len(
+        annotated_nb.keywords
+    )
+    assert sum(len(p.titles) for p in annotated_nb.pages) == len(annotated_nb.titles)
+
+
+def test_page_visibility_hidden_ink_textbox_vector_graph_and_annotations() -> None:
+    # Hidden layer with strokes: has_ink is False, has_hidden_ink is True
+    hidden_layer_page = Page(
+        {
+            "PAGEID": "P20250101000000abc",
+            "PAGESTYLE": "style_white",
+            "LAYERSEQ": "LAYER1,MAINLAYER,BGLAYER",
+            "LAYERINFO": '[{"layerId":0,"isBackgroundLayer":false,"isVisible":true},'
+            '{"layerId":1,"isBackgroundLayer":false,"isVisible":false},'
+            '{"layerId":3,"isBackgroundLayer":true,"isVisible":true}]',
+            fileformat.KEY_LAYERS: [
+                {"LAYERNAME": "MAINLAYER", "LAYERPROTOCOL": "RATTA_RLE"},
+                {
+                    "LAYERNAME": "LAYER1",
+                    "LAYERPROTOCOL": "RATTA_RLE",
+                    "LAYERVECTORGRAPH": "512",
+                },
+                {"LAYERNAME": "BGLAYER", "LAYERPROTOCOL": "RATTA_RLE"},
+            ],
+        }
+    )
+    hidden_layer_page.layer(0).content = bytes(
+        [decoder.RattaRleDecoder.COLORCODE_BACKGROUND, 0xFF]
+    )
+    hidden_layer_page.layer(1).content = bytes(
+        [decoder.RattaRleDecoder.COLORCODE_BLACK, 0x05]
+    )
+    hidden_layer_page.layer(2).content = bytes(
+        [decoder.RattaRleDecoder.COLORCODE_BLACK, 0x05]
+    )
+    assert hidden_layer_page.has_ink is False
+    assert hidden_layer_page.has_hidden_ink is True
+    assert hidden_layer_page.has_vector_graph is False
+    assert hidden_layer_page.has_drawables is False
+    assert hidden_layer_page.has_content is False
+
+    # Visible vector graph layer marks has_vector_graph and has_drawables True while has_ink stays False
+    vector_page = Page(
+        {
+            "PAGEID": "P20250101000001abc",
+            "LAYERINFO": '[{"layerId":0,"isBackgroundLayer":false,"isVisible":true}]',
+            fileformat.KEY_LAYERS: [
+                {
+                    "LAYERNAME": "MAINLAYER",
+                    "LAYERPROTOCOL": "RATTA_RLE",
+                    "LAYERVECTORGRAPH": "256",
+                }
+            ],
+        }
+    )
+    vector_page.layer(0).content = bytes(
+        [decoder.RattaRleDecoder.COLORCODE_BACKGROUND, 0xFF]
+    )
+    assert vector_page.layer(0).has_vector_graph is True
+    assert vector_page.has_ink is False
+    assert vector_page.has_vector_graph is True
+    assert vector_page.has_drawables is True
+    assert vector_page.has_content is True
+
+    # Textbox-only non-layered page keeps has_ink False while has_textbox and has_drawables are True
+    textbox_page = Page(
+        {
+            "PAGEID": "P20250101000002abc",
+            "PAGESTYLE": "style_white",
+            "PAGETEXTBOX": "1234",
+            "PROTOCOL": "RATTA_RLE",
+        },
+        content=bytes([decoder.RattaRleDecoder.COLORCODE_BACKGROUND, 0xFF]),
+    )
+    assert textbox_page.page_number is None
+    assert textbox_page.has_ink is False
+    assert textbox_page.has_hidden_ink is False
+    assert textbox_page.has_vector_graph is False
+    assert textbox_page.has_textbox is True
+    assert textbox_page.has_drawables is True
+    assert textbox_page.has_content is True
+
+    # Incoming link alone does not count as user-authored page content; outgoing link does
+    in_link = Link({"LINKTYPE": "0", "LINKINOUT": "1"}, page_number=0)
+    out_link = Link({"LINKTYPE": "4", "LINKINOUT": "0"}, page_number=0)
+    in_only_page = Page({"PAGEID": "P_IN"}, links=[in_link])
+    assert in_only_page.links == [in_link]
+    assert in_only_page.keywords == []
+    assert in_only_page.titles == []
+    assert in_only_page.has_content is False
+
+    out_page = Page({"PAGEID": "P_OUT"}, links=[in_link, out_link])
+    assert out_page.has_content is True
+
+    # Notebook-owned pages reflect live mutations to notebook.keywords / titles / links
+    nb = Notebook(_make_metadata(pages=[{"PAGEID": "P0"}, {"PAGEID": "P1"}]))
+    kw = Keyword({"KEYWORDPAGE": "2", "KEYWORD": "tag"})
+    title = Title({"TITLELEVEL": "1"}, page_number=1)
+    nb.keywords.append(kw)
+    nb.titles.append(title)
+    nb.links.append(out_link)
+    assert nb.page(0).links == [out_link]
+    assert nb.page(1).keywords == [kw]
+    assert nb.page(1).titles == [title]
+    assert nb.page(1).has_content is True
+
+
+def test_bitmap_has_ink_flate_and_edge_cases() -> None:
+    blank_flate_buf = np.full(
+        (
+            decoder.FlateDecoder.INTERNAL_PAGE_WIDTH,
+            decoder.FlateDecoder.INTERNAL_PAGE_HEIGHT,
+        ),
+        decoder.FlateDecoder.COLORCODE_BACKGROUND,
+        dtype=np.uint16,
+    )
+    # Non-background values in the 16-column right padding margin are ignored
+    blank_flate_buf[:, -16:] = 0x0000
+    compressed_blank = zlib.compress(blank_flate_buf.tobytes())
+
+    flate_page = Page(
+        {
+            "PAGEID": "P20250101000003abc",
+            "LAYERINFO": "none",
+            fileformat.KEY_LAYERS: [
+                {
+                    "LAYERNAME": "MAINLAYER",
+                    "LAYERPROTOCOL": "SN_ASA_COMPRESS",
+                    "LAYERTYPE": "MARK",
+                },
+                {
+                    "LAYERNAME": "MAINLAYER",
+                    "LAYERPROTOCOL": "SN_ASA_COMPRESS",
+                    "LAYERTYPE": "BACKGROUND",
+                },
+                {"LAYERPROTOCOL": "RATTA_RLE"},
+            ],
+        }
+    )
+    flate_page.layer(0).content = compressed_blank
+    flate_page.layer(1).content = bytes([0x00, 0x05])
+    assert flate_page.has_ink is False
+
+    corrupt_flate = Page({"PROTOCOL": "SN_ASA_COMPRESS"}, content=b"not-zlib")
+    with pytest.raises(
+        exceptions.DecoderException, match="failed to decompress bitmap"
+    ):
+        _ = corrupt_flate.has_ink
+
+    unknown_page = Page({"PROTOCOL": "FUTURE_CODEC"})
+    assert unknown_page.has_ink is False
+    unknown_page.content = b"\x01\x02"
+    assert unknown_page.has_ink is True
