@@ -498,3 +498,37 @@ def test_server_config_load_named_ai_providers(tmp_path: Path) -> None:
         type="openai", base_url="http://localhost:11434/v1"
     )
     assert config.ai.provider_type("llamacpp") == "openai"
+
+
+def test_default_user_quota_config_and_env(tmp_path: Path) -> None:
+    """Verify default_user_quota defaults to 0 and parses YAML and env overrides."""
+    assert ServerConfig().default_user_quota == 0
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    quota_20gb = 20 * 1024**3
+    quota_500mb = 500 * 1024**2
+    with open(config_dir / "config.yaml", "w") as f:
+        yaml.safe_dump({"default_user_quota": quota_20gb}, f)
+
+    loaded = ServerConfig.load(config_dir)
+    assert loaded.default_user_quota == quota_20gb
+
+    with patch.dict(os.environ, {"SUPERNOTE_DEFAULT_USER_QUOTA": str(quota_500mb)}):
+        env_loaded = ServerConfig.load(config_dir)
+        assert env_loaded.default_user_quota == quota_500mb
+
+    with patch.dict(os.environ, {"SUPERNOTE_DEFAULT_USER_QUOTA": "0"}):
+        unlimited_loaded = ServerConfig.load(config_dir)
+        assert unlimited_loaded.default_user_quota == 0
+
+    with patch.dict(os.environ, {"SUPERNOTE_DEFAULT_USER_QUOTA": "invalid-size"}):
+        fallback_loaded = ServerConfig.load(config_dir)
+        assert fallback_loaded.default_user_quota == quota_20gb
+
+    with patch.dict(os.environ, {"SUPERNOTE_DEFAULT_USER_QUOTA": "-10"}):
+        neg_env_loaded = ServerConfig.load(config_dir)
+        assert neg_env_loaded.default_user_quota == quota_20gb
+
+    with pytest.raises(ValueError):
+        ServerConfig(default_user_quota=-100)

@@ -233,6 +233,8 @@ async def test_user_query(
     res = await web_client.query_user()
     assert res.success is True
     assert res.user_name == "Test User"
+    assert res.total_capacity is not None
+    assert int(res.total_capacity) > 0
 
 
 async def test_user_register_errors_and_success(

@@ -53,6 +53,11 @@ async def test_admin_client_endpoints(aiohttp_client: AiohttpClient) -> None:
         recorded_requests.append(("admin_reset_password", data))
         return web.json_response({"success": True})
 
+    async def handler_admin_users_quota(request: web.Request) -> web.Response:
+        data = await request.json()
+        recorded_requests.append(("admin_set_quota", data))
+        return web.json_response({"success": True})
+
     async def handler_queue_stop(request: web.Request) -> web.Response:
         recorded_requests.append(("queue_stop", None))
         return web.json_response({"success": True})
@@ -88,6 +93,7 @@ async def test_admin_client_endpoints(aiohttp_client: AiohttpClient) -> None:
     )
     app.router.add_post("/api/admin/users", handler_admin_users)
     app.router.add_post("/api/admin/users/password", handler_admin_users_password)
+    app.router.add_post("/api/admin/users/quota", handler_admin_users_quota)
     app.router.add_post("/api/admin/queue/stop", handler_queue_stop)
     app.router.add_post("/api/admin/queue/start", handler_queue_start)
     app.router.add_get("/api/admin/queue/status", handler_queue_status)
@@ -180,3 +186,8 @@ async def test_admin_client_endpoints(aiohttp_client: AiohttpClient) -> None:
     req, data = recorded_requests[-1]
     assert req == "reprocess"
     assert data == {"task_type": "transcribe", "file_id": 42}
+
+    await admin.admin_set_quota("target@example.com", 21474836480)
+    req, data = recorded_requests[-1]
+    assert req == "admin_set_quota"
+    assert data == {"email": "target@example.com", "totalCapacity": 21474836480}

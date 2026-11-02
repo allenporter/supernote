@@ -765,6 +765,19 @@ class UserService:
 
         await self.revoke_user_sessions(user_id)
 
+    async def admin_set_user_quota(self, email: str, total_capacity: int) -> None:
+        """Set a user's storage quota in bytes (0 = unlimited / volume-backed)."""
+        if isinstance(total_capacity, bool) or total_capacity < 0:
+            raise ValueError("total_capacity must be a non-negative integer")
+
+        async with self._session_manager.session() as session:
+            result = await session.execute(select(UserDO).where(UserDO.email == email))
+            user = result.scalar_one_or_none()
+            if not user:
+                raise ValueError(f"User {email} not found")
+            user.total_capacity = str(total_capacity)
+            await session.commit()
+
     async def retrieve_password(self, account: str, password_md5: str) -> bool:
         """Retrieve/Reset password and revoke active sessions."""
         # Find user by alias (email/phone/username) and reset password.

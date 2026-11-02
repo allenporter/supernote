@@ -552,6 +552,24 @@ class UpdateEmailDTO(DataClassJSONMixin):
 
 
 @dataclass
+class UpdateUserQuotaDTO(DataClassJSONMixin):
+    """Request to update a user's storage quota (Admin API).
+
+    Used by:
+        /api/admin/users/quota (POST)
+    """
+
+    email: str
+    """Target user's email address."""
+
+    total_capacity: int = field(metadata=field_options(alias="totalCapacity"))
+    """Storage quota in bytes (0 for unlimited / volume-backed)."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
 class LoginRecordDTO(DataClassJSONMixin):
     """Request to query login records.
 

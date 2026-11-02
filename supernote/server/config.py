@@ -267,6 +267,14 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_STORAGE_DIR`
     """
 
+    default_user_quota: int = 0
+    """Default per-user storage quota in bytes (0 = unlimited, bounded by storage volume free space).
+
+    Individual users can override this via `UserDO.total_capacity` (`supernote admin user set-quota`).
+
+    Env Var: `SUPERNOTE_DEFAULT_USER_QUOTA`
+    """
+
     proxy_mode: str | None = None
     """Proxy header handling mode: None/'disabled' (ignore proxy headers), 'relaxed' (trust immediate upstream), or 'strict' (require specific trusted IPs). Defaults to None for security.
 
@@ -350,6 +358,8 @@ class ServerConfig(DataClassYAMLMixin):
 
     def __post_init__(self) -> None:
         self.log_level = _normalize_log_level(self.log_level)
+        if isinstance(self.default_user_quota, bool) or self.default_user_quota < 0:
+            raise ValueError("default_user_quota must be a non-negative integer")
         self._sync_legacy_gemini_config()
 
     def _sync_legacy_gemini_config(self) -> None:
@@ -494,6 +504,20 @@ class ServerConfig(DataClassYAMLMixin):
         if os.getenv("SUPERNOTE_STORAGE_DIR"):
             config.storage_dir = os.getenv("SUPERNOTE_STORAGE_DIR", config.storage_dir)
             logger.info(f"Using SUPERNOTE_STORAGE_DIR: {config.storage_dir}")
+
+        if (raw_quota := os.getenv("SUPERNOTE_DEFAULT_USER_QUOTA")) is not None:
+            try:
+                quota_val = int(raw_quota)
+                if quota_val < 0:
+                    raise ValueError("must be >= 0")
+                config.default_user_quota = quota_val
+                logger.info(
+                    f"Using SUPERNOTE_DEFAULT_USER_QUOTA: {config.default_user_quota}"
+                )
+            except ValueError as err:
+                logger.warning(
+                    f"Ignoring invalid SUPERNOTE_DEFAULT_USER_QUOTA {raw_quota!r}: {err}"
+                )
 
         if os.getenv("SUPERNOTE_BASE_URL"):
             config._base_url = os.getenv("SUPERNOTE_BASE_URL")

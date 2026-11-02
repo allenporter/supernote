@@ -1,6 +1,7 @@
 """Sanity tests for user models to catch import and serialization errors."""
 
 from supernote.models.user import (
+    UpdateUserQuotaDTO,
     UserCheckDTO,
     UserCheckVO,
     UserQueryByIdVO,
@@ -67,3 +68,12 @@ def test_user_check_dto_serialization() -> None:
     dto = UserCheckDTO.from_dict(data)
     assert dto.country_code == "1"
     assert dto.user_name == "test"
+
+
+def test_update_user_quota_dto_serialization() -> None:
+    """Test UpdateUserQuotaDTO serialization with totalCapacity alias."""
+    dto = UpdateUserQuotaDTO(email="user@example.com", total_capacity=10737418240)
+    dumped = dto.to_dict()
+    assert dumped == {"email": "user@example.com", "totalCapacity": 10737418240}
+    restored = UpdateUserQuotaDTO.from_dict(dumped)
+    assert restored == dto
