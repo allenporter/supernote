@@ -19,6 +19,7 @@ from supernote.models.extended import (
     SearchResultVO,
     SystemTaskListVO,
     SystemTaskVO,
+    WebAiStatusVO,
     WebNoteCoverRequestDTO,
     WebNoteCoverVO,
     WebSearchRequestDTO,
@@ -299,13 +300,12 @@ async def handle_extended_ai_status(request: web.Request) -> web.Response:
     )
 
     return web.json_response(
-        {
-            "success": True,
-            "hasApiKey": is_configured,
-            "ocrEnabled": ocr_enabled,
-            "vectorSearchEnabled": vector_search_enabled,
-            "model": model,
-        }
+        WebAiStatusVO(
+            has_api_key=is_configured,
+            ocr_enabled=ocr_enabled,
+            vector_search_enabled=vector_search_enabled,
+            model=model,
+        ).to_dict()
     )
 
 

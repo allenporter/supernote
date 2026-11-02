@@ -234,3 +234,21 @@ class WebNoteCoverVO(BaseResponse):
 
     class Config(BaseConfig):
         serialize_by_alias = True
+
+
+@dataclass
+class WebAiStatusVO(BaseResponse):
+    """Response VO for server AI processing configuration and health status.
+
+    Used by: GET /api/extended/ai/status
+    """
+
+    has_api_key: bool = field(metadata=field_options(alias="hasApiKey"), default=False)
+    ocr_enabled: bool = field(metadata=field_options(alias="ocrEnabled"), default=False)
+    vector_search_enabled: bool = field(
+        metadata=field_options(alias="vectorSearchEnabled"), default=False
+    )
+    model: str | None = None
+
+    class Config(BaseConfig):
+        serialize_by_alias = True

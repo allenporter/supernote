@@ -191,22 +191,17 @@ async def test_extended_search_raw_camelcase_json_contract(
         )
         await session.commit()
 
-    raw_resp = await extended_client._client.post(
-        "/api/extended/search",
-        json={"query": "deep-dive", "topN": 1},
-    )
-    assert raw_resp.status == 200
-    payload = await raw_resp.json()
-    assert payload["success"] is True
-    assert len(payload["results"]) == 1
-    hit = payload["results"][0]
-    assert hit["fileId"] == file_id
-    assert hit["fileName"] == "Architecture.note"
-    assert hit["pageIndex"] == 2
-    assert hit["pageId"] == "P20250116100000def"
-    assert hit["textPreview"] == "Page three deep-dive."
-    assert hit["date"] == "2025-01-16"
-    assert isinstance(hit["score"], float)
+    search_resp = await extended_client.search(query="deep-dive", top_n=1)
+    assert search_resp.success is True
+    assert len(search_resp.results) == 1
+    hit = search_resp.results[0]
+    assert hit.file_id == file_id
+    assert hit.file_name == "Architecture.note"
+    assert hit.page_index == 2
+    assert hit.page_id == "P20250116100000def"
+    assert hit.text_preview == "Page three deep-dive."
+    assert hit.date == "2025-01-16"
+    assert isinstance(hit.score, float)
 
 
 async def test_extended_transcript_not_found(
@@ -218,23 +213,27 @@ async def test_extended_transcript_not_found(
 
 
 async def test_extended_file_summary_list_invalid_json(
-    extended_client: ExtendedClient,
+    client: TestClient,
+    auth_headers: dict[str, str],
 ) -> None:
-    with pytest.raises(ApiException):
-        await extended_client._client.post(
-            "/api/extended/file/summary/list",
-            data="invalid json",
-        )
+    resp = await client.post(
+        "/api/extended/file/summary/list",
+        data="invalid json",
+        headers=auth_headers,
+    )
+    assert resp.status == 400
 
 
 async def test_extended_file_summary_list_invalid_dto(
-    extended_client: ExtendedClient,
+    client: TestClient,
+    auth_headers: dict[str, str],
 ) -> None:
-    with pytest.raises(ApiException):
-        await extended_client._client.post(
-            "/api/extended/file/summary/list",
-            json={},
-        )
+    resp = await client.post(
+        "/api/extended/file/summary/list",
+        json={},
+        headers=auth_headers,
+    )
+    assert resp.status == 400
 
 
 async def test_extended_file_summary_list_success(
@@ -450,15 +449,17 @@ async def test_file_processing_status_excludes_other_users_files(
 
 async def test_extended_search_invalid_dto_and_errors(
     client: TestClient,
+    auth_headers: dict[str, str],
     extended_client: ExtendedClient,
     user_service: UserService,
 ) -> None:
     # Invalid DTO
-    with pytest.raises(ApiException):
-        await extended_client._client.post(
-            "/api/extended/search",
-            json={"invalid": "data"},
-        )
+    bad_resp = await client.post(
+        "/api/extended/search",
+        json={"invalid": "data"},
+        headers=auth_headers,
+    )
+    assert bad_resp.status == 400
 
     # User not found
     with (
@@ -481,15 +482,17 @@ async def test_extended_search_invalid_dto_and_errors(
 
 async def test_extended_transcript_invalid_dto_and_errors(
     client: TestClient,
+    auth_headers: dict[str, str],
     extended_client: ExtendedClient,
     user_service: UserService,
 ) -> None:
     # Invalid DTO
-    with pytest.raises(ApiException):
-        await extended_client._client.post(
-            "/api/extended/transcript",
-            json={"invalid": "payload"},
-        )
+    bad_resp = await client.post(
+        "/api/extended/transcript",
+        json={"invalid": "payload"},
+        headers=auth_headers,
+    )
+    assert bad_resp.status == 400
 
     # User not found
     with (
@@ -511,20 +514,18 @@ async def test_extended_transcript_invalid_dto_and_errors(
 
 
 async def test_extended_ai_status(extended_client: ExtendedClient) -> None:
-    resp = await extended_client._client.get("/api/extended/ai/status")
-    data = await resp.json()
-    assert data == {
-        "success": True,
-        "hasApiKey": True,
-        "ocrEnabled": True,
-        "vectorSearchEnabled": True,
-        "model": "fake-ocr-v1",
-    }
+    status = await extended_client.get_ai_status()
+    assert status.success is True
+    assert status.has_api_key is True
+    assert status.ocr_enabled is True
+    assert status.vector_search_enabled is True
+    assert status.model == "fake-ocr-v1"
 
 
 async def test_extended_note_cover_converts_only_first_page(
     client: TestClient,
     auth_headers: dict[str, str],
+    extended_client: ExtendedClient,
     session_manager: DatabaseSessionManager,
     test_user_id: int,
 ) -> None:
@@ -550,16 +551,18 @@ async def test_extended_note_cover_converts_only_first_page(
         )
         await session.commit()
 
+    cover_vo = await extended_client.get_note_cover(file_id=file_id)
+    assert cover_vo.success is True
+    assert cover_vo.url is not None
+    assert f"/api/oss/png/{file_id}/0?" in cover_vo.url
+
+    # Also verify browser-style string fileId wire payload
     resp = await client.post(
         "/api/extended/file/note/cover",
         json={"fileId": str(file_id)},
         headers=auth_headers,
     )
     assert resp.status == 200
-    data = await resp.json()
-    assert data["success"] is True
-    assert data["url"] is not None
-    assert f"/api/oss/png/{file_id}/0?" in data["url"]
 
     # Page 1 was NOT eagerly converted
     assert (
@@ -568,7 +571,7 @@ async def test_extended_note_cover_converts_only_first_page(
     )
 
     # Signed URL downloads valid PNG bytes
-    rel_url = "/" + data["url"].split("/", 3)[3]
+    rel_url = "/" + cover_vo.url.split("/", 3)[3]
     png_resp = await client.get(rel_url)
     assert png_resp.status == 200
     png_bytes = await png_resp.read()
@@ -576,12 +579,6 @@ async def test_extended_note_cover_converts_only_first_page(
 
     # When web_notebook_preview is disabled, cover endpoint returns url=None
     client.app["config"].web_notebook_preview = False
-    disabled_resp = await client.post(
-        "/api/extended/file/note/cover",
-        json={"fileId": str(file_id)},
-        headers=auth_headers,
-    )
-    assert disabled_resp.status == 200
-    disabled_data = await disabled_resp.json()
-    assert disabled_data["success"] is True
-    assert disabled_data["url"] is None
+    disabled_vo = await extended_client.get_note_cover(file_id=file_id)
+    assert disabled_vo.success is True
+    assert disabled_vo.url is None

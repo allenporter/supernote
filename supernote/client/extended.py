@@ -4,6 +4,9 @@ from supernote.models.extended import (
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
     SystemTaskListVO,
+    WebAiStatusVO,
+    WebNoteCoverRequestDTO,
+    WebNoteCoverVO,
     WebSearchRequestDTO,
     WebSearchResponseVO,
     WebSummaryListRequestDTO,
@@ -80,4 +83,15 @@ class ExtendedClient:
         """List recent system tasks (Extension)."""
         return await self._client.get_json(
             "/api/extended/system/tasks", SystemTaskListVO
+        )
+
+    async def get_ai_status(self) -> WebAiStatusVO:
+        """Query server AI processing configuration and status (Extension)."""
+        return await self._client.get_json("/api/extended/ai/status", WebAiStatusVO)
+
+    async def get_note_cover(self, file_id: int) -> WebNoteCoverVO:
+        """Retrieve a single-page cover preview URL for a notebook (Extension)."""
+        dto = WebNoteCoverRequestDTO(file_id=file_id)
+        return await self._client.post_json(
+            "/api/extended/file/note/cover", WebNoteCoverVO, json=dto.to_dict()
         )
