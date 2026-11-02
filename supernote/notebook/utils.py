@@ -36,6 +36,11 @@ class WorkaroundPageWrapper(fileformat.Page):
         # copy contents from the original page object
         wrapped_page.content = page.content
         wrapped_page.totalpath = page.totalpath
+        wrapped_page._page_index = page._page_index
+        wrapped_page._notebook = page._notebook
+        wrapped_page._keywords = list(page._keywords)
+        wrapped_page._titles = list(page._titles)
+        wrapped_page._links = list(page._links)
         for i, layer in enumerate(page.layers):
             wrapped_page.layer(i).content = layer.content
         return wrapped_page
