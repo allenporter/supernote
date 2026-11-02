@@ -6,6 +6,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from supernote.models.base import ErrorCode
 from supernote.server.constants import (
     SYSTEM_CATEGORY_CONTAINER_MAP,
     SYSTEM_ROOT_DIRECTORIES,
@@ -359,17 +360,17 @@ class VirtualFileSystem:
 
         return "/".join(path_parts)
 
-    async def ensure_directory_path(self, user_id: int, path: str) -> int:
-        """Ensure a directory path exists, creating if necessary. Returns the final directory ID."""
-        parts = [p for p in path.strip("/").split("/") if p]
+    async def _resolve_existing_directory_prefix(
+        self, user_id: int, parts: list[str]
+    ) -> tuple[int, list[str]]:
+        """Walk existing folder segments from root and return `(deepest_dir_id, missing_parts)`."""
         current_dir_id = 0
-
         for i, part in enumerate(parts):
-            node: UserFileDO | None = None
+            existing: UserFileDO | None = None
             if i == 0 and current_dir_id == 0:
-                node = await self._resolve_root_segment(user_id, part)
+                existing = await self._resolve_root_segment(user_id, part)
 
-            if node is None:
+            if existing is None:
                 stmt = select(UserFileDO).where(
                     UserFileDO.user_id == user_id,
                     UserFileDO.directory_id == current_dir_id,
@@ -377,19 +378,92 @@ class VirtualFileSystem:
                     UserFileDO.is_active == "Y",
                 )
                 result = await self.db.execute(stmt)
-                node = result.scalar_one_or_none()
+                existing = result.scalar_one_or_none()
 
-            if node:
-                if node.is_folder != "Y":
-                    raise InvalidPath(f"{part} is a file")
-                current_dir_id = node.id
-            else:
-                # Note: This could likely be made more efficient creating multiple
-                # directories in a single transaction.
-                new_dir = await self.create_directory(user_id, current_dir_id, part)
-                current_dir_id = new_dir.id
+            if existing is None:
+                return current_dir_id, parts[i:]
+
+            if existing.is_folder != "Y":
+                raise InvalidPath(f"{part} is a file")
+            current_dir_id = existing.id
+
+        return current_dir_id, []
+
+    async def ensure_directory_path(self, user_id: int, path: str) -> int:
+        """Ensure a directory path exists, creating if necessary. Returns the final directory ID."""
+        parts = [p for p in path.strip("/").split("/") if p]
+        current_dir_id, missing_parts = await self._resolve_existing_directory_prefix(
+            user_id, parts
+        )
+        for part in missing_parts:
+            # Note: This could likely be made more efficient creating multiple
+            # directories in a single transaction.
+            new_dir = await self.create_directory(user_id, current_dir_id, part)
+            current_dir_id = new_dir.id
 
         return current_dir_id
+
+    async def _ensure_not_in_subtree(
+        self, user_id: int, folder_id: int, target_parent_id: int
+    ) -> None:
+        """Ensure target_parent_id is neither folder_id nor a descendant of folder_id."""
+        curr_id = target_parent_id
+        visited: set[int] = set()
+        while curr_id != 0:
+            if curr_id == folder_id:
+                raise InvalidPath(
+                    "Cyclic move: cannot move a folder into itself or its descendants",
+                    error_code=ErrorCode.CYCLIC_MOVE,
+                )
+            if curr_id in visited:
+                raise InvalidPath(
+                    f"Cycle detected in move {folder_id} -> {target_parent_id} found {curr_id} multiple times"
+                )
+            visited.add(curr_id)
+            stmt = select(UserFileDO.directory_id).where(
+                UserFileDO.user_id == user_id,
+                UserFileDO.id == curr_id,
+                UserFileDO.is_active == "Y",
+            )
+            res = await self.db.execute(stmt)
+            curr_id = res.scalar() or 0
+
+    async def move_node_to_path(
+        self,
+        user_id: int,
+        node_id: int,
+        to_path: str,
+        autorename: bool = False,
+    ) -> UserFileDO | None:
+        """Move a node to a full destination path (`<parent_dir>/<target_name>`).
+
+        Validates that existing parent segments are folders and do not form a
+        subtree cycle before creating any missing intermediate directories.
+        """
+        node = await self.get_node_by_id(user_id, node_id)
+        if not node:
+            return None
+
+        parts = [p for p in to_path.split("/") if p]
+        if not parts:
+            raise InvalidPath("Destination path cannot be empty")
+
+        parent_parts = parts[:-1]
+        new_name = parts[-1]
+        current_dir_id, missing_parts = await self._resolve_existing_directory_prefix(
+            user_id, parent_parts
+        )
+
+        if node.is_folder == "Y" and current_dir_id != 0:
+            await self._ensure_not_in_subtree(user_id, node.id, current_dir_id)
+
+        for part in missing_parts:
+            new_dir = await self.create_directory(user_id, current_dir_id, part)
+            current_dir_id = new_dir.id
+
+        return await self.move_node(
+            user_id, node_id, current_dir_id, new_name, autorename
+        )
 
     async def move_node(
         self,
@@ -406,25 +480,7 @@ class VirtualFileSystem:
 
         # Cyclic check: ensure new_parent is not a descendant of node
         if node.is_folder == "Y":
-            curr_id = new_parent_id
-            visited = set()
-            while curr_id != 0:
-                if curr_id == node.id:
-                    raise InvalidPath(
-                        "Cyclic move: cannot move a folder into itself or its descendants"
-                    )
-                if curr_id in visited:
-                    raise InvalidPath(
-                        f"Cycle detected in move {node_id} -> {new_parent_id} found {curr_id} multiple times"
-                    )
-                visited.add(curr_id)
-                stmt = select(UserFileDO.directory_id).where(
-                    UserFileDO.user_id == user_id,
-                    UserFileDO.id == curr_id,
-                    UserFileDO.is_active == "Y",
-                )
-                res = await self.db.execute(stmt)
-                curr_id = res.scalar() or 0
+            await self._ensure_not_in_subtree(user_id, node.id, new_parent_id)
 
         # Identity check: if same parent and same name, it's a no-op UNLESS autorename is True
         if (
@@ -442,6 +498,16 @@ class VirtualFileSystem:
                     f"Invalid destination: folder {new_parent_id} not found"
                 )
 
+        exclude_node_id = (
+            None
+            if (
+                autorename
+                and node.directory_id == new_parent_id
+                and node.file_name == new_name
+            )
+            else node.id
+        )
+
         # Collision resolution
         if autorename:
             logger.debug("Autorename enabled for move")
@@ -454,13 +520,23 @@ class VirtualFileSystem:
 
             counter = 1
             while await self._check_exists(
-                user_id, new_parent_id, new_name, node.is_folder
+                user_id,
+                new_parent_id,
+                new_name,
+                node.is_folder,
+                exclude_node_id=exclude_node_id,
             ):
                 new_name = f"{base_name} ({counter}){ext}"
                 counter += 1
                 if counter > 100:
                     raise FileAlreadyExists(f"File already exists: {new_name}")
-        elif await self._check_exists(user_id, new_parent_id, new_name, node.is_folder):
+        elif await self._check_exists(
+            user_id,
+            new_parent_id,
+            new_name,
+            node.is_folder,
+            exclude_node_id=exclude_node_id,
+        ):
             raise FileAlreadyExists(f"File already exists: {new_name}")
 
         node.directory_id = new_parent_id
@@ -686,6 +762,7 @@ class VirtualFileSystem:
         parent_id: int,
         name: str,
         is_folder: str,
+        exclude_node_id: int | None = None,
     ) -> bool:
         """Check if a node exists with the given name in the parent directory."""
         stmt = select(UserFileDO).where(
@@ -696,6 +773,8 @@ class VirtualFileSystem:
         )
         if is_folder is not None:
             stmt = stmt.where(UserFileDO.is_folder == is_folder)
+        if exclude_node_id is not None:
+            stmt = stmt.where(UserFileDO.id != exclude_node_id)
 
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none() is not None
