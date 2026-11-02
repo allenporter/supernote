@@ -239,6 +239,75 @@ async def test_process_with_real_file(
         assert len(current_pages) == len(pages)
 
 
+TEST_DATA_DIR = Path(__file__).parents[3] / "testdata"
+
+
+@pytest.mark.parametrize(
+    ("relative_note_path", "expected_hashes"),
+    [
+        (
+            "20251207_221454.note",
+            ["8222bb495f9987c137b49585ae75a912"],
+        ),
+        (
+            "dsummersl/sn2md_20260618.note",
+            ["ff9877eb19672f85d036ddfcd99e5ada"],
+        ),
+        (
+            "mmujynya/stroller.note",
+            [
+                "3bfafc2b307510c90ecbccd38800093f",
+                "f214521188a21f0d91f5f883aa5af07c",
+            ],
+        ),
+        (
+            "philips/manta.note",
+            ["af7e28b961de2109dc35b248f5a4c4dc"],
+        ),
+    ],
+)
+async def test_page_hashing_preserves_pinned_wire_md5(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    relative_note_path: str,
+    expected_hashes: list[str],
+) -> None:
+    """Verify page content_hash stays bit-for-bit identical across .note variants."""
+    note_path = TEST_DATA_DIR / relative_note_path
+    file_id = 1000
+    storage_key = f"pinned_hash_{note_path.stem}"
+    await blob_storage.put(USER_DATA_BUCKET, storage_key, note_path.read_bytes())
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=1,
+                storage_key=storage_key,
+                file_name=note_path.name,
+                directory_id=0,
+            )
+        )
+        await session.commit()
+
+    assert await page_hashing_module.run(file_id, session_manager) is True
+
+    async with session_manager.session() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(NotePageContentDO)
+                    .where(NotePageContentDO.file_id == file_id)
+                    .order_by(NotePageContentDO.page_index)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert [row.content_hash for row in rows] == expected_hashes
+
+
 async def test_page_hashing_marks_task_failed_on_missing_or_corrupt_file(
     page_hashing_module: PageHashingModule,
     session_manager: DatabaseSessionManager,
