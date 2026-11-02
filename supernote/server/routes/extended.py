@@ -257,30 +257,35 @@ async def handle_extended_transcript(request: web.Request) -> web.Response:
 @routes.get("/api/extended/ai/status")
 async def handle_extended_ai_status(request: web.Request) -> web.Response:
     # Endpoint: GET /api/extended/ai/status
-    # Purpose: Returns server AI processing configuration and API key health status.
-    config: ServerConfig | None = request.app.get("config")
+    # Purpose: Returns server AI processing configuration and capability health status.
     ocr_model: OcrModel | None = request.app.get("ocr_model")
     summary_model: SummaryModel | None = request.app.get("summary_model")
     embedding_model: EmbeddingModel | None = request.app.get("embedding_model")
-    is_configured = any((ocr_model, summary_model, embedding_model))
+
     ocr_enabled = ocr_model is not None
+    ocr_model_id = ocr_model.model_id if ocr_model is not None else None
+
+    summary_enabled = summary_model is not None
+    summary_model_id = summary_model.model_id if summary_model is not None else None
+
     vector_search_enabled = embedding_model is not None
-    model = (
-        ocr_model.model_id
-        if ocr_model is not None
-        else (
-            config.ai.ocr.model
-            if config is not None and config.ai.ocr is not None
-            else (config.gemini_ocr_model if config is not None else None)
-        )
+    embedding_model_id = (
+        embedding_model.model_id if embedding_model is not None else None
     )
+
+    is_configured = any((ocr_enabled, summary_enabled, vector_search_enabled))
+    primary_model = ocr_model_id or summary_model_id or embedding_model_id
 
     return web.json_response(
         WebAiStatusVO(
             has_api_key=is_configured,
             ocr_enabled=ocr_enabled,
+            ocr_model=ocr_model_id,
+            summary_enabled=summary_enabled,
+            summary_model=summary_model_id,
             vector_search_enabled=vector_search_enabled,
-            model=model,
+            embedding_model=embedding_model_id,
+            model=primary_model,
         ).to_dict()
     )
 
