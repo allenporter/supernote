@@ -1,12 +1,22 @@
 import base64
+import io
 import json
+import re
+from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from supernote.notebook import SupernoteMetadata, exceptions, parse_metadata
+from supernote.notebook import (
+    Link,
+    Notebook,
+    SupernoteMetadata,
+    exceptions,
+    parse_metadata,
+    reconstruct,
+)
 from supernote.notebook.schema import (
     EquipmentType,
     FileType,
@@ -404,3 +414,119 @@ def test_supernote_metadata_to_dict_omits_private_ordering_fields() -> None:
     assert "_wire_keys" not in structured["footer"]
     assert "_wire_keys" not in structured["pages"][0]
     assert "_wire_layer_info" not in structured["pages"][0]
+
+
+def test_synthetic_link_blocks_roundtrip_through_reconstruct_and_parse_metadata(
+    reconstructable_notebook: Notebook,
+) -> None:
+    reconstructable_notebook.links = [
+        Link(
+            {
+                "LINKTYPE": "0",
+                "LINKINOUT": "0",
+                "LINKRECT": "10,20,30,40",
+                "LINKTIMESTAMP": "1700000000",
+                "LINKFILE": "dGVzdC5ub3Rl",
+                "LINKFILEID": str(reconstructable_notebook.file_id),
+                "PAGEID": str(reconstructable_notebook.page(0).page_id),
+            },
+            content=b"PAGE_LINK_BITMAP",
+            page_number=0,
+        ),
+        Link(
+            {
+                "LINKTYPE": "4",
+                "LINKINOUT": "0",
+                "LINKRECT": "50,60,70,80",
+                "LINKTIMESTAMP": "1700000001",
+                "LINKFILE": "aHR0cHM6Ly9leGFtcGxlLmNvbQ==",
+                "LINKFILEID": "none",
+                "PAGEID": "none",
+            },
+            content=b"WEB_LINK_BITMAP",
+            page_number=0,
+        ),
+    ]
+
+    binary = reconstruct(reconstructable_notebook)
+    reparsed = parse_metadata(io.BytesIO(binary))
+
+    assert len(reparsed.footer.links) == 2
+    for link_meta in reparsed.footer.links:
+        assert link_meta.extra == {}
+        assert isinstance(link_meta.link_type, LinkType)
+        assert isinstance(link_meta.direction, LinkDirection)
+    assert [m.link_type for m in reparsed.footer.links] == [
+        LinkType.PAGE,
+        LinkType.WEB,
+    ]
+    assert reparsed.footer.links[1].file_id is None
+    assert reparsed.footer.links[1].page_id is None
+
+
+# --- Executable Documentation Spec Gate (docs/notebook_spec.md) ---
+
+SPEC_PATH = Path(__file__).resolve().parents[2] / "docs" / "notebook_spec.md"
+_SPEC_SNIPPET_RE = re.compile(
+    r"<!--\s*schema:\s*(\w+)\s*-->\s*```text\n(.*?)\n```",
+    re.DOTALL,
+)
+_MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+
+_SPEC_SCHEMA_PARSERS: dict[str, Callable[[dict[str, Any]], Any]] = {
+    "HeaderMetadata": HeaderMetadata.from_params,
+    "FooterMetadata": FooterMetadata.from_params,
+    "PageMetadata": PageMetadata.from_params,
+    "LayerMetadata": LayerMetadata.from_params,
+    "KeywordMetadata": KeywordMetadata.from_params,
+    "TitleMetadata": TitleMetadata.from_params,
+    "LinkMetadata": LinkMetadata.from_params,
+}
+
+
+def _load_spec_snippets() -> list[tuple[str, str]]:
+    text = SPEC_PATH.read_text(encoding="utf-8")
+    return [(m.group(1), m.group(2).strip()) for m in _SPEC_SNIPPET_RE.finditer(text)]
+
+
+SPEC_SNIPPETS = _load_spec_snippets()
+
+
+def test_notebook_spec_covers_all_metadata_dataclasses() -> None:
+    documented_classes = {cls_name for cls_name, _ in SPEC_SNIPPETS}
+    assert documented_classes == set(_SPEC_SCHEMA_PARSERS)
+
+
+@pytest.mark.parametrize(
+    ("cls_name", "wire_snippet"),
+    SPEC_SNIPPETS,
+    ids=[f"{cls_name}_{idx}" for idx, (cls_name, _) in enumerate(SPEC_SNIPPETS)],
+)
+def test_notebook_spec_snippet_parses_strictly_and_roundtrips(
+    cls_name: str, wire_snippet: str
+) -> None:
+    parser_fn = _SPEC_SCHEMA_PARSERS[cls_name]
+    params = extract_parameters(wire_snippet)
+    assert params, f"empty <KEY:VALUE> block for {cls_name}"
+
+    model = parser_fn(params)
+    assert model.extra == {}, (
+        f"unmodeled extra keys in docs/notebook_spec.md {cls_name} snippet: {model.extra}"
+    )
+    assert encode_parameters(model.to_params()).decode("utf-8") == wire_snippet
+
+
+def test_notebook_spec_relative_links_resolve() -> None:
+    spec_text = SPEC_PATH.read_text(encoding="utf-8")
+    assert "file://" not in spec_text
+
+    targets = _MARKDOWN_LINK_RE.findall(spec_text)
+    assert targets, "expected relative links in docs/notebook_spec.md"
+    for target in targets:
+        if target.startswith(("http://", "https://", "#")):
+            continue
+        rel_path = target.split("#", 1)[0]
+        resolved = (SPEC_PATH.parent / rel_path).resolve()
+        assert resolved.exists(), (
+            f"broken relative link in docs/notebook_spec.md: {target} -> {resolved}"
+        )
