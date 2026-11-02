@@ -14,6 +14,7 @@ from supernote.notebook import (
     Notebook,
     SupernoteMetadata,
     exceptions,
+    load_notebook,
     parse_metadata,
     reconstruct,
 )
@@ -613,4 +614,37 @@ def test_notebook_spec_relative_links_resolve() -> None:
         resolved = (SPEC_PATH.parent / rel_path).resolve()
         assert resolved.exists(), (
             f"broken relative link in docs/notebook_spec.md: {target} -> {resolved}"
+        )
+
+
+def test_supernote_metadata_json_roundtrip_across_corpus() -> None:
+    for note_path in NOTE_PATHS:
+        nb = load_notebook(note_path, policy="loose")
+        rehydrated = SupernoteMetadata.from_json(nb.metadata.to_json())
+        assert rehydrated == nb.metadata
+        assert rehydrated.to_wire_dict() == nb.metadata.to_wire_dict()
+
+    with pytest.raises(
+        exceptions.ParserException, match="invalid SupernoteMetadata JSON"
+    ):
+        SupernoteMetadata.from_json("{bad")
+    with pytest.raises(exceptions.ParserException, match="must be an object"):
+        SupernoteMetadata.from_json("[1, 2]")
+    bad_wire: Any = "bad"
+    with pytest.raises(
+        exceptions.ParserException, match="invalid notebook metadata wire dict"
+    ):
+        SupernoteMetadata.from_wire_dict(bad_wire)
+    with pytest.raises(exceptions.ParserException, match="missing __type__"):
+        SupernoteMetadata.from_wire_dict({})
+    with pytest.raises(exceptions.ParserException, match="missing __header__"):
+        SupernoteMetadata.from_wire_dict({"__type__": "note", "__signature__": "SN"})
+    with pytest.raises(exceptions.ParserException, match="missing __pages__"):
+        SupernoteMetadata.from_wire_dict(
+            {
+                "__type__": "note",
+                "__signature__": "SN",
+                "__header__": {},
+                "__footer__": {},
+            }
         )

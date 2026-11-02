@@ -16,13 +16,16 @@ from supernote.models.summary import (
 from supernote.server.ai.models.summary import SummaryModel
 from supernote.server.ai.prompts import format_summary_prompt
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.db.models.note_processing import NoteMetadataDO, NotePageContentDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.services.summary import SummaryService
-from supernote.server.utils.note_content import format_page_metadata
+from supernote.server.utils.note_content import (
+    extract_keywords_by_page_index,
+    format_page_metadata,
+)
 from supernote.server.utils.paths import (
     get_summary_group_id,
     get_summary_id,
@@ -143,12 +146,16 @@ class SummaryModule(ProcessorModule):
             )
             result = await session.execute(stmt)
             pages = result.scalars().all()
+            meta_do = await session.get(NoteMetadataDO, (file_do.user_id, file_id))
+            keywords_by_page = extract_keywords_by_page_index(
+                meta_do.metadata_json if meta_do is not None else None
+            )
 
         if not pages:
             logger.info(f"No OCR pages found for file {file_id}. Skipping summary.")
             return
 
-        # Format transcript with Page markers and inferred dates
+        # Format transcript with Page markers, inferred dates, styles, and keywords
         text_parts = []
         for p in pages:
             if p.text_content:
@@ -157,11 +164,55 @@ class SummaryModule(ProcessorModule):
                     page_id=p.page_id or "",
                     file_name=file_do.file_name,
                     notebook_create_time=file_do.create_time,
+                    page_style=p.page_style,
+                    keywords=keywords_by_page.get(p.page_index),
                     include_section_divider=True,
                 )
                 text_parts.append(f"{metadata}\n{p.text_content}")
 
         full_text = "\n\n".join(text_parts)
+
+        if not full_text.strip():
+            existing_group = await self.summary_service.get_summary_by_uuid(
+                user_email, group_uuid
+            )
+            if not existing_group:
+                logger.info(
+                    f"All pages in file {file_id} are blank; skipping summary generation."
+                )
+                return
+            await self._upsert_group(
+                user_email,
+                AddSummaryGroupDTO(
+                    unique_identifier=group_uuid,
+                    name=group_name,
+                    md5_hash=group_md5,
+                ),
+            )
+            await self._upsert_summary(
+                user_email,
+                AddSummaryDTO(
+                    file_id=file_id,
+                    unique_identifier=transcript_uuid,
+                    parent_unique_identifier=group_uuid,
+                    content="",
+                    data_source="OCR",
+                    source_path=file_do.file_name,
+                ),
+            )
+            await self._upsert_summary(
+                user_email,
+                AddSummaryDTO(
+                    file_id=file_id,
+                    unique_identifier=summary_uuid,
+                    parent_unique_identifier=group_uuid,
+                    content="No summary generated.",
+                    data_source=self.summary_model.model_id,
+                    source_path=file_do.file_name,
+                    metadata=None,
+                ),
+            )
+            return
 
         await self._upsert_group(
             user_email,

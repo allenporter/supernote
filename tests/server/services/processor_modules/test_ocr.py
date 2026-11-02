@@ -1,10 +1,17 @@
+from pathlib import Path
+
 import pytest
 from sqlalchemy import select
 
+from supernote.notebook import load_notebook
 from supernote.server.ai.models.fake.ocr import FakeOcrModel
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
+from supernote.server.db.models.note_processing import (
+    NoteMetadataDO,
+    NotePageContentDO,
+    SystemTaskDO,
+)
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
@@ -115,3 +122,117 @@ async def test_ocr_run_if_needed_disabled(
 
     # run() should still return True (skipped success)
     assert await module.run(1, session_manager, page_index=0, page_id="p0") is True
+
+
+async def test_ocr_skips_blank_pages_and_includes_style_and_keywords(
+    ocr_module: OcrModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    fake_ocr_model: FakeOcrModel,
+) -> None:
+    user_id = 101
+    file_id = 1005
+    stroller_nb = load_notebook(
+        Path("tests/testdata/mmujynya/stroller.note"), policy="loose"
+    )
+    await blob_storage.put(
+        CACHE_BUCKET, get_page_png_path(file_id, "p_written"), b"png-bytes"
+    )
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key="stroller_key",
+                file_name="stroller.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NoteMetadataDO(
+                user_id=user_id,
+                file_id=file_id,
+                file_type="note",
+                total_pages=3,
+                metadata_json=stroller_nb.metadata.to_json(),
+            )
+        )
+        session.add_all(
+            [
+                # Written page on index 0 (has keywords in stroller.note + page_style)
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="p_written",
+                    content_hash="h0",
+                    page_style="style_four_quadrant_method",
+                    has_ink=True,
+                    has_drawables=True,
+                ),
+                # Blank page via has_drawables=False (no PNG even needed!)
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=1,
+                    page_id="p_blank_drawables",
+                    content_hash="h1",
+                    page_style="style_5mm_dots",
+                    has_ink=False,
+                    has_drawables=False,
+                ),
+                # Legacy blank page via has_drawables=None, has_ink=False
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=2,
+                    page_id="p_blank_ink",
+                    content_hash="h2",
+                    page_style="style_white",
+                    has_ink=False,
+                    has_drawables=None,
+                ),
+            ]
+        )
+        await session.commit()
+
+    # Blank pages run without PNG prerequisite and without calling OCR LLM
+    assert (
+        await ocr_module.run(
+            file_id, session_manager, page_index=1, page_id="p_blank_drawables"
+        )
+        is True
+    )
+    assert (
+        await ocr_module.run(
+            file_id, session_manager, page_index=2, page_id="p_blank_ink"
+        )
+        is True
+    )
+    assert fake_ocr_model.calls == []
+
+    # Written page invokes OCR with Page Style + Page Keywords
+    assert (
+        await ocr_module.run(
+            file_id, session_manager, page_index=0, page_id="p_written"
+        )
+        is True
+    )
+    assert len(fake_ocr_model.calls) == 1
+    _, prompt = fake_ocr_model.calls[0]
+    assert "Page Style: Four Quadrant Method" in prompt
+    assert "Page Keywords:" in prompt
+
+    async with session_manager.session() as session:
+        rows = list(
+            (
+                await session.execute(
+                    select(NotePageContentDO)
+                    .where(NotePageContentDO.file_id == file_id)
+                    .order_by(NotePageContentDO.page_index)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert rows[0].text_content is not None and rows[0].text_content != ""
+        assert rows[1].text_content == ""
+        assert rows[2].text_content == ""

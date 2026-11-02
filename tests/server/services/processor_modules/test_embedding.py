@@ -175,3 +175,52 @@ async def test_embedding_run_if_needed_disabled(
 
     # run() should still return True (skipped success)
     assert await module.run(1, session_manager, page_index=0, page_id="p0") is True
+
+
+async def test_embedding_skips_blank_text_and_clears_stale_embedding(
+    embedding_module: EmbeddingModule,
+    session_manager: DatabaseSessionManager,
+    fake_embedding_model: FakeEmbeddingModel,
+) -> None:
+    file_id = 1015
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=1,
+                storage_key="key_blank",
+                file_name="blank.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="p_blank",
+                content_hash="h_blank",
+                has_ink=False,
+                has_drawables=False,
+                text_content="",
+                embedding="[0.1, 0.2]",
+                embedding_model="stale-model",
+            )
+        )
+        await session.commit()
+
+    assert (
+        await embedding_module.run(
+            file_id, session_manager, page_index=0, page_id="p_blank"
+        )
+        is True
+    )
+    assert fake_embedding_model.calls == []
+
+    async with session_manager.session() as session:
+        content = (
+            await session.execute(
+                select(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
+            )
+        ).scalar_one()
+        assert content.embedding is None
+        assert content.embedding_model is None

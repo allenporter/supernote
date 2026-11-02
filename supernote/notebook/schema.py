@@ -1669,13 +1669,41 @@ class FooterMetadata:
             else KeywordMetadata.from_params(item)
             for item in (params.get(KEY_KEYWORDS) or [])
         ]
-        titles = [
-            item if isinstance(item, TitleMetadata) else TitleMetadata.from_params(item)
-            for item in (params.get(KEY_TITLES) or [])
+        title_page_indices = [
+            int(key[6:10]) - 1
+            for key, addrs in title_addresses.items()
+            if len(key) >= 10 and key[6:10].isdigit()
+            for _ in addrs
         ]
+        raw_titles = list(params.get(KEY_TITLES) or [])
+        titles = [
+            item
+            if isinstance(item, TitleMetadata)
+            else TitleMetadata.from_params(
+                item,
+                page_index=(
+                    title_page_indices[idx] if idx < len(title_page_indices) else 0
+                ),
+            )
+            for idx, item in enumerate(raw_titles)
+        ]
+        link_page_indices = [
+            int(key[6:10]) - 1
+            for key, addrs in link_addresses.items()
+            if len(key) >= 10 and key[6:10].isdigit()
+            for _ in addrs
+        ]
+        raw_links = list(params.get(KEY_LINKS) or [])
         links = [
-            item if isinstance(item, LinkMetadata) else LinkMetadata.from_params(item)
-            for item in (params.get(KEY_LINKS) or [])
+            item
+            if isinstance(item, LinkMetadata)
+            else LinkMetadata.from_params(
+                item,
+                page_index=(
+                    link_page_indices[idx] if idx < len(link_page_indices) else 0
+                ),
+            )
+            for idx, item in enumerate(raw_links)
         ]
 
         return cls(
@@ -1846,6 +1874,17 @@ class SupernoteMetadata:
             raise IndexError(f"page number out of range: {page_number}")
         return self._pages[page_number].is_layer_supported
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, SupernoteMetadata):
+            return NotImplemented
+        return (
+            self._type == other._type
+            and self._signature == other._signature
+            and self._header == other._header
+            and self._footer == other._footer
+            and self._pages == other._pages
+        )
+
     def to_wire_dict(self) -> dict[str, Any]:
         """Return legacy wire-tag dictionary (`__type__`, `__header__`, etc.)."""
         return {
@@ -1877,6 +1916,47 @@ class SupernoteMetadata:
         """Serialize wire-tag structure as a JSON string (used by `supernote analyze`)."""
         kwargs.setdefault("ensure_ascii", False)
         return json.dumps(self.to_wire_dict(), **kwargs)
+
+    @classmethod
+    def from_wire_dict(cls, data: Mapping[str, Any]) -> Self:
+        """Rehydrate `SupernoteMetadata` from a `to_wire_dict()` mapping."""
+        if not isinstance(data, Mapping):
+            raise exceptions.ParserException("invalid notebook metadata wire dict")
+        raw_type = data.get(KEY_TYPE)
+        raw_sig = data.get(KEY_SIGNATURE)
+        raw_header = data.get(KEY_HEADER)
+        raw_footer = data.get(KEY_FOOTER)
+        raw_pages = data.get(KEY_PAGES)
+        if not isinstance(raw_type, str) or not isinstance(raw_sig, str):
+            raise exceptions.ParserException(
+                "missing __type__ or __signature__ in notebook metadata"
+            )
+        if not isinstance(raw_header, Mapping) or not isinstance(raw_footer, Mapping):
+            raise exceptions.ParserException(
+                "missing __header__ or __footer__ in notebook metadata"
+            )
+        if not isinstance(raw_pages, Sequence) or isinstance(raw_pages, (str, bytes)):
+            raise exceptions.ParserException("missing __pages__ in notebook metadata")
+        return cls(
+            type=raw_type,
+            signature=raw_sig,
+            header=raw_header,
+            footer=raw_footer,
+            pages=raw_pages,
+        )
+
+    @classmethod
+    def from_json(cls, raw: str) -> Self:
+        """Deserialize `SupernoteMetadata` from a `to_json()` string."""
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise exceptions.ParserException(
+                f"invalid SupernoteMetadata JSON: {exc}"
+            ) from exc
+        if not isinstance(parsed, Mapping):
+            raise exceptions.ParserException("SupernoteMetadata JSON must be an object")
+        return cls.from_wire_dict(parsed)
 
 
 __all__ = [

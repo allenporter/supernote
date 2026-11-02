@@ -5,7 +5,11 @@ from sqlalchemy import select
 
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
+from supernote.server.db.models.note_processing import (
+    NoteMetadataDO,
+    NotePageContentDO,
+    SystemTaskDO,
+)
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
@@ -95,6 +99,13 @@ async def test_process_with_real_file(
 
         assert task is not None
         assert task.status == "COMPLETED"
+        assert task.data == "v2"
+
+        note_meta = await session.get(NoteMetadataDO, (user_id, file_id))
+        assert note_meta is not None
+        assert note_meta.file_type == "note"
+        assert note_meta.total_pages == len(pages)
+        assert note_meta.metadata_json != ""
 
     # Test Change Detection (Simulated)
     # Since we can't easily edit the binary .note file to change content,
@@ -350,3 +361,84 @@ async def test_page_hashing_marks_task_failed_on_missing_or_corrupt_file(
             ).scalar_one()
             assert task.status == "FAILED"
             assert task.last_error is not None
+
+
+async def test_page_hashing_persists_metadata_and_ink_signals(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    """Verify PageHashingModule persists NoteMetadataDO and per-page style, has_ink, and has_drawables."""
+    pdf_template_path = (
+        TEST_DATA_DIR / "nelinory" / "A5X_TestNote_With_Pdf_Template.note"
+    )
+    file_id = 1010
+    user_id = 7
+    storage_key = "pdf_template_key"
+    await blob_storage.put(
+        USER_DATA_BUCKET, storage_key, pdf_template_path.read_bytes()
+    )
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key=storage_key,
+                file_name="PdfTemplate.note",
+                directory_id=0,
+            )
+        )
+        await session.commit()
+
+    assert await page_hashing_module.run(file_id, session_manager) is True
+
+    async with session_manager.session() as session:
+        meta = await session.get(NoteMetadataDO, (user_id, file_id))
+        assert meta is not None
+        assert meta.equipment == "A5X"
+        assert meta.total_pages == 3
+        assert meta.width == 1404
+        assert meta.height == 1872
+
+        rows = list(
+            (
+                await session.execute(
+                    select(NotePageContentDO)
+                    .where(NotePageContentDO.file_id == file_id)
+                    .order_by(NotePageContentDO.page_index)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert [
+            (r.page_index, r.page_style, r.has_ink, r.has_drawables) for r in rows
+        ] == [
+            (0, "user_pdf_Pdf_Template_1", True, True),
+            (1, "user_pdf_Pdf_Template_2", False, False),
+            (2, "user_pdf_Pdf_Template_3", True, True),
+        ]
+
+        # Simulate legacy row missing signals with unchanged content_hash:
+        # re-running backfills page_style/has_ink/has_drawables without clearing text_content.
+        rows[0].page_style = None
+        rows[0].has_ink = None
+        rows[0].has_drawables = None
+        rows[0].text_content = "preserved ocr"
+        await session.commit()
+
+    assert await page_hashing_module.run(file_id, session_manager) is True
+
+    async with session_manager.session() as session:
+        refreshed = (
+            await session.execute(
+                select(NotePageContentDO)
+                .where(NotePageContentDO.file_id == file_id)
+                .where(NotePageContentDO.page_index == 0)
+            )
+        ).scalar_one()
+        assert refreshed.page_style == "user_pdf_Pdf_Template_1"
+        assert refreshed.has_ink is True
+        assert refreshed.has_drawables is True
+        assert refreshed.text_content == "preserved ocr"

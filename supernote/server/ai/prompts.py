@@ -12,7 +12,10 @@ from mashumaro.jsonschema import build_json_schema
 from mashumaro.mixins.json import DataClassJSONMixin
 
 from supernote.server.ai.base import AIError
-from supernote.server.utils.note_content import format_page_metadata
+from supernote.server.utils.note_content import (
+    format_page_metadata,
+    normalize_page_style_type,
+)
 from supernote.server.utils.prompt_loader import PROMPT_LOADER, PromptId, PromptLoader
 
 __all__ = [
@@ -42,12 +45,18 @@ class PageMetadata:
     page_index: int
     page_id: str
     notebook_create_time: int | None
+    page_style: str | None = None
+    keywords: list[str] = field(default_factory=list)
 
     @property
     def file_name_basis(self) -> str | None:
         if self.file_name:
             return Path(self.file_name).stem.lower()
         return None
+
+    @property
+    def page_style_basis(self) -> str | None:
+        return normalize_page_style_type(self.page_style)
 
 
 @dataclass
@@ -94,9 +103,19 @@ def format_ocr_prompt(
     prompt_loader: PromptLoader = PROMPT_LOADER,
 ) -> str:
     """Format the full OCR prompt including page metadata header and template."""
-    resolved_custom_type = (
-        custom_type if custom_type is not None else page_metadata.file_name_basis
-    )
+    if custom_type is not None:
+        resolved_custom_type: str | None = custom_type
+    elif prompt_loader.has_custom_prompt(
+        PromptId.OCR_TRANSCRIPTION, page_metadata.file_name_basis
+    ):
+        resolved_custom_type = page_metadata.file_name_basis
+    elif prompt_loader.has_custom_prompt(
+        PromptId.OCR_TRANSCRIPTION, page_metadata.page_style_basis
+    ):
+        resolved_custom_type = page_metadata.page_style_basis
+    else:
+        resolved_custom_type = page_metadata.file_name_basis
+
     prompt = prompt_loader.get_prompt(
         PromptId.OCR_TRANSCRIPTION, custom_type=resolved_custom_type
     )
@@ -105,6 +124,8 @@ def format_ocr_prompt(
         page_id=page_metadata.page_id,
         file_name=page_metadata.file_name,
         notebook_create_time=page_metadata.notebook_create_time,
+        page_style=page_metadata.page_style,
+        keywords=page_metadata.keywords,
         include_section_divider=True,
     )
     return f"{metadata_block}\n\n{prompt}"

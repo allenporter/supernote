@@ -781,3 +781,13 @@ def test_bitmap_has_ink_flate_and_edge_cases() -> None:
     assert unknown_page.has_ink is False
     unknown_page.content = b"\x01\x02"
     assert unknown_page.has_ink is True
+
+    # X2 layers omitting <LAYERPROTOCOL> default to RATTA_RLE
+    omitted_proto_layer = Layer({"LAYERNAME": "MAINLAYER"})
+    assert omitted_proto_layer.protocol is None
+    omitted_proto_layer.content = bytes(
+        [decoder.RattaRleDecoder.COLORCODE_BACKGROUND, 0xFF]
+    )
+    assert omitted_proto_layer.has_ink is False
+    omitted_proto_layer.content = bytes([decoder.RattaRleDecoder.COLORCODE_BLACK, 0x01])
+    assert omitted_proto_layer.has_ink is True

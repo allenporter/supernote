@@ -228,6 +228,7 @@ async def test_get_transcript(
                 file_id=file_id,
                 page_index=0,
                 page_id="P20231027120000abc",
+                page_style="style_5mm_dots",
                 text_content="Page 1 content.",
             )
         )
@@ -250,6 +251,7 @@ async def test_get_transcript(
     assert "Notebook Filename: Journal.note" in transcript
     assert "Page ID: P20231027120000abc" in transcript
     assert "Page Date (Inferred): 2023-10-27" in transcript
+    assert "Page Style: 5mm Dots" in transcript
     assert "Page Date (Inferred): 2023-10-28" in transcript
 
     # Specific page
