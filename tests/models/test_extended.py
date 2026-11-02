@@ -4,6 +4,11 @@ from supernote.models.base import ProcessingStatus
 from supernote.models.extended import (
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
+    NoteKeywordVO,
+    NoteLinkVO,
+    NotePageMetadataVO,
+    NoteRectVO,
+    NoteTitleVO,
     PageTranscriptVO,
     SearchResultVO,
     SystemTaskListVO,
@@ -11,6 +16,8 @@ from supernote.models.extended import (
     WebAiStatusVO,
     WebNoteCoverRequestDTO,
     WebNoteCoverVO,
+    WebNoteMetadataRequestDTO,
+    WebNoteMetadataVO,
     WebSearchRequestDTO,
     WebSearchResponseVO,
     WebSummaryListRequestDTO,
@@ -220,3 +227,150 @@ def test_web_ai_status_model() -> None:
         "model": "apple-vision",
     }
     assert WebAiStatusVO.from_dict(data) == vo
+
+
+def test_web_note_metadata_models() -> None:
+    req = WebNoteMetadataRequestDTO(file_id=77)
+    assert req.to_dict() == {"fileId": 77}
+    assert WebNoteMetadataRequestDTO.from_dict({"fileId": "77"}) == req
+
+    rect = NoteRectVO(left=10, top=20, right=110, bottom=60)
+    kw = NoteKeywordVO(page_number=0, text="stroller", rect=rect)
+    title = NoteTitleVO(page_number=0, level=1, style="1000254", rect=rect)
+    link = NoteLinkVO(
+        page_number=0,
+        link_type=1,
+        direction=0,
+        style="4",
+        target="/Note/Target.note",
+        target_file_id="F999",
+        target_page_id="P20260101000000xyz",
+        target_page_number=None,
+        rect=rect,
+    )
+    page = NotePageMetadataVO(
+        page_index=0,
+        page_id="P20260101000000abc",
+        date="2026-01-01",
+        style="style_5mm_dots",
+        style_label="5mm Dots",
+        style_hash=None,
+        orientation="1000",
+        recogn_status=1,
+        has_ink=True,
+        has_drawables=True,
+        has_textbox=False,
+        has_vector_graph=False,
+        has_content=True,
+        five_star=["100,200,50,50"],
+        keywords=[kw],
+        titles=[title],
+        links=[link],
+    )
+    vo = WebNoteMetadataVO(
+        file_id=77,
+        native_file_id="F777",
+        file_type="note",
+        equipment="N5",
+        signature="SN_FILE_VER_20230015",
+        width=1920,
+        height=2560,
+        total_pages=1,
+        recogn_language="en_US",
+        realtime_recognition=True,
+        keywords=[kw],
+        titles=[title],
+        links=[link],
+        pages=[page],
+    )
+    data = vo.to_dict()
+    assert data == {
+        "success": True,
+        "errorCode": None,
+        "errorMsg": None,
+        "fileId": 77,
+        "nativeFileId": "F777",
+        "fileType": "note",
+        "equipment": "N5",
+        "signature": "SN_FILE_VER_20230015",
+        "width": 1920,
+        "height": 2560,
+        "totalPages": 1,
+        "recognLanguage": "en_US",
+        "realtimeRecognition": True,
+        "keywords": [
+            {
+                "pageNumber": 0,
+                "text": "stroller",
+                "rect": {"left": 10, "top": 20, "right": 110, "bottom": 60},
+            }
+        ],
+        "titles": [
+            {
+                "pageNumber": 0,
+                "level": 1,
+                "style": "1000254",
+                "rect": {"left": 10, "top": 20, "right": 110, "bottom": 60},
+            }
+        ],
+        "links": [
+            {
+                "pageNumber": 0,
+                "linkType": 1,
+                "direction": 0,
+                "style": "4",
+                "target": "/Note/Target.note",
+                "targetFileId": "F999",
+                "targetPageId": "P20260101000000xyz",
+                "targetPageNumber": None,
+                "rect": {"left": 10, "top": 20, "right": 110, "bottom": 60},
+            }
+        ],
+        "pages": [
+            {
+                "pageIndex": 0,
+                "pageId": "P20260101000000abc",
+                "date": "2026-01-01",
+                "style": "style_5mm_dots",
+                "styleLabel": "5mm Dots",
+                "styleHash": None,
+                "orientation": "1000",
+                "recognStatus": 1,
+                "hasInk": True,
+                "hasDrawables": True,
+                "hasTextbox": False,
+                "hasVectorGraph": False,
+                "hasContent": True,
+                "fiveStar": ["100,200,50,50"],
+                "keywords": [
+                    {
+                        "pageNumber": 0,
+                        "text": "stroller",
+                        "rect": {"left": 10, "top": 20, "right": 110, "bottom": 60},
+                    }
+                ],
+                "titles": [
+                    {
+                        "pageNumber": 0,
+                        "level": 1,
+                        "style": "1000254",
+                        "rect": {"left": 10, "top": 20, "right": 110, "bottom": 60},
+                    }
+                ],
+                "links": [
+                    {
+                        "pageNumber": 0,
+                        "linkType": 1,
+                        "direction": 0,
+                        "style": "4",
+                        "target": "/Note/Target.note",
+                        "targetFileId": "F999",
+                        "targetPageId": "P20260101000000xyz",
+                        "targetPageNumber": None,
+                        "rect": {"left": 10, "top": 20, "right": 110, "bottom": 60},
+                    }
+                ],
+            }
+        ],
+    }
+    assert WebNoteMetadataVO.from_dict(data) == vo

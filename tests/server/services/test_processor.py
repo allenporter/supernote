@@ -13,7 +13,11 @@ from supernote.server.ai.models.fake.summary import FakeSummaryModel
 from supernote.server.ai.models.ocr import ConcurrencyLimitedOcrModel
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
+from supernote.server.db.models.note_processing import (
+    NoteMetadataDO,
+    NotePageContentDO,
+    SystemTaskDO,
+)
 from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
@@ -179,6 +183,15 @@ async def test_handle_note_deleted_cleanup(
             )
         )
         session.add(
+            NoteMetadataDO(
+                user_id=test_user_id,
+                file_id=file_id,
+                file_type="note",
+                total_pages=2,
+                metadata_json="{}",
+            )
+        )
+        session.add(
             NotePageContentDO(
                 file_id=file_id,
                 page_index=0,
@@ -270,6 +283,7 @@ async def test_handle_note_deleted_cleanup(
 
     # Verify DB records for file_id and its now-empty group are gone, while shared group & surviving child remain
     async with session_manager.session() as session:
+        assert await session.get(NoteMetadataDO, (test_user_id, file_id)) is None
         contents = (
             (
                 await session.execute(
@@ -839,7 +853,8 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
         # File 9102: Missing OCR_EXTRACTION task -> needs OCR backfill
         # File 9103: Has EMBEDDING_GENERATION with data="old-model" -> needs embedding backfill
         # File 9104: Missing SUMMARY_GENERATION task -> needs summary backfill
-        for fid in (9101, 9102, 9103, 9104):
+        # File 9105: Legacy HASHING task with data=None -> needs metadata/ink backfill
+        for fid in (9101, 9102, 9103, 9104, 9105):
             session.add(
                 UserFileDO(
                     id=fid,
@@ -864,6 +879,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                     task_type="HASHING",
                     key="global",
                     status="COMPLETED",
+                    data=None if fid == 9105 else "v2",
                 )
             )
 
@@ -930,6 +946,26 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                     status="COMPLETED",
                     data="new-model",
                 ),
+                # 9105: Complete downstream tasks, but legacy HASHING data=None
+                SystemTaskDO(
+                    file_id=9105,
+                    task_type="OCR_EXTRACTION",
+                    key="page_p0",
+                    status="COMPLETED",
+                ),
+                SystemTaskDO(
+                    file_id=9105,
+                    task_type="EMBEDDING_GENERATION",
+                    key="page_p0",
+                    status="COMPLETED",
+                    data="new-model",
+                ),
+                SystemTaskDO(
+                    file_id=9105,
+                    task_type="SUMMARY_GENERATION",
+                    key="global",
+                    status="COMPLETED",
+                ),
             ]
         )
         await session.commit()
@@ -937,7 +973,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
     await processor_service.recover_missing_tasks()
 
     assert 9101 not in processor_service.processing_files
-    assert {9102, 9103, 9104}.issubset(processor_service.processing_files)
+    assert {9102, 9103, 9104, 9105}.issubset(processor_service.processing_files)
 
 
 async def test_sync_completed_event_enqueues_new_and_updated_notes(
@@ -970,6 +1006,7 @@ async def test_sync_completed_event_enqueues_new_and_updated_notes(
                     task_type=TaskType.PAGE_HASHING,
                     key="global",
                     status="COMPLETED",
+                    data="v2",
                 ),
                 # Up-to-date note -> skip
                 UserFileDO(
@@ -985,6 +1022,7 @@ async def test_sync_completed_event_enqueues_new_and_updated_notes(
                     task_type=TaskType.PAGE_HASHING,
                     key="global",
                     status="COMPLETED",
+                    data="v2",
                 ),
                 # Brand-new note for test_user_id (no tasks yet) -> enqueue
                 UserFileDO(
@@ -1107,3 +1145,148 @@ async def test_get_file_processing_statuses(
         30: ProcessingStatus.PENDING,
         60: ProcessingStatus.PENDING,
     }
+
+
+async def test_get_note_metadata(
+    processor_service: ProcessorService,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    file_service: FileService,
+    test_user_id: int,
+) -> None:
+    """Verify get_note_metadata returns structured notebook + page metadata and enforces ownership."""
+    hashing = PageHashingModule(file_service=file_service)
+
+    # Legacy pre-PAGEID note with keywords + titles (philips/test.note),
+    # modern note with links (A5X_TestNote_Links.note), and mixed ink/blank note
+    test_note = Path("tests/testdata/philips/test.note")
+    links_note = Path("tests/testdata/nelinory/A5X_TestNote_Links.note")
+    mixed_note = Path("tests/testdata/nelinory/A5X_TestNote_With_Pdf_Template.note")
+    await blob_storage.put(USER_DATA_BUCKET, "meta_test_key", test_note.read_bytes())
+    await blob_storage.put(USER_DATA_BUCKET, "meta_links_key", links_note.read_bytes())
+    await blob_storage.put(USER_DATA_BUCKET, "meta_mixed_key", mixed_note.read_bytes())
+
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=501,
+                    user_id=test_user_id,
+                    file_name="Structured.note",
+                    storage_key="meta_test_key",
+                    directory_id=0,
+                    is_active="Y",
+                ),
+                UserFileDO(
+                    id=502,
+                    user_id=test_user_id,
+                    file_name="Links.note",
+                    storage_key="meta_links_key",
+                    directory_id=0,
+                    is_active="Y",
+                ),
+                UserFileDO(
+                    id=503,
+                    user_id=test_user_id,
+                    file_name="Unindexed.note",
+                    storage_key="unindexed_key",
+                    directory_id=0,
+                    is_active="Y",
+                ),
+                UserFileDO(
+                    id=504,
+                    user_id=test_user_id,
+                    file_name="CorruptMeta.note",
+                    storage_key="corrupt_meta_key",
+                    directory_id=0,
+                    is_active="Y",
+                ),
+                NoteMetadataDO(
+                    user_id=test_user_id,
+                    file_id=504,
+                    file_type="note",
+                    total_pages=1,
+                    metadata_json="not-json",
+                ),
+                UserFileDO(
+                    id=505,
+                    user_id=test_user_id,
+                    file_name="Mixed.note",
+                    storage_key="meta_mixed_key",
+                    directory_id=0,
+                    is_active="Y",
+                ),
+            ]
+        )
+        await session.commit()
+
+    assert await hashing.run(501, session_manager) is True
+    assert await hashing.run(502, session_manager) is True
+    assert await hashing.run(505, session_manager) is True
+
+    # Missing file, unauthorized user, unindexed file, corrupt metadata -> None
+    assert await processor_service.get_note_metadata(test_user_id, 99999) is None
+    assert await processor_service.get_note_metadata(test_user_id + 1, 501) is None
+    assert await processor_service.get_note_metadata(test_user_id, 503) is None
+    assert await processor_service.get_note_metadata(test_user_id, 504) is None
+
+    vo_501 = await processor_service.get_note_metadata(test_user_id, 501)
+    assert vo_501 is not None
+    assert vo_501.file_id == 501
+    assert vo_501.file_type == "note"
+    assert vo_501.total_pages == 2
+    assert len(vo_501.keywords) == 2
+    assert len(vo_501.titles) == 2
+    assert len(vo_501.pages) == 2
+    assert vo_501.pages[0].has_ink is None
+    assert vo_501.pages[0].has_drawables is None
+    assert vo_501.pages[0].has_content is True
+    assert vo_501.pages[0].style_label == "8mm Ruled Line"
+
+    vo_502 = await processor_service.get_note_metadata(test_user_id, 502)
+    assert vo_502 is not None
+    assert len(vo_502.links) == 8
+    assert any(lk.target is not None for lk in vo_502.links)
+    assert vo_502.pages[0].has_ink is True
+    assert vo_502.pages[0].has_drawables is True
+    assert vo_502.pages[0].has_content is True
+
+    vo_505 = await processor_service.get_note_metadata(test_user_id, 505)
+    assert vo_505 is not None
+    assert [p.has_ink for p in vo_505.pages] == [True, False, True]
+    assert [p.has_drawables for p in vo_505.pages] == [True, False, True]
+    assert [p.has_content for p in vo_505.pages] == [True, False, True]
+
+
+async def test_process_file_serializes_same_file_concurrency(
+    processor_service: ProcessorService,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    file_service: FileService,
+    test_user_id: int,
+    test_note_path: Path,
+) -> None:
+    """Verify concurrent process_file calls for the same file_id serialize cleanly without lock leaks."""
+    await blob_storage.put(
+        USER_DATA_BUCKET, "concurrent_hash_key", test_note_path.read_bytes()
+    )
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=506,
+                user_id=test_user_id,
+                file_name="Concurrent.note",
+                storage_key="concurrent_hash_key",
+                directory_id=0,
+                is_active="Y",
+            )
+        )
+        await session.commit()
+
+    processor_service.register_modules(hashing=PageHashingModule(file_service))
+    results = await asyncio.gather(
+        processor_service.process_file(506),
+        processor_service.process_file(506, task_types={TaskType.PAGE_HASHING}),
+    )
+    assert results == [True, True]
+    assert processor_service._file_locks == {}

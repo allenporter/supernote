@@ -1,11 +1,34 @@
 import asyncio
 import logging
 import time
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from sqlalchemy import delete, or_, select
 
 from supernote.models.base import ProcessingStatus, TaskType
+from supernote.models.extended import (
+    NoteKeywordVO,
+    NoteLinkVO,
+    NotePageMetadataVO,
+    NoteRectVO,
+    NoteTitleVO,
+    WebNoteMetadataVO,
+)
+from supernote.notebook import (
+    Keyword,
+    Link,
+    Notebook,
+    SupernoteMetadata,
+    Title,
+)
+from supernote.notebook import (
+    exceptions as notebook_exceptions,
+)
+from supernote.notebook import (
+    schema as notebook_schema,
+)
 from supernote.server.metrics import (
     PROCESSOR_FILES_PROCESSING,
     PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL,
@@ -15,7 +38,11 @@ from supernote.server.metrics import (
 
 from ..constants import CACHE_BUCKET, DEFAULT_PAGE_CONCURRENCY
 from ..db.models.file import UserFileDO
-from ..db.models.note_processing import NotePageContentDO, SystemTaskDO
+from ..db.models.note_processing import (
+    NoteMetadataDO,
+    NotePageContentDO,
+    SystemTaskDO,
+)
 from ..db.models.summary import SummaryDO
 from ..db.session import DatabaseSessionManager
 from ..events import (
@@ -30,9 +57,51 @@ from ..events import (
 from ..services.file import FileService
 from ..services.processor_modules import ProcessorModule
 from ..services.summary import SummaryService
+from ..utils.note_content import format_page_style, infer_page_date
 from ..utils.paths import get_page_png_path
 
 logger = logging.getLogger(__name__)
+
+
+def _rect_to_vo(bbox: tuple[int, int, int, int] | None) -> NoteRectVO | None:
+    if bbox is None:
+        return None
+    left, top, right, bottom = bbox
+    return NoteRectVO(left=left, top=top, right=right, bottom=bottom)
+
+
+def _keyword_to_vo(kw: Keyword) -> NoteKeywordVO:
+    bbox = kw.rect if kw.metadata.rect is not None else None
+    return NoteKeywordVO(
+        page_number=kw.page_number,
+        text=kw.keyword or "",
+        rect=_rect_to_vo(bbox),
+    )
+
+
+def _title_to_vo(title: Title) -> NoteTitleVO:
+    bbox = title.rect if title.metadata.rect is not None else None
+    return NoteTitleVO(
+        page_number=title.page_number,
+        level=title.level,
+        style=title.style,
+        rect=_rect_to_vo(bbox),
+    )
+
+
+def _link_to_vo(link: Link) -> NoteLinkVO:
+    bbox = link.rect if link.metadata.rect is not None else None
+    return NoteLinkVO(
+        page_number=link.page_number,
+        link_type=int(link.link_type),
+        direction=int(link.direction),
+        style=link.metadata.style,
+        target=link.target,
+        target_file_id=link.file_id,
+        target_page_id=link.page_id,
+        target_page_number=link.metadata.obj_page,
+        rect=_rect_to_vo(bbox),
+    )
 
 
 class ProcessorService:
@@ -65,6 +134,7 @@ class ProcessorService:
 
         self.queue: asyncio.Queue[int] = asyncio.Queue()  # Queue of file_ids
         self.processing_files: set[int] = set()
+        self._file_locks: dict[int, tuple[asyncio.Lock, int]] = {}
         self.workers: list[asyncio.Task] = []
         self.polling_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
@@ -236,6 +306,9 @@ class ProcessorService:
             parent_uuids = {u for u, _ in summary_rows if u}
             candidate_blob_keys = {k for _, k in summary_rows if k}
 
+            await session.execute(
+                delete(NoteMetadataDO).where(NoteMetadataDO.file_id == file_id)
+            )
             await session.execute(
                 delete(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
             )
@@ -462,6 +535,23 @@ class ProcessorService:
             except Exception as e:
                 logger.error(f"Worker {worker_id} encountered error: {e}")
 
+    @asynccontextmanager
+    async def _file_lock(self, file_id: int) -> AsyncGenerator[None]:
+        """Serialize concurrent in-process pipeline executions for the same file_id."""
+        entry = self._file_locks.get(file_id)
+        lock = entry[0] if entry is not None else asyncio.Lock()
+        count = entry[1] if entry is not None else 0
+        self._file_locks[file_id] = (lock, count + 1)
+        try:
+            async with lock:
+                yield
+        finally:
+            _, remaining = self._file_locks[file_id]
+            if remaining <= 1:
+                self._file_locks.pop(file_id, None)
+            else:
+                self._file_locks[file_id] = (lock, remaining - 1)
+
     async def process_file(
         self,
         file_id: int,
@@ -469,6 +559,15 @@ class ProcessorService:
         page_indices: set[int] | None = None,
     ) -> bool:
         """Orchestrate the processing pipeline (or a subset of task_types/page_indices) for a single file."""
+        async with self._file_lock(file_id):
+            return await self._process_file_locked(file_id, task_types, page_indices)
+
+    async def _process_file_locked(
+        self,
+        file_id: int,
+        task_types: set[TaskType] | None = None,
+        page_indices: set[int] | None = None,
+    ) -> bool:
         logger.info(f"Processing file {file_id}...")
 
         if not self.global_pre_modules:
@@ -675,3 +774,124 @@ class ProcessorService:
             )
             for file_id in file_ids
         }
+
+    async def get_note_metadata(
+        self,
+        user_id: int,
+        file_id: int,
+    ) -> WebNoteMetadataVO | None:
+        """Return structured notebook and per-page metadata for an active .note file owned by user_id."""
+        async with self.session_manager.session() as session:
+            file_row = (
+                await session.execute(
+                    select(UserFileDO).where(
+                        UserFileDO.id == file_id,
+                        UserFileDO.user_id == user_id,
+                        UserFileDO.is_active == "Y",
+                    )
+                )
+            ).scalar_one_or_none()
+            if file_row is None:
+                return None
+
+            meta_do = await session.get(NoteMetadataDO, (user_id, file_id))
+            if meta_do is None:
+                return None
+
+            content_rows = list(
+                (
+                    await session.execute(
+                        select(NotePageContentDO)
+                        .where(NotePageContentDO.file_id == file_id)
+                        .order_by(NotePageContentDO.page_index)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+        try:
+            notebook = Notebook(SupernoteMetadata.from_json(meta_do.metadata_json))
+        except (ValueError, TypeError, notebook_exceptions.ParserException) as err:
+            logger.error(
+                f"Failed to deserialize persisted NoteMetadataDO for file {file_id}: {err}"
+            )
+            return None
+
+        content_by_page_id = {row.page_id: row for row in content_rows if row.page_id}
+        content_by_index = {row.page_index: row for row in content_rows}
+
+        page_vos: list[NotePageMetadataVO] = []
+        for idx, page_obj in enumerate(notebook.pages):
+            page_id = page_obj.page_id or ""
+            content_row = (
+                content_by_page_id.get(page_id) if page_id else None
+            ) or content_by_index.get(idx)
+
+            has_ink = content_row.has_ink if content_row is not None else None
+            has_drawables = (
+                content_row.has_drawables if content_row is not None else None
+            )
+            style = (
+                content_row.page_style
+                if content_row is not None and content_row.page_style is not None
+                else page_obj.style
+            )
+
+            page_keywords = [_keyword_to_vo(kw) for kw in page_obj.keywords]
+            page_titles = [_title_to_vo(t) for t in page_obj.titles]
+            page_links = [_link_to_vo(lk) for lk in page_obj.links]
+            has_annotations = (
+                bool(page_keywords)
+                or bool(page_titles)
+                or any(
+                    lk.direction == notebook_schema.LinkDirection.OUT
+                    for lk in page_obj.links
+                )
+            )
+            if has_drawables is not None:
+                has_content: bool | None = has_drawables or has_annotations
+            elif has_annotations:
+                has_content = True
+            else:
+                has_content = None
+
+            inferred_dt = infer_page_date(page_id)
+            page_vos.append(
+                NotePageMetadataVO(
+                    page_index=idx,
+                    page_id=page_id,
+                    date=inferred_dt.strftime("%Y-%m-%d") if inferred_dt else None,
+                    style=style,
+                    style_label=format_page_style(style),
+                    style_hash=page_obj.style_hash or None,
+                    orientation=str(page_obj.orientation),
+                    recogn_status=int(page_obj.recogn_status),
+                    has_ink=has_ink,
+                    has_drawables=has_drawables,
+                    has_textbox=page_obj.has_textbox,
+                    has_vector_graph=page_obj.has_vector_graph,
+                    has_content=has_content,
+                    five_star=list(page_obj.metadata.five_star),
+                    keywords=page_keywords,
+                    titles=page_titles,
+                    links=page_links,
+                )
+            )
+
+        return WebNoteMetadataVO(
+            file_id=file_id,
+            native_file_id=meta_do.native_file_id,
+            file_type=meta_do.file_type,
+            equipment=meta_do.equipment,
+            signature=meta_do.signature,
+            width=meta_do.width,
+            height=meta_do.height,
+            total_pages=meta_do.total_pages,
+            recogn_language=meta_do.recogn_language,
+            realtime_recognition=meta_do.is_realtime_recognition,
+            keywords=[_keyword_to_vo(kw) for kw in notebook.keywords],
+            titles=[_title_to_vo(t) for t in notebook.titles],
+            links=[_link_to_vo(lk) for lk in notebook.links],
+            pages=page_vos,
+        )

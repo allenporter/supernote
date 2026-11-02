@@ -20,6 +20,7 @@ from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import SupernoteError
+from supernote.server.services.processor_modules.page_hashing import PageHashingModule
 from supernote.server.services.user import UserService
 
 
@@ -658,3 +659,87 @@ async def test_extended_note_cover_converts_only_first_page(
     disabled_vo = await extended_client.get_note_cover(file_id=file_id)
     assert disabled_vo.success is True
     assert disabled_vo.url is None
+
+
+async def test_extended_note_metadata_endpoint_and_errors(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    extended_client: ExtendedClient,
+    session_manager: DatabaseSessionManager,
+    user_service: UserService,
+    test_user_id: int,
+) -> None:
+    assert client.app is not None
+    blob_storage = client.app["blob_storage"]
+    file_service = client.app["file_service"]
+
+    file_id = 9201
+    storage_key = "metadata_route_9201.note"
+    note_bytes = Path(
+        "tests/testdata/philips/heading-n5-20260016-backgrounds-marker.note"
+    ).read_bytes()
+    await blob_storage.put(USER_DATA_BUCKET, storage_key, note_bytes)
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=test_user_id,
+                directory_id=0,
+                file_name="MetadataRoute.note",
+                is_folder="N",
+                storage_key=storage_key,
+                md5="md5_meta_9201",
+            )
+        )
+        await session.commit()
+
+    # Before PageHashingModule runs -> 404
+    with pytest.raises(ApiException):
+        await extended_client.get_note_metadata(file_id=file_id)
+
+    hashing = PageHashingModule(file_service=file_service)
+    assert await hashing.run(file_id, session_manager) is True
+
+    meta_vo = await extended_client.get_note_metadata(file_id=file_id)
+    assert meta_vo.success is True
+    assert meta_vo.file_id == file_id
+    assert meta_vo.total_pages == 3
+    assert len(meta_vo.titles) == 4
+    assert meta_vo.pages[0].has_ink is True
+    assert meta_vo.pages[0].has_drawables is True
+    assert meta_vo.pages[0].has_content is True
+
+    # Browser-style string fileId wire payload
+    str_resp = await client.post(
+        "/api/extended/file/note/metadata",
+        json={"fileId": str(file_id)},
+        headers=auth_headers,
+    )
+    assert str_resp.status == 200
+
+    # Invalid DTO -> 400
+    bad_resp = await client.post(
+        "/api/extended/file/note/metadata",
+        json={"invalid": "payload"},
+        headers=auth_headers,
+    )
+    assert bad_resp.status == 400
+
+    # User not found -> 404
+    with (
+        patch.object(user_service, "get_user_id", return_value=None),
+        pytest.raises(ApiException),
+    ):
+        await extended_client.get_note_metadata(file_id=file_id)
+
+    # Uncaught exception -> 500
+    with (
+        patch.object(
+            client.app["processor_service"],
+            "get_note_metadata",
+            side_effect=RuntimeError("metadata boom"),
+        ),
+        pytest.raises(ApiException),
+    ):
+        await extended_client.get_note_metadata(file_id=file_id)

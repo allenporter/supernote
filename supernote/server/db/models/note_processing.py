@@ -1,6 +1,14 @@
 import time
 
-from sqlalchemy import BigInteger, String, Text, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from supernote.models.base import ProcessingStatus
@@ -8,8 +16,74 @@ from supernote.server.db.base import Base
 from supernote.server.utils.unique_id import next_id
 
 
+class NoteMetadataDO(Base):
+    """Persisted notebook-level metadata extracted from .note files."""
+
+    __tablename__ = "f_note_metadata"
+
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, nullable=False)
+    """Owner user ID."""
+
+    file_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, index=True, nullable=False
+    )
+    """The numeric ID of the source file."""
+
+    native_file_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    """Stable device-generated notebook identifier (<FILE_ID>)."""
+
+    file_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    """4-byte container prefix ('note' or 'mark')."""
+
+    equipment: Mapped[str | None] = mapped_column(String, nullable=True)
+    """Hardware equipment identifier (<APPLY_EQUIPMENT>, e.g. 'A5X', 'N5', 'N6')."""
+
+    signature: Mapped[str | None] = mapped_column(String, nullable=True)
+    """Format version signature (e.g. 'SN_FILE_VER_20230015')."""
+
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    """Canvas width in pixels."""
+
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    """Canvas height in pixels."""
+
+    total_pages: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    """Total number of pages in the notebook."""
+
+    recogn_language: Mapped[str | None] = mapped_column(String, nullable=True)
+    """Handwriting recognition locale (<FILE_RECOGN_LANGUAGE>)."""
+
+    is_realtime_recognition: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    """True when real-time handwriting recognition is enabled."""
+
+    metadata_json: Mapped[str] = mapped_column(Text, nullable=False)
+    """Lossless JSON serialization of SupernoteMetadata."""
+
+    create_time: Mapped[int] = mapped_column(
+        BigInteger, default=lambda: int(time.time() * 1000)
+    )
+    """System creation timestamp."""
+
+    update_time: Mapped[int] = mapped_column(
+        BigInteger,
+        default=lambda: int(time.time() * 1000),
+        onupdate=lambda: int(time.time() * 1000),
+    )
+    """System update timestamp."""
+
+    __table_args__ = (
+        Index(
+            "ix_f_note_metadata_user_native_file_id",
+            "user_id",
+            "native_file_id",
+        ),
+    )
+
+
 class NotePageContentDO(Base):
-    """Cache for page-level content (OCR text and embeddings)."""
+    """Cache for page-level content (OCR text, embeddings, and structural signals)."""
 
     __tablename__ = "f_note_page_content"
 
@@ -27,6 +101,15 @@ class NotePageContentDO(Base):
 
     content_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     """MD5 hash of the page content (e.g. layers) to detect changes."""
+
+    page_style: Mapped[str | None] = mapped_column(String, nullable=True)
+    """Raw Supernote PAGESTYLE template identifier (e.g. 'style_5mm_dots')."""
+
+    has_ink: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    """Whether any visible foreground layer on the page contains non-transparent ink."""
+
+    has_drawables: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    """Whether the page contains visible foreground ink, text boxes, or vector graphics."""
 
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     """The extracted OCR text for this page."""

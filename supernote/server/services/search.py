@@ -300,6 +300,7 @@ class SearchService:
                     page_id=p.page_id,
                     file_name=file_do.file_name,
                     notebook_create_time=file_do.create_time,
+                    page_style=p.page_style,
                     include_section_divider=True,
                 )
                 text_parts.append(f"{metadata}\n{p.text_content}")

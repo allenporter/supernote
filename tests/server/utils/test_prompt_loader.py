@@ -85,3 +85,14 @@ def test_reload_prompts(mock_resources_dir: Path, tmp_path: Path) -> None:
 
     loader.configure(new_prompts_dir)
     assert loader.get_prompt(PromptId.SUMMARY_GENERATION) == "New Summary"
+
+
+def test_has_custom_prompt(mock_resources_dir: Path) -> None:
+    loader = PromptLoader(resources_dir=mock_resources_dir)
+    assert loader.has_custom_prompt(PromptId.OCR_TRANSCRIPTION, "type_a") is True
+    assert loader.has_custom_prompt(PromptId.OCR_TRANSCRIPTION, "TYPE_A") is True
+    assert loader.has_custom_prompt(PromptId.OCR_TRANSCRIPTION, None) is False
+    assert loader.has_custom_prompt(PromptId.OCR_TRANSCRIPTION, "") is False
+    assert loader.has_custom_prompt(PromptId.OCR_TRANSCRIPTION, "common") is False
+    assert loader.has_custom_prompt(PromptId.OCR_TRANSCRIPTION, "default") is False
+    assert loader.has_custom_prompt(PromptId.OCR_TRANSCRIPTION, "missing") is False

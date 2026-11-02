@@ -81,6 +81,12 @@ class EmbeddingModule(ProcessorModule):
             content = await get_page_content_by_id(session, file_id, page_id)
 
             if not content or not content.text_content:
+                if content and (
+                    content.embedding is not None or content.embedding_model is not None
+                ):
+                    content.embedding = None
+                    content.embedding_model = None
+                    await session.commit()
                 logger.debug(
                     f"No text content to embed for file {file_id} page {page_id} (idx {page_index})"
                 )

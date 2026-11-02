@@ -7,6 +7,8 @@ from supernote.models.extended import (
     WebAiStatusVO,
     WebNoteCoverRequestDTO,
     WebNoteCoverVO,
+    WebNoteMetadataRequestDTO,
+    WebNoteMetadataVO,
     WebSearchRequestDTO,
     WebSearchResponseVO,
     WebSummaryListRequestDTO,
@@ -94,4 +96,11 @@ class ExtendedClient:
         dto = WebNoteCoverRequestDTO(file_id=file_id)
         return await self._client.post_json(
             "/api/extended/file/note/cover", WebNoteCoverVO, json=dto.to_dict()
+        )
+
+    async def get_note_metadata(self, file_id: int) -> WebNoteMetadataVO:
+        """Retrieve structured notebook and per-page metadata for a notebook (Extension)."""
+        dto = WebNoteMetadataRequestDTO(file_id=file_id)
+        return await self._client.post_json(
+            "/api/extended/file/note/metadata", WebNoteMetadataVO, json=dto.to_dict()
         )

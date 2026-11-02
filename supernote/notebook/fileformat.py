@@ -936,7 +936,7 @@ class Layer:
     @property
     def has_ink(self) -> bool:
         """`True` if this layer's compressed bitmap contains any non-transparent pixel."""
-        return _bitmap_has_ink(self.content, self.protocol)
+        return _bitmap_has_ink(self.content, self.protocol or LayerProtocol.RATTA_RLE)
 
     @property
     def has_vector_graph(self) -> bool:

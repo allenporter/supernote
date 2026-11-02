@@ -450,3 +450,86 @@ async def test_summary_failure_marks_task_failed(
         assert task is not None
         assert task.status == "FAILED"
         assert task.last_error == "AIError: Gemini API unavailable"
+
+
+async def test_summary_skips_blank_note_and_clears_when_previously_summarized(
+    summary_module: SummaryModule,
+    session_manager: DatabaseSessionManager,
+    fake_summary_model: FakeSummaryModel,
+    summary_service: SummaryService,
+) -> None:
+    user_id = 109
+    user_email = "blank@example.com"
+    file_id = 888
+    storage_key = "blank_summary_key"
+
+    async with session_manager.session() as session:
+        session.add(UserDO(id=user_id, email=user_email, password_md5="hash"))
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key=storage_key,
+                file_name="blank.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="p0",
+                content_hash="h_blank",
+                page_style="style_5mm_dots",
+                has_ink=False,
+                has_drawables=False,
+                text_content="",
+            )
+        )
+        await session.commit()
+
+    # Case 1: Brand-new blank note -> skips group creation and skips LLM call
+    assert await summary_module.run(file_id, session_manager) is True
+    assert fake_summary_model.calls == []
+    assert (
+        await summary_service.get_summary_by_uuid(
+            user_email, get_transcript_id(storage_key)
+        )
+        is None
+    )
+
+    # Case 2: Note previously had a summary group, then all ink was erased -> updates to empty without LLM
+    async with session_manager.session() as session:
+        p0 = (
+            await session.execute(
+                select(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
+            )
+        ).scalar_one()
+        p0.text_content = "Temporary notes"
+        await session.commit()
+
+    await summary_module.process(file_id, session_manager)
+    assert len(fake_summary_model.calls) == 1
+    assert "Page Style: 5mm Dots" in fake_summary_model.calls[0]
+    fake_summary_model.calls.clear()
+
+    async with session_manager.session() as session:
+        p0 = (
+            await session.execute(
+                select(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
+            )
+        ).scalar_one()
+        p0.text_content = ""
+        await session.commit()
+
+    await summary_module.process(file_id, session_manager)
+    assert fake_summary_model.calls == []
+
+    transcript = await summary_service.get_summary_by_uuid(
+        user_email, get_transcript_id(storage_key)
+    )
+    ai_summary = await summary_service.get_summary_by_uuid(
+        user_email, get_summary_id(storage_key)
+    )
+    assert transcript is not None and transcript.content == ""
+    assert ai_summary is not None and ai_summary.content == "No summary generated."

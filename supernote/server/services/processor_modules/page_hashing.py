@@ -1,15 +1,20 @@
 import asyncio
 import logging
+import time
 from functools import partial
 
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from supernote.models.base import TaskType
-from supernote.notebook import SupernoteMetadata
-from supernote.notebook.parser import parse_metadata
+from supernote.notebook import Notebook, load_notebook
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
+from supernote.server.db.models.note_processing import (
+    NoteMetadataDO,
+    NotePageContentDO,
+    SystemTaskDO,
+)
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
@@ -19,9 +24,8 @@ from supernote.server.utils.paths import get_page_png_path, is_valid_page_id
 logger = logging.getLogger(__name__)
 
 
-def _parse_helper(path: str) -> SupernoteMetadata:
-    with open(path, "rb") as f:
-        return parse_metadata(f)
+def _load_notebook_helper(path: str) -> Notebook:
+    return load_notebook(path, policy="loose")
 
 
 class PageHashingModule(ProcessorModule):
@@ -49,6 +53,10 @@ class PageHashingModule(ProcessorModule):
     @property
     def task_type(self) -> TaskType:
         return TaskType.PAGE_HASHING
+
+    @property
+    def version(self) -> str:
+        return "v2"
 
     async def run_if_needed(
         self,
@@ -82,6 +90,7 @@ class PageHashingModule(ProcessorModule):
                 logger.error(f"File {file_id} not found in DB")
                 return
 
+            user_id = user_file.user_id
             storage_key = user_file.storage_key
             if not storage_key:
                 logger.error(f"File {file_id} has no storage_key")
@@ -98,18 +107,60 @@ class PageHashingModule(ProcessorModule):
             logger.error(f"File {abs_path} does not exist on disk")
             raise FileNotFoundError(f"File {abs_path} does not exist on disk")
 
-        # Parse .note file in thread pool
+        # Load .note file in thread pool (extracts metadata + layer bitmaps for ink detection)
         loop = asyncio.get_running_loop()
-        metadata = await loop.run_in_executor(
-            None, partial(_parse_helper, str(abs_path))
+        notebook = await loop.run_in_executor(
+            None, partial(_load_notebook_helper, str(abs_path))
         )
-
-        # Iterate pages and update DB
+        metadata = notebook.metadata
         total_pages = metadata.total_pages
-        if not metadata.pages:
-            return
+        equipment = metadata.header.apply_equipment
+        equipment_str = str(equipment) if equipment is not None else None
+        metadata_json = metadata.to_json()
 
+        now = int(time.time() * 1000)
         async with session_manager.session() as session:
+            upsert_meta = (
+                sqlite_insert(NoteMetadataDO)
+                .values(
+                    user_id=user_id,
+                    file_id=file_id,
+                    native_file_id=notebook.file_id,
+                    file_type=notebook.type,
+                    equipment=equipment_str,
+                    signature=notebook.signature,
+                    width=notebook.width,
+                    height=notebook.height,
+                    total_pages=total_pages,
+                    recogn_language=metadata.header.file_recogn_language,
+                    is_realtime_recognition=notebook.is_realtime_recognition(),
+                    metadata_json=metadata_json,
+                    create_time=now,
+                    update_time=now,
+                )
+                .on_conflict_do_update(
+                    index_elements=["user_id", "file_id"],
+                    set_={
+                        "native_file_id": notebook.file_id,
+                        "file_type": notebook.type,
+                        "equipment": equipment_str,
+                        "signature": notebook.signature,
+                        "width": notebook.width,
+                        "height": notebook.height,
+                        "total_pages": total_pages,
+                        "recogn_language": metadata.header.file_recogn_language,
+                        "is_realtime_recognition": notebook.is_realtime_recognition(),
+                        "metadata_json": metadata_json,
+                        "update_time": now,
+                    },
+                )
+            )
+            await session.execute(upsert_meta)
+
+            if not metadata.pages:
+                await session.commit()
+                return
+
             # 1. Fetch all existing pages for this file and map by page_id
             existing_pages = await session.execute(
                 select(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
@@ -132,6 +183,11 @@ class PageHashingModule(ProcessorModule):
 
                 current_page_ids.add(page_id)
 
+                page_obj = notebook.pages[i]
+                page_style = page_obj.style
+                has_ink = page_obj.has_ink
+                has_drawables = page_obj.has_drawables
+
                 # Canonical wire-dictionary string representation of page metadata for hashing
                 page_hash_input = str(page_info.to_wire_dict())
                 current_hash = get_md5_hash(page_hash_input)
@@ -139,6 +195,9 @@ class PageHashingModule(ProcessorModule):
                 if page_id in existing_map:
                     # UPDATE path
                     row = existing_map[page_id]
+                    row.page_style = page_style
+                    row.has_ink = has_ink
+                    row.has_drawables = has_drawables
 
                     # Check for Move (Index Changed)
                     if row.page_index != i:
@@ -178,6 +237,9 @@ class PageHashingModule(ProcessorModule):
                         page_index=i,
                         page_id=page_id,
                         content_hash=current_hash,
+                        page_style=page_style,
+                        has_ink=has_ink,
+                        has_drawables=has_drawables,
                         text_content=None,
                         embedding=None,
                         embedding_model=None,

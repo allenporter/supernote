@@ -194,12 +194,23 @@ class WebTranscriptRequestDTO(DataClassJSONMixin):
 
 @dataclass
 class PageTranscriptVO(DataClassJSONMixin):
-    """VO for a single page transcript in a notebook."""
+    """VO for a single page's OCR transcript in a notebook.
+
+    Used by `POST /api/extended/transcript`, which returns OCR text per page
+    (and 404 when no page in the requested range has transcribed text yet).
+    """
 
     page_index: int = field(metadata=field_options(alias="pageIndex"))
+    """0-based index of the page in the notebook."""
+
     page_id: str = field(metadata=field_options(alias="pageId"))
+    """Stable unique page identifier from the `.note` file (e.g. 'P20231027120000abc')."""
+
     text: str | None = None
+    """Extracted OCR text for the page, or `None` if unprocessed."""
+
     date: str | None = None
+    """Inferred ISO date (`YYYY-MM-DD`) parsed from `page_id`, if present."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -261,6 +272,151 @@ class WebAiStatusVO(BaseResponse):
         metadata=field_options(alias="embeddingModel"), default=None
     )
     model: str | None = None
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class WebNoteMetadataRequestDTO(DataClassJSONMixin):
+    """Request DTO for retrieving structured notebook and per-page metadata."""
+
+    file_id: int = field(metadata=field_options(alias="fileId"))
+    """The unique ID of the notebook."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class NoteRectVO(DataClassJSONMixin):
+    """Bounding box rectangle in canvas pixel coordinates."""
+
+    left: int
+    top: int
+    right: int
+    bottom: int
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class NoteKeywordVO(DataClassJSONMixin):
+    """User-authored or recognized keyword anchored to a notebook page."""
+
+    page_number: int = field(metadata=field_options(alias="pageNumber"))
+    text: str
+    rect: NoteRectVO | None = None
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class NoteTitleVO(DataClassJSONMixin):
+    """Heading/outline entry anchored to a notebook page."""
+
+    page_number: int = field(metadata=field_options(alias="pageNumber"))
+    level: int | None = None
+    style: str | None = None
+    rect: NoteRectVO | None = None
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class NoteLinkVO(DataClassJSONMixin):
+    """Hyperlink entry anchored to a notebook page."""
+
+    page_number: int = field(metadata=field_options(alias="pageNumber"))
+    link_type: int = field(metadata=field_options(alias="linkType"))
+    direction: int
+    style: str | None = None
+    target: str | None = None
+    target_file_id: str | None = field(
+        metadata=field_options(alias="targetFileId"), default=None
+    )
+    target_page_id: str | None = field(
+        metadata=field_options(alias="targetPageId"), default=None
+    )
+    target_page_number: int | None = field(
+        metadata=field_options(alias="targetPageNumber"), default=None
+    )
+    rect: NoteRectVO | None = None
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class NotePageMetadataVO(DataClassJSONMixin):
+    """Per-page structural metadata, ink/drawable flags, and annotations."""
+
+    page_index: int = field(metadata=field_options(alias="pageIndex"))
+    page_id: str = field(metadata=field_options(alias="pageId"))
+    date: str | None = None
+    style: str | None = None
+    style_label: str | None = field(
+        metadata=field_options(alias="styleLabel"), default=None
+    )
+    style_hash: str | None = field(
+        metadata=field_options(alias="styleHash"), default=None
+    )
+    orientation: str = "1000"
+    recogn_status: int = field(metadata=field_options(alias="recognStatus"), default=0)
+    has_ink: bool | None = field(metadata=field_options(alias="hasInk"), default=None)
+    has_drawables: bool | None = field(
+        metadata=field_options(alias="hasDrawables"), default=None
+    )
+    has_textbox: bool = field(metadata=field_options(alias="hasTextbox"), default=False)
+    has_vector_graph: bool = field(
+        metadata=field_options(alias="hasVectorGraph"), default=False
+    )
+    has_content: bool | None = field(
+        metadata=field_options(alias="hasContent"), default=None
+    )
+    five_star: list[str] = field(
+        metadata=field_options(alias="fiveStar"), default_factory=list
+    )
+    keywords: list[NoteKeywordVO] = field(default_factory=list)
+    titles: list[NoteTitleVO] = field(default_factory=list)
+    links: list[NoteLinkVO] = field(default_factory=list)
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class WebNoteMetadataVO(BaseResponse):
+    """Response VO for structured notebook and per-page metadata.
+
+    Used by: POST /api/extended/file/note/metadata
+    """
+
+    file_id: int = field(metadata=field_options(alias="fileId"), default=0)
+    native_file_id: str | None = field(
+        metadata=field_options(alias="nativeFileId"), default=None
+    )
+    file_type: str | None = field(
+        metadata=field_options(alias="fileType"), default=None
+    )
+    equipment: str | None = None
+    signature: str | None = None
+    width: int | None = None
+    height: int | None = None
+    total_pages: int = field(metadata=field_options(alias="totalPages"), default=0)
+    recogn_language: str | None = field(
+        metadata=field_options(alias="recognLanguage"), default=None
+    )
+    realtime_recognition: bool = field(
+        metadata=field_options(alias="realtimeRecognition"), default=False
+    )
+    keywords: list[NoteKeywordVO] = field(default_factory=list)
+    titles: list[NoteTitleVO] = field(default_factory=list)
+    links: list[NoteLinkVO] = field(default_factory=list)
+    pages: list[NotePageMetadataVO] = field(default_factory=list)
 
     class Config(BaseConfig):
         serialize_by_alias = True

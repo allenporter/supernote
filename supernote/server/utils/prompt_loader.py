@@ -104,6 +104,16 @@ class PromptLoader:
                 prompts.append(file_path.read_text(encoding="utf-8").strip())
         return "\n\n".join(prompts)
 
+    def has_custom_prompt(self, prompt_id: PromptId, custom_type: str | None) -> bool:
+        """Return True if a specific custom prompt directory exists for custom_type."""
+        if not custom_type or custom_type in (COMMON, DEFAULT):
+            return False
+        if self._prompts is None:
+            self._load_prompts()
+        assert self._prompts is not None
+        type_map = self._prompts.get(prompt_id, {})
+        return custom_type.lower() in type_map
+
     def get_prompt(self, prompt_id: PromptId, custom_type: str | None = None) -> str:
         """Retrieve a prompt by its ID, optionally overridden by a custom type.
 
