@@ -8,6 +8,9 @@ from supernote.models.extended import (
     SearchResultVO,
     SystemTaskListVO,
     SystemTaskVO,
+    WebAiStatusVO,
+    WebNoteCoverRequestDTO,
+    WebNoteCoverVO,
     WebSearchRequestDTO,
     WebSearchResponseVO,
     WebSummaryListRequestDTO,
@@ -157,3 +160,39 @@ def test_web_transcript_models() -> None:
     }
     parsed = WebTranscriptResponseVO.from_dict(data)
     assert parsed == vo
+
+
+def test_web_note_cover_models() -> None:
+    req = WebNoteCoverRequestDTO(file_id=9101)
+    assert req.to_dict() == {"fileId": 9101}
+    assert WebNoteCoverRequestDTO.from_dict({"fileId": "9101"}) == req
+
+    vo = WebNoteCoverVO(url="https://example.com/api/oss/png/9101/0")
+    data = vo.to_dict()
+    assert data == {
+        "success": True,
+        "errorCode": None,
+        "errorMsg": None,
+        "url": "https://example.com/api/oss/png/9101/0",
+    }
+    assert WebNoteCoverVO.from_dict(data) == vo
+
+
+def test_web_ai_status_model() -> None:
+    vo = WebAiStatusVO(
+        has_api_key=True,
+        ocr_enabled=True,
+        vector_search_enabled=False,
+        model="fake-ocr-v1",
+    )
+    data = vo.to_dict()
+    assert data == {
+        "success": True,
+        "errorCode": None,
+        "errorMsg": None,
+        "hasApiKey": True,
+        "ocrEnabled": True,
+        "vectorSearchEnabled": False,
+        "model": "fake-ocr-v1",
+    }
+    assert WebAiStatusVO.from_dict(data) == vo
