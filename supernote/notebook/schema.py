@@ -331,15 +331,28 @@ def extract_parameters(metadata_text: str) -> RawParamsBlock:
     return params
 
 
+def _format_parameter_tag(key: str, value: object) -> str:
+    if any(ch in key for ch in ("<", ">", ":")):
+        raise exceptions.ManipulatorException(
+            f"metadata key contains reserved tag delimiter: {key!r}"
+        )
+    text_value = str(value)
+    if "<" in text_value or ">" in text_value:
+        raise exceptions.ManipulatorException(
+            f"metadata value for <{key}> contains reserved tag delimiter: {text_value!r}"
+        )
+    return f"<{key}:{text_value}>"
+
+
 def encode_parameters(params: Mapping[str, object]) -> bytes:
     """Encode a mapping of `<KEY:VALUE>` parameters into UTF-8 wire bytes."""
     chunks: list[str] = []
     for key, value in params.items():
         if isinstance(value, list):
             for item in value:
-                chunks.append(f"<{key}:{item}>")
+                chunks.append(_format_parameter_tag(key, item))
         else:
-            chunks.append(f"<{key}:{value}>")
+            chunks.append(_format_parameter_tag(key, value))
     return "".join(chunks).encode("utf-8")
 
 

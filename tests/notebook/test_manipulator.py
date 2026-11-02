@@ -21,6 +21,7 @@ from supernote.notebook.schema import (
     LayerName,
     LayerProtocol,
     LayerType,
+    encode_parameters,
 )
 
 # --- NotebookBuilder Tests ---
@@ -497,3 +498,38 @@ def test_reconstruct_rejects_page_missing_pagestyle(
         exceptions.ManipulatorException, match="page 0 metadata is missing PAGESTYLE"
     ):
         reconstruct(reconstructable_notebook)
+
+
+def test_reconstruct_supports_20230015_and_preserves_rtr_streams(
+    reconstructable_notebook: fileformat.Notebook,
+) -> None:
+    reconstructable_notebook.signature = "SN_FILE_VER_20230015"
+    page = reconstructable_notebook.page(0)
+    page.recogn_file = b"ak-payload"
+    page.recogn_text = b"eyJlbGVtZW50cyI6IFtdfQ=="
+    page.metadata.recogn_status = 1
+
+    rebuilt = reconstruct(reconstructable_notebook)
+    reloaded = load(io.BytesIO(rebuilt))
+    assert reloaded.signature == "SN_FILE_VER_20230015"
+    assert reloaded.page(0).recogn_file == b"ak-payload"
+    assert reloaded.page(0).recogn_text == b"eyJlbGVtZW50cyI6IFtdfQ=="
+
+
+def test_reconstruct_rejects_metadata_tag_delimiter_injection(
+    reconstructable_notebook: fileformat.Notebook,
+) -> None:
+    reconstructable_notebook.metadata.header.app_version = "1.0><INJECTED:1"
+    with pytest.raises(
+        exceptions.ManipulatorException,
+        match="metadata value for <APP_VERSION> contains reserved tag delimiter",
+    ):
+        reconstruct(reconstructable_notebook)
+
+
+def test_encode_parameters_rejects_key_with_reserved_delimiter() -> None:
+    with pytest.raises(
+        exceptions.ManipulatorException,
+        match="metadata key contains reserved tag delimiter",
+    ):
+        encode_parameters({"BAD:KEY": "ok"})

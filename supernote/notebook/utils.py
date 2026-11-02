@@ -36,6 +36,8 @@ class WorkaroundPageWrapper(fileformat.Page):
         # copy contents from the original page object
         wrapped_page.content = page.content
         wrapped_page.totalpath = page.totalpath
+        wrapped_page.recogn_file = page.recogn_file
+        wrapped_page.recogn_text = page.recogn_text
         wrapped_page._page_index = page._page_index
         wrapped_page._notebook = page._notebook
         wrapped_page._keywords = list(page._keywords)
