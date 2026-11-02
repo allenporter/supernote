@@ -25,7 +25,7 @@ from PIL import Image
 from reportlab.lib.pagesizes import A4, landscape, portrait
 from reportlab.pdfgen import canvas
 
-from . import color, exceptions, fileformat, utils
+from . import color, exceptions, fileformat, schema, utils
 from . import decoder as Decoder
 from .color import ColorPalette
 from .fileformat import Notebook
@@ -142,14 +142,19 @@ class ImageConverter:
             )
             if all_blank:
                 continue
-            decoder = self.find_decoder(layer, highres_grayscale)
             custom_bg = (
                 layer_name == "BGLAYER"
                 and page_style is not None
                 and page_style.startswith("user_")
             )
             if custom_bg:
-                decoder = Decoder.PngDecoder()
+                decoder: Decoder.BaseDecoder = Decoder.PngDecoder()
+            else:
+                decoder = self.find_decoder(
+                    layer,
+                    highres_grayscale,
+                    default_protocol=schema.LayerProtocol.RATTA_RLE,
+                )
             plt = default_palette if layer_name == "BGLAYER" else palette
             img_layer = self._create_image_from_decoder(
                 decoder,
@@ -223,20 +228,29 @@ class ImageConverter:
     def _get_layer_visibility(self, page: fileformat.Page) -> dict[str, bool]:
         return page.layer_visibility
 
-    def find_decoder(self, page, highres_grayscale=False):
-        """Returns a proper decoder for the given page.
+    def find_decoder(
+        self,
+        page,
+        highres_grayscale=False,
+        default_protocol: str | None = None,
+    ):
+        """Returns a proper decoder for the given page or layer.
 
         Parameters
         ----------
-        page : Page
-            page object
+        page : Page or Layer
+            page or layer object
+        highres_grayscale : bool
+            whether X2 extended grayscale palette applies
+        default_protocol : str | None
+            fallback codec when `<LAYERPROTOCOL>` is omitted on a layered X-series layer
 
         Returns
         -------
         subclass of BaseDecoder
             a decoder
         """
-        protocol = page.protocol
+        protocol = page.protocol if page.protocol is not None else default_protocol
         if protocol == "SN_ASA_COMPRESS":
             return Decoder.FlateDecoder()
         elif protocol == "RATTA_RLE":

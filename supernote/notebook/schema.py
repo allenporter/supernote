@@ -148,6 +148,9 @@ class LayerType(StrEnum):
     MARK = "MARK"
     """Document annotation layer."""
 
+    BACKGROUND = "BACKGROUND"
+    """Background/template layer."""
+
 
 class PageOrientation(StrEnum):
     """Page orientation angle code recorded in `<ORIENTATION:...>`."""
@@ -186,6 +189,9 @@ class LinkType(IntEnum):
 
     FILE = 1
     """Jump to another file."""
+
+    DOCUMENT = 2
+    """Jump to a non-note document (e.g. a `.pdf` file or page)."""
 
     WEB = 4
     """External web URL (`LINKFILE` holds base64-encoded URL)."""
@@ -579,7 +585,7 @@ class HeaderMetadata:
     pdf_style_md5 : str | None
         `<PDFSTYLEMD5>` — MD5 digest for PDF template style, `None` if `"0"`.
     style_usage_type : int | None
-        `<STYLEUSAGETYPE>` — Template usage mode flag.
+        `<STYLEUSAGETYPE>` — Template usage mode flag (`0` built-in, `1` image, `2` PDF).
     final_operation_page : int | None
         `<FINALOPERATION_PAGE>` — Last active 1-based page number on device.
     final_operation_layer : int | None
@@ -1044,7 +1050,7 @@ class LinkMetadata:
     page_index : int
         0-based source page index extracted from the footer `LINKO_<page4>...` key.
     link_type : LinkType | int
-        `<LINKTYPE>` — Link target kind (`0` page, `1` file, `4` web URL).
+        `<LINKTYPE>` — Link target kind (`0` page, `1` file, `2` document, `4` web URL).
     direction : LinkDirection | int
         `<LINKINOUT>` — Link direction (`0` outgoing, `1` incoming).
     rect : Rect | None
@@ -1059,12 +1065,28 @@ class LinkMetadata:
         `<LINKFILEID>` — Target Supernote `<FILE_ID>`, or `None` when wire value is `"none"`.
     page_id : str | None
         `<PAGEID>` — Target Supernote `<PAGEID>`, or `None` when wire value is `"none"`.
+    obj_page : int | None
+        `<OBJPAGE>` — Target/object page number recorded by firmware (`0` when not page-specific).
     bitmap_address : int
         `<LINKBITMAP>` — Byte offset to link visual indicator bitmap (`0` if empty).
     protocol : LayerProtocol | str | None
-        `<LINKPROTO>` — Optional bitmap compression codec for the link indicator.
+        `<LINKPROTOCAL>` (or `<LINKPROTO>`) — Optional bitmap compression codec for the link indicator.
     style : str | None
         `<LINKSTYLE>` — Optional visual style descriptor for the link indicator.
+    font_size : str | None
+        `<FONTSIZE>` — Font size string for typeset text/digest links (e.g. `"0"` or `"40.000000"`).
+    font_path : str | None
+        `<FONTPATH>` — Base64-encoded font path for typeset links, or `None` when `"none"`.
+    full_text : str | None
+        `<FULLTEXT>` — Base64-encoded full text label for typeset links, or `None` when `"none"`.
+    show_text : str | None
+        `<SHOWTEXT>` — Base64-encoded display label for typeset links, or `None` when `"none"`.
+    anti : int | None
+        `<ANTI>` — Anti-aliasing flag on typeset text links (`0` or `1`).
+    bold : int | None
+        `<BOLD>` — Bold style flag on typeset text links (`0` or `1`).
+    italic : int | None
+        `<ITALIC>` — Italic style flag on typeset text links (`0` or `1`).
     extra : RawParamsBlock
         Forward-compatible map of any unrecognized `<KEY:VALUE>` link tags.
     """
@@ -1078,9 +1100,17 @@ class LinkMetadata:
     file_path: str | None = None
     file_id: str | None = None
     page_id: str | None = None
+    obj_page: int | None = None
     bitmap_address: int = 0
     protocol: LayerProtocol | str | None = None
     style: str | None = None
+    font_size: str | None = None
+    font_path: str | None = None
+    full_text: str | None = None
+    show_text: str | None = None
+    anti: int | None = None
+    bold: int | None = None
+    italic: int | None = None
     extra: RawParamsBlock = field(default_factory=dict)
     _wire_keys: tuple[str, ...] = field(default=(), repr=False, compare=False)
 
@@ -1094,9 +1124,18 @@ class LinkMetadata:
             "LINKFILE",
             "LINKFILEID",
             "PAGEID",
+            "OBJPAGE",
             "LINKBITMAP",
+            "LINKPROTOCAL",
             "LINKPROTO",
             "LINKSTYLE",
+            "FONTSIZE",
+            "FONTPATH",
+            "FULLTEXT",
+            "SHOWTEXT",
+            "ANTI",
+            "BOLD",
+            "ITALIC",
         }
     )
 
@@ -1116,6 +1155,7 @@ class LinkMetadata:
             if "LINKINOUT" in params
             else LinkDirection.OUT
         )
+        proto_key = "LINKPROTOCAL" if "LINKPROTOCAL" in params else "LINKPROTO"
         return cls(
             page_index=page_index,
             link_type=link_type,
@@ -1128,11 +1168,19 @@ class LinkMetadata:
             file_path=_parse_optional_str(params, "LINKFILE"),
             file_id=_parse_optional_str(params, "LINKFILEID", sentinel="none"),
             page_id=_parse_optional_str(params, "PAGEID", sentinel="none"),
+            obj_page=_parse_optional_int(params, "OBJPAGE"),
             bitmap_address=_parse_int_default(params, "LINKBITMAP", 0),
             protocol=_parse_optional_str_enum(
-                params, "LINKPROTO", LayerProtocol, sentinel="none"
+                params, proto_key, LayerProtocol, sentinel="none"
             ),
             style=_parse_optional_str(params, "LINKSTYLE"),
+            font_size=_parse_optional_str(params, "FONTSIZE"),
+            font_path=_parse_optional_str(params, "FONTPATH", sentinel="none"),
+            full_text=_parse_optional_str(params, "FULLTEXT", sentinel="none"),
+            show_text=_parse_optional_str(params, "SHOWTEXT", sentinel="none"),
+            anti=_parse_optional_int(params, "ANTI"),
+            bold=_parse_optional_int(params, "BOLD"),
+            italic=_parse_optional_int(params, "ITALIC"),
             extra=_coerce_extra(params, set(cls._KNOWN_KEYS)),
             _wire_keys=wire_keys,
         )
@@ -1163,9 +1211,22 @@ class LinkMetadata:
         _put_optional_str(encoded, "LINKFILE", self.file_path, present)
         _put_optional_str(encoded, "LINKFILEID", self.file_id, present, sentinel="none")
         _put_optional_str(encoded, "PAGEID", self.page_id, present, sentinel="none")
+        _put_optional_int(encoded, "OBJPAGE", self.obj_page)
         _put_int_default(encoded, "LINKBITMAP", self.bitmap_address, present)
-        _put_optional_str(encoded, "LINKPROTO", self.protocol, present, sentinel="none")
+        proto_key = (
+            "LINKPROTO"
+            if "LINKPROTO" in present and "LINKPROTOCAL" not in present
+            else "LINKPROTOCAL"
+        )
+        _put_optional_str(encoded, proto_key, self.protocol, present, sentinel="none")
         _put_optional_str(encoded, "LINKSTYLE", self.style, present)
+        _put_optional_str(encoded, "FONTSIZE", self.font_size, present)
+        _put_optional_str(encoded, "FONTPATH", self.font_path, present, sentinel="none")
+        _put_optional_str(encoded, "FULLTEXT", self.full_text, present, sentinel="none")
+        _put_optional_str(encoded, "SHOWTEXT", self.show_text, present, sentinel="none")
+        _put_optional_int(encoded, "ANTI", self.anti)
+        _put_optional_int(encoded, "BOLD", self.bold)
+        _put_optional_int(encoded, "ITALIC", self.italic)
         encoded.update(self.extra)
         return _order_params(encoded, self._wire_keys)
 
@@ -1228,6 +1289,8 @@ class PageMetadata:
         `<PAGETEXTBOX>` — Byte offset to text box data (`0` if absent).
     thumbnail_type : int | None
         `<THUMBNAILTYPE>` — Thumbnail format flag.
+    five_star : list[str]
+        `<FIVESTAR>` — 5-pointed star mark geometry descriptors (`"x1,y1,...,x5,y5,flag"`).
     data_address : int | None
         `<DATA>` — Legacy A5 non-layered page bitmap offset (`None` on X-series pages).
     protocol : LayerProtocol | str | None
@@ -1262,6 +1325,7 @@ class PageMetadata:
     id_table_address: int = 0
     page_textbox_address: int = 0
     thumbnail_type: int | None = None
+    five_star: list[str] = field(default_factory=list)
     data_address: int | None = None
     protocol: LayerProtocol | str | None = None
     layers: list[LayerMetadata] | None = None
@@ -1297,6 +1361,7 @@ class PageMetadata:
             "IDTABLE",
             "PAGETEXTBOX",
             "THUMBNAILTYPE",
+            "FIVESTAR",
             "DATA",
             "PROTOCOL",
         }
@@ -1371,6 +1436,16 @@ class PageMetadata:
                 else:
                     raise exceptions.ParserException("invalid layer metadata")
 
+        five_star: list[str] = []
+        if "FIVESTAR" in params and params["FIVESTAR"] is not None:
+            raw_five_star = params["FIVESTAR"]
+            if isinstance(raw_five_star, list):
+                five_star = [_as_single_str(item, "FIVESTAR") for item in raw_five_star]
+            else:
+                single_five_star = _as_single_str(raw_five_star, "FIVESTAR")
+                if single_five_star != "none":
+                    five_star = [single_five_star]
+
         return cls(
             page_id=_parse_optional_str(params, "PAGEID", sentinel="none"),
             style=_parse_optional_str(params, "PAGESTYLE", sentinel="none"),
@@ -1400,6 +1475,7 @@ class PageMetadata:
             id_table_address=_parse_int_default(params, "IDTABLE", 0),
             page_textbox_address=_parse_int_default(params, "PAGETEXTBOX", 0),
             thumbnail_type=_parse_optional_int(params, "THUMBNAILTYPE"),
+            five_star=five_star,
             data_address=_parse_optional_int(params, "DATA"),
             protocol=_parse_optional_str_enum(
                 params, "PROTOCOL", LayerProtocol, sentinel="none"
@@ -1468,6 +1544,12 @@ class PageMetadata:
         _put_int_default(encoded, "IDTABLE", self.id_table_address, present)
         _put_int_default(encoded, "PAGETEXTBOX", self.page_textbox_address, present)
         _put_optional_int(encoded, "THUMBNAILTYPE", self.thumbnail_type)
+        if self.five_star:
+            encoded["FIVESTAR"] = (
+                self.five_star[0] if len(self.five_star) == 1 else list(self.five_star)
+            )
+        elif "FIVESTAR" in present:
+            encoded["FIVESTAR"] = "none"
         _put_optional_int(encoded, "DATA", self.data_address)
         _put_optional_str(encoded, "PROTOCOL", self.protocol, present, sentinel="none")
         encoded.update(self.extra)
@@ -1495,8 +1577,10 @@ class FooterMetadata:
         `<PAGE>` — Ordered list of page metadata block offsets for legacy A5 files.
     cover_addresses : dict[str, int]
         `COVER_0..2` — Mapping of cover slot keys to cover bitmap byte offsets.
-    style_addresses : dict[str, int]
+    style_addresses : dict[str, list[int]]
         `STYLE_*` — Mapping of template style keys to shared style bitmap offsets.
+    pdf_style_list_address : int | None
+        `<PDFSTYLELIST>` — Byte offset to comma-separated base64 PDF template style names block.
     keyword_addresses : dict[str, list[int]]
         `KEYWORD_*` — Mapping of positional keyword keys to keyword metadata block offsets.
     title_addresses : dict[str, list[int]]
@@ -1519,7 +1603,8 @@ class FooterMetadata:
     page_addresses: dict[str, int] = field(default_factory=dict)
     legacy_page_addresses: list[int] = field(default_factory=list)
     cover_addresses: dict[str, int] = field(default_factory=dict)
-    style_addresses: dict[str, int] = field(default_factory=dict)
+    style_addresses: dict[str, list[int]] = field(default_factory=dict)
+    pdf_style_list_address: int | None = None
     keyword_addresses: dict[str, list[int]] = field(default_factory=dict)
     title_addresses: dict[str, list[int]] = field(default_factory=dict)
     link_addresses: dict[str, list[int]] = field(default_factory=dict)
@@ -1544,19 +1629,24 @@ class FooterMetadata:
         """Parse a raw `<KEY:VALUE>` footer dictionary into `FooterMetadata`."""
         wire_keys = tuple(k for k in params if k not in _SYNTHETIC_KEYS)
         file_feature_address = _parse_optional_int(params, "FILE_FEATURE")
+        pdf_style_list_address = _parse_optional_int(params, "PDFSTYLELIST")
         dirty = _parse_optional_int(params, "DIRTY")
 
         page_addresses: dict[str, int] = {}
         legacy_page_addresses: list[int] = []
         cover_addresses: dict[str, int] = {}
-        style_addresses: dict[str, int] = {}
+        style_addresses: dict[str, list[int]] = {}
         keyword_addresses: dict[str, list[int]] = {}
         title_addresses: dict[str, list[int]] = {}
         link_addresses: dict[str, list[int]] = {}
         extra: RawParamsBlock = {}
 
         for key, value in params.items():
-            if key in _SYNTHETIC_KEYS or key in ("FILE_FEATURE", "DIRTY"):
+            if key in _SYNTHETIC_KEYS or key in (
+                "FILE_FEATURE",
+                "PDFSTYLELIST",
+                "DIRTY",
+            ):
                 continue
             if key == "PAGE":
                 legacy_page_addresses = _parse_address_list(value, key)
@@ -1565,7 +1655,7 @@ class FooterMetadata:
             elif key.startswith("COVER_"):
                 cover_addresses[key] = _parse_int(value, key)
             elif key.startswith("STYLE_"):
-                style_addresses[key] = _parse_int(value, key)
+                style_addresses[key] = _parse_address_list(value, key)
             elif key.startswith("KEYWORD_"):
                 keyword_addresses[key] = _parse_address_list(value, key)
             elif key.startswith("TITLE_"):
@@ -1598,6 +1688,7 @@ class FooterMetadata:
             legacy_page_addresses=legacy_page_addresses,
             cover_addresses=cover_addresses,
             style_addresses=style_addresses,
+            pdf_style_list_address=pdf_style_list_address,
             keyword_addresses=keyword_addresses,
             title_addresses=title_addresses,
             link_addresses=link_addresses,
@@ -1628,8 +1719,9 @@ class FooterMetadata:
             encoded[key] = str(addrs[0]) if len(addrs) == 1 else [str(a) for a in addrs]
         for key, addr in self.cover_addresses.items():
             encoded[key] = str(addr)
-        for key, addr in self.style_addresses.items():
-            encoded[key] = str(addr)
+        for key, addrs in self.style_addresses.items():
+            encoded[key] = str(addrs[0]) if len(addrs) == 1 else [str(a) for a in addrs]
+        _put_optional_int(encoded, "PDFSTYLELIST", self.pdf_style_list_address)
         _put_optional_int(encoded, "DIRTY", self.dirty)
         encoded.update(self.extra)
         return _order_params(encoded, self._wire_keys)

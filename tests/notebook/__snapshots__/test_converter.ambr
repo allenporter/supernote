@@ -29,6 +29,247 @@
     'width': 1404,
   })
 # ---
+# name: test_notebook_metadata_snapshot[A5X_TestNote.pdf.mark]
+  dict({
+    'height': 1872,
+    'keywords': list([
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20220013',
+    'titles': list([
+    ]),
+    'total_pages': 2,
+    'type': 'mark',
+    'width': 1404,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[A5X_TestNote_2.11.26.note]
+  dict({
+    'height': 1872,
+    'keywords': list([
+    ]),
+    'links': list([
+      dict({
+        'FONTPATH': 'L3N5c3RlbS9mb250cy9Ecm9pZFNhbnNGYWxsYmFja0Z1bGwudHRm',
+        'FONTSIZE': '36.000000',
+        'FULLTEXT': 'aHR0cHM6Ly93d3cuaWJtLmNvbQ==',
+        'LINKBITMAP': '462',
+        'LINKFILE': 'aHR0cHM6Ly93d3cuaWJtLmNvbQ==',
+        'LINKFILEID': 'none',
+        'LINKINOUT': '0',
+        'LINKPROTOCAL': 'RATTA_RLE',
+        'LINKRECT': '473,1585,407,68',
+        'LINKRECTORI': '473,1585,407,68',
+        'LINKSTYLE': '25000000',
+        'LINKTIMESTAMP': '20240221113359653519',
+        'LINKTYPE': '4',
+        'OBJPAGE': '0',
+        'PAGEID': 'none',
+        'SHOWTEXT': 'aHR0cHM6Ly93d3cuaWJtLmNvbQ==',
+      }),
+      dict({
+        'FONTPATH': 'L3N5c3RlbS9mb250cy9Ecm9pZFNhbnNGYWxsYmFja0Z1bGwudHRm',
+        'FONTSIZE': '36.000000',
+        'FULLTEXT': 'QTVYX1Rlc3ROb3RlXzIuMTEuMjYubm90ZSAtIHBhZ2UgMw==',
+        'LINKBITMAP': '3925',
+        'LINKFILE': 'L3N0b3JhZ2UvZW11bGF0ZWQvMC9Ob3RlL0E1WF9UZXN0Tm90ZV8yLjExLjI2Lm5vdGU=',
+        'LINKFILEID': 'F20240221111319916429VSQ21RFBB6aU',
+        'LINKINOUT': '0',
+        'LINKPROTOCAL': 'RATTA_RLE',
+        'LINKRECT': '367,1580,645,68',
+        'LINKRECTORI': '367,1580,645,68',
+        'LINKSTYLE': '25000000',
+        'LINKTIMESTAMP': '20240221113237608432',
+        'LINKTYPE': '0',
+        'OBJPAGE': '3',
+        'PAGEID': 'P20240221113116206519I7LTfNP64olb',
+        'SHOWTEXT': 'QTVYX1Rlc3ROb3RlXzIuMTEuMjYubm90ZSAtIHBhZ2UgMw==',
+      }),
+      dict({
+        'FONTPATH': 'L3N5c3RlbS9mb250cy9Ecm9pZFNhbnNGYWxsYmFja0Z1bGwudHRm',
+        'FONTSIZE': '36.000000',
+        'FULLTEXT': 'QTVYX1Rlc3ROb3RlXzIuMTEuMjYubm90ZSAtIHBhZ2UgMQ==',
+        'LINKBITMAP': '4497',
+        'LINKFILE': 'L3N0b3JhZ2UvZW11bGF0ZWQvMC9Ob3RlL0E1WF9UZXN0Tm90ZV8yLjExLjI2Lm5vdGU=',
+        'LINKFILEID': 'F20240221111319916429VSQ21RFBB6aU',
+        'LINKINOUT': '0',
+        'LINKPROTOCAL': 'RATTA_RLE',
+        'LINKRECT': '376,1589,640,68',
+        'LINKRECTORI': '376,1589,640,68',
+        'LINKSTYLE': '25000000',
+        'LINKTIMESTAMP': '20240221113302760427',
+        'LINKTYPE': '0',
+        'OBJPAGE': '1',
+        'PAGEID': 'P20240221111319920557MlHqQOzCiGPO',
+        'SHOWTEXT': 'QTVYX1Rlc3ROb3RlXzIuMTEuMjYubm90ZSAtIHBhZ2UgMQ==',
+      }),
+    ]),
+    'signature': 'SN_FILE_VER_20230014',
+    'titles': list([
+    ]),
+    'total_pages': 3,
+    'type': 'note',
+    'width': 1404,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[A5X_TestNote_2.15.29.note]
+  dict({
+    'height': 1872,
+    'keywords': list([
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20230015',
+    'titles': list([
+    ]),
+    'total_pages': 1,
+    'type': 'note',
+    'width': 1404,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[A5X_TestNote_Links.note]
+  dict({
+    'height': 1872,
+    'keywords': list([
+    ]),
+    'links': list([
+      dict({
+        'LINKBITMAP': '372',
+        'LINKFILE': 'L3N0b3JhZ2UvZW11bGF0ZWQvMC9Ob3RlL2xpbmtfdGVzdC5ub3Rl',
+        'LINKFILEID': 'F20230606174214710369I9D1tLkndv5d',
+        'LINKINOUT': '0',
+        'LINKPROTOCAL': 'RATTA_RLE',
+        'LINKRECT': '110,864,280,100',
+        'LINKRECTORI': '110,864,280,100',
+        'LINKSTYLE': '24000000',
+        'LINKTIMESTAMP': '20230606174946448425',
+        'LINKTYPE': '0',
+        'OBJPAGE': '0',
+        'PAGEID': 'P202306061742147146800sjCRFQL0STS',
+      }),
+      dict({
+        'LINKBITMAP': '2698',
+        'LINKFILE': 'L3N0b3JhZ2UvZW11bGF0ZWQvMC9Ob3RlL0E1WF9UZXN0Tm90ZS5ub3Rl',
+        'LINKFILEID': 'F20230426085756711303PkPWUQZNRUPC',
+        'LINKINOUT': '0',
+        'LINKPROTOCAL': 'RATTA_RLE',
+        'LINKRECT': '1029,864,257,100',
+        'LINKRECTORI': '1029,864,257,100',
+        'LINKSTYLE': '24000000',
+        'LINKTIMESTAMP': '20230606175121852728',
+        'LINKTYPE': '1',
+        'OBJPAGE': '0',
+        'PAGEID': 'none',
+      }),
+      dict({
+        'LINKBITMAP': '6026',
+        'LINKFILE': 'L3N0b3JhZ2UvZW11bGF0ZWQvMC9Ob3RlL2xpbmtfdGVzdC5ub3Rl',
+        'LINKFILEID': 'F20230606174214710369I9D1tLkndv5d',
+        'LINKINOUT': '0',
+        'LINKPROTOCAL': 'RATTA_RLE',
+        'LINKRECT': '562,869,280,100',
+        'LINKRECTORI': '562,869,280,100',
+        'LINKSTYLE': '24000000',
+        'LINKTIMESTAMP': '20230606175020607866',
+        'LINKTYPE': '0',
+        'OBJPAGE': '0',
+        'PAGEID': 'P202306061742147146800sjCRFQL0STS',
+      }),
+      dict({
+        'LINKBITMAP': '9367',
+        'LINKFILE': 'aHR0cHM6Ly93d3cuaWJtLmNvbQ==',
+        'LINKFILEID': 'none',
+        'LINKINOUT': '0',
+        'LINKPROTOCAL': 'RATTA_RLE',
+        'LINKRECT': '576,1410,269,100',
+        'LINKRECTORI': '576,1410,269,100',
+        'LINKSTYLE': '24000000',
+        'LINKTIMESTAMP': '20230606175214295063',
+        'LINKTYPE': '4',
+        'OBJPAGE': '0',
+        'PAGEID': 'none',
+      }),
+      dict({
+        'LINKBITMAP': '12740',
+        'LINKFILE': 'L3N0b3JhZ2UvZW11bGF0ZWQvMC9Ob3RlL2xpbmtfdGVzdC5ub3Rl',
+        'LINKFILEID': 'F20230606174214710369I9D1tLkndv5d',
+        'LINKINOUT': '1',
+        'LINKPROTOCAL': 'RATTA_RLE',
+        'LINKRECT': '136,859,196,100',
+        'LINKRECTORI': '136,859,196,100',
+        'LINKSTYLE': '24000000',
+        'LINKTIMESTAMP': '20230606174526205921',
+        'LINKTYPE': '0',
+        'OBJPAGE': '0',
+        'PAGEID': 'P20230606174257238880lVgbPUicmLuB',
+      }),
+      dict({
+        'LINKBITMAP': '14140',
+        'LINKFILE': 'L3N0b3JhZ2UvZW11bGF0ZWQvMC9Ob3RlL2xpbmtfdGVzdC5ub3Rl',
+        'LINKFILEID': 'F20230606174214710369I9D1tLkndv5d',
+        'LINKINOUT': '1',
+        'LINKPROTOCAL': 'RATTA_RLE',
+        'LINKRECT': '590,860,200,100',
+        'LINKRECTORI': '590,860,200,100',
+        'LINKSTYLE': '24000000',
+        'LINKTIMESTAMP': '20230606174623840332',
+        'LINKTYPE': '0',
+        'OBJPAGE': '0',
+        'PAGEID': 'P20230606174257238880lVgbPUicmLuB',
+      }),
+      dict({
+        'LINKBITMAP': '16006',
+        'LINKFILE': 'L3N0b3JhZ2UvZW11bGF0ZWQvMC9Ob3RlL2xpbmtfdGVzdC5ub3Rl',
+        'LINKFILEID': 'F20230606174214710369I9D1tLkndv5d',
+        'LINKINOUT': '1',
+        'LINKPROTOCAL': 'RATTA_RLE',
+        'LINKRECT': '110,864,280,100',
+        'LINKRECTORI': '110,864,280,100',
+        'LINKSTYLE': '24000000',
+        'LINKTIMESTAMP': '20230606174946448425',
+        'LINKTYPE': '0',
+        'OBJPAGE': '0',
+        'PAGEID': 'P20230606174257238880lVgbPUicmLuB',
+      }),
+      dict({
+        'LINKBITMAP': '17954',
+        'LINKFILE': 'L3N0b3JhZ2UvZW11bGF0ZWQvMC9Ob3RlL2xpbmtfdGVzdC5ub3Rl',
+        'LINKFILEID': 'F20230606174214710369I9D1tLkndv5d',
+        'LINKINOUT': '1',
+        'LINKPROTOCAL': 'RATTA_RLE',
+        'LINKRECT': '562,869,280,100',
+        'LINKRECTORI': '562,869,280,100',
+        'LINKSTYLE': '24000000',
+        'LINKTIMESTAMP': '20230606175020607866',
+        'LINKTYPE': '0',
+        'OBJPAGE': '0',
+        'PAGEID': 'P20230606174257238880lVgbPUicmLuB',
+      }),
+    ]),
+    'signature': 'SN_FILE_VER_20220013',
+    'titles': list([
+    ]),
+    'total_pages': 2,
+    'type': 'note',
+    'width': 1404,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[A5X_TestNote_With_Pdf_Template.note]
+  dict({
+    'height': 1872,
+    'keywords': list([
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20220013',
+    'titles': list([
+    ]),
+    'total_pages': 3,
+    'type': 'note',
+    'width': 1404,
+  })
+# ---
 # name: test_notebook_metadata_snapshot[a5x-2.14.28.note]
   dict({
     'height': 1872,
@@ -42,6 +283,87 @@
     'total_pages': 1,
     'type': 'note',
     'width': 1404,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[blank-a6x-3.26.40-two-pages.note]
+  dict({
+    'height': 1872,
+    'keywords': list([
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20230015',
+    'titles': list([
+    ]),
+    'total_pages': 2,
+    'type': 'note',
+    'width': 1404,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[garmin_connect_20260016.pdf.mark]
+  dict({
+    'height': 2560,
+    'keywords': list([
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20260016',
+    'titles': list([
+    ]),
+    'total_pages': 1,
+    'type': 'mark',
+    'width': 1920,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[heading-n5-20260016-backgrounds-marker.note]
+  dict({
+    'height': 2560,
+    'keywords': list([
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20260016',
+    'titles': list([
+      dict({
+        'TITLEBITMAP': '430',
+        'TITLELEVEL': '1',
+        'TITLEPROTOCOL': 'RATTA_RLE',
+        'TITLERECT': '500,329,356,148',
+        'TITLERECTORI': '500,329,356,148',
+        'TITLESEQNO': '0',
+        'TITLESTYLE': '1000254',
+      }),
+      dict({
+        'TITLEBITMAP': '7513',
+        'TITLELEVEL': '1',
+        'TITLEPROTOCOL': 'RATTA_RLE',
+        'TITLERECT': '480,691,582,178',
+        'TITLERECTORI': '480,691,582,178',
+        'TITLESEQNO': '0',
+        'TITLESTYLE': '1157254',
+      }),
+      dict({
+        'TITLEBITMAP': '16447',
+        'TITLELEVEL': '1',
+        'TITLEPROTOCOL': 'RATTA_RLE',
+        'TITLERECT': '490,1016,284,125',
+        'TITLERECTORI': '490,1016,284,125',
+        'TITLESEQNO': '0',
+        'TITLESTYLE': '1201000',
+      }),
+      dict({
+        'TITLEBITMAP': '22154',
+        'TITLELEVEL': '1',
+        'TITLEPROTOCOL': 'RATTA_RLE',
+        'TITLERECT': '508,1295,290,118',
+        'TITLERECTORI': '508,1295,290,118',
+        'TITLESEQNO': '0',
+        'TITLESTYLE': '1000000',
+      }),
+    ]),
+    'total_pages': 3,
+    'type': 'note',
+    'width': 1920,
   })
 # ---
 # name: test_notebook_metadata_snapshot[horizontal_1090.note]
@@ -74,6 +396,21 @@
     'width': 1404,
   })
 # ---
+# name: test_notebook_metadata_snapshot[line-n5-20260016-ruler-tool.note]
+  dict({
+    'height': 2560,
+    'keywords': list([
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20260016',
+    'titles': list([
+    ]),
+    'total_pages': 3,
+    'type': 'note',
+    'width': 1920,
+  })
+# ---
 # name: test_notebook_metadata_snapshot[manta.note]
   dict({
     'height': 2560,
@@ -87,6 +424,21 @@
     'total_pages': 1,
     'type': 'note',
     'width': 1920,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[render-n6-20230015-moonchild-user-bg.note]
+  dict({
+    'height': 1872,
+    'keywords': list([
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20230015',
+    'titles': list([
+    ]),
+    'total_pages': 1,
+    'type': 'note',
+    'width': 1404,
   })
 # ---
 # name: test_notebook_metadata_snapshot[rtr.note]
@@ -117,6 +469,21 @@
     'total_pages': 1,
     'type': 'note',
     'width': 1404,
+  })
+# ---
+# name: test_notebook_metadata_snapshot[sticker-n5-20260016-plugin-artwork.note]
+  dict({
+    'height': 2560,
+    'keywords': list([
+    ]),
+    'links': list([
+    ]),
+    'signature': 'SN_FILE_VER_20260016',
+    'titles': list([
+    ]),
+    'total_pages': 3,
+    'type': 'note',
+    'width': 1920,
   })
 # ---
 # name: test_notebook_metadata_snapshot[stroller.note]
@@ -287,6 +654,26 @@
   dict({
   })
 # ---
+# name: test_notebook_text_snapshots[A5X_TestNote.pdf.mark]
+  dict({
+  })
+# ---
+# name: test_notebook_text_snapshots[A5X_TestNote_2.11.26.note]
+  dict({
+  })
+# ---
+# name: test_notebook_text_snapshots[A5X_TestNote_2.15.29.note]
+  dict({
+  })
+# ---
+# name: test_notebook_text_snapshots[A5X_TestNote_Links.note]
+  dict({
+  })
+# ---
+# name: test_notebook_text_snapshots[A5X_TestNote_With_Pdf_Template.note]
+  dict({
+  })
+# ---
 # name: test_notebook_text_snapshots[a5x-2.14.28.note]
   dict({
     'page_0': '''
@@ -298,6 +685,24 @@
     ''',
   })
 # ---
+# name: test_notebook_text_snapshots[blank-a6x-3.26.40-two-pages.note]
+  dict({
+  })
+# ---
+# name: test_notebook_text_snapshots[garmin_connect_20260016.pdf.mark]
+  dict({
+  })
+# ---
+# name: test_notebook_text_snapshots[heading-n5-20260016-backgrounds-marker.note]
+  dict({
+    'page_0': '''
+      Baseline with zero
+      decoration
+    ''',
+    'page_1': None,
+    'page_2': None,
+  })
+# ---
 # name: test_notebook_text_snapshots[horizontal_1090.note]
   dict({
     'page_0': None,
@@ -307,8 +712,20 @@
   dict({
   })
 # ---
+# name: test_notebook_text_snapshots[line-n5-20260016-ruler-tool.note]
+  dict({
+    'page_0': None,
+    'page_1': None,
+    'page_2': None,
+  })
+# ---
 # name: test_notebook_text_snapshots[manta.note]
   dict({
+  })
+# ---
+# name: test_notebook_text_snapshots[render-n6-20230015-moonchild-user-bg.note]
+  dict({
+    'page_0': None,
   })
 # ---
 # name: test_notebook_text_snapshots[rtr.note]
@@ -327,6 +744,13 @@
 # ---
 # name: test_notebook_text_snapshots[sn2md_20260618.note]
   dict({
+  })
+# ---
+# name: test_notebook_text_snapshots[sticker-n5-20260016-plugin-artwork.note]
+  dict({
+    'page_0': None,
+    'page_1': None,
+    'page_2': None,
   })
 # ---
 # name: test_notebook_text_snapshots[stroller.note]

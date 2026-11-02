@@ -395,6 +395,7 @@ class Link:
     # Link Types
     TYPE_PAGE_LINK = LinkType.PAGE.value  # Internal link to another page
     TYPE_FILE_LINK = LinkType.FILE.value  # Link to another file
+    TYPE_DOCUMENT_LINK = LinkType.DOCUMENT.value  # Link to a non-note document
     TYPE_WEB_LINK = LinkType.WEB.value  # External web link
 
     # Link Direction
@@ -428,7 +429,7 @@ class Link:
 
     @property
     def link_type(self) -> LinkType | int:
-        """Link target category (`LinkType.PAGE`, `LinkType.FILE`, or `LinkType.WEB`)."""
+        """Link target category (`LinkType.PAGE`, `LinkType.FILE`, `LinkType.DOCUMENT`, or `LinkType.WEB`)."""
         return self.metadata.link_type
 
     @property

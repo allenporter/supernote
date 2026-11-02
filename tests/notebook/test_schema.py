@@ -44,7 +44,9 @@ from supernote.notebook.schema import (
 
 from .conftest import TEST_DATA_DIR
 
-NOTE_PATHS = sorted(TEST_DATA_DIR.glob("**/*.note"))
+NOTE_PATHS = sorted(
+    [*TEST_DATA_DIR.glob("**/*.note"), *TEST_DATA_DIR.glob("**/*.mark")]
+)
 
 
 # --- Corpus Completeness & Round-Trip Gate ---
@@ -103,6 +105,8 @@ def test_corpus_enum_fields_resolve_to_known_members(note_path: Path) -> None:
     for link in metadata.footer.links:
         assert isinstance(link.link_type, LinkType)
         assert isinstance(link.direction, LinkDirection)
+        if link.protocol is not None:
+            assert isinstance(link.protocol, LayerProtocol)
 
 
 def _assert_plain_wire_values(obj: Any) -> None:
@@ -302,13 +306,54 @@ def test_footer_metadata_parses_positional_covers_pages_keywords_titles_links() 
     assert footer.page_addresses == {"PAGE1": 100, "PAGE2": 200}
     assert footer.cover_addresses == {"COVER_0": 0, "COVER_2": 555}
     assert footer.cover_address == 555
-    assert footer.style_addresses == {"STYLE_style_white": 900}
+    assert footer.style_addresses == {"STYLE_style_white": [900]}
     assert footer.keyword_addresses == {"KEYWORD_00010057": [300, 350]}
     assert footer.title_addresses == {"TITLE_00020100": [400]}
     assert footer.link_addresses == {"LINKO_00010010002000300040": [500]}
     assert footer.dirty == 1
     assert footer.extra == {}
     assert footer.to_params() == raw
+
+
+def test_footer_metadata_handles_duplicate_style_addresses_and_pdf_style_list() -> None:
+    raw = {
+        "FILE_FEATURE": "24",
+        "PAGE1": "100",
+        "STYLE_style_white": ["849", "51187"],
+        "PDFSTYLELIST": "461",
+        "DIRTY": "0",
+    }
+    footer = FooterMetadata.from_params(raw)
+    assert footer.style_addresses == {"STYLE_style_white": [849, 51187]}
+    assert footer.pdf_style_list_address == 461
+    assert footer.extra == {}
+    assert footer.to_params() == raw
+
+
+def test_page_metadata_roundtrips_single_and_multiple_five_star_marks() -> None:
+    single_raw = {
+        "PAGEID": "P1",
+        "FIVESTAR": "2894,10793,3496,10605,3115,11109,3115,10476,3496,10983,1",
+    }
+    single_page = PageMetadata.from_params(single_raw)
+    assert single_page.five_star == [
+        "2894,10793,3496,10605,3115,11109,3115,10476,3496,10983,1"
+    ]
+    assert single_page.extra == {}
+    assert single_page.to_wire_dict() == single_raw
+
+    multi_raw = {
+        "PAGEID": "P2",
+        "FIVESTAR": ["1,2,3,4,5,6,7,8,9,10,1", "11,12,13,14,15,16,17,18,19,20,1"],
+    }
+    multi_page = PageMetadata.from_params(multi_raw)
+    assert len(multi_page.five_star) == 2
+    assert multi_page.to_wire_dict() == multi_raw
+
+    none_raw = {"PAGEID": "P3", "FIVESTAR": "none"}
+    none_page = PageMetadata.from_params(none_raw)
+    assert none_page.five_star == []
+    assert none_page.to_wire_dict() == none_raw
 
 
 def test_page_metadata_handles_a5_legacy_single_layer_keys() -> None:
@@ -394,6 +439,45 @@ def test_link_metadata_converts_none_sentinels_and_roundtrips_wire_dict() -> Non
     assert link.file_id is None
     assert link.page_id is None
     assert link.page_index == 2
+    assert link.extra == {}
+    assert link.to_wire_dict() == raw
+
+
+def test_link_metadata_supports_firmware_linkprotocal_and_typeset_fields() -> None:
+    raw = {
+        "LINKTYPE": "2",
+        "LINKINOUT": "0",
+        "LINKRECT": "100,200,300,80",
+        "LINKRECTORI": "100,200,300,80",
+        "LINKPROTOCAL": "RATTA_RLE",
+        "LINKSTYLE": "4294967295",
+        "LINKTIMESTAMP": "1700000000",
+        "LINKBITMAP": "1024",
+        "LINKFILE": "L3N0b3JhZ2UvZW11bGF0ZWQvMC9Eb2N1bWVudC9ib29rLnBkZg==",
+        "LINKFILEID": "",
+        "PAGEID": "",
+        "OBJPAGE": "61",
+        "FONTSIZE": "40.000000",
+        "FONTPATH": "none",
+        "FULLTEXT": "Qm9vayAtIFBhZ2UgNjE=",
+        "SHOWTEXT": "Qm9vayAtIFBhZ2UgNjE=",
+        "ANTI": "1",
+        "BOLD": "0",
+        "ITALIC": "1",
+    }
+    link = LinkMetadata.from_params(raw, page_index=4)
+    assert link.link_type == LinkType.DOCUMENT
+    assert link.protocol == LayerProtocol.RATTA_RLE
+    assert link.obj_page == 61
+    assert link.font_size == "40.000000"
+    assert link.font_path is None
+    assert link.full_text == "Qm9vayAtIFBhZ2UgNjE="
+    assert link.show_text == "Qm9vayAtIFBhZ2UgNjE="
+    assert link.anti == 1
+    assert link.bold == 0
+    assert link.italic == 1
+    assert link.file_id == ""
+    assert link.page_id == ""
     assert link.extra == {}
     assert link.to_wire_dict() == raw
 

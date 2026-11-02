@@ -9,7 +9,7 @@ repos:
         args:
           - --allow-multiple-documents
       - id: check-added-large-files
-        exclude: '^tests/testdata/.*\.note$'
+        exclude: '^tests/testdata/.*\.(note|mark)$'
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.3
     hooks:
@@ -30,7 +30,7 @@ repos:
     hooks:
       - id: codespell
         args:
-          - --ignore-words-list=folde
+          - --ignore-words-list=folde,linkprotocal
   - repo: https://github.com/adrienverge/yamllint.git
     rev: v1.38.0
     hooks:
