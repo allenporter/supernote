@@ -701,10 +701,11 @@ async def test_file_service_publishes_vfs_domain_events(
     ]
     vfs_events.clear()
 
-    # Identity move to same path is a no-op and emits no event
+    # Identity move to same path is a no-op and emits no event (both files and folders)
     await file_service.move_item(
         user, file_1.id, "/WorkDir/doc1_renamed.pdf", autorename=False
     )
+    await file_service.move_item(user, dir_b.id, "/WorkDir/SubDir", autorename=False)
     await asyncio.sleep(0)
     assert vfs_events == []
 

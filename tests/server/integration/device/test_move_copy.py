@@ -1,4 +1,7 @@
+import pytest
+
 from supernote.client.device import DeviceClient
+from supernote.client.exceptions import ApiException
 
 
 async def test_move_folder(device_client: DeviceClient) -> None:
@@ -42,6 +45,60 @@ async def test_move_folder(device_client: DeviceClient) -> None:
         path="/SourceFolder", equipment_no="SN123456"
     )
     assert [e.name for e in data.entries] == []
+
+
+async def test_move_folder_collision_and_identity(device_client: DeviceClient) -> None:
+    await device_client.create_folder(
+        path="/DestFolder/Existing", equipment_no="SN123456"
+    )
+    bar_res = await device_client.create_folder(
+        path="/SourceFolder/Bar", equipment_no="SN123456"
+    )
+    assert bar_res.metadata and bar_res.metadata.id
+    bar_id = int(bar_res.metadata.id)
+
+    existing_query = await device_client.query_by_path(
+        path="/DestFolder/Existing", equipment_no="SN123456"
+    )
+    assert existing_query.entries_vo
+    existing_id = int(existing_query.entries_vo.id)
+
+    # Identity move on a folder succeeds as a no-op
+    noop_res = await device_client.move(
+        id=existing_id,
+        to_path="/DestFolder/Existing",
+        equipment_no="SN123456",
+        autorename=False,
+    )
+    assert noop_res.entries_vo
+    assert noop_res.entries_vo.id == str(existing_id)
+    assert noop_res.entries_vo.path_display == "DestFolder/Existing"
+
+    # Moving Bar to /DestFolder/Existing with autorename=False raises E0322 instead of nesting inside Existing
+    with pytest.raises(ApiException, match="E0322"):
+        await device_client.move(
+            id=bar_id,
+            to_path="/DestFolder/Existing",
+            equipment_no="SN123456",
+            autorename=False,
+        )
+
+    existing_children = await device_client.list_folder(
+        path="/DestFolder/Existing", equipment_no="SN123456"
+    )
+    assert existing_children.entries == []
+
+    # With autorename=True, Bar is moved next to Existing as 'Existing (1)'
+    renamed_res = await device_client.move(
+        id=bar_id,
+        to_path="/DestFolder/Existing",
+        equipment_no="SN123456",
+        autorename=True,
+    )
+    assert renamed_res.entries_vo
+    assert renamed_res.entries_vo.name == "Existing (1)"
+    assert renamed_res.entries_vo.path_display == "DestFolder/Existing (1)"
+    assert renamed_res.entries_vo.parent_path == "DestFolder"
 
 
 async def test_move_file(device_client: DeviceClient) -> None:

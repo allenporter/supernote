@@ -304,6 +304,7 @@ class ErrorCode(str, Enum):
     CONFLICT_EXISTS = ("E0322", "File or directory already exists!")
     TASK_GROUP_NOT_EXIST = ("E0328", "Task list group does not exist")
     TASK_NOT_EXIST = ("E0329", "Task does not exist")
+    CYCLIC_MOVE = ("E0358", "Cannot move a folder into itself or its subdirectory")
     TIMEZONE_NOT_OBTAINED = (
         "E0844",
         "The time zone information for this area was not obtained",

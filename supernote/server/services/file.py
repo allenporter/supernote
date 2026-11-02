@@ -785,34 +785,12 @@ class FileService:
             original_name = node.file_name
             original_full_path = await vfs.get_full_path(user_id, node.id)
 
-            # Resolve destination parent
-            clean_to_path = to_path.strip("/")
-            parent_id = 0
-            new_name = node.file_name
-
-            if clean_to_path:
-                dest_node = await vfs.resolve_path(user_id, clean_to_path)
-                if dest_node and dest_node.is_folder == "Y":
-                    # Destination is an existing folder, move INTO it
-                    parent_id = dest_node.id
-                else:
-                    # Destination is a new path (rename)
-                    parts = clean_to_path.rsplit("/", 1)
-                    if len(parts) == 2:
-                        parent_path, new_name = parts
-                        parent_id = await vfs.ensure_directory_path(
-                            user_id, parent_path
-                        )
-                    else:
-                        new_name = parts[0]
-                        parent_id = 0
-
-            new_node = await vfs.move_node(
-                user_id, item_id, parent_id, new_name, autorename
+            new_node = await vfs.move_node_to_path(
+                user_id, item_id, to_path, autorename
             )
 
             if not new_node:
-                raise FileError(f"Moving item {item_id} to {parent_id} failed")
+                raise FileError(f"Moving item {item_id} to {to_path} failed")
             # Re-fetch the new full path for simplicity rather than trying to
             # rebuild it.
             full_path = await vfs.get_full_path(user_id, new_node.id)
