@@ -45,7 +45,7 @@ def reconstructable_notebook_factory() -> Callable[[], fileformat.Notebook]:
 
     def _create() -> fileformat.Notebook:
         notebook = load_notebook(str(SAMPLE_NOTE_PATH))
-        notebook.get_metadata().signature = LATEST_SIG
+        notebook.signature = LATEST_SIG
         return notebook
 
     return _create

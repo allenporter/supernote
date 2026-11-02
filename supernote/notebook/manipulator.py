@@ -92,7 +92,7 @@ def reconstruct(notebook: fileformat.Notebook) -> bytes:
     expected_signature = parser.SupernoteXParser.SN_SIGNATURES[
         -1
     ]  # latest supported signature
-    metadata = notebook.get_metadata()
+    metadata = notebook.metadata
     if metadata.signature != expected_signature:
         raise ValueError(
             f"Only latest file format version is supported ({metadata.signature} != {expected_signature})"
@@ -127,8 +127,8 @@ def reconstruct(notebook: fileformat.Notebook) -> bytes:
 def merge(notebook1: fileformat.Notebook, notebook2: fileformat.Notebook) -> bytes:
     """Merge two notebooks into one binary stream."""
     # TODO: support non-X series
-    metadata1 = notebook1.get_metadata()
-    metadata2 = notebook2.get_metadata()
+    metadata1 = notebook1.metadata
+    metadata2 = notebook2.metadata
     expected_signature = parser.SupernoteXParser.SN_SIGNATURES[
         -1
     ]  # latest supported signature
@@ -140,7 +140,7 @@ def merge(notebook1: fileformat.Notebook, notebook2: fileformat.Notebook) -> byt
         raise ValueError(
             f"File signature must be same between merging files ({metadata1.signature} != {metadata2.signature})"
         )
-    if notebook1.get_total_pages() + notebook2.get_total_pages() > 9999:
+    if notebook1.total_pages + notebook2.total_pages > 9999:
         raise ValueError("The total number of pages are limited to 9999")
     # check header properties are same to avoid generating a corrupted note file
     _verify_header_property("FILE_TYPE", metadata1, metadata2)
@@ -157,15 +157,15 @@ def merge(notebook1: fileformat.Notebook, notebook2: fileformat.Notebook) -> byt
     _pack_header(builder, notebook1)
     _pack_cover(builder, notebook1)
     _pack_keywords(builder, notebook1)
-    _pack_keywords(builder, notebook2, offset=notebook1.get_total_pages())
+    _pack_keywords(builder, notebook2, offset=notebook1.total_pages)
     _pack_titles(builder, notebook1)
-    _pack_titles(builder, notebook2, offset=notebook1.get_total_pages())
+    _pack_titles(builder, notebook2, offset=notebook1.total_pages)
     _pack_links(builder, notebook1)
-    _pack_links(builder, notebook2, offset=notebook1.get_total_pages())
+    _pack_links(builder, notebook2, offset=notebook1.total_pages)
     _pack_backgrounds(builder, notebook1)
     _pack_backgrounds(builder, notebook2)
     _pack_pages(builder, notebook1)
-    _pack_pages(builder, notebook2, offset=notebook1.get_total_pages())
+    _pack_pages(builder, notebook2, offset=notebook1.total_pages)
     _pack_footer(builder)
     _pack_tail(builder)
     _pack_footer_address(builder)
@@ -183,25 +183,25 @@ def merge(notebook1: fileformat.Notebook, notebook2: fileformat.Notebook) -> byt
 
 
 def _pack_type(builder: NotebookBuilder, notebook: fileformat.Notebook) -> None:
-    metadata = notebook.get_metadata()
+    metadata = notebook.metadata
     builder.append("__type__", metadata.type.encode("ascii"), skip_block_size=True)
 
 
 def _pack_signature(builder: NotebookBuilder, notebook: fileformat.Notebook) -> None:
-    metadata = notebook.get_metadata()
+    metadata = notebook.metadata
     builder.append(
         "__signature__", metadata.signature.encode("ascii"), skip_block_size=True
     )
 
 
 def _pack_header(builder: NotebookBuilder, notebook: fileformat.Notebook) -> None:
-    metadata = notebook.get_metadata()
+    metadata = notebook.metadata
     header_block = _construct_metadata_block(metadata.header.to_params())
     builder.append("__header__", header_block)
 
 
 def _pack_cover(builder: NotebookBuilder, notebook: fileformat.Notebook) -> None:
-    cover_block = notebook.get_cover().get_content()
+    cover_block = notebook.cover.content
     if cover_block is not None:
         builder.append("COVER_2", cover_block)
 
@@ -209,14 +209,14 @@ def _pack_cover(builder: NotebookBuilder, notebook: fileformat.Notebook) -> None
 def _pack_keywords(
     builder: NotebookBuilder, notebook: fileformat.Notebook, offset: int = 0
 ) -> None:
-    for keyword in notebook.get_keywords():
-        page_number = keyword.get_page_number() + 1 + offset
+    for keyword in notebook.keywords:
+        page_number = keyword.page_number + 1 + offset
         if page_number > 9999:
             # the number of digits is limited to 4, so we ignore this keyword
             continue
-        position = keyword.get_position_string()
+        position = keyword.position_string
         item_id = f"{page_number:04d}{position}"
-        content = keyword.get_content()
+        content = keyword.content
         if content is not None:
             builder.append(f"KEYWORD_{item_id}", content, allow_duplicate=True)
             keyword_metadata = keyword.metadata.to_params()
@@ -236,14 +236,14 @@ def _pack_keywords(
 def _pack_titles(
     builder: NotebookBuilder, notebook: fileformat.Notebook, offset: int = 0
 ) -> None:
-    for title in notebook.get_titles():
-        page_number = title.get_page_number() + 1 + offset
+    for title in notebook.titles:
+        page_number = title.page_number + 1 + offset
         if page_number > 9999:
             # the number of digits is limited to 4, so we ignore this title
             continue
-        position = title.get_position_string()
+        position = title.position_string
         item_id = f"{page_number:04d}{position}"
-        content = title.get_content()
+        content = title.content
         if content is not None:
             builder.append(f"TITLE_{item_id}", content, allow_duplicate=True)
             title_metadata = title.metadata.to_params()
@@ -258,14 +258,14 @@ def _pack_titles(
 def _pack_links(
     builder: NotebookBuilder, notebook: fileformat.Notebook, offset: int = 0
 ) -> None:
-    for link in notebook.get_links():
-        page_number = link.get_page_number() + 1 + offset
+    for link in notebook.links:
+        page_number = link.page_number + 1 + offset
         if page_number > 9999:
             # the number of digits is limited to 4, so we ignore this link
             continue
-        position = link.get_position_string()
+        position = link.position_string
         item_id = f"{page_number:04d}{position}"
-        content = link.get_content()
+        content = link.content
         if content is not None:
             builder.append(f"LINKO_{item_id}", content, allow_duplicate=True)
             link_metadata = link.metadata.to_params()
@@ -278,19 +278,19 @@ def _pack_links(
 
 
 def _resolve_page_style(page: fileformat.Page, page_index: int) -> str:
-    style = page.get_style()
+    style = page.style
     if not style:
         raise exceptions.ManipulatorException(
             f"page {page_index} metadata is missing PAGESTYLE"
         )
     if style.startswith("user_"):
-        style += page.get_style_hash()
+        style += page.style_hash
     return style
 
 
 def _pack_backgrounds(builder: NotebookBuilder, notebook: fileformat.Notebook) -> None:
-    for i in range(notebook.get_total_pages()):
-        page = notebook.get_page(i)
+    for i in range(notebook.total_pages):
+        page = notebook.page(i)
         content = _find_background_content_from_page(page)
         if content is None:
             continue
@@ -301,16 +301,16 @@ def _pack_backgrounds(builder: NotebookBuilder, notebook: fileformat.Notebook) -
 def _pack_pages(
     builder: NotebookBuilder, notebook: fileformat.Notebook, offset: int = 0
 ) -> None:
-    for i in range(notebook.get_total_pages()):
+    for i in range(notebook.total_pages):
         page_number = i + 1 + offset
-        page = notebook.get_page(i)
+        page = notebook.page(i)
         wrapped_page = utils.WorkaroundPageWrapper.from_page(page)
         # layers
-        for layer in wrapped_page.get_layers():
-            layer_name = layer.get_name()
-            if layer_name is None:
+        for layer in wrapped_page.layers:
+            if layer.name is None:
                 continue
-            if layer_name == schema.LayerName.BGLAYER:
+            layer_name = str(layer.name)
+            if layer.name == schema.LayerName.BGLAYER:
                 style = _resolve_page_style(wrapped_page, i)
                 layer_metadata = layer.metadata.to_params()
                 layer_metadata["LAYERNAME"] = layer_name
@@ -322,7 +322,7 @@ def _pack_pages(
                     f"PAGE{page_number}/{layer_name}/metadata", layer_metadata_block
                 )
             else:
-                content = layer.get_content()
+                content = layer.content
                 if content is not None:
                     builder.append(
                         f"PAGE{page_number}/{layer_name}/LAYERBITMAP", content
@@ -339,7 +339,7 @@ def _pack_pages(
                     f"PAGE{page_number}/{layer_name}/metadata", layer_metadata_block
                 )
         # totalpath
-        totalpath_block = wrapped_page.get_totalpath()
+        totalpath_block = wrapped_page.totalpath
         if totalpath_block is not None:
             builder.append(f"PAGE{page_number}/TOTALPATH", totalpath_block)
         # page metadata
@@ -431,7 +431,7 @@ def _find_background_content_from_page(page: fileformat.Page) -> bytes | None:
     if not page.is_layer_supported():
         return None
     wrapped_page = utils.WorkaroundPageWrapper.from_page(page)
-    for layer in wrapped_page.get_layers():
-        if layer.get_name() == schema.LayerName.BGLAYER:
-            return layer.get_content()
+    for layer in wrapped_page.layers:
+        if layer.name == schema.LayerName.BGLAYER:
+            return layer.content
     return None

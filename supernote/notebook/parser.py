@@ -103,7 +103,7 @@ def load(
     if metadata is None:
         metadata = parse_metadata(stream, policy)
 
-    total_pages = metadata.get_total_pages()
+    total_pages = metadata.total_pages
     if page_number is not None and (page_number < 0 or page_number >= total_pages):
         raise ValueError(
             f"page_number {page_number} out of range (0..{total_pages - 1})"
@@ -117,28 +117,28 @@ def load(
         cover_address = metadata.footer.cover_address
         if cover_address > 0:
             content = _get_content_at_address(stream, cover_address)
-            note.get_cover().set_content(content)
+            note.cover.content = content
         # store keyword data to notebook object
-        for keyword in note.get_keywords():
+        for keyword in note.keywords:
             content = _get_content_at_address(stream, keyword.metadata.site_address)
-            keyword.set_content(content)
+            keyword.content = content
         # store title data to notebook object
-        for title in note.get_titles():
+        for title in note.titles:
             content = _get_content_at_address(stream, title.metadata.bitmap_address)
-            title.set_content(content)
+            title.content = content
         # store link data to notebook object
-        for link in note.get_links():
+        for link in note.links:
             content = _get_content_at_address(stream, link.metadata.bitmap_address)
-            link.set_content(content)
+            link.content = content
         page_indices = list(range(total_pages))
 
     for p in page_indices:
         page_meta = metadata.pages[p]
-        page_obj = note.get_page(p)
+        page_obj = note.page(p)
         if page_meta.layers is not None:
             for layer_idx, layer_meta in enumerate(page_meta.layers):
                 content = _get_content_at_address(stream, layer_meta.bitmap_address)
-                page_obj.get_layer(layer_idx).set_content(content)
+                page_obj.layer(layer_idx).content = content
         else:
             # the page has no layers
             if page_meta.data_address is None:
@@ -146,22 +146,22 @@ def load(
                     "missing or invalid integer parameter 'DATA'"
                 )
             content = _get_content_at_address(stream, page_meta.data_address)
-            page_obj.set_content(content)
+            page_obj.content = content
 
         if page_number is None:
             # store path data to notebook object
             if page_meta.totalpath_address > 0:
                 content = _get_content_at_address(stream, page_meta.totalpath_address)
-                page_obj.set_totalpath(content)
+                page_obj.totalpath = content
             # store recogn file data to notebook object
             if page_meta.recogn_file_address > 0:
                 content = _get_content_at_address(stream, page_meta.recogn_file_address)
-                page_obj.set_recogn_file(content)
+                page_obj.recogn_file = content
 
         # store recogn text data to notebook object
         if page_meta.recogn_text_address > 0:
             content = _get_content_at_address(stream, page_meta.recogn_text_address)
-            page_obj.set_recogn_text(content)
+            page_obj.recogn_text = content
 
     return note
 

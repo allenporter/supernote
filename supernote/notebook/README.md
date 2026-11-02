@@ -38,14 +38,14 @@ You can access metadata and structure directly:
 
 ```python
 # Total pages
-print(notebook.get_total_pages())
+print(notebook.total_pages)
 
 # Page ID
-print(notebook.get_page(0).get_pageid())
+print(notebook.page(0).page_id)
 
 # Keywords
-for keyword in notebook.get_keywords():
-    print(keyword.get_keyword())
+for keyword in notebook.keywords:
+    print(keyword.keyword)
 ```
 
 ## Advanced Usage

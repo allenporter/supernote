@@ -27,6 +27,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum
 from typing import Any, Self, TypeVar
+from warnings import deprecated
 
 from . import exceptions
 
@@ -1746,9 +1747,10 @@ class SupernoteMetadata:
         """Total number of pages in the notebook."""
         return len(self._pages)
 
+    @deprecated("Use SupernoteMetadata.total_pages instead")
     def get_total_pages(self) -> int:
         """Return total page count."""
-        return len(self._pages)
+        return self.total_pages
 
     def is_layer_supported(self, page_number: int) -> bool:
         """Return `True` if `page_number` uses X-series multi-layer metadata."""

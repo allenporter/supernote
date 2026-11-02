@@ -73,7 +73,7 @@ def convert_to_png(args, notebook, palette):
         img.save(file_name, format="PNG")
 
     if args.all:
-        total = notebook.get_total_pages()
+        total = notebook.total_pages
         convert_all(converter, total, args.output, save, vo)
     else:
         img = converter.convert(args.number, visibility_overlay=vo)
@@ -97,7 +97,7 @@ def convert_to_svg(args, notebook, palette):
             print("no path data")
 
     if args.all:
-        total = notebook.get_total_pages()
+        total = notebook.total_pages
         convert_all(converter, total, args.output, save, vo)
     else:
         svg = converter.convert(args.number, visibility_overlay=vo)
@@ -139,7 +139,7 @@ def convert_to_txt(args, notebook, palette):
             print("no data")
 
     if args.all:
-        total = notebook.get_total_pages()
+        total = notebook.total_pages
         convert_and_concat_all(
             converter, total, args.output, save, args.text_page_separator
         )

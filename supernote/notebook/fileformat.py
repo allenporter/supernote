@@ -22,6 +22,7 @@ Wire-level metadata blocks and enums live in `supernote.notebook.schema`.
 
 from collections.abc import Mapping
 from typing import Any
+from warnings import deprecated
 
 from . import exceptions
 from .schema import (
@@ -37,6 +38,9 @@ from .schema import (
     EquipmentType,
     KeywordMetadata,
     LayerMetadata,
+    LayerName,
+    LayerProtocol,
+    LayerType,
     LinkDirection,
     LinkMetadata,
     LinkType,
@@ -67,17 +71,14 @@ class Notebook:
     def __init__(
         self, metadata: SupernoteMetadata, page_number: int | None = None
     ) -> None:
-        if not isinstance(metadata, SupernoteMetadata):
-            raise exceptions.ParserException("notebook metadata is missing")
+        self._metadata = metadata
         self.metadata = metadata
         self.loaded_page_number = page_number
         self.page_width = PAGE_WIDTH
         self.page_height = PAGE_HEIGHT
-        if self.metadata.header.apply_equipment == EquipmentType.N5:
+        if self._metadata.header.apply_equipment == EquipmentType.N5:
             self.page_width = A5X2_PAGE_WIDTH
             self.page_height = A5X2_PAGE_HEIGHT
-        self.type: str = metadata.type
-        self.signature: str = metadata.signature
         self.cover = Cover()
         self.keywords: list[Keyword] = [Keyword(k) for k in metadata.footer.keywords]
         self.titles: list[Title] = [Title(t) for t in metadata.footer.titles]
@@ -88,27 +89,67 @@ class Notebook:
                 raise exceptions.ParserException("invalid page metadata entry")
             self.pages.append(Page(page_info))
 
-    def get_metadata(self) -> SupernoteMetadata:
-        if not isinstance(self.metadata, SupernoteMetadata):
+    @property
+    def metadata(self) -> SupernoteMetadata:
+        """Typed wire-format metadata tree (`SupernoteMetadata`)."""
+        if not isinstance(self._metadata, SupernoteMetadata):
             raise exceptions.ParserException("notebook metadata is missing")
-        return self.metadata
+        return self._metadata
 
-    def get_width(self) -> int:
+    @metadata.setter
+    def metadata(self, value: SupernoteMetadata) -> None:
+        if not isinstance(value, SupernoteMetadata):
+            raise exceptions.ParserException("notebook metadata is missing")
+        self._metadata = value
+
+    @property
+    def width(self) -> int:
+        """Canvas width in pixels (`1404` or `1920` for A5 X2 Manta)."""
         return self.page_width
 
-    def get_height(self) -> int:
+    @width.setter
+    def width(self, value: int) -> None:
+        self.page_width = value
+
+    @property
+    def height(self) -> int:
+        """Canvas height in pixels (`1872` or `2560` for A5 X2 Manta)."""
         return self.page_height
 
-    def get_type(self) -> str:
-        return self.type
+    @height.setter
+    def height(self, value: int) -> None:
+        self.page_height = value
 
-    def get_signature(self) -> str:
-        return self.signature
+    @property
+    def type(self) -> str:
+        """4-byte container prefix (`'note'` or `'mark'`)."""
+        return self.metadata.type
 
-    def get_total_pages(self) -> int:
+    @type.setter
+    def type(self, value: str) -> None:
+        self.metadata.type = value
+
+    @property
+    def signature(self) -> str:
+        """Format version signature (e.g. `'SN_FILE_VER_20230015'`)."""
+        return self.metadata.signature
+
+    @signature.setter
+    def signature(self, value: str) -> None:
+        self.metadata.signature = value
+
+    @property
+    def total_pages(self) -> int:
+        """Total number of pages in the notebook."""
         return len(self.pages)
 
-    def get_page(self, number: int) -> "Page":
+    @property
+    def file_id(self) -> str | None:
+        """Stable device-generated notebook identifier (`<FILE_ID>`)."""
+        return self.metadata.header.file_id
+
+    def page(self, number: int) -> "Page":
+        """Return the `Page` at 0-based `number`, enforcing single-page load bounds."""
         if number < 0 or number >= len(self.pages):
             raise IndexError(f"page number out of range: {number}")
         if self.loaded_page_number is not None and number != self.loaded_page_number:
@@ -117,28 +158,63 @@ class Notebook:
             )
         return self.pages[number]
 
-    def get_cover(self) -> "Cover":
-        return self.cover
-
-    def get_keywords(self) -> list["Keyword"]:
-        return self.keywords
-
-    def get_titles(self) -> list["Title"]:
-        return self.titles
-
-    def get_links(self) -> list["Link"]:
-        return self.links
-
-    def get_fileid(self) -> str | None:
-        return self.metadata.header.file_id
-
     def is_realtime_recognition(self) -> bool:
+        """Return `True` if real-time handwriting recognition is enabled (`FILE_RECOGN_TYPE == 1`)."""
         return self.metadata.header.file_recogn_type == 1
 
     def supports_highres_grayscale(self) -> bool:
+        """Return `True` if the format signature supports X2 high-resolution grayscale (`>= 20230015`)."""
         if len(self.signature) < 8 or not self.signature[-8:].isdigit():
             return False
         return int(self.signature[-8:]) >= 20230015
+
+    @deprecated("Use Notebook.metadata instead")
+    def get_metadata(self) -> SupernoteMetadata:
+        return self.metadata
+
+    @deprecated("Use Notebook.width instead")
+    def get_width(self) -> int:
+        return self.width
+
+    @deprecated("Use Notebook.height instead")
+    def get_height(self) -> int:
+        return self.height
+
+    @deprecated("Use Notebook.type instead")
+    def get_type(self) -> str:
+        return self.type
+
+    @deprecated("Use Notebook.signature instead")
+    def get_signature(self) -> str:
+        return self.signature
+
+    @deprecated("Use Notebook.total_pages instead")
+    def get_total_pages(self) -> int:
+        return self.total_pages
+
+    @deprecated("Use Notebook.page() or Notebook.pages instead")
+    def get_page(self, number: int) -> "Page":
+        return self.page(number)
+
+    @deprecated("Use Notebook.cover instead")
+    def get_cover(self) -> "Cover":
+        return self.cover
+
+    @deprecated("Use Notebook.keywords instead")
+    def get_keywords(self) -> list["Keyword"]:
+        return self.keywords
+
+    @deprecated("Use Notebook.titles instead")
+    def get_titles(self) -> list["Title"]:
+        return self.titles
+
+    @deprecated("Use Notebook.links instead")
+    def get_links(self) -> list["Link"]:
+        return self.links
+
+    @deprecated("Use Notebook.file_id instead")
+    def get_fileid(self) -> str | None:
+        return self.file_id
 
 
 class Cover:
@@ -147,9 +223,11 @@ class Cover:
     def __init__(self, content: bytes | None = None) -> None:
         self.content: bytes | None = content
 
+    @deprecated("Assign to Cover.content instead")
     def set_content(self, content: bytes | None) -> None:
         self.content = content
 
+    @deprecated("Use Cover.content instead")
     def get_content(self) -> bytes | None:
         return self.content
 
@@ -169,31 +247,60 @@ class Keyword:
         else:
             raise exceptions.ParserException("invalid keyword metadata")
         self.content: bytes | None = content
-        self.page_number = self.metadata.page_index
 
-    def set_content(self, content: bytes | None) -> None:
-        self.content = content
+    @property
+    def page_number(self) -> int:
+        """0-based page index where this keyword appears."""
+        return self.metadata.page_index
 
-    def get_content(self) -> bytes | None:
-        return self.content
+    @page_number.setter
+    def page_number(self, value: int) -> None:
+        self.metadata.page_index = value
 
-    def get_page_number(self) -> int:
-        return self.page_number
+    @property
+    def keyword(self) -> str | None:
+        """Decoded UTF-8 keyword string."""
+        return self.metadata.keyword
 
-    def get_position_string(self) -> str:
+    @property
+    def rect(self) -> tuple[int, int, int, int]:
+        """Bounding box `(left, top, right, bottom)` in page coordinates."""
+        if self.metadata.rect is None:
+            raise exceptions.ParserException("missing KEYWORDRECT in keyword metadata")
+        return self.metadata.rect.bbox
+
+    @property
+    def position_string(self) -> str:
+        """4-digit zero-padded top coordinate used in footer `KEYWORD_<page4><pos4>` keys."""
         if self.metadata.rect_original is None:
             raise exceptions.ParserException(
                 "missing KEYWORDRECTORI in keyword metadata"
             )
         return f"{self.metadata.rect_original.top:04d}"
 
-    def get_keyword(self) -> str | None:
-        return self.metadata.keyword
+    @deprecated("Assign to Keyword.content instead")
+    def set_content(self, content: bytes | None) -> None:
+        self.content = content
 
+    @deprecated("Use Keyword.content instead")
+    def get_content(self) -> bytes | None:
+        return self.content
+
+    @deprecated("Use Keyword.page_number instead")
+    def get_page_number(self) -> int:
+        return self.page_number
+
+    @deprecated("Use Keyword.position_string instead")
+    def get_position_string(self) -> str:
+        return self.position_string
+
+    @deprecated("Use Keyword.keyword instead")
+    def get_keyword(self) -> str | None:
+        return self.keyword
+
+    @deprecated("Use Keyword.rect instead")
     def get_rect(self) -> tuple[int, int, int, int]:
-        if self.metadata.rect is None:
-            raise exceptions.ParserException("missing KEYWORDRECT in keyword metadata")
-        return self.metadata.rect.bbox
+        return self.rect
 
 
 class Title:
@@ -214,28 +321,45 @@ class Title:
         self.content: bytes | None = content
         if page_number is not None:
             self.metadata.page_index = page_number
-        self.page_number = self.metadata.page_index
 
-    def set_content(self, content: bytes | None) -> None:
-        self.content = content
+    @property
+    def page_number(self) -> int:
+        """0-based page index where this title appears."""
+        return self.metadata.page_index
 
-    def get_content(self) -> bytes | None:
-        return self.content
+    @page_number.setter
+    def page_number(self, value: int) -> None:
+        self.metadata.page_index = value
 
-    def set_page_number(self, page_number: int) -> None:
-        self.page_number = page_number
-        self.metadata.page_index = page_number
-
-    def get_page_number(self) -> int:
-        return self.page_number
-
-    def get_position_string(self) -> str:
+    @property
+    def position_string(self) -> str:
+        """8-digit `<top4><left4>` coordinate suffix used in footer `TITLE_<page4><pos8>` keys."""
         if self.metadata.rect_original is None:
             raise exceptions.ParserException("missing TITLERECTORI in title metadata")
         return (
             f"{self.metadata.rect_original.top:04d}"
             f"{self.metadata.rect_original.left:04d}"
         )
+
+    @deprecated("Assign to Title.content instead")
+    def set_content(self, content: bytes | None) -> None:
+        self.content = content
+
+    @deprecated("Use Title.content instead")
+    def get_content(self) -> bytes | None:
+        return self.content
+
+    @deprecated("Assign to Title.page_number instead")
+    def set_page_number(self, page_number: int) -> None:
+        self.page_number = page_number
+
+    @deprecated("Use Title.page_number instead")
+    def get_page_number(self) -> int:
+        return self.page_number
+
+    @deprecated("Use Title.position_string instead")
+    def get_position_string(self) -> str:
+        return self.position_string
 
 
 class Link:
@@ -265,49 +389,108 @@ class Link:
         self.content: bytes | None = content
         if page_number is not None:
             self.metadata.page_index = page_number
-        self.page_number = self.metadata.page_index
 
-    def set_content(self, content: bytes | None) -> None:
-        self.content = content
+    @property
+    def page_number(self) -> int:
+        """0-based page index where this link appears."""
+        return self.metadata.page_index
 
-    def get_content(self) -> bytes | None:
-        return self.content
+    @page_number.setter
+    def page_number(self, value: int) -> None:
+        self.metadata.page_index = value
 
-    def set_page_number(self, page_number: int) -> None:
-        self.page_number = page_number
-        self.metadata.page_index = page_number
+    @property
+    def link_type(self) -> LinkType | int:
+        """Link target category (`LinkType.PAGE`, `LinkType.FILE`, or `LinkType.WEB`)."""
+        return self.metadata.link_type
 
-    def get_page_number(self) -> int:
-        return self.page_number
+    @property
+    def direction(self) -> LinkDirection | int:
+        """Link direction (`LinkDirection.OUT` or `LinkDirection.IN`)."""
+        return self.metadata.direction
 
-    def get_type(self) -> int:
-        return int(self.metadata.link_type)
+    @property
+    def rect(self) -> tuple[int, int, int, int]:
+        """Bounding box `(left, top, right, bottom)` in page coordinates."""
+        if self.metadata.rect is None:
+            raise exceptions.ParserException("missing LINKRECT in link metadata")
+        return self.metadata.rect.bbox
 
-    def get_inout(self) -> int:
-        return int(self.metadata.direction)
-
-    def get_position_string(self) -> str:
+    @property
+    def position_string(self) -> str:
+        """16-digit `<top4><left4><height4><width4>` suffix used in footer `LINKO_<page4><pos16>` keys."""
         if self.metadata.rect is None:
             raise exceptions.ParserException("missing LINKRECT in link metadata")
         rect = self.metadata.rect
         return f"{rect.top:04d}{rect.left:04d}{rect.height:04d}{rect.width:04d}"
 
-    def get_rect(self) -> tuple[int, int, int, int]:
-        if self.metadata.rect is None:
-            raise exceptions.ParserException("missing LINKRECT in link metadata")
-        return self.metadata.rect.bbox
-
-    def get_timestamp(self) -> str | None:
+    @property
+    def timestamp(self) -> str | None:
+        """Link creation/modification timestamp string (`<LINKTIMESTAMP>`)."""
         return self.metadata.timestamp
 
-    def get_filepath(self) -> str | None:
-        return self.metadata.file_path  # Base64-encoded file path or URL
+    @property
+    def file_path(self) -> str | None:
+        """Base64-encoded target file path or URL (`<LINKFILE>`)."""
+        return self.metadata.file_path
 
-    def get_fileid(self) -> str | None:
+    @property
+    def file_id(self) -> str | None:
+        """Target notebook `<FILE_ID>` (`<LINKFILEID>`), or `None` if unset."""
         return self.metadata.file_id
 
-    def get_pageid(self) -> str | None:
+    @property
+    def page_id(self) -> str | None:
+        """Target page `<PAGEID>`, or `None` if unset."""
         return self.metadata.page_id
+
+    @deprecated("Assign to Link.content instead")
+    def set_content(self, content: bytes | None) -> None:
+        self.content = content
+
+    @deprecated("Use Link.content instead")
+    def get_content(self) -> bytes | None:
+        return self.content
+
+    @deprecated("Assign to Link.page_number instead")
+    def set_page_number(self, page_number: int) -> None:
+        self.page_number = page_number
+
+    @deprecated("Use Link.page_number instead")
+    def get_page_number(self) -> int:
+        return self.page_number
+
+    @deprecated("Use Link.link_type instead")
+    def get_type(self) -> int:
+        return int(self.link_type)
+
+    @deprecated("Use Link.direction instead")
+    def get_inout(self) -> int:
+        return int(self.direction)
+
+    @deprecated("Use Link.position_string instead")
+    def get_position_string(self) -> str:
+        return self.position_string
+
+    @deprecated("Use Link.rect instead")
+    def get_rect(self) -> tuple[int, int, int, int]:
+        return self.rect
+
+    @deprecated("Use Link.timestamp instead")
+    def get_timestamp(self) -> str | None:
+        return self.timestamp
+
+    @deprecated("Use Link.file_path instead")
+    def get_filepath(self) -> str | None:
+        return self.file_path  # Base64-encoded file path or URL
+
+    @deprecated("Use Link.file_id instead")
+    def get_fileid(self) -> str | None:
+        return self.file_id
+
+    @deprecated("Use Link.page_id instead")
+    def get_pageid(self) -> str | None:
+        return self.page_id
 
 
 class Page:
@@ -350,80 +533,142 @@ class Page:
             Layer(layer_meta) for layer_meta in (self.metadata.layers or [])
         ]
 
+    @property
+    def page_id(self) -> str | None:
+        """Stable page identifier (`<PAGEID>`)."""
+        return self.metadata.page_id
+
+    @property
+    def style(self) -> str | None:
+        """Page template/background style name (`<PAGESTYLE>`)."""
+        return self.metadata.style
+
+    @property
+    def style_hash(self) -> str:
+        """Custom template MD5 hash (`<PAGESTYLEMD5>`), or `''` if unset."""
+        return self.metadata.style_md5 or ""
+
+    @property
+    def protocol(self) -> LayerProtocol | str | None:
+        """Bitmap compression protocol (`RATTA_RLE`, `SN_ASA_COMPRESS`, or `None`)."""
+        if self.is_layer_supported():
+            if not self.layers:
+                return None
+            # currently MAINLAYER is only supported
+            return self.layers[0].metadata.protocol
+        return self.metadata.protocol
+
+    @property
+    def layer_info(self) -> str | None:
+        """Normalized JSON string representation of `<LAYERINFO>`, or `None`."""
+        if self.metadata.layer_info is None:
+            return None
+        return encode_layer_info(self.metadata.layer_info, wire_escape=False)
+
+    @property
+    def layer_order(self) -> list[str]:
+        """Ordered layer slot names from `<LAYERSEQ>`."""
+        return [str(item) for item in self.metadata.layer_seq]
+
+    @property
+    def recogn_status(self) -> RecognitionStatus | int:
+        """Handwriting recognition status (`RecognitionStatus`)."""
+        return self.metadata.recogn_status
+
+    @property
+    def orientation(self) -> PageOrientation | str:
+        """Page orientation code (`PageOrientation`)."""
+        return self.metadata.orientation
+
+    def layer(self, number: int) -> "Layer":
+        """Return the `Layer` at 0-based `number`."""
+        if number < 0 or number >= len(self.layers):
+            raise IndexError(f"layer number out of range: {number}")
+        return self.layers[number]
+
     def is_horizontal(self) -> bool:
-        return self.get_orientation() in (
+        """Return `True` if this page is in landscape orientation (`1090` or `1270`)."""
+        return self.orientation in (
             self.ORIENTATION_HORIZONTAL,
             self.ORIENTATION_HORIZONTAL_270,
         )
-
-    def set_content(self, content: bytes | None) -> None:
-        self.content = content
-
-    def get_content(self) -> bytes | None:
-        return self.content
 
     def is_layer_supported(self) -> bool:
         """Returns True if this page supports layers."""
         return self.metadata.is_layer_supported
 
+    @deprecated("Assign to Page.content instead")
+    def set_content(self, content: bytes | None) -> None:
+        self.content = content
+
+    @deprecated("Use Page.content instead")
+    def get_content(self) -> bytes | None:
+        return self.content
+
+    @deprecated("Use Page.layers instead")
     def get_layers(self) -> list["Layer"]:
         return self.layers
 
+    @deprecated("Use Page.layer() or Page.layers instead")
     def get_layer(self, number: int) -> "Layer":
-        if number < 0 or number >= len(self.layers):
-            raise IndexError(f"layer number out of range: {number}")
-        return self.layers[number]
+        return self.layer(number)
 
+    @deprecated("Use Page.protocol instead")
     def get_protocol(self) -> str | None:
-        if self.is_layer_supported():
-            if not self.layers:
-                return None
-            # currently MAINLAYER is only supported
-            protocol = self.layers[0].metadata.protocol
-        else:
-            protocol = self.metadata.protocol
+        protocol = self.protocol
         return str(protocol) if protocol is not None else None
 
+    @deprecated("Use Page.style instead")
     def get_style(self) -> str | None:
-        return self.metadata.style
+        return self.style
 
+    @deprecated("Use Page.style_hash instead")
     def get_style_hash(self) -> str:
-        return self.metadata.style_md5 or ""
+        return self.style_hash
 
+    @deprecated("Use Page.layer_info or Page.metadata.layer_info instead")
     def get_layer_info(self) -> str | None:
-        if self.metadata.layer_info is None:
-            return None
-        return encode_layer_info(self.metadata.layer_info, wire_escape=False)
+        return self.layer_info
 
+    @deprecated("Use Page.layer_order instead")
     def get_layer_order(self) -> list[str]:
-        return [str(item) for item in self.metadata.layer_seq]
+        return self.layer_order
 
+    @deprecated("Assign to Page.totalpath instead")
     def set_totalpath(self, totalpath: bytes | None) -> None:
         self.totalpath = totalpath
 
+    @deprecated("Use Page.totalpath instead")
     def get_totalpath(self) -> bytes | None:
         return self.totalpath
 
+    @deprecated("Use Page.page_id instead")
     def get_pageid(self) -> str | None:
-        return self.metadata.page_id
+        return self.page_id
 
+    @deprecated("Use Page.recogn_status instead")
     def get_recogn_status(self) -> int:
-        return int(self.metadata.recogn_status)
+        return int(self.recogn_status)
 
+    @deprecated("Assign to Page.recogn_file instead")
     def set_recogn_file(self, recogn_file: bytes | None) -> None:
         self.recogn_file = recogn_file
 
+    @deprecated("Use Page.recogn_file instead")
     def get_recogn_file(self) -> bytes | None:
         return self.recogn_file
 
+    @deprecated("Assign to Page.recogn_text instead")
     def set_recogn_text(self, recogn_text: bytes | None) -> None:
         self.recogn_text = recogn_text
 
+    @deprecated("Use Page.recogn_text instead")
     def get_recogn_text(self) -> bytes | None:
         return self.recogn_text
 
+    @deprecated("Use Page.orientation instead")
     def get_orientation(self) -> str:
-        return str(self.metadata.orientation)
+        return str(self.orientation)
 
 
 class Layer:
@@ -442,26 +687,40 @@ class Layer:
             raise exceptions.ParserException("invalid layer metadata")
         self.content: bytes | None = content
 
+    @property
+    def name(self) -> LayerName | str | None:
+        """Layer slot identifier (`MAINLAYER`, `LAYER1..3`, `BGLAYER`)."""
+        return self.metadata.name
+
+    @property
+    def protocol(self) -> LayerProtocol | str | None:
+        """Bitmap compression protocol (`RATTA_RLE`, `SN_ASA_COMPRESS`)."""
+        return self.metadata.protocol
+
+    @property
+    def layer_type(self) -> LayerType | str | None:
+        """Layer content kind (`NOTE` or `MARK`)."""
+        return self.metadata.layer_type
+
+    @deprecated("Assign to Layer.content instead")
     def set_content(self, content: bytes | None) -> None:
         self.content = content
 
+    @deprecated("Use Layer.content instead")
     def get_content(self) -> bytes | None:
         return self.content
 
+    @deprecated("Use Layer.name instead")
     def get_name(self) -> str | None:
-        return str(self.metadata.name) if self.metadata.name is not None else None
+        return str(self.name) if self.name is not None else None
 
+    @deprecated("Use Layer.protocol instead")
     def get_protocol(self) -> str | None:
-        return (
-            str(self.metadata.protocol) if self.metadata.protocol is not None else None
-        )
+        return str(self.protocol) if self.protocol is not None else None
 
+    @deprecated("Use Layer.layer_type instead")
     def get_type(self) -> str | None:
-        return (
-            str(self.metadata.layer_type)
-            if self.metadata.layer_type is not None
-            else None
-        )
+        return str(self.layer_type) if self.layer_type is not None else None
 
 
 __all__ = [

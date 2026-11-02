@@ -105,7 +105,7 @@ class PageHashingModule(ProcessorModule):
         )
 
         # Iterate pages and update DB
-        total_pages = metadata.get_total_pages()
+        total_pages = metadata.total_pages
         if not metadata.pages:
             return
 
