@@ -45,10 +45,12 @@ from .conftest import (
     FakeDecoder,
 )
 
-NOTE_PATHS = sorted(TEST_DATA_DIR.glob("**/*.note"))
+NOTE_PATHS = sorted(
+    [*TEST_DATA_DIR.glob("**/*.note"), *TEST_DATA_DIR.glob("**/*.mark")]
+)
 
 
-@lru_cache(maxsize=32)
+@lru_cache(maxsize=64)
 def get_cached_notebook(note_path_str: str) -> fileformat.Notebook:
     return load_notebook(note_path_str)
 
@@ -258,6 +260,57 @@ def test_image_converter_special_white_style_and_visibility_overlay(
     img = converter.convert(0, visibility_overlay=overlay)
     assert img.size == (2, 2)
     assert img.getpixel((0, 0)) == (0, 0, 0)
+
+
+def test_image_converter_layered_page_omitted_layer_protocol_and_custom_png_bg(
+    make_notebook: Callable[..., fileformat.Notebook],
+) -> None:
+    png_buf = io.BytesIO()
+    Image.new("RGB", (2, 2), color=(200, 210, 220)).save(png_buf, format="PNG")
+    custom_bg_png = png_buf.getvalue()
+
+    layer_info = (
+        '[{"layerId": -1, "isBackgroundLayer": true, "isVisible": true}, '
+        '{"layerId": 0, "isBackgroundLayer": false, "isVisible": true}]'
+    )
+    notebook = make_notebook(
+        width=2,
+        height=2,
+        pages=[
+            {
+                "PAGEID": "P1",
+                "PAGESTYLE": "user_custom_template",
+                "LAYERINFO": layer_info.replace(":", "#"),
+                "LAYERSEQ": "MAINLAYER,BGLAYER",
+                fileformat.KEY_LAYERS: [
+                    {"LAYERNAME": "MAINLAYER", "LAYERBITMAP": "100"},
+                    {"LAYERNAME": "BGLAYER", "LAYERBITMAP": "200"},
+                ],
+            }
+        ],
+    )
+    page = notebook.page(0)
+    # Pixel (0, 0) black ink, remaining 3 pixels transparent -> reveal PNG background
+    page.layer(0).content = bytes(
+        [
+            decoder_mod.RattaRleDecoder.COLORCODE_BLACK,
+            0,
+            decoder_mod.RattaRleDecoder.COLORCODE_BACKGROUND,
+            2,
+        ]
+    )
+    page.layer(1).content = custom_bg_png
+
+    converter = ImageConverter(notebook)
+    rendered = converter.convert(0)
+    assert rendered.size == (2, 2)
+    assert rendered.getpixel((0, 0)) == (0, 0, 0)
+    assert rendered.getpixel((1, 0)) == (200, 210, 220)
+
+    # Explicit unknown protocol on a layer still raises UnknownDecodeProtocol
+    page.layer(0).metadata.protocol = "BAD_LAYER_PROTO"
+    with pytest.raises(exceptions.UnknownDecodeProtocol, match="BAD_LAYER_PROTO"):
+        converter.convert(0)
 
 
 @pytest.mark.parametrize(
