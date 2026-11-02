@@ -85,7 +85,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "c3d4e5f6a7b8"
+        assert version == "d5e6f7a8b9c0"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -181,7 +181,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "c3d4e5f6a7b8"
+        assert version == "d5e6f7a8b9c0"
 
         # Verify task columns and types
         tasks = conn.execute(
@@ -761,4 +761,50 @@ def test_seed_sync_initialized_for_existing_users_migration(
         assert rows[0][2] > 0
 
     command.downgrade(alembic_config, "a2b3c4d5e6f7")
+    engine.dispose()
+
+
+def test_reset_legacy_default_user_quota_migration(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify migration d5e6f7a8b9c0 resets untouched 10 GiB placeholders to '0' while preserving custom quotas."""
+    db_path = tmp_path / "reset_legacy_quota.db"
+    shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+    command.upgrade(alembic_config, "c3d4e5f6a7b8")
+
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM users"))
+        conn.execute(
+            text(
+                "INSERT INTO users (id, email, password_md5, is_active, total_capacity, is_admin) "
+                "VALUES "
+                "(101, 'default@example.com', '098f6bcd4621d373cade4e832627b4f6', 1, '10737418240', 1), "
+                "(102, 'custom@example.com', '098f6bcd4621d373cade4e832627b4f6', 1, '53687091200', 0)"
+            )
+        )
+
+    command.upgrade(alembic_config, "d5e6f7a8b9c0")
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT email, total_capacity FROM users ORDER BY id")
+        ).fetchall()
+        assert [tuple(r) for r in rows] == [
+            ("default@example.com", "0"),
+            ("custom@example.com", "53687091200"),
+        ]
+
+    command.downgrade(alembic_config, "c3d4e5f6a7b8")
+    with engine.connect() as conn:
+        rows_down = conn.execute(
+            text("SELECT email, total_capacity FROM users ORDER BY id")
+        ).fetchall()
+        assert [tuple(r) for r in rows_down] == [
+            ("default@example.com", "10737418240"),
+            ("custom@example.com", "53687091200"),
+        ]
+
     engine.dispose()

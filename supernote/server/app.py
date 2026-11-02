@@ -220,6 +220,7 @@ def create_app(config: ServerConfig) -> web.Application:
         user_service,
         session_manager,
         event_bus,
+        default_user_quota=config.default_user_quota,
     )
     app["user_service"] = user_service
     app["file_service"] = file_service

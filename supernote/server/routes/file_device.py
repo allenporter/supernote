@@ -264,6 +264,7 @@ async def handle_capacity_query(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
     try:
         used = await file_service.get_storage_usage(user_email)
+        allocated = await file_service.get_storage_quota(user_email)
 
         return web.json_response(
             CapacityLocalVO(
@@ -271,7 +272,7 @@ async def handle_capacity_query(request: web.Request) -> web.Response:
                 used=used,
                 allocation_vo=AllocationVO(
                     tag="personal",
-                    allocated=1024 * 1024 * 1024 * 10,  # 10GB total
+                    allocated=allocated,
                 ),
             ).to_dict()
         )
@@ -339,8 +340,19 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
 
     req_data = FileUploadApplyLocalDTO.from_dict(await request.json())
     file_name = req_data.file_name
+    user_email = request["user"]
+    file_service: FileService = request.app["file_service"]
 
     try:
+        try:
+            prospective_size = int(req_data.size) if req_data.size else 0
+        except (ValueError, TypeError):
+            prospective_size = 0
+
+        await file_service.check_upload_apply_device(
+            user_email, req_data.path, file_name, prospective_size
+        )
+
         url_signer: UrlSigner = request.app["url_signer"]
 
         # Generate a unique inner name for storage

@@ -4,9 +4,10 @@ import asyncio
 import hashlib
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
-from sqlalchemy import delete, update
+from sqlalchemy import delete, select, update
 
 from supernote.server.constants import (
     CACHE_BUCKET,
@@ -15,6 +16,7 @@ from supernote.server.constants import (
 )
 from supernote.server.db.models.file import RecycleFileDO
 from supernote.server.db.models.summary import SummaryDO
+from supernote.server.db.models.user import FALLBACK_QUOTA, UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
     Event,
@@ -25,6 +27,7 @@ from supernote.server.events import (
     VfsItemDeletedEvent,
     VfsItemMovedEvent,
 )
+from supernote.server.exceptions import QuotaExceeded
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.services.user import UserService
@@ -904,3 +907,340 @@ async def test_file_overwrite_and_purge_preserve_summary_referenced_blob(
     )
     assert await blob_storage.exists(USER_DATA_BUCKET, "shared_sum_key_v1") is False
     assert await blob_storage.exists(USER_DATA_BUCKET, "shared_sum_key_v2") is False
+
+
+async def test_get_storage_quota(
+    file_service: FileService,
+    blob_storage: BlobStorage,
+    session_manager: DatabaseSessionManager,
+    create_test_user: None,
+    test_users: list[str],
+    test_user_id: int,
+) -> None:
+    """Verify two-tier quota resolution across volume free space, default_user_quota, and per-user overrides."""
+    user = test_users[0]
+
+    with patch.object(blob_storage, "get_available_bytes", return_value=123456):
+        assert await file_service.get_storage_quota(user) == 123456
+
+    with patch.object(blob_storage, "get_available_bytes", return_value=None):
+        assert await file_service.get_storage_quota(user) == FALLBACK_QUOTA
+
+    file_service.default_user_quota = 10 * 1024 * 1024
+    assert await file_service.get_storage_quota(user) == 10 * 1024 * 1024
+
+    custom_quota = 50 * 1024 * 1024
+    async with session_manager.session() as session:
+        user_row = (
+            await session.execute(select(UserDO).where(UserDO.id == test_user_id))
+        ).scalar_one()
+        user_row.total_capacity = str(custom_quota)
+        await session.commit()
+
+    assert await file_service.get_storage_quota(user) == custom_quota
+
+    # Invalid stored quota string defers to server default_user_quota (or volume space when 0)
+    async with session_manager.session() as session:
+        user_row = (
+            await session.execute(select(UserDO).where(UserDO.id == test_user_id))
+        ).scalar_one()
+        user_row.total_capacity = "not-an-int"
+        await session.commit()
+
+    assert await file_service.get_storage_quota(user) == 10 * 1024 * 1024
+    file_service.default_user_quota = 0
+    with patch.object(blob_storage, "get_available_bytes", return_value=99999):
+        assert await file_service.get_storage_quota(user) == 99999
+
+
+async def test_finish_upload_enforces_quota_and_purges_staged_blob(
+    file_service: FileService,
+    blob_storage: BlobStorage,
+    session_manager: DatabaseSessionManager,
+    create_test_user: None,
+    test_users: list[str],
+    test_user_id: int,
+) -> None:
+    """Verify device finish_upload deletes staged unreferenced blob and raises QuotaExceeded when over quota."""
+    user = test_users[0]
+
+    # Set quota to 500 bytes
+    async with session_manager.session() as session:
+        user_row = (
+            await session.execute(select(UserDO).where(UserDO.id == test_user_id))
+        ).scalar_one()
+        user_row.total_capacity = "500"
+        await session.commit()
+
+    # Upload 300 bytes -> fits in 500 byte quota
+    content1 = b"1" * 300
+    md5_1 = hashlib.md5(content1).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "staged_blob_1", content1)
+
+    entity1 = await file_service.finish_upload(
+        user, "file1.txt", "/", md5_1, "staged_blob_1"
+    )
+    assert entity1.size == 300
+    assert await blob_storage.exists(USER_DATA_BUCKET, "staged_blob_1") is True
+    assert await file_service.get_storage_usage(user) == 300
+
+    # Upload second file of 300 bytes -> total 600 > 500 -> QuotaExceeded
+    content2 = b"2" * 300
+    md5_2 = hashlib.md5(content2).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "staged_blob_overflow", content2)
+    assert await blob_storage.exists(USER_DATA_BUCKET, "staged_blob_overflow") is True
+
+    with pytest.raises(QuotaExceeded):
+        await file_service.finish_upload(
+            user, "file2.txt", "/", md5_2, "staged_blob_overflow"
+        )
+
+    # Staged blob must be deleted because upload was aborted
+    assert await blob_storage.exists(USER_DATA_BUCKET, "staged_blob_overflow") is False
+    # Usage must remain unchanged at 300
+    assert await file_service.get_storage_usage(user) == 300
+
+
+async def test_finish_upload_overwrite_accounts_for_net_size_change(
+    file_service: FileService,
+    blob_storage: BlobStorage,
+    session_manager: DatabaseSessionManager,
+    create_test_user: None,
+    test_users: list[str],
+    test_user_id: int,
+) -> None:
+    """Verify finish_upload calculates net_change when overwriting an active file."""
+    user = test_users[0]
+
+    # Set quota to 500 bytes
+    async with session_manager.session() as session:
+        user_row = (
+            await session.execute(select(UserDO).where(UserDO.id == test_user_id))
+        ).scalar_one()
+        user_row.total_capacity = "500"
+        await session.commit()
+
+    # Upload original 400 bytes
+    content_orig = b"a" * 400
+    md5_orig = hashlib.md5(content_orig).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "blob_orig", content_orig)
+    await file_service.finish_upload(
+        user, "overwrite_test.txt", "/", md5_orig, "blob_orig"
+    )
+    assert await file_service.get_storage_usage(user) == 400
+
+    # Overwrite with 450 bytes -> net change is +50 bytes (total 450 <= 500) -> succeeds!
+    content_ok = b"b" * 450
+    md5_ok = hashlib.md5(content_ok).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "blob_ok", content_ok)
+    entity_ok = await file_service.finish_upload(
+        user, "overwrite_test.txt", "/", md5_ok, "blob_ok"
+    )
+    assert entity_ok.size == 450
+    assert await file_service.get_storage_usage(user) == 450
+    assert await blob_storage.exists(USER_DATA_BUCKET, "blob_orig") is False
+    assert await blob_storage.exists(USER_DATA_BUCKET, "blob_ok") is True
+
+    # Overwrite with 600 bytes -> net change is +150 bytes (total 600 > 500) -> QuotaExceeded
+    content_overflow = b"c" * 600
+    md5_overflow = hashlib.md5(content_overflow).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "blob_overflow", content_overflow)
+    with pytest.raises(QuotaExceeded):
+        await file_service.finish_upload(
+            user, "overwrite_test.txt", "/", md5_overflow, "blob_overflow"
+        )
+
+    # Staged overflow blob deleted; existing 450-byte file remains intact
+    assert await blob_storage.exists(USER_DATA_BUCKET, "blob_overflow") is False
+    assert await blob_storage.exists(USER_DATA_BUCKET, "blob_ok") is True
+    assert await file_service.get_storage_usage(user) == 450
+
+
+async def test_upload_finish_web_enforces_quota_and_purges_staged_blob(
+    file_service: FileService,
+    blob_storage: BlobStorage,
+    session_manager: DatabaseSessionManager,
+    create_test_user: None,
+    test_users: list[str],
+    test_user_id: int,
+) -> None:
+    """Verify Web upload_finish_web deletes staged unreferenced blob and raises QuotaExceeded when over quota."""
+    user = test_users[0]
+
+    # Set quota to 500 bytes
+    async with session_manager.session() as session:
+        user_row = (
+            await session.execute(select(UserDO).where(UserDO.id == test_user_id))
+        ).scalar_one()
+        user_row.total_capacity = "500"
+        await session.commit()
+
+    # Upload 600 bytes -> exceeds quota
+    content = b"w" * 600
+    md5_val = hashlib.md5(content).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "web_stage_overflow", content)
+    assert await blob_storage.exists(USER_DATA_BUCKET, "web_stage_overflow") is True
+
+    with pytest.raises(QuotaExceeded):
+        await file_service.upload_finish_web(
+            user=user,
+            directory_id=0,
+            file_name="web_overflow.txt",
+            md5=md5_val,
+            inner_name="web_stage_overflow",
+        )
+
+    assert await blob_storage.exists(USER_DATA_BUCKET, "web_stage_overflow") is False
+    assert await file_service.get_storage_usage(user) == 0
+
+
+async def test_upload_finish_web_overwrite_accounts_for_net_size_change(
+    file_service: FileService,
+    blob_storage: BlobStorage,
+    session_manager: DatabaseSessionManager,
+    create_test_user: None,
+    test_users: list[str],
+    test_user_id: int,
+) -> None:
+    """Verify upload_finish_web accounts for net size change when overwriting active file."""
+    user = test_users[0]
+
+    # Set quota to 500 bytes
+    async with session_manager.session() as session:
+        user_row = (
+            await session.execute(select(UserDO).where(UserDO.id == test_user_id))
+        ).scalar_one()
+        user_row.total_capacity = "500"
+        await session.commit()
+
+    # Initial upload 400 bytes
+    c1 = b"a" * 400
+    md5_1 = hashlib.md5(c1).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "web_b1", c1)
+    await file_service.upload_finish_web(
+        user=user,
+        directory_id=0,
+        file_name="web_file.txt",
+        md5=md5_1,
+        inner_name="web_b1",
+    )
+    assert await file_service.get_storage_usage(user) == 400
+
+    # Overwrite with 350 bytes (net -50 bytes, smaller size) -> succeeds
+    c2 = b"b" * 350
+    md5_2 = hashlib.md5(c2).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "web_b2", c2)
+    await file_service.upload_finish_web(
+        user=user,
+        directory_id=0,
+        file_name="web_file.txt",
+        md5=md5_2,
+        inner_name="web_b2",
+    )
+    assert await file_service.get_storage_usage(user) == 350
+    assert await blob_storage.exists(USER_DATA_BUCKET, "web_b1") is False
+    assert await blob_storage.exists(USER_DATA_BUCKET, "web_b2") is True
+
+    # Overwrite with 600 bytes (net +250 bytes, total 600 > 500) -> QuotaExceeded
+    c3 = b"c" * 600
+    md5_3 = hashlib.md5(c3).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "web_b3_overflow", c3)
+    with pytest.raises(QuotaExceeded):
+        await file_service.upload_finish_web(
+            user=user,
+            directory_id=0,
+            file_name="web_file.txt",
+            md5=md5_3,
+            inner_name="web_b3_overflow",
+        )
+
+    assert await blob_storage.exists(USER_DATA_BUCKET, "web_b3_overflow") is False
+    assert await blob_storage.exists(USER_DATA_BUCKET, "web_b2") is True
+    assert await file_service.get_storage_usage(user) == 350
+
+
+async def test_upload_apply_and_volume_free_space_enforcement(
+    file_service: FileService,
+    blob_storage: BlobStorage,
+    create_test_user: None,
+    test_users: list[str],
+) -> None:
+    """Verify pre-flight upload_apply checks and disk exhaustion checks for uncapped and default-capped users."""
+    user = test_users[0]
+
+    # Uncapped user: volume reports 500 bytes free -> 600-byte upload rejected at upload_apply
+    with patch.object(blob_storage, "get_available_bytes", return_value=500):
+        await file_service.check_upload_apply_device(user, "/doc.pdf", "doc.pdf", 400)
+        await file_service.check_upload_apply_web(user, 0, "doc.pdf", 400)
+
+        with pytest.raises(QuotaExceeded):
+            await file_service.check_upload_apply_device(
+                user, "/INBOX/big.pdf", "big.pdf", 600
+            )
+        with pytest.raises(QuotaExceeded):
+            await file_service.check_upload_apply_web(user, 0, "big.pdf", 600)
+
+    # Server default_user_quota = 500 bytes enforced when UserDO.total_capacity == "0"
+    file_service.default_user_quota = 500
+    content = b"d" * 400
+    md5_val = hashlib.md5(content).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "def_quota_1", content)
+    await file_service.finish_upload(user, "f1.txt", "/", md5_val, "def_quota_1")
+
+    with pytest.raises(QuotaExceeded):
+        await file_service.check_upload_apply_device(user, "/f2.txt", "f2.txt", 200)
+    with pytest.raises(QuotaExceeded):
+        await file_service.check_upload_apply_web(user, 0, "f2.txt", 200)
+
+    # Overwriting f1.txt (400B) with 450B (net +50B, total 450B <= 500B) passes upload_apply
+    await file_service.check_upload_apply_device(user, "/f1.txt", "f1.txt", 450)
+    await file_service.check_upload_apply_web(user, 0, "f1.txt", 450)
+
+    # Zero available bytes at commit time still succeeds once the blob is already staged on disk
+    # (including overwrites that reclaim superseded blob space)
+    file_service.default_user_quota = 0
+    c_smaller = b"z" * 100
+    md5_smaller = hashlib.md5(c_smaller).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "disk_full_overwrite", c_smaller)
+    with patch.object(blob_storage, "get_available_bytes", return_value=0):
+        overwritten = await file_service.finish_upload(
+            user, "f1.txt", "/", md5_smaller, "disk_full_overwrite"
+        )
+    assert overwritten.size == 100
+    assert await blob_storage.exists(USER_DATA_BUCKET, "disk_full_overwrite") is True
+    assert await blob_storage.exists(USER_DATA_BUCKET, "def_quota_1") is False
+
+
+async def test_concurrent_finish_upload_same_inner_name_preserves_committed_blob(
+    file_service: FileService,
+    blob_storage: BlobStorage,
+    session_manager: DatabaseSessionManager,
+    create_test_user: None,
+    test_users: list[str],
+    test_user_id: int,
+) -> None:
+    """Verify concurrent finish_upload calls for the same inner_name never delete a committed blob."""
+    user = test_users[0]
+    async with session_manager.session() as session:
+        user_row = (
+            await session.execute(select(UserDO).where(UserDO.id == test_user_id))
+        ).scalar_one()
+        user_row.total_capacity = "500"
+        await session.commit()
+
+    content = b"s" * 400
+    md5_val = hashlib.md5(content).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "shared_race_key", content)
+
+    results = await asyncio.gather(
+        file_service.finish_upload(user, "first.txt", "/", md5_val, "shared_race_key"),
+        file_service.finish_upload(user, "second.txt", "/", md5_val, "shared_race_key"),
+        return_exceptions=True,
+    )
+
+    successes = [r for r in results if not isinstance(r, BaseException)]
+    quota_errors = [r for r in results if isinstance(r, QuotaExceeded)]
+    assert len(successes) == 1
+    assert len(quota_errors) == 1
+    assert await blob_storage.exists(USER_DATA_BUCKET, "shared_race_key") is True
+    assert await file_service.get_storage_usage(user) == 400

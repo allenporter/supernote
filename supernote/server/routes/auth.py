@@ -27,6 +27,7 @@ from supernote.models.user import (
     UserRegisterDTO,
 )
 from supernote.server.exceptions import SupernoteError
+from supernote.server.services.file import FileService
 from supernote.server.services.user import UserService
 from supernote.server.utils.auth_utils import get_token_from_request
 from supernote.server.utils.rate_limit import (
@@ -274,6 +275,9 @@ async def handle_user_query(request: web.Request) -> web.Response:
         if not user_vo:
             raise SupernoteError("User not found", status_code=404)
 
+        file_service: FileService = request.app["file_service"]
+        total_capacity = str(await file_service.get_storage_quota(str(account)))
+
         return web.json_response(
             UserQueryByIdVO(
                 success=True,
@@ -282,7 +286,7 @@ async def handle_user_query(request: web.Request) -> web.Response:
                 email=user_vo.email,
                 telephone=user_vo.phone,
                 country_code=user_vo.country_code,
-                total_capacity=user_vo.total_capacity,
+                total_capacity=total_capacity,
                 file_server=user_vo.file_server,
                 avatars_url=user_vo.avatars_url,
                 birthday=user_vo.birthday,
@@ -314,12 +318,15 @@ async def handle_user_query_info(request: web.Request) -> web.Response:
         if not user_vo:
             raise SupernoteError("User not found", status_code=404)
 
+        file_service: FileService = request.app["file_service"]
+        total_capacity = str(await file_service.get_storage_quota(str(account)))
+
         user_info = UserInfo(
             user_id=user_vo.user_id,
             user_name=user_vo.user_name,
             email=user_vo.email,
             phone=user_vo.phone,
-            total_capacity=user_vo.total_capacity,
+            total_capacity=total_capacity,
             file_server=user_vo.file_server,
             avatars_url=user_vo.avatars_url,
         )

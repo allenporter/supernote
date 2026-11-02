@@ -1,5 +1,6 @@
 import hashlib
 import os
+import shutil
 import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -10,6 +11,8 @@ import pytest
 from supernote.server.services.blob import (
     CLEANUP_INTERVAL_SECONDS,
     TEMP_FILE_TTL_SECONDS,
+    BlobMetadata,
+    BlobStorage,
     CleanupStats,
     LocalBlobStorage,
 )
@@ -428,3 +431,52 @@ def test_cleanup_helpers_handle_missing_files_and_os_errors(tmp_path: Path) -> N
     with patch.object(Path, "stat", side_effect=PermissionError("stat denied")):
         LocalBlobStorage._remove_chunk_set_if_expired([tmp_file], now, stats)
     assert stats.files_removed == 0
+
+
+def test_get_available_bytes(tmp_path: Path) -> None:
+    """Verify LocalBlobStorage reports free volume bytes and BlobStorage defaults to None."""
+    storage = LocalBlobStorage(tmp_path)
+    available = storage.get_available_bytes()
+    assert available is not None
+    assert available > 0
+
+    with patch.object(shutil, "disk_usage", side_effect=OSError("disk error")):
+        assert storage.get_available_bytes() is None
+
+    class ElasticBlobStorage(BlobStorage):
+        async def put(
+            self, bucket: str, key: str, stream: AsyncGenerator[bytes] | bytes
+        ) -> BlobMetadata:
+            return BlobMetadata()
+
+        async def get(
+            self,
+            bucket: str,
+            key: str,
+            start: int | None = None,
+            end: int | None = None,
+        ) -> AsyncGenerator[bytes]:
+            if False:
+                yield b""
+
+        async def delete(self, bucket: str, key: str) -> None:
+            pass
+
+        async def exists(self, bucket: str, key: str) -> bool:
+            return False
+
+        async def get_metadata(
+            self, bucket: str, key: str, include_md5: bool = False
+        ) -> BlobMetadata:
+            return BlobMetadata()
+
+        def get_blob_path(self, bucket: str, key: str) -> Path:
+            return tmp_path
+
+        async def list_blobs(self, bucket: str) -> list[str]:
+            return []
+
+        async def cleanup(self) -> CleanupStats:
+            return CleanupStats()
+
+    assert ElasticBlobStorage().get_available_bytes() is None

@@ -118,8 +118,8 @@ async def handle_capacity_query_cloud(request: web.Request) -> web.Response:
     file_service: FileService = request.app["file_service"]
 
     try:
-        # TODO: Implement quota properly
         used = await file_service.get_storage_usage(user_email)
+        total_capacity = await file_service.get_storage_quota(user_email)
     except SupernoteError as err:
         return err.to_response()
     except Exception as err:
@@ -128,7 +128,7 @@ async def handle_capacity_query_cloud(request: web.Request) -> web.Response:
     return web.json_response(
         CapacityVO(
             used_capacity=used,
-            total_capacity=1024 * 1024 * 1024 * 10,  # 10GB total
+            total_capacity=total_capacity,
         ).to_dict()
     )
 
@@ -620,9 +620,13 @@ async def handle_file_upload_apply(request: web.Request) -> web.Response:
 
     req_data = FileUploadApplyDTO.from_dict(await request.json())
     user_email = request["user"]
+    file_service: FileService = request.app["file_service"]
     url_signer: UrlSigner = request.app["url_signer"]
 
     try:
+        await file_service.check_upload_apply_web(
+            user_email, req_data.directory_id, req_data.file_name, req_data.size
+        )
         inner_name = generate_inner_name(req_data.file_name, None)
         encoded_name = urllib.parse.quote(inner_name)
 

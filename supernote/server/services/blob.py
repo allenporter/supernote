@@ -3,6 +3,7 @@ import hashlib
 import logging
 import os
 import secrets
+import shutil
 import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
@@ -105,6 +106,10 @@ class BlobStorage(ABC):
     async def cleanup(self) -> CleanupStats:
         """Remove expired temporary staging files and abandoned upload chunks."""
 
+    def get_available_bytes(self) -> int | None:
+        """Return available free bytes on the storage backend, or None if unbounded/unknown."""
+        return None
+
 
 class LocalBlobStorage(BlobStorage):
     """Local filesystem implementation of Blob Storage.
@@ -117,6 +122,14 @@ class LocalBlobStorage(BlobStorage):
         self.root = storage_root.resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self._last_cleanup = time.time()
+
+    def get_available_bytes(self) -> int | None:
+        """Return available free bytes on the filesystem backing storage_root."""
+        try:
+            return shutil.disk_usage(self.root).free
+        except OSError as err:
+            logger.warning("Failed to query disk usage for %s: %s", self.root, err)
+            return None
 
     def _get_path(self, bucket: str, key: str) -> Path:
         """Get physical path to the blob."""

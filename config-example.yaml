@@ -10,6 +10,11 @@ port: 8080
 # Directory where uploaded files and databases will be stored.
 storage_dir: storage
 
+# Default per-user storage quota in bytes (0 = unlimited, bounded by disk free space;
+# env: SUPERNOTE_DEFAULT_USER_QUOTA).
+# Override per user via `supernote admin user set-quota <email> <bytes>`.
+# default_user_quota: 0
+
 # Logging verbosity: DEBUG, INFO, WARNING, ERROR (env: SUPERNOTE_LOG_LEVEL)
 # log_level: INFO
 

@@ -853,3 +853,30 @@ async def test_legacy_session_token_migration_and_revocation(
         ttl=ttl,
     )
     assert await user_service.verify_token(missing_user_token) is None
+
+
+async def test_admin_set_user_quota(user_service: UserService) -> None:
+    """Verify admin_set_user_quota updates UserDO.total_capacity and validates inputs."""
+    email = "quota_user@example.com"
+    pw_md5 = hashlib.md5(b"password123").hexdigest()
+    created = await user_service.register(UserRegisterDTO(email=email, password=pw_md5))
+    assert created.total_capacity == "0"
+
+    await user_service.admin_set_user_quota(email, 20 * 1024**3)
+    updated = await user_service.get_user_by_email(email)
+    assert updated is not None
+    assert updated.total_capacity == str(20 * 1024**3)
+
+    await user_service.admin_set_user_quota(email, 0)
+    reset = await user_service.get_user_by_email(email)
+    assert reset is not None
+    assert reset.total_capacity == "0"
+
+    with pytest.raises(ValueError, match="non-negative"):
+        await user_service.admin_set_user_quota(email, -1)
+
+    with pytest.raises(ValueError, match="non-negative"):
+        await user_service.admin_set_user_quota(email, True)
+
+    with pytest.raises(ValueError, match="not found"):
+        await user_service.admin_set_user_quota("missing@example.com", 1024)

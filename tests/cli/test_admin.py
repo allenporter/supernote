@@ -26,6 +26,8 @@ from supernote.cli.admin import (
     reprocess_async,
     reset_password,
     reset_password_async,
+    set_quota,
+    set_quota_async,
 )
 from supernote.models.base import ProcessingStatus
 from supernote.server.db.models.file import UserFileDO
@@ -69,6 +71,13 @@ def test_add_parser() -> None:
     parsed = parser.parse_args(["admin", "user", "reset-password", "user@example.com"])
     assert parsed.email == "user@example.com"
     assert parsed.func == reset_password
+
+    parsed = parser.parse_args(
+        ["admin", "user", "set-quota", "user@example.com", "21474836480"]
+    )
+    assert parsed.email == "user@example.com"
+    assert parsed.quota == 21474836480
+    assert parsed.func == set_quota
 
     parsed = parser.parse_args(["admin", "queue", "status"])
     assert parsed.func == queue_status
@@ -392,3 +401,38 @@ async def test_list_tasks_failure(capsys: pytest.CaptureFixture[str]) -> None:
 
     captured = capsys.readouterr()
     assert "Failed to list tasks:" in captured.out
+
+
+async def test_set_quota_cli(
+    cli_env: CliServerEnv, capsys: pytest.CaptureFixture[str]
+) -> None:
+    await list_users_async(cli_env.url)
+    captured = capsys.readouterr()
+    assert "unlimited" in captured.out
+
+    quota_bytes = 20 * 1024**3
+    await set_quota_async(cli_env.url, ADMIN_EMAIL, quota_bytes)
+    captured = capsys.readouterr()
+    assert (
+        f"Set storage quota for '{ADMIN_EMAIL}' to {quota_bytes} bytes." in captured.out
+    )
+
+    await list_users_async(cli_env.url)
+    captured = capsys.readouterr()
+    assert str(quota_bytes) in captured.out
+
+    await set_quota_async(cli_env.url, ADMIN_EMAIL, 0)
+    captured = capsys.readouterr()
+    assert "unlimited" in captured.out
+
+    with pytest.raises(SystemExit) as exc_info:
+        await set_quota_async(cli_env.url, ADMIN_EMAIL, -1)
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "Invalid quota value" in captured.out
+
+    with pytest.raises(SystemExit) as exc_info:
+        await set_quota_async(cli_env.url, "missing@example.com", quota_bytes)
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "Failed to set quota:" in captured.out

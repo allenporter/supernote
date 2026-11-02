@@ -440,3 +440,53 @@ async def test_admin_list_tasks_invalid_filters(
     """Test invalid filter parameters raise BadRequestException."""
     with pytest.raises(BadRequestException):
         await admin_api_client.list_tasks(status=status, task_type=task_type)
+
+
+async def test_admin_set_user_quota(
+    client: TestClient,
+    admin_api_client: AdminClient,
+    user_api_client: AdminClient,
+    admin_headers: dict[str, str],
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Test setting and resetting per-user storage quota via the Admin API."""
+    await admin_api_client.admin_set_quota("user@example.com", 5 * 1024**3)
+    async with session_manager.session() as session:
+        user = (
+            await session.execute(
+                select(UserDO).where(UserDO.email == "user@example.com")
+            )
+        ).scalar_one()
+        assert user.total_capacity == str(5 * 1024**3)
+
+    await admin_api_client.admin_set_quota("user@example.com", 0)
+    async with session_manager.session() as session:
+        user = (
+            await session.execute(
+                select(UserDO).where(UserDO.email == "user@example.com")
+            )
+        ).scalar_one()
+        assert user.total_capacity == "0"
+
+    with pytest.raises(ForbiddenException):
+        await user_api_client.admin_set_quota("user@example.com", 1024)
+
+    with pytest.raises(BadRequestException):
+        await admin_api_client.admin_set_quota("missing@example.com", 1024)
+
+    with pytest.raises(BadRequestException):
+        await admin_api_client.admin_set_quota("user@example.com", -10)
+
+    bad_resp = await client.post(
+        "/api/admin/users/quota",
+        json={"email": "user@example.com", "totalCapacity": "not-an-int"},
+        headers=admin_headers,
+    )
+    assert bad_resp.status == 400
+
+    empty_email_resp = await client.post(
+        "/api/admin/users/quota",
+        json={"email": "", "totalCapacity": 100},
+        headers=admin_headers,
+    )
+    assert empty_email_resp.status == 400

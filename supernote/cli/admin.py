@@ -62,11 +62,13 @@ async def list_users_async(url: str | None = None):
             users = await resp.json()
 
             print(f"\nTotal Users: {len(users)}\n")
-            print(f"{'Email':<30} {'Name':<20} {'Capacity':<10}")
-            print("-" * 65)
+            print(f"{'Email':<30} {'Name':<20} {'Quota':<15}")
+            print("-" * 68)
             for u in users:
+                raw_cap = str(u.get("totalCapacity", "0"))
+                cap_display = "unlimited" if raw_cap == "0" else raw_cap
                 print(
-                    f"{u.get('email', 'N/A'):<30} {u.get('userName', 'N/A'):<20} {u.get('totalCapacity', '0'):<10}"
+                    f"{u.get('email', 'N/A'):<30} {u.get('userName', 'N/A'):<20} {cap_display:<15}"
                 )
 
         except Exception as e:
@@ -112,6 +114,27 @@ def reset_password(args):
             sys.exit(1)
 
     asyncio.run(reset_password_async(args.url, args.email, password))
+
+
+async def set_quota_async(url: str | None, email: str, quota_bytes: int) -> None:
+    """Set a user's storage quota in bytes (0 = unlimited)."""
+    if quota_bytes < 0:
+        print(f"Invalid quota value {quota_bytes}: must be >= 0")
+        sys.exit(1)
+
+    async with create_session(url) as session:
+        admin_client = AdminClient(session.client)
+        try:
+            await admin_client.admin_set_quota(email, quota_bytes)
+            quota_label = "unlimited" if quota_bytes == 0 else f"{quota_bytes} bytes"
+            print(f"Success! Set storage quota for '{email}' to {quota_label}.")
+        except Exception as e:
+            print(f"Failed to set quota: {e}")
+            sys.exit(1)
+
+
+def set_quota(args) -> None:
+    asyncio.run(set_quota_async(args.url, args.email, args.quota))
 
 
 async def queue_status_async(url: str | None = None):
@@ -360,6 +383,19 @@ def add_parser(subparsers):
         "--password", type=str, help="New password (if omitted, prompt interactively)"
     )
     parser_user_reset.set_defaults(func=reset_password)
+
+    # user set-quota
+    parser_user_quota = user_subparsers.add_parser(
+        "set-quota",
+        help="Set user storage quota in bytes (0 for unlimited)",
+    )
+    parser_user_quota.add_argument("email", type=str, help="Email address of the user")
+    parser_user_quota.add_argument(
+        "quota",
+        type=int,
+        help="Storage quota in bytes (0 for unlimited)",
+    )
+    parser_user_quota.set_defaults(func=set_quota)
 
     # --- Queue Management ---
     parser_queue = admin_subparsers.add_parser(

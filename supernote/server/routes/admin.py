@@ -1,7 +1,7 @@
 from collections.abc import Awaitable, Callable
 
 from aiohttp import web
-from mashumaro.exceptions import MissingField
+from mashumaro.exceptions import InvalidFieldValue, MissingField
 from sqlalchemy import delete, select
 
 from supernote.models.base import (
@@ -12,7 +12,7 @@ from supernote.models.base import (
 )
 from supernote.models.extended import SystemTaskListVO, SystemTaskVO
 from supernote.models.system import QueueStatusVO
-from supernote.models.user import UserRegisterDTO
+from supernote.models.user import UpdateUserQuotaDTO, UserRegisterDTO
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
@@ -87,6 +87,35 @@ async def handle_admin_update_password(request: web.Request) -> web.Response:
     user_service: UserService = request.app["user_service"]
     try:
         await user_service.admin_reset_password(email, password_md5)
+    except ValueError as e:
+        return web.json_response(create_error_response(str(e)).to_dict(), status=400)
+    except Exception as e:
+        return SupernoteError.uncaught(e).to_response()
+
+    return web.json_response(BaseResponse().to_dict())
+
+
+@routes.post("/api/admin/users/quota")
+@require_admin
+async def handle_admin_update_quota(request: web.Request) -> web.Response:
+    """Update a user's storage quota in bytes (Admin only)."""
+    req_data = await request.json()
+    try:
+        dto = UpdateUserQuotaDTO.from_dict(req_data)
+    except (MissingField, InvalidFieldValue, ValueError, TypeError):
+        return web.json_response(
+            create_error_response("Invalid request format").to_dict(),
+            status=400,
+        )
+
+    if not dto.email:
+        return web.json_response(
+            create_error_response("Missing email").to_dict(), status=400
+        )
+
+    user_service: UserService = request.app["user_service"]
+    try:
+        await user_service.admin_set_user_quota(dto.email, dto.total_capacity)
     except ValueError as e:
         return web.json_response(create_error_response(str(e)).to_dict(), status=400)
     except Exception as e:
