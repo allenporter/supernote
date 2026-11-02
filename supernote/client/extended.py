@@ -1,6 +1,10 @@
 """Client for Extended (Web) APIs."""
 
+from supernote.models.base import BaseResponse
 from supernote.models.extended import (
+    ApiKeyListResponseVO,
+    CreateApiKeyDTO,
+    CreateApiKeyResponseVO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
     SystemTaskListVO,
@@ -83,6 +87,23 @@ class ExtendedClient:
         """List recent system tasks (Extension)."""
         return await self._client.get_json(
             "/api/extended/system/tasks", SystemTaskListVO
+        )
+
+    async def list_api_keys(self) -> ApiKeyListResponseVO:
+        """List active static Bearer API keys for the current user (Extension)."""
+        return await self._client.get_json("/api/extended/keys", ApiKeyListResponseVO)
+
+    async def create_api_key(self, name: str) -> CreateApiKeyResponseVO:
+        """Create a new static Bearer API key (Extension)."""
+        dto = CreateApiKeyDTO(name=name)
+        return await self._client.post_json(
+            "/api/extended/keys", CreateApiKeyResponseVO, json=dto.to_dict()
+        )
+
+    async def delete_api_key(self, key_id: str) -> BaseResponse:
+        """Revoke an existing static Bearer API key (Extension)."""
+        return await self._client.delete_json(
+            f"/api/extended/keys/{key_id}", BaseResponse
         )
 
     async def get_ai_status(self) -> WebAiStatusVO:

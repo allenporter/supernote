@@ -658,3 +658,129 @@ async def test_extended_note_cover_converts_only_first_page(
     disabled_vo = await extended_client.get_note_cover(file_id=file_id)
     assert disabled_vo.success is True
     assert disabled_vo.url is None
+
+
+async def test_extended_api_keys_unauthorized(client: TestClient) -> None:
+    """Test that all API keys endpoints return 401 without authentication."""
+    get_resp = await client.get("/api/extended/keys")
+    assert get_resp.status == 401
+
+    post_resp = await client.post("/api/extended/keys", json={"name": "Test Key"})
+    assert post_resp.status == 401
+
+    del_resp = await client.delete("/api/extended/keys/key_123")
+    assert del_resp.status == 401
+
+
+async def test_extended_api_keys_crud_lifecycle(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    extended_client: ExtendedClient,
+) -> None:
+    """Test full CRUD lifecycle for static Bearer API keys via ExtendedClient and routes."""
+    initial_list = await extended_client.list_api_keys()
+    assert initial_list.success is True
+    assert initial_list.keys == []
+
+    bad_json = await client.post(
+        "/api/extended/keys",
+        data="invalid-json",
+        headers={**auth_headers, "Content-Type": "application/json"},
+    )
+    assert bad_json.status == 400
+
+    bad_name = await client.post(
+        "/api/extended/keys", json={"name": "   "}, headers=auth_headers
+    )
+    assert bad_name.status == 400
+    assert "Key name cannot be empty" in (await bad_name.json())["error"]
+
+    created_1 = await extended_client.create_api_key("Claude Desktop")
+    assert created_1.success is True
+    assert len(created_1.id) == 12
+    assert created_1.name == "Claude Desktop"
+    assert created_1.key.startswith("sn_")
+    assert len(created_1.key) == 35
+    assert created_1.created_at > 0
+
+    listed_1 = await extended_client.list_api_keys()
+    assert len(listed_1.keys) == 1
+    assert listed_1.keys[0].id == created_1.id
+    assert listed_1.keys[0].name == "Claude Desktop"
+    assert listed_1.keys[0].key_prefix == f"{created_1.key[:11]}..."
+    assert listed_1.keys[0].created_at == created_1.created_at
+    assert listed_1.keys[0].last_used_at is None
+
+    created_2 = await extended_client.create_api_key("Obsidian Sync")
+    listed_2 = await extended_client.list_api_keys()
+    assert {k.id for k in listed_2.keys} == {created_1.id, created_2.id}
+
+    del_res = await extended_client.delete_api_key(created_1.id)
+    assert del_res.success is True
+
+    del_again = await client.delete(
+        f"/api/extended/keys/{created_1.id}", headers=auth_headers
+    )
+    assert del_again.status == 404
+
+    del_unknown = await client.delete(
+        "/api/extended/keys/unknown_key_999", headers=auth_headers
+    )
+    assert del_unknown.status == 404
+
+    listed_after = await extended_client.list_api_keys()
+    assert [k.id for k in listed_after.keys] == [created_2.id]
+
+    await extended_client.delete_api_key(created_2.id)
+    assert (await extended_client.list_api_keys()).keys == []
+
+
+async def test_bearer_tokens_work_across_all_apis(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    extended_client: ExtendedClient,
+) -> None:
+    """Verify static Bearer API keys and Bearer session tokens authenticate across any API."""
+    created = await extended_client.create_api_key("Universal Client")
+    bearer_api_key_headers = {"Authorization": f"Bearer {created.key}"}
+    bearer_session_headers = {
+        "Authorization": f"Bearer {auth_headers['x-access-token']}"
+    }
+
+    for headers in (bearer_api_key_headers, bearer_session_headers):
+        # Extended API
+        ai_resp = await client.get("/api/extended/ai/status", headers=headers)
+        assert ai_resp.status == 200
+
+        # File API
+        cap_resp = await client.post(
+            "/api/file/capacity/query", json={}, headers=headers
+        )
+        assert cap_resp.status == 200
+        assert (await cap_resp.json())["success"] is True
+
+        # User profile API
+        profile_resp = await client.post("/api/user/query", json={}, headers=headers)
+        assert profile_resp.status == 200
+        assert (await profile_resp.json())["email"] == "test@example.com"
+
+        # Schedule API
+        sched_resp = await client.post(
+            "/api/file/schedule/group/all", json={}, headers=headers
+        )
+        assert sched_resp.status == 200
+        assert (await sched_resp.json())["success"] is True
+
+        # Summary API
+        summary_resp = await client.post(
+            "/api/file/query/summary/tag", json={}, headers=headers
+        )
+        assert summary_resp.status == 200
+        assert (await summary_resp.json())["success"] is True
+
+    # Revoking the static API key immediately rejects Bearer requests across APIs
+    await extended_client.delete_api_key(created.id)
+    revoked_resp = await client.post(
+        "/api/file/capacity/query", json={}, headers=bearer_api_key_headers
+    )
+    assert revoked_resp.status == 401

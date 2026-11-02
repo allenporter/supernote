@@ -1,5 +1,7 @@
 import datetime
+import hashlib
 import hmac
+import json
 import logging
 import re
 import secrets
@@ -19,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from supernote.models.auth import Equipment, LoginVO, UserVO
 from supernote.models.base import ErrorCode
 from supernote.models.equipment import UserEquipmentVO
+from supernote.models.extended import ApiKeyVO
 from supernote.models.user import (
     LoginRecordVO,
     UpdateEmailDTO,
@@ -41,9 +44,13 @@ RANDOM_CODE_TTL = datetime.timedelta(minutes=5)
 UNIQUE_MACHINE_ID_KEY = "system:unique_machine_id"
 JWT_SECRET_KEY = "system:jwt_secret_key"
 # CoordinationService requires a numeric expiry (defaults to 1 year if omitted);
-# use a 100-year TTL for server-lifetime keys (unique_machine_id, jwt_secret_key, and sold_out_count).
+# use a 100-year TTL for server-lifetime keys (unique_machine_id, jwt_secret_key, sold_out_count, and static API keys).
 UNIQUE_MACHINE_ID_TTL = 100 * 365 * 24 * 3600
 SOLD_OUT_KEY_PREFIX = "user:sold_out_count:"
+API_KEY_PREFIX = "sn_"
+API_KEY_RECORD_PREFIX = "api_key:"
+API_KEY_ID_PREFIX = "api_key_id:"
+USER_API_KEYS_PREFIX = "user_api_keys:"
 
 # Validate email format
 # 1. No consecutive dots: (?!.*\.\.)
@@ -73,6 +80,18 @@ class SessionState(DataClassJSONMixin):
     equipment_no: str | None = None
     created_at: float = field(default_factory=time.time)
     last_active_at: float = field(default_factory=time.time)
+
+
+@dataclass
+class ApiKeyRecord(DataClassJSONMixin):
+    id: str
+    user_id: int
+    name: str
+    key_prefix: str
+    created_at: int
+    sha256_hash: str
+    last_used_at: int | None = None
+    is_active: bool = True
 
 
 logger = logging.getLogger(__name__)
@@ -146,7 +165,7 @@ class UserService:
 
     async def logout(self, token: str) -> None:
         """Revoke a single session token."""
-        if not token:
+        if not token or token.startswith(API_KEY_PREFIX):
             return
         secret_key = await self.get_secret_key()
         try:
@@ -330,6 +349,7 @@ class UserService:
             user_id = user.id
 
         await self.revoke_user_sessions(user_id)
+        await self.revoke_user_api_keys(user_id)
 
         async with self._session_manager.session() as session:
             await session.execute(delete(DeviceDO).where(DeviceDO.user_id == user_id))
@@ -344,6 +364,7 @@ class UserService:
             ttl=UNIQUE_MACHINE_ID_TTL,
         )
         await self.revoke_user_sessions(user_id)
+        await self.revoke_user_api_keys(user_id)
         return user_id
 
     async def generate_random_code(self, account: str) -> tuple[str, str]:
@@ -549,10 +570,234 @@ class UserService:
         )
         return token
 
+    async def create_api_key(self, user_id: int, name: str) -> tuple[str, ApiKeyVO]:
+        """Generate and store a new static Bearer API key for an active user.
+
+        Returns `(raw_token, ApiKeyVO)`. The raw token is only returned once on creation.
+        """
+        cleaned_name = name.strip()
+        if not cleaned_name:
+            raise ValueError("Key name cannot be empty")
+        user = await self._get_user_by_id(user_id)
+        if not user or not user.is_active:
+            raise ValueError(f"Active user {user_id} not found")
+
+        raw_token = f"{API_KEY_PREFIX}{secrets.token_hex(16)}"
+        key_id = secrets.token_hex(6)
+        sha256_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+        key_prefix = f"{raw_token[:11]}..."
+        now = int(time.time())
+
+        record = ApiKeyRecord(
+            id=key_id,
+            user_id=user_id,
+            name=cleaned_name,
+            key_prefix=key_prefix,
+            created_at=now,
+            sha256_hash=sha256_hash,
+            last_used_at=None,
+            is_active=True,
+        )
+        await self._coordination_service.set_value(
+            f"{API_KEY_RECORD_PREFIX}{sha256_hash}",
+            str(record.to_json()),
+            ttl=UNIQUE_MACHINE_ID_TTL,
+        )
+        await self._coordination_service.set_value(
+            f"{API_KEY_ID_PREFIX}{key_id}",
+            sha256_hash,
+            ttl=UNIQUE_MACHINE_ID_TTL,
+        )
+
+        user_keys_key = f"{USER_API_KEYS_PREFIX}{user_id}"
+        user_keys_raw = await self._coordination_service.get_value(user_keys_key)
+        key_ids: list[str] = []
+        if user_keys_raw:
+            try:
+                parsed = json.loads(user_keys_raw)
+                if isinstance(parsed, list):
+                    key_ids = [str(item) for item in parsed]
+            except (json.JSONDecodeError, TypeError, ValueError):
+                key_ids = []
+        if key_id not in key_ids:
+            key_ids.append(key_id)
+            await self._coordination_service.set_value(
+                user_keys_key,
+                json.dumps(key_ids),
+                ttl=UNIQUE_MACHINE_ID_TTL,
+            )
+
+        vo = ApiKeyVO(
+            id=key_id,
+            name=cleaned_name,
+            key_prefix=key_prefix,
+            created_at=now,
+            last_used_at=None,
+        )
+        return raw_token, vo
+
+    async def list_api_keys(self, user_id: int) -> list[ApiKeyVO]:
+        """List all active static Bearer API keys for a user."""
+        user_keys_raw = await self._coordination_service.get_value(
+            f"{USER_API_KEYS_PREFIX}{user_id}"
+        )
+        if not user_keys_raw:
+            return []
+
+        try:
+            key_ids = json.loads(user_keys_raw)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return []
+        if not isinstance(key_ids, list):
+            return []
+
+        active_keys: list[ApiKeyVO] = []
+        for key_id in key_ids:
+            sha256_hash = await self._coordination_service.get_value(
+                f"{API_KEY_ID_PREFIX}{key_id}"
+            )
+            if not sha256_hash:
+                continue
+            key_raw = await self._coordination_service.get_value(
+                f"{API_KEY_RECORD_PREFIX}{sha256_hash}"
+            )
+            if not key_raw:
+                continue
+            try:
+                record = ApiKeyRecord.from_json(key_raw)
+            except (MissingField, ValueError, TypeError, KeyError):
+                continue
+            if not record.is_active or record.user_id != user_id:
+                continue
+            active_keys.append(
+                ApiKeyVO(
+                    id=record.id,
+                    name=record.name,
+                    key_prefix=record.key_prefix,
+                    created_at=record.created_at,
+                    last_used_at=record.last_used_at,
+                )
+            )
+        return active_keys
+
+    async def revoke_api_key(self, user_id: int, key_id: str) -> bool:
+        """Revoke an active static Bearer API key belonging to `user_id`."""
+        sha256_hash = await self._coordination_service.get_value(
+            f"{API_KEY_ID_PREFIX}{key_id}"
+        )
+        if not sha256_hash:
+            return False
+
+        key_raw = await self._coordination_service.get_value(
+            f"{API_KEY_RECORD_PREFIX}{sha256_hash}"
+        )
+        if not key_raw:
+            return False
+
+        try:
+            record = ApiKeyRecord.from_json(key_raw)
+        except (MissingField, ValueError, TypeError, KeyError):
+            return False
+
+        if record.user_id != user_id or not record.is_active:
+            return False
+
+        record.is_active = False
+        await self._coordination_service.set_value(
+            f"{API_KEY_RECORD_PREFIX}{sha256_hash}",
+            str(record.to_json()),
+            ttl=UNIQUE_MACHINE_ID_TTL,
+        )
+
+        user_keys_key = f"{USER_API_KEYS_PREFIX}{user_id}"
+        user_keys_raw = await self._coordination_service.get_value(user_keys_key)
+        if user_keys_raw:
+            try:
+                key_ids = json.loads(user_keys_raw)
+                if isinstance(key_ids, list) and key_id in key_ids:
+                    key_ids.remove(key_id)
+                    await self._coordination_service.set_value(
+                        user_keys_key,
+                        json.dumps(key_ids),
+                        ttl=UNIQUE_MACHINE_ID_TTL,
+                    )
+            except (json.JSONDecodeError, TypeError, ValueError):
+                pass
+
+        return True
+
+    async def revoke_user_api_keys(self, user_id: int) -> None:
+        """Delete all static Bearer API keys belonging to `user_id`."""
+        user_keys_key = f"{USER_API_KEYS_PREFIX}{user_id}"
+        user_keys_raw = await self._coordination_service.get_value(user_keys_key)
+        if user_keys_raw:
+            try:
+                key_ids = json.loads(user_keys_raw)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                key_ids = []
+            if isinstance(key_ids, list):
+                for key_id in key_ids:
+                    sha256_hash = await self._coordination_service.get_value(
+                        f"{API_KEY_ID_PREFIX}{key_id}"
+                    )
+                    if sha256_hash:
+                        await self._coordination_service.delete_value(
+                            f"{API_KEY_RECORD_PREFIX}{sha256_hash}"
+                        )
+                    await self._coordination_service.delete_value(
+                        f"{API_KEY_ID_PREFIX}{key_id}"
+                    )
+        await self._coordination_service.delete_value(user_keys_key)
+
+    async def verify_api_key(self, token: str) -> SessionState | None:
+        """Verify a static `sn_...` Bearer API key against its SHA-256 digest and active user record."""
+        if not token or not token.startswith(API_KEY_PREFIX):
+            return None
+
+        sha256_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        key_raw = await self._coordination_service.get_value(
+            f"{API_KEY_RECORD_PREFIX}{sha256_hash}"
+        )
+        if not key_raw:
+            return None
+
+        try:
+            record = ApiKeyRecord.from_json(key_raw)
+        except (MissingField, ValueError, TypeError, KeyError):
+            return None
+
+        if not hmac.compare_digest(record.sha256_hash, sha256_hash):
+            return None
+        if not record.is_active:
+            return None
+
+        user = await self._get_user_by_id(record.user_id)
+        if not user or not user.is_active:
+            return None
+
+        now = int(time.time())
+        record.last_used_at = now
+        await self._coordination_service.set_value(
+            f"{API_KEY_RECORD_PREFIX}{sha256_hash}",
+            str(record.to_json()),
+            ttl=UNIQUE_MACHINE_ID_TTL,
+        )
+
+        return SessionState(
+            token=token,
+            email=user.email,
+            user_id=user.id,
+            equipment_no=None,
+            created_at=float(record.created_at),
+            last_active_at=float(now),
+        )
+
     async def verify_token(self, token: str) -> SessionState | None:
-        """Verify token against JWT signature, persisted session state, and active user record."""
+        """Verify a session JWT or static Bearer API key against persisted state and active user record."""
         if not token:
             return None
+        if token.startswith(API_KEY_PREFIX):
+            return await self.verify_api_key(token)
         secret_key = await self.get_secret_key()
         try:
             payload = jwt.decode(token, secret_key, algorithms=[JWT_ALGORITHM])

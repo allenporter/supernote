@@ -10,8 +10,11 @@ import logging
 from aiohttp import web
 from mashumaro.exceptions import InvalidFieldValue, MissingField
 
-from supernote.models.base import ProcessingStatus
+from supernote.models.base import BaseResponse, ProcessingStatus
 from supernote.models.extended import (
+    ApiKeyListResponseVO,
+    CreateApiKeyDTO,
+    CreateApiKeyResponseVO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
     PageTranscriptVO,
@@ -327,3 +330,82 @@ async def handle_extended_note_cover(request: web.Request) -> web.Response:
     except Exception as err:
         logger.exception("Error fetching note cover preview")
         return SupernoteError.uncaught(err).to_response()
+
+
+@routes.get("/api/extended/keys")
+async def handle_list_api_keys(request: web.Request) -> web.Response:
+    # Endpoint: GET /api/extended/keys
+    # Purpose: List active static Bearer API keys for the authenticated user.
+    user_email = request["user"]
+    user_service: UserService = request.app["user_service"]
+
+    user_id = await user_service.get_user_id(user_email)
+    if not user_id:
+        return web.json_response({"error": "User not found"}, status=404)
+
+    keys = await user_service.list_api_keys(user_id)
+    return web.json_response(ApiKeyListResponseVO(keys=keys).to_dict())
+
+
+@routes.post("/api/extended/keys")
+async def handle_create_api_key(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/keys
+    # Purpose: Generate and return a new static Bearer API key.
+    user_email = request["user"]
+    try:
+        data = await request.json()
+        req_dto = CreateApiKeyDTO.from_dict(data)
+    except (
+        json.JSONDecodeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        MissingField,
+        InvalidFieldValue,
+    ) as err:
+        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
+
+    if not req_dto.name or not req_dto.name.strip():
+        return web.json_response({"error": "Key name cannot be empty"}, status=400)
+
+    user_service: UserService = request.app["user_service"]
+    user_id = await user_service.get_user_id(user_email)
+    if not user_id:
+        return web.json_response({"error": "User not found"}, status=404)
+
+    try:
+        raw_token, vo = await user_service.create_api_key(user_id, req_dto.name.strip())
+    except ValueError as err:
+        return web.json_response({"error": str(err)}, status=400)
+
+    return web.json_response(
+        CreateApiKeyResponseVO(
+            id=vo.id,
+            name=vo.name,
+            key=raw_token,
+            created_at=vo.created_at,
+        ).to_dict()
+    )
+
+
+@routes.delete("/api/extended/keys/{key_id}")
+async def handle_delete_api_key(request: web.Request) -> web.Response:
+    # Endpoint: DELETE /api/extended/keys/{key_id}
+    # Purpose: Revoke an existing static Bearer API key.
+    user_email = request["user"]
+    key_id = request.match_info.get("key_id")
+    if not key_id:
+        return web.json_response({"error": "Missing key_id"}, status=400)
+
+    user_service: UserService = request.app["user_service"]
+    user_id = await user_service.get_user_id(user_email)
+    if not user_id:
+        return web.json_response({"error": "User not found"}, status=404)
+
+    revoked = await user_service.revoke_api_key(user_id, key_id)
+    if not revoked:
+        return web.json_response(
+            {"error": "API key not found or already revoked"}, status=404
+        )
+
+    return web.json_response(BaseResponse(success=True).to_dict())

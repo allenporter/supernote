@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 import time
 
@@ -880,3 +881,115 @@ async def test_admin_set_user_quota(user_service: UserService) -> None:
 
     with pytest.raises(ValueError, match="not found"):
         await user_service.admin_set_user_quota("missing@example.com", 1024)
+
+
+async def test_api_key_lifecycle_storage_and_verification(
+    user_service: UserService,
+    coordination_service: CoordinationService,
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Verify static Bearer API key creation, SHA-256 storage, verification, and revocation."""
+    pw_md5 = hashlib.md5(b"password123").hexdigest()
+    user1 = await user_service.register(
+        UserRegisterDTO(email="apikey1@example.com", password=pw_md5)
+    )
+    user2 = await user_service.register(
+        UserRegisterDTO(email="apikey2@example.com", password=pw_md5)
+    )
+
+    with pytest.raises(ValueError, match="Key name cannot be empty"):
+        await user_service.create_api_key(user1.id, "   ")
+
+    with pytest.raises(ValueError, match="not found"):
+        await user_service.create_api_key(999999, "Ghost Key")
+
+    raw_token, vo = await user_service.create_api_key(user1.id, "  CLI Agent  ")
+    assert raw_token.startswith("sn_")
+    assert len(raw_token) == 35
+    assert len(vo.id) == 12
+    assert vo.name == "CLI Agent"
+    assert vo.key_prefix == f"{raw_token[:11]}..."
+    assert vo.created_at <= int(time.time())
+    assert vo.last_used_at is None
+
+    # Raw token is never persisted in plaintext
+    assert await coordination_service.get_value(raw_token) is None
+    assert await coordination_service.get_value(f"api_key:{raw_token}") is None
+
+    sha256_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    stored_raw = await coordination_service.get_value(f"api_key:{sha256_hash}")
+    assert stored_raw is not None
+    stored_data = json.loads(stored_raw)
+    assert stored_data == {
+        "id": vo.id,
+        "user_id": user1.id,
+        "name": "CLI Agent",
+        "key_prefix": vo.key_prefix,
+        "created_at": vo.created_at,
+        "sha256_hash": sha256_hash,
+        "last_used_at": None,
+        "is_active": True,
+    }
+
+    # User isolation in list_api_keys and revoke_api_key
+    _, user2_vo = await user_service.create_api_key(user2.id, "Obsidian")
+    assert [k.id for k in await user_service.list_api_keys(user1.id)] == [vo.id]
+    assert [k.id for k in await user_service.list_api_keys(user2.id)] == [user2_vo.id]
+    assert await user_service.revoke_api_key(user2.id, vo.id) is False
+    assert await user_service.revoke_api_key(user1.id, "missing_key") is False
+
+    # verify_token authenticates static sn_... keys and records last_used_at
+    assert (
+        await user_service.verify_token("sn_0123456789abcdef0123456789abcdef") is None
+    )
+    session_state = await user_service.verify_token(raw_token)
+    assert session_state is not None
+    assert session_state.email == "apikey1@example.com"
+    assert session_state.user_id == user1.id
+    assert session_state.equipment_no is None
+
+    listed_after_use = await user_service.list_api_keys(user1.id)
+    assert listed_after_use[0].last_used_at is not None
+    assert listed_after_use[0].last_used_at > 0
+
+    # Logout ignores static API keys rather than revoking them
+    await user_service.logout(raw_token)
+    assert await user_service.verify_token(raw_token) is not None
+
+    # Email updates resolve dynamically to the user's updated email
+    await user_service.update_email(
+        "apikey1@example.com", UpdateEmailDTO(email="apikey1_new@example.com")
+    )
+    updated_state = await user_service.verify_token(raw_token)
+    assert updated_state is not None
+    assert updated_state.email == "apikey1_new@example.com"
+
+    # Deactivating the user immediately rejects their static API keys
+    async with session_manager.session() as db:
+        db_user = (
+            await db.execute(select(UserDO).where(UserDO.id == user1.id))
+        ).scalar_one()
+        db_user.is_active = False
+        await db.commit()
+    assert await user_service.verify_token(raw_token) is None
+
+    async with session_manager.session() as db:
+        db_user = (
+            await db.execute(select(UserDO).where(UserDO.id == user1.id))
+        ).scalar_one()
+        db_user.is_active = True
+        await db.commit()
+    assert await user_service.verify_token(raw_token) is not None
+
+    # Explicit revocation rejects subsequent verify_token calls and is idempotent
+    assert await user_service.revoke_api_key(user1.id, vo.id) is True
+    assert await user_service.revoke_api_key(user1.id, vo.id) is False
+    assert await user_service.verify_token(raw_token) is None
+    assert await user_service.list_api_keys(user1.id) == []
+
+    # Account deletion purges all remaining API keys for that user
+    user2_token, _ = await user_service.create_api_key(user2.id, "Second Key")
+    assert await user_service.verify_token(user2_token) is not None
+    await user_service.clear_account("apikey2@example.com")
+    assert await user_service.verify_token(user2_token) is None
+    assert await user_service.list_api_keys(user2.id) == []

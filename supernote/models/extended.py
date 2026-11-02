@@ -216,6 +216,67 @@ class WebTranscriptResponseVO(BaseResponse):
 
 
 @dataclass
+class ApiKeyVO(DataClassJSONMixin):
+    """VO representing static Bearer API key metadata.
+
+    Used by: GET /api/extended/keys
+    """
+
+    id: str
+    name: str
+    key_prefix: str = field(metadata=field_options(alias="keyPrefix"))
+    created_at: int = field(metadata=field_options(alias="createdAt"))
+    last_used_at: int | None = field(
+        metadata=field_options(alias="lastUsedAt"), default=None
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class CreateApiKeyDTO(DataClassJSONMixin):
+    """Request DTO to create a new static Bearer API key.
+
+    Used by: POST /api/extended/keys
+    """
+
+    name: str
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class CreateApiKeyResponseVO(BaseResponse):
+    """Response VO after creating a new static Bearer API key.
+
+    Used by: POST /api/extended/keys
+    """
+
+    id: str = ""
+    name: str = ""
+    key: str = ""
+    created_at: int = field(metadata=field_options(alias="createdAt"), default=0)
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class ApiKeyListResponseVO(BaseResponse):
+    """Response VO listing static Bearer API keys.
+
+    Used by: GET /api/extended/keys
+    """
+
+    keys: list[ApiKeyVO] = field(default_factory=list)
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
 class WebNoteCoverRequestDTO(DataClassJSONMixin):
     """Request DTO for retrieving a single-page cover preview URL for a notebook."""
 

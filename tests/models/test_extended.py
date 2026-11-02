@@ -2,6 +2,10 @@
 
 from supernote.models.base import ProcessingStatus
 from supernote.models.extended import (
+    ApiKeyListResponseVO,
+    ApiKeyVO,
+    CreateApiKeyDTO,
+    CreateApiKeyResponseVO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
     PageTranscriptVO,
@@ -160,6 +164,53 @@ def test_web_transcript_models() -> None:
     }
     parsed = WebTranscriptResponseVO.from_dict(data)
     assert parsed == vo
+
+
+def test_api_key_models() -> None:
+    dto = CreateApiKeyDTO(name="Obsidian Companion")
+    assert dto.to_dict() == {"name": "Obsidian Companion"}
+    assert CreateApiKeyDTO.from_dict({"name": "Default Key"}).name == "Default Key"
+
+    created_vo = CreateApiKeyResponseVO(
+        id="abcdef123456",
+        name="Obsidian Companion",
+        key="sn_0123456789abcdef0123456789abcdef",
+        created_at=1700000000,
+    )
+    assert created_vo.to_dict() == {
+        "success": True,
+        "errorCode": None,
+        "errorMsg": None,
+        "id": "abcdef123456",
+        "name": "Obsidian Companion",
+        "key": "sn_0123456789abcdef0123456789abcdef",
+        "createdAt": 1700000000,
+    }
+    assert CreateApiKeyResponseVO.from_dict(created_vo.to_dict()) == created_vo
+
+    key_vo = ApiKeyVO(
+        id="abcdef123456",
+        name="Obsidian Companion",
+        key_prefix="sn_01234567...",
+        created_at=1700000000,
+        last_used_at=1700000500,
+    )
+    list_vo = ApiKeyListResponseVO(keys=[key_vo])
+    assert list_vo.to_dict() == {
+        "success": True,
+        "errorCode": None,
+        "errorMsg": None,
+        "keys": [
+            {
+                "id": "abcdef123456",
+                "name": "Obsidian Companion",
+                "keyPrefix": "sn_01234567...",
+                "createdAt": 1700000000,
+                "lastUsedAt": 1700000500,
+            }
+        ],
+    }
+    assert ApiKeyListResponseVO.from_dict(list_vo.to_dict()) == list_vo
 
 
 def test_web_note_cover_models() -> None:

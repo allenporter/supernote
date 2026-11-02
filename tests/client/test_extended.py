@@ -182,3 +182,75 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
         ("GET", "/api/extended/ai/status", None),
         ("POST", "/api/extended/file/note/cover", {"fileId": 10}),
     ]
+
+
+async def test_extended_client_api_key_methods(aiohttp_client: AiohttpClient) -> None:
+    """Verify ExtendedClient static Bearer API key management methods."""
+    recorded: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    async def handle_csrf(_request: web.Request) -> web.Response:
+        return web.Response(text="ok", headers={"X-XSRF-TOKEN": "csrf-token"})
+
+    async def handle_list_keys(request: web.Request) -> web.Response:
+        recorded.append((request.method, request.path, None))
+        return web.json_response(
+            {
+                "success": True,
+                "keys": [
+                    {
+                        "id": "k1",
+                        "name": "Claude Code",
+                        "keyPrefix": "sn_abcdef01...",
+                        "createdAt": 1700000000,
+                        "lastUsedAt": None,
+                    }
+                ],
+            }
+        )
+
+    async def handle_create_key(request: web.Request) -> web.Response:
+        recorded.append((request.method, request.path, await request.json()))
+        return web.json_response(
+            {
+                "success": True,
+                "id": "k1",
+                "name": "Claude Code",
+                "key": "sn_abcdef0123456789abcdef0123456789",
+                "createdAt": 1700000000,
+            }
+        )
+
+    async def handle_delete_key(request: web.Request) -> web.Response:
+        recorded.append((request.method, request.path, None))
+        return web.json_response({"success": True})
+
+    app = web.Application()
+    app.router.add_get("/api/csrf", handle_csrf)
+    app.router.add_get("/api/extended/keys", handle_list_keys)
+    app.router.add_post("/api/extended/keys", handle_create_key)
+    app.router.add_delete("/api/extended/keys/{key_id}", handle_delete_key)
+
+    test_client = await aiohttp_client(app)
+    base_client = Client(
+        test_client.session,
+        host=str(test_client.make_url("")),
+        auth=ConstantAuth("token-123"),
+    )
+    ext = ExtendedClient(base_client)
+
+    created = await ext.create_api_key("Claude Code")
+    assert created.id == "k1"
+    assert created.key == "sn_abcdef0123456789abcdef0123456789"
+
+    listed = await ext.list_api_keys()
+    assert len(listed.keys) == 1
+    assert listed.keys[0].key_prefix == "sn_abcdef01..."
+
+    deleted = await ext.delete_api_key("k1")
+    assert deleted.success is True
+
+    assert recorded == [
+        ("POST", "/api/extended/keys", {"name": "Claude Code"}),
+        ("GET", "/api/extended/keys", None),
+        ("DELETE", "/api/extended/keys/k1", None),
+    ]
