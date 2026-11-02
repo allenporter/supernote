@@ -14,15 +14,19 @@
 
 """Utility classes."""
 
-from typing import Self
+import copy
+from collections.abc import Mapping
+from typing import Any, Self
 
-from . import fileformat
+from . import fileformat, schema
 
 
 class WorkaroundPageWrapper(fileformat.Page):
     """Workaround for duplicated layer name."""
 
-    def __init__(self, page_info: fileformat.ParamsBlock) -> None:
+    def __init__(self, page_info: schema.PageMetadata | Mapping[str, Any]) -> None:
+        if isinstance(page_info, schema.PageMetadata):
+            page_info = copy.deepcopy(page_info)
         super().__init__(page_info)
         self._override_layer_name()
 
@@ -42,8 +46,8 @@ class WorkaroundPageWrapper(fileformat.Page):
             name = layer.get_name()
             if name is None:
                 continue
-            if mainlayer_visited and name == "MAINLAYER":
+            if mainlayer_visited and name == schema.LayerName.MAINLAYER:
                 # this layer has duplicated name, so we guess this layer is BGLAYER
-                layer.metadata["LAYERNAME"] = "BGLAYER"
-            elif name == "MAINLAYER":
+                layer.metadata.name = schema.LayerName.BGLAYER
+            elif name == schema.LayerName.MAINLAYER:
                 mainlayer_visited = True

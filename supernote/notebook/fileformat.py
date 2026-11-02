@@ -12,18 +12,41 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Classes for Suernote file format.
+"""Loaded domain objects for the Supernote `.note` / `.mark` file format.
 
 The Supernote file format relies on a "Footer-first" parsing strategy.
-The last 4 bytes of the file (the "Tail") contain the offset to the Footer Block.
-The Footer Block then contains references (offsets) to all other metadata blocks
-(Pages, Titles, Keywords, etc.) and the Header Block.
+The last 4 bytes of the file contain the offset to the Footer Block, which
+references all other metadata blocks (Header, Pages, Titles, Keywords, Links).
+Wire-level metadata blocks and enums live in `supernote.notebook.schema`.
 """
 
-import json
+from collections.abc import Mapping
 from typing import Any
 
 from . import exceptions
+from .schema import (
+    KEY_FOOTER,
+    KEY_HEADER,
+    KEY_KEYWORDS,
+    KEY_LAYERS,
+    KEY_LINKS,
+    KEY_PAGES,
+    KEY_SIGNATURE,
+    KEY_TITLES,
+    KEY_TYPE,
+    EquipmentType,
+    KeywordMetadata,
+    LayerMetadata,
+    LinkDirection,
+    LinkMetadata,
+    LinkType,
+    PageMetadata,
+    PageOrientation,
+    RecognitionStatus,
+    SupernoteMetadata,
+    TitleMetadata,
+    encode_layer_info,
+)
 
 ParamsBlock = dict[str, Any]
 
@@ -34,133 +57,13 @@ PAGE_WIDTH = 1404
 A5X2_PAGE_HEIGHT = 2560
 A5X2_PAGE_WIDTH = 1920
 
-
 ADDRESS_SIZE = 4
 LENGTH_FIELD_SIZE = 4
 
-KEY_TYPE = "__type__"
-KEY_SIGNATURE = "__signature__"
-KEY_HEADER = "__header__"
-KEY_FOOTER = "__footer__"
-KEY_PAGES = "__pages__"
-KEY_LAYERS = "__layers__"
-KEY_KEYWORDS = "__keywords__"
-KEY_TITLES = "__titles__"
-KEY_LINKS = "__links__"
-
-
-class SupernoteMetadata:
-    """Represents Supernote file structure."""
-
-    def __init__(
-        self,
-        type: str,
-        signature: str,
-        header: ParamsBlock,
-        footer: ParamsBlock,
-        pages: list[ParamsBlock],
-    ) -> None:
-        self.__note: dict[str, Any] = {}
-        self.type = type
-        self.signature = signature
-        self.header = header
-        self.footer = footer
-        self.pages = pages
-
-    @property
-    def type(self) -> str:
-        return self.__note[KEY_TYPE]
-
-    @type.setter
-    def type(self, value: str) -> None:
-        if not isinstance(value, str):
-            raise exceptions.ParserException("notebook metadata type is missing")
-        self.__note[KEY_TYPE] = value
-
-    @property
-    def signature(self) -> str:
-        return self.__note[KEY_SIGNATURE]
-
-    @signature.setter
-    def signature(self, value: str) -> None:
-        if not isinstance(value, str):
-            raise exceptions.ParserException("notebook metadata signature is missing")
-        self.__note[KEY_SIGNATURE] = value
-
-    @property
-    def header(self) -> ParamsBlock:
-        return self.__note[KEY_HEADER]
-
-    @header.setter
-    def header(self, value: ParamsBlock) -> None:
-        if not isinstance(value, dict):
-            raise exceptions.ParserException("notebook metadata header is missing")
-        self.__note[KEY_HEADER] = value
-
-    @property
-    def footer(self) -> ParamsBlock:
-        return self.__note[KEY_FOOTER]
-
-    @footer.setter
-    def footer(self, value: ParamsBlock) -> None:
-        if not isinstance(value, dict):
-            raise exceptions.ParserException("notebook metadata footer is missing")
-        self.__note[KEY_FOOTER] = value
-
-    @property
-    def pages(self) -> list[ParamsBlock]:
-        return self.__note[KEY_PAGES]
-
-    @pages.setter
-    def pages(self, value: list[ParamsBlock]) -> None:
-        if not isinstance(value, list):
-            raise exceptions.ParserException("notebook metadata pages are missing")
-        self.__note[KEY_PAGES] = value
-
-    def get_total_pages(self) -> int:
-        """Returns total page number.
-
-        Returns
-        -------
-        int
-            total page number
-        """
-        return len(self.pages)
-
-    def is_layer_supported(self, page_number: int) -> bool:
-        """Returns true if the page supports layer.
-
-        Parameters
-        ----------
-        page_number : int
-            page number to check
-
-        Returns
-        -------
-        bool
-            true if the page supports layer.
-        """
-        if page_number < 0 or page_number >= self.get_total_pages():
-            raise IndexError(f"page number out of range: {page_number}")
-        return self.pages[page_number].get(KEY_LAYERS) is not None
-
-    def to_json(self, indent: int | None = None) -> str:
-        """Returns file structure as JSON format string.
-
-        Parameters
-        ----------
-        indent : int
-            optional indent level
-
-        Returns
-        -------
-        str
-            JSON format string
-        """
-        return json.dumps(self.__note, indent=indent, ensure_ascii=False)
-
 
 class Notebook:
+    """Loaded Supernote notebook combining typed `SupernoteMetadata` and binary payloads."""
+
     def __init__(
         self, metadata: SupernoteMetadata, page_number: int | None = None
     ) -> None:
@@ -170,30 +73,18 @@ class Notebook:
         self.loaded_page_number = page_number
         self.page_width = PAGE_WIDTH
         self.page_height = PAGE_HEIGHT
-        if self.metadata.header.get("APPLY_EQUIPMENT") == "N5":
+        if self.metadata.header.apply_equipment == EquipmentType.N5:
             self.page_width = A5X2_PAGE_WIDTH
             self.page_height = A5X2_PAGE_HEIGHT
         self.type: str = metadata.type
         self.signature: str = metadata.signature
         self.cover = Cover()
-        self.keywords: list[Keyword] = []
-        keywords = metadata.footer.get(KEY_KEYWORDS)
-        if isinstance(keywords, list):
-            for k in keywords:
-                self.keywords.append(Keyword(k))
-        self.titles: list[Title] = []
-        titles = metadata.footer.get(KEY_TITLES)
-        if isinstance(titles, list):
-            for t in titles:
-                self.titles.append(Title(t))
-        self.links: list[Link] = []
-        links = metadata.footer.get(KEY_LINKS)
-        if isinstance(links, list):
-            for link in links:
-                self.links.append(Link(link))
+        self.keywords: list[Keyword] = [Keyword(k) for k in metadata.footer.keywords]
+        self.titles: list[Title] = [Title(t) for t in metadata.footer.titles]
+        self.links: list[Link] = [Link(link) for link in metadata.footer.links]
         self.pages: list[Page] = []
         for page_info in metadata.pages:
-            if not isinstance(page_info, dict):
+            if not isinstance(page_info, PageMetadata):
                 raise exceptions.ParserException("invalid page metadata entry")
             self.pages.append(Page(page_info))
 
@@ -239,11 +130,10 @@ class Notebook:
         return self.links
 
     def get_fileid(self) -> str | None:
-        file_id = self.metadata.header.get("FILE_ID")
-        return file_id if isinstance(file_id, str) else None
+        return self.metadata.header.file_id
 
     def is_realtime_recognition(self) -> bool:
-        return self.metadata.header.get("FILE_RECOGN_TYPE") == "1"
+        return self.metadata.header.file_recogn_type == 1
 
     def supports_highres_grayscale(self) -> bool:
         if len(self.signature) < 8 or not self.signature[-8:].isdigit():
@@ -252,10 +142,12 @@ class Notebook:
 
 
 class Cover:
+    """Loaded cover bitmap container."""
+
     def __init__(self, content: bytes | None = None) -> None:
         self.content: bytes | None = content
 
-    def set_content(self, content: bytes | None):
+    def set_content(self, content: bytes | None) -> None:
         self.content = content
 
     def get_content(self) -> bytes | None:
@@ -263,22 +155,23 @@ class Cover:
 
 
 class Keyword:
-    def __init__(self, keyword_info: ParamsBlock, content: bytes | None = None) -> None:
-        if not isinstance(keyword_info, dict):
-            raise exceptions.ParserException("invalid keyword metadata")
-        self.metadata = keyword_info
-        self.content: bytes | None = content
-        raw_page = self.metadata.get("KEYWORDPAGE")
-        if not isinstance(raw_page, (str, int)):
-            raise exceptions.ParserException("missing KEYWORDPAGE in keyword metadata")
-        try:
-            self.page_number = int(raw_page) - 1
-        except ValueError as exc:
-            raise exceptions.ParserException(
-                f"invalid KEYWORDPAGE in keyword metadata: {raw_page!r}"
-            ) from exc
+    """Loaded keyword entry combining `KeywordMetadata` and raw keyword bytes."""
 
-    def set_content(self, content: bytes | None):
+    def __init__(
+        self,
+        keyword_info: KeywordMetadata | Mapping[str, Any],
+        content: bytes | None = None,
+    ) -> None:
+        if isinstance(keyword_info, KeywordMetadata):
+            self.metadata = keyword_info
+        elif isinstance(keyword_info, Mapping):
+            self.metadata = KeywordMetadata.from_params(keyword_info)
+        else:
+            raise exceptions.ParserException("invalid keyword metadata")
+        self.content: bytes | None = content
+        self.page_number = self.metadata.page_index
+
+    def set_content(self, content: bytes | None) -> None:
         self.content = content
 
     def get_content(self) -> bytes | None:
@@ -288,31 +181,42 @@ class Keyword:
         return self.page_number
 
     def get_position_string(self) -> str:
-        (left, top, width, height) = self.metadata["KEYWORDRECTORI"].split(",")
-        return f"{int(top):04d}"
+        if self.metadata.rect_original is None:
+            raise exceptions.ParserException(
+                "missing KEYWORDRECTORI in keyword metadata"
+            )
+        return f"{self.metadata.rect_original.top:04d}"
 
     def get_keyword(self) -> str | None:
-        return (
-            None if self.metadata["KEYWORD"] is None else str(self.metadata["KEYWORD"])
-        )
+        return self.metadata.keyword
 
     def get_rect(self) -> tuple[int, int, int, int]:
-        (left, top, width, height) = self.metadata["KEYWORDRECT"].split(",")
-        return (int(left), int(top), int(left) + int(width), int(top) + int(height))
+        if self.metadata.rect is None:
+            raise exceptions.ParserException("missing KEYWORDRECT in keyword metadata")
+        return self.metadata.rect.bbox
 
 
 class Title:
+    """Loaded heading/outline entry combining `TitleMetadata` and stroke bitmap bytes."""
+
     def __init__(
         self,
-        title_info: dict[str, str],
+        title_info: TitleMetadata | Mapping[str, Any],
         content: bytes | None = None,
-        page_number: int = 0,
+        page_number: int | None = None,
     ) -> None:
-        self.metadata = title_info
+        if isinstance(title_info, TitleMetadata):
+            self.metadata = title_info
+        elif isinstance(title_info, Mapping):
+            self.metadata = TitleMetadata.from_params(title_info)
+        else:
+            raise exceptions.ParserException("invalid title metadata")
         self.content: bytes | None = content
-        self.page_number = page_number
+        if page_number is not None:
+            self.metadata.page_index = page_number
+        self.page_number = self.metadata.page_index
 
-    def set_content(self, content: bytes | None):
+    def set_content(self, content: bytes | None) -> None:
         self.content = content
 
     def get_content(self) -> bytes | None:
@@ -320,36 +224,50 @@ class Title:
 
     def set_page_number(self, page_number: int) -> None:
         self.page_number = page_number
+        self.metadata.page_index = page_number
 
     def get_page_number(self) -> int:
         return self.page_number
 
     def get_position_string(self) -> str:
-        (left, top, width, height) = self.metadata["TITLERECTORI"].split(",")
-        return f"{int(top):04d}{int(left):04d}"
+        if self.metadata.rect_original is None:
+            raise exceptions.ParserException("missing TITLERECTORI in title metadata")
+        return (
+            f"{self.metadata.rect_original.top:04d}"
+            f"{self.metadata.rect_original.left:04d}"
+        )
 
 
 class Link:
+    """Loaded hyperlink entry combining `LinkMetadata` and indicator bitmap bytes."""
+
     # Link Types
-    TYPE_PAGE_LINK = 0  # Internal link to another page
-    TYPE_FILE_LINK = 1  # Link to another file
-    TYPE_WEB_LINK = 4  # External web link
+    TYPE_PAGE_LINK = LinkType.PAGE.value  # Internal link to another page
+    TYPE_FILE_LINK = LinkType.FILE.value  # Link to another file
+    TYPE_WEB_LINK = LinkType.WEB.value  # External web link
 
     # Link Direction
-    DIRECTION_OUT = 0  # Outgoing link (from this page)
-    DIRECTION_IN = 1  # Incoming link (to this page)
+    DIRECTION_OUT = LinkDirection.OUT.value  # Outgoing link (from this page)
+    DIRECTION_IN = LinkDirection.IN.value  # Incoming link (to this page)
 
     def __init__(
         self,
-        link_info: dict[str, str],
+        link_info: LinkMetadata | Mapping[str, Any],
         content: bytes | None = None,
-        page_number: int = 0,
+        page_number: int | None = None,
     ) -> None:
-        self.metadata = link_info
+        if isinstance(link_info, LinkMetadata):
+            self.metadata = link_info
+        elif isinstance(link_info, Mapping):
+            self.metadata = LinkMetadata.from_params(link_info)
+        else:
+            raise exceptions.ParserException("invalid link metadata")
         self.content: bytes | None = content
-        self.page_number = page_number
+        if page_number is not None:
+            self.metadata.page_index = page_number
+        self.page_number = self.metadata.page_index
 
-    def set_content(self, content: bytes | None):
+    def set_content(self, content: bytes | None) -> None:
         self.content = content
 
     def get_content(self) -> bytes | None:
@@ -357,81 +275,86 @@ class Link:
 
     def set_page_number(self, page_number: int) -> None:
         self.page_number = page_number
+        self.metadata.page_index = page_number
 
     def get_page_number(self) -> int:
         return self.page_number
 
     def get_type(self) -> int:
-        return int(self.metadata["LINKTYPE"])
+        return int(self.metadata.link_type)
 
     def get_inout(self) -> int:
-        return int(self.metadata["LINKINOUT"])
+        return int(self.metadata.direction)
 
     def get_position_string(self) -> str:
-        (left, top, width, height) = self.metadata["LINKRECT"].split(",")
-        return f"{int(top):04d}{int(left):04d}{int(height):04d}{int(width):04d}"
+        if self.metadata.rect is None:
+            raise exceptions.ParserException("missing LINKRECT in link metadata")
+        rect = self.metadata.rect
+        return f"{rect.top:04d}{rect.left:04d}{rect.height:04d}{rect.width:04d}"
 
     def get_rect(self) -> tuple[int, int, int, int]:
-        (left, top, width, height) = self.metadata["LINKRECT"].split(",")
-        return (int(left), int(top), int(left) + int(width), int(top) + int(height))
+        if self.metadata.rect is None:
+            raise exceptions.ParserException("missing LINKRECT in link metadata")
+        return self.metadata.rect.bbox
 
-    def get_timestamp(self) -> str:
-        return self.metadata["LINKTIMESTAMP"]
+    def get_timestamp(self) -> str | None:
+        return self.metadata.timestamp
 
-    def get_filepath(self) -> str:
-        return self.metadata["LINKFILE"]  # Base64-encoded file path or URL
+    def get_filepath(self) -> str | None:
+        return self.metadata.file_path  # Base64-encoded file path or URL
 
     def get_fileid(self) -> str | None:
-        return (
-            None
-            if self.metadata["LINKFILEID"] == "none"
-            else self.metadata["LINKFILEID"]
-        )
+        return self.metadata.file_id
 
     def get_pageid(self) -> str | None:
-        return None if self.metadata["PAGEID"] == "none" else self.metadata["PAGEID"]
+        return self.metadata.page_id
 
 
 class Page:
+    """Loaded page combining `PageMetadata`, `Layer` objects, and page-level binary streams."""
+
     # Recognition Status
-    RECOGNSTATUS_NONE = 0  # No recognition performed
-    RECOGNSTATUS_DONE = 1  # Recognition complete (RECOGNTEXT available)
-    RECOGNSTATUS_RUNNING = 2  # Recognition in progress
+    RECOGNSTATUS_NONE = RecognitionStatus.NONE.value  # No recognition performed
+    RECOGNSTATUS_DONE = (
+        RecognitionStatus.DONE.value
+    )  # Recognition complete (RECOGNTEXT available)
+    RECOGNSTATUS_RUNNING = RecognitionStatus.RUNNING.value  # Recognition in progress
 
     # Orientation
-    ORIENTATION_VERTICAL = "1000"  # Portrait
-    ORIENTATION_HORIZONTAL = "1090"  # Landscape
-    ORIENTATION_VERTICAL_180 = "1180"  # Portrait flipped
-    ORIENTATION_HORIZONTAL_270 = "1270"  # Landscape flipped
+    ORIENTATION_VERTICAL = PageOrientation.VERTICAL.value  # Portrait
+    ORIENTATION_HORIZONTAL = PageOrientation.HORIZONTAL.value  # Landscape
+    ORIENTATION_VERTICAL_180 = PageOrientation.VERTICAL_180.value  # Portrait flipped
+    ORIENTATION_HORIZONTAL_270 = (
+        PageOrientation.HORIZONTAL_270.value
+    )  # Landscape flipped
+
+    def __init__(
+        self,
+        page_info: PageMetadata | Mapping[str, Any],
+        content: bytes | None = None,
+        totalpath: bytes | None = None,
+        recogn_file: bytes | None = None,
+        recogn_text: bytes | None = None,
+    ) -> None:
+        if isinstance(page_info, PageMetadata):
+            self.metadata = page_info
+        elif isinstance(page_info, Mapping):
+            self.metadata = PageMetadata.from_params(page_info)
+        else:
+            raise exceptions.ParserException("invalid page metadata")
+        self.content: bytes | None = content
+        self.totalpath: bytes | None = totalpath
+        self.recogn_file: bytes | None = recogn_file
+        self.recogn_text: bytes | None = recogn_text
+        self.layers: list[Layer] = [
+            Layer(layer_meta) for layer_meta in (self.metadata.layers or [])
+        ]
 
     def is_horizontal(self) -> bool:
         return self.get_orientation() in (
             self.ORIENTATION_HORIZONTAL,
             self.ORIENTATION_HORIZONTAL_270,
         )
-
-    def __init__(
-        self,
-        page_info: ParamsBlock,
-        content: bytes | None = None,
-        totalpath: bytes | None = None,
-        recogn_file: bytes | None = None,
-        recogn_text: bytes | None = None,
-    ) -> None:
-        if not isinstance(page_info, dict):
-            raise exceptions.ParserException("invalid page metadata")
-        self.metadata = page_info
-        self.content: bytes | None = content
-        self.totalpath: bytes | None = totalpath
-        self.recogn_file: bytes | None = recogn_file
-        self.recogn_text: bytes | None = recogn_text
-        self.layers: list[Layer] = []
-        layers = page_info.get(KEY_LAYERS)
-        if isinstance(layers, list):
-            for layer_info in layers:
-                if not isinstance(layer_info, dict):
-                    raise exceptions.ParserException("invalid layer metadata")
-                self.layers.append(Layer(layer_info))
 
     def set_content(self, content: bytes | None) -> None:
         self.content = content
@@ -440,14 +363,8 @@ class Page:
         return self.content
 
     def is_layer_supported(self) -> bool:
-        """Returns True if this page supports layer.
-
-        Returns
-        -------
-        bool
-            True if this page supports layer.
-        """
-        return self.metadata.get(KEY_LAYERS) is not None
+        """Returns True if this page supports layers."""
+        return self.metadata.is_layer_supported
 
     def get_layers(self) -> list["Layer"]:
         return self.layers
@@ -462,32 +379,24 @@ class Page:
             if not self.layers:
                 return None
             # currently MAINLAYER is only supported
-            protocol = self.get_layer(0).metadata.get("LAYERPROTOCOL")
+            protocol = self.layers[0].metadata.protocol
         else:
-            protocol = self.metadata.get("PROTOCOL")
-        return protocol if isinstance(protocol, str) else None
+            protocol = self.metadata.protocol
+        return str(protocol) if protocol is not None else None
 
     def get_style(self) -> str | None:
-        style = self.metadata.get("PAGESTYLE")
-        return style if isinstance(style, str) else None
+        return self.metadata.style
 
     def get_style_hash(self) -> str:
-        hashcode = self.metadata.get("PAGESTYLEMD5")
-        if not isinstance(hashcode, str) or hashcode == "0":
-            return ""
-        return hashcode
+        return self.metadata.style_md5 or ""
 
     def get_layer_info(self) -> str | None:
-        info = self.metadata.get("LAYERINFO")
-        if not isinstance(info, str) or info == "none":
+        if self.metadata.layer_info is None:
             return None
-        return info.replace("#", ":")
+        return encode_layer_info(self.metadata.layer_info, wire_escape=False)
 
     def get_layer_order(self) -> list[str]:
-        seq = self.metadata.get("LAYERSEQ")
-        if not isinstance(seq, str):
-            return []
-        return seq.split(",")
+        return [str(item) for item in self.metadata.layer_seq]
 
     def set_totalpath(self, totalpath: bytes | None) -> None:
         self.totalpath = totalpath
@@ -496,54 +405,88 @@ class Page:
         return self.totalpath
 
     def get_pageid(self) -> str | None:
-        page_id = self.metadata.get("PAGEID")
-        return page_id if isinstance(page_id, str) else None
+        return self.metadata.page_id
 
     def get_recogn_status(self) -> int:
-        status = self.metadata.get("RECOGNSTATUS")
-        if status is None:
-            return self.RECOGNSTATUS_NONE
-        if not isinstance(status, (str, int)):
-            raise exceptions.ParserException(f"invalid page RECOGNSTATUS: {status!r}")
-        try:
-            return int(status)
-        except ValueError as exc:
-            raise exceptions.ParserException(
-                f"invalid page RECOGNSTATUS: {status!r}"
-            ) from exc
+        return int(self.metadata.recogn_status)
 
-    def set_recogn_file(self, recogn_file):
+    def set_recogn_file(self, recogn_file: bytes | None) -> None:
         self.recogn_file = recogn_file
 
-    def get_recogn_file(self):
+    def get_recogn_file(self) -> bytes | None:
         return self.recogn_file
 
-    def set_recogn_text(self, recogn_text):
+    def set_recogn_text(self, recogn_text: bytes | None) -> None:
         self.recogn_text = recogn_text
 
-    def get_recogn_text(self):
+    def get_recogn_text(self) -> bytes | None:
         return self.recogn_text
 
-    def get_orientation(self):
-        return self.metadata.get("ORIENTATION", self.ORIENTATION_VERTICAL)
+    def get_orientation(self) -> str:
+        return str(self.metadata.orientation)
 
 
 class Layer:
-    def __init__(self, layer_info: ParamsBlock, content: bytes | None = None) -> None:
-        self.metadata = layer_info
+    """Loaded layer combining `LayerMetadata` and compressed layer bitmap bytes."""
+
+    def __init__(
+        self,
+        layer_info: LayerMetadata | Mapping[str, Any],
+        content: bytes | None = None,
+    ) -> None:
+        if isinstance(layer_info, LayerMetadata):
+            self.metadata = layer_info
+        elif isinstance(layer_info, Mapping):
+            self.metadata = LayerMetadata.from_params(layer_info)
+        else:
+            raise exceptions.ParserException("invalid layer metadata")
         self.content: bytes | None = content
 
-    def set_content(self, content):
+    def set_content(self, content: bytes | None) -> None:
         self.content = content
 
-    def get_content(self):
+    def get_content(self) -> bytes | None:
         return self.content
 
-    def get_name(self):
-        return self.metadata.get("LAYERNAME")
+    def get_name(self) -> str | None:
+        return str(self.metadata.name) if self.metadata.name is not None else None
 
-    def get_protocol(self):
-        return self.metadata.get("LAYERPROTOCOL")
+    def get_protocol(self) -> str | None:
+        return (
+            str(self.metadata.protocol) if self.metadata.protocol is not None else None
+        )
 
-    def get_type(self):
-        return self.metadata.get("LAYERTYPE")
+    def get_type(self) -> str | None:
+        return (
+            str(self.metadata.layer_type)
+            if self.metadata.layer_type is not None
+            else None
+        )
+
+
+__all__ = [
+    "A5X2_PAGE_HEIGHT",
+    "A5X2_PAGE_WIDTH",
+    "ADDRESS_SIZE",
+    "KEY_FOOTER",
+    "KEY_HEADER",
+    "KEY_KEYWORDS",
+    "KEY_LAYERS",
+    "KEY_LINKS",
+    "KEY_PAGES",
+    "KEY_SIGNATURE",
+    "KEY_TITLES",
+    "KEY_TYPE",
+    "LENGTH_FIELD_SIZE",
+    "PAGE_HEIGHT",
+    "PAGE_WIDTH",
+    "Cover",
+    "Keyword",
+    "Layer",
+    "Link",
+    "Notebook",
+    "Page",
+    "ParamsBlock",
+    "SupernoteMetadata",
+    "Title",
+]

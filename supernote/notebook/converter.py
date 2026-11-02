@@ -15,12 +15,9 @@
 """Converter classes."""
 
 import base64
-import binascii
-import json
 import re
 from enum import Enum, auto
 from io import BytesIO
-from typing import Any
 
 import potrace
 import svgwrite
@@ -221,49 +218,14 @@ class ImageConverter:
             raise exceptions.DecoderException(f"Unsupported bit depth: {bpp}")
         return img
 
-    @staticmethod
-    def _parse_layer_info(info: str) -> list[dict[str, Any]]:
-        try:
-            info_array = json.loads(info)
-        except json.decoder.JSONDecodeError:
-            # Newer Supernote firmwares (Chauvet 3.25.39 and later) encode the layer info JSON
-            # payload in base64. If parsing raw JSON fails, decode the base64 string and retry.
-            # A payload that is neither valid JSON nor valid base64-encoded JSON is a corrupt
-            # layer info blob, so report it as a typed parser error instead of leaking the
-            # raw decode failure (binascii.Error, UnicodeDecodeError, JSONDecodeError).
-            try:
-                decoded_info = base64.b64decode(info).decode()
-                info_array = json.loads(decoded_info)
-            except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
-                raise exceptions.ParserException(
-                    f"invalid layer info payload: {exc}"
-                ) from exc
-        if not isinstance(info_array, list) or not all(
-            isinstance(layer, dict) for layer in info_array
-        ):
-            raise exceptions.ParserException(
-                "invalid layer info payload: expected a JSON list of layer objects"
-            )
-        return info_array
-
-    def _get_layer_visibility(self, page):
-        visibility = {}
-        info = page.get_layer_info()
-        if info is None:
+    def _get_layer_visibility(self, page: fileformat.Page) -> dict[str, bool]:
+        entries = page.metadata.layer_info
+        if entries is None:
             # pass to the process of getting visibility for mark file
             return self._get_mark_layer_visibility(page)
-        info_array = self._parse_layer_info(info)
-        for layer in info_array:
-            is_bg_layer = layer.get("isBackgroundLayer")
-            layer_id = layer.get("layerId")
-            is_main_layer = (layer_id == 0) and (not is_bg_layer)
-            is_visible = layer.get("isVisible")
-            if is_bg_layer:
-                visibility["BGLAYER"] = is_visible
-            elif is_main_layer:
-                visibility["MAINLAYER"] = is_visible
-            else:
-                visibility["LAYER" + str(layer_id)] = is_visible
+        visibility: dict[str, bool] = {
+            entry.layer_key: entry.is_visible for entry in entries
+        }
         # some old files don't include MAINLAYER info, so we set MAINLAYER visible
         if visibility.get("MAINLAYER") is None:
             visibility["MAINLAYER"] = True
@@ -529,13 +491,15 @@ class PdfConverter:
             is_internal_link = link.get_fileid() == self.note.get_fileid()
             if link_type == fileformat.Link.TYPE_PAGE_LINK and is_internal_link:
                 tag = link.get_pageid()
-                scaled_rect = self._calc_link_rect(link.get_rect(), scale)
-                cvs.linkAbsolute("Link", tag, scaled_rect)
+                if tag is not None:
+                    scaled_rect = self._calc_link_rect(link.get_rect(), scale)
+                    cvs.linkAbsolute("Link", tag, scaled_rect)
             elif link_type == fileformat.Link.TYPE_WEB_LINK:
                 encoded_url = link.get_filepath()
-                url = base64.b64decode(encoded_url).decode()
-                scaled_rect = self._calc_link_rect(link.get_rect(), scale)
-                cvs.linkURL(url, scaled_rect)
+                if encoded_url is not None:
+                    url = base64.b64decode(encoded_url).decode()
+                    scaled_rect = self._calc_link_rect(link.get_rect(), scale)
+                    cvs.linkURL(url, scaled_rect)
 
     def _calc_link_rect(self, rect, scale):
         (left, top, right, bottom) = rect

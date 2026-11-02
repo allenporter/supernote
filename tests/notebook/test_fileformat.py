@@ -25,15 +25,12 @@ def _make_metadata(**overrides: Any) -> SupernoteMetadata:
     return SupernoteMetadata(**kwargs)
 
 
-def test_supernote_metadata_construction_and_serialization() -> None:
+def test_supernote_metadata_construction_and_wire_json_serialization() -> None:
     metadata = _make_metadata(pages=[{"PAGEID": "P1", "__layers__": []}])
     assert metadata.type == "note"
     assert metadata.signature == "SN_FILE_VER_20230015"
     assert metadata.get_total_pages() == 1
     assert metadata.is_layer_supported(0) is True
-
-    with pytest.raises(IndexError, match="page number out of range"):
-        metadata.is_layer_supported(1)
 
     serialized = json.loads(metadata.to_json(indent=2))
     assert serialized == {
@@ -43,6 +40,12 @@ def test_supernote_metadata_construction_and_serialization() -> None:
         "__footer__": {},
         "__pages__": [{"PAGEID": "P1", "__layers__": []}],
     }
+
+
+def test_supernote_metadata_is_layer_supported_rejects_out_of_range_page() -> None:
+    metadata = _make_metadata(pages=[{"PAGEID": "P1", "__layers__": []}])
+    with pytest.raises(IndexError, match="page number out of range"):
+        metadata.is_layer_supported(1)
 
 
 @pytest.mark.parametrize(
@@ -66,16 +69,26 @@ def test_supernote_metadata_rejects_missing_fields_on_init_and_mutation(
         setattr(metadata, field, cast(Any, None))
 
 
-def test_notebook_validates_metadata_and_page_entries() -> None:
+def test_supernote_metadata_rejects_invalid_page_entry() -> None:
+    with pytest.raises(exceptions.ParserException, match="invalid page metadata entry"):
+        _make_metadata(pages=[cast(Any, None)])
+
+
+def test_notebook_rejects_missing_metadata() -> None:
     with pytest.raises(
         exceptions.ParserException, match="notebook metadata is missing"
     ):
         Notebook(cast(Any, None))
 
-    bad_pages_metadata = _make_metadata(pages=[cast(Any, None)])
-    with pytest.raises(exceptions.ParserException, match="invalid page metadata entry"):
-        Notebook(bad_pages_metadata)
+    notebook = Notebook(_make_metadata())
+    object.__setattr__(notebook, "metadata", None)
+    with pytest.raises(
+        exceptions.ParserException, match="notebook metadata is missing"
+    ):
+        notebook.get_metadata()
 
+
+def test_notebook_basic_accessors_and_highres_grayscale_support() -> None:
     notebook = Notebook(_make_metadata())
     assert notebook.get_type() == "note"
     assert notebook.get_signature() == "SN_FILE_VER_20230015"
@@ -84,56 +97,6 @@ def test_notebook_validates_metadata_and_page_entries() -> None:
 
     short_sig_notebook = Notebook(_make_metadata(signature="SHORT"))
     assert short_sig_notebook.supports_highres_grayscale() is False
-
-    object.__setattr__(notebook, "metadata", None)
-    with pytest.raises(
-        exceptions.ParserException, match="notebook metadata is missing"
-    ):
-        notebook.get_metadata()
-
-
-def test_keyword_validates_page_metadata() -> None:
-    with pytest.raises(exceptions.ParserException, match="invalid keyword metadata"):
-        Keyword(cast(Any, None))
-
-    with pytest.raises(exceptions.ParserException, match="missing KEYWORDPAGE"):
-        Keyword({})
-
-    with pytest.raises(exceptions.ParserException, match="invalid KEYWORDPAGE"):
-        Keyword({"KEYWORDPAGE": "not-an-int"})
-
-
-def test_page_metadata_accessors_and_guards() -> None:
-    with pytest.raises(exceptions.ParserException, match="invalid page metadata"):
-        Page(cast(Any, None))
-
-    with pytest.raises(exceptions.ParserException, match="invalid layer metadata"):
-        Page({fileformat.KEY_LAYERS: [cast(Any, None)]})
-
-    # Partial or empty layers list does not raise IndexError
-    empty_layered_page = Page({fileformat.KEY_LAYERS: []})
-    assert empty_layered_page.is_layer_supported() is True
-    assert empty_layered_page.get_layers() == []
-    assert empty_layered_page.get_protocol() is None
-
-    page = Page({"PAGESTYLE": "user_custom"})
-    assert page.get_style() == "user_custom"
-    assert page.get_style_hash() == ""
-    assert page.get_layer_info() is None
-    assert page.get_layer_order() == []
-    assert page.get_recogn_status() == Page.RECOGNSTATUS_NONE
-
-    page.metadata["PAGESTYLEMD5"] = "0"
-    assert page.get_style_hash() == ""
-    page.metadata["PAGESTYLEMD5"] = "abc123"
-    assert page.get_style_hash() == "abc123"
-
-    page.metadata["RECOGNSTATUS"] = "bad"
-    with pytest.raises(exceptions.ParserException, match="invalid page RECOGNSTATUS"):
-        page.get_recogn_status()
-
-    with pytest.raises(IndexError, match="layer number out of range"):
-        page.get_layer(0)
 
 
 def test_notebook_n5_dimensions_and_page_bounds() -> None:
@@ -149,10 +112,63 @@ def test_notebook_n5_dimensions_and_page_bounds() -> None:
         n5_notebook.get_page(0)
 
 
-def test_cover_keyword_title_link_and_layer_constructor_initialization() -> None:
+@pytest.mark.parametrize(
+    ("raw_kw", "match"),
+    [
+        (None, "invalid keyword metadata"),
+        ({}, "KEYWORDPAGE"),
+        ({"KEYWORDPAGE": "not-an-int"}, "KEYWORDPAGE"),
+    ],
+)
+def test_keyword_rejects_invalid_or_missing_page_metadata(
+    raw_kw: Any, match: str
+) -> None:
+    with pytest.raises(exceptions.ParserException, match=match):
+        Keyword(raw_kw)
+
+
+def test_page_rejects_invalid_page_or_layer_metadata() -> None:
+    with pytest.raises(exceptions.ParserException, match="invalid page metadata"):
+        Page(cast(Any, None))
+
+    with pytest.raises(exceptions.ParserException, match="invalid layer metadata"):
+        Page({fileformat.KEY_LAYERS: [cast(Any, None)]})
+
+
+def test_page_empty_layers_list_and_layer_bounds() -> None:
+    empty_layered_page = Page({fileformat.KEY_LAYERS: []})
+    assert empty_layered_page.is_layer_supported() is True
+    assert empty_layered_page.get_layers() == []
+    assert empty_layered_page.get_protocol() is None
+    with pytest.raises(IndexError, match="layer number out of range"):
+        empty_layered_page.get_layer(0)
+
+
+def test_page_style_and_hash_accessors() -> None:
+    page = Page({"PAGESTYLE": "user_custom"})
+    assert page.get_style() == "user_custom"
+    assert page.get_style_hash() == ""
+    assert page.get_layer_info() is None
+    assert page.get_layer_order() == []
+    assert page.get_recogn_status() == Page.RECOGNSTATUS_NONE
+
+    page.metadata.style_md5 = None
+    assert page.get_style_hash() == ""
+    page.metadata.style_md5 = "abc123"
+    assert page.get_style_hash() == "abc123"
+
+
+def test_page_rejects_non_integer_recogn_status() -> None:
+    with pytest.raises(exceptions.ParserException, match="RECOGNSTATUS"):
+        Page({"RECOGNSTATUS": "bad"})
+
+
+def test_cover_constructor_initialization() -> None:
     cover = fileformat.Cover(content=b"cover-bytes")
     assert cover.get_content() == b"cover-bytes"
 
+
+def test_keyword_constructor_initialization() -> None:
     kw = Keyword(
         {
             "KEYWORDPAGE": "2",
@@ -168,6 +184,8 @@ def test_cover_keyword_title_link_and_layer_constructor_initialization() -> None
     assert kw.get_keyword() == "hello"
     assert kw.get_rect() == (10, 20, 40, 60)
 
+
+def test_title_constructor_initialization() -> None:
     title = fileformat.Title(
         {"TITLERECTORI": "10,20,30,40", "TITLE": "Heading"},
         content=b"title-bytes",
@@ -177,6 +195,8 @@ def test_cover_keyword_title_link_and_layer_constructor_initialization() -> None
     assert title.get_page_number() == 3
     assert title.get_position_string() == "00200010"
 
+
+def test_link_constructor_initialization() -> None:
     link = fileformat.Link(
         {
             "LINKTYPE": "0",
@@ -201,6 +221,8 @@ def test_cover_keyword_title_link_and_layer_constructor_initialization() -> None
     assert link.get_fileid() == "F123"
     assert link.get_pageid() == "P456"
 
+
+def test_layer_constructor_initialization() -> None:
     layer = fileformat.Layer(
         {"LAYERNAME": "MAINLAYER", "LAYERPROTOCOL": "RATTA_RLE", "LAYERTYPE": "MARK"},
         content=b"layer-bytes",

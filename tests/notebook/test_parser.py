@@ -12,6 +12,11 @@ from supernote.notebook import (
     parse_metadata,
 )
 from supernote.notebook.parser import SupernoteParser, SupernoteXParser
+from supernote.notebook.schema import (
+    EquipmentType,
+    FileType,
+    HeaderMetadata,
+)
 
 
 def _pack_block(payload: bytes) -> bytes:
@@ -139,7 +144,7 @@ def test_parse_metadata_handles_empty_or_corrupt_keyword_blocks() -> None:
         footer_extra=f"<KEYWORD_00010000:{prefix_len}>".encode("ascii"),
     )
     meta = parse_metadata(stream_zero)
-    assert meta.footer[fileformat.KEY_KEYWORDS][0]["KEYWORD"] == ""
+    assert meta.footer.keywords[0].keyword == ""
 
     bad_kw_content = _pack_block(b"\xff\xfe")
     kw_bad_utf8_addr = prefix_len + len(bad_kw_content)
@@ -180,7 +185,23 @@ def test_load_rejects_nonlayered_page_missing_data_offset() -> None:
 def test_parse_metadata_full_header(test_note_path: Path) -> None:
     with test_note_path.open("rb") as fd:
         notebook: SupernoteMetadata = parse_metadata(fd)
-    assert notebook.header == {
+    assert notebook.header == HeaderMetadata(
+        file_type=FileType.NOTE,
+        apply_equipment=EquipmentType.N6,
+        final_operation_page=1,
+        final_operation_layer=1,
+        device_dpi=0,
+        soft_dpi=0,
+        file_parse_type=0,
+        ratta_etmd=0,
+        file_id="F202512072214597017338I6OJBpDccy1",
+        file_recogn_type=0,
+        file_recogn_language=None,
+        horizontal_check=0,
+        is_old_apply_equipment=1,
+        antialiasing_convert=2,
+    )
+    assert notebook.header.to_wire_dict() == {
         "FILE_TYPE": "NOTE",
         "APPLY_EQUIPMENT": "N6",
         "FINALOPERATION_PAGE": "1",
@@ -300,4 +321,5 @@ def test_original_supernote_a5_parser_and_nonlayered_load() -> None:
     assert notebook.get_page(0).is_layer_supported() is False
     assert notebook.get_page(0).get_content() == b"RAW_PAGE_BITMAP"
     assert notebook.get_page(1).get_content() is None
-    assert notebook.get_metadata().footer["EXTRA"] == ["v1", "v2", "v3"]
+    assert notebook.get_metadata().header.apply_equipment == EquipmentType.A5
+    assert notebook.get_metadata().footer.extra["EXTRA"] == ["v1", "v2", "v3"]
