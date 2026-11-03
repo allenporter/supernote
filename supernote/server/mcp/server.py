@@ -23,7 +23,7 @@ from supernote.server.mcp.models import (
 )
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.search import SearchService
-from supernote.server.services.user import UserService
+from supernote.server.services.user import API_KEY_PREFIX, UserService
 
 logger = logging.getLogger(__name__)
 
@@ -58,15 +58,25 @@ class SupernoteTokenVerifier(TokenVerifier):
     async def verify_token(self, token: str) -> SupernoteAccessToken | None:
         key = f"mcp:access_token:{token}"
         data = await self.coordination_service.get_value(key)
-        if not data:
+        if data:
+            token_data = json.loads(data)
+            return SupernoteAccessToken(
+                token=token,
+                user_id=token_data.get("user_id"),
+                client_id=token_data.get("client_id", "unknown"),
+                scopes=token_data.get("scopes", []),
+                resource=token_data.get("resource"),
+            )
+
+        session = await self.user_service.verify_token(token)
+        if not session:
             return None
-        token_data = json.loads(data)
         return SupernoteAccessToken(
             token=token,
-            user_id=token_data.get("user_id"),
-            client_id=token_data.get("client_id", "unknown"),
-            scopes=token_data.get("scopes", []),
-            resource=token_data.get("resource"),
+            user_id=session.email,
+            client_id="api_key" if token.startswith(API_KEY_PREFIX) else "session",
+            scopes=["supernote:all"],
+            expires_at=None,
         )
 
 
@@ -82,7 +92,14 @@ async def _get_auth_user_id(ctx: Context) -> int | None:
     token = cast(SupernoteAccessToken, auth_context.access_token)
     if not token.user_id:
         return None
-    return await user_service.get_user_id(token.user_id)
+    if isinstance(token.user_id, int):
+        return token.user_id
+    if token.user_id.isdigit():
+        return int(token.user_id)
+    try:
+        return await user_service.get_user_id(token.user_id)
+    except ValueError:
+        return None
 
 
 async def list_notebooks(
