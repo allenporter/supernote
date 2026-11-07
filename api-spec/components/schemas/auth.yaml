@@ -70,12 +70,111 @@ LoginVO:
         soldOutCount:
           type: integer
           description: Logout count
+        mfaRequired:
+          type: boolean
+          description: >-
+            Whether MFA second-step verification is required (enforced only when
+            equipment is 1 [Web] or 4 [Platform]; devices [equipment=3] and apps
+            [equipment=2] bypass MFA)
+        mfaToken:
+          type: string
+          description: >-
+            Temporary pre-authentication token (valid for 5 minutes) returned
+            when mfaRequired is true, used to call
+            /api/official/user/account/login/mfa/verify
+
+MfaLoginVerifyDTO:
+  type: object
+  properties:
+    mfaToken:
+      type: string
+      description: Temporary pre-authentication token returned by first-step login
+    code:
+      type: string
+      description: 6-digit TOTP code or one-time recovery code
+    type:
+      type: string
+      description: "Verification code type: 'TOTP' (default) or 'RECOVERY'"
+      enum: ["TOTP", "RECOVERY"]
+    equipment:
+      type: integer
+      description: "Device Type: 1 (Web), 4 (Platform)"
+      enum: [1, 4]
+  required:
+    - mfaToken
+    - code
+    - equipment
+
+MfaSetupVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        secret:
+          type: string
+          description: Base32 TOTP secret for manual Authenticator entry
+        otpauthUrl:
+          type: string
+          description: Standard otpauth://totp/... provisioning URI
+        qrCodeBase64:
+          type: string
+          description: QR code PNG encoded as a data URI (data:image/png;base64,...)
+
+MfaEnableDTO:
+  type: object
+  properties:
+    code:
+      type: string
+      description: 6-digit TOTP verification code from Authenticator app
+  required:
+    - code
+
+MfaEnableVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        recoveryCodes:
+          type: array
+          items:
+            type: string
+          description: One-time recovery codes (XXXXX-XXXXX), returned only once
+
+MfaDisableDTO:
+  type: object
+  properties:
+    code:
+      type: string
+      description: 6-digit TOTP verification code or one-time recovery code
+    type:
+      type: string
+      description: "Verification code type: 'TOTP' (default) or 'RECOVERY'"
+      enum: ["TOTP", "RECOVERY"]
+  required:
+    - code
+
+MfaStatusVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        enabled:
+          type: boolean
+          description: Whether MFA is currently enabled for the user
+        recoveryCodesRemaining:
+          type: integer
+          format: int32
+          description: Number of unused one-time recovery codes remaining
 
 SmsLoginDTO:
   type: object
   properties:
     email:
       type: string
+      description: User email address
     browser:
       type: string
     equipment:
@@ -85,11 +184,12 @@ SmsLoginDTO:
       description: SMS/Email verification code
     validCodeKey:
       type: string
-      description: "Redis session key for the code (e.g., '{email}_validCode')."
+      description: "Redis session key for the code (must match prefix '{email}_validCode')."
     devices:
       type: string
       description: "OS Type: WINDOWS, MACOS, LINUX, ANDROID, IOS"
   required:
+    - email
     - equipment
     - validCode
     - validCodeKey

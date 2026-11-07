@@ -4,6 +4,12 @@ loginNew:
     tags:
       - Authentication
     summary: Account Login (New)
+    description: >-
+      Primary password login endpoint. When MFA is enabled for the account and
+      the client equipment is 1 (Web) or 4 (Platform), returns mfaRequired=true
+      and a short-lived mfaToken without issuing a JWT access token; the client
+      must then call /api/official/user/account/login/mfa/verify. Supernote
+      devices (equipment=3) and mobile/desktop apps (equipment=2) bypass MFA.
     operationId: loginNew
     requestBody:
       content:
@@ -12,7 +18,32 @@ loginNew:
             $ref: "../components/schemas/auth.yaml#/LoginDTO"
     responses:
       "200":
-        description: Successful login
+        description: Successful login or MFA challenge
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/auth.yaml#/LoginVO"
+
+mfaLoginVerify:
+  post:
+    tags:
+      - Authentication
+    summary: Verify MFA Code During Login
+    description: >-
+      Completes second-factor login for Web (equipment=1) and Platform
+      (equipment=4) clients using the temporary mfaToken returned by loginNew.
+      Error codes: E0127 (invalid TOTP code), E0128 (expired mfaToken),
+      E0129 (invalid or already-used recovery code), E0045 (locked after
+      exceeding maximum failed MFA attempts).
+    operationId: mfaLoginVerify
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/auth.yaml#/MfaLoginVerifyDTO"
+    responses:
+      "200":
+        description: Successful MFA verification and JWT token issuance
         content:
           application/json:
             schema:
@@ -23,6 +54,9 @@ loginEquipment:
     tags:
       - Authentication
     summary: Device Login
+    description: >-
+      Device synchronization login endpoint used by Chauvet OS terminals. Does
+      not enforce interactive MFA even if MFA is enabled on the user account.
     operationId: loginEquipment
     requestBody:
       content:
@@ -157,3 +191,115 @@ getPicCode:
             schema:
               type: string
               format: binary
+
+mfaSetup:
+  post:
+    tags:
+      - Authentication
+    summary: Generate MFA Secret and QR Code
+    description: >-
+      Generates a temporary Base32 TOTP secret, otpauth:// URI, and PNG QR code
+      (cached for 10 minutes; throttled per 60 seconds). Error codes: E0124
+      (MFA already enabled), E0126 (MFA setup throttled or session expired).
+    operationId: mfaSetup
+    security:
+      - accessToken: []
+    responses:
+      "200":
+        description: MFA setup secret and QR code
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/auth.yaml#/MfaSetupVO"
+
+mfaEnable:
+  post:
+    tags:
+      - Authentication
+    summary: Confirm and Enable MFA
+    description: >-
+      Verifies a 6-digit TOTP code against the pending setup secret, activates
+      MFA for the user, and returns 10 one-time recovery codes. Error codes:
+      E0126 (MFA setup session expired), E0127 (MFA verification code invalid).
+    operationId: mfaEnable
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/auth.yaml#/MfaEnableDTO"
+    responses:
+      "200":
+        description: MFA enabled with one-time recovery codes
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/auth.yaml#/MfaEnableVO"
+
+mfaDisable:
+  post:
+    tags:
+      - Authentication
+    summary: Disable MFA
+    description: >-
+      Disables MFA for the authenticated user after verifying either a valid
+      TOTP code or an unused recovery code. Error codes: E0125 (MFA not
+      enabled), E0127 (MFA verification code invalid), E0129 (recovery code
+      invalid or already used).
+    operationId: mfaDisable
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/auth.yaml#/MfaDisableDTO"
+    responses:
+      "200":
+        description: MFA disabled
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+mfaRegenerateRecoveryCodes:
+  post:
+    tags:
+      - Authentication
+    summary: Regenerate MFA Recovery Codes
+    description: >-
+      Replaces existing one-time recovery codes with 10 newly generated codes
+      after verifying a valid TOTP code. Error codes: E0125 (MFA not enabled),
+      E0127 (MFA verification code invalid).
+    operationId: mfaRegenerateRecoveryCodes
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/auth.yaml#/MfaEnableDTO"
+    responses:
+      "200":
+        description: Newly generated recovery codes
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/auth.yaml#/MfaEnableVO"
+
+mfaStatus:
+  get:
+    tags:
+      - Authentication
+    summary: Query MFA Status
+    operationId: mfaStatus
+    security:
+      - accessToken: []
+    responses:
+      "200":
+        description: Current MFA status and remaining recovery code count
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/auth.yaml#/MfaStatusVO"

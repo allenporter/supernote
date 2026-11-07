@@ -235,6 +235,12 @@ moveV3:
     tags:
       - File - Device
     summary: Move File (NAS)
+    description: >-
+      Moves or renames a file or directory to the full target path specified in
+      to_path (<parent_dir>/<target_name>). Allows case-only self-renames;
+      returns error code E0322 on destination name collision when autorename is
+      false, and E0358 when attempting to move a folder into itself or one of
+      its subdirectories.
     operationId: moveV3
     security:
       - accessToken: []

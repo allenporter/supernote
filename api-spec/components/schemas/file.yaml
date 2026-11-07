@@ -543,6 +543,9 @@ FileMoveLocalDTO:
       format: int64
     to_path:
       type: string
+      description: >-
+        Full target path including destination file or folder name (e.g.,
+        '/Note/Subdir/File.note')
   required:
     - id
 

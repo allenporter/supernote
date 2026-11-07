@@ -7,12 +7,23 @@
 The LoginController is the main controller for handling user login and logout requests.
 
 *   `POST /api/official/user/account/login/new`: Account Login
+*   `POST /api/official/user/account/login/mfa/verify`: Verify MFA Code During Login (`equipment` `1` Web / `4` Platform)
 *   `POST /api/official/user/account/login/equipment`: Device Token Login
 *   `POST /api/user/sms/login`: SMS Login
 *   `POST /api/user/logout`: Logout
 *   `POST /api/user/query/loginRecord`: Query Login History
 *   `POST /api/user/query/token`: Validate/Query Token
 *   `POST /api/official/user/query/random/code`: Get Random Code (for login crypto)
+
+### Multi-Factor Authentication (MFA)
+
+The MfaController manages TOTP two-factor authentication and recovery codes for web and platform logins (Supernote devices and apps bypass MFA).
+
+*   `POST /api/user/mfa/setup`: Generate MFA Secret & QR Code
+*   `POST /api/user/mfa/enable`: Confirm & Enable MFA
+*   `POST /api/user/mfa/disable`: Disable MFA
+*   `POST /api/user/mfa/recovery/regenerate`: Regenerate MFA Recovery Codes
+*   `GET /api/user/mfa/status`: Query MFA Status
 
 ### User Profile
 
@@ -28,6 +39,8 @@ The UserController is the main controller for handling user profile requests.
 *   `PUT /api/user/freeze`: Freeze/Unfreeze Account
 *   `POST /api/user/query/one`: Query Single User
 *   `GET /api/user/query/user/{userId}`: Query User by ID
+*   `GET /api/user/register/restriction`: Query Registration Restriction Status (Admin)
+*   `PUT /api/user/register/restriction`: Set Registration Restriction Status (Admin)
 
 ### Registration
 
@@ -89,9 +102,10 @@ The FileLocalWebController is the main controller for handling web file operatio
 
 The FileController is the main controller for handling basic file operations requests.
 
-*   `POST /api/file/add/folder/file/deleteApi`: Add Folder/File (Desktop)
-*   `POST /api/file/2/files/query/deleteApi`: Query File (Dropbox style)
+*   `POST /api/file/add/folder/file/deleteApi`: Add Folder/File (Desktop, Deprecated)
+*   `POST /api/file/2/files/query/deleteApi`: Query File (Dropbox style, Deprecated)
 *   `POST /api/file/2/files`: Query File by Path
+*   `PUT /api/file/upload/ftp/{innerName}/deleteApi`: Upload File via Legacy FTP/OSS Endpoint
 
 ### File Search
 
@@ -215,10 +229,14 @@ The EquipmentController is the main controller for handling equipment management
 *   `POST /api/terminal/user/activateEquipment`: Activate Device
 *   `POST /api/terminal/user/bindEquipment`: Bind Device
 *   `POST /api/terminal/equipment/unlink`: Unbind Device
+*   `POST /api/terminal/send/password/unlock/code`: Send Password Unlock Code
 *   `POST /api/equipment/bind/status`: Check Bind Status
-*   `POST /api/equipment/query/user/equipment/deleteApi`: Query Equipment List
+*   `POST /api/equipment/query/user/equipment/deleteApi`: Query Equipment List (Deprecated)
 *   `POST /api/equipment/query/by/equipmentno`: Query by Serial No
+*   `POST /api/equipment/manual/deleteApi`: Query Equipment Manual (Deprecated)
+*   `GET /api/equipment/query/{equipmentNo}/deleteApi`: Query Equipment by Serial No (Internal, Deprecated)
 *   `GET /api/equipment/query/by/{userId}`: Query by User ID
+*   `DELETE /api/equipment/delete/{equipmentNumber}/deleteApi`: Delete Equipment by Serial No (Deprecated)
 
 ### OSS (Object Storage)
 
@@ -232,12 +250,18 @@ The OssLocalController is the main controller for handling object storage reques
 
 ### Configuration & Logs
 
-Other misc controllers (EmailServerController, SensitiveOperationController, DictionaryController)
+Other misc controllers (EmailServerController, SystemLogController, SensitiveOperationController, DictionaryController, ReferenceController)
 
 *   `POST /api/save/email/config`: Save Email Config
+*   `POST /api/send/email/test`: Test Email Config
 *   `GET /api/query/email/config`: Query Email Config
+*   `GET /api/query/email/publickey`: Query Email Public Key
+*   `GET /api/system/log/level`: Query Runtime Log Levels
+*   `PUT /api/system/log/level`: Dynamically Update Runtime Log Levels
 *   `POST /api/user/query/sensitive/record`: Query Sensitive Op Records
-*   `POST /api/system/base/dictionary/deleteApi`: Query Dictionary
+*   `POST /api/system/base/dictionary/deleteApi`: Query Dictionary (Deprecated)
+*   `POST /api/system/base/reference/param`: Query System Reference Params
+*   `POST /api/official/system/base/param`: Get Official System Params
 
 ---
 
