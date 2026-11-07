@@ -56,7 +56,7 @@ Socket.IO notifications function as **asynchronous hints/triggers** to inform co
 ### 3.2. Resilience & Missed Messages
 * **ACK Protocol**: When the server sends a change notification, it holds the message in an internal queue until the client responds with a `ClientMessage` payload `"Received"`.
 * **Heartbeat Re-flushing**: If a client drops connection or misses a packet, pending un-ACKed messages are automatically flushed when the client re-establishes a connection or sends a heartbeat (`ratta_ping` or `status`).
-* **REST Reconciliation Source of Truth**: If a Socket.IO notification is completely lost, **no data corruption occurs**. Upon receiving a notification or during scheduled/manual sync, the Supernote device executes a REST sync session (`/api/file/2/files/synchronous/start` $\to$ `/list_folder_v3` $\to$ `/synchronous/end`) to reconcile local MD5 hashes against the server state. The REST API is the authoritative source of truth.
+* **REST Reconciliation Source of Truth**: If a Socket.IO notification is completely lost, **no data corruption occurs**. Upon receiving a notification or during scheduled/manual sync, the Supernote device executes a REST sync session (`/api/file/2/files/synchronous/start` $\to$ `/list_folder_v3` $\to$ `/synchronous/end`) to reconcile local MD5 hashes against the server state. The REST API is the authoritative source of truth, and WebSocket disconnects do not release active REST sync locks.
 
 ---
 

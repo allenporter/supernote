@@ -34,3 +34,13 @@ CommonListVO:
           type: array
           items:
             type: object
+
+CommonVO:
+  type: object
+  allOf:
+    - $ref: "#/BaseVO"
+    - type: object
+      properties:
+        voT:
+          type: object
+          description: Generic response payload

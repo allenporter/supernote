@@ -306,3 +306,40 @@ PageDTO:
       type: string
     sortRules:
       type: string
+
+# System Log Level Schemas
+SystemLogLevelDTO:
+  type: object
+  properties:
+    rootLevel:
+      type: string
+      description: Root logger level
+      enum: ["ERROR", "WARN", "INFO"]
+    frameworkLevel:
+      type: string
+      description: >-
+        Framework logger level (Spring, MyBatis, Druid, Netty, Socket.IO,
+        Springfox)
+      enum: ["ERROR", "WARN", "INFO"]
+
+SystemLogLevelInfoVO:
+  type: object
+  properties:
+    rootLevel:
+      type: string
+      enum: ["ERROR", "WARN", "INFO"]
+    frameworkLevel:
+      type: string
+      enum: ["ERROR", "WARN", "INFO"]
+    allowedLevels:
+      type: array
+      items:
+        type: string
+
+SystemLogLevelVO:
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        voT:
+          $ref: "#/SystemLogLevelInfoVO"
