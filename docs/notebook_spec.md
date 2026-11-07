@@ -28,7 +28,7 @@ X-Series / X2 Container Layout
 | File Type ("note" or "mark", 4 bytes)    |
 +------------------------------------------+ 0x04
 | Format Signature (20 bytes)              |
-| e.g. "SN_FILE_VER_20230015"              |
+| e.g. "SN_FILE_VER_20260016"              |
 +------------------------------------------+ 0x18 (24)
 | Header Block       [uint32 len][<K:V>..] | <--- Footer FILE_FEATURE points here
 +------------------------------------------+
@@ -55,6 +55,13 @@ X-Series / X2 Container Layout
 | **X-Series (A5 X / A6 X)** | `note` / `mark` | `SN_FILE_VER_20200001` – `20230014` | `1404 x 1872` | 5-layer pages (`MAINLAYER`, `LAYER1..3`, `BGLAYER`) |
 | **X2 Nomad (`N6`)** | `note` / `mark` | `SN_FILE_VER_20230015` – `20260016` | `1404 x 1872` | Extended X2 grayscale RLE palette (`>= 20230015`) |
 | **X2 Manta (`N5`)** | `note` / `mark` | `SN_FILE_VER_20230015` – `20260016` | `1920 x 2560` | Selected when Header `APPLY_EQUIPMENT` is `N5` |
+
+#### Signature History & Canvas Geometry
+- **Signature `SN_FILE_VER_20260016`**: Introduced in Chauvet 3.28.42 (May 2026) and active across all subsequent releases including Chauvet 3.31.45 (Nomad/Manta) and Chauvet 2.28.42 (A5 X / A6 X). Containers written by older firmware (`SN_FILE_VER_20230015` and earlier) are forward-compatible and parsed transparently.
+- **Coordinate Systems & Aspect Ratios**:
+  - Nomad (`N6`) and legacy X-series (`A5X`, `A6X`) notebooks render to a `1404 x 1872` pixel coordinate plane.
+  - Manta (`N5`) notes render to a higher-resolution `1920 x 2560` pixel canvas with an EMR digitizer scaling ratio of `8.45` hardware units per screen pixel.
+  - The notebook canvas dimension is determined by `HeaderMetadata.apply_equipment`: parsing engines must query this field to scale vector strokes, template layers, and annotation overlays correctly.
 
 ---
 
@@ -101,12 +108,16 @@ Located via the final 4-byte offset at EOF. Indexes all top-level blocks using p
 
 ### 3. Page Block (`PageMetadata`)
 
-Each `PAGE<N>` footer pointer addresses a `PageMetadata` block describing page identity (`PAGEID`), orientation (`ORIENTATION`), background template (`PAGESTYLE` / `PAGESTYLEMD5`), vector strokes (`TOTALPATH`), recognition status/streams (`RECOGNSTATUS`, `RECOGNTEXT`, `RECOGNFILE`), optional 5-pointed star marks (`FIVESTAR`), and layer slots (`MAINLAYER`, `LAYER1`, `LAYER2`, `LAYER3`, `BGLAYER`):
+Each `PAGE<N>` footer pointer addresses a `PageMetadata` block describing page identity (`PAGEID`), orientation (`ORIENTATION`), background template (`PAGESTYLE` / `PAGESTYLEMD5`), vector strokes (`TOTALPATH`), recognition status/streams (`RECOGNSTATUS`, `RECOGNTEXT`, `RECOGNFILE`), text-box exclusion regions (`PAGETEXTBOX`, `DISABLE`), star marks (`FIVESTAR`), external links (`EXTERNALLINKINFO`), object IDs (`IDTABLE`), and layer slots (`MAINLAYER`, `LAYER1`, `LAYER2`, `LAYER3`, `BGLAYER`):
 
 <!-- schema: PageMetadata -->
 ```text
-<PAGEID:P202512072214597028199Q3d9fcB25s><PAGESTYLE:style_white><PAGESTYLEMD5:0><ORIENTATION:1000><MAINLAYER:612><LAYER1:0><LAYER2:0><LAYER3:0><BGLAYER:840><LAYERINFO:[{"layerId"#0,"name"#"Main layer","isBackgroundLayer"#false,"isAllowAdd"#false,"isCurrentLayer"#true,"isVisible"#true,"isDeleted"#false,"isAllowUp"#false,"isAllowDown"#false}]><LAYERSEQ:MAINLAYER,BGLAYER><TOTALPATH:1020><RECOGNSTATUS:0><RECOGNTEXT:0><RECOGNFILE:0>
+<PAGEID:P202512072214597028199Q3d9fcB25s><PAGESTYLE:style_white><PAGESTYLEMD5:0><ORIENTATION:1000><MAINLAYER:612><LAYER1:0><LAYER2:0><LAYER3:0><BGLAYER:840><LAYERINFO:[{"layerId"#0,"name"#"Main layer","isBackgroundLayer"#false,"isAllowAdd"#false,"isCurrentLayer"#true,"isVisible"#true,"isDeleted"#false,"isAllowUp"#false,"isAllowDown"#false}]><LAYERSEQ:MAINLAYER,BGLAYER><TOTALPATH:1020><RECOGNSTATUS:0><RECOGNTEXT:0><RECOGNFILE:0><PAGETEXTBOX:1><DISABLE:120,340,480,160>
 ```
+
+#### Typed Text Box Metadata Tags
+- **`<PAGETEXTBOX:...>`**: Indicates typed text box content exists on the page (typically set to `1` or points to text-box table data).
+- **`<DISABLE:...>`**: Formatted as pipe-separated bounding rectangles (`<x>,<y>,<w>,<h>|<x2>,<y2>,<w2>,<h2 >|...`). Defines exclusion bounding boxes where on-device handwriting recognition engines (MyScript) must suppress recognition. This prevents the handwriting parser from attempting to interpret rendered font glyphs as handwritten characters.
 
 #### `LAYERINFO` Encoding Variants
 `LAYERINFO` stores a JSON array of per-layer visibility descriptors (`LayerVisibility` in [`schema.py`](../supernote/notebook/schema.py)):
@@ -203,6 +214,58 @@ When a page uses a custom (`user_*`) or InkHub/plugin PNG template, `BGLAYER`'s 
 
 When `FILE_RECOGN_TYPE == 1` and `RECOGNSTATUS == 1`, `RECOGNTEXT` points to a length-prefixed block containing **base64-encoded UTF-8 JSON** (`{"elements": [{"type": "Text", "label": "...", "words": [{"bounding-box": {"y": ...}}]}]}`), decoded and spatially ordered by `TextDecoder` in [`decoder.py`](../supernote/notebook/decoder.py).
 
+### 5. Vector Strokes, Text Boxes & Dynamic Content (`TOTALPATH`)
+
+The `TOTALPATH` block stores the structured, stroke-level vector representation of page content. While flattened layers (`MAINLAYER` etc.) store raster bitmaps for fast display, `TOTALPATH` enables stroke-level erasing, lasso transformations, handwriting recognition, and text editing on the physical device.
+
+#### Triple-Representation Model for Text Boxes
+Supernote firmware manages typed text boxes through a synchronized three-part representation:
+1. **Visual Raster Layer**: Rendered font glyphs are rasterized directly into the foreground layer (`MAINLAYER`) using standard `RATTA_RLE` encoding.
+2. **Page Recognition Filtering**: The `PageMetadata` block sets `<PAGETEXTBOX:1>` and records `<DISABLE:left,top,width,height|...>` covering the bounding box of each text box. This instructs the on-device MyScript handwriting recognition engine (`RECOGNTEXT` / `RECOGNFILE`) to ignore these rectangular screen regions, preventing typed font text from corrupting handwriting recognition streams.
+3. **Editable Object Record**: `TOTALPATH` stores a dedicated record with attributes:
+   - `pen = 0`
+   - `predictName = "0000"`
+   - `m_copy = 30`
+   - A 19-field comma-separated base64 metadata payload (`sized_str_1`), where field index 12 stores the raw UTF-8 string content. This allows on-device keyboard re-editing, cursor placement, and font re-rendering.
+
+#### Pen Types & Contour Representation (`PointContour`)
+Chauvet firmware additions include:
+- **Calligraphy Pen (`penType=15`)**: Variable-angle, pressure-sensitive chiseled stroke dynamics.
+- **Ink Pen (`penType=16`)**: Fountain pen flow dynamics.
+- **Transformed & Dynamic Elements**: When content is flipped (horizontal/vertical flip introduced in Chauvet 3.31.45), non-proportionally scaled, or stamped from stickers/plugins, the device:
+  - Rasterizes the visual result directly into `MAINLAYER` (`RATTA_RLE`).
+  - Encodes vector boundary rings directly in the `PointContour` subsection of `TOTALPATH` in page-pixel coordinates.
+
+#### Plugin Elements (`sn-plugin-lib 0.2.3`)
+Third-party InkHub plugins interact with `TOTALPATH` via standardized `Element` structures:
+- `0`: Standard handwriting stroke
+- `100`: Title / Heading
+- `200`: Picture / Sticker
+- `500`–`502`: Text box / Digest
+- `600`: Link indicator
+- `700`: Geometric primitives (`straightLine`, `GEO_circle`, `GEO_ellipse`, `GEO_polygon`)
+- `800`: Five-star mark
+
+Beginning with `sn-plugin-lib 0.2.3`, plugin coordinates are expressed directly in Android screen pixels rather than requiring hardware EMR digitizer conversions.
+
+---
+
+## Companion Sync Formats (`.snplg` & `.snstk`)
+
+Supernote devices and Private Cloud synchronize companion zip archives alongside `.note` files:
+
+1. **InkHub Plugin Bundles (`.snplg`)**:
+   - Standard ZIP archive containing:
+     - `PluginConfig.json`: Manifest declaring plugin identity, version, permissions, UI capabilities, and lifecycle hooks.
+     - React Native JavaScript bundle providing the interactive frontend running on the device.
+     - Optional native Android APK/NPK binary extensions (`app.npk`).
+   - Synced to device plugin directories and managed via InkHub. Coordinates emitted onto pages adhere to the page-pixel standard established in `sn-plugin-lib 0.2.3`.
+
+2. **Sticker Packs (`.snstk`)**:
+   - Standard ZIP archive containing collections of `<name>.sticker` definitions, raster assets, and thumbnail previews.
+   - Registered in Ratta Private Cloud / MariaDB reference schema under file type serial `42` (`snbak` backup archives use serial `41`).
+   - Once inserted onto a page, sticker instances follow the dynamic content model (rasterized into `MAINLAYER`, bounding box contours recorded in `PointContour`).
+
 ---
 
 ## Processing System Guidelines
@@ -216,9 +279,10 @@ When building indexing, search, or sync pipelines (such as the server modules in
    - [`PageHashingModule`](../supernote/server/services/processor_modules/page_hashing.py) hashes the wire-serialized `PageMetadata` (`page.to_wire_dict()`, stripping volatile recognition keys) together with each referenced binary block (`LAYERBITMAP`, `DATA`, `TOTALPATH`).
    - Do **not** alter `PageMetadata.to_wire_dict()` key ordering or value formatting without migrating stored `NotePageContentDO.content_hash` digests, or existing deployments will unnecessarily re-render and re-OCR unchanged pages.
 3. **Text Extraction Strategy**:
-
-> [!IMPORTANT]
-> **Architecture Decision**: The Supernote server pipeline uses the **Rendered Vision OCR** path (rendering layered pages to PNG and transcribing via vision LLMs) rather than relying on device-generated `RECOGNTEXT`, ensuring consistent transcription across Standard (non-real-time) notebooks, diagrams, and mixed handwriting.
+   - **Rendered Vision OCR vs. `RECOGNTEXT`**: While `RECOGNTEXT` provides fast access to recognized handwriting on real-time recognition notebooks (`FILE_RECOGN_TYPE == 1`), it has two critical limitations:
+     1. It is entirely absent (`RECOGNSTATUS == 0`) on Standard (non-real-time) notebooks.
+     2. On-device handwriting recognition explicitly masks out regions defined in `<DISABLE:...>` bounding boxes. Consequently, typed text boxes (`PAGETEXTBOX`) and embedded plugin texts are **omitted** from `RECOGNTEXT` on-device.
+   - **Architecture Decision**: The Supernote server pipeline uses the **Rendered Vision OCR** path (rendering layered pages to PNG and transcribing via vision LLMs) rather than relying solely on device-generated `RECOGNTEXT`. This ensures consistent, comprehensive transcription across Standard notebooks, typed text boxes, diagram labels, and mixed handwriting.
 
 ---
 
