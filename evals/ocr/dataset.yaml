@@ -1,0 +1,258 @@
+---
+name: supernote-ocr-suite-v1
+cases:
+  # --- Bullet Journal: Daily Rapid Logging ---
+  - id: bujo_daily_friday
+    path: notebooks/daily.note
+    page_index: 0
+    category: bujo_daily
+    prompt_type: daily
+    description: Daily log on 5mm dot-grid with *, •, X, o, >, -, nested sub-items, and strikethrough.
+    ground_truth: |-
+      2026-11-07 Friday
+      * • Review Q4 infrastructure budget
+      X Send signed lease renewal to landlord
+      o 10:30 Design sync with Maya and Leo
+        - Agreed to ship local OCR before embeddings
+        • Follow up on latency benchmark numbers
+      > Migrate home NAS backup script to cron
+      • ~~Order replacement Ceramic nibs~~
+      o 17:45 Strength training session
+        - Deadlift 3x5 at 275 lbs felt solid
+      • Read two chapters of Designing Data Systems
+
+  - id: bujo_daily_saturday
+    path: notebooks/daily.note
+    page_index: 1
+    category: bujo_daily
+    prompt_type: daily
+    description: Technical daily log with PR numbers, semver tags, < scheduled-back item, and strikethrough.
+    ground_truth: |-
+      2026-11-08 Saturday
+      * X Fix SQLite WAL lock timeout in PR #514
+      • Tag v0.25.0 release candidate
+        • Verify Linux wheel excludes pyobjc extras
+      o 09:00 Farmers market and coffee run
+      < Schedule annual dentist checkup for Dec
+      > Draft blog post on self-hosted e-ink cloud
+      • ~~Cancel unused staging VM instance~~
+      - Latency dropped from 920ms to 165ms after warmup
+
+  # --- Bullet Journal: Weekly Log & Review ---
+  - id: bujo_weekly_w45
+    path: notebooks/weekly.note
+    page_index: 0
+    category: bujo_weekly
+    prompt_type: weekly
+    description: Weekly plan and reflection review on ruled paper with starred tasks and nested notes.
+    ground_truth: |-
+      Week 45: Nov 2 - Nov 8
+      * X Finalize multi-provider AI config schema
+      * • Benchmark Apple Vision vs Ollama gemma3
+      > Clean garage workbench and donate boxes
+      o Wed 14:00 Quarterly roadmap review
+        - Keep core container RAM under 160MB
+      X Book Thanksgiving flights to Seattle
+
+      Weekly Review
+      - Shipped named providers and local macOS OCR
+      - Biggest challenge: context switching mid-week
+      • Next week focus: bounded summary chunking
+
+  # --- Bullet Journal: Monthly Spread (Calendar + Goals) ---
+  - id: bujo_monthly_calendar
+    path: notebooks/monthly.note
+    page_index: 0
+    category: bujo_monthly
+    prompt_type: monthly
+    description: Left-hand monthly date timeline with events, starred release milestone, and completed tax item.
+    ground_truth: |-
+      November 2026
+      o 1 Sun Daylight saving time ends
+      o 3 Tue Election day
+      * • 6 Fri Release v0.25.0 milestone
+      o 9 Mon Pediatrician appointment 11:15
+      o 14 Sat Trail half marathon in Marin
+      X 18 Wed Quarterly tax estimate due
+      o 21 Sat Host friendsgiving dinner
+      o 26 Thu Thanksgiving family trip
+      • 30 Mon Monthly budget and habit retro
+
+  - id: bujo_monthly_goals
+    path: notebooks/monthly.note
+    page_index: 1
+    category: bujo_monthly
+    prompt_type: monthly
+    description: Right-hand monthly goals and task list with forward/backward migrations and cancelled item.
+    ground_truth: |-
+      November Goals & Task List
+      * • Complete 12 strength workouts this month
+      X Publish OCR evaluation suite and docs
+      • Add per-notebook custom vocabulary hints
+        - Harvest keywords from .note metadata
+      > Upgrade home server UPS battery pack
+      < Move winter camping trip to January
+      • ~~Rewrite legacy mobile sync prototype~~
+      - Lesson learned: measure CER before tuning
+
+  # --- Real-World English Prose & Orientation Notes ---
+  - id: empty_dot_grid
+    path: ../../tests/testdata/20251207_221454.note
+    page_index: 0
+    category: empty_template
+    description: Blank 5mm dot-grid page testing false-positive hallucination resistance.
+    ground_truth: ""
+
+  - id: a5x_obsidian_prose
+    path: ../../tests/testdata/philips/a5x-2.14.28.note
+    page_index: 0
+    category: english_prose
+    description: Cursive/print mixed paragraph on lined template with embedded Supernote RTR baseline.
+    ground_truth: |-
+      Subject: Obsidian Supernote Integration
+      Test File
+      Let me know how this works, please. I've
+      been thinking about setting up an Obsidian
+      instance for a while now.
+
+  - id: rtr_paragraphs
+    path: ../../tests/testdata/philips/rtr.note
+    page_index: 0
+    category: english_prose
+    description: Multi-paragraph English handwriting testing line reflow and paragraph order.
+    ground_truth: |-
+      Real time recognition paragraph test
+      With enough space a new paragraph
+      should be created. If lines are
+      close then the text should reflow.
+      This should be a new paragraph.
+      As well as this.
+      But this is the last paragraph and
+      should reflow together.
+
+  - id: manta_alphanumeric
+    path: ../../tests/testdata/philips/manta.note
+    page_index: 0
+    category: english_prose
+    description: A5X2 Manta note mixing model alphanumeric code and punctuation.
+    ground_truth: |-
+      This is a note created on
+      the A5X2 Manta.
+      It doesn't work. :(
+
+  - id: vertical_1180
+    path: ../../tests/testdata/philips/vertical_1180.note
+    page_index: 0
+    category: english_prose
+    description: Portrait orientation note inside hand-drawn border lines.
+    ground_truth: |-
+      This vertical
+      note file
+      has
+      ORIENTATION: 1180
+
+  - id: horizontal_1270
+    path: ../../tests/testdata/philips/horizontal_1270.note
+    page_index: 0
+    category: english_prose
+    description: Landscape orientation note inside hand-drawn border lines.
+    ground_truth: |-
+      This horizontal
+      note file has
+      ORIENTATION : 1270
+
+  # --- Diagrams, Callout Labels & Rotated Handwriting ---
+  - id: stroller_diagram_light
+    path: ../../tests/testdata/mmujynya/stroller.note
+    page_index: 0
+    category: diagram_and_layout
+    description: Line-art drawing of baby in stroller with arrows and lighter-contrast callout labels.
+    ground_truth: |-
+      Baby
+      Handle bar
+      Rock
+      Happy Baby in a stroller
+
+  - id: stroller_diagram_dark
+    path: ../../tests/testdata/mmujynya/stroller.note
+    page_index: 1
+    category: diagram_and_layout
+    description: Same stroller sketch with high-contrast black strokes and callout labels.
+    ground_truth: |-
+      Baby
+      Handle bar
+      Rock
+      Happy Baby in a stroller
+
+  - id: horizontal_1090_axes
+    path: ../../tests/testdata/philips/horizontal_1090.note
+    page_index: 0
+    category: diagram_and_layout
+    description: Tilted text with perpendicular width/height axis lines on ruled background.
+    ground_truth: |-
+      This is
+      a horizontal
+      note
+      width
+      A5x2
+      height
+
+  - id: sn2md_rotated_quadrants
+    path: ../../tests/testdata/dsummersl/sn2md_20260618.note
+    page_index: 0
+    category: diagram_and_layout
+    description: Steeply angled (~40 deg) cursive phrases in four page quadrants.
+    ground_truth: |-
+      deadlift weights
+      bed work
+      Studio making
+      Clogging Gig
+
+  # --- Multilingual Handwriting ---
+  - id: turkish_diacritics
+    path: ../../tests/testdata/philips/turkish.note
+    page_index: 0
+    category: multilingual
+    description: Handwritten Turkish sentences testing Ş, ç, ı, ğ, ö, ü diacritics.
+    ground_truth: |-
+      Şimdi ben buraya neden çıktım?
+      Niçin çıktım?
+      Nasıl Çıktım?
+      Bunu izaha gerek yok.
+      Gördünüz, yürüdüm çıktım.
+      Ama çıkmamış da olabilirim.
+
+  # --- Adversarial / Edge Cases ---
+  - id: inverted_banner_gray
+    path: ../../tests/testdata/philips/test.note
+    page_index: 1
+    category: edge_cases
+    description: White handwriting inside gray title highlight box plus normal black text below.
+    ground_truth: |-
+      Different title
+      Different
+
+  - id: inverted_banner_scribble_overlap
+    path: ../../tests/testdata/philips/test.note
+    page_index: 0
+    category: edge_cases
+    description: White-on-black title banner plus intentionally overlapping marker scribbles.
+    ground_truth: |-
+      Main title
+      Write this on top!
+      Dummy
+      I'm a keyword: dummy
+
+  - id: giant_digit_2
+    path: ../../tests/testdata/philips/1to10.note
+    page_index: 1
+    category: edge_cases
+    description: Poster-sized single handwritten digit '2' spanning ~40% of page height.
+    ground_truth: "2"
+
+  - id: giant_digit_10
+    path: ../../tests/testdata/philips/1to10.note
+    page_index: 9
+    category: edge_cases
+    description: Poster-sized handwritten number '10' spanning ~40% of page height.
+    ground_truth: "10"
