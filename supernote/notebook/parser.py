@@ -192,12 +192,6 @@ def _parse_int_value(value: object, field_name: str) -> int:
         ) from exc
 
 
-def _parse_footer_key_page_index(key: str) -> int:
-    """Extract 0-based page index from `TITLE_<page4>...` or `LINKO_<page4>...`."""
-    # e.g. get '0123' from 'TITLE_01234567'
-    return _parse_int_value(key[6:10], key) - 1
-
-
 class SupernoteParser:
     """Parser for legacy A5 Supernote files (`SN_FILE_ASA_*`)."""
 
@@ -404,7 +398,7 @@ class SupernoteXParser(SupernoteParser):
         # parse titles
         titles: list[schema.TitleMetadata] = []
         for key, addrs in footer.title_addresses.items():
-            page_index = _parse_footer_key_page_index(key)
+            page_index = schema.parse_footer_key_page_index(key)
             for addr in addrs:
                 titles.append(
                     schema.TitleMetadata.from_params(
@@ -417,7 +411,7 @@ class SupernoteXParser(SupernoteParser):
         # parse links
         links: list[schema.LinkMetadata] = []
         for key, addrs in footer.link_addresses.items():
-            page_index = _parse_footer_key_page_index(key)
+            page_index = schema.parse_footer_key_page_index(key)
             for addr in addrs:
                 links.append(
                     schema.LinkMetadata.from_params(

@@ -39,6 +39,7 @@ from supernote.notebook.schema import (
     encode_layer_info,
     encode_parameters,
     extract_parameters,
+    parse_footer_key_page_index,
     parse_layer_info,
 )
 
@@ -131,17 +132,43 @@ def test_corpus_wire_dict_roundtrip_is_lossless(note_path: Path) -> None:
     wire = metadata.to_wire_dict()
     _assert_plain_wire_values(wire)
 
-    rebuilt = SupernoteMetadata(
-        type=wire["__type__"],
-        signature=wire["__signature__"],
-        header=wire["__header__"],
-        footer=wire["__footer__"],
-        pages=wire["__pages__"],
-    )
+    rebuilt = SupernoteMetadata.from_wire_dict(wire)
+    assert rebuilt == metadata
     assert rebuilt.to_wire_dict() == wire
 
 
+@pytest.mark.parametrize("note_path", NOTE_PATHS, ids=lambda p: p.name)
+def test_corpus_metadata_json_roundtrip_is_lossless(note_path: Path) -> None:
+    with note_path.open("rb") as fd:
+        metadata = parse_metadata(fd)
+
+    rehydrated = SupernoteMetadata.from_json(metadata.to_json())
+    assert rehydrated == metadata
+
+
 # --- Wire Parameter Codec & Value Type Tests ---
+
+
+def test_parse_footer_key_page_index_extracts_zero_based_page() -> None:
+    assert parse_footer_key_page_index("TITLE_000100570121") == 0
+    assert parse_footer_key_page_index("TITLE_00030100") == 2
+    assert parse_footer_key_page_index("LINKO_00040060005000800070") == 3
+    assert parse_footer_key_page_index("LINKI_00120060005000800070") == 11
+
+
+@pytest.mark.parametrize(
+    "bad_key",
+    [
+        "",
+        "TITLE_",
+        "TITLE_01",
+        "TITLE_abcd0100",
+        "LINKO_xxxx0060005000800070",
+    ],
+)
+def test_parse_footer_key_page_index_rejects_invalid_key(bad_key: str) -> None:
+    with pytest.raises(exceptions.ParserException):
+        parse_footer_key_page_index(bad_key)
 
 
 def test_extract_and_encode_parameters_roundtrip_with_duplicates() -> None:
@@ -330,6 +357,40 @@ def test_footer_metadata_handles_duplicate_style_addresses_and_pdf_style_list() 
     assert footer.to_params() == raw
 
 
+def test_footer_metadata_wire_dict_preserves_title_and_link_page_indices() -> None:
+    footer = FooterMetadata(
+        file_feature_address=24,
+        title_addresses={
+            "TITLE_000201000120": [400],
+            "TITLE_000502000120": [450, 480],
+        },
+        link_addresses={
+            "LINKO_00030010002000300040": [500],
+            "LINKI_00060010002000300040": [550],
+        },
+        titles=[
+            TitleMetadata(page_index=1, bitmap_address=400, level=1),
+            TitleMetadata(page_index=4, bitmap_address=450, level=2),
+            TitleMetadata(page_index=4, bitmap_address=480, level=2),
+        ],
+        links=[
+            LinkMetadata(page_index=2, link_type=LinkType.PAGE, bitmap_address=500),
+            LinkMetadata(
+                page_index=5,
+                link_type=LinkType.PAGE,
+                direction=LinkDirection.IN,
+                bitmap_address=550,
+            ),
+        ],
+    )
+
+    rehydrated = FooterMetadata.from_params(footer.to_wire_dict())
+
+    assert rehydrated == footer
+    assert [title.page_index for title in rehydrated.titles] == [1, 4, 4]
+    assert [link.page_index for link in rehydrated.links] == [2, 5]
+
+
 def test_page_metadata_roundtrips_single_and_multiple_five_star_marks() -> None:
     single_raw = {
         "PAGEID": "P1",
@@ -509,6 +570,95 @@ def test_supernote_metadata_to_dict_omits_private_ordering_fields() -> None:
     assert "_wire_keys" not in structured["footer"]
     assert "_wire_keys" not in structured["pages"][0]
     assert "_wire_layer_info" not in structured["pages"][0]
+
+
+def test_supernote_metadata_equality_compares_values() -> None:
+    from_dicts = SupernoteMetadata(
+        type="note",
+        signature="SN_FILE_VER_20230015",
+        header={"FILE_TYPE": "NOTE", "APPLY_EQUIPMENT": "N6"},
+        footer={"FILE_FEATURE": "24"},
+        pages=[{"PAGEID": "P1"}],
+    )
+    from_models = SupernoteMetadata(
+        type="note",
+        signature="SN_FILE_VER_20230015",
+        header=HeaderMetadata(
+            file_type=FileType.NOTE, apply_equipment=EquipmentType.N6
+        ),
+        footer=FooterMetadata(file_feature_address=24),
+        pages=[PageMetadata(page_id="P1")],
+    )
+    different_page = SupernoteMetadata(
+        type="note",
+        signature="SN_FILE_VER_20230015",
+        header=HeaderMetadata(
+            file_type=FileType.NOTE, apply_equipment=EquipmentType.N6
+        ),
+        footer=FooterMetadata(file_feature_address=24),
+        pages=[PageMetadata(page_id="P2")],
+    )
+
+    assert from_dicts == from_models
+    assert from_dicts != different_page
+    assert (from_dicts == "not-metadata") is False
+
+
+@pytest.mark.parametrize(
+    ("bad_wire", "error_match"),
+    [
+        ("not-a-dict", "invalid notebook metadata wire dict"),
+        ({}, "missing __type__ or __signature__"),
+        ({"__type__": "note"}, "missing __type__ or __signature__"),
+        (
+            {"__type__": "note", "signature": "SN_FILE_VER_20230015"},
+            "missing __type__ or __signature__",
+        ),
+        (
+            {"__type__": "note", "__signature__": "SN_FILE_VER_20230015"},
+            "missing __header__ or __footer__",
+        ),
+        (
+            {
+                "__type__": "note",
+                "__signature__": "SN_FILE_VER_20230015",
+                "__header__": {},
+                "__footer__": {},
+            },
+            "missing __pages__",
+        ),
+        (
+            {
+                "__type__": "note",
+                "__signature__": "SN_FILE_VER_20230015",
+                "__header__": {},
+                "__footer__": {},
+                "__pages__": "not-a-list",
+            },
+            "missing __pages__",
+        ),
+    ],
+)
+def test_supernote_metadata_from_wire_dict_rejects_invalid_payload(
+    bad_wire: Any, error_match: str
+) -> None:
+    with pytest.raises(exceptions.ParserException, match=error_match):
+        SupernoteMetadata.from_wire_dict(bad_wire)
+
+
+@pytest.mark.parametrize(
+    ("raw_json", "error_match"),
+    [
+        ("{bad", "invalid SupernoteMetadata JSON"),
+        ("[1, 2]", "must be an object"),
+        ('"string"', "must be an object"),
+    ],
+)
+def test_supernote_metadata_from_json_rejects_invalid_json(
+    raw_json: str, error_match: str
+) -> None:
+    with pytest.raises(exceptions.ParserException, match=error_match):
+        SupernoteMetadata.from_json(raw_json)
 
 
 def test_synthetic_link_blocks_roundtrip_through_reconstruct_and_parse_metadata(
