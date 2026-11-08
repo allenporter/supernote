@@ -30,9 +30,10 @@ from supernote.server.metrics import (
 )
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.search import SearchService
-from supernote.server.services.user import UserService
+from supernote.server.services.user import API_KEY_PREFIX, UserService
 
 logger = logging.getLogger(__name__)
+MAX_MCP_TOKEN_LENGTH = 4096
 
 _P = ParamSpec("_P")
 
@@ -65,17 +66,31 @@ class SupernoteTokenVerifier(TokenVerifier):
         self.coordination_service = coordination_service
 
     async def verify_token(self, token: str) -> SupernoteAccessToken | None:
-        key = f"mcp:access_token:{token}"
-        data = await self.coordination_service.get_value(key)
-        if not data:
+        if not token or len(token) > MAX_MCP_TOKEN_LENGTH:
             return None
-        token_data = json.loads(data)
+
+        if not token.startswith(API_KEY_PREFIX):
+            key = f"mcp:access_token:{token}"
+            data = await self.coordination_service.get_value(key)
+            if data:
+                token_data = json.loads(data)
+                return SupernoteAccessToken(
+                    token=token,
+                    user_id=token_data.get("user_id"),
+                    client_id=token_data.get("client_id", "unknown"),
+                    scopes=token_data.get("scopes", []),
+                    resource=token_data.get("resource"),
+                )
+
+        session = await self.user_service.verify_token(token)
+        if not session:
+            return None
         return SupernoteAccessToken(
             token=token,
-            user_id=token_data.get("user_id"),
-            client_id=token_data.get("client_id", "unknown"),
-            scopes=token_data.get("scopes", []),
-            resource=token_data.get("resource"),
+            user_id=str(session.user_id),
+            client_id="api_key" if session.is_api_key else "session",
+            scopes=["supernote:all"],
+            expires_at=session.expires_at,
         )
 
 
@@ -91,7 +106,14 @@ async def _get_auth_user_id(ctx: Context) -> int | None:
     token = cast(SupernoteAccessToken, auth_context.access_token)
     if not token.user_id:
         return None
-    return await user_service.get_user_id(token.user_id)
+    if isinstance(token.user_id, int):
+        return token.user_id
+    if token.user_id.isdigit():
+        return int(token.user_id)
+    try:
+        return await user_service.get_user_id(token.user_id)
+    except ValueError:
+        return None
 
 
 def _instrument_mcp_tool(
