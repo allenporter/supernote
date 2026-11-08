@@ -1,24 +1,31 @@
 """Admin CLI commands."""
 
+import argparse
 import asyncio
 import getpass
 import hashlib
 import json
 import sys
+from collections.abc import Coroutine
+from typing import Any
 
 from supernote.client.admin import AdminClient
 from supernote.client.exceptions import ApiException
 from supernote.models.base import ProcessingStatus, TaskType
 
-from .client import create_session
+from .client import create_session, server_url_override
 
 
-async def add_user_async(
-    url: str, email: str, password: str, display_name: str | None = None
-):
+def _run(args: argparse.Namespace, coro: Coroutine[Any, Any, None]) -> None:
+    """Run an admin coroutine, honoring the `admin --url` override."""
+    with server_url_override(getattr(args, "url", None)):
+        asyncio.run(coro)
+
+
+async def add_user_async(email: str, password: str, display_name: str | None = None):
     """Async implementation of add user."""
-    async with create_session(url) as session:
-        print(f"Attempting to register user '{email}' on {url}...")
+    async with create_session() as session:
+        print(f"Attempting to register user '{email}' on {session.client.host}...")
 
         admin_client = AdminClient(session.client)
 
@@ -53,9 +60,9 @@ async def add_user_async(
             sys.exit(1)
 
 
-async def list_users_async(url: str | None = None):
+async def list_users_async():
     """Async implementation of list users."""
-    async with create_session(url) as session:
+    async with create_session() as session:
         client = session.client
         try:
             resp = await client.get("/api/admin/users")
@@ -81,17 +88,17 @@ def add_user(args):
         password = getpass.getpass(f"Password for {args.email}: ")
 
     display_name = args.name or args.email.split("@")[0]
-    asyncio.run(add_user_async(args.url, args.email, password, display_name))
+    _run(args, add_user_async(args.email, password, display_name))
 
 
 def list_users(args):
-    asyncio.run(list_users_async(args.url))
+    _run(args, list_users_async())
 
 
-async def reset_password_async(url: str, email: str, password: str):
+async def reset_password_async(email: str, password: str):
     """Async implementation of password reset."""
-    async with create_session(url) as session:
-        print(f"Attempting to reset password for '{email}' on {url}...")
+    async with create_session() as session:
+        print(f"Attempting to reset password for '{email}' on {session.client.host}...")
         admin_client = AdminClient(session.client)
 
         password_md5 = hashlib.md5(password.encode()).hexdigest()
@@ -113,16 +120,16 @@ def reset_password(args):
             print("Passwords do not match.")
             sys.exit(1)
 
-    asyncio.run(reset_password_async(args.url, args.email, password))
+    _run(args, reset_password_async(args.email, password))
 
 
-async def set_quota_async(url: str | None, email: str, quota_bytes: int) -> None:
+async def set_quota_async(email: str, quota_bytes: int) -> None:
     """Set a user's storage quota in bytes (0 = unlimited)."""
     if quota_bytes < 0:
         print(f"Invalid quota value {quota_bytes}: must be >= 0")
         sys.exit(1)
 
-    async with create_session(url) as session:
+    async with create_session() as session:
         admin_client = AdminClient(session.client)
         try:
             await admin_client.admin_set_quota(email, quota_bytes)
@@ -134,12 +141,12 @@ async def set_quota_async(url: str | None, email: str, quota_bytes: int) -> None
 
 
 def set_quota(args) -> None:
-    asyncio.run(set_quota_async(args.url, args.email, args.quota))
+    _run(args, set_quota_async(args.email, args.quota))
 
 
-async def queue_status_async(url: str | None = None):
+async def queue_status_async():
     """Show the background processing queue status."""
-    async with create_session(url) as session:
+    async with create_session() as session:
         admin_client = AdminClient(session.client)
         try:
             status = await admin_client.get_queue_status()
@@ -157,9 +164,9 @@ async def queue_status_async(url: str | None = None):
             sys.exit(1)
 
 
-async def queue_stop_async(url: str | None = None):
+async def queue_stop_async():
     """Stop/pause the background processing queue."""
-    async with create_session(url) as session:
+    async with create_session() as session:
         admin_client = AdminClient(session.client)
         try:
             print("Attempting to stop/pause background queue processing...")
@@ -170,9 +177,9 @@ async def queue_stop_async(url: str | None = None):
             sys.exit(1)
 
 
-async def queue_start_async(url: str | None = None):
+async def queue_start_async():
     """Start/resume the background processing queue."""
-    async with create_session(url) as session:
+    async with create_session() as session:
         admin_client = AdminClient(session.client)
         try:
             print("Attempting to start/resume background queue processing...")
@@ -184,20 +191,20 @@ async def queue_start_async(url: str | None = None):
 
 
 def queue_status(args):
-    asyncio.run(queue_status_async(args.url))
+    _run(args, queue_status_async())
 
 
 def queue_stop(args):
-    asyncio.run(queue_stop_async(args.url))
+    _run(args, queue_stop_async())
 
 
 def queue_start(args):
-    asyncio.run(queue_start_async(args.url))
+    _run(args, queue_start_async())
 
 
-async def reprocess_async(url: str, task_type: str, file_id: int | None = None):
+async def reprocess_async(task_type: str, file_id: int | None = None):
     """Async implementation of note reprocessing."""
-    async with create_session(url) as session:
+    async with create_session() as session:
         print("Connecting to server to trigger reprocessing...")
         admin_client = AdminClient(session.client)
         try:
@@ -210,18 +217,17 @@ async def reprocess_async(url: str, task_type: str, file_id: int | None = None):
 
 
 def reprocess(args):
-    asyncio.run(reprocess_async(args.url, args.type, args.file_id))
+    _run(args, reprocess_async(args.type, args.file_id))
 
 
 async def integrity_async(
-    url: str | None,
     email: str | None = None,
     file_id: int | None = None,
     full_disk: bool = False,
     as_json: bool = False,
 ) -> None:
     """Verify server storage integrity for a user or across the full disk."""
-    async with create_session(url) as session:
+    async with create_session() as session:
         admin_client = AdminClient(session.client)
         try:
             report = await admin_client.verify_integrity(
@@ -269,19 +275,18 @@ async def integrity_async(
 
 
 def integrity(args) -> None:
-    asyncio.run(
+    _run(
+        args,
         integrity_async(
-            url=args.url,
             email=args.email,
             file_id=args.file_id,
             full_disk=args.full_disk,
             as_json=args.json,
-        )
+        ),
     )
 
 
 async def list_tasks_async(
-    url: str | None = None,
     status: str | None = None,
     file_id: int | None = None,
     task_type: str | None = None,
@@ -289,7 +294,7 @@ async def list_tasks_async(
     as_json: bool = False,
 ) -> None:
     """List system processing tasks."""
-    async with create_session(url) as session:
+    async with create_session() as session:
         admin_client = AdminClient(session.client)
         try:
             resp = await admin_client.list_tasks(
@@ -324,15 +329,15 @@ async def list_tasks_async(
 
 
 def list_tasks(args) -> None:
-    asyncio.run(
+    _run(
+        args,
         list_tasks_async(
-            url=args.url,
             status=args.status,
             file_id=args.file_id,
             task_type=args.type,
             limit=args.limit,
             as_json=args.json,
-        )
+        ),
     )
 
 

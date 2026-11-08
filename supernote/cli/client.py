@@ -7,7 +7,9 @@ import os
 import sys
 import time
 import traceback
-from contextlib import asynccontextmanager
+from collections.abc import Generator
+from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 
@@ -20,9 +22,33 @@ from supernote.models.extended import WebSummaryListVO
 from supernote.models.socket import SocketHandshakeParams
 from supernote.server.socket_auth import compute_handshake_signature
 
+_server_url_override: ContextVar[str | None] = ContextVar(
+    "supernote_server_url_override", default=None
+)
+
+
+@contextmanager
+def server_url_override(url: str | None) -> Generator[None]:
+    """Use `url` instead of the cached server URL for sessions in this context.
+
+    This lets a command-wide flag such as `supernote admin --url ...` apply to
+    every session created while handling the command, without passing the URL
+    through each helper. A `None` URL keeps the cached server URL.
+    """
+    token = _server_url_override.set(url)
+    try:
+        yield
+    finally:
+        _server_url_override.reset(token)
+
 
 def load_cached_auth(url: str | None = None) -> tuple[FileCacheAuth, str]:
-    """Load cached credentials."""
+    """Load cached credentials.
+
+    The server URL is taken from `url`, then from an active
+    `server_url_override`, then from the cached credentials.
+    """
+    url = url or _server_url_override.get()
     cache_path = os.path.expanduser("~/.cache/supernote.pkl")
     if not os.path.exists(cache_path) and not url:
         print(f"Error: No cached credentials found at {cache_path}")
