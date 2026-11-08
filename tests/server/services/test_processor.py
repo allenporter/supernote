@@ -18,7 +18,12 @@ from supernote.server.ai.models.fake.summary import FakeSummaryModel
 from supernote.server.ai.models.ocr import ConcurrencyLimitedOcrModel, OcrModel
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
+from supernote.server.db.models.note_processing import (
+    NoteMetadataDO,
+    NotePageContentDO,
+    NotePageMetadataDO,
+    SystemTaskDO,
+)
 from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
@@ -889,6 +894,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                     task_type="HASHING",
                     key="global",
                     status="COMPLETED",
+                    data="v2",
                 )
             )
 
@@ -995,6 +1001,7 @@ async def test_sync_completed_event_enqueues_new_and_updated_notes(
                     task_type=TaskType.PAGE_HASHING,
                     key="global",
                     status="COMPLETED",
+                    data="v2",
                 ),
                 # Up-to-date note -> skip
                 UserFileDO(
@@ -1010,6 +1017,7 @@ async def test_sync_completed_event_enqueues_new_and_updated_notes(
                     task_type=TaskType.PAGE_HASHING,
                     key="global",
                     status="COMPLETED",
+                    data="v2",
                 ),
                 # Brand-new note for test_user_id (no tasks yet) -> enqueue
                 UserFileDO(
@@ -1365,3 +1373,92 @@ async def test_file_lock_serializes_process_and_delete_and_evicts_lock(
     ]
     assert processor_service._file_locks == {}
     assert processor_service._file_lock_refcounts == {}
+
+
+async def test_handle_note_deleted_removes_note_and_page_metadata(
+    processor_service: ProcessorService,
+    session_manager: DatabaseSessionManager,
+    file_service: FileService,
+    test_user_id: int,
+) -> None:
+    """Verify NoteDeletedEvent purges NoteMetadataDO and NotePageMetadataDO via PageHashingModule.cleanup_file."""
+    processor_service.register_modules(hashing=PageHashingModule(file_service))
+
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                NoteMetadataDO(
+                    user_id=test_user_id, file_id=601, file_type="note", total_pages=1
+                ),
+                NotePageMetadataDO(
+                    user_id=test_user_id, file_id=601, page_index=0, page_id="p0"
+                ),
+                NoteMetadataDO(
+                    user_id=test_user_id, file_id=602, file_type="note", total_pages=1
+                ),
+                NotePageMetadataDO(
+                    user_id=test_user_id, file_id=602, page_index=0, page_id="p0"
+                ),
+            ]
+        )
+        await session.commit()
+
+    await processor_service.handle_note_deleted(
+        NoteDeletedEvent(file_id=601, user_id=test_user_id)
+    )
+
+    async with session_manager.session() as session:
+        assert await session.get(NoteMetadataDO, (test_user_id, 601)) is None
+        assert await session.get(NotePageMetadataDO, (test_user_id, 601, 0)) is None
+        assert await session.get(NoteMetadataDO, (test_user_id, 602)) is not None
+        assert await session.get(NotePageMetadataDO, (test_user_id, 602, 0)) is not None
+
+
+async def test_recover_missing_tasks_enqueues_legacy_hashing_version(
+    processor_service: ProcessorService,
+    session_manager: DatabaseSessionManager,
+    file_service: FileService,
+    test_user_id: int,
+) -> None:
+    """Verify recover_missing_tasks re-enqueues files hashed before PageHashingModule v2."""
+    processor_service.register_modules(hashing=PageHashingModule(file_service))
+
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=9301,
+                    user_id=test_user_id,
+                    file_name="legacy_hash.note",
+                    storage_key="k9301",
+                    is_active="Y",
+                ),
+                SystemTaskDO(
+                    file_id=9301,
+                    task_type=TaskType.PAGE_HASHING,
+                    key="global",
+                    status="COMPLETED",
+                    data=None,
+                ),
+                UserFileDO(
+                    id=9302,
+                    user_id=test_user_id,
+                    file_name="current_hash.note",
+                    storage_key="k9302",
+                    is_active="Y",
+                ),
+                SystemTaskDO(
+                    file_id=9302,
+                    task_type=TaskType.PAGE_HASHING,
+                    key="global",
+                    status="COMPLETED",
+                    data="v2",
+                ),
+            ]
+        )
+        await session.commit()
+
+    await processor_service.recover_missing_tasks()
+
+    assert 9301 in processor_service.processing_files
+    assert 9302 not in processor_service.processing_files

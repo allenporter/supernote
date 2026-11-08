@@ -1,11 +1,19 @@
+import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import exists, func, select
 
+from supernote.notebook import load
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
+from supernote.server.db.models.note_processing import (
+    NoteMetadataDO,
+    NotePageContentDO,
+    NotePageMetadataDO,
+    SystemTaskDO,
+)
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
@@ -95,6 +103,7 @@ async def test_process_with_real_file(
 
         assert task is not None
         assert task.status == "COMPLETED"
+        assert task.data == "v2"
 
     # Test Change Detection (Simulated)
     # Since we can't easily edit the binary .note file to change content,
@@ -370,3 +379,373 @@ async def test_page_hashing_marks_task_failed_on_missing_or_corrupt_file(
             ).scalar_one()
             assert task.status == "FAILED"
             assert task.last_error is not None
+
+
+async def _seed_user_note_file(
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    *,
+    user_id: int,
+    file_id: int,
+    note_path: Path,
+) -> None:
+    storage_key = f"note_{file_id}_{note_path.stem}"
+    await blob_storage.put(USER_DATA_BUCKET, storage_key, note_path.read_bytes())
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key=storage_key,
+                file_name=note_path.name,
+                directory_id=0,
+            )
+        )
+        await session.commit()
+
+
+async def test_page_hashing_persists_note_and_page_metadata(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    """Verify PageHashingModule populates NoteMetadataDO and per-page NotePageMetadataDO."""
+    note_path = TEST_DATA_DIR / "nelinory" / "A5X_TestNote_With_Pdf_Template.note"
+    await _seed_user_note_file(
+        session_manager, blob_storage, user_id=7, file_id=1010, note_path=note_path
+    )
+
+    assert await page_hashing_module.run(1010, session_manager) is True
+
+    async with session_manager.session() as session:
+        meta = await session.get(NoteMetadataDO, (7, 1010))
+        assert meta is not None
+        assert meta.file_type == "note"
+        assert meta.total_pages == 3
+        assert json.loads(meta.header_json)["APPLY_EQUIPMENT"] == "A5X"
+        assert "PAGE1" in json.loads(meta.footer_json)
+
+        page_metas = list(
+            (
+                await session.execute(
+                    select(NotePageMetadataDO)
+                    .where(NotePageMetadataDO.file_id == 1010)
+                    .order_by(NotePageMetadataDO.page_index)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        content_rows = list(
+            (
+                await session.execute(
+                    select(NotePageContentDO)
+                    .where(NotePageContentDO.file_id == 1010)
+                    .order_by(NotePageContentDO.page_index)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert [r.content_hash for r in page_metas] == [
+            c.content_hash for c in content_rows
+        ]
+        assert [
+            (r.page_index, r.page_style, r.has_ink, r.has_drawables) for r in page_metas
+        ] == [
+            (0, "user_pdf_Pdf_Template_1", True, True),
+            (1, "user_pdf_Pdf_Template_2", False, False),
+            (2, "user_pdf_Pdf_Template_3", True, True),
+        ]
+        assert json.loads(page_metas[0].page_json)["PAGESTYLE"] == (
+            "user_pdf_Pdf_Template_1"
+        )
+
+
+async def test_page_hashing_persists_page_metadata_for_legacy_note_without_page_id(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    """Verify legacy notes lacking <PAGEID> still persist NotePageMetadataDO and wire hashes."""
+    legacy_path = TEST_DATA_DIR / "philips" / "test.note"
+    await _seed_user_note_file(
+        session_manager, blob_storage, user_id=7, file_id=1011, note_path=legacy_path
+    )
+
+    assert await page_hashing_module.run(1011, session_manager) is True
+
+    async with session_manager.session() as session:
+        legacy_pages = list(
+            (
+                await session.execute(
+                    select(NotePageMetadataDO)
+                    .where(NotePageMetadataDO.file_id == 1011)
+                    .order_by(NotePageMetadataDO.page_index)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(legacy_pages) == 2
+        assert legacy_pages[0].page_id == ""
+        assert len(legacy_pages[0].content_hash) == 32
+        assert legacy_pages[0].has_ink is True
+        assert legacy_pages[0].has_drawables is True
+        kw_wire = json.loads(legacy_pages[0].keywords_json)
+        assert isinstance(kw_wire, list) and len(kw_wire) >= 1
+        assert "KEYWORD" in kw_wire[0]
+
+
+async def test_page_hashing_skips_unchanged_pages_on_rehash(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    """Verify re-hashing decodes bitmaps and updates rows only for pages whose hash changed."""
+    note_path = TEST_DATA_DIR / "nelinory" / "A5X_TestNote_With_Pdf_Template.note"
+    await _seed_user_note_file(
+        session_manager, blob_storage, user_id=7, file_id=1012, note_path=note_path
+    )
+    assert await page_hashing_module.run(1012, session_manager) is True
+
+    async with session_manager.session() as session:
+        meta_0 = await session.get(NotePageMetadataDO, (7, 1012, 0))
+        meta_1 = await session.get(NotePageMetadataDO, (7, 1012, 1))
+        meta_2 = await session.get(NotePageMetadataDO, (7, 1012, 2))
+        assert meta_0 is not None and meta_1 is not None and meta_2 is not None
+        original_hash_1 = meta_1.content_hash
+
+        # Pin sentinel timestamps on unchanged pages and invalidate only page 1's hash.
+        meta_0.update_time = 12345
+        meta_2.update_time = 12345
+        meta_1.content_hash = "stale_hash"
+        meta_1.has_ink = True
+
+        content_0 = (
+            await session.execute(
+                select(NotePageContentDO)
+                .where(NotePageContentDO.file_id == 1012)
+                .where(NotePageContentDO.page_index == 0)
+            )
+        ).scalar_one()
+        content_0.text_content = "preserved ocr"
+        await session.commit()
+
+    with patch(
+        "supernote.server.services.processor_modules.page_hashing.load",
+        wraps=load,
+    ) as mock_load:
+        assert await page_hashing_module.run(1012, session_manager) is True
+        assert [call.kwargs["page_number"] for call in mock_load.call_args_list] == [1]
+
+        mock_load.reset_mock()
+        assert await page_hashing_module.run(1012, session_manager) is True
+        mock_load.assert_not_called()
+
+    async with session_manager.session() as session:
+        refreshed_0 = await session.get(NotePageMetadataDO, (7, 1012, 0))
+        refreshed_1 = await session.get(NotePageMetadataDO, (7, 1012, 1))
+        refreshed_2 = await session.get(NotePageMetadataDO, (7, 1012, 2))
+        assert (
+            refreshed_0 is not None
+            and refreshed_1 is not None
+            and refreshed_2 is not None
+        )
+        assert refreshed_0.update_time == 12345
+        assert refreshed_2.update_time == 12345
+        assert refreshed_1.content_hash == original_hash_1
+        assert refreshed_1.has_ink is False
+
+        refreshed_content_0 = (
+            await session.execute(
+                select(NotePageContentDO)
+                .where(NotePageContentDO.file_id == 1012)
+                .where(NotePageContentDO.page_index == 0)
+            )
+        ).scalar_one()
+        assert refreshed_content_0.text_content == "preserved ocr"
+
+
+async def test_page_hashing_updates_annotations_without_loading_bitmaps_when_hash_cached(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    """Verify footer annotation changes update NotePageMetadataDO without decoding bitmaps when content_hash is cached."""
+    legacy_path = TEST_DATA_DIR / "philips" / "test.note"
+    await _seed_user_note_file(
+        session_manager, blob_storage, user_id=7, file_id=1014, note_path=legacy_path
+    )
+    assert await page_hashing_module.run(1014, session_manager) is True
+
+    async with session_manager.session() as session:
+        pm_0 = await session.get(NotePageMetadataDO, (7, 1014, 0))
+        assert pm_0 is not None
+        expected_keywords_json = pm_0.keywords_json
+        assert json.loads(expected_keywords_json) != []
+        pm_0.keywords_json = "[]"
+        await session.commit()
+
+    with patch(
+        "supernote.server.services.processor_modules.page_hashing.load",
+        wraps=load,
+    ) as mock_load:
+        assert await page_hashing_module.run(1014, session_manager) is True
+        mock_load.assert_not_called()
+
+    async with session_manager.session() as session:
+        refreshed_0 = await session.get(NotePageMetadataDO, (7, 1014, 0))
+        assert refreshed_0 is not None
+        assert refreshed_0.keywords_json == expected_keywords_json
+
+
+async def test_page_hashing_prunes_stale_page_metadata_when_page_count_shrinks(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    test_note_path: Path,
+) -> None:
+    """Verify trailing NotePageMetadataDO rows beyond total_pages are removed on re-hash."""
+    await _seed_user_note_file(
+        session_manager, blob_storage, user_id=7, file_id=1013, note_path=test_note_path
+    )
+    assert await page_hashing_module.run(1013, session_manager) is True
+
+    async with session_manager.session() as session:
+        meta = await session.get(NoteMetadataDO, (7, 1013))
+        assert meta is not None
+        stale_index = meta.total_pages + 3
+        session.add(
+            NotePageMetadataDO(
+                user_id=7,
+                file_id=1013,
+                page_index=stale_index,
+                page_id="stale_page_id",
+            )
+        )
+        await session.commit()
+
+    assert await page_hashing_module.run(1013, session_manager) is True
+
+    async with session_manager.session() as session:
+        assert await session.get(NotePageMetadataDO, (7, 1013, stale_index)) is None
+
+
+async def test_page_hashing_cleanup_file_deletes_note_and_page_metadata(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Verify cleanup_file removes NoteMetadataDO and NotePageMetadataDO only for target file_id."""
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                NoteMetadataDO(
+                    user_id=7, file_id=1020, file_type="note", total_pages=1
+                ),
+                NotePageMetadataDO(user_id=7, file_id=1020, page_index=0, page_id="p0"),
+                NoteMetadataDO(
+                    user_id=7, file_id=1021, file_type="note", total_pages=1
+                ),
+                NotePageMetadataDO(user_id=7, file_id=1021, page_index=0, page_id="p0"),
+            ]
+        )
+        await session.commit()
+
+    await page_hashing_module.cleanup_file(
+        file_id=1020, user_id=7, session_manager=session_manager
+    )
+
+    async with session_manager.session() as session:
+        assert await session.get(NoteMetadataDO, (7, 1020)) is None
+        assert await session.get(NotePageMetadataDO, (7, 1020, 0)) is None
+        assert await session.get(NoteMetadataDO, (7, 1021)) is not None
+        assert await session.get(NotePageMetadataDO, (7, 1021, 0)) is not None
+
+
+async def test_page_hashing_metadata_supports_sql_json_extract_queries(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    """Verify persisted header_json, page_json, and keywords_json can be queried via SQL json_extract/json_each."""
+    notes = [
+        (1030, TEST_DATA_DIR / "nelinory" / "A5X_TestNote_With_Pdf_Template.note"),
+        (1031, TEST_DATA_DIR / "philips" / "manta.note"),
+        (1032, TEST_DATA_DIR / "philips" / "test.note"),
+    ]
+    for fid, path in notes:
+        await _seed_user_note_file(
+            session_manager, blob_storage, user_id=7, file_id=fid, note_path=path
+        )
+        assert await page_hashing_module.run(fid, session_manager) is True
+
+    async with session_manager.session() as session:
+        manta_meta = await session.get(NoteMetadataDO, (7, 1031))
+        assert manta_meta is not None
+        assert json.loads(manta_meta.header_json)["APPLY_EQUIPMENT"] == "N5"
+
+        # Query notebook header_json via SQL json_extract (e.g. filter by equipment).
+        n5_file_ids = list(
+            (
+                await session.execute(
+                    select(NoteMetadataDO.file_id).where(
+                        NoteMetadataDO.user_id == 7,
+                        func.json_extract(
+                            NoteMetadataDO.header_json, "$.APPLY_EQUIPMENT"
+                        )
+                        == "N5",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert n5_file_ids == [1031]
+
+        # Query page_json via SQL json_extract (e.g. filter by custom template PAGESTYLEMD5).
+        matching_template_pages = [
+            (row.file_id, row.page_index)
+            for row in (
+                await session.execute(
+                    select(
+                        NotePageMetadataDO.file_id,
+                        NotePageMetadataDO.page_index,
+                    ).where(
+                        NotePageMetadataDO.user_id == 7,
+                        func.json_extract(
+                            NotePageMetadataDO.page_json, "$.PAGESTYLEMD5"
+                        )
+                        == "ceba6dbd269b88f41a82eecc37266baa_9954",
+                    )
+                )
+            ).all()
+        ]
+        assert matching_template_pages == [(1030, 0)]
+
+        # Query JSON array elements in keywords_json via SQL json_each + json_extract.
+        kw_entry = func.json_each(NotePageMetadataDO.keywords_json).table_valued(
+            "value"
+        )
+        keyword_pages = [
+            (row.file_id, row.page_index)
+            for row in (
+                await session.execute(
+                    select(
+                        NotePageMetadataDO.file_id,
+                        NotePageMetadataDO.page_index,
+                    ).where(
+                        NotePageMetadataDO.user_id == 7,
+                        exists(
+                            select(1)
+                            .select_from(kw_entry)
+                            .where(
+                                func.json_extract(kw_entry.c.value, "$.KEYWORD")
+                                == "dummy"
+                            )
+                        ),
+                    )
+                )
+            ).all()
+        ]
+        assert keyword_pages == [(1032, 0)]
