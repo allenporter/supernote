@@ -7,7 +7,7 @@ import os
 import sys
 import time
 import traceback
-from collections.abc import Generator
+from collections.abc import AsyncIterator, Generator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from datetime import datetime
@@ -42,13 +42,13 @@ def server_url_override(url: str | None) -> Generator[None]:
         _server_url_override.reset(token)
 
 
-def load_cached_auth(url: str | None = None) -> tuple[FileCacheAuth, str]:
+def load_cached_auth() -> tuple[FileCacheAuth, str]:
     """Load cached credentials.
 
-    The server URL is taken from `url`, then from an active
-    `server_url_override`, then from the cached credentials.
+    The server URL is taken from an active `server_url_override`, falling back
+    to the cached credentials.
     """
-    url = url or _server_url_override.get()
+    url = _server_url_override.get()
     cache_path = os.path.expanduser("~/.cache/supernote.pkl")
     if not os.path.exists(cache_path) and not url:
         print(f"Error: No cached credentials found at {cache_path}")
@@ -67,9 +67,9 @@ def load_cached_auth(url: str | None = None) -> tuple[FileCacheAuth, str]:
 
 
 @asynccontextmanager
-async def create_session(url: str | None = None) -> Supernote:
+async def create_session() -> AsyncIterator[Supernote]:
     """Initialize Supernote session with cached credentials."""
-    auth, url = load_cached_auth(url)
+    auth, url = load_cached_auth()
     async with Supernote.from_auth(auth, host=url) as sn:
         yield sn
 

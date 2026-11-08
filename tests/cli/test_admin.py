@@ -30,7 +30,7 @@ from supernote.cli.admin import (
     set_quota,
     set_quota_async,
 )
-from supernote.cli.client import load_cached_auth, server_url_override
+from supernote.cli.client import server_url_override
 from supernote.client.auth import FileCacheAuth
 from supernote.models.base import ProcessingStatus
 from supernote.server.db.models.file import UserFileDO
@@ -66,10 +66,39 @@ def test_add_parser() -> None:
             "Test User",
         ]
     )
+    assert parsed.url is None
     assert parsed.email == "test@example.com"
     assert parsed.password == "secret"
     assert parsed.name == "Test User"
     assert parsed.func == add_user
+
+    parsed_trailing_url = parser.parse_args(
+        [
+            "admin",
+            "user",
+            "add",
+            "test@example.com",
+            "--url",
+            "http://trailing:8080",
+        ]
+    )
+    assert parsed_trailing_url.url == "http://trailing:8080"
+    assert parsed_trailing_url.email == "test@example.com"
+    assert parsed_trailing_url.func == add_user
+
+    parsed_mid_url = parser.parse_args(
+        [
+            "admin",
+            "user",
+            "--url",
+            "http://mid:8080",
+            "add",
+            "test@example.com",
+        ]
+    )
+    assert parsed_mid_url.url == "http://mid:8080"
+    assert parsed_mid_url.email == "test@example.com"
+    assert parsed_mid_url.func == add_user
 
     parsed = parser.parse_args(["admin", "user", "reset-password", "user@example.com"])
     assert parsed.email == "user@example.com"
@@ -123,10 +152,19 @@ def test_add_parser() -> None:
     parsed = parser.parse_args(
         ["admin", "tasks", "--status", "failed", "--type", "ocr", "--json"]
     )
+    assert parsed.url is None
     assert parsed.status == "failed"
     assert parsed.type == "ocr"
     assert parsed.json is True
     assert parsed.func == list_tasks
+
+    for argv in [
+        ["admin", "queue", "status", "--url", "http://leaf:8080"],
+        ["admin", "reprocess", "--type", "ocr", "--url", "http://leaf:8080"],
+        ["admin", "integrity", "--full-disk", "--url", "http://leaf:8080"],
+        ["admin", "tasks", "--url", "http://leaf:8080"],
+    ]:
+        assert parser.parse_args(argv).url == "http://leaf:8080"
 
 
 async def test_add_user_public_registration_success(
@@ -135,6 +173,7 @@ async def test_add_user_public_registration_success(
     await add_user_async("user@example.com", "secret", "User")
 
     captured = capsys.readouterr()
+    assert f"on {cli_env.url}..." in captured.out
     assert "Success! User created (Public Registration)." in captured.out
     assert await cli_env.user_service.check_user_exists("user@example.com") is True
 
@@ -183,31 +222,23 @@ async def test_list_users_failure(capsys: pytest.CaptureFixture[str]) -> None:
 def test_admin_url_flag_overrides_cached_url(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The `admin --url` flag reaches the session without being passed down."""
+    """The `admin --url` flag reaches the session in both leading and trailing positions."""
     FileCacheAuth(os.path.expanduser("~/.cache/supernote.pkl")).save_credentials(
         "token", "http://cached.invalid"
     )
-    list_users(argparse.Namespace(url="http://127.0.0.1:1"))
+    parser = argparse.ArgumentParser()
+    add_parser(parser.add_subparsers(dest="command"))
 
-    captured = capsys.readouterr()
-    assert "Failed to list users:" in captured.out
-    assert "127.0.0.1:1" in captured.out
-    assert "cached.invalid" not in captured.out
-
-
-def test_server_url_override_precedence() -> None:
-    FileCacheAuth(os.path.expanduser("~/.cache/supernote.pkl")).save_credentials(
-        "token", "http://cached.example"
-    )
-    assert load_cached_auth()[1] == "http://cached.example"
-    with server_url_override("http://override.example"):
-        assert load_cached_auth()[1] == "http://override.example"
-        assert load_cached_auth("http://explicit.example")[1] == (
-            "http://explicit.example"
-        )
-    with server_url_override(None):
-        assert load_cached_auth()[1] == "http://cached.example"
-    assert load_cached_auth()[1] == "http://cached.example"
+    for argv in [
+        ["admin", "--url", "http://127.0.0.1:1", "user", "list"],
+        ["admin", "user", "list", "--url", "http://127.0.0.1:1"],
+    ]:
+        parsed = parser.parse_args(argv)
+        parsed.func(parsed)
+        captured = capsys.readouterr()
+        assert "Failed to list users:" in captured.out
+        assert "127.0.0.1:1" in captured.out
+        assert "cached.invalid" not in captured.out
 
 
 def test_reset_password_mismatch(
@@ -231,6 +262,7 @@ async def test_reset_password_success(
     await reset_password_async(ADMIN_EMAIL, "newpass")
 
     captured = capsys.readouterr()
+    assert f"on {cli_env.url}..." in captured.out
     assert "Success! Password Reset." in captured.out
 
     expected_md5 = hashlib.md5(b"newpass").hexdigest()
