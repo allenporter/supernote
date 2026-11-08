@@ -409,3 +409,29 @@ def test_run_respects_config_and_env_log_level(
         logging.getLogger().setLevel(logging.INFO)
         logging.getLogger("aiosqlite").setLevel(logging.INFO)
         logging.getLogger("asyncio").setLevel(logging.INFO)
+
+
+async def test_jwt_auth_middleware_blocks_api_key_on_interactive_route(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Verify jwt_auth_middleware rejects static API keys on @interactive_session_only handlers."""
+    create_resp = await client.post(
+        "/api/extended/keys",
+        json={"name": "Middleware Check"},
+        headers=auth_headers,
+    )
+    assert create_resp.status == 200
+    raw_key = (await create_resp.json())["key"]
+    api_key_headers = {"Authorization": f"Bearer {raw_key}"}
+
+    # Standard API route succeeds with Bearer API key
+    ok_resp = await client.post(
+        "/api/file/capacity/query", json={}, headers=api_key_headers
+    )
+    assert ok_resp.status == 200
+
+    # @interactive_session_only route returns 403 before reaching the handler
+    forbidden_resp = await client.get("/api/extended/keys", headers=api_key_headers)
+    assert forbidden_resp.status == 403
+    assert "Interactive session required" in (await forbidden_resp.json())["errorMsg"]

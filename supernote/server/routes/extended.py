@@ -6,12 +6,16 @@ to our new server.
 
 import json
 import logging
+import time
 
 from aiohttp import web
 from mashumaro.exceptions import InvalidFieldValue, MissingField
 
-from supernote.models.base import ProcessingStatus
+from supernote.models.base import BaseResponse, ProcessingStatus
 from supernote.models.extended import (
+    ApiKeyListResponseVO,
+    CreateApiKeyDTO,
+    CreateApiKeyResponseVO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
     PageTranscriptVO,
@@ -52,6 +56,8 @@ from supernote.server.services.search import SearchService
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
+
+from .decorators import interactive_session_only
 
 logger = logging.getLogger(__name__)
 
@@ -340,3 +346,80 @@ async def handle_extended_note_cover(request: web.Request) -> web.Response:
     except Exception as err:
         logger.exception("Error fetching note cover preview")
         return SupernoteError.uncaught(err).to_response()
+
+
+@routes.get("/api/extended/keys")
+@interactive_session_only
+async def handle_list_api_keys(request: web.Request) -> web.Response:
+    # Endpoint: GET /api/extended/keys
+    # Purpose: List active static Bearer API keys for the authenticated user.
+    user_email = request[REQUEST_USER_KEY]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(user_email)
+    keys = await user_service.list_api_keys(user_id)
+    return web.json_response(ApiKeyListResponseVO(keys=keys).to_dict())
+
+
+@routes.post("/api/extended/keys")
+@interactive_session_only
+async def handle_create_api_key(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/keys
+    # Purpose: Generate and return a new static Bearer API key.
+    user_email = request[REQUEST_USER_KEY]
+    try:
+        req_dto = CreateApiKeyDTO.from_dict(await request.json())
+    except (
+        json.JSONDecodeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        MissingField,
+        InvalidFieldValue,
+    ) as err:
+        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
+
+    expires_at: int | None = None
+    if req_dto.expires_in_days is not None:
+        if req_dto.expires_in_days <= 0 or req_dto.expires_in_days > 3650:
+            return web.json_response(
+                {"error": "expiresInDays must be between 1 and 3650"}, status=400
+            )
+        expires_at = int(time.time()) + req_dto.expires_in_days * 86400
+
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(user_email)
+    try:
+        raw_token, vo = await user_service.create_api_key(
+            user_id, req_dto.name, expires_at=expires_at
+        )
+    except ValueError as err:
+        return web.json_response({"error": str(err)}, status=400)
+
+    return web.json_response(
+        CreateApiKeyResponseVO(
+            id=vo.id,
+            name=vo.name,
+            key=raw_token,
+            created_at=vo.created_at,
+            expires_at=vo.expires_at,
+        ).to_dict()
+    )
+
+
+@routes.delete("/api/extended/keys/{key_id}")
+@interactive_session_only
+async def handle_delete_api_key(request: web.Request) -> web.Response:
+    # Endpoint: DELETE /api/extended/keys/{key_id}
+    # Purpose: Revoke an existing static Bearer API key.
+    user_email = request[REQUEST_USER_KEY]
+    key_id = request.match_info["key_id"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(user_email)
+
+    revoked = await user_service.revoke_api_key(user_id, key_id)
+    if not revoked:
+        return web.json_response(
+            {"error": "API key not found or already revoked"}, status=404
+        )
+
+    return web.json_response(BaseResponse(success=True).to_dict())

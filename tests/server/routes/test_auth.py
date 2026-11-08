@@ -15,6 +15,7 @@ from supernote.models.user import UserCheckVO, UserRegisterDTO
 from supernote.server.config import ServerConfig
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import SupernoteError
+from supernote.server.keys import USER_SERVICE_KEY
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
 from supernote.server.utils.rate_limit import LIMIT_LOGIN_IP_MAX, LIMIT_PW_RESET_MAX
@@ -702,3 +703,59 @@ async def test_logout_and_account_clear(
 
     with pytest.raises(ApiException):
         await web_b.query_user()
+
+
+async def test_api_keys_denied_on_account_mutation_endpoints(
+    client: TestClient,
+    login_client: LoginClient,
+    create_test_user: None,
+) -> None:
+    """Verify static API keys cannot change password/email, log out sessions, or wipe the account."""
+    session_token = await login_client.login("test@example.com", "testpassword")
+    assert client.app is not None
+    user_service: UserService = client.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id("test@example.com")
+    raw_api_key, _ = await user_service.create_api_key(user_id, "Companion Sync")
+
+    api_headers = {"Authorization": f"Bearer {raw_api_key}"}
+
+    # Read-only profile query succeeds
+    query_resp = await client.post("/api/user/query", headers=api_headers, json={})
+    assert query_resp.status == 200
+
+    # Account/credential mutations are denied with 403
+    new_pw_md5 = hashlib.md5(b"hijacked").hexdigest()
+    pw_resp = await client.put(
+        "/api/user/password",
+        headers=api_headers,
+        json={"password": new_pw_md5},
+    )
+    assert pw_resp.status == 403
+
+    email_resp = await client.put(
+        "/api/user/email",
+        headers=api_headers,
+        json={"email": "hijacked@example.com"},
+    )
+    assert email_resp.status == 403
+
+    logout_resp = await client.post("/api/user/logout", headers=api_headers, json={})
+    assert logout_resp.status == 403
+
+    clear_resp = await client.post(
+        "/api/user/account/clear", headers=api_headers, json={}
+    )
+    assert clear_resp.status == 403
+
+    login_records_resp = await client.post(
+        "/api/user/query/loginRecord", headers=api_headers, json={}
+    )
+    assert login_records_resp.status == 403
+
+    # Original interactive session remains intact
+    check_resp = await client.post(
+        "/api/user/query",
+        headers={"x-access-token": session_token},
+        json={},
+    )
+    assert check_resp.status == 200
