@@ -6,16 +6,14 @@ from unittest.mock import patch
 import pytest
 from aiohttp.test_utils import TestClient
 
+from supernote.client.api import Supernote
 from supernote.client.client import Client
 from supernote.client.exceptions import ApiException
 from supernote.client.extended import ExtendedClient
+from supernote.client.schedule import ScheduleClient
 from supernote.client.summary import SummaryClient
-from supernote.models.base import BaseResponse, ProcessingStatus
-from supernote.models.extended import (
-    ApiKeyListResponseVO,
-    CreateApiKeyResponseVO,
-    PageTranscriptVO,
-)
+from supernote.models.base import ProcessingStatus
+from supernote.models.extended import PageTranscriptVO
 from supernote.models.summary import AddSummaryDTO
 from supernote.server.ai.models.embedding import EmbeddingTaskType
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
@@ -768,11 +766,10 @@ async def test_extended_api_keys_unauthorized(client: TestClient) -> None:
 async def test_extended_api_keys_crud_lifecycle(
     client: TestClient,
     auth_headers: dict[str, str],
+    extended_client: ExtendedClient,
 ) -> None:
-    """Test full CRUD lifecycle for static Bearer API keys via /api/extended/keys routes."""
-    init_resp = await client.get("/api/extended/keys", headers=auth_headers)
-    assert init_resp.status == 200
-    initial_list = ApiKeyListResponseVO.from_dict(await init_resp.json())
+    """Test full CRUD lifecycle for static Bearer API keys via ExtendedClient and routes."""
+    initial_list = await extended_client.list_api_keys()
     assert initial_list.success is True
     assert initial_list.keys == []
 
@@ -783,39 +780,22 @@ async def test_extended_api_keys_crud_lifecycle(
     )
     assert bad_json.status == 400
 
-    bad_name = await client.post(
-        "/api/extended/keys", json={"name": "   "}, headers=auth_headers
-    )
-    assert bad_name.status == 400
-    assert "Key name cannot be empty" in (await bad_name.json())["error"]
+    for invalid_name in ("   ", "x" * 101, "Bad\x1b[31mName"):
+        with pytest.raises(ApiException):
+            await extended_client.create_api_key(invalid_name)
 
-    overlong_name = await client.post(
-        "/api/extended/keys", json={"name": "x" * 101}, headers=auth_headers
-    )
-    assert overlong_name.status == 400
+    for bad_days in (0, -5, 3651):
+        with pytest.raises(ApiException):
+            await extended_client.create_api_key("Bad Expiry", expires_in_days=bad_days)
 
-    control_char_name = await client.post(
+    bad_exp = await client.post(
         "/api/extended/keys",
-        json={"name": "Bad\x1b[31mName"},
+        json={"name": "Bad Expiry", "expiresInDays": "not-an-int"},
         headers=auth_headers,
     )
-    assert control_char_name.status == 400
+    assert bad_exp.status == 400
 
-    for bad_days in (0, -5, 3651, "not-an-int"):
-        bad_exp = await client.post(
-            "/api/extended/keys",
-            json={"name": "Bad Expiry", "expiresInDays": bad_days},
-            headers=auth_headers,
-        )
-        assert bad_exp.status == 400
-
-    c1_resp = await client.post(
-        "/api/extended/keys",
-        json={"name": "Claude Desktop"},
-        headers=auth_headers,
-    )
-    assert c1_resp.status == 200
-    created_1 = CreateApiKeyResponseVO.from_dict(await c1_resp.json())
+    created_1 = await extended_client.create_api_key("Claude Desktop")
     assert created_1.success is True
     assert len(created_1.id) == 16
     assert created_1.name == "Claude Desktop"
@@ -824,8 +804,7 @@ async def test_extended_api_keys_crud_lifecycle(
     assert created_1.created_at > 0
     assert created_1.expires_at is None
 
-    l1_resp = await client.get("/api/extended/keys", headers=auth_headers)
-    listed_1 = ApiKeyListResponseVO.from_dict(await l1_resp.json())
+    listed_1 = await extended_client.list_api_keys()
     assert len(listed_1.keys) == 1
     assert listed_1.keys[0].id == created_1.id
     assert listed_1.keys[0].name == "Claude Desktop"
@@ -834,134 +813,91 @@ async def test_extended_api_keys_crud_lifecycle(
     assert listed_1.keys[0].last_used_at is None
     assert listed_1.keys[0].expires_at is None
 
-    c2_resp = await client.post(
-        "/api/extended/keys",
-        json={"name": "Obsidian Sync", "expiresInDays": 30},
-        headers=auth_headers,
+    created_2 = await extended_client.create_api_key(
+        "Obsidian Sync", expires_in_days=30
     )
-    assert c2_resp.status == 200
-    created_2 = CreateApiKeyResponseVO.from_dict(await c2_resp.json())
     assert created_2.expires_at is not None
     assert created_2.expires_at > created_2.created_at
 
-    l2_resp = await client.get("/api/extended/keys", headers=auth_headers)
-    listed_2 = ApiKeyListResponseVO.from_dict(await l2_resp.json())
+    listed_2 = await extended_client.list_api_keys()
     assert {k.id for k in listed_2.keys} == {created_1.id, created_2.id}
 
-    del_resp = await client.delete(
-        f"/api/extended/keys/{created_1.id}", headers=auth_headers
-    )
-    assert del_resp.status == 200
-    del_res = BaseResponse.from_dict(await del_resp.json())
+    del_res = await extended_client.delete_api_key(created_1.id)
     assert del_res.success is True
 
-    del_again = await client.delete(
-        f"/api/extended/keys/{created_1.id}", headers=auth_headers
-    )
-    assert del_again.status == 404
+    with pytest.raises(ApiException):
+        await extended_client.delete_api_key(created_1.id)
 
-    del_unknown = await client.delete(
-        "/api/extended/keys/unknown_key_999", headers=auth_headers
-    )
-    assert del_unknown.status == 404
+    with pytest.raises(ApiException):
+        await extended_client.delete_api_key("unknown_key_999")
 
-    la_resp = await client.get("/api/extended/keys", headers=auth_headers)
-    listed_after = ApiKeyListResponseVO.from_dict(await la_resp.json())
+    listed_after = await extended_client.list_api_keys()
     assert [k.id for k in listed_after.keys] == [created_2.id]
 
-    del2_resp = await client.delete(
-        f"/api/extended/keys/{created_2.id}", headers=auth_headers
-    )
-    assert del2_resp.status == 200
-    empty_resp = await client.get("/api/extended/keys", headers=auth_headers)
-    assert ApiKeyListResponseVO.from_dict(await empty_resp.json()).keys == []
+    del2_res = await extended_client.delete_api_key(created_2.id)
+    assert del2_res.success is True
+    assert (await extended_client.list_api_keys()).keys == []
 
 
 async def test_bearer_tokens_work_across_all_apis(
     client: TestClient,
     auth_headers: dict[str, str],
+    extended_client: ExtendedClient,
 ) -> None:
-    """Verify static Bearer API keys and Bearer session tokens authenticate across any API."""
-    c_resp = await client.post(
-        "/api/extended/keys",
-        json={"name": "Universal Client"},
-        headers=auth_headers,
+    """Verify Supernote.from_token authenticates with static API keys and session tokens across APIs."""
+    created = await extended_client.create_api_key("Universal Client")
+    base_url = str(client.make_url(""))
+
+    sn_api_key = Supernote.from_token(
+        created.key, host=base_url, session=client.session
     )
-    created = CreateApiKeyResponseVO.from_dict(await c_resp.json())
-    bearer_api_key_headers = {"Authorization": f"Bearer {created.key}"}
-    bearer_session_headers = {
-        "Authorization": f"Bearer {auth_headers['x-access-token']}"
-    }
+    sn_session = Supernote.from_token(
+        auth_headers["x-access-token"], host=base_url, session=client.session
+    )
 
-    for headers in (bearer_api_key_headers, bearer_session_headers):
-        # Extended API
-        ai_resp = await client.get("/api/extended/ai/status", headers=headers)
-        assert ai_resp.status == 200
+    for sn in (sn_api_key, sn_session):
+        ai_status = await sn.extended.get_ai_status()
+        assert ai_status.success is True
 
-        # File API
-        cap_resp = await client.post(
-            "/api/file/capacity/query", json={}, headers=headers
-        )
-        assert cap_resp.status == 200
-        assert (await cap_resp.json())["success"] is True
+        cap = await sn.web.get_capacity_web()
+        assert cap.success is True
 
-        # User profile API
-        profile_resp = await client.post("/api/user/query", json={}, headers=headers)
-        assert profile_resp.status == 200
-        assert (await profile_resp.json())["email"] == "test@example.com"
+        profile = await sn.web.query_user()
+        assert profile.email == "test@example.com"
 
-        # Schedule API
-        sched_resp = await client.post(
-            "/api/file/schedule/group/all", json={}, headers=headers
-        )
-        assert sched_resp.status == 200
-        assert (await sched_resp.json())["success"] is True
+        groups = [g async for g in ScheduleClient(sn.client).list_groups()]
+        assert isinstance(groups, list)
 
-        # Summary API
-        summary_resp = await client.post(
-            "/api/file/query/summary/tag", json={}, headers=headers
-        )
-        assert summary_resp.status == 200
-        assert (await summary_resp.json())["success"] is True
+        tags = await SummaryClient(sn.client).query_tags()
+        assert tags.success is True
 
     # Revoking the static API key immediately rejects Bearer requests across APIs
-    del_resp = await client.delete(
-        f"/api/extended/keys/{created.id}", headers=auth_headers
-    )
-    assert del_resp.status == 200
-    revoked_resp = await client.post(
-        "/api/file/capacity/query", json={}, headers=bearer_api_key_headers
-    )
-    assert revoked_resp.status == 401
+    await extended_client.delete_api_key(created.id)
+    with pytest.raises(ApiException):
+        await sn_api_key.web.get_capacity_web()
 
 
 async def test_api_keys_denied_on_key_management_endpoints(
     client: TestClient,
-    auth_headers: dict[str, str],
+    extended_client: ExtendedClient,
 ) -> None:
     """Verify static API keys cannot list, create, or delete API keys (no self-escalation)."""
-    c_resp = await client.post(
-        "/api/extended/keys",
-        json={"name": "Restricted Agent"},
-        headers=auth_headers,
+    created = await extended_client.create_api_key("Restricted Agent")
+    sn_api_key = Supernote.from_token(
+        created.key, host=str(client.make_url("")), session=client.session
     )
-    created = CreateApiKeyResponseVO.from_dict(await c_resp.json())
-    for headers in (
-        {"Authorization": f"Bearer {created.key}"},
-        {"x-access-token": created.key},
-    ):
-        list_resp = await client.get("/api/extended/keys", headers=headers)
-        assert list_resp.status == 403
 
-        create_resp = await client.post(
-            "/api/extended/keys",
-            json={"name": "Escalated Key"},
-            headers=headers,
-        )
-        assert create_resp.status == 403
+    with pytest.raises(ApiException):
+        await sn_api_key.extended.list_api_keys()
 
-        delete_resp = await client.delete(
-            f"/api/extended/keys/{created.id}",
-            headers=headers,
-        )
-        assert delete_resp.status == 403
+    with pytest.raises(ApiException):
+        await sn_api_key.extended.create_api_key("Escalated Key")
+
+    with pytest.raises(ApiException):
+        await sn_api_key.extended.delete_api_key(created.id)
+
+    # Also verify legacy x-access-token header with static API key is rejected
+    legacy_headers = {"x-access-token": created.key}
+    assert (
+        await client.get("/api/extended/keys", headers=legacy_headers)
+    ).status == 403

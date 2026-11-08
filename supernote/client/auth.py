@@ -80,8 +80,16 @@ class FileCacheAuth(AbstractAuth):
         self._host = host
 
         # Ensure directory exists
-        os.makedirs(os.path.dirname(self._cache_path), exist_ok=True)
+        cache_dir = os.path.dirname(self._cache_path)
+        if cache_dir:
+            os.makedirs(cache_dir, exist_ok=True)
 
-        with open(self._cache_path, "wb") as f:
+        fd = os.open(
+            self._cache_path,
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+            0o600,
+        )
+        with os.fdopen(fd, "wb") as f:
             data = {"access_token": token, "host": host}
             pickle.dump(data, f)
+        os.chmod(self._cache_path, 0o600)
