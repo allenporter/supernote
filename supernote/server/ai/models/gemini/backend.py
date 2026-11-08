@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 import aiohttp
-import httpx
+import httpx2
 from google import genai
 from google.genai import errors, types
 
@@ -27,7 +27,7 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 _TRANSPORT_ERRORS = (
-    httpx.HTTPError,
+    httpx2.HTTPError,
     aiohttp.ClientError,
     OSError,
     TimeoutError,
@@ -47,14 +47,14 @@ class GeminiBackend:
     @property
     def client(self) -> genai.Client:
         if self._client is None:
-            http_options = (
-                types.HttpOptions(
+            if self._base_url is not None:
+                http_options = types.HttpOptions(
                     base_url=self._base_url,
+                    api_version="v1beta",
                     retry_options=types.HttpRetryOptions(attempts=1),
                 )
-                if self._base_url is not None
-                else None
-            )
+            else:
+                http_options = types.HttpOptions(api_version="v1beta")
             self._client = genai.Client(
                 api_key=self._api_key,
                 http_options=http_options,

@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -1577,6 +1577,7 @@ all = [
     { name = "aiosqlite" },
     { name = "alembic" },
     { name = "google-genai" },
+    { name = "httpx2" },
     { name = "ical" },
     { name = "mashumaro" },
     { name = "mcp" },
@@ -1607,6 +1608,7 @@ server = [
     { name = "aiosqlite" },
     { name = "alembic" },
     { name = "google-genai" },
+    { name = "httpx2" },
     { name = "ical" },
     { name = "mashumaro" },
     { name = "mcp" },
@@ -1629,6 +1631,7 @@ requires-dist = [
     { name = "alembic", marker = "extra == 'server'", specifier = ">=1.13.0" },
     { name = "colour", specifier = ">=0.1.5" },
     { name = "google-genai", marker = "extra == 'server'", specifier = ">=1.57.0" },
+    { name = "httpx2", marker = "extra == 'server'", specifier = ">=2.0.0" },
     { name = "ical", marker = "extra == 'server'", specifier = ">=8.0.0" },
     { name = "mashumaro", marker = "extra == 'client'", specifier = ">=3.17" },
     { name = "mashumaro", marker = "extra == 'server'", specifier = ">=3.17" },

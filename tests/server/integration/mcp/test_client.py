@@ -3,9 +3,9 @@ import logging
 import re
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
-from typing import Any, cast
+from typing import Any
 
-import httpx
+import httpx2
 import pytest
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
@@ -90,10 +90,8 @@ async def mcp_session(
     mcp_url: str, auth_headers: dict[str, str]
 ) -> AsyncGenerator[ClientSession]:
     """Helper context manager for MCP sessions to avoid AnyIO task group leaks in fixtures."""
-    async with httpx.AsyncClient(headers=auth_headers) as http_client:
-        async with streamable_http_client(
-            mcp_url, http_client=cast(Any, http_client)
-        ) as res:
+    async with httpx2.AsyncClient(headers=auth_headers) as http_client:
+        async with streamable_http_client(mcp_url, http_client=http_client) as res:
             read_stream, write_stream = res[0], res[1]
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
@@ -202,7 +200,7 @@ async def test_mcp_unauthorized(
             pass
 
     # Direct request returns HTTP 401 with WWW-Authenticate header
-    async with httpx.AsyncClient() as client:
+    async with httpx2.AsyncClient() as client:
         resp = await client.post(mcp_url, headers=invalid_headers)
         assert resp.status_code == 401
         assert "www-authenticate" in resp.headers
