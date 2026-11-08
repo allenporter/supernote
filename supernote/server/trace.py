@@ -74,12 +74,19 @@ _JSON_STRING_SECRET_RE = re.compile(
 )
 _FORM_SECRET_RE = re.compile(rf"(?i)((?:^|&)(?:{_REDACTED_KEYS_PATTERN})=)[^&]*")
 _JWT_TOKEN_RE = re.compile(r"\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*")
+_SN_API_KEY_RE = re.compile(r"\bsn_[0-9a-fA-F]{32}\b")
 _REDACTED_URL_KEYS_PATTERN = "|".join(
     re.escape(k) for k in sorted(REDACTED_URL_QUERY_KEYS)
 )
 _URL_QUERY_SECRET_RE = re.compile(
     rf"(?i)((?:[?&])(?:{_REDACTED_URL_KEYS_PATTERN})=)[^&#\s]*"
 )
+
+
+def _scrub_inline_tokens(text: str) -> str:
+    """Scrub inline JWTs and sn_<32_hex> static API keys from freeform text."""
+    scrubbed = _JWT_TOKEN_RE.sub(REDACTED_VALUE, text)
+    return _SN_API_KEY_RE.sub(REDACTED_VALUE, scrubbed)
 
 
 async def _write_trace_log(config: ServerConfig, log_entry: dict[str, Any]) -> None:
@@ -125,22 +132,23 @@ def is_binary_content_type(content_type: str) -> bool:
 
 
 def redact_url(url: URL | str) -> str:
-    """Redact sensitive query parameters from a URL."""
+    """Redact sensitive query parameters and inline tokens from a URL."""
     url_str = str(url)
     try:
         u = url if isinstance(url, URL) else URL(url_str)
         if not u.query:
-            return url_str
+            return _scrub_inline_tokens(url_str)
         query = u.query.copy()
         redacted = False
         for key in list(query.keys()):
             if key.lower() in REDACTED_URL_QUERY_KEYS:
                 query[key] = REDACTED_VALUE
                 redacted = True
-        return str(u.with_query(query)) if redacted else url_str
+        rendered = str(u.with_query(query)) if redacted else url_str
+        return _scrub_inline_tokens(rendered)
     except (ValueError, TypeError):
         fallback = _URL_QUERY_SECRET_RE.sub(rf"\1{REDACTED_VALUE}", url_str)
-        return _JWT_TOKEN_RE.sub(REDACTED_VALUE, fallback)
+        return _scrub_inline_tokens(fallback)
 
 
 def _sanitize_header_value(name: str, value: Any) -> Any:
@@ -151,7 +159,7 @@ def _sanitize_header_value(name: str, value: Any) -> Any:
     if key_lower in URL_HEADER_KEYS and isinstance(value, str):
         return redact_url(value)
     if isinstance(value, str):
-        return _JWT_TOKEN_RE.sub(REDACTED_VALUE, value)
+        return _scrub_inline_tokens(value)
     return value
 
 
@@ -181,7 +189,7 @@ def sanitize_body(body: Any) -> Any:
         redacted = _JSON_STRING_SECRET_RE.sub(rf'\1"{REDACTED_VALUE}"', body)
         redacted = _FORM_SECRET_RE.sub(rf"\1{REDACTED_VALUE}", redacted)
         redacted = _URL_QUERY_SECRET_RE.sub(rf"\1{REDACTED_VALUE}", redacted)
-        return _JWT_TOKEN_RE.sub(REDACTED_VALUE, redacted)
+        return _scrub_inline_tokens(redacted)
     return body
 
 

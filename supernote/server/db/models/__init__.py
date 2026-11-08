@@ -1,6 +1,7 @@
 """Module for database models."""
 
 from . import (
+    api_key,
     device,
     event_log,
     file,
@@ -13,6 +14,7 @@ from . import (
 )
 
 __all__ = [
+    "api_key",
     "device",
     "event_log",
     "file",
