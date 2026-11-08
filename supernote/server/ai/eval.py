@@ -34,6 +34,7 @@ __all__ = [
     "evaluate_ocr_dataset",
     "format_markdown_report",
     "load_eval_case_input",
+    "merge_eval_reports",
     "score_ocr_output",
 ]
 
@@ -591,6 +592,36 @@ async def evaluate_ocr_dataset(
     )
 
 
+def merge_eval_reports(reports: Sequence[OcrEvalSuiteReport]) -> OcrEvalSuiteReport:
+    """Merge multiple `OcrEvalSuiteReport` runs for the same dataset by `target_name`.
+
+    Later reports replace earlier targets with the same `target_name` in-place while
+    preserving first-seen target order, enabling incremental provider benchmarking
+    across different machines and environments.
+    """
+    if not reports:
+        raise ValueError("merge_eval_reports requires at least one report.")
+
+    dataset_name = reports[0].dataset_name
+    merged_targets: dict[str, OcrTargetReport] = {}
+    max_case_count = 0
+    for report in reports:
+        if report.dataset_name != dataset_name:
+            raise ValueError(
+                f"Cannot merge reports from different datasets: "
+                f"{dataset_name!r} vs {report.dataset_name!r}."
+            )
+        max_case_count = max(max_case_count, report.case_count)
+        for target in report.targets:
+            merged_targets[target.target_name] = target
+
+    return OcrEvalSuiteReport(
+        dataset_name=dataset_name,
+        case_count=max_case_count,
+        targets=list(merged_targets.values()),
+    )
+
+
 def _fmt_pct(value: float | None) -> str:
     if value is None:
         return "—"
@@ -604,15 +635,16 @@ def format_markdown_report(report: OcrEvalSuiteReport) -> str:
         "",
         "## Overall Summary",
         "",
-        "| Target | Model | Pages | Mean CER | Content CER | Word Recall | BuJo Symbol Recall | Median Latency | P95 Latency | Errors |",
-        "| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Target | Model | Pages | Mean CER | Median CER | Content CER | Word Recall | BuJo Symbol Recall | Median Latency | P95 Latency | Errors |",
+        "| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for target in report.targets:
         ov = target.overall
         lines.append(
             f"| `{target.target_name}` | `{target.model_id}` | {ov.page_count} | "
-            f"{_fmt_pct(ov.mean_cer)} | {_fmt_pct(ov.mean_content_cer)} | "
-            f"{_fmt_pct(ov.mean_word_recall)} | {_fmt_pct(ov.mean_bujo_symbol_recall)} | "
+            f"{_fmt_pct(ov.mean_cer)} | {_fmt_pct(ov.median_cer)} | "
+            f"{_fmt_pct(ov.mean_content_cer)} | {_fmt_pct(ov.mean_word_recall)} | "
+            f"{_fmt_pct(ov.mean_bujo_symbol_recall)} | "
             f"{ov.median_latency_ms:.1f} ms | {ov.p95_latency_ms:.1f} ms | {ov.error_count} |"
         )
 

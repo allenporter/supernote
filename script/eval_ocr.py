@@ -17,9 +17,11 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from supernote.server.ai.eval import (  # noqa: E402
     OcrEvalDataset,
+    OcrEvalSuiteReport,
     OcrEvalTarget,
     evaluate_ocr_dataset,
     format_markdown_report,
+    merge_eval_reports,
 )
 from supernote.server.ai.models.ocr import create_ocr_model  # noqa: E402
 from supernote.server.config import (  # noqa: E402
@@ -119,6 +121,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Abort immediately if a provider raises AIError on any page.",
     )
     parser.add_argument(
+        "--from-json",
+        nargs="+",
+        action="extend",
+        type=Path,
+        default=[],
+        metavar="JSON_PATH",
+        help=(
+            "Existing `--json-out` report file(s) to merge into the output report "
+            "(supports combining incremental provider runs into a single comparison table)."
+        ),
+    )
+    parser.add_argument(
         "--markdown-out",
         type=Path,
         default=None,
@@ -160,7 +174,7 @@ def _resolve_targets(
     args: argparse.Namespace, base_config: ServerConfig
 ) -> list[OcrEvalTarget]:
     specs: list[str] = list(args.target)
-    if not specs:
+    if not specs and not args.include_device_rtr and not args.from_json:
         if base_config.ai.ocr is not None:
             specs.append(f"{base_config.ai.ocr.provider}:{base_config.ai.ocr.model}")
         elif (
@@ -217,19 +231,31 @@ def _filter_dataset(
 
 async def main_async(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    prior_reports = [
+        OcrEvalSuiteReport.from_json(path.read_text(encoding="utf-8"))
+        for path in args.from_json
+    ]
+
     manifest_path = args.dataset.resolve()
     dataset = _filter_dataset(OcrEvalDataset.load(manifest_path), args)
     base_config = _build_base_config(args)
     targets = _resolve_targets(args, base_config)
 
-    report = await evaluate_ocr_dataset(
-        dataset=dataset,
-        base_dir=manifest_path.parent,
-        targets=targets,
-        warmup=not args.no_warmup,
-        include_device_rtr=args.include_device_rtr,
-        fail_fast=args.fail_fast,
-    )
+    live_report: OcrEvalSuiteReport | None = None
+    if targets or args.include_device_rtr:
+        live_report = await evaluate_ocr_dataset(
+            dataset=dataset,
+            base_dir=manifest_path.parent,
+            targets=targets,
+            warmup=not args.no_warmup,
+            include_device_rtr=args.include_device_rtr,
+            fail_fast=args.fail_fast,
+        )
+
+    reports_to_merge = list(prior_reports)
+    if live_report is not None:
+        reports_to_merge.append(live_report)
+    report = merge_eval_reports(reports_to_merge)
 
     markdown = format_markdown_report(report)
     print(markdown)
@@ -239,9 +265,10 @@ async def main_async(argv: list[str] | None = None) -> int:
         args.markdown_out.write_text(markdown, encoding="utf-8")
 
     if args.json_out is not None:
+        json_report = live_report if live_report is not None else report
         args.json_out.parent.mkdir(parents=True, exist_ok=True)
         args.json_out.write_text(
-            json.dumps(report.to_dict(), indent=2, ensure_ascii=False) + "\n",
+            json.dumps(json_report.to_dict(), indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
 

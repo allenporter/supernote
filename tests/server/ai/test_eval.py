@@ -10,18 +10,29 @@ from supernote.server.ai.base import AIError
 from supernote.server.ai.eval import (
     OcrEvalCase,
     OcrEvalDataset,
+    OcrEvalSuiteReport,
     OcrEvalTarget,
     _summarize_results,
     _word_jaccard,
     evaluate_ocr_dataset,
     format_markdown_report,
     load_eval_case_input,
+    merge_eval_reports,
     score_ocr_output,
 )
 from supernote.server.ai.models.fake.ocr import FakeOcrModel
 from supernote.server.ai.models.ocr import OcrModel
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+BUJO_REFERENCE = (
+    "2026-11-07 Friday\n"
+    "* • Review Q4 budget\n"
+    "X Send lease renewal\n"
+    "  - Agreed on local OCR\n"
+    "• ~~Order nibs~~\n"
+    "• ---\n"
+)
 
 
 class _ScriptedOcrModel(OcrModel):
@@ -47,165 +58,15 @@ class _ScriptedOcrModel(OcrModel):
         return item
 
 
-def test_eval_case_and_dataset_validation(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="id must be non-empty"):
-        OcrEvalCase(id="  ", path="a.png")
-    with pytest.raises(ValueError, match="path must be non-empty"):
-        OcrEvalCase(id="c1", path="")
-    with pytest.raises(ValueError, match="page_index must be >= 0"):
-        OcrEvalCase(id="c1", path="a.note", page_index=-1)
-
-    with pytest.raises(ValueError, match="Duplicate OcrEvalCase id"):
-        OcrEvalDataset(
-            cases=[
-                OcrEvalCase(id="dup", path="a.png"),
-                OcrEvalCase(id="dup", path="b.png"),
-            ]
-        )
-
-    manifest = tmp_path / "dataset.yaml"
-    manifest.write_text(
-        "---\nname: mini\ncases:\n  - id: c1\n    path: page.png\n    ground_truth: hi\n",
-        encoding="utf-8",
-    )
-    loaded = OcrEvalDataset.load(manifest)
-    assert loaded.name == "mini"
-    assert len(loaded.cases) == 1
-    assert loaded.cases[0].id == "c1"
+@pytest.fixture
+def sample_png_dir(tmp_path: Path) -> Path:
+    (tmp_path / "sample.png").write_bytes(b"pngdata")
+    return tmp_path
 
 
-def test_checked_in_ocr_dataset_manifest_is_valid() -> None:
-    manifest_path = REPO_ROOT / "evals/ocr/dataset.yaml"
-    dataset = OcrEvalDataset.load(manifest_path)
-    assert len(dataset.cases) >= 20
-    for case in dataset.cases:
-        asset = (manifest_path.parent / case.path).resolve()
-        assert asset.exists(), f"Missing asset for {case.id}: {asset}"
-
-
-def test_score_ocr_output_empty_and_prose() -> None:
-    empty_ok = score_ocr_output("", "   ")
-    assert empty_ok.cer == 0.0
-    assert empty_ok.word_recall == 1.0
-    assert empty_ok.bujo_symbol_recall is None
-
-    empty_hallucination = score_ocr_output("", "phantom dots")
-    assert empty_hallucination.cer == 1.0
-    assert empty_hallucination.word_recall == 0.0
-
-    # Shorter reference than hypothesis exercises _levenshtein swap branch
-    short_vs_long = score_ocr_output("hi", "hi there friend")
-    assert short_vs_long.cer > 1.0
-    assert short_vs_long.word_recall == 1.0
-
-    # Punctuation-only reference exercises empty ref_content / ref_tokens fallbacks
-    punct_only = score_ocr_output("... !", "... !")
-    assert punct_only.cer == 0.0
-    assert punct_only.word_recall == 1.0
-
-    assert _word_jaccard(frozenset(), frozenset()) == 0.0
-
-
-def test_score_ocr_output_bujo_rapid_logging() -> None:
-    reference = (
-        "2026-11-07 Friday\n"
-        "* • Review Q4 budget\n"
-        "X Send lease renewal\n"
-        "  - Agreed on local OCR\n"
-        "• ~~Order nibs~~\n"
-        "• ---\n"
-    )
-    perfect_hyp = (
-        "2026-11-07 Friday\n"
-        "* • Review Q4 budget\n"
-        "X Send lease renewal\n"
-        "  - Agreed on local OCR\n"
-        "• ~~Order nibs~~\n"
-    )
-    perfect = score_ocr_output(reference, perfect_hyp)
-    assert perfect.bujo_expected_items == 4
-    assert perfect.bujo_symbol_recall == 1.0
-    assert perfect.bujo_strikethrough_recall == 1.0
-    assert perfect.bujo_indent_accuracy == 1.0
-    assert perfect.content_cer < 0.05
-
-    # Plain optical OCR without Rapid Logging symbols still gets strong content_cer
-    unformatted_hyp = (
-        "2026-11-07 Friday\n"
-        "Review Q4 budget\n"
-        "X Send lease renewal\n"
-        "Agreed on local OCR\n"
-        "Order nibs\n"
-        "unrelated extra line\n"
-    )
-    partial = score_ocr_output(reference, unformatted_hyp)
-    assert partial.bujo_expected_items == 4
-    assert partial.bujo_symbol_recall == 0.25  # Only 'X Send lease renewal' kept marker
-    assert partial.bujo_strikethrough_recall == 0.0
-    assert partial.bujo_indent_accuracy == 0.0
-    assert partial.content_cer < partial.cer
-
-    # Completely missing hypothesis
-    empty_hyp = score_ocr_output(reference, "")
-    assert empty_hyp.bujo_symbol_recall == 0.0
-    assert empty_hyp.wer == 1.0
-
-
-def test_load_eval_case_input_note_png_and_errors(tmp_path: Path) -> None:
-    png_file = tmp_path / "daily.png"
-    png_file.write_bytes(b"\x89PNG\r\n\x1a\nfake")
-
-    png_page = load_eval_case_input(
-        OcrEvalCase(id="png1", path="daily.png", ground_truth="hello"),
-        tmp_path,
-    )
-    assert png_page.png_data == b"\x89PNG\r\n\x1a\nfake"
-    assert png_page.device_rtr_text is None
-    assert "Daily Log" in png_page.prompt
-
-    rtr_note_case = OcrEvalCase(
-        id="a5x",
-        path="tests/testdata/philips/a5x-2.14.28.note",
-        page_index=0,
-        ground_truth="Subject",
-    )
-    loaded_note = load_eval_case_input(rtr_note_case, REPO_ROOT)
-    assert loaded_note.png_data.startswith(b"\x89PNG")
-    assert loaded_note.device_rtr_text is not None
-    assert "Obsidian" in loaded_note.device_rtr_text
-
-    with pytest.raises(FileNotFoundError, match="not found"):
-        load_eval_case_input(OcrEvalCase(id="missing", path="nope.png"), tmp_path)
-
-    with pytest.raises(IndexError, match="out of range"):
-        load_eval_case_input(
-            OcrEvalCase(
-                id="oob",
-                path="tests/testdata/philips/manta.note",
-                page_index=5,
-            ),
-            REPO_ROOT,
-        )
-
-    txt_file = tmp_path / "bad.txt"
-    txt_file.write_text("hi", encoding="utf-8")
-    with pytest.raises(ValueError, match="Unsupported asset extension"):
-        load_eval_case_input(OcrEvalCase(id="bad", path="bad.txt"), tmp_path)
-
-
-async def test_evaluate_ocr_dataset_and_markdown_report(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="empty result sequence"):
-        _summarize_results("all", [])
-
-    empty_ds = OcrEvalDataset(cases=[])
-    with pytest.raises(ValueError, match="at least one case"):
-        await evaluate_ocr_dataset(
-            empty_ds, tmp_path, [OcrEvalTarget("f", FakeOcrModel())]
-        )
-
-    png_path = tmp_path / "sample.png"
-    png_path.write_bytes(b"pngdata")
-    png_ds = OcrEvalDataset(
+@pytest.fixture
+def mixed_eval_dataset() -> OcrEvalDataset:
+    return OcrEvalDataset(
         name="unit-suite",
         cases=[
             OcrEvalCase(
@@ -224,9 +85,217 @@ async def test_evaluate_ocr_dataset_and_markdown_report(tmp_path: Path) -> None:
         ],
     )
 
-    with pytest.raises(ValueError, match="At least one OcrEvalTarget"):
-        await evaluate_ocr_dataset(png_ds, tmp_path, [], include_device_rtr=False)
 
+@pytest.fixture
+def png_only_dataset() -> OcrEvalDataset:
+    return OcrEvalDataset(
+        cases=[OcrEvalCase(id="only_png", path="sample.png", ground_truth="hi")]
+    )
+
+
+@pytest.mark.parametrize(
+    ("case_id", "path", "page_index", "error_match"),
+    [
+        ("  ", "a.png", 0, "id must be non-empty"),
+        ("c1", "", 0, "path must be non-empty"),
+        ("c1", "a.note", -1, "page_index must be >= 0"),
+    ],
+)
+def test_eval_case_validation(
+    case_id: str, path: str, page_index: int, error_match: str
+) -> None:
+    with pytest.raises(ValueError, match=error_match):
+        OcrEvalCase(id=case_id, path=path, page_index=page_index)
+
+
+def test_eval_dataset_rejects_duplicate_ids() -> None:
+    with pytest.raises(ValueError, match="Duplicate OcrEvalCase id"):
+        OcrEvalDataset(
+            cases=[
+                OcrEvalCase(id="dup", path="a.png"),
+                OcrEvalCase(id="dup", path="b.png"),
+            ]
+        )
+
+
+def test_eval_dataset_load_yaml(tmp_path: Path) -> None:
+    manifest = tmp_path / "dataset.yaml"
+    manifest.write_text(
+        "---\nname: mini\ncases:\n  - id: c1\n    path: page.png\n    ground_truth: hi\n",
+        encoding="utf-8",
+    )
+    loaded = OcrEvalDataset.load(manifest)
+    assert loaded.name == "mini"
+    assert len(loaded.cases) == 1
+    assert loaded.cases[0].id == "c1"
+
+
+def test_checked_in_ocr_dataset_manifest_assets_exist() -> None:
+    manifest_path = REPO_ROOT / "evals/ocr/dataset.yaml"
+    dataset = OcrEvalDataset.load(manifest_path)
+    assert len(dataset.cases) >= 20
+    for case in dataset.cases:
+        asset = (manifest_path.parent / case.path).resolve()
+        assert asset.exists(), f"Missing asset for {case.id}: {asset}"
+
+
+def test_checked_in_ocr_results_match_markdown_report() -> None:
+    dataset = OcrEvalDataset.load(REPO_ROOT / "evals/ocr/dataset.yaml")
+    results_dir = REPO_ROOT / "evals/ocr/results"
+    json_files = sorted(results_dir.glob("*.json"))
+    assert len(json_files) >= 2
+    reports = [
+        OcrEvalSuiteReport.from_json(path.read_text(encoding="utf-8"))
+        for path in json_files
+    ]
+    merged = merge_eval_reports(reports)
+    assert merged.dataset_name == dataset.name
+    results_md = (REPO_ROOT / "evals/ocr/RESULTS.md").read_text(encoding="utf-8")
+    assert results_md == format_markdown_report(merged)
+
+
+def test_score_ocr_output_empty_reference() -> None:
+    empty_ok = score_ocr_output("", "   ")
+    assert empty_ok.cer == 0.0
+    assert empty_ok.word_recall == 1.0
+    assert empty_ok.bujo_symbol_recall is None
+
+
+def test_score_ocr_output_empty_reference_hallucination() -> None:
+    empty_hallucination = score_ocr_output("", "phantom dots")
+    assert empty_hallucination.cer == 1.0
+    assert empty_hallucination.word_recall == 0.0
+
+
+def test_score_ocr_output_shorter_reference_than_hypothesis() -> None:
+    short_vs_long = score_ocr_output("hi", "hi there friend")
+    assert short_vs_long.cer > 1.0
+    assert short_vs_long.word_recall == 1.0
+
+
+def test_score_ocr_output_punctuation_only_and_empty_jaccard() -> None:
+    punct_only = score_ocr_output("... !", "... !")
+    assert punct_only.cer == 0.0
+    assert punct_only.word_recall == 1.0
+    assert _word_jaccard(frozenset(), frozenset()) == 0.0
+
+
+def test_score_ocr_output_bujo_perfect_match() -> None:
+    perfect_hyp = (
+        "2026-11-07 Friday\n"
+        "* • Review Q4 budget\n"
+        "X Send lease renewal\n"
+        "  - Agreed on local OCR\n"
+        "• ~~Order nibs~~\n"
+    )
+    perfect = score_ocr_output(BUJO_REFERENCE, perfect_hyp)
+    assert perfect.bujo_expected_items == 4
+    assert perfect.bujo_symbol_recall == 1.0
+    assert perfect.bujo_strikethrough_recall == 1.0
+    assert perfect.bujo_indent_accuracy == 1.0
+    assert perfect.content_cer < 0.05
+
+
+def test_score_ocr_output_bujo_partial_without_symbols() -> None:
+    unformatted_hyp = (
+        "2026-11-07 Friday\n"
+        "Review Q4 budget\n"
+        "X Send lease renewal\n"
+        "Agreed on local OCR\n"
+        "Order nibs\n"
+        "unrelated extra line\n"
+    )
+    partial = score_ocr_output(BUJO_REFERENCE, unformatted_hyp)
+    assert partial.bujo_expected_items == 4
+    assert partial.bujo_symbol_recall == 0.25
+    assert partial.bujo_strikethrough_recall == 0.0
+    assert partial.bujo_indent_accuracy == 0.0
+    assert partial.content_cer < partial.cer
+
+
+def test_score_ocr_output_bujo_empty_hypothesis() -> None:
+    empty_hyp = score_ocr_output(BUJO_REFERENCE, "")
+    assert empty_hyp.bujo_symbol_recall == 0.0
+    assert empty_hyp.wer == 1.0
+
+
+def test_load_eval_case_input_png(tmp_path: Path) -> None:
+    png_file = tmp_path / "daily.png"
+    png_file.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+
+    png_page = load_eval_case_input(
+        OcrEvalCase(id="png1", path="daily.png", ground_truth="hello"),
+        tmp_path,
+    )
+    assert png_page.png_data == b"\x89PNG\r\n\x1a\nfake"
+    assert png_page.device_rtr_text is None
+    assert "Daily Log" in png_page.prompt
+
+
+def test_load_eval_case_input_note_with_device_rtr() -> None:
+    rtr_note_case = OcrEvalCase(
+        id="a5x",
+        path="tests/testdata/philips/a5x-2.14.28.note",
+        page_index=0,
+        ground_truth="Subject",
+    )
+    loaded_note = load_eval_case_input(rtr_note_case, REPO_ROOT)
+    assert loaded_note.png_data.startswith(b"\x89PNG")
+    assert loaded_note.device_rtr_text is not None
+    assert "Obsidian" in loaded_note.device_rtr_text
+
+
+def test_load_eval_case_input_missing_file(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="not found"):
+        load_eval_case_input(OcrEvalCase(id="missing", path="nope.png"), tmp_path)
+
+
+def test_load_eval_case_input_page_index_out_of_range() -> None:
+    with pytest.raises(IndexError, match="out of range"):
+        load_eval_case_input(
+            OcrEvalCase(
+                id="oob",
+                path="tests/testdata/philips/manta.note",
+                page_index=5,
+            ),
+            REPO_ROOT,
+        )
+
+
+def test_load_eval_case_input_unsupported_extension(tmp_path: Path) -> None:
+    txt_file = tmp_path / "bad.txt"
+    txt_file.write_text("hi", encoding="utf-8")
+    with pytest.raises(ValueError, match="Unsupported asset extension"):
+        load_eval_case_input(OcrEvalCase(id="bad", path="bad.txt"), tmp_path)
+
+
+def test_summarize_results_empty_raises() -> None:
+    with pytest.raises(ValueError, match="empty result sequence"):
+        _summarize_results("all", [])
+
+
+async def test_evaluate_ocr_dataset_empty_cases_raises(tmp_path: Path) -> None:
+    empty_ds = OcrEvalDataset(cases=[])
+    with pytest.raises(ValueError, match="at least one case"):
+        await evaluate_ocr_dataset(
+            empty_ds, tmp_path, [OcrEvalTarget("f", FakeOcrModel())]
+        )
+
+
+async def test_evaluate_ocr_dataset_no_targets_raises(
+    sample_png_dir: Path,
+    mixed_eval_dataset: OcrEvalDataset,
+) -> None:
+    with pytest.raises(ValueError, match="At least one OcrEvalTarget"):
+        await evaluate_ocr_dataset(
+            mixed_eval_dataset, sample_png_dir, [], include_device_rtr=False
+        )
+
+
+async def test_evaluate_ocr_dataset_and_markdown_report(
+    sample_png_dir: Path,
+    mixed_eval_dataset: OcrEvalDataset,
+) -> None:
     flaky_model = _ScriptedOcrModel(
         [
             AIError("warmup hiccup"),
@@ -235,8 +304,8 @@ async def test_evaluate_ocr_dataset_and_markdown_report(tmp_path: Path) -> None:
         ]
     )
     report = await evaluate_ocr_dataset(
-        png_ds,
-        tmp_path,
+        mixed_eval_dataset,
+        sample_png_dir,
         [
             OcrEvalTarget("fake:v1", FakeOcrModel("fake-v1")),
             OcrEvalTarget("flaky:v1", flaky_model),
@@ -258,34 +327,90 @@ async def test_evaluate_ocr_dataset_and_markdown_report(tmp_path: Path) -> None:
     assert "`device-rtr`" in md
     assert "`bujo_daily`" in md
 
-    # Without RTR pages in dataset, include_device_rtr=True cleanly skips device-rtr target
-    png_only_ds = OcrEvalDataset(
-        cases=[OcrEvalCase(id="only_png", path="sample.png", ground_truth="hi")]
-    )
-    no_rtr_report = await evaluate_ocr_dataset(
-        png_only_ds,
-        tmp_path,
+
+async def test_evaluate_ocr_dataset_skips_device_rtr_when_absent(
+    sample_png_dir: Path,
+    png_only_dataset: OcrEvalDataset,
+) -> None:
+    report = await evaluate_ocr_dataset(
+        png_only_dataset,
+        sample_png_dir,
         [OcrEvalTarget("fake:v1", FakeOcrModel())],
         warmup=False,
         include_device_rtr=True,
     )
-    assert [t.target_name for t in no_rtr_report.targets] == ["fake:v1"]
+    assert [t.target_name for t in report.targets] == ["fake:v1"]
 
-    # fail_fast=True propagates AIError during warmup and during page evaluation
+
+async def test_evaluate_ocr_dataset_fail_fast_during_warmup(
+    sample_png_dir: Path,
+    png_only_dataset: OcrEvalDataset,
+) -> None:
     with pytest.raises(AIError, match="boom warmup"):
         await evaluate_ocr_dataset(
-            png_only_ds,
-            tmp_path,
+            png_only_dataset,
+            sample_png_dir,
             [OcrEvalTarget("err", _ScriptedOcrModel([AIError("boom warmup")]))],
             warmup=True,
             fail_fast=True,
         )
 
+
+async def test_evaluate_ocr_dataset_fail_fast_during_page_inference(
+    sample_png_dir: Path,
+    png_only_dataset: OcrEvalDataset,
+) -> None:
     with pytest.raises(AIError, match="boom page"):
         await evaluate_ocr_dataset(
-            png_only_ds,
-            tmp_path,
+            png_only_dataset,
+            sample_png_dir,
             [OcrEvalTarget("err", _ScriptedOcrModel([AIError("boom page")]))],
             warmup=False,
             fail_fast=True,
         )
+
+
+def test_merge_eval_reports_empty_raises() -> None:
+    with pytest.raises(ValueError, match="at least one report"):
+        merge_eval_reports([])
+
+
+def test_merge_eval_reports_mismatched_dataset_raises() -> None:
+    report_a = OcrEvalSuiteReport(dataset_name="suite-a", case_count=1, targets=[])
+    report_b = OcrEvalSuiteReport(dataset_name="suite-b", case_count=1, targets=[])
+    with pytest.raises(ValueError, match="different datasets"):
+        merge_eval_reports([report_a, report_b])
+
+
+async def test_merge_eval_reports_replaces_existing_targets_in_order(
+    sample_png_dir: Path,
+    mixed_eval_dataset: OcrEvalDataset,
+) -> None:
+    initial = await evaluate_ocr_dataset(
+        mixed_eval_dataset,
+        sample_png_dir,
+        [
+            OcrEvalTarget("fake:v1", FakeOcrModel("fake-v1")),
+            OcrEvalTarget("other:v1", FakeOcrModel("other-v1")),
+        ],
+        warmup=False,
+        include_device_rtr=True,
+    )
+    updated = await evaluate_ocr_dataset(
+        mixed_eval_dataset,
+        sample_png_dir,
+        [
+            OcrEvalTarget("fake:v1", FakeOcrModel("fake-v1-updated")),
+            OcrEvalTarget("new:v1", FakeOcrModel("new-v1")),
+        ],
+        warmup=False,
+    )
+
+    merged = merge_eval_reports([initial, updated])
+    assert [t.target_name for t in merged.targets] == [
+        "fake:v1",
+        "other:v1",
+        "device-rtr",
+        "new:v1",
+    ]
+    assert merged.targets[0].model_id == "fake-v1-updated"

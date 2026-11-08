@@ -2,6 +2,8 @@
 
 Provider-agnostic benchmark suite for comparing page OCR backends (`apple`, `gemini`, `openai`/Ollama/llama.cpp/vLLM, `fake`, and embedded Supernote on-device RTR) across Bullet Journal Rapid Logging notebooks and real-world `.note` fixtures.
 
+See [**RESULTS.md**](RESULTS.md) for the current checked-in provider comparison table (and [`results/`](results/) for per-provider JSON transcripts and metrics).
+
 ## Quick Start
 
 ```bash
@@ -29,9 +31,31 @@ Provider-agnostic benchmark suite for comparing page OCR backends (`apple`, `gem
 
 You can also pass `--config config/config.yaml` to reference named provider entries from `ai.providers` (e.g. `--target ollama:gemma3:27b --target llamacpp:qwen2.5-vl`).
 
+## Recording & Merging Provider Results
+
+Checked-in benchmark runs are stored as standalone JSON files in [`results/`](results/) so new providers can be evaluated incrementally on different machines (macOS Apple Silicon, Linux GPU, cloud APIs) without re-running existing providers:
+
+```bash
+# 1. Run a new provider and save its standalone per-page JSON results
+./script/eval_ocr.py \
+  --target openai:gemma3:27b \
+  --openai-base-url http://localhost:11434/v1 \
+  --json-out evals/ocr/results/ollama_gemma3_27b.json
+
+# 2. Merge all saved JSON runs into RESULTS.md (no live inference required)
+./script/eval_ocr.py \
+  --from-json evals/ocr/results/*.json \
+  --markdown-out evals/ocr/RESULTS.md
+```
+
+### Provider Notes
+
+- **`apple:vision-accurate` vs `apple:vision-fast`** ([`results/apple.json`](results/apple.json)): `vision-accurate` uses Apple's neural recognizer (strong handwriting recall on prose and Bullet Journal pages), whereas `vision-fast` uses Vision's legacy contour detector intended for machine-printed text. On Rapid Logging pages, `vision-accurate` currently transcribes hand-drawn `X` crosses as `×` (`\u00d7`), flattens leading indentation (`boundingBox.origin.x` is not yet mapped to indent spaces), and reads words underneath strikethrough strokes without wrapping them in `~~...~~`.
+- **`device-rtr`** ([`results/device_rtr.json`](results/device_rtr.json)): Scores the pre-computed `RECOGNTEXT` layer embedded inside Supernote Real-Time Recognition `.note` files (`3` pages in `dataset.yaml`).
+
 ## Metrics Reported
 
-- **Mean CER**: Normalized Character Error Rate (`Levenshtein(ref, hyp) / len(ref)`), including Rapid Logging symbols and formatting.
+- **Mean / Median CER**: Normalized Character Error Rate (`Levenshtein(ref, hyp) / len(ref)`), including Rapid Logging symbols and formatting.
 - **Content CER**: Character Error Rate after stripping leading Rapid Logging signifiers (`*`, `•`, `X`, `>`, `<`, `o`, `-`) and `~~strikethrough~~` markers—isolating raw handwriting word accuracy from prompt-driven symbol formatting.
 - **Word Recall**: Case-insensitive alphanumeric word recall (`0%–100%`).
 - **BuJo Symbol Recall**: Fraction of Rapid Logging items in `ground_truth` whose matching transcribed line preserves the canonical bullet (`•`, `X`, `>`, `<`, `o`, `-`) and critical star (`* `) defined in [legend.md](../../supernote/server/resources/prompts/ocr/common/legend.md).
