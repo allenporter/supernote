@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
+import logging
 import math
 import re
 import statistics
@@ -31,6 +33,7 @@ __all__ = [
     "OcrPageMetrics",
     "OcrTargetCaseResult",
     "OcrTargetReport",
+    "build_target_report",
     "evaluate_ocr_dataset",
     "format_markdown_report",
     "load_eval_case_input",
@@ -39,6 +42,7 @@ __all__ = [
 ]
 
 PNG_COMPRESS_LEVEL = 1
+_LOGGER = logging.getLogger(__name__)
 CANONICAL_BUJO_MARKERS: frozenset[str] = frozenset({"•", "X", ">", "<", "o", "-"})
 
 # Matches a canonical Rapid Logging line per `resources/prompts/ocr/common/legend.md`:
@@ -61,6 +65,7 @@ class OcrEvalCase(DataClassYAMLMixin, DataClassJSONMixin):
     page_index: int = 0
     category: str = "general"
     prompt_type: str | None = None
+    language: str | None = None
     ground_truth: str = ""
     description: str | None = None
 
@@ -458,12 +463,13 @@ def _summarize_results(
     )
 
 
-def _build_target_report(
+def build_target_report(
     target_name: str,
     model_id: str,
     warmup_ms: float,
     case_results: list[OcrTargetCaseResult],
 ) -> OcrTargetReport:
+    """Aggregate per-page `OcrTargetCaseResult` items into an `OcrTargetReport`."""
     categories_seen: list[str] = []
     for res in case_results:
         if res.category not in categories_seen:
@@ -491,6 +497,7 @@ async def evaluate_ocr_dataset(
     warmup: bool = True,
     include_device_rtr: bool = False,
     fail_fast: bool = False,
+    page_timeout_s: float | None = 90.0,
 ) -> OcrEvalSuiteReport:
     """Run all `targets` against `dataset` and return an `OcrEvalSuiteReport`."""
     if not dataset.cases:
@@ -502,27 +509,42 @@ async def evaluate_ocr_dataset(
 
     loaded_pages = [load_eval_case_input(case, base_dir) for case in dataset.cases]
     target_reports: list[OcrTargetReport] = []
+    total_pages = len(loaded_pages)
 
     for target in targets:
         warmup_ms = 0.0
         if warmup:
             warmup_page = loaded_pages[0]
+            _LOGGER.info("[%s] warming up on %s...", target.name, warmup_page.case.id)
             t0 = time.perf_counter()
             try:
-                await target.model.extract_text(
+                coro = target.model.extract_text(
                     warmup_page.png_data, warmup_page.prompt
                 )
-            except AIError:
+                if page_timeout_s is not None:
+                    await asyncio.wait_for(coro, timeout=page_timeout_s)
+                else:
+                    await coro
+            except (AIError, TimeoutError):
                 if fail_fast:
                     raise
             warmup_ms = (time.perf_counter() - t0) * 1000.0
 
         case_results: list[OcrTargetCaseResult] = []
-        for page in loaded_pages:
+        for idx, page in enumerate(loaded_pages, start=1):
             t_start = time.perf_counter()
             error_msg: str | None = None
             try:
-                hypothesis = await target.model.extract_text(page.png_data, page.prompt)
+                coro = target.model.extract_text(page.png_data, page.prompt)
+                if page_timeout_s is not None:
+                    hypothesis = await asyncio.wait_for(coro, timeout=page_timeout_s)
+                else:
+                    hypothesis = await coro
+            except TimeoutError:
+                if fail_fast:
+                    raise
+                hypothesis = ""
+                error_msg = f"Timed out after {page_timeout_s:.1f}s"
             except AIError as err:
                 if fail_fast:
                     raise
@@ -541,6 +563,17 @@ async def evaluate_ocr_dataset(
                     bujo_expected_items=0,
                 )
             )
+            _LOGGER.info(
+                "[%s] %d/%d %s -> CER=%.1f%% recall=%.1f%% (%.1f ms)%s",
+                target.name,
+                idx,
+                total_pages,
+                page.case.id,
+                metrics.cer * 100.0,
+                metrics.word_recall * 100.0,
+                elapsed_ms,
+                f" ERROR={error_msg}" if error_msg else "",
+            )
             case_results.append(
                 OcrTargetCaseResult(
                     case_id=page.case.id,
@@ -553,7 +586,7 @@ async def evaluate_ocr_dataset(
             )
 
         target_reports.append(
-            _build_target_report(
+            build_target_report(
                 target_name=target.name,
                 model_id=target.model.model_id,
                 warmup_ms=warmup_ms,
@@ -577,7 +610,7 @@ async def evaluate_ocr_dataset(
                 for p in rtr_pages
             ]
             target_reports.append(
-                _build_target_report(
+                build_target_report(
                     target_name="device-rtr",
                     model_id="supernote-rtr-embedded",
                     warmup_ms=0.0,
