@@ -29,6 +29,7 @@ repos:
     rev: v2.4.3
     hooks:
       - id: codespell
+        exclude: '^evals/ocr/results/.*\.json$'
         args:
           - --ignore-words-list=folde,linkprotocal
   - repo: https://github.com/adrienverge/yamllint.git

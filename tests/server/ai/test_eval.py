@@ -10,12 +10,14 @@ from supernote.server.ai.base import AIError
 from supernote.server.ai.eval import (
     OcrEvalCase,
     OcrEvalDataset,
+    OcrEvalSuiteReport,
     OcrEvalTarget,
     _summarize_results,
     _word_jaccard,
     evaluate_ocr_dataset,
     format_markdown_report,
     load_eval_case_input,
+    merge_eval_reports,
     score_ocr_output,
 )
 from supernote.server.ai.models.fake.ocr import FakeOcrModel
@@ -81,6 +83,18 @@ def test_checked_in_ocr_dataset_manifest_is_valid() -> None:
     for case in dataset.cases:
         asset = (manifest_path.parent / case.path).resolve()
         assert asset.exists(), f"Missing asset for {case.id}: {asset}"
+
+    results_dir = REPO_ROOT / "evals/ocr/results"
+    json_files = sorted(results_dir.glob("*.json"))
+    assert len(json_files) >= 2
+    reports = [
+        OcrEvalSuiteReport.from_json(path.read_text(encoding="utf-8"))
+        for path in json_files
+    ]
+    merged = merge_eval_reports(reports)
+    assert merged.dataset_name == dataset.name
+    results_md = (REPO_ROOT / "evals/ocr/RESULTS.md").read_text(encoding="utf-8")
+    assert results_md == format_markdown_report(merged)
 
 
 def test_score_ocr_output_empty_and_prose() -> None:
@@ -289,3 +303,33 @@ async def test_evaluate_ocr_dataset_and_markdown_report(tmp_path: Path) -> None:
             warmup=False,
             fail_fast=True,
         )
+
+    # merge_eval_reports validation and in-place target replacement
+    with pytest.raises(ValueError, match="at least one report"):
+        merge_eval_reports([])
+
+    other_ds_report = OcrEvalSuiteReport(
+        dataset_name="different-suite",
+        case_count=1,
+        targets=[],
+    )
+    with pytest.raises(ValueError, match="different datasets"):
+        merge_eval_reports([report, other_ds_report])
+
+    updated_fake = await evaluate_ocr_dataset(
+        png_ds,
+        tmp_path,
+        [
+            OcrEvalTarget("fake:v1", FakeOcrModel("fake-v1-updated")),
+            OcrEvalTarget("new:v1", FakeOcrModel("new-v1")),
+        ],
+        warmup=False,
+    )
+    merged = merge_eval_reports([report, updated_fake])
+    assert [t.target_name for t in merged.targets] == [
+        "fake:v1",
+        "flaky:v1",
+        "device-rtr",
+        "new:v1",
+    ]
+    assert merged.targets[0].model_id == "fake-v1-updated"
