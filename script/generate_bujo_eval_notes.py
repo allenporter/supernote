@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Generate deterministic Bullet Journal `.note` fixtures for OCR evaluation.
 
-Creates valid Supernote `.note` files (`SN_FILE_VER_20260016`) under
-`evals/ocr/notebooks/` with `RATTA_RLE`-compressed dot-grid / lined background
-layers and anti-aliased `MAINLAYER` handwriting + hand-drawn Rapid Logging
-signifiers (`•`, `X`, `>`, `<`, `o`, `-`, `*`, nested indentation, and
-`~~strikethrough~~`).
+Creates valid Supernote `.note` files (`SN_FILE_VER_20260016`) and sibling
+rendered `.png` previews under `evals/ocr/notebooks/` with `RATTA_RLE`-compressed
+dot-grid / lined background layers and anti-aliased `MAINLAYER` handwriting +
+hand-drawn Rapid Logging signifiers (`•`, `X`, `>`, `<`, `o`, `-`, `*`, nested
+indentation, and `~~strikethrough~~`).
 """
 
 from __future__ import annotations
@@ -412,16 +412,21 @@ def main() -> None:
         out_path = out_dir / filename
         out_path.write_bytes(raw_bytes)
 
-        # Verify round-trip parsing and rendering
+        # Verify round-trip parsing and export rendered PNG previews next to each .note
         parsed = load_notebook(str(out_path))
         assert parsed.total_pages == len(specs)
         converter = ImageConverter(parsed)  # type: ignore[no-untyped-call]
+        png_paths: list[Path] = []
         for idx in range(len(specs)):
             rendered = converter.convert(idx)  # type: ignore[no-untyped-call]
             assert rendered.size == (PAGE_WIDTH, PAGE_HEIGHT)
+            png_path = out_path.with_name(f"{out_path.stem}_page_{idx}.png")
+            rendered.save(png_path, format="PNG", optimize=True)
+            png_paths.append(png_path)
+        preview_names = ", ".join(p.name for p in png_paths)
         print(
             f"Generated {out_path.relative_to(REPO_ROOT)} "
-            f"({len(specs)} page(s), {len(raw_bytes):,} bytes)"
+            f"({len(specs)} page(s), {len(raw_bytes):,} bytes) -> {preview_names}"
         )
 
 

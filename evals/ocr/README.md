@@ -55,4 +55,14 @@ Drop a `.note` notebook or `.png` page into `evals/ocr/notebooks/` (or anywhere 
       X Morning run 5km
 ```
 
-Synthetic Bullet Journal fixtures (`notebooks/{daily,weekly,monthly}.note`) can be regenerated deterministically with [generate_bujo_eval_notes.py](../../script/generate_bujo_eval_notes.py).
+## Bullet Journal Fixtures
+
+Synthetic Bullet Journal fixtures (`notebooks/{daily,weekly,monthly}.note`) and their rendered `.png` previews are generated deterministically with [generate_bujo_eval_notes.py](../../script/generate_bujo_eval_notes.py):
+
+| Case ID | Notebook | Page | Rendered Preview |
+| :--- | :--- | ---: | :--- |
+| `bujo_daily_friday` | [daily.note](notebooks/daily.note) | `0` | [daily_page_0.png](notebooks/daily_page_0.png) |
+| `bujo_daily_saturday` | [daily.note](notebooks/daily.note) | `1` | [daily_page_1.png](notebooks/daily_page_1.png) |
+| `bujo_weekly_w45` | [weekly.note](notebooks/weekly.note) | `0` | [weekly_page_0.png](notebooks/weekly_page_0.png) |
+| `bujo_monthly_nov_calendar` | [monthly.note](notebooks/monthly.note) | `0` | [monthly_page_0.png](notebooks/monthly_page_0.png) |
+| `bujo_monthly_nov_tasks` | [monthly.note](notebooks/monthly.note) | `1` | [monthly_page_1.png](notebooks/monthly_page_1.png) |
