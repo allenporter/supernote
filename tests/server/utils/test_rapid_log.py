@@ -97,19 +97,23 @@ o ~~Rescheduled dentist~~
     assert items[0].text == "Call Bob"
     assert items[0].task_state == RapidLogTaskState.CANCELLED
     assert items[0].is_cancelled
+    assert items[0].has_explicit_bullet is True
 
     assert items[1].kind == RapidLogKind.TASK
     assert items[1].text == "Fix prod alert"
     assert items[1].is_starred
     assert items[1].is_cancelled
+    assert items[1].has_explicit_bullet is True
 
     assert items[2].kind == RapidLogKind.TASK
     assert items[2].text == "Update roadmap"
     assert items[2].task_state == RapidLogTaskState.CANCELLED
+    assert items[2].has_explicit_bullet is True
 
     assert items[3].kind == RapidLogKind.TASK
     assert items[3].text == "Plain crossed out task"
     assert items[3].task_state == RapidLogTaskState.CANCELLED
+    assert items[3].has_explicit_bullet is False
 
     assert items[4].kind == RapidLogKind.NOTE
     assert items[4].text == "Crossed out note"
@@ -167,3 +171,35 @@ Plain heading
     followup = items[2]
     assert followup.kind == RapidLogKind.TASK
     assert followup.detail == "- Ask about dark mode icons"
+
+
+def test_parse_indented_lists_under_headings_and_horizontal_rules() -> None:
+    transcript = """## Action Items
+  • Send Q3 proposal
+    - Include SQLite benchmarks
+  • Call Bob
+- - -
+* * *
+_ _ _
+~~[] Empty bracket cancelled~~
+- [] Empty bracket open
+"""
+    items = parse_rapid_log(transcript)
+    assert len(items) == 4
+
+    assert items[0].kind == RapidLogKind.TASK
+    assert items[0].text == "Send Q3 proposal"
+    assert items[0].detail == "- Include SQLite benchmarks"
+
+    assert items[1].kind == RapidLogKind.TASK
+    assert items[1].text == "Call Bob"
+    assert items[1].detail is None
+
+    assert items[2].kind == RapidLogKind.TASK
+    assert items[2].text == "Empty bracket cancelled"
+    assert items[2].task_state == RapidLogTaskState.CANCELLED
+    assert items[2].has_explicit_bullet is True
+
+    assert items[3].kind == RapidLogKind.TASK
+    assert items[3].text == "Empty bracket open"
+    assert items[3].task_state == RapidLogTaskState.INCOMPLETE
