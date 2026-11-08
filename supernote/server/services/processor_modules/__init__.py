@@ -170,3 +170,12 @@ class ProcessorModule(abc.ABC):
             duration = time.perf_counter() - start_time
             PROCESSOR_TASKS_TOTAL.labels(module=self.name, status=status_str).inc()
             PROCESSOR_TASK_DURATION_SECONDS.labels(module=self.name).observe(duration)
+
+    async def cleanup_file(
+        self,
+        file_id: int,
+        user_id: int,
+        session_manager: DatabaseSessionManager,
+    ) -> None:
+        """Clean up module-owned domain artifacts when a note file is deleted."""
+        return None

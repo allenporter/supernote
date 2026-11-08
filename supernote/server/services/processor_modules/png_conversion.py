@@ -63,6 +63,32 @@ class PngConversionModule(ProcessorModule):
                 return True
         return False
 
+    async def cleanup_file(
+        self,
+        file_id: int,
+        user_id: int,
+        session_manager: DatabaseSessionManager,
+    ) -> None:
+        """Delete cached page PNG blobs for a deleted note."""
+        async with session_manager.session() as session:
+            result = await session.execute(
+                select(NotePageContentDO.page_id).where(
+                    NotePageContentDO.file_id == file_id
+                )
+            )
+            page_ids = result.scalars().all()
+
+        for page_id in page_ids:
+            if not page_id:
+                continue
+            png_path = get_page_png_path(file_id, page_id)
+            try:
+                await self.file_service.blob_storage.delete(CACHE_BUCKET, png_path)
+            except (FileNotFoundError, OSError) as e:
+                logger.warning(
+                    f"Failed to delete PNG for {file_id} page {page_id}: {e}"
+                )
+
     async def process(
         self,
         file_id: int,

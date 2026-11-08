@@ -278,7 +278,16 @@ async def test_handle_note_deleted_cleanup(
         )
         await session.commit()
 
-    # Trigger deletion event
+    # Trigger deletion event across registered modules
+    processor_service.register_modules(
+        hashing=PageHashingModule(file_service=file_service),
+        png=PngConversionModule(file_service=file_service),
+        summary=SummaryModule(
+            file_service=file_service,
+            summary_service=summary_service,
+            summary_model=None,
+        ),
+    )
     event = NoteDeletedEvent(file_id=file_id, user_id=test_user_id)
     await processor_service.handle_note_deleted(event)
 
@@ -1298,3 +1307,61 @@ async def test_synthetic_handwriting_notebook_full_pipeline_and_incremental_appe
     )
     assert updated_transcript is not None
     assert "Launch Retrospective" in updated_transcript
+
+
+async def test_file_lock_serializes_process_and_delete_and_evicts_lock(
+    processor_service: ProcessorService,
+) -> None:
+    events_log: list[str] = []
+    in_process = asyncio.Event()
+    allow_finish = asyncio.Event()
+
+    class LockingTestModule(ProcessorModule):
+        @property
+        def name(self) -> str:
+            return "LockingTestModule"
+
+        @property
+        def task_type(self) -> TaskType:
+            return TaskType.PAGE_HASHING
+
+        async def run_if_needed(self, *args: object, **kwargs: object) -> bool:
+            return True
+
+        async def process(self, file_id: int, *args: object, **kwargs: object) -> None:
+            events_log.append(f"process_start:{file_id}")
+            in_process.set()
+            await allow_finish.wait()
+            events_log.append(f"process_end:{file_id}")
+
+        async def cleanup_file(
+            self,
+            file_id: int,
+            user_id: int,
+            session_manager: DatabaseSessionManager,
+        ) -> None:
+            events_log.append(f"cleanup:{file_id}:{user_id}")
+
+    processor_service.register_modules(hashing=LockingTestModule())
+
+    proc_task = asyncio.create_task(processor_service.process_file(777))
+    await in_process.wait()
+
+    del_task = asyncio.create_task(
+        processor_service.handle_note_deleted(NoteDeletedEvent(file_id=777, user_id=42))
+    )
+    await asyncio.sleep(0.02)
+    # Delete must wait until in-flight process_file releases the per-file lock
+    assert events_log == ["process_start:777"]
+    assert 777 in processor_service._file_locks
+
+    allow_finish.set()
+    await asyncio.gather(proc_task, del_task)
+
+    assert events_log == [
+        "process_start:777",
+        "process_end:777",
+        "cleanup:777:42",
+    ]
+    assert processor_service._file_locks == {}
+    assert processor_service._file_lock_refcounts == {}
