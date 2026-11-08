@@ -221,7 +221,9 @@ async def test_batch_update_tasks_updates_timestamp_for_since_filter(
     )
 
     sync_token = max(task1.update_time, task2.update_time)
-    assert await schedule_service.list_tasks(user_id, since=sync_token) == []
+    # The since filter is inclusive; step past the boundary so this test still
+    # proves that batch_update_tasks advances update_time.
+    assert await schedule_service.list_tasks(user_id, since=sync_token + 1) == []
 
     await asyncio.sleep(0.005)
     await schedule_service.batch_update_tasks(
@@ -233,8 +235,53 @@ async def test_batch_update_tasks_updates_timestamp_for_since_filter(
     assert updated_task1 is not None
     assert updated_task1.sort == 2
     assert updated_task1.update_time > sync_token
-    delta_tasks = await schedule_service.list_tasks(user_id, since=sync_token)
+    delta_tasks = await schedule_service.list_tasks(user_id, since=sync_token + 1)
     assert [t.task_id for t in delta_tasks] == [task1.task_id]
+
+
+async def test_list_tasks_since_includes_tasks_at_cursor(
+    schedule_service: ScheduleService,
+) -> None:
+    """Tasks modified exactly at the since cursor are part of the incremental delta."""
+    user_id = 556
+    group = await schedule_service.create_group(user_id, "Cursor Group")
+    cursor = 1710000001000
+
+    at_update_cursor = await schedule_service.create_task(
+        user_id,
+        group.task_list_id,
+        "Updated at the cursor",
+        last_modified_ms=cursor,
+    )
+    at_sort_cursor = await schedule_service.create_task(
+        user_id,
+        group.task_list_id,
+        "Sorted at the cursor",
+        last_modified_ms=cursor - 1000,
+        sort_time=cursor,
+    )
+    at_planer_sort_cursor = await schedule_service.create_task(
+        user_id,
+        group.task_list_id,
+        "Planer-sorted at the cursor",
+        last_modified_ms=cursor - 1000,
+        planer_sort_time=cursor,
+    )
+    before_cursor = await schedule_service.create_task(
+        user_id,
+        group.task_list_id,
+        "Modified before the cursor",
+        last_modified_ms=cursor - 1000,
+    )
+
+    tasks = await schedule_service.list_tasks(user_id, since=cursor)
+
+    assert {t.task_id for t in tasks} == {
+        at_update_cursor.task_id,
+        at_sort_cursor.task_id,
+        at_planer_sort_cursor.task_id,
+    }
+    assert before_cursor.task_id not in {t.task_id for t in tasks}
 
 
 async def test_create_task_completed_time_and_last_modified(
