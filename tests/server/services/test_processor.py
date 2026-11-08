@@ -553,7 +553,9 @@ async def test_start_calls_poll_loop(
         await session.commit()
 
     await processor_service.start()
-    await asyncio.sleep(0.05)
+    async with asyncio.timeout(2.0):
+        while not hashing.calls:
+            await asyncio.sleep(0.01)
 
     assert hashing.calls == [(1, None, None)]
     assert processor_service.polling_task is not None
