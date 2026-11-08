@@ -1,0 +1,111 @@
+{
+  "dataset_name": "supernote-ocr-suite-v1",
+  "case_count": 20,
+  "targets": [
+    {
+      "target_name": "device-rtr",
+      "model_id": "supernote-rtr-embedded",
+      "warmup_ms": 0.0,
+      "overall": {
+        "category": "all",
+        "page_count": 3,
+        "error_count": 0,
+        "mean_cer": 0.043,
+        "median_cer": 0.0189,
+        "mean_content_cer": 0.043,
+        "mean_wer": 0.0772,
+        "mean_word_recall": 0.9877,
+        "mean_bujo_symbol_recall": null,
+        "mean_bujo_strikethrough_recall": null,
+        "mean_bujo_indent_accuracy": null,
+        "median_latency_ms": 0.0,
+        "p95_latency_ms": 0.0
+      },
+      "by_category": [
+        {
+          "category": "english_prose",
+          "page_count": 2,
+          "error_count": 0,
+          "mean_cer": 0.0645,
+          "median_cer": 0.0645,
+          "mean_content_cer": 0.0645,
+          "mean_wer": 0.1159,
+          "mean_word_recall": 0.9815,
+          "mean_bujo_symbol_recall": null,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": null,
+          "median_latency_ms": 0.0,
+          "p95_latency_ms": 0.0
+        },
+        {
+          "category": "multilingual",
+          "page_count": 1,
+          "error_count": 0,
+          "mean_cer": 0.0,
+          "median_cer": 0.0,
+          "mean_content_cer": 0.0,
+          "mean_wer": 0.0,
+          "mean_word_recall": 1.0,
+          "mean_bujo_symbol_recall": null,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": null,
+          "median_latency_ms": 0.0,
+          "p95_latency_ms": 0.0
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "a5x_obsidian_prose",
+          "category": "english_prose",
+          "hypothesis": "Subject: Obsidian Super Note Integration\nTest File\nLet me know how this works, please. I've\nbeen thinking about setting up an obsidian\ninstance for a while now.",
+          "latency_ms": 0.0,
+          "metrics": {
+            "cer": 0.0189,
+            "content_cer": 0.0189,
+            "wer": 0.1154,
+            "word_recall": 0.963,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "rtr_paragraphs",
+          "category": "english_prose",
+          "hypothesis": "Real paragraph test recognition time\nWith enough space a new paragraph\nshould be created. If lines are\nclose then the text should reflow.\nThis should be a new paragraph.\nAs well as this.\nBut thin is the last paragraph and\nshould reflow together.",
+          "latency_ms": 0.0,
+          "metrics": {
+            "cer": 0.1102,
+            "content_cer": 0.1102,
+            "wer": 0.1163,
+            "word_recall": 1.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "turkish_diacritics",
+          "category": "multilingual",
+          "hypothesis": "Şimdi ben buraya neden çıktım?\nNiçin çıktım?\nNasıl Çıktım?\nBunu izaha gerek yok.\nGördünüz, yürüdüm çıktım.\nAma çıkmamış da olabilirim.",
+          "latency_ms": 0.0,
+          "metrics": {
+            "cer": 0.0,
+            "content_cer": 0.0,
+            "wer": 0.0,
+            "word_recall": 1.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        }
+      ]
+    }
+  ]
+}

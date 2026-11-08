@@ -1,0 +1,974 @@
+{
+  "dataset_name": "supernote-ocr-suite-v1",
+  "case_count": 20,
+  "targets": [
+    {
+      "target_name": "apple:vision-accurate",
+      "model_id": "vision-accurate",
+      "warmup_ms": 862.5,
+      "overall": {
+        "category": "all",
+        "page_count": 20,
+        "error_count": 0,
+        "mean_cer": 0.1588,
+        "median_cer": 0.0425,
+        "mean_content_cer": 0.156,
+        "mean_wer": 0.2995,
+        "mean_word_recall": 0.7701,
+        "mean_bujo_symbol_recall": 0.6772,
+        "mean_bujo_strikethrough_recall": 0.0,
+        "mean_bujo_indent_accuracy": 0.0,
+        "median_latency_ms": 365.5,
+        "p95_latency_ms": 499.2
+      },
+      "by_category": [
+        {
+          "category": "bujo_daily",
+          "page_count": 2,
+          "error_count": 0,
+          "mean_cer": 0.0359,
+          "median_cer": 0.0359,
+          "mean_content_cer": 0.0258,
+          "mean_wer": 0.1608,
+          "mean_word_recall": 0.9407,
+          "mean_bujo_symbol_recall": 0.7,
+          "mean_bujo_strikethrough_recall": 0.0,
+          "mean_bujo_indent_accuracy": 0.0,
+          "median_latency_ms": 467.6,
+          "p95_latency_ms": 494.5
+        },
+        {
+          "category": "bujo_weekly",
+          "page_count": 1,
+          "error_count": 0,
+          "mean_cer": 0.0072,
+          "median_cer": 0.0072,
+          "mean_content_cer": 0.0025,
+          "mean_wer": 0.0423,
+          "mean_word_recall": 0.9839,
+          "mean_bujo_symbol_recall": 0.7778,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": 0.0,
+          "median_latency_ms": 407.4,
+          "p95_latency_ms": 407.4
+        },
+        {
+          "category": "bujo_monthly",
+          "page_count": 2,
+          "error_count": 0,
+          "mean_cer": 0.034,
+          "median_cer": 0.034,
+          "mean_content_cer": 0.0301,
+          "mean_wer": 0.156,
+          "mean_word_recall": 0.9436,
+          "mean_bujo_symbol_recall": 0.6041,
+          "mean_bujo_strikethrough_recall": 0.0,
+          "mean_bujo_indent_accuracy": 0.0,
+          "median_latency_ms": 445.9,
+          "p95_latency_ms": 455.0
+        },
+        {
+          "category": "empty_template",
+          "page_count": 1,
+          "error_count": 0,
+          "mean_cer": 0.0,
+          "median_cer": 0.0,
+          "mean_content_cer": 0.0,
+          "mean_wer": 0.0,
+          "mean_word_recall": 1.0,
+          "mean_bujo_symbol_recall": null,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": null,
+          "median_latency_ms": 131.7,
+          "p95_latency_ms": 131.7
+        },
+        {
+          "category": "english_prose",
+          "page_count": 5,
+          "error_count": 0,
+          "mean_cer": 0.0296,
+          "median_cer": 0.0245,
+          "mean_content_cer": 0.0296,
+          "mean_wer": 0.1557,
+          "mean_word_recall": 0.9292,
+          "mean_bujo_symbol_recall": null,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": null,
+          "median_latency_ms": 289.4,
+          "p95_latency_ms": 368.6
+        },
+        {
+          "category": "diagram_and_layout",
+          "page_count": 4,
+          "error_count": 0,
+          "mean_cer": 0.2189,
+          "median_cer": 0.2507,
+          "mean_content_cer": 0.2131,
+          "mean_wer": 0.4792,
+          "mean_word_recall": 0.6424,
+          "mean_bujo_symbol_recall": null,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": null,
+          "median_latency_ms": 398.6,
+          "p95_latency_ms": 671.2
+        },
+        {
+          "category": "multilingual",
+          "page_count": 1,
+          "error_count": 0,
+          "mean_cer": 0.2612,
+          "median_cer": 0.2612,
+          "mean_content_cer": 0.2612,
+          "mean_wer": 0.65,
+          "mean_word_recall": 0.35,
+          "mean_bujo_symbol_recall": null,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": null,
+          "median_latency_ms": 451.5,
+          "p95_latency_ms": 451.5
+        },
+        {
+          "category": "edge_cases",
+          "page_count": 4,
+          "error_count": 0,
+          "mean_cer": 0.4363,
+          "median_cer": 0.3725,
+          "mean_content_cer": 0.4363,
+          "mean_wer": 0.4924,
+          "mean_word_recall": 0.5209,
+          "mean_bujo_symbol_recall": null,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": null,
+          "median_latency_ms": 227.4,
+          "p95_latency_ms": 396.4
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "bujo_daily_friday",
+          "category": "bujo_daily",
+          "hypothesis": "2026-11-07 Friday\n* • Review Q4 infrastructure budget\n× send signed lease renewal to landlord\no 10:30 Design sync with Maya and Leo\n- Agreed to ship local OCR before embeddings\n• Follow up on Latency. benchmark.numbers\n> Migrate home NAS backup script to cron\n• Order replacement ceramic nibs\no 17:45 Strength training session\n- Deadlift 3X5 at 275 lbs felt solid\n• Read two chapters of Designing Data Systems",
+          "latency_ms": 494.5,
+          "metrics": {
+            "cer": 0.0267,
+            "content_cer": 0.0155,
+            "wer": 0.125,
+            "word_recall": 1.0,
+            "bujo_expected_items": 10,
+            "bujo_symbol_recall": 0.9,
+            "bujo_strikethrough_recall": 0.0,
+            "bujo_indent_accuracy": 0.0
+          },
+          "error": null
+        },
+        {
+          "case_id": "bujo_daily_saturday",
+          "category": "bujo_daily",
+          "hypothesis": "2026-11-08 Saturday\n* × Fix SQLite WAL lock timeout in PR #514\n• Tag. vO.25.0 release candidate\n•• Verify Linux wheel excludes pyobjo extras.\n• 09:00 Farmers market and coffee run\n< Schedule annual dentist checkup for Dec\n> Draft blog post on self-hosted e-ink cloud\n• Caniel inused staging UM instanee\n- Latency dropped from 92Oms to 165ms after warmup",
+          "latency_ms": 440.6,
+          "metrics": {
+            "cer": 0.0452,
+            "content_cer": 0.0361,
+            "wer": 0.1967,
+            "word_recall": 0.8814,
+            "bujo_expected_items": 8,
+            "bujo_symbol_recall": 0.5,
+            "bujo_strikethrough_recall": 0.0,
+            "bujo_indent_accuracy": 0.0
+          },
+          "error": null
+        },
+        {
+          "case_id": "bujo_weekly_w45",
+          "category": "bujo_weekly",
+          "hypothesis": "Week 45: Nov 2 - Nov 8\n* × Finalize multi-provider Al config schema\n* • Benchmark Apple Vision vs Ollama gemma3\n> Clean garage workbench and donate boxes\n• Wed 14:00 Quarterly roadmap review\n- Keep core container RAM under 160MB\nX Book Thanksgiving flights to Seattle\nWeekly Review\n- Shipped named providers and local macOS OCR\n- Biggest challenge: context switching mid-week\n• Next week focus: bounded summary chunking",
+          "latency_ms": 407.4,
+          "metrics": {
+            "cer": 0.0072,
+            "content_cer": 0.0025,
+            "wer": 0.0423,
+            "word_recall": 0.9839,
+            "bujo_expected_items": 9,
+            "bujo_symbol_recall": 0.7778,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": 0.0
+          },
+          "error": null
+        },
+        {
+          "case_id": "bujo_monthly_calendar",
+          "category": "bujo_monthly",
+          "hypothesis": "November 2026\no i sun Daylight saving time ends\n03 The Election day\n* • 6 Fri Release v0.25.0 milestone\n0 9 Mon Pediatrician appointment 11:15.\n• 14 Sat Trail half marathon in Marin\nX 18 Wed Quarterly tax estimate due\nO 21 Sat Host friendsgiving dinner\n0 26 Thi Thanksgiving family trip\n30 Mon Monthly budget and habit retro",
+          "latency_ms": 455.0,
+          "metrics": {
+            "cer": 0.0399,
+            "content_cer": 0.0392,
+            "wer": 0.1935,
+            "word_recall": 0.9273,
+            "bujo_expected_items": 9,
+            "bujo_symbol_recall": 0.3333,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "bujo_monthly_goals",
+          "category": "bujo_monthly",
+          "hypothesis": "November Goals & Task List:\n* • Complete 12 strength workouts this month\nx Publish OCR evaluation suite and does.\n• Add per-notebook custom vocabulary hints\n- Harvest keywords from note metadata\n> Upgrade home server UPS battery pack\n< Move winter camping trip to January\n• Rewrite legacy mobile syne prototype\n- Lesson learned: measure CER before tuning",
+          "latency_ms": 436.8,
+          "metrics": {
+            "cer": 0.028,
+            "content_cer": 0.0209,
+            "wer": 0.1186,
+            "word_recall": 0.96,
+            "bujo_expected_items": 8,
+            "bujo_symbol_recall": 0.875,
+            "bujo_strikethrough_recall": 0.0,
+            "bujo_indent_accuracy": 0.0
+          },
+          "error": null
+        },
+        {
+          "case_id": "empty_dot_grid",
+          "category": "empty_template",
+          "hypothesis": "",
+          "latency_ms": 131.7,
+          "metrics": {
+            "cer": 0.0,
+            "content_cer": 0.0,
+            "wer": 0.0,
+            "word_recall": 1.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "a5x_obsidian_prose",
+          "category": "english_prose",
+          "hypothesis": "Subject: Obsidian Supernote Integration\nTest File\nLet me know how this works, please. Eve\nbeen thinlang about setting up an Obsidian.\ninstance for a while now.",
+          "latency_ms": 368.6,
+          "metrics": {
+            "cer": 0.0314,
+            "content_cer": 0.0314,
+            "wer": 0.1154,
+            "word_recall": 0.8889,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "rtr_paragraphs",
+          "category": "english_prose",
+          "hypothesis": "Real time recognition paragraph test\nWith enough space a new paragraph\nShould be crealed, If lines are\nClose then the text shoul reflow.\nThis should be\na new paragraph.\nAs well as this.\nBut this is the last paragraph and\nShould reflow together.",
+          "latency_ms": 362.3,
+          "metrics": {
+            "cer": 0.0245,
+            "content_cer": 0.0245,
+            "wer": 0.1163,
+            "word_recall": 0.9767,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "manta_alphanumeric",
+          "category": "english_prose",
+          "hypothesis": "This is a note created on\nthe\nA5XZ Manta.\nIt doesn't work. \"",
+          "latency_ms": 289.4,
+          "metrics": {
+            "cer": 0.0492,
+            "content_cer": 0.0492,
+            "wer": 0.1538,
+            "word_recall": 0.9231,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "vertical_1180",
+          "category": "english_prose",
+          "hypothesis": "This\nvertical\nnote file\nhas\nORIENTATION: |180",
+          "latency_ms": 289.3,
+          "metrics": {
+            "cer": 0.0222,
+            "content_cer": 0.0222,
+            "wer": 0.1429,
+            "word_recall": 0.8571,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "horizontal_1270",
+          "category": "english_prose",
+          "hypothesis": "This horizontal\nnote file has\nORIENTATION: 1270",
+          "latency_ms": 263.7,
+          "metrics": {
+            "cer": 0.0208,
+            "content_cer": 0.0208,
+            "wer": 0.25,
+            "word_recall": 1.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "stroller_diagram_light",
+          "category": "diagram_and_layout",
+          "hypothesis": "Hande bar\nRock\nHappy Bady in a strater",
+          "latency_ms": 671.2,
+          "metrics": {
+            "cer": 0.2222,
+            "content_cer": 0.2222,
+            "wer": 0.4444,
+            "word_recall": 0.5556,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "stroller_diagram_dark",
+          "category": "diagram_and_layout",
+          "hypothesis": "Baby\nHandle bar\nRock\nHappy Body in a streller",
+          "latency_ms": 268.6,
+          "metrics": {
+            "cer": 0.0667,
+            "content_cer": 0.0667,
+            "wer": 0.2222,
+            "word_recall": 0.8889,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "horizontal_1090_axes",
+          "category": "diagram_and_layout",
+          "hypothesis": "This is\na horizontal\nnote\nA5XL\n- Width\nhelght",
+          "latency_ms": 499.2,
+          "metrics": {
+            "cer": 0.2791,
+            "content_cer": 0.2558,
+            "wer": 0.5,
+            "word_recall": 0.75,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "sn2md_rotated_quadrants",
+          "category": "diagram_and_layout",
+          "hypothesis": "deadlift\nweights\nbedrk\nStudies\nclogging",
+          "latency_ms": 298.1,
+          "metrics": {
+            "cer": 0.3077,
+            "content_cer": 0.3077,
+            "wer": 0.75,
+            "word_recall": 0.375,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "turkish_diacritics",
+          "category": "multilingual",
+          "hypothesis": "Simai Den burun neden siktu?\nNicin yktim?\nNasl Gittim?\nBunu izaha gerek yok.\nbartiniz, gürüdim aktim.\nAma akmany, da olablirim.",
+          "latency_ms": 451.5,
+          "metrics": {
+            "cer": 0.2612,
+            "content_cer": 0.2612,
+            "wer": 0.65,
+            "word_recall": 0.35,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "inverted_banner_gray",
+          "category": "edge_cases",
+          "hypothesis": "Different itte!\nDifferent",
+          "latency_ms": 228.0,
+          "metrics": {
+            "cer": 0.12,
+            "content_cer": 0.12,
+            "wer": 0.3333,
+            "word_recall": 0.6667,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "inverted_banner_scribble_overlap",
+          "category": "edge_cases",
+          "hypothesis": "Main title\nI'm a bayscid ding",
+          "latency_ms": 396.4,
+          "metrics": {
+            "cer": 0.625,
+            "content_cer": 0.625,
+            "wer": 0.6364,
+            "word_recall": 0.4167,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "giant_digit_2",
+          "category": "edge_cases",
+          "hypothesis": "2",
+          "latency_ms": 224.3,
+          "metrics": {
+            "cer": 0.0,
+            "content_cer": 0.0,
+            "wer": 0.0,
+            "word_recall": 1.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "giant_digit_10",
+          "category": "edge_cases",
+          "hypothesis": "",
+          "latency_ms": 226.9,
+          "metrics": {
+            "cer": 1.0,
+            "content_cer": 1.0,
+            "wer": 1.0,
+            "word_recall": 0.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        }
+      ]
+    },
+    {
+      "target_name": "apple:vision-fast",
+      "model_id": "vision-fast",
+      "warmup_ms": 173.6,
+      "overall": {
+        "category": "all",
+        "page_count": 20,
+        "error_count": 0,
+        "mean_cer": 0.6528,
+        "median_cer": 0.8174,
+        "mean_content_cer": 0.6495,
+        "mean_wer": 0.8121,
+        "mean_word_recall": 0.2406,
+        "mean_bujo_symbol_recall": 0.1222,
+        "mean_bujo_strikethrough_recall": 0.0,
+        "mean_bujo_indent_accuracy": 0.0,
+        "median_latency_ms": 113.2,
+        "p95_latency_ms": 160.0
+      },
+      "by_category": [
+        {
+          "category": "bujo_daily",
+          "page_count": 2,
+          "error_count": 0,
+          "mean_cer": 0.311,
+          "median_cer": 0.311,
+          "mean_content_cer": 0.2987,
+          "mean_wer": 0.6115,
+          "mean_word_recall": 0.5297,
+          "mean_bujo_symbol_recall": 0.125,
+          "mean_bujo_strikethrough_recall": 0.0,
+          "mean_bujo_indent_accuracy": 0.0,
+          "median_latency_ms": 156.1,
+          "p95_latency_ms": 160.0
+        },
+        {
+          "category": "bujo_weekly",
+          "page_count": 1,
+          "error_count": 0,
+          "mean_cer": 0.1862,
+          "median_cer": 0.1862,
+          "mean_content_cer": 0.1662,
+          "mean_wer": 0.5211,
+          "mean_word_recall": 0.629,
+          "mean_bujo_symbol_recall": 0.1111,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": 0.0,
+          "median_latency_ms": 143.1,
+          "p95_latency_ms": 143.1
+        },
+        {
+          "category": "bujo_monthly",
+          "page_count": 2,
+          "error_count": 0,
+          "mean_cer": 0.3626,
+          "median_cer": 0.3626,
+          "mean_content_cer": 0.352,
+          "mean_wer": 0.6982,
+          "mean_word_recall": 0.3755,
+          "mean_bujo_symbol_recall": 0.125,
+          "mean_bujo_strikethrough_recall": 0.0,
+          "mean_bujo_indent_accuracy": 0.0,
+          "median_latency_ms": 158.3,
+          "p95_latency_ms": 158.6
+        },
+        {
+          "category": "empty_template",
+          "page_count": 1,
+          "error_count": 0,
+          "mean_cer": 0.0,
+          "median_cer": 0.0,
+          "mean_content_cer": 0.0,
+          "mean_wer": 0.0,
+          "mean_word_recall": 1.0,
+          "mean_bujo_symbol_recall": null,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": null,
+          "median_latency_ms": 98.3,
+          "p95_latency_ms": 98.3
+        },
+        {
+          "category": "english_prose",
+          "page_count": 5,
+          "error_count": 0,
+          "mean_cer": 0.8458,
+          "median_cer": 0.8367,
+          "mean_content_cer": 0.8458,
+          "mean_wer": 0.9703,
+          "mean_word_recall": 0.0746,
+          "mean_bujo_symbol_recall": null,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": null,
+          "median_latency_ms": 115.6,
+          "p95_latency_ms": 172.7
+        },
+        {
+          "category": "diagram_and_layout",
+          "page_count": 4,
+          "error_count": 0,
+          "mean_cer": 0.8792,
+          "median_cer": 0.8919,
+          "mean_content_cer": 0.8792,
+          "mean_wer": 1.0,
+          "mean_word_recall": 0.0,
+          "mean_bujo_symbol_recall": null,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": null,
+          "median_latency_ms": 108.2,
+          "p95_latency_ms": 133.1
+        },
+        {
+          "category": "multilingual",
+          "page_count": 1,
+          "error_count": 0,
+          "mean_cer": 0.7761,
+          "median_cer": 0.7761,
+          "mean_content_cer": 0.7761,
+          "mean_wer": 1.25,
+          "mean_word_recall": 0.0,
+          "mean_bujo_symbol_recall": null,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": null,
+          "median_latency_ms": 126.1,
+          "p95_latency_ms": 126.1
+        },
+        {
+          "category": "edge_cases",
+          "page_count": 4,
+          "error_count": 0,
+          "mean_cer": 0.75,
+          "median_cer": 1.0,
+          "mean_content_cer": 0.75,
+          "mean_wer": 0.75,
+          "mean_word_recall": 0.25,
+          "mean_bujo_symbol_recall": null,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": null,
+          "median_latency_ms": 100.1,
+          "p95_latency_ms": 104.3
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "bujo_daily_friday",
+          "category": "bujo_daily",
+          "hypothesis": "2026-11-07 Friday\nTU)iiew o+ L￿frAstr￿St￿re b￿￿get\nx Se￿ s￿9￿e￿ Lease re￿ewaL to La￿LOrd\n0 10:30 T)eSL9￿ WLth Maya Leo\nAgreed to ship LoGaL c)cR brfore etrKbeddk￿gs\n.FoLLow LA.te￿Y.be￿Gh￿Kar￿.￿Kv￿berS\n'> Migrate hokKe NAS bASk￿P.SSriFt.tO Gro\n0 17:+5Stre￿gth tra￿￿￿￿9 sessio\neadLift 3x5 at 275 Lbs feLt soLid\nRead two Ghapters of T)esL9￿￿￿9 T>ata SyStekKs",
+          "latency_ms": 160.0,
+          "metrics": {
+            "cer": 0.4272,
+            "content_cer": 0.4197,
+            "wer": 0.7639,
+            "word_recall": 0.4154,
+            "bujo_expected_items": 10,
+            "bujo_symbol_recall": 0.0,
+            "bujo_strikethrough_recall": 0.0,
+            "bujo_indent_accuracy": 0.0
+          },
+          "error": null
+        },
+        {
+          "case_id": "bujo_daily_saturday",
+          "category": "bujo_daily",
+          "hypothesis": "2026-11-08 gaturday\n* x Fix goLite WAL lock timeout in PR #514\nTag .vO.25.0 release oandidat2\nVerify Linux wheel exclude& pyobjo extra&\n0 09:00 Farmer& market and Coffee run\n< gchedule annual denti&t checkup for Dec\n> Draft blog po&t on &elf-ho&ted e-ink cloud\nLatency. dropped from 920m& to165m& after warmup",
+          "latency_ms": 152.2,
+          "metrics": {
+            "cer": 0.1949,
+            "content_cer": 0.1777,
+            "wer": 0.459,
+            "word_recall": 0.6441,
+            "bujo_expected_items": 8,
+            "bujo_symbol_recall": 0.25,
+            "bujo_strikethrough_recall": 0.0,
+            "bujo_indent_accuracy": 0.0
+          },
+          "error": null
+        },
+        {
+          "case_id": "bujo_weekly_w45",
+          "category": "bujo_weekly",
+          "hypothesis": "* X Finalize multi-\nrovider AI confi\nschema\nBenchmark A le Vision vs Ollama\nemma3\n> Clean\nara\ne workbench and donate boxes\no Wed 14:00 Quarterl\nroadma\nreview\nKee\ncore container RAM under 160MB\nX Book Thanks\nivin\nhts to Seattle\nShi\ned named roviders and local macos OCR\nest challen\ne: context switchin\nmid-week\nNext week focus: bounded summar\nchunkin",
+          "latency_ms": 143.1,
+          "metrics": {
+            "cer": 0.1862,
+            "content_cer": 0.1662,
+            "wer": 0.5211,
+            "word_recall": 0.629,
+            "bujo_expected_items": 9,
+            "bujo_symbol_recall": 0.1111,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": 0.0
+          },
+          "error": null
+        },
+        {
+          "case_id": "bujo_monthly_calendar",
+          "category": "bujo_monthly",
+          "hypothesis": "NovekKber 2026\n0 3 TKe FLeGtbovb day\n6 Frb ReLease vo.25.o kKbLtsto\n0 g Movb pedbatrbc•bayb aPPOb¥btkKe¥bt 11:15\n.0 i+ sat. TrabL haLf kKarathovb Marb¥\n'X 12 vved QMarterLy tAx ￿t￿￿￿te dKe\n.0 ￿ sat FtOSt fr￿e￿s9￿Vbw.\n0 26 ThK Thavbl2sgbVbw trbp\n30 Movb MovbthLy bKdget hab'bt retro",
+          "latency_ms": 158.6,
+          "metrics": {
+            "cer": 0.5123,
+            "content_cer": 0.5131,
+            "wer": 0.871,
+            "word_recall": 0.2909,
+            "bujo_expected_items": 9,
+            "bujo_symbol_recall": 0.0,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "bujo_monthly_goals",
+          "category": "bujo_monthly",
+          "hypothesis": "Movember Goal& & Tagk List\n* • Complete12 drength workout& thi& month\nX Publigh OCR e!alu4tion &uite and doc&\nAdd per-notebook cu&tom vocabulary hint&\nHarve&t keyword& from .note metadata\n> Upgrade home gerver upg battery pack\n< Moiie winter camping trip to January\nLe￿on learned: mea&ure CER before tunin9",
+          "latency_ms": 158.0,
+          "metrics": {
+            "cer": 0.2129,
+            "content_cer": 0.191,
+            "wer": 0.5254,
+            "word_recall": 0.46,
+            "bujo_expected_items": 8,
+            "bujo_symbol_recall": 0.25,
+            "bujo_strikethrough_recall": 0.0,
+            "bujo_indent_accuracy": 0.0
+          },
+          "error": null
+        },
+        {
+          "case_id": "empty_dot_grid",
+          "category": "empty_template",
+          "hypothesis": "",
+          "latency_ms": 98.3,
+          "metrics": {
+            "cer": 0.0,
+            "content_cer": 0.0,
+            "wer": 0.0,
+            "word_recall": 1.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "a5x_obsidian_prose",
+          "category": "english_prose",
+          "hypothesis": "-f&s+_ F; I\nrt0￿ l¢rkJ\nCL\n06si\nla",
+          "latency_ms": 115.6,
+          "metrics": {
+            "cer": 0.8994,
+            "content_cer": 0.8994,
+            "wer": 1.0,
+            "word_recall": 0.037,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "rtr_paragraphs",
+          "category": "english_prose",
+          "hypothesis": "-L fjeco\n,,lJ\nCre\n[<3 If |ihLs\nclos. tV£a -fvL +0<+ Ik.,Q)\n-,< £1, IJ b.\n£b, J J pofk- b3.be(",
+          "latency_ms": 172.7,
+          "metrics": {
+            "cer": 0.8367,
+            "content_cer": 0.8367,
+            "wer": 0.9767,
+            "word_recall": 0.1163,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "manta_alphanumeric",
+          "category": "english_prose",
+          "hypothesis": "Tk'i Ls CL o\nfvÈgZ È4G,a\nOK",
+          "latency_ms": 135.7,
+          "metrics": {
+            "cer": 0.8361,
+            "content_cer": 0.8361,
+            "wer": 1.0,
+            "word_recall": 0.0769,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "vertical_1180",
+          "category": "english_prose",
+          "hypothesis": "G3\nOeJEThJTA T)gAJ . I I30",
+          "latency_ms": 108.7,
+          "metrics": {
+            "cer": 0.8444,
+            "content_cer": 0.8444,
+            "wer": 1.0,
+            "word_recall": 0.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "horizontal_1270",
+          "category": "english_prose",
+          "hypothesis": "9T21 bNf4 T)DpJ\n1270",
+          "latency_ms": 104.1,
+          "metrics": {
+            "cer": 0.8125,
+            "content_cer": 0.8125,
+            "wer": 0.875,
+            "word_recall": 0.1429,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "stroller_diagram_light",
+          "category": "diagram_and_layout",
+          "hypothesis": "l/\nlla(, L,\noc\nPI,IFy 6,1\nIk J sldleb-",
+          "latency_ms": 110.8,
+          "metrics": {
+            "cer": 0.7333,
+            "content_cer": 0.7333,
+            "wer": 1.0,
+            "word_recall": 0.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "stroller_diagram_dark",
+          "category": "diagram_and_layout",
+          "hypothesis": "oc\n'fFy J Ih J glAI,,",
+          "latency_ms": 105.5,
+          "metrics": {
+            "cer": 0.8222,
+            "content_cer": 0.8222,
+            "wer": 1.0,
+            "word_recall": 0.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "horizontal_1090_axes",
+          "category": "diagram_and_layout",
+          "hypothesis": "",
+          "latency_ms": 133.1,
+          "metrics": {
+            "cer": 1.0,
+            "content_cer": 1.0,
+            "wer": 1.0,
+            "word_recall": 0.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "sn2md_rotated_quadrants",
+          "category": "diagram_and_layout",
+          "hypothesis": "clo",
+          "latency_ms": 103.1,
+          "metrics": {
+            "cer": 0.9615,
+            "content_cer": 0.9615,
+            "wer": 1.0,
+            "word_recall": 0.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "turkish_diacritics",
+          "category": "multilingual",
+          "hypothesis": "5'thJi fv bJ(th nkn fiilh?\nUifilq fil Ik, ?\nKI I (4L4\n)(\n(J￿V i tqkn y,k J.k.\n10Th4 41 krtwi p J4 Dloli I'iriffi.",
+          "latency_ms": 126.1,
+          "metrics": {
+            "cer": 0.7761,
+            "content_cer": 0.7761,
+            "wer": 1.25,
+            "word_recall": 0.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "inverted_banner_gray",
+          "category": "edge_cases",
+          "hypothesis": "",
+          "latency_ms": 99.6,
+          "metrics": {
+            "cer": 1.0,
+            "content_cer": 1.0,
+            "wer": 1.0,
+            "word_recall": 0.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "inverted_banner_scribble_overlap",
+          "category": "edge_cases",
+          "hypothesis": "L)Q",
+          "latency_ms": 104.3,
+          "metrics": {
+            "cer": 1.0,
+            "content_cer": 1.0,
+            "wer": 1.0,
+            "word_recall": 0.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "giant_digit_2",
+          "category": "edge_cases",
+          "hypothesis": "z",
+          "latency_ms": 99.6,
+          "metrics": {
+            "cer": 1.0,
+            "content_cer": 1.0,
+            "wer": 1.0,
+            "word_recall": 0.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "giant_digit_10",
+          "category": "edge_cases",
+          "hypothesis": "10",
+          "latency_ms": 100.6,
+          "metrics": {
+            "cer": 0.0,
+            "content_cer": 0.0,
+            "wer": 0.0,
+            "word_recall": 1.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        }
+      ]
+    }
+  ]
+}
