@@ -18,7 +18,9 @@ from supernote.cli.client import (
     async_cloud_search,
     async_cloud_socket,
     async_cloud_upload,
+    create_session,
     load_cached_auth,
+    server_url_override,
     setup_logging,
     subcommand_cloud_download,
     subcommand_cloud_insights,
@@ -105,7 +107,7 @@ def test_load_cached_auth_no_cache_no_url(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     with pytest.raises(SystemExit) as exc_info:
-        load_cached_auth(url=None)
+        load_cached_auth()
     assert exc_info.value.code == 1
     captured = capsys.readouterr()
     assert "No cached credentials found" in captured.out
@@ -118,7 +120,7 @@ def test_load_cached_auth_no_host_in_cache(
     FileCacheAuth(cache_path).save_credentials("token-123", "")
 
     with pytest.raises(SystemExit) as exc_info:
-        load_cached_auth(url=None)
+        load_cached_auth()
     assert exc_info.value.code == 1
     captured = capsys.readouterr()
     assert "No server URL found in cached credentials" in captured.out
@@ -128,9 +130,28 @@ def test_load_cached_auth_success() -> None:
     cache_path = os.path.expanduser("~/.cache/supernote.pkl")
     FileCacheAuth(cache_path).save_credentials("token-123", "http://cached-server:8080")
 
-    auth, url = load_cached_auth(url=None)
+    auth, url = load_cached_auth()
     assert url == "http://cached-server:8080"
     assert auth.token == "token-123"
+
+
+async def test_server_url_override_precedence() -> None:
+    """Verify server_url_override supersedes cached host and resets cleanly."""
+    with server_url_override("http://bootstrap.example"):
+        assert load_cached_auth()[1] == "http://bootstrap.example"
+
+    cache_path = os.path.expanduser("~/.cache/supernote.pkl")
+    FileCacheAuth(cache_path).save_credentials("token-123", "http://cached.example")
+
+    assert load_cached_auth()[1] == "http://cached.example"
+    with server_url_override("http://override.example"):
+        assert load_cached_auth()[1] == "http://override.example"
+        async with create_session() as sn:
+            assert sn.client.host == "http://override.example"
+        with server_url_override(None):
+            assert load_cached_auth()[1] == "http://cached.example"
+        assert load_cached_auth()[1] == "http://override.example"
+    assert load_cached_auth()[1] == "http://cached.example"
 
 
 def test_setup_logging() -> None:
