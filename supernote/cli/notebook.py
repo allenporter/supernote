@@ -24,13 +24,13 @@ from typing import NoReturn
 from colour import Color
 
 from supernote.notebook import (
-    NotebookAuthor,
     load,
     load_notebook,
     merge,
     parse_metadata,
     reconstruct,
 )
+from supernote.notebook.author import NotebookAuthor
 from supernote.notebook.color import MODE_RGB, ColorPalette
 from supernote.notebook.converter import (
     ImageConverter,

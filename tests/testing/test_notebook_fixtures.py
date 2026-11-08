@@ -9,7 +9,7 @@ import pytest
 
 from supernote.server.utils.note_content import infer_page_date
 from supernote.server.utils.paths import is_valid_page_id
-from supernote.testing import (
+from supernote.testing.notebook_fixtures import (
     append_synthetic_page,
     build_synthetic_notebook,
 )

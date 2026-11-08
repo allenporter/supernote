@@ -46,7 +46,7 @@ from supernote.server.services.search import SearchService
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 from supernote.server.utils.paths import get_page_png_path
-from supernote.testing import (
+from supernote.testing.notebook_fixtures import (
     SyntheticNotebook,
     append_synthetic_page,
     build_synthetic_notebook,
