@@ -88,6 +88,7 @@ class TaskType(str, BaseEnum):
     OCR_EXTRACTION = ("OCR_EXTRACTION", "ocr")
     EMBEDDING_GENERATION = ("EMBEDDING_GENERATION", "embedding")
     SUMMARY_GENERATION = ("SUMMARY_GENERATION", "summary")
+    RAPID_LOG_EXTRACTION = ("RAPID_LOG_EXTRACTION", "rapid_log")
 
     @classmethod
     def from_friendly(cls, friendly: str) -> "TaskType":

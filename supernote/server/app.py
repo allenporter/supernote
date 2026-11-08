@@ -47,6 +47,7 @@ from .services.processor_modules.embedding import EmbeddingModule
 from .services.processor_modules.ocr import OcrModule
 from .services.processor_modules.page_hashing import PageHashingModule
 from .services.processor_modules.png_conversion import PngConversionModule
+from .services.processor_modules.rapid_log import RapidLogModule
 from .services.processor_modules.summary import SummaryModule
 from .services.schedule import ScheduleService
 from .services.search import SearchService
@@ -273,6 +274,11 @@ def create_app(config: ServerConfig) -> web.Application:
             file_service=file_service,
             summary_service=summary_service,
             summary_model=summary_model,
+        ),
+        rapid_log=RapidLogModule(
+            file_service=file_service,
+            schedule_service=app["schedule_service"],
+            enabled=ocr_model is not None,
         ),
     )
 

@@ -134,7 +134,13 @@ async def test_process_with_real_file(
             key="global",
             status="COMPLETED",
         )
-        session.add_all([ocr_task, summary_task])
+        rapid_log_task = SystemTaskDO(
+            file_id=file_id,
+            task_type="RAPID_LOG_EXTRACTION",
+            key="global",
+            status="COMPLETED",
+        )
+        session.add_all([ocr_task, summary_task, rapid_log_task])
         await session.commit()
 
     # Run process again
@@ -189,6 +195,20 @@ async def test_process_with_real_file(
             .first()
         )
         assert invalidated_summary_task is None
+
+        invalidated_rapid_log_task = (
+            (
+                await session.execute(
+                    select(SystemTaskDO)
+                    .where(SystemTaskDO.file_id == file_id)
+                    .where(SystemTaskDO.task_type == "RAPID_LOG_EXTRACTION")
+                    .where(SystemTaskDO.key == "global")
+                )
+            )
+            .scalars()
+            .first()
+        )
+        assert invalidated_rapid_log_task is None
 
     # Test Deletion
     # We will simulate deletion by manually adding an extra page that doesn't exist in the file.

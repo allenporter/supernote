@@ -39,17 +39,20 @@ class RapidLogItem:
     task_state: RapidLogTaskState | None = None
     is_starred: bool = False
     is_cancelled: bool = False
+    has_explicit_bullet: bool = True
     detail: str | None = None
     children: list["RapidLogItem"] = field(default_factory=list)
     line_number: int = 0
 
+
+_HORIZONTAL_RULE_RE = re.compile(r"^(?:-\s*){3,}$|^(?:\*\s*){3,}$|^(?:_\s*){3,}$")
 
 # Signifier + bullet followed by strikethrough text:
 # e.g. "• ~~Call Bob~~", "* o ~~4pm Sync~~", "- ~~Old note~~"
 _BULLET_STRIKETHROUGH_RE = re.compile(
     r"^(?P<star>\*\s+)?"
     r"(?:"
-    r"(?P<task>[•X><]|-\s*\[[ xX]\]|\[[ xX]\])"
+    r"(?P<task>[•X><]|-\s*\[\s*[xX]?\s*\]|\[\s*[xX]?\s*\])"
     r"|(?P<event>o)"
     r"|(?P<note>-)"
     r")\s+~~\s*(?P<text>.+?)\s*~~\s*$"
@@ -63,7 +66,7 @@ _FULL_STRIKETHROUGH_RE = re.compile(r"^(?P<star>\*\s+)?~~\s*(?P<inner>.+?)\s*~~\
 _INNER_BULLET_RE = re.compile(
     r"^(?P<star>\*\s+)?"
     r"(?:"
-    r"(?P<task>[•X><]|-\s*\[[ xX]\]|\[[ xX]\])"
+    r"(?P<task>[•X><]|-\s*\[\s*[xX]?\s*\]|\[\s*[xX]?\s*\])"
     r"|(?P<event>o)"
     r"|(?P<note>-)"
     r")\s+(?P<text>.+?)\s*$"
@@ -100,7 +103,7 @@ def _unwrap_tilde_text(raw_text: str) -> tuple[str, bool]:
 
 def _parse_rapid_log_line(stripped: str, line_number: int) -> RapidLogItem | None:
     """Parse a single stripped line into a `RapidLogItem`, or `None` if not a Rapid Log entry."""
-    if not stripped:
+    if not stripped or _HORIZONTAL_RULE_RE.match(stripped):
         return None
 
     # 1. Bullet followed by strikethrough text: "• ~~Call Bob~~", "o ~~Sync~~", "- ~~Note~~"
@@ -172,13 +175,14 @@ def _parse_rapid_log_line(stripped: str, line_number: int) -> RapidLogItem | Non
             )
         if not inner:
             return None
-        # Bare strikethrough without visible bullet (e.g. heavy ink scribble over a task)
+        # Bare strikethrough without visible bullet (e.g. heavy ink scribble over an item)
         return RapidLogItem(
             kind=RapidLogKind.TASK,
             text=inner,
             task_state=RapidLogTaskState.CANCELLED,
             is_starred=is_starred,
             is_cancelled=True,
+            has_explicit_bullet=False,
             line_number=line_number,
         )
 
@@ -253,11 +257,13 @@ def parse_rapid_log(text_content: str | None) -> list[RapidLogItem]:
         stripped = expanded.lstrip(" ").rstrip()
         indent = len(expanded.rstrip()) - len(stripped)
 
-        if indent >= 2:
-            if not stack:
-                # Indented text not nested under any Rapid Log item (e.g. under a plain heading)
-                continue
+        if stack:
+            root_indent = stack[0][0]
+            child_min_indent = 2 if root_indent < 2 else root_indent + 2
+        else:
+            child_min_indent = None
 
+        if child_min_indent is not None and indent >= child_min_indent:
             while len(stack) > 1 and stack[-1][0] >= indent:
                 stack.pop()
 
@@ -276,13 +282,14 @@ def parse_rapid_log(text_content: str | None) -> list[RapidLogItem]:
                 child = RapidLogItem(
                     kind=RapidLogKind.NOTE,
                     text=stripped,
+                    has_explicit_bullet=False,
                     line_number=line_idx,
                 )
             stack[-1][1].children.append(child)
             stack.append((indent, child))
             continue
 
-        # Top-level line (indent < 2)
+        # Root-level line (either unindented, or indented under a non-bullet heading)
         parsed = _parse_rapid_log_line(stripped, line_idx)
         if parsed is not None:
             items.append(parsed)
