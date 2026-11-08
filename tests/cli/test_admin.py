@@ -2,6 +2,7 @@
 
 import argparse
 import hashlib
+import os
 
 import pytest
 from sqlalchemy import select
@@ -29,6 +30,8 @@ from supernote.cli.admin import (
     set_quota,
     set_quota_async,
 )
+from supernote.cli.client import load_cached_auth, server_url_override
+from supernote.client.auth import FileCacheAuth
 from supernote.models.base import ProcessingStatus
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import SystemTaskDO
@@ -129,7 +132,7 @@ def test_add_parser() -> None:
 async def test_add_user_public_registration_success(
     cli_env: CliServerEnv, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    await add_user_async(cli_env.url, "user@example.com", "secret", "User")
+    await add_user_async("user@example.com", "secret", "User")
 
     captured = capsys.readouterr()
     assert "Success! User created (Public Registration)." in captured.out
@@ -140,7 +143,7 @@ async def test_add_user_fallback_admin_creation_success(
     cli_env: CliServerEnv, capsys: pytest.CaptureFixture[str]
 ) -> None:
     cli_env.server_config.auth.enable_registration = False
-    await add_user_async(cli_env.url, "user2@example.com", "prompted_pass", "User 2")
+    await add_user_async("user2@example.com", "prompted_pass", "User 2")
 
     captured = capsys.readouterr()
     assert "Success! User created (Admin API)." in captured.out
@@ -152,7 +155,7 @@ async def test_add_user_failure(
 ) -> None:
     cli_env.server_config.auth.enable_registration = False
     with pytest.raises(SystemExit) as exc_info:
-        await add_user_async(cli_env.url, ADMIN_EMAIL, "pass", "Duplicate Admin")
+        await add_user_async(ADMIN_EMAIL, "pass", "Duplicate Admin")
     assert exc_info.value.code == 1
 
     captured = capsys.readouterr()
@@ -162,7 +165,7 @@ async def test_add_user_failure(
 async def test_list_users_success(
     cli_env: CliServerEnv, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    await list_users_async(cli_env.url)
+    await list_users_async()
 
     captured = capsys.readouterr()
     assert ADMIN_EMAIL in captured.out
@@ -170,10 +173,41 @@ async def test_list_users_success(
 
 
 async def test_list_users_failure(capsys: pytest.CaptureFixture[str]) -> None:
-    await list_users_async("http://127.0.0.1:1")
+    with server_url_override("http://127.0.0.1:1"):
+        await list_users_async()
 
     captured = capsys.readouterr()
     assert "Failed to list users:" in captured.out
+
+
+def test_admin_url_flag_overrides_cached_url(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The `admin --url` flag reaches the session without being passed down."""
+    FileCacheAuth(os.path.expanduser("~/.cache/supernote.pkl")).save_credentials(
+        "token", "http://cached.invalid"
+    )
+    list_users(argparse.Namespace(url="http://127.0.0.1:1"))
+
+    captured = capsys.readouterr()
+    assert "Failed to list users:" in captured.out
+    assert "127.0.0.1:1" in captured.out
+    assert "cached.invalid" not in captured.out
+
+
+def test_server_url_override_precedence() -> None:
+    FileCacheAuth(os.path.expanduser("~/.cache/supernote.pkl")).save_credentials(
+        "token", "http://cached.example"
+    )
+    assert load_cached_auth()[1] == "http://cached.example"
+    with server_url_override("http://override.example"):
+        assert load_cached_auth()[1] == "http://override.example"
+        assert load_cached_auth("http://explicit.example")[1] == (
+            "http://explicit.example"
+        )
+    with server_url_override(None):
+        assert load_cached_auth()[1] == "http://cached.example"
+    assert load_cached_auth()[1] == "http://cached.example"
 
 
 def test_reset_password_mismatch(
@@ -194,7 +228,7 @@ def test_reset_password_mismatch(
 async def test_reset_password_success(
     cli_env: CliServerEnv, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    await reset_password_async(cli_env.url, ADMIN_EMAIL, "newpass")
+    await reset_password_async(ADMIN_EMAIL, "newpass")
 
     captured = capsys.readouterr()
     assert "Success! Password Reset." in captured.out
@@ -211,7 +245,7 @@ async def test_reset_password_failure(
     cli_env: CliServerEnv, capsys: pytest.CaptureFixture[str]
 ) -> None:
     with pytest.raises(SystemExit) as exc_info:
-        await reset_password_async(cli_env.url, "missing@example.com", "newpass")
+        await reset_password_async("missing@example.com", "newpass")
     assert exc_info.value.code == 1
 
     captured = capsys.readouterr()
@@ -221,7 +255,7 @@ async def test_reset_password_failure(
 async def test_queue_status_running(
     cli_env: CliServerEnv, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    await queue_status_async(cli_env.url)
+    await queue_status_async()
 
     captured = capsys.readouterr()
     assert "Status:            RUNNING" in captured.out
@@ -229,8 +263,11 @@ async def test_queue_status_running(
 
 
 async def test_queue_status_failure(capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit) as exc_info:
-        await queue_status_async("http://127.0.0.1:1")
+    with (
+        server_url_override("http://127.0.0.1:1"),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        await queue_status_async()
     assert exc_info.value.code == 1
 
     captured = capsys.readouterr()
@@ -240,15 +277,15 @@ async def test_queue_status_failure(capsys: pytest.CaptureFixture[str]) -> None:
 async def test_queue_stop_and_start_success(
     cli_env: CliServerEnv, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    await queue_stop_async(cli_env.url)
+    await queue_stop_async()
     captured = capsys.readouterr()
     assert "Success: Queue processing stopped." in captured.out
 
-    await queue_status_async(cli_env.url)
+    await queue_status_async()
     captured = capsys.readouterr()
     assert "Status:            PAUSED" in captured.out
 
-    await queue_start_async(cli_env.url)
+    await queue_start_async()
     captured = capsys.readouterr()
     assert "Success: Queue processing started." in captured.out
 
@@ -268,7 +305,7 @@ async def test_reprocess_success(
         )
         await session.commit()
 
-    await reprocess_async(cli_env.url, "summary", 42)
+    await reprocess_async("summary", 42)
 
     captured = capsys.readouterr()
     assert "Triggered reprocessing of 'summary' for file ID 42." in captured.out
@@ -292,11 +329,11 @@ async def test_integrity_success_and_json(
     admin_id = await cli_env.user_service.get_user_id(ADMIN_EMAIL)
     assert admin_id is not None
 
-    await integrity_async(cli_env.url, email=ADMIN_EMAIL, as_json=False)
+    await integrity_async(email=ADMIN_EMAIL, as_json=False)
     captured = capsys.readouterr()
     assert "All integrity checks passed." in captured.out
 
-    await integrity_async(cli_env.url, email=ADMIN_EMAIL, as_json=True)
+    await integrity_async(email=ADMIN_EMAIL, as_json=True)
     captured = capsys.readouterr()
     assert '"scanned": 8' in captured.out
     assert '"ok": 8' in captured.out
@@ -308,14 +345,12 @@ async def test_integrity_success_and_json(
             )
         ).scalar_one()
 
-    await integrity_async(
-        cli_env.url, email=ADMIN_EMAIL, file_id=folder_id, as_json=True
-    )
+    await integrity_async(email=ADMIN_EMAIL, file_id=folder_id, as_json=True)
     captured = capsys.readouterr()
     assert '"scanned": 1' in captured.out
     assert '"ok": 1' in captured.out
 
-    await integrity_async(cli_env.url, full_disk=True, as_json=True)
+    await integrity_async(full_disk=True, as_json=True)
     captured = capsys.readouterr()
     assert '"scanned": 8' in captured.out
     assert '"ok": 8' in captured.out
@@ -342,7 +377,7 @@ async def test_integrity_issues_detected(
         await session.commit()
 
     with pytest.raises(SystemExit) as exc_info:
-        await integrity_async(cli_env.url, email=ADMIN_EMAIL, as_json=False)
+        await integrity_async(email=ADMIN_EMAIL, as_json=False)
     assert exc_info.value.code == 1
 
     captured = capsys.readouterr()
@@ -355,8 +390,11 @@ async def test_integrity_issues_detected(
 
 
 async def test_integrity_failure(capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit) as exc_info:
-        await integrity_async("http://127.0.0.1:1", email=ADMIN_EMAIL)
+    with (
+        server_url_override("http://127.0.0.1:1"),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        await integrity_async(email=ADMIN_EMAIL)
     assert exc_info.value.code == 1
 
     captured = capsys.readouterr()
@@ -366,11 +404,11 @@ async def test_integrity_failure(capsys: pytest.CaptureFixture[str]) -> None:
 async def test_list_tasks_cli(
     cli_env: CliServerEnv, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    await list_tasks_async(cli_env.url, as_json=False)
+    await list_tasks_async(as_json=False)
     captured = capsys.readouterr()
     assert "No matching tasks found." in captured.out
 
-    await list_tasks_async(cli_env.url, as_json=True)
+    await list_tasks_async(as_json=True)
     captured = capsys.readouterr()
     assert '"tasks": []' in captured.out
 
@@ -388,15 +426,18 @@ async def test_list_tasks_cli(
         )
         await session.commit()
 
-    await list_tasks_async(cli_env.url, status="failed", task_type="ocr", as_json=False)
+    await list_tasks_async(status="failed", task_type="ocr", as_json=False)
     captured = capsys.readouterr()
     assert "OCR_EXTRACTION" in captured.out
     assert "Rate limit exceeded" in captured.out
 
 
 async def test_list_tasks_failure(capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit) as exc_info:
-        await list_tasks_async("http://127.0.0.1:1")
+    with (
+        server_url_override("http://127.0.0.1:1"),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        await list_tasks_async()
     assert exc_info.value.code == 1
 
     captured = capsys.readouterr()
@@ -406,33 +447,33 @@ async def test_list_tasks_failure(capsys: pytest.CaptureFixture[str]) -> None:
 async def test_set_quota_cli(
     cli_env: CliServerEnv, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    await list_users_async(cli_env.url)
+    await list_users_async()
     captured = capsys.readouterr()
     assert "unlimited" in captured.out
 
     quota_bytes = 20 * 1024**3
-    await set_quota_async(cli_env.url, ADMIN_EMAIL, quota_bytes)
+    await set_quota_async(ADMIN_EMAIL, quota_bytes)
     captured = capsys.readouterr()
     assert (
         f"Set storage quota for '{ADMIN_EMAIL}' to {quota_bytes} bytes." in captured.out
     )
 
-    await list_users_async(cli_env.url)
+    await list_users_async()
     captured = capsys.readouterr()
     assert str(quota_bytes) in captured.out
 
-    await set_quota_async(cli_env.url, ADMIN_EMAIL, 0)
+    await set_quota_async(ADMIN_EMAIL, 0)
     captured = capsys.readouterr()
     assert "unlimited" in captured.out
 
     with pytest.raises(SystemExit) as exc_info:
-        await set_quota_async(cli_env.url, ADMIN_EMAIL, -1)
+        await set_quota_async(ADMIN_EMAIL, -1)
     assert exc_info.value.code == 1
     captured = capsys.readouterr()
     assert "Invalid quota value" in captured.out
 
     with pytest.raises(SystemExit) as exc_info:
-        await set_quota_async(cli_env.url, "missing@example.com", quota_bytes)
+        await set_quota_async("missing@example.com", quota_bytes)
     assert exc_info.value.code == 1
     captured = capsys.readouterr()
     assert "Failed to set quota:" in captured.out
