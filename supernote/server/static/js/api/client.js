@@ -864,3 +864,74 @@ export async function fetchNoteCover(fileId) {
     const data = await response.json();
     return data.url || null;
 }
+
+/**
+ * Execute a fetch request with authentication headers attached.
+ * @param {string} url
+ * @param {RequestInit} [options={}]
+ * @returns {Promise<Response>}
+ */
+export async function fetchWithAuth(url, options = {}) {
+    const currentToken = getToken();
+    const headers = new Headers(options.headers || {});
+    if (currentToken) {
+        if (!headers.has('Authorization')) {
+            headers.set('Authorization', `Bearer ${currentToken}`);
+        }
+        if (!headers.has('x-access-token')) {
+            headers.set('x-access-token', currentToken);
+        }
+    }
+    const response = await fetch(url, { ...options, headers });
+    if (response.status === 401) {
+        logout();
+        throw new Error("Unauthorized");
+    }
+    return response;
+}
+
+/**
+ * Fetch registered server and UI plugins.
+ * @returns {Promise<Array<Object>>}
+ */
+export async function getServerPlugins() {
+    try {
+        const response = await fetchWithAuth('/api/extended/plugins');
+        if (!response.ok) {
+            return [];
+        }
+        const data = await response.json();
+        return data.plugins || [];
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * List all .note files across root and top-level directories for plugin file pickers and note selectors.
+ */
+export async function fetchAllNoteFiles() {
+    const notes = [];
+    const rootItems = await fetchFiles("0");
+    const folders = [];
+    for (const item of rootItems) {
+        if (item.isDirectory) {
+            folders.push(item);
+        } else if (item.name && item.name.toLowerCase().endsWith('.note')) {
+            notes.push({ ...item, path: `/${item.name}` });
+        }
+    }
+    for (const folder of folders) {
+        try {
+            const children = await fetchFiles(String(folder.id));
+            for (const child of children) {
+                if (!child.isDirectory && child.name && child.name.toLowerCase().endsWith('.note')) {
+                    notes.push({ ...child, path: `/${folder.name}/${child.name}` });
+                }
+            }
+        } catch {
+            // Ignore unreadable subfolders
+        }
+    }
+    return notes;
+}

@@ -8,7 +8,7 @@ const MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024; // 2 MB
 
 export default {
     name: 'FileViewer',
-    props: ['file', 'initialPage', 'pageJumpSeq'],
+    props: ['file', 'initialPage', 'pageJumpSeq', 'pluginActions', 'hostApi'],
     emits: ['close'],
     setup(props) {
         const pages = ref([]);
@@ -52,6 +52,11 @@ export default {
             if (ext === 'pdf') return 'pdf';
             if (TEXT_EXTENSIONS.has(ext)) return 'text';
             return 'unsupported';
+        });
+
+        const visiblePluginActions = computed(() => {
+            if (!props.pluginActions || !Array.isArray(props.pluginActions)) return [];
+            return props.pluginActions.filter(action => !action.shouldShow || action.shouldShow(props.file));
         });
 
         const showSidePanel = computed(() => {
@@ -492,7 +497,8 @@ export default {
             updateActivePageFromScroll,
             realSummaries,
             aiStatus,
-            formatContent
+            formatContent,
+            visiblePluginActions
         };
     },
     template: `
@@ -511,6 +517,11 @@ export default {
                 </div>
             </div>
             <div class="flex items-center gap-2">
+                <button v-for="action in visiblePluginActions" :key="action.id" @click="action.onClick(file)"
+                    class="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-sm">
+                    <span v-if="action.iconSvg" v-html="action.iconSvg" class="inline-flex items-center w-3.5 h-3.5"></span>
+                    <span>{{ action.label }}</span>
+                </button>
                 <button @click="handleDownload" :disabled="downloading"
                     class="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-wait">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

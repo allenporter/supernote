@@ -2,7 +2,8 @@ import { createApp, ref, onMounted, computed, watch, nextTick } from 'https://un
 import { useFileSystem } from './composables/useFileSystem.js';
 import { useProcessingStatus } from './composables/useProcessingStatus.js';
 import { useToast } from './composables/useToast.js';
-import { setToken, getToken, login, logout, fetchPathInfo, connectSocket } from './api/client.js';
+import { usePlugins } from './composables/usePlugins.js';
+import { setToken, getToken, login, logout, fetchPathInfo, connectSocket, fetchWithAuth } from './api/client.js';
 import SearchModal from './components/SearchModal.js';
 import TaskPanel from './components/TaskPanel.js';
 import FileCard from './components/FileCard.js';
@@ -72,6 +73,9 @@ export function parseUrlHash(hashString) {
         if (params.get('tab') === 'tasks' || params.get('view') === 'tasks') {
             return { tab: 'tasks', view: 'grid', dirId: '0', showSystem: false };
         }
+        if (params.has('tab') && params.get('tab') !== 'files' && params.get('tab') !== 'tasks' && params.get('tab') !== 'system') {
+            return { tab: params.get('tab'), view: 'grid', dirId: '0', showSystem: false };
+        }
         if (params.has('file')) {
             return {
                 tab: 'files',
@@ -100,6 +104,10 @@ export function parseUrlHash(hashString) {
 
     if (parts[0] === 'tasks') {
         return { tab: 'tasks', view: 'grid', dirId: '0', showSystem: false };
+    }
+
+    if (parts[0] && !['files', 'explorer', 'file', 'folder', 'system', 'tasks'].includes(parts[0])) {
+        return { tab: parts[0], view: 'grid', dirId: '0', showSystem: false };
     }
 
     if (parts[0] === 'file' && parts[1]) {
@@ -132,6 +140,9 @@ export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false,
     if (tab === 'tasks') {
         return '#/tasks';
     }
+    if (tab && tab !== 'files' && tab !== 'system') {
+        return `#/${tab}`;
+    }
     if (viewState === 'viewer' && fileObj && fileObj.id) {
         if (typeof pageIndex === 'number' && pageIndex > 0) {
             return `#/file/${fileObj.id}?page=${pageIndex + 1}`;
@@ -163,8 +174,17 @@ createApp({
         const loginError = ref(null);
         const showSystemPanel = ref(false);
 
+        const {
+            pluginNavTabs,
+            pluginFileToolbarActions,
+            pluginFileViewerActions,
+            pluginTabProps,
+            pluginHostApi,
+            loadPlugins
+        } = usePlugins();
+
         // Navigation State
-        const activeTab = ref('files'); // 'files' | 'tasks'
+        const activeTab = ref('files');
         const showSearchModal = ref(false);
 
         // UI Modals State
@@ -411,6 +431,15 @@ createApp({
                     return;
                 }
 
+                if (parsed.tab && parsed.tab !== 'files' && parsed.tab !== 'tasks' && parsed.tab !== 'system') {
+                    activeTab.value = parsed.tab;
+                    view.value = 'grid';
+                    selectedFile.value = null;
+                    selectedPageIndex.value = null;
+                    viewerOpenedFromHistory = false;
+                    return;
+                }
+
                 activeTab.value = 'files';
                 if (parsed.view === 'viewer' && parsed.fileId) {
                     selectedPageIndex.value = typeof parsed.pageIndex === 'number' ? parsed.pageIndex : null;
@@ -561,6 +590,70 @@ createApp({
             await switchTab('tasks');
         }
 
+        function getCurrentFolderPath() {
+            if (breadcrumbs.value.length <= 1) {
+                return '/';
+            }
+            const pathParts = breadcrumbs.value.slice(1).map(c => c.name);
+            return '/' + pathParts.join('/');
+        }
+
+        async function openFileByPath(fileOrPath) {
+            if (!fileOrPath) return;
+            if (typeof fileOrPath === 'object' && fileOrPath.id) {
+                await switchTab('files');
+                await openItem({
+                    id: fileOrPath.id,
+                    name: fileOrPath.name || 'Note.note',
+                    isDirectory: false,
+                });
+                return;
+            }
+            const storagePath = typeof fileOrPath === 'object' ? fileOrPath.path : String(fileOrPath);
+            if (!storagePath) return;
+            try {
+                const resp = await fetchWithAuth('/api/file/3/files/query/by/path_v3', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ equipmentNo: 'WEB', path: storagePath })
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data && data.entriesVo) {
+                        const entry = data.entriesVo;
+                        const fileItem = {
+                            id: entry.id,
+                            name: entry.name,
+                            isDirectory: entry.isFolder === 'Y' || entry.isFolder === true || entry.isFolder === 1,
+                            size: entry.size
+                        };
+                        await switchTab('files');
+                        await openItem(fileItem);
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.error('Error opening file by path:', e);
+            }
+            showToast(`Could not open file: ${storagePath}`, 'error');
+        }
+
+        async function initPlugins() {
+            await loadPlugins({
+                openFileByPath,
+                refreshFiles: async () => {
+                    await loadDirectory(currentDirectoryId.value || '0');
+                },
+                getCurrentFolderPath,
+                switchTab: (tabId) => {
+                    switchTab(tabId);
+                },
+                showToast: (msg, type) => {
+                    showToast(msg, type);
+                }
+            });
+        }
+
         // Selection
         function toggleSelection(id) {
             const index = selectedIds.value.indexOf(id);
@@ -658,6 +751,7 @@ createApp({
                 await login(email, password);
                 const loggedIn = await resumeSession();
                 if (loggedIn) {
+                    await initPlugins();
                     await syncFromUrl(true);
                     updateUrl(true);
                 }
@@ -681,6 +775,7 @@ createApp({
         onMounted(async () => {
             const loggedIn = await resumeSession();
             if (loggedIn) {
+                await initPlugins();
                 await syncFromUrl(true);
                 updateUrl(true);
             }
@@ -752,7 +847,12 @@ createApp({
             showToast,
             dismissToast,
             handleSearchSelectFile,
-            handleSearchSelectTask
+            handleSearchSelectTask,
+            pluginNavTabs,
+            pluginFileToolbarActions,
+            pluginFileViewerActions,
+            pluginTabProps,
+            pluginHostApi
         };
     }
 }).mount('#app');
