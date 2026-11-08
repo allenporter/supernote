@@ -63,14 +63,14 @@ pdf_data = converter.convert(0)  # Convert specific page
 
 `supernote.notebook` exposes **four layered APIs** so callers can work at the exact level of abstraction they need—without coupling visual typography, `.note` binary framing, or test-fixture generation together:
 
-| Tier | Entry Points | When to Use |
+| Tier | Module & Entry Points | When to Use |
 | :--- | :--- | :--- |
-| **1. One-Shot Authoring** | `create_notebook()` | Convert a Markdown / Bullet Journal string directly into valid `.note` bytes in one call. |
-| **2. Multi-Page & Cooperative Builder** | `NotebookAuthor`, `ExtraLayerSpec`, `AuthoredPageInfo` | Build multi-page notebooks, mix Markdown spreads with custom PIL images, target specific layers (`BGLAYER`, `MAINLAYER`, `LAYER1`–`LAYER3`), attach TOC `Title`s / `Keyword`s / `Link`s, or **append pages onto an existing `.note` file** (`NotebookAuthor.from_notebook()`) while preserving existing strokes and real-time recognition (`RECOGNTEXT`). |
-| **3. Pure Layout & Intrinsic Spans** | `render_markdown()`, `MarkdownRenderer`, `render_background()`, `RenderedPage` | Paginate Markdown into transparent RGBA PIL images + plain-text ground-truth transcripts + pixel bounding boxes (`HeadingSpan`, `KeywordSpan`, `LinkSpan`) without packing a `.note` file. |
-| **4. Low-Level Layer Codecs** | `RattaRleX2Encoder`, `RattaRleEncoder`, `PngEncoder` | Compress raw PIL images into X1 4-shade or X2 240-shade anti-aliased `RATTA_RLE` bitmaps or MD5-indexed `user_*` PNG templates. |
+| **1. One-Shot Authoring** | `supernote.notebook.author.create_notebook()` | Convert a Markdown / Bullet Journal string directly into valid `.note` bytes in one call. |
+| **2. Multi-Page & Cooperative Builder** | `supernote.notebook.author` (`NotebookAuthor`, `ExtraLayerSpec`, `AuthoredPageInfo`) | Build multi-page notebooks, mix Markdown spreads with custom PIL images, target specific layers (`BGLAYER`, `MAINLAYER`, `LAYER1`–`LAYER3`), attach TOC `Title`s / `Keyword`s / `Link`s, or **append pages onto an existing `.note` file** (`NotebookAuthor.from_notebook()`) while preserving existing strokes and real-time recognition (`RECOGNTEXT`). |
+| **3. Pure Layout & Intrinsic Spans** | `supernote.notebook.renderer` (`render_markdown()`, `MarkdownRenderer`, `render_background()`, `RenderedPage`) | Paginate Markdown into transparent RGBA PIL images + plain-text ground-truth transcripts + pixel bounding boxes (`HeadingSpan`, `KeywordSpan`, `LinkSpan`) without packing a `.note` file. |
+| **4. Low-Level Layer Codecs** | `supernote.notebook.encoder` (`RattaRleX2Encoder`, `RattaRleEncoder`, `PngEncoder`) | Compress raw PIL images into X1 4-shade or X2 240-shade anti-aliased `RATTA_RLE` bitmaps or MD5-indexed `user_*` PNG templates. |
 
-*(For deterministic server/OCR/sync E2E tests, see `supernote.testing.build_synthetic_notebook()` and `append_synthetic_page()`; for shell & agent workflows, use `supernote create`.)*
+*(For deterministic server/OCR/sync E2E tests, see `supernote.testing.notebook_fixtures.build_synthetic_notebook()` and `append_synthetic_page()`; for shell & agent workflows, use `supernote create`.)*
 
 ### Design Philosophy: Cooperative Human + Agent Layers
 
@@ -84,7 +84,8 @@ Physical Supernote stylus strokes live on `MAINLAYER`. When a script or AI agent
 
 ```python
 from pathlib import Path
-from supernote.notebook import NotebookAuthor, create_notebook, load_notebook
+from supernote.notebook import load_notebook
+from supernote.notebook.author import NotebookAuthor, create_notebook
 
 # 1. One-shot Bullet Journal spread -> .note bytes
 note_bytes = create_notebook(

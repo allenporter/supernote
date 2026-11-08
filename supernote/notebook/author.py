@@ -45,7 +45,7 @@ prevents destructive collisions:
 Example
 -------
 ```python
-from supernote.notebook import NotebookAuthor
+from supernote.notebook.author import NotebookAuthor
 
 author = NotebookAuthor(equipment="N6", seed=42)
 author.add_markdown(

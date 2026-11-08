@@ -12,23 +12,24 @@ import pytest
 from PIL import Image
 
 from supernote.notebook import (
-    BackgroundStyle,
-    ExtraLayerSpec,
     ImageConverter,
-    NotebookAuthor,
     PdfConverter,
-    RenderStyle,
     SvgConverter,
     TextConverter,
     VisibilityOverlay,
-    build_visibility_overlay,
-    create_notebook,
     fileformat,
-    generate_supernote_id,
     load,
     load_notebook,
 )
+from supernote.notebook.author import (
+    ExtraLayerSpec,
+    NotebookAuthor,
+    create_notebook,
+    generate_supernote_id,
+)
+from supernote.notebook.converter import build_visibility_overlay
 from supernote.notebook.decoder import RattaRleX2Decoder
+from supernote.notebook.renderer import BackgroundStyle, RenderStyle
 
 _ID_FORMAT_RE = re.compile(r"^[FP]\d{20}[A-Za-z0-9]{12}$")
 

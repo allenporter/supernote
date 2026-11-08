@@ -1,16 +1,21 @@
 import asyncio
 import hashlib
+import io
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
+import numpy as np
 import pytest
+from PIL import Image
 from sqlalchemy import select
 
 from supernote.models.base import ProcessingStatus, TaskType
+from supernote.notebook import fileformat
 from supernote.server.ai.models.fake.embedding import FakeEmbeddingModel
 from supernote.server.ai.models.fake.ocr import FakeOcrModel
 from supernote.server.ai.models.fake.summary import FakeSummaryModel
-from supernote.server.ai.models.ocr import ConcurrencyLimitedOcrModel
+from supernote.server.ai.models.ocr import ConcurrencyLimitedOcrModel, OcrModel
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
@@ -33,10 +38,19 @@ from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.services.processor_modules.embedding import EmbeddingModule
 from supernote.server.services.processor_modules.ocr import OcrModule
 from supernote.server.services.processor_modules.page_hashing import PageHashingModule
+from supernote.server.services.processor_modules.png_conversion import (
+    PngConversionModule,
+)
 from supernote.server.services.processor_modules.summary import SummaryModule
+from supernote.server.services.search import SearchService
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 from supernote.server.utils.paths import get_page_png_path
+from supernote.testing.notebook_fixtures import (
+    SyntheticNotebook,
+    append_synthetic_page,
+    build_synthetic_notebook,
+)
 
 
 @pytest.fixture
@@ -1107,3 +1121,178 @@ async def test_get_file_processing_statuses(
         30: ProcessingStatus.PENDING,
         60: ProcessingStatus.PENDING,
     }
+
+
+class _GroundTruthVisionOcrModel(OcrModel):
+    """Test OCR model that validates the rendered PNG image and returns ground-truth text."""
+
+    def __init__(self) -> None:
+        self.page_map: dict[str, str] = {}
+        self.processed_page_ids: list[str] = []
+
+    @property
+    def model_id(self) -> str:
+        return "synthetic-ground-truth-ocr-v1"
+
+    def register(self, synth: SyntheticNotebook) -> None:
+        for page in synth.pages:
+            self.page_map[page.page_id] = page.text
+
+    async def extract_text(self, png_data: bytes, prompt: str) -> str:
+        with Image.open(io.BytesIO(png_data)) as img:
+            assert img.size == (fileformat.PAGE_WIDTH, fileformat.PAGE_HEIGHT)
+            lum = np.asarray(img.convert("L"), dtype=np.uint8)
+            assert int((lum < 64).sum()) > 200
+
+        for pid, text in self.page_map.items():
+            if pid in prompt:
+                self.processed_page_ids.append(pid)
+                return text
+
+        raise AssertionError(
+            f"Prompt did not match any registered synthetic PAGEID: {prompt}"
+        )
+
+
+async def test_synthetic_handwriting_notebook_full_pipeline_and_incremental_append(
+    storage_root: Path,
+    blob_storage: BlobStorage,
+    user_service: UserService,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    event_bus = LocalEventBus()
+    file_service = FileService(
+        storage_root=storage_root,
+        blob_storage=blob_storage,
+        user_service=user_service,
+        session_manager=session_manager,
+        event_bus=event_bus,
+    )
+    summary_service = SummaryService(
+        user_service=user_service,
+        session_manager=session_manager,
+    )
+    embedding_model = FakeEmbeddingModel()
+    summary_model = FakeSummaryModel()
+    ocr_model = _GroundTruthVisionOcrModel()
+
+    processor = ProcessorService(
+        event_bus=event_bus,
+        session_manager=session_manager,
+        file_service=file_service,
+        summary_service=summary_service,
+    )
+    processor.register_modules(
+        hashing=PageHashingModule(file_service),
+        png=PngConversionModule(file_service),
+        ocr=OcrModule(file_service, ocr_model),
+        embedding=EmbeddingModule(file_service, embedding_model),
+        summary=SummaryModule(file_service, summary_service, summary_model),
+    )
+    search_service = SearchService(
+        session_manager=session_manager,
+        embedding_model=embedding_model,
+    )
+
+    synth = build_synthetic_notebook(
+        pages=[
+            "# Architecture Notes\n\n- [x] Designed RLE bitmap encoder #storage\n- Verified round-trip lossless decoding",
+            "# Field Study\n\n- [ ] Test telescope alignment under clear skies #astronomy",
+        ],
+        style="handwriting",
+        background="ruled",
+        base_date=datetime(2026, 2, 10, 9, 0, tzinfo=UTC),
+        seed=21,
+    )
+    ocr_model.register(synth)
+    assert len(synth.pages) == 2
+
+    storage_key = "synth-journal-001.note"
+    await blob_storage.put(USER_DATA_BUCKET, storage_key, synth.data)
+
+    file_id = 501
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=test_user_id,
+                directory_id=0,
+                file_name="ResearchJournal.note",
+                is_folder="N",
+                is_active="Y",
+                storage_key=storage_key,
+                md5=hashlib.md5(synth.data).hexdigest(),
+                size=len(synth.data),
+                create_time=1770685200000,
+                update_time=1770685200000,
+            )
+        )
+        await session.commit()
+
+    ok = await processor.process_file(file_id)
+    assert ok is True
+    assert set(ocr_model.processed_page_ids) == {
+        synth.pages[0].page_id,
+        synth.pages[1].page_id,
+    }
+
+    for page in synth.pages:
+        assert await blob_storage.exists(
+            CACHE_BUCKET, get_page_png_path(file_id, page.page_id)
+        )
+
+    transcript = await search_service.get_transcript(
+        user_id=test_user_id, file_id=file_id
+    )
+    assert transcript is not None
+    assert "Designed RLE bitmap encoder" in transcript
+    assert "telescope alignment" in transcript
+
+    feb11_results = await search_service.search_chunks(
+        user_id=test_user_id,
+        query="telescope alignment",
+        date_after="2026-02-11",
+    )
+    assert len(feb11_results) == 1
+    assert feb11_results[0].page_id == synth.pages[1].page_id
+    assert feb11_results[0].date == "2026-02-11"
+
+    async with session_manager.session() as session:
+        summaries = (
+            (
+                await session.execute(
+                    select(SummaryDO).where(SummaryDO.file_id == file_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(summaries) == 2
+
+    ocr_model.processed_page_ids.clear()
+    updated_synth = append_synthetic_page(
+        synth,
+        "# Launch Retrospective\n\n- [x] Shipped CLI `supernote create` command #release",
+        created_at=datetime(2026, 2, 12, 10, 0, tzinfo=UTC),
+    )
+    ocr_model.register(updated_synth)
+    assert len(updated_synth.pages) == 3
+
+    await blob_storage.put(USER_DATA_BUCKET, storage_key, updated_synth.data)
+    async with session_manager.session() as session:
+        file_row = await session.get(UserFileDO, file_id)
+        assert file_row is not None
+        file_row.md5 = hashlib.md5(updated_synth.data).hexdigest()
+        file_row.size = len(updated_synth.data)
+        await session.commit()
+
+    ok2 = await processor.process_file(file_id)
+    assert ok2 is True
+    assert updated_synth.pages[2].page_id in ocr_model.processed_page_ids
+
+    updated_transcript = await search_service.get_transcript(
+        user_id=test_user_id, file_id=file_id
+    )
+    assert updated_transcript is not None
+    assert "Launch Retrospective" in updated_transcript
