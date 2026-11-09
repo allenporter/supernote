@@ -758,7 +758,7 @@ function calculateFileMd5(file) {
 }
 /**
  * Fetch processing status for a list of files.
- * @param {Array<number>} fileIds
+ * @param {Array<string|number>} fileIds
  * @returns {Promise<{success: boolean, statusMap: Object}>}
  */
 export async function fetchProcessingStatus(fileIds) {
@@ -771,7 +771,7 @@ export async function fetchProcessingStatus(fileIds) {
             'Content-Type': 'application/json',
             'x-access-token': currentToken
         },
-        body: JSON.stringify({ fileIds: fileIds })
+        body: JSON.stringify({ fileIds: fileIds.map(String) })
     });
 
     if (response.status === 401) {

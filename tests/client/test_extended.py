@@ -160,7 +160,7 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
     assert cover_vo.url == "http://127.0.0.1/api/oss/png/10/0?sig=abc"
 
     assert recorded == [
-        ("POST", "/api/extended/file/summary/list", {"fileId": 10}),
+        ("POST", "/api/extended/file/summary/list", {"fileId": "10"}),
         (
             "POST",
             "/api/extended/search",
@@ -175,10 +175,10 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
         (
             "POST",
             "/api/extended/transcript",
-            {"fileId": 10, "startIndex": 0, "endIndex": 1},
+            {"fileId": "10", "startIndex": 0, "endIndex": 1},
         ),
-        ("POST", "/api/extended/file/processing/status", {"fileIds": [10]}),
+        ("POST", "/api/extended/file/processing/status", {"fileIds": ["10"]}),
         ("GET", "/api/extended/system/tasks", None),
         ("GET", "/api/extended/ai/status", None),
-        ("POST", "/api/extended/file/note/cover", {"fileId": 10}),
+        ("POST", "/api/extended/file/note/cover", {"fileId": "10"}),
     ]
