@@ -63,6 +63,7 @@ ai:
     model: gemini-embedding-001
     max_concurrency: 5
 ```
+Attach an active [Cloud Billing account](https://aistudio.google.com/docs/terms#paid-services) to your Google AI Studio project so requests are governed by Gemini's **Paid Services** no-training policy rather than the unpaid free tier (see [Cloud API Privacy](../../README.md#3-cloud-api-privacy-model-training--data-retention)).
 
 To run the models locally instead, use the `openai` provider with any server that implements the OpenAI API (e.g. Ollama, llama.cpp, vLLM, LM Studio). OCR needs a vision-capable chat model. Providers can be mixed per capability.
 ```yaml
