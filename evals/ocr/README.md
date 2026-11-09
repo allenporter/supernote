@@ -19,7 +19,7 @@ See [**RESULTS.md**](RESULTS.md) for the current checked-in provider comparison 
   --target apple:vision-accurate \
   --target openai:gemma3:27b \
   --openai-base-url http://localhost:11434/v1 \
-  --target gemini:gemini-3.6-flash \
+  --target gemini:gemini-3.5-flash-lite \
   --markdown-out storage/eval_ocr_report.md \
   --json-out storage/eval_ocr_results.json
 

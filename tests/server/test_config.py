@@ -344,6 +344,18 @@ def test_server_config_load_partial_ai_keeps_omitted_capabilities_none(
 
 def test_server_config_legacy_gemini_syncs_to_ai(tmp_path: Path) -> None:
     """Legacy gemini_* fields and env vars populate config.ai automatically."""
+    default_gemini = ServerConfig(gemini_api_key="default-key")
+    assert default_gemini.ai.ocr == ModelConfig(
+        provider="gemini",
+        model="gemini-3.5-flash-lite",
+        max_concurrency=5,
+    )
+    assert default_gemini.ai.summary == ModelConfig(
+        provider="gemini",
+        model="gemini-3.5-flash-lite",
+        max_concurrency=5,
+    )
+
     direct = ServerConfig(
         gemini_api_key="legacy-key",
         gemini_ocr_model="gemini-custom-ocr",

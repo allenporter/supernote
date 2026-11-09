@@ -44,7 +44,7 @@ export SUPERNOTE_WEB_ENABLED=false
 ```
 
 #### AI Configuration
-Configure AI providers and per-capability models (`ocr`, `summary`, `embedding`) in `config/config.yaml` (omitting any capability you want disabled). We recommend `gemini-3.6-flash` or `gemini-3.5-flash-lite` (see [Choosing an AI Provider](../../README.md#choosing-an-ai-provider)):
+Configure AI providers and per-capability models (`ocr`, `summary`, `embedding`) in `config/config.yaml` (omitting any capability you want disabled). We recommend `gemini-3.5-flash-lite` (or `gemini-3.6-flash`; see [Choosing an AI Provider](../../README.md#choosing-an-ai-provider)):
 ```yaml
 ai:
   providers:
@@ -52,11 +52,11 @@ ai:
       api_key: "your-api-key"
   ocr:
     provider: gemini
-    model: gemini-3.6-flash  # or gemini-3.5-flash-lite
+    model: gemini-3.5-flash-lite  # or gemini-3.6-flash
     max_concurrency: 5
   summary:
     provider: gemini
-    model: gemini-3.6-flash
+    model: gemini-3.5-flash-lite
     max_concurrency: 5
   embedding:
     provider: gemini

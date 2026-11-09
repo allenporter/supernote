@@ -158,7 +158,7 @@ class ModelConfig(DataClassYAMLMixin):
     """Name of the provider entry in `ai.providers` (e.g. `'gemini'`, `'openai'`, `'ollama'`)."""
 
     model: str = ""
-    """Provider-specific model identifier (e.g. `'gemini-3.6-flash'`)."""
+    """Provider-specific model identifier (e.g. `'gemini-3.5-flash-lite'`)."""
 
     max_concurrency: int = 5
     """Maximum number of concurrent requests allowed for this model."""
@@ -302,7 +302,7 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_GEMINI_API_KEY`
     """
 
-    gemini_ocr_model: str = "gemini-3.6-flash"
+    gemini_ocr_model: str = "gemini-3.5-flash-lite"
     """Legacy Gemini model to use for OCR and Summaries.
 
     Env Var: `SUPERNOTE_GEMINI_OCR_MODEL`

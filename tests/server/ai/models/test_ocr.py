@@ -33,7 +33,7 @@ def test_create_ocr_model_legacy_gemini() -> None:
     legacy_config = ServerConfig(gemini_api_key="test-key")
     model = create_ocr_model(legacy_config)
     assert model is not None
-    assert model.model_id == legacy_config.gemini_ocr_model
+    assert model.model_id == "gemini-3.5-flash-lite"
 
 
 def test_create_ocr_model_gemini_provider() -> None:

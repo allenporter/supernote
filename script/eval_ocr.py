@@ -63,7 +63,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         metavar="PROVIDER:MODEL",
         help=(
             "Target spec '<provider>:<model>' (repeatable), e.g. "
-            "'apple:vision-accurate', 'gemini:gemini-3.6-flash', or 'ollama:gemma3:27b'."
+            "'apple:vision-accurate', 'gemini:gemini-3.5-flash-lite', or 'ollama:gemma3:27b'."
         ),
     )
     parser.add_argument(

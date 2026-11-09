@@ -84,7 +84,7 @@ No API keys or external services required. Runs locally with SQLite (~160MB idle
     ```
 
 #### Option B: AI & Knowledge Hub (With Gemini, Recommended)
-Enables handwriting transcription, summarization, and semantic search. Requires a Google Gemini API Key (available on both a `$0` Free tier that trains on API data and a Paid tier that does not; see [Choosing an AI Provider](#choosing-an-ai-provider)).
+Enables handwriting transcription, summarization, and semantic search using `gemini-3.5-flash-lite` by default. Requires a Google Gemini API Key (available on both a `$0` Free tier that trains on API data and a Paid tier that does not; see [Choosing an AI Provider](#choosing-an-ai-provider)).
 
 *   **Using Python**:
     ```bash
@@ -159,7 +159,7 @@ You can access the insights from the MCP server at `http://<your ip:port>/mcp`
 
 ## Choosing an AI Provider
 
-We recommend Google Gemini (`gemini-3.6-flash` or `gemini-3.5-flash-lite`) for OCR, summarization, and embeddings based on our [30-page Supernote OCR benchmark](evals/ocr/RESULTS.md) and public multimodal evaluations.
+We recommend Google Gemini (`gemini-3.5-flash-lite` by default, or `gemini-3.6-flash`) for OCR, summarization, and embeddings based on our [30-page Supernote OCR benchmark](evals/ocr/RESULTS.md) and public multimodal evaluations.
 
 <p align="center">
   <img src="evals/ocr/pareto_frontier.svg" alt="OCR Quality vs. Latency Pareto Frontier" width="840">
@@ -178,7 +178,7 @@ Results across 30 `.note` pages (25 real handwritten pages covering Bullet Journ
 | `Apple Vision Accurate` | 30 | 73.7% | 21.7% | 20.7% | 4.5% | 49.7% | 0.41 s |
 | `Apple Vision Fast` | 30 | 17.8% | 72.8% | 70.7% | 0.0% | 8.7% | 0.13 s |
 
-- **Gemini**: Even `gemini-3.5-flash-lite` reads nearly every word accurately (99.0% Word F1, 0.0% Median CER) in ~1.2 s per page for under `$0.001` per page, while preserving Bullet Journal signifiers (`•`, `X`, `>`, `<`, `o`, `-`, `*`), nested indentation (100%), and `~~strikethroughs~~` (100%). `gemini-3.6-flash` reaches 99.7% Word F1 and 2.3% multilingual CER; its higher diagram CER comes from adding ASCII `|` fret dividers on guitar tablature (99.3% Word F1 on those pages).
+- **Gemini**: `gemini-3.5-flash-lite` (the default) reads nearly every word accurately (99.0% Word F1, 0.0% Median CER) in ~1.2 s per page for under `$0.001` per page, while preserving Bullet Journal signifiers (`•`, `X`, `>`, `<`, `o`, `-`, `*`), nested indentation (100%), and `~~strikethroughs~~` (100%). `gemini-3.6-flash` reaches 99.7% Word F1 and 2.3% multilingual CER; its higher diagram CER comes from adding ASCII `|` fret dividers on guitar tablature (99.3% Word F1 on those pages).
 - **Apple Vision**: Supported on macOS (`vision-accurate`) as an offline fallback for plain English prose (93.0% Word F1 on `english_prose`), **not** as a recommended provider. Overall accuracy matches the tablet's built-in recognizer (73.7% vs 75.5% Word F1), multi-column layouts are read out of order (30.2% diagram CER), and because Vision cannot take a prompt it drops almost all handwritten Bullet Journal task symbols (4.5% recall) and strikethroughs (0%). Avoid `vision-fast`, which only detects machine-printed text.
 
 ### Multimodal Benchmarks: Gemini vs. Claude
