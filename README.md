@@ -83,8 +83,8 @@ No API keys or external services required. Runs locally with SQLite (~160MB idle
     web_enabled: false
     ```
 
-#### Option B: AI & Knowledge Hub (With Gemini)
-Enables handwriting transcription, summarization, and semantic search. Requires a Google Gemini API Key.
+#### Option B: AI & Knowledge Hub (With Gemini, Recommended)
+Enables handwriting transcription, summarization, and semantic search using `gemini-3.5-flash-lite` by default. Requires a Google Gemini API Key (available on both a `$0` Free tier that trains on API data and a Paid tier that does not; see [Choosing an AI Provider](#choosing-an-ai-provider)).
 
 *   **Using Python**:
     ```bash
@@ -107,7 +107,7 @@ Enables handwriting transcription, summarization, and semantic search. Requires 
     ```
 
 #### Option C: AI & Knowledge Hub (With a Local Model)
-Runs the same features against a model server on your own hardware, such as [Ollama](https://ollama.com/), llama.cpp, vLLM or LM Studio, so your notes never leave your network. You need a vision-capable chat model for OCR and summaries, and an embedding model for search. Configure the `openai` provider in `config/config.yaml` (`/data/config/config.yaml` in Docker) as described in the [server AI configuration](supernote/server/README.md#ai-configuration). On macOS, you can also run zero-setup on-device OCR via Apple's native Vision framework (`provider: apple` with `pip install "supernote[server,apple]"`).
+Runs the same features against a model server on your own hardware, such as [Ollama](https://ollama.com/), llama.cpp, vLLM or LM Studio, so your notes never leave your network. You need a vision-capable chat model for OCR and summaries, and an embedding model for search. Configure the `openai` provider in `config/config.yaml` (`/data/config/config.yaml` in Docker) as described in the [server AI configuration](supernote/server/README.md#ai-configuration). On macOS, Apple's native Vision framework (`provider: apple` with `vision-accurate`) is also supported as an offline fallback for basic prose search, though it is not recommended for structured notes, diagrams, or Bullet Journal Rapid Logging (see [Choosing an AI Provider](#choosing-an-ai-provider)).
 
 When the server runs in Docker and Ollama runs on the host, use `http://host.docker.internal:11434/v1` as the `base_url` (on Linux, also pass `--add-host=host.docker.internal:host-gateway`).
 
@@ -156,6 +156,62 @@ You can access the insights from the MCP server at `http://<your ip:port>/mcp`
 
 > [!TIP]
 > **Semantic Search**: Supernote doesn't just look for words—it understands concepts. Searching for "budget" will find notes about "expenses" or "money," even if the specific word isn't there.
+
+## Choosing an AI Provider
+
+We recommend Google Gemini (`gemini-3.5-flash-lite` by default, or `gemini-3.6-flash`) for OCR, summarization, and embeddings based on our [30-page Supernote OCR benchmark](evals/ocr/RESULTS.md) and public multimodal evaluations.
+
+<p align="center">
+  <img src="evals/ocr/pareto_frontier.svg" alt="OCR Quality vs. Latency Pareto Frontier" width="840">
+</p>
+
+### Supernote OCR Benchmark ([`evals/ocr/`](evals/ocr/))
+
+Results across 30 `.note` pages (25 real handwritten pages covering Bullet Journal Rapid Logging, two-column diagrams and guitar tablature, French/Spanish/Turkish notes, and overlapping strokes, plus 5 synthetic Bullet Journal fixtures; full breakdown in [`evals/ocr/RESULTS.md`](evals/ocr/RESULTS.md)):
+
+| Provider / Model | Pages | Word F1 | Mean CER | Content CER | Handwritten BuJo Symbols | All BuJo Symbols | Median Latency |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `Gemini 3.5 Flash-Lite` | 30 | 99.0% | 2.3% | 1.4% | 85.5% | 95.8% | 1.18 s |
+| `Gemini 3.6 Flash` | 30 | 99.7% | 4.2% | 3.6% | 90.5% | 97.3% | 6.63 s |
+| `Gemini 3.8 Flash` | 30 | 96.5% | 5.6% | 5.4% | 90.5% | 97.3% | 9.93 s |
+| `Supernote On-Device` (`MyScript iink 4.1.0`) | 25 | 75.5% | 17.2% | 16.7% | 18.6% | 18.6% | 0.91 s |
+| `Apple Vision Accurate` | 30 | 73.7% | 21.7% | 20.7% | 4.5% | 49.7% | 0.41 s |
+| `Apple Vision Fast` | 30 | 17.8% | 72.8% | 70.7% | 0.0% | 8.7% | 0.13 s |
+
+- **Gemini**: `gemini-3.5-flash-lite` (the default) reads nearly every word accurately (99.0% Word F1, 0.0% Median CER) in ~1.2 s per page for under `$0.001` per page, while preserving Bullet Journal signifiers (`•`, `X`, `>`, `<`, `o`, `-`, `*`), nested indentation (100%), and `~~strikethroughs~~` (100%). `gemini-3.6-flash` reaches 99.7% Word F1 and 2.3% multilingual CER; its higher diagram CER comes from adding ASCII `|` fret dividers on guitar tablature (99.3% Word F1 on those pages).
+- **Apple Vision**: Supported on macOS (`vision-accurate`) as an offline fallback for plain English prose (93.0% Word F1 on `english_prose`), **not** as a recommended provider. Overall accuracy matches the tablet's built-in recognizer (73.7% vs 75.5% Word F1), multi-column layouts are read out of order (30.2% diagram CER), and because Vision cannot take a prompt it drops almost all handwritten Bullet Journal task symbols (4.5% recall) and strikethroughs (0%). Avoid `vision-fast`, which only detects machine-printed text.
+
+### Multimodal Benchmarks: Gemini vs. Claude
+
+Recent results (Jun–Nov 2026) from [Artificial Analysis](https://artificialanalysis.ai/) (`MMMU-Pro`), [Vals AI](https://www.vals.ai/benchmarks) (`MMMU-Pro` and `MortgageTax` scanned-form extraction), and [LMArena Vision](https://lmarena.ai/) across model tiers:
+
+| Model | Release | API Price (In / Out per 1M) | LMArena Vision (Elo) | MMMU-Pro (AA) | MMMU-Pro (Vals) | MortgageTax (Vals) |
+| :--- | :--- | :--- | ---: | ---: | ---: | ---: |
+| `Gemini 3.5 Flash-Lite` | Jul 2026 | `$0.30 / $2.50` | 1268 | 79.0% | 83.6% | 68.7% |
+| `Claude Haiku 5.5` | Oct 2026 | `$0.10 / $0.50` (≤100k) | — | — | — | — |
+| `Gemini 3.6 Flash` | Jul 2026 | `$0.75 / $3.75`\* | 1297 | 83.2% | 88.4% | 67.6% |
+| `Gemini 3.8 Flash` | Sep 2026 | `$0.75 / $3.75`\* | 1316 | 85.6% | 89.1% | 65.3% |
+| `Claude Sonnet 5` | Jun 2026 | `$2.00 / $10.00` | 1272 | 77.3% | 83.0% | 70.0% |
+| `Claude Sonnet 5.5` | Sep 2026 | `$2.00 / $10.00` | 1283 | — | — | — |
+| `Gemini 4 Carbon` | Oct 2026 | `$4.00 / $20.00` | — | 89.3% | — | — |
+| `Claude Opus 5` | Jul 2026 | `$5.00 / $25.00` | 1317 | 84.7% | 89.9% | 72.1% |
+| `Claude Opus 5.5` | Sep 2026 | `$4.00 / $20.00` | 1324 | 87.7% | — | — |
+
+*\*Promotional rate through Dec 31, 2026 (`$1.50 / $7.50` standard; 50% lower via Batch API).*
+
+`Gemini 3.5 Flash-Lite` matches `Claude Sonnet 5` on `MMMU-Pro` at roughly one-sixth the price, while `Gemini 3.6 Flash` and `Gemini 3.8 Flash` score ahead of `Claude Sonnet 5` and `5.5` on `LMArena Vision` and close to `Claude Opus 5` at a fraction of the cost.
+
+### API Privacy, Training & Data Retention
+
+Google Gemini offers both a **Free tier** that trains on API data and a **Paid tier** (enabled by linking a [Cloud Billing account](https://aistudio.google.com/docs/terms#paid-services) to your Google AI Studio project) that does not. Commercial API traffic on OpenAI and Anthropic is excluded from training by default:
+
+| Provider & Tier | Used to Train Models? | Default API Log Retention | Policy Citations |
+| :--- | :--- | :--- | :--- |
+| **Gemini API (Paid tier)** | **No** (Google acts as Data Processor) | Abuse monitoring; optional AI Studio project logs default to 55 days (configurable to 7 days or off; [ZDR](https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/zero-data-retention) on Enterprise/Vertex AI) | [Paid Services Terms](https://aistudio.google.com/docs/terms#data-use-paid), [Logs Policy](https://aistudio.google.com/docs/logs-policy), [Google DPA](https://business.safety.google/processorterms/) |
+| **Gemini API (Free tier)** | **Yes** (outside EEA, UK, and Switzerland; includes human review) | Retained for product improvement (avoid for private or sensitive notes) | [Unpaid Services Terms](https://aistudio.google.com/docs/terms#data-use-unpaid) |
+| **OpenAI API** (`api.openai.com`) | **No** (unless opted in) | Up to 30 days for abuse monitoring; ZDR available for eligible orgs | [OpenAI Data Controls](https://developers.openai.com/api/docs/guides/your-data) |
+| **Anthropic Claude API** (`api.anthropic.com`) | **No** under Commercial Terms | Not retained by default on standard endpoints, or up to 30 days on covered models; ZDR available | [Commercial Terms](https://www.anthropic.com/legal/commercial-terms), [Training Policy](https://privacy.claude.com/en/articles/7996868-is-my-data-used-for-model-training), [Data Retention](https://platform.claude.com/docs/en/manage-claude/api-and-data-retention) |
+| **Local models** (`Ollama`, `llama.cpp`, `vLLM`, `apple`) | **No** | Local only; notes never leave your server | — |
 
 ## Features Deep Dive
 

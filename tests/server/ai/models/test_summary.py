@@ -38,7 +38,7 @@ def test_create_summary_model_legacy_gemini() -> None:
     legacy_config = ServerConfig(gemini_api_key="test-key")
     model = create_summary_model(legacy_config)
     assert model is not None
-    assert model.model_id == legacy_config.gemini_ocr_model
+    assert model.model_id == "gemini-3.5-flash-lite"
 
 
 def test_create_summary_model_gemini_provider() -> None:

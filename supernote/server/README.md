@@ -44,7 +44,7 @@ export SUPERNOTE_WEB_ENABLED=false
 ```
 
 #### AI Configuration
-Configure AI providers and per-capability models (`ocr`, `summary`, `embedding`) in `config/config.yaml` (omitting any capability you want disabled):
+Configure AI providers and per-capability models (`ocr`, `summary`, `embedding`) in `config/config.yaml` (omitting any capability you want disabled). We recommend `gemini-3.5-flash-lite` (or `gemini-3.6-flash`; see [Choosing an AI Provider](../../README.md#choosing-an-ai-provider)):
 ```yaml
 ai:
   providers:
@@ -52,17 +52,18 @@ ai:
       api_key: "your-api-key"
   ocr:
     provider: gemini
-    model: gemini-3.6-flash
+    model: gemini-3.5-flash-lite  # or gemini-3.6-flash
     max_concurrency: 5
   summary:
     provider: gemini
-    model: gemini-3.6-flash
+    model: gemini-3.5-flash-lite
     max_concurrency: 5
   embedding:
     provider: gemini
     model: gemini-embedding-001
     max_concurrency: 5
 ```
+Gemini offers both a `$0` Free tier (which uses API data for model training) and a Paid tier when linked to a [Cloud Billing account](https://aistudio.google.com/docs/terms#paid-services) (which does not; see [API Privacy](../../README.md#api-privacy-training--data-retention)).
 
 To run the models locally instead, use the `openai` provider with any server that implements the OpenAI API (e.g. Ollama, llama.cpp, vLLM, LM Studio). OCR needs a vision-capable chat model. Providers can be mixed per capability.
 ```yaml
@@ -85,7 +86,7 @@ ai:
     max_concurrency: 1
 ```
 
-On macOS (`pip install "supernote[server,apple]"`), you can also use Apple's built-in on-device `Vision` framework for local OCR with no API key or model server required (`vision-accurate` or `vision-fast`), optionally paired with `gemini` or `openai` for summaries and embeddings:
+On macOS (`pip install "supernote[server,apple]"`), Apple's on-device `Vision` framework (`vision-accurate`) is supported as an offline fallback for basic prose search without an API key or model server. It is not recommended for diagrams, multi-column notes, or Bullet Journal Rapid Logging (see [Choosing an AI Provider](../../README.md#choosing-an-ai-provider)); avoid `vision-fast`, which only detects machine-printed text:
 ```yaml
 ai:
   ocr:

@@ -9,18 +9,17 @@ See [**RESULTS.md**](RESULTS.md) for the current checked-in provider comparison 
 ## Quick Start
 
 ```bash
-# Run on macOS with local Apple Vision (`vision-accurate` vs `vision-fast`) + embedded device RTR
+# Run on macOS with local Apple Vision (`vision-accurate` vs `vision-fast`)
 ./script/eval_ocr.py \
   --target apple:vision-accurate \
-  --target apple:vision-fast \
-  --include-device-rtr
+  --target apple:vision-fast
 
 # Compare Apple Vision against a local Ollama vision model and Gemini
 ./script/eval_ocr.py \
   --target apple:vision-accurate \
   --target openai:gemma3:27b \
   --openai-base-url http://localhost:11434/v1 \
-  --target gemini:gemini-3.6-flash \
+  --target gemini:gemini-3.5-flash-lite \
   --markdown-out storage/eval_ocr_report.md \
   --json-out storage/eval_ocr_results.json
 
@@ -60,8 +59,7 @@ Checked-in benchmark runs are stored as standalone JSON files in [`results/`](re
 ### Provider Notes
 
 - **`apple:vision-accurate` vs `apple:vision-fast`** ([`results/apple.json`](results/apple.json)): Evaluated across all `30` pages (`410.8 ms` median / `665.8 ms` P95 latency for `vision-accurate`, `0` errors). `vision-accurate` uses Apple's neural recognizer (`73.7%` Word F1, `21.7%` Mean CER, `9.8%` Median CER, `20.7%` Content CER), landing within `1.8` Word F1 points of `supernote-on-device` (`75.5%`) at `2.2×` lower latency. It performs strongly on English prose (`93.0%` Word F1, `3.0%` CER), synthetic Bullet Journal pages (`94.4%` Word F1, `2.9%` CER), and bilingual Spanish/English lessons (`5.2%–7.5%` CER via automatic language detection, preserving `ó` accents and `→` arrows), whereas `vision-fast` (`17.8%` Word F1, `72.8%` Mean CER) uses Vision's legacy contour detector intended for machine-printed text. On 2D spatial layouts (`bujo_monthly_november_calendar`, `guitar_caged_shapes`), sequence CER is elevated because Vision orders multi-column blocks column-first rather than row-by-row (`64.1%` Word F1 vs `30.2%` CER on `diagram_and_layout`). On real handwritten Rapid Logging pages (`bujo_daily`, `bujo_monthly`), Vision captures most words (`74.4%` daily Word F1) but drops hand-drawn signifiers (`0.0%` daily / `9.1%` monthly BuJo Symbol Recall, `0.0%` Indent, `0.0%` Strike), demonstrating that prompt-guided VLMs are required for structured Rapid Logging extraction.
-- **`device-rtr`** ([`results/device_rtr.json`](results/device_rtr.json)): Scores the pre-computed `RECOGNTEXT` layer embedded inside Supernote Real-Time Recognition `.note` files (`8` non-BuJo pages in `dataset.yaml`, `77.7%` Word F1, `12.8%` Mean CER). Notably, `french_phrases.note` and `spanish_lessons.note` were recorded on-device while the notebook language was left at `en_US`, yielding `15.0%` multilingual CER (`71.6%` Word F1) on embedded RTR.
-- **`supernote-on-device`** ([`results/supernote_on_device.json`](results/supernote_on_device.json)): Supernote Chauvet `3.30.45` on-device handwriting recognition (`MyScript iink 4.1.0`) across all `25` vector-stroke `.note` pages in `dataset.yaml` (`75.5%` Word F1, `17.2%` Mean CER, `3.3%` Median CER; the `5` `bujo_synthetic` fixtures are raster-only bitmaps without a vector stroke layer). When run with the matching `fr_FR`, `es_ES`, and `tr_TR` dictionaries, multilingual CER drops from `15.0%` (`device-rtr`) to `4.4%` (`93.9%` Word F1). On real handwritten Bullet Journal pages, word capture remains solid (`92.5%` daily Word F1, `71.4%` monthly Word F1), but Rapid Logging signifiers (`10.0%` daily / `27.3%` monthly BuJo Symbol Recall, `18.6%` overall) and horizontal strikethroughs (`0.0%` recall) are not preserved semantically. Supernote's recognizer also intentionally excludes Marker/Highlighter strokes (`1to10.note` giant digits and `inverted_banner_scribble_overlap` overlays).
+- **`supernote-on-device`** ([`results/supernote_on_device.json`](results/supernote_on_device.json)): Supernote Chauvet `3.30.45` on-device handwriting recognition (`MyScript iink 4.1.0`) across all `25` vector-stroke `.note` pages in `dataset.yaml` (`75.5%` Word F1, `17.2%` Mean CER, `3.3%` Median CER; the `5` `bujo_synthetic` fixtures are raster-only bitmaps without a vector stroke layer). Running with matching `fr_FR`, `es_ES`, and `tr_TR` dictionaries achieves `4.4%` multilingual CER (`93.9%` Word F1). On real handwritten Bullet Journal pages, word capture remains solid (`92.5%` daily Word F1, `71.4%` monthly Word F1), but Rapid Logging signifiers (`10.0%` daily / `27.3%` monthly BuJo Symbol Recall, `18.6%` overall) and horizontal strikethroughs (`0.0%` recall) are not preserved semantically. Supernote's recognizer also intentionally excludes Marker/Highlighter strokes (`1to10.note` giant digits and `inverted_banner_scribble_overlap` overlays).
 - **`gemini:gemini-3.5-flash-lite` / `gemini:gemini-3.6-flash` / `gemini:gemini-3.8-flash`** ([`results/gemini.json`](results/gemini.json)): Evaluated across all `30` pages. `gemini-3.5-flash-lite` achieves the lowest overall Mean CER (`2.3%`, `0.0%` Median CER, `1.4%` Content CER, `99.0%` Word F1, `95.8%` BuJo Symbol Recall, `0` errors) at `1.18 s` median / `1.42 s` P95 latency. `gemini-3.6-flash` posts the highest overall Word F1 (`99.7%`) and BuJo Symbol Recall (`97.3%` overall, `90.0%–90.9%` on real handwritten BuJo, `100.0%` Indent & Strike) plus `2.3%` multilingual CER; its `14.5%` diagram CER reflects optional ASCII pipe (`|`) alignment on guitar fretboard diagrams despite `99.3%` Word F1 (`6.63 s` median latency). `gemini-3.8-flash` achieves the lowest multilingual CER (`2.1%`, `99.1%` Word F1) and matches `97.3%` BuJo Symbol Recall, but spends >90 s of reasoning tokens aligning the 12-fret `guitar_tuning_grid` tablature (`1` timeout error under the default `90 s` `--page-timeout`).
 
 ## Metrics Reported
