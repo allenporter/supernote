@@ -6,7 +6,9 @@ import pytest
 from supernote.server.utils.paths import (
     generate_inner_name,
     get_conversion_pdf_path,
+    get_conversion_pdf_prefix,
     get_file_chunk_path,
+    get_full_conversion_pdf_path,
     get_page_png_path,
     get_summary_group_id,
     get_summary_id,
@@ -55,6 +57,22 @@ def test_get_conversion_pdf_path() -> None:
     assert (
         get_conversion_pdf_path(1, 2, "md5hash") == "conversions/1/2/note_md5hash.pdf"
     )
+    assert get_conversion_pdf_path(1, 2, "md5hash", []) == (
+        "conversions/1/2/note_md5hash.pdf"
+    )
+
+    selection = get_conversion_pdf_path(1, 2, "md5hash", [0, 2])
+    assert selection.startswith("conversions/1/2/note_md5hash_pages_")
+    assert selection != get_conversion_pdf_path(1, 2, "md5hash", [2, 0])
+    assert selection.startswith(get_conversion_pdf_prefix(1, 2, "md5hash"))
+
+
+def test_get_full_conversion_pdf_path() -> None:
+    full = get_conversion_pdf_path(1, 2, "md5hash")
+    selection = get_conversion_pdf_path(1, 2, "md5hash", [3])
+    assert get_full_conversion_pdf_path(selection) == full
+    assert get_full_conversion_pdf_path(full) is None
+    assert get_full_conversion_pdf_path("2/pages/P1.png") is None
 
 
 def test_generate_inner_name() -> None:
