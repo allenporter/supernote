@@ -8,6 +8,7 @@ import asyncio
 import dataclasses
 import importlib.util
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -78,8 +79,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--gemini-api-key",
         type=str,
-        default=None,
-        help="Convenience API key for the 'gemini' provider (defaults to SUPERNOTE_GEMINI_API_KEY).",
+        default=os.getenv("SUPERNOTE_GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY"),
+        help="Convenience API key for the 'gemini' provider (defaults to SUPERNOTE_GEMINI_API_KEY or GEMINI_API_KEY).",
     )
     parser.add_argument(
         "--max-concurrency",
@@ -119,6 +120,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--fail-fast",
         action="store_true",
         help="Abort immediately if a provider raises AIError on any page.",
+    )
+    parser.add_argument(
+        "--page-timeout",
+        type=float,
+        default=90.0,
+        help="Per-page inference timeout in seconds (default: 90.0).",
     )
     parser.add_argument(
         "--from-json",
@@ -230,6 +237,13 @@ def _filter_dataset(
 
 
 async def main_async(argv: list[str] | None = None) -> int:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(message)s",
+        stream=sys.stderr,
+    )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("google_genai").setLevel(logging.WARNING)
     args = parse_args(argv)
     prior_reports = [
         OcrEvalSuiteReport.from_json(path.read_text(encoding="utf-8"))
@@ -250,6 +264,7 @@ async def main_async(argv: list[str] | None = None) -> int:
             warmup=not args.no_warmup,
             include_device_rtr=args.include_device_rtr,
             fail_fast=args.fail_fast,
+            page_timeout_s=args.page_timeout,
         )
 
     reports_to_merge = list(prior_reports)

@@ -1,6 +1,6 @@
 {
   "dataset_name": "supernote-ocr-suite-v1",
-  "case_count": 20,
+  "case_count": 30,
   "targets": [
     {
       "target_name": "device-rtr",
@@ -8,16 +8,16 @@
       "warmup_ms": 0.0,
       "overall": {
         "category": "all",
-        "page_count": 3,
+        "page_count": 8,
         "error_count": 0,
-        "mean_cer": 0.043,
-        "median_cer": 0.0189,
-        "mean_content_cer": 0.043,
-        "mean_wer": 0.0772,
-        "mean_word_recall": 0.9877,
-        "mean_bujo_symbol_recall": null,
+        "mean_cer": 0.1285,
+        "median_cer": 0.1006,
+        "mean_content_cer": 0.1259,
+        "mean_wer": 0.3791,
+        "mean_word_recall": 0.8608,
+        "mean_bujo_symbol_recall": 0.7,
         "mean_bujo_strikethrough_recall": null,
-        "mean_bujo_indent_accuracy": null,
+        "mean_bujo_indent_accuracy": 0.0,
         "median_latency_ms": 0.0,
         "p95_latency_ms": 0.0
       },
@@ -39,16 +39,16 @@
         },
         {
           "category": "multilingual",
-          "page_count": 1,
+          "page_count": 6,
           "error_count": 0,
-          "mean_cer": 0.0,
-          "median_cer": 0.0,
-          "mean_content_cer": 0.0,
-          "mean_wer": 0.0,
-          "mean_word_recall": 1.0,
-          "mean_bujo_symbol_recall": null,
+          "mean_cer": 0.1499,
+          "median_cer": 0.1006,
+          "mean_content_cer": 0.1464,
+          "mean_wer": 0.4668,
+          "mean_word_recall": 0.8206,
+          "mean_bujo_symbol_recall": 0.7,
           "mean_bujo_strikethrough_recall": null,
-          "mean_bujo_indent_accuracy": null,
+          "mean_bujo_indent_accuracy": 0.0,
           "median_latency_ms": 0.0,
           "p95_latency_ms": 0.0
         }
@@ -100,6 +100,91 @@
             "word_recall": 1.0,
             "bujo_expected_items": 0,
             "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "french_cafe_bar",
+          "category": "multilingual",
+          "hypothesis": "CAFE / BAR\nBonjour v o s desire 2- quoi?\n, que Je size 2-vous comaader?\n, qu 'est ee que vous prenez?\nBonjour, souhaitez- vous commander?\non café\non e- ✗ press\non noisette - cafe w/ drop of milk\nun café crime\none evian\non perrier\nUn (o ca\nun Coca Zero\non Coca light\nuh tim ◦ hate (sprite)\none biene ⇒ Un dem i\nun verre de un rouge\non verre de vis blanc\nun Vere de rose\nL'addition\nGa fait com bien\nsit vous plait",
+          "latency_ms": 0.0,
+          "metrics": {
+            "cer": 0.198,
+            "content_cer": 0.198,
+            "wer": 0.7067,
+            "word_recall": 0.7895,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "french_travel_phrases",
+          "category": "multilingual",
+          "hypothesis": "Travel\nJe ne parte pas Fran gas.\nJe ne components pas\nPouvez - vous re peter sit vous plait?\nPower- vous m 'aider sit vous plait?\n- Can you help me please?\nJeveux acheter.ca?\n- I want to buy this\nOi sont les toilette's?\nJe voodrais -rarely used and is formal\nEst-ce que je peux avoir un cafes up?\n- can I have a coffee\nJe rais prendre un cafe\n- I 'II take a coffee",
+          "latency_ms": 0.0,
+          "metrics": {
+            "cer": 0.0942,
+            "content_cer": 0.0963,
+            "wer": 0.4028,
+            "word_recall": 0.8108,
+            "bujo_expected_items": 4,
+            "bujo_symbol_recall": 1.0,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": 0.0
+          },
+          "error": null
+        },
+        {
+          "case_id": "french_verbs_list",
+          "category": "multilingual",
+          "hypothesis": "100 Sentences\nVerbs\nJeveux\neux\nDevoir te fois\ns avoir c- now\nI like /love\nsovha.tw/Jesouhaite I wish\nPrétérer / Je préfére I prefer\nAdorer / J' adore I adore\ne- taster / Jed éteste I hate\nJai begin de I need to\nManger to eat\nboire to drink\nDormir to sleep\nPart ir to leave\nRevenir to come back/go back\nSortir to go out /get out\nMarcher to walk\nRester to stay\n- rréter to stay\ncv°i°sriit✓ir ᵗt°o vri°s^it I want\nI can\nI must/have to V out or\nPov voir / Je\nJe Sais\nAimei I J 'aime\nI",
+          "latency_ms": 0.0,
+          "metrics": {
+            "cer": 0.4062,
+            "content_cer": 0.4041,
+            "wer": 0.7475,
+            "word_recall": 0.7629,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "spanish_cognates_lesson_1",
+          "category": "multilingual",
+          "hypothesis": "Q Roo Lesson I\n1. To educate education\neducacion → edu car\n2. To observe → observacion\nobervar\n3. To reserve → reservacion\nreservoir -\n4. To legalize → legalization\nlegalization\nlegal izar\n5. To facilitate → facilitation\nfacilitation facilitate\n6. To create → creation\ncreacifn → creator\nCrear\n7. To document\ndocumentation\ndo co m en ta ai é n\ndocumenter",
+          "latency_ms": 0.0,
+          "metrics": {
+            "cer": 0.1069,
+            "content_cer": 0.0965,
+            "wer": 0.5385,
+            "word_recall": 0.6818,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "spanish_sentences_lesson_2",
+          "category": "multilingual",
+          "hypothesis": "Q Roo Lesson 2\n- I can't memorize the information\nNo peut o menorizar la inform aciéa.\nI want to confirm the\ninformation but I can't\nOviero confirm ar ta inform acion\npero no pvedo.\nI want to participate but\nI can't\nOuiero participar pero no pvedo.\n- I want to cancel the reservation\nbut I can't\nQuiero cancel ar ta reserved in\npero no puedo-\nwant to celebrate but I can't\nOvierocelebrar Pero no Pued °'",
+          "latency_ms": 0.0,
+          "metrics": {
+            "cer": 0.0938,
+            "content_cer": 0.0835,
+            "wer": 0.4054,
+            "word_recall": 0.8784,
+            "bujo_expected_items": 5,
+            "bujo_symbol_recall": 0.4,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
           },

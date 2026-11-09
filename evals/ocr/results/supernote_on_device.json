@@ -1,0 +1,560 @@
+{
+  "dataset_name": "supernote-ocr-suite-v1",
+  "case_count": 30,
+  "targets": [
+    {
+      "target_name": "supernote-on-device",
+      "model_id": "myscript-iink-4.1.0",
+      "warmup_ms": 0.0,
+      "overall": {
+        "category": "all",
+        "page_count": 25,
+        "error_count": 0,
+        "mean_cer": 0.1719,
+        "median_cer": 0.0328,
+        "mean_content_cer": 0.1707,
+        "mean_wer": 0.3145,
+        "mean_word_recall": 0.801,
+        "mean_bujo_symbol_recall": 0.6245,
+        "mean_bujo_strikethrough_recall": 0.0,
+        "mean_bujo_indent_accuracy": 0.7084,
+        "median_latency_ms": 909.0,
+        "p95_latency_ms": 1717.0
+      },
+      "by_category": [
+        {
+          "category": "bujo_daily",
+          "page_count": 1,
+          "error_count": 0,
+          "mean_cer": 0.0744,
+          "median_cer": 0.0744,
+          "mean_content_cer": 0.0718,
+          "mean_wer": 0.2917,
+          "mean_word_recall": 0.95,
+          "mean_bujo_symbol_recall": 0.1,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": null,
+          "median_latency_ms": 917.0,
+          "p95_latency_ms": 917.0
+        },
+        {
+          "category": "bujo_monthly",
+          "page_count": 2,
+          "error_count": 0,
+          "mean_cer": 0.1321,
+          "median_cer": 0.1321,
+          "mean_content_cer": 0.1224,
+          "mean_wer": 0.4479,
+          "mean_word_recall": 0.7961,
+          "mean_bujo_symbol_recall": 0.2727,
+          "mean_bujo_strikethrough_recall": 0.0,
+          "mean_bujo_indent_accuracy": 0.6667,
+          "median_latency_ms": 979.0,
+          "p95_latency_ms": 1030.0
+        },
+        {
+          "category": "empty_template",
+          "page_count": 1,
+          "error_count": 0,
+          "mean_cer": 0.0,
+          "median_cer": 0.0,
+          "mean_content_cer": 0.0,
+          "mean_wer": 0.0,
+          "mean_word_recall": 1.0,
+          "mean_bujo_symbol_recall": null,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": null,
+          "median_latency_ms": 103.0,
+          "p95_latency_ms": 103.0
+        },
+        {
+          "category": "english_prose",
+          "page_count": 5,
+          "error_count": 0,
+          "mean_cer": 0.0123,
+          "median_cer": 0.0,
+          "mean_content_cer": 0.0123,
+          "mean_wer": 0.0479,
+          "mean_word_recall": 0.9907,
+          "mean_bujo_symbol_recall": null,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": null,
+          "median_latency_ms": 509.0,
+          "p95_latency_ms": 1322.0
+        },
+        {
+          "category": "diagram_and_layout",
+          "page_count": 6,
+          "error_count": 0,
+          "mean_cer": 0.2455,
+          "median_cer": 0.1815,
+          "mean_content_cer": 0.246,
+          "mean_wer": 0.5237,
+          "mean_word_recall": 0.6806,
+          "mean_bujo_symbol_recall": 1.0,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": null,
+          "median_latency_ms": 606.0,
+          "p95_latency_ms": 1512.0
+        },
+        {
+          "category": "multilingual",
+          "page_count": 6,
+          "error_count": 0,
+          "mean_cer": 0.0439,
+          "median_cer": 0.0325,
+          "mean_content_cer": 0.0422,
+          "mean_wer": 0.155,
+          "mean_word_recall": 0.9494,
+          "mean_bujo_symbol_recall": 0.875,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": 0.75,
+          "median_latency_ms": 1611.0,
+          "p95_latency_ms": 1815.0
+        },
+        {
+          "category": "edge_cases",
+          "page_count": 4,
+          "error_count": 0,
+          "mean_cer": 0.5402,
+          "median_cer": 0.5804,
+          "mean_content_cer": 0.5402,
+          "mean_wer": 0.5909,
+          "mean_word_recall": 0.4375,
+          "mean_bujo_symbol_recall": null,
+          "mean_bujo_strikethrough_recall": null,
+          "mean_bujo_indent_accuracy": null,
+          "median_latency_ms": 203.0,
+          "p95_latency_ms": 605.0
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "bujo_daily_weekend",
+          "category": "bujo_daily",
+          "hypothesis": "1108 SAT\n- Build out test dataset\n    transfer test notes to PC\n  .\n    re-run evals\n.\n◦ Mel in SD\n  • Hike at the Boys\n1109 SAN• transfer test notes to PC\n  - re-run erals\n  ◦ Practice• dishes befor Mel returns\n  • watch Pitt ep 5",
+          "latency_ms": 917.0,
+          "metrics": {
+            "cer": 0.0744,
+            "content_cer": 0.0718,
+            "wer": 0.2917,
+            "word_recall": 0.95,
+            "bujo_expected_items": 10,
+            "bujo_symbol_recall": 0.1,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "bujo_monthly_november_backlog",
+          "category": "bujo_monthly",
+          "hypothesis": "NOVEMBER\n- Backlog\n  ✗ salad\n      revamp plan for network\n  .\n  4 cat carrier options\n  - call mom\n  • return faucet\n  • take out 3 bags ...\n- A 13\n- rewrite entire sync engine\n- reduce latman by 58 %- profile encoder",
+          "latency_ms": 1030.0,
+          "metrics": {
+            "cer": 0.098,
+            "content_cer": 0.0787,
+            "wer": 0.3415,
+            "word_recall": 0.8966,
+            "bujo_expected_items": 11,
+            "bujo_symbol_recall": 0.2727,
+            "bujo_strikethrough_recall": 0.0,
+            "bujo_indent_accuracy": 0.6667
+          },
+          "error": null
+        },
+        {
+          "case_id": "bujo_monthly_november_calendar",
+          "category": "bujo_monthly",
+          "hypothesis": "NOVEMBER 2026\nIs\n2 m\n3 T\n4 W\n5T\n6 F\n75 ◦ Mel in San Diego\n85 ◦ Practice\n9 M\n10T\n11 W ◦ Eng Review\n12T\n13 F\n145 ◦ Practice\n155\n16M\n17T\n18W\n19T\n20 F ◦ practice\n225 ◦ L's Wedding21 5\n23M ◦ ACU Break - no school\n24 T\n25W\n26T ◦ Thanksgiving ◦ San Diego\n27 F\n285 ◦ Practice\n29 5\n30",
+          "latency_ms": 928.0,
+          "metrics": {
+            "cer": 0.1661,
+            "content_cer": 0.1661,
+            "wer": 0.5543,
+            "word_recall": 0.6957,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "empty_dot_grid",
+          "category": "empty_template",
+          "hypothesis": "",
+          "latency_ms": 103.0,
+          "metrics": {
+            "cer": 0.0,
+            "content_cer": 0.0,
+            "wer": 0.0,
+            "word_recall": 1.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "a5x_obsidian_prose",
+          "category": "english_prose",
+          "hypothesis": "Subject: Obsidian Supernote Integration\n        Test File\nLet me know how this works, please. I've\n  been thinking about setting up an Obsidian\n  instance for a while now.",
+          "latency_ms": 1018.0,
+          "metrics": {
+            "cer": 0.0,
+            "content_cer": 0.0,
+            "wer": 0.0,
+            "word_recall": 1.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "rtr_paragraphs",
+          "category": "english_prose",
+          "hypothesis": "Realtime recognition paragraph test\nWith enough space a new paragraph\nShould be created. If lines are\nClose then the text should reflow.\nThis showbldbe a new paragraph.\nAs well as this.\nBut this is the last paragraph and\nShould reflow together.",
+          "latency_ms": 1322.0,
+          "metrics": {
+            "cer": 0.0286,
+            "content_cer": 0.0286,
+            "wer": 0.1628,
+            "word_recall": 0.9535,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "manta_alphanumeric",
+          "category": "english_prose",
+          "hypothesis": "This is a note created on\nthe A5X2 Manta.\nIt doesn't work. I",
+          "latency_ms": 509.0,
+          "metrics": {
+            "cer": 0.0328,
+            "content_cer": 0.0328,
+            "wer": 0.0769,
+            "word_recall": 1.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "vertical_1180",
+          "category": "english_prose",
+          "hypothesis": "This vertical\n  note file\nhas\nORIENTATION: 1180",
+          "latency_ms": 318.0,
+          "metrics": {
+            "cer": 0.0,
+            "content_cer": 0.0,
+            "wer": 0.0,
+            "word_recall": 1.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "horizontal_1270",
+          "category": "english_prose",
+          "hypothesis": "This horizontal\n  note file has\nORIENTATION : 1270",
+          "latency_ms": 313.0,
+          "metrics": {
+            "cer": 0.0,
+            "content_cer": 0.0,
+            "wer": 0.0,
+            "word_recall": 1.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "stroller_diagram_light",
+          "category": "diagram_and_layout",
+          "hypothesis": "Baby\n                              Handlebar\nRock\n      Happy Baby in a stroller",
+          "latency_ms": 607.0,
+          "metrics": {
+            "cer": 0.0222,
+            "content_cer": 0.0222,
+            "wer": 0.2222,
+            "word_recall": 0.7778,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "stroller_diagram_dark",
+          "category": "diagram_and_layout",
+          "hypothesis": "Baby\n                              Handlebar\nRock\n      Happy Baby in a stroller",
+          "latency_ms": 605.0,
+          "metrics": {
+            "cer": 0.0222,
+            "content_cer": 0.0222,
+            "wer": 0.2222,
+            "word_recall": 0.7778,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "horizontal_1090_axes",
+          "category": "diagram_and_layout",
+          "hypothesis": "his is\n  a horizontal\n    note\n                                        width\nA5x2\n                        height",
+          "latency_ms": 407.0,
+          "metrics": {
+            "cer": 0.0233,
+            "content_cer": 0.0233,
+            "wer": 0.125,
+            "word_recall": 0.875,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "sn2md_rotated_quadrants",
+          "category": "diagram_and_layout",
+          "hypothesis": "digitsbedwork\nStudiesclogging\n    no GO",
+          "latency_ms": 605.0,
+          "metrics": {
+            "cer": 0.5385,
+            "content_cer": 0.5385,
+            "wer": 1.0,
+            "word_recall": 0.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "guitar_caged_shapes",
+          "category": "diagram_and_layout",
+          "hypothesis": "GUITAR\n(shape/#1A shape / #2\n    34 55 6\n    7R2 34\n    5 66 7R\n    2 3434 5\n    6 7R7 2R\n    34 55 6\n6 Shape/#3E- Shape/#4\n    6 7R7R\n    34 55 6\n  7 2R2 32\n    5 6 7R\n    2 34÷i\n    6 7RR\nD- Shape#5\n    2 34\n            R\n  334 5\n    R\n    5 6\n    2 34",
+          "latency_ms": 1114.0,
+          "metrics": {
+            "cer": 0.5272,
+            "content_cer": 0.5272,
+            "wer": 0.7961,
+            "word_recall": 0.82,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "guitar_tuning_grid",
+          "category": "diagram_and_layout",
+          "hypothesis": "(Tuning Analysis\n(maj\nEF G¥BCD E\nB C DF◦ EA B\nG ABC DF G\nC DEF GBC\nGÉE ♂¥F G\n                                          -\nC DBC\n  1 2 34 5 6 78 9 101112\nsongAOT)\nEBD\nBG\nGABCDEF\nCDEÉ¥1T\nG-BEF\n  Cmaj?12\n  Amin?\n  - A#is not in the key but\n      resolves",
+          "latency_ms": 1512.0,
+          "metrics": {
+            "cer": 0.3398,
+            "content_cer": 0.3424,
+            "wer": 0.7767,
+            "word_recall": 0.8333,
+            "bujo_expected_items": 1,
+            "bujo_symbol_recall": 1.0,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "turkish_diacritics",
+          "category": "multilingual",
+          "hypothesis": "Şimdi ben buraya neden çıktım?\nNiçin çıktım?\nNasıl Gittim?\nBunu izaha gerek yok.\nGördünüz, yürüdüm çıktım.\nAma çıkmamış da olabilirim.",
+          "latency_ms": 909.0,
+          "metrics": {
+            "cer": 0.0299,
+            "content_cer": 0.0299,
+            "wer": 0.05,
+            "word_recall": 1.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "french_cafe_bar",
+          "category": "multilingual",
+          "hypothesis": "CAFE / BAR\nBonjour, vous désirez_quoi ?, que désirez-vous comander ?\n        , qu'est ce que vous prenez ?\nBonjour, souhaitez- vous commander ?\nUn café\nun expressun noisette - cafe w/ drop of milk\nun café crème\nune evians'il vous plait\nUn perrier\nun coca\nun coca Zero\nun coca light\nun limonate (Sprite)\nune biere ⇒ Un demi\nun verre de vin rouge\nun verre de vin blanc\nun verre de rose\nL'addition\nça fait combien",
+          "latency_ms": 1717.0,
+          "metrics": {
+            "cer": 0.0351,
+            "content_cer": 0.0351,
+            "wer": 0.24,
+            "word_recall": 0.9079,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "french_travel_phrases",
+          "category": "multilingual",
+          "hypothesis": "Travel\nJe ne parle pas français.\nJe ne comprends pas\nPouvez - vous repeter s'il vous plait ?\nPouvez- vous m'aider s'il vous plait ?\n    - Can you help me please ?\nJe veux acheter ça ?\n    - I want to buy this\nOù sont les toilettes ?\nJe voudrais -rarely used and is formal\nEst-ce que je peux avoir un cafe sup ?- can I have a Coffee\nJe vais prendre un cafe\n  - I'll take a coffee",
+          "latency_ms": 1610.0,
+          "metrics": {
+            "cer": 0.036,
+            "content_cer": 0.0368,
+            "wer": 0.2778,
+            "word_recall": 0.9865,
+            "bujo_expected_items": 4,
+            "bujo_symbol_recall": 0.75,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": 0.75
+          },
+          "error": null
+        },
+        {
+          "case_id": "french_verbs_list",
+          "category": "multilingual",
+          "hypothesis": "100 sentences\nVerbs\nVouloir / Je veux I want\nPouvoir / Je peux I canDevoir / Je dois I must/hareto\nSavoir / Je sais I know\nAimer / J'aime I like /love\nSouhaiter / Je souhaite I wish\nPréférer / Je préfère I prefer\nAdorer / J'adore 1 adore\nDétester / Je déteste I hate\n  J'ai besoin de I need to\nboire to drinkmanger to eat\nDormir to sleep\nPartir to leave\nRevenir to come back/go back\nMarcher to walksortir to go out/get out\nRester to stay\nArrêter to stop\nCourirVisitir to visit",
+          "latency_ms": 1815.0,
+          "metrics": {
+            "cer": 0.1299,
+            "content_cer": 0.1299,
+            "wer": 0.2121,
+            "word_recall": 0.8969,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "spanish_cognates_lesson_1",
+          "category": "multilingual",
+          "hypothesis": "QRoo Lesson 1\n1. To educate ⇒ education\n        educación → educar\n2. To observe → observación\n          observar\n3. To reserve → reservación\n          reservar\n4. To legalize → legalization\n          legalizaciónlegalizar\n5. To facilitate → facilitation\n          facilitación\n                            facilitar\n6. To create → creation\n      creación → creatar\n                            crear\n7. To document\n          documentation\n          documentación\n          documentar",
+          "latency_ms": 1611.0,
+          "metrics": {
+            "cer": 0.0202,
+            "content_cer": 0.0088,
+            "wer": 0.0962,
+            "word_recall": 0.9318,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "spanish_sentences_lesson_2",
+          "category": "multilingual",
+          "hypothesis": "Q Roo Lesson 2\n- I can't memorize the information\n  No pudo memorizar la información.\n- I want to confirm the\n  information but I can't\n  Quiero confirmar la información\n  pero no puedo.\n- I want to participate but\n    I caril\n  Quiero participar pero no puedo.\n- I want to cancel the reservation\n  but I can't\n  Quiero cancelar la reservación\n  pero no puedo.\n- I want to celebrate but I can't\n  Quiero celebrar pero no puedo.",
+          "latency_ms": 1611.0,
+          "metrics": {
+            "cer": 0.0123,
+            "content_cer": 0.0127,
+            "wer": 0.0541,
+            "word_recall": 0.973,
+            "bujo_expected_items": 5,
+            "bujo_symbol_recall": 1.0,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "inverted_banner_gray",
+          "category": "edge_cases",
+          "hypothesis": "Different title\n      Different",
+          "latency_ms": 303.0,
+          "metrics": {
+            "cer": 0.0,
+            "content_cer": 0.0,
+            "wer": 0.0,
+            "word_recall": 1.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "inverted_banner_scribble_overlap",
+          "category": "edge_cases",
+          "hypothesis": "Main title\nWrite thiscNtop.\n    u\n  I'm a keyword: dummy",
+          "latency_ms": 605.0,
+          "metrics": {
+            "cer": 0.1607,
+            "content_cer": 0.1607,
+            "wer": 0.3636,
+            "word_recall": 0.75,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "giant_digit_2",
+          "category": "edge_cases",
+          "hypothesis": "",
+          "latency_ms": 103.0,
+          "metrics": {
+            "cer": 1.0,
+            "content_cer": 1.0,
+            "wer": 1.0,
+            "word_recall": 0.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        },
+        {
+          "case_id": "giant_digit_10",
+          "category": "edge_cases",
+          "hypothesis": "",
+          "latency_ms": 102.0,
+          "metrics": {
+            "cer": 1.0,
+            "content_cer": 1.0,
+            "wer": 1.0,
+            "word_recall": 0.0,
+            "bujo_expected_items": 0,
+            "bujo_symbol_recall": null,
+            "bujo_strikethrough_recall": null,
+            "bujo_indent_accuracy": null
+          },
+          "error": null
+        }
+      ]
+    }
+  ]
+}
