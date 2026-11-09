@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from PIL import Image
+from prometheus_client import REGISTRY
 from sqlalchemy import select
 
 from supernote.models.base import ProcessingStatus, TaskType
@@ -1466,3 +1467,153 @@ async def test_recover_missing_tasks_enqueues_legacy_hashing_version(
 
     assert 9301 in processor_service.processing_files
     assert 9302 not in processor_service.processing_files
+
+
+async def test_process_file_and_queue_pause_metrics(
+    session_manager: DatabaseSessionManager,
+    file_service: FileService,
+    summary_service: SummaryService,
+) -> None:
+    """Verify full/on-demand `.note` run metrics, lock-wait exclusion, and queue_paused gauge."""
+    coordination = SqliteCoordinationService(session_manager)
+    await coordination.set_value("queue_paused", "true")
+
+    processor = ProcessorService(
+        event_bus=LocalEventBus(),
+        session_manager=session_manager,
+        file_service=file_service,
+        summary_service=summary_service,
+        coordination_service=coordination,
+        concurrency=0,
+    )
+    assert REGISTRY.get_sample_value("supernote_processor_queue_paused") == 0.0
+
+    await processor.start()
+    try:
+        assert REGISTRY.get_sample_value("supernote_processor_queue_paused") == 1.0
+        await processor.resume()
+        assert REGISTRY.get_sample_value("supernote_processor_queue_paused") == 0.0
+        await processor.pause()
+        assert REGISTRY.get_sample_value("supernote_processor_queue_paused") == 1.0
+    finally:
+        await processor.stop()
+
+    full_ok = {"mode": "full", "status": "success"}
+    full_fail = {"mode": "full", "status": "failure"}
+    on_demand_ok = {"mode": "on_demand", "status": "success"}
+    on_demand_cancel = {"mode": "on_demand", "status": "cancelled"}
+
+    before_full_ok = (
+        REGISTRY.get_sample_value("supernote_note_processing_runs_total", full_ok)
+        or 0.0
+    )
+    before_full_fail = (
+        REGISTRY.get_sample_value("supernote_note_processing_runs_total", full_fail)
+        or 0.0
+    )
+    before_on_demand_ok = (
+        REGISTRY.get_sample_value("supernote_note_processing_runs_total", on_demand_ok)
+        or 0.0
+    )
+    before_on_demand_cancel = (
+        REGISTRY.get_sample_value(
+            "supernote_note_processing_runs_total", on_demand_cancel
+        )
+        or 0.0
+    )
+    before_on_demand_sum = (
+        REGISTRY.get_sample_value(
+            "supernote_note_processing_duration_seconds_sum", {"mode": "on_demand"}
+        )
+        or 0.0
+    )
+
+    # Unregistered modules -> returns False -> recorded as `status="failure"`
+    assert await processor.process_file(9401) is False
+    assert (
+        REGISTRY.get_sample_value("supernote_note_processing_runs_total", full_fail)
+        == before_full_fail + 1.0
+    )
+
+    should_fail = False
+    block_event = asyncio.Event()
+    in_hashing = asyncio.Event()
+
+    class ControllableHashing(ProcessorModule):
+        @property
+        def name(self) -> str:
+            return "ControllableHashing"
+
+        @property
+        def task_type(self) -> TaskType:
+            return TaskType.PAGE_HASHING
+
+        async def run_if_needed(self, *args: object, **kwargs: object) -> bool:
+            return True
+
+        async def process(self, *args: object, **kwargs: object) -> None:
+            in_hashing.set()
+            await block_event.wait()
+            if should_fail:
+                raise RuntimeError("hashing boom")
+
+    processor.register_modules(hashing=ControllableHashing())
+
+    # Hold `_file_lock(9402)` via a full run for ~120ms while an on-demand run waits on the lock;
+    # the on-demand run's observed duration must exclude that lock contention wait!
+    full_task = asyncio.create_task(processor.process_file(9402))
+    await in_hashing.wait()
+    on_demand_task = asyncio.create_task(
+        processor.process_file(
+            9402,
+            task_types={TaskType.PAGE_HASHING},
+            page_indices={0},
+        )
+    )
+    await asyncio.sleep(0.12)
+    block_event.set()
+    assert await full_task is True
+    assert await on_demand_task is True
+
+    after_on_demand_sum = (
+        REGISTRY.get_sample_value(
+            "supernote_note_processing_duration_seconds_sum", {"mode": "on_demand"}
+        )
+        or 0.0
+    )
+    assert after_on_demand_sum - before_on_demand_sum < 0.08
+
+    # Module failure -> returns False -> `status="failure"`
+    should_fail = True
+    assert await processor.process_file(9403) is False
+
+    # Cancellation mid-run -> `status="cancelled"`
+    should_fail = False
+    block_event.clear()
+    in_hashing.clear()
+    cancel_task = asyncio.create_task(
+        processor.process_file(9404, task_types={TaskType.PAGE_HASHING})
+    )
+    await in_hashing.wait()
+    cancel_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await cancel_task
+
+    assert (
+        REGISTRY.get_sample_value("supernote_note_processing_runs_total", full_ok)
+        == before_full_ok + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_note_processing_runs_total", full_fail)
+        == before_full_fail + 2.0
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_note_processing_runs_total", on_demand_ok)
+        == before_on_demand_ok + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_note_processing_runs_total", on_demand_cancel
+        )
+        == before_on_demand_cancel + 1.0
+    )

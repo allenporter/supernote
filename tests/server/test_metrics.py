@@ -26,9 +26,13 @@ from supernote.server.app import create_app
 from supernote.server.config import ServerConfig
 from supernote.server.metrics import (
     AI_LATENCY_BUCKETS,
+    NOTE_PROCESSING_DURATION_BUCKETS,
     AIStage,
+    NoteProcessingMode,
+    init_note_processing_metrics,
     record_ai_tokens,
     track_ai_request,
+    track_note_processing_run,
 )
 
 REMOVED_LEGACY_METRICS = (
@@ -55,6 +59,9 @@ async def test_metrics_endpoint(client: TestClient) -> None:
     )
     # Should contain our custom metrics and exclude removed vendor-specific families
     assert "supernote_http_requests_total" in body
+    assert "supernote_note_processing_runs_total" in body
+    assert "supernote_note_processing_duration_seconds" in body
+    assert "supernote_processor_queue_paused" in body
     for legacy_metric in REMOVED_LEGACY_METRICS:
         assert legacy_metric not in body
 
@@ -654,6 +661,102 @@ async def test_ai_request_cancellation_and_token_guards() -> None:
         )
         == before_cancel_tok + 12.0
     )
+
+
+def test_note_processing_run_metrics_tracker() -> None:
+    """Verify `.note` run counter seeding, outcome tracking, buckets, and cancellation."""
+    init_note_processing_metrics()
+    for mode in NoteProcessingMode:
+        for status in ("success", "failure"):
+            assert (
+                REGISTRY.get_sample_value(
+                    "supernote_note_processing_runs_total",
+                    {"mode": mode.value, "status": status},
+                )
+                is not None
+            )
+
+    full_ok = {"mode": "full", "status": "success"}
+    full_fail = {"mode": "full", "status": "failure"}
+    on_demand_cancel = {"mode": "on_demand", "status": "cancelled"}
+
+    before_ok = (
+        REGISTRY.get_sample_value("supernote_note_processing_runs_total", full_ok)
+        or 0.0
+    )
+    before_fail = (
+        REGISTRY.get_sample_value("supernote_note_processing_runs_total", full_fail)
+        or 0.0
+    )
+    before_cancel = (
+        REGISTRY.get_sample_value(
+            "supernote_note_processing_runs_total", on_demand_cancel
+        )
+        or 0.0
+    )
+    before_full_dur = (
+        REGISTRY.get_sample_value(
+            "supernote_note_processing_duration_seconds_count", {"mode": "full"}
+        )
+        or 0.0
+    )
+    before_on_demand_dur = (
+        REGISTRY.get_sample_value(
+            "supernote_note_processing_duration_seconds_count", {"mode": "on_demand"}
+        )
+        or 0.0
+    )
+
+    with track_note_processing_run(mode=NoteProcessingMode.FULL) as run:
+        run.set_succeeded(True)
+
+    with track_note_processing_run(mode=NoteProcessingMode.FULL) as run:
+        run.set_succeeded(False)
+
+    with pytest.raises(RuntimeError, match="db failure"):
+        with track_note_processing_run(mode=NoteProcessingMode.FULL):
+            raise RuntimeError("db failure")
+
+    with pytest.raises(asyncio.CancelledError):
+        with track_note_processing_run(mode=NoteProcessingMode.ON_DEMAND) as run:
+            run.set_succeeded(True)
+            raise asyncio.CancelledError
+
+    assert (
+        REGISTRY.get_sample_value("supernote_note_processing_runs_total", full_ok)
+        == before_ok + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_note_processing_runs_total", full_fail)
+        == before_fail + 2.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_note_processing_runs_total", on_demand_cancel
+        )
+        == before_cancel + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_note_processing_duration_seconds_count", {"mode": "full"}
+        )
+        == before_full_dur + 3.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_note_processing_duration_seconds_count", {"mode": "on_demand"}
+        )
+        or 0.0
+    ) == before_on_demand_dur
+
+    for bucket in NOTE_PROCESSING_DURATION_BUCKETS:
+        assert (
+            REGISTRY.get_sample_value(
+                "supernote_note_processing_duration_seconds_bucket",
+                {"mode": "full", "le": str(bucket)},
+            )
+            is not None
+        )
 
     # Calling record_ai_tokens outside track_ai_request is a safe no-op
     record_ai_tokens(
