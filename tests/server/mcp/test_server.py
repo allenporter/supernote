@@ -22,7 +22,7 @@ from supernote.server.mcp.server import (
     set_services,
 )
 from supernote.server.metrics import (
-    MCP_TOOL_DURATION_BUCKETS,
+    REQUEST_DURATION_BUCKETS,
     MCPToolName,
     init_mcp_metrics,
     track_mcp_tool_call,
@@ -125,7 +125,7 @@ async def test_create_mcp_server_seeds_metrics_and_registers_tools(
 async def test_mcp_tool_duration_histogram_buckets(
     mcp_env: MCPToolTestEnv,
 ) -> None:
-    """Verify `supernote_mcp_tool_duration_seconds` exports exact `MCP_TOOL_DURATION_BUCKETS`."""
+    """Verify `supernote_mcp_tool_duration_seconds` exports exact `REQUEST_DURATION_BUCKETS`."""
     await list_notebooks(mcp_env.ctx)
 
     metric_families = {
@@ -142,7 +142,7 @@ async def test_mcp_tool_duration_histogram_buckets(
         and sample.labels.get("tool") == MCPToolName.LIST_NOTEBOOKS.value
         and sample.labels["le"] != "+Inf"
     )
-    assert finite_bounds == MCP_TOOL_DURATION_BUCKETS
+    assert finite_bounds == REQUEST_DURATION_BUCKETS
     assert (
         REGISTRY.get_sample_value(
             "supernote_mcp_tool_duration_seconds_bucket",

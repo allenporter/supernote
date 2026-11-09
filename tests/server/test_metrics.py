@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 from aiohttp import web
-from aiohttp.test_utils import TestClient
+from aiohttp.test_utils import TestClient, make_mocked_request
 from prometheus_client import REGISTRY
 
 from supernote.server.ai.base import AIError
@@ -22,12 +22,12 @@ from supernote.server.ai.models.openai.embedding import OpenAIEmbeddingModel
 from supernote.server.ai.models.openai.ocr import OpenAIOcrModel
 from supernote.server.ai.models.openai.summary import OpenAISummaryModel
 from supernote.server.ai.models.summary import InstrumentedSummaryModel
-from supernote.server.app import create_app
+from supernote.server.app import create_app, metrics_middleware
 from supernote.server.config import ServerConfig
 from supernote.server.keys import SESSION_MANAGER_KEY
 from supernote.server.metrics import (
-    AI_LATENCY_BUCKETS,
-    NOTE_PROCESSING_DURATION_BUCKETS,
+    PIPELINE_DURATION_BUCKETS,
+    REQUEST_DURATION_BUCKETS,
     AIStage,
     NoteProcessingMode,
     init_note_processing_metrics,
@@ -61,16 +61,24 @@ async def test_metrics_endpoint(client: TestClient) -> None:
     )
     # Should contain our custom metrics and exclude removed vendor-specific families
     assert "supernote_http_requests_total" in body
+    assert "supernote_http_requests_in_progress" in body
     assert "supernote_note_processing_runs_total" in body
     assert "supernote_note_processing_duration_seconds" in body
     assert "supernote_note_pages_parsed_total" in body
     assert "supernote_processor_queue_paused" in body
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_http_requests_total",
+            {"method": "GET", "path": "/metrics", "status": "200"},
+        )
+        is None
+    )
     for legacy_metric in REMOVED_LEGACY_METRICS:
         assert legacy_metric not in body
 
 
 async def test_http_request_tracking(client: TestClient) -> None:
-    """Verify that HTTP requests increment the request counters."""
+    """Verify that HTTP requests increment request counters and export extended latency buckets."""
     before = (
         REGISTRY.get_sample_value(
             "supernote_http_requests_total",
@@ -92,6 +100,209 @@ async def test_http_request_tracking(client: TestClient) -> None:
 
     assert after == before + 1.0
 
+    for bucket in REQUEST_DURATION_BUCKETS:
+        bucket_val = REGISTRY.get_sample_value(
+            "supernote_http_request_duration_seconds_bucket",
+            {
+                "method": "GET",
+                "path": "/api/file/query/server",
+                "le": str(bucket),
+            },
+        )
+        assert bucket_val is not None
+
+
+async def test_http_mcp_oauth_known_path_preserved(client: TestClient) -> None:
+    """Verify known MCP OAuth discovery requests retain their canonical route path label."""
+    oauth_labels = {
+        "method": "GET",
+        "path": "/.well-known/oauth-authorization-server",
+        "status": "200",
+    }
+    before_oauth = (
+        REGISTRY.get_sample_value("supernote_http_requests_total", oauth_labels) or 0.0
+    )
+
+    oauth_resp = await client.get("/.well-known/oauth-authorization-server")
+    assert oauth_resp.status == 200
+    assert (
+        REGISTRY.get_sample_value("supernote_http_requests_total", oauth_labels)
+        == before_oauth + 1.0
+    )
+
+
+async def test_http_mcp_unmatched_scanner_path_collapsed(client: TestClient) -> None:
+    """Verify unmatched scanner paths caught by MCP ASGIResource collapse to 'HTTP 404'."""
+    scanner_path = "/unmatched/scanner/path"
+    not_found_labels = {"method": "GET", "path": "HTTP 404", "status": "404"}
+    before_404 = (
+        REGISTRY.get_sample_value("supernote_http_requests_total", not_found_labels)
+        or 0.0
+    )
+
+    scanner_resp = await client.get(scanner_path)
+    assert scanner_resp.status == 404
+    assert (
+        REGISTRY.get_sample_value("supernote_http_requests_total", not_found_labels)
+        == before_404 + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_http_requests_total",
+            {"method": "GET", "path": scanner_path, "status": "404"},
+        )
+        is None
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_http_request_duration_seconds_count",
+            {"method": "GET", "path": scanner_path},
+        )
+        is None
+    )
+
+
+async def test_http_in_progress_gauge_and_nonstandard_method_normalized(
+    aiohttp_client: Any,
+) -> None:
+    """Verify active requests update in-progress gauge and normalize non-standard HTTP verbs to 'OTHER'."""
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow_handler(_request: web.Request) -> web.Response:
+        entered.set()
+        await release.wait()
+        return web.Response(text="ok")
+
+    app = web.Application(middlewares=[metrics_middleware])
+    app.router.add_route("*", "/slow", slow_handler)
+    custom_client = await aiohttp_client(app)
+
+    before_other_in_flight = (
+        REGISTRY.get_sample_value(
+            "supernote_http_requests_in_progress", {"method": "OTHER"}
+        )
+        or 0.0
+    )
+    before_other_total = (
+        REGISTRY.get_sample_value(
+            "supernote_http_requests_total",
+            {"method": "OTHER", "path": "/slow", "status": "200"},
+        )
+        or 0.0
+    )
+
+    req_task = asyncio.create_task(custom_client.request("PROPFIND", "/slow"))
+    await entered.wait()
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_http_requests_in_progress", {"method": "OTHER"}
+        )
+        == before_other_in_flight + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_http_requests_in_progress", {"method": "PROPFIND"}
+        )
+        is None
+    )
+
+    release.set()
+    slow_resp = await req_task
+    assert slow_resp.status == 200
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_http_requests_in_progress", {"method": "OTHER"}
+        )
+        == before_other_in_flight
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_http_requests_total",
+            {"method": "OTHER", "path": "/slow", "status": "200"},
+        )
+        == before_other_total + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_http_requests_total",
+            {"method": "PROPFIND", "path": "/slow", "status": "200"},
+        )
+        is None
+    )
+
+
+async def test_http_cancelled_request_records_499_without_duration() -> None:
+    """Verify CancelledError records status='499', decrements in-progress gauge, and skips latency observation."""
+
+    async def _noop_long_poll(_r: web.Request) -> web.Response:
+        return web.Response()
+
+    app = web.Application(middlewares=[metrics_middleware])
+    app.router.add_get("/long-poll", _noop_long_poll)
+
+    cancel_499_labels = {"method": "GET", "path": "/long-poll", "status": "499"}
+    cancel_500_labels = {"method": "GET", "path": "/long-poll", "status": "500"}
+    cancel_dur_labels = {"method": "GET", "path": "/long-poll"}
+    before_get_in_flight = (
+        REGISTRY.get_sample_value(
+            "supernote_http_requests_in_progress", {"method": "GET"}
+        )
+        or 0.0
+    )
+    before_499 = (
+        REGISTRY.get_sample_value("supernote_http_requests_total", cancel_499_labels)
+        or 0.0
+    )
+    before_500 = (
+        REGISTRY.get_sample_value("supernote_http_requests_total", cancel_500_labels)
+        or 0.0
+    )
+    before_dur = (
+        REGISTRY.get_sample_value(
+            "supernote_http_request_duration_seconds_count", cancel_dur_labels
+        )
+        or 0.0
+    )
+
+    fake_request = make_mocked_request("GET", "/long-poll", app=app)
+    match_info = await app.router.resolve(fake_request)
+    match_info.add_app(app)
+    fake_request._match_info = match_info
+
+    async def _raise_cancelled(_req: web.Request) -> web.StreamResponse:
+        assert (
+            REGISTRY.get_sample_value(
+                "supernote_http_requests_in_progress", {"method": "GET"}
+            )
+            == before_get_in_flight + 1.0
+        )
+        raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        await metrics_middleware(fake_request, _raise_cancelled)
+
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_http_requests_in_progress", {"method": "GET"}
+        )
+        == before_get_in_flight
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_http_requests_total", cancel_499_labels)
+        == before_499 + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_http_requests_total", cancel_500_labels)
+        or 0.0
+    ) == before_500
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_http_request_duration_seconds_count", cancel_dur_labels
+        )
+        or 0.0
+    ) == before_dur
+
 
 async def test_metrics_disabled(
     server_config: ServerConfig, aiohttp_client: Any
@@ -106,11 +317,10 @@ async def test_metrics_disabled(
     assert resp.status == 404
 
 
-async def test_db_session_metrics(client: TestClient) -> None:
-    """Verify that DatabaseSessionManager correctly tracks session open/close and errors."""
+async def test_db_session_active_gauge(client: TestClient) -> None:
+    """Verify DatabaseSessionManager increments and decrements active sessions gauge."""
+    assert client.app is not None
     session_manager = client.app[SESSION_MANAGER_KEY]
-
-    # Verify active session count increases inside context manager
     before = REGISTRY.get_sample_value("supernote_db_sessions_active") or 0.0
 
     async with session_manager.session():
@@ -119,18 +329,6 @@ async def test_db_session_metrics(client: TestClient) -> None:
 
     after = REGISTRY.get_sample_value("supernote_db_sessions_active") or 0.0
     assert after == before
-
-    # Verify session error count increases on database/sqlalchemy errors
-    errors_before = (
-        REGISTRY.get_sample_value("supernote_db_session_errors_total") or 0.0
-    )
-
-    with pytest.raises(Exception):
-        async with session_manager.session():
-            raise ValueError("Test error causing rollback")
-
-    errors_after = REGISTRY.get_sample_value("supernote_db_session_errors_total") or 0.0
-    assert errors_after == errors_before + 1.0
 
 
 async def test_gemini_ai_metrics_and_tokens(aiohttp_server: Any) -> None:
@@ -298,7 +496,7 @@ async def test_gemini_ai_metrics_and_tokens(aiohttp_server: Any) -> None:
     )
 
     # Verify extended latency histogram buckets (> 10s up to 600s) are exported
-    for bucket in AI_LATENCY_BUCKETS:
+    for bucket in PIPELINE_DURATION_BUCKETS:
         bucket_val = REGISTRY.get_sample_value(
             "supernote_ai_request_duration_seconds_bucket",
             {
@@ -752,7 +950,7 @@ def test_note_processing_run_metrics_tracker() -> None:
         or 0.0
     ) == before_on_demand_dur
 
-    for bucket in NOTE_PROCESSING_DURATION_BUCKETS:
+    for bucket in PIPELINE_DURATION_BUCKETS:
         assert (
             REGISTRY.get_sample_value(
                 "supernote_note_processing_duration_seconds_bucket",

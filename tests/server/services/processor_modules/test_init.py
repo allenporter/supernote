@@ -5,7 +5,7 @@ from prometheus_client import REGISTRY
 
 from supernote.models.base import ProcessingStatus, TaskType
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.metrics import PROCESSOR_TASK_DURATION_BUCKETS
+from supernote.server.metrics import PIPELINE_DURATION_BUCKETS
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.services.processor_modules.ocr import OcrModule
@@ -94,7 +94,7 @@ async def test_processor_module_success_and_skipped_metrics(
     assert _task_count(module_name, "skipped") == before_skip
     assert _duration_count(module_name) == before_dur + 1.0
 
-    for bucket in PROCESSOR_TASK_DURATION_BUCKETS:
+    for bucket in PIPELINE_DURATION_BUCKETS:
         bucket_val = REGISTRY.get_sample_value(
             "supernote_processor_task_duration_seconds_bucket",
             {"module": module_name, "le": str(bucket)},

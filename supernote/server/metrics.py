@@ -18,6 +18,7 @@ __all__ = [
     "BlobStorageKind",
     "DB_SESSIONS_ACTIVE",
     "DB_SESSION_ERRORS_TOTAL",
+    "HTTP_REQUESTS_IN_PROGRESS",
     "HTTP_REQUESTS_TOTAL",
     "HTTP_REQUEST_DURATION_SECONDS",
     "MCPToolName",
@@ -46,57 +47,7 @@ __all__ = [
     "track_note_processing_run",
 ]
 
-AI_LATENCY_BUCKETS: tuple[float, ...] = (
-    0.1,
-    0.25,
-    0.5,
-    1.0,
-    2.5,
-    5.0,
-    10.0,
-    20.0,
-    45.0,
-    90.0,
-    180.0,
-    300.0,
-    600.0,
-)
-
-NOTE_PROCESSING_DURATION_BUCKETS: tuple[float, ...] = (
-    0.1,
-    0.25,
-    0.5,
-    1.0,
-    2.5,
-    5.0,
-    10.0,
-    20.0,
-    45.0,
-    90.0,
-    180.0,
-    300.0,
-    600.0,
-)
-
-PROCESSOR_TASK_DURATION_BUCKETS: tuple[float, ...] = (
-    0.01,
-    0.05,
-    0.1,
-    0.25,
-    0.5,
-    1.0,
-    2.5,
-    5.0,
-    10.0,
-    20.0,
-    45.0,
-    90.0,
-    180.0,
-    300.0,
-    600.0,
-)
-
-MCP_TOOL_DURATION_BUCKETS: tuple[float, ...] = (
+REQUEST_DURATION_BUCKETS: tuple[float, ...] = (
     0.005,
     0.01,
     0.025,
@@ -110,6 +61,25 @@ MCP_TOOL_DURATION_BUCKETS: tuple[float, ...] = (
     10.0,
     30.0,
     60.0,
+    120.0,
+    300.0,
+)
+
+PIPELINE_DURATION_BUCKETS: tuple[float, ...] = (
+    0.01,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    2.5,
+    5.0,
+    10.0,
+    30.0,
+    60.0,
+    120.0,
+    300.0,
+    600.0,
 )
 
 
@@ -130,11 +100,48 @@ class NoteProcessingMode(StrEnum):
 
 
 class _OutcomeStatus(StrEnum):
-    """Terminal status labels for logical AI and `.note` pipeline runs."""
+    """Terminal status labels for tracked operations."""
 
     SUCCESS = "success"
     FAILURE = "failure"
     CANCELLED = "cancelled"
+
+
+class _OutcomeHandle:
+    """Mutable outcome handle for tracked operations whose success is decided inline."""
+
+    def __init__(self) -> None:
+        self._succeeded = False
+
+    def set_succeeded(self, succeeded: bool) -> None:
+        """Record whether the tracked operation succeeded."""
+        self._succeeded = succeeded
+
+
+@contextmanager
+def _track_outcome(
+    *,
+    counter: Counter,
+    histogram: Histogram,
+    labels: Mapping[str, str],
+    default_succeeded: bool = False,
+) -> Generator[_OutcomeHandle]:
+    """Shared outcome counter and non-cancelled duration observer."""
+    handle = _OutcomeHandle()
+    start_time = time.monotonic()
+    status = _OutcomeStatus.FAILURE
+    try:
+        yield handle
+        if default_succeeded or handle._succeeded:
+            status = _OutcomeStatus.SUCCESS
+    except asyncio.CancelledError:
+        status = _OutcomeStatus.CANCELLED
+        raise
+    finally:
+        duration = time.monotonic() - start_time
+        counter.labels(**labels, status=status.value).inc()
+        if status != _OutcomeStatus.CANCELLED:
+            histogram.labels(**labels).observe(duration)
 
 
 class _NotePageChangeType(StrEnum):
@@ -184,6 +191,13 @@ HTTP_REQUEST_DURATION_SECONDS: Histogram = Histogram(
     "supernote_http_request_duration_seconds",
     "Latency of HTTP requests in seconds.",
     ["method", "path"],
+    buckets=REQUEST_DURATION_BUCKETS,
+)
+
+HTTP_REQUESTS_IN_PROGRESS: Gauge = Gauge(
+    "supernote_http_requests_in_progress",
+    "Current number of HTTP requests actively being processed.",
+    ["method"],
 )
 
 # Processor metrics
@@ -197,7 +211,7 @@ PROCESSOR_TASK_DURATION_SECONDS: Histogram = Histogram(
     "supernote_processor_task_duration_seconds",
     "Latency of background pipeline tasks in seconds.",
     ["module"],
-    buckets=PROCESSOR_TASK_DURATION_BUCKETS,
+    buckets=PIPELINE_DURATION_BUCKETS,
 )
 
 PROCESSOR_QUEUE_SIZE: Gauge = Gauge(
@@ -235,7 +249,7 @@ _NOTE_PROCESSING_DURATION_SECONDS: Histogram = Histogram(
     "supernote_note_processing_duration_seconds",
     "End-to-end latency of completed .note pipeline processing runs in seconds (excluding per-file lock wait).",
     ["mode"],
-    buckets=NOTE_PROCESSING_DURATION_BUCKETS,
+    buckets=PIPELINE_DURATION_BUCKETS,
 )
 
 _NOTE_PAGES_PARSED_TOTAL: Counter = Counter(
@@ -243,17 +257,6 @@ _NOTE_PAGES_PARSED_TOTAL: Counter = Counter(
     "Total number of .note pages reconciled during page hashing by change type.",
     ["change_type"],
 )
-
-
-class NoteProcessingRun:
-    """Mutable outcome handle for an active `.note` pipeline processing run."""
-
-    def __init__(self) -> None:
-        self._succeeded = False
-
-    def set_succeeded(self, succeeded: bool) -> None:
-        """Record whether all requested stages of the pipeline run succeeded."""
-        self._succeeded = succeeded
 
 
 def init_note_processing_metrics() -> None:
@@ -293,26 +296,14 @@ def record_note_page_diff(
 def track_note_processing_run(
     *,
     mode: NoteProcessingMode,
-) -> Generator[NoteProcessingRun]:
+) -> Generator[_OutcomeHandle]:
     """Record Prometheus run count and completed latency for a `.note` pipeline run."""
-    run = NoteProcessingRun()
-    start_time = time.monotonic()
-    status = _OutcomeStatus.FAILURE
-    try:
-        yield run
-        if run._succeeded:
-            status = _OutcomeStatus.SUCCESS
-    except asyncio.CancelledError:
-        status = _OutcomeStatus.CANCELLED
-        raise
-    finally:
-        duration = time.monotonic() - start_time
-        _NOTE_PROCESSING_RUNS_TOTAL.labels(
-            mode=mode.value,
-            status=status.value,
-        ).inc()
-        if status != _OutcomeStatus.CANCELLED:
-            _NOTE_PROCESSING_DURATION_SECONDS.labels(mode=mode.value).observe(duration)
+    with _track_outcome(
+        counter=_NOTE_PROCESSING_RUNS_TOTAL,
+        histogram=_NOTE_PROCESSING_DURATION_SECONDS,
+        labels={"mode": mode.value},
+    ) as handle:
+        yield handle
 
 
 class OSSTransferDirection(StrEnum):
@@ -446,7 +437,7 @@ _AI_REQUEST_DURATION_SECONDS: Histogram = Histogram(
     "supernote_ai_request_duration_seconds",
     "Latency of completed AI model invocations in seconds (excluding concurrency queue wait).",
     ["provider", "model", "stage"],
-    buckets=AI_LATENCY_BUCKETS,
+    buckets=PIPELINE_DURATION_BUCKETS,
 )
 
 _AI_TOKENS_TOTAL: Counter = Counter(
@@ -483,29 +474,20 @@ def track_ai_request(
     token = _active_ai_request.set(
         _ActiveAIRequest(provider=provider, model=model, stage=stage)
     )
-    start_time = time.monotonic()
-    status = _OutcomeStatus.FAILURE
     try:
-        yield
-        status = _OutcomeStatus.SUCCESS
-    except asyncio.CancelledError:
-        status = _OutcomeStatus.CANCELLED
-        raise
+        with _track_outcome(
+            counter=_AI_REQUESTS_TOTAL,
+            histogram=_AI_REQUEST_DURATION_SECONDS,
+            labels={
+                "provider": provider,
+                "model": model,
+                "stage": stage.value,
+            },
+            default_succeeded=True,
+        ):
+            yield
     finally:
-        duration = time.monotonic() - start_time
         _active_ai_request.reset(token)
-        _AI_REQUESTS_TOTAL.labels(
-            provider=provider,
-            model=model,
-            stage=stage.value,
-            status=status.value,
-        ).inc()
-        if status != _OutcomeStatus.CANCELLED:
-            _AI_REQUEST_DURATION_SECONDS.labels(
-                provider=provider,
-                model=model,
-                stage=stage.value,
-            ).observe(duration)
 
 
 def _coerce_positive_tokens(value: object) -> int | None:
@@ -570,19 +552,8 @@ _MCP_TOOL_DURATION_SECONDS: Histogram = Histogram(
     "supernote_mcp_tool_duration_seconds",
     "Latency of completed MCP tool invocations in seconds.",
     ["tool"],
-    buckets=MCP_TOOL_DURATION_BUCKETS,
+    buckets=REQUEST_DURATION_BUCKETS,
 )
-
-
-class MCPToolCall:
-    """Mutable outcome handle for an active MCP tool invocation."""
-
-    def __init__(self) -> None:
-        self._succeeded = False
-
-    def set_succeeded(self, succeeded: bool) -> None:
-        """Record whether the MCP tool invocation succeeded."""
-        self._succeeded = succeeded
 
 
 def init_mcp_metrics() -> None:
@@ -599,26 +570,14 @@ def init_mcp_metrics() -> None:
 def track_mcp_tool_call(
     *,
     tool: MCPToolName,
-) -> Generator[MCPToolCall]:
+) -> Generator[_OutcomeHandle]:
     """Record Prometheus call count and completed latency for an MCP tool invocation."""
-    call = MCPToolCall()
-    start_time = time.monotonic()
-    status = _OutcomeStatus.FAILURE
-    try:
-        yield call
-        if call._succeeded:
-            status = _OutcomeStatus.SUCCESS
-    except asyncio.CancelledError:
-        status = _OutcomeStatus.CANCELLED
-        raise
-    finally:
-        duration = time.monotonic() - start_time
-        _MCP_TOOL_CALLS_TOTAL.labels(
-            tool=tool.value,
-            status=status.value,
-        ).inc()
-        if status != _OutcomeStatus.CANCELLED:
-            _MCP_TOOL_DURATION_SECONDS.labels(tool=tool.value).observe(duration)
+    with _track_outcome(
+        counter=_MCP_TOOL_CALLS_TOTAL,
+        histogram=_MCP_TOOL_DURATION_SECONDS,
+        labels={"tool": tool.value},
+    ) as handle:
+        yield handle
 
 
 # Database metrics
@@ -629,5 +588,5 @@ DB_SESSIONS_ACTIVE: Gauge = Gauge(
 
 DB_SESSION_ERRORS_TOTAL: Counter = Counter(
     "supernote_db_session_errors_total",
-    "Total number of database session errors causing rollbacks.",
+    "Total number of database and SQLAlchemy session errors.",
 )

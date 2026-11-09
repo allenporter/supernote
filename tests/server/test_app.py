@@ -13,12 +13,15 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from aiohttp.test_utils import TestClient
+from aiohttp import web
+from aiohttp.test_utils import TestClient, make_mocked_request
 from pytest_aiohttp import AiohttpClient
 from sqlalchemy import delete, select
 
 from supernote.models.file_device import FileUploadApplyLocalDTO
 from supernote.server.app import (
+    _normalize_http_method,
+    _resolve_metrics_path,
     bootstrap_ephemeral_user,
     create_app,
     run,
@@ -409,3 +412,102 @@ def test_run_respects_config_and_env_log_level(
         logging.getLogger().setLevel(logging.INFO)
         logging.getLogger("aiosqlite").setLevel(logging.INFO)
         logging.getLogger("asyncio").setLevel(logging.INFO)
+
+
+@pytest.mark.parametrize(
+    ("raw_method", "expected"),
+    [
+        ("GET", "GET"),
+        ("get", "GET"),
+        ("HEAD", "HEAD"),
+        ("POST", "POST"),
+        ("PUT", "PUT"),
+        ("DELETE", "DELETE"),
+        ("OPTIONS", "OPTIONS"),
+        ("PATCH", "PATCH"),
+        ("PROPFIND", "OTHER"),
+        ("SCANNER_VERB", "OTHER"),
+    ],
+)
+def test_normalize_http_method_bounds_cardinality(
+    raw_method: str,
+    expected: str,
+) -> None:
+    """Verify _normalize_http_method preserves standard HTTP verbs and bounds arbitrary ones."""
+    assert _normalize_http_method(raw_method) == expected
+
+
+async def test_resolve_metrics_path_preserves_known_mcp_auth_route(
+    client: TestClient,
+) -> None:
+    """Verify _resolve_metrics_path keeps canonical paths for known MCP OAuth routes."""
+    assert client.app is not None
+    known_req = make_mocked_request("GET", "/authorize", app=client.app)
+    known_match_info = await client.app.router.resolve(known_req)
+    known_match_info.add_app(client.app)
+    known_req._match_info = known_match_info
+    assert (
+        _resolve_metrics_path(known_req, 302, frozenset({"/authorize"})) == "/authorize"
+    )
+
+
+async def test_resolve_metrics_path_collapses_unknown_mcp_asgi_path(
+    client: TestClient,
+) -> None:
+    """Verify _resolve_metrics_path collapses unmatched paths routed to MCP ASGIResource."""
+    assert client.app is not None
+    unknown_req = make_mocked_request("GET", "/wp-login.php", app=client.app)
+    unknown_match_info = await client.app.router.resolve(unknown_req)
+    unknown_match_info.add_app(client.app)
+    unknown_req._match_info = unknown_match_info
+    assert (
+        _resolve_metrics_path(unknown_req, 404, frozenset({"/authorize"})) == "HTTP 404"
+    )
+
+
+async def test_resolve_metrics_path_normalizes_static_route(
+    client: TestClient,
+) -> None:
+    """Verify static asset routes normalize to '/static/{filename}'."""
+    assert client.app is not None
+    static_req = make_mocked_request("GET", "/static/app.js", app=client.app)
+    static_match_info = await client.app.router.resolve(static_req)
+    static_match_info.add_app(client.app)
+    static_req._match_info = static_match_info
+    assert _resolve_metrics_path(static_req, 200) == "/static/{filename}"
+
+
+async def test_resolve_metrics_path_uses_route_formatter() -> None:
+    """Verify parameterized routes resolve to their template formatter rather than raw IDs."""
+
+    async def _item_handler(_r: web.Request) -> web.Response:
+        return web.Response()
+
+    dyn_app = web.Application()
+    dyn_app.router.add_get("/test-items/{item_id}", _item_handler)
+    dyn_req = make_mocked_request("GET", "/test-items/42", app=dyn_app)
+    dyn_match_info = await dyn_app.router.resolve(dyn_req)
+    dyn_match_info.add_app(dyn_app)
+    dyn_req._match_info = dyn_match_info
+    assert _resolve_metrics_path(dyn_req, 200) == "/test-items/{item_id}"
+
+
+async def test_resolve_metrics_path_falls_back_when_resource_info_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify resources with empty get_info() fall back to HTTP status."""
+
+    async def _item_handler(_r: web.Request) -> web.Response:
+        return web.Response()
+
+    dyn_app = web.Application()
+    dyn_app.router.add_get("/test-items/{item_id}", _item_handler)
+    req = make_mocked_request("GET", "/custom/probe", app=dyn_app)
+    match_info = await dyn_app.router.resolve(
+        make_mocked_request("GET", "/test-items/42", app=dyn_app)
+    )
+    match_info.add_app(dyn_app)
+    assert match_info.route.resource is not None
+    monkeypatch.setattr(match_info.route.resource, "get_info", dict)
+    req._match_info = match_info
+    assert _resolve_metrics_path(req, 204) == "HTTP 204"
