@@ -83,8 +83,8 @@ No API keys or external services required. Runs locally with SQLite (~160MB idle
     web_enabled: false
     ```
 
-#### Option B: AI & Knowledge Hub (With Gemini)
-Enables handwriting transcription, summarization, and semantic search. Requires a Google Gemini API Key.
+#### Option B: AI & Knowledge Hub (With Gemini — Recommended)
+Enables high-accuracy handwriting transcription (`99.0%–99.7%` Word F1), Bullet Journal Rapid Logging task extraction, summarization, and semantic search for fractions of a cent per notebook (see [Choosing an AI Provider & OCR Benchmarks](#choosing-an-ai-provider--ocr-benchmarks)). Requires a Google Gemini API Key.
 
 *   **Using Python**:
     ```bash
@@ -107,7 +107,7 @@ Enables handwriting transcription, summarization, and semantic search. Requires 
     ```
 
 #### Option C: AI & Knowledge Hub (With a Local Model)
-Runs the same features against a model server on your own hardware, such as [Ollama](https://ollama.com/), llama.cpp, vLLM or LM Studio, so your notes never leave your network. You need a vision-capable chat model for OCR and summaries, and an embedding model for search. Configure the `openai` provider in `config/config.yaml` (`/data/config/config.yaml` in Docker) as described in the [server AI configuration](supernote/server/README.md#ai-configuration). On macOS, you can also run zero-setup on-device OCR via Apple's native Vision framework (`provider: apple` with `pip install "supernote[server,apple]"`).
+Runs the same features against a model server on your own hardware, such as [Ollama](https://ollama.com/), llama.cpp, vLLM or LM Studio, so your notes never leave your network. You need a vision-capable chat model for OCR and summaries, and an embedding model for search. Configure the `openai` provider in `config/config.yaml` (`/data/config/config.yaml` in Docker) as described in the [server AI configuration](supernote/server/README.md#ai-configuration). On macOS, Apple's native Vision framework (`provider: apple` with `vision-accurate`) is also supported as a zero-key offline fallback for basic prose search, though it is **not recommended** for structured notes, diagrams, or Bullet Journal Rapid Logging (see [benchmarks below](#choosing-an-ai-provider--ocr-benchmarks)).
 
 When the server runs in Docker and Ollama runs on the host, use `http://host.docker.internal:11434/v1` as the `base_url` (on Linux, also pass `--add-host=host.docker.internal:host-gateway`).
 
@@ -156,6 +156,55 @@ You can access the insights from the MCP server at `http://<your ip:port>/mcp`
 
 > [!TIP]
 > **Semantic Search**: Supernote doesn't just look for words—it understands concepts. Searching for "budget" will find notes about "expenses" or "money," even if the specific word isn't there.
+
+## Choosing an AI Provider & OCR Benchmarks
+
+**We recommend Google Gemini (`gemini-3.6-flash` or `gemini-3.5-flash-lite`) as the primary AI provider.** Across both our own [30-page Supernote OCR evaluation suite](evals/ocr/RESULTS.md) and recent independent multimodal leaderboards, Gemini's Flash family sits squarely on the vision price-performance Pareto frontier—delivering near-zero handwriting word error rates, full Bullet Journal Rapid Logging structure extraction, and sub-cent notebook costs in a single pass.
+
+<p align="center">
+  <img src="evals/ocr/pareto_frontier.svg" alt="OCR Quality vs. Latency Pareto Frontier" width="840">
+</p>
+
+### 1. Supernote Handwriting & Bullet Journal Benchmark ([`evals/ocr/`](evals/ocr/))
+
+Evaluated across `30` pages (`25` real handwritten `.note` pages spanning messy Bullet Journal Rapid Logging, two-column diagrams/guitar tablature, French/Spanish/Turkish notes, and stylized/overlapping strokes, plus `5` synthetic Bullet Journal fixtures; full metrics in [`evals/ocr/RESULTS.md`](evals/ocr/RESULTS.md)):
+
+| Provider / Model | Pages | Word F1 | Mean CER | Content CER | Handwritten BuJo Symbols¹ | All BuJo Symbols | Median Latency |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **`gemini:gemini-3.5-flash-lite`** *(Best Value / Speed)* | 30 | **99.0%** | **2.3%** | **1.4%** | **85.5%** | **95.8%** | **1.18 s** |
+| **`gemini:gemini-3.6-flash`** *(Highest Capture)* | 30 | **99.7%** | 4.2%² | 3.6% | **90.5%** | **97.3%** | 6.63 s |
+| `gemini:gemini-3.8-flash` | 30 | 96.5% | 5.6%² | 5.4% | **90.5%** | **97.3%** | 9.93 s |
+| `supernote-on-device` (`MyScript iink 4.1.0`) | 25 | 75.5% | 17.2% | 16.7% | 18.6% | 18.6% | 0.91 s |
+| `device-rtr` *(embedded `.note` layer)* | 8 | 77.7% | 12.8% | 12.0% | — | — | — |
+| `apple:vision-accurate` *(macOS local fallback)* | 30 | 73.7% | 21.7% | 20.7% | 4.5% | 49.7% | 0.41 s |
+| `apple:vision-fast` *(printed-text detector)* | 30 | 17.8% | 72.8% | 70.7% | 0.0% | 8.7% | 0.13 s |
+
+*¹ Hand-drawn Rapid Logging signifiers (`•`, `X`, `>`, `<`, `o`, `-`, `*`) on real handwritten `bujo_daily` + `bujo_monthly` pages (Gemini also achieves `100%` nested indentation and `100%` `~~strikethrough~~` recall vs `0%` on Apple Vision and `0%` strikethrough on device).*
+*² `gemini-3.6-flash` and `gemini-3.8-flash` emit optional ASCII `|` fret-alignment pipes on dense guitar tablature (`99.3%` Word F1 on `diagram_and_layout` for `3.6-flash`); `3.8-flash` had `1` `>90 s` reasoning timeout on a 12-fret grid.*
+
+**Key Takeaways from `evals/ocr/`:**
+- **Near-ceiling accuracy even on Gemini's smallest model**: `gemini-3.5-flash-lite` makes almost zero word-reading errors (`99.0%` Word F1, `0.0%` Median CER) in `1.18 s` per page at roughly `~$0.0005` per page (**>1,500 notebook pages per `$1`**). `gemini-3.6-flash` pushes overall Word F1 to `99.7%` and multilingual CER to `2.3%` (`99.4%` Word F1 across French, Spanish, and Turkish notes).
+- **Why Apple Vision is supported, not recommended**: We support `provider: apple` (`vision-accurate`) on macOS for users who want a strictly offline, zero-setup fallback for basic English prose search (`93.0%` Word F1 on clean `english_prose`). However, overall it performs no better than the tablet's own built-in recognition (`73.7%` vs `75.5%` Word F1), scrambles multi-column and 2D diagram reading order (`30.2%` CER), degrades sharply on stylized or overlapping strokes (`43.6%` CER), and cannot accept a prompt—losing almost all hand-drawn Bullet Journal task symbols (`4.5%`), indentation (`0%`), and strikethroughs (`0%`). (`vision-fast` targets machine-printed text and is unsuitable for handwriting.)
+
+### 2. Why Gemini Over Claude for Multimodal Note Processing?
+
+Across mid-to-late 2026 industry multimodal benchmarks—[**Artificial Analysis MMMU-Pro**](https://artificialanalysis.ai/) (college-level visual/diagram reasoning with text shortcuts removed), [**Vals AI MMMU-Pro & MortgageTax**](https://www.vals.ai/benchmarks) (multimodal comprehension and scanned document extraction), and [**LMArena Vision**](https://lmarena.ai/) (blind human pairwise evaluation on images, screenshots, and documents)—Google's native multimodal Flash models match or outperform Anthropic's much pricier tiers at a fraction of the token cost and latency:
+
+| Tier | Model (Release) | API List Price (In / Out per 1M) | LMArena Vision (Elo, Nov 2026) | MMMU-Pro (Artificial Analysis) | MMMU-Pro (Vals AI) | MortgageTax Doc OCR (Vals AI) | Throughput (AA) |
+| :--- | :--- | :--- | ---: | ---: | ---: | ---: | ---: |
+| **Lite / Budget** | **Gemini 3.5 Flash-Lite** (Jul 2026) | **`$0.30 / $2.50`** | **1268** | **79.0%** | **83.6%** | **68.7%** | **289 tok/s** |
+| | Claude Haiku 4.5 / 5.5 (Oct 2025 / Oct 2026) | `$1.00 / $5.00` → `$0.10 / $0.50` | <1253 | 58.5% *(4.5)* | 46.1% *(4.5)* | 62.2% *(4.5)* | 92 / 232 tok/s |
+| **Workhorse** | **Gemini 3.6 Flash** (Jul 2026) | **`$0.75 / $3.75`**\* | **1297** | **83.2%** | **88.4%** | **67.6%** | **189 tok/s** |
+| | **Gemini 3.8 Flash** (Sep 2026) | **`$0.75 / $3.75`**\* | **1316** | **85.6%** | **89.1%** | 65.3% | 112 tok/s |
+| | Claude Sonnet 5 / 5.5 (Jun / Sep 2026) | `$2.00 / $10.00` | 1272 / 1283 | 77.3% *(5)* | 83.0% *(5)* | **70.0%** *(5)* | 100 / 153 tok/s |
+| **Frontier** | **Gemini 4 Carbon** (Oct 2026) | `$4.00 / $20.00` | — | **89.3%** (#1) | — | — | 66 tok/s |
+| | Claude Opus 5 / 5.5 (Jul / Sep 2026) | `$5.00 / $25.00` → `$4.00 / $20.00` | 1317 / **1324** | 84.7% / 87.7% | **89.9%** *(5)* | **72.1%** *(5)* | 68 / 114 tok/s |
+
+*\*Promotional list rate through Dec 31, 2026 (`$1.50 / $7.50` standard; `50%` lower via Batch API). Benchmark figures aggregated from Artificial Analysis, Vals AI, and LMArena as of Nov 2026.*
+
+- **Flash-Lite beats or matches mid-tier models at budget pricing**: `Gemini 3.5 Flash-Lite` (`$0.30 / $2.50` per 1M tokens) scores `79.0%` on Artificial Analysis MMMU-Pro and `83.6%` on Vals AI MMMU-Pro—ahead of `Claude Haiku 4.5` by `>20` percentage points and even edging out `Claude Sonnet 5` (`77.3%` / `83.0%`) at **~5–6× lower cost** and **~3× higher output speed**.
+- **Workhorse Flash rivals Frontier Opus on vision**: On LMArena Vision and MMMU-Pro, `Gemini 3.6 Flash` (`1297` Elo, `88.4%` Vals MMMU-Pro) and `Gemini 3.8 Flash` (`1316` Elo, `89.1%` Vals MMMU-Pro) both rank **ahead of `Claude Sonnet 5.5` (`1283` Elo)** while landing within `1` Elo point of `Claude Opus 5` (`1317` Elo) at roughly **one-fifth the price**.
+- **No multi-pass "local + cloud refinement" complexity needed**: Because single-pass Gemini Flash-Lite / Flash already achieves `99.0%–99.7%` Word F1 on Supernote pages for `~0.05¢–0.1¢` per page, running a lower-quality local pass (like Apple Vision) followed by a second-pass re-read on a pricier model like Claude (`~0.6¢/page`) costs ~6–12× more and adds stale-transcript complexity without improving accuracy (see discussion in [#478](https://github.com/allenporter/supernote/issues/478)). Where Claude Sonnet and Opus shine—deep analytical reasoning and agentic workflows—you can connect **Claude** directly to your Gemini-indexed library via the built-in [**MCP server**](docs/mcp.md).
 
 ## Features Deep Dive
 
