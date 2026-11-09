@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import math
 import time
-from collections.abc import Generator
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -15,6 +15,7 @@ from prometheus_client import Counter, Gauge, Histogram
 
 __all__ = [
     "AIStage",
+    "BlobStorageKind",
     "DB_SESSIONS_ACTIVE",
     "DB_SESSION_ERRORS_TOTAL",
     "HTTP_REQUESTS_TOTAL",
@@ -39,6 +40,7 @@ __all__ = [
     "record_note_page_diff",
     "record_note_upload",
     "record_oss_transfer_bytes",
+    "set_blob_storage_metrics",
     "track_ai_request",
     "track_mcp_tool_call",
     "track_note_processing_run",
@@ -388,6 +390,49 @@ def record_note_upload(
 ) -> None:
     """Record a completed `.note` file upload for `source`."""
     _NOTE_UPLOADS_TOTAL.labels(source=source.value).inc()
+
+
+class BlobStorageKind(StrEnum):
+    """Payload kind labels for blob storage inventory gauges."""
+
+    USER_BLOB = "user_blob"
+    PNG = "png"
+    PDF = "pdf"
+
+
+_BLOB_STORAGE_OBJECTS: Gauge = Gauge(
+    "supernote_blob_storage_objects",
+    "Current number of stored blobs by bucket and payload kind.",
+    ["bucket", "kind"],
+)
+
+_BLOB_STORAGE_BYTES: Gauge = Gauge(
+    "supernote_blob_storage_bytes",
+    "Current total size in bytes of stored blobs by bucket and payload kind.",
+    ["bucket", "kind"],
+)
+
+_BLOB_STORAGE_AVAILABLE_BYTES: Gauge = Gauge(
+    "supernote_blob_storage_available_bytes",
+    "Current available free bytes on the storage backend backing blob storage.",
+)
+
+
+def set_blob_storage_metrics(
+    *,
+    counts: Mapping[tuple[str, BlobStorageKind], tuple[int, int]],
+    available_bytes: int | None = None,
+) -> None:
+    """Update blob storage object count, byte size, and available free space gauges."""
+    for (bucket, kind), (objects, byte_count) in counts.items():
+        _BLOB_STORAGE_OBJECTS.labels(bucket=bucket, kind=kind.value).set(
+            max(0, objects)
+        )
+        _BLOB_STORAGE_BYTES.labels(bucket=bucket, kind=kind.value).set(
+            max(0, byte_count)
+        )
+    if available_bytes is not None:
+        _BLOB_STORAGE_AVAILABLE_BYTES.set(max(0, available_bytes))
 
 
 # AI model metrics
