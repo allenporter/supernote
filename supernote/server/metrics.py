@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import math
 import time
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -31,10 +31,15 @@ __all__ = [
     "PROCESSOR_STALLED_TASKS_RECOVERED_TOTAL",
     "PROCESSOR_TASKS_TOTAL",
     "PROCESSOR_TASK_DURATION_SECONDS",
+    "SOCKETIO_CONNECTIONS_ACTIVE",
+    "SOCKETIO_EVENTS_EMITTED_TOTAL",
+    "WebhookDeliveryStatus",
     "init_ai_metrics",
     "init_mcp_metrics",
     "init_note_processing_metrics",
     "init_oss_and_upload_metrics",
+    "init_search_metrics",
+    "init_webhook_metrics",
     "record_ai_tokens",
     "record_note_page_diff",
     "record_note_upload",
@@ -42,6 +47,8 @@ __all__ = [
     "track_ai_request",
     "track_mcp_tool_call",
     "track_note_processing_run",
+    "track_search_query",
+    "track_webhook_delivery",
 ]
 
 AI_LATENCY_BUCKETS: tuple[float, ...] = (
@@ -586,3 +593,179 @@ DB_SESSION_ERRORS_TOTAL: Counter = Counter(
     "supernote_db_session_errors_total",
     "Total number of database session errors causing rollbacks.",
 )
+
+# Semantic search metrics
+SEARCH_DURATION_BUCKETS: tuple[float, ...] = (
+    0.005,
+    0.01,
+    0.025,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    2.5,
+    5.0,
+    10.0,
+    30.0,
+)
+
+_SEARCH_QUERIES_TOTAL: Counter = Counter(
+    "supernote_search_queries_total",
+    "Total number of semantic search queries executed.",
+    ["status"],
+)
+
+_SEARCH_DURATION_SECONDS: Histogram = Histogram(
+    "supernote_search_duration_seconds",
+    "End-to-end latency of completed semantic search queries in seconds.",
+    buckets=SEARCH_DURATION_BUCKETS,
+)
+
+_SEARCH_CANDIDATES_SCORED_TOTAL: Counter = Counter(
+    "supernote_search_candidates_scored_total",
+    "Total number of candidate chunk embeddings scored during semantic search.",
+)
+
+
+class SearchQueryRun:
+    """Mutable outcome handle for an active semantic search query."""
+
+    def __init__(self) -> None:
+        self._succeeded = False
+
+    def set_succeeded(self, succeeded: bool = True) -> None:
+        """Record whether the semantic search query completed successfully."""
+        self._succeeded = succeeded
+
+    def record_candidates_scored(self, count: int) -> None:
+        """Increment the counter of candidate chunk embeddings scored in Python."""
+        if count > 0:
+            _SEARCH_CANDIDATES_SCORED_TOTAL.inc(count)
+
+
+def init_search_metrics() -> None:
+    """Pre-initialize semantic search `success` and `failure` counter series at 0."""
+    for status in (_OutcomeStatus.SUCCESS, _OutcomeStatus.FAILURE):
+        _SEARCH_QUERIES_TOTAL.labels(status=status.value)
+
+
+@contextmanager
+def track_search_query() -> Generator[SearchQueryRun]:
+    """Record Prometheus query count and completed latency for semantic search."""
+    run = SearchQueryRun()
+    start_time = time.monotonic()
+    status = _OutcomeStatus.FAILURE
+    try:
+        yield run
+        if run._succeeded:
+            status = _OutcomeStatus.SUCCESS
+    except asyncio.CancelledError:
+        status = _OutcomeStatus.CANCELLED
+        raise
+    finally:
+        duration = time.monotonic() - start_time
+        _SEARCH_QUERIES_TOTAL.labels(status=status.value).inc()
+        if status != _OutcomeStatus.CANCELLED:
+            _SEARCH_DURATION_SECONDS.observe(duration)
+
+
+# Socket.IO metrics
+SOCKETIO_CONNECTIONS_ACTIVE: Gauge = Gauge(
+    "supernote_socketio_connections_active",
+    "Current number of active authenticated Socket.IO connections.",
+)
+
+SOCKETIO_EVENTS_EMITTED_TOTAL: Counter = Counter(
+    "supernote_socketio_events_emitted_total",
+    "Total number of Socket.IO push notification events emitted by the server.",
+    ["event"],
+)
+
+
+# Webhook delivery metrics
+WEBHOOK_DELIVERY_DURATION_BUCKETS: tuple[float, ...] = (
+    0.01,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    2.5,
+    5.0,
+    10.0,
+    20.0,
+    40.0,
+    60.0,
+)
+
+
+class WebhookDeliveryStatus(StrEnum):
+    """Terminal status labels for logical outbound webhook deliveries."""
+
+    SUCCESS = "success"
+    CLIENT_ERROR = "client_error"
+    RETRY_EXHAUSTED = "retry_exhausted"
+    CANCELLED = "cancelled"
+
+
+_WEBHOOK_DELIVERIES_TOTAL: Counter = Counter(
+    "supernote_webhook_deliveries_total",
+    "Total number of logical outbound webhook deliveries by event and status.",
+    ["event", "status"],
+)
+
+_WEBHOOK_DELIVERY_DURATION_SECONDS: Histogram = Histogram(
+    "supernote_webhook_delivery_duration_seconds",
+    "Total logical latency of completed outbound webhook deliveries across retries in seconds.",
+    ["event"],
+    buckets=WEBHOOK_DELIVERY_DURATION_BUCKETS,
+)
+
+
+class WebhookDeliveryRun:
+    """Mutable outcome handle for a logical outbound webhook delivery."""
+
+    def __init__(self) -> None:
+        self._status = WebhookDeliveryStatus.RETRY_EXHAUSTED
+
+    def set_status(self, status: WebhookDeliveryStatus) -> None:
+        """Record the terminal status for this webhook delivery."""
+        self._status = status
+
+
+def init_webhook_metrics(events: Iterable[str]) -> None:
+    """Pre-initialize non-cancelled webhook delivery counter series at 0."""
+    for event in events:
+        for status in (
+            WebhookDeliveryStatus.SUCCESS,
+            WebhookDeliveryStatus.CLIENT_ERROR,
+            WebhookDeliveryStatus.RETRY_EXHAUSTED,
+        ):
+            _WEBHOOK_DELIVERIES_TOTAL.labels(
+                event=event,
+                status=status.value,
+            )
+
+
+@contextmanager
+def track_webhook_delivery(*, event: str) -> Generator[WebhookDeliveryRun]:
+    """Record Prometheus delivery count and completed latency for a webhook target."""
+    run = WebhookDeliveryRun()
+    start_time = time.monotonic()
+    status: WebhookDeliveryStatus | None = None
+    try:
+        yield run
+        status = run._status
+    except asyncio.CancelledError:
+        status = WebhookDeliveryStatus.CANCELLED
+        raise
+    finally:
+        resolved_status = status if status is not None else run._status
+        duration = time.monotonic() - start_time
+        _WEBHOOK_DELIVERIES_TOTAL.labels(
+            event=event,
+            status=resolved_status.value,
+        ).inc()
+        if resolved_status != WebhookDeliveryStatus.CANCELLED:
+            _WEBHOOK_DELIVERY_DURATION_SECONDS.labels(event=event).observe(duration)

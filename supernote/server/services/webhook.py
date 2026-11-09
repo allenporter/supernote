@@ -34,6 +34,11 @@ from ..events import (
     NoteProcessingCompletedEvent,
     NoteUpdatedEvent,
 )
+from ..metrics import (
+    WebhookDeliveryStatus,
+    init_webhook_metrics,
+    track_webhook_delivery,
+)
 from .user import UserService
 
 logger = logging.getLogger(__name__)
@@ -45,6 +50,14 @@ REQUEST_TIMEOUT_SECONDS = 10.0
 MAX_ATTEMPTS = 3
 RETRY_BACKOFF_SECONDS = 1.0
 MAX_CONCURRENT_REQUESTS = 5
+
+KNOWN_WEBHOOK_EVENTS: frozenset[str] = frozenset(
+    {
+        EVENT_NOTE_SYNC_COMPLETED,
+        EVENT_NOTE_PROCESSING_COMPLETED,
+    }
+)
+OTHER_WEBHOOK_EVENT = "other"
 
 
 def sign_payload(secret: str, body: bytes) -> str:
@@ -97,6 +110,7 @@ class WebhookService:
         self._semaphore = asyncio.Semaphore(max_concurrency)
         self._session: aiohttp.ClientSession | None = None
         self._endpoints_by_user: dict[int, list[WebhookEndpointConfig]] = {}
+        init_webhook_metrics(KNOWN_WEBHOOK_EVENTS)
 
     async def start(self) -> None:
         """Resolve endpoint users and subscribe to the events that can trigger webhook dispatch."""
@@ -186,6 +200,8 @@ class WebhookService:
             return_exceptions=True,
         )
         for endpoint, result in zip(endpoints, results, strict=True):
+            if isinstance(result, asyncio.CancelledError):
+                raise result
             if isinstance(result, BaseException):
                 safe_url = _redact_url(endpoint.url)
                 logger.error(
@@ -217,38 +233,44 @@ class WebhookService:
         safe_url = _redact_url(endpoint.url)
         timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS)
         session = self._session
-        async with self._semaphore:
-            for attempt in range(1, MAX_ATTEMPTS + 1):
-                try:
-                    async with session.post(
-                        endpoint.url,
-                        data=body,
-                        headers=headers,
-                        timeout=timeout,
-                        allow_redirects=False,
-                    ) as response:
-                        if 200 <= response.status < 300:
-                            return
-                        if response.status < 500:
-                            logger.warning(
-                                f"Webhook {event_name} to {safe_url} rejected "
-                                f"with status {response.status}; not retrying."
-                            )
-                            return
-                        logger.warning(
-                            f"Webhook {event_name} to {safe_url} failed with "
-                            f"status {response.status} (attempt {attempt}/{MAX_ATTEMPTS})."
-                        )
-                except (aiohttp.ClientError, TimeoutError) as e:
-                    logger.warning(
-                        f"Webhook {event_name} to {safe_url} failed: "
-                        f"{type(e).__name__} (attempt {attempt}/{MAX_ATTEMPTS})."
-                    )
-
-                if attempt < MAX_ATTEMPTS:
-                    await asyncio.sleep(RETRY_BACKOFF_SECONDS * attempt)
-
-        logger.error(
-            f"Webhook {event_name} to {safe_url} failed after "
-            f"{MAX_ATTEMPTS} attempts; giving up."
+        metric_event = (
+            event_name if event_name in KNOWN_WEBHOOK_EVENTS else OTHER_WEBHOOK_EVENT
         )
+        async with self._semaphore:
+            with track_webhook_delivery(event=metric_event) as delivery:
+                for attempt in range(1, MAX_ATTEMPTS + 1):
+                    try:
+                        async with session.post(
+                            endpoint.url,
+                            data=body,
+                            headers=headers,
+                            timeout=timeout,
+                            allow_redirects=False,
+                        ) as response:
+                            if 200 <= response.status < 300:
+                                delivery.set_status(WebhookDeliveryStatus.SUCCESS)
+                                return
+                            if response.status < 500:
+                                logger.warning(
+                                    f"Webhook {event_name} to {safe_url} rejected "
+                                    f"with status {response.status}; not retrying."
+                                )
+                                delivery.set_status(WebhookDeliveryStatus.CLIENT_ERROR)
+                                return
+                            logger.warning(
+                                f"Webhook {event_name} to {safe_url} failed with "
+                                f"status {response.status} (attempt {attempt}/{MAX_ATTEMPTS})."
+                            )
+                    except (aiohttp.ClientError, TimeoutError) as e:
+                        logger.warning(
+                            f"Webhook {event_name} to {safe_url} failed: "
+                            f"{type(e).__name__} (attempt {attempt}/{MAX_ATTEMPTS})."
+                        )
+
+                    if attempt < MAX_ATTEMPTS:
+                        await asyncio.sleep(RETRY_BACKOFF_SECONDS * attempt)
+
+                logger.error(
+                    f"Webhook {event_name} to {safe_url} failed after "
+                    f"{MAX_ATTEMPTS} attempts; giving up."
+                )

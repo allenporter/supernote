@@ -11,6 +11,7 @@ from unittest.mock import ANY, patch
 
 import pytest
 from aiohttp import web
+from prometheus_client import REGISTRY
 from pytest_aiohttp import AiohttpClient
 
 from supernote.models.user import UserRegisterDTO
@@ -27,6 +28,7 @@ from supernote.server.events import (
     NoteProcessingCompletedEvent,
     NoteUpdatedEvent,
 )
+from supernote.server.metrics import WEBHOOK_DELIVERY_DURATION_BUCKETS
 from supernote.server.services.user import UserService
 from supernote.server.services.webhook import (
     EVENT_HEADER,
@@ -660,3 +662,151 @@ async def test_start_skips_endpoint_when_user_not_found(
 
     assert webhook_receiver.calls == []
     assert "missing@example.com" in caplog.text
+
+
+def _webhook_count(event: str, status: str) -> float:
+    return (
+        REGISTRY.get_sample_value(
+            "supernote_webhook_deliveries_total",
+            {"event": event, "status": status},
+        )
+        or 0.0
+    )
+
+
+def _webhook_dur_count(event: str) -> float:
+    return (
+        REGISTRY.get_sample_value(
+            "supernote_webhook_delivery_duration_seconds_count",
+            {"event": event},
+        )
+        or 0.0
+    )
+
+
+async def test_webhook_metrics_outcomes_retries_and_buckets(
+    webhook_receiver: WebhookReceiver,
+    running_service: RunningServiceFactory,
+    test_user_id: int,
+) -> None:
+    """Verify webhook delivery counters and duration buckets across success, retry, 4xx, and 5xx/timeout."""
+    endpoint = _endpoint(webhook_receiver.url, events=[])
+    config = WebhookConfig(enabled=True, endpoints=[endpoint])
+
+    async with running_service(config) as service:
+        for ev in (EVENT_NOTE_SYNC_COMPLETED, EVENT_NOTE_PROCESSING_COMPLETED):
+            for st in ("success", "client_error", "retry_exhausted"):
+                assert (
+                    REGISTRY.get_sample_value(
+                        "supernote_webhook_deliveries_total",
+                        {"event": ev, "status": st},
+                    )
+                    is not None
+                )
+
+        ev = EVENT_NOTE_SYNC_COMPLETED
+        ok_0 = _webhook_count(ev, "success")
+        client_err_0 = _webhook_count(ev, "client_error")
+        exhausted_0 = _webhook_count(ev, "retry_exhausted")
+        dur_0 = _webhook_dur_count(ev)
+
+        # Immediate 200 -> status='success'
+        webhook_receiver.queue_responses(200)
+        await service.dispatch(_sample_payload(ev), user_id=test_user_id)
+        assert _webhook_count(ev, "success") == ok_0 + 1.0
+        assert _webhook_dur_count(ev) == dur_0 + 1.0
+
+        # Transient 500 followed by 200 -> single logical status='success'
+        webhook_receiver.queue_responses(500, 200)
+        await service.dispatch(_sample_payload(ev), user_id=test_user_id)
+        assert _webhook_count(ev, "success") == ok_0 + 2.0
+        assert _webhook_count(ev, "retry_exhausted") == exhausted_0
+        assert _webhook_dur_count(ev) == dur_0 + 2.0
+
+        # Non-retried 4xx -> status='client_error'
+        webhook_receiver.queue_responses(422)
+        await service.dispatch(_sample_payload(ev), user_id=test_user_id)
+        assert _webhook_count(ev, "client_error") == client_err_0 + 1.0
+        assert _webhook_dur_count(ev) == dur_0 + 3.0
+
+        # Repeated 5xx -> status='retry_exhausted'
+        webhook_receiver.queue_responses(502, 503, 504)
+        await service.dispatch(_sample_payload(ev), user_id=test_user_id)
+        assert _webhook_count(ev, "retry_exhausted") == exhausted_0 + 1.0
+        assert _webhook_dur_count(ev) == dur_0 + 4.0
+
+        # Repeated timeouts -> status='retry_exhausted'
+        webhook_receiver.queue_responses(STALL, STALL, STALL)
+        with patch("supernote.server.services.webhook.REQUEST_TIMEOUT_SECONDS", 0.05):
+            await service.dispatch(_sample_payload(ev), user_id=test_user_id)
+        assert _webhook_count(ev, "retry_exhausted") == exhausted_0 + 2.0
+        assert _webhook_dur_count(ev) == dur_0 + 5.0
+
+        # Unbounded custom event name is normalized to bounded 'other' label
+        other_ok_0 = _webhook_count("other", "success")
+        webhook_receiver.queue_responses(200)
+        await service.dispatch(
+            WebhookPayload(event="custom.dynamic.123", timestamp=1730000000),
+            user_id=test_user_id,
+        )
+        assert _webhook_count("other", "success") == other_ok_0 + 1.0
+        assert (
+            REGISTRY.get_sample_value(
+                "supernote_webhook_deliveries_total",
+                {"event": "custom.dynamic.123", "status": "success"},
+            )
+            is None
+        )
+
+    for bucket in WEBHOOK_DELIVERY_DURATION_BUCKETS:
+        assert (
+            REGISTRY.get_sample_value(
+                "supernote_webhook_delivery_duration_seconds_bucket",
+                {"event": EVENT_NOTE_SYNC_COMPLETED, "le": str(bucket)},
+            )
+            is not None
+        )
+
+
+async def test_webhook_metrics_cancellation_skips_duration(
+    aiohttp_client: AiohttpClient,
+    running_service: RunningServiceFactory,
+    test_user_id: int,
+) -> None:
+    """Verify cancelling an in-flight webhook delivery records status='cancelled' without observing duration."""
+    in_flight = asyncio.Event()
+    release = asyncio.Event()
+
+    async def blocking_handler(request: web.Request) -> web.Response:
+        await request.read()
+        in_flight.set()
+        await release.wait()
+        return web.Response(status=200)
+
+    app = web.Application()
+    app.router.add_post("/webhook", blocking_handler)
+    client = await aiohttp_client(app)
+    url = str(client.make_url("/webhook"))
+
+    config = WebhookConfig(
+        enabled=True,
+        endpoints=[_endpoint(url, events=[EVENT_NOTE_PROCESSING_COMPLETED])],
+    )
+    ev = EVENT_NOTE_PROCESSING_COMPLETED
+    cancel_0 = _webhook_count(ev, "cancelled")
+    exhausted_0 = _webhook_count(ev, "retry_exhausted")
+    dur_0 = _webhook_dur_count(ev)
+
+    async with running_service(config) as service:
+        task = asyncio.create_task(
+            service.dispatch(_sample_payload(ev), user_id=test_user_id)
+        )
+        await asyncio.wait_for(in_flight.wait(), timeout=2.0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        release.set()
+
+    assert _webhook_count(ev, "cancelled") == cancel_0 + 1.0
+    assert _webhook_count(ev, "retry_exhausted") == exhausted_0
+    assert _webhook_dur_count(ev) == dur_0

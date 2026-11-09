@@ -1,12 +1,17 @@
+import asyncio
 import json
+from unittest.mock import AsyncMock
 
 import pytest
+from prometheus_client import REGISTRY
 
+from supernote.server.ai.base import AIError
 from supernote.server.ai.models.embedding import EmbeddingTaskType
 from supernote.server.ai.models.fake.embedding import FakeEmbeddingModel
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.metrics import SEARCH_DURATION_BUCKETS
 from supernote.server.services.search import PageTranscript, SearchService
 
 
@@ -552,3 +557,230 @@ async def test_list_notebooks(
 
     limited = await search_service.list_notebooks(user_id=user_id, limit=1)
     assert [n.file_id for n in limited] == [102]
+
+
+async def test_search_metrics_success_candidates_and_buckets(
+    search_service: SearchService,
+    session_manager: DatabaseSessionManager,
+    fake_embedding_model: FakeEmbeddingModel,
+) -> None:
+    """Verify search query counter, duration buckets, and candidate scoring counter."""
+    for status in ("success", "failure"):
+        assert (
+            REGISTRY.get_sample_value(
+                "supernote_search_queries_total", {"status": status}
+            )
+            is not None
+        )
+
+    user_id = 1
+    file_id = 501
+    vec = await fake_embedding_model.embed(
+        "metrics test", task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT
+    )
+
+    before_ok = (
+        REGISTRY.get_sample_value(
+            "supernote_search_queries_total", {"status": "success"}
+        )
+        or 0.0
+    )
+    before_dur = (
+        REGISTRY.get_sample_value("supernote_search_duration_seconds_count") or 0.0
+    )
+    before_scored = (
+        REGISTRY.get_sample_value("supernote_search_candidates_scored_total") or 0.0
+    )
+
+    # Empty candidate set still counts as a successful query with 0 scored candidates
+    assert await search_service.search_chunks(user_id=user_id, query="empty") == []
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_search_queries_total", {"status": "success"}
+        )
+        == before_ok + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_search_duration_seconds_count")
+        == before_dur + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_search_candidates_scored_total") or 0.0
+    ) == before_scored
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                file_name="Metrics.note",
+                directory_id=0,
+            )
+        )
+        session.add_all(
+            [
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="P20231027120000abc",
+                    text_content="First valid candidate",
+                    embedding=json.dumps(vec),
+                    embedding_model=fake_embedding_model.model_id,
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=1,
+                    page_id="P20231028120000def",
+                    text_content="Second valid candidate",
+                    embedding=json.dumps(vec),
+                    embedding_model=fake_embedding_model.model_id,
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=2,
+                    page_id="P20231029120000ghi",
+                    text_content="Corrupt embedding JSON skipped before scoring",
+                    embedding="{not-json",
+                    embedding_model=fake_embedding_model.model_id,
+                ),
+            ]
+        )
+        await session.commit()
+
+    results = await search_service.search_chunks(
+        user_id=user_id, query="metrics test", top_n=5
+    )
+    assert len(results) == 2
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_search_queries_total", {"status": "success"}
+        )
+        == before_ok + 2.0
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_search_duration_seconds_count")
+        == before_dur + 2.0
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_search_candidates_scored_total")
+        == before_scored + 2.0
+    )
+
+    for bucket in SEARCH_DURATION_BUCKETS:
+        assert (
+            REGISTRY.get_sample_value(
+                "supernote_search_duration_seconds_bucket",
+                {"le": str(bucket)},
+            )
+            is not None
+        )
+
+
+async def test_search_metrics_unconfigured_failure_and_cancellation(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Verify unconfigured no-op, invalid date / AIError failures, and CancelledError."""
+    unconfigured_service = SearchService(
+        session_manager=session_manager,
+        embedding_model=None,
+    )
+    before_ok = (
+        REGISTRY.get_sample_value(
+            "supernote_search_queries_total", {"status": "success"}
+        )
+        or 0.0
+    )
+    before_fail = (
+        REGISTRY.get_sample_value(
+            "supernote_search_queries_total", {"status": "failure"}
+        )
+        or 0.0
+    )
+    before_cancel = (
+        REGISTRY.get_sample_value(
+            "supernote_search_queries_total", {"status": "cancelled"}
+        )
+        or 0.0
+    )
+    before_dur = (
+        REGISTRY.get_sample_value("supernote_search_duration_seconds_count") or 0.0
+    )
+
+    # Unconfigured embedding model returns [] without recording query metrics
+    assert await unconfigured_service.search_chunks(user_id=1, query="hello") == []
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_search_queries_total", {"status": "success"}
+        )
+        == before_ok
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_search_queries_total", {"status": "failure"}
+        )
+        == before_fail
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_search_duration_seconds_count") or 0.0
+    ) == before_dur
+
+    mock_embed_model = AsyncMock()
+    mock_embed_model.model_id = "mock-embed"
+    service = SearchService(
+        session_manager=session_manager,
+        embedding_model=mock_embed_model,
+    )
+
+    # Invalid ISO date filter records status='failure' and observes duration
+    assert (
+        await service.search_chunks(
+            user_id=1, query="hello", date_after="not-a-valid-date"
+        )
+        == []
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_search_queries_total", {"status": "failure"}
+        )
+        == before_fail + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_search_duration_seconds_count")
+        == before_dur + 1.0
+    )
+
+    # AIError during query embedding records status='failure' and observes duration
+    mock_embed_model.embed.side_effect = AIError("provider outage")
+    assert await service.search_chunks(user_id=1, query="hello") == []
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_search_queries_total", {"status": "failure"}
+        )
+        == before_fail + 2.0
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_search_duration_seconds_count")
+        == before_dur + 2.0
+    )
+
+    # CancelledError records status='cancelled' without observing duration
+    mock_embed_model.embed.side_effect = asyncio.CancelledError()
+    with pytest.raises(asyncio.CancelledError):
+        await service.search_chunks(user_id=1, query="hello")
+
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_search_queries_total", {"status": "cancelled"}
+        )
+        == before_cancel + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_search_queries_total", {"status": "failure"}
+        )
+        == before_fail + 2.0
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_search_duration_seconds_count")
+        == before_dur + 2.0
+    )

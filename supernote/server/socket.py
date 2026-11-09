@@ -42,6 +42,10 @@ from supernote.server.events import (
     VfsItemMovedEvent,
 )
 from supernote.server.keys import SOCKETIO_MANAGER_KEY
+from supernote.server.metrics import (
+    SOCKETIO_CONNECTIONS_ACTIVE,
+    SOCKETIO_EVENTS_EMITTED_TOTAL,
+)
 from supernote.server.services.user import UserService
 from supernote.server.socket_auth import verify_handshake_signature
 
@@ -139,8 +143,24 @@ class SocketIOServerManager:
         )
         self._sid_to_user: dict[str, int] = {}
         self._sid_to_token: dict[str, str] = {}
+        SOCKETIO_CONNECTIONS_ACTIVE.set(len(self._sid_to_user))
+        for event_channel in _MSG_TYPE_TO_EVENT.values():
+            SOCKETIO_EVENTS_EMITTED_TOTAL.labels(event=event_channel.value)
         self._setup_handlers()
         self._setup_event_bus_subscriptions()
+
+    def _register_session(self, sid: str, user_id: int, token: str) -> None:
+        """Track an authenticated Socket.IO session and update active gauge."""
+        self._sid_to_user[sid] = user_id
+        self._sid_to_token[sid] = token
+        SOCKETIO_CONNECTIONS_ACTIVE.set(len(self._sid_to_user))
+
+    def _evict_session(self, sid: str) -> int | None:
+        """Remove a Socket.IO session if present and update active gauge."""
+        user_id = self._sid_to_user.pop(sid, None)
+        self._sid_to_token.pop(sid, None)
+        SOCKETIO_CONNECTIONS_ACTIVE.set(len(self._sid_to_user))
+        return user_id
 
     @property
     def sio(self) -> socketio.AsyncServer:
@@ -170,8 +190,7 @@ class SocketIOServerManager:
         if token and await self.user_service.verify_token(token):
             return True
 
-        user_id = self._sid_to_user.pop(sid, None)
-        self._sid_to_token.pop(sid, None)
+        user_id = self._evict_session(sid)
         logger.warning(
             "Socket.IO session no longer valid for user=%s (sid=%s); disconnecting",
             user_id,
@@ -209,8 +228,7 @@ class SocketIOServerManager:
 
             # Associate session ID with user room
             user_id = session.user_id
-            self._sid_to_user[sid] = user_id
-            self._sid_to_token[sid] = params.token
+            self._register_session(sid, user_id, params.token)
             user_room = f"user_{user_id}"
             await self._sio.enter_room(sid, user_room)
             logger.info(
@@ -223,8 +241,7 @@ class SocketIOServerManager:
 
         @self._sio.event
         async def disconnect(sid: str) -> None:
-            user_id = self._sid_to_user.pop(sid, None)
-            self._sid_to_token.pop(sid, None)
+            user_id = self._evict_session(sid)
             logger.info("Socket.IO disconnected for user=%s (sid=%s)", user_id, sid)
 
         @self._sio.on(SocketIoEvent.CLIENT_MESSAGE.value)
@@ -702,6 +719,7 @@ class SocketIOServerManager:
             payload_str,
             room=user_room,
         )
+        SOCKETIO_EVENTS_EMITTED_TOTAL.labels(event=resolved_event).inc()
 
 
 def setup_socketio(

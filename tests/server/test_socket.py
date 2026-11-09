@@ -8,11 +8,13 @@ import aiohttp
 import jwt
 import pytest
 from aiohttp.test_utils import TestServer
+from prometheus_client import REGISTRY
 from socketio.exceptions import ConnectionError as SocketIOConnectionError
 
 from supernote.client.exceptions import SupernoteSocketError
 from supernote.client.socket import SupernoteSocketClient
 from supernote.models.socket import (
+    BaseSocketMessageData,
     DigestMessageTemplate,
     ScheduleMessageTemplate,
     SocketDigestMessageData,
@@ -1503,3 +1505,125 @@ async def test_socketio_ratta_ping_without_payload(
 
             await ws.send_str('42["ClientMessage","status","extra1"]')
             assert await ws.receive_str() == '42["ServerMessage","true"]'
+
+
+@pytest.mark.asyncio
+async def test_socketio_metrics_connections_eviction_and_events(
+    socketio_server: TestServer,
+    create_socket_client: Callable[[], SupernoteSocketClient],
+) -> None:
+    """Verify active connections gauge across connect/disconnect/eviction and emitted events counter."""
+    user_service: UserService = socketio_server.app[USER_SERVICE_KEY]
+    manager: SocketIOServerManager = socketio_server.app[SOCKETIO_MANAGER_KEY]
+    user_email = "test@example.com"
+    user_id = await user_service.get_user_id(user_email)
+
+    assert REGISTRY.get_sample_value("supernote_socketio_connections_active") == 0.0
+    for channel in (
+        SocketIoEvent.SERVER_MESSAGE.value,
+        SocketIoEvent.TODO.value,
+        SocketIoEvent.DIGEST.value,
+    ):
+        assert (
+            REGISTRY.get_sample_value(
+                "supernote_socketio_events_emitted_total",
+                {"event": channel},
+            )
+            is not None
+        )
+
+    def _emitted(channel: str) -> float:
+        return (
+            REGISTRY.get_sample_value(
+                "supernote_socketio_events_emitted_total",
+                {"event": channel},
+            )
+            or 0.0
+        )
+
+    before_server_msg = _emitted(SocketIoEvent.SERVER_MESSAGE.value)
+    before_todo = _emitted(SocketIoEvent.TODO.value)
+    before_digest = _emitted(SocketIoEvent.DIGEST.value)
+
+    # Rejected handshake leaves active connections at 0 and does not increment push counter
+    bad_client = create_socket_client()
+    with pytest.raises(SocketIOConnectionError):
+        await bad_client.connect(
+            SocketHandshakeParams(
+                token="invalid",
+                type="file",
+                random="123",
+                sign="bad_sig",
+            )
+        )
+    assert REGISTRY.get_sample_value("supernote_socketio_connections_active") == 0.0
+    assert _emitted(SocketIoEvent.SERVER_MESSAGE.value) == before_server_msg
+
+    # Connect two sessions -> gauge rises 0 -> 1 -> 2
+    token_1 = await user_service.create_session(user_email)
+    token_2 = await user_service.create_session(user_email)
+    client_1 = create_socket_client()
+    client_2 = create_socket_client()
+
+    await client_1.connect(_make_handshake_params(token_1))
+    assert REGISTRY.get_sample_value("supernote_socketio_connections_active") == 1.0
+
+    await client_2.connect(_make_handshake_params(token_2))
+    assert REGISTRY.get_sample_value("supernote_socketio_connections_active") == 2.0
+
+    # Heartbeats do not increment push notification counters
+    await client_1.ping(timeout=2.0)
+    await client_1.check_status(timeout=2.0)
+    assert _emitted(SocketIoEvent.SERVER_MESSAGE.value) == before_server_msg
+
+    # Emit FILE-SYN, TASK-SYN, DIGEST-SYN, and fallback msg_type
+    await manager.send_message(
+        user_id,
+        SocketMessageData(msg="file sync", msg_type=SocketIoMessageType.FILE_SYN),
+    )
+    await anext(client_1.messages())
+    assert _emitted(SocketIoEvent.SERVER_MESSAGE.value) == before_server_msg + 1.0
+
+    await manager.send_message(
+        user_id,
+        SocketTaskMessageData(msg="task sync"),
+    )
+    await anext(client_1.messages())
+    assert _emitted(SocketIoEvent.TODO.value) == before_todo + 1.0
+
+    await manager.send_message(
+        user_id,
+        SocketDigestMessageData(msg="digest sync"),
+    )
+    await anext(client_1.messages())
+    assert _emitted(SocketIoEvent.DIGEST.value) == before_digest + 1.0
+
+    await manager.send_message(
+        user_id,
+        BaseSocketMessageData(msg="custom", msg_type="UNBOUNDED-CUSTOM-TYPE"),
+    )
+    assert _emitted(SocketIoEvent.SERVER_MESSAGE.value) == before_server_msg + 2.0
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_socketio_events_emitted_total",
+            {"event": "UNBOUNDED-CUSTOM-TYPE"},
+        )
+        is None
+    )
+
+    # Revoke token_2 -> expired session eviction drops gauge 2 -> 1 without drift on disconnect
+    await user_service.logout(token_2)
+    with pytest.raises(TimeoutError):
+        await client_2.ping(timeout=0.1)
+    assert REGISTRY.get_sample_value("supernote_socketio_connections_active") == 1.0
+
+    await client_2.disconnect()
+    assert REGISTRY.get_sample_value("supernote_socketio_connections_active") == 1.0
+
+    # Disconnect remaining session -> gauge drops 1 -> 0
+    await client_1.disconnect()
+    for _ in range(20):
+        if REGISTRY.get_sample_value("supernote_socketio_connections_active") == 0.0:
+            break
+        await asyncio.sleep(0.02)
+    assert REGISTRY.get_sample_value("supernote_socketio_connections_active") == 0.0

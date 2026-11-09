@@ -11,6 +11,7 @@ from supernote.server.ai.models.embedding import EmbeddingModel, EmbeddingTaskTy
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.metrics import init_search_metrics, track_search_query
 from supernote.server.utils.note_content import format_page_metadata, infer_page_date
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ class SearchService:
     ) -> None:
         self.session_manager = session_manager
         self.embedding_model = embedding_model
+        init_search_metrics()
 
     async def list_notebooks(
         self,
@@ -109,105 +111,112 @@ class SearchService:
             logger.warning("Search requested but embedding model is not configured")
             return []
 
-        # Parse date filters
-        after_dt: datetime | None = None
-        before_dt: datetime | None = None
-        try:
-            if date_after:
-                after_dt = datetime.strptime(date_after, "%Y-%m-%d")
-            if date_before:
-                before_dt = datetime.strptime(date_before, "%Y-%m-%d")
-        except ValueError as e:
-            logger.error(f"Invalid date filter format: {e}")
-            return []
-
-        try:
-            embedding_values = await self.embedding_model.embed(
-                query, task_type=EmbeddingTaskType.RETRIEVAL_QUERY
-            )
-            query_embedding = np.array(embedding_values)
-        except (AIError, ValueError, TypeError) as e:
-            logger.error(f"Failed to fetch or process query embedding: {e}")
-            return []
-
-        query_norm = np.linalg.norm(query_embedding)
-
-        async with self.session_manager.session() as session:
-            # Metadata-based page filtering (Phase 2)
-            # We use notebook metadata (PAGEID) to infer page dates and filter them.
-
-            stmt = (
-                select(NotePageContentDO, UserFileDO.file_name)
-                .join(UserFileDO, UserFileDO.id == NotePageContentDO.file_id)
-                .where(UserFileDO.user_id == user_id)
-                .where(UserFileDO.is_active == "Y")
-                .where(NotePageContentDO.embedding.isnot(None))
-                .where(
-                    NotePageContentDO.embedding_model == self.embedding_model.model_id
-                )
-            )
-
-            if name_filter:
-                stmt = stmt.where(UserFileDO.file_name.ilike(f"%{name_filter}%"))
-
-            result = await session.execute(stmt)
-            candidates = result.all()
-
-        if not candidates:
-            return []
-
-        results = []
-        for content_do, file_name in candidates:
-            if not content_do.embedding:
-                continue
+        with track_search_query() as query_run:
+            # Parse date filters
+            after_dt: datetime | None = None
+            before_dt: datetime | None = None
+            try:
+                if date_after:
+                    after_dt = datetime.strptime(date_after, "%Y-%m-%d")
+                if date_before:
+                    before_dt = datetime.strptime(date_before, "%Y-%m-%d")
+            except ValueError as e:
+                logger.error(f"Invalid date filter format: {e}")
+                return []
 
             try:
-                embedding_list = json.loads(content_do.embedding)
-            except json.JSONDecodeError as e:
-                logger.warning(
-                    f"Failed to decode embedding JSON for result {content_do.id}: {e}"
+                embedding_values = await self.embedding_model.embed(
+                    query, task_type=EmbeddingTaskType.RETRIEVAL_QUERY
                 )
-                continue
+                query_embedding = np.array(embedding_values)
+            except (AIError, ValueError, TypeError) as e:
+                logger.error(f"Failed to fetch or process query embedding: {e}")
+                return []
 
-            try:
-                candidate_embedding = np.array(embedding_list)
+            query_norm = np.linalg.norm(query_embedding)
 
-                # Cosine Similarity
-                score = np.dot(query_embedding, candidate_embedding) / (
-                    query_norm * np.linalg.norm(candidate_embedding)
-                )
+            async with self.session_manager.session() as session:
+                # Metadata-based page filtering (Phase 2)
+                # We use notebook metadata (PAGEID) to infer page dates and filter them.
 
-                # Date Inference (Phase 2)
-                page_date = infer_page_date(content_do.page_id)
-
-                # Date Filtering (Inferred)
-                # TODO: In the future we can replace this with LLM based date filtering
-                if after_dt and (not page_date or page_date < after_dt):
-                    continue
-                if before_dt and (not page_date or page_date > before_dt):
-                    continue
-
-                results.append(
-                    SearchResult(
-                        file_id=content_do.file_id,
-                        file_name=file_name,
-                        page_index=content_do.page_index,
-                        page_id=content_do.page_id,
-                        score=float(score),
-                        text_preview=content_do.text_content[:200]
-                        if content_do.text_content
-                        else "",
-                        date=page_date.strftime("%Y-%m-%d") if page_date else None,
+                stmt = (
+                    select(NotePageContentDO, UserFileDO.file_name)
+                    .join(UserFileDO, UserFileDO.id == NotePageContentDO.file_id)
+                    .where(UserFileDO.user_id == user_id)
+                    .where(UserFileDO.is_active == "Y")
+                    .where(NotePageContentDO.embedding.isnot(None))
+                    .where(
+                        NotePageContentDO.embedding_model
+                        == self.embedding_model.model_id
                     )
                 )
-            except (ValueError, TypeError) as e:
-                logger.warning(
-                    f"Failed to process embedding math for result {content_do.id}: {e}"
-                )
-                continue
 
-        results.sort(key=lambda x: x.score, reverse=True)
-        return results[:top_n]
+                if name_filter:
+                    stmt = stmt.where(UserFileDO.file_name.ilike(f"%{name_filter}%"))
+
+                result = await session.execute(stmt)
+                candidates = result.all()
+
+            if not candidates:
+                query_run.set_succeeded(True)
+                return []
+
+            scored_candidates = 0
+            results = []
+            for content_do, file_name in candidates:
+                if not content_do.embedding:
+                    continue
+
+                try:
+                    embedding_list = json.loads(content_do.embedding)
+                except json.JSONDecodeError as e:
+                    logger.warning(
+                        f"Failed to decode embedding JSON for result {content_do.id}: {e}"
+                    )
+                    continue
+
+                try:
+                    candidate_embedding = np.array(embedding_list)
+
+                    # Cosine Similarity
+                    score = np.dot(query_embedding, candidate_embedding) / (
+                        query_norm * np.linalg.norm(candidate_embedding)
+                    )
+                    scored_candidates += 1
+
+                    # Date Inference (Phase 2)
+                    page_date = infer_page_date(content_do.page_id)
+
+                    # Date Filtering (Inferred)
+                    # TODO: In the future we can replace this with LLM based date filtering
+                    if after_dt and (not page_date or page_date < after_dt):
+                        continue
+                    if before_dt and (not page_date or page_date > before_dt):
+                        continue
+
+                    results.append(
+                        SearchResult(
+                            file_id=content_do.file_id,
+                            file_name=file_name,
+                            page_index=content_do.page_index,
+                            page_id=content_do.page_id,
+                            score=float(score),
+                            text_preview=content_do.text_content[:200]
+                            if content_do.text_content
+                            else "",
+                            date=page_date.strftime("%Y-%m-%d") if page_date else None,
+                        )
+                    )
+                except (ValueError, TypeError) as e:
+                    logger.warning(
+                        f"Failed to process embedding math for result {content_do.id}: {e}"
+                    )
+                    continue
+
+            query_run.record_candidates_scored(scored_candidates)
+            query_run.set_succeeded(True)
+            results.sort(key=lambda x: x.score, reverse=True)
+            return results[:top_n]
 
     async def _fetch_notebook_pages(
         self,
