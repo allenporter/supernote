@@ -275,6 +275,12 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_DEFAULT_USER_QUOTA`
     """
 
+    event_log_retention_days: int = 90
+    """Number of days to retain domain events in `f_user_event` (0 = retain indefinitely).
+
+    Env Var: `SUPERNOTE_EVENT_LOG_RETENTION_DAYS`
+    """
+
     proxy_mode: str | None = None
     """Proxy header handling mode: None/'disabled' (ignore proxy headers), 'relaxed' (trust immediate upstream), or 'strict' (require specific trusted IPs). Defaults to None for security.
 
@@ -360,6 +366,11 @@ class ServerConfig(DataClassYAMLMixin):
         self.log_level = _normalize_log_level(self.log_level)
         if isinstance(self.default_user_quota, bool) or self.default_user_quota < 0:
             raise ValueError("default_user_quota must be a non-negative integer")
+        if (
+            isinstance(self.event_log_retention_days, bool)
+            or self.event_log_retention_days < 0
+        ):
+            raise ValueError("event_log_retention_days must be a non-negative integer")
         self._sync_legacy_gemini_config()
 
     def _sync_legacy_gemini_config(self) -> None:
@@ -517,6 +528,22 @@ class ServerConfig(DataClassYAMLMixin):
             except ValueError as err:
                 logger.warning(
                     f"Ignoring invalid SUPERNOTE_DEFAULT_USER_QUOTA {raw_quota!r}: {err}"
+                )
+
+        if (
+            raw_retention := os.getenv("SUPERNOTE_EVENT_LOG_RETENTION_DAYS")
+        ) is not None:
+            try:
+                retention_val = int(raw_retention)
+                if retention_val < 0:
+                    raise ValueError("must be >= 0")
+                config.event_log_retention_days = retention_val
+                logger.info(
+                    f"Using SUPERNOTE_EVENT_LOG_RETENTION_DAYS: {config.event_log_retention_days}"
+                )
+            except ValueError as err:
+                logger.warning(
+                    f"Ignoring invalid SUPERNOTE_EVENT_LOG_RETENTION_DAYS {raw_retention!r}: {err}"
                 )
 
         if os.getenv("SUPERNOTE_BASE_URL"):

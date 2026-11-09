@@ -85,7 +85,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "e6f7a8b9c0d1"
+        assert version == "f2a3b4c5d6e7"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -181,7 +181,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "e6f7a8b9c0d1"
+        assert version == "f2a3b4c5d6e7"
 
         # Verify task columns and types
         tasks = conn.execute(
@@ -833,5 +833,49 @@ def test_add_note_and_page_metadata_tables_migration(
     reflected_down.reflect(bind=engine)
     assert "f_note_metadata" not in reflected_down.tables
     assert "f_note_page_metadata" not in reflected_down.tables
+
+    engine.dispose()
+
+
+def test_add_user_event_log_table_migration(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify migration f2a3b4c5d6e7 creates f_user_event with non-recycled seq and downgrades cleanly."""
+    db_path = tmp_path / "user_event_log.db"
+    shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+
+    command.upgrade(alembic_config, "f2a3b4c5d6e7")
+
+    engine = create_engine(url)
+    reflected = MetaData()
+    reflected.reflect(bind=engine)
+    assert "f_user_event" in reflected.tables
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO f_user_event "
+                "(user_id, timestamp_ms, event_type, actor, entity_type, entity_id, payload) "
+                "VALUES (1, 1000, 'vfs.created', 'user:web', 'file', '10', '{}')"
+            )
+        )
+        seq1 = conn.execute(text("SELECT MAX(seq) FROM f_user_event")).scalar_one()
+        conn.execute(text("DELETE FROM f_user_event WHERE seq = :seq"), {"seq": seq1})
+        conn.execute(
+            text(
+                "INSERT INTO f_user_event "
+                "(user_id, timestamp_ms, event_type, actor, entity_type, entity_id, payload) "
+                "VALUES (1, 2000, 'vfs.deleted', 'user:web', 'file', '10', '{}')"
+            )
+        )
+        seq2 = conn.execute(text("SELECT MAX(seq) FROM f_user_event")).scalar_one()
+        assert seq2 > seq1
+
+    command.downgrade(alembic_config, "e6f7a8b9c0d1")
+    reflected_down = MetaData()
+    reflected_down.reflect(bind=engine)
+    assert "f_user_event" not in reflected_down.tables
 
     engine.dispose()

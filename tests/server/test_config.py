@@ -544,3 +544,35 @@ def test_default_user_quota_config_and_env(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         ServerConfig(default_user_quota=-100)
+
+
+def test_event_log_retention_days_config_and_env(tmp_path: Path) -> None:
+    """Verify event_log_retention_days defaults to 90 and parses env overrides."""
+    assert ServerConfig().event_log_retention_days == 90
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    with open(config_dir / "config.yaml", "w") as f:
+        yaml.safe_dump({"event_log_retention_days": 30}, f)
+
+    loaded = ServerConfig.load(config_dir)
+    assert loaded.event_log_retention_days == 30
+
+    with patch.dict(os.environ, {"SUPERNOTE_EVENT_LOG_RETENTION_DAYS": "14"}):
+        env_loaded = ServerConfig.load(config_dir)
+        assert env_loaded.event_log_retention_days == 14
+
+    with patch.dict(os.environ, {"SUPERNOTE_EVENT_LOG_RETENTION_DAYS": "0"}):
+        zero_loaded = ServerConfig.load(config_dir)
+        assert zero_loaded.event_log_retention_days == 0
+
+    with patch.dict(os.environ, {"SUPERNOTE_EVENT_LOG_RETENTION_DAYS": "invalid"}):
+        fallback_loaded = ServerConfig.load(config_dir)
+        assert fallback_loaded.event_log_retention_days == 30
+
+    with patch.dict(os.environ, {"SUPERNOTE_EVENT_LOG_RETENTION_DAYS": "-5"}):
+        neg_loaded = ServerConfig.load(config_dir)
+        assert neg_loaded.event_log_retention_days == 30
+
+    with pytest.raises(ValueError):
+        ServerConfig(event_log_retention_days=-1)

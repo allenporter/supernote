@@ -27,15 +27,18 @@ TABLES_WITHOUT_USER_ID_ALLOWLIST = frozenset(
     }
 )
 
-# Existing user-owned tables whose primary key is a server-generated ID (not client-supplied)
+# User-owned tables whose primary key is a server-generated ID (not client-supplied)
 # and therefore does not include user_id in the primary key.
-# All NEW user-owned tables must include user_id in their primary key.
+# - f_user_event: server-generated AUTOINCREMENT cursor sequence (SQLite AUTOINCREMENT
+#   requires a single-column INTEGER PRIMARY KEY).
+# All new user-owned tables with client-supplied or synced IDs must include user_id in their PK.
 TABLES_WITHOUT_USER_ID_IN_PK_ALLOWLIST = frozenset(
     {
         "devices",
         "login_records",
         "f_user_file",
         "f_recycle_file",
+        "f_user_event",
     }
 )
 

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from supernote.models.summary import SummaryItem, SummaryTagItem
@@ -172,6 +172,21 @@ class BlobCleanupEvent(Event):
     storage_keys: set[str]
 
 
+@dataclass
+class DomainEventRecorded(Event):
+    """Published after a durable `UserEventDO` row is committed to `f_user_event`."""
+
+    user_id: int
+    seq: int
+    timestamp_ms: int
+    event_type: str
+    actor: str
+    entity_type: str
+    entity_id: str
+    related_file_id: int | None = None
+    payload: dict[str, Any] = field(default_factory=dict)
+
+
 EventHandler = Callable[[Any], Awaitable[Any]]
 
 
@@ -179,28 +194,39 @@ class LocalEventBus:
     """A simple in-process event bus using asyncio."""
 
     def __init__(self) -> None:
-        self._subscribers: dict[type[Event], list[EventHandler]] = {}
+        self._subscribers: dict[type[Event], list[tuple[EventHandler, bool]]] = {}
         self._background_tasks: set[asyncio.Task[None]] = set()
 
     def subscribe[E: Event](
-        self, event_type: type[E], handler: Callable[[E], Awaitable[Any]]
+        self,
+        event_type: type[E],
+        handler: Callable[[E], Awaitable[Any]],
+        *,
+        inline: bool = False,
     ) -> None:
-        """Subscribe a handler to an event type."""
+        """Subscribe a handler to an event type.
+
+        When `inline=True`, `publish()` awaits the handler directly in subscription
+        order before returning.
+        """
         if event_type not in self._subscribers:
             self._subscribers[event_type] = []
-        self._subscribers[event_type].append(handler)
-        logger.debug(f"Subscribed {handler} to {event_type.__name__}")
+        self._subscribers[event_type].append((handler, inline))
+        logger.debug(f"Subscribed {handler} to {event_type.__name__} (inline={inline})")
 
     async def publish(self, event: Event) -> None:
         """Publish an event to all subscribers."""
         event_type = type(event)
         if event_type in self._subscribers:
-            for handler in self._subscribers[event_type]:
-                # We fire and forget using create_task to ensure background execution
-                # and not block the caller (e.g., the API response).
-                task = asyncio.create_task(self._safe_execute(handler, event))
-                self._background_tasks.add(task)
-                task.add_done_callback(self._background_tasks.discard)
+            for handler, inline in self._subscribers[event_type]:
+                if inline:
+                    await self._safe_execute(handler, event)
+                else:
+                    # We fire and forget using create_task to ensure background execution
+                    # and not block the caller (e.g., the API response).
+                    task = asyncio.create_task(self._safe_execute(handler, event))
+                    self._background_tasks.add(task)
+                    task.add_done_callback(self._background_tasks.discard)
 
     async def _safe_execute(self, handler: EventHandler, event: Event) -> None:
         """Execute handler and log exceptions."""

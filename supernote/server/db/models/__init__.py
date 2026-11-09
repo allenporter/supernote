@@ -2,6 +2,7 @@
 
 from . import (
     device,
+    event_log,
     file,
     kv,
     login_record,
@@ -13,6 +14,7 @@ from . import (
 
 __all__ = [
     "device",
+    "event_log",
     "file",
     "kv",
     "login_record",
