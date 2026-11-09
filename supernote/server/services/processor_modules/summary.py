@@ -185,11 +185,6 @@ class SummaryModule(ProcessorModule):
             user_email = user.email
 
             file_basis = file_do.storage_key or str(file_do.id)
-            group_uuid = get_summary_group_id(file_basis)
-            group_name = Path(file_do.file_name).name
-            group_md5 = hashlib.md5(group_name.encode("utf-8")).hexdigest()
-            summary_uuid = get_summary_id(file_basis)
-            transcript_uuid = get_transcript_id(file_basis)
 
             stmt = (
                 select(NotePageContentDO)
@@ -206,7 +201,7 @@ class SummaryModule(ProcessorModule):
         # Format transcript with Page markers and inferred dates
         text_parts = []
         for p in pages:
-            if p.text_content:
+            if not p.is_blank:
                 metadata = format_page_metadata(
                     page_index=p.page_index,
                     page_id=p.page_id or "",
@@ -216,6 +211,18 @@ class SummaryModule(ProcessorModule):
                 )
                 text_parts.append(f"{metadata}\n{p.text_content}")
 
+        if not text_parts:
+            await self._delete_generated_summaries(user_email, file_basis)
+            logger.info(
+                f"All pages in file {file_id} are blank; skipping summary generation."
+            )
+            return
+
+        group_uuid = get_summary_group_id(file_basis)
+        group_name = Path(file_do.file_name).name
+        group_md5 = hashlib.md5(group_name.encode("utf-8")).hexdigest()
+        summary_uuid = get_summary_id(file_basis)
+        transcript_uuid = get_transcript_id(file_basis)
         full_text = "\n\n".join(text_parts)
 
         await self._upsert_group(
@@ -345,3 +352,30 @@ class SummaryModule(ProcessorModule):
             )
         else:
             await self.summary_service.add_summary(user_email, dto)
+
+    async def _delete_generated_summaries(
+        self, user_email: str, file_basis: str
+    ) -> None:
+        """Soft-delete SummaryModule's deterministic transcript/summary items and now-empty group.
+
+        Server-generated entries are keyed by the synthetic `{file_basis}-transcript` and
+        `{file_basis}-summary` UUIDs (whereas device-created digests use client UUIDs), so
+        any manual digests filed under `{file_basis}-group` remain intact.
+        """
+        for item_uuid in (get_transcript_id(file_basis), get_summary_id(file_basis)):
+            existing_item = await self.summary_service.get_summary_by_uuid(
+                user_email, item_uuid
+            )
+            if existing_item and existing_item.id is not None:
+                await self.summary_service.delete_summary(user_email, existing_item.id)
+
+        group_uuid = get_summary_group_id(file_basis)
+        existing_group = await self.summary_service.get_summary_by_uuid(
+            user_email, group_uuid
+        )
+        if existing_group and existing_group.id is not None:
+            remaining = await self.summary_service.count_summaries(
+                user_email, parent_uuid=group_uuid
+            )
+            if remaining == 0:
+                await self.summary_service.delete_group(user_email, existing_group.id)

@@ -80,11 +80,18 @@ class EmbeddingModule(ProcessorModule):
         async with session_manager.session() as session:
             content = await get_page_content_by_id(session, file_id, page_id)
 
-            if not content or not content.text_content:
+            if not content or content.is_blank:
+                if content and (
+                    content.embedding is not None or content.embedding_model is not None
+                ):
+                    content.embedding = None
+                    content.embedding_model = None
+                    await session.commit()
                 logger.debug(
                     f"No text content to embed for file {file_id} page {page_id} (idx {page_index})"
                 )
                 return
+            assert content.text_content is not None
             text_content = content.text_content
 
         embedding_values = await self.embedding_model.embed(
