@@ -11,8 +11,10 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock, patch
 
 import pytest
+from aiohttp import web
 from aiohttp.test_utils import TestClient
 from pytest_aiohttp import AiohttpClient
 from sqlalchemy import delete, select
@@ -25,6 +27,7 @@ from supernote.server.app import (
 )
 from supernote.server.config import ServerConfig
 from supernote.server.db.models.user import UserDO
+from supernote.server.plugins import PluginContext, ServerPluginDescriptor
 from supernote.server.services.processor_modules.png_conversion import (
     PngConversionModule,
 )
@@ -404,3 +407,36 @@ def test_run_respects_config_and_env_log_level(
         logging.getLogger().setLevel(logging.INFO)
         logging.getLogger("aiosqlite").setLevel(logging.INFO)
         logging.getLogger("asyncio").setLevel(logging.INFO)
+
+
+async def test_server_plugin_entrypoint_discovery(
+    server_config: ServerConfig,
+    coordination_service: Any,
+    session_manager: Any,
+    user_service: Any,
+) -> None:
+    """Verify create_app discovers server plugins via entry points and registers descriptors."""
+    routes = web.RouteTableDef()
+
+    @routes.get("/api/custom-plugin/status")
+    async def status_handler(request: web.Request) -> web.Response:
+        return web.json_response({"ok": True})
+
+    descriptor = ServerPluginDescriptor(
+        plugin_id="custom_plugin",
+        display_name="Custom Plugin",
+        version="0.2.0",
+        routes=routes,
+    )
+
+    fake_ep = MagicMock()
+    fake_ep.name = "custom_plugin"
+    fake_ep.load.return_value = lambda ctx: descriptor
+
+    with patch("importlib.metadata.entry_points", return_value=[fake_ep]):
+        app = create_app(server_config)
+
+    assert "plugin_context" in app
+    assert isinstance(app["plugin_context"], PluginContext)
+    assert "server_plugins" in app
+    assert app["server_plugins"] == [descriptor]

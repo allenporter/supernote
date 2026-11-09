@@ -25,6 +25,7 @@ from .constants import MAX_UPLOAD_SIZE
 from .db.session import DatabaseSessionManager
 from .events import LocalEventBus
 from .metrics import HTTP_REQUEST_DURATION_SECONDS, HTTP_REQUESTS_TOTAL
+from .plugins import PluginContext, load_server_plugins
 from .routes import (
     admin,
     auth,
@@ -286,6 +287,15 @@ def create_app(config: ServerConfig) -> web.Application:
     app.add_routes(schedule.routes)
     app.add_routes(summary.routes)
     app.add_routes(extended.routes)
+
+    # Initialize plugin context and discover server plugins
+    plugin_ctx = PluginContext(
+        file_service=file_service,
+        user_service=user_service,
+        event_bus=event_bus,
+        storage_dir=Path(config.storage_dir),
+    )
+    load_server_plugins(app, plugin_ctx)
 
     # Attach Socket.IO real-time server manager
     setup_socketio(app, config, user_service, event_bus)
