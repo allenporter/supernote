@@ -24,11 +24,17 @@ class FakeSummaryModel(SummaryModel):
         segments: list[SummarySegment] | None = None,
         model_id: str = "fake-summary-v1",
         error: Exception | None = None,
+        provider: str = "fake",
     ) -> None:
         self._segments = segments
         self._model_id = model_id
         self.error = error
+        self._provider = provider
         self.calls: list[str] = []
+
+    @property
+    def provider(self) -> str:
+        return self._provider
 
     @property
     def model_id(self) -> str:
@@ -59,4 +65,7 @@ def create_summary_model(config: ServerConfig) -> SummaryModel | None:
     """Create a `FakeSummaryModel` from `ServerConfig`, or `None` if unconfigured."""
     if config.ai.summary is None:
         return None
-    return FakeSummaryModel(model_id=config.ai.summary.model)
+    return FakeSummaryModel(
+        model_id=config.ai.summary.model,
+        provider=config.ai.summary.provider,
+    )

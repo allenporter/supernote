@@ -9,7 +9,6 @@ from types import ModuleType
 
 import pytest
 from PIL import Image, ImageDraw, ImageFont
-from prometheus_client import REGISTRY
 
 from supernote.server.ai.base import AIError
 from supernote.server.ai.models.apple.backend import (
@@ -32,9 +31,11 @@ def test_create_apple_backend_and_eager_runtime_check(
 
     backend = create_apple_backend({})
     assert isinstance(backend, AppleVisionBackend)
+    assert backend.provider == "apple"
 
     named_backend = create_apple_backend({}, "mac_vision")
     assert isinstance(named_backend, AppleVisionBackend)
+    assert named_backend.provider == "mac_vision"
 
     # Also handles an objc module without an `error` exception class attribute
     no_error_objc = FakeObjCModule(error=None)
@@ -73,18 +74,6 @@ async def test_recognize_text_accurate_and_fast(
     fake_vision.include_empty_observation = True
     fake_vision.lines = ["  Daily Log  ", None, "   ", "", "- Ship local Vision OCR"]
 
-    call_labels = {"operation": "recognize_text", "status": "success"}
-    duration_labels = {"operation": "recognize_text"}
-    calls_before = (
-        REGISTRY.get_sample_value("supernote_apple_ai_calls_total", call_labels) or 0.0
-    )
-    durations_before = (
-        REGISTRY.get_sample_value(
-            "supernote_apple_ai_duration_seconds_count", duration_labels
-        )
-        or 0.0
-    )
-
     accurate_text = await apple_backend.recognize_text(
         b"png-accurate", level=RecognitionLevel.VISION_ACCURATE
     )
@@ -112,18 +101,6 @@ async def test_recognize_text_accurate_and_fast(
         second_call.recognition_level == fake_vision.VNRequestTextRecognitionLevelFast
     )
 
-    calls_after = (
-        REGISTRY.get_sample_value("supernote_apple_ai_calls_total", call_labels) or 0.0
-    )
-    durations_after = (
-        REGISTRY.get_sample_value(
-            "supernote_apple_ai_duration_seconds_count", duration_labels
-        )
-        or 0.0
-    )
-    assert calls_after == calls_before + 2.0
-    assert durations_after == durations_before + 2.0
-
 
 async def test_recognize_text_none_results(
     apple_backend: AppleVisionBackend,
@@ -147,14 +124,11 @@ async def test_recognize_text_empty_data_and_nil_handler_raise_ai_error(
         await apple_backend.recognize_text(b"png-bytes")
 
 
-async def test_recognize_text_vision_errors_record_failure_metric(
+async def test_recognize_text_vision_errors_raise_ai_error(
     apple_backend: AppleVisionBackend,
     fake_vision: FakeVisionModule,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    labels = {"operation": "recognize_text", "status": "failure"}
-    before = REGISTRY.get_sample_value("supernote_apple_ai_calls_total", labels) or 0.0
-
     fake_vision.perform_success = False
     fake_vision.perform_error = FakeNSError("corrupt PNG buffer")
     with caplog.at_level("ERROR"):
@@ -169,9 +143,6 @@ async def test_recognize_text_vision_errors_record_failure_metric(
     fake_vision.perform_error = "plain error string"
     with pytest.raises(AIError, match="plain error string"):
         await apple_backend.recognize_text(b"bad-png")
-
-    after = REGISTRY.get_sample_value("supernote_apple_ai_calls_total", labels) or 0.0
-    assert after == before + 3.0
 
 
 async def test_recognize_text_objc_and_runtime_exceptions_raise_ai_error(

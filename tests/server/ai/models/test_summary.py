@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
+from aiohttp import web
+from prometheus_client import REGISTRY
 
+from supernote.server.ai.base import AIError
 from supernote.server.ai.models.embedding import (
     ConcurrencyLimitedEmbeddingModel,
+    EmbeddingTaskType,
     create_embedding_model,
 )
 from supernote.server.ai.models.fake.summary import FakeSummaryModel
-from supernote.server.ai.models.openai.embedding import OpenAIEmbeddingModel
-from supernote.server.ai.models.openai.summary import OpenAISummaryModel
 from supernote.server.ai.models.summary import (
     ConcurrencyLimitedSummaryModel,
+    InstrumentedSummaryModel,
     create_summary_model,
 )
 from supernote.server.config import (
@@ -102,22 +106,92 @@ def test_create_summary_model_unsupported_provider() -> None:
 
 
 async def test_concurrency_limited_summary_model() -> None:
-    wrapped = ConcurrencyLimitedSummaryModel(FakeSummaryModel(), max_concurrency=2)
+    wrapped = ConcurrencyLimitedSummaryModel(
+        InstrumentedSummaryModel(FakeSummaryModel()), max_concurrency=2
+    )
     result = await wrapped.summarize("TRANSCRIPT:\nHello")
+    assert wrapped.provider == "fake"
     assert wrapped.model_id == "fake-summary-v1"
     assert len(result.segments) == 1
 
 
-def test_create_summary_model_named_openai_providers() -> None:
-    """Summary and embedding can use two different OpenAI-compatible servers."""
+async def test_instrumented_summary_model_records_success_and_failure() -> None:
+    model = FakeSummaryModel(model_id="instr-summary-v1", provider="fake-instr")
+    wrapped = InstrumentedSummaryModel(model)
+    ok_labels = {
+        "provider": "fake-instr",
+        "model": "instr-summary-v1",
+        "stage": "summary",
+        "status": "success",
+    }
+    fail_labels = {**ok_labels, "status": "failure"}
+    before_ok = REGISTRY.get_sample_value("supernote_ai_requests_total", ok_labels)
+    before_fail = REGISTRY.get_sample_value("supernote_ai_requests_total", fail_labels)
+    assert before_ok is not None
+    assert before_fail is not None
+
+    await wrapped.summarize("TRANSCRIPT:\nHello")
+    model.error = AIError("boom")
+    with pytest.raises(AIError, match="boom"):
+        await wrapped.summarize("TRANSCRIPT:\nHello")
+
+    assert (
+        REGISTRY.get_sample_value("supernote_ai_requests_total", ok_labels)
+        == before_ok + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_ai_requests_total", fail_labels)
+        == before_fail + 1.0
+    )
+
+
+async def test_create_summary_model_named_openai_providers(
+    aiohttp_server: Any,
+) -> None:
+    """Summary and embedding route HTTP requests to two distinct OpenAI-compatible servers."""
+    ollama_hits: list[str] = []
+    llamacpp_hits: list[str] = []
+
+    async def handle_ollama_chat(request: web.Request) -> web.Response:
+        body = await request.json()
+        ollama_hits.append(body["model"])
+        return web.json_response(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"segments":[{"date_range":"2026-11-09",'
+                                '"summary":"ok","extracted_dates":["2026-11-09"],'
+                                '"page_refs":[1]}]}'
+                            )
+                        }
+                    }
+                ]
+            }
+        )
+
+    async def handle_llamacpp_embed(request: web.Request) -> web.Response:
+        body = await request.json()
+        llamacpp_hits.append(body["model"])
+        return web.json_response({"data": [{"embedding": [0.3, 0.4, 0.5]}]})
+
+    ollama_app = web.Application()
+    ollama_app.router.add_post("/v1/chat/completions", handle_ollama_chat)
+    ollama_srv = await aiohttp_server(ollama_app)
+
+    llamacpp_app = web.Application()
+    llamacpp_app.router.add_post("/v1/embeddings", handle_llamacpp_embed)
+    llamacpp_srv = await aiohttp_server(llamacpp_app)
+
     config = ServerConfig(
         ai=AiConfig(
             providers={
                 "ollama": ProviderConfig(
-                    type="openai", base_url="http://localhost:11434/v1"
+                    type="openai", base_url=str(ollama_srv.make_url("/v1"))
                 ),
                 "llamacpp": ProviderConfig(
-                    type="openai", base_url="http://localhost:8080/v1"
+                    type="openai", base_url=str(llamacpp_srv.make_url("/v1"))
                 ),
             },
             summary=ModelConfig(provider="ollama", model="gemma3:27b"),
@@ -126,13 +200,20 @@ def test_create_summary_model_named_openai_providers() -> None:
     )
     model = create_summary_model(config)
     assert isinstance(model, ConcurrencyLimitedSummaryModel)
-    assert isinstance(model._model, OpenAISummaryModel)
-    assert model._model._backend._base_url == "http://localhost:11434/v1"
+    assert (model.provider, model.model_id) == ("ollama", "gemma3:27b")
 
     embedding = create_embedding_model(config)
     assert isinstance(embedding, ConcurrencyLimitedEmbeddingModel)
-    assert isinstance(embedding._model, OpenAIEmbeddingModel)
-    assert embedding._model._backend._base_url == "http://localhost:8080/v1"
+    assert (embedding.provider, embedding.model_id) == ("llamacpp", "embeddinggemma")
+
+    summary_res = await model.summarize("TRANSCRIPT:\nPage 1")
+    assert summary_res.segments[0].summary == "ok"
+    vec = await embedding.embed(
+        "Page 1", task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT
+    )
+    assert vec == [0.3, 0.4, 0.5]
+    assert ollama_hits == ["gemma3:27b"]
+    assert llamacpp_hits == ["embeddinggemma"]
 
 
 def test_create_summary_model_unknown_provider_type() -> None:

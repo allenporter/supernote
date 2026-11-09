@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING
 from google.genai import types
 
 from supernote.server.ai.base import AIError
-from supernote.server.ai.models.embedding import EmbeddingModel, EmbeddingTaskType
+from supernote.server.ai.models.embedding import (
+    EmbeddingModel,
+    EmbeddingTaskType,
+    validate_embedding_vector,
+)
 
 from .backend import GeminiBackend, create_gemini_backend
 
@@ -28,10 +32,14 @@ class GeminiEmbeddingModel(EmbeddingModel):
         self._model_name = model_name
 
     @property
+    def provider(self) -> str:
+        return self._backend.provider
+
+    @property
     def model_id(self) -> str:
         return self._model_name
 
-    async def _embed(
+    async def embed(
         self,
         text: str,
         task_type: EmbeddingTaskType,
@@ -43,7 +51,9 @@ class GeminiEmbeddingModel(EmbeddingModel):
         )
         if not response.embeddings or not response.embeddings[0].values:
             raise AIError("No embeddings returned from Gemini API")
-        return list(response.embeddings[0].values)
+        return validate_embedding_vector(
+            response.embeddings[0].values, self._model_name
+        )
 
 
 def create_embedding_model(config: ServerConfig) -> EmbeddingModel | None:

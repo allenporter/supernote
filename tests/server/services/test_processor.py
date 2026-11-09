@@ -1142,6 +1142,10 @@ class _GroundTruthVisionOcrModel(OcrModel):
         self.processed_page_ids: list[str] = []
 
     @property
+    def provider(self) -> str:
+        return "fake"
+
+    @property
     def model_id(self) -> str:
         return "synthetic-ground-truth-ocr-v1"
 

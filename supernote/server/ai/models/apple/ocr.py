@@ -45,6 +45,10 @@ class AppleOcrModel(OcrModel):
         self._backend = backend
 
     @property
+    def provider(self) -> str:
+        return self._backend.provider
+
+    @property
     def model_id(self) -> str:
         return self._level.value
 

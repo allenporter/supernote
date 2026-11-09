@@ -32,6 +32,10 @@ class GeminiSummaryModel(SummaryModel):
         self._model_name = model_name
 
     @property
+    def provider(self) -> str:
+        return self._backend.provider
+
+    @property
     def model_id(self) -> str:
         return self._model_name
 
