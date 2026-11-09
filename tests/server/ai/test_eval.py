@@ -17,10 +17,13 @@ from supernote.server.ai.eval import (
     _summarize_results,
     _word_jaccard,
     build_target_report,
+    compute_pareto_frontier,
     evaluate_ocr_dataset,
     format_markdown_report,
     load_eval_case_input,
     merge_eval_reports,
+    render_pareto_svg,
+    rescore_suite_report,
     score_ocr_output,
 )
 from supernote.server.ai.models.fake.ocr import FakeOcrModel
@@ -155,6 +158,10 @@ def test_checked_in_ocr_results_match_markdown_report() -> None:
     assert merged.dataset_name == dataset.name
     results_md = (REPO_ROOT / "evals/ocr/RESULTS.md").read_text(encoding="utf-8")
     assert results_md == format_markdown_report(merged)
+    pareto_svg = (REPO_ROOT / "evals/ocr/pareto_frontier.svg").read_text(
+        encoding="utf-8"
+    )
+    assert pareto_svg == render_pareto_svg(merged)
 
 
 def test_score_ocr_output_empty_reference() -> None:
@@ -477,3 +484,148 @@ async def test_evaluate_ocr_dataset_page_timeout_records_error(
     )
     assert report.targets[0].overall.error_count == 1
     assert report.targets[0].cases[0].error == "Timed out after 0.0s"
+
+
+def test_eval_case_is_bujo() -> None:
+    assert OcrEvalCase(id="b1", path="a.png", category="bujo_daily").is_bujo
+    assert OcrEvalCase(id="b2", path="a.png", prompt_type="weekly").is_bujo
+    assert not OcrEvalCase(id="p1", path="a.png", category="multilingual").is_bujo
+
+
+def test_score_ocr_output_multiset_word_recall_and_contractions() -> None:
+    metrics = score_ocr_output("I L's C C C", "I Ls C extra")
+    assert metrics.word_recall == 0.6
+    assert metrics.word_f1 == 0.6667
+
+
+def test_score_ocr_output_case_insensitive_content_cer() -> None:
+    metrics = score_ocr_output("Salad Lesson", "salad lesson")
+    assert metrics.cer > 0.0
+    assert metrics.content_cer == 0.0
+
+
+def test_score_ocr_output_skips_bujo_on_non_bujo_prose_dashes() -> None:
+    prose = "- I want to celebrate\n- Quiero celebrar"
+    metrics = score_ocr_output(prose, prose, evaluate_bujo=False)
+    assert metrics.bujo_expected_items == 0
+    assert metrics.bujo_symbol_recall is None
+
+
+async def test_rescore_suite_report_updates_metrics_and_categories(
+    sample_png_dir: Path,
+    png_only_dataset: OcrEvalDataset,
+) -> None:
+    report = await evaluate_ocr_dataset(
+        png_only_dataset,
+        sample_png_dir,
+        [
+            OcrEvalTarget("ok:v1", _ScriptedOcrModel(["HI"])),
+            OcrEvalTarget("err:v1", _ScriptedOcrModel([AIError("failed")])),
+        ],
+        warmup=False,
+    )
+    updated_ds = OcrEvalDataset(
+        name="rescored-suite",
+        cases=[
+            OcrEvalCase(
+                id="only_png",
+                path="sample.png",
+                category="english_prose",
+                ground_truth="hi",
+            )
+        ],
+    )
+    rescored = rescore_suite_report(report, updated_ds)
+    assert rescored.dataset_name == "rescored-suite"
+    assert rescored.targets[0].cases[0].category == "english_prose"
+    assert rescored.targets[0].cases[0].metrics.content_cer == 0.0
+    assert rescored.targets[0].cases[0].metrics.word_f1 == 1.0
+    assert rescored.targets[1].cases[0].metrics.word_f1 == 0.0
+
+
+async def test_rescore_suite_report_missing_case_raises(
+    sample_png_dir: Path,
+    png_only_dataset: OcrEvalDataset,
+) -> None:
+    report = await evaluate_ocr_dataset(
+        png_only_dataset,
+        sample_png_dir,
+        [OcrEvalTarget("ok:v1", FakeOcrModel())],
+        warmup=False,
+    )
+    other_ds = OcrEvalDataset(cases=[OcrEvalCase(id="other", path="sample.png")])
+    with pytest.raises(KeyError, match="not found in dataset"):
+        rescore_suite_report(report, other_ds)
+
+
+def test_compute_pareto_frontier_identifies_dominated_targets() -> None:
+    fast_low = build_target_report(
+        "fast:v1",
+        "m1",
+        0.0,
+        [
+            OcrTargetCaseResult(
+                case_id="c1",
+                category="english_prose",
+                hypothesis="a",
+                latency_ms=100.0,
+                metrics=score_ocr_output("a b", "a"),
+            )
+        ],
+    )
+    mid_high = build_target_report(
+        "mid:v1",
+        "m2",
+        0.0,
+        [
+            OcrTargetCaseResult(
+                case_id="c1",
+                category="english_prose",
+                hypothesis="a b",
+                latency_ms=400.0,
+                metrics=score_ocr_output("a b", "a b"),
+            )
+        ],
+    )
+    slow_dominated = build_target_report(
+        "slow:v1",
+        "m3",
+        0.0,
+        [
+            OcrTargetCaseResult(
+                case_id="c1",
+                category="english_prose",
+                hypothesis="a",
+                latency_ms=900.0,
+                metrics=score_ocr_output("a b", "a"),
+            )
+        ],
+    )
+    zero_lat = build_target_report(
+        "device-rtr",
+        "rtr",
+        0.0,
+        [
+            OcrTargetCaseResult(
+                case_id="c1",
+                category="english_prose",
+                hypothesis="a b",
+                latency_ms=0.0,
+                metrics=score_ocr_output("a b", "a b"),
+            )
+        ],
+    )
+    suite = OcrEvalSuiteReport(
+        dataset_name="pareto-suite",
+        case_count=1,
+        targets=[slow_dominated, zero_lat, fast_low, mid_high],
+    )
+    pts = compute_pareto_frontier(suite, use_p95_latency=True)
+    assert [(p.target_name, p.is_pareto) for p in pts] == [
+        ("fast:v1", True),
+        ("mid:v1", True),
+        ("slow:v1", False),
+    ]
+    svg = render_pareto_svg(suite)
+    assert "<svg" in svg
+    assert "fast:v1" in svg

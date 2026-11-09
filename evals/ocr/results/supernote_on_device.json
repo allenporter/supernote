@@ -12,14 +12,15 @@
         "error_count": 0,
         "mean_cer": 0.1719,
         "median_cer": 0.0328,
-        "mean_content_cer": 0.1707,
+        "mean_content_cer": 0.1668,
         "mean_wer": 0.3145,
-        "mean_word_recall": 0.801,
-        "mean_bujo_symbol_recall": 0.6245,
+        "mean_word_recall": 0.7379,
+        "mean_bujo_symbol_recall": 0.1864,
         "mean_bujo_strikethrough_recall": 0.0,
-        "mean_bujo_indent_accuracy": 0.7084,
+        "mean_bujo_indent_accuracy": 0.6667,
         "median_latency_ms": 909.0,
-        "p95_latency_ms": 1717.0
+        "p95_latency_ms": 1717.0,
+        "mean_word_f1": 0.7554
       },
       "by_category": [
         {
@@ -30,12 +31,13 @@
           "median_cer": 0.0744,
           "mean_content_cer": 0.0718,
           "mean_wer": 0.2917,
-          "mean_word_recall": 0.95,
+          "mean_word_recall": 0.925,
           "mean_bujo_symbol_recall": 0.1,
           "mean_bujo_strikethrough_recall": null,
           "mean_bujo_indent_accuracy": null,
           "median_latency_ms": 917.0,
-          "p95_latency_ms": 917.0
+          "p95_latency_ms": 917.0,
+          "mean_word_f1": 0.925
         },
         {
           "category": "bujo_monthly",
@@ -43,14 +45,15 @@
           "error_count": 0,
           "mean_cer": 0.1321,
           "median_cer": 0.1321,
-          "mean_content_cer": 0.1224,
+          "mean_content_cer": 0.1173,
           "mean_wer": 0.4479,
-          "mean_word_recall": 0.7961,
+          "mean_word_recall": 0.6845,
           "mean_bujo_symbol_recall": 0.2727,
           "mean_bujo_strikethrough_recall": 0.0,
           "mean_bujo_indent_accuracy": 0.6667,
           "median_latency_ms": 979.0,
-          "p95_latency_ms": 1030.0
+          "p95_latency_ms": 1030.0,
+          "mean_word_f1": 0.7144
         },
         {
           "category": "empty_template",
@@ -65,7 +68,8 @@
           "mean_bujo_strikethrough_recall": null,
           "mean_bujo_indent_accuracy": null,
           "median_latency_ms": 103.0,
-          "p95_latency_ms": 103.0
+          "p95_latency_ms": 103.0,
+          "mean_word_f1": 1.0
         },
         {
           "category": "english_prose",
@@ -73,14 +77,15 @@
           "error_count": 0,
           "mean_cer": 0.0123,
           "median_cer": 0.0,
-          "mean_content_cer": 0.0123,
+          "mean_content_cer": 0.0098,
           "mean_wer": 0.0479,
-          "mean_word_recall": 0.9907,
+          "mean_word_recall": 0.9814,
           "mean_bujo_symbol_recall": null,
           "mean_bujo_strikethrough_recall": null,
           "mean_bujo_indent_accuracy": null,
           "median_latency_ms": 509.0,
-          "p95_latency_ms": 1322.0
+          "p95_latency_ms": 1322.0,
+          "mean_word_f1": 0.9777
         },
         {
           "category": "diagram_and_layout",
@@ -88,14 +93,15 @@
           "error_count": 0,
           "mean_cer": 0.2455,
           "median_cer": 0.1815,
-          "mean_content_cer": 0.246,
+          "mean_content_cer": 0.2376,
           "mean_wer": 0.5237,
-          "mean_word_recall": 0.6806,
-          "mean_bujo_symbol_recall": 1.0,
+          "mean_word_recall": 0.5058,
+          "mean_bujo_symbol_recall": null,
           "mean_bujo_strikethrough_recall": null,
           "mean_bujo_indent_accuracy": null,
           "median_latency_ms": 606.0,
-          "p95_latency_ms": 1512.0
+          "p95_latency_ms": 1512.0,
+          "mean_word_f1": 0.5519
         },
         {
           "category": "multilingual",
@@ -103,14 +109,15 @@
           "error_count": 0,
           "mean_cer": 0.0439,
           "median_cer": 0.0325,
-          "mean_content_cer": 0.0422,
+          "mean_content_cer": 0.0409,
           "mean_wer": 0.155,
-          "mean_word_recall": 0.9494,
-          "mean_bujo_symbol_recall": 0.875,
+          "mean_word_recall": 0.9294,
+          "mean_bujo_symbol_recall": null,
           "mean_bujo_strikethrough_recall": null,
-          "mean_bujo_indent_accuracy": 0.75,
+          "mean_bujo_indent_accuracy": null,
           "median_latency_ms": 1611.0,
-          "p95_latency_ms": 1815.0
+          "p95_latency_ms": 1815.0,
+          "mean_word_f1": 0.9386
         },
         {
           "category": "edge_cases",
@@ -118,14 +125,15 @@
           "error_count": 0,
           "mean_cer": 0.5402,
           "median_cer": 0.5804,
-          "mean_content_cer": 0.5402,
+          "mean_content_cer": 0.5357,
           "mean_wer": 0.5909,
-          "mean_word_recall": 0.4375,
+          "mean_word_recall": 0.4091,
           "mean_bujo_symbol_recall": null,
           "mean_bujo_strikethrough_recall": null,
           "mean_bujo_indent_accuracy": null,
           "median_latency_ms": 203.0,
-          "p95_latency_ms": 605.0
+          "p95_latency_ms": 605.0,
+          "mean_word_f1": 0.425
         }
       ],
       "cases": [
@@ -138,8 +146,9 @@
             "cer": 0.0744,
             "content_cer": 0.0718,
             "wer": 0.2917,
-            "word_recall": 0.95,
+            "word_recall": 0.925,
             "bujo_expected_items": 10,
+            "word_f1": 0.925,
             "bujo_symbol_recall": 0.1,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -157,6 +166,7 @@
             "wer": 0.3415,
             "word_recall": 0.8966,
             "bujo_expected_items": 11,
+            "word_f1": 0.8667,
             "bujo_symbol_recall": 0.2727,
             "bujo_strikethrough_recall": 0.0,
             "bujo_indent_accuracy": 0.6667
@@ -170,10 +180,11 @@
           "latency_ms": 928.0,
           "metrics": {
             "cer": 0.1661,
-            "content_cer": 0.1661,
+            "content_cer": 0.1559,
             "wer": 0.5543,
-            "word_recall": 0.6957,
+            "word_recall": 0.4725,
             "bujo_expected_items": 0,
+            "word_f1": 0.5621,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -191,6 +202,7 @@
             "wer": 0.0,
             "word_recall": 1.0,
             "bujo_expected_items": 0,
+            "word_f1": 1.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -208,6 +220,7 @@
             "wer": 0.0,
             "word_recall": 1.0,
             "bujo_expected_items": 0,
+            "word_f1": 1.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -221,10 +234,11 @@
           "latency_ms": 1322.0,
           "metrics": {
             "cer": 0.0286,
-            "content_cer": 0.0286,
+            "content_cer": 0.0163,
             "wer": 0.1628,
-            "word_recall": 0.9535,
+            "word_recall": 0.907,
             "bujo_expected_items": 0,
+            "word_f1": 0.9286,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -242,6 +256,7 @@
             "wer": 0.0769,
             "word_recall": 1.0,
             "bujo_expected_items": 0,
+            "word_f1": 0.96,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -259,6 +274,7 @@
             "wer": 0.0,
             "word_recall": 1.0,
             "bujo_expected_items": 0,
+            "word_f1": 1.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -276,6 +292,7 @@
             "wer": 0.0,
             "word_recall": 1.0,
             "bujo_expected_items": 0,
+            "word_f1": 1.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -293,6 +310,7 @@
             "wer": 0.2222,
             "word_recall": 0.7778,
             "bujo_expected_items": 0,
+            "word_f1": 0.8235,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -310,6 +328,7 @@
             "wer": 0.2222,
             "word_recall": 0.7778,
             "bujo_expected_items": 0,
+            "word_f1": 0.8235,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -327,6 +346,7 @@
             "wer": 0.125,
             "word_recall": 0.875,
             "bujo_expected_items": 0,
+            "word_f1": 0.875,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -340,10 +360,11 @@
           "latency_ms": 605.0,
           "metrics": {
             "cer": 0.5385,
-            "content_cer": 0.5385,
+            "content_cer": 0.5,
             "wer": 1.0,
             "word_recall": 0.0,
             "bujo_expected_items": 0,
+            "word_f1": 0.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -357,10 +378,11 @@
           "latency_ms": 1114.0,
           "metrics": {
             "cer": 0.5272,
-            "content_cer": 0.5272,
+            "content_cer": 0.523,
             "wer": 0.7961,
-            "word_recall": 0.82,
+            "word_recall": 0.31,
             "bujo_expected_items": 0,
+            "word_f1": 0.3974,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -374,11 +396,12 @@
           "latency_ms": 1512.0,
           "metrics": {
             "cer": 0.3398,
-            "content_cer": 0.3424,
+            "content_cer": 0.3346,
             "wer": 0.7767,
-            "word_recall": 0.8333,
-            "bujo_expected_items": 1,
-            "bujo_symbol_recall": 1.0,
+            "word_recall": 0.2941,
+            "bujo_expected_items": 0,
+            "word_f1": 0.3922,
+            "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
           },
@@ -393,8 +416,9 @@
             "cer": 0.0299,
             "content_cer": 0.0299,
             "wer": 0.05,
-            "word_recall": 1.0,
+            "word_recall": 0.95,
             "bujo_expected_items": 0,
+            "word_f1": 0.95,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -408,10 +432,11 @@
           "latency_ms": 1717.0,
           "metrics": {
             "cer": 0.0351,
-            "content_cer": 0.0351,
+            "content_cer": 0.0301,
             "wer": 0.24,
-            "word_recall": 0.9079,
+            "word_recall": 0.8904,
             "bujo_expected_items": 0,
+            "word_f1": 0.9091,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -425,13 +450,14 @@
           "latency_ms": 1610.0,
           "metrics": {
             "cer": 0.036,
-            "content_cer": 0.0368,
+            "content_cer": 0.034,
             "wer": 0.2778,
-            "word_recall": 0.9865,
-            "bujo_expected_items": 4,
-            "bujo_symbol_recall": 0.75,
+            "word_recall": 0.9857,
+            "bujo_expected_items": 0,
+            "word_f1": 0.9857,
+            "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
-            "bujo_indent_accuracy": 0.75
+            "bujo_indent_accuracy": null
           },
           "error": null
         },
@@ -444,8 +470,9 @@
             "cer": 0.1299,
             "content_cer": 0.1299,
             "wer": 0.2121,
-            "word_recall": 0.8969,
+            "word_recall": 0.8617,
             "bujo_expected_items": 0,
+            "word_f1": 0.895,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -463,6 +490,7 @@
             "wer": 0.0962,
             "word_recall": 0.9318,
             "bujo_expected_items": 0,
+            "word_f1": 0.9425,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -478,9 +506,10 @@
             "cer": 0.0123,
             "content_cer": 0.0127,
             "wer": 0.0541,
-            "word_recall": 0.973,
-            "bujo_expected_items": 5,
-            "bujo_symbol_recall": 1.0,
+            "word_recall": 0.9565,
+            "bujo_expected_items": 0,
+            "word_f1": 0.9496,
+            "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
           },
@@ -497,6 +526,7 @@
             "wer": 0.0,
             "word_recall": 1.0,
             "bujo_expected_items": 0,
+            "word_f1": 1.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -510,10 +540,11 @@
           "latency_ms": 605.0,
           "metrics": {
             "cer": 0.1607,
-            "content_cer": 0.1607,
+            "content_cer": 0.1429,
             "wer": 0.3636,
-            "word_recall": 0.75,
+            "word_recall": 0.6364,
             "bujo_expected_items": 0,
+            "word_f1": 0.7,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -531,6 +562,7 @@
             "wer": 1.0,
             "word_recall": 0.0,
             "bujo_expected_items": 0,
+            "word_f1": 0.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -548,6 +580,7 @@
             "wer": 1.0,
             "word_recall": 0.0,
             "bujo_expected_items": 0,
+            "word_f1": 0.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
