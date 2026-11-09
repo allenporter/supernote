@@ -66,6 +66,24 @@ NOTE_PROCESSING_DURATION_BUCKETS: tuple[float, ...] = (
     600.0,
 )
 
+PROCESSOR_TASK_DURATION_BUCKETS: tuple[float, ...] = (
+    0.01,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    2.5,
+    5.0,
+    10.0,
+    20.0,
+    45.0,
+    90.0,
+    180.0,
+    300.0,
+    600.0,
+)
+
 
 class AIStage(StrEnum):
     """Canonical pipeline/query stage labels for AI model metrics."""
@@ -141,6 +159,7 @@ PROCESSOR_TASK_DURATION_SECONDS: Histogram = Histogram(
     "supernote_processor_task_duration_seconds",
     "Latency of background pipeline tasks in seconds.",
     ["module"],
+    buckets=PROCESSOR_TASK_DURATION_BUCKETS,
 )
 
 PROCESSOR_QUEUE_SIZE: Gauge = Gauge(
