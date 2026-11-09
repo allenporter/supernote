@@ -175,7 +175,6 @@ Results across 30 `.note` pages (25 real handwritten pages covering Bullet Journ
 | `gemini:gemini-3.6-flash` | 30 | 99.7% | 4.2% | 3.6% | 90.5% | 97.3% | 6.63 s |
 | `gemini:gemini-3.8-flash` | 30 | 96.5% | 5.6% | 5.4% | 90.5% | 97.3% | 9.93 s |
 | `supernote-on-device` (`MyScript iink 4.1.0`) | 25 | 75.5% | 17.2% | 16.7% | 18.6% | 18.6% | 0.91 s |
-| `device-rtr` (embedded `.note` layer) | 8 | 77.7% | 12.8% | 12.0% | — | — | — |
 | `apple:vision-accurate` | 30 | 73.7% | 21.7% | 20.7% | 4.5% | 49.7% | 0.41 s |
 | `apple:vision-fast` | 30 | 17.8% | 72.8% | 70.7% | 0.0% | 8.7% | 0.13 s |
 
