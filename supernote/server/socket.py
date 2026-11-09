@@ -41,6 +41,7 @@ from supernote.server.events import (
     VfsItemDeletedEvent,
     VfsItemMovedEvent,
 )
+from supernote.server.keys import SOCKETIO_MANAGER_KEY
 from supernote.server.services.user import UserService
 from supernote.server.socket_auth import verify_handshake_signature
 
@@ -149,7 +150,7 @@ class SocketIOServerManager:
     def attach_to_app(self, app: web.Application) -> None:
         """Attach the Socket.IO server instance to an aiohttp web Application."""
         self._sio.attach(app)
-        app["socketio_manager"] = self
+        app[SOCKETIO_MANAGER_KEY] = self
 
     async def _send_error(self, sid: str, status: HTTPStatus, message: str) -> None:
         """Send a SocketMessageData error response to a specific session ID."""

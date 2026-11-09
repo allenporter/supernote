@@ -33,6 +33,19 @@ from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.ai.models.summary import SummaryModel
 from supernote.server.config import ServerConfig
 from supernote.server.exceptions import SupernoteError
+from supernote.server.keys import (
+    CONFIG_KEY,
+    CONVERSION_SERVICE_KEY,
+    EMBEDDING_MODEL_KEY,
+    OCR_MODEL_KEY,
+    PROCESSOR_SERVICE_KEY,
+    REQUEST_USER_KEY,
+    SEARCH_SERVICE_KEY,
+    SUMMARY_MODEL_KEY,
+    SUMMARY_SERVICE_KEY,
+    URL_SIGNER_KEY,
+    USER_SERVICE_KEY,
+)
 from supernote.server.services.conversion import ConversionService
 from supernote.server.services.processor import ProcessorService
 from supernote.server.services.search import SearchService
@@ -49,7 +62,7 @@ routes = web.RouteTableDef()
 async def handle_extended_file_summary_list(request: web.Request) -> web.Response:
     # Endpoint: POST /api/extended/file/summary/list
     # Purpose: Extended API to list summaries for a file.
-    user_email = request["user"]
+    user_email = request[REQUEST_USER_KEY]
     try:
         data = await request.json()
     except Exception:
@@ -60,7 +73,7 @@ async def handle_extended_file_summary_list(request: web.Request) -> web.Respons
     except Exception as e:
         return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
 
-    summary_service: SummaryService = request.app["summary_service"]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
         summaries = await summary_service.list_summaries_for_file_internal(
@@ -82,9 +95,9 @@ async def handle_extended_file_summary_list(request: web.Request) -> web.Respons
 async def handle_list_system_tasks(request: web.Request) -> web.Response:
     # Endpoint: GET /api/extended/system/tasks
     # Purpose: Extended API to list system tasks for the control panel.
-    user_email = request["user"]
-    user_service: UserService = request.app["user_service"]
-    processor_service: ProcessorService = request.app["processor_service"]
+    user_email = request[REQUEST_USER_KEY]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    processor_service: ProcessorService = request.app[PROCESSOR_SERVICE_KEY]
 
     user_id = await user_service.get_user_id(user_email)
     if not user_id:
@@ -117,7 +130,7 @@ async def handle_list_system_tasks(request: web.Request) -> web.Response:
 async def handle_file_processing_status(request: web.Request) -> web.Response:
     # Endpoint: POST /api/extended/file/processing/status
     # Purpose: Get aggregated processing status for a list of files.
-    user_email = request["user"]
+    user_email = request[REQUEST_USER_KEY]
     try:
         data = await request.json()
         req_dto = FileProcessingStatusDTO.from_dict(data)
@@ -131,8 +144,8 @@ async def handle_file_processing_status(request: web.Request) -> web.Response:
     ) as e:
         return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
 
-    user_service: UserService = request.app["user_service"]
-    processor_service: ProcessorService = request.app["processor_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    processor_service: ProcessorService = request.app[PROCESSOR_SERVICE_KEY]
 
     user_id = await user_service.get_user_id(user_email)
     if not user_id:
@@ -156,15 +169,15 @@ async def handle_file_processing_status(request: web.Request) -> web.Response:
 async def handle_extended_search(request: web.Request) -> web.Response:
     # Endpoint: POST /api/extended/search
     # Purpose: Semantic search across notebook content.
-    user_email = request["user"]
+    user_email = request[REQUEST_USER_KEY]
     try:
         data = await request.json()
         req_dto = WebSearchRequestDTO.from_dict(data)
     except Exception as e:
         return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
 
-    user_service: UserService = request.app["user_service"]
-    search_service: SearchService = request.app["search_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    search_service: SearchService = request.app[SEARCH_SERVICE_KEY]
 
     user_id = await user_service.get_user_id(user_email)
     if not user_id:
@@ -203,7 +216,7 @@ async def handle_extended_search(request: web.Request) -> web.Response:
 async def handle_extended_transcript(request: web.Request) -> web.Response:
     # Endpoint: POST /api/extended/transcript
     # Purpose: Retrieve structured per-page notebook transcript.
-    user_email = request["user"]
+    user_email = request[REQUEST_USER_KEY]
     try:
         data = await request.json()
         req_dto = WebTranscriptRequestDTO.from_dict(data)
@@ -217,8 +230,8 @@ async def handle_extended_transcript(request: web.Request) -> web.Response:
     ) as e:
         return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
 
-    user_service: UserService = request.app["user_service"]
-    search_service: SearchService = request.app["search_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    search_service: SearchService = request.app[SEARCH_SERVICE_KEY]
 
     user_id = await user_service.get_user_id(user_email)
     if not user_id:
@@ -258,9 +271,9 @@ async def handle_extended_transcript(request: web.Request) -> web.Response:
 async def handle_extended_ai_status(request: web.Request) -> web.Response:
     # Endpoint: GET /api/extended/ai/status
     # Purpose: Returns server AI processing configuration and capability health status.
-    ocr_model: OcrModel | None = request.app.get("ocr_model")
-    summary_model: SummaryModel | None = request.app.get("summary_model")
-    embedding_model: EmbeddingModel | None = request.app.get("embedding_model")
+    ocr_model: OcrModel | None = request.app.get(OCR_MODEL_KEY)
+    summary_model: SummaryModel | None = request.app.get(SUMMARY_MODEL_KEY)
+    embedding_model: EmbeddingModel | None = request.app.get(EMBEDDING_MODEL_KEY)
 
     ocr_enabled = ocr_model is not None
     ocr_model_id = ocr_model.model_id if ocr_model is not None else None
@@ -294,19 +307,19 @@ async def handle_extended_ai_status(request: web.Request) -> web.Response:
 async def handle_extended_note_cover(request: web.Request) -> web.Response:
     # Endpoint: POST /api/extended/file/note/cover
     # Purpose: Convert/fetch only the first page (page 0) PNG for lightweight explorer thumbnails.
-    user_email = request["user"]
+    user_email = request[REQUEST_USER_KEY]
     try:
         data = await request.json()
         req_dto = WebNoteCoverRequestDTO.from_dict(data)
     except (json.JSONDecodeError, MissingField, InvalidFieldValue, ValueError) as err:
         return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
 
-    config: ServerConfig = request.app["config"]
+    config: ServerConfig = request.app[CONFIG_KEY]
     if not (config.web_enabled and config.web_notebook_preview):
         return web.json_response(WebNoteCoverVO(url=None).to_dict())
 
-    conversion_service: ConversionService = request.app["conversion_service"]
-    url_signer: UrlSigner = request.app["url_signer"]
+    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
+    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
 
     try:
         page_numbers = await conversion_service.convert_note_to_png(

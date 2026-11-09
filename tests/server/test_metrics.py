@@ -24,6 +24,7 @@ from supernote.server.ai.models.openai.summary import OpenAISummaryModel
 from supernote.server.ai.models.summary import InstrumentedSummaryModel
 from supernote.server.app import create_app
 from supernote.server.config import ServerConfig
+from supernote.server.keys import SESSION_MANAGER_KEY
 from supernote.server.metrics import (
     AI_LATENCY_BUCKETS,
     NOTE_PROCESSING_DURATION_BUCKETS,
@@ -107,7 +108,7 @@ async def test_metrics_disabled(
 
 async def test_db_session_metrics(client: TestClient) -> None:
     """Verify that DatabaseSessionManager correctly tracks session open/close and errors."""
-    session_manager = client.app["session_manager"]
+    session_manager = client.app[SESSION_MANAGER_KEY]
 
     # Verify active session count increases inside context manager
     before = REGISTRY.get_sample_value("supernote_db_sessions_active") or 0.0

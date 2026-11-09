@@ -36,6 +36,7 @@ from supernote.client.auth import FileCacheAuth
 from supernote.models.summary import AddSummaryDTO
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.keys import SUMMARY_SERVICE_KEY
 from supernote.server.services.summary import SummaryService
 
 from .conftest import ADMIN_EMAIL, ADMIN_PASSWORD, CliServerEnv
@@ -261,7 +262,7 @@ async def test_async_cloud_insights_success(
     capsys.readouterr()
 
     assert cli_env.client.app is not None
-    summary_service: SummaryService = cli_env.client.app["summary_service"]
+    summary_service: SummaryService = cli_env.client.app[SUMMARY_SERVICE_KEY]
     async with cli_env.session_manager.session() as session:
         user_file = (
             await session.execute(

@@ -44,6 +44,11 @@ from supernote.server.constants import (
     SYSTEM_ROOT_DIRECTORIES,
 )
 from supernote.server.exceptions import SupernoteError
+from supernote.server.keys import (
+    FILE_SERVICE_KEY,
+    REQUEST_USER_KEY,
+    URL_SIGNER_KEY,
+)
 from supernote.server.services.file import (
     FileEntity,
     FileService,
@@ -114,8 +119,8 @@ async def handle_capacity_query_cloud(request: web.Request) -> web.Response:
     # Purpose: Get storage capacity usage (Cloud).
     # Response: CapacityVO
 
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         used = await file_service.get_storage_usage(user_email)
@@ -139,8 +144,8 @@ async def handle_recycle_list(request: web.Request) -> web.Response:
     # Purpose: List files in recycle bin.
 
     req_data = RecycleFileListDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         recycle_files = await file_service.list_recycle(
@@ -183,8 +188,8 @@ async def handle_recycle_delete(request: web.Request) -> web.Response:
     # Response: BaseVO
 
     req_data = RecycleFileDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         await file_service.delete_from_recycle(user_email, req_data.id_list)
@@ -200,8 +205,8 @@ async def handle_recycle_revert(request: web.Request) -> web.Response:
     # Response: BaseVO
 
     req_data = RecycleFileDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         await file_service.revert_from_recycle(user_email, req_data.id_list)
@@ -215,8 +220,8 @@ async def handle_recycle_clear(request: web.Request) -> web.Response:
     # Endpoint: POST /api/file/recycle/clear
     # Purpose: Empty the recycle bin.
 
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         await file_service.clear_recycle(user_email)
@@ -232,8 +237,8 @@ async def handle_path_query(request: web.Request) -> web.Response:
     # Response: FilePathQueryVO
 
     req_data = FilePathQueryDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         path_info = await file_service.get_path_info(user_email, req_data.id)
@@ -269,9 +274,9 @@ async def handle_download_url(request: web.Request) -> web.Response:
     # Response: FileDownloadUrlVO
 
     req_data = FileDownloadDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
-    url_signer: UrlSigner = request.app["url_signer"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
+    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
 
     try:
         info = await file_service.get_file_info_by_id(user_email, req_data.id)
@@ -311,8 +316,8 @@ async def handle_file_list_query(request: web.Request) -> web.Response:
     # Response: FileListQueryVO
 
     req_data = FileListQueryDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         file_entities = await file_service.query_file_list(
@@ -392,8 +397,8 @@ async def handle_file_search(request: web.Request) -> web.Response:
     # Response: FileLabelSearchVO
 
     req_data = FileLabelSearchDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         search_term = req_data.keyword or req_data.file_name or ""
@@ -452,8 +457,8 @@ async def handle_folder_add(request: web.Request) -> web.Response:
     # Response: FolderVO
 
     req_data = FolderAddDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         new_dir = await file_service.create_directory_by_id(
@@ -489,8 +494,8 @@ async def handle_folder_list_query(request: web.Request) -> web.Response:
     # Response: FolderListQueryVO
 
     req_data = FolderListQueryDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         # Initial query
@@ -543,8 +548,8 @@ async def handle_file_move_web(request: web.Request) -> web.Response:
     # Response: BaseResponse
 
     req_data = FileMoveAndCopyDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         await file_service.move_items(
@@ -562,8 +567,8 @@ async def handle_file_copy_web(request: web.Request) -> web.Response:
     # Response: BaseResponse
 
     req_data = FileMoveAndCopyDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         await file_service.copy_items(
@@ -581,8 +586,8 @@ async def handle_file_rename_web(request: web.Request) -> web.Response:
     # Response: BaseResponse
 
     req_data = FileReNameDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         await file_service.rename_item(user_email, req_data.id, req_data.new_name)
@@ -598,8 +603,8 @@ async def handle_file_delete(request: web.Request) -> web.Response:
     # Response: BaseResponse
 
     req_data = FileDeleteDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         await file_service.delete_items(
@@ -619,9 +624,9 @@ async def handle_file_upload_apply(request: web.Request) -> web.Response:
     # Response: FileUploadApplyLocalVO
 
     req_data = FileUploadApplyDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
-    url_signer: UrlSigner = request.app["url_signer"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
+    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
 
     try:
         await file_service.check_upload_apply_web(
@@ -659,8 +664,8 @@ async def handle_file_upload_finish(request: web.Request) -> web.Response:
     # Response: BaseResponse
 
     req_data = FileUploadFinishDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         await file_service.upload_finish_web(

@@ -40,6 +40,16 @@ from supernote.server.events import (
     LocalEventBus,
     SyncCompletedEvent,
 )
+from supernote.server.keys import (
+    BLOB_STORAGE_KEY,
+    CONFIG_KEY,
+    EVENT_BUS_KEY,
+    FILE_SERVICE_KEY,
+    SCHEDULE_SERVICE_KEY,
+    SOCKETIO_MANAGER_KEY,
+    SUMMARY_SERVICE_KEY,
+    USER_SERVICE_KEY,
+)
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.services.schedule import ScheduleService
@@ -99,7 +109,7 @@ async def test_socketio_ping_pong(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
 ) -> None:
-    user_service: UserService = socketio_server.app["user_service"]
+    user_service: UserService = socketio_server.app[USER_SERVICE_KEY]
     token_a = await user_service.create_session("test@example.com")
     params_a = _make_handshake_params(token_a)
 
@@ -118,7 +128,7 @@ async def test_socketio_status_heartbeat(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
 ) -> None:
-    user_service: UserService = socketio_server.app["user_service"]
+    user_service: UserService = socketio_server.app[USER_SERVICE_KEY]
     token_a = await user_service.create_session("test@example.com")
     params_a = _make_handshake_params(token_a)
 
@@ -142,7 +152,7 @@ async def test_socketio_multi_user_message_isolation(
     create_socket_client: Callable[[], SupernoteSocketClient],
     create_test_user: None,
 ) -> None:
-    user_service: UserService = socketio_server.app["user_service"]
+    user_service: UserService = socketio_server.app[USER_SERVICE_KEY]
     user_a = "test@example.com"
     user_b = "a@example.com"
     user_a_id = await user_service.get_user_id(user_a)
@@ -162,7 +172,7 @@ async def test_socketio_multi_user_message_isolation(
     assert client_a.is_connected
     assert client_b.is_connected
 
-    manager: SocketIOServerManager = socketio_server.app["socketio_manager"]
+    manager: SocketIOServerManager = socketio_server.app[SOCKETIO_MANAGER_KEY]
     assert manager.sio is not None
 
     # Send a message targeted ONLY to User A
@@ -247,7 +257,7 @@ async def test_socketio_client_received_ack(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
 ) -> None:
-    user_service: UserService = socketio_server.app["user_service"]
+    user_service: UserService = socketio_server.app[USER_SERVICE_KEY]
     token_a = await user_service.create_session("test@example.com")
     params_a = _make_handshake_params(token_a)
 
@@ -267,7 +277,7 @@ async def test_socketio_client_messages_async_iterator(
     socketio_server: TestServer,
     socket_client: SupernoteSocketClient,
 ) -> None:
-    user_service: UserService = socketio_server.app["user_service"]
+    user_service: UserService = socketio_server.app[USER_SERVICE_KEY]
     user_email = "test@example.com"
     user_id = await user_service.get_user_id(user_email)
     token_a = await user_service.create_session(user_email)
@@ -275,7 +285,7 @@ async def test_socketio_client_messages_async_iterator(
 
     await socket_client.connect(params_a)
 
-    manager: SocketIOServerManager = socketio_server.app["socketio_manager"]
+    manager: SocketIOServerManager = socketio_server.app[SOCKETIO_MANAGER_KEY]
     msg_data = SocketMessageData(
         msg="test message",
         timestamp=1700000000000,
@@ -333,7 +343,7 @@ async def test_socketio_client_messages_async_iterator(
     assert received_digest.data[0].id == 302
 
     # Verify LocalEventBus SyncCompletedEvent triggers STARTSYNC on ServerMessage
-    event_bus: LocalEventBus = socketio_server.app["event_bus"]
+    event_bus: LocalEventBus = socketio_server.app[EVENT_BUS_KEY]
     await event_bus.publish(
         SyncCompletedEvent(
             user_id=user_id,
@@ -356,8 +366,8 @@ async def test_socketio_revoked_session_disconnected_on_heartbeat_and_send(
     create_socket_client: Callable[[], SupernoteSocketClient],
 ) -> None:
     """Verify revoked sessions are disconnected on heartbeat or outbound send_message."""
-    user_service: UserService = socketio_server.app["user_service"]
-    manager: SocketIOServerManager = socketio_server.app["socketio_manager"]
+    user_service: UserService = socketio_server.app[USER_SERVICE_KEY]
+    manager: SocketIOServerManager = socketio_server.app[SOCKETIO_MANAGER_KEY]
     user_email = "test@example.com"
     user_id = await user_service.get_user_id(user_email)
 
@@ -409,8 +419,8 @@ async def test_socketio_schedule_service_events_publish_task_syn(
     socket_client: SupernoteSocketClient,
 ) -> None:
     """Verify ScheduleService mutations publish ScheduleUpdatedEvent and emit TASK-SYN messages."""
-    user_service: UserService = socketio_server.app["user_service"]
-    schedule_service: ScheduleService = socketio_server.app["schedule_service"]
+    user_service: UserService = socketio_server.app[USER_SERVICE_KEY]
+    schedule_service: ScheduleService = socketio_server.app[SCHEDULE_SERVICE_KEY]
     user_email = "test@example.com"
     user_id = await user_service.get_user_id(user_email)
 
@@ -592,7 +602,7 @@ async def test_socketio_schedule_service_events_publish_task_syn(
 
     # Standalone manager without event_bus initializes cleanly
     standalone_manager = SocketIOServerManager(
-        socketio_server.app["config"], user_service, event_bus=None
+        socketio_server.app[CONFIG_KEY], user_service, event_bus=None
     )
     assert standalone_manager.event_bus is None
 
@@ -605,8 +615,8 @@ async def test_socketio_summary_service_events_publish_digest_syn(
     socket_client: SupernoteSocketClient,
 ) -> None:
     """Verify SummaryService tag, group, and summary mutations publish DIGEST-SYN Socket.IO notifications."""
-    user_service: UserService = socketio_server.app["user_service"]
-    summary_service: SummaryService = socketio_server.app["summary_service"]
+    user_service: UserService = socketio_server.app[USER_SERVICE_KEY]
+    summary_service: SummaryService = socketio_server.app[SUMMARY_SERVICE_KEY]
     user_email = "test@example.com"
     user_id = await user_service.get_user_id(user_email)
 
@@ -912,9 +922,9 @@ async def test_socketio_file_service_events_publish_file_syn(
     socket_client: SupernoteSocketClient,
 ) -> None:
     """Verify FileService folder and file mutations publish FILE-SYN Socket.IO notifications."""
-    user_service: UserService = socketio_server.app["user_service"]
-    file_service: FileService = socketio_server.app["file_service"]
-    blob_storage: BlobStorage = socketio_server.app["blob_storage"]
+    user_service: UserService = socketio_server.app[USER_SERVICE_KEY]
+    file_service: FileService = socketio_server.app[FILE_SERVICE_KEY]
+    blob_storage: BlobStorage = socketio_server.app[BLOB_STORAGE_KEY]
     user_email = "test@example.com"
 
     token = await user_service.create_session(user_email)
@@ -1311,8 +1321,8 @@ async def test_socketio_eio3_device_handshake_and_ping_compat(
     socketio_server: TestServer,
 ) -> None:
     """Verify real Supernote device EIO=3 (Socket.IO v2) WebSocket handshake, ACKs, and client PING/PONG."""
-    user_service: UserService = socketio_server.app["user_service"]
-    manager: SocketIOServerManager = socketio_server.app["socketio_manager"]
+    user_service: UserService = socketio_server.app[USER_SERVICE_KEY]
+    manager: SocketIOServerManager = socketio_server.app[SOCKETIO_MANAGER_KEY]
     user_email = "test@example.com"
     user_id = await user_service.get_user_id(user_email)
 
@@ -1392,8 +1402,8 @@ async def test_socketio_client_channels_and_error_handling_via_server(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Verify SupernoteSocketClient handles TASK-SYN, DIGEST-SYN, malformed payloads, and unexpected server replies."""
-    user_service: UserService = socketio_server.app["user_service"]
-    manager: SocketIOServerManager = socketio_server.app["socketio_manager"]
+    user_service: UserService = socketio_server.app[USER_SERVICE_KEY]
+    manager: SocketIOServerManager = socketio_server.app[SOCKETIO_MANAGER_KEY]
     user_email = "test@example.com"
     user_id = await user_service.get_user_id(user_email)
 
@@ -1466,7 +1476,7 @@ async def test_socketio_ratta_ping_without_payload(
     socketio_server: TestServer,
 ) -> None:
     """Devices emit `ratta_ping` and `ClientMessage` with no arguments or extra positional args."""
-    user_service: UserService = socketio_server.app["user_service"]
+    user_service: UserService = socketio_server.app[USER_SERVICE_KEY]
     user_id = "test@example.com"
     token = await user_service.create_session(user_id)
     params = _make_handshake_params(token)

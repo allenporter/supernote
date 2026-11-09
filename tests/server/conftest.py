@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import pytest_asyncio
 from aiohttp.test_utils import TestClient
 from pytest_aiohttp import AiohttpClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -226,7 +227,7 @@ async def auth_headers_fixture(
     }
 
 
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def _session_manager_shared(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> AsyncGenerator[DatabaseSessionManager]:

@@ -24,6 +24,31 @@ from .config import AuthConfig, ServerConfig
 from .constants import MAX_UPLOAD_SIZE
 from .db.session import DatabaseSessionManager
 from .events import LocalEventBus
+from .keys import (
+    BLOB_STORAGE_KEY,
+    CONFIG_KEY,
+    CONVERSION_SERVICE_KEY,
+    COORDINATION_SERVICE_KEY,
+    EMBEDDING_MODEL_KEY,
+    EVENT_BUS_KEY,
+    FILE_SERVICE_KEY,
+    INTEGRITY_SERVICE_KEY,
+    MCP_ASGI_RESOURCE_KEY,
+    MCP_TASK_KEY,
+    OCR_MODEL_KEY,
+    PROCESSOR_SERVICE_KEY,
+    RATE_LIMITER_KEY,
+    REQUEST_EQUIPMENT_NO_KEY,
+    REQUEST_USER_KEY,
+    SCHEDULE_SERVICE_KEY,
+    SEARCH_SERVICE_KEY,
+    SESSION_MANAGER_KEY,
+    SUMMARY_MODEL_KEY,
+    SUMMARY_SERVICE_KEY,
+    URL_SIGNER_KEY,
+    USER_SERVICE_KEY,
+    WEBHOOK_SERVICE_KEY,
+)
 from .metrics import HTTP_REQUEST_DURATION_SECONDS, HTTP_REQUESTS_TOTAL
 from .routes import (
     admin,
@@ -127,7 +152,7 @@ async def jwt_auth_middleware(
     if isinstance(route, SystemRoute):
         return await handler(request)
 
-    if route.resource and route.resource is request.app.get("mcp_asgi_resource"):
+    if route.resource and route.resource is request.app.get(MCP_ASGI_RESOURCE_KEY):
         return await handler(request)
 
     handler_func = getattr(route, "handler", None)
@@ -153,15 +178,15 @@ async def jwt_auth_middleware(
             create_error_response("Unauthorized").to_dict(), status=401
         )
 
-    user_service: UserService = request.app["user_service"]
+    user_service = request.app[USER_SERVICE_KEY]
     session = await user_service.verify_token(token)
     if not session:
         return web.json_response(
             create_error_response("Invalid token").to_dict(), status=401
         )
 
-    request["user"] = session.email
-    request["equipment_no"] = session.equipment_no
+    request[REQUEST_USER_KEY] = session.email
+    request[REQUEST_EQUIPMENT_NO_KEY] = session.equipment_no
     return await handler(request)
 
 
@@ -197,7 +222,7 @@ def create_user_service(
 
 def create_app(config: ServerConfig) -> web.Application:
     app = web.Application(client_max_size=MAX_UPLOAD_SIZE)
-    app["config"] = config
+    app[CONFIG_KEY] = config
 
     # Initialize services
     blob_storage = LocalBlobStorage(config.storage_root)
@@ -205,11 +230,11 @@ def create_app(config: ServerConfig) -> web.Application:
     session_manager = create_db_session_manager(config.db_url)
     coordination_service = create_coordination_service(session_manager)
 
-    app["session_manager"] = session_manager
-    app["coordination_service"] = coordination_service
-    app["blob_storage"] = blob_storage
+    app[SESSION_MANAGER_KEY] = session_manager
+    app[COORDINATION_SERVICE_KEY] = coordination_service
+    app[BLOB_STORAGE_KEY] = blob_storage
     event_bus = LocalEventBus()
-    app["event_bus"] = event_bus
+    app[EVENT_BUS_KEY] = event_bus
 
     user_service = create_user_service(
         config.auth, coordination_service, session_manager
@@ -222,33 +247,33 @@ def create_app(config: ServerConfig) -> web.Application:
         event_bus,
         default_user_quota=config.default_user_quota,
     )
-    app["user_service"] = user_service
-    app["file_service"] = file_service
-    app["integrity_service"] = IntegrityService(session_manager, blob_storage)
-    app["schedule_service"] = ScheduleService(session_manager, event_bus)
+    app[USER_SERVICE_KEY] = user_service
+    app[FILE_SERVICE_KEY] = file_service
+    app[INTEGRITY_SERVICE_KEY] = IntegrityService(session_manager, blob_storage)
+    app[SCHEDULE_SERVICE_KEY] = ScheduleService(session_manager, event_bus)
     ocr_model = create_ocr_model(config)
     summary_model = create_summary_model(config)
     embedding_model = create_embedding_model(config)
-    app["ocr_model"] = ocr_model
-    app["summary_model"] = summary_model
-    app["embedding_model"] = embedding_model
+    app[OCR_MODEL_KEY] = ocr_model
+    app[SUMMARY_MODEL_KEY] = summary_model
+    app[EMBEDDING_MODEL_KEY] = embedding_model
 
     if config.prompts_dir:
         PROMPT_LOADER.configure(Path(config.prompts_dir))
 
     summary_service = SummaryService(user_service, session_manager, event_bus)
-    app["summary_service"] = summary_service
+    app[SUMMARY_SERVICE_KEY] = summary_service
 
     search_service = SearchService(session_manager, embedding_model)
-    app["search_service"] = search_service
+    app[SEARCH_SERVICE_KEY] = search_service
 
-    app["rate_limiter"] = RateLimiter(coordination_service)
+    app[RATE_LIMITER_KEY] = RateLimiter(coordination_service)
 
     processor_service = ProcessorService(
         event_bus, session_manager, file_service, summary_service, coordination_service
     )
-    app["processor_service"] = processor_service
-    app["conversion_service"] = ConversionService(
+    app[PROCESSOR_SERVICE_KEY] = processor_service
+    app[CONVERSION_SERVICE_KEY] = ConversionService(
         session_manager=session_manager,
         blob_storage=blob_storage,
         user_service=user_service,
@@ -256,7 +281,7 @@ def create_app(config: ServerConfig) -> web.Application:
     )
 
     webhook_service = WebhookService(config.webhooks, event_bus, user_service)
-    app["webhook_service"] = webhook_service
+    app[WEBHOOK_SERVICE_KEY] = webhook_service
 
     # Register modules
     png_enabled = (ocr_model is not None) or (
@@ -345,7 +370,7 @@ def create_app(config: ServerConfig) -> web.Application:
         await asyncio.to_thread(run_migrations, config.db_url, config=config)
 
         secret_key = await user_service.get_secret_key()
-        app["url_signer"] = UrlSigner(secret_key, coordination_service)
+        app[URL_SIGNER_KEY] = UrlSigner(secret_key, coordination_service)
 
         if config.ephemeral:
             await bootstrap_ephemeral_user(app)
@@ -364,19 +389,21 @@ def create_app(config: ServerConfig) -> web.Application:
 
             logger.info(f"Mounting MCP Authorization Server at {config.base_url}")
             auth_app = create_auth_app(
-                app["user_service"], app["coordination_service"], config.base_url
+                app[USER_SERVICE_KEY], app[COORDINATION_SERVICE_KEY], config.base_url
             )
             asgi_resource = ASGIResource(auth_app)
             app.router.register_resource(asgi_resource)
-            app["mcp_asgi_resource"] = asgi_resource
+            app[MCP_ASGI_RESOURCE_KEY] = asgi_resource
 
             # Inject services and start MCP server on a separate port
             set_services(
-                app["search_service"], app["user_service"], app["coordination_service"]
+                app[SEARCH_SERVICE_KEY],
+                app[USER_SERVICE_KEY],
+                app[COORDINATION_SERVICE_KEY],
             )
             mcp_port = config.mcp_port
             mcp_server = create_mcp_server(config.base_url, rs_url)
-            app["mcp_task"] = asyncio.create_task(
+            app[MCP_TASK_KEY] = asyncio.create_task(
                 run_server(mcp_server, config.host, mcp_port, config.proxy_mode)
             )
 
@@ -388,7 +415,7 @@ def create_app(config: ServerConfig) -> web.Application:
     app.on_startup.append(on_startup_handler)
 
     async def on_shutdown_handler(app: web.Application) -> None:
-        if mcp_task := app.get("mcp_task"):
+        if mcp_task := app.get(MCP_TASK_KEY):
             mcp_task.cancel()
             try:
                 await mcp_task
@@ -406,7 +433,7 @@ def create_app(config: ServerConfig) -> web.Application:
 
 async def bootstrap_ephemeral_user(app: web.Application) -> None:
     """Create a default admin user and system folders for ephemeral mode if not present."""
-    user_service: UserService = app["user_service"]
+    user_service = app[USER_SERVICE_KEY]
     if not await user_service.check_user_exists("debug@example.com"):
         logger.info("Creating default user debug@example.com / password")
         await user_service.register(

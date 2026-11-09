@@ -7,6 +7,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from supernote.server.config import ServerConfig
+from supernote.server.keys import CONFIG_KEY
 from supernote.server.trace import (
     ACCESS_LOG_FORMAT,
     SanitizedAccessLogger,
@@ -135,7 +136,7 @@ async def test_sanitized_access_logger_redacts_and_supports_unsafe_mode(
     """Verify SanitizedAccessLogger redacts URL tokens and headers using ACCESS_LOG_FORMAT."""
     config = ServerConfig(trace_log_unsafe=False)
     app = web.Application()
-    app["config"] = config
+    app[CONFIG_KEY] = config
 
     async def ok_handler(_request: web.Request) -> web.Response:
         return web.Response(text="ok")

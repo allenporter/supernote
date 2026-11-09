@@ -297,6 +297,10 @@ def create_mcp_server(issuer_url: str, resource_server_url: str) -> MCPServer:
         auth=AuthSettings(
             issuer_url=AnyHttpUrl(issuer_url),
             resource_server_url=AnyHttpUrl(resource_server_url),
+            # SupernoteTokenVerifier validates opaque tokens stored in the
+            # server-local mcp:access_token:* namespace exclusively for this
+            # embedded MCP resource server.
+            validate_token_resource=False,
         ),
         token_verifier=token_verifier,
     )

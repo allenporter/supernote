@@ -16,6 +16,7 @@ from supernote.models.socket import (
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import RecycleFileDO, UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.keys import FILE_SERVICE_KEY, SOCKETIO_MANAGER_KEY
 from supernote.server.routes.file_device import SYNC_LOCK_KEY_PREFIX, SYNC_LOCK_TIMEOUT
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.coordination import CoordinationService
@@ -129,7 +130,7 @@ async def test_sync_lock(
     lock_key = f"{SYNC_LOCK_KEY_PREFIX}{user_id}"
 
     with patch.object(
-        client.app["socketio_manager"], "send_message", new_callable=AsyncMock
+        client.app[SOCKETIO_MANAGER_KEY], "send_message", new_callable=AsyncMock
     ) as mock_send_message:
         # 1. Start sync from SN123 -> stored in CoordinationService (no Socket.IO event emitted on start)
         resp = await client.post(
@@ -190,7 +191,7 @@ async def test_sync_end_opportunistic_recycle_cleanup(
     blob_storage: BlobStorage,
 ) -> None:
     """Verify device sync completion (synchronous/end) opportunistically purges >30-day recycle bin items."""
-    file_service: FileService = client.app["file_service"]
+    file_service: FileService = client.app[FILE_SERVICE_KEY]
     user_email = "test@example.com"
 
     expired_upload = await device_client.upload_content(

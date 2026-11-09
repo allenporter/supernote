@@ -43,6 +43,16 @@ from supernote.models.file_device import (
 from supernote.server.config import ServerConfig
 from supernote.server.events import LocalEventBus, SyncCompletedEvent
 from supernote.server.exceptions import SupernoteError
+from supernote.server.keys import (
+    CONFIG_KEY,
+    CONVERSION_SERVICE_KEY,
+    COORDINATION_SERVICE_KEY,
+    EVENT_BUS_KEY,
+    FILE_SERVICE_KEY,
+    REQUEST_USER_KEY,
+    URL_SIGNER_KEY,
+    USER_SERVICE_KEY,
+)
 from supernote.server.services.conversion import ConversionService
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.file import (
@@ -96,10 +106,10 @@ async def handle_sync_start(request: web.Request) -> web.Response:
     # Purpose: Start a file synchronization session.
     # Response: SynchronousStartLocalVO
     req_data = SynchronousStartLocalDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
-    user_service: UserService = request.app["user_service"]
-    coordination_service: CoordinationService = request.app["coordination_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    coordination_service: CoordinationService = request.app[COORDINATION_SERVICE_KEY]
     equipment_no = req_data.equipment_no or ""
 
     try:
@@ -150,10 +160,12 @@ async def handle_sync_end(request: web.Request) -> web.Response:
     # Response: SynchronousEndLocalVO
     try:
         req_data = SynchronousEndLocalDTO.from_dict(await request.json())
-        user_email = request["user"]
-        user_service: UserService = request.app["user_service"]
-        file_service: FileService = request.app["file_service"]
-        coordination_service: CoordinationService = request.app["coordination_service"]
+        user_email = request[REQUEST_USER_KEY]
+        user_service: UserService = request.app[USER_SERVICE_KEY]
+        file_service: FileService = request.app[FILE_SERVICE_KEY]
+        coordination_service: CoordinationService = request.app[
+            COORDINATION_SERVICE_KEY
+        ]
         user_id = await user_service.get_user_id(user_email)
 
         # Release lock if held by this equipment
@@ -174,7 +186,7 @@ async def handle_sync_end(request: web.Request) -> web.Response:
                 logger.warning(
                     f"Failed opportunistic recycle bin cleanup for user {user_id}: {err}"
                 )
-            event_bus: LocalEventBus = request.app["event_bus"]
+            event_bus: LocalEventBus = request.app[EVENT_BUS_KEY]
             await event_bus.publish(
                 SyncCompletedEvent(
                     user_id=user_id,
@@ -199,8 +211,8 @@ async def handle_list_folder(request: web.Request) -> web.Response:
 
     req_data = ListFolderV2DTO.from_dict(await request.json())
     path_str = req_data.path
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         entities = await file_service.list_folder(
@@ -229,8 +241,8 @@ async def handle_list_folder_v3(request: web.Request) -> web.Response:
 
     req_data = ListFolderLocalDTO.from_dict(await request.json())
     folder_id = req_data.id
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         entities = await file_service.list_folder_by_id(
@@ -259,9 +271,9 @@ async def handle_capacity_query(request: web.Request) -> web.Response:
 
     req_data = await request.json()
     equipment_no = req_data.get("equipmentNo", "")
-    user_email = request["user"]
+    user_email = request[REQUEST_USER_KEY]
 
-    file_service: FileService = request.app["file_service"]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
     try:
         used = await file_service.get_storage_usage(user_email)
         allocated = await file_service.get_storage_quota(user_email)
@@ -290,8 +302,8 @@ async def handle_query_by_path(request: web.Request) -> web.Response:
 
     req_data = FileQueryByPathLocalDTO.from_dict(await request.json())
     path_str = req_data.path
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         entity = await file_service.get_file_info(user_email, path_str)
@@ -315,8 +327,8 @@ async def handle_query_v3(request: web.Request) -> web.Response:
 
     req_data = FileQueryLocalDTO.from_dict(await request.json())
     file_id = req_data.id
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         entity = await file_service.get_file_info_by_id(user_email, int(file_id))
@@ -340,8 +352,8 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
 
     req_data = FileUploadApplyLocalDTO.from_dict(await request.json())
     file_name = req_data.file_name
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         try:
@@ -353,7 +365,7 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
             user_email, req_data.path, file_name, prospective_size
         )
 
-        url_signer: UrlSigner = request.app["url_signer"]
+        url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
 
         # Generate a unique inner name for storage
         inner_name = generate_inner_name(file_name, req_data.equipment_no)
@@ -362,7 +374,9 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
         # Simple Upload URL: /api/oss/upload?path={name}&timestamp={ms}
         base_url = get_request_base_url(request)
         simple_path = f"/api/oss/upload?path={encoded_name}"
-        full_upload_url_path = await url_signer.sign(simple_path, user=request["user"])
+        full_upload_url_path = await url_signer.sign(
+            simple_path, user=request[REQUEST_USER_KEY]
+        )
         full_upload_url = f"{base_url}{full_upload_url_path}"
 
         # Extract signature and timestamp using UrlSigner helpers
@@ -374,7 +388,9 @@ async def handle_upload_apply(request: web.Request) -> web.Response:
         # Part Upload URL: /api/oss/upload/part?path={name}
         # Client will append &uploadId=...&partNumber=...
         part_path = f"/api/oss/upload/part?path={encoded_name}"
-        part_upload_url_path = await url_signer.sign(part_path, user=request["user"])
+        part_upload_url_path = await url_signer.sign(
+            part_path, user=request[REQUEST_USER_KEY]
+        )
         part_upload_url = f"{base_url}{part_upload_url_path}"
 
         return web.json_response(
@@ -401,8 +417,8 @@ async def handle_upload_finish(request: web.Request) -> web.Response:
     # Response: FileUploadFinishLocalVO
 
     req_data = FileUploadFinishLocalDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     if not req_data.inner_name:
         return web.json_response(
@@ -448,8 +464,8 @@ async def handle_download_apply(request: web.Request) -> web.Response:
 
     req_data = FileDownloadLocalDTO.from_dict(await request.json())
     file_id = int(req_data.id)
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         # Verify file exists using VFS
@@ -461,7 +477,7 @@ async def handle_download_apply(request: web.Request) -> web.Response:
             )
 
         # Generate signed download URL
-        url_signer: UrlSigner = request.app["url_signer"]
+        url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
 
         # OSS download URL: /api/oss/download?path={id}
         path_to_sign = f"/api/oss/download?path={info.id}"
@@ -508,8 +524,8 @@ async def handle_create_folder(request: web.Request) -> web.Response:
     # Response: CreateFolderLocalVO
 
     req_data = CreateFolderLocalDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         entry = await file_service.create_directory(user_email, req_data.path)
@@ -532,8 +548,8 @@ async def handle_delete_folder(request: web.Request) -> web.Response:
     # Response: DeleteFolderLocalVO
 
     req_data = DeleteFolderLocalDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         deleted_item = await file_service.delete_item(
@@ -560,8 +576,8 @@ async def handle_move_file(request: web.Request) -> web.Response:
     # Response: FileMoveLocalVO
 
     req_data = FileMoveLocalDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         result = await file_service.move_item(
@@ -589,8 +605,8 @@ async def handle_copy_file(request: web.Request) -> web.Response:
     # Response: FileCopyLocalVO
 
     req_data = FileCopyLocalDTO.from_dict(await request.json())
-    user_email = request["user"]
-    file_service: FileService = request.app["file_service"]
+    user_email = request[REQUEST_USER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
 
     try:
         result = await file_service.copy_item(
@@ -617,14 +633,14 @@ async def handle_note_to_png(request: web.Request) -> web.Response:
     # Purpose: Convert a note to PNG.
     # Response: PngVO
     req_data = PngDTO.from_dict(await request.json())
-    user_email = request["user"]
-    config: ServerConfig = request.app["config"]
+    user_email = request[REQUEST_USER_KEY]
+    config: ServerConfig = request.app[CONFIG_KEY]
 
     if not (config.web_enabled and config.web_notebook_preview):
         return web.json_response(PngVO(png_page_vo_list=[]).to_dict())
 
-    conversion_service: ConversionService = request.app["conversion_service"]
-    url_signer: UrlSigner = request.app["url_signer"]
+    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
+    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
 
     try:
         page_numbers = await conversion_service.convert_note_to_png(
@@ -655,9 +671,9 @@ async def handle_note_to_pdf(request: web.Request) -> web.Response:
     # Purpose: Convert a note to PDF.
     # Response: PdfVO
     req_data = PdfDTO.from_dict(await request.json())
-    user_email = request["user"]
-    conversion_service: ConversionService = request.app["conversion_service"]
-    url_signer: UrlSigner = request.app["url_signer"]
+    user_email = request[REQUEST_USER_KEY]
+    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
+    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
 
     try:
         await conversion_service.convert_note_to_pdf(
