@@ -14,13 +14,7 @@ from enum import StrEnum
 from prometheus_client import Counter, Gauge, Histogram
 
 __all__ = [
-    "AI_LATENCY_BUCKETS",
-    "AI_REQUESTS_TOTAL",
-    "AI_REQUEST_DURATION_SECONDS",
-    "AI_TOKENS_TOTAL",
-    "AIRequestStatus",
     "AIStage",
-    "AITokenType",
     "DB_SESSIONS_ACTIVE",
     "DB_SESSION_ERRORS_TOTAL",
     "HTTP_REQUESTS_TOTAL",
@@ -62,7 +56,7 @@ class AIStage(StrEnum):
     EMBEDDING_QUERY = "embedding_query"
 
 
-class AIRequestStatus(StrEnum):
+class _AIRequestStatus(StrEnum):
     """Terminal status labels for logical AI model invocations."""
 
     SUCCESS = "success"
@@ -70,7 +64,7 @@ class AIRequestStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
-class AITokenType(StrEnum):
+class _AITokenType(StrEnum):
     """Mutually exclusive token category labels for AI token metrics.
 
     Categories are disjoint (`input` + `output` + `thinking` == total billed
@@ -143,20 +137,20 @@ PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL: Counter = Counter(
 )
 
 # AI model metrics
-AI_REQUESTS_TOTAL: Counter = Counter(
+_AI_REQUESTS_TOTAL: Counter = Counter(
     "supernote_ai_requests_total",
     "Total number of logical AI model invocations.",
     ["provider", "model", "stage", "status"],
 )
 
-AI_REQUEST_DURATION_SECONDS: Histogram = Histogram(
+_AI_REQUEST_DURATION_SECONDS: Histogram = Histogram(
     "supernote_ai_request_duration_seconds",
     "Latency of completed AI model invocations in seconds (excluding concurrency queue wait).",
     ["provider", "model", "stage"],
     buckets=AI_LATENCY_BUCKETS,
 )
 
-AI_TOKENS_TOTAL: Counter = Counter(
+_AI_TOKENS_TOTAL: Counter = Counter(
     "supernote_ai_tokens_total",
     "Total number of mutually exclusive tokens processed by AI models (when reported by provider).",
     ["provider", "model", "stage", "token_type"],
@@ -170,8 +164,8 @@ def init_ai_metrics(
     stage: AIStage,
 ) -> None:
     """Pre-initialize `success` and `failure` counter series at 0 for rate()/increase()."""
-    for status in (AIRequestStatus.SUCCESS, AIRequestStatus.FAILURE):
-        AI_REQUESTS_TOTAL.labels(
+    for status in (_AIRequestStatus.SUCCESS, _AIRequestStatus.FAILURE):
+        _AI_REQUESTS_TOTAL.labels(
             provider=provider,
             model=model,
             stage=stage.value,
@@ -191,24 +185,24 @@ def track_ai_request(
         _ActiveAIRequest(provider=provider, model=model, stage=stage)
     )
     start_time = time.monotonic()
-    status = AIRequestStatus.FAILURE
+    status = _AIRequestStatus.FAILURE
     try:
         yield
-        status = AIRequestStatus.SUCCESS
+        status = _AIRequestStatus.SUCCESS
     except asyncio.CancelledError:
-        status = AIRequestStatus.CANCELLED
+        status = _AIRequestStatus.CANCELLED
         raise
     finally:
         duration = time.monotonic() - start_time
         _active_ai_request.reset(token)
-        AI_REQUESTS_TOTAL.labels(
+        _AI_REQUESTS_TOTAL.labels(
             provider=provider,
             model=model,
             stage=stage.value,
             status=status.value,
         ).inc()
-        if status != AIRequestStatus.CANCELLED:
-            AI_REQUEST_DURATION_SECONDS.labels(
+        if status != _AIRequestStatus.CANCELLED:
+            _AI_REQUEST_DURATION_SECONDS.labels(
                 provider=provider,
                 model=model,
                 stage=stage.value,
@@ -244,13 +238,13 @@ def record_ai_tokens(
         return
 
     for token_type, raw_count in (
-        (AITokenType.INPUT, input_tokens),
-        (AITokenType.OUTPUT, output_tokens),
-        (AITokenType.THINKING, thinking_tokens),
+        (_AITokenType.INPUT, input_tokens),
+        (_AITokenType.OUTPUT, output_tokens),
+        (_AITokenType.THINKING, thinking_tokens),
     ):
         count = _coerce_positive_tokens(raw_count)
         if count is not None:
-            AI_TOKENS_TOTAL.labels(
+            _AI_TOKENS_TOTAL.labels(
                 provider=active.provider,
                 model=active.model,
                 stage=active.stage.value,

@@ -287,7 +287,7 @@ async def test_gemini_ai_metrics_and_tokens(aiohttp_server: Any) -> None:
         == before_think_tok + 15.0
     )
 
-    # Verify extended latency histogram buckets (> 10s up to 300s) are exported
+    # Verify extended latency histogram buckets (> 10s up to 600s) are exported
     for bucket in AI_LATENCY_BUCKETS:
         bucket_val = REGISTRY.get_sample_value(
             "supernote_ai_request_duration_seconds_bucket",
@@ -305,7 +305,7 @@ async def test_gemini_ai_metrics_and_tokens(aiohttp_server: Any) -> None:
             "provider": "gemini",
             "model": "gemini-3-flash-preview",
             "stage": "ocr",
-            "le": "300.0",
+            "le": "600.0",
         },
     )
     assert top_bucket_val is not None and top_bucket_val >= 1.0
