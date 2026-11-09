@@ -218,6 +218,17 @@ class SummaryModule(ProcessorModule):
 
         full_text = "\n\n".join(text_parts)
 
+        if not full_text.strip():
+            existing_group = await self.summary_service.get_summary_by_uuid(
+                user_email, group_uuid
+            )
+            if existing_group and existing_group.id is not None:
+                await self.summary_service.delete_group(user_email, existing_group.id)
+            logger.info(
+                f"All pages in file {file_id} are blank; skipping summary generation."
+            )
+            return
+
         await self._upsert_group(
             user_email,
             AddSummaryGroupDTO(

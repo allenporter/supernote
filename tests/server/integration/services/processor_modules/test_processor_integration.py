@@ -59,25 +59,26 @@ async def test_full_processing_pipeline_with_real_file(
     processor_service: ProcessorService,
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
-    test_note_path: Path,
+    test_data_dir: Path,
     fake_ocr_model: FakeOcrModel,
     fake_embedding_model: FakeEmbeddingModel,
     fake_summary_model: FakeSummaryModel,
     authenticated_client: Client,
     user_service: UserService,
 ) -> None:
-    """Full integration test using a real .note file."""
+    """Full integration test using a real handwritten .note file."""
 
     # Setup Data
     user_email = "test@example.com"
     user_id = await user_service.get_user_id(user_email)
     file_id = 999
     storage_key = "test_integration_note"
+    written_note_path = test_data_dir / "dsummersl" / "sn2md_20260618.note"
 
-    if not test_note_path.exists():
-        pytest.skip(f"Test file not found at {test_note_path}")
+    if not written_note_path.exists():
+        pytest.skip(f"Test file not found at {written_note_path}")
 
-    file_content = test_note_path.read_bytes()
+    file_content = written_note_path.read_bytes()
     await blob_storage.put(USER_DATA_BUCKET, storage_key, file_content)
 
     async with session_manager.session() as session:
@@ -231,3 +232,97 @@ async def test_full_processing_pipeline_with_real_file(
         ]
 
     print(f"Integration test passed with {total_pages} pages processed.")
+
+
+async def test_pipeline_skips_blank_pages_in_real_multi_page_note(
+    processor_service: ProcessorService,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    fake_ocr_model: FakeOcrModel,
+    fake_embedding_model: FakeEmbeddingModel,
+    fake_summary_model: FakeSummaryModel,
+    authenticated_client: Client,
+    user_service: UserService,
+) -> None:
+    """Verify blank template pages skip OCR and embedding LLM calls while still rendering PNGs and completing tasks."""
+    note_path = (
+        Path(__file__).parents[4]
+        / "testdata"
+        / "nelinory"
+        / "A5X_TestNote_With_Pdf_Template.note"
+    )
+    user_id = await user_service.get_user_id("test@example.com")
+    file_id = 1001
+    storage_key = "pdf_template_mixed_blank"
+    await blob_storage.put(USER_DATA_BUCKET, storage_key, note_path.read_bytes())
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key=storage_key,
+                file_name=note_path.name,
+                directory_id=0,
+            )
+        )
+        await session.commit()
+
+    processor_service.register_modules(
+        hashing=PageHashingModule(processor_service.file_service),
+        png=PngConversionModule(processor_service.file_service),
+        ocr=OcrModule(processor_service.file_service, fake_ocr_model),
+        embedding=EmbeddingModule(processor_service.file_service, fake_embedding_model),
+        summary=SummaryModule(
+            file_service=processor_service.file_service,
+            summary_service=processor_service.summary_service,
+            summary_model=fake_summary_model,
+        ),
+    )
+
+    await processor_service.process_file(file_id)
+
+    # Pages 0 and 2 have ink; page 1 is an un-inked PDF template page.
+    assert len(fake_ocr_model.calls) == 2
+    assert len(fake_embedding_model.calls) == 2
+    assert len(fake_summary_model.calls) == 1
+
+    async with session_manager.session() as session:
+        pages = list(
+            (
+                await session.execute(
+                    select(NotePageContentDO)
+                    .where(NotePageContentDO.file_id == file_id)
+                    .order_by(NotePageContentDO.page_index)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(pages) == 3
+        assert pages[0].text_content and pages[0].embedding is not None
+        assert pages[1].text_content == "" and pages[1].embedding is None
+        assert pages[2].text_content and pages[2].embedding is not None
+
+        for page in pages:
+            assert await blob_storage.exists(
+                CACHE_BUCKET, get_page_png_path(file_id, page.page_id)
+            )
+
+        completed_tasks = list(
+            (
+                await session.execute(
+                    select(SystemTaskDO).where(
+                        SystemTaskDO.file_id == file_id,
+                        SystemTaskDO.status == "COMPLETED",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(completed_tasks) == 1 + (3 * 3) + 1
+
+    # Missing-task recovery must NOT re-enqueue completed notes containing blank pages.
+    await processor_service.recover_missing_tasks()
+    assert file_id not in processor_service.processing_files

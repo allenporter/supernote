@@ -4,7 +4,11 @@ from sqlalchemy import select
 from supernote.server.ai.models.fake.ocr import FakeOcrModel
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
+from supernote.server.db.models.note_processing import (
+    NotePageContentDO,
+    NotePageMetadataDO,
+    SystemTaskDO,
+)
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
@@ -115,3 +119,67 @@ async def test_ocr_run_if_needed_disabled(
 
     # run() should still return True (skipped success)
     assert await module.run(1, session_manager, page_index=0, page_id="p0") is True
+
+
+async def test_ocr_skips_llm_call_for_blank_page(
+    ocr_module: OcrModule,
+    session_manager: DatabaseSessionManager,
+    fake_ocr_model: FakeOcrModel,
+) -> None:
+    """Verify blank pages (has_drawables=False) write empty text_content and complete without calling OcrModel."""
+    file_id = 1005
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=7,
+                storage_key="blank_key",
+                file_name="blank.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="p_blank",
+                content_hash="h_blank",
+                text_content=None,
+            )
+        )
+        session.add(
+            NotePageMetadataDO(
+                user_id=7,
+                file_id=file_id,
+                page_index=0,
+                page_id="p_blank",
+                content_hash="h_blank",
+                has_ink=False,
+                has_drawables=False,
+            )
+        )
+        await session.commit()
+
+    assert (
+        await ocr_module.run(file_id, session_manager, page_index=0, page_id="p_blank")
+        is True
+    )
+    assert fake_ocr_model.calls == []
+
+    async with session_manager.session() as session:
+        content = (
+            await session.execute(
+                select(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
+            )
+        ).scalar_one()
+        assert content.text_content == ""
+
+        task = (
+            await session.execute(
+                select(SystemTaskDO)
+                .where(SystemTaskDO.file_id == file_id)
+                .where(SystemTaskDO.task_type == "OCR_EXTRACTION")
+                .where(SystemTaskDO.key == "page_p_blank")
+            )
+        ).scalar_one()
+        assert task.status == "COMPLETED"

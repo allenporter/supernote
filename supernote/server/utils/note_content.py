@@ -4,7 +4,10 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.db.models.note_processing import (
+    NotePageContentDO,
+    NotePageMetadataDO,
+)
 
 
 async def get_page_content_by_id(
@@ -22,6 +25,42 @@ async def get_page_content_by_id(
         .scalars()
         .first()
     )
+
+
+async def get_page_metadata_for_page(
+    session: AsyncSession,
+    file_id: int,
+    page_id: str | None = None,
+    page_index: int | None = None,
+) -> NotePageMetadataDO | None:
+    """Retrieve NotePageMetadataDO for a page by page_id (preferred) or page_index."""
+    if page_id:
+        by_id = (
+            (
+                await session.execute(
+                    select(NotePageMetadataDO)
+                    .where(NotePageMetadataDO.file_id == file_id)
+                    .where(NotePageMetadataDO.page_id == page_id)
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if by_id is not None:
+            return by_id
+    if page_index is not None:
+        return (
+            (
+                await session.execute(
+                    select(NotePageMetadataDO)
+                    .where(NotePageMetadataDO.file_id == file_id)
+                    .where(NotePageMetadataDO.page_index == page_index)
+                )
+            )
+            .scalars()
+            .first()
+        )
+    return None
 
 
 def infer_page_date(page_id: str) -> datetime | None:

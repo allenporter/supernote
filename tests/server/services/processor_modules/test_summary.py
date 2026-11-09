@@ -450,3 +450,126 @@ async def test_summary_failure_marks_task_failed(
         assert task is not None
         assert task.status == "FAILED"
         assert task.last_error == "AIError: Gemini API unavailable"
+
+
+async def test_summary_skips_llm_and_group_creation_when_all_pages_blank(
+    summary_module: SummaryModule,
+    session_manager: DatabaseSessionManager,
+    fake_summary_model: FakeSummaryModel,
+    summary_service: SummaryService,
+) -> None:
+    """Verify all-blank notebooks skip SummaryModel calls and avoid creating empty summary groups."""
+    user_id = 108
+    user_email = "blank@example.com"
+    file_id = 808
+    storage_key = "blank_note_key"
+
+    async with session_manager.session() as session:
+        session.add(UserDO(id=user_id, email=user_email, password_md5="hash"))
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key=storage_key,
+                file_name="blank.note",
+                directory_id=0,
+            )
+        )
+        session.add_all(
+            [
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="p0",
+                    content_hash="h0",
+                    text_content="",
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=1,
+                    page_id="p1",
+                    content_hash="h1",
+                    text_content="",
+                ),
+            ]
+        )
+        await session.commit()
+
+    assert await summary_module.run(file_id, session_manager) is True
+    assert fake_summary_model.calls == []
+    assert (
+        await summary_service.get_summary_by_uuid(
+            user_email, get_summary_group_id(storage_key)
+        )
+        is None
+    )
+
+
+async def test_summary_deletes_existing_group_when_all_pages_erased(
+    summary_module: SummaryModule,
+    session_manager: DatabaseSessionManager,
+    fake_summary_model: FakeSummaryModel,
+    summary_service: SummaryService,
+) -> None:
+    """Verify erasing all pages on an already-summarized note deletes its summary group without an LLM call."""
+    user_id = 109
+    user_email = "erased@example.com"
+    file_id = 809
+    storage_key = "erased_note_key"
+
+    async with session_manager.session() as session:
+        session.add(UserDO(id=user_id, email=user_email, password_md5="hash"))
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key=storage_key,
+                file_name="erased.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="p0",
+                content_hash="h0",
+                text_content="Initial handwritten note",
+            )
+        )
+        await session.commit()
+
+    assert await summary_module.run(file_id, session_manager) is True
+    assert len(fake_summary_model.calls) == 1
+    fake_summary_model.calls.clear()
+
+    async with session_manager.session() as session:
+        p0 = (
+            await session.execute(
+                select(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
+            )
+        ).scalar_one()
+        p0.text_content = ""
+        await session.commit()
+
+    await summary_module.process(file_id, session_manager)
+    assert fake_summary_model.calls == []
+
+    assert (
+        await summary_service.get_summary_by_uuid(
+            user_email, get_summary_group_id(storage_key)
+        )
+        is None
+    )
+    assert (
+        await summary_service.get_summary_by_uuid(
+            user_email, get_transcript_id(storage_key)
+        )
+        is None
+    )
+    assert (
+        await summary_service.get_summary_by_uuid(
+            user_email, get_summary_id(storage_key)
+        )
+        is None
+    )
