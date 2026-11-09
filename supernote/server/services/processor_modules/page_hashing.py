@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from functools import partial
 
 from sqlalchemy import delete, select
@@ -18,12 +19,24 @@ from supernote.server.db.models.note_processing import (
     SystemTaskDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.metrics import record_note_page_diff
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.utils.hashing import get_md5_hash
 from supernote.server.utils.paths import get_page_png_path, is_valid_page_id
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _PageDiffCounts:
+    """Mutually exclusive reconciliation counts across pages in a `.note` run."""
+
+    added: int = 0
+    modified: int = 0
+    moved: int = 0
+    unchanged: int = 0
+    deleted: int = 0
 
 
 def _serialize_page_annotations(page_obj: Page) -> tuple[str, str, str]:
@@ -190,7 +203,7 @@ class PageHashingModule(ProcessorModule):
         )
 
         async with session_manager.session() as session:
-            await self._sync_note_and_page_metadata(
+            legacy_diff = await self._sync_note_and_page_metadata(
                 session,
                 user_id=user_id,
                 file_id=file_id,
@@ -198,11 +211,18 @@ class PageHashingModule(ProcessorModule):
                 page_identities=page_identities,
                 page_has_ink=page_has_ink,
             )
-            if page_identities:
-                await self._sync_page_content_hashes(
-                    session, file_id=file_id, page_identities=page_identities
-                )
+            content_diff = await self._sync_page_content_hashes(
+                session, file_id=file_id, page_identities=page_identities
+            )
             await session.commit()
+
+        record_note_page_diff(
+            added=legacy_diff.added + content_diff.added,
+            modified=legacy_diff.modified + content_diff.modified,
+            moved=legacy_diff.moved + content_diff.moved,
+            unchanged=legacy_diff.unchanged + content_diff.unchanged,
+            deleted=legacy_diff.deleted + content_diff.deleted,
+        )
 
     async def _sync_note_and_page_metadata(
         self,
@@ -213,7 +233,7 @@ class PageHashingModule(ProcessorModule):
         notebook: Notebook,
         page_identities: Sequence[tuple[str, str]],
         page_has_ink: Sequence[bool],
-    ) -> None:
+    ) -> _PageDiffCounts:
         """Synchronize notebook-level and per-page metadata rows with the parsed `.note` file.
 
         `NoteMetadataDO` is upserted once per file with container fields and lossless
@@ -223,6 +243,10 @@ class PageHashingModule(ProcessorModule):
         `UPDATE`s, and trailing rows left over when a notebook shrinks are deleted.
         """
         metadata = notebook.metadata
+        legacy_added = 0
+        legacy_modified = 0
+        legacy_unchanged = 0
+        legacy_deleted = 0
 
         # Upsert notebook-level container fields and raw header/footer wire dicts.
         meta_do = await session.get(NoteMetadataDO, (user_id, file_id))
@@ -255,6 +279,14 @@ class PageHashingModule(ProcessorModule):
 
         for i, (page_id, content_hash) in enumerate(page_identities):
             pm = existing_page_meta.pop(i, None)
+            if not page_id:
+                if pm is None:
+                    legacy_added += 1
+                elif pm.content_hash != content_hash:
+                    legacy_modified += 1
+                else:
+                    legacy_unchanged += 1
+
             page_obj = notebook.pages[i]
             keywords_json, titles_json, links_json = _serialize_page_annotations(
                 page_obj
@@ -298,7 +330,16 @@ class PageHashingModule(ProcessorModule):
             pm.links_json = links_json
 
         for stale_pm in existing_page_meta.values():
+            if not stale_pm.page_id:
+                legacy_deleted += 1
             await session.delete(stale_pm)
+
+        return _PageDiffCounts(
+            added=legacy_added,
+            modified=legacy_modified,
+            unchanged=legacy_unchanged,
+            deleted=legacy_deleted,
+        )
 
     async def _sync_page_content_hashes(
         self,
@@ -306,7 +347,7 @@ class PageHashingModule(ProcessorModule):
         *,
         file_id: int,
         page_identities: Sequence[tuple[str, str]],
-    ) -> None:
+    ) -> _PageDiffCounts:
         """Reconcile `NotePageContentDO` rows by `<PAGEID>` and invalidate stale checkpoints."""
         existing_pages = await session.execute(
             select(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
@@ -315,6 +356,11 @@ class PageHashingModule(ProcessorModule):
 
         current_page_ids: set[str] = set()
         any_page_changed = False
+        added = 0
+        modified = 0
+        moved = 0
+        unchanged = 0
+        deleted = 0
 
         for i, (page_id, current_hash) in enumerate(page_identities):
             if not page_id:
@@ -327,19 +373,22 @@ class PageHashingModule(ProcessorModule):
 
             if page_id in existing_map:
                 row = existing_map[page_id]
+                index_changed = row.page_index != i
+                hash_changed = row.content_hash != current_hash
 
-                if row.page_index != i:
+                if index_changed:
                     logger.info(f"Page {page_id} moved from {row.page_index} to {i}")
                     row.page_index = i
                     any_page_changed = True
 
-                if row.content_hash != current_hash:
+                if hash_changed:
                     logger.info(f"Page {page_id} (idx {i}) changed. Resetting content.")
                     row.content_hash = current_hash
                     row.text_content = None
                     row.embedding = None
                     row.embedding_model = None
                     any_page_changed = True
+                    modified += 1
 
                     # SystemTaskDO rows act as completion checkpoints; deleting
                     # the page's task rows causes downstream page modules (PNG,
@@ -351,9 +400,14 @@ class PageHashingModule(ProcessorModule):
                         .where(SystemTaskDO.file_id == file_id)
                         .where(SystemTaskDO.key == page_task_key)
                     )
+                elif index_changed:
+                    moved += 1
+                else:
+                    unchanged += 1
             else:
                 logger.info(f"New page {page_id} at index {i} detected.")
                 any_page_changed = True
+                added += 1
                 session.add(
                     NotePageContentDO(
                         file_id=file_id,
@@ -370,6 +424,7 @@ class PageHashingModule(ProcessorModule):
             if pid not in current_page_ids:
                 logger.info(f"Page {pid} deleted (was at {row.page_index}).")
                 any_page_changed = True
+                deleted += 1
                 await session.delete(row)
 
                 png_path = get_page_png_path(file_id, pid)
@@ -395,3 +450,11 @@ class PageHashingModule(ProcessorModule):
                 .where(SystemTaskDO.key == "global")
                 .where(SystemTaskDO.task_type != TaskType.PAGE_HASHING.value)
             )
+
+        return _PageDiffCounts(
+            added=added,
+            modified=modified,
+            moved=moved,
+            unchanged=unchanged,
+            deleted=deleted,
+        )

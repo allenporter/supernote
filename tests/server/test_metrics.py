@@ -26,11 +26,13 @@ from supernote.server.app import create_app
 from supernote.server.config import ServerConfig
 from supernote.server.metrics import (
     AI_LATENCY_BUCKETS,
+    NOTE_PAGES_PER_RUN_BUCKETS,
     NOTE_PROCESSING_DURATION_BUCKETS,
     AIStage,
     NoteProcessingMode,
     init_note_processing_metrics,
     record_ai_tokens,
+    record_note_page_diff,
     track_ai_request,
     track_note_processing_run,
 )
@@ -61,6 +63,8 @@ async def test_metrics_endpoint(client: TestClient) -> None:
     assert "supernote_http_requests_total" in body
     assert "supernote_note_processing_runs_total" in body
     assert "supernote_note_processing_duration_seconds" in body
+    assert "supernote_note_pages_parsed_total" in body
+    assert "supernote_note_pages_per_run" in body
     assert "supernote_processor_queue_paused" in body
     for legacy_metric in REMOVED_LEGACY_METRICS:
         assert legacy_metric not in body
@@ -762,3 +766,123 @@ def test_note_processing_run_metrics_tracker() -> None:
     record_ai_tokens(
         provider="gemini", input_tokens=999, output_tokens=999, thinking_tokens=999
     )
+
+
+def test_record_note_page_diff_metrics() -> None:
+    """Verify page-diff counter seeding, mutually exclusive increments, and per-run histograms."""
+    init_note_processing_metrics()
+    change_types = ("added", "modified", "moved", "unchanged", "deleted")
+    for change_type in change_types:
+        assert (
+            REGISTRY.get_sample_value(
+                "supernote_note_pages_parsed_total",
+                {"change_type": change_type},
+            )
+            is not None
+        )
+
+    before_counts = {
+        ct: (
+            REGISTRY.get_sample_value(
+                "supernote_note_pages_parsed_total",
+                {"change_type": ct},
+            )
+            or 0.0
+        )
+        for ct in change_types
+    }
+    before_total_sum = (
+        REGISTRY.get_sample_value(
+            "supernote_note_pages_per_run_sum",
+            {"scope": "total"},
+        )
+        or 0.0
+    )
+    before_dirty_sum = (
+        REGISTRY.get_sample_value(
+            "supernote_note_pages_per_run_sum",
+            {"scope": "dirty"},
+        )
+        or 0.0
+    )
+    before_zero_dirty_bucket = (
+        REGISTRY.get_sample_value(
+            "supernote_note_pages_per_run_bucket",
+            {"scope": "dirty", "le": "0.0"},
+        )
+        or 0.0
+    )
+
+    # Run 1: 2 added + 1 modified + 3 moved + 4 unchanged + 2 deleted -> total=10, dirty=3
+    record_note_page_diff(
+        added=2,
+        modified=1,
+        moved=3,
+        unchanged=4,
+        deleted=2,
+    )
+    # Run 2: pure reorder/unchanged (0 dirty pages) -> lands in le="0.0" bucket for scope="dirty"
+    record_note_page_diff(
+        moved=1,
+        unchanged=5,
+    )
+
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_note_pages_parsed_total", {"change_type": "added"}
+        )
+        == before_counts["added"] + 2.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_note_pages_parsed_total", {"change_type": "modified"}
+        )
+        == before_counts["modified"] + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_note_pages_parsed_total", {"change_type": "moved"}
+        )
+        == before_counts["moved"] + 4.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_note_pages_parsed_total", {"change_type": "unchanged"}
+        )
+        == before_counts["unchanged"] + 9.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_note_pages_parsed_total", {"change_type": "deleted"}
+        )
+        == before_counts["deleted"] + 2.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_note_pages_per_run_sum", {"scope": "total"}
+        )
+        == before_total_sum + 16.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_note_pages_per_run_sum", {"scope": "dirty"}
+        )
+        == before_dirty_sum + 3.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_note_pages_per_run_bucket",
+            {"scope": "dirty", "le": "0.0"},
+        )
+        == before_zero_dirty_bucket + 1.0
+    )
+
+    for scope in ("total", "dirty"):
+        for bucket in NOTE_PAGES_PER_RUN_BUCKETS:
+            assert (
+                REGISTRY.get_sample_value(
+                    "supernote_note_pages_per_run_bucket",
+                    {"scope": scope, "le": str(bucket)},
+                )
+                is not None
+            )
