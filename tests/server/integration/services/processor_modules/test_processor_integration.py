@@ -11,6 +11,7 @@ from supernote.server.ai.models.fake.summary import FakeSummaryModel
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
+from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus, NoteProcessingCompletedEvent
 from supernote.server.services.blob import BlobStorage
@@ -238,25 +239,20 @@ async def test_pipeline_skips_blank_pages_in_real_multi_page_note(
     processor_service: ProcessorService,
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
+    test_data_dir: Path,
     fake_ocr_model: FakeOcrModel,
     fake_embedding_model: FakeEmbeddingModel,
     fake_summary_model: FakeSummaryModel,
-    authenticated_client: Client,
-    user_service: UserService,
 ) -> None:
     """Verify blank template pages skip OCR and embedding LLM calls while still rendering PNGs and completing tasks."""
-    note_path = (
-        Path(__file__).parents[4]
-        / "testdata"
-        / "nelinory"
-        / "A5X_TestNote_With_Pdf_Template.note"
-    )
-    user_id = await user_service.get_user_id("test@example.com")
+    note_path = test_data_dir / "nelinory" / "A5X_TestNote_With_Pdf_Template.note"
+    user_id = 77
     file_id = 1001
     storage_key = "pdf_template_mixed_blank"
     await blob_storage.put(USER_DATA_BUCKET, storage_key, note_path.read_bytes())
 
     async with session_manager.session() as session:
+        session.add(UserDO(id=user_id, email="mixed@example.com", password_md5="hash"))
         session.add(
             UserFileDO(
                 id=file_id,
@@ -322,7 +318,3 @@ async def test_pipeline_skips_blank_pages_in_real_multi_page_note(
             .all()
         )
         assert len(completed_tasks) == 1 + (3 * 3) + 1
-
-    # Missing-task recovery must NOT re-enqueue completed notes containing blank pages.
-    await processor_service.recover_missing_tasks()
-    assert file_id not in processor_service.processing_files

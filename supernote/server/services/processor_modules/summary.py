@@ -216,9 +216,7 @@ class SummaryModule(ProcessorModule):
                 )
                 text_parts.append(f"{metadata}\n{p.text_content}")
 
-        full_text = "\n\n".join(text_parts)
-
-        if not full_text.strip():
+        if not text_parts:
             await self._delete_ai_summaries_for_blank_note(
                 user_email=user_email,
                 group_uuid=group_uuid,
@@ -229,6 +227,8 @@ class SummaryModule(ProcessorModule):
                 f"All pages in file {file_id} are blank; skipping summary generation."
             )
             return
+
+        full_text = "\n\n".join(text_parts)
 
         await self._upsert_group(
             user_email,

@@ -575,6 +575,50 @@ async def test_summary_deletes_existing_group_when_all_pages_erased(
     )
 
 
+async def test_summary_skips_whitespace_only_pages(
+    summary_module: SummaryModule,
+    session_manager: DatabaseSessionManager,
+    fake_summary_model: FakeSummaryModel,
+    summary_service: SummaryService,
+) -> None:
+    """Verify whitespace-only OCR text ('  \\n ') does not emit a metadata-only transcript to SummaryModel."""
+    user_id = 110
+    user_email = "whitespace@example.com"
+    file_id = 810
+    storage_key = "ws_note_key"
+
+    async with session_manager.session() as session:
+        session.add(UserDO(id=user_id, email=user_email, password_md5="hash"))
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key=storage_key,
+                file_name="whitespace.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="p0",
+                content_hash="h0",
+                text_content="   \n\t  ",
+            )
+        )
+        await session.commit()
+
+    assert await summary_module.run(file_id, session_manager) is True
+    assert fake_summary_model.calls == []
+    assert (
+        await summary_service.get_summary_by_uuid(
+            user_email, get_summary_group_id(storage_key)
+        )
+        is None
+    )
+
+
 async def test_summary_preserves_manual_digests_when_notebook_erased(
     summary_module: SummaryModule,
     session_manager: DatabaseSessionManager,
@@ -582,9 +626,9 @@ async def test_summary_preserves_manual_digests_when_notebook_erased(
     summary_service: SummaryService,
 ) -> None:
     """Verify erasing a notebook deletes AI transcript/summary items while preserving user-created digests in the group."""
-    user_id = 110
+    user_id = 111
     user_email = "manual_digest@example.com"
-    file_id = 810
+    file_id = 811
     storage_key = "manual_digest_note_key"
     group_uuid = get_summary_group_id(storage_key)
 
@@ -630,7 +674,7 @@ async def test_summary_preserves_manual_digests_when_notebook_erased(
                 select(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
             )
         ).scalar_one()
-        p0.text_content = "   \n  "
+        p0.text_content = ""
         await session.commit()
 
     await summary_module.process(file_id, session_manager)

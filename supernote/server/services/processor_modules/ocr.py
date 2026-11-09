@@ -1,36 +1,47 @@
 import logging
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from supernote.models.base import TaskType
 from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.ai.prompts import PageMetadata, format_ocr_prompt
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import (
-    NotePageContentDO,
-    NotePageMetadataDO,
-)
+from supernote.server.db.models.note_processing import NotePageMetadataDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
-from supernote.server.utils.note_content import (
-    get_page_content_by_id,
-    get_page_metadata_for_page,
-)
+from supernote.server.utils.note_content import get_page_content_by_id
 from supernote.server.utils.paths import get_page_png_path
 
 logger = logging.getLogger(__name__)
 
 
-def _is_verified_blank_page(
-    content: NotePageContentDO | None,
-    page_meta: NotePageMetadataDO | None,
+async def _is_verified_blank_page(
+    session: AsyncSession,
+    user_id: int,
+    file_id: int,
+    page_id: str,
+    content_hash: str | None,
 ) -> bool:
-    """Return True when page content and matching-revision metadata confirm no drawables."""
-    if content is None or page_meta is None:
+    """Return True when matching-revision page metadata confirms there are no drawables."""
+    if not content_hash:
         return False
-    if not content.content_hash or page_meta.content_hash != content.content_hash:
-        return False
-    return not page_meta.has_drawables
+    page_meta = (
+        await session.execute(
+            select(NotePageMetadataDO).where(
+                NotePageMetadataDO.user_id == user_id,
+                NotePageMetadataDO.file_id == file_id,
+                NotePageMetadataDO.page_id == page_id,
+            )
+        )
+    ).scalar_one_or_none()
+    return (
+        page_meta is not None
+        and page_meta.content_hash == content_hash
+        and not page_meta.has_drawables
+    )
 
 
 class OcrModule(ProcessorModule):
@@ -82,12 +93,10 @@ class OcrModule(ProcessorModule):
                 )
                 return False
             file_do = await session.get(UserFileDO, file_id)
-            if file_do is not None:
-                page_meta = await get_page_metadata_for_page(
-                    session, file_do.user_id, file_id, page_id=page_id
-                )
-                if _is_verified_blank_page(content, page_meta):
-                    return True
+            if file_do is not None and await _is_verified_blank_page(
+                session, file_do.user_id, file_id, page_id, content.content_hash
+            ):
+                return True
 
         # Check if PNG exists (Prerequisite)
         png_path = get_page_png_path(file_id, page_id)
@@ -116,20 +125,15 @@ class OcrModule(ProcessorModule):
 
         file_name: str | None = None
         notebook_create_time: int | None = None
-        resolved_index = page_index or 0
         async with session_manager.session() as session:
             content = await get_page_content_by_id(session, file_id, page_id)
-            if content is not None:
-                resolved_index = content.page_index
-
             file_do = await session.get(UserFileDO, file_id)
             if file_do is not None:
                 file_name = file_do.file_name
                 notebook_create_time = file_do.create_time
-                page_meta = await get_page_metadata_for_page(
-                    session, file_do.user_id, file_id, page_id=page_id
-                )
-                if _is_verified_blank_page(content, page_meta) and content is not None:
+                if content is not None and await _is_verified_blank_page(
+                    session, file_do.user_id, file_id, page_id, content.content_hash
+                ):
                     content.text_content = ""
                     await session.commit()
                     logger.info(
@@ -148,7 +152,7 @@ class OcrModule(ProcessorModule):
 
         page_metadata = PageMetadata(
             file_name=file_name,
-            page_index=resolved_index,
+            page_index=page_index or 0,
             page_id=page_id,
             notebook_create_time=notebook_create_time,
         )

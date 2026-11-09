@@ -4,10 +4,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from supernote.server.db.models.note_processing import (
-    NotePageContentDO,
-    NotePageMetadataDO,
-)
+from supernote.server.db.models.note_processing import NotePageContentDO
 
 
 async def get_page_content_by_id(
@@ -25,38 +22,6 @@ async def get_page_content_by_id(
         .scalars()
         .first()
     )
-
-
-async def get_page_metadata_for_page(
-    session: AsyncSession,
-    user_id: int,
-    file_id: int,
-    page_id: str | None = None,
-    page_index: int | None = None,
-) -> NotePageMetadataDO | None:
-    """Retrieve NotePageMetadataDO scoped to user_id and file_id.
-
-    Queries by `page_id` when non-empty (hitting `ix_f_note_page_metadata_user_file_page_id`),
-    and only queries by `page_index` (primary key `(user_id, file_id, page_index)`) when
-    `page_id` is absent or empty so a stale slot at `page_index` never aliases another `<PAGEID>`.
-    """
-    if page_id:
-        return (
-            (
-                await session.execute(
-                    select(NotePageMetadataDO).where(
-                        NotePageMetadataDO.user_id == user_id,
-                        NotePageMetadataDO.file_id == file_id,
-                        NotePageMetadataDO.page_id == page_id,
-                    )
-                )
-            )
-            .scalars()
-            .first()
-        )
-    if page_index is not None:
-        return await session.get(NotePageMetadataDO, (user_id, file_id, page_index))
-    return None
 
 
 def infer_page_date(page_id: str) -> datetime | None:
