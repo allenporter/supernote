@@ -117,7 +117,7 @@ class EventLogService:
             max_user_seq = await session.scalar(
                 select(func.max(UserEventDO.seq)).where(UserEventDO.user_id == user_id)
             )
-            head_seq = max(int(max_user_seq or 0), pruned_seq)
+            head_seq = int(max_user_seq or 0)
 
             if cursor == "head":
                 return EventFeedPage(

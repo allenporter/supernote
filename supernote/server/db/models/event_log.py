@@ -3,36 +3,34 @@
 import time
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, Index, Integer, String
+from sqlalchemy import JSON, BigInteger, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from supernote.server.db.base import Base
+from supernote.server.utils.unique_id import next_id
 
 
 class UserEventDO(Base):
     """Append-only domain event record (`f_user_event`).
 
-    Uses a non-recycled monotonic `seq` primary key so incremental sync clients,
-    external AI agents, and UI views can share a single cursor spine.
+    Keyed by `(user_id, seq)` where `seq` is a monotonic 64-bit Snowflake ID so
+    incremental sync clients, external AI agents, and UI views share a single
+    per-user cursor spine.
     """
 
     __tablename__ = "f_user_event"
     __table_args__ = (
-        Index("ix_f_user_event_user_seq", "user_id", "seq"),
         Index("ix_f_user_event_user_file_seq", "user_id", "related_file_id", "seq"),
         Index("ix_f_user_event_ts", "timestamp_ms"),
-        {"sqlite_autoincrement": True},
     )
+
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, nullable=False)
+    """Owner user ID."""
 
     seq: Mapped[int] = mapped_column(
-        Integer().with_variant(BigInteger(), "postgresql"),
-        primary_key=True,
-        autoincrement=True,
+        BigInteger, primary_key=True, default=next_id, nullable=False
     )
     """Strictly monotonic 64-bit cursor sequence number."""
-
-    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    """Owner user ID."""
 
     timestamp_ms: Mapped[int] = mapped_column(
         BigInteger, default=lambda: int(time.time() * 1000), nullable=False

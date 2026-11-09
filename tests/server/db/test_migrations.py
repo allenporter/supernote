@@ -840,7 +840,7 @@ def test_add_note_and_page_metadata_tables_migration(
 def test_add_user_event_log_table_migration(
     tmp_path: Path, alembic_config: Config
 ) -> None:
-    """Verify migration f2a3b4c5d6e7 creates f_user_event with non-recycled seq and downgrades cleanly."""
+    """Verify migration f2a3b4c5d6e7 creates f_user_event keyed by (user_id, seq) and downgrades cleanly."""
     db_path = tmp_path / "user_event_log.db"
     shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
     url = f"sqlite:///{db_path}"
@@ -852,26 +852,20 @@ def test_add_user_event_log_table_migration(
     reflected = MetaData()
     reflected.reflect(bind=engine)
     assert "f_user_event" in reflected.tables
+    pk_cols = [col.name for col in reflected.tables["f_user_event"].primary_key.columns]
+    assert pk_cols == ["user_id", "seq"]
 
     with engine.begin() as conn:
         conn.execute(
             text(
                 "INSERT INTO f_user_event "
-                "(user_id, timestamp_ms, event_type, actor, entity_type, entity_id, payload) "
-                "VALUES (1, 1000, 'vfs.created', 'user:web', 'file', '10', '{}')"
+                "(user_id, seq, timestamp_ms, event_type, actor, entity_type, entity_id, payload) "
+                "VALUES (1, 100, 1000, 'vfs.created', 'user:web', 'file', '10', '{}'), "
+                "       (2, 100, 1000, 'vfs.created', 'user:web', 'file', '20', '{}')"
             )
         )
-        seq1 = conn.execute(text("SELECT MAX(seq) FROM f_user_event")).scalar_one()
-        conn.execute(text("DELETE FROM f_user_event WHERE seq = :seq"), {"seq": seq1})
-        conn.execute(
-            text(
-                "INSERT INTO f_user_event "
-                "(user_id, timestamp_ms, event_type, actor, entity_type, entity_id, payload) "
-                "VALUES (1, 2000, 'vfs.deleted', 'user:web', 'file', '10', '{}')"
-            )
-        )
-        seq2 = conn.execute(text("SELECT MAX(seq) FROM f_user_event")).scalar_one()
-        assert seq2 > seq1
+        count = conn.execute(text("SELECT count(*) FROM f_user_event")).scalar_one()
+        assert count == 2
 
     command.downgrade(alembic_config, "e6f7a8b9c0d1")
     reflected_down = MetaData()

@@ -366,11 +366,8 @@ class ServerConfig(DataClassYAMLMixin):
         self.log_level = _normalize_log_level(self.log_level)
         if isinstance(self.default_user_quota, bool) or self.default_user_quota < 0:
             raise ValueError("default_user_quota must be a non-negative integer")
-        if (
-            isinstance(self.event_log_retention_days, bool)
-            or self.event_log_retention_days < 0
-        ):
-            raise ValueError("event_log_retention_days must be a non-negative integer")
+        if self.event_log_retention_days < 0:
+            raise ValueError("event_log_retention_days must be >= 0")
         self._sync_legacy_gemini_config()
 
     def _sync_legacy_gemini_config(self) -> None:

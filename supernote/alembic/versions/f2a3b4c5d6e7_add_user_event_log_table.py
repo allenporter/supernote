@@ -21,13 +21,8 @@ def upgrade() -> None:
     """Create `f_user_event` append-only domain event log table and indexes."""
     op.create_table(
         "f_user_event",
-        sa.Column(
-            "seq",
-            sa.Integer().with_variant(sa.BigInteger(), "postgresql"),
-            autoincrement=True,
-            nullable=False,
-        ),
         sa.Column("user_id", sa.BigInteger(), nullable=False),
+        sa.Column("seq", sa.BigInteger(), nullable=False),
         sa.Column("timestamp_ms", sa.BigInteger(), nullable=False),
         sa.Column("event_type", sa.String(length=64), nullable=False),
         sa.Column("actor", sa.String(length=64), nullable=False),
@@ -35,14 +30,7 @@ def upgrade() -> None:
         sa.Column("entity_id", sa.String(length=128), nullable=False),
         sa.Column("related_file_id", sa.BigInteger(), nullable=True),
         sa.Column("payload", sa.JSON(), nullable=False),
-        sa.PrimaryKeyConstraint("seq"),
-        sqlite_autoincrement=True,
-    )
-    op.create_index(
-        "ix_f_user_event_user_seq",
-        "f_user_event",
-        ["user_id", "seq"],
-        unique=False,
+        sa.PrimaryKeyConstraint("user_id", "seq"),
     )
     op.create_index(
         "ix_f_user_event_user_file_seq",
@@ -62,5 +50,4 @@ def downgrade() -> None:
     """Drop `f_user_event` table and indexes."""
     op.drop_index("ix_f_user_event_ts", table_name="f_user_event")
     op.drop_index("ix_f_user_event_user_file_seq", table_name="f_user_event")
-    op.drop_index("ix_f_user_event_user_seq", table_name="f_user_event")
     op.drop_table("f_user_event")
