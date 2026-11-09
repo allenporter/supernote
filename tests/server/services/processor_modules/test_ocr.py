@@ -183,3 +183,117 @@ async def test_ocr_skips_llm_call_for_blank_page(
             )
         ).scalar_one()
         assert task.status == "COMPLETED"
+
+
+async def test_ocr_does_not_skip_when_metadata_slot_or_hash_is_stale(
+    ocr_module: OcrModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    fake_ocr_model: FakeOcrModel,
+) -> None:
+    """Verify stale blank metadata (wrong page_id at slot 0 or mismatched content_hash) never drops transcription."""
+    file_id = 1006
+    png_content = b"inked-png"
+    await blob_storage.put(
+        CACHE_BUCKET, get_page_png_path(file_id, "p_new_inked"), png_content
+    )
+    await blob_storage.put(
+        CACHE_BUCKET, get_page_png_path(file_id, "p_hash_mismatch"), png_content
+    )
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=7,
+                storage_key="stale_meta_key",
+                file_name="stale.note",
+                directory_id=0,
+            )
+        )
+        session.add_all(
+            [
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="p_new_inked",
+                    content_hash="h_new",
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=1,
+                    page_id="p_hash_mismatch",
+                    content_hash="h_v2_inked",
+                ),
+                NotePageMetadataDO(
+                    user_id=7,
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="p_old_blank",
+                    content_hash="h_new",
+                    has_ink=False,
+                    has_drawables=False,
+                ),
+                NotePageMetadataDO(
+                    user_id=7,
+                    file_id=file_id,
+                    page_index=1,
+                    page_id="p_hash_mismatch",
+                    content_hash="h_v1_blank",
+                    has_ink=False,
+                    has_drawables=False,
+                ),
+            ]
+        )
+        await session.commit()
+
+    assert (
+        await ocr_module.run(
+            file_id, session_manager, page_index=0, page_id="p_new_inked"
+        )
+        is True
+    )
+    assert (
+        await ocr_module.run(
+            file_id, session_manager, page_index=1, page_id="p_hash_mismatch"
+        )
+        is True
+    )
+    assert len(fake_ocr_model.calls) == 2
+
+
+async def test_ocr_run_if_needed_requires_page_content_row(
+    ocr_module: OcrModule,
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Verify run_if_needed returns False when NotePageContentDO is missing even if NotePageMetadataDO marks blank."""
+    file_id = 1007
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=7,
+                storage_key="missing_content_key",
+                file_name="missing.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NotePageMetadataDO(
+                user_id=7,
+                file_id=file_id,
+                page_index=0,
+                page_id="p_blank",
+                content_hash="h_blank",
+                has_ink=False,
+                has_drawables=False,
+            )
+        )
+        await session.commit()
+
+    assert (
+        await ocr_module.run_if_needed(
+            file_id, session_manager, page_index=0, page_id="p_blank"
+        )
+        is False
+    )

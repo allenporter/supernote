@@ -573,3 +573,85 @@ async def test_summary_deletes_existing_group_when_all_pages_erased(
         )
         is None
     )
+
+
+async def test_summary_preserves_manual_digests_when_notebook_erased(
+    summary_module: SummaryModule,
+    session_manager: DatabaseSessionManager,
+    fake_summary_model: FakeSummaryModel,
+    summary_service: SummaryService,
+) -> None:
+    """Verify erasing a notebook deletes AI transcript/summary items while preserving user-created digests in the group."""
+    user_id = 110
+    user_email = "manual_digest@example.com"
+    file_id = 810
+    storage_key = "manual_digest_note_key"
+    group_uuid = get_summary_group_id(storage_key)
+
+    async with session_manager.session() as session:
+        session.add(UserDO(id=user_id, email=user_email, password_md5="hash"))
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key=storage_key,
+                file_name="project.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="p0",
+                content_hash="h0",
+                text_content="Initial project notes",
+            )
+        )
+        await session.commit()
+
+    assert await summary_module.run(file_id, session_manager) is True
+    fake_summary_model.calls.clear()
+
+    # User adds a manual digest on their Supernote device under the same category
+    await summary_service.add_summary(
+        user_email,
+        AddSummaryDTO(
+            unique_identifier="user-manual-digest-uuid",
+            parent_unique_identifier=group_uuid,
+            content="User handwritten highlight",
+            data_source="USER",
+        ),
+    )
+
+    async with session_manager.session() as session:
+        p0 = (
+            await session.execute(
+                select(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
+            )
+        ).scalar_one()
+        p0.text_content = "   \n  "
+        await session.commit()
+
+    await summary_module.process(file_id, session_manager)
+    assert fake_summary_model.calls == []
+
+    # AI transcript and AI summary are removed, while the user digest and parent group survive
+    assert (
+        await summary_service.get_summary_by_uuid(
+            user_email, get_transcript_id(storage_key)
+        )
+        is None
+    )
+    assert (
+        await summary_service.get_summary_by_uuid(
+            user_email, get_summary_id(storage_key)
+        )
+        is None
+    )
+    manual = await summary_service.get_summary_by_uuid(
+        user_email, "user-manual-digest-uuid"
+    )
+    assert manual is not None
+    assert manual.content == "User handwritten highlight"
+    assert await summary_service.get_summary_by_uuid(user_email, group_uuid) is not None

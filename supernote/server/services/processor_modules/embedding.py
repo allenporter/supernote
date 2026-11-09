@@ -80,7 +80,11 @@ class EmbeddingModule(ProcessorModule):
         async with session_manager.session() as session:
             content = await get_page_content_by_id(session, file_id, page_id)
 
-            if not content or not content.text_content:
+            if (
+                not content
+                or not content.text_content
+                or not content.text_content.strip()
+            ):
                 if content and (
                     content.embedding is not None or content.embedding_model is not None
                 ):

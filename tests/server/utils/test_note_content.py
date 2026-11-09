@@ -8,10 +8,10 @@ from supernote.server.utils.note_content import (
 )
 
 
-async def test_get_page_metadata_for_page_prefers_page_id_then_page_index(
+async def test_get_page_metadata_for_page_scopes_user_and_avoids_unsafe_slot_fallback(
     db_session: AsyncSession,
 ) -> None:
-    """Verify get_page_metadata_for_page resolves by page_id first and falls back to page_index."""
+    """Verify get_page_metadata_for_page scopes by user_id, never falls back to page_index on page_id miss, and uses page_index only when page_id is empty."""
     db_session.add_all(
         [
             NotePageMetadataDO(
@@ -26,7 +26,7 @@ async def test_get_page_metadata_for_page_prefers_page_id_then_page_index(
                 user_id=7,
                 file_id=500,
                 page_index=1,
-                page_id="P20260102000000b",
+                page_id="",
                 has_ink=False,
                 has_drawables=False,
             ),
@@ -35,19 +35,35 @@ async def test_get_page_metadata_for_page_prefers_page_id_then_page_index(
     await db_session.commit()
 
     by_id = await get_page_metadata_for_page(
-        db_session, 500, page_id="P20260102000000b", page_index=0
+        db_session, 7, 500, page_id="P20260101000000a", page_index=1
     )
     assert by_id is not None
-    assert by_id.page_index == 1
-    assert by_id.has_drawables is False
+    assert by_id.page_index == 0
+    assert by_id.has_drawables is True
 
-    by_index = await get_page_metadata_for_page(
-        db_session, 500, page_id="unknown_id", page_index=0
+    # Wrong user_id must not leak metadata
+    assert (
+        await get_page_metadata_for_page(
+            db_session, 99, 500, page_id="P20260101000000a", page_index=0
+        )
+        is None
     )
-    assert by_index is not None
-    assert by_index.page_id == "P20260101000000a"
 
-    assert await get_page_metadata_for_page(db_session, 999, page_id="p0") is None
+    # Non-empty unknown page_id must NOT fall back to page_index=0
+    assert (
+        await get_page_metadata_for_page(
+            db_session, 7, 500, page_id="unknown_id", page_index=0
+        )
+        is None
+    )
+
+    # Legacy page without page_id resolves cleanly by PK (user_id, file_id, page_index)
+    legacy = await get_page_metadata_for_page(
+        db_session, 7, 500, page_id="", page_index=1
+    )
+    assert legacy is not None
+    assert legacy.page_index == 1
+    assert legacy.has_drawables is False
 
 
 def test_infer_page_date_and_format_page_metadata() -> None:

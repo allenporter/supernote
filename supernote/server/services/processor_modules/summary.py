@@ -206,7 +206,7 @@ class SummaryModule(ProcessorModule):
         # Format transcript with Page markers and inferred dates
         text_parts = []
         for p in pages:
-            if p.text_content:
+            if p.text_content and p.text_content.strip():
                 metadata = format_page_metadata(
                     page_index=p.page_index,
                     page_id=p.page_id or "",
@@ -219,11 +219,12 @@ class SummaryModule(ProcessorModule):
         full_text = "\n\n".join(text_parts)
 
         if not full_text.strip():
-            existing_group = await self.summary_service.get_summary_by_uuid(
-                user_email, group_uuid
+            await self._delete_ai_summaries_for_blank_note(
+                user_email=user_email,
+                group_uuid=group_uuid,
+                transcript_uuid=transcript_uuid,
+                summary_uuid=summary_uuid,
             )
-            if existing_group and existing_group.id is not None:
-                await self.summary_service.delete_group(user_email, existing_group.id)
             logger.info(
                 f"All pages in file {file_id} are blank; skipping summary generation."
             )
@@ -356,3 +357,28 @@ class SummaryModule(ProcessorModule):
             )
         else:
             await self.summary_service.add_summary(user_email, dto)
+
+    async def _delete_ai_summaries_for_blank_note(
+        self,
+        user_email: str,
+        group_uuid: str,
+        transcript_uuid: str,
+        summary_uuid: str,
+    ) -> None:
+        """Soft-delete AI transcript/summary items and delete the parent group only when empty."""
+        for item_uuid in (transcript_uuid, summary_uuid):
+            existing_item = await self.summary_service.get_summary_by_uuid(
+                user_email, item_uuid
+            )
+            if existing_item and existing_item.id is not None:
+                await self.summary_service.delete_summary(user_email, existing_item.id)
+
+        existing_group = await self.summary_service.get_summary_by_uuid(
+            user_email, group_uuid
+        )
+        if existing_group and existing_group.id is not None:
+            remaining = await self.summary_service.count_summaries(
+                user_email, parent_uuid=group_uuid
+            )
+            if remaining == 0:
+                await self.summary_service.delete_group(user_email, existing_group.id)

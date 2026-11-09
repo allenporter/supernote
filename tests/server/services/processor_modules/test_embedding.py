@@ -221,3 +221,49 @@ async def test_embedding_clears_stale_vector_when_page_becomes_blank(
         ).scalar_one()
         assert content.embedding is None
         assert content.embedding_model is None
+
+
+async def test_embedding_skips_whitespace_only_text_content(
+    embedding_module: EmbeddingModule,
+    session_manager: DatabaseSessionManager,
+    fake_embedding_model: FakeEmbeddingModel,
+) -> None:
+    """Verify whitespace-only OCR output ('  \\n ') skips EmbeddingModel and clears stale vectors."""
+    file_id = 1006
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=1,
+                storage_key="ws_key",
+                file_name="ws.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="p0",
+                content_hash="h_ws",
+                text_content="   \n\t  ",
+                embedding="[0.3, 0.4]",
+                embedding_model="old-model",
+            )
+        )
+        await session.commit()
+
+    assert (
+        await embedding_module.run(file_id, session_manager, page_index=0, page_id="p0")
+        is True
+    )
+    assert fake_embedding_model.calls == []
+
+    async with session_manager.session() as session:
+        content = (
+            await session.execute(
+                select(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
+            )
+        ).scalar_one()
+        assert content.embedding is None
+        assert content.embedding_model is None

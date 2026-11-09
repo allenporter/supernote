@@ -5,7 +5,10 @@ from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.ai.prompts import PageMetadata, format_ocr_prompt
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageMetadataDO
+from supernote.server.db.models.note_processing import (
+    NotePageContentDO,
+    NotePageMetadataDO,
+)
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
@@ -18,9 +21,14 @@ from supernote.server.utils.paths import get_page_png_path
 logger = logging.getLogger(__name__)
 
 
-def _is_blank_page(page_meta: NotePageMetadataDO | None) -> bool:
-    """Return True when persisted page metadata confirms there are no drawables to transcribe."""
-    if page_meta is None:
+def _is_verified_blank_page(
+    content: NotePageContentDO | None,
+    page_meta: NotePageMetadataDO | None,
+) -> bool:
+    """Return True when page content and matching-revision metadata confirm no drawables."""
+    if content is None or page_meta is None:
+        return False
+    if not content.content_hash or page_meta.content_hash != content.content_hash:
         return False
     return not page_meta.has_drawables
 
@@ -67,11 +75,19 @@ class OcrModule(ProcessorModule):
             return False
 
         async with session_manager.session() as session:
-            page_meta = await get_page_metadata_for_page(
-                session, file_id, page_id=page_id, page_index=page_index
-            )
-            if _is_blank_page(page_meta):
-                return True
+            content = await get_page_content_by_id(session, file_id, page_id)
+            if content is None:
+                logger.warning(
+                    f"Page content prerequisite not met for OCR of {file_id} page {page_id}"
+                )
+                return False
+            file_do = await session.get(UserFileDO, file_id)
+            if file_do is not None:
+                page_meta = await get_page_metadata_for_page(
+                    session, file_do.user_id, file_id, page_id=page_id
+                )
+                if _is_verified_blank_page(content, page_meta):
+                    return True
 
         # Check if PNG exists (Prerequisite)
         png_path = get_page_png_path(file_id, page_id)
@@ -106,22 +122,20 @@ class OcrModule(ProcessorModule):
             if content is not None:
                 resolved_index = content.page_index
 
-            page_meta = await get_page_metadata_for_page(
-                session, file_id, page_id=page_id, page_index=resolved_index
-            )
-            if _is_blank_page(page_meta):
-                if content is not None:
-                    content.text_content = ""
-                    await session.commit()
-                logger.info(
-                    f"Skipping OCR LLM call for blank page {page_id} of file {file_id}"
-                )
-                return
-
             file_do = await session.get(UserFileDO, file_id)
-            if file_do:
+            if file_do is not None:
                 file_name = file_do.file_name
                 notebook_create_time = file_do.create_time
+                page_meta = await get_page_metadata_for_page(
+                    session, file_do.user_id, file_id, page_id=page_id
+                )
+                if _is_verified_blank_page(content, page_meta) and content is not None:
+                    content.text_content = ""
+                    await session.commit()
+                    logger.info(
+                        f"Skipping OCR LLM call for blank page {page_id} of file {file_id}"
+                    )
+                    return
 
         png_path = get_page_png_path(file_id, page_id)
         chunks = [
