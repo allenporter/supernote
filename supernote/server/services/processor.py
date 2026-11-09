@@ -11,8 +11,12 @@ from supernote.models.base import ProcessingStatus, TaskType
 from supernote.server.metrics import (
     PROCESSOR_FILES_PROCESSING,
     PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL,
+    PROCESSOR_QUEUE_PAUSED,
     PROCESSOR_QUEUE_SIZE,
     PROCESSOR_STALLED_TASKS_RECOVERED_TOTAL,
+    NoteProcessingMode,
+    init_note_processing_metrics,
+    track_note_processing_run,
 )
 
 from ..constants import DEFAULT_PAGE_CONCURRENCY
@@ -71,12 +75,21 @@ class ProcessorService:
         self.polling_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
         self._processing_enabled = asyncio.Event()
-        self._processing_enabled.set()
+        init_note_processing_metrics()
+        self._set_processing_enabled(True)
 
         # Module registry
         self.global_pre_modules: list[ProcessorModule] = []
         self.page_modules: list[ProcessorModule] = []
         self.global_post_modules: list[ProcessorModule] = []
+
+    def _set_processing_enabled(self, enabled: bool) -> None:
+        if enabled:
+            self._processing_enabled.set()
+            PROCESSOR_QUEUE_PAUSED.set(0)
+        else:
+            self._processing_enabled.clear()
+            PROCESSOR_QUEUE_PAUSED.set(1)
 
     def _update_queue_metrics(self) -> None:
         PROCESSOR_QUEUE_SIZE.set(self.queue.qsize())
@@ -123,17 +136,17 @@ class ProcessorService:
             try:
                 paused_val = await self.coordination_service.get_value("queue_paused")
                 if paused_val == "true":
-                    self._processing_enabled.clear()
+                    self._set_processing_enabled(False)
                     logger.info(
                         "ProcessorService queue processing starts in PAUSED state."
                     )
                 else:
-                    self._processing_enabled.set()
+                    self._set_processing_enabled(True)
             except Exception as e:
                 logger.error(f"Failed to load queue paused state: {e}")
-                self._processing_enabled.set()
+                self._set_processing_enabled(True)
         else:
-            self._processing_enabled.set()
+            self._set_processing_enabled(True)
 
         # subscribe to events
         self.event_bus.subscribe(NoteUpdatedEvent, self.handle_note_updated)
@@ -156,7 +169,7 @@ class ProcessorService:
 
     async def pause(self) -> None:
         """Pause processing of tasks."""
-        self._processing_enabled.clear()
+        self._set_processing_enabled(False)
         if self.coordination_service:
             try:
                 await self.coordination_service.set_value("queue_paused", "true")
@@ -166,7 +179,7 @@ class ProcessorService:
 
     async def resume(self) -> None:
         """Resume processing of tasks."""
-        self._processing_enabled.set()
+        self._set_processing_enabled(True)
         if self.coordination_service:
             try:
                 await self.coordination_service.set_value("queue_paused", "false")
@@ -433,12 +446,20 @@ class ProcessorService:
         page_indices: set[int] | None = None,
     ) -> bool:
         """Orchestrate the processing pipeline (or a subset of task_types/page_indices) for a single file."""
+        mode = (
+            NoteProcessingMode.FULL
+            if task_types is None and page_indices is None
+            else NoteProcessingMode.ON_DEMAND
+        )
         async with self._file_lock(file_id):
-            return await self._process_file_locked(
-                file_id,
-                task_types=task_types,
-                page_indices=page_indices,
-            )
+            with track_note_processing_run(mode=mode) as run:
+                ok = await self._process_file_locked(
+                    file_id,
+                    task_types=task_types,
+                    page_indices=page_indices,
+                )
+                run.set_succeeded(ok)
+                return ok
 
     async def _process_file_locked(
         self,

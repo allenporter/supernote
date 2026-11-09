@@ -19,18 +19,38 @@ __all__ = [
     "DB_SESSION_ERRORS_TOTAL",
     "HTTP_REQUESTS_TOTAL",
     "HTTP_REQUEST_DURATION_SECONDS",
+    "NoteProcessingMode",
     "PROCESSOR_FILES_PROCESSING",
     "PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL",
+    "PROCESSOR_QUEUE_PAUSED",
     "PROCESSOR_QUEUE_SIZE",
     "PROCESSOR_STALLED_TASKS_RECOVERED_TOTAL",
     "PROCESSOR_TASKS_TOTAL",
     "PROCESSOR_TASK_DURATION_SECONDS",
     "init_ai_metrics",
+    "init_note_processing_metrics",
     "record_ai_tokens",
     "track_ai_request",
+    "track_note_processing_run",
 ]
 
 AI_LATENCY_BUCKETS: tuple[float, ...] = (
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    2.5,
+    5.0,
+    10.0,
+    20.0,
+    45.0,
+    90.0,
+    180.0,
+    300.0,
+    600.0,
+)
+
+NOTE_PROCESSING_DURATION_BUCKETS: tuple[float, ...] = (
     0.1,
     0.25,
     0.5,
@@ -56,8 +76,15 @@ class AIStage(StrEnum):
     EMBEDDING_QUERY = "embedding_query"
 
 
-class _AIRequestStatus(StrEnum):
-    """Terminal status labels for logical AI model invocations."""
+class NoteProcessingMode(StrEnum):
+    """Execution mode labels for `.note` pipeline processing runs."""
+
+    FULL = "full"
+    ON_DEMAND = "on_demand"
+
+
+class _OutcomeStatus(StrEnum):
+    """Terminal status labels for logical AI and `.note` pipeline runs."""
 
     SUCCESS = "success"
     FAILURE = "failure"
@@ -121,6 +148,11 @@ PROCESSOR_QUEUE_SIZE: Gauge = Gauge(
     "Current size of the background processor queue.",
 )
 
+PROCESSOR_QUEUE_PAUSED: Gauge = Gauge(
+    "supernote_processor_queue_paused",
+    "Whether background processor queue execution is currently paused (1 = paused, 0 = active).",
+)
+
 PROCESSOR_FILES_PROCESSING: Gauge = Gauge(
     "supernote_processor_files_processing",
     "Current number of files actively undergoing background pipeline processing.",
@@ -135,6 +167,67 @@ PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL: Counter = Counter(
     "supernote_processor_missing_tasks_recovered_total",
     "Total number of missing tasks recovered/enqueued.",
 )
+
+_NOTE_PROCESSING_RUNS_TOTAL: Counter = Counter(
+    "supernote_note_processing_runs_total",
+    "Total number of .note pipeline processing runs.",
+    ["mode", "status"],
+)
+
+_NOTE_PROCESSING_DURATION_SECONDS: Histogram = Histogram(
+    "supernote_note_processing_duration_seconds",
+    "End-to-end latency of completed .note pipeline processing runs in seconds (excluding per-file lock wait).",
+    ["mode"],
+    buckets=NOTE_PROCESSING_DURATION_BUCKETS,
+)
+
+
+class NoteProcessingRun:
+    """Mutable outcome handle for an active `.note` pipeline processing run."""
+
+    def __init__(self) -> None:
+        self._succeeded = False
+
+    def set_succeeded(self, succeeded: bool) -> None:
+        """Record whether all requested stages of the pipeline run succeeded."""
+        self._succeeded = succeeded
+
+
+def init_note_processing_metrics() -> None:
+    """Pre-initialize `success` and `failure` `.note` run counter series at 0."""
+    for mode in NoteProcessingMode:
+        for status in (_OutcomeStatus.SUCCESS, _OutcomeStatus.FAILURE):
+            _NOTE_PROCESSING_RUNS_TOTAL.labels(
+                mode=mode.value,
+                status=status.value,
+            )
+
+
+@contextmanager
+def track_note_processing_run(
+    *,
+    mode: NoteProcessingMode,
+) -> Generator[NoteProcessingRun]:
+    """Record Prometheus run count and completed latency for a `.note` pipeline run."""
+    run = NoteProcessingRun()
+    start_time = time.monotonic()
+    status = _OutcomeStatus.FAILURE
+    try:
+        yield run
+        if run._succeeded:
+            status = _OutcomeStatus.SUCCESS
+    except asyncio.CancelledError:
+        status = _OutcomeStatus.CANCELLED
+        raise
+    finally:
+        duration = time.monotonic() - start_time
+        _NOTE_PROCESSING_RUNS_TOTAL.labels(
+            mode=mode.value,
+            status=status.value,
+        ).inc()
+        if status != _OutcomeStatus.CANCELLED:
+            _NOTE_PROCESSING_DURATION_SECONDS.labels(mode=mode.value).observe(duration)
+
 
 # AI model metrics
 _AI_REQUESTS_TOTAL: Counter = Counter(
@@ -164,7 +257,7 @@ def init_ai_metrics(
     stage: AIStage,
 ) -> None:
     """Pre-initialize `success` and `failure` counter series at 0 for rate()/increase()."""
-    for status in (_AIRequestStatus.SUCCESS, _AIRequestStatus.FAILURE):
+    for status in (_OutcomeStatus.SUCCESS, _OutcomeStatus.FAILURE):
         _AI_REQUESTS_TOTAL.labels(
             provider=provider,
             model=model,
@@ -185,12 +278,12 @@ def track_ai_request(
         _ActiveAIRequest(provider=provider, model=model, stage=stage)
     )
     start_time = time.monotonic()
-    status = _AIRequestStatus.FAILURE
+    status = _OutcomeStatus.FAILURE
     try:
         yield
-        status = _AIRequestStatus.SUCCESS
+        status = _OutcomeStatus.SUCCESS
     except asyncio.CancelledError:
-        status = _AIRequestStatus.CANCELLED
+        status = _OutcomeStatus.CANCELLED
         raise
     finally:
         duration = time.monotonic() - start_time
@@ -201,7 +294,7 @@ def track_ai_request(
             stage=stage.value,
             status=status.value,
         ).inc()
-        if status != _AIRequestStatus.CANCELLED:
+        if status != _OutcomeStatus.CANCELLED:
             _AI_REQUEST_DURATION_SECONDS.labels(
                 provider=provider,
                 model=model,
