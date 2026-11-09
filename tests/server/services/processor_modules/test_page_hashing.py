@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from prometheus_client import REGISTRY
 from sqlalchemy import exists, func, select
 
 from supernote.notebook import load
@@ -749,3 +750,162 @@ async def test_page_hashing_metadata_supports_sql_json_extract_queries(
             ).all()
         ]
         assert keyword_pages == [(1032, 0)]
+
+
+def _page_diff_snapshot() -> tuple[dict[str, float], float, float]:
+    change_types = ("added", "modified", "moved", "unchanged", "deleted")
+    counts = {
+        ct: (
+            REGISTRY.get_sample_value(
+                "supernote_note_pages_parsed_total",
+                {"change_type": ct},
+            )
+            or 0.0
+        )
+        for ct in change_types
+    }
+    total_sum = (
+        REGISTRY.get_sample_value(
+            "supernote_note_pages_per_run_sum",
+            {"scope": "total"},
+        )
+        or 0.0
+    )
+    dirty_sum = (
+        REGISTRY.get_sample_value(
+            "supernote_note_pages_per_run_sum",
+            {"scope": "dirty"},
+        )
+        or 0.0
+    )
+    return counts, total_sum, dirty_sum
+
+
+def _assert_page_diff_delta(
+    before: tuple[dict[str, float], float, float],
+    after: tuple[dict[str, float], float, float],
+    *,
+    added: float = 0.0,
+    modified: float = 0.0,
+    moved: float = 0.0,
+    unchanged: float = 0.0,
+    deleted: float = 0.0,
+    total_sum: float,
+    dirty_sum: float,
+) -> None:
+    before_counts, before_total, before_dirty = before
+    after_counts, after_total, after_dirty = after
+    assert after_counts["added"] - before_counts["added"] == added
+    assert after_counts["modified"] - before_counts["modified"] == modified
+    assert after_counts["moved"] - before_counts["moved"] == moved
+    assert after_counts["unchanged"] - before_counts["unchanged"] == unchanged
+    assert after_counts["deleted"] - before_counts["deleted"] == deleted
+    assert after_total - before_total == total_sum
+    assert after_dirty - before_dirty == dirty_sum
+
+
+async def test_page_hashing_emits_mutually_exclusive_page_diff_metrics(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    """Verify PageHashingModule emits exact page-diff counters and histograms for standard and legacy notes."""
+    note_path = TEST_DATA_DIR / "nelinory" / "A5X_TestNote_With_Pdf_Template.note"
+    await _seed_user_note_file(
+        session_manager, blob_storage, user_id=7, file_id=1040, note_path=note_path
+    )
+
+    # 1. Initial 3-page standard `<PAGEID>` parse -> 3 added, total=3, dirty=3.
+    snap = _page_diff_snapshot()
+    assert await page_hashing_module.run(1040, session_manager) is True
+    snap_after_init = _page_diff_snapshot()
+    _assert_page_diff_delta(
+        snap,
+        snap_after_init,
+        added=3.0,
+        total_sum=3.0,
+        dirty_sum=3.0,
+    )
+
+    # Simulate: page 0 moved + modified, page 1 moved only, page 2 unchanged, 1 deleted page.
+    async with session_manager.session() as session:
+        rows = list(
+            (
+                await session.execute(
+                    select(NotePageContentDO)
+                    .where(NotePageContentDO.file_id == 1040)
+                    .order_by(NotePageContentDO.page_index)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 3
+        rows[0].page_index = 1
+        rows[0].content_hash = "stale_hash"
+        rows[1].page_index = 0
+        session.add(
+            NotePageContentDO(
+                file_id=1040,
+                page_index=9,
+                page_id="deleted_pid",
+                content_hash="deleted_hash",
+            )
+        )
+        await session.commit()
+
+    assert await page_hashing_module.run(1040, session_manager) is True
+    snap_after_reconcile = _page_diff_snapshot()
+    _assert_page_diff_delta(
+        snap_after_init,
+        snap_after_reconcile,
+        modified=1.0,
+        moved=1.0,
+        unchanged=1.0,
+        deleted=1.0,
+        total_sum=3.0,
+        dirty_sum=1.0,
+    )
+
+    # 2. Legacy 2-page `.note` lacking `<PAGEID>`: initial parse + modified/unchanged/deleted re-hash.
+    legacy_path = TEST_DATA_DIR / "philips" / "test.note"
+    await _seed_user_note_file(
+        session_manager, blob_storage, user_id=7, file_id=1041, note_path=legacy_path
+    )
+
+    assert await page_hashing_module.run(1041, session_manager) is True
+    snap_legacy_init = _page_diff_snapshot()
+    _assert_page_diff_delta(
+        snap_after_reconcile,
+        snap_legacy_init,
+        added=2.0,
+        total_sum=2.0,
+        dirty_sum=2.0,
+    )
+
+    async with session_manager.session() as session:
+        pm_0 = await session.get(NotePageMetadataDO, (7, 1041, 0))
+        assert pm_0 is not None
+        pm_0.content_hash = "stale_legacy_hash"
+        session.add(
+            NotePageMetadataDO(
+                user_id=7,
+                file_id=1041,
+                page_index=5,
+                page_id="",
+                content_hash="deleted_legacy_hash",
+            )
+        )
+        await session.commit()
+
+    assert await page_hashing_module.run(1041, session_manager) is True
+    snap_legacy_rehash = _page_diff_snapshot()
+    _assert_page_diff_delta(
+        snap_legacy_init,
+        snap_legacy_rehash,
+        modified=1.0,
+        unchanged=1.0,
+        deleted=1.0,
+        total_sum=2.0,
+        dirty_sum=1.0,
+    )
