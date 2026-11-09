@@ -16,3 +16,7 @@ Before adding a method, parameter, or dependency to an interface or base class, 
 
 3. **Fix Root Model Gaps Rather Than Working Around Them in Subclasses**:
    - If the existing base abstraction or state model cannot express a new requirement, pause and ask what single concept is missing from the core model. Extend the base invariant once rather than writing bespoke overrides in every implementation.
+
+4. **Prefer Idiomatic Library Primitives Over Custom Ceremony**:
+   - Before writing custom serializers, validators, or wrapper subclasses, check what the underlying library (`mashumaro`, `sqlalchemy`, `aiohttp`, stdlib) already supports natively (e.g., `field_options(serialize=str)` rather than custom serializer/deserializer pairs and wrapper VOs).
+   - During code or adversarial reviews, fix genuine security boundaries and state-invariant bugs; reject fixes that add speculative defensive bloat for contrived inputs.
