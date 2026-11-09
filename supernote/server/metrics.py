@@ -67,20 +67,6 @@ NOTE_PROCESSING_DURATION_BUCKETS: tuple[float, ...] = (
     600.0,
 )
 
-NOTE_PAGES_PER_RUN_BUCKETS: tuple[float, ...] = (
-    0.0,
-    1.0,
-    2.0,
-    5.0,
-    10.0,
-    20.0,
-    50.0,
-    100.0,
-    250.0,
-    500.0,
-    1000.0,
-)
-
 PROCESSOR_TASK_DURATION_BUCKETS: tuple[float, ...] = (
     0.01,
     0.05,
@@ -132,13 +118,6 @@ class _NotePageChangeType(StrEnum):
     MOVED = "moved"
     UNCHANGED = "unchanged"
     DELETED = "deleted"
-
-
-class _NotePageScope(StrEnum):
-    """Scope labels for per-`.note` page count distributions."""
-
-    TOTAL = "total"
-    DIRTY = "dirty"
 
 
 class _AITokenType(StrEnum):
@@ -238,13 +217,6 @@ _NOTE_PAGES_PARSED_TOTAL: Counter = Counter(
     ["change_type"],
 )
 
-_NOTE_PAGES_PER_RUN: Histogram = Histogram(
-    "supernote_note_pages_per_run",
-    "Number of pages per .note page-hashing run (total notebook pages vs dirty added/modified pages).",
-    ["scope"],
-    buckets=NOTE_PAGES_PER_RUN_BUCKETS,
-)
-
 
 class NoteProcessingRun:
     """Mutable outcome handle for an active `.note` pipeline processing run."""
@@ -277,7 +249,7 @@ def record_note_page_diff(
     unchanged: int = 0,
     deleted: int = 0,
 ) -> None:
-    """Record mutually exclusive `.note` page diff counts and per-run page distributions."""
+    """Record mutually exclusive `.note` page diff counts."""
     counts = (
         (_NotePageChangeType.ADDED, max(0, added)),
         (_NotePageChangeType.MODIFIED, max(0, modified)),
@@ -288,11 +260,6 @@ def record_note_page_diff(
     for change_type, count in counts:
         if count > 0:
             _NOTE_PAGES_PARSED_TOTAL.labels(change_type=change_type.value).inc(count)
-
-    total_pages = max(0, added) + max(0, modified) + max(0, moved) + max(0, unchanged)
-    dirty_pages = max(0, added) + max(0, modified)
-    _NOTE_PAGES_PER_RUN.labels(scope=_NotePageScope.TOTAL.value).observe(total_pages)
-    _NOTE_PAGES_PER_RUN.labels(scope=_NotePageScope.DIRTY.value).observe(dirty_pages)
 
 
 @contextmanager
