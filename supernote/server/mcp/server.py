@@ -1,6 +1,8 @@
+import functools
 import json
 import logging
-from typing import Any, cast
+from collections.abc import Awaitable, Callable
+from typing import Any, ParamSpec, cast
 
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.provider import TokenVerifier
@@ -21,11 +23,18 @@ from supernote.server.mcp.models import (
     TranscriptRequestDTO,
     TranscriptResponseVO,
 )
+from supernote.server.metrics import (
+    MCPToolName,
+    init_mcp_metrics,
+    track_mcp_tool_call,
+)
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.search import SearchService
 from supernote.server.services.user import UserService
 
 logger = logging.getLogger(__name__)
+
+_P = ParamSpec("_P")
 
 # Global services to be injected by the app
 _services: dict[str, Any] = {
@@ -85,6 +94,30 @@ async def _get_auth_user_id(ctx: Context) -> int | None:
     return await user_service.get_user_id(token.user_id)
 
 
+def _instrument_mcp_tool(
+    tool: MCPToolName,
+) -> Callable[
+    [Callable[_P, Awaitable[dict[str, Any]]]],
+    Callable[_P, Awaitable[dict[str, Any]]],
+]:
+    """Wrap an MCP tool handler to record Prometheus call and latency metrics."""
+
+    def decorator(
+        fn: Callable[_P, Awaitable[dict[str, Any]]],
+    ) -> Callable[_P, Awaitable[dict[str, Any]]]:
+        @functools.wraps(fn)
+        async def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> dict[str, Any]:
+            with track_mcp_tool_call(tool=tool) as call:
+                result = await fn(*args, **kwargs)
+                call.set_succeeded(result.get("success") is True)
+                return result
+
+        return wrapper
+
+    return decorator
+
+
+@_instrument_mcp_tool(MCPToolName.LIST_NOTEBOOKS)
 async def list_notebooks(
     ctx: Context,
     limit: int = 20,
@@ -128,6 +161,7 @@ async def list_notebooks(
     return ListNotebooksResponseVO(notebooks=vo_list).to_dict()
 
 
+@_instrument_mcp_tool(MCPToolName.SEARCH_NOTEBOOK_CHUNKS)
 async def search_notebook_chunks(
     ctx: Context,
     query: str,
@@ -196,6 +230,7 @@ async def search_notebook_chunks(
     return SearchResponseVO(results=vo_list).to_dict()
 
 
+@_instrument_mcp_tool(MCPToolName.GET_NOTEBOOK_TRANSCRIPT)
 async def get_notebook_transcript(
     ctx: Context,
     file_id: str,
@@ -253,6 +288,7 @@ async def get_notebook_transcript(
 
 def create_mcp_server(issuer_url: str, resource_server_url: str) -> MCPServer:
     """Create a new MCPServer instance and register tools."""
+    init_mcp_metrics()
     token_verifier = SupernoteTokenVerifier(
         _services["user_service"], _services["coordination_service"]
     )
