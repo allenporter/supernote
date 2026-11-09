@@ -1,4 +1,4 @@
-"""macOS Vision framework wrapper with Prometheus instrumentation.
+"""macOS Vision framework wrapper with error translation.
 
 Imports `pyobjc-framework-Vision` only when an `AppleVisionBackend` is
 constructed so Linux installations and containers do not require macOS
@@ -11,14 +11,12 @@ from __future__ import annotations
 import asyncio
 import importlib
 import logging
-import time
 from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from supernote.server.ai.base import AIError
-from supernote.server.metrics import APPLE_AI_CALLS_TOTAL, APPLE_AI_DURATION_SECONDS
 
 if TYPE_CHECKING:
     from supernote.server.config import ProviderConfig
@@ -72,9 +70,15 @@ def _format_vision_error(error: Any) -> str:
 
 
 class AppleVisionBackend:
-    """On-device macOS Vision OCR backend with Prometheus instrumentation."""
+    """On-device macOS Vision OCR backend with error translation."""
 
-    def __init__(self, vision_loader: VisionLoader = _load_vision_runtime) -> None:
+    def __init__(
+        self,
+        *,
+        provider: str,
+        vision_loader: VisionLoader = _load_vision_runtime,
+    ) -> None:
+        self._provider = provider
         self._objc, self._vision = vision_loader()
         objc_error = getattr(self._objc, "error", None)
         if isinstance(objc_error, type) and issubclass(objc_error, BaseException):
@@ -85,23 +89,20 @@ class AppleVisionBackend:
         else:
             self._handled_errors = _BASE_RUNTIME_ERRORS
 
+    @property
+    def provider(self) -> str:
+        return self._provider
+
     @contextmanager
-    def _track_call(self, operation: str) -> Generator[None]:
-        start_time = time.monotonic()
-        status = "failure"
+    def _handle_vision_errors(self, operation: str) -> Generator[None]:
         try:
             yield
-            status = "success"
         except AIError as err:
             logger.error(f"Apple Vision error during {operation}: {err}")
             raise
         except self._handled_errors as err:
             logger.error(f"Unexpected Apple Vision error during {operation}: {err!r}")
             raise AIError(f"Apple Vision error during {operation}: {err}") from err
-        finally:
-            duration = time.monotonic() - start_time
-            APPLE_AI_CALLS_TOTAL.labels(operation=operation, status=status).inc()
-            APPLE_AI_DURATION_SECONDS.labels(operation=operation).observe(duration)
 
     def _recognize_text_sync(
         self,
@@ -152,13 +153,13 @@ class AppleVisionBackend:
         level: RecognitionLevel = RecognitionLevel.VISION_ACCURATE,
     ) -> str:
         """Run on-device Vision text recognition on `png_data` in a worker thread."""
-        with self._track_call("recognize_text"):
+        with self._handle_vision_errors("recognize_text"):
             return await asyncio.to_thread(self._recognize_text_sync, png_data, level)
 
 
 def create_apple_backend(
     providers: Mapping[str, ProviderConfig],
-    name: str = "apple",
+    provider: str,
 ) -> AppleVisionBackend:
     """Create an `AppleVisionBackend`, failing fast if Vision is unavailable."""
-    return AppleVisionBackend()
+    return AppleVisionBackend(provider=provider)

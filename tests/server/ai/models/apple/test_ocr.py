@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 
 import pytest
+from prometheus_client import REGISTRY
 
 from supernote.server.ai.base import AIError
 from supernote.server.ai.models.apple.backend import AppleVisionBackend
@@ -13,21 +14,44 @@ from supernote.server.ai.models.apple.ocr import (
     AppleOcrModel,
     create_ocr_model,
 )
+from supernote.server.ai.models.ocr import InstrumentedOcrModel
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
 
-from .conftest import FakeObjCModule, FakeVisionModule
+from .conftest import FakeNSError, FakeObjCModule, FakeVisionModule
 
 
 async def test_apple_ocr_model(
     apple_backend: AppleVisionBackend,
     fake_vision: FakeVisionModule,
 ) -> None:
-    accurate_model = AppleOcrModel(apple_backend, "vision-accurate")
-    fast_model = AppleOcrModel(apple_backend, "vision-fast")
+    accurate_model = InstrumentedOcrModel(
+        AppleOcrModel(apple_backend, "vision-accurate")
+    )
+    fast_model = InstrumentedOcrModel(AppleOcrModel(apple_backend, "vision-fast"))
+
+    accurate_labels = {
+        "provider": "apple",
+        "model": "vision-accurate",
+        "stage": "ocr",
+        "status": "success",
+    }
+    fast_labels = {
+        "provider": "apple",
+        "model": "vision-fast",
+        "stage": "ocr",
+        "status": "success",
+    }
+    accurate_before = (
+        REGISTRY.get_sample_value("supernote_ai_requests_total", accurate_labels) or 0.0
+    )
+    fast_before = (
+        REGISTRY.get_sample_value("supernote_ai_requests_total", fast_labels) or 0.0
+    )
 
     text = await accurate_model.extract_text(b"png-bytes", "Ignored VLM prompt")
     await fast_model.extract_text(b"png-fast-bytes", "Ignored VLM prompt")
 
+    assert accurate_model.provider == "apple"
     assert accurate_model.model_id == "vision-accurate"
     assert fast_model.model_id == "vision-fast"
     assert text == "Daily Log\n- Ship local Vision OCR"
@@ -39,6 +63,32 @@ async def test_apple_ocr_model(
     assert (
         fake_vision.calls[1].recognition_level
         == fake_vision.VNRequestTextRecognitionLevelFast
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_ai_requests_total", accurate_labels)
+        == accurate_before + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_ai_requests_total", fast_labels)
+        == fast_before + 1.0
+    )
+
+    fail_labels = {
+        "provider": "apple",
+        "model": "vision-accurate",
+        "stage": "ocr",
+        "status": "failure",
+    }
+    fail_before = (
+        REGISTRY.get_sample_value("supernote_ai_requests_total", fail_labels) or 0.0
+    )
+    fake_vision.perform_success = False
+    fake_vision.perform_error = FakeNSError("corrupt image")
+    with pytest.raises(AIError, match="corrupt image"):
+        await accurate_model.extract_text(b"bad-png", "Ignored")
+    assert (
+        REGISTRY.get_sample_value("supernote_ai_requests_total", fail_labels)
+        == fail_before + 1.0
     )
 
 

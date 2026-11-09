@@ -1,4 +1,4 @@
-"""OpenAI-compatible HTTP client with Prometheus instrumentation.
+"""OpenAI-compatible HTTP client with error translation and token reporting.
 
 Only two endpoints are used, `/chat/completions` and `/embeddings`, so the
 client is a thin layer over `aiohttp` rather than a vendor SDK.
@@ -7,7 +7,7 @@ client is a thin layer over `aiohttp` rather than a vendor SDK.
 from __future__ import annotations
 
 import logging
-import time
+import math
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 import aiohttp
 
 from supernote.server.ai.base import AIError
-from supernote.server.metrics import OPENAI_API_CALLS_TOTAL, OPENAI_API_DURATION_SECONDS
+from supernote.server.metrics import record_ai_tokens
 
 if TYPE_CHECKING:
     from supernote.server.config import ProviderConfig
@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 __all__ = [
     "DEFAULT_BASE_URL",
     "OpenAIBackend",
+    "REQUEST_TIMEOUT",
     "create_openai_backend",
 ]
 
@@ -37,6 +38,7 @@ REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=600)
 _RESPONSE_ERRORS = (
     aiohttp.ClientError,
     TimeoutError,
+    OSError,
     ValueError,
     KeyError,
     IndexError,
@@ -44,20 +46,67 @@ _RESPONSE_ERRORS = (
 )
 
 
-class OpenAIBackend:
-    """OpenAI-compatible HTTP client with Prometheus instrumentation."""
+def _non_negative_int(value: object) -> int | None:
+    """Coerce a raw JSON token count to a non-negative `int`, rejecting `bool`."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, float) and math.isfinite(value) and value >= 0:
+        return int(value)
+    return None
 
-    def __init__(self, base_url: str, api_key: str | None = None) -> None:
+
+def _record_usage(data: Any, *, provider: str) -> None:
+    """Record mutually exclusive token counts from an OpenAI-compatible `usage` block.
+
+    Per the OpenAI `/chat/completions` specification, `completion_tokens`
+    includes `completion_tokens_details.reasoning_tokens`, so reasoning tokens
+    are subtracted to report `output` as visible completion tokens only.
+    """
+    if not isinstance(data, Mapping):
+        return
+    usage = data.get("usage")
+    if not isinstance(usage, Mapping):
+        return
+    details = usage.get("completion_tokens_details")
+    raw_reasoning = (
+        details.get("reasoning_tokens") if isinstance(details, Mapping) else None
+    )
+    reasoning = _non_negative_int(raw_reasoning)
+    completion = _non_negative_int(usage.get("completion_tokens"))
+    if completion is not None and reasoning is not None:
+        completion = max(0, completion - reasoning)
+    record_ai_tokens(
+        provider=provider,
+        input_tokens=usage.get("prompt_tokens"),
+        output_tokens=completion,
+        thinking_tokens=reasoning,
+    )
+
+
+class OpenAIBackend:
+    """OpenAI-compatible HTTP client with error translation and token reporting."""
+
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str | None = None,
+        *,
+        provider: str,
+    ) -> None:
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
+        self._provider = provider
+
+    @property
+    def provider(self) -> str:
+        return self._provider
 
     @contextmanager
-    def _track_api_call(self, operation: str) -> Generator[None]:
-        start_time = time.monotonic()
-        status = "failure"
+    def _handle_api_errors(self, operation: str) -> Generator[None]:
         try:
             yield
-            status = "success"
         except AIError as err:
             logger.error(f"OpenAI-compatible API error during {operation}: {err}")
             raise
@@ -66,10 +115,6 @@ class OpenAIBackend:
             raise AIError(
                 f"OpenAI-compatible API error during {operation}: {err!r}"
             ) from err
-        finally:
-            duration = time.monotonic() - start_time
-            OPENAI_API_CALLS_TOTAL.labels(operation=operation, status=status).inc()
-            OPENAI_API_DURATION_SECONDS.labels(operation=operation).observe(duration)
 
     async def _post(self, path: str, payload: dict[str, Any]) -> Any:
         headers = {}
@@ -99,8 +144,9 @@ class OpenAIBackend:
         }
         if response_format is not None:
             payload["response_format"] = response_format
-        with self._track_api_call("chat_completion"):
+        with self._handle_api_errors("chat_completion"):
             data = await self._post("/chat/completions", payload)
+            _record_usage(data, provider=self._provider)
             text = data["choices"][0]["message"]["content"] or ""
             if not isinstance(text, str):
                 raise TypeError("chat completion content is not a string")
@@ -108,25 +154,26 @@ class OpenAIBackend:
 
     async def embeddings(self, model: str, text: str) -> list[float]:
         """Return the embedding vector for `text` from `/embeddings`."""
-        with self._track_api_call("embeddings"):
+        with self._handle_api_errors("embeddings"):
             data = await self._post("/embeddings", {"model": model, "input": text})
+            _record_usage(data, provider=self._provider)
             return [float(value) for value in data["data"][0]["embedding"]]
 
 
 def create_openai_backend(
     providers: Mapping[str, ProviderConfig],
-    name: str = "openai",
+    provider: str,
 ) -> OpenAIBackend | None:
     """Create an `OpenAIBackend` from configured providers, or `None` if unconfigured.
 
     A provider entry needs a `base_url` (e.g. a local Ollama server) or an
     `api_key` (hosted OpenAI at `DEFAULT_BASE_URL`).
     """
-    provider_cfg = providers.get(name)
+    provider_cfg = providers.get(provider)
     if provider_cfg is None:
         return None
     base_url = (provider_cfg.base_url or "").strip()
     api_key = (provider_cfg.api_key or "").strip() or None
     if not base_url and not api_key:
         return None
-    return OpenAIBackend(base_url or DEFAULT_BASE_URL, api_key)
+    return OpenAIBackend(base_url or DEFAULT_BASE_URL, api_key, provider=provider)

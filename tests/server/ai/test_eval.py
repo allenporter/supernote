@@ -52,6 +52,10 @@ class _ScriptedOcrModel(OcrModel):
         self.calls = 0
 
     @property
+    def provider(self) -> str:
+        return "fake"
+
+    @property
     def model_id(self) -> str:
         return self._model_id
 
@@ -462,6 +466,10 @@ def test_build_target_report_aggregates_external_results() -> None:
 
 
 class _SlowOcrModel(OcrModel):
+    @property
+    def provider(self) -> str:
+        return "slow"
+
     @property
     def model_id(self) -> str:
         return "slow-ocr-v1"
