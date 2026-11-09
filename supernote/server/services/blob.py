@@ -7,7 +7,7 @@ import shutil
 import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -103,12 +103,19 @@ class BlobStorage(ABC):
         """
 
     @abstractmethod
+    async def list_blob_sizes(self, bucket: str) -> list[tuple[str, int]]:
+        """Return sorted `(key, size_bytes)` pairs for all stored blobs in `bucket`.
+
+        Excludes temporary staging files and unmerged multipart `.part.N` chunks.
+        """
+
+    @abstractmethod
     async def cleanup(self) -> CleanupStats:
         """Remove expired temporary staging files and abandoned upload chunks."""
 
+    @abstractmethod
     def get_available_bytes(self) -> int | None:
         """Return available free bytes on the storage backend, or None if unbounded/unknown."""
-        return None
 
 
 class LocalBlobStorage(BlobStorage):
@@ -260,12 +267,35 @@ class LocalBlobStorage(BlobStorage):
         return await asyncio.to_thread(self._list_blobs_sync, bucket)
 
     def _list_blobs_sync(self, bucket: str) -> list[str]:
-        clean_bucket = Path(bucket).name
-        bucket_dir = (self.root / clean_bucket).resolve()
-        if not bucket_dir.is_relative_to(self.root) or not bucket_dir.is_dir():
-            return []
+        return sorted(key for key, _ in self._iter_bucket_files(bucket))
 
-        keys: list[str] = []
+    async def list_blob_sizes(self, bucket: str) -> list[tuple[str, int]]:
+        """Return sorted `(key, size_bytes)` pairs for all stored blobs in `bucket`."""
+        return await asyncio.to_thread(self._list_blob_sizes_sync, bucket)
+
+    def _list_blob_sizes_sync(self, bucket: str) -> list[tuple[str, int]]:
+        entries: list[tuple[str, int]] = []
+        for key, file_path in self._iter_bucket_files(bucket):
+            try:
+                size = file_path.stat().st_size
+            except FileNotFoundError:
+                continue
+            entries.append((key, size))
+        entries.sort(key=lambda item: item[0])
+        return entries
+
+    def _iter_bucket_files(self, bucket: str) -> Iterator[tuple[str, Path]]:
+        clean_bucket = Path(bucket).name
+        if not clean_bucket or clean_bucket in {".", "..", "temp"}:
+            return
+        bucket_dir = (self.root / clean_bucket).resolve()
+        if (
+            bucket_dir == self.root
+            or not bucket_dir.is_relative_to(self.root)
+            or not bucket_dir.is_dir()
+        ):
+            return
+
         for shard_dir in bucket_dir.iterdir():
             if not shard_dir.is_dir():
                 continue
@@ -275,9 +305,7 @@ class LocalBlobStorage(BlobStorage):
                     if parse_file_chunk_name(filename) is not None:
                         continue
                     file_path = root_path / filename
-                    keys.append(file_path.relative_to(shard_dir).as_posix())
-        keys.sort()
-        return keys
+                    yield file_path.relative_to(shard_dir).as_posix(), file_path
 
     async def cleanup(self) -> CleanupStats:
         """Remove expired temporary staging files and abandoned upload chunks."""

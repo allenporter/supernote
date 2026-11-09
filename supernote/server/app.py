@@ -43,6 +43,7 @@ from .keys import (
     SCHEDULE_SERVICE_KEY,
     SEARCH_SERVICE_KEY,
     SESSION_MANAGER_KEY,
+    STORAGE_METRICS_COLLECTOR_KEY,
     SUMMARY_MODEL_KEY,
     SUMMARY_SERVICE_KEY,
     URL_SIGNER_KEY,
@@ -75,6 +76,7 @@ from .services.processor_modules.png_conversion import PngConversionModule
 from .services.processor_modules.summary import SummaryModule
 from .services.schedule import ScheduleService
 from .services.search import SearchService
+from .services.storage_metrics import StorageMetricsCollector
 from .services.summary import SummaryService
 from .services.user import UserService
 from .services.webhook import WebhookService
@@ -410,6 +412,10 @@ def create_app(config: ServerConfig) -> web.Application:
         logger.info("Starting background services...")
         await processor_service.start()
         await webhook_service.start()
+        if config.metrics_enabled:
+            storage_metrics_collector = StorageMetricsCollector(blob_storage)
+            app[STORAGE_METRICS_COLLECTOR_KEY] = storage_metrics_collector
+            await storage_metrics_collector.start()
         logger.info("Startup sequence complete.")
 
     app.on_startup.append(on_startup_handler)
@@ -422,6 +428,8 @@ def create_app(config: ServerConfig) -> web.Application:
             except asyncio.CancelledError:
                 pass
 
+        if storage_metrics_collector := app.get(STORAGE_METRICS_COLLECTOR_KEY):
+            await storage_metrics_collector.stop()
         await webhook_service.stop()
         await processor_service.stop()
         await session_manager.close()

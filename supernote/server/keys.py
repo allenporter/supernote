@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from .services.processor import ProcessorService
     from .services.schedule import ScheduleService
     from .services.search import SearchService
+    from .services.storage_metrics import StorageMetricsCollector
     from .services.summary import SummaryService
     from .services.user import UserService
     from .services.webhook import WebhookService
@@ -55,6 +56,9 @@ URL_SIGNER_KEY: web.AppKey[UrlSigner] = web.AppKey("url_signer")
 SOCKETIO_MANAGER_KEY: web.AppKey[SocketIOServerManager] = web.AppKey("socketio_manager")
 MCP_ASGI_RESOURCE_KEY: web.AppKey[ASGIResource] = web.AppKey("mcp_asgi_resource")
 MCP_TASK_KEY: web.AppKey[asyncio.Task[None]] = web.AppKey("mcp_task")
+STORAGE_METRICS_COLLECTOR_KEY: web.AppKey[StorageMetricsCollector] = web.AppKey(
+    "storage_metrics_collector"
+)
 
 REQUEST_USER_KEY: web.RequestKey[str] = web.RequestKey("user")
 REQUEST_EQUIPMENT_NO_KEY: web.RequestKey[str | None] = web.RequestKey("equipment_no")
