@@ -204,7 +204,6 @@ Across mid-to-late 2026 industry multimodal benchmarks—[**Artificial Analysis 
 
 - **Flash-Lite beats or matches mid-tier models at budget pricing**: `Gemini 3.5 Flash-Lite` (`$0.30 / $2.50` per 1M tokens) scores `79.0%` on Artificial Analysis MMMU-Pro and `83.6%` on Vals AI MMMU-Pro—ahead of `Claude Haiku 4.5` by `>20` percentage points and even edging out `Claude Sonnet 5` (`77.3%` / `83.0%`) at **~5–6× lower cost** and **~3× higher output speed**.
 - **Workhorse Flash rivals Frontier Opus on vision**: On LMArena Vision and MMMU-Pro, `Gemini 3.6 Flash` (`1297` Elo, `88.4%` Vals MMMU-Pro) and `Gemini 3.8 Flash` (`1316` Elo, `89.1%` Vals MMMU-Pro) both rank **ahead of `Claude Sonnet 5.5` (`1283` Elo)** while landing within `1` Elo point of `Claude Opus 5` (`1317` Elo) at roughly **one-fifth the price**.
-- **No multi-pass "local + cloud refinement" complexity needed**: Because single-pass Gemini Flash-Lite / Flash already achieves `99.0%–99.7%` Word F1 on Supernote pages for `~0.05¢–0.1¢` per page, running a lower-quality local pass (like Apple Vision) followed by a second-pass re-read on a pricier model like Claude (`~0.6¢/page`) costs ~6–12× more and adds stale-transcript complexity without improving accuracy (see discussion in [#478](https://github.com/allenporter/supernote/issues/478)). Where Claude Sonnet and Opus shine—deep analytical reasoning and agentic workflows—you can connect **Claude** directly to your Gemini-indexed library via the built-in [**MCP server**](docs/mcp.md).
 
 ## Features Deep Dive
 
