@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import time
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from sqlalchemy import delete, or_, select
@@ -13,10 +15,9 @@ from supernote.server.metrics import (
     PROCESSOR_STALLED_TASKS_RECOVERED_TOTAL,
 )
 
-from ..constants import CACHE_BUCKET, DEFAULT_PAGE_CONCURRENCY
+from ..constants import DEFAULT_PAGE_CONCURRENCY
 from ..db.models.file import UserFileDO
 from ..db.models.note_processing import NotePageContentDO, SystemTaskDO
-from ..db.models.summary import SummaryDO
 from ..db.session import DatabaseSessionManager
 from ..events import (
     BlobCleanupEvent,
@@ -30,7 +31,6 @@ from ..events import (
 from ..services.file import FileService
 from ..services.processor_modules import ProcessorModule
 from ..services.summary import SummaryService
-from ..utils.paths import get_page_png_path
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +65,8 @@ class ProcessorService:
 
         self.queue: asyncio.Queue[int] = asyncio.Queue()  # Queue of file_ids
         self.processing_files: set[int] = set()
+        self._file_locks: dict[int, asyncio.Lock] = {}
+        self._file_lock_refcounts: dict[int, int] = {}
         self.workers: list[asyncio.Task] = []
         self.polling_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
@@ -79,6 +81,24 @@ class ProcessorService:
     def _update_queue_metrics(self) -> None:
         PROCESSOR_QUEUE_SIZE.set(self.queue.qsize())
         PROCESSOR_FILES_PROCESSING.set(len(self.processing_files))
+
+    @asynccontextmanager
+    async def _file_lock(self, file_id: int) -> AsyncGenerator[None]:
+        """Serialize processing and deletion per file_id without leaking idle locks."""
+        lock = self._file_locks.setdefault(file_id, asyncio.Lock())
+        self._file_lock_refcounts[file_id] = (
+            self._file_lock_refcounts.get(file_id, 0) + 1
+        )
+        try:
+            async with lock:
+                yield
+        finally:
+            remaining = self._file_lock_refcounts[file_id] - 1
+            if remaining <= 0:
+                self._file_lock_refcounts.pop(file_id, None)
+                self._file_locks.pop(file_id, None)
+            else:
+                self._file_lock_refcounts[file_id] = remaining
 
     def register_modules(
         self,
@@ -217,80 +237,24 @@ class ProcessorService:
         file_id = event.file_id
         logger.info(f"Received delete for note: {file_id}")
 
-        async with self.session_manager.session() as session:
-            # Get all pages to know which PNGs to delete
-            stmt = select(NotePageContentDO.page_id).where(
-                NotePageContentDO.file_id == file_id
-            )
-            result = await session.execute(stmt)
-            page_ids = result.scalars().all()
+        async with self._file_lock(file_id):
+            for module in (
+                *self.global_pre_modules,
+                *self.page_modules,
+                *self.global_post_modules,
+            ):
+                await module.cleanup_file(file_id, event.user_id, self.session_manager)
 
-            # Collect parent group UUIDs and any handwriting blob keys attached to
-            # the note's summaries or their now-empty parent summary groups so
-            # unreferenced blobs can be cleaned up after the SummaryDO rows are deleted.
-            summary_rows_stmt = select(
-                SummaryDO.parent_unique_identifier,
-                SummaryDO.handwrite_inner_name,
-            ).where(SummaryDO.file_id == file_id)
-            summary_rows = (await session.execute(summary_rows_stmt)).all()
-            parent_uuids = {u for u, _ in summary_rows if u}
-            candidate_blob_keys = {k for _, k in summary_rows if k}
-
-            await session.execute(
-                delete(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
-            )
-            await session.execute(
-                delete(SystemTaskDO).where(SystemTaskDO.file_id == file_id)
-            )
-            await session.execute(delete(SummaryDO).where(SummaryDO.file_id == file_id))
-            if parent_uuids:
-                surviving_parent_stmt = (
-                    select(SummaryDO.parent_unique_identifier)
-                    .where(SummaryDO.parent_unique_identifier.in_(parent_uuids))
-                    .group_by(SummaryDO.parent_unique_identifier)
+            async with self.session_manager.session() as session:
+                await session.execute(
+                    delete(NotePageContentDO).where(
+                        NotePageContentDO.file_id == file_id
+                    )
                 )
-                surviving_parents = {
-                    u
-                    for u in (await session.execute(surviving_parent_stmt))
-                    .scalars()
-                    .all()
-                    if u
-                }
-                empty_parent_uuids = parent_uuids - surviving_parents
-                if empty_parent_uuids:
-                    group_blobs_stmt = select(SummaryDO.handwrite_inner_name).where(
-                        SummaryDO.unique_identifier.in_(empty_parent_uuids),
-                        SummaryDO.is_summary_group.is_(True),
-                        SummaryDO.handwrite_inner_name.is_not(None),
-                    )
-                    candidate_blob_keys.update(
-                        k
-                        for k in (await session.execute(group_blobs_stmt))
-                        .scalars()
-                        .all()
-                        if k
-                    )
-                    await session.execute(
-                        delete(SummaryDO).where(
-                            SummaryDO.unique_identifier.in_(empty_parent_uuids),
-                            SummaryDO.is_summary_group.is_(True),
-                        )
-                    )
-            await session.commit()
-
-        await self.file_service.cleanup_unreferenced_blobs(candidate_blob_keys)
-
-        # Delete Blobs (PNGs)
-        for page_id in page_ids:
-            if not page_id:
-                continue
-            png_path = get_page_png_path(file_id, page_id)
-            try:
-                await self.file_service.blob_storage.delete(CACHE_BUCKET, png_path)
-            except (FileNotFoundError, OSError) as e:
-                logger.warning(
-                    f"Failed to delete PNG for {file_id} page {page_id}: {e}"
+                await session.execute(
+                    delete(SystemTaskDO).where(SystemTaskDO.file_id == file_id)
                 )
+                await session.commit()
 
         logger.info(f"Cleanup complete for deleted note: {file_id}")
 
@@ -469,6 +433,19 @@ class ProcessorService:
         page_indices: set[int] | None = None,
     ) -> bool:
         """Orchestrate the processing pipeline (or a subset of task_types/page_indices) for a single file."""
+        async with self._file_lock(file_id):
+            return await self._process_file_locked(
+                file_id,
+                task_types=task_types,
+                page_indices=page_indices,
+            )
+
+    async def _process_file_locked(
+        self,
+        file_id: int,
+        task_types: set[TaskType] | None = None,
+        page_indices: set[int] | None = None,
+    ) -> bool:
         logger.info(f"Processing file {file_id}...")
 
         if not self.global_pre_modules:

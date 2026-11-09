@@ -3,7 +3,7 @@ import json
 import logging
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from supernote.models.base import TaskType
 from supernote.models.summary import (
@@ -17,6 +17,7 @@ from supernote.server.ai.models.summary import SummaryModel
 from supernote.server.ai.prompts import format_summary_prompt
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
@@ -102,6 +103,60 @@ class SummaryModule(ProcessorModule):
                 return False
 
         return True
+
+    async def cleanup_file(
+        self,
+        file_id: int,
+        user_id: int,
+        session_manager: DatabaseSessionManager,
+    ) -> None:
+        """Delete SummaryDO records, now-empty parent summary groups, and unreferenced handwriting blobs."""
+        async with session_manager.session() as session:
+            summary_rows_stmt = select(
+                SummaryDO.parent_unique_identifier,
+                SummaryDO.handwrite_inner_name,
+            ).where(SummaryDO.file_id == file_id)
+            summary_rows = (await session.execute(summary_rows_stmt)).all()
+            parent_uuids = {u for u, _ in summary_rows if u}
+            candidate_blob_keys = {k for _, k in summary_rows if k}
+
+            await session.execute(delete(SummaryDO).where(SummaryDO.file_id == file_id))
+            if parent_uuids:
+                surviving_parent_stmt = (
+                    select(SummaryDO.parent_unique_identifier)
+                    .where(SummaryDO.parent_unique_identifier.in_(parent_uuids))
+                    .group_by(SummaryDO.parent_unique_identifier)
+                )
+                surviving_parents = {
+                    u
+                    for u in (await session.execute(surviving_parent_stmt))
+                    .scalars()
+                    .all()
+                    if u
+                }
+                empty_parent_uuids = parent_uuids - surviving_parents
+                if empty_parent_uuids:
+                    group_blobs_stmt = select(SummaryDO.handwrite_inner_name).where(
+                        SummaryDO.unique_identifier.in_(empty_parent_uuids),
+                        SummaryDO.is_summary_group.is_(True),
+                        SummaryDO.handwrite_inner_name.is_not(None),
+                    )
+                    candidate_blob_keys.update(
+                        k
+                        for k in (await session.execute(group_blobs_stmt))
+                        .scalars()
+                        .all()
+                        if k
+                    )
+                    await session.execute(
+                        delete(SummaryDO).where(
+                            SummaryDO.unique_identifier.in_(empty_parent_uuids),
+                            SummaryDO.is_summary_group.is_(True),
+                        )
+                    )
+            await session.commit()
+
+        await self.file_service.cleanup_unreferenced_blobs(candidate_blob_keys)
 
     async def process(
         self,
