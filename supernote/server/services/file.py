@@ -39,6 +39,11 @@ from ..events import (
     VfsItemDeletedEvent,
     VfsItemMovedEvent,
 )
+from ..metrics import (
+    NoteUploadSource,
+    init_oss_and_upload_metrics,
+    record_note_upload,
+)
 from .blob import BlobStorage
 from .user import UserService
 from .vfs import VirtualFileSystem
@@ -178,6 +183,7 @@ class FileService:
         self._staging_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
+        init_oss_and_upload_metrics()
 
     async def list_folder(
         self, user: str, path_str: str, recursive: bool = False
@@ -496,6 +502,9 @@ class FileService:
                 await self.cleanup_unreferenced_blobs({inner_name})
                 raise QuotaExceeded("Storage quota exceeded", ErrorCode.QUOTA_EXCEEDED)
 
+        if filename.lower().endswith(".note"):
+            record_note_upload(source=NoteUploadSource.DEVICE_SYNC)
+
         await self._cleanup_superseded_artifacts(upsert_result)
 
         # Construct response
@@ -587,6 +596,9 @@ class FileService:
             if is_over_quota:
                 await self.cleanup_unreferenced_blobs({inner_name})
                 raise QuotaExceeded("Storage quota exceeded", ErrorCode.QUOTA_EXCEEDED)
+
+        if file_name.lower().endswith(".note"):
+            record_note_upload(source=NoteUploadSource.WEB)
 
         await self._cleanup_superseded_artifacts(upsert_result)
 

@@ -20,6 +20,9 @@ __all__ = [
     "HTTP_REQUESTS_TOTAL",
     "HTTP_REQUEST_DURATION_SECONDS",
     "NoteProcessingMode",
+    "NoteUploadSource",
+    "OSSTransferDirection",
+    "OSSTransferKind",
     "PROCESSOR_FILES_PROCESSING",
     "PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL",
     "PROCESSOR_QUEUE_PAUSED",
@@ -29,8 +32,11 @@ __all__ = [
     "PROCESSOR_TASK_DURATION_SECONDS",
     "init_ai_metrics",
     "init_note_processing_metrics",
+    "init_oss_and_upload_metrics",
     "record_ai_tokens",
     "record_note_page_diff",
+    "record_note_upload",
+    "record_oss_transfer_bytes",
     "track_ai_request",
     "track_note_processing_run",
 ]
@@ -286,6 +292,83 @@ def track_note_processing_run(
         ).inc()
         if status != _OutcomeStatus.CANCELLED:
             _NOTE_PROCESSING_DURATION_SECONDS.labels(mode=mode.value).observe(duration)
+
+
+class OSSTransferDirection(StrEnum):
+    """Transfer direction labels for OSS byte transfer metrics."""
+
+    UPLOAD = "upload"
+    DOWNLOAD = "download"
+
+
+class OSSTransferKind(StrEnum):
+    """Payload kind labels for OSS byte transfer metrics."""
+
+    USER_BLOB = "user_blob"
+    USER_CHUNK = "user_chunk"
+    PNG_PREVIEW = "png_preview"
+    PDF_EXPORT = "pdf_export"
+
+
+class NoteUploadSource(StrEnum):
+    """Origin API labels for completed `.note` file uploads."""
+
+    DEVICE_SYNC = "device_sync"
+    WEB = "web"
+
+
+_OSS_TRANSFER_SERIES: tuple[tuple[OSSTransferDirection, OSSTransferKind], ...] = (
+    (OSSTransferDirection.UPLOAD, OSSTransferKind.USER_BLOB),
+    (OSSTransferDirection.UPLOAD, OSSTransferKind.USER_CHUNK),
+    (OSSTransferDirection.DOWNLOAD, OSSTransferKind.USER_BLOB),
+    (OSSTransferDirection.DOWNLOAD, OSSTransferKind.PNG_PREVIEW),
+    (OSSTransferDirection.DOWNLOAD, OSSTransferKind.PDF_EXPORT),
+)
+
+_OSS_TRANSFER_BYTES_TOTAL: Counter = Counter(
+    "supernote_oss_transfer_bytes_total",
+    "Total number of OSS object bytes transferred by direction and payload kind.",
+    ["direction", "kind"],
+)
+
+_NOTE_UPLOADS_TOTAL: Counter = Counter(
+    "supernote_note_uploads_total",
+    "Total number of completed .note file uploads by source.",
+    ["source"],
+)
+
+
+def init_oss_and_upload_metrics() -> None:
+    """Pre-initialize OSS byte transfer and `.note` upload counter series at 0."""
+    for direction, kind in _OSS_TRANSFER_SERIES:
+        _OSS_TRANSFER_BYTES_TOTAL.labels(
+            direction=direction.value,
+            kind=kind.value,
+        )
+    for source in NoteUploadSource:
+        _NOTE_UPLOADS_TOTAL.labels(source=source.value)
+
+
+def record_oss_transfer_bytes(
+    *,
+    direction: OSSTransferDirection,
+    kind: OSSTransferKind,
+    byte_count: int,
+) -> None:
+    """Record OSS object bytes transferred when `byte_count` is positive."""
+    if byte_count > 0:
+        _OSS_TRANSFER_BYTES_TOTAL.labels(
+            direction=direction.value,
+            kind=kind.value,
+        ).inc(byte_count)
+
+
+def record_note_upload(
+    *,
+    source: NoteUploadSource,
+) -> None:
+    """Record a completed `.note` file upload for `source`."""
+    _NOTE_UPLOADS_TOTAL.labels(source=source.value).inc()
 
 
 # AI model metrics

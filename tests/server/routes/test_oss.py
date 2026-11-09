@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from aiohttp import FormData
+from prometheus_client import REGISTRY
 
 from supernote.client.client import Client
 from supernote.client.device import DeviceClient
@@ -13,6 +14,11 @@ from supernote.client.exceptions import ApiException, ForbiddenException
 from supernote.models.file_common import FileUploadApplyLocalVO
 from supernote.models.system import FileChunkVO, UploadFileVO
 from supernote.server.config import ServerConfig
+from supernote.server.metrics import (
+    OSSTransferDirection,
+    OSSTransferKind,
+    record_oss_transfer_bytes,
+)
 from supernote.server.utils.url_signer import UrlSigner
 
 TEST_USER = "user@example.com"
@@ -526,3 +532,158 @@ async def test_oss_upload_routes_do_not_log_request_headers(
     logged = "\n".join(r.getMessage() for r in caplog.records)
     assert raw_token not in logged
     assert raw_channel not in logged
+
+
+def _oss_bytes(direction: OSSTransferDirection, kind: OSSTransferKind) -> float:
+    val = REGISTRY.get_sample_value(
+        "supernote_oss_transfer_bytes_total",
+        {"direction": direction.value, "kind": kind.value},
+    )
+    assert val is not None
+    return val
+
+
+async def test_oss_transfer_bytes_metrics_all_paths(
+    device_client: DeviceClient,
+    test_note_path: Path,
+    client: Client,
+) -> None:
+    """Verify supernote_oss_transfer_bytes_total across uploads, chunk merges, Range downloads, PNG, and PDF."""
+    # Pre-seeded at >= 0.0 for all 5 valid (direction, kind) combinations
+    expected_series = (
+        (OSSTransferDirection.UPLOAD, OSSTransferKind.USER_BLOB),
+        (OSSTransferDirection.UPLOAD, OSSTransferKind.USER_CHUNK),
+        (OSSTransferDirection.DOWNLOAD, OSSTransferKind.USER_BLOB),
+        (OSSTransferDirection.DOWNLOAD, OSSTransferKind.PNG_PREVIEW),
+        (OSSTransferDirection.DOWNLOAD, OSSTransferKind.PDF_EXPORT),
+    )
+    baseline = {pair: _oss_bytes(*pair) for pair in expected_series}
+
+    # Non-positive byte counts are ignored
+    record_oss_transfer_bytes(
+        direction=OSSTransferDirection.UPLOAD,
+        kind=OSSTransferKind.USER_BLOB,
+        byte_count=0,
+    )
+    record_oss_transfer_bytes(
+        direction=OSSTransferDirection.UPLOAD,
+        kind=OSSTransferKind.USER_BLOB,
+        byte_count=-10,
+    )
+    assert {pair: _oss_bytes(*pair) for pair in expected_series} == baseline
+
+    # Single-shot upload records exact payload size on (upload, user_blob)
+    single_payload = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    single_res = await device_client.upload_content(
+        path="/metrics_single.txt",
+        content=single_payload,
+        equipment_no="SN_METRICS",
+    )
+    assert single_res.id is not None
+    single_file_id = int(single_res.id)
+    assert _oss_bytes(OSSTransferDirection.UPLOAD, OSSTransferKind.USER_BLOB) == (
+        baseline[(OSSTransferDirection.UPLOAD, OSSTransferKind.USER_BLOB)]
+        + len(single_payload)
+    )
+    assert (
+        _oss_bytes(OSSTransferDirection.UPLOAD, OSSTransferKind.USER_CHUNK)
+        == (baseline[(OSSTransferDirection.UPLOAD, OSSTransferKind.USER_CHUNK)])
+    )
+
+    # Multi-part chunk upload with implicit merge on final chunk counts each part once (no double-counting)
+    before_chunk_upload = _oss_bytes(
+        OSSTransferDirection.UPLOAD, OSSTransferKind.USER_CHUNK
+    )
+    before_blob_upload = _oss_bytes(
+        OSSTransferDirection.UPLOAD, OSSTransferKind.USER_BLOB
+    )
+    before_blob_download = _oss_bytes(
+        OSSTransferDirection.DOWNLOAD, OSSTransferKind.USER_BLOB
+    )
+    chunked_payload = b"X" * 2500  # 3 chunks: 1024 + 1024 + 452 = 2500 bytes
+    await device_client.upload_content(
+        path="/metrics_chunked.txt",
+        content=chunked_payload,
+        equipment_no="SN_METRICS",
+        chunk_size=1024,
+    )
+    assert _oss_bytes(OSSTransferDirection.UPLOAD, OSSTransferKind.USER_CHUNK) == (
+        before_chunk_upload + len(chunked_payload)
+    )
+    assert (
+        _oss_bytes(OSSTransferDirection.UPLOAD, OSSTransferKind.USER_BLOB)
+        == before_blob_upload
+    )
+    assert (
+        _oss_bytes(OSSTransferDirection.DOWNLOAD, OSSTransferKind.USER_BLOB)
+        == before_blob_download
+    )
+
+    # Full download records full blob length on (download, user_blob)
+    download_info = await device_client.download_v3(single_file_id, "SN_METRICS")
+    parsed_dl = urllib.parse.urlparse(download_info.url)
+    rel_dl_url = f"{parsed_dl.path}?{parsed_dl.query}"
+
+    resp_full = await client.get(rel_dl_url, headers={})
+    assert resp_full.status == HTTPStatus.OK
+    assert await resp_full.read() == single_payload
+    assert _oss_bytes(OSSTransferDirection.DOWNLOAD, OSSTransferKind.USER_BLOB) == (
+        before_blob_download + len(single_payload)
+    )
+
+    # HTTP 206 Range download records only the requested slice length (10 bytes), and 416 records 0 bytes
+    before_range = _oss_bytes(OSSTransferDirection.DOWNLOAD, OSSTransferKind.USER_BLOB)
+    resp_range = await client.get(rel_dl_url, headers={"Range": "bytes=10-19"})
+    assert resp_range.status == HTTPStatus.PARTIAL_CONTENT
+    range_body = await resp_range.read()
+    assert len(range_body) == 10
+    assert _oss_bytes(OSSTransferDirection.DOWNLOAD, OSSTransferKind.USER_BLOB) == (
+        before_range + 10
+    )
+
+    resp_invalid_range = await client.get(
+        rel_dl_url, headers={"Range": f"bytes={len(single_payload) + 100}-"}
+    )
+    assert resp_invalid_range.status == HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE
+    assert _oss_bytes(OSSTransferDirection.DOWNLOAD, OSSTransferKind.USER_BLOB) == (
+        before_range + 10
+    )
+
+    # PNG preview download and PDF export download record exact bytes on their respective kinds
+    note_bytes = test_note_path.read_bytes()
+    note_upload = await device_client.upload_content(
+        path="/metrics_note.note",
+        content=note_bytes,
+        equipment_no="SN_METRICS",
+    )
+    assert note_upload.id is not None
+    note_file_id = int(note_upload.id)
+
+    before_png = _oss_bytes(OSSTransferDirection.DOWNLOAD, OSSTransferKind.PNG_PREVIEW)
+    png_vo = await device_client.note_to_png(note_file_id)
+    parsed_png = urllib.parse.urlparse(png_vo.png_page_vo_list[0].url)
+    resp_png = await client.get(f"{parsed_png.path}?{parsed_png.query}", headers={})
+    assert resp_png.status == HTTPStatus.OK
+    png_body = await resp_png.read()
+    assert len(png_body) > 0
+    assert _oss_bytes(OSSTransferDirection.DOWNLOAD, OSSTransferKind.PNG_PREVIEW) == (
+        before_png + len(png_body)
+    )
+
+    before_pdf = _oss_bytes(OSSTransferDirection.DOWNLOAD, OSSTransferKind.PDF_EXPORT)
+    pdf_vo = await device_client.note_to_pdf(note_file_id)
+    assert pdf_vo.url is not None
+    parsed_pdf = urllib.parse.urlparse(pdf_vo.url)
+    resp_pdf = await client.get(f"{parsed_pdf.path}?{parsed_pdf.query}", headers={})
+    assert resp_pdf.status == HTTPStatus.OK
+    pdf_body = await resp_pdf.read()
+    assert len(pdf_body) > 0
+    assert _oss_bytes(OSSTransferDirection.DOWNLOAD, OSSTransferKind.PDF_EXPORT) == (
+        before_pdf + len(pdf_body)
+    )
+
+    metrics_resp = await client.get("/metrics", headers={})
+    assert metrics_resp.status == HTTPStatus.OK
+    metrics_text = await metrics_resp.text()
+    assert "supernote_oss_transfer_bytes_total" in metrics_text
+    assert "supernote_note_uploads_total" in metrics_text
