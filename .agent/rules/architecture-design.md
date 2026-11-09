@@ -20,3 +20,7 @@ Before adding a method, parameter, or dependency to an interface or base class, 
 4. **Prefer Idiomatic Library Primitives Over Custom Ceremony**:
    - Before writing custom serializers, validators, or wrapper subclasses, check what the underlying library (`mashumaro`, `sqlalchemy`, `aiohttp`, stdlib) already supports natively (e.g., `field_options(serialize=str)` rather than custom serializer/deserializer pairs and wrapper VOs).
    - During code or adversarial reviews, fix genuine security boundaries and state-invariant bugs; reject fixes that add speculative defensive bloat for contrived inputs.
+
+5. **Never Bypass Architectural Conformance Tests or Legacy Allowlists**:
+   - When a schema or architecture conformance test fails (e.g., `test_init.py` multi-user primary-key and scoping invariants), treat it as a hard design error in the new code—never add new tables or modules to legacy exemption allowlists (`TABLES_WITHOUT_USER_ID_IN_PK_ALLOWLIST`, `TABLES_WITHOUT_USER_ID_ALLOWLIST`, `UNSCOPED_UNIQUE_CONSTRAINT_ALLOWLIST`) to make the test pass.
+   - If a new table genuinely appears to conflict with an invariant, stop and ask the user rather than modifying the allowlist.
