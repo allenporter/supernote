@@ -85,7 +85,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "d5e6f7a8b9c0"
+        assert version == "e6f7a8b9c0d1"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -181,7 +181,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "d5e6f7a8b9c0"
+        assert version == "e6f7a8b9c0d1"
 
         # Verify task columns and types
         tasks = conn.execute(
@@ -806,5 +806,32 @@ def test_reset_legacy_default_user_quota_migration(
             ("default@example.com", "10737418240"),
             ("custom@example.com", "53687091200"),
         ]
+
+    engine.dispose()
+
+
+def test_add_note_and_page_metadata_tables_migration(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify migration e6f7a8b9c0d1 creates and downgrades f_note_metadata and f_note_page_metadata cleanly."""
+    db_path = tmp_path / "note_metadata_tables.db"
+    shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+
+    command.upgrade(alembic_config, "e6f7a8b9c0d1")
+
+    engine = create_engine(url)
+    reflected = MetaData()
+    reflected.reflect(bind=engine)
+    assert "f_note_metadata" in reflected.tables
+    assert "f_note_page_metadata" in reflected.tables
+    assert "content_hash" in reflected.tables["f_note_page_metadata"].columns
+
+    command.downgrade(alembic_config, "d5e6f7a8b9c0")
+    reflected_down = MetaData()
+    reflected_down.reflect(bind=engine)
+    assert "f_note_metadata" not in reflected_down.tables
+    assert "f_note_page_metadata" not in reflected_down.tables
 
     engine.dispose()
