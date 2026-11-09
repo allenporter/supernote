@@ -1,6 +1,8 @@
 """Tests for supernote.client.auth module."""
 
+import os
 import pickle
+import stat
 from pathlib import Path
 
 import pytest
@@ -120,3 +122,20 @@ async def test_token_refresh_flow(tmp_path: Path) -> None:
     auth.save_credentials("refreshed-token-xyz", "https://api.supernote.com")
     assert await auth.async_get_access_token() == "refreshed-token-xyz"
     assert auth.get_host() == "https://api.supernote.com"
+
+
+def test_file_cache_auth_enforces_0600_permissions(tmp_path: Path) -> None:
+    """Verify FileCacheAuth writes credential cache files with strict 0600 owner-only permissions."""
+    cache_file = tmp_path / "nested" / "supernote.pkl"
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_bytes(b"stale")
+    os.chmod(cache_file, 0o644)
+
+    auth = FileCacheAuth(str(cache_file))
+    auth.save_credentials("tok_secret", "http://localhost:8080")
+
+    mode = stat.S_IMODE(cache_file.stat().st_mode)
+    assert mode == 0o600
+    reloaded = FileCacheAuth(str(cache_file))
+    assert reloaded.token == "tok_secret"
+    assert reloaded.get_host() == "http://localhost:8080"

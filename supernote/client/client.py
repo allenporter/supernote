@@ -2,12 +2,15 @@
 
 import hashlib
 import logging
+import re
 import uuid
+from collections.abc import Mapping
 from typing import Any, TypeVar
 
 import aiohttp
 from aiohttp import FormData
 from aiohttp.client_exceptions import ClientError
+from yarl import URL
 
 from supernote.models.base import BaseResponse, ErrorCode
 from supernote.models.system import FileChunkParams, FileChunkVO, UploadFileVO
@@ -50,8 +53,22 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
 }
 ACCESS_TOKEN = "x-access-token"
+AUTHORIZATION_HEADER = "Authorization"
+API_KEY_PREFIX = "sn_"
 XSRF_COOKIE = "XSRF-TOKEN"
 XSRF_HEADER = "X-XSRF-TOKEN"
+_REDACTED_LOG_HEADERS = frozenset(
+    {ACCESS_TOKEN.lower(), AUTHORIZATION_HEADER.lower(), "cookie", "set-cookie"}
+)
+_SN_API_KEY_LOG_RE = re.compile(r"\bsn_[0-9a-fA-F]{32}\b")
+
+
+def _redact_log_headers(headers: Mapping[str, Any]) -> dict[str, Any]:
+    """Redact authentication headers before emitting client debug logs."""
+    return {
+        k: ("***" if k.lower() in _REDACTED_LOG_HEADERS else v)
+        for k, v in headers.items()
+    }
 
 
 def _create_headers(host: str | None = None) -> dict[str, Any]:
@@ -92,6 +109,21 @@ class Client:
         """Return the current authentication credentials."""
         return self._auth
 
+    def _is_same_origin(self, url: str) -> bool:
+        """Return True when `url` is relative or shares `(scheme, host, port)` with `self._host`."""
+        if not (url.startswith("http://") or url.startswith("https://")):
+            return True
+        try:
+            target = URL(url)
+            base = URL(self._host)
+        except ValueError:
+            return False
+        return (target.scheme, target.host, target.port) == (
+            base.scheme,
+            base.host,
+            base.port,
+        )
+
     def _url(self, url: str) -> str:
         if not (url.startswith("http://") or url.startswith("https://")):
             if self._host.endswith("/"):
@@ -109,23 +141,35 @@ class Client:
         **kwargs: Any,
     ) -> aiohttp.ClientResponse:
         """Make a request."""
+        same_origin = self._is_same_origin(url)
         if headers is None:
-            headers = _create_headers(self._host)
-        # Always get a fresh CSRF token
-        self._xsrf_token = await self._get_csrf_token()
-        headers[XSRF_HEADER] = self._xsrf_token
+            headers = _create_headers(self._host if same_origin else None)
+        else:
+            headers = dict(headers)
 
-        if self._auth and ACCESS_TOKEN not in headers:
-            access_token = await self._auth.async_get_access_token()
-            if access_token:
-                headers[ACCESS_TOKEN] = access_token
+        if same_origin:
+            # Always get a fresh CSRF token for same-origin API requests
+            self._xsrf_token = await self._get_csrf_token()
+            headers[XSRF_HEADER] = self._xsrf_token
+
+            if (
+                self._auth
+                and ACCESS_TOKEN not in headers
+                and AUTHORIZATION_HEADER not in headers
+            ):
+                access_token = await self._auth.async_get_access_token()
+                if access_token:
+                    if access_token.startswith(API_KEY_PREFIX):
+                        headers[AUTHORIZATION_HEADER] = f"Bearer {access_token}"
+                    else:
+                        headers[ACCESS_TOKEN] = access_token
         url = self._url(url)
         _LOGGER.debug(
             "request[%s]=%s %s %s",
             method,
             url,
             kwargs.get("params"),
-            headers,
+            _redact_log_headers(headers),
         )
         if method != "get" and "json" in kwargs:
             _LOGGER.debug("request[post json]=%s", kwargs["json"])
@@ -154,7 +198,7 @@ class Client:
             result = await resp.text()
         except ClientError as err:
             raise ApiException("Server returned malformed response") from err
-        _LOGGER.debug("response=%s", result)
+        _LOGGER.debug("response=%s", _SN_API_KEY_LOG_RE.sub("***", result))
         try:
             data_response = data_cls.from_json(result)
         except (LookupError, ValueError) as err:
