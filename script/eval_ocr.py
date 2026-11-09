@@ -23,6 +23,8 @@ from supernote.server.ai.eval import (  # noqa: E402
     evaluate_ocr_dataset,
     format_markdown_report,
     merge_eval_reports,
+    render_pareto_svg,
+    rescore_suite_report,
 )
 from supernote.server.ai.models.ocr import create_ocr_model  # noqa: E402
 from supernote.server.config import (  # noqa: E402
@@ -140,10 +142,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--rescore",
+        action="store_true",
+        help="Recompute per-case metrics and categories of `--from-json` reports against `--dataset`.",
+    )
+    parser.add_argument(
         "--markdown-out",
         type=Path,
         default=None,
         help="Optional file path to write the Markdown summary report.",
+    )
+    parser.add_argument(
+        "--svg-out",
+        type=Path,
+        default=None,
+        help="Optional file path to write the quality-vs-latency Pareto frontier SVG.",
     )
     parser.add_argument(
         "--json-out",
@@ -251,7 +264,12 @@ async def main_async(argv: list[str] | None = None) -> int:
     ]
 
     manifest_path = args.dataset.resolve()
-    dataset = _filter_dataset(OcrEvalDataset.load(manifest_path), args)
+    full_dataset = OcrEvalDataset.load(manifest_path)
+    if args.rescore:
+        prior_reports = [
+            rescore_suite_report(prior, full_dataset) for prior in prior_reports
+        ]
+    dataset = _filter_dataset(full_dataset, args)
     base_config = _build_base_config(args)
     targets = _resolve_targets(args, base_config)
 
@@ -278,6 +296,10 @@ async def main_async(argv: list[str] | None = None) -> int:
     if args.markdown_out is not None:
         args.markdown_out.parent.mkdir(parents=True, exist_ok=True)
         args.markdown_out.write_text(markdown, encoding="utf-8")
+
+    if args.svg_out is not None:
+        args.svg_out.parent.mkdir(parents=True, exist_ok=True)
+        args.svg_out.write_text(render_pareto_svg(report), encoding="utf-8")
 
     if args.json_out is not None:
         json_report = live_report if live_report is not None else report

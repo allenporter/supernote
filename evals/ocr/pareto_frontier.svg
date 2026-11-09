@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 400" width="960" height="400" role="img" aria-label="OCR Accuracy vs Latency Pareto Frontier">
+  <style>
+    .card { fill: #ffffff; stroke: #e2e8f0; stroke-width: 1.5; }
+    .plot-bg { fill: #f8fafc; stroke: #e2e8f0; stroke-width: 1; }
+    .grid { stroke: #e2e8f0; stroke-width: 1; stroke-dasharray: 3 3; }
+    .title { font: 600 16px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0f172a; }
+    .subtitle { font: 400 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #64748b; }
+    .panel-title { font: 600 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #1e293b; }
+    .axis-label { font: 500 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #475569; }
+    .tick { font: 400 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #64748b; }
+    .frontier-step { fill: none; stroke: #93c5fd; stroke-width: 1.5; stroke-dasharray: 4 3; }
+    .frontier-line { fill: none; stroke: #2563eb; stroke-width: 2.5; }
+    .pt-pareto { fill: #2563eb; stroke: #ffffff; stroke-width: 2; }
+    .pt-dom { fill: #94a3b8; stroke: #ffffff; stroke-width: 1.5; }
+    .lbl-pareto { font: 600 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0f172a; }
+    .lbl-dom { font: 400 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #64748b; }
+    @media (prefers-color-scheme: dark) {
+      .card { fill: #0f172a; stroke: #334155; }
+      .plot-bg { fill: #1e293b; stroke: #334155; }
+      .grid { stroke: #334155; }
+      .title, .panel-title, .lbl-pareto { fill: #f8fafc; }
+      .subtitle, .axis-label, .tick, .lbl-dom { fill: #94a3b8; }
+      .frontier-step { stroke: #1d4ed8; }
+      .frontier-line { stroke: #60a5fa; }
+      .pt-pareto { fill: #60a5fa; stroke: #0f172a; }
+      .pt-dom { fill: #64748b; stroke: #0f172a; }
+    }
+  </style>
+  <rect x="1" y="1" width="958" height="398" rx="12" class="card" />
+  <text x="24" y="30" class="title">OCR Quality vs. Latency Pareto Frontier (supernote-ocr-suite-v1, 30 pages)</text>
+  <text x="24" y="48" class="subtitle">Solid blue = Pareto-optimal (non-dominated); gray = dominated. Pre-baked 0 ms device-rtr excluded.</text>
+<text x="64.0" y="80.0" class="panel-title">1. Transcript Capture (Word F1)</text>
+<rect x="64.0" y="94.0" width="392.0" height="254.0" class="plot-bg" rx="6" />
+<line x1="64.0" y1="348.0" x2="456.0" y2="348.0" class="grid" />
+<text x="56.0" y="352.0" text-anchor="end" class="tick">0%</text>
+<line x1="64.0" y1="284.5" x2="456.0" y2="284.5" class="grid" />
+<text x="56.0" y="288.5" text-anchor="end" class="tick">25%</text>
+<line x1="64.0" y1="221.0" x2="456.0" y2="221.0" class="grid" />
+<text x="56.0" y="225.0" text-anchor="end" class="tick">50%</text>
+<line x1="64.0" y1="157.5" x2="456.0" y2="157.5" class="grid" />
+<text x="56.0" y="161.5" text-anchor="end" class="tick">75%</text>
+<line x1="64.0" y1="94.0" x2="456.0" y2="94.0" class="grid" />
+<text x="56.0" y="98.0" text-anchor="end" class="tick">100%</text>
+<line x1="80.3" y1="94.0" x2="80.3" y2="348.0" class="grid" />
+<text x="80.3" y="366.0" text-anchor="middle" class="tick">100 ms</text>
+<line x1="158.3" y1="94.0" x2="158.3" y2="348.0" class="grid" />
+<text x="158.3" y="366.0" text-anchor="middle" class="tick">300 ms</text>
+<line x1="243.7" y1="94.0" x2="243.7" y2="348.0" class="grid" />
+<text x="243.7" y="366.0" text-anchor="middle" class="tick">1 s</text>
+<line x1="321.6" y1="94.0" x2="321.6" y2="348.0" class="grid" />
+<text x="321.6" y="366.0" text-anchor="middle" class="tick">3 s</text>
+<line x1="407.0" y1="94.0" x2="407.0" y2="348.0" class="grid" />
+<text x="407.0" y="366.0" text-anchor="middle" class="tick">10 s</text>
+<text x="260.0" y="384.0" text-anchor="middle" class="axis-label">Median Page Latency (log scale, lower is faster)</text>
+<text x="26.0" y="221.0" text-anchor="middle" transform="rotate(-90 26.0 221.0)" class="axis-label">Mean Word F1</text>
+<polyline points="96.6,302.8 180.6,302.8 180.6,160.9 236.9,160.9 236.9,156.1 255.4,156.1 255.4,96.6 377.8,96.6 377.8,94.7" class="frontier-step" />
+<polyline points="96.6,302.8 180.6,160.9 236.9,156.1 255.4,96.6 377.8,94.7" class="frontier-line" />
+<circle cx="96.6" cy="302.8" r="6.0" class="pt-pareto" />
+<text x="105.6" y="294.8" text-anchor="start" class="lbl-pareto">apple:vision-fast (17.8%)</text>
+<circle cx="180.6" cy="160.9" r="6.0" class="pt-pareto" />
+<text x="189.6" y="174.9" text-anchor="start" class="lbl-pareto">apple:vision-accurate (73.7%)</text>
+<circle cx="236.9" cy="156.1" r="6.0" class="pt-pareto" />
+<text x="245.9" y="148.1" text-anchor="start" class="lbl-pareto">supernote-on-device (75.5%)</text>
+<circle cx="255.4" cy="96.6" r="6.0" class="pt-pareto" />
+<text x="264.4" y="110.6" text-anchor="start" class="lbl-pareto">gemini-3.5-flash-lite (99.0%)</text>
+<circle cx="377.8" cy="94.7" r="6.0" class="pt-pareto" />
+<text x="368.8" y="86.7" text-anchor="end" class="lbl-pareto">gemini-3.6-flash (99.7%)</text>
+<circle cx="406.5" cy="102.9" r="5.0" class="pt-dom" />
+<text x="397.5" y="116.9" text-anchor="end" class="lbl-dom">gemini-3.8-flash (96.5%)</text>
+<text x="536.0" y="80.0" class="panel-title">2. Handwritten Rapid Logging (BuJo Symbol Recall)</text>
+<rect x="536.0" y="94.0" width="392.0" height="254.0" class="plot-bg" rx="6" />
+<line x1="536.0" y1="348.0" x2="928.0" y2="348.0" class="grid" />
+<text x="528.0" y="352.0" text-anchor="end" class="tick">0%</text>
+<line x1="536.0" y1="284.5" x2="928.0" y2="284.5" class="grid" />
+<text x="528.0" y="288.5" text-anchor="end" class="tick">25%</text>
+<line x1="536.0" y1="221.0" x2="928.0" y2="221.0" class="grid" />
+<text x="528.0" y="225.0" text-anchor="end" class="tick">50%</text>
+<line x1="536.0" y1="157.5" x2="928.0" y2="157.5" class="grid" />
+<text x="528.0" y="161.5" text-anchor="end" class="tick">75%</text>
+<line x1="536.0" y1="94.0" x2="928.0" y2="94.0" class="grid" />
+<text x="528.0" y="98.0" text-anchor="end" class="tick">100%</text>
+<line x1="552.3" y1="94.0" x2="552.3" y2="348.0" class="grid" />
+<text x="552.3" y="366.0" text-anchor="middle" class="tick">100 ms</text>
+<line x1="630.3" y1="94.0" x2="630.3" y2="348.0" class="grid" />
+<text x="630.3" y="366.0" text-anchor="middle" class="tick">300 ms</text>
+<line x1="715.7" y1="94.0" x2="715.7" y2="348.0" class="grid" />
+<text x="715.7" y="366.0" text-anchor="middle" class="tick">1 s</text>
+<line x1="793.6" y1="94.0" x2="793.6" y2="348.0" class="grid" />
+<text x="793.6" y="366.0" text-anchor="middle" class="tick">3 s</text>
+<line x1="879.0" y1="94.0" x2="879.0" y2="348.0" class="grid" />
+<text x="879.0" y="366.0" text-anchor="middle" class="tick">10 s</text>
+<text x="732.0" y="384.0" text-anchor="middle" class="axis-label">Median Page Latency (log scale, lower is faster)</text>
+<text x="498.0" y="221.0" text-anchor="middle" transform="rotate(-90 498.0 221.0)" class="axis-label">BuJo Symbol Recall</text>
+<polyline points="568.6,348.0 652.6,348.0 652.6,336.5 708.9,336.5 708.9,300.7 727.4,300.7 727.4,130.9 849.8,130.9 849.8,118.2" class="frontier-step" />
+<polyline points="568.6,348.0 652.6,336.5 708.9,300.7 727.4,130.9 849.8,118.2" class="frontier-line" />
+<circle cx="568.6" cy="348.0" r="6.0" class="pt-pareto" />
+<text x="577.6" y="340.0" text-anchor="start" class="lbl-pareto">apple:vision-fast (0.0%)</text>
+<circle cx="652.6" cy="336.5" r="6.0" class="pt-pareto" />
+<text x="661.6" y="350.5" text-anchor="start" class="lbl-pareto">apple:vision-accurate (4.5%)</text>
+<circle cx="708.9" cy="300.7" r="6.0" class="pt-pareto" />
+<text x="717.9" y="292.7" text-anchor="start" class="lbl-pareto">supernote-on-device (18.6%)</text>
+<circle cx="727.4" cy="130.9" r="6.0" class="pt-pareto" />
+<text x="736.4" y="144.9" text-anchor="start" class="lbl-pareto">gemini-3.5-flash-lite (85.5%)</text>
+<circle cx="849.8" cy="118.2" r="6.0" class="pt-pareto" />
+<text x="840.8" y="110.2" text-anchor="end" class="lbl-pareto">gemini-3.6-flash (90.5%)</text>
+<circle cx="878.5" cy="118.2" r="5.0" class="pt-dom" />
+<text x="869.5" y="132.2" text-anchor="end" class="lbl-dom">gemini-3.8-flash (90.5%)</text>
+</svg>

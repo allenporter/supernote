@@ -1,13 +1,13 @@
 ---
 name: supernote-ocr-suite-v1
 cases:
-  # --- Bullet Journal: Daily Rapid Logging ---
+  # --- Bullet Journal: Synthetic Rapid Logging Fixtures ---
   - id: bujo_daily_friday
     path: notebooks/daily.note
     page_index: 0
-    category: bujo_daily
+    category: bujo_synthetic
     prompt_type: daily
-    description: Daily log on 5mm dot-grid with *, •, X, o, >, -, nested sub-items, and strikethrough.
+    description: Synthetic daily log on 5mm dot-grid with *, •, X, o, >, -, nested sub-items, and strikethrough.
     ground_truth: |-
       2026-11-07 Friday
       * • Review Q4 infrastructure budget
@@ -24,9 +24,9 @@ cases:
   - id: bujo_daily_saturday
     path: notebooks/daily.note
     page_index: 1
-    category: bujo_daily
+    category: bujo_synthetic
     prompt_type: daily
-    description: Technical daily log with PR numbers, semver tags, < scheduled-back item, and strikethrough.
+    description: Synthetic technical daily log with PR numbers, semver tags, < scheduled-back item, and strikethrough.
     ground_truth: |-
       2026-11-08 Saturday
       * X Fix SQLite WAL lock timeout in PR #514
@@ -38,6 +38,7 @@ cases:
       • ~~Cancel unused staging VM instance~~
       - Latency dropped from 920ms to 165ms after warmup
 
+  # --- Bullet Journal: Handwritten Daily Rapid Logging ---
   - id: bujo_daily_weekend
     path: notebooks/bujo_daily_weekend.note
     page_index: 0
@@ -59,13 +60,12 @@ cases:
       • dishes befor Mel returns
       • watch Pitt ep 5
 
-  # --- Bullet Journal: Weekly Log & Review ---
   - id: bujo_weekly_w45
     path: notebooks/weekly.note
     page_index: 0
-    category: bujo_weekly
+    category: bujo_synthetic
     prompt_type: weekly
-    description: Weekly plan and reflection review on ruled paper with starred tasks and nested notes.
+    description: Synthetic weekly plan and reflection review on ruled paper with starred tasks and nested notes.
     ground_truth: |-
       Week 45: Nov 2 - Nov 8
       * X Finalize multi-provider AI config schema
@@ -80,13 +80,12 @@ cases:
       - Biggest challenge: context switching mid-week
       • Next week focus: bounded summary chunking
 
-  # --- Bullet Journal: Monthly Spread (Calendar + Goals) ---
   - id: bujo_monthly_calendar
     path: notebooks/monthly.note
     page_index: 0
-    category: bujo_monthly
+    category: bujo_synthetic
     prompt_type: monthly
-    description: Left-hand monthly date timeline with events, starred release milestone, and completed tax item.
+    description: Synthetic left-hand monthly date timeline with events, starred release milestone, and completed tax item.
     ground_truth: |-
       November 2026
       o 1 Sun Daylight saving time ends
@@ -102,9 +101,9 @@ cases:
   - id: bujo_monthly_goals
     path: notebooks/monthly.note
     page_index: 1
-    category: bujo_monthly
+    category: bujo_synthetic
     prompt_type: monthly
-    description: Right-hand monthly goals and task list with forward/backward migrations and cancelled item.
+    description: Synthetic right-hand monthly goals and task list with forward/backward migrations and cancelled item.
     ground_truth: |-
       November Goals & Task List
       * • Complete 12 strength workouts this month
@@ -115,6 +114,8 @@ cases:
       < Move winter camping trip to January
       • ~~Rewrite legacy mobile sync prototype~~
       - Lesson learned: measure CER before tuning
+
+  # --- Bullet Journal: Handwritten Monthly Spread (Backlog + Calendar) ---
 
   - id: bujo_monthly_november_backlog
     path: notebooks/bujo_monthly_november.note

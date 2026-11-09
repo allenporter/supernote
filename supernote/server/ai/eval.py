@@ -9,9 +9,11 @@ import math
 import re
 import statistics
 import time
-from collections.abc import Sequence
+from collections import Counter
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from xml.sax.saxutils import escape as xml_escape
 
 from mashumaro.mixins.json import DataClassJSONMixin
 from mashumaro.mixins.yaml import DataClassYAMLMixin
@@ -23,6 +25,7 @@ from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.ai.prompts import PageMetadata, format_ocr_prompt
 
 __all__ = [
+    "BUJO_PROMPT_TYPES",
     "CANONICAL_BUJO_MARKERS",
     "LoadedEvalPage",
     "OcrCategorySummary",
@@ -33,17 +36,22 @@ __all__ = [
     "OcrPageMetrics",
     "OcrTargetCaseResult",
     "OcrTargetReport",
+    "ParetoPoint",
     "build_target_report",
+    "compute_pareto_frontier",
     "evaluate_ocr_dataset",
     "format_markdown_report",
     "load_eval_case_input",
     "merge_eval_reports",
+    "render_pareto_svg",
+    "rescore_suite_report",
     "score_ocr_output",
 ]
 
 PNG_COMPRESS_LEVEL = 1
 _LOGGER = logging.getLogger(__name__)
 CANONICAL_BUJO_MARKERS: frozenset[str] = frozenset({"•", "X", ">", "<", "o", "-"})
+BUJO_PROMPT_TYPES: frozenset[str] = frozenset({"daily", "weekly", "monthly"})
 
 # Matches a canonical Rapid Logging line per `resources/prompts/ocr/common/legend.md`:
 # optional 2-space indents, optional `* ` critical signifier, bullet marker, and body.
@@ -53,6 +61,7 @@ _BUJO_LINE_RE = re.compile(
 # Strips leading bullet/checkbox prefixes and `~~` markers for content-only CER.
 _STRIP_PREFIX_RE = re.compile(r"^[ ]*(?:\*\s+)?(?:[•·∙*X×><o\-]|\[[ xX>]\])\s+")
 _STRIKETHROUGH_RE = re.compile(r"~~(.+?)~~")
+_INTERNAL_APOSTROPHE_RE = re.compile(r"(?<=\w)['\u2019](?=\w)")
 _WORD_RE = re.compile(r"\w+")
 
 
@@ -76,6 +85,13 @@ class OcrEvalCase(DataClassYAMLMixin, DataClassJSONMixin):
             raise ValueError(f"OcrEvalCase({self.id!r}).path must be non-empty.")
         if self.page_index < 0:
             raise ValueError(f"OcrEvalCase({self.id!r}).page_index must be >= 0.")
+
+    @property
+    def is_bujo(self) -> bool:
+        """Return True when this case evaluates Bullet Journal Rapid Logging."""
+        return self.category.startswith("bujo_") or (
+            self.prompt_type in BUJO_PROMPT_TYPES
+        )
 
 
 @dataclass
@@ -117,6 +133,7 @@ class OcrPageMetrics(DataClassJSONMixin):
     wer: float
     word_recall: float
     bujo_expected_items: int
+    word_f1: float = 0.0
     bujo_symbol_recall: float | None = None
     bujo_strikethrough_recall: float | None = None
     bujo_indent_accuracy: float | None = None
@@ -151,6 +168,7 @@ class OcrCategorySummary(DataClassJSONMixin):
     mean_bujo_indent_accuracy: float | None
     median_latency_ms: float
     p95_latency_ms: float
+    mean_word_f1: float = 0.0
 
 
 @dataclass
@@ -223,7 +241,7 @@ def _strip_bujo_markup(text: str) -> str:
 
 
 def _tokenize_words(text: str) -> list[str]:
-    return _WORD_RE.findall(text.lower())
+    return _WORD_RE.findall(_INTERNAL_APOSTROPHE_RE.sub("", text.lower()))
 
 
 def _parse_bujo_line(line: str) -> _ParsedBujoItem | None:
@@ -320,7 +338,12 @@ def _score_bujo_structure(
     return len(ref_items), symbol_recall, strike_recall, indent_acc
 
 
-def score_ocr_output(reference: str, hypothesis: str) -> OcrPageMetrics:
+def score_ocr_output(
+    reference: str,
+    hypothesis: str,
+    *,
+    evaluate_bujo: bool = True,
+) -> OcrPageMetrics:
     """Compute character, word, and Bullet Journal Rapid Logging metrics."""
     ref_norm = _normalize_ws(reference)
     hyp_norm = _normalize_ws(hypothesis)
@@ -332,13 +355,14 @@ def score_ocr_output(reference: str, hypothesis: str) -> OcrPageMetrics:
             content_cer=0.0 if empty_match else 1.0,
             wer=0.0 if empty_match else 1.0,
             word_recall=1.0 if empty_match else 0.0,
+            word_f1=1.0 if empty_match else 0.0,
             bujo_expected_items=0,
         )
 
     cer = _levenshtein(ref_norm, hyp_norm) / len(ref_norm)
 
-    ref_content = _normalize_ws(_strip_bujo_markup(reference))
-    hyp_content = _normalize_ws(_strip_bujo_markup(hypothesis))
+    ref_content = _normalize_ws(_strip_bujo_markup(reference)).lower()
+    hyp_content = _normalize_ws(_strip_bujo_markup(hypothesis)).lower()
     content_cer = (
         _levenshtein(ref_content, hyp_content) / len(ref_content)
         if ref_content
@@ -350,12 +374,23 @@ def score_ocr_output(reference: str, hypothesis: str) -> OcrPageMetrics:
     wer = _levenshtein(ref_words, hyp_words) / len(ref_words)
 
     ref_tokens = _tokenize_words(ref_content or reference)
-    hyp_token_set = frozenset(_tokenize_words(hyp_content or hypothesis))
-    matched_tokens = sum(1 for tok in ref_tokens if tok in hyp_token_set)
-    word_recall = matched_tokens / len(ref_tokens) if ref_tokens else 1.0
+    hyp_tokens = _tokenize_words(hyp_content or hypothesis)
+    if not ref_tokens:
+        word_recall = 1.0
+        word_f1 = 1.0 if not hyp_tokens else 0.0
+    else:
+        matched_tokens = sum((Counter(ref_tokens) & Counter(hyp_tokens)).values())
+        word_recall = matched_tokens / len(ref_tokens)
+        word_f1 = (
+            2 * matched_tokens / (len(ref_tokens) + len(hyp_tokens))
+            if hyp_tokens
+            else 0.0
+        )
 
-    bujo_count, bujo_sym, bujo_strike, bujo_indent = _score_bujo_structure(
-        reference, hypothesis
+    bujo_count, bujo_sym, bujo_strike, bujo_indent = (
+        _score_bujo_structure(reference, hypothesis)
+        if evaluate_bujo
+        else (0, None, None, None)
     )
 
     return OcrPageMetrics(
@@ -363,6 +398,7 @@ def score_ocr_output(reference: str, hypothesis: str) -> OcrPageMetrics:
         content_cer=round(content_cer, 4),
         wer=round(wer, 4),
         word_recall=round(word_recall, 4),
+        word_f1=round(word_f1, 4),
         bujo_expected_items=bujo_count,
         bujo_symbol_recall=bujo_sym,
         bujo_strikethrough_recall=bujo_strike,
@@ -437,6 +473,7 @@ def _summarize_results(
     content_cers = [r.metrics.content_cer for r in results]
     wers = [r.metrics.wer for r in results]
     recalls = [r.metrics.word_recall for r in results]
+    f1s = [r.metrics.word_f1 for r in results]
     latencies = sorted(r.latency_ms for r in results)
     p95_idx = max(0, math.ceil(0.95 * len(latencies)) - 1)
 
@@ -449,6 +486,7 @@ def _summarize_results(
         mean_content_cer=round(statistics.mean(content_cers), 4),
         mean_wer=round(statistics.mean(wers), 4),
         mean_word_recall=round(statistics.mean(recalls), 4),
+        mean_word_f1=round(statistics.mean(f1s), 4),
         mean_bujo_symbol_recall=_mean_optional(
             [r.metrics.bujo_symbol_recall for r in results]
         ),
@@ -486,6 +524,17 @@ def build_target_report(
         overall=_summarize_results("all", case_results),
         by_category=by_category,
         cases=case_results,
+    )
+
+
+def _error_page_metrics() -> OcrPageMetrics:
+    return OcrPageMetrics(
+        cer=1.0,
+        content_cer=1.0,
+        wer=1.0,
+        word_recall=0.0,
+        word_f1=0.0,
+        bujo_expected_items=0,
     )
 
 
@@ -553,24 +602,22 @@ async def evaluate_ocr_dataset(
             elapsed_ms = (time.perf_counter() - t_start) * 1000.0
 
             metrics = (
-                score_ocr_output(page.case.ground_truth, hypothesis)
-                if error_msg is None
-                else OcrPageMetrics(
-                    cer=1.0,
-                    content_cer=1.0,
-                    wer=1.0,
-                    word_recall=0.0,
-                    bujo_expected_items=0,
+                score_ocr_output(
+                    page.case.ground_truth,
+                    hypothesis,
+                    evaluate_bujo=page.case.is_bujo,
                 )
+                if error_msg is None
+                else _error_page_metrics()
             )
             _LOGGER.info(
-                "[%s] %d/%d %s -> CER=%.1f%% recall=%.1f%% (%.1f ms)%s",
+                "[%s] %d/%d %s -> CER=%.1f%% F1=%.1f%% (%.1f ms)%s",
                 target.name,
                 idx,
                 total_pages,
                 page.case.id,
                 metrics.cer * 100.0,
-                metrics.word_recall * 100.0,
+                metrics.word_f1 * 100.0,
                 elapsed_ms,
                 f" ERROR={error_msg}" if error_msg else "",
             )
@@ -604,7 +651,9 @@ async def evaluate_ocr_dataset(
                     hypothesis=p.device_rtr_text or "",
                     latency_ms=0.0,
                     metrics=score_ocr_output(
-                        p.case.ground_truth, p.device_rtr_text or ""
+                        p.case.ground_truth,
+                        p.device_rtr_text or "",
+                        evaluate_bujo=p.case.is_bujo,
                     ),
                 )
                 for p in rtr_pages
@@ -622,6 +671,56 @@ async def evaluate_ocr_dataset(
         dataset_name=dataset.name,
         case_count=len(loaded_pages),
         targets=target_reports,
+    )
+
+
+def rescore_suite_report(
+    report: OcrEvalSuiteReport,
+    dataset: OcrEvalDataset,
+) -> OcrEvalSuiteReport:
+    """Recompute per-case metrics, categories, and summaries against `dataset`."""
+    cases_by_id = {case.id: case for case in dataset.cases}
+    rescored_targets: list[OcrTargetReport] = []
+    for target in report.targets:
+        rescored_cases: list[OcrTargetCaseResult] = []
+        for item in target.cases:
+            if item.case_id not in cases_by_id:
+                raise KeyError(
+                    f"Case {item.case_id!r} in target {target.target_name!r} "
+                    f"not found in dataset {dataset.name!r}."
+                )
+            case = cases_by_id[item.case_id]
+            metrics = (
+                score_ocr_output(
+                    case.ground_truth,
+                    item.hypothesis,
+                    evaluate_bujo=case.is_bujo,
+                )
+                if item.error is None
+                else _error_page_metrics()
+            )
+            rescored_cases.append(
+                OcrTargetCaseResult(
+                    case_id=item.case_id,
+                    category=case.category,
+                    hypothesis=item.hypothesis,
+                    latency_ms=item.latency_ms,
+                    metrics=metrics,
+                    error=item.error,
+                )
+            )
+        rescored_targets.append(
+            build_target_report(
+                target_name=target.target_name,
+                model_id=target.model_id,
+                warmup_ms=target.warmup_ms,
+                case_results=rescored_cases,
+            )
+        )
+    return OcrEvalSuiteReport(
+        dataset_name=dataset.name,
+        case_count=report.case_count,
+        targets=rescored_targets,
     )
 
 
@@ -668,16 +767,16 @@ def format_markdown_report(report: OcrEvalSuiteReport) -> str:
         "",
         "## Overall Summary",
         "",
-        "| Target | Model | Pages | Mean CER | Median CER | Content CER | Word Recall | BuJo Symbol Recall | Median Latency | P95 Latency | Errors |",
-        "| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Target | Model | Pages | Mean CER | Median CER | Content CER | Word F1 | Word Recall | BuJo Symbol Recall | Median Latency | P95 Latency | Errors |",
+        "| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for target in report.targets:
         ov = target.overall
         lines.append(
             f"| `{target.target_name}` | `{target.model_id}` | {ov.page_count} | "
             f"{_fmt_pct(ov.mean_cer)} | {_fmt_pct(ov.median_cer)} | "
-            f"{_fmt_pct(ov.mean_content_cer)} | {_fmt_pct(ov.mean_word_recall)} | "
-            f"{_fmt_pct(ov.mean_bujo_symbol_recall)} | "
+            f"{_fmt_pct(ov.mean_content_cer)} | {_fmt_pct(ov.mean_word_f1)} | "
+            f"{_fmt_pct(ov.mean_word_recall)} | {_fmt_pct(ov.mean_bujo_symbol_recall)} | "
             f"{ov.median_latency_ms:.1f} ms | {ov.p95_latency_ms:.1f} ms | {ov.error_count} |"
         )
 
@@ -686,8 +785,8 @@ def format_markdown_report(report: OcrEvalSuiteReport) -> str:
             "",
             "## Breakdown by Category",
             "",
-            "| Target | Category | Pages | Mean CER | Content CER | Word Recall | BuJo Symbol Recall | BuJo Indent | BuJo Strike | Median Latency |",
-            "| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            "| Target | Category | Pages | Mean CER | Content CER | Word F1 | Word Recall | BuJo Symbol Recall | BuJo Indent | BuJo Strike | Median Latency |",
+            "| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     for target in report.targets:
@@ -695,10 +794,239 @@ def format_markdown_report(report: OcrEvalSuiteReport) -> str:
             lines.append(
                 f"| `{target.target_name}` | `{cat.category}` | {cat.page_count} | "
                 f"{_fmt_pct(cat.mean_cer)} | {_fmt_pct(cat.mean_content_cer)} | "
-                f"{_fmt_pct(cat.mean_word_recall)} | {_fmt_pct(cat.mean_bujo_symbol_recall)} | "
+                f"{_fmt_pct(cat.mean_word_f1)} | {_fmt_pct(cat.mean_word_recall)} | "
+                f"{_fmt_pct(cat.mean_bujo_symbol_recall)} | "
                 f"{_fmt_pct(cat.mean_bujo_indent_accuracy)} | "
                 f"{_fmt_pct(cat.mean_bujo_strikethrough_recall)} | "
                 f"{cat.median_latency_ms:.1f} ms |"
             )
 
     return "\n".join(lines) + "\n"
+
+
+@dataclass(frozen=True)
+class ParetoPoint:
+    """Latency-vs-quality coordinate for a single evaluated `OcrTargetReport`."""
+
+    target_name: str
+    model_id: str
+    latency_ms: float
+    score: float
+    is_pareto: bool
+
+
+def compute_pareto_frontier(
+    report: OcrEvalSuiteReport,
+    *,
+    score_fn: Callable[[OcrTargetReport], float | None] | None = None,
+    use_p95_latency: bool = False,
+) -> list[ParetoPoint]:
+    """Compute latency-minimizing, score-maximizing Pareto status across targets.
+
+    Targets without live latency measurements (`latency_ms <= 0`, such as pre-embedded
+    `device-rtr`) or where `score_fn` returns `None` are excluded. Returned points are
+    sorted by `(latency_ms, -score)`.
+    """
+    extractor = score_fn or (lambda t: t.overall.mean_word_f1)
+    candidates: list[tuple[float, float, OcrTargetReport]] = []
+    for target in report.targets:
+        lat = (
+            target.overall.p95_latency_ms
+            if use_p95_latency
+            else target.overall.median_latency_ms
+        )
+        if lat <= 0.0:
+            continue
+        val = extractor(target)
+        if val is None:
+            continue
+        candidates.append((lat, val, target))
+
+    candidates.sort(key=lambda item: (item[0], -item[1]))
+    points: list[ParetoPoint] = []
+    best_score = -math.inf
+    for lat, val, target in candidates:
+        is_pareto = val > best_score
+        if is_pareto:
+            best_score = val
+        points.append(
+            ParetoPoint(
+                target_name=target.target_name,
+                model_id=target.model_id,
+                latency_ms=lat,
+                score=val,
+                is_pareto=is_pareto,
+            )
+        )
+    return points
+
+
+def _render_pareto_panel_svg(
+    points: Sequence[ParetoPoint],
+    *,
+    x0: float,
+    y0: float,
+    width: float,
+    height: float,
+    title: str,
+    y_label: str,
+) -> list[str]:
+    pad_l, pad_r, pad_t, pad_b = 52.0, 20.0, 34.0, 40.0
+    plot_w = width - pad_l - pad_r
+    plot_h = height - pad_t - pad_b
+    min_log, max_log = 1.9, 4.3  # ~80 ms to ~20,000 ms
+
+    def sx(ms: float) -> float:
+        clamped = min(max(math.log10(ms), min_log), max_log)
+        return x0 + pad_l + (clamped - min_log) / (max_log - min_log) * plot_w
+
+    def sy(score: float) -> float:
+        clamped = min(max(score, 0.0), 1.0)
+        return y0 + pad_t + (1.0 - clamped) * plot_h
+
+    out: list[str] = [
+        f'<text x="{x0 + pad_l:.1f}" y="{y0 + 20:.1f}" class="panel-title">{xml_escape(title)}</text>',
+        f'<rect x="{x0 + pad_l:.1f}" y="{y0 + pad_t:.1f}" width="{plot_w:.1f}" height="{plot_h:.1f}" class="plot-bg" rx="6" />',
+    ]
+
+    for pct in (0.0, 0.25, 0.5, 0.75, 1.0):
+        gy = sy(pct)
+        out.append(
+            f'<line x1="{x0 + pad_l:.1f}" y1="{gy:.1f}" x2="{x0 + pad_l + plot_w:.1f}" y2="{gy:.1f}" class="grid" />'
+        )
+        out.append(
+            f'<text x="{x0 + pad_l - 8:.1f}" y="{gy + 4:.1f}" text-anchor="end" class="tick">{int(pct * 100)}%</text>'
+        )
+
+    for tick_ms, label in (
+        (100.0, "100 ms"),
+        (300.0, "300 ms"),
+        (1000.0, "1 s"),
+        (3000.0, "3 s"),
+        (10000.0, "10 s"),
+    ):
+        gx = sx(tick_ms)
+        out.append(
+            f'<line x1="{gx:.1f}" y1="{y0 + pad_t:.1f}" x2="{gx:.1f}" y2="{y0 + pad_t + plot_h:.1f}" class="grid" />'
+        )
+        out.append(
+            f'<text x="{gx:.1f}" y="{y0 + pad_t + plot_h + 18:.1f}" text-anchor="middle" class="tick">{label}</text>'
+        )
+
+    out.append(
+        f'<text x="{x0 + pad_l + plot_w / 2:.1f}" y="{y0 + height - 4:.1f}" text-anchor="middle" class="axis-label">Median Page Latency (log scale, lower is faster)</text>'
+    )
+    mid_y = y0 + pad_t + plot_h / 2
+    out.append(
+        f'<text x="{x0 + 14:.1f}" y="{mid_y:.1f}" text-anchor="middle" transform="rotate(-90 {x0 + 14:.1f} {mid_y:.1f})" class="axis-label">{xml_escape(y_label)}</text>'
+    )
+
+    frontier = [p for p in points if p.is_pareto]
+    if len(frontier) >= 2:
+        step_coords: list[str] = [
+            f"{sx(frontier[0].latency_ms):.1f},{sy(frontier[0].score):.1f}"
+        ]
+        for prev_pt, next_pt in zip(frontier, frontier[1:], strict=False):
+            step_coords.append(f"{sx(next_pt.latency_ms):.1f},{sy(prev_pt.score):.1f}")
+            step_coords.append(f"{sx(next_pt.latency_ms):.1f},{sy(next_pt.score):.1f}")
+        out.append(
+            f'<polyline points="{" ".join(step_coords)}" class="frontier-step" />'
+        )
+        direct_coords = " ".join(
+            f"{sx(p.latency_ms):.1f},{sy(p.score):.1f}" for p in frontier
+        )
+        out.append(f'<polyline points="{direct_coords}" class="frontier-line" />')
+
+    for idx, pt in enumerate(points):
+        px, py = sx(pt.latency_ms), sy(pt.score)
+        cls = "pt-pareto" if pt.is_pareto else "pt-dom"
+        r = 6.0 if pt.is_pareto else 5.0
+        out.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{r:.1f}" class="{cls}" />')
+        short = pt.target_name.replace("gemini:gemini-", "gemini-").replace(
+            "apple:", "apple:"
+        )
+        align_right = px > x0 + pad_l + plot_w * 0.62
+        dx = -9.0 if align_right else 9.0
+        dy = -8.0 if idx % 2 == 0 else 14.0
+        anchor = "end" if align_right else "start"
+        lbl_cls = "lbl-pareto" if pt.is_pareto else "lbl-dom"
+        out.append(
+            f'<text x="{px + dx:.1f}" y="{py + dy:.1f}" text-anchor="{anchor}" class="{lbl_cls}">'
+            f"{xml_escape(short)} ({pt.score * 100:.1f}%)</text>"
+        )
+
+    return out
+
+
+def render_pareto_svg(report: OcrEvalSuiteReport) -> str:
+    """Render a two-panel SVG Pareto frontier chart (Word F1 & Handwritten BuJo vs Latency)."""
+
+    def _handwritten_bujo_recall(target: OcrTargetReport) -> float | None:
+        vals = [
+            c.mean_bujo_symbol_recall
+            for c in target.by_category
+            if c.category in {"bujo_daily", "bujo_monthly"}
+            and c.mean_bujo_symbol_recall is not None
+        ]
+        return statistics.mean(vals) if vals else target.overall.mean_bujo_symbol_recall
+
+    f1_points = compute_pareto_frontier(report)
+    bujo_points = compute_pareto_frontier(report, score_fn=_handwritten_bujo_recall)
+
+    svg_lines: list[str] = [
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 400" width="960" height="400" role="img" aria-label="OCR Accuracy vs Latency Pareto Frontier">',
+        "  <style>",
+        "    .card { fill: #ffffff; stroke: #e2e8f0; stroke-width: 1.5; }",
+        "    .plot-bg { fill: #f8fafc; stroke: #e2e8f0; stroke-width: 1; }",
+        "    .grid { stroke: #e2e8f0; stroke-width: 1; stroke-dasharray: 3 3; }",
+        "    .title { font: 600 16px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0f172a; }",
+        "    .subtitle { font: 400 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #64748b; }",
+        "    .panel-title { font: 600 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #1e293b; }",
+        "    .axis-label { font: 500 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #475569; }",
+        "    .tick { font: 400 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #64748b; }",
+        "    .frontier-step { fill: none; stroke: #93c5fd; stroke-width: 1.5; stroke-dasharray: 4 3; }",
+        "    .frontier-line { fill: none; stroke: #2563eb; stroke-width: 2.5; }",
+        "    .pt-pareto { fill: #2563eb; stroke: #ffffff; stroke-width: 2; }",
+        "    .pt-dom { fill: #94a3b8; stroke: #ffffff; stroke-width: 1.5; }",
+        "    .lbl-pareto { font: 600 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0f172a; }",
+        "    .lbl-dom { font: 400 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #64748b; }",
+        "    @media (prefers-color-scheme: dark) {",
+        "      .card { fill: #0f172a; stroke: #334155; }",
+        "      .plot-bg { fill: #1e293b; stroke: #334155; }",
+        "      .grid { stroke: #334155; }",
+        "      .title, .panel-title, .lbl-pareto { fill: #f8fafc; }",
+        "      .subtitle, .axis-label, .tick, .lbl-dom { fill: #94a3b8; }",
+        "      .frontier-step { stroke: #1d4ed8; }",
+        "      .frontier-line { stroke: #60a5fa; }",
+        "      .pt-pareto { fill: #60a5fa; stroke: #0f172a; }",
+        "      .pt-dom { fill: #64748b; stroke: #0f172a; }",
+        "    }",
+        "  </style>",
+        '  <rect x="1" y="1" width="958" height="398" rx="12" class="card" />',
+        f'  <text x="24" y="30" class="title">OCR Quality vs. Latency Pareto Frontier ({xml_escape(report.dataset_name)}, {report.case_count} pages)</text>',
+        '  <text x="24" y="48" class="subtitle">Solid blue = Pareto-optimal (non-dominated); gray = dominated. Pre-baked 0 ms device-rtr excluded.</text>',
+    ]
+    svg_lines.extend(
+        _render_pareto_panel_svg(
+            f1_points,
+            x0=12.0,
+            y0=60.0,
+            width=464.0,
+            height=328.0,
+            title="1. Transcript Capture (Word F1)",
+            y_label="Mean Word F1",
+        )
+    )
+    svg_lines.extend(
+        _render_pareto_panel_svg(
+            bujo_points,
+            x0=484.0,
+            y0=60.0,
+            width=464.0,
+            height=328.0,
+            title="2. Handwritten Rapid Logging (BuJo Symbol Recall)",
+            y_label="BuJo Symbol Recall",
+        )
+    )
+    svg_lines.append("</svg>\n")
+    return "\n".join(svg_lines)

@@ -12,60 +12,64 @@
         "error_count": 0,
         "mean_cer": 0.2174,
         "median_cer": 0.0975,
-        "mean_content_cer": 0.2112,
+        "mean_content_cer": 0.2068,
         "mean_wer": 0.3983,
-        "mean_word_recall": 0.7654,
-        "mean_bujo_symbol_recall": 0.4577,
+        "mean_word_recall": 0.7104,
+        "mean_bujo_symbol_recall": 0.4967,
         "mean_bujo_strikethrough_recall": 0.0,
         "mean_bujo_indent_accuracy": 0.0,
         "median_latency_ms": 410.8,
-        "p95_latency_ms": 665.8
+        "p95_latency_ms": 665.8,
+        "mean_word_f1": 0.7366
       },
       "by_category": [
         {
-          "category": "bujo_daily",
-          "page_count": 3,
+          "category": "bujo_synthetic",
+          "page_count": 5,
           "error_count": 0,
-          "mean_cer": 0.0891,
-          "median_cer": 0.0452,
-          "mean_content_cer": 0.0582,
-          "mean_wer": 0.2808,
-          "mean_word_recall": 0.8938,
-          "mean_bujo_symbol_recall": 0.4667,
+          "mean_cer": 0.0294,
+          "median_cer": 0.028,
+          "mean_content_cer": 0.0201,
+          "mean_wer": 0.1352,
+          "mean_word_recall": 0.9505,
+          "mean_bujo_symbol_recall": 0.6772,
           "mean_bujo_strikethrough_recall": 0.0,
           "mean_bujo_indent_accuracy": 0.0,
-          "median_latency_ms": 440.0,
-          "p95_latency_ms": 617.7
+          "median_latency_ms": 405.6,
+          "p95_latency_ms": 501.8,
+          "mean_word_f1": 0.9437
         },
         {
-          "category": "bujo_weekly",
+          "category": "bujo_daily",
           "page_count": 1,
           "error_count": 0,
-          "mean_cer": 0.0072,
-          "median_cer": 0.0072,
-          "mean_content_cer": 0.0025,
-          "mean_wer": 0.0423,
-          "mean_word_recall": 0.9839,
-          "mean_bujo_symbol_recall": 0.7778,
+          "mean_cer": 0.1953,
+          "median_cer": 0.1953,
+          "mean_content_cer": 0.1128,
+          "mean_wer": 0.5208,
+          "mean_word_recall": 0.725,
+          "mean_bujo_symbol_recall": 0.0,
           "mean_bujo_strikethrough_recall": null,
-          "mean_bujo_indent_accuracy": 0.0,
-          "median_latency_ms": 393.1,
-          "p95_latency_ms": 393.1
+          "mean_bujo_indent_accuracy": null,
+          "median_latency_ms": 617.7,
+          "p95_latency_ms": 617.7,
+          "mean_word_f1": 0.7436
         },
         {
           "category": "bujo_monthly",
-          "page_count": 4,
+          "page_count": 2,
           "error_count": 0,
-          "mean_cer": 0.2656,
-          "median_cer": 0.1866,
-          "mean_content_cer": 0.2527,
-          "mean_wer": 0.4675,
-          "mean_word_recall": 0.728,
-          "mean_bujo_symbol_recall": 0.4331,
+          "mean_cer": 0.4971,
+          "median_cer": 0.4971,
+          "mean_content_cer": 0.4619,
+          "mean_wer": 0.779,
+          "mean_word_recall": 0.4924,
+          "mean_bujo_symbol_recall": 0.0909,
           "mean_bujo_strikethrough_recall": 0.0,
           "mean_bujo_indent_accuracy": 0.0,
-          "median_latency_ms": 526.9,
-          "p95_latency_ms": 665.8
+          "median_latency_ms": 608.9,
+          "p95_latency_ms": 665.8,
+          "mean_word_f1": 0.5641
         },
         {
           "category": "empty_template",
@@ -80,7 +84,8 @@
           "mean_bujo_strikethrough_recall": null,
           "mean_bujo_indent_accuracy": null,
           "median_latency_ms": 132.1,
-          "p95_latency_ms": 132.1
+          "p95_latency_ms": 132.1,
+          "mean_word_f1": 1.0
         },
         {
           "category": "english_prose",
@@ -88,14 +93,15 @@
           "error_count": 0,
           "mean_cer": 0.0296,
           "median_cer": 0.0245,
-          "mean_content_cer": 0.0296,
+          "mean_content_cer": 0.0272,
           "mean_wer": 0.1557,
-          "mean_word_recall": 0.9292,
+          "mean_word_recall": 0.9301,
           "mean_bujo_symbol_recall": null,
           "mean_bujo_strikethrough_recall": null,
           "mean_bujo_indent_accuracy": null,
           "median_latency_ms": 291.9,
-          "p95_latency_ms": 376.8
+          "p95_latency_ms": 376.8,
+          "mean_word_f1": 0.9301
         },
         {
           "category": "diagram_and_layout",
@@ -103,14 +109,15 @@
           "error_count": 0,
           "mean_cer": 0.3022,
           "median_cer": 0.2934,
-          "mean_content_cer": 0.2984,
+          "mean_content_cer": 0.2938,
           "mean_wer": 0.546,
-          "mean_word_recall": 0.7338,
-          "mean_bujo_symbol_recall": 0.0,
+          "mean_word_recall": 0.5816,
+          "mean_bujo_symbol_recall": null,
           "mean_bujo_strikethrough_recall": null,
           "mean_bujo_indent_accuracy": null,
           "median_latency_ms": 390.0,
-          "p95_latency_ms": 559.8
+          "p95_latency_ms": 559.8,
+          "mean_word_f1": 0.6414
         },
         {
           "category": "multilingual",
@@ -118,14 +125,15 @@
           "error_count": 0,
           "mean_cer": 0.2463,
           "median_cer": 0.2926,
-          "mean_content_cer": 0.244,
+          "mean_content_cer": 0.2371,
           "mean_wer": 0.5282,
-          "mean_word_recall": 0.7086,
-          "mean_bujo_symbol_recall": 0.55,
+          "mean_word_recall": 0.6134,
+          "mean_bujo_symbol_recall": null,
           "mean_bujo_strikethrough_recall": null,
-          "mean_bujo_indent_accuracy": 0.0,
+          "mean_bujo_indent_accuracy": null,
           "median_latency_ms": 609.7,
-          "p95_latency_ms": 651.6
+          "p95_latency_ms": 651.6,
+          "mean_word_f1": 0.6454
         },
         {
           "category": "edge_cases",
@@ -135,26 +143,28 @@
           "median_cer": 0.3725,
           "mean_content_cer": 0.4363,
           "mean_wer": 0.4924,
-          "mean_word_recall": 0.5209,
+          "mean_word_recall": 0.5076,
           "mean_bujo_symbol_recall": null,
           "mean_bujo_strikethrough_recall": null,
           "mean_bujo_indent_accuracy": null,
           "median_latency_ms": 387.8,
-          "p95_latency_ms": 720.3
+          "p95_latency_ms": 720.3,
+          "mean_word_f1": 0.5343
         }
       ],
       "cases": [
         {
           "case_id": "bujo_daily_friday",
-          "category": "bujo_daily",
+          "category": "bujo_synthetic",
           "hypothesis": "2026-11-07 Friday\n* • Review Q4 infrastructure budget\n× send signed lease renewal to landlord\no 10:30 Design sync with Maya and Leo\n- Agreed to ship local OCR before embeddings\n• Follow up on Latency. benchmark.numbers\n> Migrate home NAS backup script to cron\n• Order replacement ceramic nibs\no 17:45 Strength training session\n- Deadlift 3X5 at 275 lbs felt solid\n• Read two chapters of Designing Data Systems",
           "latency_ms": 440.0,
           "metrics": {
             "cer": 0.0267,
-            "content_cer": 0.0155,
+            "content_cer": 0.0052,
             "wer": 0.125,
             "word_recall": 1.0,
             "bujo_expected_items": 10,
+            "word_f1": 1.0,
             "bujo_symbol_recall": 0.9,
             "bujo_strikethrough_recall": 0.0,
             "bujo_indent_accuracy": 0.0
@@ -163,7 +173,7 @@
         },
         {
           "case_id": "bujo_daily_saturday",
-          "category": "bujo_daily",
+          "category": "bujo_synthetic",
           "hypothesis": "2026-11-08 Saturday\n* × Fix SQLite WAL lock timeout in PR #514\n• Tag. vO.25.0 release candidate\n•• Verify Linux wheel excludes pyobjo extras.\n• 09:00 Farmers market and coffee run\n< Schedule annual dentist checkup for Dec\n> Draft blog post on self-hosted e-ink cloud\n• Caniel inused staging UM instanee\n- Latency dropped from 92Oms to 165ms after warmup",
           "latency_ms": 405.6,
           "metrics": {
@@ -172,6 +182,7 @@
             "wer": 0.1967,
             "word_recall": 0.8814,
             "bujo_expected_items": 8,
+            "word_f1": 0.8814,
             "bujo_symbol_recall": 0.5,
             "bujo_strikethrough_recall": 0.0,
             "bujo_indent_accuracy": 0.0
@@ -185,10 +196,11 @@
           "latency_ms": 617.7,
           "metrics": {
             "cer": 0.1953,
-            "content_cer": 0.1231,
+            "content_cer": 0.1128,
             "wer": 0.5208,
-            "word_recall": 0.8,
+            "word_recall": 0.725,
             "bujo_expected_items": 10,
+            "word_f1": 0.7436,
             "bujo_symbol_recall": 0.0,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -197,7 +209,7 @@
         },
         {
           "case_id": "bujo_weekly_w45",
-          "category": "bujo_weekly",
+          "category": "bujo_synthetic",
           "hypothesis": "Week 45: Nov 2 - Nov 8\n* × Finalize multi-provider Al config schema\n* • Benchmark Apple Vision vs Ollama gemma3\n> Clean garage workbench and donate boxes\n• Wed 14:00 Quarterly roadmap review\n- Keep core container RAM under 160MB\nX Book Thanksgiving flights to Seattle\nWeekly Review\n- Shipped named providers and local macOS OCR\n- Biggest challenge: context switching mid-week\n• Next week focus: bounded summary chunking",
           "latency_ms": 393.1,
           "metrics": {
@@ -206,6 +218,7 @@
             "wer": 0.0423,
             "word_recall": 0.9839,
             "bujo_expected_items": 9,
+            "word_f1": 0.9839,
             "bujo_symbol_recall": 0.7778,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": 0.0
@@ -214,15 +227,16 @@
         },
         {
           "case_id": "bujo_monthly_calendar",
-          "category": "bujo_monthly",
+          "category": "bujo_synthetic",
           "hypothesis": "November 2026\no i sun Daylight saving time ends\n03 The Election day\n* • 6 Fri Release v0.25.0 milestone\n0 9 Mon Pediatrician appointment 11:15.\n• 14 Sat Trail half marathon in Marin\nX 18 Wed Quarterly tax estimate due\nO 21 Sat Host friendsgiving dinner\n0 26 Thi Thanksgiving family trip\n30 Mon Monthly budget and habit retro",
           "latency_ms": 501.8,
           "metrics": {
             "cer": 0.0399,
-            "content_cer": 0.0392,
+            "content_cer": 0.0359,
             "wer": 0.1935,
             "word_recall": 0.9273,
             "bujo_expected_items": 9,
+            "word_f1": 0.9027,
             "bujo_symbol_recall": 0.3333,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -231,7 +245,7 @@
         },
         {
           "case_id": "bujo_monthly_goals",
-          "category": "bujo_monthly",
+          "category": "bujo_synthetic",
           "hypothesis": "November Goals & Task List:\n* • Complete 12 strength workouts this month\nx Publish OCR evaluation suite and does.\n• Add per-notebook custom vocabulary hints\n- Harvest keywords from note metadata\n> Upgrade home server UPS battery pack\n< Move winter camping trip to January\n• Rewrite legacy mobile syne prototype\n- Lesson learned: measure CER before tuning",
           "latency_ms": 402.2,
           "metrics": {
@@ -240,6 +254,7 @@
             "wer": 0.1186,
             "word_recall": 0.96,
             "bujo_expected_items": 8,
+            "word_f1": 0.9505,
             "bujo_symbol_recall": 0.875,
             "bujo_strikethrough_recall": 0.0,
             "bujo_indent_accuracy": 0.0
@@ -253,10 +268,11 @@
           "latency_ms": 665.8,
           "metrics": {
             "cer": 0.3333,
-            "content_cer": 0.2865,
+            "content_cer": 0.2697,
             "wer": 0.6341,
             "word_recall": 0.6552,
             "bujo_expected_items": 11,
+            "word_f1": 0.6667,
             "bujo_symbol_recall": 0.0909,
             "bujo_strikethrough_recall": 0.0,
             "bujo_indent_accuracy": 0.0
@@ -270,10 +286,11 @@
           "latency_ms": 552.0,
           "metrics": {
             "cer": 0.661,
-            "content_cer": 0.6644,
+            "content_cer": 0.6542,
             "wer": 0.9239,
-            "word_recall": 0.3696,
+            "word_recall": 0.3297,
             "bujo_expected_items": 0,
+            "word_f1": 0.4615,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -291,6 +308,7 @@
             "wer": 0.0,
             "word_recall": 1.0,
             "bujo_expected_items": 0,
+            "word_f1": 1.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -306,8 +324,9 @@
             "cer": 0.0314,
             "content_cer": 0.0314,
             "wer": 0.1154,
-            "word_recall": 0.8889,
+            "word_recall": 0.9231,
             "bujo_expected_items": 0,
+            "word_f1": 0.9231,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -321,10 +340,11 @@
           "latency_ms": 376.8,
           "metrics": {
             "cer": 0.0245,
-            "content_cer": 0.0245,
+            "content_cer": 0.0122,
             "wer": 0.1163,
-            "word_recall": 0.9767,
+            "word_recall": 0.9535,
             "bujo_expected_items": 0,
+            "word_f1": 0.9535,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -340,8 +360,9 @@
             "cer": 0.0492,
             "content_cer": 0.0492,
             "wer": 0.1538,
-            "word_recall": 0.9231,
+            "word_recall": 0.9167,
             "bujo_expected_items": 0,
+            "word_f1": 0.9167,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -359,6 +380,7 @@
             "wer": 0.1429,
             "word_recall": 0.8571,
             "bujo_expected_items": 0,
+            "word_f1": 0.8571,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -376,6 +398,7 @@
             "wer": 0.25,
             "word_recall": 1.0,
             "bujo_expected_items": 0,
+            "word_f1": 1.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -393,6 +416,7 @@
             "wer": 0.4444,
             "word_recall": 0.5556,
             "bujo_expected_items": 0,
+            "word_f1": 0.5882,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -408,8 +432,9 @@
             "cer": 0.0667,
             "content_cer": 0.0667,
             "wer": 0.2222,
-            "word_recall": 0.8889,
+            "word_recall": 0.7778,
             "bujo_expected_items": 0,
+            "word_f1": 0.7778,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -427,6 +452,7 @@
             "wer": 0.5,
             "word_recall": 0.75,
             "bujo_expected_items": 0,
+            "word_f1": 0.75,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -440,10 +466,11 @@
           "latency_ms": 271.2,
           "metrics": {
             "cer": 0.3077,
-            "content_cer": 0.3077,
+            "content_cer": 0.2885,
             "wer": 0.75,
             "word_recall": 0.375,
             "bujo_expected_items": 0,
+            "word_f1": 0.4615,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -457,10 +484,11 @@
           "latency_ms": 408.7,
           "metrics": {
             "cer": 0.4435,
-            "content_cer": 0.4435,
+            "content_cer": 0.4351,
             "wer": 0.6408,
-            "word_recall": 0.99,
+            "word_recall": 0.58,
             "bujo_expected_items": 0,
+            "word_f1": 0.703,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -476,9 +504,10 @@
             "cer": 0.4942,
             "content_cer": 0.4942,
             "wer": 0.7184,
-            "word_recall": 0.8431,
-            "bujo_expected_items": 1,
-            "bujo_symbol_recall": 0.0,
+            "word_recall": 0.451,
+            "bujo_expected_items": 0,
+            "word_f1": 0.5679,
+            "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
           },
@@ -495,6 +524,7 @@
             "wer": 0.65,
             "word_recall": 0.35,
             "bujo_expected_items": 0,
+            "word_f1": 0.35,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -508,10 +538,11 @@
           "latency_ms": 603.6,
           "metrics": {
             "cer": 0.3409,
-            "content_cer": 0.3459,
+            "content_cer": 0.3434,
             "wer": 0.6133,
-            "word_recall": 0.7105,
+            "word_recall": 0.5616,
             "bujo_expected_items": 0,
+            "word_f1": 0.6165,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -525,13 +556,14 @@
           "latency_ms": 651.6,
           "metrics": {
             "cer": 0.3241,
-            "content_cer": 0.3173,
+            "content_cer": 0.2918,
             "wer": 0.5417,
-            "word_recall": 0.7297,
-            "bujo_expected_items": 4,
-            "bujo_symbol_recall": 0.5,
+            "word_recall": 0.6714,
+            "bujo_expected_items": 0,
+            "word_f1": 0.7121,
+            "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
-            "bujo_indent_accuracy": 0.0
+            "bujo_indent_accuracy": null
           },
           "error": null
         },
@@ -542,10 +574,11 @@
           "latency_ms": 649.4,
           "metrics": {
             "cer": 0.4247,
-            "content_cer": 0.4247,
+            "content_cer": 0.4144,
             "wer": 0.7071,
-            "word_recall": 0.6701,
+            "word_recall": 0.4468,
             "bujo_expected_items": 0,
+            "word_f1": 0.525,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -561,8 +594,9 @@
             "cer": 0.0751,
             "content_cer": 0.0614,
             "wer": 0.3462,
-            "word_recall": 0.8182,
+            "word_recall": 0.7955,
             "bujo_expected_items": 0,
+            "word_f1": 0.814,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -576,11 +610,12 @@
           "latency_ms": 510.0,
           "metrics": {
             "cer": 0.0519,
-            "content_cer": 0.0532,
+            "content_cer": 0.0506,
             "wer": 0.3108,
-            "word_recall": 0.973,
-            "bujo_expected_items": 5,
-            "bujo_symbol_recall": 0.6,
+            "word_recall": 0.8551,
+            "bujo_expected_items": 0,
+            "word_f1": 0.8551,
+            "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
           },
@@ -597,6 +632,7 @@
             "wer": 0.3333,
             "word_recall": 0.6667,
             "bujo_expected_items": 0,
+            "word_f1": 0.6667,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -612,8 +648,9 @@
             "cer": 0.625,
             "content_cer": 0.625,
             "wer": 0.6364,
-            "word_recall": 0.4167,
+            "word_recall": 0.3636,
             "bujo_expected_items": 0,
+            "word_f1": 0.4706,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -631,6 +668,7 @@
             "wer": 0.0,
             "word_recall": 1.0,
             "bujo_expected_items": 0,
+            "word_f1": 1.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -648,6 +686,7 @@
             "wer": 1.0,
             "word_recall": 0.0,
             "bujo_expected_items": 0,
+            "word_f1": 0.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -666,60 +705,64 @@
         "error_count": 0,
         "mean_cer": 0.728,
         "median_cer": 0.8433,
-        "mean_content_cer": 0.725,
+        "mean_content_cer": 0.7067,
         "mean_wer": 0.8693,
-        "mean_word_recall": 0.2122,
-        "mean_bujo_symbol_recall": 0.0611,
+        "mean_word_recall": 0.1699,
+        "mean_bujo_symbol_recall": 0.0873,
         "mean_bujo_strikethrough_recall": 0.0,
         "mean_bujo_indent_accuracy": 0.0,
         "median_latency_ms": 125.7,
-        "p95_latency_ms": 163.8
+        "p95_latency_ms": 163.8,
+        "mean_word_f1": 0.1778
       },
       "by_category": [
         {
-          "category": "bujo_daily",
-          "page_count": 3,
+          "category": "bujo_synthetic",
+          "page_count": 5,
           "error_count": 0,
-          "mean_cer": 0.4957,
-          "median_cer": 0.4272,
-          "mean_content_cer": 0.4846,
-          "mean_wer": 0.741,
-          "mean_word_recall": 0.3532,
-          "mean_bujo_symbol_recall": 0.0833,
+          "mean_cer": 0.3067,
+          "median_cer": 0.2129,
+          "mean_content_cer": 0.2667,
+          "mean_wer": 0.6281,
+          "mean_word_recall": 0.4814,
+          "mean_bujo_symbol_recall": 0.1222,
           "mean_bujo_strikethrough_recall": 0.0,
           "mean_bujo_indent_accuracy": 0.0,
-          "median_latency_ms": 163.8,
-          "p95_latency_ms": 179.7
+          "median_latency_ms": 155.0,
+          "p95_latency_ms": 163.8,
+          "mean_word_f1": 0.4758
         },
         {
-          "category": "bujo_weekly",
+          "category": "bujo_daily",
           "page_count": 1,
           "error_count": 0,
-          "mean_cer": 0.1862,
-          "median_cer": 0.1862,
-          "mean_content_cer": 0.1662,
-          "mean_wer": 0.5211,
-          "mean_word_recall": 0.629,
-          "mean_bujo_symbol_recall": 0.1111,
+          "mean_cer": 0.8651,
+          "median_cer": 0.8651,
+          "mean_content_cer": 0.8462,
+          "mean_wer": 1.0,
+          "mean_word_recall": 0.0,
+          "mean_bujo_symbol_recall": 0.0,
           "mean_bujo_strikethrough_recall": null,
-          "mean_bujo_indent_accuracy": 0.0,
-          "median_latency_ms": 147.1,
-          "p95_latency_ms": 147.1
+          "mean_bujo_indent_accuracy": null,
+          "median_latency_ms": 179.7,
+          "p95_latency_ms": 179.7,
+          "mean_word_f1": 0.0
         },
         {
           "category": "bujo_monthly",
-          "page_count": 4,
+          "page_count": 2,
           "error_count": 0,
-          "mean_cer": 0.6131,
-          "median_cer": 0.6875,
-          "mean_content_cer": 0.6056,
-          "mean_wer": 0.8376,
-          "mean_word_recall": 0.2589,
-          "mean_bujo_symbol_recall": 0.0833,
+          "mean_cer": 0.8636,
+          "median_cer": 0.8636,
+          "mean_content_cer": 0.8355,
+          "mean_wer": 0.9769,
+          "mean_word_recall": 0.0722,
+          "mean_bujo_symbol_recall": 0.0,
           "mean_bujo_strikethrough_recall": 0.0,
           "mean_bujo_indent_accuracy": 0.0,
-          "median_latency_ms": 136.8,
-          "p95_latency_ms": 155.0
+          "median_latency_ms": 122.4,
+          "p95_latency_ms": 123.2,
+          "mean_word_f1": 0.1102
         },
         {
           "category": "empty_template",
@@ -734,7 +777,8 @@
           "mean_bujo_strikethrough_recall": null,
           "mean_bujo_indent_accuracy": null,
           "median_latency_ms": 98.7,
-          "p95_latency_ms": 98.7
+          "p95_latency_ms": 98.7,
+          "mean_word_f1": 1.0
         },
         {
           "category": "english_prose",
@@ -742,14 +786,15 @@
           "error_count": 0,
           "mean_cer": 0.8458,
           "median_cer": 0.8367,
-          "mean_content_cer": 0.8458,
+          "mean_content_cer": 0.8184,
           "mean_wer": 0.9703,
-          "mean_word_recall": 0.0746,
+          "mean_word_recall": 0.0592,
           "mean_bujo_symbol_recall": null,
           "mean_bujo_strikethrough_recall": null,
           "mean_bujo_indent_accuracy": null,
           "median_latency_ms": 114.6,
-          "p95_latency_ms": 159.2
+          "p95_latency_ms": 159.2,
+          "mean_word_f1": 0.0715
         },
         {
           "category": "diagram_and_layout",
@@ -757,14 +802,15 @@
           "error_count": 0,
           "mean_cer": 0.9049,
           "median_cer": 0.9537,
-          "mean_content_cer": 0.9055,
+          "mean_content_cer": 0.8949,
           "mean_wer": 0.9984,
-          "mean_word_recall": 0.0556,
-          "mean_bujo_symbol_recall": 0.0,
+          "mean_word_recall": 0.0098,
+          "mean_bujo_symbol_recall": null,
           "mean_bujo_strikethrough_recall": null,
           "mean_bujo_indent_accuracy": null,
           "median_latency_ms": 115.8,
-          "p95_latency_ms": 133.6
+          "p95_latency_ms": 133.6,
+          "mean_word_f1": 0.0185
         },
         {
           "category": "multilingual",
@@ -772,14 +818,15 @@
           "error_count": 0,
           "mean_cer": 0.8427,
           "median_cer": 0.8458,
-          "mean_content_cer": 0.8412,
+          "mean_content_cer": 0.8176,
           "mean_wer": 1.0236,
-          "mean_word_recall": 0.1559,
-          "mean_bujo_symbol_recall": 0.0,
+          "mean_word_recall": 0.0319,
+          "mean_bujo_symbol_recall": null,
           "mean_bujo_strikethrough_recall": null,
-          "mean_bujo_indent_accuracy": 0.0,
+          "mean_bujo_indent_accuracy": null,
           "median_latency_ms": 137.6,
-          "p95_latency_ms": 150.1
+          "p95_latency_ms": 150.1,
+          "mean_word_f1": 0.0446
         },
         {
           "category": "edge_cases",
@@ -787,28 +834,30 @@
           "error_count": 0,
           "mean_cer": 0.75,
           "median_cer": 1.0,
-          "mean_content_cer": 0.75,
+          "mean_content_cer": 0.7455,
           "mean_wer": 0.75,
           "mean_word_recall": 0.25,
           "mean_bujo_symbol_recall": null,
           "mean_bujo_strikethrough_recall": null,
           "mean_bujo_indent_accuracy": null,
           "median_latency_ms": 102.7,
-          "p95_latency_ms": 105.7
+          "p95_latency_ms": 105.7,
+          "mean_word_f1": 0.25
         }
       ],
       "cases": [
         {
           "case_id": "bujo_daily_friday",
-          "category": "bujo_daily",
+          "category": "bujo_synthetic",
           "hypothesis": "2026-11-07 Friday\nTU)iiew o+ L￿frAstr￿St￿re b￿￿get\nx Se￿ s￿9￿e￿ Lease re￿ewaL to La￿LOrd\n0 10:30 T)eSL9￿ WLth Maya Leo\nAgreed to ship LoGaL c)cR brfore etrKbeddk￿gs\n.FoLLow LA.te￿Y.be￿Gh￿Kar￿.￿Kv￿berS\n'> Migrate hokKe NAS bASk￿P.SSriFt.tO Gro\n0 17:+5Stre￿gth tra￿￿￿￿9 sessio\neadLift 3x5 at 275 Lbs feLt soLid\nRead two Ghapters of T)esL9￿￿￿9 T>ata SyStekKs",
           "latency_ms": 163.8,
           "metrics": {
             "cer": 0.4272,
-            "content_cer": 0.4197,
+            "content_cer": 0.3549,
             "wer": 0.7639,
             "word_recall": 0.4154,
             "bujo_expected_items": 10,
+            "word_f1": 0.3673,
             "bujo_symbol_recall": 0.0,
             "bujo_strikethrough_recall": 0.0,
             "bujo_indent_accuracy": 0.0
@@ -817,15 +866,16 @@
         },
         {
           "case_id": "bujo_daily_saturday",
-          "category": "bujo_daily",
+          "category": "bujo_synthetic",
           "hypothesis": "2026-11-08 gaturday\n* x Fix goLite WAL lock timeout in PR #514\nTag .vO.25.0 release oandidat2\nVerify Linux wheel exclude& pyobjo extra&\n0 09:00 Farmer& market and Coffee run\n< gchedule annual denti&t checkup for Dec\n> Draft blog po&t on &elf-ho&ted e-ink cloud\nLatency. dropped from 920m& to165m& after warmup",
           "latency_ms": 157.7,
           "metrics": {
             "cer": 0.1949,
-            "content_cer": 0.1777,
+            "content_cer": 0.1747,
             "wer": 0.459,
             "word_recall": 0.6441,
             "bujo_expected_items": 8,
+            "word_f1": 0.6496,
             "bujo_symbol_recall": 0.25,
             "bujo_strikethrough_recall": 0.0,
             "bujo_indent_accuracy": 0.0
@@ -839,10 +889,11 @@
           "latency_ms": 179.7,
           "metrics": {
             "cer": 0.8651,
-            "content_cer": 0.8564,
+            "content_cer": 0.8462,
             "wer": 1.0,
             "word_recall": 0.0,
             "bujo_expected_items": 10,
+            "word_f1": 0.0,
             "bujo_symbol_recall": 0.0,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -851,15 +902,16 @@
         },
         {
           "case_id": "bujo_weekly_w45",
-          "category": "bujo_weekly",
+          "category": "bujo_synthetic",
           "hypothesis": "* X Finalize multi-\nrovider AI confi\nschema\nBenchmark A le Vision vs Ollama\nemma3\n> Clean\nara\ne workbench and donate boxes\no Wed 14:00 Quarterl\nroadma\nreview\nKee\ncore container RAM under 160MB\nX Book Thanks\nivin\nhts to Seattle\nShi\ned named roviders and local macos OCR\nest challen\ne: context switchin\nmid-week\nNext week focus: bounded summar\nchunkin",
           "latency_ms": 147.1,
           "metrics": {
             "cer": 0.1862,
-            "content_cer": 0.1662,
+            "content_cer": 0.1612,
             "wer": 0.5211,
-            "word_recall": 0.629,
+            "word_recall": 0.5968,
             "bujo_expected_items": 9,
+            "word_f1": 0.6116,
             "bujo_symbol_recall": 0.1111,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": 0.0
@@ -868,15 +920,16 @@
         },
         {
           "case_id": "bujo_monthly_calendar",
-          "category": "bujo_monthly",
+          "category": "bujo_synthetic",
           "hypothesis": "NovekKber 2026\n0 3 TKe FLeGtbovb day\n6 Frb ReLease vo.25.o kKbLtsto\n0 g Movb pedbatrbc•bayb aPPOb¥btkKe¥bt 11:15\n.0 i+ sat. TrabL haLf kKarathovb Marb¥\n'X 12 vved QMarterLy tAx ￿t￿￿￿te dKe\n.0 ￿ sat FtOSt fr￿e￿s9￿Vbw.\n0 26 ThK Thavbl2sgbVbw trbp\n30 Movb MovbthLy bKdget hab'bt retro",
           "latency_ms": 155.0,
           "metrics": {
             "cer": 0.5123,
-            "content_cer": 0.5131,
+            "content_cer": 0.4575,
             "wer": 0.871,
             "word_recall": 0.2909,
             "bujo_expected_items": 9,
+            "word_f1": 0.2857,
             "bujo_symbol_recall": 0.0,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -885,15 +938,16 @@
         },
         {
           "case_id": "bujo_monthly_goals",
-          "category": "bujo_monthly",
+          "category": "bujo_synthetic",
           "hypothesis": "Movember Goal& & Tagk List\n* • Complete12 drength workout& thi& month\nX Publigh OCR e!alu4tion &uite and doc&\nAdd per-notebook cu&tom vocabulary hint&\nHarve&t keyword& from .note metadata\n> Upgrade home gerver upg battery pack\n< Moiie winter camping trip to January\nLe￿on learned: mea&ure CER before tunin9",
           "latency_ms": 150.4,
           "metrics": {
             "cer": 0.2129,
-            "content_cer": 0.191,
+            "content_cer": 0.1851,
             "wer": 0.5254,
             "word_recall": 0.46,
             "bujo_expected_items": 8,
+            "word_f1": 0.4646,
             "bujo_symbol_recall": 0.25,
             "bujo_strikethrough_recall": 0.0,
             "bujo_indent_accuracy": 0.0
@@ -907,10 +961,11 @@
           "latency_ms": 121.6,
           "metrics": {
             "cer": 0.8627,
-            "content_cer": 0.8539,
+            "content_cer": 0.8202,
             "wer": 0.9756,
             "word_recall": 0.0345,
             "bujo_expected_items": 11,
+            "word_f1": 0.0435,
             "bujo_symbol_recall": 0.0,
             "bujo_strikethrough_recall": 0.0,
             "bujo_indent_accuracy": 0.0
@@ -924,10 +979,11 @@
           "latency_ms": 123.2,
           "metrics": {
             "cer": 0.8644,
-            "content_cer": 0.8644,
+            "content_cer": 0.8508,
             "wer": 0.9783,
-            "word_recall": 0.25,
+            "word_recall": 0.1099,
             "bujo_expected_items": 0,
+            "word_f1": 0.177,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -945,6 +1001,7 @@
             "wer": 0.0,
             "word_recall": 1.0,
             "bujo_expected_items": 0,
+            "word_f1": 1.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -958,10 +1015,11 @@
           "latency_ms": 114.6,
           "metrics": {
             "cer": 0.8994,
-            "content_cer": 0.8994,
+            "content_cer": 0.8931,
             "wer": 1.0,
-            "word_recall": 0.037,
+            "word_recall": 0.0,
             "bujo_expected_items": 0,
+            "word_f1": 0.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -975,10 +1033,11 @@
           "latency_ms": 159.2,
           "metrics": {
             "cer": 0.8367,
-            "content_cer": 0.8367,
+            "content_cer": 0.8204,
             "wer": 0.9767,
-            "word_recall": 0.1163,
+            "word_recall": 0.0698,
             "bujo_expected_items": 0,
+            "word_f1": 0.0909,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -992,10 +1051,11 @@
           "latency_ms": 129.7,
           "metrics": {
             "cer": 0.8361,
-            "content_cer": 0.8361,
+            "content_cer": 0.7869,
             "wer": 1.0,
-            "word_recall": 0.0769,
+            "word_recall": 0.0833,
             "bujo_expected_items": 0,
+            "word_f1": 0.1,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -1009,10 +1069,11 @@
           "latency_ms": 107.2,
           "metrics": {
             "cer": 0.8444,
-            "content_cer": 0.8444,
+            "content_cer": 0.8,
             "wer": 1.0,
             "word_recall": 0.0,
             "bujo_expected_items": 0,
+            "word_f1": 0.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -1026,10 +1087,11 @@
           "latency_ms": 113.5,
           "metrics": {
             "cer": 0.8125,
-            "content_cer": 0.8125,
+            "content_cer": 0.7917,
             "wer": 0.875,
             "word_recall": 0.1429,
             "bujo_expected_items": 0,
+            "word_f1": 0.1667,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -1043,10 +1105,11 @@
           "latency_ms": 119.7,
           "metrics": {
             "cer": 0.7333,
-            "content_cer": 0.7333,
+            "content_cer": 0.7111,
             "wer": 1.0,
             "word_recall": 0.0,
             "bujo_expected_items": 0,
+            "word_f1": 0.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -1060,10 +1123,11 @@
           "latency_ms": 113.3,
           "metrics": {
             "cer": 0.8222,
-            "content_cer": 0.8222,
+            "content_cer": 0.8,
             "wer": 1.0,
             "word_recall": 0.0,
             "bujo_expected_items": 0,
+            "word_f1": 0.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -1081,6 +1145,7 @@
             "wer": 1.0,
             "word_recall": 0.0,
             "bujo_expected_items": 0,
+            "word_f1": 0.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -1094,10 +1159,11 @@
           "latency_ms": 102.7,
           "metrics": {
             "cer": 0.9615,
-            "content_cer": 0.9615,
+            "content_cer": 0.9423,
             "wer": 1.0,
             "word_recall": 0.0,
             "bujo_expected_items": 0,
+            "word_f1": 0.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -1115,6 +1181,7 @@
             "wer": 1.0,
             "word_recall": 0.01,
             "bujo_expected_items": 0,
+            "word_f1": 0.019,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -1130,9 +1197,10 @@
             "cer": 0.9459,
             "content_cer": 0.9494,
             "wer": 0.9903,
-            "word_recall": 0.3235,
-            "bujo_expected_items": 1,
-            "bujo_symbol_recall": 0.0,
+            "word_recall": 0.049,
+            "bujo_expected_items": 0,
+            "word_f1": 0.0917,
+            "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
           },
@@ -1145,10 +1213,11 @@
           "latency_ms": 128.1,
           "metrics": {
             "cer": 0.7761,
-            "content_cer": 0.7761,
+            "content_cer": 0.7612,
             "wer": 1.25,
             "word_recall": 0.0,
             "bujo_expected_items": 0,
+            "word_f1": 0.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -1162,10 +1231,11 @@
           "latency_ms": 150.1,
           "metrics": {
             "cer": 0.8496,
-            "content_cer": 0.8496,
+            "content_cer": 0.8195,
             "wer": 1.0,
-            "word_recall": 0.2237,
+            "word_recall": 0.0274,
             "bujo_expected_items": 0,
+            "word_f1": 0.0364,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -1179,13 +1249,14 @@
           "latency_ms": 134.3,
           "metrics": {
             "cer": 0.8421,
-            "content_cer": 0.8385,
+            "content_cer": 0.8244,
             "wer": 0.9583,
-            "word_recall": 0.0811,
-            "bujo_expected_items": 4,
-            "bujo_symbol_recall": 0.0,
+            "word_recall": 0.0429,
+            "bujo_expected_items": 0,
+            "word_f1": 0.0619,
+            "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
-            "bujo_indent_accuracy": 0.0
+            "bujo_indent_accuracy": null
           },
           "error": null
         },
@@ -1196,10 +1267,11 @@
           "latency_ms": 140.8,
           "metrics": {
             "cer": 0.8845,
-            "content_cer": 0.8845,
+            "content_cer": 0.8701,
             "wer": 0.9798,
-            "word_recall": 0.2371,
+            "word_recall": 0.0319,
             "bujo_expected_items": 0,
+            "word_f1": 0.0476,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -1213,10 +1285,11 @@
           "latency_ms": 130.2,
           "metrics": {
             "cer": 0.8844,
-            "content_cer": 0.883,
+            "content_cer": 0.848,
             "wer": 0.9808,
-            "word_recall": 0.2045,
+            "word_recall": 0.0455,
             "bujo_expected_items": 0,
+            "word_f1": 0.0656,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -1230,11 +1303,12 @@
           "latency_ms": 145.3,
           "metrics": {
             "cer": 0.8198,
-            "content_cer": 0.8152,
+            "content_cer": 0.7823,
             "wer": 0.973,
-            "word_recall": 0.1892,
-            "bujo_expected_items": 5,
-            "bujo_symbol_recall": 0.0,
+            "word_recall": 0.0435,
+            "bujo_expected_items": 0,
+            "word_f1": 0.0561,
+            "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
           },
@@ -1251,6 +1325,7 @@
             "wer": 1.0,
             "word_recall": 0.0,
             "bujo_expected_items": 0,
+            "word_f1": 0.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -1264,10 +1339,11 @@
           "latency_ms": 104.8,
           "metrics": {
             "cer": 1.0,
-            "content_cer": 1.0,
+            "content_cer": 0.9821,
             "wer": 1.0,
             "word_recall": 0.0,
             "bujo_expected_items": 0,
+            "word_f1": 0.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -1285,6 +1361,7 @@
             "wer": 1.0,
             "word_recall": 0.0,
             "bujo_expected_items": 0,
+            "word_f1": 0.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
@@ -1302,6 +1379,7 @@
             "wer": 0.0,
             "word_recall": 1.0,
             "bujo_expected_items": 0,
+            "word_f1": 1.0,
             "bujo_symbol_recall": null,
             "bujo_strikethrough_recall": null,
             "bujo_indent_accuracy": null
