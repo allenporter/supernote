@@ -84,7 +84,7 @@ No API keys or external services required. Runs locally with SQLite (~160MB idle
     ```
 
 #### Option B: AI & Knowledge Hub (With Gemini — Recommended)
-Enables high-accuracy handwriting transcription (`99.0%–99.7%` Word F1), Bullet Journal Rapid Logging task extraction, summarization, and semantic search for fractions of a cent per notebook (see [Choosing an AI Provider & OCR Benchmarks](#choosing-an-ai-provider--ocr-benchmarks)). Requires a Google Gemini API Key (link a [Cloud Billing account](https://aistudio.google.com/docs/terms#paid-services) so your notes are covered by Gemini's **Paid Services** no-training terms rather than the free tier; see [Cloud API Privacy](#3-cloud-api-privacy-model-training--data-retention)).
+Enables high-accuracy handwriting transcription (`99.0%–99.7%` Word F1), Bullet Journal Rapid Logging task extraction, summarization, and semantic search (see [Choosing an AI Provider & OCR Benchmarks](#choosing-an-ai-provider--ocr-benchmarks)). Requires a Google Gemini API Key—Gemini offers both a **Free tier** (`$0`, where API data may be used to train models) and a **Paid tier** (fractions of a cent per notebook, where your data is **not** used to train models; see [Cloud API Privacy](#3-cloud-api-privacy-model-training--data-retention)).
 
 *   **Using Python**:
     ```bash
@@ -207,18 +207,18 @@ Across mid-to-late 2026 industry multimodal benchmarks—[**Artificial Analysis 
 
 ### 3. Cloud API Privacy, Model Training & Data Retention
 
-Commercial developer APIs have stricter privacy guarantees than consumer chat apps, with one critical caveat on **Gemini's unpaid free tier**:
+Google Gemini offers both a **Free tier** (which uses API data to train and improve models) and a **Paid tier** (which **does not** train on your data), while OpenAI and Anthropic exclude commercial API traffic from model training by default:
 
 | Provider & Tier | Used to Train Models? | Default API Log Retention | Official Policy Citations |
 | :--- | :--- | :--- | :--- |
 | **Google Gemini API — Paid Tier** *(Cloud Billing enabled)* | **No** — prompts, page images, and outputs are excluded from training and product improvement; Google acts as a Data Processor. | Short-term abuse monitoring only; optional project logs in AI Studio default to `55` days (configurable to `7` days or off; [ZDR](https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/zero-data-retention) on Vertex AI / Enterprise). | [Gemini Paid Services Terms](https://aistudio.google.com/docs/terms#data-use-paid) · [Logs Policy](https://aistudio.google.com/docs/logs-policy) · [Google DPA](https://business.safety.google/processorterms/) |
-| **Google Gemini API — Unpaid / Free Tier** *(no billing linked)* | **Yes** *(outside EEA, UK & Switzerland)* — inputs/outputs may be used to train Google models and reviewed by human annotators. | Retained for product improvement (Google advises *not* submitting personal or confidential data on the unpaid tier). | [Gemini Unpaid Services Terms](https://aistudio.google.com/docs/terms#data-use-unpaid) |
+| **Google Gemini API — Free Tier** *(no billing linked)* | **Yes** *(outside EEA, UK & Switzerland)* — inputs/outputs may be used to train Google models and reviewed by human annotators. | Retained for product improvement (Google advises *not* submitting personal or confidential data on the unpaid tier). | [Gemini Unpaid Services Terms](https://aistudio.google.com/docs/terms#data-use-unpaid) |
 | **OpenAI API** (`api.openai.com`) | **No** by default (since March 2023, unless explicitly opted in). | Up to `30` days for abuse monitoring before deletion; Zero Data Retention (ZDR) available for eligible organizations. | [OpenAI Platform Data Controls](https://developers.openai.com/api/docs/guides/your-data) |
 | **Anthropic Claude API** (`api.anthropic.com`) | **No** by default under Commercial Terms without express permission. | Not retained by default on standard endpoints, or up to `30` days on covered models / safety monitoring; ZDR available on request. | [Commercial Terms](https://www.anthropic.com/legal/commercial-terms) · [Training Policy](https://privacy.claude.com/en/articles/7996868-is-my-data-used-for-model-training) · [API Data Retention](https://platform.claude.com/docs/en/manage-claude/api-and-data-retention) |
 | **Local Self-Hosted** (`Ollama`, `llama.cpp`, `vLLM`, macOS `Vision`) | **Never** — `100%` local execution. | None (`0` external transmission; notes never leave your server/LAN). | — |
 
-> [!IMPORTANT]
-> **Using Gemini with personal notebooks**: Always attach an active [Cloud Billing account](https://aistudio.google.com/docs/terms#paid-services) to the Google Cloud project backing your `SUPERNOTE_GEMINI_API_KEY`. Even though transcribing `>1,500` pages with `gemini-3.5-flash-lite` costs under `$1`, enabling billing switches your API traffic from **Unpaid Services** to **Paid Services** so your handwritten notes are never used for model training or human review.
+> [!NOTE]
+> **Gemini Free vs. Paid Tier**: Leaving Cloud Billing off lets you run Gemini on the **Free tier** at `$0` for testing or non-sensitive notes, whereas linking an active [Cloud Billing account](https://aistudio.google.com/docs/terms#paid-services) to your Google AI Studio project switches your API key to the **Paid tier** (`>1,500` pages per `$1` on `gemini-3.5-flash-lite`) so personal notebooks are never used for model training or human review.
 
 ## Features Deep Dive
 
