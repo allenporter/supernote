@@ -2,6 +2,8 @@
 
 from supernote.models.base import ProcessingStatus
 from supernote.models.extended import (
+    DomainEventVO,
+    EventFeedListVO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
     PageTranscriptVO,
@@ -231,3 +233,44 @@ def test_web_ai_status_model() -> None:
         "model": "apple-vision",
     }
     assert WebAiStatusVO.from_dict(data) == vo
+
+
+def test_domain_event_feed_models() -> None:
+    ev = DomainEventVO(
+        seq="772252421643567001",
+        timestamp=1_700_000_000_000,
+        type="note.page_transcribed",
+        actor="system:processor",
+        entity_type="note_page",
+        entity_id="772252421643567298:0",
+        related_file_id=772252421643567298,
+        payload={"page_index": 0, "current_text": "hello"},
+    )
+    feed = EventFeedListVO(
+        events=[ev],
+        next_cursor="772252421643567001",
+        head_cursor="772252421643567005",
+        has_more=True,
+    )
+    data = feed.to_dict()
+    assert data == {
+        "success": True,
+        "errorCode": None,
+        "errorMsg": None,
+        "events": [
+            {
+                "seq": "772252421643567001",
+                "timestamp": 1_700_000_000_000,
+                "type": "note.page_transcribed",
+                "actor": "system:processor",
+                "entityType": "note_page",
+                "entityId": "772252421643567298:0",
+                "relatedFileId": "772252421643567298",
+                "payload": {"page_index": 0, "current_text": "hello"},
+            }
+        ],
+        "nextCursor": "772252421643567001",
+        "headCursor": "772252421643567005",
+        "hasMore": True,
+    }
+    assert EventFeedListVO.from_dict(data) == feed

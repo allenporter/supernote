@@ -25,6 +25,7 @@ from supernote.server.keys import (
     CONFIG_KEY,
     CONVERSION_SERVICE_KEY,
     EMBEDDING_MODEL_KEY,
+    EVENT_LOG_SERVICE_KEY,
     PROCESSOR_SERVICE_KEY,
     SEARCH_SERVICE_KEY,
     SUMMARY_SERVICE_KEY,
@@ -747,3 +748,71 @@ async def test_extended_routes_64bit_string_ids(
     assert (await transcript_http.json())["pages"][0][
         "text"
     ] == "snowflake-note precision check"
+
+
+async def test_extended_events_route_and_client(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    extended_client: ExtendedClient,
+    user_service: UserService,
+    test_user_id: int,
+) -> None:
+    """Verify GET /api/extended/events cursor querying, filtering, and error responses."""
+    assert client.app is not None
+    event_log_service = client.app[EVENT_LOG_SERVICE_KEY]
+
+    ev1 = await event_log_service.append(
+        user_id=test_user_id,
+        event_type="vfs.created",
+        entity_type="file",
+        entity_id="772252421643567298",
+        related_file_id=772252421643567298,
+        actor="device:SN001",
+        payload={"path": "/NOTE/todo.note"},
+        timestamp_ms=1_700_000_001_000,
+    )
+    ev2 = await event_log_service.append(
+        user_id=test_user_id,
+        event_type="note.page_transcribed",
+        entity_type="note_page",
+        entity_id="772252421643567298:0",
+        related_file_id=772252421643567298,
+        actor="system:processor",
+        payload={"page_index": 0, "current_text": "buy milk"},
+        timestamp_ms=1_700_000_002_000,
+    )
+
+    feed = await extended_client.list_events(cursor="0")
+    assert [e.seq for e in feed.events] == [str(ev1.seq), str(ev2.seq)]
+    assert feed.events[0].related_file_id == 772252421643567298
+    assert feed.next_cursor == str(ev2.seq)
+    assert feed.head_cursor == str(ev2.seq)
+    assert feed.has_more is False
+
+    # Filter by types, file_id, and exclude_actor
+    filtered = await extended_client.list_events(
+        cursor="0",
+        types=["note.*"],
+        file_id=772252421643567298,
+        exclude_actor="device:SN001",
+    )
+    assert [e.seq for e in filtered.events] == [str(ev2.seq)]
+
+    # Invalid fileId, limit, or cursor returns 400
+    for bad_query in ("fileId=abc", "limit=abc", "limit=0", "cursor=bad"):
+        resp = await client.get(
+            f"/api/extended/events?{bad_query}", headers=auth_headers
+        )
+        assert resp.status == 400
+
+    # User not found returns 404
+    with patch.object(user_service, "get_user_id", return_value=None):
+        not_found = await client.get("/api/extended/events", headers=auth_headers)
+        assert not_found.status == 404
+
+    # Unexpected exception returns 500
+    with patch.object(
+        event_log_service, "list_events", side_effect=RuntimeError("boom")
+    ):
+        err_resp = await client.get("/api/extended/events", headers=auth_headers)
+        assert err_resp.status == 500

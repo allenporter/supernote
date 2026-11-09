@@ -5,6 +5,7 @@ to our new server.
 """
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from mashumaro import field_options
 from mashumaro.config import BaseConfig
@@ -267,6 +268,44 @@ class WebAiStatusVO(BaseResponse):
         metadata=field_options(alias="embeddingModel"), default=None
     )
     model: str | None = None
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class DomainEventVO(DataClassJSONMixin):
+    """VO for a single domain event in the cursor feed.
+
+    Used by: GET /api/extended/events
+    """
+
+    seq: str
+    timestamp: int
+    type: str
+    actor: str
+    entity_type: str = field(metadata=field_options(alias="entityType"))
+    entity_id: str = field(metadata=field_options(alias="entityId"))
+    related_file_id: int | None = field(
+        metadata=field_options(alias="relatedFileId", serialize=str), default=None
+    )
+    payload: dict[str, Any] = field(default_factory=dict)
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class EventFeedListVO(BaseResponse):
+    """Response VO for querying the per-user domain event feed.
+
+    Used by: GET /api/extended/events
+    """
+
+    events: list[DomainEventVO] = field(default_factory=list)
+    next_cursor: str = field(metadata=field_options(alias="nextCursor"), default="0")
+    head_cursor: str = field(metadata=field_options(alias="headCursor"), default="0")
+    has_more: bool = field(metadata=field_options(alias="hasMore"), default=False)
 
     class Config(BaseConfig):
         serialize_by_alias = True

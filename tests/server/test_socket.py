@@ -44,6 +44,7 @@ from supernote.server.keys import (
     BLOB_STORAGE_KEY,
     CONFIG_KEY,
     EVENT_BUS_KEY,
+    EVENT_LOG_SERVICE_KEY,
     FILE_SERVICE_KEY,
     SCHEDULE_SERVICE_KEY,
     SOCKETIO_MANAGER_KEY,
@@ -1503,3 +1504,44 @@ async def test_socketio_ratta_ping_without_payload(
 
             await ws.send_str('42["ClientMessage","status","extra1"]')
             assert await ws.receive_str() == '42["ServerMessage","true"]'
+
+
+@pytest.mark.asyncio
+async def test_socketio_domain_event_recorded_emits_cursor_hint(
+    socketio_server: TestServer,
+) -> None:
+    """Verify appending to EventLogService pushes an event_log_cursor frame to the user room."""
+    user_service: UserService = socketio_server.app[USER_SERVICE_KEY]
+    event_log_service = socketio_server.app[EVENT_LOG_SERVICE_KEY]
+    user_email = "test@example.com"
+    user_id = await user_service.get_user_id(user_email)
+    assert user_id is not None
+
+    token = await user_service.create_session(user_email)
+    params = _make_handshake_params(token)
+    url = (
+        f"http://{socketio_server.host}:{socketio_server.port}/socket.io/"
+        f"?EIO=4&transport=websocket&token={params.token}&sign={params.sign}"
+        f"&random={params.random}&type={params.type}"
+    )
+
+    async with aiohttp.ClientSession() as session:
+        async with session.ws_connect(url) as ws:
+            assert (await ws.receive_str()).startswith("0{")
+            await ws.send_str("40")
+            assert (await ws.receive_str()).startswith("40")
+
+            recorded = await event_log_service.append(
+                user_id=user_id,
+                event_type="note.page_transcribed",
+                entity_type="note_page",
+                entity_id="999:0",
+                related_file_id=999,
+                actor="system:processor",
+                timestamp_ms=1_700_000_005_000,
+            )
+
+            frame = await asyncio.wait_for(ws.receive_str(), timeout=2.0)
+            assert frame.startswith('42["event_log_cursor",')
+            assert f'"seq":"{recorded.seq}"' in frame
+            assert '"relatedFileId":"999"' in frame
