@@ -14,11 +14,15 @@ from supernote.models.base import BaseResponse, ProcessingStatus
 from supernote.models.summary import SummaryItem
 
 
+def _serialize_str_list(values: list[int]) -> list[str]:
+    return [str(v) for v in values]
+
+
 @dataclass
 class WebSummaryListRequestDTO(DataClassJSONMixin):
     """Request DTO for listing summaries by file ID (Web Extension)."""
 
-    file_id: int = field(metadata=field_options(alias="fileId"))
+    file_id: int = field(metadata=field_options(alias="fileId", serialize=str))
     """The ID of the file to list summaries for."""
 
     class Config(BaseConfig):
@@ -51,10 +55,10 @@ class SystemTaskVO(DataClassJSONMixin):
     Used by: GET /api/extended/system/tasks
     """
 
-    id: int
+    id: int = field(metadata=field_options(serialize=str))
     """The unique ID of the system task."""
 
-    file_id: int = field(metadata=field_options(alias="fileId"))
+    file_id: int = field(metadata=field_options(alias="fileId", serialize=str))
     """The ID of the file associated with this task."""
 
     task_type: str = field(metadata=field_options(alias="taskType"))
@@ -103,7 +107,9 @@ class FileProcessingStatusDTO(DataClassJSONMixin):
         /api/extended/file/processing/status (POST)
     """
 
-    file_ids: list[int] = field(metadata=field_options(alias="fileIds"))
+    file_ids: list[int] = field(
+        metadata=field_options(alias="fileIds", serialize=_serialize_str_list)
+    )
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -128,7 +134,7 @@ class FileProcessingStatusVO(BaseResponse):
 class SearchResultVO(DataClassJSONMixin):
     """VO for a single semantic search result."""
 
-    file_id: int = field(metadata=field_options(alias="fileId"))
+    file_id: int = field(metadata=field_options(alias="fileId", serialize=str))
     file_name: str = field(metadata=field_options(alias="fileName"))
     page_index: int = field(metadata=field_options(alias="pageIndex"))
     page_id: str = field(metadata=field_options(alias="pageId"))
@@ -175,7 +181,7 @@ class WebSearchResponseVO(BaseResponse):
 class WebTranscriptRequestDTO(DataClassJSONMixin):
     """Request DTO for retrieving a notebook transcript (Web Extension)."""
 
-    file_id: int = field(metadata=field_options(alias="fileId"))
+    file_id: int = field(metadata=field_options(alias="fileId", serialize=str))
     """The unique ID of the notebook."""
 
     start_index: int | None = field(
@@ -219,7 +225,7 @@ class WebTranscriptResponseVO(BaseResponse):
 class WebNoteCoverRequestDTO(DataClassJSONMixin):
     """Request DTO for retrieving a single-page cover preview URL for a notebook."""
 
-    file_id: int = field(metadata=field_options(alias="fileId"))
+    file_id: int = field(metadata=field_options(alias="fileId", serialize=str))
     """The unique ID of the notebook."""
 
     class Config(BaseConfig):

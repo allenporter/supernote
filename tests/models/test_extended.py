@@ -22,8 +22,12 @@ from supernote.models.summary import SummaryItem
 
 
 def test_web_summary_list_models() -> None:
-    req = WebSummaryListRequestDTO(file_id=42)
-    assert req.to_dict() == {"fileId": 42}
+    req = WebSummaryListRequestDTO(file_id=772252421643567298)
+    assert req.to_dict() == {"fileId": "772252421643567298"}
+    assert WebSummaryListRequestDTO.from_dict({"fileId": "772252421643567298"}) == req
+    assert WebSummaryListRequestDTO.from_dict(
+        {"fileId": 42}
+    ) == WebSummaryListRequestDTO(file_id=42)
 
     item = SummaryItem(id=1, file_id=42, content="Summary")
     vo = WebSummaryListVO(summary_do_list=[item], total_records=1)
@@ -38,8 +42,8 @@ def test_web_summary_list_models() -> None:
 
 def test_system_task_models() -> None:
     task = SystemTaskVO(
-        id=1,
-        file_id=100,
+        id=772252421643567001,
+        file_id=772252421643567298,
         task_type="OCR",
         key="page_0",
         status=ProcessingStatus.COMPLETED,
@@ -48,14 +52,15 @@ def test_system_task_models() -> None:
         last_error=None,
     )
     list_vo = SystemTaskListVO(tasks=[task])
-    assert list_vo.to_dict() == {
+    data = list_vo.to_dict()
+    assert data == {
         "success": True,
         "errorCode": None,
         "errorMsg": None,
         "tasks": [
             {
-                "id": 1,
-                "fileId": 100,
+                "id": "772252421643567001",
+                "fileId": "772252421643567298",
                 "taskType": "OCR",
                 "key": "page_0",
                 "status": "COMPLETED",
@@ -65,11 +70,13 @@ def test_system_task_models() -> None:
             }
         ],
     }
+    assert SystemTaskListVO.from_dict(data) == list_vo
 
 
 def test_file_processing_status_models() -> None:
-    req = FileProcessingStatusDTO(file_ids=[1, 2])
-    assert req.to_dict() == {"fileIds": [1, 2]}
+    req = FileProcessingStatusDTO(file_ids=[1, 772252421643567298])
+    assert req.to_dict() == {"fileIds": ["1", "772252421643567298"]}
+    assert FileProcessingStatusDTO.from_dict(req.to_dict()) == req
 
     vo = FileProcessingStatusVO(status_map={"1": ProcessingStatus.COMPLETED})
     assert vo.to_dict() == {
@@ -95,7 +102,7 @@ def test_web_search_models() -> None:
     }
 
     res = SearchResultVO(
-        file_id=10,
+        file_id=772252421643567298,
         file_name="Daily.note",
         page_index=0,
         page_id="P20231027120000abc",
@@ -104,13 +111,14 @@ def test_web_search_models() -> None:
         date="2023-10-27",
     )
     vo = WebSearchResponseVO(results=[res])
-    assert vo.to_dict() == {
+    data = vo.to_dict()
+    assert data == {
         "success": True,
         "errorCode": None,
         "errorMsg": None,
         "results": [
             {
-                "fileId": 10,
+                "fileId": "772252421643567298",
                 "fileName": "Daily.note",
                 "pageIndex": 0,
                 "pageId": "P20231027120000abc",
@@ -120,15 +128,17 @@ def test_web_search_models() -> None:
             }
         ],
     }
+    assert WebSearchResponseVO.from_dict(data) == vo
 
 
 def test_web_transcript_models() -> None:
     req = WebTranscriptRequestDTO(file_id=101, start_index=0, end_index=2)
     assert req.to_dict() == {
-        "fileId": 101,
+        "fileId": "101",
         "startIndex": 0,
         "endIndex": 2,
     }
+    assert WebTranscriptRequestDTO.from_dict(req.to_dict()) == req
 
     page = PageTranscriptVO(
         page_index=0,
@@ -164,8 +174,9 @@ def test_web_transcript_models() -> None:
 
 def test_web_note_cover_models() -> None:
     req = WebNoteCoverRequestDTO(file_id=9101)
-    assert req.to_dict() == {"fileId": 9101}
+    assert req.to_dict() == {"fileId": "9101"}
     assert WebNoteCoverRequestDTO.from_dict({"fileId": "9101"}) == req
+    assert WebNoteCoverRequestDTO.from_dict({"fileId": 9101}) == req
 
     vo = WebNoteCoverVO(url="https://example.com/api/oss/png/9101/0")
     data = vo.to_dict()

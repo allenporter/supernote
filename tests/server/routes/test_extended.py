@@ -669,3 +669,81 @@ async def test_extended_note_cover_converts_only_first_page(
     disabled_vo = await extended_client.get_note_cover(file_id=file_id)
     assert disabled_vo.success is True
     assert disabled_vo.url is None
+
+
+async def test_extended_routes_64bit_string_ids(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    """Verify /api/extended/* preserves 63-bit Snowflake IDs as strings over JSON."""
+    assert client.app is not None
+    snowflake_file_id = 772252421643567298
+    snowflake_task_id = 772252421643567999
+    embedding_model = client.app[EMBEDDING_MODEL_KEY]
+    assert embedding_model is not None
+    query_vec = await embedding_model.embed(
+        "snowflake-note", EmbeddingTaskType.RETRIEVAL_QUERY
+    )
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=snowflake_file_id,
+                user_id=test_user_id,
+                file_name="Snowflake.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=snowflake_file_id,
+                page_index=0,
+                page_id="P20261109010101abc",
+                text_content="snowflake-note precision check",
+                embedding=json.dumps(query_vec),
+                embedding_model="fake-embedding-v1",
+            )
+        )
+        session.add(
+            SystemTaskDO(
+                id=snowflake_task_id,
+                file_id=snowflake_file_id,
+                task_type="OCR_EXTRACTION",
+                key="P20261109010101abc",
+                status=ProcessingStatus.COMPLETED.value,
+                retry_count=0,
+            )
+        )
+        await session.commit()
+
+    search_http = await client.post(
+        "/api/extended/search",
+        json={"query": "snowflake-note", "topN": 1},
+        headers=auth_headers,
+    )
+    assert (await search_http.json())["results"][0]["fileId"] == str(snowflake_file_id)
+
+    tasks_http = await client.get("/api/extended/system/tasks", headers=auth_headers)
+    task_json = (await tasks_http.json())["tasks"][0]
+    assert task_json["id"] == str(snowflake_task_id)
+    assert task_json["fileId"] == str(snowflake_file_id)
+
+    status_http = await client.post(
+        "/api/extended/file/processing/status",
+        json={"fileIds": [str(snowflake_file_id)]},
+        headers=auth_headers,
+    )
+    assert (await status_http.json())["statusMap"] == {
+        str(snowflake_file_id): "COMPLETED"
+    }
+
+    transcript_http = await client.post(
+        "/api/extended/transcript",
+        json={"fileId": str(snowflake_file_id)},
+        headers=auth_headers,
+    )
+    assert (await transcript_http.json())["pages"][0][
+        "text"
+    ] == "snowflake-note precision check"
