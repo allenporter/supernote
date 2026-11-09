@@ -1,8 +1,11 @@
 import asyncio
 import json
+import re
+from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from aiohttp import web
 from aiohttp.test_utils import TestClient, make_mocked_request
 from prometheus_client import REGISTRY
@@ -1031,3 +1034,36 @@ def test_record_note_page_diff_metrics() -> None:
         )
         == before_counts["deleted"] + 2.0
     )
+
+
+def test_prometheus_rules_reference_registered_metrics() -> None:
+    """Verify Prometheus recording and alerting rules parse and reference registered metrics."""
+    rules_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "monitoring"
+        / "prometheus_rules.yaml"
+    )
+    payload = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
+    groups = {group["name"]: group["rules"] for group in payload["groups"]}
+    assert set(groups) == {"supernote_recording_rules", "supernote_alerting_rules"}
+
+    recorded_names = {rule["record"] for rule in groups["supernote_recording_rules"]}
+    assert {
+        "supernote:note_pages_parsed_per_run:ratio_rate5m",
+        "supernote:note_dirty_pages_per_run:ratio_rate5m",
+        "supernote:processor_task_skip:ratio_rate5m",
+        "supernote:ai_requests_per_note_run:ratio_rate5m",
+        "supernote:ai_tokens_per_note_run:ratio_rate5m",
+    }.issubset(recorded_names)
+
+    registered_names = set(REGISTRY._names_to_collectors)
+    referenced_metrics: set[str] = set()
+    for group_rules in groups.values():
+        for rule in group_rules:
+            expr = rule["expr"]
+            assert isinstance(expr, str) and expr.strip()
+            referenced_metrics.update(re.findall(r"\bsupernote_[a-z0-9_]+\b", expr))
+
+    assert referenced_metrics
+    assert referenced_metrics.issubset(registered_names)
