@@ -1,4 +1,5 @@
 import datetime
+import hashlib
 import hmac
 import logging
 import re
@@ -7,6 +8,7 @@ import time
 import urllib.parse
 import uuid
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 import jwt
 from mashumaro import DataClassDictMixin
@@ -19,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from supernote.models.auth import Equipment, LoginVO, UserVO
 from supernote.models.base import ErrorCode
 from supernote.models.equipment import UserEquipmentVO
+from supernote.models.extended import ApiKeyVO
 from supernote.models.user import (
     LoginRecordVO,
     UpdateEmailDTO,
@@ -30,6 +33,7 @@ from supernote.models.user import (
 from supernote.server.utils.hashing import hash_with_salt
 
 from ..config import AuthConfig
+from ..db.models.api_key import ApiKeyDO
 from ..db.models.device import DeviceDO
 from ..db.models.login_record import LoginRecordDO
 from ..db.models.user import UserDO
@@ -44,6 +48,11 @@ JWT_SECRET_KEY = "system:jwt_secret_key"
 # use a 100-year TTL for server-lifetime keys (unique_machine_id, jwt_secret_key, and sold_out_count).
 UNIQUE_MACHINE_ID_TTL = 100 * 365 * 24 * 3600
 SOLD_OUT_KEY_PREFIX = "user:sold_out_count:"
+API_KEY_PREFIX = "sn_"
+MAX_API_KEY_NAME_LENGTH = 100
+MAX_API_KEYS_PER_USER = 50
+API_KEY_LAST_USED_TOUCH_INTERVAL_SECONDS = 60
+_API_KEY_TOKEN_RE = re.compile(r"^sn_[0-9a-fA-F]{32}$")
 
 # Validate email format
 # 1. No consecutive dots: (?!.*\.\.)
@@ -53,6 +62,13 @@ EMAIL_REGEX = r"^(?!.*\.\.)(?!^\.)[a-zA-Z0-9_.+-]+(?<!\.)@[a-zA-Z0-9][a-zA-Z0-9-
 
 # Validate MD5 hash
 MD5_REGEX = r"^[a-f0-9]{32}$"
+
+
+class AuthMethod(StrEnum):
+    """Authentication mechanism backing a verified SessionState."""
+
+    SESSION = "session"
+    API_KEY = "api_key"
 
 
 @dataclass
@@ -73,6 +89,13 @@ class SessionState(DataClassJSONMixin):
     equipment_no: str | None = None
     created_at: float = field(default_factory=time.time)
     last_active_at: float = field(default_factory=time.time)
+    expires_at: int | None = None
+    auth_method: AuthMethod = AuthMethod.SESSION
+
+    @property
+    def is_api_key(self) -> bool:
+        """Return True when authenticated via a static Bearer API key rather than an interactive session."""
+        return self.auth_method == AuthMethod.API_KEY
 
 
 logger = logging.getLogger(__name__)
@@ -146,7 +169,7 @@ class UserService:
 
     async def logout(self, token: str) -> None:
         """Revoke a single session token."""
-        if not token:
+        if not token or token.startswith(API_KEY_PREFIX):
             return
         secret_key = await self.get_secret_key()
         try:
@@ -332,6 +355,7 @@ class UserService:
         await self.revoke_user_sessions(user_id)
 
         async with self._session_manager.session() as session:
+            await session.execute(delete(ApiKeyDO).where(ApiKeyDO.user_id == user_id))
             await session.execute(delete(DeviceDO).where(DeviceDO.user_id == user_id))
             await session.execute(
                 delete(LoginRecordDO).where(LoginRecordDO.user_id == user_id)
@@ -549,10 +573,175 @@ class UserService:
         )
         return token
 
+    async def create_api_key(
+        self,
+        user_id: int,
+        name: str,
+        expires_at: int | None = None,
+    ) -> tuple[str, ApiKeyVO]:
+        """Generate and store a new static Bearer API key for an active user.
+
+        Returns `(raw_token, ApiKeyVO)`. The raw token is only returned once on creation.
+        """
+        cleaned_name = name.strip()
+        if not cleaned_name:
+            raise ValueError("Key name cannot be empty")
+        if len(cleaned_name) > MAX_API_KEY_NAME_LENGTH:
+            raise ValueError(
+                f"Key name cannot exceed {MAX_API_KEY_NAME_LENGTH} characters"
+            )
+        if not cleaned_name.isprintable():
+            raise ValueError("Key name cannot contain control characters")
+
+        now = int(time.time())
+        if expires_at is not None and expires_at <= now:
+            raise ValueError("Expiration time must be in the future")
+
+        raw_token = f"{API_KEY_PREFIX}{secrets.token_hex(16)}"
+        key_id = secrets.token_hex(8)
+        sha256_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+        key_prefix = f"{raw_token[:11]}..."
+
+        async with self._session_manager.session() as session:
+            user = (
+                await session.execute(select(UserDO).where(UserDO.id == user_id))
+            ).scalar_one_or_none()
+            if not user or not user.is_active:
+                raise ValueError(f"Active user {user_id} not found")
+
+            key_count = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(ApiKeyDO)
+                    .where(ApiKeyDO.user_id == user_id)
+                )
+            ).scalar() or 0
+            if key_count >= MAX_API_KEYS_PER_USER:
+                raise ValueError(
+                    f"Maximum of {MAX_API_KEYS_PER_USER} API keys per user reached"
+                )
+
+            session.add(
+                ApiKeyDO(
+                    user_id=user_id,
+                    id=key_id,
+                    name=cleaned_name,
+                    key_prefix=key_prefix,
+                    sha256_hash=sha256_hash,
+                    created_at=now,
+                    last_used_at=None,
+                    expires_at=expires_at,
+                )
+            )
+            await session.commit()
+
+        vo = ApiKeyVO(
+            id=key_id,
+            name=cleaned_name,
+            key_prefix=key_prefix,
+            created_at=now,
+            last_used_at=None,
+            expires_at=expires_at,
+        )
+        return raw_token, vo
+
+    async def list_api_keys(self, user_id: int) -> list[ApiKeyVO]:
+        """List all active static Bearer API keys for a user."""
+        async with self._session_manager.session() as session:
+            stmt = (
+                select(ApiKeyDO)
+                .where(ApiKeyDO.user_id == user_id)
+                .order_by(ApiKeyDO.created_at.asc(), ApiKeyDO.id.asc())
+            )
+            rows = (await session.execute(stmt)).scalars().all()
+            return [
+                ApiKeyVO(
+                    id=row.id,
+                    name=row.name,
+                    key_prefix=row.key_prefix,
+                    created_at=row.created_at,
+                    last_used_at=row.last_used_at,
+                    expires_at=row.expires_at,
+                )
+                for row in rows
+            ]
+
+    async def revoke_api_key(self, user_id: int, key_id: str) -> bool:
+        """Revoke an active static Bearer API key belonging to `user_id`."""
+        async with self._session_manager.session() as session:
+            row = (
+                await session.execute(
+                    select(ApiKeyDO).where(
+                        ApiKeyDO.user_id == user_id,
+                        ApiKeyDO.id == key_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if not row:
+                return False
+            await session.delete(row)
+            await session.commit()
+            return True
+
+    async def revoke_user_api_keys(self, user_id: int) -> None:
+        """Delete all static Bearer API keys belonging to `user_id`."""
+        async with self._session_manager.session() as session:
+            await session.execute(delete(ApiKeyDO).where(ApiKeyDO.user_id == user_id))
+            await session.commit()
+
+    async def verify_api_key(self, token: str) -> SessionState | None:
+        """Verify a static `sn_...` Bearer API key against its SHA-256 digest and active user record."""
+        if not token or not _API_KEY_TOKEN_RE.match(token):
+            return None
+
+        sha256_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        now = int(time.time())
+
+        async with self._session_manager.session() as session:
+            stmt = (
+                select(ApiKeyDO, UserDO)
+                .join(UserDO, ApiKeyDO.user_id == UserDO.id)
+                .where(ApiKeyDO.sha256_hash == sha256_hash)
+            )
+            row = (await session.execute(stmt)).one_or_none()
+            if not row:
+                return None
+
+            record, user = row
+            if not user.is_active:
+                return None
+            if record.expires_at is not None and record.expires_at <= now:
+                return None
+
+            created_at = record.created_at
+            expires_at = record.expires_at
+            email = user.email
+            user_id = user.id
+            if (
+                record.last_used_at is None
+                or (now - record.last_used_at)
+                >= API_KEY_LAST_USED_TOUCH_INTERVAL_SECONDS
+            ):
+                record.last_used_at = now
+                await session.commit()
+
+        return SessionState(
+            token=token,
+            email=email,
+            user_id=user_id,
+            equipment_no=None,
+            created_at=float(created_at),
+            last_active_at=float(now),
+            expires_at=expires_at,
+            auth_method=AuthMethod.API_KEY,
+        )
+
     async def verify_token(self, token: str) -> SessionState | None:
-        """Verify token against JWT signature, persisted session state, and active user record."""
+        """Verify a session JWT or static Bearer API key against persisted state and active user record."""
         if not token:
             return None
+        if token.startswith(API_KEY_PREFIX):
+            return await self.verify_api_key(token)
         secret_key = await self.get_secret_key()
         try:
             payload = jwt.decode(token, secret_key, algorithms=[JWT_ALGORITHM])
@@ -702,7 +891,7 @@ class UserService:
             )
 
     async def update_password(self, account: str, dto: UpdatePasswordDTO) -> None:
-        """Update user password and revoke active sessions."""
+        """Update user password and revoke active sessions and API keys."""
         if not re.match(MD5_REGEX, dto.password):
             raise ValueError("Invalid password format, must be md5 hash")
 
@@ -718,6 +907,7 @@ class UserService:
             await session.commit()
 
         await self.revoke_user_sessions(user_id)
+        await self.revoke_user_api_keys(user_id)
 
     async def update_email(self, account: str, dto: UpdateEmailDTO) -> None:
         """Update user email and revoke active sessions bound to the old email."""
@@ -750,7 +940,7 @@ class UserService:
         await self.revoke_user_sessions(user_id)
 
     async def admin_reset_password(self, email: str, password_md5: str) -> None:
-        """Force reset user password (Admin only) and revoke active sessions."""
+        """Force reset user password (Admin only) and revoke active sessions and API keys."""
         if not re.match(MD5_REGEX, password_md5):
             raise ValueError("Invalid password format, must be md5 hash")
 
@@ -764,6 +954,7 @@ class UserService:
             await session.commit()
 
         await self.revoke_user_sessions(user_id)
+        await self.revoke_user_api_keys(user_id)
 
     async def admin_set_user_quota(self, email: str, total_capacity: int) -> None:
         """Set a user's storage quota in bytes (0 = unlimited / volume-backed)."""
@@ -779,7 +970,7 @@ class UserService:
             await session.commit()
 
     async def retrieve_password(self, account: str, password_md5: str) -> bool:
-        """Retrieve/Reset password and revoke active sessions."""
+        """Retrieve/Reset password and revoke active sessions and API keys."""
         # Find user by alias (email/phone/username) and reset password.
         if not account:
             return False
@@ -803,6 +994,7 @@ class UserService:
             await session.commit()
 
         await self.revoke_user_sessions(user_id)
+        await self.revoke_user_api_keys(user_id)
         return True
 
     async def query_login_records(

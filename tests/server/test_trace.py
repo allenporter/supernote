@@ -1,6 +1,7 @@
 """Unit tests for HTTP trace redaction helpers and SanitizedAccessLogger."""
 
 import logging
+from pathlib import Path
 
 import pytest
 from aiohttp import web
@@ -15,6 +16,7 @@ from supernote.server.trace import (
     redact_url,
     sanitize_body,
     sanitize_headers,
+    trace_middleware,
     try_parse_json,
 )
 
@@ -204,3 +206,68 @@ async def test_sanitized_access_logger_redacts_and_supports_unsafe_mode(
             assert "token=raw_sio_jwt&sign=raw_sio_sig" in unsafe_msg
             assert "https://app.example.com/?token=raw_ref_jwt" in unsafe_msg
             assert embedded_jwt in unsafe_msg
+
+
+async def test_trace_redacts_static_sn_api_keys_across_response_bodies_and_preserve_task_keys(
+    tmp_path: Path,
+) -> None:
+    """Verify sn_<32_hex> secrets are scrubbed from POST /api/extended/keys responses without breaking SystemTaskVO.key."""
+    raw_api_key = "sn_0123456789abcdef0123456789abcdef"
+
+    # Parsed JSON response body from CreateApiKeyResponseVO
+    create_key_body = {
+        "success": True,
+        "id": "a1b2c3d4e5f67890",
+        "name": "Obsidian Sync",
+        "key": raw_api_key,
+        "createdAt": 1700000000,
+    }
+    assert sanitize_body(create_key_body) == {
+        "success": True,
+        "id": "a1b2c3d4e5f67890",
+        "name": "Obsidian Sync",
+        "key": "***",
+        "createdAt": 1700000000,
+    }
+
+    # Non-secret SystemTaskVO "key" values remain untouched
+    task_body = {"tasks": [{"id": 1, "fileId": 10, "key": "page_0"}]}
+    assert sanitize_body(task_body) == task_body
+
+    # Inline sn_... keys in custom headers, URLs, and error strings are scrubbed
+    assert sanitize_headers({"X-Debug": f"leaked {raw_api_key} here"}) == {
+        "X-Debug": "leaked *** here"
+    }
+    assert (
+        redact_url(f"https://example.com/callback?custom={raw_api_key}")
+        == "https://example.com/callback?custom=***"
+    )
+    assert sanitize_body(f"Auth error for {raw_api_key}") == "Auth error for ***"
+
+    # End-to-end trace_middleware disk output never contains raw_api_key
+    trace_file = tmp_path / "trace.jsonl"
+    config = ServerConfig(trace_log_file=str(trace_file), trace_log_unsafe=False)
+    app = web.Application(middlewares=[trace_middleware])
+    app[CONFIG_KEY] = config
+
+    async def mint_key_handler(_request: web.Request) -> web.Response:
+        return web.json_response(create_key_body)
+
+    app.router.add_post("/api/extended/keys", mint_key_handler)
+
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        async with TestClient(server) as test_client:
+            resp = await test_client.post(
+                "/api/extended/keys", json={"name": "Obsidian Sync"}
+            )
+            assert resp.status == 200
+            # Caller still receives the real key over HTTP
+            assert (await resp.json())["key"] == raw_api_key
+    finally:
+        await server.close()
+
+    disk_contents = trace_file.read_text(encoding="utf-8")
+    assert raw_api_key not in disk_contents
+    assert '"key": "***"' in disk_contents

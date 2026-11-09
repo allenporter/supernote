@@ -16,5 +16,7 @@ async def test_session_manager_session() -> None:
     async with manager.session() as session:
         result = await session.execute(text("SELECT 1"))
         assert result.scalar() == 1
+        fk_enabled = await session.execute(text("PRAGMA foreign_keys"))
+        assert fk_enabled.scalar() == 1
 
     await manager.close()

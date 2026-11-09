@@ -41,8 +41,10 @@ TABLES_WITHOUT_USER_ID_IN_PK_ALLOWLIST = frozenset(
 
 # Existing user-owned tables with a globally unique column not scoped by user_id:
 # - devices.equipment_no: hardware device serial number bound to a single account globally
+# - api_keys.sha256_hash: cryptographic bearer token digest bound to a single account globally
 UNSCOPED_UNIQUE_CONSTRAINT_ALLOWLIST = frozenset(
     {
+        ("api_keys", ("sha256_hash",)),
         ("devices", ("equipment_no",)),
     }
 )
