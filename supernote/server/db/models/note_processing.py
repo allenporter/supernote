@@ -193,6 +193,11 @@ class NotePageContentDO(Base):
         UniqueConstraint("file_id", "page_id", name="uq_note_page_content"),
     )
 
+    @property
+    def is_blank(self) -> bool:
+        """Return True when the page has no non-whitespace OCR text."""
+        return not self.text_content or not self.text_content.strip()
+
 
 class SystemTaskDO(Base):
     """Generic system task tracking."""
