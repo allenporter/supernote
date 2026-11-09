@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from prometheus_client import REGISTRY
 from sqlalchemy import delete, select, update
 
 from supernote.server.constants import (
@@ -27,7 +28,8 @@ from supernote.server.events import (
     VfsItemDeletedEvent,
     VfsItemMovedEvent,
 )
-from supernote.server.exceptions import QuotaExceeded
+from supernote.server.exceptions import HashMismatch, QuotaExceeded
+from supernote.server.metrics import NoteUploadSource
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.services.user import UserService
@@ -1244,3 +1246,95 @@ async def test_concurrent_finish_upload_same_inner_name_preserves_committed_blob
     assert len(quota_errors) == 1
     assert await blob_storage.exists(USER_DATA_BUCKET, "shared_race_key") is True
     assert await file_service.get_storage_usage(user) == 400
+
+
+def _note_uploads(source: NoteUploadSource) -> float:
+    val = REGISTRY.get_sample_value(
+        "supernote_note_uploads_total",
+        {"source": source.value},
+    )
+    assert val is not None
+    return val
+
+
+async def test_note_upload_metrics_by_source_and_extension(
+    storage_root: Path,
+    blob_storage: BlobStorage,
+    user_service: UserService,
+    session_manager: DatabaseSessionManager,
+    create_test_user: None,
+    test_users: list[str],
+) -> None:
+    """Verify supernote_note_uploads_total zero-seeding and counting for .note vs non-.note uploads."""
+    # Construct FileService with event_bus=None to also verify metric recording is independent of EventBus
+    headless_file_service = FileService(
+        storage_root=storage_root,
+        blob_storage=blob_storage,
+        user_service=user_service,
+        session_manager=session_manager,
+        event_bus=None,
+    )
+    user = test_users[0]
+
+    before_device = _note_uploads(NoteUploadSource.DEVICE_SYNC)
+    before_web = _note_uploads(NoteUploadSource.WEB)
+
+    payload = b"notebook binary bytes"
+    md5_val = hashlib.md5(payload).hexdigest()
+
+    # Device sync .note (including uppercase .NOTE) increments source="device_sync"
+    await blob_storage.put(USER_DATA_BUCKET, "metric_dev_note_1", payload)
+    await headless_file_service.finish_upload(
+        user, "daily.note", "/Note", md5_val, "metric_dev_note_1"
+    )
+    await blob_storage.put(USER_DATA_BUCKET, "metric_dev_note_2", payload)
+    await headless_file_service.finish_upload(
+        user, "UPPER.NOTE", "/Note", md5_val, "metric_dev_note_2"
+    )
+    assert _note_uploads(NoteUploadSource.DEVICE_SYNC) == before_device + 2.0
+    assert _note_uploads(NoteUploadSource.WEB) == before_web
+
+    # Non-.note upload via device sync does NOT increment supernote_note_uploads_total
+    await blob_storage.put(USER_DATA_BUCKET, "metric_dev_pdf", payload)
+    await headless_file_service.finish_upload(
+        user, "manual.pdf", "/Document", md5_val, "metric_dev_pdf"
+    )
+    assert _note_uploads(NoteUploadSource.DEVICE_SYNC) == before_device + 2.0
+    assert _note_uploads(NoteUploadSource.WEB) == before_web
+
+    # Web upload .note increments source="web", while non-.note does not
+    await blob_storage.put(USER_DATA_BUCKET, "metric_web_note", payload)
+    await headless_file_service.upload_finish_web(
+        user=user,
+        directory_id=0,
+        file_name="web_journal.note",
+        md5=md5_val,
+        inner_name="metric_web_note",
+    )
+    await blob_storage.put(USER_DATA_BUCKET, "metric_web_pdf", payload)
+    await headless_file_service.upload_finish_web(
+        user=user,
+        directory_id=0,
+        file_name="slides.pdf",
+        md5=md5_val,
+        inner_name="metric_web_pdf",
+    )
+    assert _note_uploads(NoteUploadSource.DEVICE_SYNC) == before_device + 2.0
+    assert _note_uploads(NoteUploadSource.WEB) == before_web + 1.0
+
+    # Failed .note uploads (e.g. MD5 mismatch) do NOT increment either counter
+    await blob_storage.put(USER_DATA_BUCKET, "metric_bad_md5", payload)
+    with pytest.raises(HashMismatch):
+        await headless_file_service.finish_upload(
+            user, "corrupt.note", "/Note", "0" * 32, "metric_bad_md5"
+        )
+    with pytest.raises(HashMismatch):
+        await headless_file_service.upload_finish_web(
+            user=user,
+            directory_id=0,
+            file_name="corrupt_web.note",
+            md5="0" * 32,
+            inner_name="metric_bad_md5",
+        )
+    assert _note_uploads(NoteUploadSource.DEVICE_SYNC) == before_device + 2.0
+    assert _note_uploads(NoteUploadSource.WEB) == before_web + 1.0
