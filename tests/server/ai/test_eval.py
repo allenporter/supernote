@@ -629,3 +629,39 @@ def test_compute_pareto_frontier_identifies_dominated_targets() -> None:
     svg = render_pareto_svg(suite)
     assert "<svg" in svg
     assert "fast:v1" in svg
+
+
+def test_render_pareto_svg_formats_known_provider_labels() -> None:
+    targets = [
+        build_target_report(
+            target_name,
+            target_name,
+            0.0,
+            [
+                OcrTargetCaseResult(
+                    case_id="c1",
+                    category="english_prose",
+                    hypothesis="hello",
+                    latency_ms=lat,
+                    metrics=score_ocr_output("hello", "hello"),
+                )
+            ],
+        )
+        for target_name, lat in (
+            ("apple:vision-fast", 120.0),
+            ("apple:vision-accurate", 400.0),
+            ("supernote-on-device", 900.0),
+            ("gemini:gemini-3.5-flash-lite", 1200.0),
+            ("gemini:gemini-3.6-flash", 6500.0),
+        )
+    ]
+    svg = render_pareto_svg(
+        OcrEvalSuiteReport(dataset_name="suite", case_count=1, targets=targets)
+    )
+    assert "Apple Vision Fast (100.0%)" in svg
+    assert "Apple Vision Accurate (100.0%)" in svg
+    assert "Supernote On-Device (100.0%)" in svg
+    assert "Gemini 3.5 Flash-Lite (100.0%)" in svg
+    assert "Gemini 3.6 Flash (100.0%)" in svg
+    assert "apple:vision-fast" not in svg
+    assert "gemini:gemini-3.5-flash-lite" not in svg

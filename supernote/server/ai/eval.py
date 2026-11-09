@@ -861,6 +861,61 @@ def compute_pareto_frontier(
     return points
 
 
+_KNOWN_PARETO_LABELS: dict[str, str] = {
+    "apple:vision-accurate": "Apple Vision Accurate",
+    "apple:vision-fast": "Apple Vision Fast",
+    "supernote-on-device": "Supernote On-Device",
+    "gemini:gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite",
+    "gemini:gemini-3.6-flash": "Gemini 3.6 Flash",
+    "gemini:gemini-3.8-flash": "Gemini 3.8 Flash",
+}
+
+
+def _format_pareto_label(target_name: str) -> str:
+    """Format a CLI target identifier into a clear chart label."""
+    if target_name in _KNOWN_PARETO_LABELS:
+        return _KNOWN_PARETO_LABELS[target_name]
+    if target_name.startswith("gemini:"):
+        raw = target_name.removeprefix("gemini:")
+        if raw.startswith("gemini-"):
+            parts = raw.removeprefix("gemini-").split("-")
+            titled = (
+                "-".join(p.capitalize() for p in parts[1:]) if len(parts) > 1 else ""
+            )
+            return f"Gemini {parts[0]} {titled}".strip()
+    if target_name.startswith("apple:vision-"):
+        mode = target_name.removeprefix("apple:vision-").capitalize()
+        return f"Apple Vision {mode}"
+    return target_name
+
+
+def _boxes_overlap(
+    a: tuple[float, float, float, float],
+    b: tuple[float, float, float, float],
+    pad: float = 3.0,
+) -> bool:
+    return not (
+        a[2] + pad < b[0] or b[2] + pad < a[0] or a[3] + pad < b[1] or b[3] + pad < a[1]
+    )
+
+
+def _segment_hits_box(
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+    box: tuple[float, float, float, float],
+) -> bool:
+    """Return True if interior of segment (x1,y1)-(x2,y2) passes through `box`."""
+    bx0, by0, bx1, by1 = box
+    for t in (0.12, 0.25, 0.38, 0.5, 0.62, 0.75, 0.88):
+        sx_t = x1 + (x2 - x1) * t
+        sy_t = y1 + (y2 - y1) * t
+        if bx0 <= sx_t <= bx1 and by0 <= sy_t <= by1:
+            return True
+    return False
+
+
 def _render_pareto_panel_svg(
     points: Sequence[ParetoPoint],
     *,
@@ -871,31 +926,37 @@ def _render_pareto_panel_svg(
     title: str,
     y_label: str,
 ) -> list[str]:
-    pad_l, pad_r, pad_t, pad_b = 52.0, 20.0, 34.0, 40.0
+    pad_l, pad_r, pad_t, pad_b = 52.0, 16.0, 34.0, 40.0
     plot_w = width - pad_l - pad_r
     plot_h = height - pad_t - pad_b
-    min_log, max_log = 1.9, 4.3  # ~80 ms to ~20,000 ms
+    plot_left = x0 + pad_l
+    plot_right = plot_left + plot_w
+    plot_top = y0 + pad_t
+    plot_bottom = plot_top + plot_h
+    inner_y_pad = 26.0
+    usable_h = plot_h - 2.0 * inner_y_pad
+    min_log, max_log = 1.74, 4.32  # ~55 ms to ~21,000 ms
 
     def sx(ms: float) -> float:
         clamped = min(max(math.log10(ms), min_log), max_log)
-        return x0 + pad_l + (clamped - min_log) / (max_log - min_log) * plot_w
+        return plot_left + (clamped - min_log) / (max_log - min_log) * plot_w
 
     def sy(score: float) -> float:
         clamped = min(max(score, 0.0), 1.0)
-        return y0 + pad_t + (1.0 - clamped) * plot_h
+        return plot_top + inner_y_pad + (1.0 - clamped) * usable_h
 
     out: list[str] = [
-        f'<text x="{x0 + pad_l:.1f}" y="{y0 + 20:.1f}" class="panel-title">{xml_escape(title)}</text>',
-        f'<rect x="{x0 + pad_l:.1f}" y="{y0 + pad_t:.1f}" width="{plot_w:.1f}" height="{plot_h:.1f}" class="plot-bg" rx="6" />',
+        f'<text x="{plot_left:.1f}" y="{y0 + 20:.1f}" class="panel-title">{xml_escape(title)}</text>',
+        f'<rect x="{plot_left:.1f}" y="{plot_top:.1f}" width="{plot_w:.1f}" height="{plot_h:.1f}" class="plot-bg" rx="6" />',
     ]
 
     for pct in (0.0, 0.25, 0.5, 0.75, 1.0):
         gy = sy(pct)
         out.append(
-            f'<line x1="{x0 + pad_l:.1f}" y1="{gy:.1f}" x2="{x0 + pad_l + plot_w:.1f}" y2="{gy:.1f}" class="grid" />'
+            f'<line x1="{plot_left:.1f}" y1="{gy:.1f}" x2="{plot_right:.1f}" y2="{gy:.1f}" class="grid" />'
         )
         out.append(
-            f'<text x="{x0 + pad_l - 8:.1f}" y="{gy + 4:.1f}" text-anchor="end" class="tick">{int(pct * 100)}%</text>'
+            f'<text x="{plot_left - 8:.1f}" y="{gy + 4:.1f}" text-anchor="end" class="tick">{int(pct * 100)}%</text>'
         )
 
     for tick_ms, label in (
@@ -907,28 +968,32 @@ def _render_pareto_panel_svg(
     ):
         gx = sx(tick_ms)
         out.append(
-            f'<line x1="{gx:.1f}" y1="{y0 + pad_t:.1f}" x2="{gx:.1f}" y2="{y0 + pad_t + plot_h:.1f}" class="grid" />'
+            f'<line x1="{gx:.1f}" y1="{plot_top:.1f}" x2="{gx:.1f}" y2="{plot_bottom:.1f}" class="grid" />'
         )
         out.append(
-            f'<text x="{gx:.1f}" y="{y0 + pad_t + plot_h + 18:.1f}" text-anchor="middle" class="tick">{label}</text>'
+            f'<text x="{gx:.1f}" y="{plot_bottom + 18:.1f}" text-anchor="middle" class="tick">{label}</text>'
         )
 
     out.append(
-        f'<text x="{x0 + pad_l + plot_w / 2:.1f}" y="{y0 + height - 4:.1f}" text-anchor="middle" class="axis-label">Median Page Latency (log scale, lower is faster)</text>'
+        f'<text x="{plot_left + plot_w / 2:.1f}" y="{y0 + height - 4:.1f}" text-anchor="middle" class="axis-label">Median Page Latency (log scale, lower is faster)</text>'
     )
-    mid_y = y0 + pad_t + plot_h / 2
+    mid_y = plot_top + plot_h / 2
     out.append(
         f'<text x="{x0 + 14:.1f}" y="{mid_y:.1f}" text-anchor="middle" transform="rotate(-90 {x0 + 14:.1f} {mid_y:.1f})" class="axis-label">{xml_escape(y_label)}</text>'
     )
 
     frontier = [p for p in points if p.is_pareto]
+    frontier_segments: list[tuple[float, float, float, float]] = []
     if len(frontier) >= 2:
         step_coords: list[str] = [
             f"{sx(frontier[0].latency_ms):.1f},{sy(frontier[0].score):.1f}"
         ]
         for prev_pt, next_pt in zip(frontier, frontier[1:], strict=False):
-            step_coords.append(f"{sx(next_pt.latency_ms):.1f},{sy(prev_pt.score):.1f}")
-            step_coords.append(f"{sx(next_pt.latency_ms):.1f},{sy(next_pt.score):.1f}")
+            x1, y1 = sx(prev_pt.latency_ms), sy(prev_pt.score)
+            x2, y2 = sx(next_pt.latency_ms), sy(next_pt.score)
+            frontier_segments.append((x1, y1, x2, y2))
+            step_coords.append(f"{x2:.1f},{y1:.1f}")
+            step_coords.append(f"{x2:.1f},{y2:.1f}")
         out.append(
             f'<polyline points="{" ".join(step_coords)}" class="frontier-step" />'
         )
@@ -937,24 +1002,119 @@ def _render_pareto_panel_svg(
         )
         out.append(f'<polyline points="{direct_coords}" class="frontier-line" />')
 
+    coords = [(sx(pt.latency_ms), sy(pt.score)) for pt in points]
+    point_boxes = [(px - 6.0, py - 6.0, px + 6.0, py + 6.0) for px, py in coords]
+    placed_boxes: list[tuple[float, float, float, float]] = []
+
+    candidate_offsets: list[tuple[float, float, str]] = [
+        (10.0, 4.0, "start"),
+        (-10.0, 4.0, "end"),
+        (9.0, -11.0, "start"),
+        (-9.0, -11.0, "end"),
+        (9.0, 19.0, "start"),
+        (-9.0, 19.0, "end"),
+        (-4.0, -12.0, "start"),
+        (4.0, -12.0, "end"),
+        (-4.0, 20.0, "start"),
+        (4.0, 20.0, "end"),
+        (10.0, -24.0, "start"),
+        (-10.0, -24.0, "end"),
+        (10.0, 31.0, "start"),
+        (-10.0, 31.0, "end"),
+        (-28.0, -16.0, "start"),
+        (28.0, -16.0, "end"),
+        (-28.0, 24.0, "start"),
+        (28.0, 24.0, "end"),
+        (10.0, -36.0, "start"),
+        (-10.0, -36.0, "end"),
+        (10.0, 43.0, "start"),
+        (-10.0, 43.0, "end"),
+    ]
+
+    leader_lines: list[str] = []
+    point_circles: list[str] = []
+    label_texts: list[str] = []
+
+    order = sorted(
+        range(len(points)),
+        key=lambda i: (-coords[i][0], coords[i][1]),
+    )
+    placements: dict[
+        int, tuple[float, float, str, str, tuple[float, float, float, float]]
+    ] = {}
+
+    for idx in order:
+        pt = points[idx]
+        px, py = coords[idx]
+        label_text = f"{_format_pareto_label(pt.target_name)} ({pt.score * 100:.1f}%)"
+        char_w = 6.3 if pt.is_pareto else 5.8
+        est_w = len(label_text) * char_w + 3.0
+        est_h = 13.0
+
+        best_choice: (
+            tuple[float, float, float, str, tuple[float, float, float, float]] | None
+        ) = None
+        prefer_end = px > plot_left + plot_w * 0.48
+
+        for dx, dy, anchor in candidate_offsets:
+            tx = px + dx
+            ty = py + dy
+            if anchor == "start":
+                box = (tx, ty - est_h + 2.0, tx + est_w, ty + 3.0)
+            else:
+                box = (tx - est_w, ty - est_h + 2.0, tx, ty + 3.0)
+
+            penalty = math.hypot(dx, dy)
+            if (anchor == "end") != prefer_end:
+                penalty += 6.0
+            if (
+                box[0] < plot_left + 4.0
+                or box[2] > plot_right - 4.0
+                or box[1] < plot_top + 3.0
+                or box[3] > plot_bottom - 3.0
+            ):
+                penalty += 30000.0
+            for pbox in point_boxes:
+                if _boxes_overlap(box, pbox, pad=2.0):
+                    penalty += 25000.0
+            for lbox in placed_boxes:
+                if _boxes_overlap(box, lbox, pad=3.5):
+                    penalty += 15000.0
+            for sx1, sy1, sx2, sy2 in frontier_segments:
+                if _segment_hits_box(sx1, sy1, sx2, sy2, box):
+                    penalty += 500.0
+
+            if best_choice is None or penalty < best_choice[0]:
+                best_choice = (penalty, tx, ty, anchor, box)
+
+        assert best_choice is not None
+        _, tx, ty, anchor, chosen_box = best_choice
+        placed_boxes.append(chosen_box)
+        placements[idx] = (tx, ty, anchor, label_text, chosen_box)
+
     for idx, pt in enumerate(points):
-        px, py = sx(pt.latency_ms), sy(pt.score)
+        px, py = coords[idx]
         cls = "pt-pareto" if pt.is_pareto else "pt-dom"
         r = 6.0 if pt.is_pareto else 5.0
-        out.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{r:.1f}" class="{cls}" />')
-        short = pt.target_name.replace("gemini:gemini-", "gemini-").replace(
-            "apple:", "apple:"
+        point_circles.append(
+            f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{r:.1f}" class="{cls}" />'
         )
-        align_right = px > x0 + pad_l + plot_w * 0.62
-        dx = -9.0 if align_right else 9.0
-        dy = -8.0 if idx % 2 == 0 else 14.0
-        anchor = "end" if align_right else "start"
+        tx, ty, anchor, label_text, box = placements[idx]
         lbl_cls = "lbl-pareto" if pt.is_pareto else "lbl-dom"
-        out.append(
-            f'<text x="{px + dx:.1f}" y="{py + dy:.1f}" text-anchor="{anchor}" class="{lbl_cls}">'
-            f"{xml_escape(short)} ({pt.score * 100:.1f}%)</text>"
+        lx = min(max(px, box[0]), box[2])
+        ly = min(max(py, box[1]), box[3])
+        if math.hypot(lx - px, ly - py) > 12.0:
+            leader_lines.append(
+                f'<line x1="{px:.1f}" y1="{py:.1f}" x2="{lx:.1f}" y2="{ly:.1f}" class="leader" />'
+            )
+        label_texts.append(
+            f'<text x="{tx:.1f}" y="{ty:.1f}" text-anchor="{anchor}" class="{lbl_cls}">'
+            f"{xml_escape(label_text)}</text>"
         )
 
+    out.extend(leader_lines)
+    out.extend(point_circles)
+    out.extend(label_texts)
     return out
 
 
@@ -986,10 +1146,11 @@ def render_pareto_svg(report: OcrEvalSuiteReport) -> str:
         "    .tick { font: 400 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #64748b; }",
         "    .frontier-step { fill: none; stroke: #93c5fd; stroke-width: 1.5; stroke-dasharray: 4 3; }",
         "    .frontier-line { fill: none; stroke: #2563eb; stroke-width: 2.5; }",
+        "    .leader { stroke: #cbd5e1; stroke-width: 1; }",
         "    .pt-pareto { fill: #2563eb; stroke: #ffffff; stroke-width: 2; }",
         "    .pt-dom { fill: #94a3b8; stroke: #ffffff; stroke-width: 1.5; }",
-        "    .lbl-pareto { font: 600 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0f172a; }",
-        "    .lbl-dom { font: 400 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #64748b; }",
+        "    .lbl-pareto { font: 600 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #0f172a; }",
+        "    .lbl-dom { font: 400 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #64748b; }",
         "    @media (prefers-color-scheme: dark) {",
         "      .card { fill: #0f172a; stroke: #334155; }",
         "      .plot-bg { fill: #1e293b; stroke: #334155; }",
@@ -998,13 +1159,14 @@ def render_pareto_svg(report: OcrEvalSuiteReport) -> str:
         "      .subtitle, .axis-label, .tick, .lbl-dom { fill: #94a3b8; }",
         "      .frontier-step { stroke: #1d4ed8; }",
         "      .frontier-line { stroke: #60a5fa; }",
+        "      .leader { stroke: #475569; }",
         "      .pt-pareto { fill: #60a5fa; stroke: #0f172a; }",
         "      .pt-dom { fill: #64748b; stroke: #0f172a; }",
         "    }",
         "  </style>",
         '  <rect x="1" y="1" width="958" height="398" rx="12" class="card" />',
         f'  <text x="24" y="30" class="title">OCR Quality vs. Latency Pareto Frontier ({xml_escape(report.dataset_name)}, {report.case_count} pages)</text>',
-        '  <text x="24" y="48" class="subtitle">Solid blue = Pareto-optimal (non-dominated); gray = dominated. Pre-baked 0 ms device-rtr excluded.</text>',
+        '  <text x="24" y="48" class="subtitle">Solid blue = Pareto-optimal (non-dominated); gray = dominated.</text>',
     ]
     svg_lines.extend(
         _render_pareto_panel_svg(

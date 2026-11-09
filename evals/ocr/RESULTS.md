@@ -6,7 +6,6 @@
 | :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `apple:vision-accurate` | `vision-accurate` | 30 | 21.7% | 9.8% | 20.7% | 73.7% | 71.0% | 49.7% | 410.8 ms | 665.8 ms | 0 |
 | `apple:vision-fast` | `vision-fast` | 30 | 72.8% | 84.3% | 70.7% | 17.8% | 17.0% | 8.7% | 125.7 ms | 163.8 ms | 0 |
-| `device-rtr` | `supernote-rtr-embedded` | 8 | 12.8% | 10.1% | 12.0% | 77.7% | 80.4% | — | 0.0 ms | 0.0 ms | 0 |
 | `gemini:gemini-3.5-flash-lite` | `gemini-3.5-flash-lite` | 30 | 2.3% | 0.0% | 1.4% | 99.0% | 99.1% | 95.8% | 1179.1 ms | 1422.3 ms | 0 |
 | `gemini:gemini-3.6-flash` | `gemini-3.6-flash` | 30 | 4.2% | 0.4% | 3.6% | 99.7% | 99.8% | 97.3% | 6626.1 ms | 17502.4 ms | 0 |
 | `gemini:gemini-3.8-flash` | `gemini-3.8-flash` | 30 | 5.6% | 0.0% | 5.4% | 96.5% | 96.5% | 97.3% | 9932.0 ms | 40308.0 ms | 1 |
@@ -32,8 +31,6 @@
 | `apple:vision-fast` | `diagram_and_layout` | 6 | 90.5% | 89.5% | 1.8% | 1.0% | — | — | — | 115.8 ms |
 | `apple:vision-fast` | `multilingual` | 6 | 84.3% | 81.8% | 4.5% | 3.2% | — | — | — | 137.6 ms |
 | `apple:vision-fast` | `edge_cases` | 4 | 75.0% | 74.6% | 25.0% | 25.0% | — | — | — | 102.7 ms |
-| `device-rtr` | `english_prose` | 2 | 6.5% | 5.8% | 96.0% | 96.9% | — | — | — | 0.0 ms |
-| `device-rtr` | `multilingual` | 6 | 15.0% | 14.0% | 71.6% | 74.9% | — | — | — | 0.0 ms |
 | `gemini:gemini-3.5-flash-lite` | `bujo_synthetic` | 5 | 0.0% | 0.0% | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% | 1316.4 ms |
 | `gemini:gemini-3.5-flash-lite` | `bujo_daily` | 1 | 1.9% | 1.0% | 92.7% | 95.0% | 80.0% | — | — | 1003.2 ms |
 | `gemini:gemini-3.5-flash-lite` | `bujo_monthly` | 2 | 0.5% | 0.0% | 100.0% | 100.0% | 90.9% | 100.0% | 100.0% | 1319.8 ms |
