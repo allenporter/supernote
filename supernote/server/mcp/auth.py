@@ -259,6 +259,14 @@ def create_auth_app(
         # Extract and verify token
         token = get_token_from_request(request)
         session = await user_service.verify_token(token) if token else None
+        if session and session.is_api_key:
+            return JSONResponse(
+                {
+                    "error": "forbidden",
+                    "error_description": "API keys cannot authorize OAuth clients",
+                },
+                status_code=403,
+            )
         if not session:
             # If this was an API background call (POST), return 401 JSON
             if request.method == "POST":

@@ -491,3 +491,30 @@ async def test_admin_set_user_quota(
         headers=admin_headers,
     )
     assert empty_email_resp.status == 400
+
+
+async def test_admin_api_key_denied_on_admin_endpoints(
+    client: TestClient,
+    admin_headers: dict[str, Any],
+    user_service: UserService,
+) -> None:
+    """Verify static API keys belonging to an admin user cannot invoke /api/admin/* endpoints."""
+    ok_resp = await client.get("/api/admin/users", headers=admin_headers)
+    assert ok_resp.status == 200
+
+    admin_id = await user_service.get_user_id("admin@example.com")
+    raw_api_key, _ = await user_service.create_api_key(admin_id, "Admin MCP Key")
+    headers = {"Authorization": f"Bearer {raw_api_key}"}
+
+    users_resp = await client.get("/api/admin/users", headers=headers)
+    assert users_resp.status == 403
+
+    queue_resp = await client.get("/api/admin/queue/status", headers=headers)
+    assert queue_resp.status == 403
+
+    quota_resp = await client.post(
+        "/api/admin/users/quota",
+        json={"email": "user@example.com", "totalCapacity": 1024},
+        headers=headers,
+    )
+    assert quota_resp.status == 403

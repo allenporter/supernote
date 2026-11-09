@@ -10,8 +10,12 @@ from supernote.client.client import Client
 from supernote.client.exceptions import ApiException
 from supernote.client.extended import ExtendedClient
 from supernote.client.summary import SummaryClient
-from supernote.models.base import ProcessingStatus
-from supernote.models.extended import PageTranscriptVO
+from supernote.models.base import BaseResponse, ProcessingStatus
+from supernote.models.extended import (
+    ApiKeyListResponseVO,
+    CreateApiKeyResponseVO,
+    PageTranscriptVO,
+)
 from supernote.models.summary import AddSummaryDTO
 from supernote.server.ai.models.embedding import EmbeddingTaskType
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
@@ -747,3 +751,217 @@ async def test_extended_routes_64bit_string_ids(
     assert (await transcript_http.json())["pages"][0][
         "text"
     ] == "snowflake-note precision check"
+
+
+async def test_extended_api_keys_unauthorized(client: TestClient) -> None:
+    """Test that all API keys endpoints return 401 without authentication."""
+    get_resp = await client.get("/api/extended/keys")
+    assert get_resp.status == 401
+
+    post_resp = await client.post("/api/extended/keys", json={"name": "Test Key"})
+    assert post_resp.status == 401
+
+    del_resp = await client.delete("/api/extended/keys/key_123")
+    assert del_resp.status == 401
+
+
+async def test_extended_api_keys_crud_lifecycle(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Test full CRUD lifecycle for static Bearer API keys via /api/extended/keys routes."""
+    init_resp = await client.get("/api/extended/keys", headers=auth_headers)
+    assert init_resp.status == 200
+    initial_list = ApiKeyListResponseVO.from_dict(await init_resp.json())
+    assert initial_list.success is True
+    assert initial_list.keys == []
+
+    bad_json = await client.post(
+        "/api/extended/keys",
+        data="invalid-json",
+        headers={**auth_headers, "Content-Type": "application/json"},
+    )
+    assert bad_json.status == 400
+
+    bad_name = await client.post(
+        "/api/extended/keys", json={"name": "   "}, headers=auth_headers
+    )
+    assert bad_name.status == 400
+    assert "Key name cannot be empty" in (await bad_name.json())["error"]
+
+    overlong_name = await client.post(
+        "/api/extended/keys", json={"name": "x" * 101}, headers=auth_headers
+    )
+    assert overlong_name.status == 400
+
+    control_char_name = await client.post(
+        "/api/extended/keys",
+        json={"name": "Bad\x1b[31mName"},
+        headers=auth_headers,
+    )
+    assert control_char_name.status == 400
+
+    for bad_days in (0, -5, 3651, "not-an-int"):
+        bad_exp = await client.post(
+            "/api/extended/keys",
+            json={"name": "Bad Expiry", "expiresInDays": bad_days},
+            headers=auth_headers,
+        )
+        assert bad_exp.status == 400
+
+    c1_resp = await client.post(
+        "/api/extended/keys",
+        json={"name": "Claude Desktop"},
+        headers=auth_headers,
+    )
+    assert c1_resp.status == 200
+    created_1 = CreateApiKeyResponseVO.from_dict(await c1_resp.json())
+    assert created_1.success is True
+    assert len(created_1.id) == 16
+    assert created_1.name == "Claude Desktop"
+    assert created_1.key.startswith("sn_")
+    assert len(created_1.key) == 35
+    assert created_1.created_at > 0
+    assert created_1.expires_at is None
+
+    l1_resp = await client.get("/api/extended/keys", headers=auth_headers)
+    listed_1 = ApiKeyListResponseVO.from_dict(await l1_resp.json())
+    assert len(listed_1.keys) == 1
+    assert listed_1.keys[0].id == created_1.id
+    assert listed_1.keys[0].name == "Claude Desktop"
+    assert listed_1.keys[0].key_prefix == f"{created_1.key[:11]}..."
+    assert listed_1.keys[0].created_at == created_1.created_at
+    assert listed_1.keys[0].last_used_at is None
+    assert listed_1.keys[0].expires_at is None
+
+    c2_resp = await client.post(
+        "/api/extended/keys",
+        json={"name": "Obsidian Sync", "expiresInDays": 30},
+        headers=auth_headers,
+    )
+    assert c2_resp.status == 200
+    created_2 = CreateApiKeyResponseVO.from_dict(await c2_resp.json())
+    assert created_2.expires_at is not None
+    assert created_2.expires_at > created_2.created_at
+
+    l2_resp = await client.get("/api/extended/keys", headers=auth_headers)
+    listed_2 = ApiKeyListResponseVO.from_dict(await l2_resp.json())
+    assert {k.id for k in listed_2.keys} == {created_1.id, created_2.id}
+
+    del_resp = await client.delete(
+        f"/api/extended/keys/{created_1.id}", headers=auth_headers
+    )
+    assert del_resp.status == 200
+    del_res = BaseResponse.from_dict(await del_resp.json())
+    assert del_res.success is True
+
+    del_again = await client.delete(
+        f"/api/extended/keys/{created_1.id}", headers=auth_headers
+    )
+    assert del_again.status == 404
+
+    del_unknown = await client.delete(
+        "/api/extended/keys/unknown_key_999", headers=auth_headers
+    )
+    assert del_unknown.status == 404
+
+    la_resp = await client.get("/api/extended/keys", headers=auth_headers)
+    listed_after = ApiKeyListResponseVO.from_dict(await la_resp.json())
+    assert [k.id for k in listed_after.keys] == [created_2.id]
+
+    del2_resp = await client.delete(
+        f"/api/extended/keys/{created_2.id}", headers=auth_headers
+    )
+    assert del2_resp.status == 200
+    empty_resp = await client.get("/api/extended/keys", headers=auth_headers)
+    assert ApiKeyListResponseVO.from_dict(await empty_resp.json()).keys == []
+
+
+async def test_bearer_tokens_work_across_all_apis(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Verify static Bearer API keys and Bearer session tokens authenticate across any API."""
+    c_resp = await client.post(
+        "/api/extended/keys",
+        json={"name": "Universal Client"},
+        headers=auth_headers,
+    )
+    created = CreateApiKeyResponseVO.from_dict(await c_resp.json())
+    bearer_api_key_headers = {"Authorization": f"Bearer {created.key}"}
+    bearer_session_headers = {
+        "Authorization": f"Bearer {auth_headers['x-access-token']}"
+    }
+
+    for headers in (bearer_api_key_headers, bearer_session_headers):
+        # Extended API
+        ai_resp = await client.get("/api/extended/ai/status", headers=headers)
+        assert ai_resp.status == 200
+
+        # File API
+        cap_resp = await client.post(
+            "/api/file/capacity/query", json={}, headers=headers
+        )
+        assert cap_resp.status == 200
+        assert (await cap_resp.json())["success"] is True
+
+        # User profile API
+        profile_resp = await client.post("/api/user/query", json={}, headers=headers)
+        assert profile_resp.status == 200
+        assert (await profile_resp.json())["email"] == "test@example.com"
+
+        # Schedule API
+        sched_resp = await client.post(
+            "/api/file/schedule/group/all", json={}, headers=headers
+        )
+        assert sched_resp.status == 200
+        assert (await sched_resp.json())["success"] is True
+
+        # Summary API
+        summary_resp = await client.post(
+            "/api/file/query/summary/tag", json={}, headers=headers
+        )
+        assert summary_resp.status == 200
+        assert (await summary_resp.json())["success"] is True
+
+    # Revoking the static API key immediately rejects Bearer requests across APIs
+    del_resp = await client.delete(
+        f"/api/extended/keys/{created.id}", headers=auth_headers
+    )
+    assert del_resp.status == 200
+    revoked_resp = await client.post(
+        "/api/file/capacity/query", json={}, headers=bearer_api_key_headers
+    )
+    assert revoked_resp.status == 401
+
+
+async def test_api_keys_denied_on_key_management_endpoints(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Verify static API keys cannot list, create, or delete API keys (no self-escalation)."""
+    c_resp = await client.post(
+        "/api/extended/keys",
+        json={"name": "Restricted Agent"},
+        headers=auth_headers,
+    )
+    created = CreateApiKeyResponseVO.from_dict(await c_resp.json())
+    for headers in (
+        {"Authorization": f"Bearer {created.key}"},
+        {"x-access-token": created.key},
+    ):
+        list_resp = await client.get("/api/extended/keys", headers=headers)
+        assert list_resp.status == 403
+
+        create_resp = await client.post(
+            "/api/extended/keys",
+            json={"name": "Escalated Key"},
+            headers=headers,
+        )
+        assert create_resp.status == 403
+
+        delete_resp = await client.delete(
+            f"/api/extended/keys/{created.id}",
+            headers=headers,
+        )
+        assert delete_resp.status == 403
