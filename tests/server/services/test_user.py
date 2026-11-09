@@ -749,22 +749,24 @@ async def test_jwt_secret_key_explicit_config_takes_precedence(
     coordination_service: CoordinationService,
 ) -> None:
     """Explicit AuthConfig.secret_key takes precedence over system:jwt_secret_key in CoordinationService."""
-    await coordination_service.set_value(JWT_SECRET_KEY, "db-secret-key", ttl=3600)
+    explicit_secret = "explicit-secret-key-32-characters-long!!"
+    db_secret = "database-secret-key-32-characters-long!!"
+    await coordination_service.set_value(JWT_SECRET_KEY, db_secret, ttl=3600)
 
     service = UserService(
-        AuthConfig(secret_key="explicit-secret", enable_registration=True),
+        AuthConfig(secret_key=explicit_secret, enable_registration=True),
         coordination_service,
         session_manager,
     )
-    assert await service.get_secret_key() == "explicit-secret"
-    assert await coordination_service.get_value(JWT_SECRET_KEY) == "db-secret-key"
+    assert await service.get_secret_key() == explicit_secret
+    assert await coordination_service.get_value(JWT_SECRET_KEY) == db_secret
 
     pw_md5 = hashlib.md5(b"password123").hexdigest()
     email = "explicit_jwt@example.com"
     await service.register(UserRegisterDTO(email=email, password=pw_md5))
 
     token = await service.create_session(email)
-    decoded = jwt.decode(token, "explicit-secret", algorithms=["HS256"])
+    decoded = jwt.decode(token, explicit_secret, algorithms=["HS256"])
     assert decoded["sub"] == email
 
 

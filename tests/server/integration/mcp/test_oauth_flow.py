@@ -7,6 +7,7 @@ from aiohttp.test_utils import TestClient
 
 from supernote.client.client import Client
 from supernote.client.login_client import LoginClient
+from supernote.server.keys import COORDINATION_SERVICE_KEY
 from tests.server.conftest import TEST_PASSWORD, TEST_USERNAME
 
 
@@ -373,7 +374,7 @@ async def test_oauth_token_revocation(
     access_token = tokens["access_token"]
     refresh_token = tokens["refresh_token"]
 
-    coordination = client.app["coordination_service"]
+    coordination = client.app[COORDINATION_SERVICE_KEY]
     assert await coordination.get_value(f"mcp:access_token:{access_token}") is not None
     assert (
         await coordination.get_value(f"mcp:refresh_token:{refresh_token}") is not None

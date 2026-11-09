@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 from aiohttp.test_utils import TestClient
 
+from supernote.server.keys import CONFIG_KEY
+
 
 @pytest.fixture
 def mock_trace_log(tmp_path: Path) -> str:
@@ -161,7 +163,7 @@ async def test_trace_logging_unsafe_mode_preserves_raw_tokens(
     mock_trace_log: str,
 ) -> None:
     """Verify trace_log_unsafe=True logs raw unredacted headers, URLs, and bodies for debugging."""
-    client.app["config"].trace_log_unsafe = True
+    client.app[CONFIG_KEY].trace_log_unsafe = True
     await client.post(
         "/api/official/user/account/login/new?token=debug_query_token",
         headers={

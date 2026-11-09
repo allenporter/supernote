@@ -18,6 +18,14 @@ from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus, NoteUpdatedEvent
 from supernote.server.exceptions import SupernoteError
+from supernote.server.keys import (
+    EVENT_BUS_KEY,
+    INTEGRITY_SERVICE_KEY,
+    PROCESSOR_SERVICE_KEY,
+    REQUEST_USER_KEY,
+    SESSION_MANAGER_KEY,
+    USER_SERVICE_KEY,
+)
 from supernote.server.services.integrity import IntegrityService
 from supernote.server.services.user import UserService
 
@@ -30,8 +38,8 @@ def require_admin(
     """Decorator to require admin privileges."""
 
     async def wrapper(request: web.Request) -> web.Response:
-        user_service: UserService = request.app["user_service"]
-        username = request.get("user")
+        user_service: UserService = request.app[USER_SERVICE_KEY]
+        username = request.get(REQUEST_USER_KEY)
         if not username:
             return web.json_response(
                 create_error_response("Unauthorized").to_dict(), status=401
@@ -62,7 +70,7 @@ async def handle_create_user(request: web.Request) -> web.Response:
             status=400,
         )
 
-    user_service: UserService = request.app["user_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
     try:
         await user_service.create_user(dto)
         return web.json_response(BaseResponse().to_dict())
@@ -84,7 +92,7 @@ async def handle_admin_update_password(request: web.Request) -> web.Response:
         return web.json_response(
             create_error_response("Missing email or password").to_dict(), status=400
         )
-    user_service: UserService = request.app["user_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
     try:
         await user_service.admin_reset_password(email, password_md5)
     except ValueError as e:
@@ -113,7 +121,7 @@ async def handle_admin_update_quota(request: web.Request) -> web.Response:
             create_error_response("Missing email").to_dict(), status=400
         )
 
-    user_service: UserService = request.app["user_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
     try:
         await user_service.admin_set_user_quota(dto.email, dto.total_capacity)
     except ValueError as e:
@@ -128,7 +136,7 @@ async def handle_admin_update_quota(request: web.Request) -> web.Response:
 @require_admin
 async def handle_list_users(request: web.Request) -> web.Response:
     """List all users (Admin only)."""
-    user_service: UserService = request.app["user_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
     user_vos = await user_service.list_user_profiles()
     return web.json_response([vo.to_dict() for vo in user_vos])
 
@@ -137,7 +145,7 @@ async def handle_list_users(request: web.Request) -> web.Response:
 @require_admin
 async def handle_stop_queue(request: web.Request) -> web.Response:
     """Stop/pause the queue processing."""
-    processor_service = request.app["processor_service"]
+    processor_service = request.app[PROCESSOR_SERVICE_KEY]
     await processor_service.pause()
     return web.json_response(BaseResponse().to_dict())
 
@@ -146,7 +154,7 @@ async def handle_stop_queue(request: web.Request) -> web.Response:
 @require_admin
 async def handle_start_queue(request: web.Request) -> web.Response:
     """Start/resume the queue processing."""
-    processor_service = request.app["processor_service"]
+    processor_service = request.app[PROCESSOR_SERVICE_KEY]
     await processor_service.resume()
     return web.json_response(BaseResponse().to_dict())
 
@@ -155,7 +163,7 @@ async def handle_start_queue(request: web.Request) -> web.Response:
 @require_admin
 async def handle_queue_status(request: web.Request) -> web.Response:
     """Get the queue status."""
-    processor_service = request.app["processor_service"]
+    processor_service = request.app[PROCESSOR_SERVICE_KEY]
 
     status = QueueStatusVO(
         paused=not processor_service.is_processing_enabled(),
@@ -173,8 +181,8 @@ async def handle_reprocess(request: web.Request) -> web.Response:
     task_type = req_data.get("task_type", "summary")
     file_id = req_data.get("file_id")
 
-    session_manager: DatabaseSessionManager = request.app["session_manager"]
-    event_bus: LocalEventBus = request.app["event_bus"]
+    session_manager: DatabaseSessionManager = request.app[SESSION_MANAGER_KEY]
+    event_bus: LocalEventBus = request.app[EVENT_BUS_KEY]
 
     async with session_manager.session() as session:
         stmt = delete(SystemTaskDO)
@@ -231,7 +239,7 @@ async def handle_verify_integrity(request: web.Request) -> web.Response:
         )
     full_disk = full_disk_str == "true"
 
-    integrity_service: IntegrityService = request.app["integrity_service"]
+    integrity_service: IntegrityService = request.app[INTEGRITY_SERVICE_KEY]
 
     if full_disk:
         if email or file_id_str is not None:
@@ -258,7 +266,7 @@ async def handle_verify_integrity(request: web.Request) -> web.Response:
             status=400,
         )
 
-    user_service: UserService = request.app["user_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
     user = await user_service.get_user_by_email(email)
     if user is None:
         return web.json_response(
@@ -312,7 +320,7 @@ async def handle_admin_list_tasks(request: web.Request) -> web.Response:
                 status=400,
             )
 
-    processor_service = request.app["processor_service"]
+    processor_service = request.app[PROCESSOR_SERVICE_KEY]
     tasks = await processor_service.list_system_tasks(
         limit=limit,
         status=status_filter,

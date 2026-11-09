@@ -19,6 +19,7 @@ from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.keys import SEARCH_SERVICE_KEY
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ async def notebook_file_id(
 @pytest.fixture
 def mock_gemini_service(client: Any) -> Generator[None]:
     """Fixture to configure a FakeEmbeddingModel on the app's search service."""
-    search_service = client.app["search_service"]
+    search_service = client.app[SEARCH_SERVICE_KEY]
     original = search_service.embedding_model
     search_service.embedding_model = FakeEmbeddingModel(dimensions=768)
     try:

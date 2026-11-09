@@ -12,6 +12,7 @@ from supernote.server.config import ServerConfig
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.keys import FILE_SERVICE_KEY
 from supernote.server.utils.paths import (
     get_conversion_pdf_path,
     get_page_png_path,
@@ -45,7 +46,7 @@ async def test_note_conversion_wrappers(
     assert pdf_content.startswith(b"%PDF")
 
     # Verify PDF is stored in CACHE_BUCKET and not USER_DATA_BUCKET
-    file_service = client.app["file_service"]
+    file_service = client.app[FILE_SERVICE_KEY]
     user_email = "test@example.com"
     user_id = await file_service.user_service.get_user_id(user_email)
     file_info = await file_service.get_file_info_by_id(user_email, file_id)
@@ -92,7 +93,7 @@ async def test_note_png_caching(
     assert upload_res.id is not None
     file_id = int(upload_res.id)
 
-    file_service = client.app["file_service"]
+    file_service = client.app[FILE_SERVICE_KEY]
 
     # First conversion: runs PageHashingModule + PngConversionModule and saves PNGs to CACHE_BUCKET
     png_pages_first = await device_client.get_note_png_pages(file_id)

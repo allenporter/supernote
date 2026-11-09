@@ -22,6 +22,7 @@ from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import Event, NoteUpdatedEvent
+from supernote.server.keys import EVENT_BUS_KEY
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
 
@@ -301,7 +302,7 @@ async def test_admin_reprocess(
             published_ids.append(event.file_id)
 
     assert client.app is not None
-    client.app["event_bus"].subscribe(NoteUpdatedEvent, capture_updated)
+    client.app[EVENT_BUS_KEY].subscribe(NoteUpdatedEvent, capture_updated)
 
     resp = await client.post(
         "/api/admin/reprocess",

@@ -14,6 +14,7 @@ from aiohttp.web_log import AccessLogger
 from yarl import URL
 
 from .config import ServerConfig
+from .keys import CONFIG_KEY
 
 __all__ = [
     "ACCESS_LOG_FORMAT",
@@ -208,7 +209,7 @@ async def trace_middleware(
     handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
 ) -> web.StreamResponse:
     """Middleware that writes HTTP request and response traces to disk."""
-    config: ServerConfig = request.app["config"]
+    config = request.app[CONFIG_KEY]
     unsafe = config.trace_log_unsafe
 
     try:
@@ -284,7 +285,7 @@ async def trace_middleware(
 class SanitizedAccessLogger(AccessLogger):
     """Aiohttp access logger that redacts sensitive URL query parameters and headers.
 
-    When `ServerConfig.trace_log_unsafe` is `True` on `request.app["config"]`,
+    When `ServerConfig.trace_log_unsafe` is `True` on `request.app[CONFIG_KEY]`,
     access log entries are emitted unredacted for debugging.
     """
 
@@ -297,7 +298,7 @@ class SanitizedAccessLogger(AccessLogger):
         entries = list(super()._format_line(request, response, time))
         if (
             isinstance(request, web.Request)
-            and (config := request.app.get("config")) is not None
+            and (config := request.app.get(CONFIG_KEY)) is not None
             and config.trace_log_unsafe
         ):
             return entries

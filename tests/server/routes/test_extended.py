@@ -20,6 +20,15 @@ from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import SupernoteError
+from supernote.server.keys import (
+    BLOB_STORAGE_KEY,
+    CONFIG_KEY,
+    CONVERSION_SERVICE_KEY,
+    EMBEDDING_MODEL_KEY,
+    PROCESSOR_SERVICE_KEY,
+    SEARCH_SERVICE_KEY,
+    SUMMARY_SERVICE_KEY,
+)
 from supernote.server.services.user import UserService
 
 
@@ -160,7 +169,9 @@ async def test_extended_search_raw_camelcase_json_contract(
 ) -> None:
     """Verify /api/extended/search honors camelCase topN and returns camelCase result keys."""
     assert client.app is not None
-    query_vec = await client.app["embedding_model"].embed(
+    embedding_model = client.app[EMBEDDING_MODEL_KEY]
+    assert embedding_model is not None
+    query_vec = await embedding_model.embed(
         "deep-dive", EmbeddingTaskType.RETRIEVAL_QUERY
     )
     opposite_vec = [-v for v in query_vec]
@@ -265,7 +276,7 @@ async def test_extended_file_summary_list_error(
 ) -> None:
     with (
         patch.object(
-            client.app["summary_service"],
+            client.app[SUMMARY_SERVICE_KEY],
             "list_summaries_for_file_internal",
             side_effect=SupernoteError("Custom summary error", status_code=400),
         ),
@@ -275,7 +286,7 @@ async def test_extended_file_summary_list_error(
 
     with (
         patch.object(
-            client.app["summary_service"],
+            client.app[SUMMARY_SERVICE_KEY],
             "list_summaries_for_file_internal",
             side_effect=ValueError("Uncaught error"),
         ),
@@ -310,7 +321,7 @@ async def test_handle_list_system_tasks(
 
     with (
         patch.object(
-            client.app["processor_service"],
+            client.app[PROCESSOR_SERVICE_KEY],
             "list_system_tasks",
             side_effect=Exception("DB error"),
         ),
@@ -445,7 +456,7 @@ async def test_file_processing_status(
 
     with (
         patch.object(
-            client.app["processor_service"],
+            client.app[PROCESSOR_SERVICE_KEY],
             "get_file_processing_statuses",
             side_effect=RuntimeError("Service fail"),
         ),
@@ -504,7 +515,7 @@ async def test_extended_search_invalid_dto_and_errors(
     # Search exception
     with (
         patch.object(
-            client.app["search_service"],
+            client.app[SEARCH_SERVICE_KEY],
             "search_chunks",
             side_effect=Exception("Search crash"),
         ),
@@ -537,7 +548,7 @@ async def test_extended_transcript_invalid_dto_and_errors(
     # Transcript exception
     with (
         patch.object(
-            client.app["search_service"],
+            client.app[SEARCH_SERVICE_KEY],
             "get_page_transcripts",
             side_effect=Exception("Transcript crash"),
         ),
@@ -606,8 +617,8 @@ async def test_extended_note_cover_converts_only_first_page(
     test_user_id: int,
 ) -> None:
     assert client.app is not None
-    blob_storage = client.app["blob_storage"]
-    conversion_service = client.app["conversion_service"]
+    blob_storage = client.app[BLOB_STORAGE_KEY]
+    conversion_service = client.app[CONVERSION_SERVICE_KEY]
     file_id = 9101
     storage_key = "cover_test_9101.note"
     multipage_note = Path("tests/testdata/mmujynya/stroller.note")
@@ -654,7 +665,7 @@ async def test_extended_note_cover_converts_only_first_page(
     assert png_bytes.startswith(b"\x89PNG")
 
     # When web_notebook_preview is disabled, cover endpoint returns url=None
-    client.app["config"].web_notebook_preview = False
+    client.app[CONFIG_KEY].web_notebook_preview = False
     disabled_vo = await extended_client.get_note_cover(file_id=file_id)
     assert disabled_vo.success is True
     assert disabled_vo.url is None

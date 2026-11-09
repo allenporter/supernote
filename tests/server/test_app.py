@@ -25,6 +25,11 @@ from supernote.server.app import (
 )
 from supernote.server.config import ServerConfig
 from supernote.server.db.models.user import UserDO
+from supernote.server.keys import (
+    INTEGRITY_SERVICE_KEY,
+    PROCESSOR_SERVICE_KEY,
+    SESSION_MANAGER_KEY,
+)
 from supernote.server.services.processor_modules.png_conversion import (
     PngConversionModule,
 )
@@ -272,7 +277,7 @@ def test_png_module_registration_matrix(
         gemini_api_key=gemini_api_key,
     )
     app = create_app(cfg)
-    page_modules = app["processor_service"].page_modules
+    page_modules = app[PROCESSOR_SERVICE_KEY].page_modules
     has_png = any(isinstance(m, PngConversionModule) for m in page_modules)
     assert has_png is expected_png
 
@@ -280,7 +285,7 @@ def test_png_module_registration_matrix(
 async def test_bootstrap_ephemeral_user(client: TestClient) -> None:
     """Verify bootstrap_ephemeral_user registers debug@example.com as an admin with system folders."""
     assert client.app is not None
-    session_manager = client.app["session_manager"]
+    session_manager = client.app[SESSION_MANAGER_KEY]
     async with session_manager.session() as session:
         await session.execute(delete(UserDO))
         await session.commit()
@@ -295,7 +300,7 @@ async def test_bootstrap_ephemeral_user(client: TestClient) -> None:
         ).scalar_one()
         assert user.is_admin is True
 
-    integrity_service = client.app["integrity_service"]
+    integrity_service = client.app[INTEGRITY_SERVICE_KEY]
     report = await integrity_service.verify_user_storage(user.id)
     assert report.scanned == 8
     assert report.ok == 8
