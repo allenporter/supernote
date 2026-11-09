@@ -23,7 +23,9 @@ from .ai.models.summary import create_summary_model
 from .config import AuthConfig, ServerConfig
 from .constants import MAX_UPLOAD_SIZE
 from .db.session import DatabaseSessionManager
+from .event_context import bind_event_provenance, resolve_request_provenance
 from .events import LocalEventBus
+from .exceptions import InvalidEventProvenance
 from .keys import (
     BLOB_STORAGE_KEY,
     CONFIG_KEY,
@@ -189,7 +191,19 @@ async def jwt_auth_middleware(
 
     request[REQUEST_USER_KEY] = session.email
     request[REQUEST_EQUIPMENT_NO_KEY] = session.equipment_no
-    return await handler(request)
+    try:
+        provenance = resolve_request_provenance(
+            request, equipment_no=session.equipment_no
+        )
+    except InvalidEventProvenance as err:
+        return err.to_response()
+
+    with bind_event_provenance(
+        actor=provenance.actor,
+        cause_seq=provenance.cause_seq,
+        reason=provenance.reason,
+    ):
+        return await handler(request)
 
 
 @web.middleware

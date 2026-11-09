@@ -13,10 +13,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from aiohttp import web
 from aiohttp.test_utils import TestClient
 from pytest_aiohttp import AiohttpClient
 from sqlalchemy import delete, select
 
+from supernote.models.base import ErrorCode
 from supernote.models.file_device import FileUploadApplyLocalDTO
 from supernote.server.app import (
     bootstrap_ephemeral_user,
@@ -25,6 +27,7 @@ from supernote.server.app import (
 )
 from supernote.server.config import ServerConfig
 from supernote.server.db.models.user import UserDO
+from supernote.server.event_context import EventProvenance, get_event_provenance
 from supernote.server.keys import (
     INTEGRITY_SERVICE_KEY,
     PROCESSOR_SERVICE_KEY,
@@ -409,3 +412,67 @@ def test_run_respects_config_and_env_log_level(
         logging.getLogger().setLevel(logging.INFO)
         logging.getLogger("aiosqlite").setLevel(logging.INFO)
         logging.getLogger("asyncio").setLevel(logging.INFO)
+
+
+async def test_jwt_auth_middleware_binds_event_provenance(
+    server_config: ServerConfig,
+    aiohttp_client: AiohttpClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Verify jwt_auth_middleware binds parsed request provenance onto async context."""
+    observed: list[EventProvenance] = []
+
+    async def probe_handler(_request: web.Request) -> web.Response:
+        observed.append(get_event_provenance())
+        return web.json_response({"ok": True})
+
+    app = create_app(server_config)
+    app.router.add_get("/api/probe-provenance", probe_handler)
+    probe_client = await aiohttp_client(app)
+    try:
+        resp = await probe_client.get(
+            "/api/probe-provenance",
+            headers={
+                **auth_headers,
+                "X-Supernote-Client": "magic-todo",
+                "X-Supernote-Cause-Seq": "42",
+                "X-Supernote-Reason": "Syncing task checkoff",
+            },
+        )
+        assert resp.status == 200
+        assert observed == [
+            EventProvenance(
+                actor="client:magic-todo",
+                cause_seq=42,
+                reason="Syncing task checkoff",
+            )
+        ]
+        assert get_event_provenance() == EventProvenance()
+    finally:
+        await probe_client.close()
+
+
+@pytest.mark.parametrize(
+    "bad_headers",
+    [
+        {"X-Supernote-Client": "api_key:spoofed"},
+        {"X-Supernote-Client": "mcp:spoofed"},
+        {"X-Supernote-Cause-Seq": "not-a-number"},
+        {"X-Supernote-Cause-Seq": str(10**30)},
+        {"X-Supernote-Reason": "r" * 513},
+    ],
+)
+async def test_jwt_auth_middleware_rejects_spoofed_or_overflow_provenance_headers(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    bad_headers: dict[str, str],
+) -> None:
+    """Verify jwt_auth_middleware rejects spoofed actor namespaces and malformed provenance headers with 400."""
+    resp = await client.get(
+        "/api/extended/ai/status",
+        headers={**auth_headers, **bad_headers},
+    )
+    assert resp.status == 400
+    body = await resp.json()
+    assert body["success"] is False
+    assert body["errorCode"] == ErrorCode.BAD_REQUEST.value

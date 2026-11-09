@@ -173,3 +173,12 @@ class RateLimitExceeded(SupernoteError):
         self, message: str, error_code: str | ErrorCode = ErrorCode.ACCESS_DENIED_SYSTEM
     ):
         super().__init__(message, error_code, status_code=429)
+
+
+class InvalidEventProvenance(SupernoteError):
+    """Raised when event provenance headers (`X-Supernote-*`) fail validation."""
+
+    def __init__(
+        self, message: str, error_code: str | ErrorCode = ErrorCode.BAD_REQUEST
+    ):
+        super().__init__(message, error_code, status_code=400)
