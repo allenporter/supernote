@@ -4,11 +4,13 @@ import logging
 import os
 import time
 from collections.abc import Awaitable, Callable
+from collections.abc import Set as AbstractSet
 from pathlib import Path
 from typing import Any
 
 import aiohttp_remotes
 from aiohttp import web
+from aiohttp.typedefs import Middleware
 from aiohttp.web_urldispatcher import SystemRoute
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
@@ -50,7 +52,11 @@ from .keys import (
     USER_SERVICE_KEY,
     WEBHOOK_SERVICE_KEY,
 )
-from .metrics import HTTP_REQUEST_DURATION_SECONDS, HTTP_REQUESTS_TOTAL
+from .metrics import (
+    HTTP_REQUEST_DURATION_SECONDS,
+    HTTP_REQUESTS_IN_PROGRESS,
+    HTTP_REQUESTS_TOTAL,
+)
 from .routes import (
     admin,
     auth,
@@ -103,42 +109,81 @@ async def socketio_compat_middleware(
     return await handler(request)
 
 
-@web.middleware
-async def metrics_middleware(
+_KNOWN_HTTP_METHODS: frozenset[str] = frozenset(
+    {"GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"}
+)
+
+
+def _normalize_http_method(method: str) -> str:
+    """Normalize HTTP method to a bounded label set."""
+    normalized = method.upper()
+    return normalized if normalized in _KNOWN_HTTP_METHODS else "OTHER"
+
+
+def _resolve_metrics_path(
     request: web.Request,
-    handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
-) -> web.StreamResponse:
-    start_time = time.perf_counter()
-    status = 500
-    try:
-        response = await handler(request)
-        status = response.status
-        return response
-    except web.HTTPException as ex:
-        status = ex.status
-        raise
-    except Exception:
+    status: int,
+    mcp_auth_paths: AbstractSet[str] = frozenset(),
+) -> str:
+    """Resolve a bounded Prometheus path label without falling back to raw request paths."""
+    route = request.match_info.route
+    if route is None:
+        return request.path if request.path in mcp_auth_paths else f"HTTP {status}"
+    if route.resource is None:
+        return f"HTTP {status}"
+    if route.name == "static":
+        return "/static/{filename}"
+    info = route.resource.get_info()
+    return info.get("formatter") or info.get("path") or f"HTTP {status}"
+
+
+def create_metrics_middleware(
+    metrics_path: str = "/metrics",
+    mcp_auth_paths: AbstractSet[str] = frozenset(),
+) -> Middleware:
+    """Create HTTP Prometheus metrics middleware with explicit path configuration."""
+
+    @web.middleware
+    async def _middleware(
+        request: web.Request,
+        handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
+    ) -> web.StreamResponse:
+        if request.path == metrics_path:
+            return await handler(request)
+
+        method = _normalize_http_method(request.method)
+        in_progress = HTTP_REQUESTS_IN_PROGRESS.labels(method=method)
+        in_progress.inc()
+        start_time = time.perf_counter()
         status = 500
-        raise
-    finally:
-        duration = time.perf_counter() - start_time
-        route = request.match_info.route
-        resource = route.resource if route else None
+        cancelled = False
+        try:
+            response = await handler(request)
+            status = response.status
+            return response
+        except web.HTTPException as ex:
+            status = ex.status
+            raise
+        except asyncio.CancelledError:
+            status = 499
+            cancelled = True
+            raise
+        finally:
+            duration = time.perf_counter() - start_time
+            in_progress.dec()
+            path_pattern = _resolve_metrics_path(request, status, mcp_auth_paths)
+            HTTP_REQUESTS_TOTAL.labels(
+                method=method, path=path_pattern, status=str(status)
+            ).inc()
+            if not cancelled:
+                HTTP_REQUEST_DURATION_SECONDS.labels(
+                    method=method, path=path_pattern
+                ).observe(duration)
 
-        if resource:
-            info = resource.get_info()
-            path_pattern = info.get("formatter") or info.get("path") or request.path
-            if route.name == "static" or path_pattern.startswith("/static/"):
-                path_pattern = "/static/{filename}"
-        else:
-            path_pattern = f"HTTP {status}"
+    return _middleware
 
-        HTTP_REQUESTS_TOTAL.labels(
-            method=request.method, path=path_pattern, status=str(status)
-        ).inc()
-        HTTP_REQUEST_DURATION_SECONDS.labels(
-            method=request.method, path=path_pattern
-        ).observe(duration)
+
+metrics_middleware: Middleware = create_metrics_middleware()
 
 
 @web.middleware
@@ -360,10 +405,17 @@ def create_app(config: ServerConfig) -> web.Application:
             # XForwardedRelaxed trusts the immediate upstream proxy
             await aiohttp_remotes.setup(app, aiohttp_remotes.XForwardedRelaxed())
 
+        mcp_auth_paths: set[str] = set()
+
         # Register trace and auth middlewares after proxy setup to avoid clone errors
         app.middlewares.append(socketio_compat_middleware)
         if config.metrics_enabled:
-            app.middlewares.append(metrics_middleware)
+            app.middlewares.append(
+                create_metrics_middleware(
+                    metrics_path=config.metrics_path,
+                    mcp_auth_paths=mcp_auth_paths,
+                )
+            )
         app.middlewares.append(trace_middleware)
         app.middlewares.append(jwt_auth_middleware)
         app.middlewares.append(static_cache_control_middleware)
@@ -396,6 +448,11 @@ def create_app(config: ServerConfig) -> web.Application:
             asgi_resource = ASGIResource(auth_app)
             app.router.register_resource(asgi_resource)
             app[MCP_ASGI_RESOURCE_KEY] = asgi_resource
+            mcp_auth_paths.update(
+                path
+                for route in auth_app.routes
+                if isinstance(path := getattr(route, "path", None), str)
+            )
 
             # Inject services and start MCP server on a separate port
             set_services(
