@@ -22,7 +22,7 @@ jobs:
         with:
           check_hidden: false
           ignore_words_list: folde
-          skip: ./.git,./evals/ocr/results
+          skip: ./.git,./evals/ocr/dataset.yaml,./evals/ocr/results
       - name: Validate Renovate configuration
         run: |
           npx --package=renovate@38 -- renovate-config-validator .github/renovate.json5

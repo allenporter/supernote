@@ -9,7 +9,7 @@ repos:
         args:
           - --allow-multiple-documents
       - id: check-added-large-files
-        exclude: '^tests/testdata/.*\.(note|mark)$'
+        exclude: '^(tests/testdata|evals/ocr/notebooks)/.*\.(note|mark)$'
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.4
     hooks:
@@ -29,7 +29,7 @@ repos:
     rev: v2.4.3
     hooks:
       - id: codespell
-        exclude: '^evals/ocr/results/.*\.json$'
+        exclude: '^evals/ocr/(dataset\.yaml|results/.*\.json)$'
         args:
           - --ignore-words-list=folde,linkprotocal
   - repo: https://github.com/adrienverge/yamllint.git

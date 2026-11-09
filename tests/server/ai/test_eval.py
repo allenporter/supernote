@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -12,8 +13,10 @@ from supernote.server.ai.eval import (
     OcrEvalDataset,
     OcrEvalSuiteReport,
     OcrEvalTarget,
+    OcrTargetCaseResult,
     _summarize_results,
     _word_jaccard,
+    build_target_report,
     evaluate_ocr_dataset,
     format_markdown_report,
     load_eval_case_input,
@@ -414,3 +417,63 @@ async def test_merge_eval_reports_replaces_existing_targets_in_order(
         "new:v1",
     ]
     assert merged.targets[0].model_id == "fake-v1-updated"
+
+
+def test_eval_case_preserves_optional_language() -> None:
+    turkish_loaded = load_eval_case_input(
+        OcrEvalCase(
+            id="tr0",
+            path="tests/testdata/philips/turkish.note",
+            page_index=0,
+            language="tr_TR",
+            ground_truth="Şimdi",
+        ),
+        REPO_ROOT,
+    )
+    assert turkish_loaded.case.language == "tr_TR"
+
+
+def test_build_target_report_aggregates_external_results() -> None:
+    target = build_target_report(
+        target_name="supernote-on-device",
+        model_id="myscript-iink-4.1.0",
+        warmup_ms=0.0,
+        case_results=[
+            OcrTargetCaseResult(
+                case_id="c1",
+                category="english_prose",
+                hypothesis="hello world",
+                latency_ms=120.0,
+                metrics=score_ocr_output("hello world", "hello world"),
+            )
+        ],
+    )
+    assert target.target_name == "supernote-on-device"
+    assert target.overall.mean_cer == 0.0
+    assert target.overall.median_latency_ms == 120.0
+    assert [c.category for c in target.by_category] == ["english_prose"]
+
+
+class _SlowOcrModel(OcrModel):
+    @property
+    def model_id(self) -> str:
+        return "slow-ocr-v1"
+
+    async def extract_text(self, png_data: bytes, prompt: str) -> str:
+        await asyncio.sleep(0.2)
+        return "too late"
+
+
+async def test_evaluate_ocr_dataset_page_timeout_records_error(
+    sample_png_dir: Path,
+    png_only_dataset: OcrEvalDataset,
+) -> None:
+    report = await evaluate_ocr_dataset(
+        png_only_dataset,
+        sample_png_dir,
+        [OcrEvalTarget("slow:v1", _SlowOcrModel())],
+        warmup=False,
+        page_timeout_s=0.01,
+    )
+    assert report.targets[0].overall.error_count == 1
+    assert report.targets[0].cases[0].error == "Timed out after 0.0s"

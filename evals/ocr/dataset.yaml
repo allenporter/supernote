@@ -38,6 +38,27 @@ cases:
       • ~~Cancel unused staging VM instance~~
       - Latency dropped from 920ms to 165ms after warmup
 
+  - id: bujo_daily_weekend
+    path: notebooks/bujo_daily_weekend.note
+    page_index: 0
+    category: bujo_daily
+    prompt_type: daily
+    description: Handwritten weekend daily Rapid Logging (1108 SAT & 1109 SUN) on Nomad dot-grid.
+    ground_truth: |-
+      1108 SAT
+      X Build out test dataset
+      > transfer test notes to PC
+      > re-run evals
+      o Mel in SD
+      o Hike w/ the Boys
+
+      1109 SUN
+      • transfer test notes to PC
+      • re-run evals
+      o Practice
+      • dishes befor Mel returns
+      • watch Pitt ep 5
+
   # --- Bullet Journal: Weekly Log & Review ---
   - id: bujo_weekly_w45
     path: notebooks/weekly.note
@@ -94,6 +115,66 @@ cases:
       < Move winter camping trip to January
       • ~~Rewrite legacy mobile sync prototype~~
       - Lesson learned: measure CER before tuning
+
+  - id: bujo_monthly_november_backlog
+    path: notebooks/bujo_monthly_november.note
+    page_index: 0
+    category: bujo_monthly
+    prompt_type: monthly
+    description: Handwritten November backlog and project task lists with nested signifiers and strikethrough.
+    ground_truth: |-
+      NOVEMBER
+      - Backlog
+        X salad
+        • ~~revamp plan for network~~
+        < cat carrier options
+        • call mom
+        • return faucet
+        • take out 3 bags ...
+
+      - A13
+        • rewrite entire sync engine
+        • reduce latency by 50%
+        • profile encoder
+
+  - id: bujo_monthly_november_calendar
+    path: notebooks/bujo_monthly_november.note
+    page_index: 1
+    category: bujo_monthly
+    prompt_type: monthly
+    description: Handwritten November 2026 1-30 date timeline with event entries.
+    ground_truth: |-
+      NOVEMBER 2026
+      1 S
+      2 M
+      3 T
+      4 W
+      5 T
+      6 F
+      7 S o Mel in San Diego
+      8 S o Practice
+      9 M
+      10 T
+      11 W o Eng Review
+      12 T
+      13 F
+      14 S o Practice
+      15 S
+      16 M
+      17 T
+      18 W
+      19 T
+      20 F
+      21 S o Practice
+      22 S o L's Wedding
+      23 M o ACU Break - no school
+      24 T
+      25 W
+      26 T o Thanksgiving o San Diego
+      27 F
+      28 S o Practice
+      29 S
+      30 M
 
   # --- Real-World English Prose & Orientation Notes ---
   - id: empty_dot_grid
@@ -208,11 +289,87 @@ cases:
       Studio making
       Clogging Gig
 
+  - id: guitar_caged_shapes
+    path: notebooks/guitar_theory.note
+    page_index: 0
+    category: diagram_and_layout
+    description: Two-column CAGED guitar fretboard scale-degree diagrams (#1-#5) with circled root notes.
+    ground_truth: |-
+      GUITAR
+      C Shape / #1
+      3 4 5
+      7 R 2
+      5 6
+      2 3 4
+      6 7 R
+      3 4 5
+
+      A Shape / #2
+      5 6
+      2 3 4
+      6 7 R
+      3 4 5
+      7 R 2
+      5 6
+
+      G Shape / #3
+      6 7 R
+      3 4 5
+      7 R 2
+      5 6 7
+      2 3 4
+      6 7 R
+
+      E-Shape / #4
+      7 R
+      5 6
+      2 3 4
+      6 7 R
+      3 4 5
+      7 R 2
+
+      D-Shape / #5
+      2 3 4
+      6 7 R
+      3 4 5
+      7 R 2
+      5 6
+      2 3 4
+
+  - id: guitar_tuning_grid
+    path: notebooks/guitar_theory.note
+    page_index: 1
+    category: diagram_and_layout
+    description: Inverted title banner, 12-fret C tuning note table, song tab grid, and harmony notes.
+    ground_truth: |-
+      C Tuning Analysis
+      Cmaj
+      E F G A B C D E
+      B C D E F G A B
+      G A B C D E F G
+      C D E F G A B C
+      G A B C D E F G
+      C D E F G A B C
+      1 2 3 4 5 6 7 8 9 10 11 12
+
+      Song (AoT)
+      E B D
+      B G
+      G A B C D E F A A#
+      C D E
+      G A B E F A A#
+      C
+      Cmaj? 12
+      Amin?
+      - A# is not in the key but
+        resolves
+
   # --- Multilingual Handwriting ---
   - id: turkish_diacritics
     path: ../../tests/testdata/philips/turkish.note
     page_index: 0
     category: multilingual
+    language: tr_TR
     description: Handwritten Turkish sentences testing Ş, ç, ı, ğ, ö, ü diacritics.
     ground_truth: |-
       Şimdi ben buraya neden çıktım?
@@ -221,6 +378,150 @@ cases:
       Bunu izaha gerek yok.
       Gördünüz, yürüdüm çıktım.
       Ama çıkmamış da olabilirim.
+
+  - id: french_cafe_bar
+    path: notebooks/french_phrases.note
+    page_index: 0
+    category: multilingual
+    language: fr_FR
+    description: Bilingual French/English cafe ordering phrases and drink vocabulary with é, è, ç diacritics.
+    ground_truth: |-
+      CAFE / BAR
+      Bonjour, vous desirez-quoi?
+      , que desirez-vous comander?
+      , qu'est ce que vous prenez?
+      Bonjour, souhaitez-vous commander?
+
+      un café
+      un express
+      un noisette - cafe w/ drop of milk
+      un café crème
+
+      une evian s'il vous plait
+      Un perrier
+      un coca
+      un coca zero
+      un coca light
+      un limonate (Sprite)
+
+      une biere ⇒ Un demi
+      un verre de vin rouge
+      un verre de vin blanc
+      un vere de rose
+
+      L'addition
+      ça fait combien
+
+  - id: french_travel_phrases
+    path: notebooks/french_phrases.note
+    page_index: 1
+    category: multilingual
+    language: fr_FR
+    description: Bilingual French/English travel questions with indented English translations and ç, ù diacritics.
+    ground_truth: |-
+      Travel
+      Je ne parle pas français.
+      Je ne comprends pas
+      Pouvez-vous repeter s'il vous plait?
+      Pouvez-vous m'aider s'il vous plait?
+        - Can you help me please?
+      Je veux acheter ça?
+        - I want to buy this
+      Où sont les toilettes?
+
+      Je voudrais - rarely used and is formal
+      Est-ce que je peux avoir un cafe svp?
+        - can I have a coffee
+      Je vais prendre un cafe
+        - I'll take a coffee
+
+  - id: french_verbs_list
+    path: notebooks/french_phrases.note
+    page_index: 2
+    category: multilingual
+    language: fr_FR
+    description: Bilingual French/English verb table testing é, è, ê diacritics and multi-column alignment.
+    ground_truth: |-
+      100 sentences
+      Verbs
+      Vouloir / Je veux I want
+      Pouvoir / Je peux I can
+      Devoir / Je dois I must/have to
+      Savoir / Je sais I know
+      Aimer / J'aime I like/love
+      Souhaiter / Je souhaite I wish
+      Préférer / Je préfère I prefer
+      Adorer / J'adore I adore
+      Détester / Je déteste I hate
+      J'ai besoin de I need to
+
+      manger to eat
+      boire to drink
+      Dormir to sleep
+      Partir to leave
+      Revenir to come back/go back
+      Sortir to go out/get out
+      Marcher to walk
+      Rester to stay
+      Arrêter to stop
+      Courir to run
+      Visitir to visit
+
+  - id: spanish_cognates_lesson_1
+    path: notebooks/spanish_lessons.note
+    page_index: 0
+    category: multilingual
+    language: es_ES
+    description: Bilingual English/Spanish cognate list with inverted title banner, arrows, ó accents, and crossed-out word.
+    ground_truth: |-
+      QRoo Lesson 1
+      1. To educate → education
+      educación → educar
+      2. To observe → observación
+      obervar
+      3. To reserve → reservación
+      reservar
+      4. To legalize → legalization
+      legalización
+      legalizar
+      5. To facilitate → facilitation
+      facilitación
+      facilitar
+      6. To create → creation
+      creación → ~~creatar~~
+      crear
+      7. To document
+      documentation
+      documentación
+      documentar
+
+  - id: spanish_sentences_lesson_2
+    path: notebooks/spanish_lessons.note
+    page_index: 6
+    category: multilingual
+    language: es_ES
+    description: Bilingual English/Spanish sentence drills with inverted title banner, dash bullets, and ó accents.
+    ground_truth: |-
+      QRoo Lesson 2
+      - I can't memorize the information
+      No peudo memorizar la información.
+
+      - I want to confirm the
+      information but I can't
+      Quiero confirmar la información
+      pero no puedo.
+
+      - I want to participate but
+      I can't
+      Quiero participar pero no puedo.
+
+      - I want to cancel the reservation
+      but I can't
+      Quiero cancelar la reservación
+      pero no puedo.
+
+      - I want to celebrate but I can't
+      Quiero celebrar pero no puedo.
 
   # --- Adversarial / Edge Cases ---
   - id: inverted_banner_gray
