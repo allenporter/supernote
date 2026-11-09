@@ -54,7 +54,8 @@ class GeminiBackend:
         self,
         api_key: str,
         base_url: str | None = None,
-        provider: str = "gemini",
+        *,
+        provider: str,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url
@@ -153,10 +154,10 @@ class GeminiBackend:
 
 def create_gemini_backend(
     providers: Mapping[str, ProviderConfig],
-    name: str = "gemini",
+    provider: str,
 ) -> GeminiBackend | None:
     """Create a `GeminiBackend` from configured providers, or `None` if unconfigured."""
-    provider_cfg = providers.get(name)
+    provider_cfg = providers.get(provider)
     if (
         provider_cfg is None
         or not provider_cfg.api_key
@@ -166,5 +167,5 @@ def create_gemini_backend(
     return GeminiBackend(
         provider_cfg.api_key,
         base_url=provider_cfg.base_url,
-        provider=name,
+        provider=provider,
     )

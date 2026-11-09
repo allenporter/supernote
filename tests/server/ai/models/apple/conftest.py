@@ -196,4 +196,7 @@ def apple_backend(
     fake_objc: FakeObjCModule,
     fake_vision: FakeVisionModule,
 ) -> AppleVisionBackend:
-    return AppleVisionBackend(vision_loader=lambda: (fake_objc, fake_vision))
+    return AppleVisionBackend(
+        provider="apple",
+        vision_loader=lambda: (fake_objc, fake_vision),
+    )

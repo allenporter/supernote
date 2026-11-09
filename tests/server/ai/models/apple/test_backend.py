@@ -29,7 +29,7 @@ def test_create_apple_backend_and_eager_runtime_check(
     monkeypatch.setitem(sys.modules, "objc", fake_objc)  # type: ignore[arg-type]
     monkeypatch.setitem(sys.modules, "Vision", fake_vision)  # type: ignore[arg-type]
 
-    backend = create_apple_backend({})
+    backend = create_apple_backend({}, "apple")
     assert isinstance(backend, AppleVisionBackend)
     assert backend.provider == "apple"
 
@@ -40,13 +40,14 @@ def test_create_apple_backend_and_eager_runtime_check(
     # Also handles an objc module without an `error` exception class attribute
     no_error_objc = FakeObjCModule(error=None)
     plain_backend = AppleVisionBackend(
-        vision_loader=lambda: (no_error_objc, fake_vision)
+        provider="apple",
+        vision_loader=lambda: (no_error_objc, fake_vision),
     )
     assert isinstance(plain_backend, AppleVisionBackend)
 
     monkeypatch.setitem(sys.modules, "Vision", None)
     with pytest.raises(AIError, match="supernote\\[apple\\]"):
-        create_apple_backend({})
+        create_apple_backend({}, "apple")
 
 
 def test_load_vision_runtime_missing_and_present(
@@ -178,7 +179,7 @@ async def test_recognize_text_live_macos_vision() -> None:
     buf = io.BytesIO()
     image.save(buf, format="PNG")
 
-    backend = create_apple_backend({})
+    backend = create_apple_backend({}, "apple")
     extracted = await backend.recognize_text(
         buf.getvalue(), level=RecognitionLevel.VISION_ACCURATE
     )

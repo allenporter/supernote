@@ -74,8 +74,9 @@ class AppleVisionBackend:
 
     def __init__(
         self,
+        *,
+        provider: str,
         vision_loader: VisionLoader = _load_vision_runtime,
-        provider: str = "apple",
     ) -> None:
         self._provider = provider
         self._objc, self._vision = vision_loader()
@@ -158,7 +159,7 @@ class AppleVisionBackend:
 
 def create_apple_backend(
     providers: Mapping[str, ProviderConfig],
-    name: str = "apple",
+    provider: str,
 ) -> AppleVisionBackend:
     """Create an `AppleVisionBackend`, failing fast if Vision is unavailable."""
-    return AppleVisionBackend(provider=name)
+    return AppleVisionBackend(provider=provider)

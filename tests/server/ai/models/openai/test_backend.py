@@ -22,24 +22,30 @@ from .conftest import FakeOpenAIServer
 
 
 def test_create_openai_backend() -> None:
-    assert create_openai_backend({}) is None
-    assert create_openai_backend({"openai": ProviderConfig()}) is None
+    assert create_openai_backend({}, "openai") is None
+    assert create_openai_backend({"openai": ProviderConfig()}, "openai") is None
     assert (
-        create_openai_backend({"openai": ProviderConfig(api_key=" ", base_url=" ")})
+        create_openai_backend(
+            {"openai": ProviderConfig(api_key=" ", base_url=" ")}, "openai"
+        )
         is None
     )
 
     local = create_openai_backend(
-        {"openai": ProviderConfig(base_url="http://localhost:11434/v1/")}
+        {"openai": ProviderConfig(base_url="http://localhost:11434/v1/")}, "openai"
     )
     assert isinstance(local, OpenAIBackend)
     assert local._base_url == "http://localhost:11434/v1"
     assert local._api_key is None
+    assert local.provider == "openai"
 
-    hosted = create_openai_backend({"openai": ProviderConfig(api_key="sk-test")})
+    hosted = create_openai_backend(
+        {"openai": ProviderConfig(api_key="sk-test")}, "openai"
+    )
     assert isinstance(hosted, OpenAIBackend)
     assert hosted._base_url == DEFAULT_BASE_URL
     assert hosted._api_key == "sk-test"
+    assert hosted.provider == "openai"
 
 
 async def test_chat_completion(
@@ -74,7 +80,7 @@ async def test_chat_completion_null_content(
 async def test_embeddings_with_api_key(
     openai_base_url: str, fake_openai: FakeOpenAIServer
 ) -> None:
-    backend = OpenAIBackend(openai_base_url, api_key="sk-test")
+    backend = OpenAIBackend(openai_base_url, api_key="sk-test", provider="openai")
 
     assert await backend.embeddings(model="embed", text="hello") == [0.1, 0.2, 0.3]
     assert fake_openai.requests == [
@@ -114,7 +120,9 @@ async def test_connection_error_raises_ai_error_and_records_metric() -> None:
     before = REGISTRY.get_sample_value("supernote_ai_requests_total", labels)
 
     ocr_model = InstrumentedOcrModel(
-        OpenAIOcrModel(OpenAIBackend("http://127.0.0.1:1/v1"), "gemma")
+        OpenAIOcrModel(
+            OpenAIBackend("http://127.0.0.1:1/v1", provider="openai"), "gemma"
+        )
     )
     with pytest.raises(AIError, match="during chat_completion"):
         await ocr_model.extract_text(b"png", "prompt")

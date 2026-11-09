@@ -9,7 +9,7 @@ concurrency-limited, or replaced independently.
 To add a new provider (e.g., `<provider>`):
 
 1. **Create the provider subpackage** under `supernote/server/ai/models/<provider>/`:
-   - `backend.py`: Shared transport/client wrapper and `create_<provider>_backend(providers: Mapping[str, ProviderConfig], name: str = "<provider>")` helper. Translate SDK or HTTP failures into `AIError` (`supernote.server.ai.base.AIError`).
+   - `backend.py`: Shared transport/client wrapper and `create_<provider>_backend(providers: Mapping[str, ProviderConfig], provider: str)` helper. Translate SDK or HTTP failures into `AIError` (`supernote.server.ai.base.AIError`).
    - `ocr.py`: Subclass `OcrModel` (`provider`, `model_id`, `extract_text(png_data, prompt) -> str`) and provide `create_ocr_model(config: ServerConfig) -> OcrModel | None`.
    - `summary.py`: Subclass `SummaryModel` (`provider`, `model_id`, `summarize(prompt) -> SummaryResponse`, using `get_summary_json_schema()`) and provide `create_summary_model(config: ServerConfig) -> SummaryModel | None`.
    - `embedding.py`: Subclass `EmbeddingModel` (`provider`, `model_id`, `embed(text, task_type) -> list[float]`) and provide `create_embedding_model(config: ServerConfig) -> EmbeddingModel | None`.

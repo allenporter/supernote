@@ -23,15 +23,19 @@ from .conftest import FakeGeminiServer
 
 
 def test_create_gemini_backend() -> None:
-    assert create_gemini_backend({}) is None
-    assert create_gemini_backend({"gemini": ProviderConfig(api_key="  ")}) is None
+    assert create_gemini_backend({}, "gemini") is None
+    assert (
+        create_gemini_backend({"gemini": ProviderConfig(api_key="  ")}, "gemini")
+        is None
+    )
 
     backend = create_gemini_backend(
         {
             "gemini": ProviderConfig(
                 api_key="valid-key", base_url="http://localhost:8080"
             )
-        }
+        },
+        "gemini",
     )
     assert isinstance(backend, GeminiBackend)
     assert backend._api_key == "valid-key"
@@ -82,7 +86,11 @@ async def test_gemini_connection_error_raises_ai_error_and_records_metric() -> N
     }
     before = REGISTRY.get_sample_value("supernote_ai_requests_total", labels)
 
-    backend = GeminiBackend(api_key="fake-key", base_url="http://127.0.0.1:1")
+    backend = GeminiBackend(
+        api_key="fake-key",
+        base_url="http://127.0.0.1:1",
+        provider="gemini",
+    )
     ocr_model = InstrumentedOcrModel(GeminiOcrModel(backend, "gemini-2.0-flash"))
     with pytest.raises(
         AIError, match=r"Unexpected error calling Gemini API \(generate_content\)"
@@ -110,7 +118,11 @@ async def test_gemini_embed_content_ignores_non_finite_token_statistics(
     app = web.Application()
     app.router.add_post("/v1beta/models/{model}:batchEmbedContents", handle_batch_embed)
     server = await aiohttp_server(app)
-    backend = GeminiBackend(api_key="key", base_url=str(server.make_url("/")))
+    backend = GeminiBackend(
+        api_key="key",
+        base_url=str(server.make_url("/")),
+        provider="gemini",
+    )
 
     labels = {
         "provider": "gemini",
@@ -145,7 +157,7 @@ def test_create_gemini_backend_named_entry() -> None:
     assert isinstance(backend, GeminiBackend)
     assert backend._api_key == "work-key"
     assert backend.provider == "work"
-    assert create_gemini_backend(providers) is None
+    assert create_gemini_backend(providers, "gemini") is None
 
 
 async def test_gemini_generate_content_sums_only_positive_prompt_tokens(
@@ -173,7 +185,11 @@ async def test_gemini_generate_content_sums_only_positive_prompt_tokens(
     app = web.Application()
     app.router.add_post("/v1beta/models/{model}:generateContent", handle_generate)
     server = await aiohttp_server(app)
-    backend = GeminiBackend(api_key="key", base_url=str(server.make_url("/")))
+    backend = GeminiBackend(
+        api_key="key",
+        base_url=str(server.make_url("/")),
+        provider="gemini",
+    )
 
     in_labels = {
         "provider": "gemini",
