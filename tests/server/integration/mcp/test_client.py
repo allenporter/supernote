@@ -10,6 +10,7 @@ import pytest
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from mcp.types import TextContent
+from prometheus_client import REGISTRY
 from sqlalchemy import select
 
 from supernote.server.ai.models.fake.embedding import FakeEmbeddingModel
@@ -219,3 +220,84 @@ async def test_mcp_unauthorized(
         assert meta_response.status_code == 200
         data = meta_response.json()
         assert data.get("authorization_servers") == [f"{server_config.base_url}/"]
+
+
+async def test_mcp_tool_metrics_exported_over_streamable_http(
+    client: Any,
+    mcp_url: str,
+    auth_headers: dict[str, str],
+    notebook_file_id: int,
+) -> None:
+    """Verify standalone MCP server tool calls record Prometheus metrics visible on `/metrics`."""
+    token = auth_headers["x-access-token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    before_list_ok = (
+        REGISTRY.get_sample_value(
+            "supernote_mcp_tool_calls_total",
+            {"tool": "list_notebooks", "status": "success"},
+        )
+        or 0.0
+    )
+    before_transcript_fail = (
+        REGISTRY.get_sample_value(
+            "supernote_mcp_tool_calls_total",
+            {"tool": "get_notebook_transcript", "status": "failure"},
+        )
+        or 0.0
+    )
+    before_transcript_dur = (
+        REGISTRY.get_sample_value(
+            "supernote_mcp_tool_duration_seconds_count",
+            {"tool": "get_notebook_transcript"},
+        )
+        or 0.0
+    )
+
+    async with mcp_session(mcp_url, headers) as session:
+        await session.call_tool(
+            "list_notebooks",
+            arguments={"name_filter": "test_notes"},
+            meta={"token": token},
+        )
+        err_call = await session.call_tool(
+            "get_notebook_transcript",
+            arguments={"file_id": "999999"},
+            meta={"token": token},
+        )
+        assert err_call.content
+        err_content = err_call.content[0]
+        assert isinstance(err_content, TextContent)
+        assert json.loads(err_content.text) == {
+            "success": False,
+            "errorCode": "404",
+            "errorMsg": "No transcript found for notebook 999999.",
+        }
+
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_mcp_tool_calls_total",
+            {"tool": "list_notebooks", "status": "success"},
+        )
+        == before_list_ok + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_mcp_tool_calls_total",
+            {"tool": "get_notebook_transcript", "status": "failure"},
+        )
+        == before_transcript_fail + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_mcp_tool_duration_seconds_count",
+            {"tool": "get_notebook_transcript"},
+        )
+        == before_transcript_dur + 1.0
+    )
+
+    metrics_resp = await client.get("/metrics")
+    assert metrics_resp.status == 200
+    metrics_body = await metrics_resp.text()
+    assert "supernote_mcp_tool_calls_total" in metrics_body
+    assert "supernote_mcp_tool_duration_seconds_bucket" in metrics_body

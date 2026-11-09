@@ -19,6 +19,7 @@ __all__ = [
     "DB_SESSION_ERRORS_TOTAL",
     "HTTP_REQUESTS_TOTAL",
     "HTTP_REQUEST_DURATION_SECONDS",
+    "MCPToolName",
     "NoteProcessingMode",
     "PROCESSOR_FILES_PROCESSING",
     "PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL",
@@ -28,10 +29,12 @@ __all__ = [
     "PROCESSOR_TASKS_TOTAL",
     "PROCESSOR_TASK_DURATION_SECONDS",
     "init_ai_metrics",
+    "init_mcp_metrics",
     "init_note_processing_metrics",
     "record_ai_tokens",
     "record_note_page_diff",
     "track_ai_request",
+    "track_mcp_tool_call",
     "track_note_processing_run",
 ]
 
@@ -83,6 +86,22 @@ PROCESSOR_TASK_DURATION_BUCKETS: tuple[float, ...] = (
     180.0,
     300.0,
     600.0,
+)
+
+MCP_TOOL_DURATION_BUCKETS: tuple[float, ...] = (
+    0.005,
+    0.01,
+    0.025,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    2.5,
+    5.0,
+    10.0,
+    30.0,
+    60.0,
 )
 
 
@@ -402,6 +421,76 @@ def record_ai_tokens(
                 stage=active.stage.value,
                 token_type=token_type.value,
             ).inc(count)
+
+
+# MCP server metrics
+class MCPToolName(StrEnum):
+    """Canonical tool name labels for MCP server metrics."""
+
+    LIST_NOTEBOOKS = "list_notebooks"
+    SEARCH_NOTEBOOK_CHUNKS = "search_notebook_chunks"
+    GET_NOTEBOOK_TRANSCRIPT = "get_notebook_transcript"
+
+
+_MCP_TOOL_CALLS_TOTAL: Counter = Counter(
+    "supernote_mcp_tool_calls_total",
+    "Total number of MCP tool invocations.",
+    ["tool", "status"],
+)
+
+_MCP_TOOL_DURATION_SECONDS: Histogram = Histogram(
+    "supernote_mcp_tool_duration_seconds",
+    "Latency of completed MCP tool invocations in seconds.",
+    ["tool"],
+    buckets=MCP_TOOL_DURATION_BUCKETS,
+)
+
+
+class MCPToolCall:
+    """Mutable outcome handle for an active MCP tool invocation."""
+
+    def __init__(self) -> None:
+        self._succeeded = False
+
+    def set_succeeded(self, succeeded: bool) -> None:
+        """Record whether the MCP tool invocation succeeded."""
+        self._succeeded = succeeded
+
+
+def init_mcp_metrics() -> None:
+    """Pre-initialize MCP tool call `success` and `failure` counter series at 0."""
+    for tool in MCPToolName:
+        for status in (_OutcomeStatus.SUCCESS, _OutcomeStatus.FAILURE):
+            _MCP_TOOL_CALLS_TOTAL.labels(
+                tool=tool.value,
+                status=status.value,
+            )
+
+
+@contextmanager
+def track_mcp_tool_call(
+    *,
+    tool: MCPToolName,
+) -> Generator[MCPToolCall]:
+    """Record Prometheus call count and completed latency for an MCP tool invocation."""
+    call = MCPToolCall()
+    start_time = time.monotonic()
+    status = _OutcomeStatus.FAILURE
+    try:
+        yield call
+        if call._succeeded:
+            status = _OutcomeStatus.SUCCESS
+    except asyncio.CancelledError:
+        status = _OutcomeStatus.CANCELLED
+        raise
+    finally:
+        duration = time.monotonic() - start_time
+        _MCP_TOOL_CALLS_TOTAL.labels(
+            tool=tool.value,
+            status=status.value,
+        ).inc()
+        if status != _OutcomeStatus.CANCELLED:
+            _MCP_TOOL_DURATION_SECONDS.labels(tool=tool.value).observe(duration)
 
 
 # Database metrics
