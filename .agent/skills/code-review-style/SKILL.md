@@ -35,6 +35,7 @@ Execute this prescriptive task list when reviewing code changes, auditing PRs, o
 - [ ] Check for early returns and guard clauses to keep main happy paths unindented.
 - [ ] Verify repetitive error emission or formatting blocks are extracted into flat helper methods.
 - [ ] Check code hygiene: top-level imports only, no numbered comments (`# 1.`, `# 2.`), and clean `__all__` package exports.
+- [ ] Audit minimalism & PR size: verify built-in library primitives are used instead of custom wrapper classes/validators, and flag diffs exceeding ~300–400 production LoC for splitting.
 
 ### Step 6: Audit Test Quality & Fixture Delegation
 - [ ] Verify assertions check full dictionary structures (`assert data_dict == {...}`).
