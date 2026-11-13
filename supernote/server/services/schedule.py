@@ -338,9 +338,9 @@ class ScheduleService:
             if since is not None:
                 query = query.where(
                     or_(
-                        ScheduleTaskDO.update_time > since,
-                        ScheduleTaskDO.sort_time > since,
-                        ScheduleTaskDO.planer_sort_time > since,
+                        ScheduleTaskDO.update_time >= since,
+                        ScheduleTaskDO.sort_time >= since,
+                        ScheduleTaskDO.planer_sort_time >= since,
                     )
                 )
 
