@@ -108,6 +108,29 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
             }
         )
 
+    async def handle_events(request: web.Request) -> web.Response:
+        recorded.append((request.method, request.path, dict(request.query)))
+        return web.json_response(
+            {
+                "success": True,
+                "events": [
+                    {
+                        "seq": "105",
+                        "timestamp": 1700000000000,
+                        "type": "vfs.created",
+                        "actor": "user:web",
+                        "entityType": "file",
+                        "entityId": "10",
+                        "relatedFileId": "10",
+                        "payload": {"path": "/NOTE/a.note"},
+                    }
+                ],
+                "nextCursor": "105",
+                "headCursor": "105",
+                "hasMore": False,
+            }
+        )
+
     app = web.Application()
     app.router.add_get("/api/csrf", handle_csrf)
     app.router.add_post("/api/extended/file/summary/list", handle_summaries)
@@ -119,6 +142,7 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
     app.router.add_get("/api/extended/system/tasks", handle_system_tasks)
     app.router.add_get("/api/extended/ai/status", handle_ai_status)
     app.router.add_post("/api/extended/file/note/cover", handle_note_cover)
+    app.router.add_get("/api/extended/events", handle_events)
 
     test_client = await aiohttp_client(app)
     base_client = Client(
@@ -159,6 +183,18 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
     cover_vo = await ext.get_note_cover(file_id=10)
     assert cover_vo.url == "http://127.0.0.1/api/oss/png/10/0?sig=abc"
 
+    events_vo = await ext.list_events(
+        cursor="100",
+        types=["vfs.*", "note.*"],
+        file_id=10,
+        exclude_actor="device:SN1",
+        limit=50,
+    )
+    assert len(events_vo.events) == 1
+    assert events_vo.events[0].seq == "105"
+    assert events_vo.events[0].related_file_id == 10
+    assert events_vo.next_cursor == "105"
+
     assert recorded == [
         ("POST", "/api/extended/file/summary/list", {"fileId": "10"}),
         (
@@ -181,4 +217,15 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
         ("GET", "/api/extended/system/tasks", None),
         ("GET", "/api/extended/ai/status", None),
         ("POST", "/api/extended/file/note/cover", {"fileId": "10"}),
+        (
+            "GET",
+            "/api/extended/events",
+            {
+                "cursor": "100",
+                "limit": "50",
+                "types": "vfs.*,note.*",
+                "fileId": "10",
+                "excludeActor": "device:SN1",
+            },
+        ),
     ]

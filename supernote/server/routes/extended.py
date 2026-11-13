@@ -12,6 +12,8 @@ from mashumaro.exceptions import InvalidFieldValue, MissingField
 
 from supernote.models.base import ProcessingStatus
 from supernote.models.extended import (
+    DomainEventVO,
+    EventFeedListVO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
     PageTranscriptVO,
@@ -32,11 +34,12 @@ from supernote.server.ai.models.embedding import EmbeddingModel
 from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.ai.models.summary import SummaryModel
 from supernote.server.config import ServerConfig
-from supernote.server.exceptions import SupernoteError
+from supernote.server.exceptions import InvalidInputError, SupernoteError
 from supernote.server.keys import (
     CONFIG_KEY,
     CONVERSION_SERVICE_KEY,
     EMBEDDING_MODEL_KEY,
+    EVENT_LOG_SERVICE_KEY,
     OCR_MODEL_KEY,
     PROCESSOR_SERVICE_KEY,
     REQUEST_USER_KEY,
@@ -47,6 +50,7 @@ from supernote.server.keys import (
     USER_SERVICE_KEY,
 )
 from supernote.server.services.conversion import ConversionService
+from supernote.server.services.event_log import DEFAULT_FEED_LIMIT, EventLogService
 from supernote.server.services.processor import ProcessorService
 from supernote.server.services.search import SearchService
 from supernote.server.services.summary import SummaryService
@@ -339,4 +343,76 @@ async def handle_extended_note_cover(request: web.Request) -> web.Response:
         return err.to_response()
     except Exception as err:
         logger.exception("Error fetching note cover preview")
+        return SupernoteError.uncaught(err).to_response()
+
+
+@routes.get("/api/extended/events")
+async def handle_list_events(request: web.Request) -> web.Response:
+    # Endpoint: GET /api/extended/events
+    # Purpose: Incremental per-user domain event cursor feed.
+    user_email = request[REQUEST_USER_KEY]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    event_log_service: EventLogService = request.app[EVENT_LOG_SERVICE_KEY]
+
+    user_id = await user_service.get_user_id(user_email)
+    if not user_id:
+        return web.json_response({"error": "User not found"}, status=404)
+
+    cursor = request.query.get("cursor", "0")
+    raw_types = [
+        *request.query.getall("types", []),
+        *request.query.getall("type", []),
+    ]
+    types = [
+        part.strip() for item in raw_types for part in item.split(",") if part.strip()
+    ] or None
+    exclude_actor = request.query.get("excludeActor") or request.query.get(
+        "exclude_actor"
+    )
+    file_id_str = request.query.get("fileId") or request.query.get("file_id")
+    limit_str = request.query.get("limit", str(DEFAULT_FEED_LIMIT))
+
+    try:
+        file_id: int | None = None
+        if file_id_str is not None:
+            if not (file_id_str.isascii() and file_id_str.isdigit()):
+                raise InvalidInputError(f"Invalid fileId: {file_id_str!r}")
+            file_id = int(file_id_str)
+
+        try:
+            limit = int(limit_str)
+        except ValueError as err:
+            raise InvalidInputError(f"Invalid limit: {limit_str!r}") from err
+
+        page = await event_log_service.list_events(
+            user_id=user_id,
+            cursor=cursor,
+            types=types,
+            file_id=file_id,
+            exclude_actor=exclude_actor,
+            limit=limit,
+        )
+        vo = EventFeedListVO(
+            events=[
+                DomainEventVO(
+                    seq=str(ev.seq),
+                    timestamp=ev.timestamp_ms,
+                    type=ev.event_type,
+                    actor=ev.actor,
+                    entity_type=ev.entity_type,
+                    entity_id=ev.entity_id,
+                    related_file_id=ev.related_file_id,
+                    payload=ev.payload,
+                )
+                for ev in page.events
+            ],
+            next_cursor=page.next_cursor,
+            head_cursor=page.head_cursor,
+            has_more=page.has_more,
+        )
+        return web.json_response(vo.to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        logger.exception("Error listing domain events")
         return SupernoteError.uncaught(err).to_response()

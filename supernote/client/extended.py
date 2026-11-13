@@ -1,6 +1,8 @@
 """Client for Extended (Web) APIs."""
 
 from supernote.models.extended import (
+    DomainEventVO,
+    EventFeedListVO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
     SystemTaskListVO,
@@ -16,6 +18,8 @@ from supernote.models.extended import (
 )
 
 from .client import Client
+
+__all__ = ["DomainEventVO", "EventFeedListVO", "ExtendedClient"]
 
 
 class ExtendedClient:
@@ -94,4 +98,25 @@ class ExtendedClient:
         dto = WebNoteCoverRequestDTO(file_id=file_id)
         return await self._client.post_json(
             "/api/extended/file/note/cover", WebNoteCoverVO, json=dto.to_dict()
+        )
+
+    async def list_events(
+        self,
+        *,
+        cursor: str = "0",
+        types: list[str] | None = None,
+        file_id: int | None = None,
+        exclude_actor: str | None = None,
+        limit: int = 200,
+    ) -> EventFeedListVO:
+        """List per-user domain events after `cursor` (Extension)."""
+        params: dict[str, str] = {"cursor": cursor, "limit": str(limit)}
+        if types:
+            params["types"] = ",".join(types)
+        if file_id is not None:
+            params["fileId"] = str(file_id)
+        if exclude_actor:
+            params["excludeActor"] = exclude_actor
+        return await self._client.get_json(
+            "/api/extended/events", EventFeedListVO, params=params
         )
