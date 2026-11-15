@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { computeSocketSignature } from '../../supernote/server/static/js/api/client.js';
 import { apiRequest, getToken, logout, onLogout, setToken } from '../../supernote/server/static/js/api/http.js';
 import {
     fetchIcsFeed,
     fetchTasks,
     normalizeTaskImportance,
 } from '../../supernote/server/static/js/api/schedule.js';
+import { compareItems } from '../../supernote/server/static/js/components/FileBrowserPanel.js';
 import { toLocalDateInputValue } from '../../supernote/server/static/js/components/tasks/TaskEditorModal.js';
 import { getDueMeta } from '../../supernote/server/static/js/components/tasks/TaskRow.js';
 import {
@@ -361,4 +363,42 @@ test('clipboard.js & markdown.js: clipboard write + plain-HTTP fallback and sani
     const rendered = renderMarkdown('## 2026-06-18\\n\\nSummary body<script>evil()</script>');
     assert.match(rendered, /<h2>2026-06-18<\/h2>/);
     assert.doesNotMatch(rendered, /<script>/);
+});
+
+test('FileBrowserPanel compareItems & client computeSocketSignature', async () => {
+    const items = [
+        { id: '1', name: 'Note 10.note', isDirectory: false, size: 500, updatedAt: 2000 },
+        { id: '2', name: 'Archive', isDirectory: true, size: 0, updatedAt: 1000 },
+        { id: '3', name: 'Note 2.note', isDirectory: false, size: 1200, updatedAt: 3000 },
+    ];
+
+    const byNameAsc = [...items].sort((a, b) => compareItems(a, b, 'name', 'asc'));
+    assert.deepEqual(byNameAsc.map((i) => i.name), ['Archive', 'Note 2.note', 'Note 10.note']);
+
+    const bySizeDesc = [...items].sort((a, b) => compareItems(a, b, 'size', 'desc'));
+    assert.deepEqual(bySizeDesc.map((i) => i.name), ['Archive', 'Note 2.note', 'Note 10.note']);
+
+    const byDateAsc = [...items].sort((a, b) => compareItems(a, b, 'updatedAt', 'asc'));
+    assert.deepEqual(byDateAsc.map((i) => i.name), ['Archive', 'Note 10.note', 'Note 2.note']);
+
+    const origWindow = globalThis.window;
+    try {
+        globalThis.window = { crypto: globalThis.crypto };
+        const sigWebCrypto = await computeSocketSignature('tok1', 'WEB', '12345');
+        assert.match(sigWebCrypto, /^[A-Za-z0-9]+$/);
+        assert.ok(sigWebCrypto.length >= 40);
+
+        // Verify LAN HTTP fallback via window.sha256.hmac.arrayBuffer when crypto.subtle is absent
+        globalThis.window = {
+            sha256: Object.assign(() => '', {
+                hmac: {
+                    arrayBuffer: () => new Uint8Array([65, 66, 67, 255]).buffer,
+                },
+            }),
+        };
+        const sigFallback = await computeSocketSignature('tok1', 'WEB', '12345');
+        assert.equal(sigFallback, 'QUJDw');
+    } finally {
+        globalThis.window = origWindow;
+    }
 });

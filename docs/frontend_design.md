@@ -34,6 +34,7 @@ supernote/server/static/
     │   ├── markdown.js               # CommonMark + GFM Markdown renderer sanitized via DOMPurify
     │   └── oauth.js                  # OAuth 2.1 /login-bridge return_to validation & display helpers
     └── components/
+        ├── FileBrowserPanel.js       # Directory browser, Grid/List switcher, multi-select & file modals
         ├── FileCard.js               # Grid, compact folder & list-row item card with lazy covers
         ├── FileViewer.js             # Split-pane document & .note canvas coordinator
         ├── viewer/
