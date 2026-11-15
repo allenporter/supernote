@@ -194,6 +194,7 @@ createApp({
         // Navigation & Display State
         const activeTab = ref('files'); // 'files' | 'tasks'
         const showSearchModal = ref(false);
+        const searchInitialQuery = ref('');
         const searchShortcutLabel = typeof navigator !== 'undefined' &&
             /Mac|iPod|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '')
             ? '⌘K'
@@ -947,11 +948,25 @@ createApp({
             isDraggingOver.value = false;
         };
 
+        function openSearchWithQuery(initialQuery = '') {
+            searchInitialQuery.value = typeof initialQuery === 'string' ? initialQuery : '';
+            showSearchModal.value = true;
+        }
+
+        function closeSearchModal() {
+            showSearchModal.value = false;
+            searchInitialQuery.value = '';
+        }
+
         const handleGlobalKeydown = (e) => {
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
                 if (!isLoggedIn.value) return;
                 e.preventDefault();
-                showSearchModal.value = !showSearchModal.value;
+                if (showSearchModal.value) {
+                    closeSearchModal();
+                } else {
+                    openSearchWithQuery('');
+                }
                 return;
             }
             if (e.key === 'Escape') {
@@ -1002,6 +1017,9 @@ createApp({
             handleLogout,
             activeTab,
             showSearchModal,
+            searchInitialQuery,
+            openSearchWithQuery,
+            closeSearchModal,
             searchShortcutLabel,
             displayMode,
             sortBy,
