@@ -40,64 +40,31 @@ class DomainEventType(StrEnum):
     """File or folder deleted from the VFS (`entity_type='file'`, serialized from `VfsItemDeletedEvent`)."""
 
     NOTE_PAGES_DELTA = "note.pages_delta"
-    """Structural page changes detected in a `.note` file (`entity_type='file'`).
-
-    Payload keys: `file_path`, `added_pages`, `modified_pages`, `moved_pages`,
-    `deleted_pages`.
-    """
+    """Structural page changes detected in a `.note` file (`entity_type='file'`, serialized from `NotePagesDeltaEvent`)."""
 
     NOTE_PAGE_TRANSCRIBED = "note.page_transcribed"
-    """Single notebook page OCR text updated (`entity_type='note_page'`, `entity_id='<file_id>:<page_id>'`).
-
-    Payload keys: `file_path`, `page_id`, `page_index`, `page_modified_ms`,
-    `previous_text`, `current_text`.
-    """
+    """Single notebook page OCR text updated (`entity_type='note_page'`, serialized from `NotePageTranscribedEvent`)."""
 
     NOTE_PROCESSING_COMPLETED = "note.processing_completed"
-    """Background processing pipeline finished for a `.note` file (`entity_type='file'`).
-
-    Payload keys: `file_path`, `page_count`.
-    """
+    """Background processing pipeline finished for a `.note` file (`entity_type='file'`, serialized from `NoteProcessingCompletedEvent`)."""
 
     NOTE_PROCESSING_FAILED = "note.processing_failed"
-    """Background processing pipeline failed for a `.note` file (`entity_type='file'`).
-
-    Payload keys: `file_path`, `module_name`, `page_id`, `error`.
-    """
+    """Background processing pipeline failed for a `.note` file (`entity_type='file'`, serialized from `NoteProcessingFailedEvent`)."""
 
     SCHEDULE_TASK_CREATED = "schedule.task_created"
-    """Schedule to-do task created (`entity_type='schedule_task'`).
-
-    Payload keys: `task_id`, `task_list_id`, `title`, `detail`, `status`,
-    `due_time`, `links`, `linked_page_id`.
-    """
+    """Schedule to-do task created (`entity_type='schedule_task'`, serialized from `ScheduleTaskCreatedEvent`)."""
 
     SCHEDULE_TASK_UPDATED = "schedule.task_updated"
-    """Schedule to-do task updated (`entity_type='schedule_task'`).
-
-    Payload keys: `task_id`, `task_list_id`, `title`, `status`,
-    `changed_fields`, `linked_page_id`.
-    """
+    """Schedule to-do task updated (`entity_type='schedule_task'`, serialized from `ScheduleTaskUpdatedEvent`)."""
 
     SCHEDULE_TASK_DELETED = "schedule.task_deleted"
-    """Schedule to-do task deleted (`entity_type='schedule_task'`).
-
-    Payload keys: `task_id`, `task_list_id`, `title`, `previous_status`,
-    `linked_page_id`.
-    """
+    """Schedule to-do task deleted (`entity_type='schedule_task'`, serialized from `ScheduleTaskDeletedEvent`)."""
 
     SUMMARY_UPSERTED = "summary.upserted"
-    """Summary or synthesis item created or updated (`entity_type='summary'`).
-
-    Payload keys: `id`, `unique_identifier`, `is_new`, `is_summary_group`,
-    `name`, `source_path`, `data_source`, `md5_hash`.
-    """
+    """Summary or synthesis item created or updated (`entity_type='summary'`, serialized from `SummaryUpsertedEvent`)."""
 
     SUMMARY_DELETED = "summary.deleted"
-    """Summary or synthesis item deleted (`entity_type='summary'`).
-
-    Payload keys: `summary_id`, `unique_identifier`, `is_summary_group`.
-    """
+    """Summary or synthesis item deleted (`entity_type='summary'`, serialized from `SummaryDeletedEvent`)."""
 
 
 class DomainEntityType(StrEnum):
