@@ -8,6 +8,7 @@ import pytest
 
 from supernote.models.base import BooleanEnum
 from supernote.models.events import DomainEntityType, DomainEventType
+from supernote.models.schedule import ScheduleTaskLinkDTO
 from supernote.models.summary import AddSummaryDTO, AddSummaryGroupDTO, SummaryItem
 from supernote.models.user import UserRegisterDTO
 from supernote.server.constants import USER_DATA_BUCKET
@@ -25,6 +26,7 @@ from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.event_log import EventLogService, encode_sync_token
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.summary import SummaryModule
+from supernote.server.services.schedule import ScheduleService
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 
@@ -504,3 +506,72 @@ async def test_vfs_file_and_folder_domain_events_recorded(
     )
     assert [e.event_type for e in p4.events] == [DomainEventType.VFS_DELETED]
     assert p4.events[0].entity_id == str(copied_dir.id)
+
+
+async def test_schedule_task_domain_events_recorded(
+    event_log_service: EventLogService,
+    event_bus: LocalEventBus,
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Verify schedule task create, semantic update (suppressing sort-only), and delete events."""
+    schedule_service = ScheduleService(session_manager, event_bus)
+    uid = 77
+
+    group = await schedule_service.create_group(uid, "Action Items")
+    link_b64 = ScheduleTaskLinkDTO(
+        app_name="Note",
+        path="/Note/Todo.note",
+        page=1,
+        file_id="901",
+        page_id="P1",
+    ).to_b64()
+
+    task = await schedule_service.create_task(
+        uid,
+        group_id=group.task_list_id,
+        title="Ship slice",
+        detail="Minimal PR",
+        links=link_b64,
+    )
+
+    # Sort-only updates do not emit schedule.task_updated
+    await schedule_service.update_task(uid, task.task_id, sort=5, sort_time=1000)
+    await schedule_service.batch_update_tasks(
+        uid,
+        [{"task_id": task.task_id, "sort": 10}],
+        task_list_id=group.task_list_id,
+    )
+
+    # Semantic update emits schedule.task_updated
+    await schedule_service.update_task(uid, task.task_id, status="completed")
+
+    # Deleting the group cascades schedule.task_deleted for tasks in the group
+    await schedule_service.delete_group(uid, group.task_list_id)
+
+    page = await event_log_service.list_events(user_id=uid, event_types=["schedule.*"])
+    assert [
+        (e.event_type, e.entity_type, e.entity_id, e.related_file_id)
+        for e in page.events
+    ] == [
+        (
+            DomainEventType.SCHEDULE_TASK_CREATED,
+            DomainEntityType.SCHEDULE_TASK,
+            task.task_id,
+            901,
+        ),
+        (
+            DomainEventType.SCHEDULE_TASK_UPDATED,
+            DomainEntityType.SCHEDULE_TASK,
+            task.task_id,
+            901,
+        ),
+        (
+            DomainEventType.SCHEDULE_TASK_DELETED,
+            DomainEntityType.SCHEDULE_TASK,
+            task.task_id,
+            901,
+        ),
+    ]
+    assert page.events[0].payload["title"] == "Ship slice"
+    assert page.events[1].payload["status"] == "completed"
+    assert page.events[2].payload["status"] == "completed"

@@ -6,7 +6,13 @@ from sqlalchemy.engine import CursorResult
 
 from supernote.server.db.models.schedule import ScheduleTaskDO, ScheduleTaskGroupDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.events import LocalEventBus, ScheduleUpdatedEvent
+from supernote.server.events import (
+    LocalEventBus,
+    ScheduleTaskCreatedEvent,
+    ScheduleTaskDeletedEvent,
+    ScheduleTaskUpdatedEvent,
+    ScheduleUpdatedEvent,
+)
 from supernote.server.exceptions import TaskGroupNotFound
 
 MAX_TITLE_LENGTH = 255
@@ -46,6 +52,34 @@ TASK_NULLABLE_FIELDS: set[str] = {
     "recurrence",
     "links",
 }
+
+TASK_SEMANTIC_FIELDS: set[str] = (TASK_BASE_FIELDS - {"update_time"}) | {"links"}
+
+
+def _to_task_event[E: ScheduleTaskCreatedEvent](
+    cls: type[E], task: ScheduleTaskDO
+) -> E:
+    return cls(
+        user_id=task.user_id,
+        task_id=task.task_id,
+        task_list_id=task.task_list_id,
+        title=task.title,
+        detail=task.detail,
+        status=task.status,
+        due_time=task.due_time,
+        links=task.links,
+    )
+
+
+def _to_task_deleted_event(task: ScheduleTaskDO) -> ScheduleTaskDeletedEvent:
+    return ScheduleTaskDeletedEvent(
+        user_id=task.user_id,
+        task_id=task.task_id,
+        task_list_id=task.task_list_id,
+        title=task.title,
+        status=task.status,
+        links=task.links,
+    )
 
 
 class ScheduleService:
@@ -194,6 +228,20 @@ class ScheduleService:
                 return False
 
             target_group_id = group.task_list_id
+            tasks_in_group = list(
+                (
+                    await session.execute(
+                        select(ScheduleTaskDO).where(
+                            ScheduleTaskDO.user_id == user_id,
+                            ScheduleTaskDO.task_list_id == target_group_id,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            deleted_events = [_to_task_deleted_event(t) for t in tasks_in_group]
+
             # First cascade delete all tasks in the group
             stmt_tasks = delete(ScheduleTaskDO).where(
                 ScheduleTaskDO.user_id == user_id,
@@ -211,6 +259,9 @@ class ScheduleService:
             deleted = bool(getattr(result, "rowcount", 0) > 0)
 
         if deleted:
+            if self.event_bus is not None:
+                for ev in deleted_events:
+                    await self.event_bus.publish(ev)
             await self._publish_schedule_updated(
                 user_id=user_id, task_list_id=target_group_id
             )
@@ -223,6 +274,20 @@ class ScheduleService:
                 return False
 
             target_group_id = group.task_list_id
+            tasks_in_group = list(
+                (
+                    await session.execute(
+                        select(ScheduleTaskDO).where(
+                            ScheduleTaskDO.user_id == user_id,
+                            ScheduleTaskDO.task_list_id == target_group_id,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            deleted_events = [_to_task_deleted_event(t) for t in tasks_in_group]
+
             # Clear all tasks from the group without deleting the group
             stmt = delete(ScheduleTaskDO).where(
                 ScheduleTaskDO.user_id == user_id,
@@ -233,6 +298,9 @@ class ScheduleService:
             cleared = bool(getattr(result, "rowcount", 0) > 0)
 
         if cleared:
+            if self.event_bus is not None:
+                for ev in deleted_events:
+                    await self.event_bus.publish(ev)
             await self._publish_schedule_updated(
                 user_id=user_id, task_list_id=target_group_id
             )
@@ -306,6 +374,8 @@ class ScheduleService:
             await session.commit()
             await session.refresh(task)
 
+        if self.event_bus is not None:
+            await self.event_bus.publish(_to_task_event(ScheduleTaskCreatedEvent, task))
         await self._publish_schedule_updated(
             user_id=user_id,
             task_list_id=task.task_list_id,
@@ -365,6 +435,11 @@ class ScheduleService:
             if not (task := await self.get_task(user_id, task_id)):
                 return None
 
+            semantic_changed = any(
+                k in TASK_SEMANTIC_FIELDS and getattr(task, k) != v
+                for k, v in updates.items()
+            )
+
             stmt = (
                 update(ScheduleTaskDO)
                 .where(
@@ -386,6 +461,10 @@ class ScheduleService:
             updated_task = result.scalar_one_or_none()
 
         if updated_task is not None:
+            if semantic_changed and self.event_bus is not None:
+                await self.event_bus.publish(
+                    _to_task_event(ScheduleTaskUpdatedEvent, updated_task)
+                )
             await self._publish_schedule_updated(
                 user_id=user_id,
                 task_list_id=updated_task.task_list_id,
@@ -403,6 +482,7 @@ class ScheduleService:
         now_ms = int(time.time() * 1000)
         resolved_group_id = task_list_id
         updated_any = False
+        pending_update_events: list[ScheduleTaskUpdatedEvent] = []
         async with self.session_manager.session() as session:
             for item in updates_list:
                 if not (task_id := item.get("task_id")):
@@ -440,6 +520,11 @@ class ScheduleService:
                 if not updates.get("update_time"):
                     updates["update_time"] = now_ms
 
+                semantic_changed = any(
+                    k in TASK_SEMANTIC_FIELDS and getattr(task, k) != v
+                    for k, v in updates.items()
+                )
+
                 stmt = (
                     update(ScheduleTaskDO)
                     .where(
@@ -449,10 +534,26 @@ class ScheduleService:
                     .values(**updates)
                 )
                 await session.execute(stmt)
+                if semantic_changed:
+                    pending_update_events.append(
+                        ScheduleTaskUpdatedEvent(
+                            user_id=user_id,
+                            task_id=task.task_id,
+                            task_list_id=updates.get("task_list_id", task.task_list_id),
+                            title=updates.get("title", task.title),
+                            detail=updates.get("detail", task.detail),
+                            status=updates.get("status", task.status),
+                            due_time=updates.get("due_time", task.due_time),
+                            links=updates.get("links", task.links),
+                        )
+                    )
                 updated_any = True
             await session.commit()
 
         if updated_any:
+            if self.event_bus is not None:
+                for ev in pending_update_events:
+                    await self.event_bus.publish(ev)
             await self._publish_schedule_updated(
                 user_id=user_id, task_list_id=resolved_group_id
             )
@@ -466,6 +567,7 @@ class ScheduleService:
 
             target_group_id = task.task_list_id
             target_task_id = task.task_id
+            deleted_event = _to_task_deleted_event(task)
             stmt = delete(ScheduleTaskDO).where(
                 ScheduleTaskDO.user_id == user_id,
                 ScheduleTaskDO.task_id == target_task_id,
@@ -475,6 +577,8 @@ class ScheduleService:
             deleted = bool(result.rowcount > 0)
 
         if deleted:
+            if self.event_bus is not None:
+                await self.event_bus.publish(deleted_event)
             await self._publish_schedule_updated(
                 user_id=user_id,
                 task_list_id=target_group_id,
