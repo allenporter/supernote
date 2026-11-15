@@ -25,27 +25,17 @@ This document describes the architecture of the asynchronous, multi-stage `.note
 
 ```mermaid
 flowchart TD
-    EVT["NoteUpdatedEvent / SyncCompletedEvent"] --> Q["ProcessorService Queue\n(file_id)"]
-    Q --> PRE["1. Global Pre-Processing\nPageHashingModule (HASHING, key='global', version='v2')\nUpserts NoteMetadataDO, NotePageMetadataDO & NotePageContentDO"]
-    PRE --> DIFF{"Page Changed\nor New?"}
-    DIFF -- "Unchanged" --> SKIP["Keep COMPLETED SystemTaskDO\n& Reuse Cached has_ink / has_drawables"]
-    DIFF -- "Changed / New" --> INV["Invalidate Page SystemTaskDOs\n& SUMMARY_GENERATION Checkpoint"]
-    INV --> PAGE_PAR["2. Per-Page Pipeline (Semaphore Throttled)\nkey='page_{page_id}'"]
-    SKIP --> PAGE_PAR
-
-    subgraph PageStage["Sequential Per-Page Modules"]
-        PNG["PngConversionModule\n(PNG_CONVERSION -> CACHE_BUCKET)"]
-        BLANK{"has_drawables\n== False?"}
-        OCR_SKIP["Set text_content = ''\n(Skip LLM Call)"]
-        OCR["OcrModule\n(OCR_EXTRACTION -> NotePageContentDO.text_content)"]
-        EMB["EmbeddingModule\n(EMBEDDING_GENERATION -> NotePageContentDO.embedding\nSkips if is_blank)"]
-        PNG --> BLANK
-        BLANK -- "Yes (Blank)" --> OCR_SKIP --> EMB
-        BLANK -- "No (Has Ink/Text)" --> OCR --> EMB
-    end
-
-    PAGE_PAR --> PageStage
-    PageStage --> POST["3. Global Post-Processing\nSummaryModule (SUMMARY_GENERATION, key='global')\nUpserts OCR Transcript & AI Synthesis SummaryDO"]
+    EVT["NoteUpdatedEvent / SyncCompletedEvent"] --> PRE["1. PageHashingModule (Global)<br/>Upsert metadata & compare page MD5s"]
+    PRE --> DIFF{"Page Changed?"}
+    DIFF -- "No" --> REUSE["Reuse cached task & page state"]
+    DIFF -- "Yes" --> PNG["2. PngConversionModule<br/>Render page PNG to cache"]
+    PNG --> BLANK{"Blank Page?"}
+    BLANK -- "Yes" --> SKIP_OCR["Set text_content = ''"]
+    BLANK -- "No" --> OCR["3. OcrModule<br/>Extract Markdown transcript"]
+    SKIP_OCR --> EMB["4. EmbeddingModule<br/>Embed non-blank transcript"]
+    OCR --> EMB
+    REUSE --> POST["5. SummaryModule (Global)<br/>Assemble transcript & AI summary"]
+    EMB --> POST
     POST --> DONE["Publish NoteProcessingCompletedEvent"]
 ```
 

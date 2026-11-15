@@ -20,14 +20,6 @@ The `supernote` package provides two command-line entry points for **Open Privat
 
 If you invoke a subcommand whose optional extra is not installed, the CLI prints the exact `pip install 'supernote[...]'` command needed to enable it.
 
-```mermaid
-flowchart LR
-    CLI["supernote"] --> NB["Local Notebook Commands\n(analyze, convert, create, merge, reconstruct)\nAlways Available"]
-    CLI --> CLOUD["Cloud Client Commands\n(supernote cloud ...)\nRequires supernote[client]"]
-    CLI --> ADMIN["Admin Commands\n(supernote admin ...)\nRequires supernote[client]"]
-    CLI --> SERVE["Server Commands\n(supernote serve / supernote-server serve)\nRequires supernote[server]"]
-```
-
 ---
 
 ## Local Notebook Commands

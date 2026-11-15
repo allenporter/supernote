@@ -248,77 +248,12 @@ Rather than requiring a heavy multi-container deployment (Java + MySQL + Redis +
 
 ```mermaid
 flowchart TB
-    subgraph Clients["Clients & Hardware"]
-        DEV["Supernote Tablet\n(Nomad / Manta / A5X / A6X)"]
-        WEB["Web UI & Python SDK\n(supernote.client)"]
-        MCP_CLIENT["AI Assistants\n(Claude / Cursor / MCP Clients)"]
-    end
-
-    subgraph HTTP["aiohttp Application & Dual-Port MCP"]
-        ROUTES["REST Routes (/api/*)\nauth, file_device, file_web, oss,\nschedule, summary, extended, admin"]
-        SIO["SocketIOServerManager\n(/socket.io EIO v3/v4)"]
-        OAUTH["MCP OAuth 2.1 AS\n(/.well-known/*, /authorize, /token)"]
-        MCP_SRV["FastMCP Server\n(Separate Port :8081 /mcp)"]
-    end
-
-    subgraph CoreServices["Domain Services (supernote.server.services)"]
-        USER["UserService & UrlSigner"]
-        FILE["FileService & VirtualFileSystem"]
-        CONV["ConversionService\n(supernote.notebook PNG/PDF)"]
-        SCHED["ScheduleService & SummaryService"]
-        SEARCH["SearchService\n(NumPy Cosine Similarity)"]
-        EVLOG["EventLogService & StorageMetricsCollector"]
-        INTEG["IntegrityService"]
-        COORD["SqliteCoordinationService\n(Locks, Nonces, Sessions)"]
-    end
-
-    subgraph AsyncPipeline["Event-Driven Background Pipeline"]
-        BUS["LocalEventBus\n(supernote.server.events)"]
-        PROC["ProcessorService\n(Worker Pool & Recovery)"]
-        MODS["ProcessorModules\n1. PageHashingModule\n2. PngConversionModule\n3. OcrModule\n4. EmbeddingModule\n5. SummaryModule"]
-        WH["WebhookService"]
-    end
-
-    subgraph Persistence["Single-Directory Storage (storage_root)"]
-        DB[("SQLite (supernote.db)\nf_user_file, f_note_metadata,\nf_note_page_metadata, f_note_page_content,\nf_system_task, f_summary, f_user_event,\nt_schedule_*, f_api_key, key_values")]
-        BLOB[("LocalBlobStorage\nsupernote-user-data/<prefix>/<key>\nsupernote-cache/<prefix>/<key>")]
-    end
-
-    DEV --> ROUTES
-    DEV --> SIO
-    WEB --> ROUTES
-    WEB --> SIO
-    MCP_CLIENT --> OAUTH
-    MCP_CLIENT --> MCP_SRV
-
-    ROUTES --> USER
-    ROUTES --> FILE
-    ROUTES --> CONV
-    ROUTES --> SCHED
-    ROUTES --> SEARCH
-    ROUTES --> EVLOG
-    ROUTES --> INTEG
-    MCP_SRV --> SEARCH
-
-    FILE --> BUS
-    SCHED --> BUS
-    BUS --> SIO
-    BUS --> PROC
-    BUS --> WH
-    BUS --> EVLOG
-    PROC --> MODS
-
-    USER --> COORD
-    COORD --> DB
-    FILE --> DB
-    FILE --> BLOB
-    CONV --> BLOB
-    MODS --> DB
-    MODS --> BLOB
-    SEARCH --> DB
-    EVLOG --> DB
-    INTEG --> DB
-    INTEG --> BLOB
+    Clients["Supernote Tablet · Web UI · Python SDK · MCP Clients"] --> HTTP["aiohttp Server (:8080) & FastMCP Server (:8081)<br/>REST Routes · Socket.IO · OAuth 2.1 / Bearer sn_..."]
+    HTTP --> Services["Domain Services<br/>FileService · UserService · ScheduleService · SearchService · ConversionService"]
+    Services --> Bus["LocalEventBus & EventLogService"]
+    Bus --> Pipeline["ProcessorService & WebhookService<br/>PageHashing → PNG → OCR → Embedding → Summary"]
+    Services --> Storage[("SQLite (supernote.db) & LocalBlobStorage")]
+    Pipeline --> Storage
 ```
 
 ### 2.1. Replacing External Infrastructure with Embedded Components

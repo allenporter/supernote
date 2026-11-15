@@ -9,17 +9,12 @@
 ## Architecture Overview
 
 ```mermaid
-flowchart LR
-    Device["Supernote Tablet\n(Nomad / Manta / A5X)"] <-->|Sync + Socket.IO :8080| App["aiohttp Application\n(supernote.server.app)"]
-    WebUI["Web UI / CLI"] <-->|REST + Socket.IO :8080| App
-    Agent["MCP Client\n(Claude / Cursor)"] <-->|OAuth 2.1 :8080 or Bearer sn_...\nStreamable HTTP :8081/mcp| MCP["MCP Server\n(supernote.server.mcp)"]
-
-    App --> VFS["FileService & LocalBlobStorage"]
-    App --> Sched["ScheduleService & ICalExportService"]
-    App --> Bus["LocalEventBus & EventLogService"]
-    Bus --> Proc["ProcessorService\n(Hashing -> PNG -> OCR -> Embedding -> Summary)"]
-    Bus --> WH["WebhookService\n(HMAC-SHA256 HTTP POST)"]
-    MCP --> Search["SearchService\n(Vector Similarity + Transcripts)"]
+flowchart TD
+    Clients["Supernote Tablet · Web UI · CLI · MCP Clients"] --> App["aiohttp Server (:8080) & MCP Server (:8081)"]
+    App --> Services["FileService · ScheduleService · SearchService"]
+    Services --> Bus["LocalEventBus & EventLogService"]
+    Bus --> Proc["ProcessorService<br/>Hashing → PNG → OCR → Embedding → Summary"]
+    Bus --> WH["WebhookService<br/>HMAC-SHA256 HTTP POST"]
 ```
 
 ### Package Structure

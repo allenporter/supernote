@@ -6,15 +6,11 @@ It requires only the base `supernote` installation (`pip install supernote`) wit
 
 ```mermaid
 flowchart LR
-    MD["Markdown / Bullet Journal\ncreate_notebook() / NotebookAuthor"] --> NB["Notebook\n(Pages, Layers, Keywords, Titles, Links)"]
-    FILE[".note File / Stream"] --> PARSER["parse_metadata()\nload_notebook() / load()"]
-    PARSER --> META["SupernoteMetadata\n(Header, Footer, Page Blocks)"]
+    MD["Markdown<br/>create_notebook()"] --> NB["Notebook<br/>(Pages, Layers, Keywords, Titles, Links)"]
+    FILE[".note File / Stream"] --> PARSER["load_notebook() / parse_metadata()"]
     PARSER --> NB
-    NB --> IMG["ImageConverter\n(PIL.Image / PNG)"]
-    NB --> SVG["SvgConverter\n(Potrace Vector SVG)"]
-    NB --> PDF["PdfConverter\n(ReportLab PDF + Links/Keywords)"]
-    NB --> TXT["TextConverter\n(Real-Time Recognition Text)"]
-    NB --> MANIP["merge() / reconstruct()\n(Binary .note Builder)"]
+    NB --> EXPORT["PdfConverter · ImageConverter · SvgConverter · TextConverter"]
+    NB --> MANIP["merge() · reconstruct() · NotebookAuthor"]
 ```
 
 ---

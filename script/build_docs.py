@@ -407,7 +407,24 @@ def _install_markdown_link_rewriter() -> None:
     def short_linkify(
         context: Context, code: str, namespace: str = "", shorten: bool = True
     ) -> Any:
-        result = str(orig_linkify(context, code, namespace=namespace, shorten=shorten))
+        # Protect <pre class="mermaid-pre">...</pre> blocks from linkify so pdoc
+        # never injects <a href="..."> tags inside Mermaid diagram definitions.
+        mermaid_blocks: list[str] = []
+
+        def _stash_mermaid(m: re.Match[str]) -> str:
+            idx = len(mermaid_blocks)
+            mermaid_blocks.append(m.group(0).replace(r"\n", "<br/>"))
+            return f"__MERMAID_BLOCK_{idx}__"
+
+        protected = re.sub(
+            r'<pre class="mermaid-pre">.*?</pre>',
+            _stash_mermaid,
+            code,
+            flags=re.S,
+        )
+        result = str(
+            orig_linkify(context, protected, namespace=namespace, shorten=shorten)
+        )
 
         def _shorten_anchor(m: re.Match[str]) -> str:
             href = m.group("href")
@@ -423,13 +440,14 @@ def _install_markdown_link_rewriter() -> None:
                 short = raw.rsplit(".", 1)[-1] + suffix
             return f'<a href="{href}" title="{label}">{short}</a>'
 
-        return pdoc.render_helpers.Markup(
-            re.sub(
-                r'<a href="(?P<href>[^"]+)">(?P<label>supernote\.[A-Za-z0-9_.]+(?:\(\))?)</a>',
-                _shorten_anchor,
-                result,
-            )
+        shortened = re.sub(
+            r'<a href="(?P<href>[^"]+)">(?P<label>supernote\.[A-Za-z0-9_.]+(?:\(\))?)</a>',
+            _shorten_anchor,
+            result,
         )
+        for idx, block in enumerate(mermaid_blocks):
+            shortened = shortened.replace(f"__MERMAID_BLOCK_{idx}__", block)
+        return pdoc.render_helpers.Markup(shortened)
 
     pdoc.render.env.filters["linkify"] = pdoc.render_helpers.pass_context(short_linkify)
 

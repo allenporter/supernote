@@ -10,12 +10,11 @@ When a `.note` file is uploaded or synchronized, `supernote.server.services.proc
 
 ```mermaid
 flowchart TD
-    Sync[".note File Synced (NoteUpdatedEvent)"] --> S1["1. PageHashingModule (Global Pre-Stage)\nParse metadata, compute page MD5s & detect drawables"]
-    S1 -->|Changed or New Pages| S2["2. PngConversionModule (Per-Page)\nRasterize page to PNG"]
-    S2 --> S3["3. OcrModule (Per-Page)\nVision LLM Markdown transcript (skips blank pages)"]
-    S3 --> S4["4. EmbeddingModule (Per-Page)\nVector embedding for semantic search"]
-    S4 -->|All Pages Complete| S5["5. SummaryModule (Global Post-Stage)\nFull transcript + structured notebook summary"]
-    S5 --> Done["NoteProcessingCompletedEvent (Web UI & Webhooks)"]
+    Sync[".note File Synced"] --> S1["1. PageHashingModule<br/>Parse metadata & page MD5s"]
+    S1 -->|Changed Pages| S2["2. PngConversionModule<br/>Rasterize page to PNG"]
+    S2 --> S3["3. OcrModule<br/>Vision LLM transcript (skips blank pages)"]
+    S3 --> S4["4. EmbeddingModule<br/>Vector embedding for search"]
+    S4 --> S5["5. SummaryModule<br/>Full transcript + notebook summary"]
 ```
 
 ### Stage Breakdown

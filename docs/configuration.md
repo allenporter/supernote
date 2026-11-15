@@ -16,13 +16,6 @@ When `supernote.server.config.ServerConfig.load` runs at server startup:
 3. **Database Fallbacks**:
    - If `auth.secret_key` (`SUPERNOTE_JWT_SECRET`) is not provided via environment variable or `config.yaml`, `supernote.server.services.user.UserService` automatically generates and persists a random secret key inside the SQLite coordination store (`storage/system/supernote.db`) so tokens survive restarts without manual secret management.
 
-```mermaid
-flowchart LR
-    Env["Environment Variables\n(SUPERNOTE_*)"] -->|Highest Priority| Merged["Resolved ServerConfig"]
-    YAML["YAML File\n(config/config.yaml)"] -->|Medium Priority| Merged
-    Defaults["Dataclass Defaults &\nSQLite Coordination Key"] -->|Fallback| Merged
-```
-
 > [!NOTE]
 > Boolean environment variables accept `"true"`, `"1"`, `"yes"`, or `"on"` (case-insensitive) as `True`, and any other value as `False`.
 
