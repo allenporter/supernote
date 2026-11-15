@@ -103,16 +103,16 @@ class ExtendedClient:
     async def list_events(
         self,
         *,
-        cursor: str | None = None,
+        sync_token: str | None = None,
         types: list[str] | None = None,
         file_id: int | None = None,
         exclude_actor: str | None = None,
         limit: int = 200,
     ) -> EventFeedListVO:
-        """List per-user domain events after `cursor` (Extension)."""
+        """List per-user domain events after `sync_token` (Extension)."""
         params: dict[str, str] = {"limit": str(limit)}
-        if cursor:
-            params["cursor"] = cursor
+        if sync_token:
+            params["syncToken"] = sync_token
         if types:
             params["types"] = ",".join(types)
         if file_id is not None:

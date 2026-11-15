@@ -358,7 +358,7 @@ async def handle_list_events(request: web.Request) -> web.Response:
     if not user_id:
         return web.json_response({"error": "User not found"}, status=404)
 
-    cursor = request.query.get("cursor") or None
+    sync_token = request.query.get("syncToken") or request.query.get("sync_token")
     raw_types = [
         *request.query.getall("types", []),
         *request.query.getall("type", []),
@@ -386,7 +386,7 @@ async def handle_list_events(request: web.Request) -> web.Response:
 
         page = await event_log_service.list_events(
             user_id=user_id,
-            cursor=cursor,
+            sync_token=sync_token,
             types=types,
             file_id=file_id,
             exclude_actor=exclude_actor,
@@ -406,8 +406,7 @@ async def handle_list_events(request: web.Request) -> web.Response:
                 )
                 for ev in page.events
             ],
-            next_cursor=page.next_cursor,
-            head_cursor=page.head_cursor,
+            next_sync_token=page.next_sync_token,
             has_more=page.has_more,
         )
         return web.json_response(vo.to_dict())

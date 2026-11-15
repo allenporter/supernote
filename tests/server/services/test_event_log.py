@@ -67,15 +67,14 @@ async def test_append_persists_and_publishes_domain_event(
     assert published == [e1, e2]
 
 
-async def test_list_events_cursors_filters_and_user_isolation(
+async def test_list_events_sync_tokens_filters_and_user_isolation(
     event_log_service: EventLogService,
 ) -> None:
-    """Verify cursor=None/empty, cursor='head', pagination, type globbing, file_id, and exclude_actor."""
-    empty_head = await event_log_service.list_events(user_id=1, cursor="head")
-    assert empty_head.events == []
-    assert empty_head.next_cursor is None
-    assert empty_head.head_cursor is None
-    assert empty_head.has_more is False
+    """Verify sync_token=None/empty, pagination, type globbing, file_id, and exclude_actor."""
+    empty_page = await event_log_service.list_events(user_id=1)
+    assert empty_page.events == []
+    assert empty_page.next_sync_token is None
+    assert empty_page.has_more is False
 
     ev1 = await event_log_service.append(
         user_id=1,
@@ -114,15 +113,14 @@ async def test_list_events_cursors_filters_and_user_isolation(
     page1 = await event_log_service.list_events(user_id=1, limit=2)
     assert [e.seq for e in page1.events] == [ev1.seq, ev3.seq]
     assert page1.has_more is True
-    assert page1.next_cursor == str(ev3.seq)
-    assert page1.head_cursor == str(ev4.seq)
+    assert page1.next_sync_token == str(ev3.seq)
 
     page2 = await event_log_service.list_events(
-        user_id=1, cursor=page1.next_cursor, limit=2
+        user_id=1, sync_token=page1.next_sync_token, limit=2
     )
     assert [e.seq for e in page2.events] == [ev4.seq]
     assert page2.has_more is False
-    assert page2.next_cursor == str(ev4.seq)
+    assert page2.next_sync_token == str(ev4.seq)
 
     # Prefix type globbing + exact type matching
     filtered_types = await event_log_service.list_events(
@@ -130,11 +128,10 @@ async def test_list_events_cursors_filters_and_user_isolation(
     )
     assert [e.seq for e in filtered_types.events] == [ev3.seq, ev4.seq]
 
-    # When a filtered query has 0 matches, next_cursor advances to head_cursor
+    # When a filtered query has 0 matches, next_sync_token advances to user's latest seq
     no_match = await event_log_service.list_events(user_id=1, types=["summary.*"])
     assert no_match.events == []
-    assert no_match.next_cursor == str(ev4.seq)
-    assert no_match.head_cursor == str(ev4.seq)
+    assert no_match.next_sync_token == str(ev4.seq)
 
     # file_id and exclude_actor filters
     by_file = await event_log_service.list_events(
@@ -142,20 +139,14 @@ async def test_list_events_cursors_filters_and_user_isolation(
     )
     assert [e.seq for e in by_file.events] == [ev3.seq]
 
-    # cursor="head" fast-forwards to user 1's latest seq
-    head_page = await event_log_service.list_events(user_id=1, cursor="head")
-    assert head_page.events == []
-    assert head_page.next_cursor == str(ev4.seq)
-    assert head_page.head_cursor == str(ev4.seq)
-
 
 async def test_list_events_validation_errors(
     event_log_service: EventLogService,
 ) -> None:
-    """Verify invalid cursors and out-of-range limits raise InvalidInputError."""
-    for bad_cursor in ("0", "-1", "abc", "12.3", "head "):
+    """Verify invalid sync tokens and out-of-range limits raise InvalidInputError."""
+    for bad_token in ("0", "-1", "abc", "12.3", "head"):
         with pytest.raises(InvalidInputError):
-            await event_log_service.list_events(user_id=1, cursor=bad_cursor)
+            await event_log_service.list_events(user_id=1, sync_token=bad_token)
 
     for bad_limit in (0, -5, 1001):
         with pytest.raises(InvalidInputError):
@@ -165,7 +156,7 @@ async def test_list_events_validation_errors(
 async def test_prune_expired_events_and_cursor_expiration(
     event_log_service: EventLogService,
 ) -> None:
-    """Verify pruning deletes expired history and raises 410 only for cursors < pruned_seq."""
+    """Verify pruning deletes expired history and raises 410 only for sync_token < pruned_seq."""
     now_ms = int(time.time() * 1000)
     old1 = await event_log_service.append(
         user_id=1,
@@ -192,19 +183,21 @@ async def test_prune_expired_events_and_cursor_expiration(
     deleted = await event_log_service.prune_expired_events(max_age_ms=5_000)
     assert deleted == 2
 
-    # cursor < old2.seq is expired (410 Gone)
+    # sync_token < old2.seq is expired (410 Gone)
     with pytest.raises(CursorExpiredError) as exc_info:
-        await event_log_service.list_events(user_id=1, cursor=str(old1.seq))
+        await event_log_service.list_events(user_id=1, sync_token=str(old1.seq))
     assert exc_info.value.status_code == 410
 
-    # cursor == old2.seq is still valid because client already consumed up through old2.seq
-    from_boundary = await event_log_service.list_events(user_id=1, cursor=str(old2.seq))
+    # sync_token == old2.seq is still valid because client already consumed up through old2.seq
+    from_boundary = await event_log_service.list_events(
+        user_id=1, sync_token=str(old2.seq)
+    )
     assert [e.seq for e in from_boundary.events] == [recent.seq]
 
-    # cursor == None or "" always returns retained history without raising 410
+    # sync_token == None or "" always returns retained history without raising 410
     from_start = await event_log_service.list_events(user_id=1)
     assert [e.seq for e in from_start.events] == [recent.seq]
-    from_empty = await event_log_service.list_events(user_id=1, cursor="")
+    from_empty = await event_log_service.list_events(user_id=1, sync_token="")
     assert [e.seq for e in from_empty.events] == [recent.seq]
 
     # Pruning again with no expired rows or disabled retention is a safe no-op

@@ -303,11 +303,8 @@ class EventFeedListVO(BaseResponse):
     """
 
     events: list[DomainEventVO] = field(default_factory=list)
-    next_cursor: str | None = field(
-        metadata=field_options(alias="nextCursor"), default=None
-    )
-    head_cursor: str | None = field(
-        metadata=field_options(alias="headCursor"), default=None
+    next_sync_token: str | None = field(
+        metadata=field_options(alias="nextSyncToken"), default=None
     )
     has_more: bool = field(metadata=field_options(alias="hasMore"), default=False)
 

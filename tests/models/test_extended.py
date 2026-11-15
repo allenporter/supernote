@@ -248,8 +248,7 @@ def test_domain_event_feed_models() -> None:
     )
     feed = EventFeedListVO(
         events=[ev],
-        next_cursor="772252421643567001",
-        head_cursor="772252421643567005",
+        next_sync_token="772252421643567001",
         has_more=True,
     )
     data = feed.to_dict()
@@ -269,8 +268,7 @@ def test_domain_event_feed_models() -> None:
                 "payload": {"page_index": 0, "current_text": "hello"},
             }
         ],
-        "nextCursor": "772252421643567001",
-        "headCursor": "772252421643567005",
+        "nextSyncToken": "772252421643567001",
         "hasMore": True,
     }
     assert EventFeedListVO.from_dict(data) == feed

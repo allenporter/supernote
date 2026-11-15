@@ -785,8 +785,7 @@ async def test_extended_events_route_and_client(
     feed = await extended_client.list_events()
     assert [e.seq for e in feed.events] == [str(ev1.seq), str(ev2.seq)]
     assert feed.events[0].related_file_id == 772252421643567298
-    assert feed.next_cursor == str(ev2.seq)
-    assert feed.head_cursor == str(ev2.seq)
+    assert feed.next_sync_token == str(ev2.seq)
     assert feed.has_more is False
 
     # Filter by types, file_id, and exclude_actor
@@ -797,8 +796,8 @@ async def test_extended_events_route_and_client(
     )
     assert [e.seq for e in filtered.events] == [str(ev2.seq)]
 
-    # Invalid fileId, limit, or cursor returns 400
-    for bad_query in ("fileId=abc", "limit=abc", "limit=0", "cursor=bad"):
+    # Invalid fileId, limit, or syncToken returns 400
+    for bad_query in ("fileId=abc", "limit=abc", "limit=0", "syncToken=bad"):
         resp = await client.get(
             f"/api/extended/events?{bad_query}", headers=auth_headers
         )

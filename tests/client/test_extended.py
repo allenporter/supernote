@@ -125,8 +125,7 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
                         "payload": {"path": "/NOTE/a.note"},
                     }
                 ],
-                "nextCursor": "105",
-                "headCursor": "105",
+                "nextSyncToken": "105",
                 "hasMore": False,
             }
         )
@@ -184,7 +183,7 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
     assert cover_vo.url == "http://127.0.0.1/api/oss/png/10/0?sig=abc"
 
     events_vo = await ext.list_events(
-        cursor="100",
+        sync_token="100",
         types=["vfs.*", "note.*"],
         file_id=10,
         exclude_actor="device:SN1",
@@ -193,7 +192,7 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
     assert len(events_vo.events) == 1
     assert events_vo.events[0].seq == "105"
     assert events_vo.events[0].related_file_id == 10
-    assert events_vo.next_cursor == "105"
+    assert events_vo.next_sync_token == "105"
 
     assert recorded == [
         ("POST", "/api/extended/file/summary/list", {"fileId": "10"}),
@@ -221,7 +220,7 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
             "GET",
             "/api/extended/events",
             {
-                "cursor": "100",
+                "syncToken": "100",
                 "limit": "50",
                 "types": "vfs.*,note.*",
                 "fileId": "10",

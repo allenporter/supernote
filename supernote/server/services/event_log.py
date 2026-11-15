@@ -25,11 +25,10 @@ _PRUNED_SEQ_TTL = 100 * 365 * 86400
 
 @dataclass(slots=True)
 class EventFeedPage:
-    """Paginated cursor response for per-user domain event queries."""
+    """Paginated response for per-user domain event queries."""
 
     events: list[DomainEventRecorded]
-    next_cursor: str | None
-    head_cursor: str | None
+    next_sync_token: str | None
     has_more: bool
 
 
@@ -98,47 +97,33 @@ class EventLogService:
         self,
         user_id: int,
         *,
-        cursor: str | None = None,
+        sync_token: str | None = None,
         types: list[str] | None = None,
         file_id: int | None = None,
         exclude_actor: str | None = None,
         limit: int = DEFAULT_FEED_LIMIT,
     ) -> EventFeedPage:
-        """Query a user's domain event feed after `cursor`."""
+        """Query a user's domain event feed after `sync_token`."""
         if limit < 1 or limit > MAX_FEED_LIMIT:
             raise InvalidInputError(f"limit must be between 1 and {MAX_FEED_LIMIT}")
 
-        cursor_seq = 0
-        if cursor and cursor != "head":
-            if not (cursor.isascii() and cursor.isdigit() and int(cursor) > 0):
-                raise InvalidInputError(f"Invalid cursor: {cursor!r}")
-            cursor_seq = int(cursor)
-
-        pruned_seq = await self._get_pruned_seq()
+        after_seq = 0
+        if sync_token:
+            if not (
+                sync_token.isascii() and sync_token.isdigit() and int(sync_token) > 0
+            ):
+                raise InvalidInputError(f"Invalid sync_token: {sync_token!r}")
+            after_seq = int(sync_token)
+            pruned_seq = await self._get_pruned_seq()
+            if after_seq < pruned_seq:
+                raise CursorExpiredError(
+                    f"Sync token {after_seq} has expired (oldest retained seq is {pruned_seq})"
+                )
 
         async with self._session_manager.session() as session:
-            max_user_seq = await session.scalar(
-                select(func.max(UserEventDO.seq)).where(UserEventDO.user_id == user_id)
-            )
-            head_seq = int(max_user_seq or 0)
-            head_cursor = str(head_seq) if head_seq > 0 else None
-
-            if cursor == "head":
-                return EventFeedPage(
-                    events=[],
-                    next_cursor=head_cursor,
-                    head_cursor=head_cursor,
-                    has_more=False,
-                )
-
-            if 0 < cursor_seq < pruned_seq:
-                raise CursorExpiredError(
-                    f"Cursor {cursor_seq} has expired (oldest retained seq is {pruned_seq})"
-                )
-
             stmt = select(UserEventDO).where(
                 UserEventDO.user_id == user_id,
-                UserEventDO.seq > cursor_seq,
+                UserEventDO.seq > after_seq,
             )
             if file_id is not None:
                 stmt = stmt.where(UserEventDO.related_file_id == file_id)
@@ -158,20 +143,22 @@ class EventLogService:
             stmt = stmt.order_by(UserEventDO.seq.asc()).limit(limit + 1)
             rows = list((await session.execute(stmt)).scalars().all())
 
-        has_more = len(rows) > limit
-        page_rows = rows[:limit]
-        if page_rows:
-            last_seq = int(page_rows[-1].seq)
-            head_seq = max(head_seq, last_seq)
-            next_cursor: str | None = str(last_seq)
-        else:
-            effective_seq = max(cursor_seq, head_seq)
-            next_cursor = str(effective_seq) if effective_seq > 0 else None
+            has_more = len(rows) > limit
+            page_rows = rows[:limit]
+            if page_rows:
+                next_sync_token: str | None = str(int(page_rows[-1].seq))
+            else:
+                max_user_seq = await session.scalar(
+                    select(func.max(UserEventDO.seq)).where(
+                        UserEventDO.user_id == user_id
+                    )
+                )
+                effective_seq = max(after_seq, int(max_user_seq or 0))
+                next_sync_token = str(effective_seq) if effective_seq > 0 else None
 
         return EventFeedPage(
             events=[_row_to_recorded(row) for row in page_rows],
-            next_cursor=next_cursor,
-            head_cursor=str(head_seq) if head_seq > 0 else None,
+            next_sync_token=next_sync_token,
             has_more=has_more,
         )
 
