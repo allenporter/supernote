@@ -4,6 +4,7 @@ from supernote.models.base import ProcessingStatus
 from supernote.models.extended import (
     DomainEventVO,
     EventFeedListVO,
+    EventFeedRequestDTO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
     PageTranscriptVO,
@@ -236,6 +237,24 @@ def test_web_ai_status_model() -> None:
 
 
 def test_domain_event_feed_models() -> None:
+    req = EventFeedRequestDTO(
+        sync_token="djE6MTAw",
+        types="vfs.*, note.*",
+        file_id=772252421643567298,
+        exclude_actor="user:web",
+        limit=50,
+    )
+    assert req.type_list == ["vfs.*", "note.*"]
+    assert req.to_dict() == {
+        "syncToken": "djE6MTAw",
+        "types": "vfs.*, note.*",
+        "fileId": "772252421643567298",
+        "excludeActor": "user:web",
+        "limit": 50,
+    }
+    assert EventFeedRequestDTO.from_dict(req.to_dict()) == req
+    assert EventFeedRequestDTO().type_list is None
+
     ev = DomainEventVO(
         seq="772252421643567001",
         timestamp=1_700_000_000_000,

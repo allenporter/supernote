@@ -3,6 +3,7 @@
 from supernote.models.extended import (
     DomainEventVO,
     EventFeedListVO,
+    EventFeedRequestDTO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
     SystemTaskListVO,
@@ -19,7 +20,12 @@ from supernote.models.extended import (
 
 from .client import Client
 
-__all__ = ["DomainEventVO", "EventFeedListVO", "ExtendedClient"]
+__all__ = [
+    "DomainEventVO",
+    "EventFeedListVO",
+    "EventFeedRequestDTO",
+    "ExtendedClient",
+]
 
 
 class ExtendedClient:
@@ -125,15 +131,14 @@ class ExtendedClient:
             on the next call), and `has_more` (`True` when another page is
             immediately available).
         """
-        params: dict[str, str] = {"limit": str(limit)}
-        if sync_token:
-            params["syncToken"] = sync_token
-        if types:
-            params["types"] = ",".join(types)
-        if file_id is not None:
-            params["fileId"] = str(file_id)
-        if exclude_actor:
-            params["excludeActor"] = exclude_actor
+        dto = EventFeedRequestDTO(
+            sync_token=sync_token,
+            types=",".join(types) if types else None,
+            file_id=file_id,
+            exclude_actor=exclude_actor,
+            limit=limit,
+        )
+        params = {k: str(v) for k, v in dto.to_dict().items()}
         return await self._client.get_json(
             "/api/extended/events", EventFeedListVO, params=params
         )

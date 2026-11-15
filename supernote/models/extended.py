@@ -274,6 +274,46 @@ class WebAiStatusVO(BaseResponse):
 
 
 @dataclass
+class EventFeedRequestDTO(DataClassJSONMixin):
+    """Query parameters DTO for polling the per-user domain event feed.
+
+    Used by: GET /api/extended/events
+    """
+
+    sync_token: str | None = field(
+        metadata=field_options(alias="syncToken"), default=None
+    )
+    """Opaque checkpoint token returned as `nextSyncToken` by a prior call (`None` to start from the beginning)."""
+
+    types: str | None = None
+    """Optional comma-separated event type filters (e.g. `'vfs.*,note.page_transcribed'`)."""
+
+    file_id: int | None = field(
+        metadata=field_options(alias="fileId", serialize=str), default=None
+    )
+    """Optional VFS file ID filter."""
+
+    exclude_actor: str | None = field(
+        metadata=field_options(alias="excludeActor"), default=None
+    )
+    """Optional actor identifier to exclude from results (e.g. `'user:web'`)."""
+
+    limit: int = 200
+    """Maximum number of events to return (`1..1000`, default `200`)."""
+
+    @property
+    def type_list(self) -> list[str] | None:
+        """Return parsed event type filter strings, or `None` when unset."""
+        if not self.types:
+            return None
+        return [part.strip() for part in self.types.split(",") if part.strip()] or None
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+        omit_none = True
+
+
+@dataclass
 class DomainEventVO(DataClassJSONMixin):
     """VO for a single domain event in the per-user event feed.
 
