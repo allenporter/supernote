@@ -6,7 +6,7 @@ from aiohttp.test_utils import TestClient
 
 from supernote.client.exceptions import UnauthorizedException
 from supernote.client.login_client import LoginClient
-from tests.server.conftest import TEST_PASSWORD, TEST_USERNAME
+from tests.fixtures.server import TEST_PASSWORD, TEST_USERNAME
 
 
 @pytest.fixture

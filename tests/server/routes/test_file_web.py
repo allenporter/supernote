@@ -11,7 +11,7 @@ from supernote.models.summary import AddSummaryVO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
-from tests.server.conftest import TEST_USERNAME
+from tests.fixtures.server import TEST_USERNAME
 
 
 @pytest.fixture

@@ -1,6 +1,4 @@
-"""Shared fixtures for CLI tests backed by the shared in-process server harness."""
-# ruff: noqa: F401, F811 — pytest discovers fixtures imported into this conftest
-# module namespace, which also share names with fixture parameters below.
+"""CLI-specific fixtures layered onto the root in-process server harness."""
 
 import hashlib
 import os
@@ -15,24 +13,7 @@ from supernote.models.user import UserRegisterDTO
 from supernote.server.config import AiConfig, AuthConfig, ModelConfig, ServerConfig
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.user import UserService
-from tests.server.conftest import (
-    TEST_PASSWORD,
-    TEST_USERNAME,
-    _session_manager_shared,
-    additional_users,
-    auth_headers_fixture,
-    client_fixture,
-    coordination_service,
-    ignore_aiossqllite_debug,
-    mcp_enabled,
-    mcp_port,
-    patch_run_migrations,
-    server_port,
-    session_manager_fixture,
-    storage_root,
-    test_users,
-    user_service,
-)
+from tests.fixtures.server import TEST_PASSWORD, TEST_USERNAME
 
 ADMIN_EMAIL = TEST_USERNAME
 ADMIN_PASSWORD = TEST_PASSWORD

@@ -36,7 +36,7 @@ from supernote.server.services.webhook import (
     sign_payload,
     verify_signature,
 )
-from tests.server.conftest import TEST_USERNAME
+from tests.fixtures.server import TEST_USERNAME
 
 
 class _StallResponse:
