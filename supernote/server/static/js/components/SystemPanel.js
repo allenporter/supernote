@@ -1,3 +1,4 @@
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { fetchSystemTasks, fetchCapacity, fetchAiStatus } from '../api/client.js';
 import { formatSize, formatSystemTimestamp } from '../utils/format.js';
 
@@ -184,43 +185,21 @@ export default {
             </div>
         </div>
     `,
-    data() {
-        return {
-            loading: true,
-            error: null,
-            tasks: [],
-            capacity: null,
-            aiStatus: null
-        };
-    },
-    computed: {
-        usagePercent() {
-            if (!this.capacity || this.capacity.totalCapacity === 0) return 0;
-            return Math.min(100, (this.capacity.usedCapacity / this.capacity.totalCapacity) * 100);
-        }
-    },
-    async mounted() {
-        this._handleKeydown = (e) => {
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                e.stopPropagation();
-                this.$emit('close');
-            }
-        };
-        window.addEventListener('keydown', this._handleKeydown);
-        await this.loadData();
-    },
-    unmounted() {
-        if (this._handleKeydown) {
-            window.removeEventListener('keydown', this._handleKeydown);
-        }
-    },
-    methods: {
-        formatSize,
-        formatSystemTimestamp,
-        async loadData() {
-            this.loading = true;
-            this.error = null;
+    setup(props, { emit }) {
+        const loading = ref(true);
+        const error = ref(null);
+        const tasks = ref([]);
+        const capacity = ref(null);
+        const aiStatus = ref(null);
+
+        const usagePercent = computed(() => {
+            if (!capacity.value || capacity.value.totalCapacity === 0) return 0;
+            return Math.min(100, (capacity.value.usedCapacity / capacity.value.totalCapacity) * 100);
+        });
+
+        const loadData = async () => {
+            loading.value = true;
+            error.value = null;
             try {
                 const [tasksResult, capacityResult, aiStatusResult] = await Promise.all([
                     fetchSystemTasks(),
@@ -229,24 +208,26 @@ export default {
                 ]);
 
                 if (tasksResult.success) {
-                    this.tasks = tasksResult.tasks;
+                    tasks.value = tasksResult.tasks;
                 } else {
-                    this.error = "Failed to load tasks";
+                    error.value = "Failed to load tasks";
                 }
 
-                this.capacity = capacityResult;
-                this.aiStatus = aiStatusResult;
+                capacity.value = capacityResult;
+                aiStatus.value = aiStatusResult;
             } catch (e) {
-                this.error = e.message;
+                error.value = e.message;
             } finally {
-                this.loading = false;
+                loading.value = false;
             }
-        },
-        formatTaskType(rawType) {
+        };
+
+        const formatTaskType = (rawType) => {
             if (!rawType) return 'Task';
             return TASK_TYPE_LABELS[rawType] || rawType;
-        },
-        formatTaskKey(rawKey) {
+        };
+
+        const formatTaskKey = (rawKey) => {
             if (!rawKey) return '—';
             const str = String(rawKey);
             if (str.startsWith('page_') && str.length > 18) {
@@ -256,16 +237,18 @@ export default {
                 return `${str.slice(0, 10)}…${str.slice(-6)}`;
             }
             return str;
-        },
-        formatShortId(fileId) {
+        };
+
+        const formatShortId = (fileId) => {
             if (!fileId) return '—';
             const str = String(fileId);
             if (str.length > 10) {
                 return `#…${str.slice(-6)}`;
             }
             return `#${str}`;
-        },
-        statusClass(status) {
+        };
+
+        const statusClass = (status) => {
             const classes = {
                 'PENDING': 'bg-amber-50 text-amber-700 border-amber-200',
                 'PROCESSING': 'bg-sky-50 text-sky-700 border-sky-200',
@@ -273,6 +256,39 @@ export default {
                 'FAILED': 'bg-rose-50 text-rose-700 border-rose-200'
             };
             return classes[status] || 'bg-stone-100 text-stone-600 border-stone-200';
-        }
+        };
+
+        const handleKeydown = (e) => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                emit('close');
+            }
+        };
+
+        onMounted(() => {
+            window.addEventListener('keydown', handleKeydown);
+            loadData();
+        });
+
+        onUnmounted(() => {
+            window.removeEventListener('keydown', handleKeydown);
+        });
+
+        return {
+            loading,
+            error,
+            tasks,
+            capacity,
+            aiStatus,
+            usagePercent,
+            formatSize,
+            formatSystemTimestamp,
+            loadData,
+            formatTaskType,
+            formatTaskKey,
+            formatShortId,
+            statusClass
+        };
     }
 };

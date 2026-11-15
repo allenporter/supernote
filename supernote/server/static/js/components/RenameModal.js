@@ -1,3 +1,5 @@
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
+
 export default {
     name: 'RenameModal',
     props: ['item'],
@@ -21,40 +23,45 @@ export default {
             </div>
         </div>
     `,
-    data() {
-        return {
-            newName: this.item.name
-        };
-    },
-    computed: {
-        trimmedName() {
-            return (this.newName || '').trim();
-        }
-    },
-    mounted() {
-        this._handleKeydown = (e) => {
+    setup(props, { emit }) {
+        const newName = ref(props.item ? props.item.name : '');
+        const nameInput = ref(null);
+
+        const trimmedName = computed(() => (newName.value || '').trim());
+
+        const handleKeydown = (e) => {
             if (e.key === 'Escape') {
                 e.preventDefault();
                 e.stopPropagation();
-                this.$emit('close');
+                emit('close');
             }
         };
-        window.addEventListener('keydown', this._handleKeydown);
-        this.$nextTick(() => {
-            this.$refs.nameInput.focus();
-            this.$refs.nameInput.select();
-        });
-    },
-    unmounted() {
-        if (this._handleKeydown) {
-            window.removeEventListener('keydown', this._handleKeydown);
-        }
-    },
-    methods: {
-        handleRename() {
-            if (this.trimmedName && this.trimmedName !== this.item.name) {
-                this.$emit('confirm', this.trimmedName);
+
+        const handleRename = () => {
+            if (trimmedName.value && trimmedName.value !== props.item.name) {
+                emit('confirm', trimmedName.value);
             }
-        }
+        };
+
+        onMounted(() => {
+            window.addEventListener('keydown', handleKeydown);
+            nextTick(() => {
+                if (nameInput.value) {
+                    nameInput.value.focus();
+                    nameInput.value.select();
+                }
+            });
+        });
+
+        onUnmounted(() => {
+            window.removeEventListener('keydown', handleKeydown);
+        });
+
+        return {
+            newName,
+            nameInput,
+            trimmedName,
+            handleRename
+        };
     }
 };
