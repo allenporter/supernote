@@ -949,7 +949,11 @@ async def test_extended_note_metadata_returns_notebook_and_pages(
     assert meta_vo.width == 1404
     assert meta_vo.height == 1872
     assert meta_vo.total_pages == 2
-    assert len(meta_vo.keywords) == 6
+    assert meta_vo.keywords == {
+        "ks-tilt": [0, 1],
+        "ks-trapezoid": [0, 1],
+        "ks-shapes": [0, 1],
+    }
     assert len(meta_vo.pages) == 2
     assert meta_vo.pages[0].page_index == 0
     assert meta_vo.pages[0].has_ink is True

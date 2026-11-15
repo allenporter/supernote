@@ -118,7 +118,7 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
                 "width": 1920,
                 "height": 2560,
                 "totalPages": 1,
-                "keywords": [],
+                "keywords": {},
                 "titles": [],
                 "links": [],
                 "pages": [

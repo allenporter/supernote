@@ -8,7 +8,6 @@ from supernote.models.extended import (
     CreateApiKeyResponseVO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
-    NoteKeywordVO,
     NoteLinkVO,
     NotePageMetadataVO,
     NoteTitleVO,
@@ -311,11 +310,11 @@ def test_web_note_metadata_models() -> None:
         width=1920,
         height=2560,
         total_pages=2,
-        keywords=[NoteKeywordVO(page_number=0, text="Sprint")],
-        titles=[NoteTitleVO(page_number=0, level=1, style="1000254")],
+        keywords={"Sprint": [0, 1]},
+        titles=[NoteTitleVO(page_index=0, level=1, style="1000254")],
         links=[
             NoteLinkVO(
-                page_number=1,
+                page_index=1,
                 link_type=0,
                 direction=0,
                 target="/Note/Target.note",
@@ -346,11 +345,11 @@ def test_web_note_metadata_models() -> None:
         "width": 1920,
         "height": 2560,
         "totalPages": 2,
-        "keywords": [{"pageNumber": 0, "text": "Sprint"}],
-        "titles": [{"pageNumber": 0, "level": 1, "style": "1000254"}],
+        "keywords": {"Sprint": [0, 1]},
+        "titles": [{"pageIndex": 0, "level": 1, "style": "1000254"}],
         "links": [
             {
-                "pageNumber": 1,
+                "pageIndex": 1,
                 "linkType": 0,
                 "direction": 0,
                 "target": "/Note/Target.note",

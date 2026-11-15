@@ -354,21 +354,10 @@ class WebNoteMetadataRequestDTO(DataClassJSONMixin):
 
 
 @dataclass
-class NoteKeywordVO(DataClassJSONMixin):
-    """Keyword entry anchored to a notebook page."""
-
-    page_number: int = field(metadata=field_options(alias="pageNumber"))
-    text: str
-
-    class Config(BaseConfig):
-        serialize_by_alias = True
-
-
-@dataclass
 class NoteTitleVO(DataClassJSONMixin):
     """Heading/outline entry anchored to a notebook page."""
 
-    page_number: int = field(metadata=field_options(alias="pageNumber"))
+    page_index: int = field(metadata=field_options(alias="pageIndex"))
     level: int | None = None
     style: str | None = None
 
@@ -380,7 +369,7 @@ class NoteTitleVO(DataClassJSONMixin):
 class NoteLinkVO(DataClassJSONMixin):
     """Hyperlink entry anchored to a notebook page."""
 
-    page_number: int = field(metadata=field_options(alias="pageNumber"))
+    page_index: int = field(metadata=field_options(alias="pageIndex"))
     link_type: int = field(metadata=field_options(alias="linkType"))
     direction: int
     target: str | None = None
@@ -430,7 +419,7 @@ class WebNoteMetadataVO(BaseResponse):
     width: int | None = None
     height: int | None = None
     total_pages: int = field(metadata=field_options(alias="totalPages"), default=0)
-    keywords: list[NoteKeywordVO] = field(default_factory=list)
+    keywords: dict[str, list[int]] = field(default_factory=dict)
     titles: list[NoteTitleVO] = field(default_factory=list)
     links: list[NoteLinkVO] = field(default_factory=list)
     pages: list[NotePageMetadataVO] = field(default_factory=list)

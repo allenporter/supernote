@@ -10,7 +10,6 @@ from sqlalchemy import delete, or_, select
 
 from supernote.models.base import ProcessingStatus, TaskType
 from supernote.models.extended import (
-    NoteKeywordVO,
     NoteLinkVO,
     NotePageMetadataVO,
     NoteTitleVO,
@@ -775,6 +774,14 @@ class ProcessorService:
                 )
             )
 
+        keywords_by_text: dict[str, list[int]] = {}
+        for kw in notebook.keywords:
+            if kw.keyword and kw.keyword.strip():
+                text = kw.keyword.strip()
+                indices = keywords_by_text.setdefault(text, [])
+                if kw.page_number not in indices:
+                    indices.append(kw.page_number)
+
         equipment = (
             str(notebook.metadata.header.apply_equipment)
             if notebook.metadata.header.apply_equipment
@@ -786,14 +793,10 @@ class ProcessorService:
             width=notebook.width,
             height=notebook.height,
             total_pages=meta_do.total_pages,
-            keywords=[
-                NoteKeywordVO(page_number=kw.page_number, text=kw.keyword or "")
-                for kw in notebook.keywords
-                if kw.keyword
-            ],
+            keywords=keywords_by_text,
             titles=[
                 NoteTitleVO(
-                    page_number=t.page_number,
+                    page_index=t.page_number,
                     level=t.level,
                     style=t.style,
                 )
@@ -801,7 +804,7 @@ class ProcessorService:
             ],
             links=[
                 NoteLinkVO(
-                    page_number=lk.page_number,
+                    page_index=lk.page_number,
                     link_type=int(lk.link_type),
                     direction=int(lk.direction),
                     target=lk.target,
