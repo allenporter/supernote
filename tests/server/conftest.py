@@ -209,9 +209,10 @@ async def auth_headers_fixture(
     token = await user_service.create_session(TEST_USERNAME)
 
     # 2. Store as MCP token (for MCP resource server verification)
+    user_id = await user_service.get_user_id(TEST_USERNAME)
     token_data = {
         "token": token,
-        "user_id": TEST_USERNAME,
+        "user_id": user_id,
         "client_id": "test_client",
         "scopes": ["supernote:all"],
     }

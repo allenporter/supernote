@@ -89,7 +89,7 @@ def mcp_env() -> Generator[MCPToolTestEnv]:
 
     access_token = SupernoteAccessToken(
         token="test-mcp-token",
-        user_id="test@example.com",
+        user_id=42,
         client_id="https://client.example.com",
         scopes=["supernote:all"],
     )
@@ -428,13 +428,13 @@ async def test_token_verifier_static_key_session_and_oauth(
     assert await verifier.verify_token("") is None
     assert await verifier.verify_token("x" * 5000) is None
 
-    # Valid static Bearer API key (bypasses coordination_service lookup and binds numeric user_id)
+    # Valid static Bearer API key
     raw_token, key_vo = await user_service.create_api_key(
         user.id, "Test Verifier", expires_at=2_000_000_000
     )
     result = await verifier.verify_token(raw_token)
     assert result is not None
-    assert result.user_id == str(user.id)
+    assert result.user_id == user.id
     assert result.scopes == ["supernote:all"]
     assert result.client_id == "api_key"
     assert result.expires_at == 2_000_000_000
@@ -447,14 +447,14 @@ async def test_token_verifier_static_key_session_and_oauth(
     session_jwt = await user_service.create_session("mcpuser@example.com")
     session_result = await verifier.verify_token(session_jwt)
     assert session_result is not None
-    assert session_result.user_id == str(user.id)
+    assert session_result.user_id == user.id
     assert session_result.client_id == "session"
     assert session_result.scopes == ["supernote:all"]
 
     # OAuth access token
     oauth_token = "oauth_token_xyz"
     oauth_data = {
-        "user_id": "mcpuser@example.com",
+        "user_id": user.id,
         "client_id": "oauth_client_1",
         "scopes": ["supernote:all"],
     }
@@ -464,22 +464,47 @@ async def test_token_verifier_static_key_session_and_oauth(
 
     oauth_result = await verifier.verify_token(oauth_token)
     assert oauth_result is not None
-    assert oauth_result.user_id == "mcpuser@example.com"
+    assert oauth_result.user_id == user.id
     assert oauth_result.client_id == "oauth_client_1"
     assert oauth_result.scopes == ["supernote:all"]
+
+    # Legacy OAuth access token stored with email user_id migrates to int user_id
+    legacy_token = "oauth_token_legacy_email"
+    await coordination_service.set_value(
+        f"mcp:access_token:{legacy_token}",
+        json.dumps(
+            {
+                "user_id": "mcpuser@example.com",
+                "client_id": "oauth_client_1",
+                "scopes": ["supernote:all"],
+            }
+        ),
+    )
+    legacy_result = await verifier.verify_token(legacy_token)
+    assert legacy_result is not None
+    assert legacy_result.user_id == user.id
+
+    # Legacy OAuth token for deleted/unknown user returns None
+    unknown_legacy_token = "oauth_token_unknown_email"
+    await coordination_service.set_value(
+        f"mcp:access_token:{unknown_legacy_token}",
+        json.dumps(
+            {
+                "user_id": "deleted@example.com",
+                "client_id": "oauth_client_1",
+                "scopes": ["supernote:all"],
+            }
+        ),
+    )
+    assert await verifier.verify_token(unknown_legacy_token) is None
 
     assert await verifier.verify_token("oauth_token_unknown") is None
 
 
 async def test_get_auth_user_id() -> None:
-    """Test _get_auth_user_id resolves numeric IDs, emails, and handles missing users."""
+    """Test _get_auth_user_id returns the integer user_id from the authenticated token."""
     previous_services = dict(mcp_server_module._services)
     mock_user_service = AsyncMock(spec=UserService)
-    mock_user_service.get_user_id.side_effect = lambda acc: (
-        10
-        if acc == "user@example.com"
-        else (_ for _ in ()).throw(ValueError(f"User {acc} not found"))
-    )
     mock_search = AsyncMock(spec=SearchService)
     mock_coord = AsyncMock(spec=CoordinationService)
     set_services(mock_search, mock_user_service, mock_coord)
@@ -488,36 +513,15 @@ async def test_get_auth_user_id() -> None:
 
         assert await _get_auth_user_id(ctx) is None
 
-        token_numeric = SupernoteAccessToken(
-            token="tok1", user_id="42", client_id="c1", scopes=["supernote:all"]
+        token_user = SupernoteAccessToken(
+            token="tok2",
+            user_id=42,
+            client_id="c1",
+            scopes=["supernote:all"],
         )
-        tok = auth_context_var.set(AuthenticatedUser(token_numeric))
+        tok = auth_context_var.set(AuthenticatedUser(token_user))
         try:
             assert await _get_auth_user_id(ctx) == 42
-        finally:
-            auth_context_var.reset(tok)
-
-        token_email = SupernoteAccessToken(
-            token="tok2",
-            user_id="user@example.com",
-            client_id="c1",
-            scopes=["supernote:all"],
-        )
-        tok = auth_context_var.set(AuthenticatedUser(token_email))
-        try:
-            assert await _get_auth_user_id(ctx) == 10
-        finally:
-            auth_context_var.reset(tok)
-
-        token_unknown = SupernoteAccessToken(
-            token="tok3",
-            user_id="unknown@example.com",
-            client_id="c1",
-            scopes=["supernote:all"],
-        )
-        tok = auth_context_var.set(AuthenticatedUser(token_unknown))
-        try:
-            assert await _get_auth_user_id(ctx) is None
         finally:
             auth_context_var.reset(tok)
     finally:
