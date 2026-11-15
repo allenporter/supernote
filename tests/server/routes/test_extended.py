@@ -13,7 +13,7 @@ from supernote.client.extended import ExtendedClient
 from supernote.client.schedule import ScheduleClient
 from supernote.client.summary import SummaryClient
 from supernote.models.base import ProcessingStatus
-from supernote.models.extended import PageTranscriptVO
+from supernote.models.extended import PageTranscriptVO, SearchResultVO
 from supernote.models.summary import AddSummaryDTO
 from supernote.server.ai.models.embedding import EmbeddingTaskType
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
@@ -1206,3 +1206,136 @@ async def test_extended_note_metadata_normalizes_titles_and_resolves_links(
     assert meta_vo.pages[1].style == "daily"
     assert meta_vo.pages[1].is_blank is False
     assert meta_vo.pages[1].has_five_star is False
+
+
+@pytest.mark.parametrize("ai_config", [AiConfig()])
+async def test_extended_search_matches_native_keywords_without_embedding_model(
+    extended_client: ExtendedClient,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    """POST /api/extended/search returns native keyword matches even when AI embeddings are disabled."""
+    file_id = 9401
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=test_user_id,
+                file_name="DiagramOnly.note",
+                directory_id=0,
+                is_active="Y",
+                is_folder="N",
+            )
+        )
+        session.add(
+            NotePageMetadataDO(
+                user_id=test_user_id,
+                file_id=file_id,
+                page_index=1,
+                page_id="P20260405110000abc",
+                keywords_json=json.dumps([{"KEYWORDPAGE": "1", "KEYWORD": "ks-tilt"}]),
+            )
+        )
+        await session.commit()
+
+    resp = await extended_client.search(query="#KS-Tilt", top_n=5)
+    assert resp.success is True
+    assert resp.results == [
+        SearchResultVO(
+            file_id=file_id,
+            file_name="DiagramOnly.note",
+            page_index=1,
+            page_id="P20260405110000abc",
+            score=1.0,
+            text_preview="Keywords: #ks-tilt",
+            date="2026-04-05",
+        )
+    ]
+
+
+async def test_extended_search_hybrid_merges_keyword_and_vector_hits(
+    client: TestClient,
+    extended_client: ExtendedClient,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    """POST /api/extended/search deduplicates hybrid hits and ranks native keyword matches above pure vector hits."""
+    assert client.app is not None
+    embedding_model = client.app[EMBEDDING_MODEL_KEY]
+    assert embedding_model is not None
+    query_vec = await embedding_model.embed(
+        "#optics", EmbeddingTaskType.RETRIEVAL_QUERY
+    )
+
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=9501,
+                    user_id=test_user_id,
+                    file_name="HybridOptics.note",
+                    directory_id=0,
+                    is_active="Y",
+                    is_folder="N",
+                ),
+                UserFileDO(
+                    id=9502,
+                    user_id=test_user_id,
+                    file_name="SemanticOnly.note",
+                    directory_id=0,
+                    is_active="Y",
+                    is_folder="N",
+                ),
+                NotePageMetadataDO(
+                    user_id=test_user_id,
+                    file_id=9501,
+                    page_index=0,
+                    page_id="P20260406090000abc",
+                    keywords_json=json.dumps(
+                        [{"KEYWORDPAGE": "1", "KEYWORD": "optics"}]
+                    ),
+                ),
+                NotePageContentDO(
+                    file_id=9501,
+                    page_index=0,
+                    page_id="P20260406090000abc",
+                    text_content="Collimating parabolic telescope mirror.",
+                    embedding=json.dumps(query_vec),
+                    embedding_model="fake-embedding-v1",
+                ),
+                NotePageContentDO(
+                    file_id=9502,
+                    page_index=0,
+                    page_id="P20260406100000def",
+                    text_content="Lens focal length notes.",
+                    embedding=json.dumps(query_vec),
+                    embedding_model="fake-embedding-v1",
+                ),
+            ]
+        )
+        await session.commit()
+
+    resp = await extended_client.search(query="#optics", top_n=5)
+    assert resp.success is True
+    assert len(resp.results) == 2
+    assert resp.results == [
+        SearchResultVO(
+            file_id=9501,
+            file_name="HybridOptics.note",
+            page_index=0,
+            page_id="P20260406090000abc",
+            score=1.0,
+            text_preview="Collimating parabolic telescope mirror.",
+            date="2026-04-06",
+        ),
+        SearchResultVO(
+            file_id=9502,
+            file_name="SemanticOnly.note",
+            page_index=0,
+            page_id="P20260406100000def",
+            score=resp.results[1].score,
+            text_preview="Lens focal length notes.",
+            date="2026-04-06",
+        ),
+    ]
+    assert resp.results[1].score == pytest.approx(1.0)
