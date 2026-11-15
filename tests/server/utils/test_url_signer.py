@@ -128,6 +128,27 @@ async def test_verify_allows_extra_device_query_params(signer: UrlSigner) -> Non
     assert payload["path"] == "/api/oss/upload/part?path=12"
 
 
+async def test_verify_signed_query_keys_rejects_unsigned_param(
+    signer: UrlSigner,
+) -> None:
+    """Verify signed_query_keys rejects injecting a query key omitted at sign time while allowing other keys."""
+    signed_url = await signer.sign("/api/oss/pdf/42")
+    with pytest.raises(InvalidSignature, match="Signed query parameter mismatch"):
+        await signer.verify(f"{signed_url}&pages=0", signed_query_keys=("pages",))
+
+    payload = await signer.verify(
+        f"{signed_url}&inline=1", signed_query_keys=("pages",)
+    )
+    assert payload["path"] == "/api/oss/pdf/42"
+
+
+async def test_verify_rejects_fragment_in_signed_url(signer: UrlSigner) -> None:
+    """Verify verify() rejects '#' in URLs (e.g. decoded from %23 in request.path_qs) before urlparse truncates."""
+    signed_url = await signer.sign("/api/oss/pdf/42?pages=0")
+    with pytest.raises(InvalidSignature, match="fragments.*not supported"):
+        await signer.verify(f"{signed_url}#extra")
+
+
 async def test_verify_tampered_url_does_not_consume_nonce(
     coordination_service: CoordinationService,
 ) -> None:

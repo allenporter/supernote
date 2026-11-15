@@ -66,6 +66,9 @@ def test_get_conversion_pdf_path() -> None:
     assert selection != get_conversion_pdf_path(1, 2, "md5hash", [2, 0])
     assert selection.startswith(get_conversion_pdf_prefix(1, 2, "md5hash"))
 
+    with pytest.raises(ValueError, match="file_md5"):
+        get_conversion_pdf_prefix(1, 2, "")
+
 
 def test_get_full_conversion_pdf_path() -> None:
     full = get_conversion_pdf_path(1, 2, "md5hash")

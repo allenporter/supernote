@@ -376,8 +376,21 @@ async def test_list_blobs_returns_logical_keys_and_skips_chunks(
     await storage.put("cache", other_pdf_key, b"pdf")
     assert await storage.list_blobs("cache", "conversions/7/42/") == [pdf_key]
     assert await storage.list_blobs("cache", "42/") == [png_key]
-    assert await storage.list_blobs("cache", "c") == sorted([pdf_key, other_pdf_key])
     assert await storage.list_blobs("cache", "conversions/8/") == []
+    assert await storage.list_blobs("nonexistent-bucket", "conversions/8/") == []
+
+
+@pytest.mark.parametrize(
+    "bad_prefix",
+    ["", "c", "co", "./a", "../a", "..foo", "co/../../a", "/conversions", "co\\foo"],
+)
+async def test_list_blobs_rejects_short_or_unsafe_prefixes(
+    tmp_path: Path, bad_prefix: str
+) -> None:
+    """Verify list_blobs enforces minimum prefix length and rejects path traversal prefixes."""
+    storage = LocalBlobStorage(tmp_path)
+    with pytest.raises(ValueError, match="Invalid blob prefix"):
+        await storage.list_blobs("cache", bad_prefix)
 
 
 @pytest.mark.parametrize("bucket", ["nonexistent-bucket", "", ".", "temp"])

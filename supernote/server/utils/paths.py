@@ -69,6 +69,8 @@ def get_transcript_id(file_basis: str) -> str:
 
 def get_conversion_pdf_prefix(user_id: int, file_id: int, file_md5: str) -> str:
     """Return the key prefix shared by every PDF converted from one note version."""
+    if not file_md5:
+        raise ValueError("file_md5 must not be empty")
     return f"conversions/{user_id}/{file_id}/note_{file_md5}"
 
 

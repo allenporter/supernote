@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 TEMP_FILE_TTL_SECONDS = 86400.0  # 24 hours
 CLEANUP_INTERVAL_SECONDS = 3600.0  # Run opportunistic cleanup at most once per hour
 STREAM_CHUNK_SIZE = 1024 * 1024  # 1 MB chunks to minimize aiofiles thread-pool hops
+MIN_BLOB_KEY_LENGTH = 3
 
 
 def _compute_file_md5(path: Path) -> str:
@@ -96,11 +97,12 @@ class BlobStorage(ABC):
         """Get physical path to the blob (optional, useful for serving files)."""
 
     @abstractmethod
-    async def list_blobs(self, bucket: str, prefix: str = "") -> list[str]:
+    async def list_blobs(self, bucket: str, prefix: str | None = None) -> list[str]:
         """Return sorted logical keys of all stored blobs in the given bucket.
 
-        Only keys starting with `prefix` are returned. Excludes temporary staging
-        files and unmerged multipart `.part.N` chunks.
+        When `prefix` is provided (minimum 3 characters), only keys starting
+        with `prefix` are returned. Excludes temporary staging files and
+        unmerged multipart `.part.N` chunks.
         """
 
     @abstractmethod
@@ -141,7 +143,7 @@ class LocalBlobStorage(BlobStorage):
 
     def _get_path(self, bucket: str, key: str) -> Path:
         """Get physical path to the blob."""
-        if len(key) < 3:
+        if len(key) < MIN_BLOB_KEY_LENGTH:
             raise ValueError(f"Invalid blob path: {bucket}/{key}")
         clean_bucket = Path(bucket).name
         prefix_dir = (self.root / clean_bucket / key[:2]).resolve()
@@ -263,11 +265,24 @@ class LocalBlobStorage(BlobStorage):
         """Get physical path to the blob."""
         return self._get_path(bucket, key)
 
-    async def list_blobs(self, bucket: str, prefix: str = "") -> list[str]:
+    @staticmethod
+    def _validate_prefix(bucket: str, prefix: str) -> None:
+        if (
+            len(prefix) < MIN_BLOB_KEY_LENGTH
+            or prefix.startswith("/")
+            or "\\" in prefix
+            or prefix[:2].rstrip("/") in {"", ".", ".."}
+            or any(part in {".", ".."} for part in prefix.split("/"))
+        ):
+            raise ValueError(f"Invalid blob prefix: {bucket}/{prefix}")
+
+    async def list_blobs(self, bucket: str, prefix: str | None = None) -> list[str]:
         """Return sorted logical keys of all stored blobs in the given bucket."""
+        if prefix is not None:
+            self._validate_prefix(bucket, prefix)
         return await asyncio.to_thread(self._list_blobs_sync, bucket, prefix)
 
-    def _list_blobs_sync(self, bucket: str, prefix: str = "") -> list[str]:
+    def _list_blobs_sync(self, bucket: str, prefix: str | None = None) -> list[str]:
         return sorted(key for key, _ in self._iter_bucket_files(bucket, prefix))
 
     async def list_blob_sizes(self, bucket: str) -> list[tuple[str, int]]:
@@ -286,8 +301,11 @@ class LocalBlobStorage(BlobStorage):
         return entries
 
     def _iter_bucket_files(
-        self, bucket: str, prefix: str = ""
+        self, bucket: str, prefix: str | None = None
     ) -> Iterator[tuple[str, Path]]:
+        if prefix is not None:
+            self._validate_prefix(bucket, prefix)
+
         clean_bucket = Path(bucket).name
         if not clean_bucket or clean_bucket in {".", "..", "temp"}:
             return
@@ -299,13 +317,10 @@ class LocalBlobStorage(BlobStorage):
         ):
             return
 
-        # Keys are sharded by their first two characters, so a longer prefix
-        # narrows the walk to one directory inside one shard.
-        if len(prefix) >= 2:
-            shard_dir = (bucket_dir / prefix[:2]).resolve()
-            if shard_dir.parent != bucket_dir:
-                return
-            shard_dirs = [shard_dir]
+        # Keys are sharded by their first two characters, so a validated prefix
+        # (>= 3 chars) narrows the walk to at most one directory in one shard.
+        if prefix is not None:
+            shard_dirs = [(bucket_dir / prefix[:2]).resolve()]
             start_rel = prefix.rpartition("/")[0]
         else:
             shard_dirs = [
@@ -326,7 +341,7 @@ class LocalBlobStorage(BlobStorage):
                         continue
                     file_path = root_path / filename
                     key = file_path.relative_to(shard_dir).as_posix()
-                    if key.startswith(prefix):
+                    if prefix is None or key.startswith(prefix):
                         yield key, file_path
 
     async def cleanup(self) -> CleanupStats:

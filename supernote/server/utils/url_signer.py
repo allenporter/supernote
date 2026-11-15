@@ -41,6 +41,7 @@ import datetime
 import time
 import urllib.parse
 import uuid
+from collections.abc import Collection
 from typing import Any
 
 import jwt
@@ -131,18 +132,27 @@ class UrlSigner:
         separator = "&" if "?" in path else "?"
         return f"{path}{separator}timestamp={now_ms}&nonce={nonce}&signature={token}"
 
-    async def verify(self, signed_url: str, consume: bool = True) -> dict[str, Any]:
+    async def verify(
+        self,
+        signed_url: str,
+        consume: bool = True,
+        signed_query_keys: Collection[str] = (),
+    ) -> dict[str, Any]:
         """Verify the signature embedded in the URL.
 
         Args:
             signed_url: The full path + query string containing the signature.
             consume: Whether to consume the nonce (single-use). Default True.
+            signed_query_keys: Optional query parameter names whose presence or
+                absence must match the signed URL even when omitted at sign time.
 
         Returns:
             The decoded payload if valid.
         """
         if not signed_url.startswith("/"):
             raise ValueError("Path must start with '/'")
+        if "#" in signed_url:
+            raise InvalidSignature("URL fragments (anchors) are not supported")
 
         # Parse URL and extract signature
         parsed = urllib.parse.urlparse(signed_url)
@@ -180,8 +190,8 @@ class UrlSigner:
         expected_query = urllib.parse.parse_qs(
             expected_parsed.query, keep_blank_values=True
         )
-        for key, expected_values in expected_query.items():
-            if query_params.get(key) != expected_values:
+        for key in expected_query.keys() | set(signed_query_keys):
+            if query_params.get(key) != expected_query.get(key):
                 raise InvalidSignature(f"Signed query parameter mismatch for '{key}'")
 
         # Verify timestamp if present in payload
