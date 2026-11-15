@@ -497,22 +497,22 @@ export default {
                     }
                 }
 
-                // Fetch real OCR transcript, summaries & note metadata from extended APIs
-                isLoadingTranscript.value = true;
-                const [rawPages, summariesData, metaData] = await Promise.all([
-                    fetchTranscript(props.file.id).catch(() => []),
-                    fetchSummaries(props.file.id).catch(() => []),
-                    category === 'note' ? fetchNoteMetadata(props.file.id).catch(() => null) : Promise.resolve(null)
-                ]);
-                if (seq !== activeLoadSeq) return;
-
-                transcriptPages.value = normalizeTranscriptPages(rawPages);
-                noteMetadata.value = metaData;
-
-                if (summariesData && Array.isArray(summariesData)) {
-                    realSummaries.value = summariesData.filter(s => (s.dataSource || '').toUpperCase() !== 'OCR');
-                }
                 if (category === 'note') {
+                    // Fetch real OCR transcript, summaries & note metadata from extended APIs
+                    isLoadingTranscript.value = true;
+                    const [rawPages, summariesData, metaData] = await Promise.all([
+                        fetchTranscript(props.file.id).catch(() => []),
+                        fetchSummaries(props.file.id).catch(() => []),
+                        fetchNoteMetadata(props.file.id).catch(() => null)
+                    ]);
+                    if (seq !== activeLoadSeq) return;
+
+                    transcriptPages.value = normalizeTranscriptPages(rawPages);
+                    noteMetadata.value = metaData;
+
+                    if (summariesData && Array.isArray(summariesData)) {
+                        realSummaries.value = summariesData.filter(s => (s.dataSource || '').toUpperCase() !== 'OCR');
+                    }
                     activeRightTab.value = transcriptPages.value.length > 0 ? 'transcription' : 'outline';
                 } else {
                     activeRightTab.value = 'transcription';
@@ -542,14 +542,19 @@ export default {
 
         const refreshInsights = async () => {
             if (!props.file) return;
+            if (fileCategory.value !== 'note') {
+                transcriptPages.value = [];
+                realSummaries.value = [];
+                noteMetadata.value = null;
+                return;
+            }
             const seq = activeLoadSeq;
-            const category = fileCategory.value;
             isLoadingTranscript.value = true;
             try {
                 const [rawPages, summariesData, metaData] = await Promise.all([
                     fetchTranscript(props.file.id).catch(() => []),
                     fetchSummaries(props.file.id).catch(() => []),
-                    category === 'note' ? fetchNoteMetadata(props.file.id).catch(() => null) : Promise.resolve(null)
+                    fetchNoteMetadata(props.file.id).catch(() => null)
                 ]);
                 if (seq !== activeLoadSeq) return;
 
@@ -610,9 +615,17 @@ export default {
             clearPendingTargetPage();
             if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer);
         });
-        watch(() => props.file?.id, (newId) => {
-            if (newId) loadFileContent();
-        });
+        watch(
+            () => [props.file?.id, fileCategory.value],
+            ([newId, newCategory], [oldId, oldCategory]) => {
+                if (newId !== oldId) {
+                    isMobileSidePanelOpen.value = false;
+                }
+                if (newId && (newId !== oldId || newCategory !== oldCategory)) {
+                    loadFileContent();
+                }
+            }
+        );
         watch(
             () => [props.initialPage, props.pageJumpSeq],
             ([newPage]) => {
@@ -954,11 +967,11 @@ export default {
             </div>
 
             <!-- Mobile Overlay Drawer Backdrop -->
-            <div v-if="showSidePanel && isMobileSidePanelOpen" @click="isMobileSidePanelOpen = false" class="fixed inset-0 z-30 bg-black/30 md:hidden"></div>
+            <div v-if="showSidePanel && isMobileSidePanelOpen" @click="isMobileSidePanelOpen = false" class="fixed inset-0 z-[60] bg-black/30 md:hidden"></div>
 
             <!-- Right Pane: Notebook Outline, OCR Transcript & Summaries -->
             <div v-if="showSidePanel" :class="isMobileSidePanelOpen ? 'translate-y-0' : 'translate-y-full md:translate-y-0'"
-                class="fixed md:static inset-x-0 bottom-0 z-40 md:z-10 h-[65vh] md:h-full w-full md:w-80 lg:w-96 border-t md:border-t-0 md:border-l border-stone-200/80 bg-white flex flex-col shadow-2xl md:shadow-none transition-transform duration-200 ease-in-out flex-shrink-0 rounded-t-2xl md:rounded-none">
+                class="fixed md:static inset-x-0 bottom-0 z-[70] md:z-10 h-[65vh] md:h-full w-full max-w-[100vw] md:max-w-none md:w-80 lg:w-96 border-t md:border-t-0 md:border-l border-stone-200/80 bg-white flex flex-col shadow-2xl md:shadow-none transition-transform duration-200 ease-in-out flex-shrink-0 rounded-t-2xl md:rounded-none">
 
                 <!-- Segmented Tab Selector -->
                 <div class="p-2 border-b border-stone-200/80 grid gap-1 bg-stone-100/70"
@@ -997,7 +1010,7 @@ export default {
 
                 <!-- Tab 0: Notebook Outline & Metadata -->
                 <div v-if="activeRightTab === 'outline'" class="p-4 flex-1 overflow-y-auto space-y-5">
-                    <div class="flex items-center justify-between">
+                    <div class="flex items-center justify-between gap-2">
                         <div class="flex items-center gap-2 min-w-0">
                             <span class="text-[11px] font-bold text-stone-500 uppercase tracking-wider shrink-0">Notebook Outline</span>
                             <span v-if="noteMetadata?.equipment"
@@ -1006,7 +1019,7 @@ export default {
                                 {{ noteMetadata.equipment }}
                             </span>
                         </div>
-                        <button @click="isMobileSidePanelOpen = false" type="button" class="md:hidden text-xs text-stone-500 hover:text-slate-700">Done</button>
+                        <button @click="isMobileSidePanelOpen = false" type="button" class="md:hidden shrink-0 text-xs text-stone-500 hover:text-slate-700">Done</button>
                     </div>
 
                     <!-- Keywords Section -->
@@ -1154,7 +1167,7 @@ export default {
 
                 <!-- Tab 1: Real OCR Transcript -->
                 <div v-if="activeRightTab === 'transcription'" ref="transcriptScrollPane" class="p-4 flex-1 overflow-y-auto space-y-3">
-                    <div class="flex items-center justify-between">
+                    <div class="flex items-center justify-between gap-2">
                         <div class="flex items-center gap-2 min-w-0">
                             <span class="text-[11px] font-bold text-stone-500 uppercase tracking-wider shrink-0">OCR Transcript</span>
                             <span v-if="aiStatus?.ocrEnabled && aiStatus?.model"
@@ -1166,7 +1179,7 @@ export default {
                                 {{ transcriptPages.length }} {{ transcriptPages.length === 1 ? 'page' : 'pages' }}
                             </span>
                         </div>
-                        <button @click="isMobileSidePanelOpen = false" type="button" class="md:hidden text-xs text-stone-500 hover:text-slate-700">Done</button>
+                        <button @click="isMobileSidePanelOpen = false" type="button" class="md:hidden shrink-0 text-xs text-stone-500 hover:text-slate-700">Done</button>
                     </div>
 
                     <div v-if="isLoadingTranscript" class="py-12 text-center text-stone-500 text-xs">
@@ -1229,9 +1242,9 @@ export default {
 
                 <!-- Tab 2: Real Summaries -->
                 <div v-if="activeRightTab === 'insights'" class="p-4 flex-1 overflow-y-auto space-y-3">
-                    <div class="flex items-center justify-between">
-                        <h4 class="text-[11px] font-bold text-stone-500 uppercase tracking-wider">Notebook Summaries</h4>
-                        <button @click="isMobileSidePanelOpen = false" type="button" class="md:hidden text-xs text-stone-500 hover:text-slate-700">Done</button>
+                    <div class="flex items-center justify-between gap-2">
+                        <h4 class="text-[11px] font-bold text-stone-500 uppercase tracking-wider truncate">Notebook Summaries</h4>
+                        <button @click="isMobileSidePanelOpen = false" type="button" class="md:hidden shrink-0 text-xs text-stone-500 hover:text-slate-700">Done</button>
                     </div>
 
                     <div v-if="realSummaries.length > 0" class="space-y-3">
