@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 
+pytest_plugins = ["tests.fixtures.server"]
+
 
 @pytest.fixture(scope="session")
 def test_data_dir() -> Path:

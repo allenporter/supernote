@@ -16,8 +16,9 @@ TEST_ROOT = REPO_ROOT / "tests"
 # Required top-level package exports for supernote/__init__.py
 REQUIRED_PACKAGE_EXPORTS = {"notebook", "models"}
 
-# Test file names globally excluded from 1:1 module path matching (package markers and pytest fixtures)
+# Test file names and directories globally excluded from 1:1 module path matching
 IGNORED_TEST_FILENAMES = {"__init__.py", "conftest.py"}
+IGNORED_TEST_DIRNAMES = {"fixtures", "integration"}
 
 # Module and test naming constants for package init files
 INIT_MODULE_NAME = "__init__.py"
@@ -67,7 +68,9 @@ def test_all_test_files_conform_to_1to1_mapping():
         for t in TEST_ROOT.rglob("*.py")
         if not any(part.startswith(".") for part in t.parts)
         and t.name not in IGNORED_TEST_FILENAMES
-        and not any(part == "integration" for part in t.relative_to(TEST_ROOT).parts)
+        and not any(
+            part in IGNORED_TEST_DIRNAMES for part in t.relative_to(TEST_ROOT).parts
+        )
         and t.relative_to(TEST_ROOT) not in expected_1to1
         and str(t.relative_to(TEST_ROOT)) not in ALLOWLIST_NON_CONFORMING_TESTS
     ]

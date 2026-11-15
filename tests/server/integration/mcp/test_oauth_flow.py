@@ -8,7 +8,7 @@ from aiohttp.test_utils import TestClient
 from supernote.client.client import Client
 from supernote.client.login_client import LoginClient
 from supernote.server.keys import COORDINATION_SERVICE_KEY
-from tests.server.conftest import TEST_PASSWORD, TEST_USERNAME
+from tests.fixtures.server import TEST_PASSWORD, TEST_USERNAME
 
 
 @pytest.fixture(name="login_client")

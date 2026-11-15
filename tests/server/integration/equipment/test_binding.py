@@ -4,7 +4,7 @@ from typing import Any
 from aiohttp.test_utils import TestClient
 
 from supernote.server.services.user import UserService
-from tests.server.conftest import TEST_PASSWORD, TEST_USERNAME
+from tests.fixtures.server import TEST_PASSWORD, TEST_USERNAME
 
 
 async def _login(client: TestClient, equipment_no: str) -> Any:

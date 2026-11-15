@@ -1,142 +1,34 @@
-"""Shared pytest fixtures for server tests.
+"""Server-scoped autouse fixtures and shared server service fixtures.
 
-This module is automatically discovered by pytest as a plugin.
+Core non-autouse server and client harness fixtures (`session_manager`, `client`,
+`auth_headers`, `user_service`, `server_config`, etc.) live in
+`tests/fixtures/server.py` (registered via `pytest_plugins` in `tests/conftest.py`).
 """
 
-import hashlib
-import json
 import logging
-import socket
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import Generator
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
-import pytest_asyncio
-from aiohttp.test_utils import TestClient
-from pytest_aiohttp import AiohttpClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
 import supernote.server.db.models  # noqa: F401
-from supernote.client.admin import AdminClient
-from supernote.client.auth import AbstractAuth
-from supernote.client.client import Client
-from supernote.client.device import DeviceClient
-from supernote.client.login_client import LoginClient
-from supernote.client.summary import SummaryClient
-from supernote.client.web import WebClient
-from supernote.models.user import UserRegisterDTO
-from supernote.server.app import create_app
-from supernote.server.config import AuthConfig, ServerConfig
-from supernote.server.db.base import Base
+from supernote.server.ai.models.fake.embedding import FakeEmbeddingModel
+from supernote.server.ai.models.fake.ocr import FakeOcrModel
+from supernote.server.ai.models.fake.summary import FakeSummaryModel
+from supernote.server.config import ServerConfig
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.services.blob import BlobStorage, LocalBlobStorage
-from supernote.server.services.coordination import (
-    CoordinationService,
-    SqliteCoordinationService,
-)
+from supernote.server.events import LocalEventBus
+from supernote.server.services.blob import BlobStorage
+from supernote.server.services.file import FileService
+from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
-
-TEST_USERNAME = "test@example.com"
-TEST_PASSWORD = "testpassword"
-
-
-# Use in-memory SQLite for tests
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
 @pytest.fixture(autouse=True)
 def ignore_aiossqllite_debug() -> None:
     """Always ignore debug logs from aiosqlite since they are too verbose."""
     logging.getLogger("aiosqlite").setLevel(logging.INFO)
-
-
-@pytest.fixture
-def mock_trace_log(tmp_path: Path) -> str | None:
-    """Create a temporary trace log file for testing.
-
-    Defaults to None (disabled) for performance.
-    Can be overridden by individual tests or modules.
-    """
-    return None
-
-
-@pytest.fixture
-def proxy_mode() -> str | None:
-    """Default proxy mode for tests. Can be overridden by individual tests.
-
-    Defaults to None (disabled) to match production default behavior.
-    Tests that need proxy header handling should override this fixture.
-    """
-    return None
-
-
-@pytest.fixture
-def configured_base_url() -> str | None:
-    """Default configured base URL for tests. Can be overridden by individual tests.
-
-    Defaults to None.
-    Tests that need explicit SUPERNOTE_BASE_URL should override this fixture.
-    """
-    return None
-
-
-def pick_port() -> int:
-    """Find a free port on the host."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
-        return int(s.getsockname()[1])
-
-
-@pytest.fixture
-def server_port() -> int:
-    """Find a free port for the main server."""
-    return pick_port()
-
-
-@pytest.fixture
-def mcp_enabled() -> bool:
-    """Default MCP server toggle for tests.
-
-    Disabled by default to avoid booting an embedded Uvicorn ASGI server
-    on every non-MCP HTTP route test. Override to True in MCP test suites.
-    """
-    return False
-
-
-@pytest.fixture
-def mcp_port(mcp_enabled: bool) -> int:
-    """Find a free port for the MCP server when enabled."""
-    return pick_port() if mcp_enabled else 0
-
-
-@pytest.fixture
-def server_config(
-    mock_trace_log: str,
-    storage_root: Path,
-    proxy_mode: str | None,
-    configured_base_url: str | None,
-    server_port: int,
-    mcp_enabled: bool,
-    mcp_port: int,
-) -> ServerConfig:
-    """Create a ServerConfig object for testing."""
-    return ServerConfig(
-        host="127.0.0.1",
-        trace_log_file=mock_trace_log,
-        storage_dir=str(storage_root),
-        port=server_port,
-        mcp_enabled=mcp_enabled,
-        mcp_port=mcp_port,
-        proxy_mode=proxy_mode,
-        _base_url=configured_base_url,
-        _mcp_base_url=f"http://127.0.0.1:{mcp_port}",
-        auth=AuthConfig(
-            enable_registration=True,
-            expiration_hours=1,
-            secret_key="test-secret-key-32-characters-long!!",
-        ),
-    )
 
 
 @pytest.fixture(autouse=True)
@@ -148,7 +40,7 @@ def patch_server_config(server_config: ServerConfig) -> Generator[None]:
 
 @pytest.fixture(autouse=True)
 def patch_run_migrations() -> Generator[None]:
-    """Bypass redundant DB migrations during app startup across tests.
+    """Bypass redundant DB migrations during app startup across server tests.
 
     _session_manager_shared already initializes all database schema tables
     at session start via create_all_tables(). Full Alembic migration execution
@@ -159,238 +51,47 @@ def patch_run_migrations() -> Generator[None]:
 
 
 @pytest.fixture
-def coordination_service(
+def file_service(
+    storage_root: Path,
+    blob_storage: BlobStorage,
+    user_service: UserService,
     session_manager: DatabaseSessionManager,
-) -> Generator[CoordinationService]:
-    """Shared coordination service for tests."""
-    coordination_service = SqliteCoordinationService(session_manager)
-    with patch(
-        "supernote.server.app.create_coordination_service",
-        return_value=coordination_service,
-    ):
-        yield coordination_service
-
-
-@pytest.fixture
-def additional_users() -> list[str]:
-    """Additional test users to create. Can be overridden by test modules."""
-    return []
-
-
-@pytest.fixture
-async def test_users(additional_users: list[str]) -> list[str]:
-    """Fixture with test users to create."""
-    return [TEST_USERNAME, *additional_users]
-
-
-@pytest.fixture
-async def create_test_user(
-    user_service: UserService,
-    test_users: list[str],
-) -> None:
-    """Create the default test user in the database."""
-    for test_user in test_users:
-        result = await user_service.create_user(
-            UserRegisterDTO(
-                email=test_user,
-                password=hashlib.md5(TEST_PASSWORD.encode("utf-8")).hexdigest(),
-                user_name="Test User",
-            )
-        )
-        assert result.id
-        assert result.is_active
-
-
-@pytest.fixture
-async def test_user_id(
-    create_test_user: None,
-    user_service: UserService,
-) -> int:
-    """Return the database ID assigned to the default test user."""
-    return await user_service.get_user_id(TEST_USERNAME)
-
-
-@pytest.fixture(name="auth_headers")
-async def auth_headers_fixture(
-    user_service: UserService,
-    coordination_service: SqliteCoordinationService,
-    create_test_user: None,
-) -> dict[str, str]:
-    """Generate auth headers and persist session in state."""
-    # 1. Create and persist regular session via UserService
-    token = await user_service.create_session(TEST_USERNAME)
-
-    # 2. Store as MCP token (for MCP resource server verification)
-    user_id = await user_service.get_user_id(TEST_USERNAME)
-    token_data = {
-        "token": token,
-        "user_id": user_id,
-        "client_id": "test_client",
-        "scopes": ["supernote:all"],
-    }
-    await coordination_service.set_value(
-        f"mcp:access_token:{token}",
-        json.dumps(token_data),
-        ttl=3600,
+) -> FileService:
+    """Provide a FileService wired to the test storage and session manager."""
+    return FileService(
+        storage_root=storage_root,
+        blob_storage=blob_storage,
+        user_service=user_service,
+        session_manager=session_manager,
+        event_bus=LocalEventBus(),
     )
 
-    return {
-        "x-access-token": token,
-        "Authorization": f"Bearer {token}",
-    }
-
-
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
-async def _session_manager_shared(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> AsyncGenerator[DatabaseSessionManager]:
-    """Create a singleton session manager for the entire test session."""
-    tmp_dir = tmp_path_factory.mktemp("db")
-    db_path = tmp_dir / "test_db.sqlite"
-    db_url = f"sqlite+aiosqlite:///{db_path}"
-    session_manager = DatabaseSessionManager(
-        db_url,
-        engine_kwargs={
-            "connect_args": {"check_same_thread": False},
-        },
-        # Disable fsyncs and keep temp tables in RAM for ephemeral test DBs to
-        # avoid 0.5s+ SQLite WAL flush stalls during per-test table truncation.
-        sqlite_pragmas={
-            "synchronous": "OFF",
-            "temp_store": "MEMORY",
-        },
-    )
-    await session_manager.create_all_tables()
-    # Prevent anyone (like app startup or cleanup) from redundant work/closing
-    session_manager.create_all_tables = AsyncMock()  # type: ignore
-    real_close = session_manager.close
-    session_manager.close = AsyncMock()  # type: ignore
-    yield session_manager
-    # Actually close it at the end of the session
-    await real_close()
-
-
-@pytest.fixture(name="session_manager")
-async def session_manager_fixture(
-    _session_manager_shared: DatabaseSessionManager,
-) -> AsyncGenerator[DatabaseSessionManager]:
-    """Provide a session manager and clean up data after each test."""
-
-    with patch(
-        "supernote.server.app.create_db_session_manager",
-        return_value=_session_manager_shared,
-    ):
-        yield _session_manager_shared
-
-    # Truncate all tables to ensure isolation between tests efficiently
-    async with _session_manager_shared.session() as session:
-        delete_sql = "\n".join(
-            f"DELETE FROM {table.name};"
-            for table in reversed(Base.metadata.sorted_tables)
-        )
-        conn = await session.connection()
-        raw_conn = await conn.get_raw_connection()
-        await raw_conn._connection.executescript(delete_sql)
-        await session.commit()
-
 
 @pytest.fixture
-async def db_session(
-    session_manager: DatabaseSessionManager,
-) -> AsyncGenerator[AsyncSession]:
-    """Get a database session."""
-    async with session_manager.session() as session:
-        yield session
-
-
-@pytest.fixture
-def storage_root(tmp_path: Path) -> Path:
-    """Provides a StorageService instance for testing."""
-    return tmp_path / "storage"
-
-
-@pytest.fixture
-def blob_storage(storage_root: Path) -> BlobStorage:
-    """Provides a BlobStorage instance for testing."""
-    return LocalBlobStorage(storage_root)
-
-
-@pytest.fixture
-def user_service(
-    server_config: ServerConfig,
-    coordination_service: SqliteCoordinationService,
-    session_manager: DatabaseSessionManager,
-) -> Generator[UserService]:
-    """Provides a shared UserService instance for testing."""
-    service = UserService(server_config.auth, coordination_service, session_manager)
-    with patch(
-        "supernote.server.app.create_user_service",
-        return_value=service,
-    ):
-        yield service
-
-
-@pytest.fixture(name="client")
-async def client_fixture(
-    session_manager: DatabaseSessionManager,
-    aiohttp_client: AiohttpClient,
-    server_config: ServerConfig,
-    coordination_service: SqliteCoordinationService,
+def summary_service(
     user_service: UserService,
-) -> AsyncGenerator[TestClient]:
-    """Create a test client for server tests."""
-    app = create_app(server_config)
-    test_client = await aiohttp_client(app)
-    yield test_client
-    await test_client.close()
+    session_manager: DatabaseSessionManager,
+) -> SummaryService:
+    """Provide a SummaryService wired to the test session manager."""
+    return SummaryService(
+        user_service=user_service,
+        session_manager=session_manager,
+    )
 
 
 @pytest.fixture
-async def authenticated_client(
-    client: TestClient,
-    auth_headers: dict[str, str],
-) -> AsyncGenerator[Client]:
-    """Create an authenticated supernote client."""
-
-    token = auth_headers["x-access-token"]
-
-    class TokenAuth(AbstractAuth):
-        async def async_get_access_token(self) -> str:
-            return token
-
-    # client is TestClient, client.session is ClientSession
-    base_url = str(client.make_url(""))
-    supernote_client = Client(client.session, auth=TokenAuth(), host=base_url)
-    yield supernote_client
+def fake_ocr_model() -> FakeOcrModel:
+    """Provide a deterministic fake OCR model."""
+    return FakeOcrModel()
 
 
 @pytest.fixture
-def device_client(authenticated_client: Client) -> Generator[DeviceClient]:
-    """Create a DeviceClient."""
-    yield DeviceClient(authenticated_client)
+def fake_embedding_model() -> FakeEmbeddingModel:
+    """Provide a deterministic fake embedding model."""
+    return FakeEmbeddingModel()
 
 
 @pytest.fixture
-def web_client(authenticated_client: Client) -> Generator[WebClient]:
-    """Create a WebClient."""
-    yield WebClient(authenticated_client)
-
-
-@pytest.fixture
-def admin_client(authenticated_client: Client) -> AdminClient:
-    """Create an AdminClient."""
-    return AdminClient(authenticated_client)
-
-
-@pytest.fixture
-def login_client(client: TestClient) -> LoginClient:
-    """Create a LoginClient."""
-    base_url = str(client.make_url("/"))
-    real_client = Client(client.session, host=base_url)
-    return LoginClient(real_client)
-
-
-@pytest.fixture
-def summary_client(authenticated_client: Client) -> SummaryClient:
-    """Create a SummaryClient."""
-    return SummaryClient(authenticated_client)
+def fake_summary_model() -> FakeSummaryModel:
+    """Provide a deterministic fake summary model."""
+    return FakeSummaryModel()

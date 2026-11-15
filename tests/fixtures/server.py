@@ -1,0 +1,410 @@
+"""Shared pytest plugin for in-process server and client harness fixtures.
+
+`pytest` only permits `pytest_plugins` in the top-level `tests/conftest.py`
+because plugins are always registered globally on the session. As a result,
+this module is imported during collection on *every* `pytest` invocation—even
+targeted non-server runs like `pytest tests/notebook/test_parser.py`.
+
+To keep collection fast and decoupled from optional `[server]`/`[client]`
+extras, `supernote.server.*`, `supernote.client.*`, and `sqlalchemy` are only
+imported at module level under `TYPE_CHECKING` (paired with
+`from __future__ import annotations`, since `pytest` inspects fixture parameter
+names rather than runtime annotations) and imported lazily inside the fixture
+bodies when a test actually requests a server fixture.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import socket
+from collections.abc import AsyncGenerator, Generator
+from pathlib import Path
+from typing import TYPE_CHECKING
+from unittest.mock import AsyncMock, patch
+
+import pytest
+import pytest_asyncio
+
+# Keep server/client/SQLAlchemy imports behind TYPE_CHECKING at module import
+# time so collecting non-server tests does not pay the ~2s server bootstrap
+# import cost; import runtime modules inside the fixtures that construct them.
+if TYPE_CHECKING:
+    from aiohttp.test_utils import TestClient
+    from pytest_aiohttp import AiohttpClient
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from supernote.client.admin import AdminClient
+    from supernote.client.client import Client
+    from supernote.client.device import DeviceClient
+    from supernote.client.login_client import LoginClient
+    from supernote.client.summary import SummaryClient
+    from supernote.client.web import WebClient
+    from supernote.server.config import ServerConfig
+    from supernote.server.db.session import DatabaseSessionManager
+    from supernote.server.services.blob import BlobStorage
+    from supernote.server.services.coordination import (
+        CoordinationService,
+        SqliteCoordinationService,
+    )
+    from supernote.server.services.user import UserService
+
+TEST_USERNAME = "test@example.com"
+TEST_PASSWORD = "testpassword"
+
+
+def pick_port() -> int:
+    """Find a free port on the host."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        return int(s.getsockname()[1])
+
+
+@pytest.fixture
+def mock_trace_log(tmp_path: Path) -> str | None:
+    """Create a temporary trace log file for testing.
+
+    Defaults to None (disabled) for performance.
+    Can be overridden by individual tests or modules.
+    """
+    return None
+
+
+@pytest.fixture
+def proxy_mode() -> str | None:
+    """Default proxy mode for tests. Can be overridden by individual tests.
+
+    Defaults to None (disabled) to match production default behavior.
+    Tests that need proxy header handling should override this fixture.
+    """
+    return None
+
+
+@pytest.fixture
+def configured_base_url() -> str | None:
+    """Default configured base URL for tests. Can be overridden by individual tests.
+
+    Defaults to None.
+    Tests that need explicit SUPERNOTE_BASE_URL should override this fixture.
+    """
+    return None
+
+
+@pytest.fixture
+def server_port() -> int:
+    """Find a free port for the main server."""
+    return pick_port()
+
+
+@pytest.fixture
+def mcp_enabled() -> bool:
+    """Default MCP server toggle for tests.
+
+    Disabled by default to avoid booting an embedded Uvicorn ASGI server
+    on every non-MCP HTTP route test. Override to True in MCP test suites.
+    """
+    return False
+
+
+@pytest.fixture
+def mcp_port(mcp_enabled: bool) -> int:
+    """Find a free port for the MCP server when enabled."""
+    return pick_port() if mcp_enabled else 0
+
+
+@pytest.fixture
+def server_config(
+    mock_trace_log: str | None,
+    storage_root: Path,
+    proxy_mode: str | None,
+    configured_base_url: str | None,
+    server_port: int,
+    mcp_enabled: bool,
+    mcp_port: int,
+) -> ServerConfig:
+    """Create a ServerConfig object for testing."""
+    from supernote.server.config import AuthConfig, ServerConfig  # noqa: PLC0415
+
+    return ServerConfig(
+        host="127.0.0.1",
+        trace_log_file=mock_trace_log,
+        storage_dir=str(storage_root),
+        port=server_port,
+        mcp_enabled=mcp_enabled,
+        mcp_port=mcp_port,
+        proxy_mode=proxy_mode,
+        _base_url=configured_base_url,
+        _mcp_base_url=f"http://127.0.0.1:{mcp_port}",
+        auth=AuthConfig(
+            enable_registration=True,
+            expiration_hours=1,
+            secret_key="test-secret-key-32-characters-long!!",
+        ),
+    )
+
+
+@pytest.fixture
+def coordination_service(
+    session_manager: DatabaseSessionManager,
+) -> Generator[CoordinationService]:
+    """Shared coordination service for tests."""
+    from supernote.server.services.coordination import (  # noqa: PLC0415
+        SqliteCoordinationService,
+    )
+
+    coordination_service = SqliteCoordinationService(session_manager)
+    with patch(
+        "supernote.server.app.create_coordination_service",
+        return_value=coordination_service,
+    ):
+        yield coordination_service
+
+
+@pytest.fixture
+def additional_users() -> list[str]:
+    """Additional test users to create. Can be overridden by test modules."""
+    return []
+
+
+@pytest.fixture
+async def test_users(additional_users: list[str]) -> list[str]:
+    """Fixture with test users to create."""
+    return [TEST_USERNAME, *additional_users]
+
+
+@pytest.fixture
+async def create_test_user(
+    user_service: UserService,
+    test_users: list[str],
+) -> None:
+    """Create the default test user in the database."""
+    from supernote.models.user import UserRegisterDTO  # noqa: PLC0415
+
+    for test_user in test_users:
+        result = await user_service.create_user(
+            UserRegisterDTO(
+                email=test_user,
+                password=hashlib.md5(TEST_PASSWORD.encode("utf-8")).hexdigest(),
+                user_name="Test User",
+            )
+        )
+        assert result.id
+        assert result.is_active
+
+
+@pytest.fixture
+async def test_user_id(
+    create_test_user: None,
+    user_service: UserService,
+) -> int:
+    """Return the database ID assigned to the default test user."""
+    return await user_service.get_user_id(TEST_USERNAME)
+
+
+@pytest.fixture(name="auth_headers")
+async def auth_headers_fixture(
+    user_service: UserService,
+    coordination_service: SqliteCoordinationService,
+    create_test_user: None,
+) -> dict[str, str]:
+    """Generate auth headers and persist session in state."""
+    token = await user_service.create_session(TEST_USERNAME)
+
+    user_id = await user_service.get_user_id(TEST_USERNAME)
+    token_data = {
+        "token": token,
+        "user_id": user_id,
+        "client_id": "test_client",
+        "scopes": ["supernote:all"],
+    }
+    await coordination_service.set_value(
+        f"mcp:access_token:{token}",
+        json.dumps(token_data),
+        ttl=3600,
+    )
+
+    return {
+        "x-access-token": token,
+        "Authorization": f"Bearer {token}",
+    }
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def _session_manager_shared(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> AsyncGenerator[DatabaseSessionManager]:
+    """Create a singleton session manager for the entire test session."""
+    import supernote.server.db.models  # noqa: F401, PLC0415
+    from supernote.server.db.session import DatabaseSessionManager  # noqa: PLC0415
+
+    logging.getLogger("aiosqlite").setLevel(logging.INFO)
+    tmp_dir = tmp_path_factory.mktemp("db")
+    db_path = tmp_dir / "test_db.sqlite"
+    db_url = f"sqlite+aiosqlite:///{db_path}"
+    session_manager = DatabaseSessionManager(
+        db_url,
+        engine_kwargs={
+            "connect_args": {"check_same_thread": False},
+        },
+        # Disable fsyncs and keep temp tables in RAM for ephemeral test DBs to
+        # avoid 0.5s+ SQLite WAL flush stalls during per-test table truncation.
+        sqlite_pragmas={
+            "synchronous": "OFF",
+            "temp_store": "MEMORY",
+        },
+    )
+    await session_manager.create_all_tables()
+    # Prevent anyone (like app startup or cleanup) from redundant work/closing
+    session_manager.create_all_tables = AsyncMock()  # type: ignore[method-assign]
+    real_close = session_manager.close
+    session_manager.close = AsyncMock()  # type: ignore[method-assign]
+    yield session_manager
+    await real_close()
+
+
+@pytest.fixture(name="session_manager")
+async def session_manager_fixture(
+    _session_manager_shared: DatabaseSessionManager,
+) -> AsyncGenerator[DatabaseSessionManager]:
+    """Provide a session manager and clean up data after each test."""
+    from supernote.server.db.base import Base  # noqa: PLC0415
+
+    with patch(
+        "supernote.server.app.create_db_session_manager",
+        return_value=_session_manager_shared,
+    ):
+        yield _session_manager_shared
+
+    # Truncate all tables to ensure isolation between tests efficiently
+    async with _session_manager_shared.session() as session:
+        delete_sql = "\n".join(
+            f"DELETE FROM {table.name};"
+            for table in reversed(Base.metadata.sorted_tables)
+        )
+        conn = await session.connection()
+        raw_conn = await conn.get_raw_connection()
+        assert raw_conn._connection is not None
+        await raw_conn._connection.executescript(delete_sql)
+        await session.commit()
+
+
+@pytest.fixture
+async def db_session(
+    session_manager: DatabaseSessionManager,
+) -> AsyncGenerator[AsyncSession]:
+    """Get a database session."""
+    async with session_manager.session() as session:
+        yield session
+
+
+@pytest.fixture
+def storage_root(tmp_path: Path) -> Path:
+    """Provide a temporary storage directory for testing."""
+    return tmp_path / "storage"
+
+
+@pytest.fixture
+def blob_storage(storage_root: Path) -> BlobStorage:
+    """Provide a BlobStorage instance for testing."""
+    from supernote.server.services.blob import LocalBlobStorage  # noqa: PLC0415
+
+    return LocalBlobStorage(storage_root)
+
+
+@pytest.fixture
+def user_service(
+    server_config: ServerConfig,
+    coordination_service: SqliteCoordinationService,
+    session_manager: DatabaseSessionManager,
+) -> Generator[UserService]:
+    """Provide a shared UserService instance for testing."""
+    from supernote.server.services.user import UserService  # noqa: PLC0415
+
+    service = UserService(server_config.auth, coordination_service, session_manager)
+    with patch(
+        "supernote.server.app.create_user_service",
+        return_value=service,
+    ):
+        yield service
+
+
+@pytest.fixture(name="client")
+async def client_fixture(
+    session_manager: DatabaseSessionManager,
+    aiohttp_client: AiohttpClient,
+    server_config: ServerConfig,
+    coordination_service: SqliteCoordinationService,
+    user_service: UserService,
+) -> AsyncGenerator[TestClient]:
+    """Create a test client for server tests."""
+    from supernote.server.app import create_app  # noqa: PLC0415
+
+    with patch("supernote.server.app.run_migrations"):
+        app = create_app(server_config)
+        test_client = await aiohttp_client(app)
+        yield test_client
+        await test_client.close()
+
+
+@pytest.fixture
+async def authenticated_client(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> AsyncGenerator[Client]:
+    """Create an authenticated supernote client."""
+    from supernote.client.auth import AbstractAuth  # noqa: PLC0415
+    from supernote.client.client import Client  # noqa: PLC0415
+
+    token = auth_headers["x-access-token"]
+
+    class TokenAuth(AbstractAuth):
+        async def async_get_access_token(self) -> str:
+            return token
+
+    base_url = str(client.make_url(""))
+    supernote_client = Client(client.session, auth=TokenAuth(), host=base_url)
+    yield supernote_client
+
+
+@pytest.fixture
+def device_client(authenticated_client: Client) -> Generator[DeviceClient]:
+    """Create a DeviceClient."""
+    from supernote.client.device import DeviceClient  # noqa: PLC0415
+
+    yield DeviceClient(authenticated_client)
+
+
+@pytest.fixture
+def web_client(authenticated_client: Client) -> Generator[WebClient]:
+    """Create a WebClient."""
+    from supernote.client.web import WebClient  # noqa: PLC0415
+
+    yield WebClient(authenticated_client)
+
+
+@pytest.fixture
+def admin_client(authenticated_client: Client) -> AdminClient:
+    """Create an AdminClient."""
+    from supernote.client.admin import AdminClient  # noqa: PLC0415
+
+    return AdminClient(authenticated_client)
+
+
+@pytest.fixture
+def login_client(client: TestClient) -> LoginClient:
+    """Create a LoginClient."""
+    from supernote.client.client import Client  # noqa: PLC0415
+    from supernote.client.login_client import LoginClient  # noqa: PLC0415
+
+    base_url = str(client.make_url("/"))
+    real_client = Client(client.session, host=base_url)
+    return LoginClient(real_client)
+
+
+@pytest.fixture
+def summary_client(authenticated_client: Client) -> SummaryClient:
+    """Create a SummaryClient."""
+    from supernote.client.summary import SummaryClient  # noqa: PLC0415
+
+    return SummaryClient(authenticated_client)
