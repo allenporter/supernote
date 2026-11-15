@@ -38,17 +38,21 @@ done
 
 export SUPERNOTE_JWT_SECRET="${SUPERNOTE_JWT_SECRET:-supernote_dev_secret_key}"
 
+if command -v uv >/dev/null 2>&1 && [ ! -d ".venv" ]; then
+  ./script/bootstrap
+fi
+
 if [ "$PERSISTENT" = true ]; then
   echo "==> Starting persistent server (using storage/)..."
   if command -v uv >/dev/null 2>&1; then
-    uv run supernote serve "${PASSTHROUGH_ARGS[@]}"
+    uv run --no-sync supernote serve "${PASSTHROUGH_ARGS[@]}"
   else
     supernote serve "${PASSTHROUGH_ARGS[@]}"
   fi
 else
   echo "==> Starting ephemeral server..."
   if command -v uv >/dev/null 2>&1; then
-    uv run supernote serve --ephemeral "${PASSTHROUGH_ARGS[@]}"
+    uv run --no-sync supernote serve --ephemeral "${PASSTHROUGH_ARGS[@]}"
   else
     supernote serve --ephemeral "${PASSTHROUGH_ARGS[@]}"
   fi

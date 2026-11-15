@@ -13,6 +13,8 @@ paths:
   # Authentication
   /api/official/user/account/login/new:
     $ref: "./paths/auth.yaml#/loginNew"
+  /api/official/user/account/login/mfa/verify:
+    $ref: "./paths/auth.yaml#/mfaLoginVerify"
   /api/official/user/account/login/equipment:
     $ref: "./paths/auth.yaml#/loginEquipment"
   /api/user/sms/login:
@@ -29,6 +31,16 @@ paths:
     $ref: "./paths/auth.yaml#/checkValidCode"
   /api/base/pic/code:
     $ref: "./paths/auth.yaml#/getPicCode"
+  /api/user/mfa/setup:
+    $ref: "./paths/auth.yaml#/mfaSetup"
+  /api/user/mfa/enable:
+    $ref: "./paths/auth.yaml#/mfaEnable"
+  /api/user/mfa/disable:
+    $ref: "./paths/auth.yaml#/mfaDisable"
+  /api/user/mfa/recovery/regenerate:
+    $ref: "./paths/auth.yaml#/mfaRegenerateRecoveryCodes"
+  /api/user/mfa/status:
+    $ref: "./paths/auth.yaml#/mfaStatus"
 
   # User Profile
   /api/user/check/exists:
@@ -53,6 +65,8 @@ paths:
     $ref: "./paths/user.yaml#/queryUserByPathId"
   /api/user/register:
     $ref: "./paths/user.yaml#/userRegister"
+  /api/user/register/restriction:
+    $ref: "./paths/user.yaml#/registerRestriction"
   /api/user/account/clear:
     $ref: "./paths/user.yaml#/accountClear"
   /api/official/user/retrieve/password:
@@ -102,6 +116,8 @@ paths:
     $ref: "./paths/files-web.yaml#/uploadApply"
   /api/file/upload/finish:
     $ref: "./paths/files-web.yaml#/uploadFinish"
+  /api/file/upload/ftp/{innerName}/deleteApi:
+    $ref: "./paths/files-web.yaml#/uploadFtp_deleteApi"
   /api/file/add/folder/file/deleteApi:
     $ref: "./paths/files-web.yaml#/addFolderFile_deleteApi"
   /api/file/2/files/query/deleteApi:
@@ -280,6 +296,10 @@ paths:
     $ref: "./paths/system.yaml#/queryReferenceByParam"
   /api/official/system/base/param:
     $ref: "./paths/system.yaml#/getReference"
+
+  # System (Logging)
+  /api/system/log/level:
+    $ref: "./paths/system.yaml#/systemLogLevel"
 components:
   securitySchemes:
     accessToken:
@@ -291,3 +311,5 @@ components:
       $ref: "./components/schemas/common.yaml#/BaseVO"
     CommonListVO:
       $ref: "./components/schemas/common.yaml#/CommonListVO"
+    CommonVO:
+      $ref: "./components/schemas/common.yaml#/CommonVO"

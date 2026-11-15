@@ -17,6 +17,7 @@ text = await ocr_model.extract_text(png_bytes, prompt)
 
 __all__ = [
     "base",
+    "eval",
     "models",
     "prompts",
 ]

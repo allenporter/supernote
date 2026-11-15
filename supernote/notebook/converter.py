@@ -23,8 +23,6 @@ See `supernote.notebook` and `supernote.guides.notebook_spec`.
 """
 
 import base64
-import binascii
-import json
 import re
 from enum import Enum, auto
 from io import BytesIO
@@ -35,7 +33,7 @@ from PIL import Image
 from reportlab.lib.pagesizes import A4, landscape, portrait
 from reportlab.pdfgen import canvas
 
-from . import color, exceptions, fileformat, utils
+from . import color, exceptions, fileformat, schema, utils
 from . import decoder as Decoder
 from .color import ColorPalette
 from .fileformat import Notebook
@@ -87,7 +85,7 @@ class ImageConverter:
         PIL.Image.Image
             an image object
         """
-        page = self.note.get_page(page_number)
+        page = self.note.page(page_number)
         if page.is_layer_supported():
             highres_grayscale = self.note.supports_highres_grayscale()
             converted_img = self._convert_layered_page(
@@ -107,11 +105,11 @@ class ImageConverter:
     def _convert_nonlayered_page(
         self, page, palette=None, visibility_overlay=None, highres_grayscale=False
     ):
-        binary = page.get_content()
+        binary = page.content
         if binary is None:
             return Image.new(
                 "L",
-                (self.note.get_width(), self.note.get_height()),
+                (self.note.width, self.note.height),
                 color=color.TRANSPARENT,
             )
         decoder = self.find_decoder(page)
@@ -123,22 +121,24 @@ class ImageConverter:
         default_palette = color.DEFAULT_COLORPALETTE
         page = utils.WorkaroundPageWrapper.from_page(page)
         visibility = self._get_layer_visibility(page)
-        layers_by_name = {layer.get_name(): layer for layer in page.get_layers()}
+        layers_by_name = {
+            str(layer.name): layer for layer in page.layers if layer.name is not None
+        }
         horizontal = page.is_horizontal()
-        page_width, page_height = (self.note.get_width(), self.note.get_height())
+        page_width, page_height = (self.note.width, self.note.height)
         if horizontal:
             page_height, page_width = (page_width, page_height)
         flatten_img = Image.new(
             "RGB", (page_width, page_height), color=color.RGB_TRANSPARENT
         )
-        page_style = page.get_style()
-        for layer_name in reversed(page.get_layer_order()):
+        page_style = page.style
+        for layer_name in reversed(page.layer_order):
             if not self._is_layer_visible(layer_name, visibility, visibility_overlay):
                 continue
             layer = layers_by_name.get(layer_name)
             if layer is None:
                 continue
-            binary = layer.get_content()
+            binary = layer.content
             if binary is None:
                 continue
             binary_size = len(binary)
@@ -150,14 +150,11 @@ class ImageConverter:
             )
             if all_blank:
                 continue
-            decoder = self.find_decoder(layer, highres_grayscale)
-            custom_bg = (
-                layer_name == "BGLAYER"
-                and page_style is not None
-                and page_style.startswith("user_")
+            decoder = self.find_decoder(
+                layer,
+                highres_grayscale,
+                default_protocol=schema.LayerProtocol.RATTA_RLE,
             )
-            if custom_bg:
-                decoder = Decoder.PngDecoder()
             plt = default_palette if layer_name == "BGLAYER" else palette
             img_layer = self._create_image_from_decoder(
                 decoder,
@@ -169,8 +166,13 @@ class ImageConverter:
             if layer_name == "BGLAYER":
                 # convert transparent to white for custom template
                 img_layer = self._whiten_transparent(img_layer)
-            mask_src = img_layer if img_layer.mode == "L" else img_layer.convert("L")
-            mask = mask_src.point(_NON_TRANSPARENT_LUT, mode="1")
+            if img_layer.mode == "RGBA":
+                mask = img_layer.getchannel("A")
+            else:
+                mask_src = (
+                    img_layer if img_layer.mode == "L" else img_layer.convert("L")
+                )
+                mask = mask_src.point(_NON_TRANSPARENT_LUT, mode="1")
             flatten_img.paste(img_layer, None, mask)
         return flatten_img
 
@@ -204,8 +206,8 @@ class ImageConverter:
     def _create_image_from_decoder(
         self, decoder, binary, palette=None, blank_hint=False, horizontal=False
     ):
-        page_width = self.note.get_width()
-        page_height = self.note.get_height()
+        page_width = self.note.width
+        page_height = self.note.height
         bitmap, size, bpp = decoder.decode(
             binary,
             page_width,
@@ -228,76 +230,44 @@ class ImageConverter:
             raise exceptions.DecoderException(f"Unsupported bit depth: {bpp}")
         return img
 
-    def _get_layer_visibility(self, page):
-        visibility = {}
-        info = page.get_layer_info()
-        if info is None:
-            # pass to the process of getting visibility for mark file
-            return self._get_mark_layer_visibility(page)
-        try:
-            info_array = json.loads(info)
-        except json.decoder.JSONDecodeError:
-            # Newer Supernote firmwares (Chauvet 3.25.39 and later) encode the layer info JSON
-            # payload in base64. If parsing raw JSON fails, decode the base64 string and retry.
-            # A payload that is neither valid JSON nor valid base64-encoded JSON is a corrupt
-            # layer info blob, so report it as a typed parser error instead of leaking the
-            # raw decode failure (binascii.Error, UnicodeDecodeError, JSONDecodeError).
-            try:
-                info = base64.b64decode(info).decode()
-                info_array = json.loads(info)
-            except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
-                raise exceptions.ParserException(
-                    f"invalid layer info payload: {exc}"
-                ) from exc
-        for layer in info_array:
-            is_bg_layer = layer.get("isBackgroundLayer")
-            layer_id = layer.get("layerId")
-            is_main_layer = (layer_id == 0) and (not is_bg_layer)
-            is_visible = layer.get("isVisible")
-            if is_bg_layer:
-                visibility["BGLAYER"] = is_visible
-            elif is_main_layer:
-                visibility["MAINLAYER"] = is_visible
-            else:
-                visibility["LAYER" + str(layer_id)] = is_visible
-        # some old files don't include MAINLAYER info, so we set MAINLAYER visible
-        if visibility.get("MAINLAYER") is None:
-            visibility["MAINLAYER"] = True
-        return visibility
+    def _get_layer_visibility(self, page: fileformat.Page) -> dict[str, bool]:
+        return page.layer_visibility
 
-    def _get_mark_layer_visibility(self, page):
-        visibility = {}
-        layers = page.get_layers()
-        for layer in layers:
-            name = layer.get_name()
-            visibility[name] = layer.get_type() == "MARK"
-        return visibility
+    @staticmethod
+    def _resolve_protocol(
+        target: fileformat.Page | fileformat.Layer,
+        default_protocol: str | None = None,
+    ) -> str | None:
+        if isinstance(target, fileformat.Layer):
+            if target.protocol is None and (
+                target.content is None
+                or not target.content.startswith(Decoder.PNG_SIGNATURE)
+            ):
+                return default_protocol
+            return target.bitmap_protocol
+        if target.content is not None and target.content.startswith(
+            Decoder.PNG_SIGNATURE
+        ):
+            return schema.LayerProtocol.PNG
+        return target.protocol if target.protocol is not None else default_protocol
 
-    def find_decoder(self, page, highres_grayscale=False):
-        """Returns a proper decoder for the given page.
-
-        Parameters
-        ----------
-        page : Page
-            page object
-
-        Returns
-        -------
-        subclass of BaseDecoder
-            a decoder
-        """
-        protocol = page.get_protocol()
-        if protocol == "SN_ASA_COMPRESS":
+    def find_decoder(
+        self,
+        page,
+        highres_grayscale=False,
+        default_protocol: str | None = None,
+    ):
+        """Return the bitmap decoder for `page` (or `Layer`), falling back to `default_protocol` when `<LAYERPROTOCOL>` is omitted."""
+        protocol = self._resolve_protocol(page, default_protocol)
+        if protocol == schema.LayerProtocol.SN_ASA_COMPRESS:
             return Decoder.FlateDecoder()
-        elif protocol == "RATTA_RLE":
+        if protocol == schema.LayerProtocol.RATTA_RLE:
             if highres_grayscale:
                 return Decoder.RattaRleX2Decoder()
-            else:
-                return Decoder.RattaRleDecoder()
-        else:
-            raise exceptions.UnknownDecodeProtocol(
-                f"unknown decode protocol: {protocol}"
-            )
+            return Decoder.RattaRleDecoder()
+        if protocol == schema.LayerProtocol.PNG:
+            return Decoder.PngDecoder()
+        raise exceptions.UnknownDecodeProtocol(f"unknown decode protocol: {protocol}")
 
 
 class SvgConverter:
@@ -321,9 +291,9 @@ class SvgConverter:
         string
             an SVG string
         """
-        page = self.note.get_page(page_number)
+        page = self.note.page(page_number)
         horizontal = page.is_horizontal()
-        page_width, page_height = (self.note.get_width(), self.note.get_height())
+        page_width, page_height = (self.note.width, self.note.height)
         if horizontal:
             page_height, page_width = (page_width, page_height)
         dwg = svgwrite.Drawing(
@@ -456,11 +426,11 @@ class PdfConverter:
 
     def _create_image_list(
         self, converter: ImageConverter, page_indices: int | list[int]
-    ) -> list[tuple[int, Image]]:
+    ) -> list[tuple[int, Image.Image]]:
         imglist = []
         if isinstance(page_indices, int):
             if page_indices < 0:
-                indices = list(range(self.note.get_total_pages()))
+                indices = list(range(self.note.total_pages))
             else:
                 indices = [page_indices]
         else:
@@ -474,16 +444,15 @@ class PdfConverter:
     def _create_pdf(
         self,
         buf: BytesIO,
-        imglist: list[tuple[int, Image]],
+        imglist: list[tuple[int, Image.Image]],
         renderer_class: type[ImgPageRenderer],
         enable_link: bool,
         enable_keyword: bool,
     ) -> None:
         c = canvas.Canvas(buf, pagesize=self.pagesize)
-        keywords = self.note.get_keywords()
         for page_idx, img in imglist:
-            page = self.note.get_page(page_idx)
-            pageid = page.get_pageid()
+            page = self.note.page(page_idx)
+            pageid = page.page_id
             horizontal = page.is_horizontal()
             pagesize = (
                 landscape(self.pagesize) if horizontal else portrait(self.pagesize)
@@ -492,46 +461,42 @@ class PdfConverter:
             renderer = renderer_class(img, pagesize)
             renderer.draw(c)
             if enable_keyword:
-                found = []
-                for keyword in keywords:
-                    if keyword.get_page_number() == page_idx:
-                        found.append(keyword)
-                for i in found:
+                for keyword in page.keywords:
                     try:
                         c.bookmarkPage(pageid)
                         scaled_rect = self._calc_link_rect(
-                            i.get_rect(), renderer.get_scale()
+                            keyword.rect, renderer.get_scale()
                         )
-                        c.textAnnotation(i.get_keyword(), scaled_rect)
+                        c.textAnnotation(keyword.keyword, scaled_rect)
                     except Exception:
                         continue
             if enable_link:
-                pageid = page.get_pageid()
+                pageid = page.page_id
                 if pageid is not None:
                     c.bookmarkPage(pageid)
-                    self._add_links(c, page_idx, renderer.get_scale())
+                    self._add_links(c, page, renderer.get_scale())
             c.showPage()
         c.save()
 
-    def _add_links(self, cvs, page_number, scale):
-        links = self.note.get_links()
-        for link in links:
-            if link.get_page_number() != page_number:
-                continue
-            if link.get_inout() == fileformat.Link.DIRECTION_IN:
+    def _add_links(
+        self, cvs: canvas.Canvas, page: fileformat.Page, scale: tuple[float, float]
+    ) -> None:
+        for link in page.links:
+            if link.direction == fileformat.Link.DIRECTION_IN:
                 # ignore income link
                 continue
-            link_type = link.get_type()
-            is_internal_link = link.get_fileid() == self.note.get_fileid()
+            link_type = link.link_type
+            is_internal_link = link.file_id == self.note.file_id
             if link_type == fileformat.Link.TYPE_PAGE_LINK and is_internal_link:
-                tag = link.get_pageid()
-                scaled_rect = self._calc_link_rect(link.get_rect(), scale)
-                cvs.linkAbsolute("Link", tag, scaled_rect)
+                tag = link.page_id
+                if tag is not None:
+                    scaled_rect = self._calc_link_rect(link.rect, scale)
+                    cvs.linkAbsolute("Link", tag, scaled_rect)
             elif link_type == fileformat.Link.TYPE_WEB_LINK:
-                encoded_url = link.get_filepath()
-                url = base64.b64decode(encoded_url).decode()
-                scaled_rect = self._calc_link_rect(link.get_rect(), scale)
-                cvs.linkURL(url, scaled_rect)
+                url = link.target
+                if url is not None:
+                    scaled_rect = self._calc_link_rect(link.rect, scale)
+                    cvs.linkURL(url, scaled_rect)
 
     def _calc_link_rect(self, rect, scale):
         (left, top, right, bottom) = rect
@@ -568,10 +533,10 @@ class TextConverter:
         """
         if not self.note.is_realtime_recognition():
             return None
-        page = self.note.get_page(page_number)
-        if page.get_recogn_status() != fileformat.Page.RECOGNSTATUS_DONE:
+        page = self.note.page(page_number)
+        if page.recogn_status != fileformat.Page.RECOGNSTATUS_DONE:
             return None
-        binary = page.get_recogn_text()
+        binary = page.recogn_text
         decoder = Decoder.TextDecoder()
         elements = decoder.decode(binary)
         if elements is None:

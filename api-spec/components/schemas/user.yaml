@@ -261,6 +261,25 @@ UserRegisterDTO:
     - email
     - password
 
+RegistrationRestrictionDTO:
+  type: object
+  properties:
+    enabled:
+      type: boolean
+      description: Whether new user registration restriction is enabled
+  required:
+    - enabled
+
+RegistrationRestrictionVO:
+  type: object
+  allOf:
+    - $ref: "common.yaml#/BaseVO"
+    - type: object
+      properties:
+        enabled:
+          type: boolean
+          description: Whether new user registration restriction is enabled
+
 RetrievePasswordDTO:
   type: object
   properties:

@@ -7,12 +7,18 @@ and `supernote.server.services.search.SearchService`.
 """
 
 import re
+from collections.abc import Sequence
 from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.db.models.note_processing import (
+    NotePageContentDO,
+    NotePageMetadataDO,
+)
+
+_DEVICE_STYLE_SUFFIX_RE = re.compile(r"_(?:a5x2|a5x|a6x2|a6x|n5|n6)$", re.IGNORECASE)
 
 
 async def get_page_content_by_id(
@@ -30,6 +36,55 @@ async def get_page_content_by_id(
         .scalars()
         .first()
     )
+
+
+async def get_page_keywords_map(
+    session: AsyncSession,
+    user_id: int,
+    file_id: int,
+) -> dict[str, list[str]]:
+    """Return a map of `page_id -> keyword_texts` for a file's pages."""
+    rows = (
+        (
+            await session.execute(
+                select(NotePageMetadataDO).where(
+                    NotePageMetadataDO.user_id == user_id,
+                    NotePageMetadataDO.file_id == file_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        pm.page_id: pm.keyword_texts for pm in rows if pm.page_id and pm.keyword_texts
+    }
+
+
+def normalize_page_style_type(page_style: str | None) -> str | None:
+    """Normalize a raw Supernote PAGESTYLE identifier into a canonical prompt slug.
+
+    Examples:
+        'user_Daily' -> 'daily'
+        'style_h_8mm_ruled_line_a5x2' -> '8mm_ruled_line'
+    """
+    if not page_style:
+        return None
+    cleaned = page_style.strip()
+    if not cleaned:
+        return None
+
+    lower = cleaned.lower()
+    if lower.startswith("user_"):
+        cleaned = cleaned[5:]
+    elif lower.startswith("style_h_"):
+        cleaned = cleaned[8:]
+    elif lower.startswith("style_"):
+        cleaned = cleaned[6:]
+
+    cleaned = _DEVICE_STYLE_SUFFIX_RE.sub("", cleaned)
+    slug = re.sub(r"[\s\-]+", "_", cleaned.strip(" _")).lower()
+    return slug or None
 
 
 def infer_page_date(page_id: str) -> datetime | None:
@@ -57,6 +112,7 @@ def format_page_metadata(
     page_id: str,
     file_name: str | None = None,
     notebook_create_time: int | None = None,
+    keywords: Sequence[str] | None = None,
     include_section_divider: bool = False,
 ) -> str:
     """Formats a consistent metadata block for a notebook page.
@@ -76,6 +132,11 @@ def format_page_metadata(
     inferred_date = infer_page_date(page_id)
     if inferred_date:
         lines.append(f"Page Date (Inferred): {inferred_date.strftime('%Y-%m-%d')}")
+
+    if keywords:
+        cleaned_keywords = [kw.strip() for kw in keywords if kw and kw.strip()]
+        if cleaned_keywords:
+            lines.append(f"Page Keywords: {', '.join(cleaned_keywords)}")
 
     if include_section_divider:
         lines.append("---")

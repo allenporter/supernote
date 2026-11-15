@@ -18,6 +18,11 @@ from supernote.models.summary import (
 )
 from supernote.models.user import UserRegisterDTO
 from supernote.server.exceptions import SupernoteError
+from supernote.server.keys import (
+    SUMMARY_SERVICE_KEY,
+    URL_SIGNER_KEY,
+    USER_SERVICE_KEY,
+)
 from supernote.server.services.summary import DEFAULT_SUMMARY_PAGE_SIZE
 
 
@@ -305,7 +310,7 @@ async def test_summary_route_error_handling(
 
         # SupernoteError path -> 400
         with patch.object(
-            client.app["summary_service"],
+            client.app[SUMMARY_SERVICE_KEY],
             method_name,
             side_effect=SupernoteError("Err", status_code=400),
         ):
@@ -316,7 +321,7 @@ async def test_summary_route_error_handling(
 
         # Uncaught Exception path -> 500
         with patch.object(
-            client.app["summary_service"],
+            client.app[SUMMARY_SERVICE_KEY],
             method_name,
             side_effect=Exception("Uncaught"),
         ):
@@ -331,7 +336,7 @@ async def test_upload_apply_summary_error(
 ) -> None:
     with (
         patch.object(
-            client.app["url_signer"],
+            client.app[URL_SIGNER_KEY],
             "sign",
             side_effect=SupernoteError("Sign error", status_code=400),
         ),
@@ -341,7 +346,7 @@ async def test_upload_apply_summary_error(
 
     with (
         patch.object(
-            client.app["url_signer"], "sign", side_effect=Exception("Sign fail")
+            client.app[URL_SIGNER_KEY], "sign", side_effect=Exception("Sign fail")
         ),
         pytest.raises(ApiException),
     ):
@@ -350,8 +355,8 @@ async def test_upload_apply_summary_error(
 
 async def test_summary_uuid_scoped_per_user(client: TestClient) -> None:
     """Verify two users can create summaries and groups with the same unique_identifier without collision."""
-    user_service = client.app["user_service"]
-    summary_service = client.app["summary_service"]
+    user_service = client.app[USER_SERVICE_KEY]
+    summary_service = client.app[SUMMARY_SERVICE_KEY]
 
     user_a = "user_a@example.com"
     user_b = "user_b@example.com"

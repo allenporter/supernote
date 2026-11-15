@@ -8,10 +8,10 @@ Tokens are persisted with TTLs in `supernote.server.services.coordination.Coordi
 and verified by `supernote.server.mcp.server.SupernoteTokenVerifier`. See `supernote.guides.mcp`.
 """
 
-import logging
+import json
 import secrets
 import time
-from typing import override
+from typing import Any, override
 from urllib.parse import quote, urlencode, urlparse
 
 from mcp.server.auth.provider import (
@@ -42,8 +42,6 @@ from .models import (
     SupernoteAuthorizationCode,
     SupernoteRefreshToken,
 )
-
-_LOGGER = logging.getLogger(__name__)
 
 
 class SupernoteOAuthClientInformationFull(OAuthClientInformationFull):
@@ -184,6 +182,18 @@ class SupernoteOAuthProvider(
             scope=" ".join(authorization_code.scopes),
         )
 
+    async def _parse_stored_token_data(self, data: str) -> dict[str, Any] | None:
+        """Parse stored token JSON, migrating legacy email user_id values to integer IDs."""
+        payload: dict[str, Any] = json.loads(data)
+        raw_user_id = payload.get("user_id")
+        # TODO(#442): Remove legacy email user_id migration once 30-day OAuth refresh tokens expire.
+        if isinstance(raw_user_id, str) and not raw_user_id.isdigit():
+            try:
+                payload["user_id"] = await self.user_service.get_user_id(raw_user_id)
+            except ValueError:
+                return None
+        return payload
+
     async def load_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: str
     ) -> SupernoteRefreshToken | None:
@@ -192,7 +202,10 @@ class SupernoteOAuthProvider(
         data = await self._coordination.get_value(key)
         if not data:
             return None
-        return SupernoteRefreshToken.model_validate_json(data)
+        payload = await self._parse_stored_token_data(data)
+        if payload is None:
+            return None
+        return SupernoteRefreshToken.model_validate(payload)
 
     async def exchange_refresh_token(
         self,
@@ -228,7 +241,10 @@ class SupernoteOAuthProvider(
         data = await self._coordination.get_value(key)
         if not data:
             return None
-        return SupernoteAccessToken.model_validate_json(data)
+        payload = await self._parse_stored_token_data(data)
+        if payload is None:
+            return None
+        return SupernoteAccessToken.model_validate(payload)
 
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
         """Revokes an access or refresh token."""
@@ -270,6 +286,14 @@ def create_auth_app(
         # Extract and verify token
         token = get_token_from_request(request)
         session = await user_service.verify_token(token) if token else None
+        if session and session.is_api_key:
+            return JSONResponse(
+                {
+                    "error": "forbidden",
+                    "error_description": "API keys cannot authorize OAuth clients",
+                },
+                status_code=403,
+            )
         if not session:
             # If this was an API background call (POST), return 401 JSON
             if request.method == "POST":
@@ -306,7 +330,7 @@ def create_auth_app(
         code_str = secrets.token_urlsafe(16)
         auth_code = SupernoteAuthorizationCode(
             code=code_str,
-            user_id=session.email,
+            user_id=session.user_id,
             client_id=client_id,
             redirect_uri=AnyHttpUrl(str(validated_redirect_uri)),
             scopes=["supernote:all"],

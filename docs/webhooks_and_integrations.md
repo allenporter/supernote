@@ -1,6 +1,6 @@
 # Webhooks, Calendar (`.ics`) & Home Assistant Integrations
 
-Supernote Knowledge Hub provides two primary integration mechanisms for external automation platforms, task managers, and smart-home systems:
+Open Private Cloud for Supernote provides two primary integration mechanisms for external automation platforms, task managers, and smart-home systems:
 1. **RFC 5545 iCalendar (`.ics`) Task Feeds** (`supernote.server.services.ical_export.ICalExportService`)
 2. **Signed Outbound Webhooks** (`supernote.server.services.webhook.WebhookService`)
 

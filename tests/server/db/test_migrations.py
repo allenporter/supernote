@@ -85,7 +85,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "c3d4e5f6a7b8"
+        assert version == "e8f9a0b1c2d3"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -181,7 +181,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "c3d4e5f6a7b8"
+        assert version == "e8f9a0b1c2d3"
 
         # Verify task columns and types
         tasks = conn.execute(
@@ -761,4 +761,154 @@ def test_seed_sync_initialized_for_existing_users_migration(
         assert rows[0][2] > 0
 
     command.downgrade(alembic_config, "a2b3c4d5e6f7")
+    engine.dispose()
+
+
+def test_reset_legacy_default_user_quota_migration(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify migration d5e6f7a8b9c0 resets untouched 10 GiB placeholders to '0' while preserving custom quotas."""
+    db_path = tmp_path / "reset_legacy_quota.db"
+    shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+    command.upgrade(alembic_config, "c3d4e5f6a7b8")
+
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM users"))
+        conn.execute(
+            text(
+                "INSERT INTO users (id, email, password_md5, is_active, total_capacity, is_admin) "
+                "VALUES "
+                "(101, 'default@example.com', '098f6bcd4621d373cade4e832627b4f6', 1, '10737418240', 1), "
+                "(102, 'custom@example.com', '098f6bcd4621d373cade4e832627b4f6', 1, '53687091200', 0)"
+            )
+        )
+
+    command.upgrade(alembic_config, "d5e6f7a8b9c0")
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT email, total_capacity FROM users ORDER BY id")
+        ).fetchall()
+        assert [tuple(r) for r in rows] == [
+            ("default@example.com", "0"),
+            ("custom@example.com", "53687091200"),
+        ]
+
+    command.downgrade(alembic_config, "c3d4e5f6a7b8")
+    with engine.connect() as conn:
+        rows_down = conn.execute(
+            text("SELECT email, total_capacity FROM users ORDER BY id")
+        ).fetchall()
+        assert [tuple(r) for r in rows_down] == [
+            ("default@example.com", "10737418240"),
+            ("custom@example.com", "53687091200"),
+        ]
+
+    engine.dispose()
+
+
+def test_add_note_and_page_metadata_tables_migration(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify migration e6f7a8b9c0d1 creates and downgrades f_note_metadata and f_note_page_metadata cleanly."""
+    db_path = tmp_path / "note_metadata_tables.db"
+    shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+
+    command.upgrade(alembic_config, "e6f7a8b9c0d1")
+
+    engine = create_engine(url)
+    reflected = MetaData()
+    reflected.reflect(bind=engine)
+    assert "f_note_metadata" in reflected.tables
+    assert "f_note_page_metadata" in reflected.tables
+    assert "content_hash" in reflected.tables["f_note_page_metadata"].columns
+
+    command.downgrade(alembic_config, "d5e6f7a8b9c0")
+    reflected_down = MetaData()
+    reflected_down.reflect(bind=engine)
+    assert "f_note_metadata" not in reflected_down.tables
+    assert "f_note_page_metadata" not in reflected_down.tables
+    engine.dispose()
+
+
+def test_add_user_event_log_table_migration(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify migration f2a3b4c5d6e7 creates f_user_event keyed by (user_id, seq) and downgrades cleanly."""
+    db_path = tmp_path / "user_event_log.db"
+    shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+
+    command.upgrade(alembic_config, "f2a3b4c5d6e7")
+
+    engine = create_engine(url)
+    reflected = MetaData()
+    reflected.reflect(bind=engine)
+    assert "f_user_event" in reflected.tables
+    pk_cols = [col.name for col in reflected.tables["f_user_event"].primary_key.columns]
+    assert pk_cols == ["user_id", "seq"]
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO f_user_event "
+                "(user_id, seq, timestamp_ms, event_type, actor, entity_type, entity_id, payload) "
+                "VALUES (1, 100, 1000, 'vfs.created', 'user:web', 'file', '10', '{}'), "
+                "       (2, 100, 1000, 'vfs.created', 'user:web', 'file', '20', '{}')"
+            )
+        )
+        count = conn.execute(text("SELECT count(*) FROM f_user_event")).scalar_one()
+        assert count == 2
+
+    command.downgrade(alembic_config, "e6f7a8b9c0d1")
+    reflected_down = MetaData()
+    reflected_down.reflect(bind=engine)
+    assert "f_user_event" not in reflected_down.tables
+
+    engine.dispose()
+
+
+def test_api_keys_table_migration(tmp_path: Path, alembic_config: Config) -> None:
+    """Verify migration e8f9a0b1c2d3 creates and drops the api_keys table cleanly."""
+    db_path = tmp_path / "api_keys_migration.db"
+    shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+    command.upgrade(alembic_config, "e8f9a0b1c2d3")
+
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO users (id, email, password_md5, is_active, total_capacity, is_admin) "
+                "VALUES (201, 'keyowner@example.com', '098f6bcd4621d373cade4e832627b4f6', 1, '0', 0)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO api_keys (user_id, id, name, key_prefix, sha256_hash, created_at, last_used_at, expires_at) "
+                "VALUES (201, 'key001', 'CLI', 'sn_00001111...', :digest, 1700000000, NULL, 1702592000)"
+            ),
+            {"digest": "a" * 64},
+        )
+
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                "SELECT user_id, id, name, key_prefix, expires_at FROM api_keys WHERE id = 'key001'"
+            )
+        ).fetchone()
+        assert row is not None
+        assert tuple(row) == (201, "key001", "CLI", "sn_00001111...", 1702592000)
+
+    command.downgrade(alembic_config, "f2a3b4c5d6e7")
+    reflected = MetaData()
+    reflected.reflect(bind=engine)
+    assert "api_keys" not in reflected.tables
     engine.dispose()

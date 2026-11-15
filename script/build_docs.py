@@ -71,6 +71,18 @@ GUIDE_SPECS: list[GuideSpec] = [
         path=ROOT_DIR / "docs" / "mcp.md",
     ),
     GuideSpec(
+        slug="ocr_benchmarks",
+        title="OCR Provider Benchmarks",
+        section="Self-Hosting & Guides",
+        path=ROOT_DIR / "evals" / "ocr" / "RESULTS.md",
+    ),
+    GuideSpec(
+        slug="monitoring",
+        title="Prometheus & Grafana Monitoring",
+        section="Self-Hosting & Guides",
+        path=ROOT_DIR / "docs" / "monitoring.md",
+    ),
+    GuideSpec(
         slug="webhooks_and_integrations",
         title="Webhooks, iCal & Integrations",
         section="Self-Hosting & Guides",
@@ -174,7 +186,9 @@ class MarkdownGuideModule(pdoc.doc.Module):
 
     @cached_property
     def docstring(self) -> str:
-        return self._guide_spec.path.read_text(encoding="utf-8")
+        return self._guide_spec.path.read_text(encoding="utf-8").replace(
+            r"$\rightarrow$", "→"
+        )
 
     @cached_property
     def source_file(self) -> Path | None:
@@ -267,11 +281,12 @@ def _install_markdown_link_rewriter() -> None:
 
             path_part, sep, fragment = href.partition("#")
             clean_path = path_part.strip()
-            if not clean_path.endswith(".md") and ".py" not in clean_path:
+            if not clean_path or clean_path.endswith(".html"):
                 return match.group(0)
 
             # Resolve relative to source_file if possible
             target_mod: str | None = None
+            resolved_rel: str | None = None
             base_dir = ROOT_DIR
             if current_mod.source_file is not None:
                 if current_mod.modulename == "supernote":
@@ -280,9 +295,10 @@ def _install_markdown_link_rewriter() -> None:
                     base_dir = current_mod.source_file.parent
 
             try:
-                resolved = (
-                    (base_dir / clean_path).resolve().relative_to(ROOT_DIR).as_posix()
-                )
+                resolved_path = (base_dir / clean_path).resolve()
+                resolved = resolved_path.relative_to(ROOT_DIR).as_posix()
+                if resolved_path.exists():
+                    resolved_rel = resolved
                 if resolved in md_to_module:
                     target_mod = md_to_module[resolved]
                 elif resolved.startswith("supernote/") and resolved.endswith(".py"):
@@ -293,7 +309,9 @@ def _install_markdown_link_rewriter() -> None:
             except ValueError:
                 pass
 
-            if target_mod is None:
+            if target_mod is None and (
+                clean_path.endswith(".md") or ".py" in clean_path
+            ):
                 normalized = clean_path.lstrip("./")
                 while normalized.startswith("../"):
                     normalized = normalized.removeprefix("../")
@@ -311,7 +329,22 @@ def _install_markdown_link_rewriter() -> None:
                     return f"[{label}]({rel_url}#{fragment})"
                 return f"[{label}]({rel_url})"
 
+            if resolved_rel is not None:
+                gh_url = (
+                    f"https://github.com/allenporter/supernote/blob/main/{resolved_rel}"
+                )
+                if sep:
+                    gh_url = f"{gh_url}#{fragment}"
+                return f"[{label}]({gh_url})"
+
             return match.group(0)
+
+        if current_mod.modulename == "supernote":
+            converted = re.sub(
+                r'(<img\s+[^>]*src=")(?P<src>(?:docs|evals)/[^"]+)(")',
+                r"\g<1>../\g<src>\g<3>",
+                converted,
+            )
 
         return re.sub(
             r"\[(?P<label>[^\]]+)\]\((?P<href>[^)]+)\)",
@@ -324,6 +357,20 @@ def _install_markdown_link_rewriter() -> None:
     )
 
 
+def get_child_modules(
+    parent_name: str, all_modules: dict[str, pdoc.doc.Module]
+) -> list[pdoc.doc.Module]:
+    """Return all direct child modules of `parent_name` in `all_modules`."""
+    prefix = parent_name + "."
+    return [
+        mod
+        for name, mod in sorted(all_modules.items())
+        if name.startswith(prefix)
+        and "." not in name[len(prefix) :]
+        and not name[len(prefix) :].startswith("_")
+    ]
+
+
 def configure_pdoc() -> None:
     """Configure pdoc templates, globals, and navigation metadata."""
     pdoc.render.configure(
@@ -333,7 +380,7 @@ def configure_pdoc() -> None:
             "supernote": "https://github.com/allenporter/supernote/blob/main/supernote/",
         },
         favicon="https://raw.githubusercontent.com/allenporter/supernote/main/supernote/server/static/favicon.ico",
-        footer_text="Supernote Private Cloud & SDK",
+        footer_text="Open Private Cloud for Supernote & Python SDK",
         math=False,
         mermaid=True,
         search=True,
@@ -370,6 +417,7 @@ def configure_pdoc() -> None:
     env_globals["nav_guide_sections"] = nav_guide_sections
     env_globals["nav_api_packages"] = API_PACKAGES
     env_globals["nav_page_titles"] = page_titles
+    env_globals["get_child_modules"] = get_child_modules
 
     _install_markdown_link_rewriter()
 
@@ -377,7 +425,19 @@ def configure_pdoc() -> None:
 def load_all_modules() -> dict[str, pdoc.doc.Module]:
     """Load all Python modules in `supernote` plus virtual Markdown guide modules."""
     all_modules: dict[str, pdoc.doc.Module] = {}
-    specs = [str(ROOT_DIR / "supernote"), "!supernote.alembic", "!supernote.testing"]
+    specs = [
+        str(ROOT_DIR / "supernote"),
+        *[
+            f"supernote.notebook.{p.stem}"
+            for p in sorted((ROOT_DIR / "supernote" / "notebook").glob("*.py"))
+            if p.stem not in ("__init__", "exceptions", "schema")
+        ],
+        "supernote.client.api",
+        "supernote.client.client",
+        "!supernote.alembic",
+        "!supernote.testing",
+        "!supernote.notebook.resources",
+    ]
     for mod_name in pdoc.extract.walk_specs(specs):
         all_modules[mod_name] = pdoc.doc.Module.from_name(mod_name)
 
@@ -391,6 +451,10 @@ def load_all_modules() -> dict[str, pdoc.doc.Module]:
         all_modules["supernote.guides"] = GuideIndexModule(guide_modules)
         for gmod in guide_modules:
             all_modules[gmod.modulename] = gmod
+
+    for mod_name, mod in all_modules.items():
+        if not mod_name.startswith("supernote.guides") and mod_name != "supernote":
+            mod.__dict__["submodules"] = get_child_modules(mod_name, all_modules)
 
     return all_modules
 

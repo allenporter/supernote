@@ -28,21 +28,25 @@ from dataclasses import dataclass
 from io import BytesIO
 
 import numpy as np
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 from . import color, exceptions
 
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
 
 class BaseDecoder:
-    """Abstract decoder class."""
+    """Abstract bitmap decoder class."""
 
     def decode(
         self,
         data: bytes,
+        page_width: int,
+        page_height: int,
         palette: color.ColorPalette | None = None,
         all_blank: bool = False,
         horizontal: bool = False,
-    ):
+    ) -> tuple[bytes, tuple[int, int], int]:
         raise NotImplementedError("subclasses must implement decode method")
 
 
@@ -59,13 +63,13 @@ class FlateDecoder(BaseDecoder):
 
     def decode(
         self,
-        data,
-        page_width,
-        page_height,
-        palette=None,
-        all_blank=False,
-        horizontal=False,
-    ):
+        data: bytes,
+        page_width: int,
+        page_height: int,
+        palette: color.ColorPalette | None = None,
+        all_blank: bool = False,
+        horizontal: bool = False,
+    ) -> tuple[bytes, tuple[int, int], int]:
         """Uncompress bitmap data.
 
         Parameters
@@ -148,13 +152,13 @@ class RattaRleDecoder(BaseDecoder):
 
     def decode(
         self,
-        data,
-        page_width,
-        page_height,
-        palette=None,
-        all_blank=False,
-        horizontal=False,
-    ):
+        data: bytes,
+        page_width: int,
+        page_height: int,
+        palette: color.ColorPalette | None = None,
+        all_blank: bool = False,
+        horizontal: bool = False,
+    ) -> tuple[bytes, tuple[int, int], int]:
         """Uncompress bitmap data.
 
         Parameters
@@ -339,13 +343,13 @@ class PngDecoder(BaseDecoder):
 
     def decode(
         self,
-        data,
-        page_width,
-        page_height,
-        palette=None,
-        all_blank=False,
-        horizontal=False,
-    ):
+        data: bytes,
+        page_width: int,
+        page_height: int,
+        palette: color.ColorPalette | None = None,
+        all_blank: bool = False,
+        horizontal: bool = False,
+    ) -> tuple[bytes, tuple[int, int], int]:
         """Uncompress bitmap data.
 
         Parameters
@@ -366,13 +370,20 @@ class PngDecoder(BaseDecoder):
         int
             bit per pixel
         """
-        with Image.open(BytesIO(data)) as img:
-            width, height = img.size
-            if width != page_width or height != page_height:
-                raise exceptions.DecoderException(
-                    f"invalid size = ({width}, {height}), expected = ({page_width}, {page_height})"
-                )
-            bitmap = img.convert("RGBA").tobytes()
+        if horizontal:
+            page_height, page_width = (page_width, page_height)
+        try:
+            with Image.open(BytesIO(data)) as img:
+                width, height = img.size
+                if width != page_width or height != page_height:
+                    raise exceptions.DecoderException(
+                        f"invalid size = ({width}, {height}), expected = ({page_width}, {page_height})"
+                    )
+                bitmap = img.convert("RGBA").tobytes()
+        except (UnidentifiedImageError, OSError) as err:
+            raise exceptions.DecoderException(
+                f"failed to decode PNG bitmap: {err}"
+            ) from err
         return bitmap, (page_width, page_height), 32
 
 
@@ -384,11 +395,15 @@ class TextElement:
     y: int
 
 
-class TextDecoder(BaseDecoder):
+class TextDecoder:
     """Decoder for text."""
 
     def decode(
-        self, data: bytes, palette=None, all_blank=False, horizontal=False
+        self,
+        data: bytes | None,
+        palette: color.ColorPalette | None = None,
+        all_blank: bool = False,
+        horizontal: bool = False,
     ) -> list[TextElement] | None:
         """Extract text from a realtime recognition data with spatial ordering.
 

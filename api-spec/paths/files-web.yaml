@@ -346,8 +346,46 @@ uploadFinish:
             schema:
               $ref: "../components/schemas/common.yaml#/BaseVO"
 
+uploadFtp_deleteApi:
+  put:
+    tags:
+      - File - Web
+    summary: Upload File via Legacy FTP/OSS Endpoint (Delete API)
+    operationId: upload_deleteApi
+    parameters:
+      - name: innerName
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: x-amz-date
+        in: header
+        schema:
+          type: string
+      - name: Authorization
+        in: header
+        schema:
+          type: string
+    requestBody:
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            properties:
+              file:
+                type: string
+                format: binary
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
 addFolderFile_deleteApi:
   post:
+    deprecated: true
     tags:
       - File - Web
     summary: Add Folder/File (Delete API)
@@ -369,6 +407,7 @@ addFolderFile_deleteApi:
 
 queryFileV2_deleteApi:
   post:
+    deprecated: true
     tags:
       - File - Web
     summary: Query File V2 (Delete API)

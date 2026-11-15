@@ -1,8 +1,21 @@
 [v-cloak] { display: none; }
 
+:root {
+    --bg-canvas: #F7F6F2;
+    --ink-primary: #141413;
+}
+
 body {
     font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    transition: background-color 0.3s ease, color 0.3s ease;
+    background-color: var(--bg-canvas);
+    color: var(--ink-primary);
+    transition: background-color 0.2s ease, color 0.2s ease;
+    -webkit-font-smoothing: antialiased;
+}
+
+.font-mono, code, kbd, pre, .tabular-nums {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
 }
 
 /* Custom scrollbars */
@@ -16,65 +29,54 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(148, 163, 184, 0.4);
+    background: rgba(120, 118, 112, 0.3);
     border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(148, 163, 184, 0.7);
+    background: rgba(120, 118, 112, 0.55);
 }
 
-/* Dark Mode support */
-.dark body {
-    background-color: #0b0f19;
-    color: #f1f5f9;
+/* Touch & keyboard accessible progressive reveal */
+.hover-reveal {
+    opacity: 1;
+    transition: opacity 0.15s ease;
 }
 
-/* Glassmorphism utilities */
-.glass-header {
-    background: rgba(255, 255, 255, 0.75);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+@media (hover: hover) and (pointer: fine) {
+    .hover-reveal {
+        opacity: 0;
+    }
+
+    .group:hover .hover-reveal,
+    .group:focus-within .hover-reveal,
+    .hover-reveal:focus,
+    .hover-reveal:focus-visible,
+    .hover-reveal.is-visible {
+        opacity: 1;
+    }
 }
 
-.dark .glass-header {
-    background: rgba(15, 23, 42, 0.8);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+/* Subtle E-Ink Paper Texture & Card Shadows */
+.paper-surface {
+    background-color: #FAF9F5;
+    background-image: radial-gradient(#D8D5CE 0.65px, transparent 0.65px);
+    background-size: 16px 16px;
 }
 
-.glass-card {
-    background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+.notebook-page-shadow {
+    box-shadow:
+        0 1px 2px rgba(20, 20, 19, 0.06),
+        0 8px 24px -4px rgba(20, 20, 19, 0.08),
+        0 0 0 1px rgba(20, 20, 19, 0.05);
 }
 
-.dark .glass-card {
-    background: rgba(30, 41, 59, 0.7);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-}
-
-/* Subtle glow effects */
-.glow-indigo {
-    box-shadow: 0 0 25px -5px rgba(99, 102, 241, 0.25);
-}
-
-.glow-purple {
-    box-shadow: 0 0 25px -5px rgba(168, 85, 247, 0.25);
-}
-
-/* Micro-animations */
+/* Micro-animations (opacity-only so position: fixed children are never trapped by a transform) */
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 
 .animate-fade-in {
-    animation: fadeIn 0.25s ease-out forwards;
-}
-
-/* Notebook Cover Canvas Shadow */
-.cover-shadow {
-    box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.15), 0 4px 10px -2px rgba(0, 0, 0, 0.05);
+    animation: fadeIn 0.18s ease-out;
 }

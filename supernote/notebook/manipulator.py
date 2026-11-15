@@ -22,36 +22,44 @@ and verifying structural integrity. See `supernote.notebook` and `supernote.guid
 
 import io
 import re
+from collections.abc import Mapping
 
-from . import exceptions, fileformat, parser, utils
+from . import exceptions, fileformat, parser, schema, utils
 
 
 class NotebookBuilder:
-    def __init__(self, offset=0):
+    def __init__(self, offset: int = 0) -> None:
         self.total_size = offset
-        self.toc = {}
-        self.blocks = []
+        self.toc: dict[str, int | list[int]] = {}
+        self.blocks: list[bytes] = []
 
-    def get_total_size(self):
+    def get_total_size(self) -> int:
         return self.total_size
 
-    def get_block_address(self, label):
-        if type(self.toc.get(label)) is list:
-            address = self.toc.get(label)[0]  # use first one
+    def get_block_address(self, label: str) -> int:
+        entry = self.toc.get(label)
+        if isinstance(entry, list):
+            address: int | None = entry[0]  # use first one
         else:
-            address = self.toc.get(label)
+            address = entry
         return address if address is not None else 0
 
-    def get_duplicate_block_address_list(self, label):
-        if type(self.toc.get(label)) is list:
-            return self.toc.get(label)
-        else:
-            return [self.toc.get(label)]
+    def get_duplicate_block_address_list(self, label: str) -> list[int | None]:
+        entry = self.toc.get(label)
+        if isinstance(entry, list):
+            return list(entry)
+        return [entry]
 
     def get_labels(self):
         return self.toc.keys()
 
-    def append(self, label, block, skip_block_size=False, allow_duplicate=False):
+    def append(
+        self,
+        label: str,
+        block: bytes | None,
+        skip_block_size: bool = False,
+        allow_duplicate: bool = False,
+    ) -> bool:
         if not label or block is None:
             raise ValueError("empty label or block is not allowed")
         label_duplicated = label in self.toc
@@ -64,10 +72,11 @@ class NotebookBuilder:
             )
         self.blocks.append(block)
         if label_duplicated:
-            if type(self.toc[label]) is list:
-                self.toc[label].append(self.total_size)
+            existing = self.toc[label]
+            if isinstance(existing, list):
+                existing.append(self.total_size)
             else:
-                self.toc[label] = [self.toc[label], self.total_size]
+                self.toc[label] = [existing, self.total_size]
         else:
             self.toc.setdefault(label, self.total_size)
         self.total_size += block_size
@@ -75,24 +84,34 @@ class NotebookBuilder:
             self.total_size += fileformat.LENGTH_FIELD_SIZE
         return True
 
-    def build(self):
+    def build(self) -> bytes:
         return b"".join(self.blocks)
 
-    def dump(self):
+    def dump(self) -> None:
         print("# NotebookBuilder Dump:")
         print(f"# total_size = {self.total_size}")
         print(f"# toc = {self.toc}")
 
 
-def reconstruct(notebook):
-    """Reconstruct a notebook for debug."""
-    expected_signature = parser.SupernoteXParser.SN_SIGNATURES[
-        -1
-    ]  # latest supported signature
-    metadata = notebook.get_metadata()
-    if metadata.signature != expected_signature:
+SUPPORTED_RECONSTRUCT_SIGNATURES = frozenset(parser.SupernoteXParser.SN_SIGNATURES[-2:])
+
+_VALIDATION_ERRORS = (
+    exceptions.SupernoteLibException,
+    ValueError,
+    TypeError,
+    KeyError,
+    IndexError,
+    RuntimeError,
+    OSError,
+)
+
+
+def reconstruct(notebook: fileformat.Notebook) -> bytes:
+    """Reconstruct a notebook binary from its in-memory representation."""
+    metadata = notebook.metadata
+    if metadata.signature not in SUPPORTED_RECONSTRUCT_SIGNATURES:
         raise ValueError(
-            f"Only latest file format version is supported ({metadata.signature} != {expected_signature})"
+            f"Only latest file format version is supported ({metadata.signature} not in {sorted(SUPPORTED_RECONSTRUCT_SIGNATURES)})"
         )
 
     builder = NotebookBuilder()
@@ -114,30 +133,27 @@ def reconstruct(notebook):
         stream = io.BytesIO(reconstructed_binary)
         xparser = parser.SupernoteXParser()
         _ = xparser.parse_stream(stream)
-    except Exception as e:
+    except _VALIDATION_ERRORS as e:
         raise exceptions.GeneratedFileValidationException(
             f"generated file fails validation: {e}"
-        )
+        ) from e
     return reconstructed_binary
 
 
-def merge(notebook1, notebook2):
-    """Merge multiple notebooks to one."""
+def merge(notebook1: fileformat.Notebook, notebook2: fileformat.Notebook) -> bytes:
+    """Merge two notebooks into one binary stream."""
     # TODO: support non-X series
-    metadata1 = notebook1.get_metadata()
-    metadata2 = notebook2.get_metadata()
-    expected_signature = parser.SupernoteXParser.SN_SIGNATURES[
-        -1
-    ]  # latest supported signature
-    if metadata1.signature != expected_signature:
+    metadata1 = notebook1.metadata
+    metadata2 = notebook2.metadata
+    if metadata1.signature not in SUPPORTED_RECONSTRUCT_SIGNATURES:
         raise ValueError(
-            f"Only latest file format version is supported ({metadata1.signature} != {expected_signature})"
+            f"Only latest file format version is supported ({metadata1.signature} not in {sorted(SUPPORTED_RECONSTRUCT_SIGNATURES)})"
         )
     if metadata1.signature != metadata2.signature:
         raise ValueError(
             f"File signature must be same between merging files ({metadata1.signature} != {metadata2.signature})"
         )
-    if notebook1.get_total_pages() + notebook2.get_total_pages() > 9999:
+    if notebook1.total_pages + notebook2.total_pages > 9999:
         raise ValueError("The total number of pages are limited to 9999")
     # check header properties are same to avoid generating a corrupted note file
     _verify_header_property("FILE_TYPE", metadata1, metadata2)
@@ -154,15 +170,15 @@ def merge(notebook1, notebook2):
     _pack_header(builder, notebook1)
     _pack_cover(builder, notebook1)
     _pack_keywords(builder, notebook1)
-    _pack_keywords(builder, notebook2, offset=notebook1.get_total_pages())
+    _pack_keywords(builder, notebook2, offset=notebook1.total_pages)
     _pack_titles(builder, notebook1)
-    _pack_titles(builder, notebook2, offset=notebook1.get_total_pages())
+    _pack_titles(builder, notebook2, offset=notebook1.total_pages)
     _pack_links(builder, notebook1)
-    _pack_links(builder, notebook2, offset=notebook1.get_total_pages())
+    _pack_links(builder, notebook2, offset=notebook1.total_pages)
     _pack_backgrounds(builder, notebook1)
     _pack_backgrounds(builder, notebook2)
     _pack_pages(builder, notebook1)
-    _pack_pages(builder, notebook2, offset=notebook1.get_total_pages())
+    _pack_pages(builder, notebook2, offset=notebook1.total_pages)
     _pack_footer(builder)
     _pack_tail(builder)
     _pack_footer_address(builder)
@@ -172,138 +188,144 @@ def merge(notebook1, notebook2):
         stream = io.BytesIO(merged_binary)
         xparser = parser.SupernoteXParser()
         _ = xparser.parse_stream(stream)
-    except Exception as e:
+    except _VALIDATION_ERRORS as e:
         raise exceptions.GeneratedFileValidationException(
             f"generated file fails validation: {e}"
-        )
+        ) from e
     return merged_binary
 
 
-def _pack_type(builder, notebook):
-    metadata = notebook.get_metadata()
+def _pack_type(builder: NotebookBuilder, notebook: fileformat.Notebook) -> None:
+    metadata = notebook.metadata
     builder.append("__type__", metadata.type.encode("ascii"), skip_block_size=True)
 
 
-def _pack_signature(builder, notebook):
-    metadata = notebook.get_metadata()
+def _pack_signature(builder: NotebookBuilder, notebook: fileformat.Notebook) -> None:
+    metadata = notebook.metadata
     builder.append(
         "__signature__", metadata.signature.encode("ascii"), skip_block_size=True
     )
 
 
-def _pack_header(builder, notebook):
-    metadata = notebook.get_metadata()
-    header_block = _construct_metadata_block(metadata.header)
+def _pack_header(builder: NotebookBuilder, notebook: fileformat.Notebook) -> None:
+    metadata = notebook.metadata
+    header_block = _construct_metadata_block(metadata.header.to_params())
     builder.append("__header__", header_block)
 
 
-def _pack_cover(builder, notebook):
-    cover_block = notebook.get_cover().get_content()
+def _pack_cover(builder: NotebookBuilder, notebook: fileformat.Notebook) -> None:
+    cover_block = notebook.cover.content
     if cover_block is not None:
         builder.append("COVER_2", cover_block)
 
 
-def _pack_keywords(builder, notebook, offset=0):
-    for keyword in notebook.get_keywords():
-        page_number = keyword.get_page_number() + 1 + offset
+def _pack_keywords(
+    builder: NotebookBuilder, notebook: fileformat.Notebook, offset: int = 0
+) -> None:
+    for keyword in notebook.keywords:
+        page_number = keyword.page_number + 1 + offset
         if page_number > 9999:
             # the number of digits is limited to 4, so we ignore this keyword
             continue
-        position = keyword.get_position_string()
-        id = f"{page_number:04d}{position}"
-        content = keyword.get_content()
+        position = keyword.position_string
+        item_id = f"{page_number:04d}{position}"
+        content = keyword.content
         if content is not None:
-            builder.append(f"KEYWORD_{id}", content, allow_duplicate=True)
-            keyword_metadata = keyword.metadata
-            keyword_metadata["KEYWORDPAGE"] = page_number
-            address_list = builder.get_duplicate_block_address_list(f"KEYWORD_{id}")
-            if len(address_list) == 1:
-                keyword_metadata["KEYWORDSITE"] = str(address_list[0])
-            else:
-                keyword_metadata["KEYWORDSITE"] = str(
-                    address_list[-1]
-                )  # use last address
+            builder.append(f"KEYWORD_{item_id}", content, allow_duplicate=True)
+            keyword_metadata = keyword.metadata.to_params()
+            keyword_metadata["KEYWORDPAGE"] = str(page_number)
+            address_list = builder.get_duplicate_block_address_list(
+                f"KEYWORD_{item_id}"
+            )
+            keyword_metadata["KEYWORDSITE"] = str(address_list[-1])  # use last address
             keyword_metadata_block = _construct_metadata_block(keyword_metadata)
             builder.append(
-                f"KEYWORD_{id}/metadata", keyword_metadata_block, allow_duplicate=True
+                f"KEYWORD_{item_id}/metadata",
+                keyword_metadata_block,
+                allow_duplicate=True,
             )
 
 
-def _pack_titles(builder, notebook, offset=0):
-    for title in notebook.get_titles():
-        page_number = title.get_page_number() + 1 + offset
+def _pack_titles(
+    builder: NotebookBuilder, notebook: fileformat.Notebook, offset: int = 0
+) -> None:
+    for title in notebook.titles:
+        page_number = title.page_number + 1 + offset
         if page_number > 9999:
-            # the number of digits is limited to 4, so we ignore this keyword
+            # the number of digits is limited to 4, so we ignore this title
             continue
-        position = title.get_position_string()
-        id = f"{page_number:04d}{position}"
-        content = title.get_content()
+        position = title.position_string
+        item_id = f"{page_number:04d}{position}"
+        content = title.content
         if content is not None:
-            builder.append(f"TITLE_{id}", content, allow_duplicate=True)
-            title_metadata = title.metadata
-            address_list = builder.get_duplicate_block_address_list(f"TITLE_{id}")
-            if len(address_list) == 1:
-                title_metadata["TITLEBITMAP"] = str(address_list[0])
-            else:
-                title_metadata["TITLEBITMAP"] = str(
-                    address_list[-1]
-                )  # use last address
+            builder.append(f"TITLE_{item_id}", content, allow_duplicate=True)
+            title_metadata = title.metadata.to_params()
+            address_list = builder.get_duplicate_block_address_list(f"TITLE_{item_id}")
+            title_metadata["TITLEBITMAP"] = str(address_list[-1])  # use last address
             title_metadata_block = _construct_metadata_block(title_metadata)
             builder.append(
-                f"TITLE_{id}/metadata", title_metadata_block, allow_duplicate=True
+                f"TITLE_{item_id}/metadata", title_metadata_block, allow_duplicate=True
             )
 
 
-def _pack_links(builder, notebook, offset=0):
-    for link in notebook.get_links():
-        page_number = link.get_page_number() + 1 + offset
+def _pack_links(
+    builder: NotebookBuilder, notebook: fileformat.Notebook, offset: int = 0
+) -> None:
+    for link in notebook.links:
+        page_number = link.page_number + 1 + offset
         if page_number > 9999:
-            # the number of digits is limited to 4, so we ignore this keyword
+            # the number of digits is limited to 4, so we ignore this link
             continue
-        position = link.get_position_string()
-        id = f"{page_number:04d}{position}"
-        content = link.get_content()
+        position = link.position_string
+        item_id = f"{page_number:04d}{position}"
+        content = link.content
         if content is not None:
-            builder.append(f"LINKO_{id}", content, allow_duplicate=True)
-            link_metadata = link.metadata
-            address_list = builder.get_duplicate_block_address_list(f"LINKO_{id}")
-            if len(address_list) == 1:
-                link_metadata["LINKBITMAP"] = str(address_list[0])
-            else:
-                link_metadata["LINKBITMAP"] = str(address_list[-1])  # use last address
+            builder.append(f"LINKO_{item_id}", content, allow_duplicate=True)
+            link_metadata = link.metadata.to_params()
+            address_list = builder.get_duplicate_block_address_list(f"LINKO_{item_id}")
+            link_metadata["LINKBITMAP"] = str(address_list[-1])  # use last address
             link_metadata_block = _construct_metadata_block(link_metadata)
             builder.append(
-                f"LINKO_{id}/metadata", link_metadata_block, allow_duplicate=True
+                f"LINKO_{item_id}/metadata", link_metadata_block, allow_duplicate=True
             )
 
 
-def _pack_backgrounds(builder, notebook):
-    for i in range(notebook.get_total_pages()):
-        page = notebook.get_page(i)
-        style = page.get_style()
-        if style.startswith("user_"):
-            style += page.get_style_hash()
+def _resolve_page_style(page: fileformat.Page, page_index: int) -> str:
+    style = page.style
+    if not style:
+        raise exceptions.ManipulatorException(
+            f"page {page_index} metadata is missing PAGESTYLE"
+        )
+    if style.startswith("user_"):
+        style += page.style_hash
+    return style
+
+
+def _pack_backgrounds(builder: NotebookBuilder, notebook: fileformat.Notebook) -> None:
+    for i in range(notebook.total_pages):
+        page = notebook.page(i)
         content = _find_background_content_from_page(page)
-        if content is not None:
-            builder.append(f"STYLE_{style}", content)
+        if content is None:
+            continue
+        style = _resolve_page_style(page, i)
+        builder.append(f"STYLE_{style}", content)
 
 
-def _pack_pages(builder, notebook, offset=0):
-    for i in range(notebook.get_total_pages()):
+def _pack_pages(
+    builder: NotebookBuilder, notebook: fileformat.Notebook, offset: int = 0
+) -> None:
+    for i in range(notebook.total_pages):
         page_number = i + 1 + offset
-        page = notebook.get_page(i)
-        page = utils.WorkaroundPageWrapper.from_page(page)
+        page = notebook.page(i)
+        wrapped_page = utils.WorkaroundPageWrapper.from_page(page)
         # layers
-        layers = page.get_layers()
-        for layer in layers:
-            layer_name = layer.get_name()
-            if layer_name is None:
+        for layer in wrapped_page.layers:
+            if layer.name is None:
                 continue
-            if layer_name == "BGLAYER":
-                style = page.get_style()
-                if style.startswith("user_"):
-                    style += page.get_style_hash()
-                layer_metadata = layer.metadata
+            layer_name = str(layer.name)
+            if layer.name == schema.LayerName.BGLAYER:
+                style = _resolve_page_style(wrapped_page, i)
+                layer_metadata = layer.metadata.to_params()
                 layer_metadata["LAYERNAME"] = layer_name
                 layer_metadata["LAYERBITMAP"] = str(
                     builder.get_block_address(f"STYLE_{style}")
@@ -313,9 +335,12 @@ def _pack_pages(builder, notebook, offset=0):
                     f"PAGE{page_number}/{layer_name}/metadata", layer_metadata_block
                 )
             else:
-                content = layer.get_content()
-                builder.append(f"PAGE{page_number}/{layer_name}/LAYERBITMAP", content)
-                layer_metadata = layer.metadata
+                content = layer.content
+                if content is not None:
+                    builder.append(
+                        f"PAGE{page_number}/{layer_name}/LAYERBITMAP", content
+                    )
+                layer_metadata = layer.metadata.to_params()
                 layer_metadata["LAYERNAME"] = layer_name
                 layer_metadata["LAYERBITMAP"] = str(
                     builder.get_block_address(
@@ -326,55 +351,70 @@ def _pack_pages(builder, notebook, offset=0):
                 builder.append(
                     f"PAGE{page_number}/{layer_name}/metadata", layer_metadata_block
                 )
-        # totalpath
-        totalpath_block = page.get_totalpath()
+        # totalpath and RTR recognition streams
+        totalpath_block = wrapped_page.totalpath
         if totalpath_block is not None:
             builder.append(f"PAGE{page_number}/TOTALPATH", totalpath_block)
+        recogn_file_block = wrapped_page.recogn_file
+        if recogn_file_block is not None:
+            builder.append(f"PAGE{page_number}/RECOGNFILE", recogn_file_block)
+        recogn_text_block = wrapped_page.recogn_text
+        if recogn_text_block is not None:
+            builder.append(f"PAGE{page_number}/RECOGNTEXT", recogn_text_block)
         # page metadata
-        page_metadata = page.metadata
-        del page_metadata["__layers__"]
-        for prop in ["MAINLAYER", "LAYER1", "LAYER2", "LAYER3", "BGLAYER"]:
-            address = builder.get_block_address(f"PAGE{page_number}/{prop}/metadata")
-            page_metadata[prop] = address
-        page_metadata["TOTALPATH"] = builder.get_block_address(
-            f"PAGE{page_number}/TOTALPATH"
+        page_metadata = wrapped_page.metadata.to_params()
+        for prop in schema.X_SERIES_LAYER_KEYS:
+            address = builder.get_block_address(
+                f"PAGE{page_number}/{prop.value}/metadata"
+            )
+            page_metadata[prop.value] = str(address)
+        page_metadata["TOTALPATH"] = str(
+            builder.get_block_address(f"PAGE{page_number}/TOTALPATH")
         )
+        if "RECOGNFILE" in page_metadata or recogn_file_block is not None:
+            page_metadata["RECOGNFILE"] = str(
+                builder.get_block_address(f"PAGE{page_number}/RECOGNFILE")
+            )
+        if "RECOGNTEXT" in page_metadata or recogn_text_block is not None:
+            page_metadata["RECOGNTEXT"] = str(
+                builder.get_block_address(f"PAGE{page_number}/RECOGNTEXT")
+            )
         page_metadata_block = _construct_metadata_block(page_metadata)
         builder.append(f"PAGE{page_number}/metadata", page_metadata_block)
 
 
-def _pack_footer(builder):
-    metadata_footer = {}
+def _pack_footer(builder: NotebookBuilder) -> None:
+    metadata_footer: dict[str, object] = {}
     metadata_footer.setdefault("FILE_FEATURE", builder.get_block_address("__header__"))
     for label in builder.get_labels():
         if re.match(r"PAGE\d+/metadata", label):
             address = builder.get_block_address(label)
-            label = label[: -len("/metadata")]
-            metadata_footer.setdefault(label, address)
+            short_label = label[: -len("/metadata")]
+            metadata_footer.setdefault(short_label, address)
     for label in builder.get_labels():
         if re.match(r"TITLE_\d+/metadata", label):
             address_list = builder.get_duplicate_block_address_list(label)
-            label = label[: -len("/metadata")]
+            short_label = label[: -len("/metadata")]
             if len(address_list) == 1:
-                metadata_footer.setdefault(label, address_list[0])
+                metadata_footer.setdefault(short_label, address_list[0])
             else:
-                metadata_footer[label] = address_list
+                metadata_footer[short_label] = address_list
     for label in builder.get_labels():
         if re.match(r"KEYWORD_\d+/metadata", label):
             address_list = builder.get_duplicate_block_address_list(label)
-            label = label[: -len("/metadata")]
+            short_label = label[: -len("/metadata")]
             if len(address_list) == 1:
-                metadata_footer.setdefault(label, address_list[0])
+                metadata_footer.setdefault(short_label, address_list[0])
             else:
-                metadata_footer[label] = address_list
+                metadata_footer[short_label] = address_list
     for label in builder.get_labels():
         if re.match(r"LINKO_\d+/metadata", label):
             address_list = builder.get_duplicate_block_address_list(label)
-            label = label[: -len("/metadata")]
+            short_label = label[: -len("/metadata")]
             if len(address_list) == 1:
-                metadata_footer.setdefault(label, address_list[0])
+                metadata_footer.setdefault(short_label, address_list[0])
             else:
-                metadata_footer[label] = address_list
+                metadata_footer[short_label] = address_list
     address = builder.get_block_address("COVER_2")
     if address == 0:
         metadata_footer["COVER_0"] = 0
@@ -388,39 +428,37 @@ def _pack_footer(builder):
     builder.append("__footer__", footer_block)
 
 
-def _pack_tail(builder):
+def _pack_tail(builder: NotebookBuilder) -> None:
     builder.append("__tail__", b"tail", skip_block_size=True)
 
 
-def _pack_footer_address(builder):
+def _pack_footer_address(builder: NotebookBuilder) -> None:
     footer_address = builder.get_block_address("__footer__")
     builder.append(
         "__footer_address__", footer_address.to_bytes(4, "little"), skip_block_size=True
     )
 
 
-def _verify_header_property(prop_name, metadata1, metadata2):
-    if metadata1.header.get(prop_name) != metadata2.header.get(prop_name):
+def _verify_header_property(
+    prop_name: str,
+    metadata1: schema.SupernoteMetadata,
+    metadata2: schema.SupernoteMetadata,
+) -> None:
+    header1 = metadata1.header.to_params()
+    header2 = metadata2.header.to_params()
+    if header1.get(prop_name) != header2.get(prop_name):
         raise ValueError(f"<{prop_name}> property must be same between merging files")
 
 
-def _construct_metadata_block(info):
-    block_data = ""
-    for k, v in info.items():
-        if type(v) is list:
-            for e in v:
-                block_data += f"<{k}:{e}>"
-        else:
-            block_data += f"<{k}:{v}>"
-    return block_data.encode("utf-8")
+def _construct_metadata_block(info: Mapping[str, object]) -> bytes:
+    return schema.encode_parameters(info)
 
 
-def _find_background_content_from_page(page):
-    page = utils.WorkaroundPageWrapper.from_page(page)
+def _find_background_content_from_page(page: fileformat.Page) -> bytes | None:
     if not page.is_layer_supported():
         return None
-    layers = page.get_layers()
-    for layer in layers:
-        if layer.get_name() == "BGLAYER":
-            return layer.get_content()
+    wrapped_page = utils.WorkaroundPageWrapper.from_page(page)
+    for layer in wrapped_page.layers:
+        if layer.name == schema.LayerName.BGLAYER:
+            return layer.content
     return None

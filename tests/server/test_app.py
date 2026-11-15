@@ -4,23 +4,39 @@ These tests verify that the server correctly handles X-Forwarded-* headers
 when deployed behind a reverse proxy, with different proxy modes.
 """
 
+import argparse
 import dataclasses
+import logging
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
-from aiohttp.test_utils import TestClient
+from aiohttp import web
+from aiohttp.test_utils import TestClient, make_mocked_request
 from pytest_aiohttp import AiohttpClient
 from sqlalchemy import delete, select
 
 from supernote.models.file_device import FileUploadApplyLocalDTO
-from supernote.server.app import bootstrap_ephemeral_user, create_app
+from supernote.server.app import (
+    _normalize_http_method,
+    _resolve_metrics_path,
+    bootstrap_ephemeral_user,
+    create_app,
+    run,
+)
 from supernote.server.config import ServerConfig
 from supernote.server.db.models.user import UserDO
+from supernote.server.keys import (
+    INTEGRITY_SERVICE_KEY,
+    PROCESSOR_SERVICE_KEY,
+    SESSION_MANAGER_KEY,
+)
 from supernote.server.services.processor_modules.png_conversion import (
     PngConversionModule,
 )
+from supernote.server.trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger
 
 
 def test_import_does_not_load_google_genai() -> None:
@@ -264,7 +280,7 @@ def test_png_module_registration_matrix(
         gemini_api_key=gemini_api_key,
     )
     app = create_app(cfg)
-    page_modules = app["processor_service"].page_modules
+    page_modules = app[PROCESSOR_SERVICE_KEY].page_modules
     has_png = any(isinstance(m, PngConversionModule) for m in page_modules)
     assert has_png is expected_png
 
@@ -272,7 +288,7 @@ def test_png_module_registration_matrix(
 async def test_bootstrap_ephemeral_user(client: TestClient) -> None:
     """Verify bootstrap_ephemeral_user registers debug@example.com as an admin with system folders."""
     assert client.app is not None
-    session_manager = client.app["session_manager"]
+    session_manager = client.app[SESSION_MANAGER_KEY]
     async with session_manager.session() as session:
         await session.execute(delete(UserDO))
         await session.commit()
@@ -287,7 +303,7 @@ async def test_bootstrap_ephemeral_user(client: TestClient) -> None:
         ).scalar_one()
         assert user.is_admin is True
 
-    integrity_service = client.app["integrity_service"]
+    integrity_service = client.app[INTEGRITY_SERVICE_KEY]
     report = await integrity_service.verify_user_storage(user.id)
     assert report.scanned == 8
     assert report.ok == 8
@@ -339,3 +355,185 @@ async def test_toast_static_asset_served(client: TestClient) -> None:
     assert index_resp.status == 200
     html_text = await index_resp.text()
     assert "toast in toasts" in html_text
+
+
+def test_run_configures_default_info_level_and_sanitized_access_logger(
+    monkeypatch: pytest.MonkeyPatch,
+    server_config: ServerConfig,
+) -> None:
+    """Verify run() defaults root logging to INFO and wires SanitizedAccessLogger into web.run_app."""
+    monkeypatch.delenv("SUPERNOTE_LOG_LEVEL", raising=False)
+    cfg = dataclasses.replace(server_config, log_level="INFO")
+    monkeypatch.setattr(ServerConfig, "load", lambda _dir=None: cfg)
+
+    captured_kwargs: dict[str, Any] = {}
+
+    def fake_run_app(app: Any, **kwargs: Any) -> None:
+        captured_kwargs["app"] = app
+        captured_kwargs.update(kwargs)
+
+    monkeypatch.setattr("supernote.server.app.web.run_app", fake_run_app)
+
+    run(argparse.Namespace(config_dir=None))
+
+    assert logging.getLogger().level == logging.INFO
+    assert logging.getLogger("aiosqlite").level == logging.INFO
+    assert logging.getLogger("asyncio").level == logging.INFO
+    assert captured_kwargs["access_log_class"] is SanitizedAccessLogger
+    assert captured_kwargs["access_log_format"] == ACCESS_LOG_FORMAT
+
+
+def test_run_respects_config_and_env_log_level(
+    monkeypatch: pytest.MonkeyPatch,
+    server_config: ServerConfig,
+) -> None:
+    """Verify run() applies config.log_level while keeping noisy library loggers at INFO+."""
+    monkeypatch.setattr("supernote.server.app.web.run_app", lambda *_a, **_kw: None)
+
+    try:
+        monkeypatch.delenv("SUPERNOTE_LOG_LEVEL", raising=False)
+        debug_cfg = dataclasses.replace(server_config, log_level="DEBUG")
+        monkeypatch.setattr(ServerConfig, "load", lambda _dir=None: debug_cfg)
+
+        run(argparse.Namespace(config_dir=None))
+        assert logging.getLogger().level == logging.DEBUG
+        assert logging.getLogger("aiosqlite").level == logging.INFO
+        assert logging.getLogger("asyncio").level == logging.INFO
+
+        monkeypatch.setenv("SUPERNOTE_LOG_LEVEL", "WARNING")
+        warn_cfg = dataclasses.replace(server_config, log_level="WARNING")
+        monkeypatch.setattr(ServerConfig, "load", lambda _dir=None: warn_cfg)
+
+        run(argparse.Namespace(config_dir=None))
+        assert logging.getLogger().level == logging.WARNING
+        assert logging.getLogger("aiosqlite").level == logging.WARNING
+        assert logging.getLogger("asyncio").level == logging.WARNING
+    finally:
+        logging.getLogger().setLevel(logging.INFO)
+        logging.getLogger("aiosqlite").setLevel(logging.INFO)
+        logging.getLogger("asyncio").setLevel(logging.INFO)
+
+
+@pytest.mark.parametrize(
+    ("raw_method", "expected"),
+    [
+        ("GET", "GET"),
+        ("get", "GET"),
+        ("HEAD", "HEAD"),
+        ("POST", "POST"),
+        ("PUT", "PUT"),
+        ("DELETE", "DELETE"),
+        ("OPTIONS", "OPTIONS"),
+        ("PATCH", "PATCH"),
+        ("PROPFIND", "OTHER"),
+        ("SCANNER_VERB", "OTHER"),
+    ],
+)
+def test_normalize_http_method_bounds_cardinality(
+    raw_method: str,
+    expected: str,
+) -> None:
+    """Verify _normalize_http_method preserves standard HTTP verbs and bounds arbitrary ones."""
+    assert _normalize_http_method(raw_method) == expected
+
+
+async def test_resolve_metrics_path_preserves_known_mcp_auth_route(
+    client: TestClient,
+) -> None:
+    """Verify _resolve_metrics_path keeps canonical paths for known MCP OAuth routes."""
+    assert client.app is not None
+    known_req = make_mocked_request("GET", "/authorize", app=client.app)
+    known_match_info = await client.app.router.resolve(known_req)
+    known_match_info.add_app(client.app)
+    known_req._match_info = known_match_info
+    assert (
+        _resolve_metrics_path(known_req, 302, frozenset({"/authorize"})) == "/authorize"
+    )
+
+
+async def test_resolve_metrics_path_collapses_unknown_mcp_asgi_path(
+    client: TestClient,
+) -> None:
+    """Verify _resolve_metrics_path collapses unmatched paths routed to MCP ASGIResource."""
+    assert client.app is not None
+    unknown_req = make_mocked_request("GET", "/wp-login.php", app=client.app)
+    unknown_match_info = await client.app.router.resolve(unknown_req)
+    unknown_match_info.add_app(client.app)
+    unknown_req._match_info = unknown_match_info
+    assert (
+        _resolve_metrics_path(unknown_req, 404, frozenset({"/authorize"})) == "HTTP 404"
+    )
+
+
+async def test_resolve_metrics_path_normalizes_static_route(
+    client: TestClient,
+) -> None:
+    """Verify static asset routes normalize to '/static/{filename}'."""
+    assert client.app is not None
+    static_req = make_mocked_request("GET", "/static/app.js", app=client.app)
+    static_match_info = await client.app.router.resolve(static_req)
+    static_match_info.add_app(client.app)
+    static_req._match_info = static_match_info
+    assert _resolve_metrics_path(static_req, 200) == "/static/{filename}"
+
+
+async def test_resolve_metrics_path_uses_route_formatter() -> None:
+    """Verify parameterized routes resolve to their template formatter rather than raw IDs."""
+
+    async def _item_handler(_r: web.Request) -> web.Response:
+        return web.Response()
+
+    dyn_app = web.Application()
+    dyn_app.router.add_get("/test-items/{item_id}", _item_handler)
+    dyn_req = make_mocked_request("GET", "/test-items/42", app=dyn_app)
+    dyn_match_info = await dyn_app.router.resolve(dyn_req)
+    dyn_match_info.add_app(dyn_app)
+    dyn_req._match_info = dyn_match_info
+    assert _resolve_metrics_path(dyn_req, 200) == "/test-items/{item_id}"
+
+
+async def test_resolve_metrics_path_falls_back_when_resource_info_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify resources with empty get_info() fall back to HTTP status."""
+
+    async def _item_handler(_r: web.Request) -> web.Response:
+        return web.Response()
+
+    dyn_app = web.Application()
+    dyn_app.router.add_get("/test-items/{item_id}", _item_handler)
+    req = make_mocked_request("GET", "/custom/probe", app=dyn_app)
+    match_info = await dyn_app.router.resolve(
+        make_mocked_request("GET", "/test-items/42", app=dyn_app)
+    )
+    match_info.add_app(dyn_app)
+    assert match_info.route.resource is not None
+    monkeypatch.setattr(match_info.route.resource, "get_info", dict)
+    req._match_info = match_info
+    assert _resolve_metrics_path(req, 204) == "HTTP 204"
+
+
+async def test_jwt_auth_middleware_blocks_api_key_on_interactive_route(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Verify jwt_auth_middleware rejects static API keys on @interactive_session_only handlers."""
+    create_resp = await client.post(
+        "/api/extended/keys",
+        json={"name": "Middleware Check"},
+        headers=auth_headers,
+    )
+    assert create_resp.status == 200
+    raw_key = (await create_resp.json())["key"]
+    api_key_headers = {"Authorization": f"Bearer {raw_key}"}
+
+    # Standard API route succeeds with Bearer API key
+    ok_resp = await client.post(
+        "/api/file/capacity/query", json={}, headers=api_key_headers
+    )
+    assert ok_resp.status == 200
+
+    # @interactive_session_only route returns 403 before reaching the handler
+    forbidden_resp = await client.get("/api/extended/keys", headers=api_key_headers)
+    assert forbidden_resp.status == 403
+    assert "Interactive session required" in (await forbidden_resp.json())["errorMsg"]

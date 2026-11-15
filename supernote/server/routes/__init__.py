@@ -7,7 +7,7 @@ Routes are organized by functional domain using `aiohttp.web.RouteTableDef`:
 - `supernote.server.routes.oss`: Signed Content-Addressable Storage (CAS) upload and download endpoints (`/api/oss/*`).
 - `supernote.server.routes.schedule`: Tasks, task groups, sort orders, and RFC 5545 `.ics` feeds (`/api/file/schedule/*`, `/api/schedule/feed.ics`).
 - `supernote.server.routes.summary`: Summaries and summary tags (`/api/file/*/summary*`).
-- `supernote.server.routes.extended`: Knowledge Hub extensions for semantic search, transcripts, and task status (`/api/extended/*`).
+- `supernote.server.routes.extended`: Open Private Cloud extensions for semantic search, transcripts, API keys, and task status (`/api/extended/*`).
 - `supernote.server.routes.admin`: User provisioning, queue control, reprocessing, and storage integrity (`/api/admin/*`).
 - `supernote.server.routes.system`: Server discovery and health endpoints.
 """

@@ -4,6 +4,9 @@ Authentication
 /api/official/user/account/login/equipment (POST):
   Request: LoginDTO
   Response: LoginVO
+/api/official/user/account/login/mfa/verify (POST):
+  Request: MfaLoginVerifyDTO
+  Response: LoginVO
 /api/official/user/account/login/new (POST):
   Request: LoginDTO
   Response: LoginVO
@@ -18,6 +21,19 @@ Authentication
 /api/user/mail/validcode (POST):
   Request: EmailDTO
   Response: EmailVO
+/api/user/mfa/disable (POST):
+  Request: MfaDisableDTO
+  Response: BaseVO
+/api/user/mfa/enable (POST):
+  Request: MfaEnableDTO
+  Response: MfaEnableVO
+/api/user/mfa/recovery/regenerate (POST):
+  Request: MfaEnableDTO
+  Response: MfaEnableVO
+/api/user/mfa/setup (POST):
+  Response: MfaSetupVO
+/api/user/mfa/status (GET):
+  Response: MfaStatusVO
 /api/user/query/token (POST):
   Response: QueryTokenVO
 /api/user/sms/login (POST):
@@ -45,6 +61,9 @@ Equipment
 /api/terminal/equipment/unlink (POST):
   Request: UnbindEquipmentDTO
   Response: BaseVO
+/api/terminal/send/password/unlock/code (POST):
+  Request: PasswordResetCodeDTO
+  Response: PasswordResetCodeVO
 /api/terminal/user/activateEquipment (POST):
   Request: ActivateEquipmentDTO
   Response: BaseVO
@@ -176,6 +195,8 @@ File - Web
   Response: FileUploadApplyLocalVO
 /api/file/upload/finish (POST):
   Request: FileUploadFinishDTO
+  Response: BaseVO
+/api/file/upload/ftp/{innerName}/deleteApi (PUT):
   Response: BaseVO
 
 Schedule
@@ -318,6 +339,11 @@ System
   Response: ReferenceListVO
 /api/system/base/reference/{id}/deleteApi (GET):
   Response: ReferenceVO
+/api/system/log/level (GET):
+  Response: SystemLogLevelVO
+/api/system/log/level (PUT):
+  Request: SystemLogLevelDTO
+  Response: BaseVO
 
 User
 /api/official/user/check/exists/server (POST):
@@ -359,6 +385,11 @@ User
   Response: UserQueryByIdVO
 /api/user/register (POST):
   Request: UserRegisterDTO
+  Response: BaseVO
+/api/user/register/restriction (GET):
+  Response: RegistrationRestrictionVO
+/api/user/register/restriction (PUT):
+  Request: RegistrationRestrictionDTO
   Response: BaseVO
 /api/user/update (POST):
   Request: UserUpdateDTO

@@ -1,0 +1,105 @@
+---
+# Automatically label Pull Requests by changed file paths and branch prefixes.
+changed-files-labels-limit: 6
+max-files-changed: 150
+
+# --- Area Labels (path-based) ---
+ai:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'supernote/server/ai/**'
+          - 'supernote/server/resources/prompts/**'
+          - 'supernote/server/services/processor_modules/ocr.py'
+          - 'supernote/server/services/processor_modules/summary.py'
+          - 'supernote/server/services/processor_modules/embedding.py'
+          - 'supernote/server/services/search.py'
+          - 'tests/server/ai/**'
+
+web-ui:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'supernote/server/static/**'
+          - 'docs/frontend_*'
+
+mcp:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'supernote/server/mcp/**'
+          - 'docs/mcp.md'
+          - 'tests/server/mcp/**'
+
+notebook:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'supernote/notebook/**'
+          - 'docs/notebook_spec.md'
+          - 'tests/notebook/**'
+
+storage-sync:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'supernote/server/services/blob.py'
+          - 'supernote/server/services/file.py'
+          - 'supernote/server/services/vfs.py'
+          - 'supernote/server/routes/file_device.py'
+          - 'supernote/server/routes/file_web.py'
+          - 'supernote/server/routes/oss.py'
+          - 'supernote/server/routes/extended.py'
+
+schedule:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'supernote/server/services/schedule.py'
+          - 'supernote/server/routes/schedule.py'
+          - 'supernote/server/db/models/schedule.py'
+          - 'supernote/models/schedule.py'
+          - 'docs/schedule_api.md'
+          - 'tests/server/services/test_schedule.py'
+
+cli-client:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'supernote/cli/**'
+          - 'supernote/client/**'
+          - 'tests/cli/**'
+          - 'tests/client/**'
+
+security:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'supernote/server/routes/auth.py'
+          - 'supernote/server/services/user.py'
+          - 'supernote/server/utils/rate_limit.py'
+          - 'supernote/server/utils/url_signer.py'
+          - 'docs/security.md'
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/**'
+          - 'README.md'
+          - 'ROADMAP.md'
+          - 'supernote/**/README.md'
+
+# --- Type Labels (branch-prefix-based) ---
+dependencies:
+  - head-branch:
+      - '^renovate/'
+
+bug:
+  - head-branch:
+      - '^fix/'
+      - '^bugfix/'
+      - '^hotfix/'
+
+enhancement:
+  - head-branch:
+      - '^feat/'
+      - '^feature/'
+
+tech-debt:
+  - head-branch:
+      - '^chore/'
+      - '^refactor/'
+      - '^perf/'
+      - '^test/'

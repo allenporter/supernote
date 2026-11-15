@@ -8,8 +8,6 @@ CSRF token issuance, and hardware equipment binding (`bind_equipment`, `unbind_e
 `supernote.server.utils.rate_limit.RateLimiter`. See `supernote.guides.bootstrap_guide`.
 """
 
-import logging
-
 from aiohttp import web
 from mashumaro.exceptions import MissingField
 
@@ -39,6 +37,15 @@ from supernote.models.user import (
     UserRegisterDTO,
 )
 from supernote.server.exceptions import SupernoteError
+from supernote.server.keys import (
+    CONFIG_KEY,
+    FILE_SERVICE_KEY,
+    RATE_LIMITER_KEY,
+    REQUEST_EQUIPMENT_NO_KEY,
+    REQUEST_USER_KEY,
+    USER_SERVICE_KEY,
+)
+from supernote.server.services.file import FileService
 from supernote.server.services.user import UserService
 from supernote.server.utils.auth_utils import get_token_from_request
 from supernote.server.utils.rate_limit import (
@@ -55,9 +62,7 @@ from supernote.server.utils.rate_limit import (
     RateLimitExceeded,
 )
 
-from .decorators import public_route
-
-logger = logging.getLogger(__name__)
+from .decorators import interactive_session_only, public_route
 
 routes = web.RouteTableDef()
 
@@ -66,7 +71,7 @@ UNKNOWN_IP = "unknown"
 
 async def _check_ip_rate_limit(request: web.Request) -> None:
     ip = request.remote or UNKNOWN_IP
-    rate_limiter = request.app["rate_limiter"]
+    rate_limiter = request.app[RATE_LIMITER_KEY]
     await rate_limiter.check(
         f"{LOGIN_KEY_IP}:{ip}",
         limit=LIMIT_LOGIN_IP_MAX,
@@ -113,7 +118,7 @@ async def handle_equipment_unlink(request: web.Request) -> web.Response:
     except RateLimitExceeded as e:
         return e.to_response()
 
-    user_service: UserService = request.app["user_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
     await user_service.unlink_equipment(unlink_req.equipment_no)
     return web.json_response(BaseResponse().to_dict())
 
@@ -137,7 +142,7 @@ async def handle_check_user_exists(request: web.Request) -> web.Response:
         await _check_ip_rate_limit(request)
     except RateLimitExceeded as e:
         return e.to_response()
-    user_service: UserService = request.app["user_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
     result = await user_service.check_user_server(user_check_req)
     return web.json_response(result.to_dict())
 
@@ -168,7 +173,7 @@ async def handle_random_code(request: web.Request) -> web.Response:
         await _check_ip_rate_limit(request)
     except RateLimitExceeded as e:
         return e.to_response()
-    user_service: UserService = request.app["user_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
     random_code, timestamp = await user_service.generate_random_code(code_req.account)
     return web.json_response(
         RandomCodeVO(random_code=random_code, timestamp=timestamp).to_dict()
@@ -186,7 +191,7 @@ async def handle_login(request: web.Request) -> web.Response:
     if request.method == "GET":
         return web.json_response(BaseResponse().to_dict())
 
-    user_service: UserService = request.app["user_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
     req_data = await request.json()
     try:
         login_req = LoginDTO.from_dict(req_data)
@@ -197,7 +202,7 @@ async def handle_login(request: web.Request) -> web.Response:
         )
 
     # RATE LIMIT CHECKS
-    rate_limiter = request.app["rate_limiter"]
+    rate_limiter = request.app[RATE_LIMITER_KEY]
     try:
         await _check_ip_rate_limit(request)
         await rate_limiter.check(
@@ -238,7 +243,7 @@ async def handle_bind_equipment(request: web.Request) -> web.Response:
     except RateLimitExceeded as e:
         return e.to_response()
 
-    user_service: UserService = request.app["user_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
     try:
         await user_service.bind_equipment(bind_req.account, bind_req.equipment_no)
     except ValueError as e:
@@ -268,7 +273,7 @@ async def handle_query_equipment_by_no(request: web.Request) -> web.Response:
     except RateLimitExceeded as e:
         return e.to_response()
 
-    user_service: UserService = request.app["user_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
     result = await user_service.query_equipment_by_no(dto.equipment_no)
     return web.json_response(result.to_dict())
 
@@ -279,14 +284,17 @@ async def handle_user_query(request: web.Request) -> web.Response:
     # Endpoint: POST / GET /api/user/query (OpenAPI Spec: queryUserById)
     # Purpose: Get flat user profile details (UserQueryByIdVO).
     try:
-        account = request.get("user")
+        account = request.get(REQUEST_USER_KEY)
         if not account:
             raise SupernoteError("Unauthorized", status_code=401)
 
-        user_service: UserService = request.app["user_service"]
+        user_service: UserService = request.app[USER_SERVICE_KEY]
         user_vo = await user_service.get_user_profile(str(account))
         if not user_vo:
             raise SupernoteError("User not found", status_code=404)
+
+        file_service: FileService = request.app[FILE_SERVICE_KEY]
+        total_capacity = str(await file_service.get_storage_quota(str(account)))
 
         return web.json_response(
             UserQueryByIdVO(
@@ -296,7 +304,7 @@ async def handle_user_query(request: web.Request) -> web.Response:
                 email=user_vo.email,
                 telephone=user_vo.phone,
                 country_code=user_vo.country_code,
-                total_capacity=user_vo.total_capacity,
+                total_capacity=total_capacity,
                 file_server=user_vo.file_server,
                 avatars_url=user_vo.avatars_url,
                 birthday=user_vo.birthday,
@@ -315,25 +323,28 @@ async def handle_user_query_info(request: web.Request) -> web.Response:
     # Endpoint: POST / GET /api/user/query/info (OpenAPI Spec: queryUserInfo)
     # Purpose: Get refined user info object (UserQueryVO) for Supernote apps & device terminals.
     try:
-        account = request.get("user")
+        account = request.get(REQUEST_USER_KEY)
         if not account:
             raise SupernoteError("Unauthorized", status_code=401)
 
         data = await request.json() if request.content_length else {}
         dto = UserQueryDTO.from_dict(data)
-        equipment_no = dto.equipment_no or request.get("equipment_no")
+        equipment_no = dto.equipment_no or request.get(REQUEST_EQUIPMENT_NO_KEY)
 
-        user_service: UserService = request.app["user_service"]
+        user_service: UserService = request.app[USER_SERVICE_KEY]
         user_vo = await user_service.get_user_profile(str(account))
         if not user_vo:
             raise SupernoteError("User not found", status_code=404)
+
+        file_service: FileService = request.app[FILE_SERVICE_KEY]
+        total_capacity = str(await file_service.get_storage_quota(str(account)))
 
         user_info = UserInfo(
             user_id=user_vo.user_id,
             user_name=user_vo.user_name,
             email=user_vo.email,
             phone=user_vo.phone,
-            total_capacity=user_vo.total_capacity,
+            total_capacity=total_capacity,
             file_server=user_vo.file_server,
             avatars_url=user_vo.avatars_url,
         )
@@ -368,7 +379,7 @@ async def handle_register(request: web.Request) -> web.Response:
     except RateLimitExceeded as e:
         return e.to_response()
 
-    user_service: UserService = request.app["user_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
     try:
         await user_service.register(dto)
         return web.json_response(BaseResponse().to_dict())
@@ -381,6 +392,7 @@ async def handle_register(request: web.Request) -> web.Response:
 
 
 @routes.post("/api/user/account/clear")
+@interactive_session_only
 async def handle_account_clear(request: web.Request) -> web.Response:
     """Permanently delete the authenticated user account and all cloud content.
 
@@ -390,13 +402,13 @@ async def handle_account_clear(request: web.Request) -> web.Response:
     embeddings, cached PNGs), summaries, summary tags, schedule tasks and groups,
     device bindings, login records, and active sessions.
     """
-    account = request.get("user")
+    account = request.get(REQUEST_USER_KEY)
     if not account:
         return web.json_response(
             create_error_response("Unauthorized").to_dict(), status=401
         )
 
-    user_service: UserService = request.app["user_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
     try:
         await user_service.clear_account(str(account))
     except ValueError as e:
@@ -408,6 +420,7 @@ async def handle_account_clear(request: web.Request) -> web.Response:
 
 
 @routes.post("/api/user/logout")
+@interactive_session_only
 async def handle_logout(request: web.Request) -> web.Response:
     """Log out the current session and revoke its token."""
     token = get_token_from_request(request)
@@ -416,15 +429,16 @@ async def handle_logout(request: web.Request) -> web.Response:
             create_error_response("Unauthorized").to_dict(), status=401
         )
 
-    user_service: UserService = request.app["user_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
     await user_service.logout(token)
     return web.json_response(BaseResponse().to_dict())
 
 
 @routes.put("/api/user/password")
+@interactive_session_only
 async def handle_update_password(request: web.Request) -> web.Response:
     """Update user password."""
-    account = request.get("user")
+    account = request.get(REQUEST_USER_KEY)
     if not account:
         return web.json_response(
             create_error_response("Unauthorized").to_dict(), status=401
@@ -433,7 +447,7 @@ async def handle_update_password(request: web.Request) -> web.Response:
     req_data = await request.json()
     try:
         dto = UpdatePasswordDTO.from_dict(req_data)
-        user_service: UserService = request.app["user_service"]
+        user_service: UserService = request.app[USER_SERVICE_KEY]
         await user_service.update_password(str(account), dto)
     except (MissingField, ValueError) as e:
         return web.json_response(create_error_response(str(e)).to_dict(), status=400)
@@ -441,9 +455,10 @@ async def handle_update_password(request: web.Request) -> web.Response:
 
 
 @routes.put("/api/user/email")
+@interactive_session_only
 async def handle_update_email(request: web.Request) -> web.Response:
     """Update user email."""
-    account = request.get("user")
+    account = request.get(REQUEST_USER_KEY)
     if not account:
         return web.json_response(
             create_error_response("Unauthorized").to_dict(), status=401
@@ -452,7 +467,7 @@ async def handle_update_email(request: web.Request) -> web.Response:
     req_data = await request.json()
     try:
         dto = UpdateEmailDTO.from_dict(req_data)
-        user_service: UserService = request.app["user_service"]
+        user_service: UserService = request.app[USER_SERVICE_KEY]
         await user_service.update_email(str(account), dto)
     except (MissingField, ValueError) as e:
         return web.json_response(create_error_response(str(e)).to_dict(), status=400)
@@ -463,7 +478,7 @@ async def handle_update_email(request: web.Request) -> web.Response:
 @public_route
 async def handle_retrieve_password(request: web.Request) -> web.Response:
     """Retrieve password."""
-    if not request.app["config"].auth.enable_remote_password_reset:
+    if not request.app[CONFIG_KEY].auth.enable_remote_password_reset:
         return web.json_response(
             create_error_response("Remote password reset is disabled").to_dict(),
             status=403,
@@ -477,7 +492,7 @@ async def handle_retrieve_password(request: web.Request) -> web.Response:
             create_error_response("Invalid request format").to_dict(),
             status=400,
         )
-    user_service: UserService = request.app["user_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
 
     # Extract target account and password from DTO
     account = dto.email or dto.telephone or ""
@@ -486,7 +501,7 @@ async def handle_retrieve_password(request: web.Request) -> web.Response:
     # Strict Limit: 5 attempts / hour
     # We use a longer window for password reset to prevent enumeration
     ip = request.remote or UNKNOWN_IP
-    rate_limiter = request.app["rate_limiter"]
+    rate_limiter = request.app[RATE_LIMITER_KEY]
     try:
         await rate_limiter.check(
             f"{RESET_KEY_IP}:{ip}",
@@ -518,9 +533,10 @@ async def handle_retrieve_password(request: web.Request) -> web.Response:
 # TODO: Also implement sensitive query operations and record them for all operations
 # done on the user (update, edit settings, reset passwd, etc)
 @routes.post("/api/user/query/loginRecord")
+@interactive_session_only
 async def handle_login_record(request: web.Request) -> web.Response:
     """Query login records."""
-    account = request.get("user")
+    account = request.get(REQUEST_USER_KEY)
     if not account:
         return web.json_response(
             create_error_response("Unauthorized").to_dict(), status=401
@@ -536,7 +552,7 @@ async def handle_login_record(request: web.Request) -> web.Response:
             create_error_response("Invalid request format").to_dict(),
             status=400,
         )
-    user_service: UserService = request.app["user_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
 
     records, total = await user_service.query_login_records(
         str(account), page_no, page_size

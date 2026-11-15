@@ -1,0 +1,38 @@
+---
+# Configuration for GitHub auto-generated release notes (`gh release create --generate-notes`).
+changelog:
+  exclude:
+    labels:
+      - dependencies
+      - duplicate
+      - wontfix
+  categories:
+    - title: Security & Data Safety
+      labels:
+        - security
+    - title: Bug Fixes
+      labels:
+        - bug
+    - title: AI, OCR & Search
+      labels:
+        - ai
+        - mcp
+    - title: Web UI & Schedule
+      labels:
+        - web-ui
+        - schedule
+    - title: Notebook Format & Sync
+      labels:
+        - notebook
+        - storage-sync
+        - cli-client
+    - title: Enhancements
+      labels:
+        - enhancement
+    - title: Documentation & Maintenance
+      labels:
+        - documentation
+        - tech-debt
+    - title: Other Changes
+      labels:
+        - '*'

@@ -3,7 +3,7 @@
 import pytest
 
 from supernote.models.auth import LoginMethod
-from supernote.models.base import BooleanEnum, create_error_response
+from supernote.models.base import BooleanEnum, ErrorCode, create_error_response
 
 
 def test_create_error_response() -> None:
@@ -11,6 +11,15 @@ def test_create_error_response() -> None:
     error_response = create_error_response("test error")
     assert error_response.error_msg == "test error"
     assert error_response.error_code is None
+
+    cyclic_response = create_error_response(
+        ErrorCode.CYCLIC_MOVE.message, ErrorCode.CYCLIC_MOVE
+    )
+    assert cyclic_response.to_dict() == {
+        "success": False,
+        "errorCode": "E0358",
+        "errorMsg": "Cannot move a folder into itself or its subdirectory",
+    }
 
 
 def test_enum_accepts_a_string_code() -> None:

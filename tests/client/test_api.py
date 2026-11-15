@@ -7,6 +7,7 @@ from pytest_aiohttp import AiohttpClient
 from supernote.client import Supernote
 from supernote.client.auth import ConstantAuth
 from supernote.client.device import DeviceClient
+from supernote.client.extended import ExtendedClient
 from supernote.client.web import WebClient
 from supernote.models.user import UserQueryByIdVO
 
@@ -18,6 +19,7 @@ async def test_supernote_init() -> None:
         assert sn._client.host == "http://test"
         assert isinstance(sn.web, WebClient)
         assert isinstance(sn.device, DeviceClient)
+        assert isinstance(sn.extended, ExtendedClient)
         assert sn._session == session
 
 

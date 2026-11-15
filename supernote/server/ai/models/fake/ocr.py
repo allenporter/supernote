@@ -18,9 +18,18 @@ __all__ = [
 class FakeOcrModel(OcrModel):
     """Fake OCR model returning deterministic page transcripts."""
 
-    def __init__(self, model_id: str = "fake-ocr-v1") -> None:
+    def __init__(
+        self,
+        model_id: str = "fake-ocr-v1",
+        provider: str = "fake",
+    ) -> None:
         self._model_id = model_id
+        self._provider = provider
         self.calls: list[tuple[bytes, str]] = []
+
+    @property
+    def provider(self) -> str:
+        return self._provider
 
     @property
     def model_id(self) -> str:
@@ -39,4 +48,7 @@ def create_ocr_model(config: ServerConfig) -> OcrModel | None:
     """Create a `FakeOcrModel` from `ServerConfig`, or `None` if unconfigured."""
     if config.ai.ocr is None:
         return None
-    return FakeOcrModel(model_id=config.ai.ocr.model)
+    return FakeOcrModel(
+        model_id=config.ai.ocr.model,
+        provider=config.ai.ocr.provider,
+    )

@@ -119,7 +119,7 @@ export function useFileSystem() {
 ```
 
 **`src/composables/useFileViewer.ts`**
-*Manages the "View" action. This logic replaces the complex "QTServer" flow.*
+*Manages the "View" action and on-demand page rendering.*
 
 ```typescript
 import { convertNoteUrl } from '../api/client';

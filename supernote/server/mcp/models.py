@@ -25,19 +25,19 @@ from supernote.models.base import BaseResponse
 class SupernoteAuthorizationCode(AuthorizationCode):
     """OAuth 2.1 authorization code associated with a Supernote user account."""
 
-    user_id: str
+    user_id: int
 
 
 class SupernoteAccessToken(AccessToken):
     """OAuth 2.1 access token associated with a Supernote user account."""
 
-    user_id: str
+    user_id: int
 
 
 class SupernoteRefreshToken(RefreshToken):
     """OAuth 2.1 refresh token associated with a Supernote user account."""
 
-    user_id: str
+    user_id: int
 
 
 @dataclass

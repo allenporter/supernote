@@ -65,6 +65,10 @@ sendPasswordUnlockCode:
     tags:
       - Equipment
     summary: Send Password Unlock Code
+    description: >-
+      Decodes the device unlock/file-protection verification code and emails it
+      to the device's reserved contact email (when provided in the request) or
+      the bound account email, returning the recipient address in sendTo.
     operationId: sendPasswordUnlockCode
     security: {}
     requestBody:
@@ -98,6 +102,7 @@ bindStatus:
 
 queryUserEquipment_deleteApi:
   post:
+    deprecated: true
     tags:
       - Equipment
     summary: Query User Equipment (Delete API)
@@ -140,6 +145,7 @@ queryUserEquipmentByNo:
 
 queryEquipmentManual_deleteApi:
   post:
+    deprecated: true
     tags:
       - Equipment
     summary: Query Equipment Manual (Delete API)
@@ -159,6 +165,7 @@ queryEquipmentManual_deleteApi:
 
 queryEquipmentByNo_deleteApi:
   get:
+    deprecated: true
     tags:
       - Equipment
     summary: Query Equipment By Number (Internal)
@@ -200,6 +207,7 @@ queryUserEquipmentByUserId:
 
 deleteByEquipmentNumber_deleteApi:
   delete:
+    deprecated: true
     tags:
       - Equipment
     summary: Delete Equipment By Number

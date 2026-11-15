@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import pytest_asyncio
 from aiohttp.test_utils import TestClient
 from pytest_aiohttp import AiohttpClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -208,9 +209,10 @@ async def auth_headers_fixture(
     token = await user_service.create_session(TEST_USERNAME)
 
     # 2. Store as MCP token (for MCP resource server verification)
+    user_id = await user_service.get_user_id(TEST_USERNAME)
     token_data = {
         "token": token,
-        "user_id": TEST_USERNAME,
+        "user_id": user_id,
         "client_id": "test_client",
         "scopes": ["supernote:all"],
     }
@@ -226,7 +228,7 @@ async def auth_headers_fixture(
     }
 
 
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def _session_manager_shared(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> AsyncGenerator[DatabaseSessionManager]:

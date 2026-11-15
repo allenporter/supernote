@@ -6,13 +6,16 @@ tools exposed to authenticated AI agents:
 - `search_notebook_chunks`: Performs vector similarity search via `supernote.server.services.search.SearchService`.
 - `get_notebook_transcript`: Retrieves full or page-sliced OCR transcripts.
 
-Validates Bearer tokens issued by `supernote.server.mcp.auth.SupernoteOAuthProvider` against
-`supernote.server.services.coordination.CoordinationService`. See `supernote.guides.mcp`.
+Validates both OAuth 2.1 Bearer tokens issued by `supernote.server.mcp.auth.SupernoteOAuthProvider`
+and static Bearer API keys (`sn_...`) via `supernote.server.services.user.UserService`.
+See `supernote.guides.mcp`.
 """
 
+import functools
 import json
 import logging
-from typing import Any, cast
+from collections.abc import Awaitable, Callable
+from typing import Any, ParamSpec, cast
 
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.provider import TokenVerifier
@@ -33,11 +36,19 @@ from supernote.server.mcp.models import (
     TranscriptRequestDTO,
     TranscriptResponseVO,
 )
+from supernote.server.metrics import (
+    MCPToolName,
+    init_mcp_metrics,
+    track_mcp_tool_call,
+)
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.search import SearchService
-from supernote.server.services.user import UserService
+from supernote.server.services.user import API_KEY_PREFIX, UserService
 
 logger = logging.getLogger(__name__)
+MAX_MCP_TOKEN_LENGTH = 4096
+
+_P = ParamSpec("_P")
 
 # Global services to be injected by the app
 _services: dict[str, Any] = {
@@ -68,35 +79,79 @@ class SupernoteTokenVerifier(TokenVerifier):
         self.coordination_service = coordination_service
 
     async def verify_token(self, token: str) -> SupernoteAccessToken | None:
-        key = f"mcp:access_token:{token}"
-        data = await self.coordination_service.get_value(key)
-        if not data:
+        if not token or len(token) > MAX_MCP_TOKEN_LENGTH:
             return None
-        token_data = json.loads(data)
+
+        if not token.startswith(API_KEY_PREFIX):
+            key = f"mcp:access_token:{token}"
+            data = await self.coordination_service.get_value(key)
+            if data:
+                token_data = json.loads(data)
+                raw_user_id = token_data.get("user_id")
+                # TODO(#442): Remove legacy email user_id migration once 30-day OAuth refresh tokens expire.
+                if isinstance(raw_user_id, str) and not raw_user_id.isdigit():
+                    try:
+                        raw_user_id = await self.user_service.get_user_id(raw_user_id)
+                    except ValueError:
+                        return None
+                if raw_user_id is None:
+                    return None
+                return SupernoteAccessToken(
+                    token=token,
+                    user_id=int(raw_user_id),
+                    client_id=token_data.get("client_id", "unknown"),
+                    scopes=token_data.get("scopes", []),
+                    resource=token_data.get("resource"),
+                )
+
+        session = await self.user_service.verify_token(token)
+        if not session:
+            return None
         return SupernoteAccessToken(
             token=token,
-            user_id=token_data.get("user_id"),
-            client_id=token_data.get("client_id", "unknown"),
-            scopes=token_data.get("scopes", []),
-            resource=token_data.get("resource"),
+            user_id=session.user_id,
+            client_id="api_key" if session.is_api_key else "session",
+            scopes=["supernote:all"],
+            expires_at=session.expires_at,
         )
 
 
 async def _get_auth_user_id(ctx: Context) -> int | None:
     """Verify token and return user_id."""
-    if not (user_service_raw := _services["user_service"]):
+    if not _services["user_service"]:
         raise ValueError("User service not initialized.")
-    user_service: UserService = user_service_raw
 
     # Try to get user from MCP Auth Context (e.g. Bearer token)
     if not (auth_context := auth_context_var.get()):
         return None
     token = cast(SupernoteAccessToken, auth_context.access_token)
-    if not token.user_id:
-        return None
-    return await user_service.get_user_id(token.user_id)
+    return token.user_id
 
 
+def _instrument_mcp_tool(
+    tool: MCPToolName,
+) -> Callable[
+    [Callable[_P, Awaitable[dict[str, Any]]]],
+    Callable[_P, Awaitable[dict[str, Any]]],
+]:
+    """Wrap an MCP tool handler to record Prometheus call and latency metrics."""
+
+    def decorator(
+        fn: Callable[_P, Awaitable[dict[str, Any]]],
+    ) -> Callable[_P, Awaitable[dict[str, Any]]]:
+        @functools.wraps(fn)
+        async def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> dict[str, Any]:
+            with track_mcp_tool_call(tool=tool) as call:
+                result = await fn(*args, **kwargs)
+                call.set_succeeded(result.get("success") is True)
+                return result
+
+        return wrapper
+
+    return decorator
+
+
+@_instrument_mcp_tool(MCPToolName.LIST_NOTEBOOKS)
 async def list_notebooks(
     ctx: Context,
     limit: int = 20,
@@ -140,6 +195,7 @@ async def list_notebooks(
     return ListNotebooksResponseVO(notebooks=vo_list).to_dict()
 
 
+@_instrument_mcp_tool(MCPToolName.SEARCH_NOTEBOOK_CHUNKS)
 async def search_notebook_chunks(
     ctx: Context,
     query: str,
@@ -208,6 +264,7 @@ async def search_notebook_chunks(
     return SearchResponseVO(results=vo_list).to_dict()
 
 
+@_instrument_mcp_tool(MCPToolName.GET_NOTEBOOK_TRANSCRIPT)
 async def get_notebook_transcript(
     ctx: Context,
     file_id: str,
@@ -265,6 +322,7 @@ async def get_notebook_transcript(
 
 def create_mcp_server(issuer_url: str, resource_server_url: str) -> MCPServer:
     """Create a new MCPServer instance and register tools."""
+    init_mcp_metrics()
     token_verifier = SupernoteTokenVerifier(
         _services["user_service"], _services["coordination_service"]
     )
@@ -273,6 +331,10 @@ def create_mcp_server(issuer_url: str, resource_server_url: str) -> MCPServer:
         auth=AuthSettings(
             issuer_url=AnyHttpUrl(issuer_url),
             resource_server_url=AnyHttpUrl(resource_server_url),
+            # SupernoteTokenVerifier validates opaque tokens stored in the
+            # server-local mcp:access_token:* namespace exclusively for this
+            # embedded MCP resource server.
+            validate_token_resource=False,
         ),
         token_verifier=token_verifier,
     )

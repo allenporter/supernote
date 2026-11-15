@@ -19,7 +19,6 @@ payload = await signer.verify("/api/oss/download", signature_token)
 """
 
 import datetime
-import logging
 import time
 import urllib.parse
 import uuid
@@ -29,9 +28,8 @@ import jwt
 from aiohttp import web
 
 from supernote.server.exceptions import InvalidSignature, SignerError
+from supernote.server.keys import CONFIG_KEY
 from supernote.server.services.coordination import CoordinationService
-
-logger = logging.getLogger(__name__)
 
 DEFAULT_EXPIRATION = datetime.timedelta(minutes=15)
 
@@ -222,7 +220,7 @@ def get_request_base_url(request: web.Request) -> str:
     Prefers `ServerConfig.configured_base_url` when set (`SUPERNOTE_BASE_URL`),
     falling back to `f"{request.scheme}://{request.host}"` derived from the request.
     """
-    config = request.app.get("config")
+    config = request.app.get(CONFIG_KEY)
     if config and config.configured_base_url:
         return config.configured_base_url
     return f"{request.scheme}://{request.host}"

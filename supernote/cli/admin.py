@@ -7,25 +7,34 @@ note reprocessing (`reprocess`), and two-way storage integrity checks (`verify-i
 See `supernote.cli` and `supernote.guides.cli_reference`.
 """
 
+import argparse
 import asyncio
 import getpass
 import hashlib
 import json
 import sys
+from collections.abc import Coroutine
+from typing import Any
 
 from supernote.client.admin import AdminClient
 from supernote.client.exceptions import ApiException
 from supernote.models.base import ProcessingStatus, TaskType
 
-from .client import create_session
+from .client import create_session, server_url_override
+
+
+def _run(args: argparse.Namespace, coro: Coroutine[Any, Any, None]) -> None:
+    """Run an admin coroutine, honoring the `admin --url` override."""
+    with server_url_override(getattr(args, "url", None)):
+        asyncio.run(coro)
 
 
 async def add_user_async(
-    url: str, email: str, password: str, display_name: str | None = None
-):
+    email: str, password: str, display_name: str | None = None
+) -> None:
     """Async implementation of add user."""
-    async with create_session(url) as session:
-        print(f"Attempting to register user '{email}' on {url}...")
+    async with create_session() as session:
+        print(f"Attempting to register user '{email}' on {session.client.host}...")
 
         admin_client = AdminClient(session.client)
 
@@ -60,43 +69,45 @@ async def add_user_async(
             sys.exit(1)
 
 
-async def list_users_async(url: str | None = None):
+async def list_users_async() -> None:
     """Async implementation of list users."""
-    async with create_session(url) as session:
+    async with create_session() as session:
         client = session.client
         try:
             resp = await client.get("/api/admin/users")
             users = await resp.json()
 
             print(f"\nTotal Users: {len(users)}\n")
-            print(f"{'Email':<30} {'Name':<20} {'Capacity':<10}")
-            print("-" * 65)
+            print(f"{'Email':<30} {'Name':<20} {'Quota':<15}")
+            print("-" * 68)
             for u in users:
+                raw_cap = str(u.get("totalCapacity", "0"))
+                cap_display = "unlimited" if raw_cap == "0" else raw_cap
                 print(
-                    f"{u.get('email', 'N/A'):<30} {u.get('userName', 'N/A'):<20} {u.get('totalCapacity', '0'):<10}"
+                    f"{u.get('email', 'N/A'):<30} {u.get('userName', 'N/A'):<20} {cap_display:<15}"
                 )
 
         except Exception as e:
             print(f"Failed to list users: {e}")
 
 
-def add_user(args):
+def add_user(args: argparse.Namespace) -> None:
     password = args.password
     if not password:
         password = getpass.getpass(f"Password for {args.email}: ")
 
     display_name = args.name or args.email.split("@")[0]
-    asyncio.run(add_user_async(args.url, args.email, password, display_name))
+    _run(args, add_user_async(args.email, password, display_name))
 
 
-def list_users(args):
-    asyncio.run(list_users_async(args.url))
+def list_users(args: argparse.Namespace) -> None:
+    _run(args, list_users_async())
 
 
-async def reset_password_async(url: str, email: str, password: str):
+async def reset_password_async(email: str, password: str) -> None:
     """Async implementation of password reset."""
-    async with create_session(url) as session:
-        print(f"Attempting to reset password for '{email}' on {url}...")
+    async with create_session() as session:
+        print(f"Attempting to reset password for '{email}' on {session.client.host}...")
         admin_client = AdminClient(session.client)
 
         password_md5 = hashlib.md5(password.encode()).hexdigest()
@@ -109,7 +120,7 @@ async def reset_password_async(url: str, email: str, password: str):
             sys.exit(1)
 
 
-def reset_password(args):
+def reset_password(args: argparse.Namespace) -> None:
     password = args.password
     if not password:
         password = getpass.getpass(f"New password for {args.email}: ")
@@ -118,12 +129,33 @@ def reset_password(args):
             print("Passwords do not match.")
             sys.exit(1)
 
-    asyncio.run(reset_password_async(args.url, args.email, password))
+    _run(args, reset_password_async(args.email, password))
 
 
-async def queue_status_async(url: str | None = None):
+async def set_quota_async(email: str, quota_bytes: int) -> None:
+    """Set a user's storage quota in bytes (0 = unlimited)."""
+    if quota_bytes < 0:
+        print(f"Invalid quota value {quota_bytes}: must be >= 0")
+        sys.exit(1)
+
+    async with create_session() as session:
+        admin_client = AdminClient(session.client)
+        try:
+            await admin_client.admin_set_quota(email, quota_bytes)
+            quota_label = "unlimited" if quota_bytes == 0 else f"{quota_bytes} bytes"
+            print(f"Success! Set storage quota for '{email}' to {quota_label}.")
+        except Exception as e:
+            print(f"Failed to set quota: {e}")
+            sys.exit(1)
+
+
+def set_quota(args: argparse.Namespace) -> None:
+    _run(args, set_quota_async(args.email, args.quota))
+
+
+async def queue_status_async() -> None:
     """Show the background processing queue status."""
-    async with create_session(url) as session:
+    async with create_session() as session:
         admin_client = AdminClient(session.client)
         try:
             status = await admin_client.get_queue_status()
@@ -141,9 +173,9 @@ async def queue_status_async(url: str | None = None):
             sys.exit(1)
 
 
-async def queue_stop_async(url: str | None = None):
+async def queue_stop_async() -> None:
     """Stop/pause the background processing queue."""
-    async with create_session(url) as session:
+    async with create_session() as session:
         admin_client = AdminClient(session.client)
         try:
             print("Attempting to stop/pause background queue processing...")
@@ -154,9 +186,9 @@ async def queue_stop_async(url: str | None = None):
             sys.exit(1)
 
 
-async def queue_start_async(url: str | None = None):
+async def queue_start_async() -> None:
     """Start/resume the background processing queue."""
-    async with create_session(url) as session:
+    async with create_session() as session:
         admin_client = AdminClient(session.client)
         try:
             print("Attempting to start/resume background queue processing...")
@@ -167,21 +199,21 @@ async def queue_start_async(url: str | None = None):
             sys.exit(1)
 
 
-def queue_status(args):
-    asyncio.run(queue_status_async(args.url))
+def queue_status(args: argparse.Namespace) -> None:
+    _run(args, queue_status_async())
 
 
-def queue_stop(args):
-    asyncio.run(queue_stop_async(args.url))
+def queue_stop(args: argparse.Namespace) -> None:
+    _run(args, queue_stop_async())
 
 
-def queue_start(args):
-    asyncio.run(queue_start_async(args.url))
+def queue_start(args: argparse.Namespace) -> None:
+    _run(args, queue_start_async())
 
 
-async def reprocess_async(url: str, task_type: str, file_id: int | None = None):
+async def reprocess_async(task_type: str, file_id: int | None = None) -> None:
     """Async implementation of note reprocessing."""
-    async with create_session(url) as session:
+    async with create_session() as session:
         print("Connecting to server to trigger reprocessing...")
         admin_client = AdminClient(session.client)
         try:
@@ -193,19 +225,18 @@ async def reprocess_async(url: str, task_type: str, file_id: int | None = None):
             sys.exit(1)
 
 
-def reprocess(args):
-    asyncio.run(reprocess_async(args.url, args.type, args.file_id))
+def reprocess(args: argparse.Namespace) -> None:
+    _run(args, reprocess_async(args.type, args.file_id))
 
 
 async def integrity_async(
-    url: str | None,
     email: str | None = None,
     file_id: int | None = None,
     full_disk: bool = False,
     as_json: bool = False,
 ) -> None:
     """Verify server storage integrity for a user or across the full disk."""
-    async with create_session(url) as session:
+    async with create_session() as session:
         admin_client = AdminClient(session.client)
         try:
             report = await admin_client.verify_integrity(
@@ -252,20 +283,19 @@ async def integrity_async(
             sys.exit(1)
 
 
-def integrity(args) -> None:
-    asyncio.run(
+def integrity(args: argparse.Namespace) -> None:
+    _run(
+        args,
         integrity_async(
-            url=args.url,
             email=args.email,
             file_id=args.file_id,
             full_disk=args.full_disk,
             as_json=args.json,
-        )
+        ),
     )
 
 
 async def list_tasks_async(
-    url: str | None = None,
     status: str | None = None,
     file_id: int | None = None,
     task_type: str | None = None,
@@ -273,7 +303,7 @@ async def list_tasks_async(
     as_json: bool = False,
 ) -> None:
     """List system processing tasks."""
-    async with create_session(url) as session:
+    async with create_session() as session:
         admin_client = AdminClient(session.client)
         try:
             resp = await admin_client.list_tasks(
@@ -307,37 +337,54 @@ async def list_tasks_async(
             )
 
 
-def list_tasks(args) -> None:
-    asyncio.run(
+def list_tasks(args: argparse.Namespace) -> None:
+    _run(
+        args,
         list_tasks_async(
-            url=args.url,
             status=args.status,
             file_id=args.file_id,
             task_type=args.type,
             limit=args.limit,
             as_json=args.json,
-        )
+        ),
     )
 
 
-def add_parser(subparsers):
+def add_parser(subparsers: Any) -> None:
+    # Allow `--url` on any admin subcommand without overwriting an earlier
+    # `supernote admin --url ...` flag with a child default of None.
+    url_subparser = argparse.ArgumentParser(add_help=False)
+    url_subparser.add_argument(
+        "--url",
+        type=str,
+        default=argparse.SUPPRESS,
+        help="URL of the Supernote Server",
+    )
+
     # 'admin' parent command
     parser_admin = subparsers.add_parser(
         "admin",
         help="Administrative commands for Supernote Server",
     )
-    parser_admin.add_argument("--url", type=str, help="URL of the Supernote Server")
+    parser_admin.add_argument(
+        "--url", type=str, default=None, help="URL of the Supernote Server"
+    )
 
     admin_subparsers = parser_admin.add_subparsers(dest="admin_command")
 
     # --- User Management ---
-    parser_user = admin_subparsers.add_parser("user", help="User management commands")
+    parser_user = admin_subparsers.add_parser(
+        "user",
+        help="User management commands",
+        parents=[url_subparser],
+    )
     user_subparsers = parser_user.add_subparsers(dest="user_command")
 
     # user list
     parser_user_list = user_subparsers.add_parser(
         "list",
         help="List all users",
+        parents=[url_subparser],
     )
     parser_user_list.set_defaults(func=list_users)
 
@@ -345,6 +392,7 @@ def add_parser(subparsers):
     parser_user_add = user_subparsers.add_parser(
         "add",
         help="Add a new user",
+        parents=[url_subparser],
     )
     parser_user_add.add_argument(
         "email", type=str, help="Email address for the new user"
@@ -361,6 +409,7 @@ def add_parser(subparsers):
     parser_user_reset = user_subparsers.add_parser(
         "reset-password",
         help="Reset user password",
+        parents=[url_subparser],
     )
     parser_user_reset.add_argument("email", type=str, help="Email address of the user")
     parser_user_reset.add_argument(
@@ -368,9 +417,25 @@ def add_parser(subparsers):
     )
     parser_user_reset.set_defaults(func=reset_password)
 
+    # user set-quota
+    parser_user_quota = user_subparsers.add_parser(
+        "set-quota",
+        help="Set user storage quota in bytes (0 for unlimited)",
+        parents=[url_subparser],
+    )
+    parser_user_quota.add_argument("email", type=str, help="Email address of the user")
+    parser_user_quota.add_argument(
+        "quota",
+        type=int,
+        help="Storage quota in bytes (0 for unlimited)",
+    )
+    parser_user_quota.set_defaults(func=set_quota)
+
     # --- Queue Management ---
     parser_queue = admin_subparsers.add_parser(
-        "queue", help="Queue management commands"
+        "queue",
+        help="Queue management commands",
+        parents=[url_subparser],
     )
     queue_subparsers = parser_queue.add_subparsers(dest="queue_command")
 
@@ -378,6 +443,7 @@ def add_parser(subparsers):
     parser_queue_status = queue_subparsers.add_parser(
         "status",
         help="Show queue processing status",
+        parents=[url_subparser],
     )
     parser_queue_status.set_defaults(func=queue_status)
 
@@ -385,6 +451,7 @@ def add_parser(subparsers):
     parser_queue_stop = queue_subparsers.add_parser(
         "stop",
         help="Stop/pause the queue processing",
+        parents=[url_subparser],
     )
     parser_queue_stop.set_defaults(func=queue_stop)
 
@@ -392,6 +459,7 @@ def add_parser(subparsers):
     parser_queue_start = queue_subparsers.add_parser(
         "start",
         help="Start/resume the queue processing",
+        parents=[url_subparser],
     )
     parser_queue_start.set_defaults(func=queue_start)
 
@@ -399,6 +467,7 @@ def add_parser(subparsers):
     parser_reprocess = admin_subparsers.add_parser(
         "reprocess",
         help="Force reprocessing of notes by clearing task states on the server",
+        parents=[url_subparser],
     )
     reprocess_choices = ["all", *TaskType.friendly_names()]
 
@@ -420,6 +489,7 @@ def add_parser(subparsers):
     parser_integrity = admin_subparsers.add_parser(
         "integrity",
         help="Verify VFS and blob storage integrity",
+        parents=[url_subparser],
     )
     integrity_scope = parser_integrity.add_mutually_exclusive_group(required=True)
     integrity_scope.add_argument(
@@ -450,6 +520,7 @@ def add_parser(subparsers):
     parser_tasks = admin_subparsers.add_parser(
         "tasks",
         help="Inspect background note processing tasks and errors",
+        parents=[url_subparser],
     )
     status_choices = [
         s.value.lower() for s in ProcessingStatus if s != ProcessingStatus.NONE

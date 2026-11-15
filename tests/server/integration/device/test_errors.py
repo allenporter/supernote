@@ -37,10 +37,14 @@ async def test_error_move_into_self(device_client: DeviceClient) -> None:
     assert res.entries_vo
     folder_id = int(res.entries_vo.id)
 
-    with pytest.raises(BadRequestException, match="Cyclic move"):
+    with pytest.raises(BadRequestException, match="E0358.*Cyclic move"):
         await device_client.move(
-            id=folder_id, to_path="/FolderA/Sub", equipment_no="test"
+            id=folder_id, to_path="/FolderA/NewSub/Sub", equipment_no="test"
         )
+
+    # Ensure intermediate folder NewSub was not created inside FolderA
+    listing = await device_client.list_folder(path="/FolderA", equipment_no="test")
+    assert listing.entries == []
 
 
 async def test_error_list_file_as_folder(device_client: DeviceClient) -> None:

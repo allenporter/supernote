@@ -14,6 +14,7 @@ from supernote.models.user import UserRegisterDTO
 from supernote.server.app import create_app
 from supernote.server.config import AuthConfig, ServerConfig
 from supernote.server.db.migrations import run_migrations
+from supernote.server.keys import USER_SERVICE_KEY
 from supernote.server.services.user import UserService
 
 
@@ -36,7 +37,7 @@ async def test_unmigrated_summary_api_query(tmp_path: Path) -> None:
     )
     app = create_app(config)
 
-    token = await app["user_service"].create_session("api_test@example.com")
+    token = await app[USER_SERVICE_KEY].create_session("api_test@example.com")
 
     class TokenAuth(AbstractAuth):
         async def async_get_access_token(self) -> str:
@@ -90,7 +91,7 @@ async def test_migrated_legacy_db_summary_api_query(tmp_path: Path) -> None:
     )
     app = create_app(config)
 
-    token = await app["user_service"].create_session("api_test@example.com")
+    token = await app[USER_SERVICE_KEY].create_session("api_test@example.com")
 
     class TokenAuth(AbstractAuth):
         async def async_get_access_token(self) -> str:
@@ -147,7 +148,7 @@ async def test_post_migration_new_summary_creation(tmp_path: Path) -> None:
     )
     app = create_app(config)
 
-    user_service: UserService = app["user_service"]
+    user_service: UserService = app[USER_SERVICE_KEY]
     pwd_md5 = hashlib.md5(b"password123").hexdigest()
     await user_service.register(
         UserRegisterDTO(email="new_api_test@example.com", password=pwd_md5)

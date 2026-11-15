@@ -1,6 +1,6 @@
 # Configuration Reference
 
-The Supernote Private Cloud server is configured via a YAML configuration file (`config/config.yaml` by default) and `SUPERNOTE_*` environment variables, parsed and validated by `supernote.server.config.ServerConfig`.
+The **Open Private Cloud for Supernote** server is configured via a YAML configuration file (`config/config.yaml` by default) and `SUPERNOTE_*` environment variables, parsed and validated by `supernote.server.config.ServerConfig`.
 
 ---
 
@@ -51,7 +51,7 @@ auth:
 
 ### Example 2: Full Knowledge Hub with Cloud AI — Google Gemini (Recommended)
 
-Enables the Web UI, MCP server on port `8081`, and background AI pipeline using Google Gemini for handwriting OCR, structured notebook summaries, and vector embeddings. We generally recommend Gemini for its strong multimodal handwriting capabilities and low cost (quality for summaries and OCR extraction may be lower when using other OpenAI-compatible or local models).
+Enables the Web UI, MCP server on port `8081`, and background AI pipeline using Google Gemini (`gemini-3.5-flash-lite` or `gemini-3.6-flash`) for handwriting OCR, structured notebook summaries, and vector embeddings. See `supernote.guides.ocr_benchmarks` for accuracy, latency, and cost comparisons across models.
 
 ```yaml
 host: 0.0.0.0
@@ -68,11 +68,11 @@ ai:
       api_key: "AIzaSyYourGeminiApiKey"
   ocr:
     provider: gemini
-    model: gemini-3.6-flash
+    model: gemini-3.5-flash-lite  # or gemini-3.6-flash
     max_concurrency: 5
   summary:
     provider: gemini
-    model: gemini-3.6-flash
+    model: gemini-3.5-flash-lite
     max_concurrency: 5
   embedding:
     provider: gemini
@@ -80,9 +80,9 @@ ai:
     max_concurrency: 5
 ```
 
-### Example 3: Local AI (Ollama / vLLM / LM Studio via `openai` Provider)
+### Example 3: Local AI & Named OpenAI-Compatible Providers (`ollama` + `llamacpp`)
 
-Runs 100% locally with zero external API calls using any OpenAI-compatible inference server (`openai` provider). You can also mix providers per capability (e.g., local embeddings with cloud OCR, or omitting `summary` while keeping `ocr` and `embedding`).
+Runs 100% locally with zero external API calls using any OpenAI-compatible inference server (`type: openai`). A provider entry's backend implementation defaults to its key name (`gemini`, `openai`, `apple`), or you can set `type: openai` on multiple named entries to route capabilities across distinct local servers:
 
 ```yaml
 host: 0.0.0.0
@@ -93,32 +93,36 @@ storage_dir: storage
 
 ai:
   providers:
-    openai:
+    ollama:
+      type: openai
       # When running Ollama on the host machine:
       # - Native Python: http://localhost:11434/v1
       # - Inside Docker: http://host.docker.internal:11434/v1
       base_url: "http://localhost:11434/v1"
-      # api_key: "sk-..." # Optional for local servers; required for hosted OpenAI
+    llamacpp:
+      type: openai
+      base_url: "http://localhost:8082/v1"
   ocr:
-    provider: openai
+    provider: ollama
     model: gemma3:27b
     max_concurrency: 1
   summary:
-    provider: openai
+    provider: ollama
     model: gemma3:27b
     max_concurrency: 1
   embedding:
-    provider: openai
+    provider: llamacpp
     model: embeddinggemma
     max_concurrency: 1
 ```
 
 > [!TIP]
-> **Docker to Host Ollama**: When running `supernote` inside Docker and Ollama on the Docker host, set `base_url: "http://host.docker.internal:11434/v1"` and add `extra_hosts: ["host.docker.internal:host-gateway"]` to your `docker-compose.yml`.
+> - **Docker to Host Ollama**: When running `supernote` inside Docker and Ollama on the Docker host, set `base_url: "http://host.docker.internal:11434/v1"` and add `extra_hosts: ["host.docker.internal:host-gateway"]` to your `docker-compose.yml`.
+> - **macOS On-Device Vision OCR (`apple` provider)**: On macOS (`pip install "supernote[server,apple]"`), you can configure `provider: apple` with `model: vision-accurate` (`max_concurrency: 2`) under `ai.ocr` as an offline fallback for basic prose search without an API key or model server (avoid `vision-fast`, which only detects machine-printed text).
 
-### Example 4: Reverse-Proxied Production Setup with Webhooks
+### Example 4: Reverse-Proxied Production Setup with Quotas & Webhooks
 
-Configured for deployment behind an HTTPS reverse proxy (Caddy/Nginx/Traefik) with custom prompts and signed outbound webhooks.
+Configured for deployment behind an HTTPS reverse proxy (Caddy/Nginx/Traefik) with per-user storage quotas, custom prompts, and signed outbound webhooks.
 
 ```yaml
 host: 0.0.0.0
@@ -133,7 +137,10 @@ trusted_proxies:
   - "::1"
   - "172.18.0.0/16"
 
+log_level: INFO
 storage_dir: /data
+default_user_quota: 10737418240  # 10 GiB per user default (0 = bounded by volume free space)
+event_log_retention_days: 90
 prompts_dir: /data/config/prompts
 metrics_enabled: true
 metrics_path: /metrics
@@ -150,11 +157,11 @@ ai:
       api_key: "AIzaSyYourGeminiApiKey"
   ocr:
     provider: gemini
-    model: gemini-3.6-flash
+    model: gemini-3.5-flash-lite
     max_concurrency: 5
   summary:
     provider: gemini
-    model: gemini-3.6-flash
+    model: gemini-3.5-flash-lite
     max_concurrency: 5
   embedding:
     provider: gemini
@@ -184,16 +191,19 @@ webhooks:
 | `mcp_port` | `SUPERNOTE_MCP_PORT` | `int` | `8081` | TCP port for the Streamable HTTP MCP Resource Server (`/mcp`). |
 | `base_url` | `SUPERNOTE_BASE_URL` *(or legacy `SUPERNOTE_AUTH_URL_BASE`)* | `str \| None` | `None` *(falls back to `http://<host>:<port>`)* | Publicly reachable base URL of the main server (port `8080`). Used as the OAuth 2.1 issuer URL and for signed OSS URLs when set. |
 | `mcp_base_url` | `SUPERNOTE_MCP_BASE_URL` | `str \| None` | `None` *(falls back to `http://<host>:<mcp_port>`)* | Publicly reachable base URL of the MCP server (port `8081`). Used in RFC 9728 Protected Resource metadata (`/.well-known/oauth-protected-resource`). |
-| `storage_dir` | `SUPERNOTE_STORAGE_DIR` | `str` | `"storage"` *(`"/data"` in Docker)* | Root directory for SQLite (`system/supernote.db`), trace logs, user file blobs (`supernote-user-data/`), and PNG cache (`supernote-cache/`). |
+| `storage_dir` | `SUPERNOTE_STORAGE_DIR` | `str` | `"storage"` *(`"/data"` in Docker)* | Root directory for SQLite (`system/supernote.db`), trace logs, user file blobs (`supernote-user-data/`), and PNG/PDF cache (`supernote-cache/`). |
+| `default_user_quota` | `SUPERNOTE_DEFAULT_USER_QUOTA` | `int` | `0` | Default per-user storage quota in bytes (`0` = uncapped per-user quota, bounded by storage volume free space). Individual users can override this via `UserDO.total_capacity` (`supernote admin user set-quota`). |
+| `event_log_retention_days` | `SUPERNOTE_EVENT_LOG_RETENTION_DAYS` | `int` | `90` | Number of days to retain domain events in `f_user_event` (`UserEventDO`, managed by `supernote.server.services.event_log.EventLogService`). Set `0` to retain indefinitely. |
 | `proxy_mode` | `SUPERNOTE_PROXY_MODE` | `str \| None` | `None` | Reverse proxy header handling: `None`/`"disabled"` (ignore `X-Forwarded-*`), `"relaxed"` (trust immediate upstream proxy and disable MCP DNS rebinding check), or `"strict"` (only trust `trusted_proxies`). |
 | `trusted_proxies` | `SUPERNOTE_TRUSTED_PROXIES` | `list[str]` *(comma-separated in env)* | `["127.0.0.1", "::1", "172.17.0.0/16"]` | IP addresses or CIDR ranges trusted when `proxy_mode` is `"strict"`. |
 | `web_enabled` | `SUPERNOTE_WEB_ENABLED` | `bool` | `true` | Serves the single-page Web UI dashboard at `/` and static assets at `/static/`. |
 | `web_notebook_preview` | `SUPERNOTE_WEB_NOTEBOOK_PREVIEW` | `bool` | `true` | Enables background PNG rasterization of `.note` pages for Web UI viewing. Automatically enabled if `ai.ocr` is configured. |
 | `prompts_dir` | `SUPERNOTE_PROMPTS_DIR` | `str \| None` | `None` | Path to a directory containing custom Markdown prompt overrides for `ocr/` and `summary/`. |
-| `metrics_enabled` | `SUPERNOTE_METRICS_ENABLED` | `bool` | `true` | Enables Prometheus request/processing metrics collection and exposes the metrics endpoint. |
+| `metrics_enabled` | `SUPERNOTE_METRICS_ENABLED` | `bool` | `true` | Enables Prometheus request, processing, and blob storage inventory metrics (`supernote.server.services.storage_metrics.StorageMetricsCollector`) and exposes the metrics endpoint. |
 | `metrics_path` | `SUPERNOTE_METRICS_PATH` | `str` | `"/metrics"` | URL path on the main server (`port`) where Prometheus metrics are exposed. |
-| `trace_log_file` | `SUPERNOTE_TRACE_LOG_FILE` | `str \| None` | `<storage_dir>/system/trace.log` | File path for structured JSONL HTTP request/response trace logging. |
-| `trace_log_unsafe` | `SUPERNOTE_TRACE_LOG_UNSAFE` | `bool` | `false` | Disables credential/token redaction in `trace.log`. Use only for local protocol debugging. |
+| `log_level` | `SUPERNOTE_LOG_LEVEL` | `str` | `"INFO"` | Server logging verbosity (`"DEBUG"`, `"INFO"`, `"WARNING"`, `"ERROR"`). |
+| `trace_log_file` | `SUPERNOTE_TRACE_LOG_FILE` | `str \| None` | `<storage_dir>/system/trace.log` | File path for structured HTTP request/response trace logging. Set to `""` (empty string) to disable writing trace logs to disk. |
+| `trace_log_unsafe` | `SUPERNOTE_TRACE_LOG_UNSAFE` | `bool` | `false` | Disables credential, cookie, and token redaction across `trace.log` and HTTP access logs. Use only for local protocol debugging. |
 | *(runtime property)* | `SUPERNOTE_EPHEMERAL` | `bool` | `false` | Internal flag set by `supernote serve --ephemeral` to bootstrap `debug@example.com` on startup. |
 
 ---
@@ -204,9 +214,9 @@ Configured under the `auth:` block in `config.yaml`.
 
 | YAML Key | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `auth.secret_key` | `SUPERNOTE_JWT_SECRET` | `str` | `""` *(auto-generated in DB)* | Secret key used to sign JWT session tokens and HMAC-signed OSS file URLs. If empty, a persistent secret is generated and stored in SQLite on first boot. |
-| `auth.expiration_hours` | — | `int` | `24` | Lifetime (in hours) of Web UI and CLI JWT access tokens. |
-| `auth.device_expiration_hours` | — | `int` | `87600` *(10 years)* | Lifetime (in hours) of JWT tokens issued to physical Supernote hardware devices (`equipment_no` present). |
+| `auth.secret_key` | `SUPERNOTE_JWT_SECRET` | `str` | `""` *(auto-generated in DB)* | Secret key used to sign JWT session tokens and HMAC-signed OSS file URLs. If empty, a persistent secret is generated and stored in SQLite (`system:jwt_secret_key`) on first boot. |
+| `auth.expiration_hours` | `SUPERNOTE_JWT_EXPIRATION_HOURS` | `int` | `24` | Lifetime (in hours) of Web UI and CLI JWT access tokens. |
+| `auth.device_expiration_hours` | `SUPERNOTE_DEVICE_EXPIRATION_HOURS` | `int` | `87600` *(10 years)* | Lifetime (in hours) of JWT tokens issued to physical Supernote hardware devices (`equipment_no` present). |
 | `auth.enable_registration` | `SUPERNOTE_ENABLE_REGISTRATION` | `bool` | `false` | When `false`, public registration is only permitted when 0 users exist in the database (Admin-First bootstrap). Set to `true` to allow open public signup at any time. |
 | `auth.enable_remote_password_reset` | `SUPERNOTE_ENABLE_REMOTE_PASSWORD_RESET` | `bool` | `false` | When `false`, unauthenticated public password reset endpoints return `403 Forbidden` (administrators can always reset passwords via `supernote admin user reset-password`). |
 
@@ -222,7 +232,8 @@ Defined as entries under `ai.providers.<provider_name>`:
 
 | YAML Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `ai.providers.<name>.api_key` | `str \| None` | `None` | API key for authenticating with the provider (required for `gemini` and hosted `openai`; optional for local Ollama/vLLM). |
+| `ai.providers.<name>.type` | `str \| None` | `None` *(defaults to `<name>`)* | Backend implementation (`"gemini"`, `"openai"`, `"apple"`, `"fake"`). Set explicitly (e.g. `type: openai`) to configure multiple servers of the same kind under distinct entry names (`ollama`, `llamacpp`). |
+| `ai.providers.<name>.api_key` | `str \| None` | `None` | API key for authenticating with the provider (required for `gemini` and hosted `openai`; optional for local Ollama/vLLM/llama.cpp). |
 | `ai.providers.<name>.base_url` | `str \| None` | `None` | Custom base URL for OpenAI-compatible servers (e.g. `"http://localhost:11434/v1"` for Ollama). |
 
 ### Capability Model Configuration (`supernote.server.config.ModelConfig`)
@@ -231,9 +242,9 @@ Defined at `ai.ocr`, `ai.summary`, and `ai.embedding`:
 
 | YAML Key | Type | Default | Validation & Behavior |
 | :--- | :--- | :--- | :--- |
-| `ai.<capability>.provider` | `str` | `"gemini"` | Must match a provider key in `ai.providers` (`"gemini"` or `"openai"`). Non-empty string required. |
-| `ai.<capability>.model` | `str` | `""` | Provider-specific model identifier (e.g., `"gemini-3.6-flash"`, `"gemini-embedding-001"`, `"gemma3:27b"`, `"embeddinggemma"`). Non-empty string required. |
-| `ai.<capability>.max_concurrency` | `int` | `5` | Maximum concurrent in-flight API requests for this capability (`>= 1`). Lower to `1` or `2` when using local GPU/CPU inference servers. |
+| `ai.<capability>.provider` | `str` | `"gemini"` | Name of the provider entry in `ai.providers` (or a built-in provider type such as `"gemini"`, `"openai"`, `"apple"`). Non-empty string required. |
+| `ai.<capability>.model` | `str` | `""` | Provider-specific model identifier (e.g., `"gemini-3.5-flash-lite"`, `"gemini-3.6-flash"`, `"gemini-embedding-001"`, `"gemma3:27b"`, `"embeddinggemma"`, `"vision-accurate"`). Non-empty string required. |
+| `ai.<capability>.max_concurrency` | `int` | `5` | Maximum concurrent in-flight API requests for this capability (`>= 1`). Lower to `1` or `2` when using local GPU/CPU inference servers or macOS `apple` Vision. |
 
 ### Legacy Top-Level Gemini Environment Variables
 
@@ -242,7 +253,7 @@ For single-variable Docker deployments, `supernote.server.config.ServerConfig` a
 | Legacy YAML Key | Environment Variable | Default | Mapped Target |
 | :--- | :--- | :--- | :--- |
 | `gemini_api_key` | `SUPERNOTE_GEMINI_API_KEY` | `None` | `ai.providers.gemini.api_key` (and enables `ocr`, `summary`, `embedding` if unset) |
-| `gemini_ocr_model` | `SUPERNOTE_GEMINI_OCR_MODEL` | `"gemini-3.6-flash"` | `ai.ocr.model` and `ai.summary.model` |
+| `gemini_ocr_model` | `SUPERNOTE_GEMINI_OCR_MODEL` | `"gemini-3.5-flash-lite"` | `ai.ocr.model` and `ai.summary.model` |
 | `gemini_embedding_model` | `SUPERNOTE_GEMINI_EMBEDDING_MODEL` | `"gemini-embedding-001"` | `ai.embedding.model` |
 | `gemini_max_concurrency` | `SUPERNOTE_GEMINI_MAX_CONCURRENCY` | `5` | `ai.{ocr,summary,embedding}.max_concurrency` |
 
@@ -250,7 +261,7 @@ For single-variable Docker deployments, `supernote.server.config.ServerConfig` a
 
 ## 6. Outbound Webhook Settings (`supernote.server.config.WebhookConfig`)
 
-Configured under the `webhooks:` block in `config.yaml`, consumed by `supernote.server.services.webhook.WebhookService`.
+Configured under the `webhooks:` block in `config.yaml`, consumed by `supernote.server.services.webhook.WebhookService` (see `supernote.guides.webhooks_and_integrations`).
 
 | YAML Key | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |

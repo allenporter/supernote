@@ -1,4 +1,4 @@
-"""Async Python SDK for Supernote Cloud and self-hosted Supernote Private Cloud servers.
+"""Async Python SDK for Open Private Cloud for Supernote.
 
 Install the client extra to use this package:
 
@@ -10,18 +10,18 @@ pip install "supernote[client]"
 
 ## Architecture Overview
 
-The `supernote.client.Supernote` session facade manages an underlying `aiohttp.ClientSession` and authenticated `supernote.client.Client` transport, providing direct properties for core APIs and access to specialized domain clients:
+The `supernote.client.Supernote` session facade manages an underlying `aiohttp.ClientSession` and authenticated `supernote.client.Client` transport, providing direct properties (`sn.device`, `sn.web`, `sn.extended`, `sn.login_client`, `sn.client`) and access to specialized domain clients:
 
 ```mermaid
 flowchart TD
-    SN["Supernote\n(supernote.client.Supernote)"] --> BASE["sn.client : Client\n(CSRF + x-access-token + OSS upload)"]
+    SN["Supernote\n(supernote.client.Supernote)"] --> BASE["sn.client : Client\n(CSRF + x-access-token / Bearer sn_... + OSS upload)"]
     SN --> DEV["sn.device : DeviceClient\n(V2/V3 path & ID sync, upload/download, PNG/PDF)"]
     SN --> WEB["sn.web : WebClient\n(Directory tree, recycle bin, keyword search)"]
+    SN --> EXT["sn.extended : ExtendedClient\n(Semantic search, transcripts, API keys, AI status)"]
     SN --> LOGIN["sn.login_client : LoginClient\n(Challenge-response SHA256/MD5 & SMS auth)"]
     BASE --> SCHED["ScheduleClient(sn.client)\n(Task groups, tasks, batch updates, iCal feed)"]
     BASE --> SUM["SummaryClient(sn.client)\n(Summaries, summary groups, tags)"]
-    BASE --> EXT["ExtendedClient(sn.client)\n(Semantic search, transcripts, AI insights)"]
-    BASE --> ADM["AdminClient(sn.client)\n(Users, queue control, reprocess, integrity)"]
+    BASE --> ADM["AdminClient(sn.client)\n(Users, quotas, queue control, reprocess, integrity)"]
     SOCK["SupernoteSocketClient(host)\n(Real-time Socket.IO push & heartbeats)"]
 ```
 
@@ -31,10 +31,10 @@ flowchart TD
 | `supernote.client.client.Client` | `sn.client` | Low-level HTTP/JSON transport (`X-XSRF-TOKEN`, `x-access-token`, single & multipart OSS uploads). |
 | `supernote.client.device.DeviceClient` | `sn.device` | Hardware V2/V3 file APIs: path-based listing, `upload_content`, `download_content`, sync locks, and server-side PNG/PDF conversion. |
 | `supernote.client.web.WebClient` | `sn.web` | Web UI APIs: paginated directory queries, recycle bin management, rename/move/copy, and user profile queries. |
+| `supernote.client.extended.ExtendedClient` | `sn.extended` or `ExtendedClient(sn.client)` | Self-hosted server extensions: semantic chunk search, page transcripts, AI summaries, note covers, AI status, and static Bearer API keys. |
 | `supernote.client.schedule.ScheduleClient` | `ScheduleClient(sn.client)` | Task lists (`create_group`, `list_groups`), tasks (`create_task`, `list_tasks`, `update_task`, `batch_update_tasks`), and RFC 5545 `.ics` feeds. |
 | `supernote.client.summary.SummaryClient` | `SummaryClient(sn.client)` | Device-synced summaries, summary groups, and summary tags. |
-| `supernote.client.extended.ExtendedClient` | `ExtendedClient(sn.client)` | Self-hosted server intelligence extensions: semantic chunk search, page transcripts, AI summaries, and task status. |
-| `supernote.client.admin.AdminClient` | `AdminClient(sn.client)` | Account administration, processor queue pause/resume, task inspection, note reprocessing, and storage integrity verification. |
+| `supernote.client.admin.AdminClient` | `AdminClient(sn.client)` | Account administration, per-user quotas (`admin_set_quota`), processor queue pause/resume, task inspection, note reprocessing, and storage integrity verification. |
 | `supernote.client.socket.SupernoteSocketClient` | `SupernoteSocketClient(host)` | Real-time Socket.IO listener for `FILE-SYN`, `TASK-SYN`, and `DIGEST-SYN` push notifications. |
 
 ---
@@ -66,15 +66,15 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-### 2. Existing JWT Access Token (`Supernote.from_token`)
+### 2. Static API Key (`sn_...`) or JWT Access Token (`Supernote.from_token`)
 
-Wrap a known `x-access-token` using `supernote.client.auth.ConstantAuth`:
+Wrap a long-lived static Bearer API key (`sn_...`, minted via `supernote cloud keys create` or `sn.extended.create_api_key`) or an existing `x-access-token` JWT using `supernote.client.auth.ConstantAuth`:
 
 ```python
 from supernote.client import Supernote
 
 async with Supernote.from_token(
-    "eyJhbGciOiJIUzI1NiIs...",
+    "sn_live_9f8e7d6c5b4a...",
     host="http://127.0.0.1:8080",
 ) as sn:
     capacity = await sn.device.get_capacity()
@@ -150,8 +150,7 @@ async def sync_notes(sn: Supernote) -> None:
 `supernote.client.schedule.ScheduleClient` wraps the `/api/file/schedule/*` endpoints with async iterators for automatic pagination and RFC 5545 `.ics` feed export:
 
 ```python
-from supernote.client import Supernote
-from supernote.client.schedule import ScheduleClient
+from supernote.client import ScheduleClient, Supernote
 
 
 async def manage_schedule(sn: Supernote) -> None:
@@ -191,19 +190,22 @@ async def manage_schedule(sn: Supernote) -> None:
     print(ics_text[:200])
 ```
 
-### Semantic Search, Transcripts, and AI Summaries (`ExtendedClient`)
+### Semantic Search, Transcripts, AI Status, Covers & API Keys (`ExtendedClient`)
 
-When connected to the self-hosted `supernote` server with AI processing enabled, `supernote.client.extended.ExtendedClient` queries the indexed knowledge base:
+When connected to the self-hosted Open Private Cloud server, `sn.extended` (`supernote.client.extended.ExtendedClient`) provides access to semantic search, transcripts, AI synthesis, cover previews, and static API key management:
 
 ```python
 from supernote.client import Supernote
-from supernote.client.extended import ExtendedClient
 
 
 async def query_knowledge_base(sn: Supernote, file_id: int) -> None:
-    ext = ExtendedClient(sn.client)
+    ext = sn.extended
 
-    # 1. Semantic search across all notebook page chunks
+    # 1. Inspect server AI configuration and active OCR/embedding/summary models
+    ai_status = await ext.get_ai_status()
+    print(f"OCR enabled={ai_status.ocr_enabled} (model={ai_status.ocr_model})")
+
+    # 2. Semantic search across all notebook page chunks
     search_resp = await ext.search(
         query="database migration rollback strategy",
         top_n=5,
@@ -216,20 +218,30 @@ async def query_knowledge_base(sn: Supernote, file_id: int) -> None:
             f"{hit.text_preview}"
         )
 
-    # 2. Fetch full or page-range OCR transcript for a notebook
+    # 3. Fetch full or page-range OCR transcript for a notebook
     transcript_resp = await ext.get_transcript(
         file_id=file_id, start_index=0, end_index=4
     )
-    print(transcript_resp.transcript)
+    for page in transcript_resp.pages:
+        print(f"Page {page.page_index + 1}: {page.text}")
 
-    # 3. List AI-generated synthesis summaries and OCR transcripts attached to a file
+    # 4. List AI-generated synthesis summaries and fetch a single-page cover preview URL
     summaries_resp = await ext.list_summaries(file_id=file_id)
     for summary in summaries_resp.summary_do_list:
         print(f"[{summary.data_source}] {summary.content}")
 
-    # 4. Check background processing status for specific file IDs
-    status_resp = await ext.get_processing_status([file_id])
-    print(status_resp.status_map)
+    cover_vo = await ext.get_note_cover(file_id=file_id)
+    print(f"Cover preview URL: {cover_vo.url}")
+
+    # 5. Create, list, and revoke static Bearer API keys (requires interactive login session)
+    created_key = await ext.create_api_key("Notebook Agent", expires_in_days=90)
+    print(f"Created key {created_key.id}: {created_key.key}")
+
+    key_list = await ext.list_api_keys()
+    for k in key_list.keys:
+        print(f"{k.id}: {k.name} ({k.key_prefix}...)")
+
+    await ext.delete_api_key(created_key.id)
 ```
 
 ### Listening to Real-Time Push Events (`SupernoteSocketClient`)
@@ -238,7 +250,7 @@ async def query_knowledge_base(sn: Supernote, file_id: int) -> None:
 
 ```python
 import time
-from supernote.client.socket import SupernoteSocketClient
+from supernote.client import SupernoteSocketClient
 from supernote.models.socket import SocketHandshakeParams
 from supernote.server.socket_auth import compute_handshake_signature
 
@@ -273,9 +285,7 @@ async def listen_events(host: str, token: str) -> None:
 
 from . import (
     admin,
-    api,
     auth,
-    client,
     device,
     exceptions,
     extended,
@@ -292,9 +302,7 @@ __all__ = [
     "Client",
     "Supernote",
     "admin",
-    "api",
     "auth",
-    "client",
     "device",
     "exceptions",
     "extended",

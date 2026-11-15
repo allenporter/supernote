@@ -20,36 +20,47 @@ by `supernote.notebook.converter` and `supernote.notebook.manipulator` to normal
 `"LAYER2"`, `"LAYER3"`, and `"BGLAYER"`. See `supernote.notebook`.
 """
 
-from typing import Self
+import copy
+from collections.abc import Mapping
+from typing import Any, Self
 
-from . import fileformat
+from . import fileformat, schema
 
 
 class WorkaroundPageWrapper(fileformat.Page):
     """Workaround for duplicated layer name."""
 
-    def __init__(self, page_info: fileformat.ParamsBlock) -> None:
+    def __init__(self, page_info: schema.PageMetadata | Mapping[str, Any]) -> None:
+        if isinstance(page_info, schema.PageMetadata):
+            page_info = copy.deepcopy(page_info)
         super().__init__(page_info)
         self._override_layer_name()
 
-    @staticmethod
-    def from_page(page: fileformat.Page) -> Self:
-        wrapped_page = WorkaroundPageWrapper(page.metadata)
+    @classmethod
+    def from_page(cls, page: fileformat.Page) -> Self:
+        wrapped_page = cls(page.metadata)
         # copy contents from the original page object
-        wrapped_page.set_content(page.get_content())
-        wrapped_page.set_totalpath(page.get_totalpath())
-        for i, layer in enumerate(page.get_layers()):
-            wrapped_page.get_layer(i).set_content(layer.get_content())
+        wrapped_page.content = page.content
+        wrapped_page.totalpath = page.totalpath
+        wrapped_page.recogn_file = page.recogn_file
+        wrapped_page.recogn_text = page.recogn_text
+        wrapped_page._page_index = page._page_index
+        wrapped_page._notebook = page._notebook
+        wrapped_page._keywords = list(page._keywords)
+        wrapped_page._titles = list(page._titles)
+        wrapped_page._links = list(page._links)
+        for i, layer in enumerate(page.layers):
+            wrapped_page.layer(i).content = layer.content
         return wrapped_page
 
     def _override_layer_name(self) -> None:
         mainlayer_visited = False
-        for layer in self.get_layers():
-            name = layer.get_name()
+        for layer in self.layers:
+            name = layer.name
             if name is None:
                 continue
-            if mainlayer_visited and name == "MAINLAYER":
+            if mainlayer_visited and name == schema.LayerName.MAINLAYER:
                 # this layer has duplicated name, so we guess this layer is BGLAYER
-                layer.metadata["LAYERNAME"] = "BGLAYER"
-            elif name == "MAINLAYER":
+                layer.metadata.name = schema.LayerName.BGLAYER
+            elif name == schema.LayerName.MAINLAYER:
                 mainlayer_visited = True

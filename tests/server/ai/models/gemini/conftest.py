@@ -96,4 +96,8 @@ async def gemini_base_url(
 
 @pytest.fixture
 def gemini_backend(gemini_base_url: str) -> GeminiBackend:
-    return GeminiBackend(api_key="test-key", base_url=gemini_base_url)
+    return GeminiBackend(
+        api_key="test-key",
+        base_url=gemini_base_url,
+        provider="gemini",
+    )

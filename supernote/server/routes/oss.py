@@ -23,6 +23,17 @@ from supernote.models.base import create_error_response
 from supernote.models.system import FileChunkParams, FileChunkVO, UploadFileVO
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.exceptions import SupernoteError
+from supernote.server.keys import (
+    BLOB_STORAGE_KEY,
+    CONVERSION_SERVICE_KEY,
+    FILE_SERVICE_KEY,
+    URL_SIGNER_KEY,
+)
+from supernote.server.metrics import (
+    OSSTransferDirection,
+    OSSTransferKind,
+    record_oss_transfer_bytes,
+)
 from supernote.server.services.blob import STREAM_CHUNK_SIZE, BlobStorage
 from supernote.server.services.conversion import ConversionService
 from supernote.server.services.file import FileService
@@ -51,10 +62,9 @@ async def handle_oss_upload(request: web.Request) -> web.Response:
 
     Query: object_name
     """
-    url_signer: UrlSigner = request.app["url_signer"]
-    blob_storage: BlobStorage = request.app["blob_storage"]
+    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
+    blob_storage: BlobStorage = request.app[BLOB_STORAGE_KEY]
 
-    logger.debug("OSS Upload Headers: %s", dict(request.headers))
     try:
         payload = await url_signer.verify(request.path_qs)
     except SupernoteError as err:
@@ -88,6 +98,11 @@ async def handle_oss_upload(request: web.Request) -> web.Response:
         metadata = await blob_storage.put(
             USER_DATA_BUCKET, object_name, _stream_upload_field(field)
         )
+        record_oss_transfer_bytes(
+            direction=OSSTransferDirection.UPLOAD,
+            kind=OSSTransferKind.USER_BLOB,
+            byte_count=metadata.size,
+        )
         logger.info(
             f"Received OSS upload for {object_name} (user: {user_email}): {metadata.size} bytes, MD5: {metadata.content_md5}"
         )
@@ -111,10 +126,9 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
     Endpoint: POST /api/oss/upload/part
     Query Params: uploadId, partNumber, object_name, signature, totalChunks (optional/implied for implicit merge)
     """
-    url_signer: UrlSigner = request.app["url_signer"]
-    blob_storage: BlobStorage = request.app["blob_storage"]
+    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
+    blob_storage: BlobStorage = request.app[BLOB_STORAGE_KEY]
 
-    logger.debug("OSS Upload Part Headers: %s", dict(request.headers))
     query_dict = dict(request.query)
     try:
         params = FileChunkParams.from_dict(query_dict)
@@ -163,6 +177,11 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
         )
         chunk_md5 = metadata.content_md5
         total_bytes = metadata.size
+        record_oss_transfer_bytes(
+            direction=OSSTransferDirection.UPLOAD,
+            kind=OSSTransferKind.USER_CHUNK,
+            byte_count=total_bytes,
+        )
 
         logger.info(
             f"Received chunk {params.part_number} for {params.path} (uploadId: {params.upload_id}): {total_bytes} bytes, MD5: {chunk_md5}"
@@ -268,6 +287,8 @@ async def _stream_blob_response(
     storage_key: str,
     file_name: str,
     file_size: int,
+    *,
+    kind: OSSTransferKind,
 ) -> web.StreamResponse:
     """Stream a blob from storage with HTTP Range and Content-Disposition support."""
     range_header = request.headers.get("Range")
@@ -318,6 +339,11 @@ async def _stream_blob_response(
         stream = blob_storage.get(bucket, storage_key, start=start, end=end)
         async for chunk in stream:
             await response.write(chunk)
+            record_oss_transfer_bytes(
+                direction=OSSTransferDirection.DOWNLOAD,
+                kind=kind,
+                byte_count=len(chunk),
+            )
     except FileNotFoundError:
         return web.json_response(
             create_error_response("Blob not found").to_dict(),
@@ -336,8 +362,8 @@ async def handle_oss_download(request: web.Request) -> web.StreamResponse:
     Query Params: path (which effectively is the object key/ID), signature
     Headers: Range (optional)
     """
-    url_signer: UrlSigner = request.app["url_signer"]
-    file_service: FileService = request.app["file_service"]
+    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
+    file_service: FileService = request.app[FILE_SERVICE_KEY]
     try:
         payload = await url_signer.verify(request.path_qs, consume=False)
     except SupernoteError as err:
@@ -402,6 +428,7 @@ async def handle_oss_download(request: web.Request) -> web.StreamResponse:
         storage_key=storage_key,
         file_name=file_name,
         file_size=file_size,
+        kind=OSSTransferKind.USER_BLOB,
     )
 
 
@@ -412,9 +439,9 @@ async def handle_oss_png_download(request: web.Request) -> web.StreamResponse:
 
     Endpoint: GET /api/oss/png/{file_id}/{page_no}
     """
-    url_signer: UrlSigner = request.app["url_signer"]
-    conversion_service: ConversionService = request.app["conversion_service"]
-    blob_storage: BlobStorage = request.app["blob_storage"]
+    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
+    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
+    blob_storage: BlobStorage = request.app[BLOB_STORAGE_KEY]
     try:
         payload = await url_signer.verify(request.path_qs, consume=False)
     except SupernoteError as err:
@@ -461,6 +488,7 @@ async def handle_oss_png_download(request: web.Request) -> web.StreamResponse:
         storage_key=blob.storage_key,
         file_name=blob.file_name,
         file_size=metadata.size,
+        kind=OSSTransferKind.PNG_PREVIEW,
     )
 
 
@@ -471,9 +499,9 @@ async def handle_oss_pdf_download(request: web.Request) -> web.StreamResponse:
 
     Endpoint: GET /api/oss/pdf/{file_id}
     """
-    url_signer: UrlSigner = request.app["url_signer"]
-    conversion_service: ConversionService = request.app["conversion_service"]
-    blob_storage: BlobStorage = request.app["blob_storage"]
+    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
+    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
+    blob_storage: BlobStorage = request.app[BLOB_STORAGE_KEY]
     try:
         payload = await url_signer.verify(request.path_qs, consume=False)
     except SupernoteError as err:
@@ -519,4 +547,5 @@ async def handle_oss_pdf_download(request: web.Request) -> web.StreamResponse:
         storage_key=blob.storage_key,
         file_name=blob.file_name,
         file_size=metadata.size,
+        kind=OSSTransferKind.PDF_EXPORT,
     )

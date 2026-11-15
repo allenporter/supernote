@@ -7,6 +7,7 @@ import pytest
 from supernote.models.base import BooleanEnum
 from supernote.models.summary import SummaryItem, SummaryTagItem
 from supernote.server.events import (
+    DomainEventRecorded,
     Event,
     LocalEventBus,
     NoteDeletedEvent,
@@ -226,3 +227,37 @@ async def test_local_event_bus_isolates_subscriber_exceptions(
 
     assert healthy_received == [ev]
     assert "Error handling event" in caplog.text
+
+
+async def test_local_event_bus_inline_subscribers_execute_in_order() -> None:
+    """Verify inline=True subscribers run synchronously before publish returns."""
+    bus = LocalEventBus()
+    order: list[str] = []
+
+    async def inline_first(event: DomainEventRecorded) -> None:
+        order.append(f"inline_1:{event.seq}")
+
+    async def inline_second(event: DomainEventRecorded) -> None:
+        order.append(f"inline_2:{event.seq}")
+
+    async def background_handler(event: DomainEventRecorded) -> None:
+        order.append(f"bg:{event.seq}")
+
+    bus.subscribe(DomainEventRecorded, inline_first, inline=True)
+    bus.subscribe(DomainEventRecorded, background_handler, inline=False)
+    bus.subscribe(DomainEventRecorded, inline_second, inline=True)
+
+    recorded = DomainEventRecorded(
+        user_id=1,
+        seq=7,
+        timestamp_ms=1000,
+        event_type="vfs.created",
+        actor="user:web",
+        entity_type="file",
+        entity_id="99",
+    )
+    await bus.publish(recorded)
+    assert order == ["inline_1:7", "inline_2:7"]
+
+    await asyncio.sleep(0)
+    assert order == ["inline_1:7", "inline_2:7", "bg:7"]

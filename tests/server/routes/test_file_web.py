@@ -1,12 +1,17 @@
 import hashlib
 
 import pytest
+from sqlalchemy import select
 
 from supernote.client.client import Client
-from supernote.client.exceptions import BadRequestException
+from supernote.client.exceptions import BadRequestException, ForbiddenException
 from supernote.client.web import WebClient
 from supernote.models.extended import WebSummaryListRequestDTO, WebSummaryListVO
 from supernote.models.summary import AddSummaryVO
+from supernote.server.db.models.user import UserDO
+from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.services.blob import BlobStorage
+from tests.server.conftest import TEST_USERNAME
 
 
 @pytest.fixture
@@ -162,3 +167,56 @@ async def test_web_list_query_returns_recursive_folder_sizes(
         if item.file_name == "Note"
     )
     assert note_folder_after.size == 1000
+
+
+async def test_web_capacity_query_returns_volume_backed_capacity_by_default(
+    authenticated_client: Client,
+    blob_storage: BlobStorage,
+) -> None:
+    """Verify Web capacity endpoint returns positive volume-backed capacity when uncapped."""
+    web_client = WebClient(authenticated_client)
+    capacity = await web_client.get_capacity_web()
+    assert capacity.used_capacity == 0
+    assert capacity.total_capacity > 0
+    available = blob_storage.get_available_bytes()
+    assert available is not None
+    assert abs(capacity.total_capacity - available) < 64 * 1024 * 1024
+
+
+async def test_web_capacity_query_returns_custom_user_capacity(
+    authenticated_client: Client,
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Verify Web capacity endpoint returns customized user total_capacity."""
+    custom_capacity = 25 * 1024 * 1024 * 1024  # 25GB
+    async with session_manager.session() as session:
+        stmt = select(UserDO).where(UserDO.email == TEST_USERNAME)
+        user = (await session.execute(stmt)).scalar_one()
+        user.total_capacity = str(custom_capacity)
+        await session.commit()
+
+    web_client = WebClient(authenticated_client)
+    capacity = await web_client.get_capacity_web()
+    assert capacity.total_capacity == custom_capacity
+
+
+async def test_web_upload_finish_enforces_quota_via_api(
+    authenticated_client: Client,
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Verify Web upload completion rejects uploads exceeding quota with 403."""
+    # Set quota to 500 bytes
+    async with session_manager.session() as session:
+        stmt = select(UserDO).where(UserDO.email == TEST_USERNAME)
+        user = (await session.execute(stmt)).scalar_one()
+        user.total_capacity = "500"
+        await session.commit()
+
+    web_client = WebClient(authenticated_client)
+
+    # Upload 300 bytes - fits under 500-byte quota
+    await web_client.upload_file(0, "fit.txt", b"a" * 300)
+
+    # Next upload of 300 bytes brings total to 600 > 500 - should fail with ForbiddenException (403)
+    with pytest.raises(ForbiddenException):
+        await web_client.upload_file(0, "overflow.txt", b"b" * 300)

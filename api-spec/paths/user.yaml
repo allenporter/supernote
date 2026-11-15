@@ -199,12 +199,60 @@ userRegister:
     tags:
       - User
     summary: User Registration
+    description: >-
+      Registers a new user account. In Private Cloud deployments, the first
+      registered user is granted admin status (isNormal='A') even if
+      registration restriction is enabled; subsequent registrations fail with
+      E0120 (registration restricted) or E0121 (user already exists,
+      registration not allowed) when restriction is active.
     operationId: userRegister
     requestBody:
       content:
         application/json:
           schema:
             $ref: "../components/schemas/user.yaml#/UserRegisterDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"
+
+registerRestriction:
+  get:
+    tags:
+      - User
+    summary: Get Registration Restriction Status (Admin)
+    description: >-
+      Queries whether new user registration is restricted (stored in system
+      reference REGISTER_RESTRICTION / serial 01). Requires admin privileges
+      (isNormal='A'); returns error code E0123 otherwise.
+    operationId: getRegistrationRestriction
+    security:
+      - accessToken: []
+    responses:
+      "200":
+        description: Registration restriction status
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/user.yaml#/RegistrationRestrictionVO"
+  put:
+    tags:
+      - User
+    summary: Set Registration Restriction Status (Admin)
+    description: >-
+      Enables or disables new user registration restriction. Requires admin
+      privileges (isNormal='A'); returns error code E0122 otherwise.
+    operationId: setRegistrationRestriction
+    security:
+      - accessToken: []
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/user.yaml#/RegistrationRestrictionDTO"
     responses:
       "200":
         description: Success
@@ -314,7 +362,7 @@ querySensitiveRecord:
           application/json:
             schema:
               allOf:
-                - $ref: "common.yaml#/BaseVO"
+                - $ref: "../components/schemas/common.yaml#/BaseVO"
                 - type: object
                   properties:
                     data:
@@ -342,7 +390,7 @@ queryLoginRecord:
           application/json:
             schema:
               allOf:
-                - $ref: "common.yaml#/CommonListVO"
+                - $ref: "../components/schemas/common.yaml#/CommonListVO"
                 - type: object
                   properties:
                     list:

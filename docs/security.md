@@ -14,14 +14,17 @@ The system is designed to provide a secure, self-hosted environment for syncing 
     - **Mitigation/Rationale**: This is an **ACCEPTED RISK**. The Supernote device firmware transmits MD5 hashes of passwords. To maintain compatibility with existing hardware clients, the server must store and verify these hashes. We mitigate this by assuming the server is run in a trusted private environment and has secure communication channels.
 - **Login Challenge**: The login flow uses a challenge-response mechanism (Salted SHA256 of the stored MD5 + Random Code) to prevent replay attacks during the authentication handshake.
 
-### Session Management
-- **JWT**: Stateless session management using JSON Web Tokens (HS256).
-- **Session Tracking**: While JWTs are stateless, valid sessions are tracked in a `CoordinationService` (backed by the database) to allow for revocation and to limit concurrent sessions per user/device.
+### Session Management & Static API Keys
+- **JWT Sessions**: Interactive sessions use JSON Web Tokens (HS256) tracked in `CoordinationService` so sessions can be revoked on logout or password change.
+- **Static Bearer API Keys (`sn_<32-hex>`)**: Users can mint named, revocable API keys via `/api/extended/keys` or `supernote cloud keys create` for headless CLI scripts, SDK automation, and MCP agents.
+    - **Storage**: Raw API keys are returned only once at creation. The `api_keys` table stores only the SHA-256 digest (`key_hash`), a truncated display prefix (`sn_xxxxxxxx...`), creation/last-used timestamps, and an optional expiration timestamp (`expires_at`).
+    - **Transport**: API keys and session tokens are accepted via `Authorization: Bearer <token>` (or `x-access-token`) across REST APIs (`/api/extended/*`, `/api/file/*`, `/api/oss/*`, `/api/user/query`), Socket.IO, and `/mcp`.
+    - **Privilege Boundaries (`@interactive_session_only`)**: Static API keys cannot be used to create/list/revoke API keys, change passwords or emails, unbind hardware devices, authorize OAuth clients (`/login-bridge`), or call `/api/admin/*` endpoints. Password rotation revokes interactive sessions without revoking independent API keys; deleting a user cascades and revokes all of their API keys.
 
 ## Authorization
 
 - **Role-Based Access**: The system differentiates between `Admin` and `User` roles.
-    - **Admin**: Can manage users (create, list, reset passwords). The first user created is automatically granted Admin privileges (Bootstrapping).
+    - **Admin**: Can manage users (create, list, reset passwords) using an interactive admin session. The first user created is automatically granted Admin privileges (Bootstrapping).
     - **User**: Can only access their own files and settings.
 
 ## URL Security & Sharing
@@ -34,7 +37,7 @@ Direct access to files (uploads/downloads) is secured using **Signed URLs**.
     - **Benefit**: Prevents replay attacks where an intercepted signed URL could be reused.
 
 ### Log Redaction
-- **Trace Logs**: The request tracing middleware automatically redacts sensitive query parameters (`signature`, `token`) from logs to prevent credentials from leaking into log files.
+- **Trace Logs**: The request tracing middleware automatically redacts sensitive query parameters (`signature`, `token`) and authentication headers (`Authorization`, `x-access-token`) from trace logs to prevent credentials from leaking into log files.
 
 ## Data Storage & Integrity
 

@@ -1,19 +1,30 @@
 import asyncio
 import hashlib
+import io
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
+import numpy as np
 import pytest
+from PIL import Image
+from prometheus_client import REGISTRY
 from sqlalchemy import select
 
-from supernote.models.base import TaskType
+from supernote.models.base import ProcessingStatus, TaskType
+from supernote.notebook import fileformat
 from supernote.server.ai.models.fake.embedding import FakeEmbeddingModel
 from supernote.server.ai.models.fake.ocr import FakeOcrModel
 from supernote.server.ai.models.fake.summary import FakeSummaryModel
-from supernote.server.ai.models.ocr import ConcurrencyLimitedOcrModel
+from supernote.server.ai.models.ocr import ConcurrencyLimitedOcrModel, OcrModel
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
+from supernote.server.db.models.note_processing import (
+    NoteMetadataDO,
+    NotePageContentDO,
+    NotePageMetadataDO,
+    SystemTaskDO,
+)
 from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
@@ -33,10 +44,19 @@ from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.services.processor_modules.embedding import EmbeddingModule
 from supernote.server.services.processor_modules.ocr import OcrModule
 from supernote.server.services.processor_modules.page_hashing import PageHashingModule
+from supernote.server.services.processor_modules.png_conversion import (
+    PngConversionModule,
+)
 from supernote.server.services.processor_modules.summary import SummaryModule
+from supernote.server.services.search import SearchService
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 from supernote.server.utils.paths import get_page_png_path
+from supernote.testing.notebook_fixtures import (
+    SyntheticNotebook,
+    append_synthetic_page,
+    build_synthetic_notebook,
+)
 
 
 @pytest.fixture
@@ -264,7 +284,16 @@ async def test_handle_note_deleted_cleanup(
         )
         await session.commit()
 
-    # Trigger deletion event
+    # Trigger deletion event across registered modules
+    processor_service.register_modules(
+        hashing=PageHashingModule(file_service=file_service),
+        png=PngConversionModule(file_service=file_service),
+        summary=SummaryModule(
+            file_service=file_service,
+            summary_service=summary_service,
+            summary_model=None,
+        ),
+    )
     event = NoteDeletedEvent(file_id=file_id, user_id=test_user_id)
     await processor_service.handle_note_deleted(event)
 
@@ -539,7 +568,9 @@ async def test_start_calls_poll_loop(
         await session.commit()
 
     await processor_service.start()
-    await asyncio.sleep(0.05)
+    async with asyncio.timeout(2.0):
+        while not hashing.calls:
+            await asyncio.sleep(0.01)
 
     assert hashing.calls == [(1, None, None)]
     assert processor_service.polling_task is not None
@@ -864,6 +895,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                     task_type="HASHING",
                     key="global",
                     status="COMPLETED",
+                    data="v2",
                 )
             )
 
@@ -970,6 +1002,7 @@ async def test_sync_completed_event_enqueues_new_and_updated_notes(
                     task_type=TaskType.PAGE_HASHING,
                     key="global",
                     status="COMPLETED",
+                    data="v2",
                 ),
                 # Up-to-date note -> skip
                 UserFileDO(
@@ -985,6 +1018,7 @@ async def test_sync_completed_event_enqueues_new_and_updated_notes(
                     task_type=TaskType.PAGE_HASHING,
                     key="global",
                     status="COMPLETED",
+                    data="v2",
                 ),
                 # Brand-new note for test_user_id (no tasks yet) -> enqueue
                 UserFileDO(
@@ -1028,3 +1062,558 @@ async def test_sync_completed_event_enqueues_new_and_updated_notes(
     assert 9201 not in processor_service.processing_files
     assert 9204 not in processor_service.processing_files
     assert {entity.id, 9203}.issubset(processor_service.processing_files)
+
+
+async def test_get_file_processing_statuses(
+    processor_service: ProcessorService,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    """Verify batched file processing status aggregation, ownership scoping, and queue overrides."""
+    assert await processor_service.get_file_processing_statuses(test_user_id, []) == {}
+
+    other_user_id = test_user_id + 999
+    async with session_manager.session() as session:
+        for fid in (10, 20, 30, 40, 60):
+            session.add(
+                UserFileDO(
+                    id=fid,
+                    user_id=test_user_id,
+                    file_name=f"Note{fid}.note",
+                    directory_id=0,
+                )
+            )
+        session.add(
+            UserFileDO(
+                id=77,
+                user_id=other_user_id,
+                file_name="OtherUser.note",
+                directory_id=0,
+            )
+        )
+        session.add_all(
+            [
+                SystemTaskDO(file_id=10, task_type="PNG", key="p0", status="FAILED"),
+                SystemTaskDO(file_id=10, task_type="OCR", key="p0", status="COMPLETED"),
+                SystemTaskDO(
+                    file_id=20, task_type="PNG", key="p0", status="PROCESSING"
+                ),
+                SystemTaskDO(file_id=30, task_type="PNG", key="p0", status="COMPLETED"),
+                SystemTaskDO(file_id=40, task_type="PNG", key="p0", status="PENDING"),
+                SystemTaskDO(file_id=77, task_type="PNG", key="p0", status="FAILED"),
+            ]
+        )
+        await session.commit()
+
+    statuses = await processor_service.get_file_processing_statuses(
+        user_id=test_user_id,
+        file_ids=[10, 20, 30, 40, 50, 60, 77],
+    )
+    assert statuses == {
+        10: ProcessingStatus.FAILED,
+        20: ProcessingStatus.PROCESSING,
+        30: ProcessingStatus.COMPLETED,
+        40: ProcessingStatus.PENDING,
+        50: ProcessingStatus.NONE,
+        60: ProcessingStatus.NONE,
+        77: ProcessingStatus.NONE,
+    }
+
+    # Enqueue files via the public NoteUpdatedEvent handler (workers not started):
+    # - 60 has no SystemTaskDO rows yet -> PENDING
+    # - 30 was previously COMPLETED and is now re-queued -> PENDING
+    # - 20 already has an active PROCESSING task -> PROCESSING
+    for fid in (20, 30, 60):
+        await processor_service.handle_note_updated(
+            NoteUpdatedEvent(
+                file_id=fid,
+                user_id=test_user_id,
+                file_path=f"/Note/Note{fid}.note",
+            )
+        )
+
+    queued_statuses = await processor_service.get_file_processing_statuses(
+        user_id=test_user_id,
+        file_ids=[20, 30, 60],
+    )
+    assert queued_statuses == {
+        20: ProcessingStatus.PROCESSING,
+        30: ProcessingStatus.PENDING,
+        60: ProcessingStatus.PENDING,
+    }
+
+
+class _GroundTruthVisionOcrModel(OcrModel):
+    """Test OCR model that validates the rendered PNG image and returns ground-truth text."""
+
+    def __init__(self) -> None:
+        self.page_map: dict[str, str] = {}
+        self.processed_page_ids: list[str] = []
+
+    @property
+    def provider(self) -> str:
+        return "fake"
+
+    @property
+    def model_id(self) -> str:
+        return "synthetic-ground-truth-ocr-v1"
+
+    def register(self, synth: SyntheticNotebook) -> None:
+        for page in synth.pages:
+            self.page_map[page.page_id] = page.text
+
+    async def extract_text(self, png_data: bytes, prompt: str) -> str:
+        with Image.open(io.BytesIO(png_data)) as img:
+            assert img.size == (fileformat.PAGE_WIDTH, fileformat.PAGE_HEIGHT)
+            lum = np.asarray(img.convert("L"), dtype=np.uint8)
+            assert int((lum < 64).sum()) > 200
+
+        for pid, text in self.page_map.items():
+            if pid in prompt:
+                self.processed_page_ids.append(pid)
+                return text
+
+        raise AssertionError(
+            f"Prompt did not match any registered synthetic PAGEID: {prompt}"
+        )
+
+
+async def test_synthetic_handwriting_notebook_full_pipeline_and_incremental_append(
+    storage_root: Path,
+    blob_storage: BlobStorage,
+    user_service: UserService,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    event_bus = LocalEventBus()
+    file_service = FileService(
+        storage_root=storage_root,
+        blob_storage=blob_storage,
+        user_service=user_service,
+        session_manager=session_manager,
+        event_bus=event_bus,
+    )
+    summary_service = SummaryService(
+        user_service=user_service,
+        session_manager=session_manager,
+    )
+    embedding_model = FakeEmbeddingModel()
+    summary_model = FakeSummaryModel()
+    ocr_model = _GroundTruthVisionOcrModel()
+
+    processor = ProcessorService(
+        event_bus=event_bus,
+        session_manager=session_manager,
+        file_service=file_service,
+        summary_service=summary_service,
+    )
+    processor.register_modules(
+        hashing=PageHashingModule(file_service),
+        png=PngConversionModule(file_service),
+        ocr=OcrModule(file_service, ocr_model),
+        embedding=EmbeddingModule(file_service, embedding_model),
+        summary=SummaryModule(file_service, summary_service, summary_model),
+    )
+    search_service = SearchService(
+        session_manager=session_manager,
+        embedding_model=embedding_model,
+    )
+
+    synth = build_synthetic_notebook(
+        pages=[
+            "# Architecture Notes\n\n- [x] Designed RLE bitmap encoder #storage\n- Verified round-trip lossless decoding",
+            "# Field Study\n\n- [ ] Test telescope alignment under clear skies #astronomy",
+        ],
+        style="handwriting",
+        background="ruled",
+        base_date=datetime(2026, 2, 10, 9, 0, tzinfo=UTC),
+        seed=21,
+    )
+    ocr_model.register(synth)
+    assert len(synth.pages) == 2
+
+    storage_key = "synth-journal-001.note"
+    await blob_storage.put(USER_DATA_BUCKET, storage_key, synth.data)
+
+    file_id = 501
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=test_user_id,
+                directory_id=0,
+                file_name="ResearchJournal.note",
+                is_folder="N",
+                is_active="Y",
+                storage_key=storage_key,
+                md5=hashlib.md5(synth.data).hexdigest(),
+                size=len(synth.data),
+                create_time=1770685200000,
+                update_time=1770685200000,
+            )
+        )
+        await session.commit()
+
+    ok = await processor.process_file(file_id)
+    assert ok is True
+    assert set(ocr_model.processed_page_ids) == {
+        synth.pages[0].page_id,
+        synth.pages[1].page_id,
+    }
+
+    for page in synth.pages:
+        assert await blob_storage.exists(
+            CACHE_BUCKET, get_page_png_path(file_id, page.page_id)
+        )
+
+    transcript = await search_service.get_transcript(
+        user_id=test_user_id, file_id=file_id
+    )
+    assert transcript is not None
+    assert "Designed RLE bitmap encoder" in transcript
+    assert "telescope alignment" in transcript
+
+    feb11_results = await search_service.search_chunks(
+        user_id=test_user_id,
+        query="telescope alignment",
+        date_after="2026-02-11",
+    )
+    assert len(feb11_results) == 1
+    assert feb11_results[0].page_id == synth.pages[1].page_id
+    assert feb11_results[0].date == "2026-02-11"
+
+    async with session_manager.session() as session:
+        summaries = (
+            (
+                await session.execute(
+                    select(SummaryDO).where(SummaryDO.file_id == file_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(summaries) == 2
+
+    ocr_model.processed_page_ids.clear()
+    updated_synth = append_synthetic_page(
+        synth,
+        "# Launch Retrospective\n\n- [x] Shipped CLI `supernote create` command #release",
+        created_at=datetime(2026, 2, 12, 10, 0, tzinfo=UTC),
+    )
+    ocr_model.register(updated_synth)
+    assert len(updated_synth.pages) == 3
+
+    await blob_storage.put(USER_DATA_BUCKET, storage_key, updated_synth.data)
+    async with session_manager.session() as session:
+        file_row = await session.get(UserFileDO, file_id)
+        assert file_row is not None
+        file_row.md5 = hashlib.md5(updated_synth.data).hexdigest()
+        file_row.size = len(updated_synth.data)
+        await session.commit()
+
+    ok2 = await processor.process_file(file_id)
+    assert ok2 is True
+    assert updated_synth.pages[2].page_id in ocr_model.processed_page_ids
+
+    updated_transcript = await search_service.get_transcript(
+        user_id=test_user_id, file_id=file_id
+    )
+    assert updated_transcript is not None
+    assert "Launch Retrospective" in updated_transcript
+
+
+async def test_file_lock_serializes_process_and_delete_and_evicts_lock(
+    processor_service: ProcessorService,
+) -> None:
+    events_log: list[str] = []
+    in_process = asyncio.Event()
+    allow_finish = asyncio.Event()
+
+    class LockingTestModule(ProcessorModule):
+        @property
+        def name(self) -> str:
+            return "LockingTestModule"
+
+        @property
+        def task_type(self) -> TaskType:
+            return TaskType.PAGE_HASHING
+
+        async def run_if_needed(self, *args: object, **kwargs: object) -> bool:
+            return True
+
+        async def process(self, file_id: int, *args: object, **kwargs: object) -> None:
+            events_log.append(f"process_start:{file_id}")
+            in_process.set()
+            await allow_finish.wait()
+            events_log.append(f"process_end:{file_id}")
+
+        async def cleanup_file(
+            self,
+            file_id: int,
+            user_id: int,
+            session_manager: DatabaseSessionManager,
+        ) -> None:
+            events_log.append(f"cleanup:{file_id}:{user_id}")
+
+    processor_service.register_modules(hashing=LockingTestModule())
+
+    proc_task = asyncio.create_task(processor_service.process_file(777))
+    await in_process.wait()
+
+    del_task = asyncio.create_task(
+        processor_service.handle_note_deleted(NoteDeletedEvent(file_id=777, user_id=42))
+    )
+    await asyncio.sleep(0.02)
+    # Delete must wait until in-flight process_file releases the per-file lock
+    assert events_log == ["process_start:777"]
+    assert 777 in processor_service._file_locks
+
+    allow_finish.set()
+    await asyncio.gather(proc_task, del_task)
+
+    assert events_log == [
+        "process_start:777",
+        "process_end:777",
+        "cleanup:777:42",
+    ]
+    assert processor_service._file_locks == {}
+    assert processor_service._file_lock_refcounts == {}
+
+
+async def test_handle_note_deleted_removes_note_and_page_metadata(
+    processor_service: ProcessorService,
+    session_manager: DatabaseSessionManager,
+    file_service: FileService,
+    test_user_id: int,
+) -> None:
+    """Verify NoteDeletedEvent purges NoteMetadataDO and NotePageMetadataDO via PageHashingModule.cleanup_file."""
+    processor_service.register_modules(hashing=PageHashingModule(file_service))
+
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                NoteMetadataDO(
+                    user_id=test_user_id, file_id=601, file_type="note", total_pages=1
+                ),
+                NotePageMetadataDO(
+                    user_id=test_user_id, file_id=601, page_index=0, page_id="p0"
+                ),
+                NoteMetadataDO(
+                    user_id=test_user_id, file_id=602, file_type="note", total_pages=1
+                ),
+                NotePageMetadataDO(
+                    user_id=test_user_id, file_id=602, page_index=0, page_id="p0"
+                ),
+            ]
+        )
+        await session.commit()
+
+    await processor_service.handle_note_deleted(
+        NoteDeletedEvent(file_id=601, user_id=test_user_id)
+    )
+
+    async with session_manager.session() as session:
+        assert await session.get(NoteMetadataDO, (test_user_id, 601)) is None
+        assert await session.get(NotePageMetadataDO, (test_user_id, 601, 0)) is None
+        assert await session.get(NoteMetadataDO, (test_user_id, 602)) is not None
+        assert await session.get(NotePageMetadataDO, (test_user_id, 602, 0)) is not None
+
+
+async def test_recover_missing_tasks_enqueues_legacy_hashing_version(
+    processor_service: ProcessorService,
+    session_manager: DatabaseSessionManager,
+    file_service: FileService,
+    test_user_id: int,
+) -> None:
+    """Verify recover_missing_tasks re-enqueues files hashed before PageHashingModule v2."""
+    processor_service.register_modules(hashing=PageHashingModule(file_service))
+
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=9301,
+                    user_id=test_user_id,
+                    file_name="legacy_hash.note",
+                    storage_key="k9301",
+                    is_active="Y",
+                ),
+                SystemTaskDO(
+                    file_id=9301,
+                    task_type=TaskType.PAGE_HASHING,
+                    key="global",
+                    status="COMPLETED",
+                    data=None,
+                ),
+                UserFileDO(
+                    id=9302,
+                    user_id=test_user_id,
+                    file_name="current_hash.note",
+                    storage_key="k9302",
+                    is_active="Y",
+                ),
+                SystemTaskDO(
+                    file_id=9302,
+                    task_type=TaskType.PAGE_HASHING,
+                    key="global",
+                    status="COMPLETED",
+                    data="v2",
+                ),
+            ]
+        )
+        await session.commit()
+
+    await processor_service.recover_missing_tasks()
+
+    assert 9301 in processor_service.processing_files
+    assert 9302 not in processor_service.processing_files
+
+
+async def test_process_file_and_queue_pause_metrics(
+    session_manager: DatabaseSessionManager,
+    file_service: FileService,
+    summary_service: SummaryService,
+) -> None:
+    """Verify full/on-demand `.note` run metrics, lock-wait exclusion, and queue_paused gauge."""
+    coordination = SqliteCoordinationService(session_manager)
+    await coordination.set_value("queue_paused", "true")
+
+    processor = ProcessorService(
+        event_bus=LocalEventBus(),
+        session_manager=session_manager,
+        file_service=file_service,
+        summary_service=summary_service,
+        coordination_service=coordination,
+        concurrency=0,
+    )
+    assert REGISTRY.get_sample_value("supernote_processor_queue_paused") == 0.0
+
+    await processor.start()
+    try:
+        assert REGISTRY.get_sample_value("supernote_processor_queue_paused") == 1.0
+        await processor.resume()
+        assert REGISTRY.get_sample_value("supernote_processor_queue_paused") == 0.0
+        await processor.pause()
+        assert REGISTRY.get_sample_value("supernote_processor_queue_paused") == 1.0
+    finally:
+        await processor.stop()
+
+    full_ok = {"mode": "full", "status": "success"}
+    full_fail = {"mode": "full", "status": "failure"}
+    on_demand_ok = {"mode": "on_demand", "status": "success"}
+    on_demand_cancel = {"mode": "on_demand", "status": "cancelled"}
+
+    before_full_ok = (
+        REGISTRY.get_sample_value("supernote_note_processing_runs_total", full_ok)
+        or 0.0
+    )
+    before_full_fail = (
+        REGISTRY.get_sample_value("supernote_note_processing_runs_total", full_fail)
+        or 0.0
+    )
+    before_on_demand_ok = (
+        REGISTRY.get_sample_value("supernote_note_processing_runs_total", on_demand_ok)
+        or 0.0
+    )
+    before_on_demand_cancel = (
+        REGISTRY.get_sample_value(
+            "supernote_note_processing_runs_total", on_demand_cancel
+        )
+        or 0.0
+    )
+    before_on_demand_sum = (
+        REGISTRY.get_sample_value(
+            "supernote_note_processing_duration_seconds_sum", {"mode": "on_demand"}
+        )
+        or 0.0
+    )
+
+    # Unregistered modules -> returns False -> recorded as `status="failure"`
+    assert await processor.process_file(9401) is False
+    assert (
+        REGISTRY.get_sample_value("supernote_note_processing_runs_total", full_fail)
+        == before_full_fail + 1.0
+    )
+
+    should_fail = False
+    block_event = asyncio.Event()
+    in_hashing = asyncio.Event()
+
+    class ControllableHashing(ProcessorModule):
+        @property
+        def name(self) -> str:
+            return "ControllableHashing"
+
+        @property
+        def task_type(self) -> TaskType:
+            return TaskType.PAGE_HASHING
+
+        async def run_if_needed(self, *args: object, **kwargs: object) -> bool:
+            return True
+
+        async def process(self, *args: object, **kwargs: object) -> None:
+            in_hashing.set()
+            await block_event.wait()
+            if should_fail:
+                raise RuntimeError("hashing boom")
+
+    processor.register_modules(hashing=ControllableHashing())
+
+    # Hold `_file_lock(9402)` via a full run for ~120ms while an on-demand run waits on the lock;
+    # the on-demand run's observed duration must exclude that lock contention wait!
+    full_task = asyncio.create_task(processor.process_file(9402))
+    await in_hashing.wait()
+    on_demand_task = asyncio.create_task(
+        processor.process_file(
+            9402,
+            task_types={TaskType.PAGE_HASHING},
+            page_indices={0},
+        )
+    )
+    await asyncio.sleep(0.12)
+    block_event.set()
+    assert await full_task is True
+    assert await on_demand_task is True
+
+    after_on_demand_sum = (
+        REGISTRY.get_sample_value(
+            "supernote_note_processing_duration_seconds_sum", {"mode": "on_demand"}
+        )
+        or 0.0
+    )
+    assert after_on_demand_sum - before_on_demand_sum < 0.08
+
+    # Module failure -> returns False -> `status="failure"`
+    should_fail = True
+    assert await processor.process_file(9403) is False
+
+    # Cancellation mid-run -> `status="cancelled"`
+    should_fail = False
+    block_event.clear()
+    in_hashing.clear()
+    cancel_task = asyncio.create_task(
+        processor.process_file(9404, task_types={TaskType.PAGE_HASHING})
+    )
+    await in_hashing.wait()
+    cancel_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await cancel_task
+
+    assert (
+        REGISTRY.get_sample_value("supernote_note_processing_runs_total", full_ok)
+        == before_full_ok + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_note_processing_runs_total", full_fail)
+        == before_full_fail + 2.0
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_note_processing_runs_total", on_demand_ok)
+        == before_on_demand_ok + 1.0
+    )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_note_processing_runs_total", on_demand_cancel
+        )
+        == before_on_demand_cancel + 1.0
+    )

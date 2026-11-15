@@ -1,0 +1,560 @@
+---
+name: supernote-ocr-suite-v1
+cases:
+  # --- Bullet Journal: Synthetic Rapid Logging Fixtures ---
+  - id: bujo_daily_friday
+    path: notebooks/daily.note
+    page_index: 0
+    category: bujo_synthetic
+    prompt_type: daily
+    description: Synthetic daily log on 5mm dot-grid with *, •, X, o, >, -, nested sub-items, and strikethrough.
+    ground_truth: |-
+      2026-11-07 Friday
+      * • Review Q4 infrastructure budget
+      X Send signed lease renewal to landlord
+      o 10:30 Design sync with Maya and Leo
+        - Agreed to ship local OCR before embeddings
+        • Follow up on latency benchmark numbers
+      > Migrate home NAS backup script to cron
+      • ~~Order replacement Ceramic nibs~~
+      o 17:45 Strength training session
+        - Deadlift 3x5 at 275 lbs felt solid
+      • Read two chapters of Designing Data Systems
+
+  - id: bujo_daily_saturday
+    path: notebooks/daily.note
+    page_index: 1
+    category: bujo_synthetic
+    prompt_type: daily
+    description: Synthetic technical daily log with PR numbers, semver tags, < scheduled-back item, and strikethrough.
+    ground_truth: |-
+      2026-11-08 Saturday
+      * X Fix SQLite WAL lock timeout in PR #514
+      • Tag v0.25.0 release candidate
+        • Verify Linux wheel excludes pyobjc extras
+      o 09:00 Farmers market and coffee run
+      < Schedule annual dentist checkup for Dec
+      > Draft blog post on self-hosted e-ink cloud
+      • ~~Cancel unused staging VM instance~~
+      - Latency dropped from 920ms to 165ms after warmup
+
+  # --- Bullet Journal: Handwritten Daily Rapid Logging ---
+  - id: bujo_daily_weekend
+    path: notebooks/bujo_daily_weekend.note
+    page_index: 0
+    category: bujo_daily
+    prompt_type: daily
+    description: Handwritten weekend daily Rapid Logging (1108 SAT & 1109 SUN) on Nomad dot-grid.
+    ground_truth: |-
+      1108 SAT
+      X Build out test dataset
+      > transfer test notes to PC
+      > re-run evals
+      o Mel in SD
+      o Hike w/ the Boys
+
+      1109 SUN
+      • transfer test notes to PC
+      • re-run evals
+      o Practice
+      • dishes befor Mel returns
+      • watch Pitt ep 5
+
+  - id: bujo_weekly_w45
+    path: notebooks/weekly.note
+    page_index: 0
+    category: bujo_synthetic
+    prompt_type: weekly
+    description: Synthetic weekly plan and reflection review on ruled paper with starred tasks and nested notes.
+    ground_truth: |-
+      Week 45: Nov 2 - Nov 8
+      * X Finalize multi-provider AI config schema
+      * • Benchmark Apple Vision vs Ollama gemma3
+      > Clean garage workbench and donate boxes
+      o Wed 14:00 Quarterly roadmap review
+        - Keep core container RAM under 160MB
+      X Book Thanksgiving flights to Seattle
+
+      Weekly Review
+      - Shipped named providers and local macOS OCR
+      - Biggest challenge: context switching mid-week
+      • Next week focus: bounded summary chunking
+
+  - id: bujo_monthly_calendar
+    path: notebooks/monthly.note
+    page_index: 0
+    category: bujo_synthetic
+    prompt_type: monthly
+    description: Synthetic left-hand monthly date timeline with events, starred release milestone, and completed tax item.
+    ground_truth: |-
+      November 2026
+      o 1 Sun Daylight saving time ends
+      o 3 Tue Election day
+      * • 6 Fri Release v0.25.0 milestone
+      o 9 Mon Pediatrician appointment 11:15
+      o 14 Sat Trail half marathon in Marin
+      X 18 Wed Quarterly tax estimate due
+      o 21 Sat Host friendsgiving dinner
+      o 26 Thu Thanksgiving family trip
+      • 30 Mon Monthly budget and habit retro
+
+  - id: bujo_monthly_goals
+    path: notebooks/monthly.note
+    page_index: 1
+    category: bujo_synthetic
+    prompt_type: monthly
+    description: Synthetic right-hand monthly goals and task list with forward/backward migrations and cancelled item.
+    ground_truth: |-
+      November Goals & Task List
+      * • Complete 12 strength workouts this month
+      X Publish OCR evaluation suite and docs
+      • Add per-notebook custom vocabulary hints
+        - Harvest keywords from .note metadata
+      > Upgrade home server UPS battery pack
+      < Move winter camping trip to January
+      • ~~Rewrite legacy mobile sync prototype~~
+      - Lesson learned: measure CER before tuning
+
+  # --- Bullet Journal: Handwritten Monthly Spread (Backlog + Calendar) ---
+
+  - id: bujo_monthly_november_backlog
+    path: notebooks/bujo_monthly_november.note
+    page_index: 0
+    category: bujo_monthly
+    prompt_type: monthly
+    description: Handwritten November backlog and project task lists with nested signifiers and strikethrough.
+    ground_truth: |-
+      NOVEMBER
+      - Backlog
+        X salad
+        • ~~revamp plan for network~~
+        < cat carrier options
+        • call mom
+        • return faucet
+        • take out 3 bags ...
+
+      - A13
+        • rewrite entire sync engine
+        • reduce latency by 50%
+        • profile encoder
+
+  - id: bujo_monthly_november_calendar
+    path: notebooks/bujo_monthly_november.note
+    page_index: 1
+    category: bujo_monthly
+    prompt_type: monthly
+    description: Handwritten November 2026 1-30 date timeline with event entries.
+    ground_truth: |-
+      NOVEMBER 2026
+      1 S
+      2 M
+      3 T
+      4 W
+      5 T
+      6 F
+      7 S o Mel in San Diego
+      8 S o Practice
+      9 M
+      10 T
+      11 W o Eng Review
+      12 T
+      13 F
+      14 S o Practice
+      15 S
+      16 M
+      17 T
+      18 W
+      19 T
+      20 F
+      21 S o Practice
+      22 S o L's Wedding
+      23 M o ACU Break - no school
+      24 T
+      25 W
+      26 T o Thanksgiving o San Diego
+      27 F
+      28 S o Practice
+      29 S
+      30 M
+
+  # --- Real-World English Prose & Orientation Notes ---
+  - id: empty_dot_grid
+    path: ../../tests/testdata/20251207_221454.note
+    page_index: 0
+    category: empty_template
+    description: Blank 5mm dot-grid page testing false-positive hallucination resistance.
+    ground_truth: ""
+
+  - id: a5x_obsidian_prose
+    path: ../../tests/testdata/philips/a5x-2.14.28.note
+    page_index: 0
+    category: english_prose
+    description: Cursive/print mixed paragraph on lined template with embedded Supernote RTR baseline.
+    ground_truth: |-
+      Subject: Obsidian Supernote Integration
+      Test File
+      Let me know how this works, please. I've
+      been thinking about setting up an Obsidian
+      instance for a while now.
+
+  - id: rtr_paragraphs
+    path: ../../tests/testdata/philips/rtr.note
+    page_index: 0
+    category: english_prose
+    description: Multi-paragraph English handwriting testing line reflow and paragraph order.
+    ground_truth: |-
+      Real time recognition paragraph test
+      With enough space a new paragraph
+      should be created. If lines are
+      close then the text should reflow.
+      This should be a new paragraph.
+      As well as this.
+      But this is the last paragraph and
+      should reflow together.
+
+  - id: manta_alphanumeric
+    path: ../../tests/testdata/philips/manta.note
+    page_index: 0
+    category: english_prose
+    description: A5X2 Manta note mixing model alphanumeric code and punctuation.
+    ground_truth: |-
+      This is a note created on
+      the A5X2 Manta.
+      It doesn't work. :(
+
+  - id: vertical_1180
+    path: ../../tests/testdata/philips/vertical_1180.note
+    page_index: 0
+    category: english_prose
+    description: Portrait orientation note inside hand-drawn border lines.
+    ground_truth: |-
+      This vertical
+      note file
+      has
+      ORIENTATION: 1180
+
+  - id: horizontal_1270
+    path: ../../tests/testdata/philips/horizontal_1270.note
+    page_index: 0
+    category: english_prose
+    description: Landscape orientation note inside hand-drawn border lines.
+    ground_truth: |-
+      This horizontal
+      note file has
+      ORIENTATION : 1270
+
+  # --- Diagrams, Callout Labels & Rotated Handwriting ---
+  - id: stroller_diagram_light
+    path: ../../tests/testdata/mmujynya/stroller.note
+    page_index: 0
+    category: diagram_and_layout
+    description: Line-art drawing of baby in stroller with arrows and lighter-contrast callout labels.
+    ground_truth: |-
+      Baby
+      Handle bar
+      Rock
+      Happy Baby in a stroller
+
+  - id: stroller_diagram_dark
+    path: ../../tests/testdata/mmujynya/stroller.note
+    page_index: 1
+    category: diagram_and_layout
+    description: Same stroller sketch with high-contrast black strokes and callout labels.
+    ground_truth: |-
+      Baby
+      Handle bar
+      Rock
+      Happy Baby in a stroller
+
+  - id: horizontal_1090_axes
+    path: ../../tests/testdata/philips/horizontal_1090.note
+    page_index: 0
+    category: diagram_and_layout
+    description: Tilted text with perpendicular width/height axis lines on ruled background.
+    ground_truth: |-
+      This is
+      a horizontal
+      note
+      width
+      A5x2
+      height
+
+  - id: sn2md_rotated_quadrants
+    path: ../../tests/testdata/dsummersl/sn2md_20260618.note
+    page_index: 0
+    category: diagram_and_layout
+    description: Steeply angled (~40 deg) cursive phrases in four page quadrants.
+    ground_truth: |-
+      deadlift weights
+      bed work
+      Studio making
+      Clogging Gig
+
+  - id: guitar_caged_shapes
+    path: notebooks/guitar_theory.note
+    page_index: 0
+    category: diagram_and_layout
+    description: Two-column CAGED guitar fretboard scale-degree diagrams (#1-#5) with circled root notes.
+    ground_truth: |-
+      GUITAR
+      C Shape / #1
+      3 4 5
+      7 R 2
+      5 6
+      2 3 4
+      6 7 R
+      3 4 5
+
+      A Shape / #2
+      5 6
+      2 3 4
+      6 7 R
+      3 4 5
+      7 R 2
+      5 6
+
+      G Shape / #3
+      6 7 R
+      3 4 5
+      7 R 2
+      5 6 7
+      2 3 4
+      6 7 R
+
+      E-Shape / #4
+      7 R
+      5 6
+      2 3 4
+      6 7 R
+      3 4 5
+      7 R 2
+
+      D-Shape / #5
+      2 3 4
+      6 7 R
+      3 4 5
+      7 R 2
+      5 6
+      2 3 4
+
+  - id: guitar_tuning_grid
+    path: notebooks/guitar_theory.note
+    page_index: 1
+    category: diagram_and_layout
+    description: Inverted title banner, 12-fret C tuning note table, song tab grid, and harmony notes.
+    ground_truth: |-
+      C Tuning Analysis
+      Cmaj
+      E F G A B C D E
+      B C D E F G A B
+      G A B C D E F G
+      C D E F G A B C
+      G A B C D E F G
+      C D E F G A B C
+      1 2 3 4 5 6 7 8 9 10 11 12
+
+      Song (AoT)
+      E B D
+      B G
+      G A B C D E F A A#
+      C D E
+      G A B E F A A#
+      C
+      Cmaj? 12
+      Amin?
+      - A# is not in the key but
+        resolves
+
+  # --- Multilingual Handwriting ---
+  - id: turkish_diacritics
+    path: ../../tests/testdata/philips/turkish.note
+    page_index: 0
+    category: multilingual
+    language: tr_TR
+    description: Handwritten Turkish sentences testing Ş, ç, ı, ğ, ö, ü diacritics.
+    ground_truth: |-
+      Şimdi ben buraya neden çıktım?
+      Niçin çıktım?
+      Nasıl Çıktım?
+      Bunu izaha gerek yok.
+      Gördünüz, yürüdüm çıktım.
+      Ama çıkmamış da olabilirim.
+
+  - id: french_cafe_bar
+    path: notebooks/french_phrases.note
+    page_index: 0
+    category: multilingual
+    language: fr_FR
+    description: Bilingual French/English cafe ordering phrases and drink vocabulary with é, è, ç diacritics.
+    ground_truth: |-
+      CAFE / BAR
+      Bonjour, vous desirez-quoi?
+      , que desirez-vous comander?
+      , qu'est ce que vous prenez?
+      Bonjour, souhaitez-vous commander?
+
+      un café
+      un express
+      un noisette - cafe w/ drop of milk
+      un café crème
+
+      une evian s'il vous plait
+      Un perrier
+      un coca
+      un coca zero
+      un coca light
+      un limonate (Sprite)
+
+      une biere ⇒ Un demi
+      un verre de vin rouge
+      un verre de vin blanc
+      un vere de rose
+
+      L'addition
+      ça fait combien
+
+  - id: french_travel_phrases
+    path: notebooks/french_phrases.note
+    page_index: 1
+    category: multilingual
+    language: fr_FR
+    description: Bilingual French/English travel questions with indented English translations and ç, ù diacritics.
+    ground_truth: |-
+      Travel
+      Je ne parle pas français.
+      Je ne comprends pas
+      Pouvez-vous repeter s'il vous plait?
+      Pouvez-vous m'aider s'il vous plait?
+        - Can you help me please?
+      Je veux acheter ça?
+        - I want to buy this
+      Où sont les toilettes?
+
+      Je voudrais - rarely used and is formal
+      Est-ce que je peux avoir un cafe svp?
+        - can I have a coffee
+      Je vais prendre un cafe
+        - I'll take a coffee
+
+  - id: french_verbs_list
+    path: notebooks/french_phrases.note
+    page_index: 2
+    category: multilingual
+    language: fr_FR
+    description: Bilingual French/English verb table testing é, è, ê diacritics and multi-column alignment.
+    ground_truth: |-
+      100 sentences
+      Verbs
+      Vouloir / Je veux I want
+      Pouvoir / Je peux I can
+      Devoir / Je dois I must/have to
+      Savoir / Je sais I know
+      Aimer / J'aime I like/love
+      Souhaiter / Je souhaite I wish
+      Préférer / Je préfère I prefer
+      Adorer / J'adore I adore
+      Détester / Je déteste I hate
+      J'ai besoin de I need to
+
+      manger to eat
+      boire to drink
+      Dormir to sleep
+      Partir to leave
+      Revenir to come back/go back
+      Sortir to go out/get out
+      Marcher to walk
+      Rester to stay
+      Arrêter to stop
+      Courir to run
+      Visitir to visit
+
+  - id: spanish_cognates_lesson_1
+    path: notebooks/spanish_lessons.note
+    page_index: 0
+    category: multilingual
+    language: es_ES
+    description: Bilingual English/Spanish cognate list with inverted title banner, arrows, ó accents, and crossed-out word.
+    ground_truth: |-
+      QRoo Lesson 1
+      1. To educate → education
+      educación → educar
+      2. To observe → observación
+      obervar
+      3. To reserve → reservación
+      reservar
+      4. To legalize → legalization
+      legalización
+      legalizar
+      5. To facilitate → facilitation
+      facilitación
+      facilitar
+      6. To create → creation
+      creación → ~~creatar~~
+      crear
+      7. To document
+      documentation
+      documentación
+      documentar
+
+  - id: spanish_sentences_lesson_2
+    path: notebooks/spanish_lessons.note
+    page_index: 6
+    category: multilingual
+    language: es_ES
+    description: Bilingual English/Spanish sentence drills with inverted title banner, dash bullets, and ó accents.
+    ground_truth: |-
+      QRoo Lesson 2
+      - I can't memorize the information
+      No peudo memorizar la información.
+
+      - I want to confirm the
+      information but I can't
+      Quiero confirmar la información
+      pero no puedo.
+
+      - I want to participate but
+      I can't
+      Quiero participar pero no puedo.
+
+      - I want to cancel the reservation
+      but I can't
+      Quiero cancelar la reservación
+      pero no puedo.
+
+      - I want to celebrate but I can't
+      Quiero celebrar pero no puedo.
+
+  # --- Adversarial / Edge Cases ---
+  - id: inverted_banner_gray
+    path: ../../tests/testdata/philips/test.note
+    page_index: 1
+    category: edge_cases
+    description: White handwriting inside gray title highlight box plus normal black text below.
+    ground_truth: |-
+      Different title
+      Different
+
+  - id: inverted_banner_scribble_overlap
+    path: ../../tests/testdata/philips/test.note
+    page_index: 0
+    category: edge_cases
+    description: White-on-black title banner plus intentionally overlapping marker scribbles.
+    ground_truth: |-
+      Main title
+      Write this on top!
+      Dummy
+      I'm a keyword: dummy
+
+  - id: giant_digit_2
+    path: ../../tests/testdata/philips/1to10.note
+    page_index: 1
+    category: edge_cases
+    description: Poster-sized single handwritten digit '2' spanning ~40% of page height.
+    ground_truth: "2"
+
+  - id: giant_digit_10
+    path: ../../tests/testdata/philips/1to10.note
+    page_index: 9
+    category: edge_cases
+    description: Poster-sized handwritten number '10' spanning ~40% of page height.
+    ground_truth: "10"

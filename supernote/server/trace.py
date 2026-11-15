@@ -12,22 +12,35 @@ import json
 import logging
 import re
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any
 
 from aiohttp import web
+from aiohttp.web_log import AccessLogger
 from yarl import URL
 
 from .config import ServerConfig
+from .keys import CONFIG_KEY
+
+__all__ = [
+    "ACCESS_LOG_FORMAT",
+    "SanitizedAccessLogger",
+    "redact_url",
+    "sanitize_body",
+    "sanitize_headers",
+    "trace_middleware",
+]
 
 logger = logging.getLogger(__name__)
+
+ACCESS_LOG_FORMAT = '%a %t "%r" %s %b "%{Referer}i" "%{User-Agent}i" (%Tf)'
 
 TRUNCATE_BODY_LOG = 10 * 1024
 
 REDACTED_VALUE = "***"
 REDACTED_HEADER_KEYS = frozenset(
-    {"x-access-token", "authorization", "cookie", "set-cookie"}
+    {"x-access-token", "authorization", "cookie", "set-cookie", "channel"}
 )
 URL_HEADER_KEYS = frozenset({"location", "referer"})
 REDACTED_URL_QUERY_KEYS = frozenset(
@@ -67,6 +80,20 @@ _JSON_STRING_SECRET_RE = re.compile(
     rf'(?i)("({_REDACTED_KEYS_PATTERN})"\s*:\s*)"(?:\\.|[^"\\])*(?:"|$)'
 )
 _FORM_SECRET_RE = re.compile(rf"(?i)((?:^|&)(?:{_REDACTED_KEYS_PATTERN})=)[^&]*")
+_JWT_TOKEN_RE = re.compile(r"\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*")
+_SN_API_KEY_RE = re.compile(r"\bsn_[0-9a-fA-F]{32}\b")
+_REDACTED_URL_KEYS_PATTERN = "|".join(
+    re.escape(k) for k in sorted(REDACTED_URL_QUERY_KEYS)
+)
+_URL_QUERY_SECRET_RE = re.compile(
+    rf"(?i)((?:[?&])(?:{_REDACTED_URL_KEYS_PATTERN})=)[^&#\s]*"
+)
+
+
+def _scrub_inline_tokens(text: str) -> str:
+    """Scrub inline JWTs and sn_<32_hex> static API keys from freeform text."""
+    scrubbed = _JWT_TOKEN_RE.sub(REDACTED_VALUE, text)
+    return _SN_API_KEY_RE.sub(REDACTED_VALUE, scrubbed)
 
 
 async def _write_trace_log(config: ServerConfig, log_entry: dict[str, Any]) -> None:
@@ -94,7 +121,7 @@ def try_parse_json(body: str | None) -> Any:
         return body
     try:
         return json.loads(body)
-    except Exception:
+    except (json.JSONDecodeError, ValueError, TypeError):
         return body
 
 
@@ -112,35 +139,40 @@ def is_binary_content_type(content_type: str) -> bool:
 
 
 def redact_url(url: URL | str) -> str:
-    """Redact sensitive query parameters from a URL."""
+    """Redact sensitive query parameters and inline tokens from a URL."""
     url_str = str(url)
     try:
         u = url if isinstance(url, URL) else URL(url_str)
         if not u.query:
-            return url_str
+            return _scrub_inline_tokens(url_str)
         query = u.query.copy()
         redacted = False
         for key in list(query.keys()):
             if key.lower() in REDACTED_URL_QUERY_KEYS:
                 query[key] = REDACTED_VALUE
                 redacted = True
-        return str(u.with_query(query)) if redacted else url_str
-    except Exception:
-        return url_str
+        rendered = str(u.with_query(query)) if redacted else url_str
+        return _scrub_inline_tokens(rendered)
+    except (ValueError, TypeError):
+        fallback = _URL_QUERY_SECRET_RE.sub(rf"\1{REDACTED_VALUE}", url_str)
+        return _scrub_inline_tokens(fallback)
 
 
-def sanitize_headers(headers: dict[str, Any]) -> dict[str, Any]:
-    """Redact authentication, cookie, and URL-bearing headers case-insensitively."""
-    sanitized: dict[str, Any] = {}
-    for k, v in headers.items():
-        key_lower = k.lower()
-        if key_lower in REDACTED_HEADER_KEYS:
-            sanitized[k] = REDACTED_VALUE
-        elif key_lower in URL_HEADER_KEYS and isinstance(v, str):
-            sanitized[k] = redact_url(v)
-        else:
-            sanitized[k] = v
-    return sanitized
+def _sanitize_header_value(name: str, value: Any) -> Any:
+    """Redact a single HTTP header value based on its header name and content."""
+    key_lower = name.lower()
+    if key_lower in REDACTED_HEADER_KEYS:
+        return REDACTED_VALUE
+    if key_lower in URL_HEADER_KEYS and isinstance(value, str):
+        return redact_url(value)
+    if isinstance(value, str):
+        return _scrub_inline_tokens(value)
+    return value
+
+
+def sanitize_headers(headers: Mapping[str, Any]) -> dict[str, Any]:
+    """Redact authentication, cookie, channel, and URL-bearing headers case-insensitively."""
+    return {k: _sanitize_header_value(k, v) for k, v in headers.items()}
 
 
 def sanitize_body(body: Any) -> Any:
@@ -162,7 +194,9 @@ def sanitize_body(body: Any) -> Any:
         if body.startswith(("http://", "https://", "/")):
             return redact_url(body)
         redacted = _JSON_STRING_SECRET_RE.sub(rf'\1"{REDACTED_VALUE}"', body)
-        return _FORM_SECRET_RE.sub(rf"\1{REDACTED_VALUE}", redacted)
+        redacted = _FORM_SECRET_RE.sub(rf"\1{REDACTED_VALUE}", redacted)
+        redacted = _URL_QUERY_SECRET_RE.sub(rf"\1{REDACTED_VALUE}", redacted)
+        return _scrub_inline_tokens(redacted)
     return body
 
 
@@ -190,7 +224,7 @@ async def trace_middleware(
     handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
 ) -> web.StreamResponse:
     """Middleware that writes HTTP request and response traces to disk."""
-    config: ServerConfig = request.app["config"]
+    config = request.app[CONFIG_KEY]
     unsafe = config.trace_log_unsafe
 
     try:
@@ -256,8 +290,50 @@ async def trace_middleware(
                 ),
                 "body": parsed_req_body if unsafe else sanitize_body(parsed_req_body),
             },
-            "error": str(e),
+            "error": str(e) if unsafe else sanitize_body(str(e)),
             "status": 500,
         }
         await _write_trace_log(config, log_entry)
         raise
+
+
+class SanitizedAccessLogger(AccessLogger):
+    """Aiohttp access logger that redacts sensitive URL query parameters and headers.
+
+    When `ServerConfig.trace_log_unsafe` is `True` on `request.app[CONFIG_KEY]`,
+    access log entries are emitted unredacted for debugging.
+    """
+
+    def _format_line(
+        self,
+        request: web.BaseRequest,
+        response: web.StreamResponse,
+        time: float,
+    ) -> list[tuple[str | tuple[str, str], Any]]:
+        entries = list(super()._format_line(request, response, time))
+        if (
+            isinstance(request, web.Request)
+            and (config := request.app.get(CONFIG_KEY)) is not None
+            and config.trace_log_unsafe
+        ):
+            return entries
+
+        sanitized: list[tuple[str | tuple[str, str], Any]] = []
+        for key, value in entries:
+            if key == "first_request_line" and request is not None:
+                redacted_path = redact_url(request.path_qs)
+                value = (
+                    f"{request.method} {redacted_path} "
+                    f"HTTP/{request.version.major}.{request.version.minor}"
+                )
+            elif (
+                isinstance(key, tuple)
+                and len(key) == 2
+                and isinstance(value, str)
+                and value != "-"
+            ):
+                category, header_name = key
+                if category in ("request_header", "response_header"):
+                    value = _sanitize_header_value(header_name, value)
+            sanitized.append((key, value))
+        return sanitized

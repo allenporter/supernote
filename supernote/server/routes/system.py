@@ -31,7 +31,7 @@ DEFAULT_PARAMS = {
 @routes.get("/api/health")
 @public_route
 async def handle_health(request: web.Request) -> web.Response:
-    return web.Response(text="Supernote Private Cloud Server")
+    return web.Response(text="Open Private Cloud Server")
 
 
 @routes.post("/api/official/system/base/param")

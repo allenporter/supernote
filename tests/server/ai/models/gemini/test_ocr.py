@@ -5,8 +5,9 @@ from __future__ import annotations
 import base64
 
 from supernote.server.ai.models.gemini.backend import GeminiBackend
-from supernote.server.ai.models.gemini.ocr import GeminiOcrModel
+from supernote.server.ai.models.gemini.ocr import GeminiOcrModel, create_ocr_model
 from supernote.server.ai.prompts import PageMetadata, format_ocr_prompt
+from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
 
 from .conftest import FakeGeminiServer
 
@@ -44,3 +45,17 @@ async def test_gemini_ocr_model(
         "mime_type": "image/png",
     }
     assert payload["generationConfig"] == {"mediaResolution": "MEDIA_RESOLUTION_HIGH"}
+
+
+def test_create_ocr_model() -> None:
+    assert create_ocr_model(ServerConfig()) is None
+
+    config = ServerConfig(
+        ai=AiConfig(
+            providers={"work": ProviderConfig(type="gemini", api_key="work-key")},
+            ocr=ModelConfig(provider="work", model="gemini-custom"),
+        )
+    )
+    model = create_ocr_model(config)
+    assert isinstance(model, GeminiOcrModel)
+    assert model.model_id == "gemini-custom"

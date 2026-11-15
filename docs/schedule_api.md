@@ -1,6 +1,6 @@
 # Schedule & Task API Specification and Behavioral Guide
 
-This document defines the architecture, endpoint specifications, data models, and behavioral requirements for the **Schedule & Task Ecosystem** in the Supernote Private Cloud.
+This document defines the architecture, endpoint specifications, data models, and behavioral requirements for the **Schedule & Task Ecosystem** in Open Private Cloud (implementing the Supernote Private Cloud protocol).
 
 ---
 
@@ -29,7 +29,7 @@ The Schedule ecosystem manages user tasks, task lists (groups), recurrence rules
 
 ## 2. Official Device & Server API Endpoints
 
-All schedule endpoints are unified under the `/api/file/schedule/` namespace (verified against original Java controller `F_ScheduleController`):
+All schedule endpoints are unified under the `/api/file/schedule/` namespace:
 
 ### Task Group Management (`/api/file/schedule/group*`)
 * `POST /api/file/schedule/group` — Create Task Group ([AddScheduleTaskGroupDTO](../supernote/models/schedule.py#L180-L203) → [AddScheduleTaskGroupVO](../supernote/models/schedule.py#L479-L490))

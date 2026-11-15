@@ -1,4 +1,4 @@
-"""Knowledge Hub extension routes (`/api/extended/*`) for search, transcripts, and AI status.
+"""Open Private Cloud extension routes (`/api/extended/*`) for search, transcripts, API keys, and AI status.
 
 Exposes non-device HTTP endpoints consumed by the Web UI and `supernote.client.extended.ExtendedClient`:
 - `POST /api/extended/search`: Semantic vector search across notebook pages via `supernote.server.services.search.SearchService`.
@@ -11,19 +11,25 @@ See `supernote.guides.mcp` and `supernote.guides.note_processing_design`.
 
 import json
 import logging
+import time
 
 from aiohttp import web
 from mashumaro.exceptions import InvalidFieldValue, MissingField
-from sqlalchemy import select
 
-from supernote.models.base import ProcessingStatus
+from supernote.models.base import BaseResponse, ProcessingStatus
 from supernote.models.extended import (
+    ApiKeyListResponseVO,
+    CreateApiKeyDTO,
+    CreateApiKeyResponseVO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
     PageTranscriptVO,
     SearchResultVO,
     SystemTaskListVO,
     SystemTaskVO,
+    WebAiStatusVO,
+    WebNoteCoverRequestDTO,
+    WebNoteCoverVO,
     WebSearchRequestDTO,
     WebSearchResponseVO,
     WebSummaryListRequestDTO,
@@ -35,12 +41,28 @@ from supernote.server.ai.models.embedding import EmbeddingModel
 from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.ai.models.summary import SummaryModel
 from supernote.server.config import ServerConfig
-from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.exceptions import SupernoteError
+from supernote.server.keys import (
+    CONFIG_KEY,
+    CONVERSION_SERVICE_KEY,
+    EMBEDDING_MODEL_KEY,
+    OCR_MODEL_KEY,
+    PROCESSOR_SERVICE_KEY,
+    REQUEST_USER_KEY,
+    SEARCH_SERVICE_KEY,
+    SUMMARY_MODEL_KEY,
+    SUMMARY_SERVICE_KEY,
+    URL_SIGNER_KEY,
+    USER_SERVICE_KEY,
+)
+from supernote.server.services.conversion import ConversionService
+from supernote.server.services.processor import ProcessorService
 from supernote.server.services.search import SearchService
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
+from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
+
+from .decorators import interactive_session_only
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +73,7 @@ routes = web.RouteTableDef()
 async def handle_extended_file_summary_list(request: web.Request) -> web.Response:
     # Endpoint: POST /api/extended/file/summary/list
     # Purpose: Extended API to list summaries for a file.
-    user_email = request["user"]
+    user_email = request[REQUEST_USER_KEY]
     try:
         data = await request.json()
     except Exception:
@@ -62,7 +84,7 @@ async def handle_extended_file_summary_list(request: web.Request) -> web.Respons
     except Exception as e:
         return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
 
-    summary_service: SummaryService = request.app["summary_service"]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
         summaries = await summary_service.list_summaries_for_file_internal(
@@ -84,9 +106,9 @@ async def handle_extended_file_summary_list(request: web.Request) -> web.Respons
 async def handle_list_system_tasks(request: web.Request) -> web.Response:
     # Endpoint: GET /api/extended/system/tasks
     # Purpose: Extended API to list system tasks for the control panel.
-    user_email = request["user"]
-    user_service: UserService = request.app["user_service"]
-    processor_service = request.app["processor_service"]
+    user_email = request[REQUEST_USER_KEY]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    processor_service: ProcessorService = request.app[PROCESSOR_SERVICE_KEY]
 
     user_id = await user_service.get_user_id(user_email)
     if not user_id:
@@ -119,55 +141,33 @@ async def handle_list_system_tasks(request: web.Request) -> web.Response:
 async def handle_file_processing_status(request: web.Request) -> web.Response:
     # Endpoint: POST /api/extended/file/processing/status
     # Purpose: Get aggregated processing status for a list of files.
-    user_email = request["user"]
+    user_email = request[REQUEST_USER_KEY]
     try:
         data = await request.json()
         req_dto = FileProcessingStatusDTO.from_dict(data)
-    except Exception as e:
+    except (
+        json.JSONDecodeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        MissingField,
+        InvalidFieldValue,
+    ) as e:
         return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
 
-    user_service: UserService = request.app["user_service"]
-    session_manager = request.app["session_manager"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    processor_service: ProcessorService = request.app[PROCESSOR_SERVICE_KEY]
 
     user_id = await user_service.get_user_id(user_email)
     if not user_id:
         return web.json_response({"error": "User not found"}, status=404)
 
     try:
-        status_map = {}
-        async with session_manager.session() as session:
-            for file_id in req_dto.file_ids:
-                # Aggregate tasks for this file belonging to the requesting user
-                stmt = (
-                    select(SystemTaskDO)
-                    .join(UserFileDO, SystemTaskDO.file_id == UserFileDO.id)
-                    .where(
-                        SystemTaskDO.file_id == file_id,
-                        UserFileDO.user_id == user_id,
-                    )
-                )
-                result = await session.execute(stmt)
-                tasks = result.scalars().all()
-
-                if not tasks:
-                    status_map[str(file_id)] = ProcessingStatus.NONE
-                    continue
-
-                # Logic:
-                # If any FAILED -> FAILED
-                # If any PROCESSING -> PROCESSING
-                # If all COMPLETED -> COMPLETED
-                # Else -> PENDING
-
-                if any(t.status == ProcessingStatus.FAILED for t in tasks):
-                    status_map[str(file_id)] = ProcessingStatus.FAILED
-                elif any(t.status == ProcessingStatus.PROCESSING for t in tasks):
-                    status_map[str(file_id)] = ProcessingStatus.PROCESSING
-                elif all(t.status == ProcessingStatus.COMPLETED for t in tasks):
-                    status_map[str(file_id)] = ProcessingStatus.COMPLETED
-                else:
-                    status_map[str(file_id)] = ProcessingStatus.PENDING
-
+        statuses = await processor_service.get_file_processing_statuses(
+            user_id=user_id,
+            file_ids=req_dto.file_ids,
+        )
+        status_map = {str(fid): status for fid, status in statuses.items()}
         return web.json_response(
             FileProcessingStatusVO(status_map=status_map).to_dict()
         )
@@ -180,15 +180,15 @@ async def handle_file_processing_status(request: web.Request) -> web.Response:
 async def handle_extended_search(request: web.Request) -> web.Response:
     # Endpoint: POST /api/extended/search
     # Purpose: Semantic search across notebook content.
-    user_email = request["user"]
+    user_email = request[REQUEST_USER_KEY]
     try:
         data = await request.json()
         req_dto = WebSearchRequestDTO.from_dict(data)
     except Exception as e:
         return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
 
-    user_service: UserService = request.app["user_service"]
-    search_service: SearchService = request.app["search_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    search_service: SearchService = request.app[SEARCH_SERVICE_KEY]
 
     user_id = await user_service.get_user_id(user_email)
     if not user_id:
@@ -227,7 +227,7 @@ async def handle_extended_search(request: web.Request) -> web.Response:
 async def handle_extended_transcript(request: web.Request) -> web.Response:
     # Endpoint: POST /api/extended/transcript
     # Purpose: Retrieve structured per-page notebook transcript.
-    user_email = request["user"]
+    user_email = request[REQUEST_USER_KEY]
     try:
         data = await request.json()
         req_dto = WebTranscriptRequestDTO.from_dict(data)
@@ -241,8 +241,8 @@ async def handle_extended_transcript(request: web.Request) -> web.Response:
     ) as e:
         return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
 
-    user_service: UserService = request.app["user_service"]
-    search_service: SearchService = request.app["search_service"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    search_service: SearchService = request.app[SEARCH_SERVICE_KEY]
 
     user_id = await user_service.get_user_id(user_email)
     if not user_id:
@@ -281,30 +281,150 @@ async def handle_extended_transcript(request: web.Request) -> web.Response:
 @routes.get("/api/extended/ai/status")
 async def handle_extended_ai_status(request: web.Request) -> web.Response:
     # Endpoint: GET /api/extended/ai/status
-    # Purpose: Returns server AI processing configuration and API key health status.
-    config: ServerConfig | None = request.app.get("config")
-    ocr_model: OcrModel | None = request.app.get("ocr_model")
-    summary_model: SummaryModel | None = request.app.get("summary_model")
-    embedding_model: EmbeddingModel | None = request.app.get("embedding_model")
-    is_configured = any((ocr_model, summary_model, embedding_model))
+    # Purpose: Returns server AI processing configuration and capability health status.
+    ocr_model: OcrModel | None = request.app.get(OCR_MODEL_KEY)
+    summary_model: SummaryModel | None = request.app.get(SUMMARY_MODEL_KEY)
+    embedding_model: EmbeddingModel | None = request.app.get(EMBEDDING_MODEL_KEY)
+
     ocr_enabled = ocr_model is not None
+    ocr_model_id = ocr_model.model_id if ocr_model is not None else None
+
+    summary_enabled = summary_model is not None
+    summary_model_id = summary_model.model_id if summary_model is not None else None
+
     vector_search_enabled = embedding_model is not None
-    model = (
-        ocr_model.model_id
-        if ocr_model is not None
-        else (
-            config.ai.ocr.model
-            if config is not None and config.ai.ocr is not None
-            else (config.gemini_ocr_model if config is not None else None)
-        )
+    embedding_model_id = (
+        embedding_model.model_id if embedding_model is not None else None
     )
 
+    is_configured = any((ocr_enabled, summary_enabled, vector_search_enabled))
+    primary_model = ocr_model_id or summary_model_id or embedding_model_id
+
     return web.json_response(
-        {
-            "success": True,
-            "hasApiKey": is_configured,
-            "ocrEnabled": ocr_enabled,
-            "vectorSearchEnabled": vector_search_enabled,
-            "model": model,
-        }
+        WebAiStatusVO(
+            has_api_key=is_configured,
+            ocr_enabled=ocr_enabled,
+            ocr_model=ocr_model_id,
+            summary_enabled=summary_enabled,
+            summary_model=summary_model_id,
+            vector_search_enabled=vector_search_enabled,
+            embedding_model=embedding_model_id,
+            model=primary_model,
+        ).to_dict()
     )
+
+
+@routes.post("/api/extended/file/note/cover")
+async def handle_extended_note_cover(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/file/note/cover
+    # Purpose: Convert/fetch only the first page (page 0) PNG for lightweight explorer thumbnails.
+    user_email = request[REQUEST_USER_KEY]
+    try:
+        data = await request.json()
+        req_dto = WebNoteCoverRequestDTO.from_dict(data)
+    except (json.JSONDecodeError, MissingField, InvalidFieldValue, ValueError) as err:
+        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
+
+    config: ServerConfig = request.app[CONFIG_KEY]
+    if not (config.web_enabled and config.web_notebook_preview):
+        return web.json_response(WebNoteCoverVO(url=None).to_dict())
+
+    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
+    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
+
+    try:
+        page_numbers = await conversion_service.convert_note_to_png(
+            user_email, req_dto.file_id, page_indices={0}
+        )
+        if not page_numbers:
+            return web.json_response(WebNoteCoverVO(url=None).to_dict())
+
+        page_no = page_numbers[0]
+        path_to_sign = f"/api/oss/png/{req_dto.file_id}/{page_no}"
+        signed_path = await url_signer.sign(
+            path_to_sign, user=user_email, single_use=False
+        )
+        download_url = f"{get_request_base_url(request)}{signed_path}"
+        return web.json_response(WebNoteCoverVO(url=download_url).to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        logger.exception("Error fetching note cover preview")
+        return SupernoteError.uncaught(err).to_response()
+
+
+@routes.get("/api/extended/keys")
+@interactive_session_only
+async def handle_list_api_keys(request: web.Request) -> web.Response:
+    # Endpoint: GET /api/extended/keys
+    # Purpose: List active static Bearer API keys for the authenticated user.
+    user_email = request[REQUEST_USER_KEY]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(user_email)
+    keys = await user_service.list_api_keys(user_id)
+    return web.json_response(ApiKeyListResponseVO(keys=keys).to_dict())
+
+
+@routes.post("/api/extended/keys")
+@interactive_session_only
+async def handle_create_api_key(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/keys
+    # Purpose: Generate and return a new static Bearer API key.
+    user_email = request[REQUEST_USER_KEY]
+    try:
+        req_dto = CreateApiKeyDTO.from_dict(await request.json())
+    except (
+        json.JSONDecodeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        MissingField,
+        InvalidFieldValue,
+    ) as err:
+        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
+
+    expires_at: int | None = None
+    if req_dto.expires_in_days is not None:
+        if req_dto.expires_in_days <= 0 or req_dto.expires_in_days > 3650:
+            return web.json_response(
+                {"error": "expiresInDays must be between 1 and 3650"}, status=400
+            )
+        expires_at = int(time.time()) + req_dto.expires_in_days * 86400
+
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(user_email)
+    try:
+        raw_token, vo = await user_service.create_api_key(
+            user_id, req_dto.name, expires_at=expires_at
+        )
+    except ValueError as err:
+        return web.json_response({"error": str(err)}, status=400)
+
+    return web.json_response(
+        CreateApiKeyResponseVO(
+            id=vo.id,
+            name=vo.name,
+            key=raw_token,
+            created_at=vo.created_at,
+            expires_at=vo.expires_at,
+        ).to_dict()
+    )
+
+
+@routes.delete("/api/extended/keys/{key_id}")
+@interactive_session_only
+async def handle_delete_api_key(request: web.Request) -> web.Response:
+    # Endpoint: DELETE /api/extended/keys/{key_id}
+    # Purpose: Revoke an existing static Bearer API key.
+    user_email = request[REQUEST_USER_KEY]
+    key_id = request.match_info["key_id"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(user_email)
+
+    revoked = await user_service.revoke_api_key(user_id, key_id)
+    if not revoked:
+        return web.json_response(
+            {"error": "API key not found or already revoked"}, status=404
+        )
+
+    return web.json_response(BaseResponse(success=True).to_dict())

@@ -11,6 +11,7 @@ from supernote.client.schedule import ScheduleClient
 from supernote.server.app import create_app
 from supernote.server.config import AuthConfig, ServerConfig
 from supernote.server.db.migrations import run_migrations
+from supernote.server.keys import USER_SERVICE_KEY
 
 FIXTURES_DIR = Path(__file__).parent.parent.parent.parent / "fixtures"
 SCHEDULE_V20_FIXTURE_PATH = FIXTURES_DIR / "db_v0_20_0_schedule.sqlite"
@@ -38,7 +39,7 @@ async def test_load_v0_20_0_schedule_database_via_api(tmp_path: Path) -> None:
     await server.start_server()
 
     # Generate auth token for the test user
-    token = await app["user_service"].create_session("test@example.com")
+    token = await app[USER_SERVICE_KEY].create_session("test@example.com")
 
     class TokenAuth(AbstractAuth):
         async def async_get_access_token(self) -> str:

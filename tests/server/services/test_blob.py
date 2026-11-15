@@ -1,5 +1,6 @@
 import hashlib
 import os
+import shutil
 import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -372,6 +373,69 @@ async def test_list_blobs_returns_logical_keys_and_skips_chunks(
     assert await storage.list_blobs("cache") == sorted([png_key, pdf_key])
 
 
+@pytest.mark.parametrize("bucket", ["nonexistent-bucket", "", ".", "temp"])
+async def test_list_blob_sizes_returns_empty_for_missing_or_reserved_buckets(
+    tmp_path: Path,
+    bucket: str,
+) -> None:
+    """Verify list_blob_sizes returns empty list for nonexistent, invalid, or staging buckets."""
+    storage = LocalBlobStorage(tmp_path)
+    temp_dir = tmp_path / "temp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    (temp_dir / "staging123.tmp").write_bytes(b"temporary staging bytes")
+
+    assert await storage.list_blob_sizes(bucket) == []
+
+
+async def test_list_blob_sizes_returns_sorted_pairs_and_skips_chunks(
+    tmp_path: Path,
+) -> None:
+    """Verify list_blob_sizes returns sorted (key, size) pairs and excludes .part.N chunks."""
+    storage = LocalBlobStorage(tmp_path)
+
+    await storage.put("user-data", "blob_b.note", b"12345")
+    await storage.put("user-data", "blob_a.note", b"12")
+    await storage.put("user-data", "upload.note.part.1", b"chunk-bytes")
+    (tmp_path / "user-data" / "stray_top_level_file").write_bytes(b"ignored")
+
+    assert await storage.list_blob_sizes("user-data") == [
+        ("blob_a.note", 2),
+        ("blob_b.note", 5),
+    ]
+
+    png_key = get_page_png_path(file_id=42, page_id="P1")
+    pdf_key = get_conversion_pdf_path(user_id=7, file_id=42, file_md5="deadbeef")
+    await storage.put("cache", png_key, b"png-payload")
+    await storage.put("cache", pdf_key, b"pdf-payload-bytes")
+
+    assert await storage.list_blob_sizes("cache") == sorted(
+        [
+            (png_key, len(b"png-payload")),
+            (pdf_key, len(b"pdf-payload-bytes")),
+        ]
+    )
+
+
+async def test_list_blob_sizes_skips_disappearing_file_during_stat(
+    tmp_path: Path,
+) -> None:
+    """Verify list_blob_sizes skips files removed between directory walk and stat."""
+    storage = LocalBlobStorage(tmp_path)
+    await storage.put("user-data", "blob_a.note", b"12")
+    await storage.put("user-data", "blob_b.note", b"12345")
+
+    original_stat = Path.stat
+    blob_a_path = storage.get_blob_path("user-data", "blob_a.note")
+
+    def flaky_stat(self: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        if self == blob_a_path:
+            raise FileNotFoundError(self)
+        return original_stat(self, follow_symlinks=follow_symlinks)
+
+    with patch.object(Path, "stat", flaky_stat):
+        assert await storage.list_blob_sizes("user-data") == [("blob_b.note", 5)]
+
+
 async def test_put_stream_error_cleans_up_temp_file(tmp_path: Path) -> None:
     """Verify put() cleans up temporary staging file and re-raises when stream fails."""
     storage = LocalBlobStorage(tmp_path)
@@ -428,3 +492,14 @@ def test_cleanup_helpers_handle_missing_files_and_os_errors(tmp_path: Path) -> N
     with patch.object(Path, "stat", side_effect=PermissionError("stat denied")):
         LocalBlobStorage._remove_chunk_set_if_expired([tmp_file], now, stats)
     assert stats.files_removed == 0
+
+
+def test_get_available_bytes(tmp_path: Path) -> None:
+    """Verify LocalBlobStorage reports free volume bytes and returns None on OSError."""
+    storage = LocalBlobStorage(tmp_path)
+    available = storage.get_available_bytes()
+    assert available is not None
+    assert available > 0
+
+    with patch.object(shutil, "disk_usage", side_effect=OSError("disk error")):
+        assert storage.get_available_bytes() is None

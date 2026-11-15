@@ -9,7 +9,6 @@ handwriting blobs. Delegates persistence and event emission to
 `supernote.server.services.summary.SummaryService`. See `supernote.guides.summary_api`.
 """
 
-import logging
 import urllib.parse
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -43,6 +42,11 @@ from supernote.models.summary import (
     UploadSummaryApplyVO,
 )
 from supernote.server.exceptions import SupernoteError
+from supernote.server.keys import (
+    REQUEST_USER_KEY,
+    SUMMARY_SERVICE_KEY,
+    URL_SIGNER_KEY,
+)
 from supernote.server.services.summary import (
     DEFAULT_SUMMARY_PAGE_SIZE,
     SummaryService,
@@ -50,7 +54,6 @@ from supernote.server.services.summary import (
 from supernote.server.utils.paths import generate_inner_name
 from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
-logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
 
 
@@ -109,8 +112,8 @@ async def handle_add_summary_tag(request: web.Request) -> web.Response:
     # Purpose: Add a new summary tag.
     # Response: AddSummaryTagVO
     req_data = AddSummaryTagDTO.from_dict(await request.json())
-    user_email = request["user"]
-    summary_service: SummaryService = request.app["summary_service"]
+    user_email = request[REQUEST_USER_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
         tag = await summary_service.add_tag(user_email, req_data.name)
@@ -128,8 +131,8 @@ async def handle_update_summary_tag(request: web.Request) -> web.Response:
     # Purpose: Update an existing summary tag.
     # Response: BaseResponse
     req_data = UpdateSummaryTagDTO.from_dict(await request.json())
-    user_email = request["user"]
-    summary_service: SummaryService = request.app["summary_service"]
+    user_email = request[REQUEST_USER_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
         await summary_service.update_tag(user_email, req_data.id, req_data.name)
@@ -147,8 +150,8 @@ async def handle_delete_summary_tag(request: web.Request) -> web.Response:
     # Purpose: Delete a summary tag.
     # Response: BaseResponse
     req_data = DeleteSummaryTagDTO.from_dict(await request.json())
-    user_email = request["user"]
-    summary_service: SummaryService = request.app["summary_service"]
+    user_email = request[REQUEST_USER_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
         await summary_service.delete_tag(user_email, req_data.id)
@@ -165,8 +168,8 @@ async def handle_query_summary_tag(request: web.Request) -> web.Response:
     # Endpoint: GET /api/file/query/summary/tag
     # Purpose: Query summary tags.
     # Response: QuerySummaryTagVO
-    user_email = request["user"]
-    summary_service: SummaryService = request.app["summary_service"]
+    user_email = request[REQUEST_USER_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
         tags = await summary_service.list_tags(user_email)
@@ -183,8 +186,8 @@ async def handle_add_summary(request: web.Request) -> web.Response:
     # Purpose: Add a new summary.
     # Response: AddSummaryVO
     req_data = AddSummaryDTO.from_dict(await request.json())
-    user_email = request["user"]
-    summary_service: SummaryService = request.app["summary_service"]
+    user_email = request[REQUEST_USER_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
         summary = await summary_service.add_summary(user_email, req_data)
@@ -202,8 +205,8 @@ async def handle_update_summary(request: web.Request) -> web.Response:
     # Purpose: Update an existing summary.
     # Response: BaseResponse
     req_data = UpdateSummaryDTO.from_dict(await request.json())
-    user_email = request["user"]
-    summary_service: SummaryService = request.app["summary_service"]
+    user_email = request[REQUEST_USER_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
         await summary_service.update_summary(user_email, req_data)
@@ -221,8 +224,8 @@ async def handle_delete_summary(request: web.Request) -> web.Response:
     # Purpose: Delete a summary.
     # Response: BaseResponse
     req_data = DeleteSummaryDTO.from_dict(await request.json())
-    user_email = request["user"]
-    summary_service: SummaryService = request.app["summary_service"]
+    user_email = request[REQUEST_USER_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
         await summary_service.delete_summary(user_email, req_data.id)
@@ -239,8 +242,8 @@ async def handle_query_summary(request: web.Request) -> web.Response:
     # Purpose: Query summaries.
     # Response: QuerySummaryVO
     req_data = QuerySummaryDTO.from_dict(await request.json())
-    user_email = request["user"]
-    summary_service: SummaryService = request.app["summary_service"]
+    user_email = request[REQUEST_USER_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
         size = (
@@ -286,8 +289,8 @@ async def handle_add_summary_group(request: web.Request) -> web.Response:
     # Purpose: Add a new summary group.
     # Response: AddSummaryGroupVO
     req_data = AddSummaryGroupDTO.from_dict(await request.json())
-    user_email = request["user"]
-    summary_service: SummaryService = request.app["summary_service"]
+    user_email = request[REQUEST_USER_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
         group = await summary_service.add_group(user_email, req_data)
@@ -305,8 +308,8 @@ async def handle_update_summary_group(request: web.Request) -> web.Response:
     # Purpose: Update an existing summary group.
     # Response: BaseResponse
     req_data = UpdateSummaryGroupDTO.from_dict(await request.json())
-    user_email = request["user"]
-    summary_service: SummaryService = request.app["summary_service"]
+    user_email = request[REQUEST_USER_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
         await summary_service.update_group(user_email, req_data)
@@ -324,8 +327,8 @@ async def handle_delete_summary_group(request: web.Request) -> web.Response:
     # Purpose: Delete a summary group.
     # Response: BaseResponse
     req_data = DeleteSummaryGroupDTO.from_dict(await request.json())
-    user_email = request["user"]
-    summary_service: SummaryService = request.app["summary_service"]
+    user_email = request[REQUEST_USER_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
         await summary_service.delete_group(user_email, req_data.id)
@@ -342,8 +345,8 @@ async def handle_query_summary_group(request: web.Request) -> web.Response:
     # Purpose: Query summary groups.
     # Response: QuerySummaryGroupVO
     req_data = QuerySummaryGroupDTO.from_dict(await request.json())
-    user_email = request["user"]
-    summary_service: SummaryService = request.app["summary_service"]
+    user_email = request[REQUEST_USER_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
         size = DEFAULT_SUMMARY_PAGE_SIZE if req_data.size is None else req_data.size
@@ -377,10 +380,10 @@ async def handle_upload_apply_summary(request: web.Request) -> web.Response:
     # Purpose: Apply for upload (signed URL).
     # Response: UploadSummaryApplyVO
     req_data = UploadSummaryApplyDTO.from_dict(await request.json())
-    user_email = request["user"]
+    user_email = request[REQUEST_USER_KEY]
 
     try:
-        url_signer: UrlSigner = request.app["url_signer"]
+        url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
 
         # Generate inner name
         inner_name = generate_inner_name(req_data.file_name, req_data.equipment_no)
@@ -415,8 +418,8 @@ async def handle_download_summary(request: web.Request) -> web.Response:
     # Purpose: Get signed download URL for binary content.
     # Response: DownloadSummaryVO
     req_data = DownloadSummaryDTO.from_dict(await request.json())
-    user_email = request["user"]
-    summary_service: SummaryService = request.app["summary_service"]
+    user_email = request[REQUEST_USER_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
         summary = await summary_service.get_summary(user_email, req_data.id)
@@ -428,7 +431,7 @@ async def handle_download_summary(request: web.Request) -> web.Response:
                 status=404,
             )
 
-        url_signer: UrlSigner = request.app["url_signer"]
+        url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
         encoded_name = urllib.parse.quote(summary.handwrite_inner_name)
         download_path = f"/api/oss/download?path={encoded_name}"
         signed_path = await url_signer.sign(
@@ -450,8 +453,8 @@ async def handle_query_summary_hash(request: web.Request) -> web.Response:
     # Purpose: Query summary lightweight info (hash/integrity).
     # Response: QuerySummaryMD5HashVO
     req_data = QuerySummaryDTO.from_dict(await request.json())
-    user_email = request["user"]
-    summary_service: SummaryService = request.app["summary_service"]
+    user_email = request[REQUEST_USER_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
         infos = await summary_service.list_summary_infos(user_email, req_data)
@@ -486,8 +489,8 @@ async def handle_query_summary_id(request: web.Request) -> web.Response:
     # Purpose: Query full summaries by ID.
     # Response: QuerySummaryByIdVO
     req_data = QuerySummaryDTO.from_dict(await request.json())
-    user_email = request["user"]
-    summary_service: SummaryService = request.app["summary_service"]
+    user_email = request[REQUEST_USER_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
 
     try:
         summaries = await summary_service.list_summaries_by_id(user_email, req_data)

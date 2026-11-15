@@ -1,6 +1,10 @@
 """Tests for top-level supernote package initialization, exports, and repository structure conformance."""
 
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 import supernote
 
@@ -25,10 +29,28 @@ INIT_TEST_NAME = "test_init.py"
 ALLOWLIST_NON_CONFORMING_TESTS = set()
 
 
-def test_package_exports():
+def test_package_exports() -> None:
     """Verify top-level package exports and attribute integrity for supernote."""
     assert hasattr(supernote, "__all__")
     assert REQUIRED_PACKAGE_EXPORTS.issubset(supernote.__all__)
+
+
+def test_top_level_package_lazy_imports() -> None:
+    """Verify subpackages are lazily loaded via PEP 562 __getattr__."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys, supernote; assert 'supernote.server' not in sys.modules; assert 'supernote.client' not in sys.modules",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert supernote.notebook is not None
+    with pytest.raises(AttributeError):
+        _ = supernote.nonexistent_submodule
 
 
 def test_all_test_files_conform_to_1to1_mapping():

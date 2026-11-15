@@ -2,11 +2,11 @@
 
 {% block title %}
     {%- if module.modulename == "supernote" -%}
-        Supernote Private Cloud & Knowledge Hub — Documentation
+        Open Private Cloud for Supernote — Documentation
     {%- elif module.modulename in nav_page_titles -%}
-        {{ nav_page_titles[module.modulename] }} — Supernote Documentation
+        {{ nav_page_titles[module.modulename] }} — Open Private Cloud for Supernote
     {%- else -%}
-        {{ module.modulename }} — Supernote API Reference
+        {{ module.modulename }} — Open Private Cloud for Supernote API Reference
     {%- endif -%}
 {% endblock %}
 
@@ -17,8 +17,8 @@
         <a href="{{ rootprefix }}supernote.html" class="sn-brand-link">
             <span class="sn-brand-icon">📓</span>
             <div class="sn-brand-text">
-                <span class="sn-brand-title">Supernote</span>
-                <span class="sn-brand-subtitle">Private Cloud &amp; SDK</span>
+                <span class="sn-brand-title">Open Private Cloud</span>
+                <span class="sn-brand-subtitle">for Supernote &amp; SDK</span>
             </div>
         </a>
     </div>
@@ -87,20 +87,21 @@
                                 {{ toc_html | safe }}
                             </div>
                         {% endif %}
-                        {% set pkg_mod = all_modules.get(pkg.module) %}
-                        {% if is_pkg_active and pkg_mod and pkg_mod.submodules %}
+                        {% set pkg_children = get_child_modules(pkg.module, all_modules) %}
+                        {% if is_pkg_active and pkg_children %}
                             <ul class="sn-subnav-list">
-                                {% for sub in pkg_mod.submodules if sub.fullname in all_modules and not sub.name.startswith("_") %}
+                                {% for sub in pkg_children %}
                                     {% set is_sub_current = (module.modulename == sub.fullname) %}
                                     {% set is_sub_active = (is_sub_current or module.modulename.startswith(sub.fullname + ".")) %}
+                                    {% set sub_children = get_child_modules(sub.fullname, all_modules) %}
                                     <li>
                                         <a href="{{ rootprefix }}{{ sub.fullname.replace('.', '/') }}.html"
                                            class="sn-subnav-item {{ 'current' if is_sub_current else ('active-branch' if is_sub_active else '') }}">
                                             {{ sub.name }}
                                         </a>
-                                        {% if is_sub_active and sub.submodules %}
+                                        {% if is_sub_active and sub_children %}
                                             <ul class="sn-subnav-list sn-subnav-level2">
-                                                {% for sub2 in sub.submodules if sub2.fullname in all_modules and not sub2.name.startswith("_") %}
+                                                {% for sub2 in sub_children %}
                                                     {% set is_sub2_current = (module.modulename == sub2.fullname) %}
                                                     <li>
                                                         <a href="{{ rootprefix }}{{ sub2.fullname.replace('.', '/') }}.html"

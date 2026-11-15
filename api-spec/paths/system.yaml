@@ -303,6 +303,7 @@ downloadFile:
 # Merged Path Item
 dictionaryResource:
   get:
+    deprecated: true
     tags:
       - System
       - Dictionary
@@ -327,6 +328,7 @@ dictionaryResource:
               items:
                 $ref: "../components/schemas/system.yaml#/DictionarysVO"
   post:
+    deprecated: true
     tags:
       - System
       - Dictionary
@@ -347,6 +349,7 @@ dictionaryResource:
 
 queryDictionaryById_deleteApi:
   get:
+    deprecated: true
     tags:
       - System
       - Dictionary
@@ -369,6 +372,7 @@ queryDictionaryById_deleteApi:
 
 queryDictionaryByNameAndValue_deleteApi:
   post:
+    deprecated: true
     tags:
       - System
       - Dictionary
@@ -389,6 +393,7 @@ queryDictionaryByNameAndValue_deleteApi:
 
 queryDictionaryByName_deleteApi:
   get:
+    deprecated: true
     tags:
       - System
       - Dictionary
@@ -410,6 +415,7 @@ queryDictionaryByName_deleteApi:
 
 queryRef_deleteApi:
   post:
+    deprecated: true
     tags:
       - System
       - Reference
@@ -430,6 +436,7 @@ queryRef_deleteApi:
 
 queryRefById_deleteApi:
   get:
+    deprecated: true
     tags:
       - System
       - Reference
@@ -484,3 +491,38 @@ getReference:
           application/json:
             schema:
               $ref: "../components/schemas/system.yaml#/ReferenceRespVO"
+
+# System Logging Endpoints
+systemLogLevel:
+  get:
+    tags:
+      - System
+    summary: Query Runtime Log Levels
+    operationId: getLogLevel
+    responses:
+      "200":
+        description: Current root and framework logger levels
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/system.yaml#/SystemLogLevelVO"
+  put:
+    tags:
+      - System
+    summary: Dynamically Update Runtime Log Levels
+    description: >-
+      Updates rootLevel and/or frameworkLevel at runtime without restarting the
+      service. Allowed levels: ERROR, WARN, INFO.
+    operationId: setLogLevel
+    requestBody:
+      content:
+        application/json:
+          schema:
+            $ref: "../components/schemas/system.yaml#/SystemLogLevelDTO"
+    responses:
+      "200":
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: "../components/schemas/common.yaml#/BaseVO"

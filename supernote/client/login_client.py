@@ -7,7 +7,6 @@ challenge-response login (`login`, `device_login`), SMS verification flows (`req
 `query_user_equipment`) using models from `supernote.models.auth` and `supernote.models.equipment`.
 """
 
-import logging
 from typing import TypeVar
 
 from mashumaro.mixins.json import DataClassJSONMixin
@@ -39,9 +38,6 @@ from supernote.models.user import UserCheckDTO, UserCheckVO
 from .client import Client
 from .exceptions import ApiException, SmsVerificationRequired
 from .hashing import get_token_salt, hash_password, hash_with_salt
-
-_LOGGER = logging.getLogger(__name__)
-
 
 _T = TypeVar("_T", bound=DataClassJSONMixin)
 

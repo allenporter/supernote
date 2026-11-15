@@ -14,6 +14,7 @@ import aiohttp
 from .auth import AbstractAuth, ConstantAuth
 from .client import Client
 from .device import DeviceClient
+from .extended import ExtendedClient
 from .login_client import LoginClient
 from .web import WebClient
 
@@ -52,6 +53,7 @@ class Supernote:
         self._client = Client(self._session, host=host, auth=auth)
         self._web = WebClient(self._client)
         self._device = DeviceClient(self._client)
+        self._extended = ExtendedClient(self._client)
         self._login_client = LoginClient(self._client)
 
     @classmethod
@@ -113,6 +115,11 @@ class Supernote:
     def device(self) -> DeviceClient:
         """Return the device client."""
         return self._device
+
+    @property
+    def extended(self) -> ExtendedClient:
+        """Return the extended server API client."""
+        return self._extended
 
     @property
     def login_client(self) -> LoginClient:

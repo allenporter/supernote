@@ -25,6 +25,19 @@ from mashumaro.mixins.yaml import DataClassYAMLMixin
 
 logger = logging.getLogger(__name__)
 
+VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
+
+
+def _normalize_log_level(level_name: str) -> str:
+    """Validate and return an uppercase standard log level name."""
+    normalized = level_name.strip().upper()
+    if normalized not in VALID_LOG_LEVELS:
+        raise ValueError(
+            f"Invalid log level {level_name!r}; expected one of: "
+            f"{', '.join(VALID_LOG_LEVELS)}"
+        )
+    return normalized
+
 
 def _get_bool_env(name: str, default: bool) -> bool:
     """Get a boolean value from an environment variable."""
@@ -45,10 +58,16 @@ class AuthConfig(DataClassYAMLMixin):
     """
 
     expiration_hours: int = 24
-    """JWT expiration time in hours."""
+    """JWT expiration time in hours.
+
+    Env Var: `SUPERNOTE_JWT_EXPIRATION_HOURS`
+    """
 
     device_expiration_hours: int = 87600
-    """JWT expiration time for devices in hours (default: 10 years)."""
+    """JWT expiration time for devices in hours (default: 10 years).
+
+    Env Var: `SUPERNOTE_DEVICE_EXPIRATION_HOURS`
+    """
 
     enable_registration: bool = False
     """When disabled, registration is only allowed if there are no users in the system.
@@ -134,6 +153,13 @@ class ProviderConfig(DataClassYAMLMixin):
     base_url: str | None = None
     """Optional custom base URL for the provider (e.g. local Ollama or vLLM server)."""
 
+    type: str | None = None
+    """Backend implementation (`'gemini'`, `'openai'`, `'apple'`, `'fake'`). Defaults to the entry's name.
+
+    Set it to configure several entries of one kind, e.g. two OpenAI-compatible
+    servers named `ollama` and `llamacpp`.
+    """
+
     class Config(BaseConfig):
         omit_none = True
         code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
@@ -144,10 +170,10 @@ class ModelConfig(DataClassYAMLMixin):
     """Configuration for a task-specific AI model (`ocr`, `summary`, `embedding`)."""
 
     provider: str = "gemini"
-    """Name of the provider entry in `ai.providers` (e.g. `'gemini'`, `'openai'`, `'mistral'`)."""
+    """Name of the provider entry in `ai.providers` (e.g. `'gemini'`, `'openai'`, `'ollama'`)."""
 
     model: str = ""
-    """Provider-specific model identifier (e.g. `'gemini-3.6-flash'`)."""
+    """Provider-specific model identifier (e.g. `'gemini-3.5-flash-lite'`)."""
 
     max_concurrency: int = 5
     """Maximum number of concurrent requests allowed for this model."""
@@ -180,6 +206,13 @@ class AiConfig(DataClassYAMLMixin):
 
     embedding: ModelConfig | None = None
     """Model configuration for page embedding generation."""
+
+    def provider_type(self, name: str) -> str:
+        """Return the backend implementation for the `ai.providers` entry `name`."""
+        provider_cfg = self.providers.get(name)
+        if provider_cfg is not None and provider_cfg.type:
+            return provider_cfg.type
+        return name
 
     class Config(BaseConfig):
         omit_none = True
@@ -223,6 +256,12 @@ class ServerConfig(DataClassYAMLMixin):
     Used for RFC 9728 discovery if the server is behind a proxy.
     """
 
+    log_level: str = "INFO"
+    """Server logging level (DEBUG, INFO, WARNING, ERROR).
+
+    Env Var: `SUPERNOTE_LOG_LEVEL`
+    """
+
     trace_log_file: str | None = None
     """Path to trace log file.
 
@@ -232,7 +271,7 @@ class ServerConfig(DataClassYAMLMixin):
     """
 
     trace_log_unsafe: bool = False
-    """Whether to disable credential and token redaction in the trace log for debugging.
+    """Whether to disable credential and token redaction across trace and access logs.
 
     Env Var: `SUPERNOTE_TRACE_LOG_UNSAFE`
     """
@@ -241,6 +280,20 @@ class ServerConfig(DataClassYAMLMixin):
     """Directory for storing files and database.
 
     Env Var: `SUPERNOTE_STORAGE_DIR`
+    """
+
+    default_user_quota: int = 0
+    """Default per-user storage quota in bytes (0 = unlimited, bounded by storage volume free space).
+
+    Individual users can override this via `UserDO.total_capacity` (`supernote admin user set-quota`).
+
+    Env Var: `SUPERNOTE_DEFAULT_USER_QUOTA`
+    """
+
+    event_log_retention_days: int = 90
+    """Number of days to retain domain events in `f_user_event` (0 = retain indefinitely).
+
+    Env Var: `SUPERNOTE_EVENT_LOG_RETENTION_DAYS`
     """
 
     proxy_mode: str | None = None
@@ -270,7 +323,7 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_GEMINI_API_KEY`
     """
 
-    gemini_ocr_model: str = "gemini-3.6-flash"
+    gemini_ocr_model: str = "gemini-3.5-flash-lite"
     """Legacy Gemini model to use for OCR and Summaries.
 
     Env Var: `SUPERNOTE_GEMINI_OCR_MODEL`
@@ -325,6 +378,11 @@ class ServerConfig(DataClassYAMLMixin):
     """
 
     def __post_init__(self) -> None:
+        self.log_level = _normalize_log_level(self.log_level)
+        if isinstance(self.default_user_quota, bool) or self.default_user_quota < 0:
+            raise ValueError("default_user_quota must be a non-negative integer")
+        if self.event_log_retention_days < 0:
+            raise ValueError("event_log_retention_days must be >= 0")
         self._sync_legacy_gemini_config()
 
     def _sync_legacy_gemini_config(self) -> None:
@@ -470,6 +528,36 @@ class ServerConfig(DataClassYAMLMixin):
             config.storage_dir = os.getenv("SUPERNOTE_STORAGE_DIR", config.storage_dir)
             logger.info(f"Using SUPERNOTE_STORAGE_DIR: {config.storage_dir}")
 
+        if (raw_quota := os.getenv("SUPERNOTE_DEFAULT_USER_QUOTA")) is not None:
+            try:
+                quota_val = int(raw_quota)
+                if quota_val < 0:
+                    raise ValueError("must be >= 0")
+                config.default_user_quota = quota_val
+                logger.info(
+                    f"Using SUPERNOTE_DEFAULT_USER_QUOTA: {config.default_user_quota}"
+                )
+            except ValueError as err:
+                logger.warning(
+                    f"Ignoring invalid SUPERNOTE_DEFAULT_USER_QUOTA {raw_quota!r}: {err}"
+                )
+
+        if (
+            raw_retention := os.getenv("SUPERNOTE_EVENT_LOG_RETENTION_DAYS")
+        ) is not None:
+            try:
+                retention_val = int(raw_retention)
+                if retention_val < 0:
+                    raise ValueError("must be >= 0")
+                config.event_log_retention_days = retention_val
+                logger.info(
+                    f"Using SUPERNOTE_EVENT_LOG_RETENTION_DAYS: {config.event_log_retention_days}"
+                )
+            except ValueError as err:
+                logger.warning(
+                    f"Ignoring invalid SUPERNOTE_EVENT_LOG_RETENTION_DAYS {raw_retention!r}: {err}"
+                )
+
         if os.getenv("SUPERNOTE_BASE_URL"):
             config._base_url = os.getenv("SUPERNOTE_BASE_URL")
             logger.info(f"Using SUPERNOTE_BASE_URL: {config._base_url}")
@@ -500,6 +588,28 @@ class ServerConfig(DataClassYAMLMixin):
             logger.info(
                 f"Remote Password Reset Enabled: {config.auth.enable_remote_password_reset}"
             )
+
+        if raw_exp := os.getenv("SUPERNOTE_JWT_EXPIRATION_HOURS"):
+            try:
+                exp_val = int(raw_exp)
+                if exp_val > 0:
+                    config.auth.expiration_hours = exp_val
+                    logger.info(
+                        f"Using SUPERNOTE_JWT_EXPIRATION_HOURS: {config.auth.expiration_hours}"
+                    )
+            except ValueError:
+                pass
+
+        if raw_dev_exp := os.getenv("SUPERNOTE_DEVICE_EXPIRATION_HOURS"):
+            try:
+                dev_exp_val = int(raw_dev_exp)
+                if dev_exp_val > 0:
+                    config.auth.device_expiration_hours = dev_exp_val
+                    logger.info(
+                        f"Using SUPERNOTE_DEVICE_EXPIRATION_HOURS: {config.auth.device_expiration_hours}"
+                    )
+            except ValueError:
+                pass
 
         if os.getenv("SUPERNOTE_PROXY_MODE"):
             config.proxy_mode = os.getenv("SUPERNOTE_PROXY_MODE")
@@ -585,9 +695,13 @@ class ServerConfig(DataClassYAMLMixin):
             )
             logger.info(f"Web Notebook Preview: {config.web_notebook_preview}")
 
-        if trace_log_file := os.getenv("SUPERNOTE_TRACE_LOG_FILE"):
+        if raw_log_level := os.getenv("SUPERNOTE_LOG_LEVEL"):
+            config.log_level = _normalize_log_level(raw_log_level)
+            logger.info(f"Using SUPERNOTE_LOG_LEVEL: {config.log_level}")
+
+        if (trace_log_file := os.getenv("SUPERNOTE_TRACE_LOG_FILE")) is not None:
             config.trace_log_file = trace_log_file
-            logger.info(f"Using SUPERNOTE_TRACE_LOG_FILE: {config.trace_log_file}")
+            logger.info(f"Using SUPERNOTE_TRACE_LOG_FILE: {config.trace_log_file!r}")
 
         if os.getenv("SUPERNOTE_TRACE_LOG_UNSAFE"):
             config.trace_log_unsafe = _get_bool_env(

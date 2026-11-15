@@ -13,7 +13,7 @@ import json
 import logging
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from supernote.models.base import TaskType
 from supernote.models.summary import (
@@ -27,12 +27,16 @@ from supernote.server.ai.models.summary import SummaryModel
 from supernote.server.ai.prompts import format_summary_prompt
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.services.summary import SummaryService
-from supernote.server.utils.note_content import format_page_metadata
+from supernote.server.utils.note_content import (
+    format_page_metadata,
+    get_page_keywords_map,
+)
 from supernote.server.utils.paths import (
     get_summary_group_id,
     get_summary_id,
@@ -113,6 +117,60 @@ class SummaryModule(ProcessorModule):
 
         return True
 
+    async def cleanup_file(
+        self,
+        file_id: int,
+        user_id: int,
+        session_manager: DatabaseSessionManager,
+    ) -> None:
+        """Delete SummaryDO records, now-empty parent summary groups, and unreferenced handwriting blobs."""
+        async with session_manager.session() as session:
+            summary_rows_stmt = select(
+                SummaryDO.parent_unique_identifier,
+                SummaryDO.handwrite_inner_name,
+            ).where(SummaryDO.file_id == file_id)
+            summary_rows = (await session.execute(summary_rows_stmt)).all()
+            parent_uuids = {u for u, _ in summary_rows if u}
+            candidate_blob_keys = {k for _, k in summary_rows if k}
+
+            await session.execute(delete(SummaryDO).where(SummaryDO.file_id == file_id))
+            if parent_uuids:
+                surviving_parent_stmt = (
+                    select(SummaryDO.parent_unique_identifier)
+                    .where(SummaryDO.parent_unique_identifier.in_(parent_uuids))
+                    .group_by(SummaryDO.parent_unique_identifier)
+                )
+                surviving_parents = {
+                    u
+                    for u in (await session.execute(surviving_parent_stmt))
+                    .scalars()
+                    .all()
+                    if u
+                }
+                empty_parent_uuids = parent_uuids - surviving_parents
+                if empty_parent_uuids:
+                    group_blobs_stmt = select(SummaryDO.handwrite_inner_name).where(
+                        SummaryDO.unique_identifier.in_(empty_parent_uuids),
+                        SummaryDO.is_summary_group.is_(True),
+                        SummaryDO.handwrite_inner_name.is_not(None),
+                    )
+                    candidate_blob_keys.update(
+                        k
+                        for k in (await session.execute(group_blobs_stmt))
+                        .scalars()
+                        .all()
+                        if k
+                    )
+                    await session.execute(
+                        delete(SummaryDO).where(
+                            SummaryDO.unique_identifier.in_(empty_parent_uuids),
+                            SummaryDO.is_summary_group.is_(True),
+                        )
+                    )
+            await session.commit()
+
+        await self.file_service.cleanup_unreferenced_blobs(candidate_blob_keys)
+
     async def process(
         self,
         file_id: int,
@@ -140,11 +198,6 @@ class SummaryModule(ProcessorModule):
             user_email = user.email
 
             file_basis = file_do.storage_key or str(file_do.id)
-            group_uuid = get_summary_group_id(file_basis)
-            group_name = Path(file_do.file_name).name
-            group_md5 = hashlib.md5(group_name.encode("utf-8")).hexdigest()
-            summary_uuid = get_summary_id(file_basis)
-            transcript_uuid = get_transcript_id(file_basis)
 
             stmt = (
                 select(NotePageContentDO)
@@ -153,6 +206,9 @@ class SummaryModule(ProcessorModule):
             )
             result = await session.execute(stmt)
             pages = result.scalars().all()
+            keywords_map = await get_page_keywords_map(
+                session, file_do.user_id, file_id
+            )
 
         if not pages:
             logger.info(f"No OCR pages found for file {file_id}. Skipping summary.")
@@ -161,16 +217,29 @@ class SummaryModule(ProcessorModule):
         # Format transcript with Page markers and inferred dates
         text_parts = []
         for p in pages:
-            if p.text_content:
+            if not p.is_blank:
                 metadata = format_page_metadata(
                     page_index=p.page_index,
                     page_id=p.page_id or "",
                     file_name=file_do.file_name,
                     notebook_create_time=file_do.create_time,
+                    keywords=keywords_map.get(p.page_id or ""),
                     include_section_divider=True,
                 )
                 text_parts.append(f"{metadata}\n{p.text_content}")
 
+        if not text_parts:
+            await self._delete_generated_summaries(user_email, file_basis)
+            logger.info(
+                f"All pages in file {file_id} are blank; skipping summary generation."
+            )
+            return
+
+        group_uuid = get_summary_group_id(file_basis)
+        group_name = Path(file_do.file_name).name
+        group_md5 = hashlib.md5(group_name.encode("utf-8")).hexdigest()
+        summary_uuid = get_summary_id(file_basis)
+        transcript_uuid = get_transcript_id(file_basis)
         full_text = "\n\n".join(text_parts)
 
         await self._upsert_group(
@@ -300,3 +369,30 @@ class SummaryModule(ProcessorModule):
             )
         else:
             await self.summary_service.add_summary(user_email, dto)
+
+    async def _delete_generated_summaries(
+        self, user_email: str, file_basis: str
+    ) -> None:
+        """Soft-delete SummaryModule's deterministic transcript/summary items and now-empty group.
+
+        Server-generated entries are keyed by the synthetic `{file_basis}-transcript` and
+        `{file_basis}-summary` UUIDs (whereas device-created digests use client UUIDs), so
+        any manual digests filed under `{file_basis}-group` remain intact.
+        """
+        for item_uuid in (get_transcript_id(file_basis), get_summary_id(file_basis)):
+            existing_item = await self.summary_service.get_summary_by_uuid(
+                user_email, item_uuid
+            )
+            if existing_item and existing_item.id is not None:
+                await self.summary_service.delete_summary(user_email, existing_item.id)
+
+        group_uuid = get_summary_group_id(file_basis)
+        existing_group = await self.summary_service.get_summary_by_uuid(
+            user_email, group_uuid
+        )
+        if existing_group and existing_group.id is not None:
+            remaining = await self.summary_service.count_summaries(
+                user_email, parent_uuid=group_uuid
+            )
+            if remaining == 0:
+                await self.summary_service.delete_group(user_email, existing_group.id)

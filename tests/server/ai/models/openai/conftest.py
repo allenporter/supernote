@@ -71,4 +71,4 @@ async def openai_base_url(
 
 @pytest.fixture
 def openai_backend(openai_base_url: str) -> OpenAIBackend:
-    return OpenAIBackend(openai_base_url)
+    return OpenAIBackend(openai_base_url, provider="openai")

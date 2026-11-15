@@ -89,8 +89,8 @@ async def run_ocr_for_page(
     out_dir: Path,
 ) -> tuple[str, str]:
     """Runs OCR on a single page, saves the extracted PNG and individual txt transcript."""
-    page = notebook.get_page(page_idx)
-    page_id = page.get_pageid() or f"page_{page_idx}"
+    page = notebook.page(page_idx)
+    page_id = page.page_id or f"page_{page_idx}"
 
     # Convert page to PNG bytes
     converter = PngConverter(notebook)
@@ -304,7 +304,7 @@ async def main_async() -> None:
 
     print(f"Loading notebook: {notebook_path}")
     notebook = load_notebook(str(notebook_path))
-    total_pages = notebook.get_total_pages()
+    total_pages = notebook.total_pages
     print(f"Total pages in notebook: {total_pages}")
 
     # Parse pages argument

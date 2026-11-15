@@ -1,6 +1,7 @@
 """Tests for supernote.cli.notebook."""
 
 import argparse
+import io
 import json
 from pathlib import Path
 
@@ -11,9 +12,11 @@ from supernote.cli.notebook import (
     parse_color,
     subcommand_analyze,
     subcommand_convert,
+    subcommand_create,
     subcommand_merge,
     subcommand_reconstruct,
 )
+from supernote.notebook import load_notebook
 
 
 def test_parse_color_valid():
@@ -276,3 +279,160 @@ def test_subcommand_merge_multiple(test_data_dir: Path, tmp_path: Path):
     subcommand_merge(args)
     assert out_file.exists()
     assert out_file.stat().st_size > 0
+
+
+def test_subcommand_create_and_append(tmp_path: Path) -> None:
+    md_file = tmp_path / "doc.md"
+    md_file.write_text(
+        "# CLI Notebook\n\n- [x] First task #cli\n\n---\n\n## Second Page\n\nBody text.",
+        encoding="utf-8",
+    )
+    out_note = tmp_path / "created.note"
+
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command")
+    add_parser(subparsers)
+
+    args = parser.parse_args(
+        [
+            "create",
+            str(md_file),
+            str(out_note),
+            "--style",
+            "handwriting",
+            "--background",
+            "ruled",
+            "--hidden-layer-text",
+            "## Hidden Hint\n\nSecret note",
+            "--auto-toc",
+            "--seed",
+            "11",
+        ]
+    )
+    assert args.func == subcommand_create
+    args.func(args)
+    assert out_note.exists()
+
+    nb = load_notebook(str(out_note))
+    assert nb.total_pages == 2
+    assert len(nb.titles) == 2
+    assert [k.keyword for k in nb.keywords] == ["cli"]
+
+    appended_note = tmp_path / "appended.note"
+    append_args = parser.parse_args(
+        [
+            "create",
+            str(appended_note),
+            "--append-to",
+            str(out_note),
+            "--text",
+            "# Third Page\n\nAppended via CLI!",
+            "--style",
+            "stylized",
+        ]
+    )
+    append_args.func(append_args)
+    nb_appended = load_notebook(str(appended_note))
+    assert nb_appended.total_pages == 3
+
+    out_png = tmp_path / "rendered.png"
+    conv_args = parser.parse_args(
+        ["convert", str(appended_note), str(out_png), "-n", "2"]
+    )
+    conv_args.func(conv_args)
+    assert out_png.exists()
+
+
+def test_subcommand_create_stdin_blank_and_hidden_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command")
+    add_parser(subparsers)
+
+    blank_note = tmp_path / "blank.note"
+    blank_args = parser.parse_args(["create", str(blank_note), "--background", "grid"])
+    blank_args.func(blank_args)
+    assert load_notebook(str(blank_note)).total_pages == 1
+
+    hidden_md_file = tmp_path / "hidden.md"
+    hidden_md_file.write_text("### Overlay\n- Answer key", encoding="utf-8")
+    stdin_note = tmp_path / "stdin.note"
+    monkeypatch.setattr("sys.stdin", io.StringIO("# From Stdin\n\nHello"))
+    stdin_args = parser.parse_args(
+        [
+            "create",
+            "-",
+            str(stdin_note),
+            "--hidden-layer-file",
+            str(hidden_md_file),
+        ]
+    )
+    stdin_args.func(stdin_args)
+    assert load_notebook(str(stdin_note)).total_pages == 1
+
+
+@pytest.mark.parametrize(
+    ("cli_argv", "expected_code", "expected_err"),
+    [
+        (
+            ["create", "in.md", "out.note", "--text", "conflict"],
+            2,
+            "cannot specify both positional 'input' and '--text'",
+        ),
+        (
+            [
+                "create",
+                "out.note",
+                "--hidden-layer-text",
+                "a",
+                "--hidden-layer-file",
+                "b.md",
+            ],
+            2,
+            "cannot specify both '--hidden-layer-text' and '--hidden-layer-file'",
+        ),
+        (
+            [
+                "create",
+                "out.note",
+                "--append-to",
+                "existing.note",
+                "--equipment",
+                "N5",
+            ],
+            2,
+            "cannot override '--equipment' when using '--append-to'",
+        ),
+        (
+            ["create", "out.note", "--font-size", "0"],
+            2,
+            "'--font-size' must be positive",
+        ),
+        (
+            ["create", "out.note", "--font", "/nonexistent/font.ttf"],
+            1,
+            "font file not found",
+        ),
+        (
+            ["create", "/nonexistent/in.md", "out.note"],
+            1,
+            "input file not found",
+        ),
+    ],
+)
+def test_subcommand_create_rejects_conflicting_or_missing_inputs(
+    cli_argv: list[str],
+    expected_code: int,
+    expected_err: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command")
+    add_parser(subparsers)
+
+    parsed = parser.parse_args(cli_argv)
+    with pytest.raises(SystemExit) as exc_info:
+        parsed.func(parsed)
+    assert exc_info.value.code == expected_code
+    assert expected_err in capsys.readouterr().err

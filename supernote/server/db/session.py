@@ -17,7 +17,7 @@ await session_manager.close()
 """
 
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 from sqlalchemy import event
@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from supernote.server.constants import SQLITE_TIMEOUT_SECONDS
-from supernote.server.exceptions import DatabaseError, SupernoteError
+from supernote.server.exceptions import DatabaseError
 from supernote.server.metrics import DB_SESSION_ERRORS_TOTAL, DB_SESSIONS_ACTIVE
 
 from .base import Base
@@ -39,6 +39,12 @@ ENGINE_KWARGS: dict[str, Any] = {
     # Set to True to enable verbose SQL logging
     "echo": False,
 }
+
+
+async def _rollback_quietly(session: AsyncSession) -> None:
+    """Perform a best-effort session rollback without masking the active exception."""
+    with suppress(SQLAlchemyError, OSError):
+        await session.rollback()
 
 
 class DatabaseSessionManager:
@@ -71,6 +77,7 @@ class DatabaseSessionManager:
                 cursor = dbapi_connection.cursor()
                 cursor.execute("PRAGMA journal_mode=WAL")
                 cursor.execute("PRAGMA synchronous=NORMAL")
+                cursor.execute("PRAGMA foreign_keys=ON")
                 cursor.close()
 
     async def close(self) -> None:
@@ -90,17 +97,16 @@ class DatabaseSessionManager:
         DB_SESSIONS_ACTIVE.inc()
         try:
             yield session
-        except SupernoteError:
+        except DatabaseError:
             DB_SESSION_ERRORS_TOTAL.inc()
-            await session.rollback()
+            await _rollback_quietly(session)
             raise
         except SQLAlchemyError as err:
             DB_SESSION_ERRORS_TOTAL.inc()
-            await session.rollback()
+            await _rollback_quietly(session)
             raise DatabaseError(str(err)) from err
-        except Exception:
-            DB_SESSION_ERRORS_TOTAL.inc()
-            await session.rollback()
+        except BaseException:
+            await _rollback_quietly(session)
             raise
         finally:
             DB_SESSIONS_ACTIVE.dec()

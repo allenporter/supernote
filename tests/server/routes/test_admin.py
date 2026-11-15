@@ -22,6 +22,7 @@ from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import Event, NoteUpdatedEvent
+from supernote.server.keys import EVENT_BUS_KEY
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
 
@@ -301,7 +302,7 @@ async def test_admin_reprocess(
             published_ids.append(event.file_id)
 
     assert client.app is not None
-    client.app["event_bus"].subscribe(NoteUpdatedEvent, capture_updated)
+    client.app[EVENT_BUS_KEY].subscribe(NoteUpdatedEvent, capture_updated)
 
     resp = await client.post(
         "/api/admin/reprocess",
@@ -440,3 +441,80 @@ async def test_admin_list_tasks_invalid_filters(
     """Test invalid filter parameters raise BadRequestException."""
     with pytest.raises(BadRequestException):
         await admin_api_client.list_tasks(status=status, task_type=task_type)
+
+
+async def test_admin_set_user_quota(
+    client: TestClient,
+    admin_api_client: AdminClient,
+    user_api_client: AdminClient,
+    admin_headers: dict[str, str],
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Test setting and resetting per-user storage quota via the Admin API."""
+    await admin_api_client.admin_set_quota("user@example.com", 5 * 1024**3)
+    async with session_manager.session() as session:
+        user = (
+            await session.execute(
+                select(UserDO).where(UserDO.email == "user@example.com")
+            )
+        ).scalar_one()
+        assert user.total_capacity == str(5 * 1024**3)
+
+    await admin_api_client.admin_set_quota("user@example.com", 0)
+    async with session_manager.session() as session:
+        user = (
+            await session.execute(
+                select(UserDO).where(UserDO.email == "user@example.com")
+            )
+        ).scalar_one()
+        assert user.total_capacity == "0"
+
+    with pytest.raises(ForbiddenException):
+        await user_api_client.admin_set_quota("user@example.com", 1024)
+
+    with pytest.raises(BadRequestException):
+        await admin_api_client.admin_set_quota("missing@example.com", 1024)
+
+    with pytest.raises(BadRequestException):
+        await admin_api_client.admin_set_quota("user@example.com", -10)
+
+    bad_resp = await client.post(
+        "/api/admin/users/quota",
+        json={"email": "user@example.com", "totalCapacity": "not-an-int"},
+        headers=admin_headers,
+    )
+    assert bad_resp.status == 400
+
+    empty_email_resp = await client.post(
+        "/api/admin/users/quota",
+        json={"email": "", "totalCapacity": 100},
+        headers=admin_headers,
+    )
+    assert empty_email_resp.status == 400
+
+
+async def test_admin_api_key_denied_on_admin_endpoints(
+    client: TestClient,
+    admin_headers: dict[str, Any],
+    user_service: UserService,
+) -> None:
+    """Verify static API keys belonging to an admin user cannot invoke /api/admin/* endpoints."""
+    ok_resp = await client.get("/api/admin/users", headers=admin_headers)
+    assert ok_resp.status == 200
+
+    admin_id = await user_service.get_user_id("admin@example.com")
+    raw_api_key, _ = await user_service.create_api_key(admin_id, "Admin MCP Key")
+    headers = {"Authorization": f"Bearer {raw_api_key}"}
+
+    users_resp = await client.get("/api/admin/users", headers=headers)
+    assert users_resp.status == 403
+
+    queue_resp = await client.get("/api/admin/queue/status", headers=headers)
+    assert queue_resp.status == 403
+
+    quota_resp = await client.post(
+        "/api/admin/users/quota",
+        json={"email": "user@example.com", "totalCapacity": 1024},
+        headers=headers,
+    )
+    assert quota_resp.status == 403

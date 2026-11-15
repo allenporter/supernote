@@ -1,14 +1,15 @@
-# Supernote Notebook Parser & Converter Guide
+# Supernote Notebook Parser, Converter & Authoring Guide
 
-The `supernote.notebook` package parses, inspects, converts, and manipulates binary Supernote `.note` files (both original `SN_FILE_ASA_*` and X/X2-series `SN_FILE_VER_*` formats, including high-resolution `A5X2` / Manta `1920x2560` and standard `1404x1872` canvases).
+The `supernote.notebook` package parses, inspects, converts, authors, and manipulates binary Supernote `.note` files (both original `SN_FILE_ASA_*` and X/X2-series `SN_FILE_VER_*` formats, including high-resolution `A5X2` / Manta `1920x2560` and standard Nomad `1404x1872` canvases).
 
 It requires only the base `supernote` installation (`pip install supernote`) with zero network or server dependencies.
 
 ```mermaid
 flowchart LR
+    MD["Markdown / Bullet Journal\ncreate_notebook() / NotebookAuthor"] --> NB["Notebook\n(Pages, Layers, Keywords, Titles, Links)"]
     FILE[".note File / Stream"] --> PARSER["parse_metadata()\nload_notebook() / load()"]
     PARSER --> META["SupernoteMetadata\n(Header, Footer, Page Blocks)"]
-    PARSER --> NB["Notebook\n(Pages, Layers, Keywords, Titles, Links)"]
+    PARSER --> NB
     NB --> IMG["ImageConverter\n(PIL.Image / PNG)"]
     NB --> SVG["SvgConverter\n(Potrace Vector SVG)"]
     NB --> PDF["PdfConverter\n(ReportLab PDF + Links/Keywords)"]
@@ -35,6 +36,12 @@ notebook = load_notebook("Meeting_Notes.note")
 # Load from an in-memory binary stream
 raw_bytes = Path("Meeting_Notes.note").read_bytes()
 notebook_from_stream = load(io.BytesIO(raw_bytes))
+
+# Access Pythonic properties on the loaded Notebook
+print("Total pages:", notebook.total_pages)
+print("First page ID:", notebook.page(0).page_id)
+for keyword in notebook.keywords:
+    print("Keyword:", keyword.keyword)
 ```
 
 ### Single-Page Lazy Loading (`page_number`)
@@ -52,7 +59,7 @@ img.save("page_3.png")
 
 ### Metadata-Only Inspection (`parse_metadata`)
 
-To inspect a `.note` file's structure without loading bitmap blocks into memory, call `supernote.notebook.parse_metadata`. It performs a fast footer-first seek and returns a `supernote.notebook.SupernoteMetadata` object:
+To inspect a `.note` file's structure without loading bitmap blocks into memory, call `supernote.notebook.parse_metadata`. It performs a fast footer-first seek and returns a typed `supernote.notebook.SupernoteMetadata` object (`supernote.notebook.schema.SupernoteMetadata`):
 
 ```python
 from supernote.notebook import parse_metadata
@@ -61,8 +68,8 @@ with open("Meeting_Notes.note", "rb") as f:
     metadata = parse_metadata(f, policy="strict")
 
 print("Signature:", metadata.signature)         # e.g. SN_FILE_VER_20260016
-print("Total pages:", metadata.get_total_pages())
-print("Header dict:", metadata.header)          # FILE_ID, APPLY_EQUIPMENT, FILE_RECOGN_TYPE, ...
+print("Total pages:", metadata.total_pages)
+print("Equipment:", metadata.header.apply_equipment)
 print(metadata.to_json(indent=2))               # Full JSON dump (same as `supernote analyze`)
 ```
 
@@ -135,7 +142,7 @@ Path("Project_Plan_Excerpt.pdf").write_bytes(subset_pdf)
 
 ### Real-Time Recognition Text Extraction (`TextConverter`)
 
-If a notebook was created on the device with **Real-Time Recognition** enabled (`notebook.is_realtime_recognition() == True`) and a page has completed on-device recognition (`page.get_recogn_status() == Page.RECOGNSTATUS_DONE`), `supernote.notebook.TextConverter` decodes the embedded `RECOGNTEXT` block, sorts recognized text elements top-to-bottom, and reconstructs line breaks and punctuation spacing:
+If a notebook was created on the device with **Real-Time Recognition** enabled (`notebook.is_realtime_recognition() == True`) and a page has completed on-device recognition (`page.recogn_status == Page.RECOGNSTATUS_DONE`), `supernote.notebook.TextConverter` decodes the embedded `RECOGNTEXT` block, sorts recognized text elements top-to-bottom, and reconstructs line breaks and punctuation spacing:
 
 ```python
 from supernote.notebook import TextConverter, load_notebook
@@ -143,10 +150,71 @@ from supernote.notebook import TextConverter, load_notebook
 notebook = load_notebook("Realtime_Notes.note")
 txt_converter = TextConverter(notebook)
 
-for idx in range(notebook.get_total_pages()):
+for idx in range(notebook.total_pages):
     page_text = txt_converter.convert(idx)
     if page_text is not None:
         print(f"--- Page {idx + 1} ---\n{page_text}")
+```
+
+---
+
+## Authoring, Rendering & Cooperative Editing APIs
+
+`supernote.notebook` exposes **four layered APIs** so callers can work at the exact level of abstraction they need—without coupling visual typography, `.note` binary framing, or test-fixture generation together:
+
+| Tier | Module & Entry Points | When to Use |
+| :--- | :--- | :--- |
+| **1. One-Shot Authoring** | `supernote.notebook.author.create_notebook()` | Convert a Markdown / Bullet Journal string directly into valid `.note` bytes in one call. |
+| **2. Multi-Page & Cooperative Builder** | `supernote.notebook.author` (`NotebookAuthor`, `ExtraLayerSpec`, `AuthoredPageInfo`) | Build multi-page notebooks, mix Markdown spreads with custom PIL images, target specific layers (`BGLAYER`, `MAINLAYER`, `LAYER1`–`LAYER3`), attach TOC `Title`s / `Keyword`s / `Link`s, or **append pages onto an existing `.note` file** (`NotebookAuthor.from_notebook()`) while preserving existing strokes and real-time recognition (`RECOGNTEXT`). |
+| **3. Pure Layout & Intrinsic Spans** | `supernote.notebook.renderer` (`render_markdown()`, `MarkdownRenderer`, `render_background()`, `RenderedPage`) | Paginate Markdown into transparent RGBA PIL images + plain-text ground-truth transcripts + pixel bounding boxes (`HeadingSpan`, `KeywordSpan`, `LinkSpan`) without packing a `.note` file. |
+| **4. Low-Level Layer Codecs** | `supernote.notebook.encoder` (`RattaRleX2Encoder`, `RattaRleEncoder`, `PngEncoder`) | Compress raw PIL images into X1 4-shade or X2 240-shade anti-aliased `RATTA_RLE` bitmaps or MD5-indexed `user_*` PNG templates. |
+
+*(For deterministic server/OCR/sync E2E tests, see `supernote.testing.notebook_fixtures.build_synthetic_notebook()` and `append_synthetic_page()`; for shell & agent workflows, use `supernote create`.)*
+
+### Design Philosophy: Cooperative Human + Agent Layers
+
+Physical Supernote stylus strokes live on `MAINLAYER`. When a script or AI agent generates or edits a notebook that a human will also write in on-device, layer routing keeps both workflows non-destructive:
+
+1. **Templates on `BGLAYER` (`style="stylized"` default)**: Editorial planners, briefings, and habit trackers render onto `BGLAYER` as a custom `user_stylized` PNG template, leaving `MAINLAYER` 100% empty so human pen strokes, erasers, and lasso moves never collide with the template.
+2. **Simulated Ink on `MAINLAYER` (`style="handwriting"` / `"architect"` default)**: Encodes variable-weight anti-aliased `RATTA_RLE` ink onto `MAINLAYER` over native `style_*` paper (`dots`, `ruled`, `grid`) for realistic synthetic handwriting and standalone notes.
+3. **Toggleable Overlays on `LAYER1`–`LAYER3` (`hidden_layer_markdown`)**: Places flashcard answer keys, coaching prompts, or review cards onto a hidden secondary layer (`isVisible: False` by default) that can be revealed on-device via the Layers menu or in Python via `build_visibility_overlay(layer1=VisibilityOverlay.VISIBLE)`.
+
+### Authoring Examples
+
+```python
+from pathlib import Path
+from supernote.notebook import load_notebook
+from supernote.notebook.author import NotebookAuthor, create_notebook
+
+# 1. One-shot Bullet Journal spread -> .note bytes
+note_bytes = create_notebook(
+    "#### NOV 2026 · DAILY LOG\n"
+    "# Focus & Rapid Log\n\n"
+    "* - [ ] Ship ==notebook API== #roadmap\n"
+    "- [>] Migrate soak test\n"
+    "! - [-] Quiet stationery grids let ink command hierarchy",
+    style="stylized",   # "stylized" (editorial), "handwriting" (Caveat script), or "architect"
+    background="dots",  # "white", "dots", "ruled", or "grid"
+    auto_toc=True,
+)
+Path("daily.note").write_bytes(note_bytes)
+
+# 2. Multi-page builder with simulated handwriting + hidden LAYER1 answer card
+author = NotebookAuthor(equipment="N6", seed=42)
+pages = author.add_markdown(
+    "# Practice Quiz\n\n1. What is 6 * 7? [See Formula Sheet](page:2)\n\n---\n\n# Formula Sheet",
+    style="handwriting",
+    background="ruled",
+    hidden_layer_markdown="### Answer Key\n\n- [-] 42",
+    auto_toc=True,
+)
+author.save("quiz.note")
+
+# 3. Non-destructively append an agent summary page onto an existing .note file
+existing = load_notebook("meeting_notes.note")
+editor = NotebookAuthor.from_notebook(existing)
+editor.add_markdown("# Action Items\n\n* - [ ] Follow up on Q4 budget #finance", style="stylized")
+editor.save("meeting_notes_updated.note")
 ```
 
 ---
@@ -209,38 +277,38 @@ vector_only_svg = SvgConverter(notebook).convert(0, visibility_overlay=no_bg_ove
 
 ## Inspecting Internal Structure
 
-A loaded `supernote.notebook.Notebook` exposes rich domain objects defined in `supernote.notebook.fileformat`:
+A loaded `supernote.notebook.Notebook` exposes Pythonic properties and typed wire metadata defined in `supernote.notebook.fileformat` and `supernote.notebook.schema`:
 
-| Class | Key Methods & Properties | Description |
+| Class | Key Properties & Methods | Description |
 | :--- | :--- | :--- |
-| `supernote.notebook.Notebook` | `get_total_pages()`, `get_page(i)`, `get_width()`, `get_height()`, `get_fileid()`, `get_signature()`, `get_keywords()`, `get_titles()`, `get_links()`, `get_cover()`, `is_realtime_recognition()`, `supports_highres_grayscale()` | High-level representation of a parsed `.note` file. |
-| `supernote.notebook.Page` | `get_pageid()`, `get_style()`, `get_style_hash()`, `get_orientation()`, `is_horizontal()`, `is_layer_supported()`, `get_layers()`, `get_layer(i)`, `get_layer_order()`, `get_layer_info()`, `get_recogn_status()`, `get_recogn_text()`, `get_totalpath()` | Single notebook page with layer metadata, orientation (`1000`, `1090`, `1180`, `1270`), and recognition data. |
-| `supernote.notebook.Layer` | `get_name()`, `get_protocol()`, `get_type()`, `get_content()` | Individual layer (`MAINLAYER`, `LAYER1`..`LAYER3`, `BGLAYER`) holding compressed bitmap bytes. |
-| `supernote.notebook.Keyword` | `get_keyword()`, `get_page_number()`, `get_rect()`, `get_content()` | Indexed keyword tag attached to a page and bounding rectangle `(left, top, right, bottom)`. |
-| `supernote.notebook.Title` | `get_page_number()`, `get_position_string()`, `get_content()` | Handwritten table-of-contents heading marker on a page. |
-| `supernote.notebook.Link` | `get_type()`, `get_inout()`, `get_page_number()`, `get_rect()`, `get_filepath()`, `get_fileid()`, `get_pageid()` | Hyperlink (`TYPE_PAGE_LINK = 0`, `TYPE_FILE_LINK = 1`, `TYPE_WEB_LINK = 4`; `DIRECTION_OUT = 0`, `DIRECTION_IN = 1`). |
-| `supernote.notebook.Cover` | `get_content()`, `set_content(bytes)` | Custom notebook cover bitmap block (`COVER_2` / `COVER_1`). |
-| `supernote.notebook.SupernoteMetadata` | `type`, `signature`, `header`, `footer`, `pages`, `get_total_pages()`, `is_layer_supported(i)`, `to_json(indent)` | Raw parsed dictionary tree of `<KEY:VALUE>` parameter blocks. |
+| `supernote.notebook.Notebook` | `total_pages`, `pages`, `page(i)`, `width`, `height`, `file_id`, `signature`, `keywords`, `titles`, `links`, `cover`, `metadata`, `is_realtime_recognition()`, `supports_highres_grayscale()` | High-level representation of a parsed `.note` file. |
+| `supernote.notebook.Page` | `page_id`, `page_number`, `style`, `style_hash`, `orientation`, `is_horizontal()`, `is_layer_supported()`, `layers`, `layer(i)`, `layer_order`, `layer_info`, `layer_visibility`, `has_ink`, `has_hidden_ink`, `has_drawables`, `has_content`, `keywords`, `titles`, `links`, `recogn_status`, `recogn_text`, `totalpath` | Single notebook page with layer metadata, orientation (`1000`, `1090`, `1180`, `1270`), and recognition data. |
+| `supernote.notebook.Layer` | `name`, `protocol`, `bitmap_protocol`, `layer_type`, `content`, `has_ink`, `has_vector_graph` | Individual layer (`MAINLAYER`, `LAYER1`..`LAYER3`, `BGLAYER`) holding compressed bitmap bytes. |
+| `supernote.notebook.Keyword` | `keyword`, `page_number`, `rect`, `position_string`, `content` | Indexed keyword tag attached to a page and bounding rectangle `(left, top, right, bottom)`. |
+| `supernote.notebook.Title` | `page_number`, `level`, `style`, `protocol`, `rect`, `position_string`, `content` | Handwritten or authored table-of-contents heading marker on a page. |
+| `supernote.notebook.Link` | `link_type`, `direction`, `page_number`, `rect`, `file_path`, `target`, `file_id`, `page_id`, `content` | Hyperlink (`LinkType.PAGE = 0`, `LinkType.FILE = 1`, `LinkType.WEB = 4`; `LinkDirection.OUT = 0`, `LinkDirection.IN = 1`). |
+| `supernote.notebook.Cover` | `content` | Custom notebook cover bitmap block (`COVER_2` / `COVER_1`). |
+| `supernote.notebook.SupernoteMetadata` | `type`, `signature`, `header`, `footer`, `pages`, `total_pages`, `is_layer_supported(i)`, `to_json(indent)` | Typed wire-format tree of `<KEY:VALUE>` parameter blocks (`supernote.notebook.schema`). |
 
 ```python
-import base64
 from supernote.notebook import Link, load_notebook
 
 nb = load_notebook("Research.note")
-print(f"File ID: {nb.get_fileid()} ({nb.get_width()}x{nb.get_height()})")
+print(f"File ID: {nb.file_id} ({nb.width}x{nb.height})")
 
-for idx in range(nb.get_total_pages()):
-    page = nb.get_page(idx)
-    layers = [layer.get_name() for layer in page.get_layers() if layer.get_content()]
-    print(f"Page {idx} (ID={page.get_pageid()}, style={page.get_style()}): layers={layers}")
+for idx, page in enumerate(nb.pages):
+    layers = [str(layer.name) for layer in page.layers if layer.content]
+    print(f"Page {idx} (ID={page.page_id}, style={page.style}): layers={layers}")
 
-for kw in nb.get_keywords():
-    print(f"Keyword '{kw.get_keyword()}' on page {kw.get_page_number()} at {kw.get_rect()}")
+for kw in nb.keywords:
+    print(f"Keyword '{kw.keyword}' on page {kw.page_number} at {kw.rect}")
 
-for link in nb.get_links():
-    if link.get_inout() == Link.DIRECTION_OUT and link.get_type() == Link.TYPE_WEB_LINK:
-        url = base64.b64decode(link.get_filepath()).decode("utf-8")
-        print(f"Web link on page {link.get_page_number()} -> {url}")
+for title in nb.titles:
+    print(f"Title (level {title.level}) on page {title.page_number} at {title.rect}")
+
+for link in nb.links:
+    if link.direction == Link.DIRECTION_OUT and link.link_type == Link.TYPE_WEB_LINK:
+        print(f"Web link on page {link.page_number} -> {link.target}")
 ```
 
 ---

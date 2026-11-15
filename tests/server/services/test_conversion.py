@@ -99,6 +99,48 @@ async def test_convert_note_to_png_and_resolve_page(
     )
 
 
+async def test_convert_note_to_png_page_subset_only_renders_requested_page(
+    conversion_service: ConversionService,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    test_user_id: int,
+) -> None:
+    user_email = "test@example.com"
+    file_id = 5005
+    storage_key = "note_5005.note"
+    multipage_note = Path("tests/testdata/mmujynya/stroller.note")
+
+    await blob_storage.put(USER_DATA_BUCKET, storage_key, multipage_note.read_bytes())
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=test_user_id,
+                directory_id=0,
+                file_name="MultiPage.note",
+                is_folder="N",
+                storage_key=storage_key,
+                md5="md5_5005",
+            )
+        )
+        await session.commit()
+
+    cover_pages = await conversion_service.convert_note_to_png(
+        user_email, file_id, page_indices={0}
+    )
+    assert cover_pages == [0]
+    assert (
+        await conversion_service.get_note_png_page(user_email, file_id, 0) is not None
+    )
+    assert await conversion_service.get_note_png_page(user_email, file_id, 1) is None
+
+    all_pages = await conversion_service.convert_note_to_png(user_email, file_id)
+    assert len(all_pages) >= 2
+    assert (
+        await conversion_service.get_note_png_page(user_email, file_id, 1) is not None
+    )
+
+
 async def test_convert_note_to_pdf_and_resolve(
     conversion_service: ConversionService,
     session_manager: DatabaseSessionManager,

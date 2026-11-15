@@ -15,13 +15,16 @@ See `supernote.guides.bootstrap_guide` and `supernote.guides.architecture`.
 import asyncio
 import importlib.resources
 import logging
+import os
 import time
 from collections.abc import Awaitable, Callable
+from collections.abc import Set as AbstractSet
 from pathlib import Path
 from typing import Any
 
 import aiohttp_remotes
 from aiohttp import web
+from aiohttp.typedefs import Middleware
 from aiohttp.web_urldispatcher import SystemRoute
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
@@ -37,7 +40,37 @@ from .config import AuthConfig, ServerConfig
 from .constants import MAX_UPLOAD_SIZE
 from .db.session import DatabaseSessionManager
 from .events import LocalEventBus
-from .metrics import HTTP_REQUEST_DURATION_SECONDS, HTTP_REQUESTS_TOTAL
+from .keys import (
+    BLOB_STORAGE_KEY,
+    CONFIG_KEY,
+    CONVERSION_SERVICE_KEY,
+    COORDINATION_SERVICE_KEY,
+    EMBEDDING_MODEL_KEY,
+    EVENT_BUS_KEY,
+    FILE_SERVICE_KEY,
+    INTEGRITY_SERVICE_KEY,
+    MCP_ASGI_RESOURCE_KEY,
+    MCP_TASK_KEY,
+    OCR_MODEL_KEY,
+    PROCESSOR_SERVICE_KEY,
+    RATE_LIMITER_KEY,
+    REQUEST_EQUIPMENT_NO_KEY,
+    REQUEST_USER_KEY,
+    SCHEDULE_SERVICE_KEY,
+    SEARCH_SERVICE_KEY,
+    SESSION_MANAGER_KEY,
+    STORAGE_METRICS_COLLECTOR_KEY,
+    SUMMARY_MODEL_KEY,
+    SUMMARY_SERVICE_KEY,
+    URL_SIGNER_KEY,
+    USER_SERVICE_KEY,
+    WEBHOOK_SERVICE_KEY,
+)
+from .metrics import (
+    HTTP_REQUEST_DURATION_SECONDS,
+    HTTP_REQUESTS_IN_PROGRESS,
+    HTTP_REQUESTS_TOTAL,
+)
 from .routes import (
     admin,
     auth,
@@ -63,11 +96,12 @@ from .services.processor_modules.png_conversion import PngConversionModule
 from .services.processor_modules.summary import SummaryModule
 from .services.schedule import ScheduleService
 from .services.search import SearchService
+from .services.storage_metrics import StorageMetricsCollector
 from .services.summary import SummaryService
 from .services.user import UserService
 from .services.webhook import WebhookService
 from .socket import setup_socketio
-from .trace import trace_middleware
+from .trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger, trace_middleware
 from .utils.hashing import get_md5_hash
 from .utils.prompt_loader import PROMPT_LOADER
 from .utils.rate_limit import RateLimiter
@@ -89,42 +123,81 @@ async def socketio_compat_middleware(
     return await handler(request)
 
 
-@web.middleware
-async def metrics_middleware(
+_KNOWN_HTTP_METHODS: frozenset[str] = frozenset(
+    {"GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"}
+)
+
+
+def _normalize_http_method(method: str) -> str:
+    """Normalize HTTP method to a bounded label set."""
+    normalized = method.upper()
+    return normalized if normalized in _KNOWN_HTTP_METHODS else "OTHER"
+
+
+def _resolve_metrics_path(
     request: web.Request,
-    handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
-) -> web.StreamResponse:
-    start_time = time.perf_counter()
-    status = 500
-    try:
-        response = await handler(request)
-        status = response.status
-        return response
-    except web.HTTPException as ex:
-        status = ex.status
-        raise
-    except Exception:
+    status: int,
+    mcp_auth_paths: AbstractSet[str] = frozenset(),
+) -> str:
+    """Resolve a bounded Prometheus path label without falling back to raw request paths."""
+    route = request.match_info.route
+    if route is None:
+        return request.path if request.path in mcp_auth_paths else f"HTTP {status}"
+    if route.resource is None:
+        return f"HTTP {status}"
+    if route.name == "static":
+        return "/static/{filename}"
+    info = route.resource.get_info()
+    return info.get("formatter") or info.get("path") or f"HTTP {status}"
+
+
+def create_metrics_middleware(
+    metrics_path: str = "/metrics",
+    mcp_auth_paths: AbstractSet[str] = frozenset(),
+) -> Middleware:
+    """Create HTTP Prometheus metrics middleware with explicit path configuration."""
+
+    @web.middleware
+    async def _middleware(
+        request: web.Request,
+        handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
+    ) -> web.StreamResponse:
+        if request.path == metrics_path:
+            return await handler(request)
+
+        method = _normalize_http_method(request.method)
+        in_progress = HTTP_REQUESTS_IN_PROGRESS.labels(method=method)
+        in_progress.inc()
+        start_time = time.perf_counter()
         status = 500
-        raise
-    finally:
-        duration = time.perf_counter() - start_time
-        route = request.match_info.route
-        resource = route.resource if route else None
+        cancelled = False
+        try:
+            response = await handler(request)
+            status = response.status
+            return response
+        except web.HTTPException as ex:
+            status = ex.status
+            raise
+        except asyncio.CancelledError:
+            status = 499
+            cancelled = True
+            raise
+        finally:
+            duration = time.perf_counter() - start_time
+            in_progress.dec()
+            path_pattern = _resolve_metrics_path(request, status, mcp_auth_paths)
+            HTTP_REQUESTS_TOTAL.labels(
+                method=method, path=path_pattern, status=str(status)
+            ).inc()
+            if not cancelled:
+                HTTP_REQUEST_DURATION_SECONDS.labels(
+                    method=method, path=path_pattern
+                ).observe(duration)
 
-        if resource:
-            info = resource.get_info()
-            path_pattern = info.get("formatter") or info.get("path") or request.path
-            if route.name == "static" or path_pattern.startswith("/static/"):
-                path_pattern = "/static/{filename}"
-        else:
-            path_pattern = f"HTTP {status}"
+    return _middleware
 
-        HTTP_REQUESTS_TOTAL.labels(
-            method=request.method, path=path_pattern, status=str(status)
-        ).inc()
-        HTTP_REQUEST_DURATION_SECONDS.labels(
-            method=request.method, path=path_pattern
-        ).observe(duration)
+
+metrics_middleware: Middleware = create_metrics_middleware()
 
 
 @web.middleware
@@ -140,7 +213,7 @@ async def jwt_auth_middleware(
     if isinstance(route, SystemRoute):
         return await handler(request)
 
-    if route.resource and route.resource is request.app.get("mcp_asgi_resource"):
+    if route.resource and route.resource is request.app.get(MCP_ASGI_RESOURCE_KEY):
         return await handler(request)
 
     handler_func = getattr(route, "handler", None)
@@ -166,15 +239,21 @@ async def jwt_auth_middleware(
             create_error_response("Unauthorized").to_dict(), status=401
         )
 
-    user_service: UserService = request.app["user_service"]
+    user_service = request.app[USER_SERVICE_KEY]
     session = await user_service.verify_token(token)
     if not session:
         return web.json_response(
             create_error_response("Invalid token").to_dict(), status=401
         )
 
-    request["user"] = session.email
-    request["equipment_no"] = session.equipment_no
+    if session.is_api_key and getattr(handler_func, "interactive_session_only", False):
+        return web.json_response(
+            create_error_response("Forbidden: Interactive session required").to_dict(),
+            status=403,
+        )
+
+    request[REQUEST_USER_KEY] = session.email
+    request[REQUEST_EQUIPMENT_NO_KEY] = session.equipment_no
     return await handler(request)
 
 
@@ -210,7 +289,7 @@ def create_user_service(
 
 def create_app(config: ServerConfig) -> web.Application:
     app = web.Application(client_max_size=MAX_UPLOAD_SIZE)
-    app["config"] = config
+    app[CONFIG_KEY] = config
 
     # Initialize services
     blob_storage = LocalBlobStorage(config.storage_root)
@@ -218,11 +297,11 @@ def create_app(config: ServerConfig) -> web.Application:
     session_manager = create_db_session_manager(config.db_url)
     coordination_service = create_coordination_service(session_manager)
 
-    app["session_manager"] = session_manager
-    app["coordination_service"] = coordination_service
-    app["blob_storage"] = blob_storage
+    app[SESSION_MANAGER_KEY] = session_manager
+    app[COORDINATION_SERVICE_KEY] = coordination_service
+    app[BLOB_STORAGE_KEY] = blob_storage
     event_bus = LocalEventBus()
-    app["event_bus"] = event_bus
+    app[EVENT_BUS_KEY] = event_bus
 
     user_service = create_user_service(
         config.auth, coordination_service, session_manager
@@ -233,34 +312,35 @@ def create_app(config: ServerConfig) -> web.Application:
         user_service,
         session_manager,
         event_bus,
+        default_user_quota=config.default_user_quota,
     )
-    app["user_service"] = user_service
-    app["file_service"] = file_service
-    app["integrity_service"] = IntegrityService(session_manager, blob_storage)
-    app["schedule_service"] = ScheduleService(session_manager, event_bus)
+    app[USER_SERVICE_KEY] = user_service
+    app[FILE_SERVICE_KEY] = file_service
+    app[INTEGRITY_SERVICE_KEY] = IntegrityService(session_manager, blob_storage)
+    app[SCHEDULE_SERVICE_KEY] = ScheduleService(session_manager, event_bus)
     ocr_model = create_ocr_model(config)
     summary_model = create_summary_model(config)
     embedding_model = create_embedding_model(config)
-    app["ocr_model"] = ocr_model
-    app["summary_model"] = summary_model
-    app["embedding_model"] = embedding_model
+    app[OCR_MODEL_KEY] = ocr_model
+    app[SUMMARY_MODEL_KEY] = summary_model
+    app[EMBEDDING_MODEL_KEY] = embedding_model
 
     if config.prompts_dir:
         PROMPT_LOADER.configure(Path(config.prompts_dir))
 
     summary_service = SummaryService(user_service, session_manager, event_bus)
-    app["summary_service"] = summary_service
+    app[SUMMARY_SERVICE_KEY] = summary_service
 
     search_service = SearchService(session_manager, embedding_model)
-    app["search_service"] = search_service
+    app[SEARCH_SERVICE_KEY] = search_service
 
-    app["rate_limiter"] = RateLimiter(coordination_service)
+    app[RATE_LIMITER_KEY] = RateLimiter(coordination_service)
 
     processor_service = ProcessorService(
         event_bus, session_manager, file_service, summary_service, coordination_service
     )
-    app["processor_service"] = processor_service
-    app["conversion_service"] = ConversionService(
+    app[PROCESSOR_SERVICE_KEY] = processor_service
+    app[CONVERSION_SERVICE_KEY] = ConversionService(
         session_manager=session_manager,
         blob_storage=blob_storage,
         user_service=user_service,
@@ -268,7 +348,7 @@ def create_app(config: ServerConfig) -> web.Application:
     )
 
     webhook_service = WebhookService(config.webhooks, event_bus, user_service)
-    app["webhook_service"] = webhook_service
+    app[WEBHOOK_SERVICE_KEY] = webhook_service
 
     # Register modules
     png_enabled = (ocr_model is not None) or (
@@ -345,10 +425,17 @@ def create_app(config: ServerConfig) -> web.Application:
             # XForwardedRelaxed trusts the immediate upstream proxy
             await aiohttp_remotes.setup(app, aiohttp_remotes.XForwardedRelaxed())
 
+        mcp_auth_paths: set[str] = set()
+
         # Register trace and auth middlewares after proxy setup to avoid clone errors
         app.middlewares.append(socketio_compat_middleware)
         if config.metrics_enabled:
-            app.middlewares.append(metrics_middleware)
+            app.middlewares.append(
+                create_metrics_middleware(
+                    metrics_path=config.metrics_path,
+                    mcp_auth_paths=mcp_auth_paths,
+                )
+            )
         app.middlewares.append(trace_middleware)
         app.middlewares.append(jwt_auth_middleware)
         app.middlewares.append(static_cache_control_middleware)
@@ -357,7 +444,7 @@ def create_app(config: ServerConfig) -> web.Application:
         await asyncio.to_thread(run_migrations, config.db_url, config=config)
 
         secret_key = await user_service.get_secret_key()
-        app["url_signer"] = UrlSigner(secret_key, coordination_service)
+        app[URL_SIGNER_KEY] = UrlSigner(secret_key, coordination_service)
 
         if config.ephemeral:
             await bootstrap_ephemeral_user(app)
@@ -376,37 +463,50 @@ def create_app(config: ServerConfig) -> web.Application:
 
             logger.info(f"Mounting MCP Authorization Server at {config.base_url}")
             auth_app = create_auth_app(
-                app["user_service"], app["coordination_service"], config.base_url
+                app[USER_SERVICE_KEY], app[COORDINATION_SERVICE_KEY], config.base_url
             )
             asgi_resource = ASGIResource(auth_app)
             app.router.register_resource(asgi_resource)
-            app["mcp_asgi_resource"] = asgi_resource
+            app[MCP_ASGI_RESOURCE_KEY] = asgi_resource
+            mcp_auth_paths.update(
+                path
+                for route in auth_app.routes
+                if isinstance(path := getattr(route, "path", None), str)
+            )
 
             # Inject services and start MCP server on a separate port
             set_services(
-                app["search_service"], app["user_service"], app["coordination_service"]
+                app[SEARCH_SERVICE_KEY],
+                app[USER_SERVICE_KEY],
+                app[COORDINATION_SERVICE_KEY],
             )
             mcp_port = config.mcp_port
             mcp_server = create_mcp_server(config.base_url, rs_url)
-            app["mcp_task"] = asyncio.create_task(
+            app[MCP_TASK_KEY] = asyncio.create_task(
                 run_server(mcp_server, config.host, mcp_port, config.proxy_mode)
             )
 
         logger.info("Starting background services...")
         await processor_service.start()
         await webhook_service.start()
+        if config.metrics_enabled:
+            storage_metrics_collector = StorageMetricsCollector(blob_storage)
+            app[STORAGE_METRICS_COLLECTOR_KEY] = storage_metrics_collector
+            await storage_metrics_collector.start()
         logger.info("Startup sequence complete.")
 
     app.on_startup.append(on_startup_handler)
 
     async def on_shutdown_handler(app: web.Application) -> None:
-        if mcp_task := app.get("mcp_task"):
+        if mcp_task := app.get(MCP_TASK_KEY):
             mcp_task.cancel()
             try:
                 await mcp_task
             except asyncio.CancelledError:
                 pass
 
+        if storage_metrics_collector := app.get(STORAGE_METRICS_COLLECTOR_KEY):
+            await storage_metrics_collector.stop()
         await webhook_service.stop()
         await processor_service.stop()
         await session_manager.close()
@@ -418,7 +518,7 @@ def create_app(config: ServerConfig) -> web.Application:
 
 async def bootstrap_ephemeral_user(app: web.Application) -> None:
     """Create a default admin user and system folders for ephemeral mode if not present."""
-    user_service: UserService = app["user_service"]
+    user_service = app[USER_SERVICE_KEY]
     if not await user_service.check_user_exists("debug@example.com"):
         logger.info("Creating default user debug@example.com / password")
         await user_service.register(
@@ -431,25 +531,30 @@ async def bootstrap_ephemeral_user(app: web.Application) -> None:
 
 
 def run(args: Any) -> None:
-    # Robust logging setup
     FORMAT = "%(asctime)s %(levelname)-8s [%(name)s] %(message)s"
-    logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
-
-    # Suppress noisy library logs
-    logging.getLogger("aiosqlite").setLevel(logging.INFO)
-    logging.getLogger("asyncio").setLevel(logging.INFO)
+    env_level = getattr(
+        logging,
+        os.getenv("SUPERNOTE_LOG_LEVEL", "INFO").strip().upper(),
+        logging.INFO,
+    )
+    logging.basicConfig(level=env_level, format=FORMAT, force=True)
 
     config_dir = getattr(args, "config_dir", None)
     config = ServerConfig.load(config_dir)
-    app = create_app(config)
 
-    # Standard access log format for aiohttp
-    ACCESS_LOG_FORMAT = '%a %t "%r" %s %b "%{Referer}i" "%{User-Agent}i" (%Tf)'
+    level = getattr(logging, config.log_level)
+    logging.getLogger().setLevel(level)
+    noisy_level = max(level, logging.INFO)
+    logging.getLogger("aiosqlite").setLevel(noisy_level)
+    logging.getLogger("asyncio").setLevel(noisy_level)
+
+    app = create_app(config)
 
     web.run_app(
         app,
         host=config.host,
         port=config.port,
+        access_log_class=SanitizedAccessLogger,
         access_log=logging.getLogger("aiohttp.access"),
         access_log_format=ACCESS_LOG_FORMAT,
     )

@@ -4,12 +4,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Supernote Cloud - Web Viewer</title>
+    <title>Open Private Cloud</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config = { darkMode: 'class' };</script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/spark-md5/3.0.2/spark-md5.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha256/1.0.0/sha256.min.js"></script>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <!-- Import Map for Vue (No Build) -->
@@ -22,181 +23,430 @@
     </script>
 </head>
 
-<body class="bg-slate-50 text-slate-900 antialiased min-h-screen">
+<body class="bg-[#F7F6F2] text-slate-900 antialiased min-h-screen selection:bg-slate-900 selection:text-white">
     <div id="app" class="flex flex-col min-h-screen" v-cloak>
-        <header class="sticky top-0 z-50 bg-white/70 backdrop-blur-md border-b border-slate-200">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="flex justify-between items-center h-16">
-                    <div class="flex items-center gap-3">
-                        <div
-                            class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-200">
-                            S</div>
-                        <h1 class="text-xl font-semibold tracking-tight">Supernote <span
-                                class="text-indigo-600">Lite</span></h1>
+        <!-- Top Navigation Header -->
+        <header class="sticky top-0 z-50 bg-[#F7F6F2]/90 backdrop-blur-md border-b border-stone-200/90">
+            <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center gap-2 h-14">
+                    <!-- Brand Identity -->
+                    <div class="flex items-center shrink-0">
+                        <button @click="isLoggedIn ? switchTab('files') : null" type="button"
+                            class="flex items-center gap-2 sm:gap-2.5 text-left group focus:outline-none">
+                            <div class="w-7 h-7 sm:w-8 sm:h-8 bg-slate-900 rounded-lg flex items-center justify-center text-white shadow-sm group-hover:bg-slate-800 transition-colors shrink-0">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z">
+                                    </path>
+                                </svg>
+                            </div>
+                            <div class="flex items-baseline gap-1.5">
+                                <span class="text-sm sm:text-base font-bold tracking-tight text-slate-900">Open Private Cloud</span>
+                                <span class="hidden md:inline text-xs font-mono font-medium uppercase tracking-widest text-stone-500">for Supernote</span>
+                            </div>
+                        </button>
                     </div>
 
-                    <!-- Navigation Tabs -->
-                    <div v-if="isLoggedIn" class="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
-                        <button @click="switchTab('files')"
-                            :class="(activeTab === 'files' || activeTab === 'explorer') ? 'bg-white text-indigo-700 font-semibold shadow-sm' : 'text-slate-600 hover:text-slate-900 font-medium'"
-                            class="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm transition-all">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <!-- Primary View Switcher -->
+                    <div v-if="isLoggedIn" class="flex items-center gap-1 bg-stone-200/70 p-0.5 sm:p-1 rounded-xl border border-stone-300/40 shrink-0">
+                        <button @click="switchTab('files')" type="button"
+                            :class="activeTab === 'files' ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-stone-600 hover:text-slate-900 font-medium'"
+                            class="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all">
+                            <svg class="hidden sm:block w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
                             </svg>
-                            Files
+                            <span>Files</span>
                         </button>
-                        <button @click="switchTab('tasks')"
-                            :class="activeTab === 'tasks' ? 'bg-white text-indigo-700 font-semibold shadow-sm' : 'text-slate-600 hover:text-slate-900 font-medium'"
-                            class="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm transition-all">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <button @click="switchTab('tasks')" type="button"
+                            :class="activeTab === 'tasks' ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-stone-600 hover:text-slate-900 font-medium'"
+                            class="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all">
+                            <svg class="hidden sm:block w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg>
-                            Tasks & Schedule
+                            <span>Tasks<span class="hidden sm:inline"> &amp; Schedule</span></span>
                         </button>
                     </div>
 
-                    <div v-if="isLoggedIn" class="flex items-center gap-4">
-                        <button @click="openSystemPanel"
-                            class="text-slate-500 hover:text-slate-700 transition-colors" title="System Status">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    <!-- Right Utilities -->
+                    <div v-if="isLoggedIn" class="flex items-center gap-1 sm:gap-2 shrink-0">
+                        <button @click="showSearchModal = true" type="button"
+                            aria-label="Global Search"
+                            :title="'Global Search (' + searchShortcutLabel + ')'"
+                            class="flex items-center gap-2 p-2 sm:px-3 sm:py-1.5 bg-white hover:bg-stone-50 text-stone-600 hover:text-slate-900 rounded-lg text-xs font-medium border border-stone-200/90 shadow-sm transition-all">
+                            <svg class="w-3.5 h-3.5 text-stone-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                            </svg>
+                            <span class="hidden sm:inline text-stone-500">Search...</span>
+                            <kbd class="hidden md:inline-block px-1.5 py-0.5 bg-stone-100 text-stone-600 text-[10px] font-mono rounded border border-stone-200/80">{{ searchShortcutLabel }}</kbd>
+                        </button>
+
+                        <button @click="openSystemPanel" type="button"
+                            aria-label="System Status"
+                            title="System Status"
+                            class="flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-medium text-stone-600 hover:text-slate-900 hover:bg-stone-200/60 transition-colors">
+                            <svg class="w-4 h-4 text-stone-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
                                     d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
                                 </path>
                             </svg>
+                            <span class="hidden md:inline">System</span>
                         </button>
-                        <button @click="handleLogout"
-                            class="text-sm font-medium text-slate-500 hover:text-slate-800 transition-colors">
-                            Sign Out
+
+                        <div class="h-4 w-px bg-stone-200 hidden sm:block"></div>
+
+                        <button @click="handleLogout" type="button"
+                            aria-label="Sign Out"
+                            title="Sign Out"
+                            class="flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-medium text-stone-600 hover:text-slate-900 hover:bg-stone-200/60 transition-colors">
+                            <svg class="w-4 h-4 sm:hidden shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+                                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1">
+                                </path>
+                            </svg>
+                            <span class="hidden sm:inline">Sign Out</span>
                         </button>
                     </div>
                 </div>
             </div>
         </header>
 
-        <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Main Workspace Container -->
+        <main class="flex-grow max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-6">
             <template v-if="isLoggedIn">
-                <template v-if="activeTab === 'files' || activeTab === 'explorer' || activeTab === 'dashboard'">
-                <!-- Breadcrumbs -->
-                <nav
-                    class="flex mb-8 text-sm font-medium text-slate-500 items-center overflow-x-auto whitespace-nowrap pb-2">
-                    <div v-for="(crumb, index) in breadcrumbs" :key="crumb.id" class="flex items-center">
-                        <button @click="navigateTo(index)"
-                            :class="index === breadcrumbs.length - 1 ? 'text-slate-900 font-bold' : 'hover:text-indigo-600 transition-colors'"
-                            class="flex items-center">
-                            <svg v-if="index === 0" class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                <path
-                                    d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z">
-                                </path>
-                            </svg>
-                            {{ crumb.name }}
-                        </button>
-                        <span v-if="index < breadcrumbs.length - 1" class="mx-2 text-slate-300">/</span>
-                    </div>
-                </nav>
-                <!-- Actions Bar -->
-                <div class="flex flex-wrap items-center justify-between gap-4 mb-8">
-                    <div class="flex items-center gap-2">
-                        <button @click="triggerUpload"
-                            class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-medium transition-all shadow-lg shadow-indigo-100">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
-                            </svg>
-                            Upload
-                        </button>
-                        <button @click="showNewFolderModal = true"
-                            class="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2 rounded-xl font-medium transition-all">
-                            <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M12 4v16m8-8H4"></path>
-                            </svg>
-                            New Folder
-                        </button>
+                <template v-if="activeTab === 'files'">
+                    <!-- Directory Browser View -->
+                    <div v-if="view === 'grid'"
+                        @dragover="handleDragOver"
+                        @dragleave="handleDragLeave"
+                        @drop="handleDrop"
+                        class="relative">
+
+                        <!-- Drag-and-Drop Upload Overlay -->
+                        <div v-if="isDraggingOver"
+                            class="fixed inset-4 z-40 rounded-2xl bg-slate-900/10 backdrop-blur-[2px] border-2 border-dashed border-slate-900 flex items-center justify-center pointer-events-none">
+                            <div class="bg-white px-6 py-4 rounded-2xl shadow-xl border border-stone-200 flex items-center gap-3">
+                                <svg class="w-6 h-6 text-slate-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                                </svg>
+                                <span class="text-sm font-semibold text-slate-900">Drop files to upload to {{ breadcrumbs[breadcrumbs.length - 1]?.name || 'Cloud' }}</span>
+                            </div>
+                        </div>
+
+                        <!-- Unified Directory Header Bar: Breadcrumbs + Controls -->
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 mb-6 border-b border-stone-200/80">
+                            <!-- Breadcrumb Path -->
+                            <nav class="flex items-center text-sm overflow-x-auto whitespace-nowrap min-w-0" aria-label="Breadcrumb">
+                                <div v-for="(crumb, index) in breadcrumbs" :key="crumb.id" class="flex items-center">
+                                    <button @click="navigateTo(index)" type="button"
+                                        :class="index === breadcrumbs.length - 1
+                                            ? 'text-slate-900 font-bold bg-stone-200/60 px-2.5 py-1 rounded-lg'
+                                            : 'text-stone-600 hover:text-slate-900 hover:bg-stone-200/40 px-2 py-1 rounded-lg font-medium transition-colors'"
+                                        class="flex items-center gap-1.5 text-sm">
+                                        <svg v-if="index === 0" class="w-4 h-4 text-stone-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6">
+                                            </path>
+                                        </svg>
+                                        <span>{{ crumb.name }}</span>
+                                    </button>
+                                    <svg v-if="index < breadcrumbs.length - 1" class="w-4 h-4 mx-1 text-stone-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                                    </svg>
+                                </div>
+                            </nav>
+
+                            <!-- Right Controls: Sort, View Mode, New Folder, Upload -->
+                            <div class="flex flex-wrap items-center gap-2 shrink-0">
+                                <!-- Sort Control -->
+                                <div class="flex items-center bg-white border border-stone-200/90 rounded-lg p-0.5 shadow-sm">
+                                    <select v-model="sortBy" @change="handleSortByChange" aria-label="Sort files by"
+                                        class="bg-transparent text-xs font-medium text-stone-600 hover:text-slate-900 pl-2.5 pr-1 py-1 outline-none cursor-pointer">
+                                        <option value="name">Sort: Name</option>
+                                        <option value="updatedAt">Sort: Modified</option>
+                                        <option value="size">Sort: Size</option>
+                                    </select>
+                                    <button @click="toggleSortOrder" type="button"
+                                        :aria-label="sortOrder === 'asc' ? 'Sort ascending' : 'Sort descending'"
+                                        :title="sortOrder === 'asc' ? 'Ascending' : 'Descending'"
+                                        class="p-1 text-stone-600 hover:text-slate-900 rounded hover:bg-stone-100 transition-colors">
+                                        <svg v-if="sortOrder === 'asc'" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path>
+                                        </svg>
+                                        <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+
+                                <!-- Grid / List View Switcher -->
+                                <div class="flex items-center bg-white border border-stone-200/90 rounded-lg p-0.5 shadow-sm">
+                                    <button @click="displayMode = 'grid'" type="button"
+                                        aria-label="Grid view"
+                                        :class="displayMode === 'grid' ? 'bg-stone-200/80 text-slate-900' : 'text-stone-500 hover:text-slate-800'"
+                                        class="p-1.5 rounded-md transition-colors" title="Grid view">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path>
+                                        </svg>
+                                    </button>
+                                    <button @click="displayMode = 'list'" type="button"
+                                        aria-label="List view"
+                                        :class="displayMode === 'list' ? 'bg-stone-200/80 text-slate-900' : 'text-stone-500 hover:text-slate-800'"
+                                        class="p-1.5 rounded-md transition-colors" title="List view">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+
+                                <!-- New Folder Button -->
+                                <button @click="showNewFolderModal = true" type="button"
+                                    class="flex items-center gap-1.5 bg-white hover:bg-stone-50 text-slate-700 border border-stone-200/90 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-all">
+                                    <svg class="w-3.5 h-3.5 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                                    </svg>
+                                    New Folder
+                                </button>
+
+                                <!-- Primary Upload CTA -->
+                                <button @click="triggerUpload" type="button"
+                                    class="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-sm">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                                    </svg>
+                                    Upload
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Contextual Multi-Select Action Bar -->
+                        <div v-if="selectedIds.length > 0"
+                            class="mb-6 px-4 py-2.5 bg-slate-900 text-white rounded-xl shadow-md flex flex-wrap items-center justify-between gap-3 animate-fade-in">
+                            <div class="flex items-center gap-3">
+                                <span class="text-xs font-mono font-semibold bg-white/15 px-2 py-0.5 rounded-md tabular-nums">
+                                    {{ selectedIds.length }} selected
+                                </span>
+                                <button @click="toggleSelectAllVisible" type="button"
+                                    class="text-xs text-stone-300 hover:text-white font-medium transition-colors">
+                                    {{ allVisibleSelected ? 'Deselect all' : 'Select all (' + visibleItemCount + ')' }}
+                                </button>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button @click="handleMoveSelected" type="button"
+                                    class="flex items-center gap-1.5 text-xs bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg font-medium transition-colors">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
+                                    </svg>
+                                    Move
+                                </button>
+                                <button @click="handleDeleteSelected" type="button"
+                                    class="flex items-center gap-1.5 text-xs bg-rose-500/90 hover:bg-rose-500 text-white px-3 py-1.5 rounded-lg font-medium transition-colors">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                    </svg>
+                                    Delete
+                                </button>
+                                <button @click="selectedIds = []" type="button"
+                                    class="text-xs text-stone-300 hover:text-white px-2 py-1">
+                                    Clear
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Error State -->
+                        <div v-if="error" class="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl text-sm mb-6 flex items-center justify-between">
+                            <span>{{ error }}</span>
+                        </div>
+
+                        <!-- Loading State -->
+                        <div v-if="isLoading" class="flex flex-col items-center justify-center py-24 gap-3">
+                            <div class="animate-spin rounded-full h-8 w-8 border-2 border-stone-300 border-t-slate-900"></div>
+                            <span class="text-xs font-mono text-stone-500">Loading directory...</span>
+                        </div>
+
+                        <!-- Empty Directory State -->
+                        <div v-else-if="folders.length === 0 && regularFiles.length === 0"
+                            class="bg-white border border-stone-200/90 rounded-2xl p-12 text-center max-w-lg mx-auto my-8 shadow-sm">
+                            <div class="w-12 h-12 bg-stone-100 text-stone-500 rounded-xl flex items-center justify-center mx-auto mb-4">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+                                </svg>
+                            </div>
+                            <h3 class="text-sm font-bold text-slate-900 mb-1">This folder is empty</h3>
+                            <p class="text-xs text-stone-500 mb-6">Drag and drop `.note`, PDF, EPUB, or image files here, or use the actions below.</p>
+                            <div class="flex items-center justify-center gap-2.5">
+                                <button @click="showNewFolderModal = true" type="button"
+                                    class="px-3.5 py-2 bg-white hover:bg-stone-50 text-slate-700 border border-stone-200 rounded-lg text-xs font-semibold transition-colors">
+                                    + New Folder
+                                </button>
+                                <button @click="triggerUpload" type="button"
+                                    class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold transition-colors">
+                                    Upload Files
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Populated Directory Content -->
+                        <template v-else>
+                            <!-- List View Mode -->
+                            <div v-if="displayMode === 'list'" class="bg-white rounded-2xl border border-stone-200/90 shadow-sm overflow-hidden">
+                                <div class="grid grid-cols-12 gap-4 px-4 py-2.5 bg-stone-50/80 border-b border-stone-200/80 text-[11px] font-semibold uppercase tracking-wider text-stone-500">
+                                    <div class="col-span-7 sm:col-span-5 pl-7">Name</div>
+                                    <div class="hidden sm:block sm:col-span-3">Modified</div>
+                                    <div class="col-span-3 sm:col-span-2 text-right">Size</div>
+                                    <div class="col-span-2 text-right pr-2">Actions</div>
+                                </div>
+                                <div class="divide-y divide-stone-100">
+                                    <file-card v-for="folder in folders" :key="folder.id" :file="folder" layout="list"
+                                        :is-selected="selectedIds.includes(folder.id)"
+                                        :selection-mode="selectedIds.length > 0"
+                                        :processing-status="processingStatuses[folder.id]" @open="openItem" @select="toggleSelection"
+                                        @rename="triggerRename"></file-card>
+                                    <file-card v-for="file in regularFiles" :key="file.id" :file="file" layout="list"
+                                        :is-selected="selectedIds.includes(file.id)"
+                                        :selection-mode="selectedIds.length > 0"
+                                        :processing-status="processingStatuses[file.id]" @open="openItem" @select="toggleSelection"
+                                        @rename="triggerRename"></file-card>
+                                </div>
+                            </div>
+
+                            <!-- Grid View Mode (Separated Compact Folders + Portrait Notebook Cards) -->
+                            <div v-else class="space-y-8">
+                                <!-- Folders Section -->
+                                <section v-if="folders.length > 0">
+                                    <div class="flex items-center justify-between mb-3">
+                                        <h2 class="text-[11px] font-bold uppercase tracking-wider text-stone-500">
+                                            Folders <span class="font-mono font-normal text-stone-500">({{ allFolders.length }})</span>
+                                        </h2>
+                                    </div>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                        <file-card v-for="folder in folders" :key="folder.id" :file="folder" layout="folder"
+                                            :is-selected="selectedIds.includes(folder.id)"
+                                            :selection-mode="selectedIds.length > 0"
+                                            :processing-status="processingStatuses[folder.id]" @open="openItem" @select="toggleSelection"
+                                            @rename="triggerRename"></file-card>
+                                    </div>
+                                </section>
+
+                                <!-- Files & Notebooks Section -->
+                                <section v-if="regularFiles.length > 0">
+                                    <div class="flex items-center justify-between mb-3">
+                                        <h2 class="text-[11px] font-bold uppercase tracking-wider text-stone-500">
+                                            Notebooks &amp; Files <span class="font-mono font-normal text-stone-500">({{ allRegularFiles.length }})</span>
+                                        </h2>
+                                    </div>
+                                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-5">
+                                        <file-card v-for="file in regularFiles" :key="file.id" :file="file" layout="grid"
+                                            :is-selected="selectedIds.includes(file.id)"
+                                            :selection-mode="selectedIds.length > 0"
+                                            :processing-status="processingStatuses[file.id]" @open="openItem" @select="toggleSelection"
+                                            @rename="triggerRename"></file-card>
+                                    </div>
+                                </section>
+                            </div>
+
+                            <!-- Directory Pagination Footer -->
+                            <div v-if="totalItemCount > 50"
+                                class="mt-8 flex flex-col items-center gap-3">
+                                <p class="text-xs font-mono text-stone-500 tabular-nums">
+                                    Showing {{ visibleItemCount }} of {{ totalItemCount }} items
+                                </p>
+                                <button v-if="hasMoreItems" @click="loadMoreItems" type="button"
+                                    class="px-5 py-2 bg-white hover:bg-stone-50 text-slate-700 border border-stone-200 rounded-xl text-xs font-semibold shadow-sm transition-all">
+                                    Load More
+                                </button>
+                            </div>
+                        </template>
                     </div>
 
-                    <div v-if="selectedIds.length > 0" class="flex items-center gap-2 animate-in slide-in-from-right">
-                        <span class="text-sm text-slate-500 font-medium mr-2">{{ selectedIds.length }} selected</span>
-                        <button @click="handleMoveSelected"
-                            class="text-sm bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg transition-colors">
-                            Move
-                        </button>
-                        <button @click="handleDeleteSelected"
-                            class="text-sm bg-rose-50 border border-rose-100 hover:bg-rose-100 text-rose-600 px-3 py-1.5 rounded-lg transition-colors">
-                            Delete
-                        </button>
-                        <button @click="selectedIds = []"
-                            class="text-sm text-slate-400 hover:text-slate-600 underline px-2">
-                            Clear
-                        </button>
+                    <!-- Document / Notebook Viewer -->
+                    <div v-else-if="view === 'viewer'" class="min-h-full">
+                        <!-- Compact Context Breadcrumbs Above Viewer -->
+                        <nav class="flex items-center text-xs text-stone-600 mb-3 overflow-x-auto whitespace-nowrap" aria-label="Viewer Breadcrumb">
+                            <div v-for="(crumb, index) in breadcrumbs" :key="crumb.id" class="flex items-center">
+                                <button @click="navigateTo(index)" type="button"
+                                    class="hover:text-slate-900 font-medium transition-colors flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-stone-200/50">
+                                    <svg v-if="index === 0" class="w-3.5 h-3.5 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6">
+                                        </path>
+                                    </svg>
+                                    <span>{{ crumb.name }}</span>
+                                </button>
+                                <span class="mx-1 text-stone-400">/</span>
+                            </div>
+                            <span class="text-slate-900 font-semibold truncate px-1.5">{{ selectedFile?.name }}</span>
+                        </nav>
+
+                        <file-viewer :file="selectedFile" :initial-page="selectedPageIndex"
+                            :page-jump-seq="selectedPageJumpSeq" @close="closeViewer"
+                            @page-change="handleViewerPageChange"></file-viewer>
                     </div>
-                </div>
 
-                <!-- Hidden Upload Input -->
-                <input type="file" ref="fileInput" class="hidden" multiple @change="handleFileUpload">
+                    <!-- Hidden Upload Input -->
+                    <input type="file" ref="fileInput" class="hidden" multiple @change="handleFileUpload">
 
-                <!-- New Folder Modal -->
-                <div v-if="showNewFolderModal"
-                    class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
-                    @click.self="showNewFolderModal = false">
-                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
-                        <h3 class="text-lg font-bold text-slate-900 mb-4">Create New Folder</h3>
-                        <input v-model="newFolderName" type="text" placeholder="Folder name"
-                            class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all mb-6"
-                            @keyup.enter="handleCreateFolder">
-                        <div class="flex justify-end gap-3">
-                            <button @click="showNewFolderModal = false"
-                                class="px-4 py-2 text-slate-500 hover:text-slate-700 font-medium">Cancel</button>
-                            <button @click="handleCreateFolder" :disabled="!newFolderName"
-                                class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 transition-all">
-                                Create
-                            </button>
+                    <!-- Create New Folder Modal -->
+                    <div v-if="showNewFolderModal"
+                        role="dialog" aria-modal="true" aria-label="Create New Folder"
+                        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px]"
+                        @click.self="showNewFolderModal = false">
+                        <div class="bg-white rounded-2xl border border-stone-200 shadow-2xl w-full max-w-md p-6 animate-fade-in">
+                            <h3 class="text-base font-bold text-slate-900 mb-1">Create New Folder</h3>
+                            <p class="text-xs text-stone-500 mb-4">Create a subfolder inside {{ breadcrumbs[breadcrumbs.length - 1]?.name || 'Cloud' }}.</p>
+                            <input ref="newFolderInput" v-model="newFolderName" type="text" placeholder="Folder name"
+                                class="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none transition-all mb-5"
+                                @keyup.enter="handleCreateFolder">
+                            <div class="flex justify-end gap-2.5">
+                                <button @click="showNewFolderModal = false" type="button"
+                                    class="px-4 py-2 text-xs text-stone-600 hover:text-slate-900 font-semibold">Cancel</button>
+                                <button @click="handleCreateFolder" type="button" :disabled="!newFolderName.trim()"
+                                    class="px-5 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white rounded-xl text-xs font-semibold transition-all">
+                                    Create Folder
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- Error State -->
-                <div v-if="error" class="bg-red-50 text-red-600 p-4 rounded-xl mb-6">
-                    {{ error }}
-                    <div v-if="error === 'Unauthorized'" class="mt-2 text-sm">
-                        Please log in via the CLI or check your token.
+                    <!-- In-App Delete Confirmation Modal -->
+                    <div v-if="showDeleteModal"
+                        role="dialog" aria-modal="true" aria-label="Confirm Delete"
+                        class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px]"
+                        @click.self="showDeleteModal = false">
+                        <div class="bg-white rounded-2xl border border-stone-200 shadow-2xl w-full max-w-sm p-6 animate-fade-in">
+                            <div class="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mb-3">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                </svg>
+                            </div>
+                            <h3 class="text-base font-bold text-slate-900 mb-1">
+                                Delete {{ selectedIds.length }} {{ selectedIds.length === 1 ? 'item' : 'items' }}?
+                            </h3>
+                            <p class="text-xs text-stone-500 mb-5 leading-relaxed">
+                                This action will permanently remove the selected {{ selectedIds.length === 1 ? 'item' : 'items' }} from your Supernote Cloud.
+                            </p>
+                            <div class="flex justify-end gap-2.5">
+                                <button @click="showDeleteModal = false" type="button"
+                                    class="px-4 py-2 text-xs text-stone-600 hover:text-slate-900 font-semibold">Cancel</button>
+                                <button @click="confirmDeleteSelected" type="button"
+                                    class="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold transition-all">
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                </div>
 
-                <!-- Loading State -->
-                <div v-if="isLoading" class="flex justify-center py-20">
-                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-                </div>
+                    <!-- Modals -->
+                    <move-modal v-if="showMoveModal" :item-ids="selectedIds" @close="showMoveModal = false"
+                        @confirm="onConfirmMove"></move-modal>
 
-                <!-- Grid View -->
-                <div v-if="view === 'grid' && !isLoading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <!-- Folders -->
-                    <file-card v-for="folder in folders" :key="folder.id" :file="folder"
-                        :is-selected="selectedIds.includes(folder.id)"
-                        :processing-status="processingStatuses[folder.id]" @open="openItem" @select="toggleSelection"
-                        @rename="triggerRename"></file-card>
-
-                    <!-- Files -->
-                    <file-card v-for="file in regularFiles" :key="file.id" :file="file"
-                        :is-selected="selectedIds.includes(file.id)" :processing-status="processingStatuses[file.id]"
-                        @open="openItem" @select="toggleSelection" @rename="triggerRename"></file-card>
-                </div>
-
-                <!-- Viewer -->
-                <div v-if="view === 'viewer'" class="min-h-full">
-                    <file-viewer :file="selectedFile" @close="closeViewer"></file-viewer>
-                </div>
-
-                <!-- Modals -->
-                <move-modal v-if="showMoveModal" :item-ids="selectedIds" @close="showMoveModal = false"
-                    @confirm="onConfirmMove"></move-modal>
-
-                <rename-modal v-if="showRenameModal" :item="itemToRename" @close="showRenameModal = false"
-                    @confirm="onConfirmRename"></rename-modal>
+                    <rename-modal v-if="showRenameModal" :item="itemToRename" @close="showRenameModal = false"
+                        @confirm="onConfirmRename"></rename-modal>
                 </template>
 
                 <!-- Tasks & Schedule Dashboard Panel -->
                 <template v-else-if="activeTab === 'tasks'">
-                    <task-panel></task-panel>
+                    <task-panel :focus-task="focusedTaskRequest"></task-panel>
                 </template>
             </template>
 
@@ -205,28 +455,32 @@
                 <login-card @login="handleLogin"></login-card>
             </template>
 
+            <!-- Global Search Modal -->
+            <search-modal v-if="isLoggedIn && showSearchModal" @close="showSearchModal = false"
+                @select-file="handleSearchSelectFile" @select-task="handleSearchSelectTask"></search-modal>
+
             <!-- System Panel -->
-            <system-panel v-if="showSystemPanel" @close="closeSystemPanel"></system-panel>
+            <system-panel v-if="showSystemPanel" @close="closeSystemPanel" @open-file="handleSystemOpenFile"></system-panel>
         </main>
 
         <!-- Toast Notifications Stack -->
-        <div class="fixed bottom-4 right-4 z-[200] flex flex-col gap-2 max-w-sm w-full pointer-events-none"
+        <div class="fixed bottom-4 left-4 right-4 sm:left-auto z-[200] flex flex-col gap-2 sm:max-w-sm sm:w-full pointer-events-none"
             role="region" aria-label="Notifications" aria-live="polite">
             <div v-for="toast in toasts" :key="toast.id"
                 :class="{
-                    'bg-rose-50 dark:bg-rose-950/90 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200': toast.type === 'error',
-                    'bg-emerald-50 dark:bg-emerald-950/90 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200': toast.type === 'success',
-                    'bg-white dark:bg-slate-900/90 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200': toast.type !== 'error' && toast.type !== 'success'
+                    'bg-rose-50 border-rose-200 text-rose-800': toast.type === 'error',
+                    'bg-emerald-50 border-emerald-200 text-emerald-800': toast.type === 'success',
+                    'bg-white border-stone-200 text-slate-800': toast.type !== 'error' && toast.type !== 'success'
                 }"
-                class="pointer-events-auto flex items-start justify-between gap-3 px-4 py-3 rounded-xl border shadow-lg backdrop-blur-md text-sm font-medium transition-all animate-in slide-in-from-bottom-2">
+                class="pointer-events-auto flex items-start justify-between gap-3 px-4 py-3 rounded-xl border shadow-lg backdrop-blur-md text-xs font-medium transition-all animate-fade-in">
                 <div class="flex items-start gap-2.5 min-w-0">
-                    <svg v-if="toast.type === 'error'" class="w-5 h-5 text-rose-500 dark:text-rose-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg v-if="toast.type === 'error'" class="w-4 h-4 text-rose-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                     </svg>
-                    <svg v-else-if="toast.type === 'success'" class="w-5 h-5 text-emerald-500 dark:text-emerald-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg v-else-if="toast.type === 'success'" class="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                     </svg>
-                    <svg v-else class="w-5 h-5 text-indigo-500 dark:text-indigo-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg v-else class="w-4 h-4 text-slate-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                     </svg>
                     <span class="break-words leading-snug">{{ toast.message }}</span>
@@ -234,7 +488,7 @@
                 <button @click="dismissToast(toast.id)"
                     class="text-current opacity-60 hover:opacity-100 p-0.5 rounded-lg transition-opacity shrink-0"
                     aria-label="Dismiss notification">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                     </svg>
                 </button>

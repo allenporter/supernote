@@ -5,7 +5,10 @@ import pytest
 from supernote.server.ai.models.embedding import EmbeddingTaskType
 from supernote.server.ai.models.fake.embedding import FakeEmbeddingModel
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.db.models.note_processing import (
+    NotePageContentDO,
+    NotePageMetadataDO,
+)
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.search import PageTranscript, SearchService
 
@@ -552,3 +555,47 @@ async def test_list_notebooks(
 
     limited = await search_service.list_notebooks(user_id=user_id, limit=1)
     assert [n.file_id for n in limited] == [102]
+
+
+async def test_get_transcript_includes_verified_page_keywords(
+    search_service: SearchService,
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Verify get_transcript includes Page Keywords only for matching (page_id, content_hash) metadata rows."""
+    user_id = 1
+    file_id = 199
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                file_name="Architecture.note",
+                directory_id=0,
+                is_active="Y",
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="P20260301090000a",
+                content_hash="h_arch",
+                text_content="Discussed schema design.",
+            )
+        )
+        session.add(
+            NotePageMetadataDO(
+                user_id=user_id,
+                file_id=file_id,
+                page_index=0,
+                page_id="P20260301090000a",
+                content_hash="h_arch",
+                keywords_json='[{"KEYWORDPAGE": "1", "KEYWORD": "SQLite"}]',
+            )
+        )
+        await session.commit()
+
+    transcript = await search_service.get_transcript(user_id=user_id, file_id=file_id)
+    assert transcript is not None
+    assert "Page Keywords: SQLite" in transcript

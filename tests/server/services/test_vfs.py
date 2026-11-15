@@ -2,10 +2,11 @@ import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from supernote.models.base import ErrorCode
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import RecycleFileDO, UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.exceptions import ParentNotFound
+from supernote.server.exceptions import FileAlreadyExists, InvalidPath, ParentNotFound
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.integrity import IntegrityService
 from supernote.server.services.vfs import VirtualFileSystem
@@ -377,3 +378,59 @@ async def test_get_folder_sizes_recursive_and_inactive_exclusion(
         empty_folder.id: 0,
         folder_b.id: 50,
     }
+
+
+async def test_move_node_to_path_collision_identity_and_cycle_guards(
+    db_session: AsyncSession,
+) -> None:
+    """Verify move_node_to_path treats to_path as target path, handles identity moves, and aborts cycles before creating subdirs."""
+    vfs = VirtualFileSystem(db_session)
+    user_id = 1007
+
+    note_root = await vfs.create_directory(user_id, 0, "Note")
+    foo = await vfs.create_directory(user_id, note_root.id, "Foo")
+    bar = await vfs.create_directory(user_id, note_root.id, "Bar")
+
+    # Collision with existing folder Foo when autorename=False raises E0322 instead of moving Bar inside Foo
+    with pytest.raises(FileAlreadyExists) as conflict_err:
+        await vfs.move_node_to_path(user_id, bar.id, "/Note/Foo", autorename=False)
+    assert conflict_err.value.error_code == ErrorCode.CONFLICT_EXISTS.value
+    assert await vfs.list_directory(user_id, foo.id) == []
+
+    # Collision with existing folder Foo when autorename=True renames to 'Foo (1)' in /Note
+    moved_bar = await vfs.move_node_to_path(
+        user_id, bar.id, "/Note/Foo", autorename=True
+    )
+    assert moved_bar is not None
+    assert moved_bar.directory_id == note_root.id
+    assert moved_bar.file_name == "Foo (1)"
+    assert await vfs.list_directory(user_id, foo.id) == []
+
+    # Identity move on folder Foo (autorename=False) is a no-op rather than a cyclic error
+    noop_foo = await vfs.move_node_to_path(
+        user_id, foo.id, "/Note/Foo", autorename=False
+    )
+    assert noop_foo is not None
+    assert noop_foo.id == foo.id
+    assert noop_foo.directory_id == note_root.id
+    assert noop_foo.file_name == "Foo"
+
+    # Case-only self-rename succeeds in place
+    case_renamed = await vfs.move_node_to_path(
+        user_id, foo.id, "/Note/foo", autorename=False
+    )
+    assert case_renamed is not None
+    assert case_renamed.id == foo.id
+    assert case_renamed.file_name == "foo"
+
+    # Cyclic move with non-existent intermediate directories raises E0358 without creating orphan subdirs
+    with pytest.raises(InvalidPath) as cycle_err:
+        await vfs.move_node_to_path(
+            user_id, foo.id, "/Note/foo/MissingSub/Moved", autorename=False
+        )
+    assert cycle_err.value.error_code == ErrorCode.CYCLIC_MOVE.value
+    assert await vfs.list_directory(user_id, foo.id) == []
+
+    # Empty destination path raises InvalidPath
+    with pytest.raises(InvalidPath, match="Destination path cannot be empty"):
+        await vfs.move_node_to_path(user_id, foo.id, "/", autorename=False)

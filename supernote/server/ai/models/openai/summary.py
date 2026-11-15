@@ -30,6 +30,10 @@ class OpenAISummaryModel(SummaryModel):
         self._model_name = model_name
 
     @property
+    def provider(self) -> str:
+        return self._backend.provider
+
+    @property
     def model_id(self) -> str:
         return self._model_name
 
@@ -54,7 +58,9 @@ class OpenAISummaryModel(SummaryModel):
 def create_summary_model(config: ServerConfig) -> SummaryModel | None:
     """Create an `OpenAISummaryModel` from `ServerConfig`, or `None` if unconfigured."""
     model_cfg = config.ai.summary
-    backend = create_openai_backend(config.ai.providers)
-    if model_cfg is None or backend is None:
+    if model_cfg is None:
+        return None
+    backend = create_openai_backend(config.ai.providers, model_cfg.provider)
+    if backend is None:
         return None
     return OpenAISummaryModel(backend, model_cfg.model)

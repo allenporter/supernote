@@ -9,11 +9,15 @@ is saved to `NotePageContentDO.text_content`. See `supernote.guides.mcp`.
 
 import logging
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from supernote.models.base import TaskType
 from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.ai.prompts import PageMetadata, format_ocr_prompt
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.db.models.file import UserFileDO
+from supernote.server.db.models.note_processing import NotePageMetadataDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
@@ -21,6 +25,30 @@ from supernote.server.utils.note_content import get_page_content_by_id
 from supernote.server.utils.paths import get_page_png_path
 
 logger = logging.getLogger(__name__)
+
+
+async def _get_verified_page_metadata(
+    session: AsyncSession,
+    user_id: int,
+    file_id: int,
+    page_id: str,
+    content_hash: str | None,
+) -> NotePageMetadataDO | None:
+    """Return page metadata only when its revision hash matches the page content row."""
+    if not content_hash:
+        return None
+    page_meta = (
+        await session.execute(
+            select(NotePageMetadataDO).where(
+                NotePageMetadataDO.user_id == user_id,
+                NotePageMetadataDO.file_id == file_id,
+                NotePageMetadataDO.page_id == page_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if page_meta is None or page_meta.content_hash != content_hash:
+        return None
+    return page_meta
 
 
 class OcrModule(ProcessorModule):
@@ -64,6 +92,21 @@ class OcrModule(ProcessorModule):
         if not page_id:
             return False
 
+        async with session_manager.session() as session:
+            content = await get_page_content_by_id(session, file_id, page_id)
+            if content is None:
+                logger.warning(
+                    f"Page content prerequisite not met for OCR of {file_id} page {page_id}"
+                )
+                return False
+            file_do = await session.get(UserFileDO, file_id)
+            if file_do is not None:
+                page_meta = await _get_verified_page_metadata(
+                    session, file_do.user_id, file_id, page_id, content.content_hash
+                )
+                if page_meta is not None and not page_meta.has_drawables:
+                    return True
+
         # Check if PNG exists (Prerequisite)
         png_path = get_page_png_path(file_id, page_id)
         if not await self.file_service.blob_storage.exists(CACHE_BUCKET, png_path):
@@ -89,7 +132,38 @@ class OcrModule(ProcessorModule):
         if self.ocr_model is None:
             raise ValueError("OCR model not configured")
 
-        # Get PNG Content
+        file_name: str | None = None
+        notebook_create_time: int | None = None
+        page_style: str | None = None
+        page_keywords: list[str] = []
+        async with session_manager.session() as session:
+            content = await get_page_content_by_id(session, file_id, page_id)
+            file_do = await session.get(UserFileDO, file_id)
+            if file_do is not None:
+                file_name = file_do.file_name
+                notebook_create_time = file_do.create_time
+                page_meta = (
+                    await _get_verified_page_metadata(
+                        session, file_do.user_id, file_id, page_id, content.content_hash
+                    )
+                    if content is not None
+                    else None
+                )
+                if (
+                    page_meta is not None
+                    and not page_meta.has_drawables
+                    and content is not None
+                ):
+                    content.text_content = ""
+                    await session.commit()
+                    logger.info(
+                        f"Skipping OCR LLM call for blank page {page_id} of file {file_id}"
+                    )
+                    return
+                if page_meta is not None:
+                    page_style = page_meta.page_style
+                    page_keywords = page_meta.keyword_texts
+
         png_path = get_page_png_path(file_id, page_id)
         chunks = [
             chunk
@@ -99,20 +173,13 @@ class OcrModule(ProcessorModule):
         ]
         png_data = b"".join(chunks)
 
-        # Get File Info for custom prompt and metadata
-        file_name: str | None = None
-        notebook_create_time: int | None = None
-        async with session_manager.session() as session:
-            file_do = await session.get(UserFileDO, file_id)
-            if file_do:
-                file_name = file_do.file_name
-                notebook_create_time = file_do.create_time
-
         page_metadata = PageMetadata(
             file_name=file_name,
             page_index=page_index or 0,
             page_id=page_id,
             notebook_create_time=notebook_create_time,
+            page_style=page_style,
+            keywords=page_keywords,
         )
         prompt = format_ocr_prompt(page_metadata)
         text_content = await self.ocr_model.extract_text(png_data, prompt)
