@@ -14,6 +14,7 @@ export default {
         const coverUrl = ref(null);
         const downloading = ref(false);
         const isInViewport = ref(false);
+        /** @type {IntersectionObserver | null} */
         let visibilityObserver = null;
         let activeCoverSeq = 0;
 
@@ -92,7 +93,7 @@ export default {
                 loadCover();
                 return;
             }
-            visibilityObserver = new IntersectionObserver(
+            const observer = new IntersectionObserver(
                 (entries) => {
                     if (entries.some((entry) => entry.isIntersecting)) {
                         isInViewport.value = true;
@@ -102,7 +103,8 @@ export default {
                 },
                 { rootMargin: '200px' }
             );
-            visibilityObserver.observe(cardRef.value);
+            visibilityObserver = observer;
+            observer.observe(cardRef.value);
         };
 
         const formattedSize = computed(() => formatSize(props.file?.size));

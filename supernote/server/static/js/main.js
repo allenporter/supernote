@@ -1,60 +1,37 @@
-import { createApp, ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
+/**
+ * Supernote Cloud Web UI — Host UI Root Application Shell.
+ *
+ * Coordinates session authentication, OAuth 2.1 consent bridging, top-level
+ * tab/route switching, global search (`Cmd/Ctrl+K`), system status drawer,
+ * and toast notifications while delegating domain panels to `FileBrowserPanel`,
+ * `FileViewer`, and `TaskPanel`.
+ */
+
+import { createApp, ref, onMounted, onUnmounted, computed } from 'vue';
 import { useFileSystem } from './composables/useFileSystem.js';
 import { useProcessingStatus } from './composables/useProcessingStatus.js';
 import { useRouter, parseUrlHash, buildUrlHash } from './composables/useRouter.js';
 import { useToast } from './composables/useToast.js';
 import { getToken, login, logout, connectSocket } from './api/client.js';
-import { normalizeEpochMs } from './utils/format.js';
+import FileBrowserPanel, { compareItems } from './components/FileBrowserPanel.js';
 import SearchModal from './components/SearchModal.js';
 import TaskPanel from './components/TaskPanel.js';
-import FileCard from './components/FileCard.js';
 import LoginCard from './components/LoginCard.js';
 import OAuthConsentCard from './components/OAuthConsentCard.js';
 import FileViewer from './components/FileViewer.js';
 import SystemPanel from './components/SystemPanel.js';
-import MoveModal from './components/MoveModal.js';
-import RenameModal from './components/RenameModal.js';
 
-export { parseUrlHash, buildUrlHash };
-
-export function compareItems(a, b, sortBy, sortOrder) {
-    const aIsFolder = Boolean(a.isDirectory || (a.isFolder && a.isFolder !== 'N'));
-    const bIsFolder = Boolean(b.isDirectory || (b.isFolder && b.isFolder !== 'N'));
-    if (aIsFolder !== bIsFolder) {
-        return aIsFolder ? -1 : 1;
-    }
-    if (sortBy === 'updatedAt') {
-        const tsA = normalizeEpochMs(a.updatedAt);
-        const tsB = normalizeEpochMs(b.updatedAt);
-        if (tsA === null && tsB !== null) return 1;
-        if (tsA !== null && tsB === null) return -1;
-        if (tsA !== null && tsB !== null && tsA !== tsB) {
-            return sortOrder === 'desc' ? tsB - tsA : tsA - tsB;
-        }
-    } else if (sortBy === 'size') {
-        const sizeCmp = (Number(a.size) || 0) - (Number(b.size) || 0);
-        if (sizeCmp !== 0) {
-            return sortOrder === 'desc' ? -sizeCmp : sizeCmp;
-        }
-    }
-    const nameCmp = String(a.name || '').localeCompare(String(b.name || ''), undefined, {
-        numeric: true,
-        sensitivity: 'base'
-    });
-    return sortOrder === 'desc' ? -nameCmp : nameCmp;
-}
+export { parseUrlHash, buildUrlHash, compareItems };
 
 createApp({
     components: {
+        'file-browser-panel': FileBrowserPanel,
         SearchModal,
         TaskPanel,
-        FileCard,
         LoginCard,
         'oauth-consent-card': OAuthConsentCard,
         FileViewer,
-        SystemPanel,
-        MoveModal,
-        RenameModal
+        SystemPanel
     },
     setup() {
         const { toasts, showToast, dismissToast } = useToast();
@@ -64,30 +41,17 @@ createApp({
         const isSubmittingOAuth = ref(false);
         const oauthCompletedOutcome = ref(null);
 
-        // Search & Display State
+        // Search & Cross-Tab Focus State
         const showSearchModal = ref(false);
         const searchInitialQuery = ref('');
         const searchShortcutLabel = typeof navigator !== 'undefined' &&
             /Mac|iPod|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '')
             ? '⌘K'
             : 'Ctrl K';
-        const displayMode = ref('grid'); // 'grid' | 'list'
-        const sortBy = ref('name'); // 'name' | 'updatedAt' | 'size'
-        const sortOrder = ref('asc'); // 'asc' | 'desc'
-        const isDraggingOver = ref(false);
         const focusedTaskRequest = ref(null);
-
-        // UI Modals State
-        const showNewFolderModal = ref(false);
-        const newFolderName = ref('');
-        const newFolderInput = ref(null);
-        const showMoveModal = ref(false);
-        const showRenameModal = ref(false);
-        const showDeleteModal = ref(false);
-        const itemToRename = ref(null);
         const selectedIds = ref([]);
 
-        // File System
+        // Shared VFS State
         const {
             files,
             currentDirectoryId,
@@ -131,9 +95,6 @@ createApp({
             loadedDirectoryId,
             loadDirectory,
             selectedIds,
-            onBeforeNavigate: () => {
-                isDraggingOver.value = false;
-            },
             onOAuthRouteEnter: () => {
                 isSubmittingOAuth.value = false;
                 oauthCompletedOutcome.value = null;
@@ -145,59 +106,13 @@ createApp({
             }
         });
 
-        const GRID_PAGE_SIZE = 50;
-        const visibleLimit = ref(GRID_PAGE_SIZE);
-        watch(currentDirectoryId, () => {
-            visibleLimit.value = GRID_PAGE_SIZE;
-            isDraggingOver.value = false;
-        });
-
-        watch(showNewFolderModal, (isOpen) => {
-            if (isOpen) {
-                nextTick(() => newFolderInput.value?.focus());
-            } else {
-                newFolderName.value = '';
+        async function handleRenameItem(itemId, newName) {
+            await renameSelectedItem(itemId, newName);
+            const crumb = breadcrumbs.value.find(c => String(c.id) === String(itemId));
+            if (crumb) {
+                crumb.name = newName;
             }
-        });
-
-        const allFolders = computed(() => {
-            const list = files.value.filter(f => f.isDirectory);
-            return [...list].sort((a, b) => compareItems(a, b, sortBy.value, sortOrder.value));
-        });
-        const allRegularFiles = computed(() => {
-            const list = files.value.filter(f => !f.isDirectory);
-            return [...list].sort((a, b) => compareItems(a, b, sortBy.value, sortOrder.value));
-        });
-        const folders = computed(() => allFolders.value.slice(0, visibleLimit.value));
-        const regularFiles = computed(() => {
-            const remaining = Math.max(0, visibleLimit.value - folders.value.length);
-            return allRegularFiles.value.slice(0, remaining);
-        });
-        const totalItemCount = computed(() => files.value.length);
-        const visibleItemCount = computed(() => folders.value.length + regularFiles.value.length);
-        const hasMoreItems = computed(() => visibleItemCount.value < totalItemCount.value);
-
-        function loadMoreItems() {
-            visibleLimit.value += GRID_PAGE_SIZE;
         }
-
-        function handleSortByChange() {
-            sortOrder.value = (sortBy.value === 'updatedAt' || sortBy.value === 'size') ? 'desc' : 'asc';
-        }
-
-        function toggleSortOrder() {
-            sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
-        }
-
-        watch([sortBy, sortOrder], () => {
-            if (hasMoreItems.value && selectedIds.value.length > 0) {
-                const visibleSet = new Set([
-                    ...folders.value.map(f => f.id),
-                    ...regularFiles.value.map(f => f.id)
-                ]);
-                selectedIds.value = selectedIds.value.filter(id => visibleSet.has(id));
-            }
-        });
 
         async function handleSearchSelectFile(item) {
             if (!item) return;
@@ -223,154 +138,6 @@ createApp({
             await navigateToTarget({ id: String(fileId), isDirectory: false });
         }
 
-        // Selection
-        const visibleIdsList = computed(() => [
-            ...folders.value.map(f => f.id),
-            ...regularFiles.value.map(f => f.id)
-        ]);
-
-        const allVisibleSelected = computed(() => {
-            const ids = visibleIdsList.value;
-            if (ids.length === 0) return false;
-            const selectedSet = new Set(selectedIds.value);
-            return ids.every(id => selectedSet.has(id));
-        });
-
-        function toggleSelection(id) {
-            const index = selectedIds.value.indexOf(id);
-            if (index > -1) {
-                selectedIds.value.splice(index, 1);
-            } else {
-                selectedIds.value.push(id);
-            }
-        }
-
-        function toggleSelectAllVisible() {
-            if (allVisibleSelected.value) {
-                selectedIds.value = [];
-            } else {
-                selectedIds.value = [...visibleIdsList.value];
-            }
-        }
-
-        // Actions
-        async function handleCreateFolder() {
-            const trimmed = newFolderName.value.trim();
-            if (!trimmed) return;
-            try {
-                await createNewFolder(trimmed);
-                showNewFolderModal.value = false;
-                newFolderName.value = '';
-                showToast('Folder created', 'success');
-            } catch (e) {
-                showToast('Failed to create folder: ' + e.message);
-            }
-        }
-
-        const fileInput = ref(null);
-        function triggerUpload() {
-            fileInput.value.click();
-        }
-
-        async function handleFileUpload(event) {
-            const selectedFiles = event.target.files;
-            if (selectedFiles.length === 0) return;
-            try {
-                await uploadFiles(selectedFiles);
-                showToast(`Uploaded ${selectedFiles.length} ${selectedFiles.length === 1 ? 'file' : 'files'}`, 'success');
-            } catch (e) {
-                showToast('Upload failed: ' + e.message);
-            } finally {
-                event.target.value = '';
-            }
-        }
-
-        function isFileDragEvent(event) {
-            const types = event?.dataTransfer?.types;
-            return Boolean(types && Array.from(types).includes('Files'));
-        }
-
-        function handleDragOver(event) {
-            if (!isFileDragEvent(event)) return;
-            event.preventDefault();
-            isDraggingOver.value = true;
-        }
-
-        function handleDragLeave(event) {
-            if (!isDraggingOver.value) return;
-            if (!event.currentTarget.contains(event.relatedTarget)) {
-                isDraggingOver.value = false;
-            }
-        }
-
-        async function handleDrop(event) {
-            isDraggingOver.value = false;
-            if (!isFileDragEvent(event)) return;
-            event.preventDefault();
-            const droppedFiles = event.dataTransfer?.files;
-            if (!droppedFiles || droppedFiles.length === 0) return;
-            try {
-                await uploadFiles(droppedFiles);
-                showToast(`Uploaded ${droppedFiles.length} ${droppedFiles.length === 1 ? 'file' : 'files'}`, 'success');
-            } catch (e) {
-                showToast('Upload failed: ' + e.message);
-            }
-        }
-
-        function handleDeleteSelected() {
-            if (selectedIds.value.length === 0) return;
-            showDeleteModal.value = true;
-        }
-
-        async function confirmDeleteSelected() {
-            const count = selectedIds.value.length;
-            showDeleteModal.value = false;
-            if (count === 0) return;
-            try {
-                await deleteSelectedItems(selectedIds.value);
-                selectedIds.value = [];
-                showToast(`Deleted ${count} ${count === 1 ? 'item' : 'items'}`, 'success');
-            } catch (e) {
-                showToast('Delete failed: ' + e.message);
-            }
-        }
-
-        function handleMoveSelected() {
-            showMoveModal.value = true;
-        }
-
-        async function onConfirmMove(targetDirId) {
-            try {
-                await moveSelectedItems(selectedIds.value, targetDirId);
-                selectedIds.value = [];
-                showMoveModal.value = false;
-                showToast('Moved successfully', 'success');
-            } catch (e) {
-                showToast('Move failed: ' + e.message);
-            }
-        }
-
-        function triggerRename(item) {
-            itemToRename.value = item;
-            showRenameModal.value = true;
-        }
-
-        async function onConfirmRename(newName) {
-            try {
-                const renamedId = itemToRename.value.id;
-                await renameSelectedItem(renamedId, newName);
-                const crumb = breadcrumbs.value.find(c => String(c.id) === String(renamedId));
-                if (crumb) {
-                    crumb.name = newName;
-                }
-                showRenameModal.value = false;
-                itemToRename.value = null;
-                showToast('Renamed successfully', 'success');
-            } catch (e) {
-                showToast('Rename failed: ' + e.message);
-            }
-        }
-
         async function resumeSession() {
             const token = getToken();
             if (!token) return false;
@@ -394,7 +161,7 @@ createApp({
 
         async function submitOAuthDecision(decision) {
             const req = pendingOAuthRequest.value;
-            if (!req || !req.isValid || isSubmittingOAuth.value) return;
+            if (!req || !req.isValid || !req.bridgePathWithQuery || isSubmittingOAuth.value) return;
             const token = getToken();
             if (!token) {
                 isLoggedIn.value = false;
@@ -464,10 +231,6 @@ createApp({
             view
         });
 
-        const clearDragState = () => {
-            isDraggingOver.value = false;
-        };
-
         function openSearchWithQuery(initialQuery = '') {
             searchInitialQuery.value = typeof initialQuery === 'string' ? initialQuery : '';
             showSearchModal.value = true;
@@ -487,17 +250,6 @@ createApp({
                 } else {
                     openSearchWithQuery('');
                 }
-                return;
-            }
-            if (e.key === 'Escape') {
-                isDraggingOver.value = false;
-                if (showDeleteModal.value) {
-                    showDeleteModal.value = false;
-                    e.preventDefault();
-                } else if (showNewFolderModal.value) {
-                    showNewFolderModal.value = false;
-                    e.preventDefault();
-                }
             }
         };
 
@@ -514,15 +266,11 @@ createApp({
             }
 
             window.addEventListener('supernote:file-sync', handleFileSyncEvent);
-            window.addEventListener('dragend', clearDragState);
-            window.addEventListener('drop', clearDragState);
             window.addEventListener('keydown', handleGlobalKeydown);
         });
 
         onUnmounted(() => {
             window.removeEventListener('supernote:file-sync', handleFileSyncEvent);
-            window.removeEventListener('dragend', clearDragState);
-            window.removeEventListener('drop', clearDragState);
             window.removeEventListener('keydown', handleGlobalKeydown);
         });
 
@@ -542,30 +290,19 @@ createApp({
             openSearchWithQuery,
             closeSearchModal,
             searchShortcutLabel,
-            displayMode,
-            sortBy,
-            sortOrder,
-            handleSortByChange,
-            toggleSortOrder,
-            isDraggingOver,
-            handleDragOver,
-            handleDragLeave,
-            handleDrop,
             focusedTaskRequest,
             view,
             files,
-            allFolders,
-            allRegularFiles,
-            folders,
-            regularFiles,
-            totalItemCount,
-            visibleItemCount,
-            hasMoreItems,
-            loadMoreItems,
             currentDirectoryId,
             isLoading,
             error,
             breadcrumbs,
+            selectedIds,
+            createNewFolder,
+            deleteSelectedItems,
+            moveSelectedItems,
+            uploadFiles,
+            handleRenameItem,
             switchTab,
             openSystemPanel,
             closeSystemPanel,
@@ -578,27 +315,6 @@ createApp({
             selectedPageIndex,
             selectedPageJumpSeq,
             showSystemPanel,
-            showNewFolderModal,
-            newFolderName,
-            newFolderInput,
-            showMoveModal,
-            showRenameModal,
-            showDeleteModal,
-            itemToRename,
-            selectedIds,
-            allVisibleSelected,
-            fileInput,
-            toggleSelection,
-            toggleSelectAllVisible,
-            handleCreateFolder,
-            triggerUpload,
-            handleFileUpload,
-            handleDeleteSelected,
-            confirmDeleteSelected,
-            handleMoveSelected,
-            onConfirmMove,
-            triggerRename,
-            onConfirmRename,
             processingStatuses,
             toasts,
             showToast,

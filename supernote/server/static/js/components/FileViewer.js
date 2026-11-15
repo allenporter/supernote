@@ -53,10 +53,14 @@ export default {
 
         const leftScrollPane = ref(null);
         const sidePanelRef = ref(null);
+        /** @type {IntersectionObserver | null} */
         let pageObserver = null;
         let isProgrammaticScroll = false;
+        /** @type {ReturnType<typeof setTimeout> | null} */
         let programmaticScrollTimer = null;
+        /** @type {number | null} */
         let pendingTargetPage = null;
+        /** @type {ReturnType<typeof setTimeout> | null} */
         let pendingTargetTimer = null;
         let activeLoadSeq = 0;
 
@@ -357,7 +361,7 @@ export default {
             const cards = leftScrollPane.value.querySelectorAll('[data-page-index]');
             if (!cards.length) return;
 
-            pageObserver = new IntersectionObserver(
+            const observer = new IntersectionObserver(
                 (entries) => {
                     if (isProgrammaticScroll || pendingTargetPage !== null) return;
                     let updated = false;
@@ -369,6 +373,7 @@ export default {
                         }
                     }
                     if (!updated) {
+                        /** @type {IntersectionObserverEntry | null} */
                         let bestEntry = null;
                         for (const entry of entries) {
                             if (entry.isIntersecting) {
@@ -391,8 +396,9 @@ export default {
                     threshold: [0, 0.15, 0.3, 0.5, 0.75, 1.0]
                 }
             );
+            pageObserver = observer;
 
-            cards.forEach((card) => pageObserver.observe(card));
+            cards.forEach((card) => observer.observe(card));
         };
 
         const loadingMessage = computed(() => {

@@ -6,6 +6,7 @@ import { apiRequest, getToken, logout, onLogout, setToken } from './http.js';
 
 export { apiRequest, getToken, logout, setToken };
 
+/** @type {SocketClient | null} */
 let socketInstance = null;
 const SOCKET_IO_KEY = 'K+5xFzxbnB1iSZWqmu3Etw==';
 
