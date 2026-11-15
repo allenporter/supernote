@@ -137,22 +137,7 @@ export default {
             return map;
         });
 
-        const titlesByPage = computed(() => {
-            const map = new Map();
-            const list = noteMetadata.value?.titles;
-            if (Array.isArray(list)) {
-                for (const t of list) {
-                    if (typeof t.pageIndex === 'number') {
-                        if (!map.has(t.pageIndex)) map.set(t.pageIndex, []);
-                        map.get(t.pageIndex).push(t);
-                    }
-                }
-            }
-            return map;
-        });
-
         const getPageMeta = (pageIdx) => pageMetaByIndex.value.get(pageIdx) || null;
-        const getPageTitles = (pageIdx) => titlesByPage.value.get(pageIdx) || [];
 
         const formatPageStyle = (style) => {
             if (!style || style === 'white') return null;
@@ -186,8 +171,12 @@ export default {
             return Array.isArray(noteMetadata.value?.links) ? noteMetadata.value.links : [];
         });
 
-        const notePages = computed(() => {
-            return Array.isArray(noteMetadata.value?.pages) ? noteMetadata.value.pages : [];
+        const hasNoteBookmarks = computed(() => {
+            return (
+                keywordEntries.value.length > 0 ||
+                noteTitles.value.length > 0 ||
+                noteLinks.value.length > 0
+            );
         });
 
         const jumpFromOutline = (pageIndex) => {
@@ -512,8 +501,12 @@ export default {
                 if (summariesData && Array.isArray(summariesData)) {
                     realSummaries.value = summariesData.filter(s => (s.dataSource || '').toUpperCase() !== 'OCR');
                 }
-                if (category === 'note') {
-                    activeRightTab.value = transcriptPages.value.length > 0 ? 'transcription' : 'outline';
+                if (
+                    category === 'note' &&
+                    transcriptPages.value.length === 0 &&
+                    (hasNoteBookmarks.value || realSummaries.value.length > 0)
+                ) {
+                    activeRightTab.value = 'insights';
                 } else {
                     activeRightTab.value = 'transcription';
                 }
@@ -664,13 +657,12 @@ export default {
             transcriptPages,
             noteMetadata,
             getPageMeta,
-            getPageTitles,
             formatPageStyle,
             getPageRightMeta,
             keywordEntries,
             noteTitles,
             noteLinks,
-            notePages,
+            hasNoteBookmarks,
             jumpFromOutline,
             handleNoteLinkClick,
             activePageIndex,
@@ -771,7 +763,7 @@ export default {
                 </button>
                 <button v-if="showSidePanel" @click="isMobileSidePanelOpen = !isMobileSidePanelOpen" type="button"
                     class="md:hidden px-2.5 sm:px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold">
-                    {{ isMobileSidePanelOpen ? 'Hide Panel' : (fileCategory === 'note' ? 'Outline' : 'Transcript') }}
+                    {{ isMobileSidePanelOpen ? 'Hide Panel' : 'Transcript' }}
                 </button>
             </div>
         </div>
@@ -851,22 +843,13 @@ export default {
                                 ? 'ring-2 ring-slate-900/80 border-slate-900'
                                 : 'border-stone-200/90'"
                             class="bg-white rounded-xl notebook-page-shadow border overflow-hidden transition-all">
-                            <div class="border-b border-stone-100 px-3.5 py-1.5 bg-stone-50/70 flex flex-wrap justify-between items-center gap-2 text-[11px] text-stone-500 font-mono tabular-nums">
-                                <div class="flex flex-wrap items-center gap-1.5 min-w-0">
+                            <div class="border-b border-stone-100 px-3.5 py-1.5 bg-stone-50/70 flex justify-between items-center gap-2 text-[11px] text-stone-500 font-mono tabular-nums">
+                                <div class="flex items-center gap-1.5 min-w-0">
                                     <span class="font-medium text-stone-600">Page {{ idx + 1 }} of {{ pages.length }}</span>
                                     <span v-if="getPageMeta(idx)?.hasFiveStar"
                                         class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200/80 text-[10px] font-semibold"
                                         title="Starred page">
                                         ★ Starred
-                                    </span>
-                                    <span v-for="(t, tIdx) in getPageTitles(idx)" :key="'title-' + tIdx"
-                                        class="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-semibold"
-                                        :title="'Heading Level ' + t.level">
-                                        H{{ t.level }}
-                                    </span>
-                                    <span v-for="kw in (getPageMeta(idx)?.keywords || [])" :key="kw"
-                                        class="inline-flex items-center px-1.5 py-0.5 rounded bg-stone-200/75 text-stone-700 text-[10px] font-medium">
-                                        #{{ kw }}
                                     </span>
                                 </div>
                                 <span class="text-stone-500 shrink-0">{{ getPageRightMeta(idx) }}</span>
@@ -956,200 +939,32 @@ export default {
             <!-- Mobile Overlay Drawer Backdrop -->
             <div v-if="showSidePanel && isMobileSidePanelOpen" @click="isMobileSidePanelOpen = false" class="fixed inset-0 z-30 bg-black/30 md:hidden"></div>
 
-            <!-- Right Pane: Notebook Outline, OCR Transcript & Summaries -->
+            <!-- Right Pane: Real OCR Transcript & Summaries -->
             <div v-if="showSidePanel" :class="isMobileSidePanelOpen ? 'translate-y-0' : 'translate-y-full md:translate-y-0'"
                 class="fixed md:static inset-x-0 bottom-0 z-40 md:z-10 h-[65vh] md:h-full w-full md:w-80 lg:w-96 border-t md:border-t-0 md:border-l border-stone-200/80 bg-white flex flex-col shadow-2xl md:shadow-none transition-transform duration-200 ease-in-out flex-shrink-0 rounded-t-2xl md:rounded-none">
 
                 <!-- Segmented Tab Selector -->
-                <div class="p-2 border-b border-stone-200/80 grid gap-1 bg-stone-100/70"
-                    :class="fileCategory === 'note' ? 'grid-cols-3' : 'grid-cols-2'">
-                    <button v-if="fileCategory === 'note'" @click="activeRightTab = 'outline'" type="button"
-                        :class="activeRightTab === 'outline'
-                            ? 'bg-white text-slate-900 shadow-sm font-semibold'
-                            : 'text-stone-600 hover:text-slate-900 font-medium'"
-                        class="py-1.5 px-2 rounded-lg text-xs transition-all flex items-center justify-center gap-1">
-                        <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h10M4 18h14"></path>
-                        </svg>
-                        <span>Outline</span>
-                    </button>
+                <div class="p-2 border-b border-stone-200/80 grid grid-cols-2 gap-1 bg-stone-100/70">
                     <button @click="activeRightTab = 'transcription'" type="button"
                         :class="activeRightTab === 'transcription'
                             ? 'bg-white text-slate-900 shadow-sm font-semibold'
                             : 'text-stone-600 hover:text-slate-900 font-medium'"
-                        class="py-1.5 px-2 rounded-lg text-xs transition-all flex items-center justify-center gap-1">
-                        <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        class="py-1.5 px-2 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                         </svg>
-                        <span>{{ fileCategory === 'note' ? 'Transcript' : 'OCR Transcript' }}</span>
+                        <span>OCR Transcript</span>
                     </button>
                     <button @click="activeRightTab = 'insights'" type="button"
                         :class="activeRightTab === 'insights'
                             ? 'bg-white text-slate-900 shadow-sm font-semibold'
                             : 'text-stone-600 hover:text-slate-900 font-medium'"
-                        class="py-1.5 px-2 rounded-lg text-xs transition-all flex items-center justify-center gap-1">
-                        <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        class="py-1.5 px-2 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path>
                         </svg>
                         <span>Summaries</span>
                     </button>
-                </div>
-
-                <!-- Tab 0: Notebook Outline & Metadata -->
-                <div v-if="activeRightTab === 'outline'" class="p-4 flex-1 overflow-y-auto space-y-5">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-2 min-w-0">
-                            <span class="text-[11px] font-bold text-stone-500 uppercase tracking-wider shrink-0">Notebook Outline</span>
-                            <span v-if="noteMetadata?.equipment"
-                                class="px-1.5 py-0.5 rounded bg-stone-100 text-[10px] font-mono font-semibold text-stone-600 shrink-0"
-                                title="Supernote Device">
-                                {{ noteMetadata.equipment }}
-                            </span>
-                        </div>
-                        <button @click="isMobileSidePanelOpen = false" type="button" class="md:hidden text-xs text-stone-500 hover:text-slate-700">Done</button>
-                    </div>
-
-                    <!-- Keywords Section -->
-                    <div v-if="keywordEntries.length > 0" class="space-y-2">
-                        <div class="flex items-center justify-between">
-                            <span class="text-[11px] font-bold text-stone-500 uppercase tracking-wider">Keywords</span>
-                            <span class="px-1.5 py-0.5 rounded bg-stone-100 text-[10px] font-mono text-stone-600 tabular-nums">
-                                {{ keywordEntries.length }}
-                            </span>
-                        </div>
-                        <div class="space-y-1.5">
-                            <div v-for="entry in keywordEntries" :key="entry.keyword"
-                                class="px-3 py-2 bg-stone-50/80 rounded-xl border border-stone-200/80 flex flex-wrap items-center justify-between gap-2">
-                                <span class="text-xs font-mono font-semibold text-slate-800">#{{ entry.keyword }}</span>
-                                <div class="flex flex-wrap items-center gap-1">
-                                    <button v-for="pIdx in entry.pageIndices" :key="entry.keyword + '-' + pIdx"
-                                        type="button"
-                                        @click="jumpFromOutline(pIdx)"
-                                        :class="activePageIndex === pIdx
-                                            ? 'bg-slate-900 text-white'
-                                            : 'bg-white hover:bg-stone-200/70 text-stone-700 border border-stone-200/90'"
-                                        class="px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold tabular-nums transition-colors">
-                                        Page {{ pIdx + 1 }}
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Headings / Titles Section -->
-                    <div v-if="noteTitles.length > 0" class="space-y-2">
-                        <div class="flex items-center justify-between">
-                            <span class="text-[11px] font-bold text-stone-500 uppercase tracking-wider">Headings</span>
-                            <span class="px-1.5 py-0.5 rounded bg-stone-100 text-[10px] font-mono text-stone-600 tabular-nums">
-                                {{ noteTitles.length }}
-                            </span>
-                        </div>
-                        <div class="space-y-1.5">
-                            <button v-for="(t, tIdx) in noteTitles" :key="'heading-' + tIdx"
-                                type="button"
-                                @click="jumpFromOutline(t.pageIndex)"
-                                :class="activePageIndex === t.pageIndex
-                                    ? 'border-slate-900 bg-stone-50'
-                                    : 'border-stone-200/80 bg-white hover:bg-stone-50'"
-                                class="w-full px-3 py-2 rounded-xl border flex items-center justify-between text-left transition-colors">
-                                <div class="flex items-center gap-2" :style="{ paddingLeft: Math.max(0, (t.level - 1) * 10) + 'px' }">
-                                    <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-mono font-bold">
-                                        H{{ t.level }}
-                                    </span>
-                                    <span class="text-xs font-medium text-slate-800">Heading Level {{ t.level }}</span>
-                                </div>
-                                <span class="text-[11px] font-mono font-semibold text-stone-500 tabular-nums">
-                                    Page {{ t.pageIndex + 1 }} →
-                                </span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Outgoing Links Section -->
-                    <div v-if="noteLinks.length > 0" class="space-y-2">
-                        <div class="flex items-center justify-between">
-                            <span class="text-[11px] font-bold text-stone-500 uppercase tracking-wider">Links</span>
-                            <span class="px-1.5 py-0.5 rounded bg-stone-100 text-[10px] font-mono text-stone-600 tabular-nums">
-                                {{ noteLinks.length }}
-                            </span>
-                        </div>
-                        <div class="space-y-1.5">
-                            <button v-for="(link, lIdx) in noteLinks" :key="'link-' + lIdx"
-                                type="button"
-                                @click="handleNoteLinkClick(link)"
-                                class="w-full px-3 py-2 rounded-xl border border-stone-200/80 bg-white hover:bg-stone-50 flex items-center justify-between gap-2 text-left transition-colors">
-                                <div class="min-w-0 flex items-center gap-2">
-                                    <span class="px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 text-[10px] font-mono font-semibold uppercase shrink-0">
-                                        {{ link.linkType }}
-                                    </span>
-                                    <span class="text-xs text-slate-800 font-mono truncate">
-                                        <template v-if="link.linkType === 'page' && typeof link.targetPageIndex === 'number'">
-                                            Page {{ link.targetPageIndex + 1 }}
-                                        </template>
-                                        <template v-else-if="link.target">
-                                            {{ link.target.split('/').pop() || link.target }}
-                                        </template>
-                                        <template v-else>
-                                            Linked item
-                                        </template>
-                                    </span>
-                                </div>
-                                <span class="text-[10px] font-mono text-stone-500 shrink-0 tabular-nums">
-                                    from p.{{ link.pageIndex + 1 }} →
-                                </span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Pages Index Section -->
-                    <div v-if="notePages.length > 0" class="space-y-2">
-                        <div class="flex items-center justify-between">
-                            <span class="text-[11px] font-bold text-stone-500 uppercase tracking-wider">Pages</span>
-                            <span class="px-1.5 py-0.5 rounded bg-stone-100 text-[10px] font-mono text-stone-600 tabular-nums">
-                                {{ notePages.length }}
-                            </span>
-                        </div>
-                        <div class="space-y-2">
-                            <button v-for="p in notePages" :key="p.pageId || p.pageIndex"
-                                type="button"
-                                @click="jumpFromOutline(p.pageIndex)"
-                                :class="activePageIndex === p.pageIndex
-                                    ? 'border-slate-900 ring-1 ring-slate-900/15 bg-stone-50/70'
-                                    : 'border-stone-200/80 bg-white hover:bg-stone-50/60'"
-                                class="w-full p-3 rounded-xl border text-left transition-all space-y-1.5">
-                                <div class="flex items-center justify-between gap-2">
-                                    <div class="flex items-center gap-1.5 min-w-0">
-                                        <span :class="activePageIndex === p.pageIndex
-                                            ? 'bg-slate-900 text-white'
-                                            : 'bg-stone-200/80 text-stone-700'"
-                                            class="px-2 py-0.5 rounded-md text-[11px] font-bold font-mono transition-colors tabular-nums shrink-0">
-                                            Page {{ p.pageIndex + 1 }}
-                                        </span>
-                                        <span v-if="p.date" class="text-[11px] text-stone-500 font-mono tabular-nums truncate">
-                                            {{ p.date }}
-                                        </span>
-                                        <span v-if="p.hasFiveStar" class="text-xs text-amber-600 font-bold" title="Starred page">★</span>
-                                        <span v-if="p.isBlank" class="px-1.5 py-0.5 rounded bg-stone-100 text-stone-500 text-[10px] font-mono">
-                                            Blank
-                                        </span>
-                                    </div>
-                                    <span class="text-[10px] font-mono text-stone-500 shrink-0">
-                                        {{ formatPageStyle(p.style) || (activePageIndex === p.pageIndex ? 'Viewing' : 'Jump →') }}
-                                    </span>
-                                </div>
-                                <div v-if="p.keywords && p.keywords.length > 0" class="flex flex-wrap gap-1 pt-0.5">
-                                    <span v-for="kw in p.keywords" :key="p.pageIndex + '-' + kw"
-                                        class="px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 text-[10px] font-mono">
-                                        #{{ kw }}
-                                    </span>
-                                </div>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div v-if="!noteMetadata && !isLoadingTranscript" class="bg-stone-50/80 p-5 rounded-xl border border-stone-200/70 text-center text-xs text-stone-500 leading-relaxed">
-                        No structural metadata available for this notebook.
-                    </div>
                 </div>
 
                 <!-- Tab 1: Real OCR Transcript -->
@@ -1227,23 +1042,121 @@ export default {
                     </div>
                 </div>
 
-                <!-- Tab 2: Real Summaries -->
-                <div v-if="activeRightTab === 'insights'" class="p-4 flex-1 overflow-y-auto space-y-3">
-                    <div class="flex items-center justify-between">
-                        <h4 class="text-[11px] font-bold text-stone-500 uppercase tracking-wider">Notebook Summaries</h4>
-                        <button @click="isMobileSidePanelOpen = false" type="button" class="md:hidden text-xs text-stone-500 hover:text-slate-700">Done</button>
-                    </div>
-
-                    <div v-if="realSummaries.length > 0" class="space-y-3">
-                        <div v-for="s in realSummaries" :key="s.id"
-                            class="p-3.5 bg-stone-50 rounded-xl border border-stone-200/80 text-xs text-slate-800 leading-relaxed whitespace-pre-wrap">
-                            <p v-if="s.title" class="font-bold text-slate-900 mb-1.5">{{ s.title }}</p>
-                            {{ formatContent(s.content || s.summary) }}
+                <!-- Tab 2: Real Summaries & Notebook Bookmarks -->
+                <div v-if="activeRightTab === 'insights'" class="p-4 flex-1 overflow-y-auto space-y-5">
+                    <!-- Keywords Section (only when present) -->
+                    <div v-if="keywordEntries.length > 0" class="space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[11px] font-bold text-stone-500 uppercase tracking-wider">Keywords</span>
+                            <div class="flex items-center gap-2">
+                                <span class="px-1.5 py-0.5 rounded bg-stone-100 text-[10px] font-mono text-stone-600 tabular-nums">
+                                    {{ keywordEntries.length }}
+                                </span>
+                                <button @click="isMobileSidePanelOpen = false" type="button" class="md:hidden text-xs text-stone-500 hover:text-slate-700">Done</button>
+                            </div>
+                        </div>
+                        <div class="space-y-1.5">
+                            <div v-for="entry in keywordEntries" :key="entry.keyword"
+                                class="px-3 py-2 bg-stone-50/80 rounded-xl border border-stone-200/80 flex flex-wrap items-center justify-between gap-2">
+                                <span class="text-xs font-mono font-semibold text-slate-800">#{{ entry.keyword }}</span>
+                                <div class="flex flex-wrap items-center gap-1">
+                                    <button v-for="pIdx in entry.pageIndices" :key="entry.keyword + '-' + pIdx"
+                                        type="button"
+                                        @click="jumpFromOutline(pIdx)"
+                                        :class="activePageIndex === pIdx
+                                            ? 'bg-slate-900 text-white'
+                                            : 'bg-white hover:bg-stone-200/70 text-stone-700 border border-stone-200/90'"
+                                        class="px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold tabular-nums transition-colors">
+                                        Page {{ pIdx + 1 }}
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                    <div v-else class="bg-stone-50/80 p-5 rounded-xl border border-stone-200/70 text-center text-xs text-stone-500 leading-relaxed">
-                        No summaries generated yet for this notebook.
+                    <!-- Headings / Titles Section (only when present) -->
+                    <div v-if="noteTitles.length > 0" class="space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[11px] font-bold text-stone-500 uppercase tracking-wider">Headings</span>
+                            <span class="px-1.5 py-0.5 rounded bg-stone-100 text-[10px] font-mono text-stone-600 tabular-nums">
+                                {{ noteTitles.length }}
+                            </span>
+                        </div>
+                        <div class="space-y-1.5">
+                            <button v-for="(t, tIdx) in noteTitles" :key="'heading-' + tIdx"
+                                type="button"
+                                @click="jumpFromOutline(t.pageIndex)"
+                                :class="activePageIndex === t.pageIndex
+                                    ? 'border-slate-900 bg-stone-50'
+                                    : 'border-stone-200/80 bg-white hover:bg-stone-50'"
+                                class="w-full px-3 py-2 rounded-xl border flex items-center justify-between text-left transition-colors">
+                                <div class="flex items-center gap-2" :style="{ paddingLeft: Math.max(0, (t.level - 1) * 10) + 'px' }">
+                                    <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-mono font-bold">
+                                        H{{ t.level }}
+                                    </span>
+                                    <span class="text-xs font-medium text-slate-800">Heading Level {{ t.level }}</span>
+                                </div>
+                                <span class="text-[11px] font-mono font-semibold text-stone-500 tabular-nums">
+                                    Page {{ t.pageIndex + 1 }} →
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Outgoing Links Section (only when present) -->
+                    <div v-if="noteLinks.length > 0" class="space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[11px] font-bold text-stone-500 uppercase tracking-wider">Links</span>
+                            <span class="px-1.5 py-0.5 rounded bg-stone-100 text-[10px] font-mono text-stone-600 tabular-nums">
+                                {{ noteLinks.length }}
+                            </span>
+                        </div>
+                        <div class="space-y-1.5">
+                            <button v-for="(link, lIdx) in noteLinks" :key="'link-' + lIdx"
+                                type="button"
+                                @click="handleNoteLinkClick(link)"
+                                class="w-full px-3 py-2 rounded-xl border border-stone-200/80 bg-white hover:bg-stone-50 flex items-center justify-between gap-2 text-left transition-colors">
+                                <div class="min-w-0 flex items-center gap-2">
+                                    <span class="px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 text-[10px] font-mono font-semibold uppercase shrink-0">
+                                        {{ link.linkType }}
+                                    </span>
+                                    <span class="text-xs text-slate-800 font-mono truncate">
+                                        <template v-if="link.linkType === 'page' && typeof link.targetPageIndex === 'number'">
+                                            Page {{ link.targetPageIndex + 1 }}
+                                        </template>
+                                        <template v-else-if="link.target">
+                                            {{ link.target.split('/').pop() || link.target }}
+                                        </template>
+                                        <template v-else>
+                                            Linked item
+                                        </template>
+                                    </span>
+                                </div>
+                                <span class="text-[10px] font-mono text-stone-500 shrink-0 tabular-nums">
+                                    from p.{{ link.pageIndex + 1 }} →
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- AI Summaries Section -->
+                    <div class="space-y-3">
+                        <div class="flex items-center justify-between">
+                            <h4 class="text-[11px] font-bold text-stone-500 uppercase tracking-wider">Notebook Summaries</h4>
+                            <button v-if="keywordEntries.length === 0" @click="isMobileSidePanelOpen = false" type="button" class="md:hidden text-xs text-stone-500 hover:text-slate-700">Done</button>
+                        </div>
+
+                        <div v-if="realSummaries.length > 0" class="space-y-3">
+                            <div v-for="s in realSummaries" :key="s.id"
+                                class="p-3.5 bg-stone-50 rounded-xl border border-stone-200/80 text-xs text-slate-800 leading-relaxed whitespace-pre-wrap">
+                                <p v-if="s.title" class="font-bold text-slate-900 mb-1.5">{{ s.title }}</p>
+                                {{ formatContent(s.content || s.summary) }}
+                            </div>
+                        </div>
+
+                        <div v-else class="bg-stone-50/80 p-5 rounded-xl border border-stone-200/70 text-center text-xs text-stone-500 leading-relaxed">
+                            No summaries generated yet for this notebook.
+                        </div>
                     </div>
                 </div>
             </div>
