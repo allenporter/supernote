@@ -69,7 +69,7 @@
 
                     <!-- Right Utilities -->
                     <div v-if="isLoggedIn" class="flex items-center gap-1 sm:gap-2 shrink-0">
-                        <button @click="showSearchModal = true" type="button"
+                        <button @click="openSearchWithQuery('')" type="button"
                             aria-label="Global Search"
                             :title="'Global Search (' + searchShortcutLabel + ')'"
                             class="flex items-center gap-2 p-2 sm:px-3 sm:py-1.5 bg-white hover:bg-stone-50 text-stone-600 hover:text-slate-900 rounded-lg text-xs font-medium border border-stone-200/90 shadow-sm transition-all">
@@ -381,7 +381,8 @@
                         <file-viewer :file="selectedFile" :initial-page="selectedPageIndex"
                             :page-jump-seq="selectedPageJumpSeq" @close="closeViewer"
                             @page-change="handleViewerPageChange"
-                            @open-file="handleSearchSelectFile"></file-viewer>
+                            @open-file="handleSearchSelectFile"
+                            @search="openSearchWithQuery"></file-viewer>
                     </div>
 
                     <!-- Hidden Upload Input -->
@@ -457,7 +458,8 @@
             </template>
 
             <!-- Global Search Modal -->
-            <search-modal v-if="isLoggedIn && showSearchModal" @close="showSearchModal = false"
+            <search-modal v-if="isLoggedIn && showSearchModal" :initial-query="searchInitialQuery"
+                @close="closeSearchModal"
                 @select-file="handleSearchSelectFile" @select-task="handleSearchSelectTask"></search-modal>
 
             <!-- System Panel -->

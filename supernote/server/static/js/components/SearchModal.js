@@ -1,11 +1,17 @@
-import { ref, nextTick, onMounted, onUnmounted } from 'vue';
+import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue';
 import { searchFiles, searchSemantic } from '../api/client.js';
 import { fetchTasks } from '../api/schedule.js';
 
 export default {
+    props: {
+        initialQuery: {
+            type: String,
+            default: ''
+        }
+    },
     emits: ['close', 'select-file', 'select-task'],
     setup(props, { emit }) {
-        const query = ref('');
+        const query = ref(props.initialQuery || '');
         const isSearching = ref(false);
         const results = ref([]);
         const semanticResults = ref([]);
@@ -23,7 +29,68 @@ export default {
             }
         };
 
-        const handleSearch = () => {
+        const runSearchNow = async (trimmed, seq) => {
+            try {
+                const qLower = trimmed.toLowerCase();
+                const [fileMatches, vectorMatches, { tasks: allTasks }] = await Promise.all([
+                    searchFiles(trimmed).catch(() => []),
+                    searchSemantic(trimmed).catch(() => []),
+                    fetchTasks().catch(() => ({ tasks: [] }))
+                ]);
+                if (seq !== activeSearchSeq) return;
+
+                results.value = fileMatches.map(f => {
+                    const fileName = f.name || f.fileName || '';
+                    const isDir = f.tag === 'folder' || f.isDirectory;
+                    const ext = !isDir && fileName.includes('.')
+                        ? fileName.split('.').pop().toLowerCase()
+                        : null;
+                    return {
+                        id: f.id,
+                        name: fileName,
+                        path: f.path_display || f.parent_path || fileName,
+                        isDirectory: isDir,
+                        size: f.size,
+                        extension: ext
+                    };
+                });
+
+                semanticResults.value = vectorMatches.map((r, idx) => {
+                    const fileId = r.fileId ?? r.file_id;
+                    const fileName = r.fileName ?? r.file_name ?? `Notebook ${fileId}`;
+                    const pageIndex = typeof r.pageIndex === 'number'
+                        ? r.pageIndex
+                        : (typeof r.page_index === 'number' ? r.page_index : 0);
+                    const ext = fileName.includes('.')
+                        ? fileName.split('.').pop().toLowerCase()
+                        : 'note';
+                    return {
+                        key: r.pageId ?? r.page_id ?? `${fileId}-${pageIndex}-${idx}`,
+                        fileId: String(fileId),
+                        fileName,
+                        extension: ext,
+                        pageIndex,
+                        pageNumber: pageIndex + 1,
+                        score: typeof r.score === 'number' ? r.score : 0,
+                        textPreview: r.textPreview ?? r.text_preview ?? '',
+                        date: r.date || null
+                    };
+                });
+
+                taskResults.value = allTasks.filter(t =>
+                    t.title.toLowerCase().includes(qLower) || (t.detail && t.detail.toLowerCase().includes(qLower))
+                );
+            } catch (e) {
+                if (seq !== activeSearchSeq) return;
+                console.error("Search failed:", e);
+            } finally {
+                if (seq === activeSearchSeq) {
+                    isSearching.value = false;
+                }
+            }
+        };
+
+        const handleSearch = (immediate = false) => {
             if (searchTimeout) clearTimeout(searchTimeout);
             const trimmed = query.value.trim();
             if (!trimmed) {
@@ -37,67 +104,21 @@ export default {
 
             const seq = ++activeSearchSeq;
             isSearching.value = true;
-            searchTimeout = setTimeout(async () => {
-                try {
-                    const qLower = trimmed.toLowerCase();
-                    const [fileMatches, vectorMatches, { tasks: allTasks }] = await Promise.all([
-                        searchFiles(trimmed).catch(() => []),
-                        searchSemantic(trimmed).catch(() => []),
-                        fetchTasks().catch(() => ({ tasks: [] }))
-                    ]);
-                    if (seq !== activeSearchSeq) return;
-
-                    results.value = fileMatches.map(f => {
-                        const fileName = f.name || f.fileName || '';
-                        const isDir = f.tag === 'folder' || f.isDirectory;
-                        const ext = !isDir && fileName.includes('.')
-                            ? fileName.split('.').pop().toLowerCase()
-                            : null;
-                        return {
-                            id: f.id,
-                            name: fileName,
-                            path: f.path_display || f.parent_path || fileName,
-                            isDirectory: isDir,
-                            size: f.size,
-                            extension: ext
-                        };
-                    });
-
-                    semanticResults.value = vectorMatches.map((r, idx) => {
-                        const fileId = r.fileId ?? r.file_id;
-                        const fileName = r.fileName ?? r.file_name ?? `Notebook ${fileId}`;
-                        const pageIndex = typeof r.pageIndex === 'number'
-                            ? r.pageIndex
-                            : (typeof r.page_index === 'number' ? r.page_index : 0);
-                        const ext = fileName.includes('.')
-                            ? fileName.split('.').pop().toLowerCase()
-                            : 'note';
-                        return {
-                            key: r.pageId ?? r.page_id ?? `${fileId}-${pageIndex}-${idx}`,
-                            fileId: String(fileId),
-                            fileName,
-                            extension: ext,
-                            pageIndex,
-                            pageNumber: pageIndex + 1,
-                            score: typeof r.score === 'number' ? r.score : 0,
-                            textPreview: r.textPreview ?? r.text_preview ?? '',
-                            date: r.date || null
-                        };
-                    });
-
-                    taskResults.value = allTasks.filter(t =>
-                        t.title.toLowerCase().includes(qLower) || (t.detail && t.detail.toLowerCase().includes(qLower))
-                    );
-                } catch (e) {
-                    if (seq !== activeSearchSeq) return;
-                    console.error("Search failed:", e);
-                } finally {
-                    if (seq === activeSearchSeq) {
-                        isSearching.value = false;
-                    }
-                }
-            }, 300);
+            if (immediate === true) {
+                runSearchNow(trimmed, seq);
+            } else {
+                searchTimeout = setTimeout(() => {
+                    runSearchNow(trimmed, seq);
+                }, 300);
+            }
         };
+
+        watch(() => props.initialQuery, (newVal) => {
+            if (typeof newVal === 'string' && newVal !== query.value) {
+                query.value = newVal;
+                handleSearch(true);
+            }
+        });
 
         const handleSelect = (item) => {
             emit('select-file', item);
@@ -111,8 +132,13 @@ export default {
 
         onMounted(() => {
             window.addEventListener('keydown', handleKeydown);
+            if (query.value.trim()) {
+                handleSearch(true);
+            }
             nextTick(() => {
-                if (searchInput.value) searchInput.value.focus();
+                if (searchInput.value) {
+                    searchInput.value.focus();
+                }
             });
         });
 

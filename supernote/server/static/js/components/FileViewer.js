@@ -1,5 +1,5 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
-import { convertNoteToPng, fetchTranscript, fetchSummaries, fetchNoteMetadata, fetchAiStatus, fetchDownloadUrl, downloadFile } from '../api/client.js';
+import { convertNoteToPng, fetchTranscript, fetchSummaries, fetchNoteMetadata, fetchAiStatus, fetchDownloadUrl, downloadFile, searchFiles } from '../api/client.js';
 import { showToast } from '../composables/useToast.js';
 import { formatSize } from '../utils/format.js';
 
@@ -27,7 +27,7 @@ const PAGE_STYLE_LABELS = {
 export default {
     name: 'FileViewer',
     props: ['file', 'initialPage', 'pageJumpSeq'],
-    emits: ['close', 'page-change', 'open-file'],
+    emits: ['close', 'page-change', 'open-file', 'search'],
     setup(props, { emit }) {
         const pages = ref([]);
         const previewUrl = ref(null);
@@ -154,53 +154,150 @@ export default {
             return parts.length > 0 ? parts.join(' · ') : 'Supernote Canvas';
         };
 
-        const keywordEntries = computed(() => {
-            const kwMap = noteMetadata.value?.keywords;
-            if (!kwMap || typeof kwMap !== 'object') return [];
-            return Object.entries(kwMap).map(([keyword, pageIndices]) => ({
-                keyword,
-                pageIndices: Array.isArray(pageIndices) ? pageIndices : []
-            }));
+        const linksByPageIndex = computed(() => {
+            const map = new Map();
+            const list = noteMetadata.value?.links;
+            if (Array.isArray(list)) {
+                for (const lk of list) {
+                    if (typeof lk.pageIndex === 'number') {
+                        const arr = map.get(lk.pageIndex) || [];
+                        arr.push(lk);
+                        map.set(lk.pageIndex, arr);
+                    }
+                }
+            }
+            return map;
         });
 
-        const noteTitles = computed(() => {
-            return Array.isArray(noteMetadata.value?.titles) ? noteMetadata.value.titles : [];
-        });
-
-        const noteLinks = computed(() => {
-            return Array.isArray(noteMetadata.value?.links) ? noteMetadata.value.links : [];
-        });
-
-        const hasNoteBookmarks = computed(() => {
-            return (
-                keywordEntries.value.length > 0 ||
-                noteTitles.value.length > 0 ||
-                noteLinks.value.length > 0
-            );
-        });
-
-        const jumpFromOutline = (pageIndex) => {
-            scrollToCanvasPage(pageIndex);
-            isMobileSidePanelOpen.value = false;
+        const getPageKeywords = (pageIdx) => {
+            const kws = getPageMeta(pageIdx)?.keywords;
+            return Array.isArray(kws) ? kws : [];
         };
 
-        const handleNoteLinkClick = (link) => {
+        const getPageLinks = (pageIdx) => {
+            return linksByPageIndex.value.get(pageIdx) || [];
+        };
+
+        const displayTranscriptPages = computed(() => {
+            const merged = new Map();
+            for (const item of transcriptPages.value) {
+                if (typeof item.pageIndex === 'number') {
+                    merged.set(item.pageIndex, {
+                        pageIndex: item.pageIndex,
+                        pageId: item.pageId,
+                        text: item.text ?? '',
+                        date: item.date || getPageMeta(item.pageIndex)?.date || null,
+                        hasTranscript: true
+                    });
+                }
+            }
+            const metaPages = noteMetadata.value?.pages;
+            if (Array.isArray(metaPages)) {
+                for (const mp of metaPages) {
+                    const idx = mp.pageIndex;
+                    if (typeof idx !== 'number') continue;
+                    const hasKws = Array.isArray(mp.keywords) && mp.keywords.length > 0;
+                    const hasLinks = (linksByPageIndex.value.get(idx)?.length || 0) > 0;
+                    if (!merged.has(idx) && (hasKws || hasLinks)) {
+                        merged.set(idx, {
+                            pageIndex: idx,
+                            pageId: mp.pageId || `page-${idx}`,
+                            text: '',
+                            date: mp.date || null,
+                            hasTranscript: false
+                        });
+                    }
+                }
+            }
+            return Array.from(merged.values()).sort((a, b) => a.pageIndex - b.pageIndex);
+        });
+
+        const formatLinkLabel = (link) => {
+            if (!link) return 'Link';
+            const isExternalFile = Boolean(
+                (link.targetFileId && String(link.targetFileId) !== String(props.file?.id)) ||
+                link.linkType === 'file'
+            );
+            const targetBaseName = link.target
+                ? (link.target.split('/').pop() || link.target)
+                : null;
+            if (link.linkType === 'web') {
+                return link.target ? link.target.replace(/^https?:\/\//i, '') : 'Web link';
+            }
+            if (isExternalFile) {
+                const name = targetBaseName || 'Notebook';
+                if (typeof link.targetPageIndex === 'number') {
+                    return `${name} · p.${link.targetPageIndex + 1}`;
+                }
+                return name;
+            }
+            if (typeof link.targetPageIndex === 'number') {
+                return `Page ${link.targetPageIndex + 1}`;
+            }
+            return targetBaseName || 'Linked notebook';
+        };
+
+        const handleKeywordClick = (keyword) => {
+            const trimmed = String(keyword || '').trim();
+            if (!trimmed) return;
+            isMobileSidePanelOpen.value = false;
+            emit('search', trimmed);
+        };
+
+        const handleNoteLinkClick = async (link) => {
             if (!link) return;
             if (link.linkType === 'web' && link.target) {
                 window.open(link.target, '_blank', 'noopener,noreferrer');
                 return;
             }
+            const targetBaseName = link.target
+                ? (link.target.split('/').pop() || '').trim()
+                : '';
             if (link.targetFileId && String(link.targetFileId) !== String(props.file?.id)) {
                 isMobileSidePanelOpen.value = false;
+                const ext = targetBaseName.includes('.')
+                    ? targetBaseName.split('.').pop().toLowerCase()
+                    : 'note';
                 emit('open-file', {
                     id: String(link.targetFileId),
+                    name: targetBaseName || undefined,
+                    extension: ext,
                     isDirectory: false,
                     pageIndex: typeof link.targetPageIndex === 'number' ? link.targetPageIndex : 0
                 });
                 return;
             }
+            if (link.linkType === 'file' && targetBaseName) {
+                isMobileSidePanelOpen.value = false;
+                try {
+                    const matches = await searchFiles(targetBaseName);
+                    const exact = Array.isArray(matches)
+                        ? (matches.find(m => (m.name || m.fileName) === targetBaseName) || matches[0])
+                        : null;
+                    if (exact && exact.id) {
+                        const fileName = exact.name || exact.fileName || targetBaseName;
+                        const ext = fileName.includes('.')
+                            ? fileName.split('.').pop().toLowerCase()
+                            : 'note';
+                        emit('open-file', {
+                            id: String(exact.id),
+                            name: fileName,
+                            extension: ext,
+                            isDirectory: false,
+                            pageIndex: typeof link.targetPageIndex === 'number' ? link.targetPageIndex : 0
+                        });
+                        return;
+                    }
+                } catch {
+                    // Fall back to opening search modal with the target filename
+                }
+                emit('search', targetBaseName);
+                return;
+            }
             if (typeof link.targetPageIndex === 'number') {
-                jumpFromOutline(link.targetPageIndex);
+                scrollToCanvasPage(link.targetPageIndex);
+                scrollTranscriptToPage(link.targetPageIndex);
+                isMobileSidePanelOpen.value = false;
             }
         };
 
@@ -503,8 +600,8 @@ export default {
                 }
                 if (
                     category === 'note' &&
-                    transcriptPages.value.length === 0 &&
-                    (hasNoteBookmarks.value || realSummaries.value.length > 0)
+                    displayTranscriptPages.value.length === 0 &&
+                    realSummaries.value.length > 0
                 ) {
                     activeRightTab.value = 'insights';
                 } else {
@@ -655,15 +752,15 @@ export default {
             activeRightTab,
             isMobileSidePanelOpen,
             transcriptPages,
+            displayTranscriptPages,
             noteMetadata,
             getPageMeta,
             formatPageStyle,
             getPageRightMeta,
-            keywordEntries,
-            noteTitles,
-            noteLinks,
-            hasNoteBookmarks,
-            jumpFromOutline,
+            getPageKeywords,
+            getPageLinks,
+            formatLinkLabel,
+            handleKeywordClick,
             handleNoteLinkClick,
             activePageIndex,
             leftScrollPane,
@@ -989,8 +1086,8 @@ export default {
                         Fetching OCR transcript...
                     </div>
 
-                    <div v-else-if="transcriptPages.length > 0" class="space-y-3">
-                        <div v-for="pageItem in transcriptPages" :key="pageItem.pageId || pageItem.pageIndex"
+                    <div v-else-if="displayTranscriptPages.length > 0" class="space-y-3">
+                        <div v-for="pageItem in displayTranscriptPages" :key="pageItem.pageId || pageItem.pageIndex"
                             :data-transcript-page="pageItem.pageIndex"
                             :class="activePageIndex === pageItem.pageIndex
                                 ? 'border-slate-900 ring-1 ring-slate-900/15 bg-stone-50/70'
@@ -1025,10 +1122,40 @@ export default {
                                     </span>
                                 </div>
                             </div>
-                            <div class="p-3.5 font-mono text-xs text-slate-800 whitespace-pre-wrap leading-relaxed select-text">
+                            <!-- Per-Page Keywords & Outgoing Links -->
+                            <div v-if="getPageKeywords(pageItem.pageIndex).length > 0 || getPageLinks(pageItem.pageIndex).length > 0"
+                                class="px-3.5 py-2 bg-stone-50/50 border-b border-stone-100 flex flex-wrap items-center gap-1.5">
+                                <button v-for="kw in getPageKeywords(pageItem.pageIndex)" :key="'kw-' + pageItem.pageIndex + '-' + kw"
+                                    type="button"
+                                    @click.stop="handleKeywordClick(kw)"
+                                    :title="'Search notebooks for #' + kw"
+                                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 hover:bg-amber-100/90 text-amber-900 border border-amber-200/80 text-[11px] font-mono font-semibold transition-colors cursor-pointer">
+                                    <span>#{{ kw }}</span>
+                                </button>
+                                <button v-for="(link, lIdx) in getPageLinks(pageItem.pageIndex)" :key="'lk-' + pageItem.pageIndex + '-' + lIdx"
+                                    type="button"
+                                    @click.stop="handleNoteLinkClick(link)"
+                                    :title="link.target || formatLinkLabel(link)"
+                                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-50 hover:bg-sky-100/90 text-sky-900 border border-sky-200/80 text-[11px] font-mono font-semibold transition-colors cursor-pointer">
+                                    <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
+                                    </svg>
+                                    <span class="truncate max-w-[180px]">{{ formatLinkLabel(link) }}</span>
+                                </button>
+                            </div>
+                            <div v-if="pageItem.hasTranscript" class="p-3.5 font-mono text-xs text-slate-800 whitespace-pre-wrap leading-relaxed select-text">
                                 <template v-if="pageItem.text">{{ formatContent(pageItem.text) }}</template>
                                 <span v-else class="italic text-stone-500 font-sans">No text recognized on this page.</span>
                             </div>
+                        </div>
+
+                        <div v-if="transcriptPages.length === 0" class="bg-stone-50/80 p-4 rounded-xl border border-stone-200/70 text-center text-xs text-stone-500 leading-relaxed">
+                            <template v-if="aiStatus && !aiStatus.ocrEnabled">
+                                OCR is not enabled on this server. Configure an AI provider to automatically transcribe handwritten pages.
+                            </template>
+                            <template v-else>
+                                No OCR transcript available for this notebook yet. Background processing may still be running.
+                            </template>
                         </div>
                     </div>
 
@@ -1042,121 +1169,23 @@ export default {
                     </div>
                 </div>
 
-                <!-- Tab 2: Real Summaries & Notebook Bookmarks -->
-                <div v-if="activeRightTab === 'insights'" class="p-4 flex-1 overflow-y-auto space-y-5">
-                    <!-- Keywords Section (only when present) -->
-                    <div v-if="keywordEntries.length > 0" class="space-y-2">
-                        <div class="flex items-center justify-between">
-                            <span class="text-[11px] font-bold text-stone-500 uppercase tracking-wider">Keywords</span>
-                            <div class="flex items-center gap-2">
-                                <span class="px-1.5 py-0.5 rounded bg-stone-100 text-[10px] font-mono text-stone-600 tabular-nums">
-                                    {{ keywordEntries.length }}
-                                </span>
-                                <button @click="isMobileSidePanelOpen = false" type="button" class="md:hidden text-xs text-stone-500 hover:text-slate-700">Done</button>
-                            </div>
-                        </div>
-                        <div class="space-y-1.5">
-                            <div v-for="entry in keywordEntries" :key="entry.keyword"
-                                class="px-3 py-2 bg-stone-50/80 rounded-xl border border-stone-200/80 flex flex-wrap items-center justify-between gap-2">
-                                <span class="text-xs font-mono font-semibold text-slate-800">#{{ entry.keyword }}</span>
-                                <div class="flex flex-wrap items-center gap-1">
-                                    <button v-for="pIdx in entry.pageIndices" :key="entry.keyword + '-' + pIdx"
-                                        type="button"
-                                        @click="jumpFromOutline(pIdx)"
-                                        :class="activePageIndex === pIdx
-                                            ? 'bg-slate-900 text-white'
-                                            : 'bg-white hover:bg-stone-200/70 text-stone-700 border border-stone-200/90'"
-                                        class="px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold tabular-nums transition-colors">
-                                        Page {{ pIdx + 1 }}
-                                    </button>
-                                </div>
-                            </div>
+                <!-- Tab 2: Real Summaries -->
+                <div v-if="activeRightTab === 'insights'" class="p-4 flex-1 overflow-y-auto space-y-3">
+                    <div class="flex items-center justify-between">
+                        <h4 class="text-[11px] font-bold text-stone-500 uppercase tracking-wider">Notebook Summaries</h4>
+                        <button @click="isMobileSidePanelOpen = false" type="button" class="md:hidden text-xs text-stone-500 hover:text-slate-700">Done</button>
+                    </div>
+
+                    <div v-if="realSummaries.length > 0" class="space-y-3">
+                        <div v-for="s in realSummaries" :key="s.id"
+                            class="p-3.5 bg-stone-50 rounded-xl border border-stone-200/80 text-xs text-slate-800 leading-relaxed whitespace-pre-wrap">
+                            <p v-if="s.title" class="font-bold text-slate-900 mb-1.5">{{ s.title }}</p>
+                            {{ formatContent(s.content || s.summary) }}
                         </div>
                     </div>
 
-                    <!-- Headings / Titles Section (only when present) -->
-                    <div v-if="noteTitles.length > 0" class="space-y-2">
-                        <div class="flex items-center justify-between">
-                            <span class="text-[11px] font-bold text-stone-500 uppercase tracking-wider">Headings</span>
-                            <span class="px-1.5 py-0.5 rounded bg-stone-100 text-[10px] font-mono text-stone-600 tabular-nums">
-                                {{ noteTitles.length }}
-                            </span>
-                        </div>
-                        <div class="space-y-1.5">
-                            <button v-for="(t, tIdx) in noteTitles" :key="'heading-' + tIdx"
-                                type="button"
-                                @click="jumpFromOutline(t.pageIndex)"
-                                :class="activePageIndex === t.pageIndex
-                                    ? 'border-slate-900 bg-stone-50'
-                                    : 'border-stone-200/80 bg-white hover:bg-stone-50'"
-                                class="w-full px-3 py-2 rounded-xl border flex items-center justify-between text-left transition-colors">
-                                <div class="flex items-center gap-2" :style="{ paddingLeft: Math.max(0, (t.level - 1) * 10) + 'px' }">
-                                    <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-mono font-bold">
-                                        H{{ t.level }}
-                                    </span>
-                                    <span class="text-xs font-medium text-slate-800">Heading Level {{ t.level }}</span>
-                                </div>
-                                <span class="text-[11px] font-mono font-semibold text-stone-500 tabular-nums">
-                                    Page {{ t.pageIndex + 1 }} →
-                                </span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Outgoing Links Section (only when present) -->
-                    <div v-if="noteLinks.length > 0" class="space-y-2">
-                        <div class="flex items-center justify-between">
-                            <span class="text-[11px] font-bold text-stone-500 uppercase tracking-wider">Links</span>
-                            <span class="px-1.5 py-0.5 rounded bg-stone-100 text-[10px] font-mono text-stone-600 tabular-nums">
-                                {{ noteLinks.length }}
-                            </span>
-                        </div>
-                        <div class="space-y-1.5">
-                            <button v-for="(link, lIdx) in noteLinks" :key="'link-' + lIdx"
-                                type="button"
-                                @click="handleNoteLinkClick(link)"
-                                class="w-full px-3 py-2 rounded-xl border border-stone-200/80 bg-white hover:bg-stone-50 flex items-center justify-between gap-2 text-left transition-colors">
-                                <div class="min-w-0 flex items-center gap-2">
-                                    <span class="px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 text-[10px] font-mono font-semibold uppercase shrink-0">
-                                        {{ link.linkType }}
-                                    </span>
-                                    <span class="text-xs text-slate-800 font-mono truncate">
-                                        <template v-if="link.linkType === 'page' && typeof link.targetPageIndex === 'number'">
-                                            Page {{ link.targetPageIndex + 1 }}
-                                        </template>
-                                        <template v-else-if="link.target">
-                                            {{ link.target.split('/').pop() || link.target }}
-                                        </template>
-                                        <template v-else>
-                                            Linked item
-                                        </template>
-                                    </span>
-                                </div>
-                                <span class="text-[10px] font-mono text-stone-500 shrink-0 tabular-nums">
-                                    from p.{{ link.pageIndex + 1 }} →
-                                </span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- AI Summaries Section -->
-                    <div class="space-y-3">
-                        <div class="flex items-center justify-between">
-                            <h4 class="text-[11px] font-bold text-stone-500 uppercase tracking-wider">Notebook Summaries</h4>
-                            <button v-if="keywordEntries.length === 0" @click="isMobileSidePanelOpen = false" type="button" class="md:hidden text-xs text-stone-500 hover:text-slate-700">Done</button>
-                        </div>
-
-                        <div v-if="realSummaries.length > 0" class="space-y-3">
-                            <div v-for="s in realSummaries" :key="s.id"
-                                class="p-3.5 bg-stone-50 rounded-xl border border-stone-200/80 text-xs text-slate-800 leading-relaxed whitespace-pre-wrap">
-                                <p v-if="s.title" class="font-bold text-slate-900 mb-1.5">{{ s.title }}</p>
-                                {{ formatContent(s.content || s.summary) }}
-                            </div>
-                        </div>
-
-                        <div v-else class="bg-stone-50/80 p-5 rounded-xl border border-stone-200/70 text-center text-xs text-stone-500 leading-relaxed">
-                            No summaries generated yet for this notebook.
-                        </div>
+                    <div v-else class="bg-stone-50/80 p-5 rounded-xl border border-stone-200/70 text-center text-xs text-stone-500 leading-relaxed">
+                        No summaries generated yet for this notebook.
                     </div>
                 </div>
             </div>

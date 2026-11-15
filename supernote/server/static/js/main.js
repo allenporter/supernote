@@ -192,6 +192,7 @@ createApp({
         // Navigation & Display State
         const activeTab = ref('files'); // 'files' | 'tasks'
         const showSearchModal = ref(false);
+        const searchInitialQuery = ref('');
         const searchShortcutLabel = typeof navigator !== 'undefined' &&
             /Mac|iPod|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '')
             ? '⌘K'
@@ -633,6 +634,16 @@ createApp({
             await loadDirectory(target.id);
         }
 
+        function openSearchWithQuery(initialQuery = '') {
+            searchInitialQuery.value = typeof initialQuery === 'string' ? initialQuery : '';
+            showSearchModal.value = true;
+        }
+
+        function closeSearchModal() {
+            showSearchModal.value = false;
+            searchInitialQuery.value = '';
+        }
+
         async function handleSearchSelectFile(item) {
             if (!item) return;
             showSystemPanel.value = false;
@@ -643,7 +654,21 @@ createApp({
             }
             activeTab.value = 'files';
             const existingFile = files.value.find(f => String(f.id) === String(item.id));
-            await openItem(existingFile ? { ...existingFile, pageIndex: item.pageIndex } : item);
+            if (existingFile) {
+                await openItem({ ...existingFile, pageIndex: item.pageIndex });
+                return;
+            }
+            if (!item.name || !item.extension) {
+                const targetPage = typeof item.pageIndex === 'number' ? item.pageIndex : null;
+                viewerOpenedFromHistory = true;
+                selectedPageIndex.value = targetPage;
+                if (targetPage !== null) {
+                    selectedPageJumpSeq.value++;
+                }
+                await restoreViewerState(String(item.id), ++activeSyncSeq);
+                return;
+            }
+            await openItem(item);
         }
 
         async function handleSearchSelectTask(task) {
@@ -855,7 +880,11 @@ createApp({
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
                 if (!isLoggedIn.value) return;
                 e.preventDefault();
-                showSearchModal.value = !showSearchModal.value;
+                if (showSearchModal.value) {
+                    closeSearchModal();
+                } else {
+                    openSearchWithQuery('');
+                }
                 return;
             }
             if (e.key === 'Escape') {
@@ -906,6 +935,9 @@ createApp({
             handleLogout,
             activeTab,
             showSearchModal,
+            searchInitialQuery,
+            openSearchWithQuery,
+            closeSearchModal,
             searchShortcutLabel,
             displayMode,
             sortBy,
