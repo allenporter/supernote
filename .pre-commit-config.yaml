@@ -30,7 +30,7 @@ repos:
         entry: tsc -p tsconfig.json --noEmit
         language: node
         additional_dependencies:
-          - typescript@5.9.3
+          - typescript@7.0.2
         files: '^(tsconfig\.json|supernote/server/static/js/.*\.(js|d\.ts))$'
         pass_filenames: false
   - repo: https://github.com/codespell-project/codespell
