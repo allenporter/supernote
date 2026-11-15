@@ -1,3 +1,4 @@
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { fetchFiles } from '../api/client.js';
 
 export default {
@@ -115,113 +116,132 @@ export default {
             </div>
         </div>
     `,
-    data() {
-        return {
-            folders: [],
-            currentBrowserDirId: '0',
-            breadcrumbs: [{ id: '0', name: 'Cloud Root' }],
-            targetDirId: '0',
-            isLoading: false
-        };
-    },
-    computed: {
-        excludedIdSet() {
-            return new Set((this.itemIds || []).map(id => String(id)));
-        },
-        availableFolders() {
-            return this.folders.filter(folder => !this.excludedIdSet.has(String(folder.id)));
-        },
-        currentFolderName() {
-            const last = this.breadcrumbs[this.breadcrumbs.length - 1];
+    setup(props, { emit }) {
+        const folders = ref([]);
+        const currentBrowserDirId = ref('0');
+        const breadcrumbs = ref([{ id: '0', name: 'Cloud Root' }]);
+        const targetDirId = ref('0');
+        const isLoading = ref(false);
+
+        const excludedIdSet = computed(() => (
+            new Set((props.itemIds || []).map(id => String(id)))
+        ));
+
+        const availableFolders = computed(() => (
+            folders.value.filter(folder => !excludedIdSet.value.has(String(folder.id)))
+        ));
+
+        const currentFolderName = computed(() => {
+            const last = breadcrumbs.value[breadcrumbs.value.length - 1];
             return last ? last.name : 'Cloud Root';
-        },
-        destinationPath() {
-            if (!this.targetDirId) return 'None selected';
-            const basePath = this.breadcrumbs.map(c => c.name).join(' / ');
-            if (String(this.targetDirId) === String(this.currentBrowserDirId)) {
+        });
+
+        const destinationPath = computed(() => {
+            if (!targetDirId.value) return 'None selected';
+            const basePath = breadcrumbs.value.map(c => c.name).join(' / ');
+            if (String(targetDirId.value) === String(currentBrowserDirId.value)) {
                 return basePath;
             }
-            const selectedSubfolder = this.availableFolders.find(
-                f => String(f.id) === String(this.targetDirId)
+            const selectedSubfolder = availableFolders.value.find(
+                f => String(f.id) === String(targetDirId.value)
             );
             if (selectedSubfolder) {
                 return `${basePath} / ${selectedSubfolder.name}`;
             }
-            if (String(this.targetDirId) === '0') {
+            if (String(targetDirId.value) === '0') {
                 return 'Cloud Root';
             }
             return basePath;
-        }
-    },
-    async mounted() {
-        this._handleKeydown = (e) => {
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                e.stopPropagation();
-                this.$emit('close');
-            }
-        };
-        window.addEventListener('keydown', this._handleKeydown);
-        await this.loadFolders('0');
-    },
-    unmounted() {
-        if (this._handleKeydown) {
-            window.removeEventListener('keydown', this._handleKeydown);
-        }
-    },
-    methods: {
-        isExcluded(id) {
-            return this.excludedIdSet.has(String(id));
-        },
-        async loadFolders(dirId = this.currentBrowserDirId) {
+        });
+
+        const isExcluded = (id) => excludedIdSet.value.has(String(id));
+
+        const loadFolders = async (dirId = currentBrowserDirId.value) => {
             const targetId = String(dirId || '0');
-            this.isLoading = true;
+            isLoading.value = true;
             try {
                 const files = await fetchFiles(targetId);
-                this.folders = files.filter(
-                    f => f.isDirectory && !this.isExcluded(f.id)
+                folders.value = files.filter(
+                    f => f.isDirectory && !isExcluded(f.id)
                 );
             } catch (e) {
                 console.error(e);
-                this.folders = [];
+                folders.value = [];
             } finally {
-                this.isLoading = false;
+                isLoading.value = false;
             }
-        },
-        selectTarget(id) {
+        };
+
+        const selectTarget = (id) => {
             if (id === null || id === undefined) return;
             const targetId = String(id);
-            if (this.isExcluded(targetId)) return;
-            this.targetDirId = targetId;
-        },
-        async enterFolder(folder) {
+            if (isExcluded(targetId)) return;
+            targetDirId.value = targetId;
+        };
+
+        const enterFolder = async (folder) => {
             if (!folder || folder.id === null || folder.id === undefined) return;
             const folderId = String(folder.id);
-            if (this.isExcluded(folderId)) return;
+            if (isExcluded(folderId)) return;
 
-            this.currentBrowserDirId = folderId;
-            this.targetDirId = folderId;
+            currentBrowserDirId.value = folderId;
+            targetDirId.value = folderId;
 
-            const existingIndex = this.breadcrumbs.findIndex(c => String(c.id) === folderId);
+            const existingIndex = breadcrumbs.value.findIndex(c => String(c.id) === folderId);
             if (existingIndex > -1) {
-                this.breadcrumbs = this.breadcrumbs.slice(0, existingIndex + 1);
+                breadcrumbs.value = breadcrumbs.value.slice(0, existingIndex + 1);
             } else {
-                this.breadcrumbs.push({ id: folderId, name: folder.name });
+                breadcrumbs.value.push({ id: folderId, name: folder.name });
             }
 
-            await this.loadFolders(folderId);
-        },
-        async navigateToBreadcrumb(index) {
-            if (index < 0 || index >= this.breadcrumbs.length) return;
-            this.breadcrumbs = this.breadcrumbs.slice(0, index + 1);
-            const target = this.breadcrumbs[this.breadcrumbs.length - 1];
-            this.currentBrowserDirId = String(target.id);
-            this.targetDirId = String(target.id);
-            await this.loadFolders(this.currentBrowserDirId);
-        },
-        confirmMove() {
-            if (!this.targetDirId || this.isExcluded(this.targetDirId)) return;
-            this.$emit('confirm', String(this.targetDirId));
-        }
+            await loadFolders(folderId);
+        };
+
+        const navigateToBreadcrumb = async (index) => {
+            if (index < 0 || index >= breadcrumbs.value.length) return;
+            breadcrumbs.value = breadcrumbs.value.slice(0, index + 1);
+            const target = breadcrumbs.value[breadcrumbs.value.length - 1];
+            currentBrowserDirId.value = String(target.id);
+            targetDirId.value = String(target.id);
+            await loadFolders(currentBrowserDirId.value);
+        };
+
+        const confirmMove = () => {
+            if (!targetDirId.value || isExcluded(targetDirId.value)) return;
+            emit('confirm', String(targetDirId.value));
+        };
+
+        const handleKeydown = (e) => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                emit('close');
+            }
+        };
+
+        onMounted(() => {
+            window.addEventListener('keydown', handleKeydown);
+            loadFolders('0');
+        });
+
+        onUnmounted(() => {
+            window.removeEventListener('keydown', handleKeydown);
+        });
+
+        return {
+            folders,
+            currentBrowserDirId,
+            breadcrumbs,
+            targetDirId,
+            isLoading,
+            availableFolders,
+            currentFolderName,
+            destinationPath,
+            loadFolders,
+            selectTarget,
+            enterFolder,
+            navigateToBreadcrumb,
+            confirmMove
+        };
     }
 };
