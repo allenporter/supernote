@@ -13,7 +13,10 @@ if [ ${#PYTEST_ARGS[@]} -eq 0 ]; then
 fi
 
 if command -v uv >/dev/null 2>&1; then
-  uv run pytest "${PYTEST_ARGS[@]}"
+  if [ ! -x ".venv/bin/pytest" ]; then
+    ./script/bootstrap
+  fi
+  uv run --no-sync pytest "${PYTEST_ARGS[@]}"
 else
   pytest "${PYTEST_ARGS[@]}"
 fi

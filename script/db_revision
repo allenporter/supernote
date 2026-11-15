@@ -20,7 +20,10 @@ MESSAGE="$1"
 shift
 
 if command -v uv >/dev/null 2>&1; then
-  exec uv run alembic -c supernote/alembic.ini revision --autogenerate -m "$MESSAGE" "$@"
+  if [ ! -d ".venv" ]; then
+    ./script/bootstrap
+  fi
+  exec uv run --no-sync alembic -c supernote/alembic.ini revision --autogenerate -m "$MESSAGE" "$@"
 else
   exec alembic -c supernote/alembic.ini revision --autogenerate -m "$MESSAGE" "$@"
 fi
