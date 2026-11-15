@@ -115,10 +115,8 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
                 "success": True,
                 "fileId": "10",
                 "equipment": "N5",
-                "width": 1920,
-                "height": 2560,
                 "totalPages": 1,
-                "keywords": [],
+                "keywords": {},
                 "titles": [],
                 "links": [],
                 "pages": [
@@ -126,10 +124,9 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
                         "pageIndex": 0,
                         "pageId": "P20261101120000abc",
                         "date": "2026-11-01",
-                        "style": "style_5mm_dots",
-                        "hasInk": True,
-                        "hasDrawables": True,
-                        "fiveStar": [],
+                        "style": "5mm_dots",
+                        "isBlank": False,
+                        "hasFiveStar": False,
                         "keywords": [],
                     }
                 ],
@@ -193,7 +190,7 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
     assert meta_vo.equipment == "N5"
     assert meta_vo.total_pages == 1
     assert len(meta_vo.pages) == 1
-    assert meta_vo.pages[0].has_ink is True
+    assert meta_vo.pages[0].is_blank is False
 
     assert recorded == [
         ("POST", "/api/extended/file/summary/list", {"fileId": "10"}),

@@ -8,7 +8,6 @@ from supernote.models.extended import (
     CreateApiKeyResponseVO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
-    NoteKeywordVO,
     NoteLinkVO,
     NotePageMetadataVO,
     NoteTitleVO,
@@ -300,6 +299,7 @@ def test_web_ai_status_model() -> None:
 
 def test_web_note_metadata_models() -> None:
     snowflake_id = 772252421643567298
+    target_snowflake_id = 772252421643567999
     req = WebNoteMetadataRequestDTO(file_id=snowflake_id)
     assert req.to_dict() == {"fileId": str(snowflake_id)}
     assert WebNoteMetadataRequestDTO.from_dict({"fileId": str(snowflake_id)}) == req
@@ -308,19 +308,16 @@ def test_web_note_metadata_models() -> None:
     vo = WebNoteMetadataVO(
         file_id=snowflake_id,
         equipment="N5",
-        width=1920,
-        height=2560,
         total_pages=2,
-        keywords=[NoteKeywordVO(page_number=0, text="Sprint")],
-        titles=[NoteTitleVO(page_number=0, level=1, style="1000254")],
+        keywords={"Sprint": [0, 1]},
+        titles=[NoteTitleVO(page_index=0, level=2)],
         links=[
             NoteLinkVO(
-                page_number=1,
-                link_type=0,
-                direction=0,
+                page_index=1,
+                link_type="page",
                 target="/Note/Target.note",
-                target_file_id="F_TARGET",
-                target_page_id="P_TARGET",
+                target_file_id=target_snowflake_id,
+                target_page_index=2,
             )
         ],
         pages=[
@@ -328,10 +325,9 @@ def test_web_note_metadata_models() -> None:
                 page_index=0,
                 page_id="P20261101120000abc",
                 date="2026-11-01",
-                style="style_5mm_dots",
-                has_ink=True,
-                has_drawables=True,
-                five_star=["10,20,30,40"],
+                style="5mm_dots",
+                is_blank=False,
+                has_five_star=True,
                 keywords=["Sprint"],
             )
         ],
@@ -343,19 +339,16 @@ def test_web_note_metadata_models() -> None:
         "errorMsg": None,
         "fileId": str(snowflake_id),
         "equipment": "N5",
-        "width": 1920,
-        "height": 2560,
         "totalPages": 2,
-        "keywords": [{"pageNumber": 0, "text": "Sprint"}],
-        "titles": [{"pageNumber": 0, "level": 1, "style": "1000254"}],
+        "keywords": {"Sprint": [0, 1]},
+        "titles": [{"pageIndex": 0, "level": 2}],
         "links": [
             {
-                "pageNumber": 1,
-                "linkType": 0,
-                "direction": 0,
+                "pageIndex": 1,
+                "linkType": "page",
                 "target": "/Note/Target.note",
-                "targetFileId": "F_TARGET",
-                "targetPageId": "P_TARGET",
+                "targetFileId": str(target_snowflake_id),
+                "targetPageIndex": 2,
             }
         ],
         "pages": [
@@ -363,10 +356,9 @@ def test_web_note_metadata_models() -> None:
                 "pageIndex": 0,
                 "pageId": "P20261101120000abc",
                 "date": "2026-11-01",
-                "style": "style_5mm_dots",
-                "hasInk": True,
-                "hasDrawables": True,
-                "fiveStar": ["10,20,30,40"],
+                "style": "5mm_dots",
+                "isBlank": False,
+                "hasFiveStar": True,
                 "keywords": ["Sprint"],
             }
         ],

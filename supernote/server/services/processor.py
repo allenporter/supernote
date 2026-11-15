@@ -10,7 +10,6 @@ from sqlalchemy import delete, or_, select
 
 from supernote.models.base import ProcessingStatus, TaskType
 from supernote.models.extended import (
-    NoteKeywordVO,
     NoteLinkVO,
     NotePageMetadataVO,
     NoteTitleVO,
@@ -18,7 +17,12 @@ from supernote.models.extended import (
 )
 from supernote.notebook import exceptions as notebook_exceptions
 from supernote.notebook.fileformat import Notebook
-from supernote.notebook.schema import PageMetadata, SupernoteMetadata
+from supernote.notebook.schema import (
+    LinkDirection,
+    LinkType,
+    PageMetadata,
+    SupernoteMetadata,
+)
 from supernote.server.metrics import (
     PROCESSOR_FILES_PROCESSING,
     PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL,
@@ -52,7 +56,7 @@ from ..services.event_log import EventLogService
 from ..services.file import FileService
 from ..services.processor_modules import ProcessorModule
 from ..services.summary import SummaryService
-from ..utils.note_content import infer_page_date
+from ..utils.note_content import infer_page_date, normalize_page_style_type
 
 logger = logging.getLogger(__name__)
 
@@ -734,27 +738,81 @@ class ProcessorService:
                 .all()
             )
 
-        header_dict = json.loads(meta_do.header_json)
-        footer_dict = json.loads(meta_do.footer_json)
-        if not isinstance(header_dict, dict) or not isinstance(footer_dict, dict):
-            raise ValueError("header_json and footer_json must be JSON objects")
-        notebook = Notebook(
-            SupernoteMetadata(
-                type=meta_do.file_type or "note",
-                signature=meta_do.signature or "",
-                header=header_dict,
-                footer=footer_dict,
-                pages=[],
+            header_dict = json.loads(meta_do.header_json)
+            footer_dict = json.loads(meta_do.footer_json)
+            if not isinstance(header_dict, dict) or not isinstance(footer_dict, dict):
+                raise ValueError("header_json and footer_json must be JSON objects")
+            notebook = Notebook(
+                SupernoteMetadata(
+                    type=meta_do.file_type or "note",
+                    signature=meta_do.signature or "",
+                    header=header_dict,
+                    footer=footer_dict,
+                    pages=[],
+                )
             )
-        )
+
+            outgoing_links = [
+                lk for lk in notebook.links if lk.direction == LinkDirection.OUT
+            ]
+            external_native_ids = {
+                lk.file_id
+                for lk in outgoing_links
+                if lk.file_id and lk.file_id != meta_do.native_file_id
+            }
+            native_to_file_id: dict[str, int] = {}
+            if external_native_ids:
+                ext_file_rows = (
+                    await session.execute(
+                        select(NoteMetadataDO.native_file_id, NoteMetadataDO.file_id)
+                        .join(
+                            UserFileDO,
+                            (UserFileDO.id == NoteMetadataDO.file_id)
+                            & (UserFileDO.user_id == NoteMetadataDO.user_id),
+                        )
+                        .where(
+                            NoteMetadataDO.user_id == user_id,
+                            NoteMetadataDO.native_file_id.in_(external_native_ids),
+                            UserFileDO.is_active == "Y",
+                        )
+                    )
+                ).all()
+                for native_id, resolved_fid in ext_file_rows:
+                    if native_id:
+                        native_to_file_id[native_id] = resolved_fid
+
+            page_index_by_target: dict[tuple[int, str], int] = {
+                (file_id, pm.page_id): pm.page_index for pm in page_rows if pm.page_id
+            }
+            external_page_ids = {
+                lk.page_id
+                for lk in outgoing_links
+                if lk.page_id and lk.file_id and lk.file_id in native_to_file_id
+            }
+            if external_page_ids and native_to_file_id:
+                ext_page_rows = (
+                    await session.execute(
+                        select(
+                            NotePageMetadataDO.file_id,
+                            NotePageMetadataDO.page_id,
+                            NotePageMetadataDO.page_index,
+                        ).where(
+                            NotePageMetadataDO.user_id == user_id,
+                            NotePageMetadataDO.file_id.in_(native_to_file_id.values()),
+                            NotePageMetadataDO.page_id.in_(external_page_ids),
+                        )
+                    )
+                ).all()
+                for ext_fid, ext_pid, ext_idx in ext_page_rows:
+                    page_index_by_target[(ext_fid, ext_pid)] = ext_idx
 
         page_vos: list[NotePageMetadataVO] = []
         for pm in page_rows:
-            five_star: list[str] = []
+            has_five_star = False
             try:
                 raw_page = json.loads(pm.page_json)
                 if isinstance(raw_page, dict):
-                    five_star = list(PageMetadata.from_params(raw_page).five_star)
+                    has_five_star = bool(PageMetadata.from_params(raw_page).five_star)
             except (
                 json.JSONDecodeError,
                 ValueError,
@@ -764,7 +822,6 @@ class ProcessorService:
                 logger.warning(
                     f"Failed to deserialize page_json for file {file_id} page {pm.page_index}: {err}"
                 )
-                five_star = []
 
             inferred_dt = infer_page_date(pm.page_id)
             page_vos.append(
@@ -772,11 +829,54 @@ class ProcessorService:
                     page_index=pm.page_index,
                     page_id=pm.page_id,
                     date=inferred_dt.strftime("%Y-%m-%d") if inferred_dt else None,
-                    style=pm.page_style,
-                    has_ink=pm.has_ink,
-                    has_drawables=pm.has_drawables,
-                    five_star=five_star,
+                    style=normalize_page_style_type(pm.page_style),
+                    is_blank=not pm.has_drawables,
+                    has_five_star=has_five_star,
                     keywords=pm.keyword_texts,
+                )
+            )
+
+        keywords_by_text: dict[str, list[int]] = {}
+        for kw in notebook.keywords:
+            if kw.keyword and kw.keyword.strip():
+                text = kw.keyword.strip()
+                indices = keywords_by_text.setdefault(text, [])
+                if kw.page_number not in indices:
+                    indices.append(kw.page_number)
+
+        link_vos: list[NoteLinkVO] = []
+        for lk in outgoing_links:
+            link_type_name = (
+                lk.link_type.name.lower()
+                if isinstance(lk.link_type, LinkType)
+                else str(lk.link_type)
+            )
+            if not lk.file_id or lk.file_id == meta_do.native_file_id:
+                resolved_file_id: int | None = file_id if lk.page_id else None
+            else:
+                resolved_file_id = native_to_file_id.get(lk.file_id)
+
+            target_page_index: int | None = None
+            if lk.page_id and resolved_file_id is not None:
+                target_page_index = page_index_by_target.get(
+                    (resolved_file_id, lk.page_id)
+                )
+            if (
+                target_page_index is None
+                and lk.metadata.obj_page
+                and lk.metadata.obj_page > 0
+            ):
+                target_page_index = lk.metadata.obj_page - 1
+
+            link_vos.append(
+                NoteLinkVO(
+                    page_index=lk.page_number,
+                    link_type=link_type_name,
+                    target=lk.target,
+                    target_file_id=(
+                        resolved_file_id if resolved_file_id != file_id else None
+                    ),
+                    target_page_index=target_page_index,
                 )
             )
 
@@ -788,32 +888,15 @@ class ProcessorService:
         return WebNoteMetadataVO(
             file_id=file_id,
             equipment=equipment,
-            width=notebook.width,
-            height=notebook.height,
             total_pages=meta_do.total_pages,
-            keywords=[
-                NoteKeywordVO(page_number=kw.page_number, text=kw.keyword or "")
-                for kw in notebook.keywords
-                if kw.keyword
-            ],
+            keywords=keywords_by_text,
             titles=[
                 NoteTitleVO(
-                    page_number=t.page_number,
-                    level=t.level,
-                    style=t.style,
+                    page_index=t.page_number,
+                    level=t.heading_level,
                 )
                 for t in notebook.titles
             ],
-            links=[
-                NoteLinkVO(
-                    page_number=lk.page_number,
-                    link_type=int(lk.link_type),
-                    direction=int(lk.direction),
-                    target=lk.target,
-                    target_file_id=lk.file_id,
-                    target_page_id=lk.page_id,
-                )
-                for lk in notebook.links
-            ],
+            links=link_vos,
             pages=page_vos,
         )

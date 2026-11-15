@@ -363,6 +363,11 @@ class Title:
         return self.metadata.level
 
     @property
+    def heading_level(self) -> int:
+        """Normalized 1..4 heading hierarchy level derived from `style` or `level`."""
+        return self.metadata.heading_level
+
+    @property
     def style(self) -> str | None:
         """Encoded visual heading style (`<TITLESTYLE>`, e.g. `'1000254'`)."""
         return self.metadata.style
