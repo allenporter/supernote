@@ -109,7 +109,22 @@ class ExtendedClient:
         exclude_actor: str | None = None,
         limit: int = 200,
     ) -> EventFeedListVO:
-        """List per-user domain events after `sync_token` (Extension)."""
+        """Poll a user's incremental domain event feed (`GET /api/extended/events`).
+
+        Args:
+            sync_token: Opaque `next_sync_token` from a previous response, or
+                `None` to read from the beginning of retained event history.
+            types: Optional event type filters (exact names like
+                `'schedule.task_created'` or prefix globs like `'note.*'`).
+            file_id: Optional VFS file ID to scope events to a single file/notebook.
+            exclude_actor: Optional actor identifier to exclude (e.g. `'user:web'`).
+            limit: Maximum number of events per page (`1..1000`, default `200`).
+
+        Returns:
+            `EventFeedListVO` with `events`, `next_sync_token` (persist and pass
+            on the next call), and `has_more` (`True` when another page is
+            immediately available).
+        """
         params: dict[str, str] = {"limit": str(limit)}
         if sync_token:
             params["syncToken"] = sync_token

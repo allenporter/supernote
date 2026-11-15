@@ -303,10 +303,15 @@ class EventFeedListVO(BaseResponse):
     """
 
     events: list[DomainEventVO] = field(default_factory=list)
+    """Ordered list of domain events occurring after the requested `syncToken`."""
+
     next_sync_token: str | None = field(
         metadata=field_options(alias="nextSyncToken"), default=None
     )
+    """Opaque checkpoint token to pass as `syncToken` on the next request (`None` if no events exist yet)."""
+
     has_more: bool = field(metadata=field_options(alias="hasMore"), default=False)
+    """Whether additional matching events remain beyond the page `limit`."""
 
     class Config(BaseConfig):
         serialize_by_alias = True

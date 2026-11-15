@@ -26,7 +26,18 @@ _PRUNED_SEQ_TTL = 100 * 365 * 86400
 
 @dataclass(slots=True)
 class EventFeedPage:
-    """Paginated response for per-user domain event queries."""
+    """Paginated response for per-user domain event queries.
+
+    Attributes:
+        events: Ordered list of matching domain events in ascending sequence order.
+        next_sync_token: Opaque checkpoint token to pass as `sync_token` on the
+            subsequent call, or `None` if the user has no recorded events yet.
+            When `events` is empty because of filters, `next_sync_token` still
+            advances to the user's latest sequence so callers do not re-scan
+            filtered history.
+        has_more: `True` if more matching events exist beyond `limit` and the
+            caller should immediately fetch the next page using `next_sync_token`.
+    """
 
     events: list[DomainEventRecorded]
     next_sync_token: str | None
@@ -104,7 +115,32 @@ class EventLogService:
         exclude_actor: str | None = None,
         limit: int = DEFAULT_FEED_LIMIT,
     ) -> EventFeedPage:
-        """Query a user's domain event feed after `sync_token`."""
+        """Query a user's domain event feed incrementally after `sync_token`.
+
+        Args:
+            user_id: Owner user ID whose event log to query.
+            sync_token: Opaque `next_sync_token` returned by a previous call.
+                When `None` or empty, returns retained events from the beginning.
+            types: Optional list of event type filters supporting exact matches
+                (e.g. `'schedule.task_created'`) or namespace prefix wildcards
+                ending with `'.*'` (e.g. `'note.*'`, `'vfs.*'`).
+            file_id: Optional VFS file ID filter (`related_file_id == file_id`).
+            exclude_actor: Optional actor string to exclude from results
+                (e.g. `'user:web'` or `'device:<sn>'` to avoid self-echo loops).
+            limit: Maximum number of events to return (`1..1000`, default `200`).
+
+        Returns:
+            An `EventFeedPage` containing the ordered events, `next_sync_token`
+            checkpoint, and `has_more` pagination flag.
+
+        Raises:
+            InvalidInputError: If `sync_token` is malformed or `limit` is outside
+                `1..MAX_FEED_LIMIT` (HTTP 400).
+            CursorExpiredError: If `sync_token` predates the retained event log
+                window after pruning (HTTP 410 Gone); callers should discard the
+                expired token, perform a full state resync, and resume from the
+                new `next_sync_token`.
+        """
         if limit < 1 or limit > MAX_FEED_LIMIT:
             raise InvalidInputError(f"limit must be between 1 and {MAX_FEED_LIMIT}")
 
