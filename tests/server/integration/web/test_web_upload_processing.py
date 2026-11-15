@@ -24,7 +24,7 @@ async def test_web_upload_triggers_processing(
 
     # Check if tasks were created
     # We wait for the asynchronous event bus to process the event
-    max_retries = 10
+    max_retries = 250
     found_tasks = False
     file_id = None
 
@@ -41,7 +41,7 @@ async def test_web_upload_triggers_processing(
             if tasks:
                 found_tasks = True
                 break
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.02)
 
     assert found_tasks, (
         f"No system tasks were created for the web-uploaded .note file (file_id: {file_id})"

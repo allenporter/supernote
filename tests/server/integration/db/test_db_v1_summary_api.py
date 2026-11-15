@@ -33,6 +33,7 @@ async def test_unmigrated_summary_api_query(tmp_path: Path) -> None:
     config = ServerConfig(
         storage_dir=str(storage_dir),
         auth=AuthConfig(secret_key="test-secret-key-32-characters-long!!"),
+        mcp_enabled=False,
         mcp_port=0,
     )
     app = create_app(config)
@@ -87,6 +88,7 @@ async def test_migrated_legacy_db_summary_api_query(tmp_path: Path) -> None:
     config = ServerConfig(
         storage_dir=str(storage_dir),
         auth=AuthConfig(secret_key="test-secret-key-32-characters-long!!"),
+        mcp_enabled=False,
         mcp_port=0,
     )
     app = create_app(config)
@@ -144,6 +146,7 @@ async def test_post_migration_new_summary_creation(tmp_path: Path) -> None:
     config = ServerConfig(
         storage_dir=str(storage_dir),
         auth=AuthConfig(secret_key="test-secret-key-32-characters-long!!"),
+        mcp_enabled=False,
         mcp_port=0,
     )
     app = create_app(config)

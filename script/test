@@ -9,7 +9,7 @@ echo "==> Running tests..."
 
 PYTEST_ARGS=("$@")
 if [ ${#PYTEST_ARGS[@]} -eq 0 ]; then
-  PYTEST_ARGS=("-n" "auto")
+  PYTEST_ARGS=("-n" "auto" "--dist" "worksteal")
 fi
 
 if command -v uv >/dev/null 2>&1; then

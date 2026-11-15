@@ -7,11 +7,17 @@ See `supernote.cli` and `supernote.guides.cli_reference` for server startup flag
 """
 
 import argparse
+import importlib.util
 import os
 import tempfile
 from pathlib import Path
 
-from supernote.server import app as server_app
+# `supernote.cli.main` imports every subparser module during CLI startup and catches
+# ImportError/ModuleNotFoundError to mark uninstalled optional extras as disabled.
+# Probe `sqlalchemy` via `find_spec` so missing `[server]` extras still fail fast here
+# without paying the ~2s cost of importing the server runtime on unrelated commands.
+if importlib.util.find_spec("sqlalchemy") is None:
+    raise ModuleNotFoundError("No module named 'sqlalchemy'", name="sqlalchemy")
 
 # For ephemeral mode
 DEBUG_EMAIL = "debug@example.com"
@@ -22,6 +28,10 @@ EXAMPLE_COMMAND = "supernote cloud ls"
 
 def serve_run(args: argparse.Namespace) -> None:
     """Wrapper for serve command to handle ephemeral mode."""
+    # Defer importing the server application (SQLAlchemy, Alembic, routes, services)
+    # until `supernote serve` is actually executed rather than on every CLI invocation.
+    from supernote.server import app as server_app  # noqa: PLC0415
+
     if getattr(args, "ephemeral", False):
         with tempfile.TemporaryDirectory(prefix="supernote-ephemeral-") as tmp_dir:
             tmp_path = Path(tmp_dir)

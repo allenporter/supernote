@@ -53,6 +53,19 @@ async def test_session_manager_session() -> None:
     await manager.close()
 
 
+async def test_session_manager_custom_sqlite_pragmas() -> None:
+    """Custom sqlite_pragmas merge onto the default connection pragmas."""
+    manager = DatabaseSessionManager(
+        "sqlite+aiosqlite:///:memory:",
+        sqlite_pragmas={"synchronous": "OFF", "temp_store": "MEMORY"},
+    )
+    async with manager.session() as session:
+        assert (await session.execute(text("PRAGMA synchronous"))).scalar() == 0
+        assert (await session.execute(text("PRAGMA temp_store"))).scalar() == 2
+        assert (await session.execute(text("PRAGMA foreign_keys"))).scalar() == 1
+    await manager.close()
+
+
 @pytest.mark.parametrize(
     ("exc_type", "message"),
     [
