@@ -6,6 +6,7 @@
   <img src="docs/static-assets/hero-overview.jpg" alt="Supernote Overview" width="800">
 </p>
 
+[![GitHub Repository](https://img.shields.io/badge/GitHub-allenporter%2Fsupernote-181717.svg?logo=github)](https://github.com/allenporter/supernote)
 [![Documentation](https://img.shields.io/badge/docs-manual-blue.svg)](https://allenporter.github.io/supernote/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/allenporter/supernote/blob/main/LICENSE)
 
@@ -350,7 +351,7 @@ The notebook parser originally started as a fork of [supernote-tool](https://git
 
 ## Contributing & Community
 
-We welcome contributions! Please see our **[Contributing Guide](docs/CONTRIBUTING.md)** and **[Database Migration Guide](docs/schema_migration_guide.md)** for details on local development (`./script/bootstrap`, `./script/test`, `./script/lint`, `./script/docs`), Ephemeral Mode (`supernote serve --ephemeral`), and AI Skills.
+We welcome issues, feature requests, and pull requests on **[GitHub (`allenporter/supernote`)](https://github.com/allenporter/supernote)**! Please see our **[Contributing Guide](docs/CONTRIBUTING.md)** and **[Database Migration Guide](docs/schema_migration_guide.md)** for details on local development (`./script/bootstrap`, `./script/test`, `./script/lint`, `./script/docs`), Ephemeral Mode (`supernote serve --ephemeral`), and AI Skills.
 
 ### Community Projects
 
