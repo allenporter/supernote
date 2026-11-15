@@ -36,6 +36,48 @@
       matchManagers: ['pyenv'],
       enabled: false,
     },
+    {
+      description: 'Keep Tailwind Play CDN on v3 (cdn.tailwindcss.com only serves v3)',
+      matchPackageNames: ['tailwindcss'],
+      allowedVersions: '<4.0.0',
+    },
+  ],
+  customManagers: [
+    {
+      customType: 'regex',
+      description: 'Track unpkg ESM/script CDN versions in static HTML',
+      fileMatch: [
+        '^supernote/server/static/.*\\.html$',
+      ],
+      matchStrings: [
+        'https://unpkg\\.com/(?<depName>@?[^@/]+(?:/[^@/]+)?)@(?<currentValue>[^/"\'\\s]+)/',
+      ],
+      datasourceTemplate: 'npm',
+    },
+    {
+      customType: 'regex',
+      description: 'Track Socket.IO CDN versions in static HTML',
+      fileMatch: [
+        '^supernote/server/static/.*\\.html$',
+      ],
+      matchStrings: [
+        'https://cdn\\.socket\\.io/(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)/socket\\.io\\.min\\.js',
+      ],
+      depNameTemplate: 'socket.io-client',
+      datasourceTemplate: 'npm',
+    },
+    {
+      customType: 'regex',
+      description: 'Track Tailwind Play CDN versions in static HTML',
+      fileMatch: [
+        '^supernote/server/static/.*\\.html$',
+      ],
+      matchStrings: [
+        'https://cdn\\.tailwindcss\\.com/(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)',
+      ],
+      depNameTemplate: 'tailwindcss',
+      datasourceTemplate: 'npm',
+    },
   ],
   pip_requirements: {
     fileMatch: [
