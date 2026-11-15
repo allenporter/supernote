@@ -275,21 +275,36 @@ class WebAiStatusVO(BaseResponse):
 
 @dataclass
 class DomainEventVO(DataClassJSONMixin):
-    """VO for a single domain event in the cursor feed.
+    """VO for a single domain event in the per-user event feed.
 
     Used by: GET /api/extended/events
     """
 
     seq: str
+    """Strictly monotonic 64-bit sequence ID of this event, serialized as a string."""
+
     timestamp: int
+    """Event recording timestamp in UTC epoch milliseconds."""
+
     type: str
+    """Namespaced domain event type (e.g. 'vfs.created', 'note.page_transcribed', 'schedule.task_updated')."""
+
     actor: str
+    """Originating actor identifier (e.g. 'device:<sn>', 'user:web', 'system:processor')."""
+
     entity_type: str = field(metadata=field_options(alias="entityType"))
+    """Target entity category ('file', 'note_page', 'schedule_task', 'summary', 'summary_tag')."""
+
     entity_id: str = field(metadata=field_options(alias="entityId"))
+    """Stable identifier of the affected entity (e.g. file ID, '<file_id>:<page_index>', task ID)."""
+
     related_file_id: int | None = field(
         metadata=field_options(alias="relatedFileId", serialize=str), default=None
     )
+    """Associated VFS file ID when applicable (serialized as a string on the wire)."""
+
     payload: dict[str, Any] = field(default_factory=dict)
+    """Event-specific delta metadata (paths, hashes, changed fields, OCR text diffs, etc.)."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
