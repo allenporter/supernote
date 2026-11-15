@@ -5,6 +5,7 @@ to our new server.
 """
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any
 
 from mashumaro import field_options
@@ -273,6 +274,50 @@ class WebAiStatusVO(BaseResponse):
         serialize_by_alias = True
 
 
+class DomainEventType(StrEnum):
+    """Canonical domain event type identifiers recorded in `f_user_event`."""
+
+    VFS_CREATED = "vfs.created"
+    VFS_CONTENT_UPDATED = "vfs.content_updated"
+    VFS_MOVED = "vfs.moved"
+    VFS_COPIED = "vfs.copied"
+    VFS_DELETED = "vfs.deleted"
+
+    NOTE_PAGES_DELTA = "note.pages_delta"
+    NOTE_PAGE_TRANSCRIBED = "note.page_transcribed"
+    NOTE_PROCESSING_COMPLETED = "note.processing_completed"
+    NOTE_PROCESSING_FAILED = "note.processing_failed"
+
+    SCHEDULE_TASK_CREATED = "schedule.task_created"
+    SCHEDULE_TASK_UPDATED = "schedule.task_updated"
+    SCHEDULE_TASK_DELETED = "schedule.task_deleted"
+    SCHEDULE_GROUP_CREATED = "schedule.group_created"
+    SCHEDULE_GROUP_UPDATED = "schedule.group_updated"
+    SCHEDULE_GROUP_DELETED = "schedule.group_deleted"
+
+    SUMMARY_CREATED = "summary.created"
+    SUMMARY_UPDATED = "summary.updated"
+    SUMMARY_DELETED = "summary.deleted"
+    SUMMARY_GROUP_CREATED = "summary.group_created"
+    SUMMARY_GROUP_UPDATED = "summary.group_updated"
+    SUMMARY_GROUP_DELETED = "summary.group_deleted"
+    SUMMARY_TAG_CREATED = "summary.tag_created"
+    SUMMARY_TAG_UPDATED = "summary.tag_updated"
+    SUMMARY_TAG_DELETED = "summary.tag_deleted"
+
+
+class DomainEntityType(StrEnum):
+    """Canonical target entity categories for domain events."""
+
+    FILE = "file"
+    NOTE_PAGE = "note_page"
+    SCHEDULE_TASK = "schedule_task"
+    SCHEDULE_GROUP = "schedule_group"
+    SUMMARY = "summary"
+    SUMMARY_GROUP = "summary_group"
+    SUMMARY_TAG = "summary_tag"
+
+
 @dataclass
 class EventFeedRequestDTO(DataClassJSONMixin):
     """Query parameters DTO for polling the per-user domain event feed.
@@ -286,17 +331,12 @@ class EventFeedRequestDTO(DataClassJSONMixin):
     """Opaque checkpoint token returned as `nextSyncToken` by a prior call (`None` to start from the beginning)."""
 
     types: str | None = None
-    """Optional comma-separated event type filters (e.g. `'vfs.*,note.page_transcribed'`)."""
+    """Optional comma-separated `DomainEventType` values or namespace globs (`'vfs.*'`, `'note.*'`, `'schedule.*'`, `'summary.*'`)."""
 
     file_id: int | None = field(
         metadata=field_options(alias="fileId", serialize=str), default=None
     )
     """Optional VFS file ID filter."""
-
-    exclude_actor: str | None = field(
-        metadata=field_options(alias="excludeActor"), default=None
-    )
-    """Optional actor identifier to exclude from results (e.g. `'user:web'`)."""
 
     limit: int = 200
     """Maximum number of events to return (`1..1000`, default `200`)."""
@@ -327,13 +367,13 @@ class DomainEventVO(DataClassJSONMixin):
     """Event recording timestamp in UTC epoch milliseconds."""
 
     type: str
-    """Namespaced domain event type (e.g. 'vfs.created', 'note.page_transcribed', 'schedule.task_updated')."""
+    """Domain event type identifier (see `DomainEventType` in `supernote.models.extended`)."""
 
     actor: str
-    """Originating actor identifier (e.g. 'device:<sn>', 'user:web', 'system:processor')."""
+    """Originating mutation source (`'user:web'`, `'device:<equipment_no>'`, or `'system:processor'`)."""
 
     entity_type: str = field(metadata=field_options(alias="entityType"))
-    """Target entity category ('file', 'note_page', 'schedule_task', 'summary', 'summary_tag')."""
+    """Target entity category (see `DomainEntityType` in `supernote.models.extended`)."""
 
     entity_id: str = field(metadata=field_options(alias="entityId"))
     """Stable identifier of the affected entity (e.g. file ID, '<file_id>:<page_index>', task ID)."""

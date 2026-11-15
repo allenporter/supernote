@@ -370,7 +370,6 @@ async def handle_list_events(request: web.Request) -> web.Response:
             sync_token=req_dto.sync_token,
             types=req_dto.type_list,
             file_id=req_dto.file_id,
-            exclude_actor=req_dto.exclude_actor,
             limit=req_dto.limit,
         )
         vo = EventFeedListVO(

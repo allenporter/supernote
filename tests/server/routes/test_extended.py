@@ -793,11 +793,10 @@ async def test_extended_events_route_and_client(
     assert [e.seq for e in feed2.events] == [str(ev2.seq)]
     assert feed2.has_more is False
 
-    # Filter by types, file_id, and exclude_actor
+    # Filter by types and file_id
     filtered = await extended_client.list_events(
         types=["note.*"],
         file_id=772252421643567298,
-        exclude_actor="device:SN001",
     )
     assert [e.seq for e in filtered.events] == [str(ev2.seq)]
 

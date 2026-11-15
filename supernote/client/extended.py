@@ -1,6 +1,8 @@
 """Client for Extended (Web) APIs."""
 
 from supernote.models.extended import (
+    DomainEntityType,
+    DomainEventType,
     DomainEventVO,
     EventFeedListVO,
     EventFeedRequestDTO,
@@ -21,6 +23,8 @@ from supernote.models.extended import (
 from .client import Client
 
 __all__ = [
+    "DomainEntityType",
+    "DomainEventType",
     "DomainEventVO",
     "EventFeedListVO",
     "EventFeedRequestDTO",
@@ -112,7 +116,6 @@ class ExtendedClient:
         sync_token: str | None = None,
         types: list[str] | None = None,
         file_id: int | None = None,
-        exclude_actor: str | None = None,
         limit: int = 200,
     ) -> EventFeedListVO:
         """Poll a user's incremental domain event feed (`GET /api/extended/events`).
@@ -120,10 +123,11 @@ class ExtendedClient:
         Args:
             sync_token: Opaque `next_sync_token` from a previous response, or
                 `None` to read from the beginning of retained event history.
-            types: Optional event type filters (exact names like
-                `'schedule.task_created'` or prefix globs like `'note.*'`).
+            types: Optional list of event type filters. Accepts exact
+                `DomainEventType` values (defined in `supernote.models.extended`,
+                e.g. `DomainEventType.NOTE_PAGE_TRANSCRIBED`) or namespace prefix
+                globs (`'vfs.*'`, `'note.*'`, `'schedule.*'`, `'summary.*'`).
             file_id: Optional VFS file ID to scope events to a single file/notebook.
-            exclude_actor: Optional actor identifier to exclude (e.g. `'user:web'`).
             limit: Maximum number of events per page (`1..1000`, default `200`).
 
         Returns:
@@ -135,7 +139,6 @@ class ExtendedClient:
             sync_token=sync_token,
             types=",".join(types) if types else None,
             file_id=file_id,
-            exclude_actor=exclude_actor,
             limit=limit,
         )
         params = {k: str(v) for k, v in dto.to_dict().items()}

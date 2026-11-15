@@ -186,7 +186,6 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
         sync_token="100",
         types=["vfs.*", "note.*"],
         file_id=10,
-        exclude_actor="device:SN1",
         limit=50,
     )
     assert len(events_vo.events) == 1
@@ -224,7 +223,6 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
                 "limit": "50",
                 "types": "vfs.*,note.*",
                 "fileId": "10",
-                "excludeActor": "device:SN1",
             },
         ),
     ]

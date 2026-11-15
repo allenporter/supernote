@@ -134,11 +134,9 @@ async def test_list_events_sync_tokens_filters_and_user_isolation(
     assert no_match.events == []
     assert no_match.next_sync_token == encode_sync_token(ev4.seq)
 
-    # file_id and exclude_actor filters
-    by_file = await event_log_service.list_events(
-        user_id=1, file_id=10, exclude_actor="device:SN1"
-    )
-    assert [e.seq for e in by_file.events] == [ev3.seq]
+    # file_id filter
+    by_file = await event_log_service.list_events(user_id=1, file_id=10)
+    assert [e.seq for e in by_file.events] == [ev1.seq, ev3.seq]
 
 
 async def test_list_events_validation_errors(
