@@ -61,6 +61,7 @@ from .metrics import (
 from .routes import (
     admin,
     auth,
+    events,
     extended,
     file_device,
     file_web,
@@ -372,6 +373,7 @@ def create_app(config: ServerConfig) -> web.Application:
     app.add_routes(schedule.routes)
     app.add_routes(summary.routes)
     app.add_routes(extended.routes)
+    app.add_routes(events.routes)
 
     # Attach Socket.IO real-time server manager
     setup_socketio(app, config, user_service, event_bus)

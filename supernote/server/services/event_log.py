@@ -121,7 +121,7 @@ class EventLogService:
             sync_token: Opaque `next_sync_token` returned by a previous call.
                 When `None` or empty, returns retained events from the beginning.
             event_types: Optional list of event type filters supporting exact
-                `DomainEventType` values (defined in `supernote.models.extended`)
+                `DomainEventType` values (defined in `supernote.models.events`)
                 or namespace prefix wildcards ending with `'.*'` (`'note.*'`,
                 `'vfs.*'`, `'schedule.*'`, `'summary.*'`).
             file_id: Optional VFS file ID filter (`related_file_id == file_id`).
