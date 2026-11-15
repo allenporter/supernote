@@ -31,13 +31,11 @@ from supernote.server.metrics import (
     AIStage,
     NoteProcessingMode,
     init_ai_metrics,
-    init_http_metrics,
     init_mcp_metrics,
     init_note_processing_metrics,
     init_processor_module_metrics,
     record_ai_tokens,
     record_note_page_diff,
-    set_processor_system_task_metrics,
     track_ai_request,
     track_note_processing_run,
 )
@@ -1046,23 +1044,9 @@ def test_record_note_page_diff_metrics() -> None:
     )
 
 
-def test_startup_zero_seeding_and_system_task_gauges() -> None:
-    """Verify startup seeding initializes labeled counters/histograms and resets system task gauges."""
-    init_http_metrics(("GET", "OTHER"))
-    assert (
-        REGISTRY.get_sample_value(
-            "supernote_http_requests_in_progress", {"method": "GET"}
-        )
-        is not None
-    )
-
+def test_startup_zero_seeding_for_counters_and_histograms() -> None:
+    """Verify startup seeding initializes labeled counters and histograms at 0."""
     init_processor_module_metrics(("SeededTestModule",))
-    assert (
-        REGISTRY.get_sample_value(
-            "supernote_processor_tasks_in_progress", {"module": "SeededTestModule"}
-        )
-        == 0.0
-    )
     assert (
         REGISTRY.get_sample_value(
             "supernote_processor_task_duration_seconds_count",
@@ -1137,49 +1121,4 @@ def test_startup_zero_seeding_and_system_task_gauges() -> None:
             {"tool": "list_notebooks"},
         )
         is not None
-    )
-
-    set_processor_system_task_metrics(
-        {
-            ("OCR_EXTRACTION", "COMPLETED"): 12,
-            ("OCR_EXTRACTION", "FAILED"): 2,
-        }
-    )
-    assert (
-        REGISTRY.get_sample_value(
-            "supernote_processor_system_tasks",
-            {"task_type": "OCR_EXTRACTION", "status": "COMPLETED"},
-        )
-        == 12.0
-    )
-    assert (
-        REGISTRY.get_sample_value(
-            "supernote_processor_system_tasks",
-            {"task_type": "OCR_EXTRACTION", "status": "FAILED"},
-        )
-        == 2.0
-    )
-    assert (
-        REGISTRY.get_sample_value(
-            "supernote_processor_system_tasks",
-            {"task_type": "SUMMARY_GENERATION", "status": "COMPLETED"},
-        )
-        == 0.0
-    )
-
-    # Subsequent update resets omitted task_type/status pairs back to 0.0
-    set_processor_system_task_metrics({})
-    assert (
-        REGISTRY.get_sample_value(
-            "supernote_processor_system_tasks",
-            {"task_type": "OCR_EXTRACTION", "status": "COMPLETED"},
-        )
-        == 0.0
-    )
-    assert (
-        REGISTRY.get_sample_value(
-            "supernote_processor_system_tasks",
-            {"task_type": "OCR_EXTRACTION", "status": "FAILED"},
-        )
-        == 0.0
     )

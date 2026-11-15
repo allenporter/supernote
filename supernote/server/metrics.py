@@ -19,8 +19,6 @@ from enum import StrEnum
 
 from prometheus_client import Counter, Gauge, Histogram
 
-from supernote.models.base import ProcessingStatus, TaskType
-
 __all__ = [
     "AIStage",
     "BlobStorageKind",
@@ -39,11 +37,9 @@ __all__ = [
     "PROCESSOR_QUEUE_PAUSED",
     "PROCESSOR_QUEUE_SIZE",
     "PROCESSOR_STALLED_TASKS_RECOVERED_TOTAL",
-    "PROCESSOR_TASKS_IN_PROGRESS",
     "PROCESSOR_TASKS_TOTAL",
     "PROCESSOR_TASK_DURATION_SECONDS",
     "init_ai_metrics",
-    "init_http_metrics",
     "init_mcp_metrics",
     "init_note_processing_metrics",
     "init_oss_and_upload_metrics",
@@ -53,7 +49,6 @@ __all__ = [
     "record_note_upload",
     "record_oss_transfer_bytes",
     "set_blob_storage_metrics",
-    "set_processor_system_task_metrics",
     "track_ai_request",
     "track_mcp_tool_call",
     "track_note_processing_run",
@@ -212,13 +207,6 @@ HTTP_REQUESTS_IN_PROGRESS: Gauge = Gauge(
     ["method"],
 )
 
-
-def init_http_metrics(methods: Iterable[str]) -> None:
-    """Pre-initialize in-progress HTTP request gauges at 0 for each normalized method."""
-    for method in methods:
-        HTTP_REQUESTS_IN_PROGRESS.labels(method=method)
-
-
 # Processor metrics
 PROCESSOR_TASKS_TOTAL: Counter = Counter(
     "supernote_processor_tasks_total",
@@ -231,12 +219,6 @@ PROCESSOR_TASK_DURATION_SECONDS: Histogram = Histogram(
     "Latency of background pipeline tasks in seconds.",
     ["module"],
     buckets=PIPELINE_DURATION_BUCKETS,
-)
-
-PROCESSOR_TASKS_IN_PROGRESS: Gauge = Gauge(
-    "supernote_processor_tasks_in_progress",
-    "Current number of pipeline module tasks actively executing.",
-    ["module"],
 )
 
 PROCESSOR_QUEUE_SIZE: Gauge = Gauge(
@@ -252,19 +234,6 @@ PROCESSOR_QUEUE_PAUSED: Gauge = Gauge(
 PROCESSOR_FILES_PROCESSING: Gauge = Gauge(
     "supernote_processor_files_processing",
     "Current number of files actively undergoing background pipeline processing.",
-)
-
-_PROCESSOR_SYSTEM_TASKS: Gauge = Gauge(
-    "supernote_processor_system_tasks",
-    "Current number of persistent pipeline task checkpoints for active files by task type and status.",
-    ["task_type", "status"],
-)
-
-_TRACKED_TASK_STATUSES: tuple[ProcessingStatus, ...] = (
-    ProcessingStatus.PENDING,
-    ProcessingStatus.PROCESSING,
-    ProcessingStatus.COMPLETED,
-    ProcessingStatus.FAILED,
 )
 
 _MODULE_TASK_OUTCOMES: tuple[str, ...] = (
@@ -305,32 +274,17 @@ _NOTE_PAGES_PARSED_TOTAL: Counter = Counter(
 
 
 def init_processor_module_metrics(module_names: Iterable[str]) -> None:
-    """Pre-initialize per-module task counters, active gauges, and latency histograms at 0."""
+    """Pre-initialize per-module task counters and latency histograms at 0."""
     for module_name in module_names:
-        PROCESSOR_TASKS_IN_PROGRESS.labels(module=module_name)
         PROCESSOR_TASK_DURATION_SECONDS.labels(module=module_name)
         for status in _MODULE_TASK_OUTCOMES:
             PROCESSOR_TASKS_TOTAL.labels(module=module_name, status=status)
-
-
-def set_processor_system_task_metrics(
-    counts: Mapping[tuple[str, str], int],
-) -> None:
-    """Update persistent `f_system_task` checkpoint gauges across all task types and statuses."""
-    for task_type in TaskType:
-        for status in _TRACKED_TASK_STATUSES:
-            count = counts.get((task_type.value, status.value), 0)
-            _PROCESSOR_SYSTEM_TASKS.labels(
-                task_type=task_type.value,
-                status=status.value,
-            ).set(max(0, count))
 
 
 def init_note_processing_metrics() -> None:
     """Pre-initialize `.note` queue gauges, run/page-diff counters, and histograms at 0."""
     PROCESSOR_QUEUE_SIZE.set(0)
     PROCESSOR_FILES_PROCESSING.set(0)
-    set_processor_system_task_metrics({})
     for mode in NoteProcessingMode:
         _NOTE_PROCESSING_DURATION_SECONDS.labels(mode=mode.value)
         for status in _OutcomeStatus:

@@ -23,7 +23,6 @@ from supernote.models.base import ProcessingStatus, TaskType
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.metrics import (
     PROCESSOR_TASK_DURATION_SECONDS,
-    PROCESSOR_TASKS_IN_PROGRESS,
     PROCESSOR_TASKS_TOTAL,
 )
 from supernote.server.utils.tasks import get_task, update_task_status
@@ -161,8 +160,6 @@ class ProcessorModule(abc.ABC):
 
         start_time = time.monotonic()
         status_str = "failure"
-        in_progress = PROCESSOR_TASKS_IN_PROGRESS.labels(module=self.name)
-        in_progress.inc()
         try:
             await self.process(
                 file_id, session_manager, page_index, page_id=page_id, **kwargs
@@ -194,7 +191,6 @@ class ProcessorModule(abc.ABC):
             )
             return False
         finally:
-            in_progress.dec()
             duration = time.monotonic() - start_time
             PROCESSOR_TASKS_TOTAL.labels(module=self.name, status=status_str).inc()
             if status_str != "cancelled":

@@ -232,9 +232,6 @@ async def handle_reprocess(request: web.Request) -> web.Response:
         await session.execute(stmt)
         await session.commit()
 
-    if (processor_service := request.app.get(PROCESSOR_SERVICE_KEY)) is not None:
-        await processor_service.refresh_system_task_metrics()
-
     # Publish NoteUpdatedEvent to trigger immediate reprocessing
     for fid, uid in targets:
         await event_bus.publish(

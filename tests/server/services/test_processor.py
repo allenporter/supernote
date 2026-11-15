@@ -1619,52 +1619,19 @@ async def test_process_file_and_queue_pause_metrics(
     )
 
 
-async def test_active_files_gauge_and_system_task_checkpoint_metrics(
+async def test_active_files_gauge_excludes_queued_backlog(
     session_manager: DatabaseSessionManager,
     file_service: FileService,
     summary_service: SummaryService,
 ) -> None:
-    """Verify `files_processing` excludes queued backlog and `system_tasks` gauges track active notes."""
-    event_bus = LocalEventBus()
+    """Verify `files_processing` tracks actively executing runs rather than queued backlog."""
     processor = ProcessorService(
-        event_bus=event_bus,
+        event_bus=LocalEventBus(),
         session_manager=session_manager,
         file_service=file_service,
         summary_service=summary_service,
         concurrency=0,
     )
-
-    async with session_manager.session() as session:
-        session.add(
-            UserFileDO(
-                id=9501,
-                user_id=1,
-                file_name="active_9501.note",
-                storage_key="k9501",
-                md5="m9501",
-                is_active="Y",
-            )
-        )
-        session.add(
-            UserFileDO(
-                id=9502,
-                user_id=1,
-                file_name="deleted_9502.note",
-                storage_key="k9502",
-                md5="m9502",
-                is_active="N",
-            )
-        )
-        session.add(
-            SystemTaskDO(
-                file_id=9502,
-                task_type=TaskType.PAGE_HASHING.value,
-                key="global",
-                status=ProcessingStatus.FAILED,
-                last_error="old deleted note error",
-            )
-        )
-        await session.commit()
 
     # Enqueue 2 files without workers running: queue_size == 2, active files_processing == 0
     await processor.handle_note_updated(
@@ -1693,6 +1660,13 @@ async def test_active_files_gauge_and_system_task_checkpoint_metrics(
             await release.wait()
 
     processor.register_modules(hashing=_BlockingHashing())
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_processor_tasks_total",
+            {"module": "BlockingHashing9501", "status": "success"},
+        )
+        == 0.0
+    )
 
     run_task = asyncio.create_task(processor.process_file(9501))
     await entered.wait()
@@ -1701,28 +1675,3 @@ async def test_active_files_gauge_and_system_task_checkpoint_metrics(
     release.set()
     assert await run_task is True
     assert REGISTRY.get_sample_value("supernote_processor_files_processing") == 0.0
-    # Active file 9501 completed HASHING; soft-deleted file 9502 FAILED HASHING must be excluded
-    assert (
-        REGISTRY.get_sample_value(
-            "supernote_processor_system_tasks",
-            {"task_type": "HASHING", "status": "COMPLETED"},
-        )
-        == 1.0
-    )
-    assert (
-        REGISTRY.get_sample_value(
-            "supernote_processor_system_tasks",
-            {"task_type": "HASHING", "status": "FAILED"},
-        )
-        == 0.0
-    )
-
-    # Deleting the note clears its SystemTaskDO rows and resets the gauge to 0
-    await processor.handle_note_deleted(NoteDeletedEvent(file_id=9501, user_id=1))
-    assert (
-        REGISTRY.get_sample_value(
-            "supernote_processor_system_tasks",
-            {"task_type": "HASHING", "status": "COMPLETED"},
-        )
-        == 0.0
-    )
