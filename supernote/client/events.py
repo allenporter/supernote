@@ -61,6 +61,14 @@ class EventsClient:
     ) -> EventFeedListVO:
         """Poll a user's incremental domain event feed (`GET /api/extended/events`).
 
+        When called with `sync_token=None`, returns retained events starting
+        from the oldest entry in the retention window in chronological order
+        (optionally narrowed by `event_types` or `file_id`). Callers can page
+        forward while `has_more` is `True` using each response's
+        `next_sync_token` until caught up to the most recent events, then reuse
+        that `next_sync_token` on subsequent polls to fetch only newly recorded
+        events.
+
         Args:
             sync_token: Opaque `next_sync_token` from a previous response, or
                 `None` to read from the beginning of retained event history.
