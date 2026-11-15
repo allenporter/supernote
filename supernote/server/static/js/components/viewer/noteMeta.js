@@ -1,0 +1,126 @@
+/**
+ * Pure file classification, notebook metadata, and link/transcript formatting helpers
+ * for the FileViewer component suite.
+ */
+
+export const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
+export const TEXT_EXTENSIONS = new Set(['txt', 'md', 'csv', 'json', 'yaml', 'yml', 'log']);
+export const MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024; // 2 MB
+export const ZOOM_STEPS = [75, 100, 125, 150];
+
+export const PAGE_STYLE_LABELS = {
+    '8mm_ruled_line': '8mm ruled',
+    '9mm_ruled_line': '9mm ruled',
+    '10mm_ruled_line': '10mm ruled',
+    '5mm_dots': '5mm dots',
+    '5mm_engineering_grid': '5mm grid',
+    '10mm_engineering_grid': '10mm grid',
+    'cornell_note': 'Cornell',
+    'four_wire_grid': 'Four-wire',
+    'task_list': 'Task list',
+    'weekly_2_columns': 'Weekly (2 col)',
+    'daily': 'Daily',
+    'weekly': 'Weekly',
+    'monthly': 'Monthly',
+    'custom': 'Custom template'
+};
+
+export function resolveFileExt(file) {
+    if (!file) return '';
+    if (file.extension) return String(file.extension).toLowerCase();
+    if (file.name && file.name.includes('.')) {
+        return file.name.split('.').pop().toLowerCase();
+    }
+    return '';
+}
+
+export function resolveFileCategory(ext) {
+    if (ext === 'note') return 'note';
+    if (IMAGE_EXTENSIONS.has(ext)) return 'image';
+    if (ext === 'pdf') return 'pdf';
+    if (TEXT_EXTENSIONS.has(ext)) return 'text';
+    return 'unsupported';
+}
+
+export function normalizeTranscriptPages(rawPages) {
+    if (!Array.isArray(rawPages)) return [];
+    return rawPages.map((p, idx) => ({
+        pageIndex: typeof p.pageIndex === 'number'
+            ? p.pageIndex
+            : (typeof p.page_index === 'number' ? p.page_index : idx),
+        pageId: p.pageId || p.page_id || `page-${idx}`,
+        text: p.text ?? '',
+        date: p.date || null
+    }));
+}
+
+export function formatPageStyle(style) {
+    if (!style || style === 'white') return null;
+    if (PAGE_STYLE_LABELS[style]) return PAGE_STYLE_LABELS[style];
+    const cleaned = String(style).replaceAll('_', ' ');
+    return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+export function formatLinkLabel(link, currentFileId) {
+    if (!link) return 'Link';
+    const isExternalFile = Boolean(
+        (link.targetFileId && String(link.targetFileId) !== String(currentFileId ?? '')) ||
+        link.linkType === 'file'
+    );
+    const targetBaseName = link.target
+        ? (link.target.split('/').pop() || link.target)
+        : null;
+    if (link.linkType === 'web') {
+        return link.target ? link.target.replace(/^https?:\/\//i, '') : 'Web link';
+    }
+    if (isExternalFile) {
+        const name = targetBaseName || 'Notebook';
+        if (typeof link.targetPageIndex === 'number') {
+            return `${name} · p.${link.targetPageIndex + 1}`;
+        }
+        return name;
+    }
+    if (typeof link.targetPageIndex === 'number') {
+        return `Page ${link.targetPageIndex + 1}`;
+    }
+    return targetBaseName || 'Linked notebook';
+}
+
+export function formatContent(str) {
+    if (!str) return '';
+    return str.replaceAll('\\n', '\n');
+}
+
+export function buildDisplayTranscriptPages(transcriptPages, noteMetadata, pageMetaByIndex, linksByPageIndex) {
+    const merged = new Map();
+    for (const item of transcriptPages) {
+        if (typeof item.pageIndex === 'number') {
+            merged.set(item.pageIndex, {
+                pageIndex: item.pageIndex,
+                pageId: item.pageId,
+                text: item.text ?? '',
+                date: item.date || pageMetaByIndex.get(item.pageIndex)?.date || null,
+                hasTranscript: true
+            });
+        }
+    }
+    const metaPages = noteMetadata?.pages;
+    if (Array.isArray(metaPages)) {
+        for (const mp of metaPages) {
+            const idx = mp.pageIndex;
+            if (typeof idx !== 'number') continue;
+            const hasKws = Array.isArray(mp.keywords) && mp.keywords.length > 0;
+            const hasLinks = (linksByPageIndex.get(idx)?.length || 0) > 0;
+            if (!merged.has(idx) && (hasKws || hasLinks)) {
+                merged.set(idx, {
+                    pageIndex: idx,
+                    pageId: mp.pageId || `page-${idx}`,
+                    text: '',
+                    date: mp.date || null,
+                    hasTranscript: false
+                });
+            }
+        }
+    }
+    return Array.from(merged.values()).sort((a, b) => a.pageIndex - b.pageIndex);
+}

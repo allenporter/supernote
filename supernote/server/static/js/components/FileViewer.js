@@ -1,31 +1,35 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
-import { convertNoteToPng, fetchTranscript, fetchSummaries, fetchNoteMetadata, fetchAiStatus, fetchDownloadUrl, downloadFile, searchFiles } from '../api/client.js';
+import {
+    convertNoteToPng,
+    fetchTranscript,
+    fetchSummaries,
+    fetchNoteMetadata,
+    fetchAiStatus,
+    fetchDownloadUrl,
+    downloadFile,
+    searchFiles
+} from '../api/client.js';
 import { showToast } from '../composables/useToast.js';
-import { formatSize } from '../utils/format.js';
-
-const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
-const TEXT_EXTENSIONS = new Set(['txt', 'md', 'csv', 'json', 'yaml', 'yml', 'log']);
-const MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024; // 2 MB
-const ZOOM_STEPS = [75, 100, 125, 150];
-const PAGE_STYLE_LABELS = {
-    '8mm_ruled_line': '8mm ruled',
-    '9mm_ruled_line': '9mm ruled',
-    '10mm_ruled_line': '10mm ruled',
-    '5mm_dots': '5mm dots',
-    '5mm_engineering_grid': '5mm grid',
-    '10mm_engineering_grid': '10mm grid',
-    'cornell_note': 'Cornell',
-    'four_wire_grid': 'Four-wire',
-    'task_list': 'Task list',
-    'weekly_2_columns': 'Weekly (2 col)',
-    'daily': 'Daily',
-    'weekly': 'Weekly',
-    'monthly': 'Monthly',
-    'custom': 'Custom template'
-};
+import ViewerToolbar from './viewer/ViewerToolbar.js';
+import ViewerMediaPreview from './viewer/ViewerMediaPreview.js';
+import ViewerSidePanel from './viewer/ViewerSidePanel.js';
+import {
+    MAX_TEXT_PREVIEW_BYTES,
+    ZOOM_STEPS,
+    resolveFileExt,
+    resolveFileCategory,
+    normalizeTranscriptPages,
+    formatPageStyle,
+    buildDisplayTranscriptPages
+} from './viewer/noteMeta.js';
 
 export default {
     name: 'FileViewer',
+    components: {
+        ViewerToolbar,
+        ViewerMediaPreview,
+        ViewerSidePanel
+    },
     props: ['file', 'initialPage', 'pageJumpSeq'],
     emits: ['close', 'page-change', 'open-file', 'search'],
     setup(props, { emit }) {
@@ -38,7 +42,7 @@ export default {
         const downloading = ref(false);
         const zoomPercent = ref(100);
 
-        const activeRightTab = ref('transcription'); // 'outline' | 'transcription' | 'insights'
+        const activeRightTab = ref('transcription'); // 'transcription' | 'insights'
         const isMobileSidePanelOpen = ref(false);
         const transcriptPages = ref([]);
         const noteMetadata = ref(null);
@@ -48,7 +52,7 @@ export default {
         const isLoadingTranscript = ref(false);
 
         const leftScrollPane = ref(null);
-        const transcriptScrollPane = ref(null);
+        const sidePanelRef = ref(null);
         let pageObserver = null;
         let isProgrammaticScroll = false;
         let programmaticScrollTimer = null;
@@ -56,23 +60,8 @@ export default {
         let pendingTargetTimer = null;
         let activeLoadSeq = 0;
 
-        const fileExt = computed(() => {
-            if (!props.file) return '';
-            if (props.file.extension) return String(props.file.extension).toLowerCase();
-            if (props.file.name && props.file.name.includes('.')) {
-                return props.file.name.split('.').pop().toLowerCase();
-            }
-            return '';
-        });
-
-        const fileCategory = computed(() => {
-            const ext = fileExt.value;
-            if (ext === 'note') return 'note';
-            if (IMAGE_EXTENSIONS.has(ext)) return 'image';
-            if (ext === 'pdf') return 'pdf';
-            if (TEXT_EXTENSIONS.has(ext)) return 'text';
-            return 'unsupported';
-        });
+        const fileExt = computed(() => resolveFileExt(props.file));
+        const fileCategory = computed(() => resolveFileCategory(fileExt.value));
 
         const showSidePanel = computed(() => {
             return (
@@ -102,18 +91,6 @@ export default {
             zoomPercent.value = 100;
         };
 
-        const normalizeTranscriptPages = (rawPages) => {
-            if (!Array.isArray(rawPages)) return [];
-            return rawPages.map((p, idx) => ({
-                pageIndex: typeof p.pageIndex === 'number'
-                    ? p.pageIndex
-                    : (typeof p.page_index === 'number' ? p.page_index : idx),
-                pageId: p.pageId || p.page_id || `page-${idx}`,
-                text: p.text ?? '',
-                date: p.date || null
-            }));
-        };
-
         const pageMetaByIndex = computed(() => {
             const map = new Map();
             const list = noteMetadata.value?.pages;
@@ -137,23 +114,6 @@ export default {
             return map;
         });
 
-        const getPageMeta = (pageIdx) => pageMetaByIndex.value.get(pageIdx) || null;
-
-        const formatPageStyle = (style) => {
-            if (!style || style === 'white') return null;
-            if (PAGE_STYLE_LABELS[style]) return PAGE_STYLE_LABELS[style];
-            const cleaned = String(style).replaceAll('_', ' ');
-            return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-        };
-
-        const getPageRightMeta = (pageIdx) => {
-            const meta = getPageMeta(pageIdx);
-            const date = meta?.date || transcriptByIndex.value.get(pageIdx)?.date || null;
-            const styleLabel = formatPageStyle(meta?.style);
-            const parts = [date, styleLabel].filter(Boolean);
-            return parts.length > 0 ? parts.join(' · ') : 'Supernote Canvas';
-        };
-
         const linksByPageIndex = computed(() => {
             const map = new Map();
             const list = noteMetadata.value?.links;
@@ -169,79 +129,83 @@ export default {
             return map;
         });
 
-        const getPageKeywords = (pageIdx) => {
-            const kws = getPageMeta(pageIdx)?.keywords;
-            return Array.isArray(kws) ? kws : [];
+        const getPageMeta = (pageIdx) => pageMetaByIndex.value.get(pageIdx) || null;
+
+        const getPageRightMeta = (pageIdx) => {
+            const meta = getPageMeta(pageIdx);
+            const date = meta?.date || transcriptByIndex.value.get(pageIdx)?.date || null;
+            const styleLabel = formatPageStyle(meta?.style);
+            const parts = [date, styleLabel].filter(Boolean);
+            return parts.length > 0 ? parts.join(' · ') : 'Supernote Canvas';
         };
 
-        const getPageLinks = (pageIdx) => {
-            return linksByPageIndex.value.get(pageIdx) || [];
-        };
-
-        const displayTranscriptPages = computed(() => {
-            const merged = new Map();
-            for (const item of transcriptPages.value) {
-                if (typeof item.pageIndex === 'number') {
-                    merged.set(item.pageIndex, {
-                        pageIndex: item.pageIndex,
-                        pageId: item.pageId,
-                        text: item.text ?? '',
-                        date: item.date || getPageMeta(item.pageIndex)?.date || null,
-                        hasTranscript: true
-                    });
-                }
-            }
-            const metaPages = noteMetadata.value?.pages;
-            if (Array.isArray(metaPages)) {
-                for (const mp of metaPages) {
-                    const idx = mp.pageIndex;
-                    if (typeof idx !== 'number') continue;
-                    const hasKws = Array.isArray(mp.keywords) && mp.keywords.length > 0;
-                    const hasLinks = (linksByPageIndex.value.get(idx)?.length || 0) > 0;
-                    if (!merged.has(idx) && (hasKws || hasLinks)) {
-                        merged.set(idx, {
-                            pageIndex: idx,
-                            pageId: mp.pageId || `page-${idx}`,
-                            text: '',
-                            date: mp.date || null,
-                            hasTranscript: false
-                        });
-                    }
-                }
-            }
-            return Array.from(merged.values()).sort((a, b) => a.pageIndex - b.pageIndex);
-        });
-
-        const formatLinkLabel = (link) => {
-            if (!link) return 'Link';
-            const isExternalFile = Boolean(
-                (link.targetFileId && String(link.targetFileId) !== String(props.file?.id)) ||
-                link.linkType === 'file'
-            );
-            const targetBaseName = link.target
-                ? (link.target.split('/').pop() || link.target)
-                : null;
-            if (link.linkType === 'web') {
-                return link.target ? link.target.replace(/^https?:\/\//i, '') : 'Web link';
-            }
-            if (isExternalFile) {
-                const name = targetBaseName || 'Notebook';
-                if (typeof link.targetPageIndex === 'number') {
-                    return `${name} · p.${link.targetPageIndex + 1}`;
-                }
-                return name;
-            }
-            if (typeof link.targetPageIndex === 'number') {
-                return `Page ${link.targetPageIndex + 1}`;
-            }
-            return targetBaseName || 'Linked notebook';
-        };
+        const displayTranscriptPages = computed(() =>
+            buildDisplayTranscriptPages(
+                transcriptPages.value,
+                noteMetadata.value,
+                pageMetaByIndex.value,
+                linksByPageIndex.value
+            )
+        );
 
         const handleKeywordClick = (keyword) => {
             const trimmed = String(keyword || '').trim();
             if (!trimmed) return;
             isMobileSidePanelOpen.value = false;
             emit('search', trimmed);
+        };
+
+        const scrollTranscriptToPage = (pageIndex, options = {}) => {
+            sidePanelRef.value?.scrollToPage(pageIndex, options);
+        };
+
+        const clearPendingTargetPage = () => {
+            pendingTargetPage = null;
+            if (pendingTargetTimer) {
+                clearTimeout(pendingTargetTimer);
+                pendingTargetTimer = null;
+            }
+        };
+
+        const armPendingTargetPage = (pageIndex) => {
+            clearPendingTargetPage();
+            pendingTargetPage = pageIndex;
+            pendingTargetTimer = setTimeout(() => {
+                pendingTargetPage = null;
+                pendingTargetTimer = null;
+            }, 2000);
+        };
+
+        const armProgrammaticScrollRelease = () => {
+            if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer);
+            programmaticScrollTimer = setTimeout(() => {
+                isProgrammaticScroll = false;
+                programmaticScrollTimer = null;
+            }, 180);
+        };
+
+        const scrollToCanvasPage = (pageIndex, options = {}) => {
+            const behavior = options.behavior || 'smooth';
+            if (!options.keepAnchor) {
+                armPendingTargetPage(pageIndex);
+            }
+            activePageIndex.value = pageIndex;
+            const pane = leftScrollPane.value;
+            if (!pane) return;
+            const pageEl = pane.querySelector(`[data-page-index="${pageIndex}"]`);
+            if (!pageEl) return;
+
+            isProgrammaticScroll = true;
+            armProgrammaticScrollRelease();
+
+            if (pane.scrollHeight > pane.clientHeight) {
+                const paneRect = pane.getBoundingClientRect();
+                const elRect = pageEl.getBoundingClientRect();
+                const targetTop = pageIndex === 0 ? 0 : pane.scrollTop + (elRect.top - paneRect.top) - 16;
+                pane.scrollTo({ top: Math.max(0, targetTop), behavior });
+            } else if (pane.scrollTop !== 0) {
+                pane.scrollTo({ top: 0, behavior: 'auto' });
+            }
         };
 
         const handleNoteLinkClick = async (link) => {
@@ -298,72 +262,6 @@ export default {
                 scrollToCanvasPage(link.targetPageIndex);
                 scrollTranscriptToPage(link.targetPageIndex);
                 isMobileSidePanelOpen.value = false;
-            }
-        };
-
-        const clearPendingTargetPage = () => {
-            pendingTargetPage = null;
-            if (pendingTargetTimer) {
-                clearTimeout(pendingTargetTimer);
-                pendingTargetTimer = null;
-            }
-        };
-
-        const armPendingTargetPage = (pageIndex) => {
-            clearPendingTargetPage();
-            pendingTargetPage = pageIndex;
-            pendingTargetTimer = setTimeout(() => {
-                pendingTargetPage = null;
-                pendingTargetTimer = null;
-            }, 2000);
-        };
-
-        const armProgrammaticScrollRelease = () => {
-            if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer);
-            programmaticScrollTimer = setTimeout(() => {
-                isProgrammaticScroll = false;
-                programmaticScrollTimer = null;
-            }, 180);
-        };
-
-        const scrollTranscriptToPage = (pageIndex, options = {}) => {
-            const behavior = options.behavior || 'smooth';
-            const pane = transcriptScrollPane.value;
-            if (!pane) return;
-            const cardEl = pane.querySelector(`[data-transcript-page="${pageIndex}"]`);
-            if (!cardEl) return;
-
-            if (pane.scrollHeight > pane.clientHeight) {
-                const paneRect = pane.getBoundingClientRect();
-                const cardRect = cardEl.getBoundingClientRect();
-                if (cardRect.top < paneRect.top + 8 || cardRect.bottom > paneRect.bottom - 8) {
-                    const targetTop = pane.scrollTop + (cardRect.top - paneRect.top) - 16;
-                    pane.scrollTo({ top: Math.max(0, targetTop), behavior });
-                }
-            }
-        };
-
-        const scrollToCanvasPage = (pageIndex, options = {}) => {
-            const behavior = options.behavior || 'smooth';
-            if (!options.keepAnchor) {
-                armPendingTargetPage(pageIndex);
-            }
-            activePageIndex.value = pageIndex;
-            const pane = leftScrollPane.value;
-            if (!pane) return;
-            const pageEl = pane.querySelector(`[data-page-index="${pageIndex}"]`);
-            if (!pageEl) return;
-
-            isProgrammaticScroll = true;
-            armProgrammaticScrollRelease();
-
-            if (pane.scrollHeight > pane.clientHeight) {
-                const paneRect = pane.getBoundingClientRect();
-                const elRect = pageEl.getBoundingClientRect();
-                const targetTop = pageIndex === 0 ? 0 : pane.scrollTop + (elRect.top - paneRect.top) - 16;
-                pane.scrollTo({ top: Math.max(0, targetTop), behavior });
-            } else if (pane.scrollTop !== 0) {
-                pane.scrollTo({ top: 0, behavior: 'auto' });
             }
         };
 
@@ -518,7 +416,7 @@ export default {
             try {
                 await downloadFile(props.file.id);
             } catch (e) {
-                showToast("Failed to download: " + e.message);
+                showToast('Failed to download: ' + e.message);
             } finally {
                 downloading.value = false;
             }
@@ -584,7 +482,6 @@ export default {
                 }
 
                 if (category === 'note') {
-                    // Fetch real OCR transcript, summaries & note metadata from extended APIs
                     isLoadingTranscript.value = true;
                     const [rawPages, summariesData, metaData] = await Promise.all([
                         fetchTranscript(props.file.id).catch(() => []),
@@ -607,9 +504,9 @@ export default {
                 }
             } catch (e) {
                 if (seq !== activeLoadSeq) return;
-                console.error("Failed to load file content:", e);
+                console.error('Failed to load file content:', e);
                 error.value = category === 'note'
-                    ? "Failed to render notebook pages."
+                    ? 'Failed to render notebook pages.'
                     : `Failed to load file preview: ${e.message || 'Unknown error'}`;
             } finally {
                 if (seq === activeLoadSeq) {
@@ -693,6 +590,7 @@ export default {
             }).catch(() => {});
             loadFileContent();
         });
+
         onUnmounted(() => {
             window.removeEventListener('supernote:digest-sync', handleDigestSync);
             window.removeEventListener('supernote:file-sync', handleFileSync);
@@ -703,6 +601,7 @@ export default {
             clearPendingTargetPage();
             if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer);
         });
+
         watch(
             () => [props.file?.id, fileCategory.value],
             ([newId, newCategory], [oldId, oldCategory]) => {
@@ -714,6 +613,7 @@ export default {
                 }
             }
         );
+
         watch(
             () => [props.initialPage, props.pageJumpSeq],
             ([newPage]) => {
@@ -722,21 +622,12 @@ export default {
                 }
             }
         );
-        watch(activeRightTab, (tab) => {
-            if (tab === 'transcription') {
-                nextTick(() => scrollTranscriptToPage(activePageIndex.value));
-            }
-        });
+
         watch(activePageIndex, (newIdx) => {
             if (!isLoading.value && fileCategory.value === 'note' && pages.value.length > 0) {
                 emit('page-change', newIdx);
             }
         });
-
-        const formatContent = (str) => {
-            if (!str) return '';
-            return str.replaceAll('\\n', '\n');
-        };
 
         return {
             pages,
@@ -758,163 +649,50 @@ export default {
             error,
             downloading,
             handleDownload,
-            formatSize,
             isLoadingTranscript,
             activeRightTab,
             isMobileSidePanelOpen,
             transcriptPages,
             displayTranscriptPages,
             noteMetadata,
+            pageMetaByIndex,
+            linksByPageIndex,
             getPageMeta,
-            formatPageStyle,
             getPageRightMeta,
-            getPageKeywords,
-            getPageLinks,
-            formatLinkLabel,
             handleKeywordClick,
             handleNoteLinkClick,
             activePageIndex,
             leftScrollPane,
-            transcriptScrollPane,
+            sidePanelRef,
             scrollToCanvasPage,
             handlePageImageLoad,
             updateActivePageFromScroll,
             realSummaries,
-            aiStatus,
-            formatContent
+            aiStatus
         };
     },
     template: `
     <div class="bg-white h-[calc(100vh-8.5rem)] min-h-[480px] sm:min-h-[560px] rounded-2xl border border-stone-200/90 shadow-sm flex flex-col overflow-hidden relative animate-fade-in">
-        <!-- Top Viewer Header Bar -->
-        <div class="flex-none bg-white border-b border-stone-200/80 px-3 sm:px-4 py-2.5 flex items-center justify-between gap-2 sm:gap-3 z-20">
-            <!-- Left: Back Button & File Title -->
-            <div class="flex items-center gap-2 sm:gap-3 min-w-0">
-                <button @click="$emit('close')" type="button" aria-label="Back to files" title="Back to files"
-                    class="inline-flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-semibold text-stone-600 hover:text-slate-900 bg-stone-100 hover:bg-stone-200/70 transition-colors shrink-0">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-                    </svg>
-                    <span class="hidden sm:inline">Back</span>
-                </button>
-                <div class="min-w-0" :title="'ID: ' + (file?.id || '')">
-                    <div class="flex items-center gap-2">
-                        <h3 class="text-sm font-bold text-slate-900 truncate">{{ file?.name || 'Document Viewer' }}</h3>
-                        <span v-if="fileExt" class="px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 text-[10px] font-mono font-semibold uppercase tracking-wider shrink-0">
-                            {{ fileExt }}
-                        </span>
-                    </div>
-                    <p class="text-[11px] font-mono text-stone-500 tabular-nums truncate">
-                        <span v-if="noteMetadata?.equipment" class="font-semibold text-stone-600">{{ noteMetadata.equipment }}</span>
-                        <span v-if="noteMetadata?.equipment && (pages.length > 0 || formatSize(file?.size))"> · </span>
-                        <span v-if="pages.length > 0">{{ pages.length }} {{ pages.length === 1 ? 'page' : 'pages' }}</span>
-                        <span v-if="pages.length > 0 && formatSize(file?.size)"> · </span>
-                        <span v-if="formatSize(file?.size)">{{ formatSize(file?.size) }}</span>
-                    </p>
-                </div>
-            </div>
-
-            <!-- Center: Notebook Page Stepper & Zoom Controls (Desktop) -->
-            <div v-if="fileCategory === 'note' && pages.length > 0" class="hidden sm:flex items-center gap-2">
-                <!-- Page Jumper -->
-                <div class="flex items-center bg-stone-100 rounded-lg p-0.5 border border-stone-200/60">
-                    <button @click="prevPage" :disabled="activePageIndex <= 0" type="button"
-                        aria-label="Previous page"
-                        class="p-1 rounded-md text-stone-600 hover:text-slate-900 hover:bg-white disabled:opacity-35 disabled:hover:bg-transparent transition-all"
-                        title="Previous page">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-                        </svg>
-                    </button>
-                    <span class="px-2.5 text-xs font-mono font-medium text-slate-800 tabular-nums">
-                        Page {{ activePageIndex + 1 }} / {{ pages.length }}
-                    </span>
-                    <button @click="nextPage" :disabled="activePageIndex >= pages.length - 1" type="button"
-                        aria-label="Next page"
-                        class="p-1 rounded-md text-stone-600 hover:text-slate-900 hover:bg-white disabled:opacity-35 disabled:hover:bg-transparent transition-all"
-                        title="Next page">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                        </svg>
-                    </button>
-                </div>
-
-                <!-- Zoom Control -->
-                <div class="flex items-center bg-stone-100 rounded-lg p-0.5 border border-stone-200/60">
-                    <button @click="zoomOut" :disabled="zoomPercent <= 75" type="button"
-                        aria-label="Zoom out"
-                        class="px-2 py-0.5 rounded-md text-xs font-mono font-bold text-stone-600 hover:text-slate-900 hover:bg-white disabled:opacity-35 transition-all"
-                        title="Zoom out">−</button>
-                    <button @click="resetZoom" type="button"
-                        aria-label="Reset zoom"
-                        class="px-2 py-0.5 text-[11px] font-mono font-medium text-stone-600 hover:text-slate-900 tabular-nums"
-                        title="Reset zoom">
-                        {{ zoomPercent }}%
-                    </button>
-                    <button @click="zoomIn" :disabled="zoomPercent >= 150" type="button"
-                        aria-label="Zoom in"
-                        class="px-2 py-0.5 rounded-md text-xs font-mono font-bold text-stone-600 hover:text-slate-900 hover:bg-white disabled:opacity-35 transition-all"
-                        title="Zoom in">+</button>
-                </div>
-            </div>
-
-            <!-- Right: Download & Mobile Insights Toggle -->
-            <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                <button @click="handleDownload" :disabled="downloading" type="button"
-                    aria-label="Download file"
-                    :title="downloading ? 'Downloading…' : 'Download'"
-                    class="flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 bg-stone-100 hover:bg-stone-200/80 text-slate-800 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-wait">
-                    <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"></path>
-                    </svg>
-                    <span class="hidden sm:inline">{{ downloading ? 'Downloading…' : 'Download' }}</span>
-                </button>
-                <button v-if="showSidePanel" @click="isMobileSidePanelOpen = !isMobileSidePanelOpen" type="button"
-                    class="md:hidden px-2.5 sm:px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold">
-                    {{ isMobileSidePanelOpen ? 'Hide Panel' : 'Transcript' }}
-                </button>
-            </div>
-        </div>
-
-        <!-- Mobile Notebook Secondary Control Bar -->
-        <div v-if="fileCategory === 'note' && pages.length > 0"
-            class="flex sm:hidden items-center justify-between px-3 py-1.5 bg-stone-50 border-b border-stone-200/80 gap-2 z-20">
-            <!-- Mobile Page Stepper -->
-            <div class="flex items-center bg-white rounded-lg p-0.5 border border-stone-200/80 shadow-sm">
-                <button @click="prevPage" :disabled="activePageIndex <= 0" type="button"
-                    aria-label="Previous page"
-                    class="p-1 rounded-md text-stone-600 hover:text-slate-900 hover:bg-stone-100 disabled:opacity-35 transition-all">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-                    </svg>
-                </button>
-                <span class="px-2 text-[11px] font-mono font-medium text-slate-800 tabular-nums">
-                    Page {{ activePageIndex + 1 }} / {{ pages.length }}
-                </span>
-                <button @click="nextPage" :disabled="activePageIndex >= pages.length - 1" type="button"
-                    aria-label="Next page"
-                    class="p-1 rounded-md text-stone-600 hover:text-slate-900 hover:bg-stone-100 disabled:opacity-35 transition-all">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                    </svg>
-                </button>
-            </div>
-
-            <!-- Mobile Zoom Controls -->
-            <div class="flex items-center bg-white rounded-lg p-0.5 border border-stone-200/80 shadow-sm">
-                <button @click="zoomOut" :disabled="zoomPercent <= 75" type="button"
-                    aria-label="Zoom out"
-                    class="px-2 py-0.5 rounded-md text-xs font-mono font-bold text-stone-600 hover:text-slate-900 disabled:opacity-35 transition-all">−</button>
-                <button @click="resetZoom" type="button"
-                    aria-label="Reset zoom"
-                    class="px-1.5 py-0.5 text-[11px] font-mono font-medium text-stone-600 hover:text-slate-900 tabular-nums">
-                    {{ zoomPercent }}%
-                </button>
-                <button @click="zoomIn" :disabled="zoomPercent >= 150" type="button"
-                    aria-label="Zoom in"
-                    class="px-2 py-0.5 rounded-md text-xs font-mono font-bold text-stone-600 hover:text-slate-900 disabled:opacity-35 transition-all">+</button>
-            </div>
-        </div>
+        <ViewerToolbar
+            :file="file"
+            :file-ext="fileExt"
+            :file-category="fileCategory"
+            :equipment="noteMetadata?.equipment || null"
+            :page-count="pages.length"
+            :active-page-index="activePageIndex"
+            :zoom-percent="zoomPercent"
+            :downloading="downloading"
+            :show-side-panel="showSidePanel"
+            :is-mobile-side-panel-open="isMobileSidePanelOpen"
+            @close="$emit('close')"
+            @prev-page="prevPage"
+            @next-page="nextPage"
+            @zoom-in="zoomIn"
+            @zoom-out="zoomOut"
+            @reset-zoom="resetZoom"
+            @download="handleDownload"
+            @toggle-side-panel="isMobileSidePanelOpen = !isMobileSidePanelOpen"
+        />
 
         <!-- Main Split Workspace -->
         <div class="flex-1 flex overflow-hidden relative">
@@ -967,239 +745,42 @@ export default {
                     </div>
                 </template>
 
-                <!-- Image Preview -->
-                <template v-else-if="fileCategory === 'image'">
-                    <div class="max-w-4xl w-full mx-auto my-auto flex items-center justify-center bg-white rounded-2xl notebook-page-shadow border border-stone-200/80 p-4 sm:p-6">
-                        <img v-if="previewUrl" :src="previewUrl" :alt="file?.name || 'Image Preview'"
-                            class="max-w-full max-h-[72vh] object-contain rounded-lg" />
-                    </div>
-                </template>
-
-                <!-- PDF Preview -->
-                <template v-else-if="fileCategory === 'pdf'">
-                    <div class="max-w-5xl w-full mx-auto flex-1 flex flex-col min-h-[72vh]">
-                        <iframe v-if="previewUrl" :src="previewUrl" :title="file?.name || 'PDF Preview'"
-                            class="w-full flex-1 min-h-[72vh] h-full rounded-xl border border-stone-200 bg-white shadow-sm"></iframe>
-                    </div>
-                </template>
-
-                <!-- Text / Markdown Preview -->
-                <template v-else-if="fileCategory === 'text'">
-                    <div v-if="isTextTooLarge" class="bg-white border border-stone-200 p-8 rounded-2xl shadow-sm text-center max-w-md mx-auto my-auto space-y-4">
-                        <div class="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center mx-auto">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                            </svg>
-                        </div>
-                        <div class="space-y-1">
-                            <h4 class="text-sm font-bold text-slate-900">{{ file?.name }}</h4>
-                            <p class="text-xs text-stone-500">
-                                This file ({{ formatSize(file?.size) || 'large' }}) exceeds the 2 MB inline preview limit.
-                            </p>
-                        </div>
-                        <button @click="handleDownload" :disabled="downloading" type="button"
-                            class="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm disabled:opacity-50">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"></path>
-                            </svg>
-                            Download File
-                        </button>
-                    </div>
-
-                    <div v-else class="max-w-4xl w-full mx-auto bg-white rounded-2xl notebook-page-shadow border border-stone-200/90 overflow-hidden">
-                        <div class="border-b border-stone-100 px-4 py-2 bg-stone-50/70 flex justify-between items-center text-xs text-stone-500 font-mono">
-                            <span>{{ file?.name }}</span>
-                            <span class="uppercase font-semibold text-slate-700">{{ fileExt }}</span>
-                        </div>
-                        <pre class="p-4 sm:p-6 font-mono text-xs text-slate-800 whitespace-pre-wrap break-words leading-relaxed select-text overflow-x-auto">{{ textContent }}</pre>
-                    </div>
-                </template>
-
-                <!-- Unsupported Formats Fallback Card -->
-                <template v-else>
-                    <div class="bg-white border border-stone-200/90 p-8 rounded-2xl shadow-sm text-center max-w-md w-full mx-auto my-auto space-y-5">
-                        <div class="w-12 h-12 bg-stone-100 text-stone-500 rounded-xl flex items-center justify-center mx-auto">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
-                            </svg>
-                        </div>
-                        <div class="space-y-1.5">
-                            <div class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider bg-stone-100 text-stone-600">
-                                {{ fileExt || 'FILE' }}
-                            </div>
-                            <h4 class="text-sm font-bold text-slate-900 break-all">{{ file?.name }}</h4>
-                            <p v-if="formatSize(file?.size)" class="text-xs text-stone-500 font-mono tabular-nums">{{ formatSize(file?.size) }}</p>
-                            <p class="text-xs text-stone-500 pt-1">
-                                Inline preview is not available for this file format.
-                            </p>
-                        </div>
-                        <button @click="handleDownload" :disabled="downloading" type="button"
-                            class="inline-flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm disabled:opacity-50 disabled:cursor-wait">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"></path>
-                            </svg>
-                            <span>{{ downloading ? 'Preparing download…' : 'Download File' }}</span>
-                        </button>
-                    </div>
-                </template>
+                <!-- Image, PDF, Text, and Fallback Previews -->
+                <ViewerMediaPreview
+                    v-else
+                    :file="file"
+                    :file-ext="fileExt"
+                    :file-category="fileCategory"
+                    :preview-url="previewUrl"
+                    :text-content="textContent"
+                    :is-text-too-large="isTextTooLarge"
+                    :downloading="downloading"
+                    @download="handleDownload"
+                />
             </div>
 
-            <!-- Mobile Overlay Drawer Backdrop -->
-            <div v-if="showSidePanel && isMobileSidePanelOpen" @click="isMobileSidePanelOpen = false" class="fixed inset-0 z-[60] bg-black/30 md:hidden"></div>
-
-            <!-- Right Pane: Notebook Outline, OCR Transcript & Summaries -->
-            <div v-if="showSidePanel" :class="isMobileSidePanelOpen ? 'translate-y-0' : 'translate-y-full md:translate-y-0'"
-                class="fixed md:static inset-x-0 bottom-0 z-[70] md:z-10 h-[65vh] md:h-full w-full max-w-[100vw] md:max-w-none md:w-80 lg:w-96 border-t md:border-t-0 md:border-l border-stone-200/80 bg-white flex flex-col shadow-2xl md:shadow-none transition-transform duration-200 ease-in-out flex-shrink-0 rounded-t-2xl md:rounded-none">
-
-                <!-- Segmented Tab Selector -->
-                <div class="p-2 border-b border-stone-200/80 grid grid-cols-2 gap-1 bg-stone-100/70">
-                    <button @click="activeRightTab = 'transcription'" type="button"
-                        :class="activeRightTab === 'transcription'
-                            ? 'bg-white text-slate-900 shadow-sm font-semibold'
-                            : 'text-stone-600 hover:text-slate-900 font-medium'"
-                        class="py-1.5 px-2 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5">
-                        <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                        </svg>
-                        <span>OCR Transcript</span>
-                    </button>
-                    <button @click="activeRightTab = 'insights'" type="button"
-                        :class="activeRightTab === 'insights'
-                            ? 'bg-white text-slate-900 shadow-sm font-semibold'
-                            : 'text-stone-600 hover:text-slate-900 font-medium'"
-                        class="py-1.5 px-2 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5">
-                        <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path>
-                        </svg>
-                        <span>Summaries</span>
-                    </button>
-                </div>
-
-                <!-- Tab 1: Real OCR Transcript -->
-                <div v-if="activeRightTab === 'transcription'" ref="transcriptScrollPane" class="p-4 flex-1 overflow-y-auto space-y-3">
-                    <div class="flex items-center justify-between gap-2">
-                        <div class="flex items-center gap-2 min-w-0">
-                            <span class="text-[11px] font-bold text-stone-500 uppercase tracking-wider shrink-0">OCR Transcript</span>
-                            <span v-if="aiStatus?.ocrEnabled && aiStatus?.model"
-                                class="px-1.5 py-0.5 rounded bg-stone-100 text-[10px] font-mono text-stone-600 truncate"
-                                :title="aiStatus.model">
-                                {{ aiStatus.model }}
-                            </span>
-                            <span v-if="transcriptPages.length > 0" class="px-1.5 py-0.5 rounded bg-stone-100 text-[10px] font-mono text-stone-500 shrink-0 tabular-nums">
-                                {{ transcriptPages.length }} {{ transcriptPages.length === 1 ? 'page' : 'pages' }}
-                            </span>
-                        </div>
-                        <button @click="isMobileSidePanelOpen = false" type="button" class="md:hidden shrink-0 text-xs text-stone-500 hover:text-slate-700">Done</button>
-                    </div>
-
-                    <div v-if="isLoadingTranscript" class="py-12 text-center text-stone-500 text-xs">
-                        <div class="animate-spin rounded-full h-5 w-5 border-2 border-stone-300 border-t-slate-900 mx-auto mb-2"></div>
-                        Fetching OCR transcript...
-                    </div>
-
-                    <div v-else-if="displayTranscriptPages.length > 0" class="space-y-3">
-                        <div v-for="pageItem in displayTranscriptPages" :key="pageItem.pageId || pageItem.pageIndex"
-                            :data-transcript-page="pageItem.pageIndex"
-                            :class="activePageIndex === pageItem.pageIndex
-                                ? 'border-slate-900 ring-1 ring-slate-900/15 bg-stone-50/70'
-                                : 'border-stone-200/80 bg-white'"
-                            class="rounded-xl border overflow-hidden transition-all">
-                            <button v-if="pages.length > 0" type="button"
-                                @click="scrollToCanvasPage(pageItem.pageIndex)"
-                                class="w-full px-3.5 py-2 border-b border-stone-100 flex items-center justify-between text-left hover:bg-stone-100/70 transition-colors cursor-pointer">
-                                <div class="flex items-center gap-2">
-                                    <span :class="activePageIndex === pageItem.pageIndex
-                                        ? 'bg-slate-900 text-white'
-                                        : 'bg-stone-200/80 text-stone-700'"
-                                        class="px-2 py-0.5 rounded-md text-[11px] font-bold font-mono transition-colors tabular-nums">
-                                        Page {{ pageItem.pageIndex + 1 }}
-                                    </span>
-                                    <span v-if="pageItem.date || getPageMeta(pageItem.pageIndex)?.date" class="text-[11px] text-stone-500 font-mono tabular-nums">
-                                        {{ pageItem.date || getPageMeta(pageItem.pageIndex)?.date }}
-                                    </span>
-                                    <span v-if="getPageMeta(pageItem.pageIndex)?.hasFiveStar" class="text-xs text-amber-600 font-bold" title="Starred page">★</span>
-                                </div>
-                                <span class="text-[10px] font-semibold text-stone-500">
-                                    {{ activePageIndex === pageItem.pageIndex ? 'Viewing' : 'Jump →' }}
-                                </span>
-                            </button>
-                            <div v-else class="w-full px-3.5 py-2 border-b border-stone-100 flex items-center justify-between">
-                                <div class="flex items-center gap-2">
-                                    <span class="px-2 py-0.5 rounded-md text-[11px] font-bold font-mono bg-stone-200/80 text-stone-700 tabular-nums">
-                                        Page {{ pageItem.pageIndex + 1 }}
-                                    </span>
-                                    <span v-if="pageItem.date || getPageMeta(pageItem.pageIndex)?.date" class="text-[11px] text-stone-500 font-mono tabular-nums">
-                                        {{ pageItem.date || getPageMeta(pageItem.pageIndex)?.date }}
-                                    </span>
-                                </div>
-                            </div>
-                            <!-- Per-Page Keywords & Outgoing Links -->
-                            <div v-if="getPageKeywords(pageItem.pageIndex).length > 0 || getPageLinks(pageItem.pageIndex).length > 0"
-                                class="px-3.5 py-2 bg-stone-50/50 border-b border-stone-100 flex flex-wrap items-center gap-1.5">
-                                <button v-for="kw in getPageKeywords(pageItem.pageIndex)" :key="'kw-' + pageItem.pageIndex + '-' + kw"
-                                    type="button"
-                                    @click.stop="handleKeywordClick(kw)"
-                                    :title="'Search notebooks for #' + kw"
-                                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 hover:bg-amber-100/90 text-amber-900 border border-amber-200/80 text-[11px] font-mono font-semibold transition-colors cursor-pointer">
-                                    <span>#{{ kw }}</span>
-                                </button>
-                                <button v-for="(link, lIdx) in getPageLinks(pageItem.pageIndex)" :key="'lk-' + pageItem.pageIndex + '-' + lIdx"
-                                    type="button"
-                                    @click.stop="handleNoteLinkClick(link)"
-                                    :title="link.target || formatLinkLabel(link)"
-                                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-50 hover:bg-sky-100/90 text-sky-900 border border-sky-200/80 text-[11px] font-mono font-semibold transition-colors cursor-pointer">
-                                    <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
-                                    </svg>
-                                    <span class="truncate max-w-[180px]">{{ formatLinkLabel(link) }}</span>
-                                </button>
-                            </div>
-                            <div v-if="pageItem.hasTranscript" class="p-3.5 font-mono text-xs text-slate-800 whitespace-pre-wrap leading-relaxed select-text">
-                                <template v-if="pageItem.text">{{ formatContent(pageItem.text) }}</template>
-                                <span v-else class="italic text-stone-500 font-sans">No text recognized on this page.</span>
-                            </div>
-                        </div>
-
-                        <div v-if="transcriptPages.length === 0" class="bg-stone-50/80 p-4 rounded-xl border border-stone-200/70 text-center text-xs text-stone-500 leading-relaxed">
-                            <template v-if="aiStatus && !aiStatus.ocrEnabled">
-                                OCR is not enabled on this server. Configure an AI provider to automatically transcribe handwritten pages.
-                            </template>
-                            <template v-else>
-                                No OCR transcript available for this notebook yet. Background processing may still be running.
-                            </template>
-                        </div>
-                    </div>
-
-                    <div v-else class="bg-stone-50/80 p-5 rounded-xl border border-stone-200/70 text-center text-xs text-stone-500 leading-relaxed">
-                        <template v-if="aiStatus && !aiStatus.ocrEnabled">
-                            OCR is not enabled on this server. Configure an AI provider to automatically transcribe handwritten pages.
-                        </template>
-                        <template v-else>
-                            No OCR transcript available for this notebook yet. Background processing may still be running.
-                        </template>
-                    </div>
-                </div>
-
-                <!-- Tab 2: Real Summaries -->
-                <div v-if="activeRightTab === 'insights'" class="p-4 flex-1 overflow-y-auto space-y-3">
-                    <div class="flex items-center justify-between gap-2">
-                        <h4 class="text-[11px] font-bold text-stone-500 uppercase tracking-wider truncate">Notebook Summaries</h4>
-                        <button @click="isMobileSidePanelOpen = false" type="button" class="md:hidden shrink-0 text-xs text-stone-500 hover:text-slate-700">Done</button>
-                    </div>
-
-                    <div v-if="realSummaries.length > 0" class="space-y-3">
-                        <div v-for="s in realSummaries" :key="s.id"
-                            class="p-3.5 bg-stone-50 rounded-xl border border-stone-200/80 text-xs text-slate-800 leading-relaxed whitespace-pre-wrap">
-                            <p v-if="s.title" class="font-bold text-slate-900 mb-1.5">{{ s.title }}</p>
-                            {{ formatContent(s.content || s.summary) }}
-                        </div>
-                    </div>
-
-                    <div v-else class="bg-stone-50/80 p-5 rounded-xl border border-stone-200/70 text-center text-xs text-stone-500 leading-relaxed">
-                        No summaries generated yet for this notebook.
-                    </div>
-                </div>
-            </div>
+            <!-- Right Pane: OCR Transcript & Summaries -->
+            <ViewerSidePanel
+                v-if="showSidePanel"
+                ref="sidePanelRef"
+                :file-id="file?.id ?? null"
+                :is-open-mobile="isMobileSidePanelOpen"
+                :active-tab="activeRightTab"
+                :active-page-index="activePageIndex"
+                :has-canvas-pages="pages.length > 0"
+                :is-loading-transcript="isLoadingTranscript"
+                :transcript-pages="transcriptPages"
+                :display-transcript-pages="displayTranscriptPages"
+                :page-meta-by-index="pageMetaByIndex"
+                :links-by-page-index="linksByPageIndex"
+                :summaries="realSummaries"
+                :ai-status="aiStatus"
+                @update:active-tab="activeRightTab = $event"
+                @close-mobile="isMobileSidePanelOpen = false"
+                @select-page="scrollToCanvasPage"
+                @keyword-click="handleKeywordClick"
+                @link-click="handleNoteLinkClick"
+            />
         </div>
     </div>
     `
