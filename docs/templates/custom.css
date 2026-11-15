@@ -87,6 +87,19 @@ nav.pdoc > div {
     height: 1.1rem;
 }
 
+.sn-external-link-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.sn-nav-gh-icon {
+    width: 0.95rem;
+    height: 0.95rem;
+    flex-shrink: 0;
+    color: #475569;
+}
+
 .sn-external-arrow {
     font-size: 0.75rem;
     color: #94a3b8;

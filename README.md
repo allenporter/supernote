@@ -6,6 +6,7 @@
   <img src="docs/static-assets/hero-overview.jpg" alt="Supernote Overview" width="800">
 </p>
 
+[![GitHub Repository](https://img.shields.io/badge/GitHub-allenporter%2Fsupernote-181717.svg?logo=github)](https://github.com/allenporter/supernote)
 [![Documentation](https://img.shields.io/badge/docs-manual-blue.svg)](https://allenporter.github.io/supernote/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/allenporter/supernote/blob/main/LICENSE)
 
@@ -18,7 +19,7 @@
 
 ---
 
-## Why Open Private Cloud for Supernote? (Killer Features)
+## Why Open Private Cloud for Supernote?
 
 ### Native Tablet Sync in ~135 MB of RAM (No Java, MariaDB, or Redis)
 While the official Supernote Private Cloud stack orchestrates multi-container Java/Spring Boot, MariaDB, and Redis services (~2 GB+ RAM), Open Private Cloud runs in a single Python `asyncio` process backed by a single SQLite file and content-addressable blob storage. Point your tablet's native **Settings → Sync → Private Cloud** to your server and tap **Sync**—it runs effortlessly on a Raspberry Pi, NAS, or low-memory home lab server with two-tier volume and per-user storage quotas.
@@ -350,7 +351,7 @@ The notebook parser originally started as a fork of [supernote-tool](https://git
 
 ## Contributing & Community
 
-We welcome contributions! Please see our **[Contributing Guide](docs/CONTRIBUTING.md)** and **[Database Migration Guide](docs/schema_migration_guide.md)** for details on local development (`./script/bootstrap`, `./script/test`, `./script/lint`, `./script/docs`), Ephemeral Mode (`supernote serve --ephemeral`), and AI Skills.
+We welcome issues, feature requests, and pull requests on **[GitHub (`allenporter/supernote`)](https://github.com/allenporter/supernote)**! Please see our **[Contributing Guide](docs/CONTRIBUTING.md)** and **[Database Migration Guide](docs/schema_migration_guide.md)** for details on local development (`./script/bootstrap`, `./script/test`, `./script/lint`, `./script/docs`), Ephemeral Mode (`supernote serve --ephemeral`), and AI Skills.
 
 ### Community Projects
 
