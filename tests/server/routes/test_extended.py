@@ -22,6 +22,7 @@ from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NoteMetadataDO,
     NotePageContentDO,
+    NotePageMetadataDO,
     SystemTaskDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
@@ -946,8 +947,6 @@ async def test_extended_note_metadata_returns_notebook_and_pages(
     assert meta_vo.success is True
     assert meta_vo.file_id == file_id
     assert meta_vo.equipment == "N6"
-    assert meta_vo.width == 1404
-    assert meta_vo.height == 1872
     assert meta_vo.total_pages == 2
     assert meta_vo.keywords == {
         "ks-tilt": [0, 1],
@@ -956,8 +955,9 @@ async def test_extended_note_metadata_returns_notebook_and_pages(
     }
     assert len(meta_vo.pages) == 2
     assert meta_vo.pages[0].page_index == 0
-    assert meta_vo.pages[0].has_ink is True
-    assert meta_vo.pages[0].has_drawables is True
+    assert meta_vo.pages[0].style == "white"
+    assert meta_vo.pages[0].is_blank is False
+    assert meta_vo.pages[0].has_five_star is False
     assert meta_vo.pages[1].keywords == ["ks-tilt", "ks-trapezoid", "ks-shapes"]
 
     raw_resp = await client.post(
@@ -1066,3 +1066,143 @@ async def test_extended_note_metadata_corrupt_header_raises_server_error(
 
     with pytest.raises(ApiException, match="500"):
         await extended_client.get_note_metadata(file_id=9203)
+
+
+async def test_extended_note_metadata_normalizes_titles_and_resolves_links(
+    extended_client: ExtendedClient,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    """Verify titles normalize TITLESTYLE levels and outgoing links resolve target file/page indices."""
+    src_file_id = 9210
+    dst_file_id = 9211
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=src_file_id,
+                    user_id=test_user_id,
+                    directory_id=0,
+                    file_name="Source.note",
+                    is_folder="N",
+                ),
+                UserFileDO(
+                    id=dst_file_id,
+                    user_id=test_user_id,
+                    directory_id=0,
+                    file_name="Target.note",
+                    is_folder="N",
+                ),
+                NoteMetadataDO(
+                    user_id=test_user_id,
+                    file_id=dst_file_id,
+                    native_file_id="F_DST",
+                    file_type="note",
+                    signature="SN_FILE_VER_20230015",
+                    total_pages=2,
+                    header_json=json.dumps({"FILE_ID": "F_DST"}),
+                    footer_json=json.dumps({}),
+                ),
+                NotePageMetadataDO(
+                    user_id=test_user_id,
+                    file_id=dst_file_id,
+                    page_index=1,
+                    page_id="P_DST_1",
+                    has_ink=True,
+                    has_drawables=True,
+                ),
+                NoteMetadataDO(
+                    user_id=test_user_id,
+                    file_id=src_file_id,
+                    native_file_id="F_SRC",
+                    file_type="note",
+                    signature="SN_FILE_VER_20230015",
+                    total_pages=2,
+                    header_json=json.dumps(
+                        {"FILE_ID": "F_SRC", "APPLY_EQUIPMENT": "N5"}
+                    ),
+                    footer_json=json.dumps(
+                        {
+                            "TITLE_00010010": "100",
+                            "TITLE_00020010": "200",
+                            "__titles__": [
+                                {"TITLELEVEL": "1", "TITLESTYLE": "1000254"},
+                                {"TITLELEVEL": "1", "TITLESTYLE": "1201000"},
+                            ],
+                            "LINKO_00010010001000100010": "300",
+                            "LINKO_00020010001000100010": "400",
+                            "LINKI_00010010001000100010": "500",
+                            "__links__": [
+                                {
+                                    "LINKTYPE": "0",
+                                    "LINKINOUT": "0",
+                                    "LINKFILEID": "F_SRC",
+                                    "PAGEID": "P_SRC_1",
+                                },
+                                {
+                                    "LINKTYPE": "0",
+                                    "LINKINOUT": "0",
+                                    "LINKFILEID": "F_DST",
+                                    "PAGEID": "P_DST_1",
+                                },
+                                {
+                                    "LINKTYPE": "0",
+                                    "LINKINOUT": "1",
+                                    "LINKFILEID": "F_DST",
+                                    "PAGEID": "P_SRC_0",
+                                },
+                            ],
+                        }
+                    ),
+                ),
+                NotePageMetadataDO(
+                    user_id=test_user_id,
+                    file_id=src_file_id,
+                    page_index=0,
+                    page_id="P_SRC_0",
+                    page_style="style_h_8mm_ruled_line_a5x2",
+                    has_ink=False,
+                    has_drawables=False,
+                    page_json=json.dumps({"FIVESTAR": "10,20,30,40"}),
+                ),
+                NotePageMetadataDO(
+                    user_id=test_user_id,
+                    file_id=src_file_id,
+                    page_index=1,
+                    page_id="P_SRC_1",
+                    page_style="user_Daily",
+                    has_ink=True,
+                    has_drawables=True,
+                    page_json=json.dumps({}),
+                ),
+            ]
+        )
+        await session.commit()
+
+    meta_vo = await extended_client.get_note_metadata(file_id=src_file_id)
+    assert [t.to_dict() for t in meta_vo.titles] == [
+        {"pageIndex": 0, "level": 1},
+        {"pageIndex": 1, "level": 3},
+    ]
+    assert [lk.to_dict() for lk in meta_vo.links] == [
+        {
+            "pageIndex": 0,
+            "linkType": "page",
+            "target": None,
+            "targetFileId": None,
+            "targetPageIndex": 1,
+        },
+        {
+            "pageIndex": 1,
+            "linkType": "page",
+            "target": None,
+            "targetFileId": str(dst_file_id),
+            "targetPageIndex": 1,
+        },
+    ]
+    assert meta_vo.pages[0].style == "8mm_ruled_line"
+    assert meta_vo.pages[0].is_blank is True
+    assert meta_vo.pages[0].has_five_star is True
+    assert meta_vo.pages[1].style == "daily"
+    assert meta_vo.pages[1].is_blank is False
+    assert meta_vo.pages[1].has_five_star is False

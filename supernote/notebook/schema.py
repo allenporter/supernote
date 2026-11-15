@@ -990,6 +990,14 @@ class KeywordMetadata:
         return dict(self.to_params())
 
 
+_TITLE_STYLE_LEVEL_MAP: dict[str, int] = {
+    "1000254": 1,
+    "1157254": 2,
+    "1201000": 3,
+    "1000000": 4,
+}
+
+
 @dataclass
 class TitleMetadata:
     """Heading/outline block metadata referenced from a footer `TITLE_<page4><pos>` tag."""
@@ -1022,6 +1030,15 @@ class TitleMetadata:
     """Forward-compatible map of any unrecognized `<KEY:VALUE>` title tags."""
 
     _wire_keys: tuple[str, ...] = field(default=(), repr=False, compare=False)
+
+    @property
+    def heading_level(self) -> int:
+        """Normalized 1..4 heading hierarchy level derived from `style` or `level`."""
+        if self.style and self.style in _TITLE_STYLE_LEVEL_MAP:
+            return _TITLE_STYLE_LEVEL_MAP[self.style]
+        if self.level is not None and self.level >= 1:
+            return self.level
+        return 1
 
     _KNOWN_KEYS = frozenset(
         {

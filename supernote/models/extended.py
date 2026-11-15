@@ -358,8 +358,7 @@ class NoteTitleVO(DataClassJSONMixin):
     """Heading/outline entry anchored to a notebook page."""
 
     page_index: int = field(metadata=field_options(alias="pageIndex"))
-    level: int | None = None
-    style: str | None = None
+    level: int = 1
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -370,14 +369,17 @@ class NoteLinkVO(DataClassJSONMixin):
     """Hyperlink entry anchored to a notebook page."""
 
     page_index: int = field(metadata=field_options(alias="pageIndex"))
-    link_type: int = field(metadata=field_options(alias="linkType"))
-    direction: int
+    link_type: str = field(metadata=field_options(alias="linkType"))
     target: str | None = None
-    target_file_id: str | None = field(
-        metadata=field_options(alias="targetFileId"), default=None
+    target_file_id: int | None = field(
+        metadata=field_options(
+            alias="targetFileId",
+            serialize=lambda v: str(v) if v is not None else None,
+        ),
+        default=None,
     )
-    target_page_id: str | None = field(
-        metadata=field_options(alias="targetPageId"), default=None
+    target_page_index: int | None = field(
+        metadata=field_options(alias="targetPageIndex"), default=None
     )
 
     class Config(BaseConfig):
@@ -386,18 +388,15 @@ class NoteLinkVO(DataClassJSONMixin):
 
 @dataclass
 class NotePageMetadataVO(DataClassJSONMixin):
-    """Per-page structural metadata, ink/drawable flags, and annotations."""
+    """Per-page structural metadata, blank/star flags, and keywords."""
 
     page_index: int = field(metadata=field_options(alias="pageIndex"))
     page_id: str = field(metadata=field_options(alias="pageId"))
     date: str | None = None
     style: str | None = None
-    has_ink: bool = field(metadata=field_options(alias="hasInk"), default=False)
-    has_drawables: bool = field(
-        metadata=field_options(alias="hasDrawables"), default=False
-    )
-    five_star: list[str] = field(
-        metadata=field_options(alias="fiveStar"), default_factory=list
+    is_blank: bool = field(metadata=field_options(alias="isBlank"), default=False)
+    has_five_star: bool = field(
+        metadata=field_options(alias="hasFiveStar"), default=False
     )
     keywords: list[str] = field(default_factory=list)
 
@@ -416,8 +415,6 @@ class WebNoteMetadataVO(BaseResponse):
         metadata=field_options(alias="fileId", serialize=str), default=0
     )
     equipment: str | None = None
-    width: int | None = None
-    height: int | None = None
     total_pages: int = field(metadata=field_options(alias="totalPages"), default=0)
     keywords: dict[str, list[int]] = field(default_factory=dict)
     titles: list[NoteTitleVO] = field(default_factory=list)
