@@ -39,13 +39,13 @@ from supernote.notebook.schema import (
     SupernoteMetadata,
 )
 from supernote.server.metrics import (
-    PROCESSOR_FILES_PROCESSING,
     PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL,
     PROCESSOR_QUEUE_PAUSED,
     PROCESSOR_QUEUE_SIZE,
     PROCESSOR_STALLED_TASKS_RECOVERED_TOTAL,
     NoteProcessingMode,
     init_note_processing_metrics,
+    init_processor_module_metrics,
     track_note_processing_run,
 )
 
@@ -117,6 +117,7 @@ class ProcessorService:
         self._processing_enabled = asyncio.Event()
         init_note_processing_metrics()
         self._set_processing_enabled(True)
+        self._update_queue_metrics()
 
         # Module registry
         self.global_pre_modules: list[ProcessorModule] = []
@@ -133,7 +134,6 @@ class ProcessorService:
 
     def _update_queue_metrics(self) -> None:
         PROCESSOR_QUEUE_SIZE.set(self.queue.qsize())
-        PROCESSOR_FILES_PROCESSING.set(len(self.processing_files))
 
     @asynccontextmanager
     async def _file_lock(self, file_id: int) -> AsyncGenerator[None]:
@@ -165,6 +165,15 @@ class ProcessorService:
         self.global_pre_modules = [hashing]
         self.page_modules = [m for m in (png, ocr, embedding) if m is not None]
         self.global_post_modules = [m for m in (summary,) if m is not None]
+        init_processor_module_metrics(
+            m.name
+            for m in (
+                *self.global_pre_modules,
+                *self.page_modules,
+                *self.global_post_modules,
+            )
+            if m.enabled
+        )
         logger.info("Registered all processor modules.")
 
     async def start(self) -> None:

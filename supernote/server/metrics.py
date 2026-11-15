@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import math
 import time
-from collections.abc import Generator, Mapping
+from collections.abc import Generator, Iterable, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -22,9 +22,7 @@ from prometheus_client import Counter, Gauge, Histogram
 __all__ = [
     "AIStage",
     "BlobStorageKind",
-    "DB_SESSIONS_ACTIVE",
     "DB_SESSION_ERRORS_TOTAL",
-    "HTTP_REQUESTS_IN_PROGRESS",
     "HTTP_REQUESTS_TOTAL",
     "HTTP_REQUEST_DURATION_SECONDS",
     "MCPToolName",
@@ -32,7 +30,6 @@ __all__ = [
     "NoteUploadSource",
     "OSSTransferDirection",
     "OSSTransferKind",
-    "PROCESSOR_FILES_PROCESSING",
     "PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL",
     "PROCESSOR_QUEUE_PAUSED",
     "PROCESSOR_QUEUE_SIZE",
@@ -43,6 +40,7 @@ __all__ = [
     "init_mcp_metrics",
     "init_note_processing_metrics",
     "init_oss_and_upload_metrics",
+    "init_processor_module_metrics",
     "record_ai_tokens",
     "record_note_page_diff",
     "record_note_upload",
@@ -200,12 +198,6 @@ HTTP_REQUEST_DURATION_SECONDS: Histogram = Histogram(
     buckets=REQUEST_DURATION_BUCKETS,
 )
 
-HTTP_REQUESTS_IN_PROGRESS: Gauge = Gauge(
-    "supernote_http_requests_in_progress",
-    "Current number of HTTP requests actively being processed.",
-    ["method"],
-)
-
 # Processor metrics
 PROCESSOR_TASKS_TOTAL: Counter = Counter(
     "supernote_processor_tasks_total",
@@ -230,9 +222,11 @@ PROCESSOR_QUEUE_PAUSED: Gauge = Gauge(
     "Whether background processor queue execution is currently paused (1 = paused, 0 = active).",
 )
 
-PROCESSOR_FILES_PROCESSING: Gauge = Gauge(
-    "supernote_processor_files_processing",
-    "Current number of files actively undergoing background pipeline processing.",
+_MODULE_TASK_OUTCOMES: tuple[str, ...] = (
+    _OutcomeStatus.SUCCESS.value,
+    _OutcomeStatus.FAILURE.value,
+    "skipped",
+    _OutcomeStatus.CANCELLED.value,
 )
 
 PROCESSOR_STALLED_TASKS_RECOVERED_TOTAL: Counter = Counter(
@@ -265,10 +259,20 @@ _NOTE_PAGES_PARSED_TOTAL: Counter = Counter(
 )
 
 
+def init_processor_module_metrics(module_names: Iterable[str]) -> None:
+    """Pre-initialize per-module task counters and latency histograms at 0."""
+    for module_name in module_names:
+        PROCESSOR_TASK_DURATION_SECONDS.labels(module=module_name)
+        for status in _MODULE_TASK_OUTCOMES:
+            PROCESSOR_TASKS_TOTAL.labels(module=module_name, status=status)
+
+
 def init_note_processing_metrics() -> None:
-    """Pre-initialize `.note` run and page-diff counter series at 0."""
+    """Pre-initialize `.note` queue gauge, run/page-diff counters, and histograms at 0."""
+    PROCESSOR_QUEUE_SIZE.set(0)
     for mode in NoteProcessingMode:
-        for status in (_OutcomeStatus.SUCCESS, _OutcomeStatus.FAILURE):
+        _NOTE_PROCESSING_DURATION_SECONDS.labels(mode=mode.value)
+        for status in _OutcomeStatus:
             _NOTE_PROCESSING_RUNS_TOTAL.labels(
                 mode=mode.value,
                 status=status.value,
@@ -459,13 +463,30 @@ def init_ai_metrics(
     model: str,
     stage: AIStage,
 ) -> None:
-    """Pre-initialize `success` and `failure` counter series at 0 for rate()/increase()."""
+    """Pre-initialize AI request counters, token counters, and latency histograms at 0."""
+    _AI_REQUEST_DURATION_SECONDS.labels(
+        provider=provider,
+        model=model,
+        stage=stage.value,
+    )
     for status in (_OutcomeStatus.SUCCESS, _OutcomeStatus.FAILURE):
         _AI_REQUESTS_TOTAL.labels(
             provider=provider,
             model=model,
             stage=stage.value,
             status=status.value,
+        )
+    token_types: tuple[_AITokenType, ...] = (
+        (_AITokenType.INPUT,)
+        if stage in (AIStage.EMBEDDING_DOCUMENT, AIStage.EMBEDDING_QUERY)
+        else tuple(_AITokenType)
+    )
+    for token_type in token_types:
+        _AI_TOKENS_TOTAL.labels(
+            provider=provider,
+            model=model,
+            stage=stage.value,
+            token_type=token_type.value,
         )
 
 
@@ -563,8 +584,9 @@ _MCP_TOOL_DURATION_SECONDS: Histogram = Histogram(
 
 
 def init_mcp_metrics() -> None:
-    """Pre-initialize MCP tool call `success` and `failure` counter series at 0."""
+    """Pre-initialize MCP tool call counters and latency histograms at 0."""
     for tool in MCPToolName:
+        _MCP_TOOL_DURATION_SECONDS.labels(tool=tool.value)
         for status in (_OutcomeStatus.SUCCESS, _OutcomeStatus.FAILURE):
             _MCP_TOOL_CALLS_TOTAL.labels(
                 tool=tool.value,
@@ -587,11 +609,6 @@ def track_mcp_tool_call(
 
 
 # Database metrics
-DB_SESSIONS_ACTIVE: Gauge = Gauge(
-    "supernote_db_sessions_active",
-    "Current number of active/open database sessions.",
-)
-
 DB_SESSION_ERRORS_TOTAL: Counter = Counter(
     "supernote_db_session_errors_total",
     "Total number of database and SQLAlchemy session errors.",

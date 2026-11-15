@@ -1617,3 +1617,55 @@ async def test_process_file_and_queue_pause_metrics(
         )
         == before_on_demand_cancel + 1.0
     )
+
+
+async def test_processor_queue_size_and_module_metric_seeding(
+    session_manager: DatabaseSessionManager,
+    file_service: FileService,
+    summary_service: SummaryService,
+) -> None:
+    """Verify `queue_size` tracks queued backlog and `register_modules` seeds per-module metrics."""
+    processor = ProcessorService(
+        event_bus=LocalEventBus(),
+        session_manager=session_manager,
+        file_service=file_service,
+        summary_service=summary_service,
+        concurrency=0,
+    )
+
+    await processor.handle_note_updated(
+        NoteUpdatedEvent(file_id=9501, user_id=1, file_path="/Note/a.note")
+    )
+    await processor.handle_note_updated(
+        NoteUpdatedEvent(file_id=9503, user_id=1, file_path="/Note/b.note")
+    )
+    assert REGISTRY.get_sample_value("supernote_processor_queue_size") == 2.0
+
+    class _NoopHashing(ProcessorModule):
+        @property
+        def name(self) -> str:
+            return "NoopHashing9501"
+
+        @property
+        def task_type(self) -> TaskType:
+            return TaskType.PAGE_HASHING
+
+        async def process(self, *args: object, **kwargs: object) -> None:
+            return None
+
+    processor.register_modules(hashing=_NoopHashing())
+    for status in ("success", "failure", "skipped", "cancelled"):
+        assert (
+            REGISTRY.get_sample_value(
+                "supernote_processor_tasks_total",
+                {"module": "NoopHashing9501", "status": status},
+            )
+            == 0.0
+        )
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_processor_task_duration_seconds_count",
+            {"module": "NoopHashing9501"},
+        )
+        == 0.0
+    )
