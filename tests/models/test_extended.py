@@ -8,6 +8,10 @@ from supernote.models.extended import (
     CreateApiKeyResponseVO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
+    NoteKeywordVO,
+    NoteLinkVO,
+    NotePageMetadataVO,
+    NoteTitleVO,
     PageTranscriptVO,
     SearchResultVO,
     SystemTaskListVO,
@@ -15,6 +19,8 @@ from supernote.models.extended import (
     WebAiStatusVO,
     WebNoteCoverRequestDTO,
     WebNoteCoverVO,
+    WebNoteMetadataRequestDTO,
+    WebNoteMetadataVO,
     WebSearchRequestDTO,
     WebSearchResponseVO,
     WebSummaryListRequestDTO,
@@ -290,3 +296,79 @@ def test_web_ai_status_model() -> None:
         "model": "apple-vision",
     }
     assert WebAiStatusVO.from_dict(data) == vo
+
+
+def test_web_note_metadata_models() -> None:
+    snowflake_id = 772252421643567298
+    req = WebNoteMetadataRequestDTO(file_id=snowflake_id)
+    assert req.to_dict() == {"fileId": str(snowflake_id)}
+    assert WebNoteMetadataRequestDTO.from_dict({"fileId": str(snowflake_id)}) == req
+    assert WebNoteMetadataRequestDTO.from_dict({"fileId": snowflake_id}) == req
+
+    vo = WebNoteMetadataVO(
+        file_id=snowflake_id,
+        equipment="N5",
+        width=1920,
+        height=2560,
+        total_pages=2,
+        keywords=[NoteKeywordVO(page_number=0, text="Sprint")],
+        titles=[NoteTitleVO(page_number=0, level=1, style="1000254")],
+        links=[
+            NoteLinkVO(
+                page_number=1,
+                link_type=0,
+                direction=0,
+                target="/Note/Target.note",
+                target_file_id="F_TARGET",
+                target_page_id="P_TARGET",
+            )
+        ],
+        pages=[
+            NotePageMetadataVO(
+                page_index=0,
+                page_id="P20261101120000abc",
+                date="2026-11-01",
+                style="style_5mm_dots",
+                has_ink=True,
+                has_drawables=True,
+                five_star=["10,20,30,40"],
+                keywords=["Sprint"],
+            )
+        ],
+    )
+    data = vo.to_dict()
+    assert data == {
+        "success": True,
+        "errorCode": None,
+        "errorMsg": None,
+        "fileId": str(snowflake_id),
+        "equipment": "N5",
+        "width": 1920,
+        "height": 2560,
+        "totalPages": 2,
+        "keywords": [{"pageNumber": 0, "text": "Sprint"}],
+        "titles": [{"pageNumber": 0, "level": 1, "style": "1000254"}],
+        "links": [
+            {
+                "pageNumber": 1,
+                "linkType": 0,
+                "direction": 0,
+                "target": "/Note/Target.note",
+                "targetFileId": "F_TARGET",
+                "targetPageId": "P_TARGET",
+            }
+        ],
+        "pages": [
+            {
+                "pageIndex": 0,
+                "pageId": "P20261101120000abc",
+                "date": "2026-11-01",
+                "style": "style_5mm_dots",
+                "hasInk": True,
+                "hasDrawables": True,
+                "fiveStar": ["10,20,30,40"],
+                "keywords": ["Sprint"],
+            }
+        ],
+    }
+    assert WebNoteMetadataVO.from_dict(data) == vo

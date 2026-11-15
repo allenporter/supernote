@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import time
 from collections.abc import AsyncGenerator
@@ -8,6 +9,16 @@ from typing import Any
 from sqlalchemy import delete, or_, select
 
 from supernote.models.base import ProcessingStatus, TaskType
+from supernote.models.extended import (
+    NoteKeywordVO,
+    NoteLinkVO,
+    NotePageMetadataVO,
+    NoteTitleVO,
+    WebNoteMetadataVO,
+)
+from supernote.notebook import exceptions as notebook_exceptions
+from supernote.notebook.fileformat import Notebook
+from supernote.notebook.schema import PageMetadata, SupernoteMetadata
 from supernote.server.metrics import (
     PROCESSOR_FILES_PROCESSING,
     PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL,
@@ -21,7 +32,12 @@ from supernote.server.metrics import (
 
 from ..constants import DEFAULT_PAGE_CONCURRENCY
 from ..db.models.file import UserFileDO
-from ..db.models.note_processing import NotePageContentDO, SystemTaskDO
+from ..db.models.note_processing import (
+    NoteMetadataDO,
+    NotePageContentDO,
+    NotePageMetadataDO,
+    SystemTaskDO,
+)
 from ..db.session import DatabaseSessionManager
 from ..events import (
     BlobCleanupEvent,
@@ -35,6 +51,7 @@ from ..events import (
 from ..services.file import FileService
 from ..services.processor_modules import ProcessorModule
 from ..services.summary import SummaryService
+from ..utils.note_content import infer_page_date
 
 logger = logging.getLogger(__name__)
 
@@ -673,3 +690,133 @@ class ProcessorService:
             )
             for file_id in file_ids
         }
+
+    async def get_note_metadata(
+        self,
+        user_id: int,
+        file_id: int,
+    ) -> WebNoteMetadataVO | None:
+        """Return structured notebook and per-page metadata for an active .note file owned by user_id."""
+        async with self.session_manager.session() as session:
+            file_row = (
+                await session.execute(
+                    select(UserFileDO).where(
+                        UserFileDO.id == file_id,
+                        UserFileDO.user_id == user_id,
+                        UserFileDO.is_active == "Y",
+                    )
+                )
+            ).scalar_one_or_none()
+            if file_row is None:
+                return None
+
+            meta_do = await session.get(NoteMetadataDO, (user_id, file_id))
+            if meta_do is None:
+                return None
+
+            page_rows = list(
+                (
+                    await session.execute(
+                        select(NotePageMetadataDO)
+                        .where(
+                            NotePageMetadataDO.user_id == user_id,
+                            NotePageMetadataDO.file_id == file_id,
+                        )
+                        .order_by(NotePageMetadataDO.page_index)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+        try:
+            header_dict = json.loads(meta_do.header_json)
+            footer_dict = json.loads(meta_do.footer_json)
+            if not isinstance(header_dict, dict) or not isinstance(footer_dict, dict):
+                raise ValueError("header_json and footer_json must be JSON objects")
+            notebook = Notebook(
+                SupernoteMetadata(
+                    type=meta_do.file_type or "note",
+                    signature=meta_do.signature or "",
+                    header=header_dict,
+                    footer=footer_dict,
+                    pages=[],
+                )
+            )
+        except (
+            json.JSONDecodeError,
+            ValueError,
+            TypeError,
+            notebook_exceptions.ParserException,
+        ) as err:
+            logger.error(
+                f"Failed to deserialize persisted NoteMetadataDO for file {file_id}: {err}"
+            )
+            return None
+
+        page_vos: list[NotePageMetadataVO] = []
+        for pm in page_rows:
+            five_star: list[str] = []
+            try:
+                raw_page = json.loads(pm.page_json)
+                if isinstance(raw_page, dict):
+                    five_star = list(PageMetadata.from_params(raw_page).five_star)
+            except (
+                json.JSONDecodeError,
+                ValueError,
+                TypeError,
+                notebook_exceptions.ParserException,
+            ):
+                five_star = []
+
+            inferred_dt = infer_page_date(pm.page_id)
+            page_vos.append(
+                NotePageMetadataVO(
+                    page_index=pm.page_index,
+                    page_id=pm.page_id,
+                    date=inferred_dt.strftime("%Y-%m-%d") if inferred_dt else None,
+                    style=pm.page_style,
+                    has_ink=pm.has_ink,
+                    has_drawables=pm.has_drawables,
+                    five_star=five_star,
+                    keywords=pm.keyword_texts,
+                )
+            )
+
+        equipment = (
+            str(notebook.metadata.header.apply_equipment)
+            if notebook.metadata.header.apply_equipment
+            else None
+        )
+        return WebNoteMetadataVO(
+            file_id=file_id,
+            equipment=equipment,
+            width=notebook.width,
+            height=notebook.height,
+            total_pages=meta_do.total_pages,
+            keywords=[
+                NoteKeywordVO(page_number=kw.page_number, text=kw.keyword or "")
+                for kw in notebook.keywords
+                if kw.keyword
+            ],
+            titles=[
+                NoteTitleVO(
+                    page_number=t.page_number,
+                    level=t.level,
+                    style=t.style,
+                )
+                for t in notebook.titles
+            ],
+            links=[
+                NoteLinkVO(
+                    page_number=lk.page_number,
+                    link_type=int(lk.link_type),
+                    direction=int(lk.direction),
+                    target=lk.target,
+                    target_file_id=lk.file_id,
+                    target_page_id=lk.page_id,
+                )
+                for lk in notebook.links
+            ],
+            pages=page_vos,
+        )
