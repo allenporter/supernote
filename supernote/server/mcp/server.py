@@ -74,9 +74,18 @@ class SupernoteTokenVerifier(TokenVerifier):
             data = await self.coordination_service.get_value(key)
             if data:
                 token_data = json.loads(data)
+                raw_user_id = token_data.get("user_id")
+                # TODO(#442): Remove legacy email user_id migration once 30-day OAuth refresh tokens expire.
+                if isinstance(raw_user_id, str) and not raw_user_id.isdigit():
+                    try:
+                        raw_user_id = await self.user_service.get_user_id(raw_user_id)
+                    except ValueError:
+                        return None
+                if raw_user_id is None:
+                    return None
                 return SupernoteAccessToken(
                     token=token,
-                    user_id=token_data.get("user_id"),
+                    user_id=int(raw_user_id),
                     client_id=token_data.get("client_id", "unknown"),
                     scopes=token_data.get("scopes", []),
                     resource=token_data.get("resource"),
@@ -87,7 +96,7 @@ class SupernoteTokenVerifier(TokenVerifier):
             return None
         return SupernoteAccessToken(
             token=token,
-            user_id=str(session.user_id),
+            user_id=session.user_id,
             client_id="api_key" if session.is_api_key else "session",
             scopes=["supernote:all"],
             expires_at=session.expires_at,
@@ -96,24 +105,14 @@ class SupernoteTokenVerifier(TokenVerifier):
 
 async def _get_auth_user_id(ctx: Context) -> int | None:
     """Verify token and return user_id."""
-    if not (user_service_raw := _services["user_service"]):
+    if not _services["user_service"]:
         raise ValueError("User service not initialized.")
-    user_service: UserService = user_service_raw
 
     # Try to get user from MCP Auth Context (e.g. Bearer token)
     if not (auth_context := auth_context_var.get()):
         return None
     token = cast(SupernoteAccessToken, auth_context.access_token)
-    if not token.user_id:
-        return None
-    if isinstance(token.user_id, int):
-        return token.user_id
-    if token.user_id.isdigit():
-        return int(token.user_id)
-    try:
-        return await user_service.get_user_id(token.user_id)
-    except ValueError:
-        return None
+    return token.user_id
 
 
 def _instrument_mcp_tool(

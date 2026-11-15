@@ -13,15 +13,15 @@ from supernote.models.base import BaseResponse
 
 
 class SupernoteAuthorizationCode(AuthorizationCode):
-    user_id: str
+    user_id: int
 
 
 class SupernoteAccessToken(AccessToken):
-    user_id: str
+    user_id: int
 
 
 class SupernoteRefreshToken(RefreshToken):
-    user_id: str
+    user_id: int
 
 
 @dataclass

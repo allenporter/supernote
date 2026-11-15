@@ -1,11 +1,14 @@
 """Tests for MCP OAuth authorization server and login-bridge boundaries."""
 
 import hashlib
+import json
 
+from mcp.shared.auth import OAuthClientInformationFull
+from pydantic import AnyHttpUrl
 from starlette.testclient import TestClient
 
 from supernote.models.user import UserRegisterDTO
-from supernote.server.mcp.auth import create_auth_app
+from supernote.server.mcp.auth import SupernoteOAuthProvider, create_auth_app
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
 
@@ -57,3 +60,67 @@ async def test_login_bridge_rejects_static_api_keys(
         )
         assert session_resp.status_code == 400
         assert session_resp.json() == {"error": "invalid_request"}
+
+
+async def test_oauth_provider_migrates_legacy_email_tokens(
+    user_service: UserService,
+    coordination_service: CoordinationService,
+) -> None:
+    """Verify SupernoteOAuthProvider loads legacy email user_id tokens as integer user_id."""
+    pw_md5 = hashlib.md5(b"password123").hexdigest()
+    user = await user_service.register(
+        UserRegisterDTO(email="legacyoauth@example.com", password=pw_md5)
+    )
+    provider = SupernoteOAuthProvider(
+        user_service=user_service,
+        coordination_service=coordination_service,
+        issuer_url="http://localhost:8080",
+    )
+    dummy_client = OAuthClientInformationFull(
+        client_id="client_1",
+        redirect_uris=[AnyHttpUrl("http://localhost:3000/callback")],
+    )
+
+    await coordination_service.set_value(
+        "mcp:refresh_token:rt_legacy",
+        json.dumps(
+            {
+                "token": "rt_legacy",
+                "user_id": "legacyoauth@example.com",
+                "client_id": "client_1",
+                "scopes": ["supernote:all"],
+            }
+        ),
+    )
+    loaded_rt = await provider.load_refresh_token(dummy_client, "rt_legacy")
+    assert loaded_rt is not None
+    assert loaded_rt.user_id == user.id
+
+    await coordination_service.set_value(
+        "mcp:access_token:at_legacy",
+        json.dumps(
+            {
+                "token": "at_legacy",
+                "user_id": "legacyoauth@example.com",
+                "client_id": "client_1",
+                "scopes": ["supernote:all"],
+            }
+        ),
+    )
+    loaded_at = await provider.load_access_token("at_legacy")
+    assert loaded_at is not None
+    assert loaded_at.user_id == user.id
+
+    await coordination_service.set_value(
+        "mcp:refresh_token:rt_unknown",
+        json.dumps(
+            {
+                "token": "rt_unknown",
+                "user_id": "missing@example.com",
+                "client_id": "client_1",
+                "scopes": ["supernote:all"],
+            }
+        ),
+    )
+    assert await provider.load_refresh_token(dummy_client, "rt_unknown") is None
+    assert await provider.load_access_token("at_missing") is None
