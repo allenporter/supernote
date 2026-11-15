@@ -1,6 +1,6 @@
 # Project Roadmap & Prioritization Strategy
 
-This document outlines the strategic direction and prioritization rubric for **Supernote Private Cloud & Knowledge Hub**.
+This document outlines the strategic direction and prioritization rubric for **Open Private Cloud for Supernote**.
 
 > **Live Execution Queue**: Individual features, bugs, and refactors are tracked directly in **[GitHub Issues](https://github.com/allenporter/supernote/issues)** rather than static checkboxes here so status never drifts when PRs merge:
 > - 🔥 **[P1 — Next Up & Critical](https://github.com/allenporter/supernote/issues?q=is%3Aopen+is%3Aissue+label%3Ap1)** *(Data safety, correctness bugs, active focus)*

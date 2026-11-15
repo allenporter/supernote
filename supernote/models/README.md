@@ -1,13 +1,13 @@
-# API Data Model for Supernote (Private) Cloud Server.
+# API Data Model for Supernote Private Cloud Protocol
 
 This module describes the data models used by the Supernote Private Cloud API. These
 models serve as a reference for both client and server implementations looking
-to interoperate with the Supernote Private Cloud API. While this may also work
-with the Supernote hosted cloud public API, it is not intended to be used there
-to not put load on Supernote API servers.
+to interoperate with the Supernote Private Cloud protocol. While this may also work
+with hosted public endpoints, it is intended for self-hosted servers so as not to
+place extra load on Ratta's servers.
 
-We've described the sections of the system in terms of "Controllers" and shared
-responsibilities to have a common mental model for how the system works.
+Endpoints are organized by functional domain so clients and server handlers share a
+consistent model of the protocol.
 
 ## 1. Authentication & User Management
 
@@ -16,7 +16,7 @@ on the data models related to these API endpoints.
 
 ### Login & Logout
 
-The LoginController is the main controller for handling user login and logout requests.
+Endpoints for user login, logout, and session token validation.
 
 *   `POST /api/official/user/account/login/new`: Account Login
 *   `POST /api/official/user/account/login/equipment`: Device Token Login
@@ -28,7 +28,7 @@ The LoginController is the main controller for handling user login and logout re
 
 ### User Profile
 
-The UserController is the main controller for handling user profile requests.
+Endpoints for reading and updating user profiles.
 
 *   `POST /api/user/check/exists`: Check User Exists
 *   `POST /api/official/user/check/exists/server`: Check User Exists (Server Aware)
@@ -43,21 +43,21 @@ The UserController is the main controller for handling user profile requests.
 
 ### Registration
 
-The UserRegisterController is the main controller for handling user registration requests.
+Endpoints for account registration and account deletion.
 
 *   `POST /api/user/register`: User Registration
 *   `POST /api/user/account/clear`: Delete Account (**WARNING**: permanently deletes the user account and all cloud files, blobs, recycle bin items, summaries, schedule tasks, and active sessions)
 
 ### Password & Security
 
-The PasswordController is the main controller for handling password and security requests.
+Endpoints for password recovery and updates.
 
 *   `POST /api/official/user/retrieve/password`: Retrieve Password
 *   `PUT /api/user/password`: Change Password
 
 ### Validation Codes
 
-The ValidCodeController is the main controller for handling validation code requests.
+Endpoints for issuing and verifying email and captcha validation codes.
 
 *   `POST /api/user/mail/validcode`: Send Email Validation Code
 *   `POST /api/user/check/validcode`: Verify Code
@@ -65,7 +65,7 @@ The ValidCodeController is the main controller for handling validation code requ
 
 ### Account Settings
 
-The AccountController is the main controller for handling account settings requests.
+Endpoints for updating account settings.
 
 *   `PUT /api/user/email`: Update Email Address
 
@@ -77,7 +77,7 @@ See `supernote.models.file_web` for more information on the data models related 
 
 ### Web File Operations
 
-The FileLocalWebController is the main controller for handling web file operations requests.
+Endpoints for web browser and desktop file management, recycle bin recovery, and direct uploads/downloads.
 
 *   `POST /api/file/list/query`: List Files & Folders
 *   `POST /api/file/folder/list/query`: List Folders Only
@@ -101,7 +101,7 @@ The FileLocalWebController is the main controller for handling web file operatio
 
 ### Basic File Ops
 
-The FileController is the main controller for handling basic file operations requests.
+Legacy endpoints for basic file and folder queries.
 
 *   `POST /api/file/add/folder/file/deleteApi`: Add Folder/File (Desktop)
 *   `POST /api/file/2/files/query/deleteApi`: Query File (Dropbox style)
@@ -109,13 +109,13 @@ The FileController is the main controller for handling basic file operations req
 
 ### File Search
 
-The FileSearchController is the main controller for handling file search requests.
+Endpoints for searching files by label or name.
 
 *   `POST /api/file/label/list/search`: Search by Label/Name
 
 ### Terminal Specific
 
-The TerminalFileUploadController is the main controller for handling terminal file upload requests.
+Endpoints for device terminal file upload workflows.
 
 *   `POST /api/file/terminal/upload/apply`: Terminal Upload Request
 *   `POST /api/file/terminal/upload/finish`: Terminal Upload Complete
@@ -124,20 +124,20 @@ The TerminalFileUploadController is the main controller for handling terminal fi
 
 ## 3. Cloud/NAS Synchronization (Device API)
 
-The FileLocalController is the main controller for handling cloud/nas synchronization requests.
+Endpoints used by physical Supernote devices during Cloud/Private Cloud synchronization.
 
 See `supernote.models.file_device` for more information on the data models related to these API endpoints.
 
 ### Sync Handshake
 
-The FileLocalController is the main controller for handling cloud/nas synchronization requests.
+Endpoints for acquiring and releasing per-user synchronization session locks.
 
 *   `POST /api/file/2/files/synchronous/start`: Start Sync Session
 *   `POST /api/file/2/files/synchronous/end`: End Sync Session
 
 ### Device File Operations
 
-The FileLocalController is the main controller for handling cloud/nas synchronization requests.
+Endpoints for listing, querying, moving, copying, creating, and deleting synced files and folders.
 
 *   `POST /api/file/2/files/create_folder_v2`: Create Folder
 *   `POST /api/file/2/files/list_folder`: List Folder (V2)
@@ -151,7 +151,7 @@ The FileLocalController is the main controller for handling cloud/nas synchroniz
 
 ### Device Upload/Download
 
-The FileLocalController is the main controller for handling cloud/nas synchronization requests.
+Endpoints for initiating device uploads, confirming completed transfers, and requesting signed download URLs.
 
 *   `POST /api/file/3/files/upload/apply`: Upload Request
 *   `POST /api/file/2/files/upload/finish`: Upload Finish
@@ -159,7 +159,7 @@ The FileLocalController is the main controller for handling cloud/nas synchroniz
 
 ### File Conversion
 
-The FileLocalController is the main controller for handling cloud/nas synchronization requests.
+Endpoints for converting `.note` and marked PDF files to PDF or PNG exports.
 
 *   `POST /api/file/note/to/pdf`: Convert Note to PDF
 *   `POST /api/file/note/to/png`: Convert Note to PNG
@@ -167,7 +167,7 @@ The FileLocalController is the main controller for handling cloud/nas synchroniz
 
 ### Connectivity
 
-The FileLocalController is the main controller for handling cloud/nas synchronization requests.
+Endpoints for checking server reachability from devices.
 
 *   `GET /api/file/query/server`: Ping Server
 
@@ -177,13 +177,13 @@ The FileLocalController is the main controller for handling cloud/nas synchroniz
 
 ### Sharing
 
-The ShareController is the main controller for handling sharing requests.
+Endpoints for creating file share links and records.
 
 *   `POST /api/file/share/record/add`: Create Share Record
 
 ### Scheduling & Calendar
 
-The ScheduleController is the main controller for handling scheduling and calendar requests.
+Endpoints for managing task lists, tasks, and custom sort orders.
 
 See `supernote.models.schedule` module for more information on the data models
 related to these API endpoints.
@@ -211,7 +211,7 @@ related to these API endpoints.
 
 ### Summaries & Tags
 
-The SummaryController is the main controller for handling summaries and tags requests.
+Endpoints for managing document summaries, digests, tags, and summary blobs.
 
 *   `POST /api/file/add/summary/tag`: Add Tag
 *   `PUT /api/file/update/summary/tag`: Update Tag
@@ -230,7 +230,7 @@ The SummaryController is the main controller for handling summaries and tags req
 
 ### Equipment Management
 
-The EquipmentController is the main controller for handling equipment management requests.
+Endpoints for activating, binding, unbinding, and querying paired Supernote hardware devices.
 
 *   `POST /api/terminal/user/activateEquipment`: Activate Device
 *   `POST /api/terminal/user/bindEquipment`: Bind Device
@@ -242,7 +242,7 @@ The EquipmentController is the main controller for handling equipment management
 
 ### OSS (Object Storage)
 
-The OssLocalController is the main controller for handling object storage requests.
+Endpoints for signed direct binary uploads, multipart uploads, and downloads.
 
 *   `POST /api/oss/generate/upload/url`: Get Upload URL
 *   `POST /api/oss/upload`: Upload File
@@ -252,7 +252,7 @@ The OssLocalController is the main controller for handling object storage reques
 
 ### Configuration & Logs
 
-Other misc controllers (EmailServerController, SensitiveOperationController, DictionaryController)
+Endpoints for server email configuration, audit records, and system dictionaries.
 
 *   `POST /api/save/email/config`: Save Email Config
 *   `GET /api/query/email/config`: Query Email Config

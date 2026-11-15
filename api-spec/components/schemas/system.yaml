@@ -318,8 +318,7 @@ SystemLogLevelDTO:
     frameworkLevel:
       type: string
       description: >-
-        Framework logger level (Spring, MyBatis, Druid, Netty, Socket.IO,
-        Springfox)
+        Framework logger level (HTTP, database, and WebSocket framework loggers)
       enum: ["ERROR", "WARN", "INFO"]
 
 SystemLogLevelInfoVO:

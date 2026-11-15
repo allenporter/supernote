@@ -35,8 +35,8 @@ export default {
                         </path>
                     </svg>
                 </div>
-                <h2 class="text-xl font-bold text-slate-900 tracking-tight">Sign in to Supernote Cloud</h2>
-                <p class="text-xs text-stone-500 mt-1.5">Access your notebooks, documents, and schedule</p>
+                <h2 class="text-xl font-bold text-slate-900 tracking-tight">Sign in to Open Private Cloud</h2>
+                <p class="text-xs text-stone-500 mt-1.5">Self-hosted sync, notebooks, and schedule for your Supernote</p>
             </div>
 
             <form @submit.prevent="handleSubmit" class="space-y-5">
@@ -63,7 +63,7 @@ export default {
             </form>
         </div>
         <div class="bg-[#F7F6F2] px-6 py-3.5 text-center text-[11px] font-mono text-stone-500 border-t border-stone-200/80">
-            Supernote Private Cloud
+            Unofficial server for Supernote · Not affiliated with Ratta
         </div>
     </div>
     `
