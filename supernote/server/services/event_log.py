@@ -17,6 +17,11 @@ from supernote.server.events import (
     LocalEventBus,
     SummaryDeletedEvent,
     SummaryUpsertedEvent,
+    VfsContentUpdatedEvent,
+    VfsItemCopiedEvent,
+    VfsItemCreatedEvent,
+    VfsItemDeletedEvent,
+    VfsItemMovedEvent,
 )
 from supernote.server.exceptions import CursorExpiredError, InvalidInputError
 from supernote.server.services.coordination import CoordinationService
@@ -66,6 +71,21 @@ class EventLogService:
         self._event_bus = event_bus
         self._retention_days = retention_days
         if self._event_bus is not None:
+            self._event_bus.subscribe(
+                VfsItemCreatedEvent, self._on_vfs_created, inline=True
+            )
+            self._event_bus.subscribe(
+                VfsContentUpdatedEvent, self._on_vfs_content_updated, inline=True
+            )
+            self._event_bus.subscribe(
+                VfsItemMovedEvent, self._on_vfs_moved, inline=True
+            )
+            self._event_bus.subscribe(
+                VfsItemCopiedEvent, self._on_vfs_copied, inline=True
+            )
+            self._event_bus.subscribe(
+                VfsItemDeletedEvent, self._on_vfs_deleted, inline=True
+            )
             self._event_bus.subscribe(
                 SummaryUpsertedEvent, self._on_summary_upserted, inline=True
             )
@@ -246,6 +266,184 @@ class EventLogService:
         if raw and raw.isascii() and raw.isdigit():
             return int(raw)
         return 0
+
+    async def _on_vfs_created(self, event: VfsItemCreatedEvent) -> None:
+        actor = _resolve_actor(event.equipment_no)
+        await self.append(
+            user_id=event.user_id,
+            event_type=DomainEventType.VFS_CREATED,
+            entity_type=DomainEntityType.FILE,
+            entity_id=str(event.item_id),
+            actor=actor,
+            related_file_id=None if event.is_folder else event.item_id,
+            payload={
+                "name": event.name,
+                "parent_id": str(event.parent_id),
+                "full_path": event.full_path,
+                "is_folder": event.is_folder,
+                "size": event.size,
+                "md5": event.md5,
+            },
+        )
+        for child in event.descendant_files:
+            await self.append(
+                user_id=event.user_id,
+                event_type=DomainEventType.VFS_CREATED,
+                entity_type=DomainEntityType.FILE,
+                entity_id=str(child.item_id),
+                actor=actor,
+                related_file_id=child.item_id,
+                payload={
+                    "name": child.name,
+                    "parent_id": str(child.parent_id),
+                    "full_path": child.full_path,
+                    "is_folder": False,
+                    "size": child.size,
+                    "md5": child.md5,
+                },
+            )
+
+    async def _on_vfs_content_updated(self, event: VfsContentUpdatedEvent) -> None:
+        await self.append(
+            user_id=event.user_id,
+            event_type=DomainEventType.VFS_CONTENT_UPDATED,
+            entity_type=DomainEntityType.FILE,
+            entity_id=str(event.item_id),
+            actor=_resolve_actor(event.equipment_no),
+            related_file_id=event.item_id,
+            payload={
+                "name": event.name,
+                "parent_id": str(event.parent_id),
+                "full_path": event.full_path,
+                "size": event.size,
+                "old_md5": event.old_md5,
+                "new_md5": event.new_md5,
+            },
+        )
+
+    async def _on_vfs_moved(self, event: VfsItemMovedEvent) -> None:
+        actor = _resolve_actor(event.equipment_no)
+        await self.append(
+            user_id=event.user_id,
+            event_type=DomainEventType.VFS_MOVED,
+            entity_type=DomainEntityType.FILE,
+            entity_id=str(event.item_id),
+            actor=actor,
+            related_file_id=None if event.is_folder else event.item_id,
+            payload={
+                "old_path": event.original_full_path,
+                "new_path": event.new_full_path,
+                "old_name": event.original_name,
+                "new_name": event.new_name,
+                "old_parent_id": str(event.original_parent_id),
+                "new_parent_id": str(event.new_parent_id),
+                "is_folder": event.is_folder,
+                "size": event.size,
+                "md5": event.md5,
+            },
+        )
+        for child in event.descendant_files:
+            await self.append(
+                user_id=event.user_id,
+                event_type=DomainEventType.VFS_MOVED,
+                entity_type=DomainEntityType.FILE,
+                entity_id=str(child.item_id),
+                actor=actor,
+                related_file_id=child.item_id,
+                payload={
+                    "old_path": child.original_full_path or child.full_path,
+                    "new_path": child.full_path,
+                    "old_name": child.original_name or child.name,
+                    "new_name": child.name,
+                    "old_parent_id": str(
+                        child.original_parent_id
+                        if child.original_parent_id is not None
+                        else child.parent_id
+                    ),
+                    "new_parent_id": str(child.parent_id),
+                    "is_folder": False,
+                    "size": child.size,
+                    "md5": child.md5,
+                },
+            )
+
+    async def _on_vfs_copied(self, event: VfsItemCopiedEvent) -> None:
+        actor = _resolve_actor(event.equipment_no)
+        await self.append(
+            user_id=event.user_id,
+            event_type=DomainEventType.VFS_CREATED,
+            entity_type=DomainEntityType.FILE,
+            entity_id=str(event.new_id),
+            actor=actor,
+            related_file_id=None if event.is_folder else event.new_id,
+            payload={
+                "name": event.new_name,
+                "parent_id": str(event.new_parent_id),
+                "full_path": event.new_full_path,
+                "is_folder": event.is_folder,
+                "size": event.size,
+                "md5": event.md5,
+                "copied_from_id": str(event.source_id),
+                "copied_from_path": event.original_full_path,
+            },
+        )
+        for child in event.descendant_files:
+            await self.append(
+                user_id=event.user_id,
+                event_type=DomainEventType.VFS_CREATED,
+                entity_type=DomainEntityType.FILE,
+                entity_id=str(child.item_id),
+                actor=actor,
+                related_file_id=child.item_id,
+                payload={
+                    "name": child.name,
+                    "parent_id": str(child.parent_id),
+                    "full_path": child.full_path,
+                    "is_folder": False,
+                    "size": child.size,
+                    "md5": child.md5,
+                    "copied_from_id": (
+                        str(child.source_id) if child.source_id is not None else None
+                    ),
+                    "copied_from_path": child.original_full_path,
+                },
+            )
+
+    async def _on_vfs_deleted(self, event: VfsItemDeletedEvent) -> None:
+        actor = _resolve_actor(event.equipment_no)
+        await self.append(
+            user_id=event.user_id,
+            event_type=DomainEventType.VFS_DELETED,
+            entity_type=DomainEntityType.FILE,
+            entity_id=str(event.item_id),
+            actor=actor,
+            related_file_id=None if event.is_folder else event.item_id,
+            payload={
+                "name": event.name,
+                "parent_id": str(event.parent_id),
+                "full_path": event.full_path,
+                "is_folder": event.is_folder,
+                "size": event.size,
+                "md5": event.md5,
+            },
+        )
+        for child in event.descendant_files:
+            await self.append(
+                user_id=event.user_id,
+                event_type=DomainEventType.VFS_DELETED,
+                entity_type=DomainEntityType.FILE,
+                entity_id=str(child.item_id),
+                actor=actor,
+                related_file_id=child.item_id,
+                payload={
+                    "name": child.name,
+                    "parent_id": str(child.parent_id),
+                    "full_path": child.full_path,
+                    "is_folder": False,
+                    "size": child.size,
+                    "md5": child.md5,
+                },
+            )
 
     async def _on_summary_upserted(self, event: SummaryUpsertedEvent) -> None:
         summary = event.summary

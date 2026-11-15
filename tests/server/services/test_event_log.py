@@ -1,5 +1,6 @@
 """Unit tests for EventLogService append, cursor querying, and retention pruning."""
 
+import hashlib
 import time
 from pathlib import Path
 
@@ -9,11 +10,13 @@ from supernote.models.base import BooleanEnum
 from supernote.models.events import DomainEntityType, DomainEventType
 from supernote.models.summary import AddSummaryDTO, AddSummaryGroupDTO, SummaryItem
 from supernote.models.user import UserRegisterDTO
+from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
     DomainEventRecorded,
     LocalEventBus,
+    NoteUpdatedEvent,
     SummaryDeletedEvent,
     SummaryUpsertedEvent,
 )
@@ -398,3 +401,122 @@ async def test_summary_domain_events_recorded(
         user_id=test_user_id, sync_token=after_cleanup.next_sync_token
     )
     assert [e.actor for e in dev_events.events] == ["device:SN777", "device:SN777"]
+
+
+async def test_vfs_file_and_folder_domain_events_recorded(
+    event_log_service: EventLogService,
+    event_bus: LocalEventBus,
+    session_manager: DatabaseSessionManager,
+    user_service: UserService,
+    storage_root: Path,
+    blob_storage: BlobStorage,
+) -> None:
+    """Verify VFS create, content update, MD5 no-op suppression, and recursive folder mutations."""
+    test_user = "vfs_events@example.com"
+    await user_service.register(UserRegisterDTO(email=test_user, password="a" * 32))
+    test_user_id = await user_service.get_user_id(test_user)
+    assert test_user_id is not None
+
+    note_updates: list[NoteUpdatedEvent] = []
+
+    async def on_note_updated(ev: NoteUpdatedEvent) -> None:
+        note_updates.append(ev)
+
+    event_bus.subscribe(NoteUpdatedEvent, on_note_updated, inline=True)
+
+    file_service = FileService(
+        storage_root, blob_storage, user_service, session_manager, event_bus
+    )
+
+    # Create a subfolder under /Note
+    note_dir = await file_service.get_file_info(test_user, "Note")
+    assert note_dir is not None
+    sub_dir = await file_service.create_directory_by_id(
+        test_user, note_dir.id, "Projects"
+    )
+
+    # Upload a .note file into /Note/Projects
+    blob1 = b"note-v1"
+    md5_1 = hashlib.md5(blob1).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "inner-v1", blob1)
+    await file_service.upload_finish_web(
+        test_user, sub_dir.id, "todo.note", md5_1, "inner-v1"
+    )
+    note_info = await file_service.get_file_info(test_user, "Note/Projects/todo.note")
+    assert note_info is not None
+
+    # Re-uploading identical MD5 suppresses duplicate vfs.content_updated
+    await file_service.upload_finish_web(
+        test_user, sub_dir.id, "todo.note", md5_1, "inner-v1"
+    )
+
+    # Uploading modified content records vfs.content_updated with old_md5 and new_md5
+    blob2 = b"note-v2-updated"
+    md5_2 = hashlib.md5(blob2).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "inner-v2", blob2)
+    await file_service.upload_finish_web(
+        test_user, sub_dir.id, "todo.note", md5_2, "inner-v2"
+    )
+
+    p1 = await event_log_service.list_events(
+        user_id=test_user_id, event_types=["vfs.*"]
+    )
+    assert [(e.event_type, e.entity_id, e.related_file_id) for e in p1.events] == [
+        (DomainEventType.VFS_CREATED, str(sub_dir.id), None),
+        (DomainEventType.VFS_CREATED, str(note_info.id), note_info.id),
+        (DomainEventType.VFS_CONTENT_UPDATED, str(note_info.id), note_info.id),
+    ]
+    assert p1.events[2].payload["old_md5"] == md5_1
+    assert p1.events[2].payload["new_md5"] == md5_2
+
+    # Rename folder -> emits vfs.moved for both folder and descendant file
+    await file_service.rename_item(test_user, sub_dir.id, "Roadmap")
+    p2 = await event_log_service.list_events(
+        user_id=test_user_id, sync_token=p1.next_sync_token
+    )
+    assert [
+        (e.event_type, e.entity_id, e.payload["old_path"], e.payload["new_path"])
+        for e in p2.events
+    ] == [
+        (
+            DomainEventType.VFS_MOVED,
+            str(sub_dir.id),
+            "NOTE/Note/Projects",
+            "NOTE/Note/Roadmap",
+        ),
+        (
+            DomainEventType.VFS_MOVED,
+            str(note_info.id),
+            "NOTE/Note/Projects/todo.note",
+            "NOTE/Note/Roadmap/todo.note",
+        ),
+    ]
+
+    # Copy folder -> emits vfs.created (with copied_from_id/path) for folder + descendant file
+    note_updates.clear()
+    copied_dir = await file_service.copy_item(
+        test_user, sub_dir.id, "NOTE/Note/RoadmapCopy", autorename=True
+    )
+    p3 = await event_log_service.list_events(
+        user_id=test_user_id, sync_token=p2.next_sync_token
+    )
+    assert len(p3.events) == 2
+    assert p3.events[0].event_type == DomainEventType.VFS_CREATED
+    assert p3.events[0].entity_id == str(copied_dir.id)
+    assert p3.events[0].payload["copied_from_id"] == str(sub_dir.id)
+    assert p3.events[1].event_type == DomainEventType.VFS_CREATED
+    assert p3.events[1].payload["copied_from_id"] == str(note_info.id)
+    assert p3.events[1].payload["copied_from_path"] == "NOTE/Note/Roadmap/todo.note"
+    assert len(note_updates) == 1
+
+    # Delete folder -> emits vfs.deleted for folder + descendant file
+    await file_service.delete_item(test_user, copied_dir.id)
+    p4 = await event_log_service.list_events(
+        user_id=test_user_id, sync_token=p3.next_sync_token
+    )
+    assert [e.event_type for e in p4.events] == [
+        DomainEventType.VFS_DELETED,
+        DomainEventType.VFS_DELETED,
+    ]
+    assert p4.events[0].entity_id == str(copied_dir.id)
+    assert p4.events[1].entity_id == p3.events[1].entity_id

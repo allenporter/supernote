@@ -100,6 +100,22 @@ class SummaryDeletedEvent(Event):
     equipment_no: str | None = None
 
 
+@dataclass(frozen=True)
+class AffectedVfsFile:
+    """Metadata for a descendant file affected by a folder-level VFS mutation."""
+
+    item_id: int
+    parent_id: int
+    name: str
+    full_path: str
+    size: int = 0
+    md5: str | None = None
+    source_id: int | None = None
+    original_parent_id: int | None = None
+    original_name: str | None = None
+    original_full_path: str | None = None
+
+
 @dataclass
 class VfsItemCreatedEvent(Event):
     """Triggered when a VFS file or directory is created, uploaded, or restored from recycle."""
@@ -112,6 +128,22 @@ class VfsItemCreatedEvent(Event):
     full_path: str
     size: int = 0
     md5: str | None = None
+    equipment_no: str | None = None
+    descendant_files: tuple[AffectedVfsFile, ...] = ()
+
+
+@dataclass
+class VfsContentUpdatedEvent(Event):
+    """Triggered when an existing VFS file is overwritten with new content."""
+
+    user_id: int
+    item_id: int
+    parent_id: int
+    name: str
+    full_path: str
+    size: int = 0
+    old_md5: str | None = None
+    new_md5: str | None = None
     equipment_no: str | None = None
 
 
@@ -131,6 +163,7 @@ class VfsItemMovedEvent(Event):
     size: int = 0
     md5: str | None = None
     equipment_no: str | None = None
+    descendant_files: tuple[AffectedVfsFile, ...] = ()
 
 
 @dataclass
@@ -150,6 +183,7 @@ class VfsItemCopiedEvent(Event):
     size: int = 0
     md5: str | None = None
     equipment_no: str | None = None
+    descendant_files: tuple[AffectedVfsFile, ...] = ()
 
 
 @dataclass
@@ -165,6 +199,7 @@ class VfsItemDeletedEvent(Event):
     size: int = 0
     md5: str | None = None
     equipment_no: str | None = None
+    descendant_files: tuple[AffectedVfsFile, ...] = ()
 
 
 @dataclass
