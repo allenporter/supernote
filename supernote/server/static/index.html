@@ -10,7 +10,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/spark-md5/3.0.2/spark-md5.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha256/1.0.0/sha256.min.js"></script>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <!-- Import Map for Vue (No Build) -->
@@ -23,67 +23,95 @@
     </script>
 </head>
 
-<body class="bg-slate-50 text-slate-900 antialiased min-h-screen">
+<body class="bg-[#F7F6F2] text-slate-900 antialiased min-h-screen selection:bg-slate-900 selection:text-white">
     <div id="app" class="flex flex-col min-h-screen" v-cloak>
-        <header class="sticky top-0 z-50 bg-white/70 backdrop-blur-md border-b border-slate-200">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="flex justify-between items-center h-16">
-                    <div class="flex items-center gap-3">
-                        <div
-                            class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-200">
-                            S</div>
-                        <h1 class="text-xl font-semibold tracking-tight">Supernote <span
-                                class="text-indigo-600">Cloud</span></h1>
+        <!-- Top Navigation Header -->
+        <header class="sticky top-0 z-50 bg-[#F7F6F2]/90 backdrop-blur-md border-b border-stone-200/90">
+            <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center gap-2 h-14">
+                    <!-- Brand Identity -->
+                    <div class="flex items-center shrink-0">
+                        <button @click="isLoggedIn ? switchTab('files') : null" type="button"
+                            class="flex items-center gap-2 sm:gap-2.5 text-left group focus:outline-none">
+                            <div class="w-7 h-7 sm:w-8 sm:h-8 bg-slate-900 rounded-lg flex items-center justify-center text-white shadow-sm group-hover:bg-slate-800 transition-colors shrink-0">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z">
+                                    </path>
+                                </svg>
+                            </div>
+                            <div class="flex items-baseline gap-1.5">
+                                <span class="text-sm sm:text-base font-bold tracking-tight text-slate-900">Supernote</span>
+                                <span class="hidden md:inline text-xs font-mono font-medium uppercase tracking-widest text-stone-500">Cloud</span>
+                            </div>
+                        </button>
                     </div>
 
-                    <!-- Navigation Tabs -->
-                    <div v-if="isLoggedIn" class="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
-                        <button @click="switchTab('files')"
-                            :class="activeTab === 'files' ? 'bg-white text-indigo-700 font-semibold shadow-sm' : 'text-slate-600 hover:text-slate-900 font-medium'"
-                            class="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm transition-all">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <!-- Primary View Switcher -->
+                    <div v-if="isLoggedIn" class="flex items-center gap-1 bg-stone-200/70 p-0.5 sm:p-1 rounded-xl border border-stone-300/40 shrink-0">
+                        <button @click="switchTab('files')" type="button"
+                            :class="activeTab === 'files' ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-stone-600 hover:text-slate-900 font-medium'"
+                            class="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all">
+                            <svg class="hidden sm:block w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
                             </svg>
-                            Files
+                            <span>Files</span>
                         </button>
-                        <button @click="switchTab('tasks')"
-                            :class="activeTab === 'tasks' ? 'bg-white text-indigo-700 font-semibold shadow-sm' : 'text-slate-600 hover:text-slate-900 font-medium'"
-                            class="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm transition-all">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <button @click="switchTab('tasks')" type="button"
+                            :class="activeTab === 'tasks' ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-stone-600 hover:text-slate-900 font-medium'"
+                            class="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all">
+                            <svg class="hidden sm:block w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg>
-                            Tasks & Schedule
+                            <span>Tasks<span class="hidden sm:inline"> &amp; Schedule</span></span>
                         </button>
                     </div>
 
-                    <div v-if="isLoggedIn" class="flex items-center gap-3 sm:gap-4">
+                    <!-- Right Utilities -->
+                    <div v-if="isLoggedIn" class="flex items-center gap-1 sm:gap-2 shrink-0">
                         <button @click="showSearchModal = true" type="button"
-                            class="flex items-center gap-2 px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 text-slate-600 hover:text-slate-900 rounded-xl text-xs font-medium border border-slate-200/80 transition-colors"
-                            title="Global Search (⌘K)">
-                            <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            aria-label="Global Search"
+                            :title="'Global Search (' + searchShortcutLabel + ')'"
+                            class="flex items-center gap-2 p-2 sm:px-3 sm:py-1.5 bg-white hover:bg-stone-50 text-stone-600 hover:text-slate-900 rounded-lg text-xs font-medium border border-stone-200/90 shadow-sm transition-all">
+                            <svg class="w-3.5 h-3.5 text-stone-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                             </svg>
-                            <span class="hidden sm:inline">Search</span>
-                            <kbd class="hidden sm:inline-block px-1.5 py-0.5 bg-white text-slate-400 text-[10px] font-mono rounded border border-slate-200">⌘K</kbd>
+                            <span class="hidden sm:inline text-stone-500">Search...</span>
+                            <kbd class="hidden md:inline-block px-1.5 py-0.5 bg-stone-100 text-stone-600 text-[10px] font-mono rounded border border-stone-200/80">{{ searchShortcutLabel }}</kbd>
                         </button>
-                        <button @click="openSystemPanel"
-                            class="text-slate-500 hover:text-slate-700 transition-colors" title="System Status">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+
+                        <button @click="openSystemPanel" type="button"
+                            aria-label="System Status"
+                            title="System Status"
+                            class="flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-medium text-stone-600 hover:text-slate-900 hover:bg-stone-200/60 transition-colors">
+                            <svg class="w-4 h-4 text-stone-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
                                     d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
                                 </path>
                             </svg>
+                            <span class="hidden md:inline">System</span>
                         </button>
-                        <button @click="handleLogout"
-                            class="text-sm font-medium text-slate-500 hover:text-slate-800 transition-colors">
-                            Sign Out
+
+                        <div class="h-4 w-px bg-stone-200 hidden sm:block"></div>
+
+                        <button @click="handleLogout" type="button"
+                            aria-label="Sign Out"
+                            title="Sign Out"
+                            class="flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-medium text-stone-600 hover:text-slate-900 hover:bg-stone-200/60 transition-colors">
+                            <svg class="w-4 h-4 sm:hidden shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+                                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1">
+                                </path>
+                            </svg>
+                            <span class="hidden sm:inline">Sign Out</span>
                         </button>
                     </div>
                 </div>
             </div>
         </header>
 
-        <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Main Workspace Container -->
+        <main class="flex-grow max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-6">
             <template v-if="isLoggedIn">
                 <template v-if="activeTab === 'files'">
                 <!-- Breadcrumbs -->
@@ -144,21 +172,23 @@
                 <!-- Hidden Upload Input -->
                 <input type="file" ref="fileInput" class="hidden" multiple @change="handleFileUpload">
 
-                <!-- New Folder Modal -->
+                <!-- Create New Folder Modal -->
                 <div v-if="showNewFolderModal"
-                    class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
+                    role="dialog" aria-modal="true" aria-label="Create New Folder"
+                    class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px]"
                     @click.self="showNewFolderModal = false">
-                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
-                        <h3 class="text-lg font-bold text-slate-900 mb-4">Create New Folder</h3>
-                        <input v-model="newFolderName" type="text" placeholder="Folder name"
-                            class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all mb-6"
+                    <div class="bg-white rounded-2xl border border-stone-200 shadow-2xl w-full max-w-md p-6 animate-fade-in">
+                        <h3 class="text-base font-bold text-slate-900 mb-1">Create New Folder</h3>
+                        <p class="text-xs text-stone-500 mb-4">Create a subfolder inside {{ breadcrumbs[breadcrumbs.length - 1]?.name || 'Cloud' }}.</p>
+                        <input ref="newFolderInput" v-model="newFolderName" type="text" placeholder="Folder name"
+                            class="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none transition-all mb-5"
                             @keyup.enter="handleCreateFolder">
-                        <div class="flex justify-end gap-3">
-                            <button @click="showNewFolderModal = false"
-                                class="px-4 py-2 text-slate-500 hover:text-slate-700 font-medium">Cancel</button>
-                            <button @click="handleCreateFolder" :disabled="!newFolderName"
-                                class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 transition-all">
-                                Create
+                        <div class="flex justify-end gap-2.5">
+                            <button @click="showNewFolderModal = false" type="button"
+                                class="px-4 py-2 text-xs text-stone-600 hover:text-slate-900 font-semibold">Cancel</button>
+                            <button @click="handleCreateFolder" type="button" :disabled="!newFolderName.trim()"
+                                class="px-5 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white rounded-xl text-xs font-semibold transition-all">
+                                Create Folder
                             </button>
                         </div>
                     </div>
@@ -216,7 +246,7 @@
 
                 <!-- Tasks & Schedule Dashboard Panel -->
                 <template v-else-if="activeTab === 'tasks'">
-                    <task-panel></task-panel>
+                    <task-panel :focus-task="focusedTaskRequest"></task-panel>
                 </template>
             </template>
 
@@ -230,27 +260,27 @@
                 @select-file="handleSearchSelectFile" @select-task="handleSearchSelectTask"></search-modal>
 
             <!-- System Panel -->
-            <system-panel v-if="showSystemPanel" @close="closeSystemPanel"></system-panel>
+            <system-panel v-if="showSystemPanel" @close="closeSystemPanel" @open-file="handleSystemOpenFile"></system-panel>
         </main>
 
         <!-- Toast Notifications Stack -->
-        <div class="fixed bottom-4 right-4 z-[200] flex flex-col gap-2 max-w-sm w-full pointer-events-none"
+        <div class="fixed bottom-4 left-4 right-4 sm:left-auto z-[200] flex flex-col gap-2 sm:max-w-sm sm:w-full pointer-events-none"
             role="region" aria-label="Notifications" aria-live="polite">
             <div v-for="toast in toasts" :key="toast.id"
                 :class="{
-                    'bg-rose-50 dark:bg-rose-950/90 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200': toast.type === 'error',
-                    'bg-emerald-50 dark:bg-emerald-950/90 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200': toast.type === 'success',
-                    'bg-white dark:bg-slate-900/90 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200': toast.type !== 'error' && toast.type !== 'success'
+                    'bg-rose-50 border-rose-200 text-rose-800': toast.type === 'error',
+                    'bg-emerald-50 border-emerald-200 text-emerald-800': toast.type === 'success',
+                    'bg-white border-stone-200 text-slate-800': toast.type !== 'error' && toast.type !== 'success'
                 }"
-                class="pointer-events-auto flex items-start justify-between gap-3 px-4 py-3 rounded-xl border shadow-lg backdrop-blur-md text-sm font-medium transition-all animate-in slide-in-from-bottom-2">
+                class="pointer-events-auto flex items-start justify-between gap-3 px-4 py-3 rounded-xl border shadow-lg backdrop-blur-md text-xs font-medium transition-all animate-fade-in">
                 <div class="flex items-start gap-2.5 min-w-0">
-                    <svg v-if="toast.type === 'error'" class="w-5 h-5 text-rose-500 dark:text-rose-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg v-if="toast.type === 'error'" class="w-4 h-4 text-rose-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                     </svg>
-                    <svg v-else-if="toast.type === 'success'" class="w-5 h-5 text-emerald-500 dark:text-emerald-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg v-else-if="toast.type === 'success'" class="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                     </svg>
-                    <svg v-else class="w-5 h-5 text-indigo-500 dark:text-indigo-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg v-else class="w-4 h-4 text-slate-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                     </svg>
                     <span class="break-words leading-snug">{{ toast.message }}</span>
@@ -258,7 +288,7 @@
                 <button @click="dismissToast(toast.id)"
                     class="text-current opacity-60 hover:opacity-100 p-0.5 rounded-lg transition-opacity shrink-0"
                     aria-label="Dismiss notification">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                     </svg>
                 </button>

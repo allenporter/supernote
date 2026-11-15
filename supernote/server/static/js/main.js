@@ -1,4 +1,4 @@
-import { createApp, ref, onMounted, computed, watch, nextTick } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
+import { createApp, ref, onMounted, onUnmounted, computed, watch, nextTick } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
 import { useFileSystem } from './composables/useFileSystem.js';
 import { useProcessingStatus } from './composables/useProcessingStatus.js';
 import { useToast } from './composables/useToast.js';
@@ -166,10 +166,16 @@ createApp({
         // Navigation State
         const activeTab = ref('files'); // 'files' | 'tasks'
         const showSearchModal = ref(false);
+        const searchShortcutLabel = typeof navigator !== 'undefined' &&
+            /Mac|iPod|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '')
+            ? '⌘K'
+            : 'Ctrl K';
+        const focusedTaskRequest = ref(null);
 
         // UI Modals State
         const showNewFolderModal = ref(false);
         const newFolderName = ref('');
+        const newFolderInput = ref(null);
         const showMoveModal = ref(false);
         const showRenameModal = ref(false);
         const itemToRename = ref(null);
@@ -200,6 +206,14 @@ createApp({
         const visibleLimit = ref(GRID_PAGE_SIZE);
         watch(currentDirectoryId, () => {
             visibleLimit.value = GRID_PAGE_SIZE;
+        });
+
+        watch(showNewFolderModal, (isOpen) => {
+            if (isOpen) {
+                nextTick(() => newFolderInput.value?.focus());
+            } else {
+                newFolderName.value = '';
+            }
         });
 
         const allFolders = computed(() => files.value.filter(f => f.isDirectory));
@@ -557,8 +571,23 @@ createApp({
             await openItem(existingFile ? { ...existingFile, pageIndex: item.pageIndex } : item);
         }
 
-        async function handleSearchSelectTask() {
+        async function handleSearchSelectTask(task) {
+            focusedTaskRequest.value = task
+                ? {
+                    id: task.id,
+                    title: task.title || '',
+                    status: task.status || 'needsAction',
+                    seq: Date.now()
+                }
+                : null;
             await switchTab('tasks');
+        }
+
+        async function handleSystemOpenFile(fileId) {
+            if (!fileId) return;
+            showSystemPanel.value = false;
+            systemOpenedFromHistory = false;
+            await handleSearchSelectFile({ id: String(fileId), isDirectory: false });
         }
 
         // Selection
@@ -573,11 +602,13 @@ createApp({
 
         // Actions
         async function handleCreateFolder() {
-            if (!newFolderName.value) return;
+            const trimmed = newFolderName.value.trim();
+            if (!trimmed) return;
             try {
-                await createNewFolder(newFolderName.value);
+                await createNewFolder(trimmed);
                 showNewFolderModal.value = false;
                 newFolderName.value = '';
+                showToast('Folder created', 'success');
             } catch (e) {
                 showToast("Failed to create folder: " + e.message);
             }
@@ -619,6 +650,7 @@ createApp({
                 await moveSelectedItems(selectedIds.value, targetDirId);
                 selectedIds.value = [];
                 showMoveModal.value = false;
+                showToast('Moved successfully', 'success');
             } catch (e) {
                 showToast("Move failed: " + e.message);
             }
@@ -639,6 +671,7 @@ createApp({
                 }
                 showRenameModal.value = false;
                 itemToRename.value = null;
+                showToast('Renamed successfully', 'success');
             } catch (e) {
                 showToast("Rename failed: " + e.message);
             }
@@ -678,6 +711,25 @@ createApp({
             view
         });
 
+        const handleGlobalKeydown = (e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+                if (!isLoggedIn.value) return;
+                e.preventDefault();
+                showSearchModal.value = !showSearchModal.value;
+                return;
+            }
+            if (e.key === 'Escape' && showNewFolderModal.value) {
+                showNewFolderModal.value = false;
+                e.preventDefault();
+            }
+        };
+
+        const handlePopStateOrHash = () => syncFromUrl();
+        const handleFileSyncEvent = () => {
+            if (!isLoggedIn.value) return;
+            loadDirectory(currentDirectoryId.value || '0');
+        };
+
         onMounted(async () => {
             const loggedIn = await resumeSession();
             if (loggedIn) {
@@ -685,21 +737,17 @@ createApp({
                 updateUrl(true);
             }
 
-            window.addEventListener('popstate', () => syncFromUrl());
-            window.addEventListener('hashchange', () => syncFromUrl());
-            window.addEventListener('supernote:file-sync', () => {
-                if (!isLoggedIn.value) return;
-                loadDirectory(currentDirectoryId.value || '0');
-            });
+            window.addEventListener('popstate', handlePopStateOrHash);
+            window.addEventListener('hashchange', handlePopStateOrHash);
+            window.addEventListener('supernote:file-sync', handleFileSyncEvent);
+            window.addEventListener('keydown', handleGlobalKeydown);
+        });
 
-            // Keyboard shortcut ⌘K / Ctrl+K for search
-            window.addEventListener('keydown', (e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-                    if (!isLoggedIn.value) return;
-                    e.preventDefault();
-                    showSearchModal.value = !showSearchModal.value;
-                }
-            });
+        onUnmounted(() => {
+            window.removeEventListener('popstate', handlePopStateOrHash);
+            window.removeEventListener('hashchange', handlePopStateOrHash);
+            window.removeEventListener('supernote:file-sync', handleFileSyncEvent);
+            window.removeEventListener('keydown', handleGlobalKeydown);
         });
 
         return {
@@ -708,6 +756,8 @@ createApp({
             handleLogout,
             activeTab,
             showSearchModal,
+            searchShortcutLabel,
+            focusedTaskRequest,
             view,
             files,
             folders,
@@ -733,6 +783,7 @@ createApp({
             showSystemPanel,
             showNewFolderModal,
             newFolderName,
+            newFolderInput,
             showMoveModal,
             showRenameModal,
             itemToRename,
@@ -752,7 +803,8 @@ createApp({
             showToast,
             dismissToast,
             handleSearchSelectFile,
-            handleSearchSelectTask
+            handleSearchSelectTask,
+            handleSystemOpenFile
         };
     }
 }).mount('#app');
