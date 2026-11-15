@@ -184,12 +184,14 @@ Indented lines under a top-level bullet are attached as nested `children` (`Rapi
   - Returns the formatted OCR transcript for an entire notebook or a specific `[start_index, end_index]` page range.
 - **File Summaries**: `POST /api/extended/file/summary/list` (`ExtendedClient.list_summaries`)
   - Lists the `OCR` transcript and AI synthesis `SummaryDO` records for a `file_id`.
+- **Structured Notebook Metadata**: `POST /api/extended/file/note/metadata` (`ExtendedClient.get_note_metadata`)
+  - Returns `WebNoteMetadataVO` combining notebook-level metadata (`equipment`, `total_pages`, aggregated `keywords`, `titles`, `links`) and per-page metadata (`NotePageMetadataVO`: `page_index`, `page_id`, `date`, `style`, `is_blank`, `has_five_star`, `keywords`).
 - **File Processing Status**: `POST /api/extended/file/processing/status` (`ExtendedClient.get_processing_status`)
   - Aggregates `SystemTaskDO` states for a list of `file_ids`.
 - **Recent System Tasks**: `GET /api/extended/system/tasks` (`ExtendedClient.list_system_tasks`)
   - Returns recent `SystemTaskDO` entries for the authenticated user.
-- **Domain Event Feed**: `GET /api/extended/events`
-  - Queries per-user domain events (`EventLogService.list_events`) after `cursor` with optional `types`, `file_id`, `exclude_actor`, and `limit` filters.
+- **Domain Event Feed**: `GET /api/extended/events` (`EventsClient.list_events`)
+  - Queries per-user domain events (`EventLogService.list_events`) with `sync_token` checkpointing and optional `event_types` (exact `DomainEventType` or globs like `vfs.*`, `note.*`, `schedule.*`, `summary.*`), `file_id`, and `limit` filters.
 - **Static API Keys**: `POST /api/extended/keys`, `GET /api/extended/keys`, `DELETE /api/extended/keys/{id}`
   - Creates, lists, and revokes `sn_...` Bearer API keys (`@interactive_session_only`).
 

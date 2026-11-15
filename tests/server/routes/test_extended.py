@@ -19,7 +19,12 @@ from supernote.server.ai.models.embedding import EmbeddingTaskType
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
+from supernote.server.db.models.note_processing import (
+    NoteMetadataDO,
+    NotePageContentDO,
+    NotePageMetadataDO,
+    SystemTaskDO,
+)
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
@@ -27,10 +32,12 @@ from supernote.server.keys import (
     CONFIG_KEY,
     CONVERSION_SERVICE_KEY,
     EMBEDDING_MODEL_KEY,
+    FILE_SERVICE_KEY,
     PROCESSOR_SERVICE_KEY,
     SEARCH_SERVICE_KEY,
     SUMMARY_SERVICE_KEY,
 )
+from supernote.server.services.processor_modules.page_hashing import PageHashingModule
 from supernote.server.services.user import UserService
 
 
@@ -901,3 +908,301 @@ async def test_api_keys_denied_on_key_management_endpoints(
     assert (
         await client.get("/api/extended/keys", headers=legacy_headers)
     ).status == 403
+
+
+async def test_extended_note_metadata_returns_notebook_and_pages(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    extended_client: ExtendedClient,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    """Verify POST /api/extended/file/note/metadata returns combined notebook and per-page metadata."""
+    assert client.app is not None
+    blob_storage = client.app[BLOB_STORAGE_KEY]
+    file_service = client.app[FILE_SERVICE_KEY]
+    file_id = 772252421643567500
+    storage_key = "meta_route_772252421643567500.note"
+    note_path = Path("tests/testdata/mmujynya/stroller.note")
+
+    await blob_storage.put(USER_DATA_BUCKET, storage_key, note_path.read_bytes())
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=test_user_id,
+                directory_id=0,
+                file_name="MetadataRoute.note",
+                is_folder="N",
+                storage_key=storage_key,
+                md5="md5_meta_route",
+            )
+        )
+        await session.commit()
+
+    hashing = PageHashingModule(file_service=file_service)
+    assert await hashing.run(file_id, session_manager) is True
+
+    meta_vo = await extended_client.get_note_metadata(file_id=file_id)
+    assert meta_vo.success is True
+    assert meta_vo.file_id == file_id
+    assert meta_vo.equipment == "N6"
+    assert meta_vo.total_pages == 2
+    assert meta_vo.keywords == {
+        "ks-tilt": [0, 1],
+        "ks-trapezoid": [0, 1],
+        "ks-shapes": [0, 1],
+    }
+    assert len(meta_vo.pages) == 2
+    assert meta_vo.pages[0].page_index == 0
+    assert meta_vo.pages[0].style == "white"
+    assert meta_vo.pages[0].is_blank is False
+    assert meta_vo.pages[0].has_five_star is False
+    assert meta_vo.pages[1].keywords == ["ks-tilt", "ks-trapezoid", "ks-shapes"]
+
+    raw_resp = await client.post(
+        "/api/extended/file/note/metadata",
+        json={"fileId": str(file_id)},
+        headers=auth_headers,
+    )
+    assert raw_resp.status == 200
+    raw_json = await raw_resp.json()
+    assert raw_json["fileId"] == str(file_id)
+    assert raw_json["totalPages"] == 2
+    assert len(raw_json["pages"]) == 2
+
+
+async def test_extended_note_metadata_not_found_for_unhashed_or_other_user_file(
+    extended_client: ExtendedClient,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    """Verify POST /api/extended/file/note/metadata returns 404 before hashing or for another user's file."""
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=9201,
+                    user_id=test_user_id,
+                    directory_id=0,
+                    file_name="Unhashed.note",
+                    is_folder="N",
+                ),
+                UserFileDO(
+                    id=9202,
+                    user_id=test_user_id + 999,
+                    directory_id=0,
+                    file_name="OtherUser.note",
+                    is_folder="N",
+                ),
+            ]
+        )
+        await session.commit()
+
+    with pytest.raises(ApiException, match="404"):
+        await extended_client.get_note_metadata(file_id=9201)
+
+    with pytest.raises(ApiException, match="404"):
+        await extended_client.get_note_metadata(file_id=9202)
+
+
+async def test_extended_note_metadata_invalid_dto_and_errors(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    extended_client: ExtendedClient,
+    user_service: UserService,
+) -> None:
+    """Verify POST /api/extended/file/note/metadata handles invalid payloads, missing user, and service errors."""
+    assert client.app is not None
+    bad_resp = await client.post(
+        "/api/extended/file/note/metadata",
+        json={"invalid": "payload"},
+        headers=auth_headers,
+    )
+    assert bad_resp.status == 400
+
+    with (
+        patch.object(user_service, "get_user_id", return_value=None),
+        pytest.raises(ApiException, match="404"),
+    ):
+        await extended_client.get_note_metadata(file_id=101)
+
+    with (
+        patch.object(
+            client.app[PROCESSOR_SERVICE_KEY],
+            "get_note_metadata",
+            side_effect=RuntimeError("metadata boom"),
+        ),
+        pytest.raises(ApiException),
+    ):
+        await extended_client.get_note_metadata(file_id=101)
+
+
+async def test_extended_note_metadata_corrupt_header_raises_server_error(
+    extended_client: ExtendedClient,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    """Verify corrupt NoteMetadataDO.header_json raises a 500 error rather than returning 404."""
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=9203,
+                user_id=test_user_id,
+                directory_id=0,
+                file_name="Corrupt.note",
+                is_folder="N",
+            )
+        )
+        session.add(
+            NoteMetadataDO(
+                user_id=test_user_id,
+                file_id=9203,
+                header_json="not-valid-json",
+                footer_json="{}",
+            )
+        )
+        await session.commit()
+
+    with pytest.raises(ApiException, match="500"):
+        await extended_client.get_note_metadata(file_id=9203)
+
+
+async def test_extended_note_metadata_normalizes_titles_and_resolves_links(
+    extended_client: ExtendedClient,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    """Verify titles normalize TITLESTYLE levels and outgoing links resolve target file/page indices."""
+    src_file_id = 9210
+    dst_file_id = 9211
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=src_file_id,
+                    user_id=test_user_id,
+                    directory_id=0,
+                    file_name="Source.note",
+                    is_folder="N",
+                ),
+                UserFileDO(
+                    id=dst_file_id,
+                    user_id=test_user_id,
+                    directory_id=0,
+                    file_name="Target.note",
+                    is_folder="N",
+                ),
+                NoteMetadataDO(
+                    user_id=test_user_id,
+                    file_id=dst_file_id,
+                    native_file_id="F_DST",
+                    file_type="note",
+                    signature="SN_FILE_VER_20230015",
+                    total_pages=2,
+                    header_json=json.dumps({"FILE_ID": "F_DST"}),
+                    footer_json=json.dumps({}),
+                ),
+                NotePageMetadataDO(
+                    user_id=test_user_id,
+                    file_id=dst_file_id,
+                    page_index=1,
+                    page_id="P_DST_1",
+                    has_ink=True,
+                    has_drawables=True,
+                ),
+                NoteMetadataDO(
+                    user_id=test_user_id,
+                    file_id=src_file_id,
+                    native_file_id="F_SRC",
+                    file_type="note",
+                    signature="SN_FILE_VER_20230015",
+                    total_pages=2,
+                    header_json=json.dumps(
+                        {"FILE_ID": "F_SRC", "APPLY_EQUIPMENT": "N5"}
+                    ),
+                    footer_json=json.dumps(
+                        {
+                            "TITLE_00010010": "100",
+                            "TITLE_00020010": "200",
+                            "__titles__": [
+                                {"TITLELEVEL": "1", "TITLESTYLE": "1000254"},
+                                {"TITLELEVEL": "1", "TITLESTYLE": "1201000"},
+                            ],
+                            "LINKO_00010010001000100010": "300",
+                            "LINKO_00020010001000100010": "400",
+                            "LINKI_00010010001000100010": "500",
+                            "__links__": [
+                                {
+                                    "LINKTYPE": "0",
+                                    "LINKINOUT": "0",
+                                    "LINKFILEID": "F_SRC",
+                                    "PAGEID": "P_SRC_1",
+                                },
+                                {
+                                    "LINKTYPE": "0",
+                                    "LINKINOUT": "0",
+                                    "LINKFILEID": "F_DST",
+                                    "PAGEID": "P_DST_1",
+                                },
+                                {
+                                    "LINKTYPE": "0",
+                                    "LINKINOUT": "1",
+                                    "LINKFILEID": "F_DST",
+                                    "PAGEID": "P_SRC_0",
+                                },
+                            ],
+                        }
+                    ),
+                ),
+                NotePageMetadataDO(
+                    user_id=test_user_id,
+                    file_id=src_file_id,
+                    page_index=0,
+                    page_id="P_SRC_0",
+                    page_style="style_h_8mm_ruled_line_a5x2",
+                    has_ink=False,
+                    has_drawables=False,
+                    page_json=json.dumps({"FIVESTAR": "10,20,30,40"}),
+                ),
+                NotePageMetadataDO(
+                    user_id=test_user_id,
+                    file_id=src_file_id,
+                    page_index=1,
+                    page_id="P_SRC_1",
+                    page_style="user_Daily",
+                    has_ink=True,
+                    has_drawables=True,
+                    page_json=json.dumps({}),
+                ),
+            ]
+        )
+        await session.commit()
+
+    meta_vo = await extended_client.get_note_metadata(file_id=src_file_id)
+    assert [t.to_dict() for t in meta_vo.titles] == [
+        {"pageIndex": 0, "level": 1},
+        {"pageIndex": 1, "level": 3},
+    ]
+    assert [lk.to_dict() for lk in meta_vo.links] == [
+        {
+            "pageIndex": 0,
+            "linkType": "page",
+            "target": None,
+            "targetFileId": None,
+            "targetPageIndex": 1,
+        },
+        {
+            "pageIndex": 1,
+            "linkType": "page",
+            "target": None,
+            "targetFileId": str(dst_file_id),
+            "targetPageIndex": 1,
+        },
+    ]
+    assert meta_vo.pages[0].style == "8mm_ruled_line"
+    assert meta_vo.pages[0].is_blank is True
+    assert meta_vo.pages[0].has_five_star is True
+    assert meta_vo.pages[1].style == "daily"
+    assert meta_vo.pages[1].is_blank is False
+    assert meta_vo.pages[1].has_five_star is False

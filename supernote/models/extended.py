@@ -344,3 +344,86 @@ class WebAiStatusVO(BaseResponse):
 
     class Config(BaseConfig):
         serialize_by_alias = True
+
+
+@dataclass
+class WebNoteMetadataRequestDTO(DataClassJSONMixin):
+    """Request DTO for retrieving structured notebook and page metadata."""
+
+    file_id: int = field(metadata=field_options(alias="fileId", serialize=str))
+    """The unique ID of the notebook."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class NoteTitleVO(DataClassJSONMixin):
+    """Heading/outline entry anchored to a notebook page."""
+
+    page_index: int = field(metadata=field_options(alias="pageIndex"))
+    level: int = 1
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class NoteLinkVO(DataClassJSONMixin):
+    """Hyperlink entry anchored to a notebook page."""
+
+    page_index: int = field(metadata=field_options(alias="pageIndex"))
+    link_type: str = field(metadata=field_options(alias="linkType"))
+    target: str | None = None
+    target_file_id: int | None = field(
+        metadata=field_options(
+            alias="targetFileId",
+            serialize=lambda v: str(v) if v is not None else None,
+        ),
+        default=None,
+    )
+    target_page_index: int | None = field(
+        metadata=field_options(alias="targetPageIndex"), default=None
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class NotePageMetadataVO(DataClassJSONMixin):
+    """Per-page structural metadata, blank/star flags, and keywords."""
+
+    page_index: int = field(metadata=field_options(alias="pageIndex"))
+    page_id: str = field(metadata=field_options(alias="pageId"))
+    date: str | None = None
+    style: str | None = None
+    is_blank: bool = field(metadata=field_options(alias="isBlank"), default=False)
+    has_five_star: bool = field(
+        metadata=field_options(alias="hasFiveStar"), default=False
+    )
+    keywords: list[str] = field(default_factory=list)
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class WebNoteMetadataVO(BaseResponse):
+    """Response VO for structured notebook and per-page metadata.
+
+    Used by: POST /api/extended/file/note/metadata
+    """
+
+    file_id: int = field(
+        metadata=field_options(alias="fileId", serialize=str), default=0
+    )
+    equipment: str | None = None
+    total_pages: int = field(metadata=field_options(alias="totalPages"), default=0)
+    keywords: dict[str, list[int]] = field(default_factory=dict)
+    titles: list[NoteTitleVO] = field(default_factory=list)
+    links: list[NoteLinkVO] = field(default_factory=list)
+    pages: list[NotePageMetadataVO] = field(default_factory=list)
+
+    class Config(BaseConfig):
+        serialize_by_alias = True

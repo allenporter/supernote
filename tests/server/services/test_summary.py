@@ -524,6 +524,7 @@ async def test_summary_service_publishes_domain_events_on_mutations(
             user_id=user_id,
             summary_id=summary.id,
             is_summary_group=False,
+            unique_identifier="sum-ev-1",
         ),
     ]
     published.clear()
@@ -535,6 +536,7 @@ async def test_summary_service_publishes_domain_events_on_mutations(
             user_id=user_id,
             summary_id=group.id,
             is_summary_group=True,
+            unique_identifier="grp-ev-1",
         ),
     ]
     published.clear()

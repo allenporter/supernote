@@ -12,30 +12,18 @@ pip install "supernote[client]"
 
 The `supernote.client.Supernote` session facade manages an underlying `aiohttp.ClientSession` and authenticated `supernote.client.Client` transport, providing direct properties (`sn.device`, `sn.web`, `sn.extended`, `sn.login_client`, `sn.client`) and access to specialized domain clients:
 
-```mermaid
-flowchart TD
-    SN["Supernote\n(supernote.client.Supernote)"] --> BASE["sn.client : Client\n(CSRF + x-access-token / Bearer sn_... + OSS upload)"]
-    SN --> DEV["sn.device : DeviceClient\n(V2/V3 path & ID sync, upload/download, PNG/PDF)"]
-    SN --> WEB["sn.web : WebClient\n(Directory tree, recycle bin, keyword search)"]
-    SN --> EXT["sn.extended : ExtendedClient\n(Semantic search, transcripts, API keys, AI status)"]
-    SN --> LOGIN["sn.login_client : LoginClient\n(Challenge-response SHA256/MD5 & SMS auth)"]
-    BASE --> SCHED["ScheduleClient(sn.client)\n(Task groups, tasks, batch updates, iCal feed)"]
-    BASE --> SUM["SummaryClient(sn.client)\n(Summaries, summary groups, tags)"]
-    BASE --> ADM["AdminClient(sn.client)\n(Users, quotas, queue control, reprocess, integrity)"]
-    SOCK["SupernoteSocketClient(host)\n(Real-time Socket.IO push & heartbeats)"]
-```
-
 | Client Class | Access / Construction | Responsibility |
 | :--- | :--- | :--- |
 | `supernote.client.Supernote` | `await Supernote.login(...)`, `Supernote.from_token(...)`, `Supernote.from_auth(...)` | Top-level async context manager and session entry point. |
 | `supernote.client.client.Client` | `sn.client` | Low-level HTTP/JSON transport (`X-XSRF-TOKEN`, `x-access-token`, single & multipart OSS uploads). |
 | `supernote.client.device.DeviceClient` | `sn.device` | Hardware V2/V3 file APIs: path-based listing, `upload_content`, `download_content`, sync locks, and server-side PNG/PDF conversion. |
 | `supernote.client.web.WebClient` | `sn.web` | Web UI APIs: paginated directory queries, recycle bin management, rename/move/copy, and user profile queries. |
-| `supernote.client.extended.ExtendedClient` | `sn.extended` or `ExtendedClient(sn.client)` | Self-hosted server extensions: semantic chunk search, page transcripts, AI summaries, note covers, AI status, and static Bearer API keys. |
+| `supernote.client.extended.ExtendedClient` | `sn.extended` or `ExtendedClient(sn.client)` | Self-hosted server extensions: semantic chunk search, page transcripts, AI summaries, structured notebook metadata (`get_note_metadata`), note covers, AI status, and static Bearer API keys. |
+| `supernote.client.events.EventsClient` | `EventsClient(sn.client)` | Incremental per-user domain event feed (`GET /api/extended/events`) with `sync_token` checkpointing across `vfs.*`, `note.*`, `schedule.*`, and `summary.*` transitions. |
 | `supernote.client.schedule.ScheduleClient` | `ScheduleClient(sn.client)` | Task lists (`create_group`, `list_groups`), tasks (`create_task`, `list_tasks`, `update_task`, `batch_update_tasks`), and RFC 5545 `.ics` feeds. |
 | `supernote.client.summary.SummaryClient` | `SummaryClient(sn.client)` | Device-synced summaries, summary groups, and summary tags. |
 | `supernote.client.admin.AdminClient` | `AdminClient(sn.client)` | Account administration, per-user quotas (`admin_set_quota`), processor queue pause/resume, task inspection, note reprocessing, and storage integrity verification. |
-| `supernote.client.socket.SupernoteSocketClient` | `SupernoteSocketClient(host)` | Real-time Socket.IO listener for `FILE-SYN`, `TASK-SYN`, and `DIGEST-SYN` push notifications. |
+| `supernote.client.socket.SupernoteSocketClient` | `SupernoteSocketClient(host)` | Real-time Socket.IO listener for `FILE-SYN`, `TASK-SYN`, `DIGEST-SYN`, and `event_log_cursor` push notifications. |
 
 ---
 
@@ -233,7 +221,11 @@ async def query_knowledge_base(sn: Supernote, file_id: int) -> None:
     cover_vo = await ext.get_note_cover(file_id=file_id)
     print(f"Cover preview URL: {cover_vo.url}")
 
-    # 5. Create, list, and revoke static Bearer API keys (requires interactive login session)
+    # 5. Fetch structured notebook & per-page metadata (keywords, titles, links, blank/star flags)
+    meta_vo = await ext.get_note_metadata(file_id=file_id)
+    print(f"Equipment={meta_vo.equipment}, total_pages={meta_vo.total_pages}")
+
+    # 6. Create, list, and revoke static Bearer API keys (requires interactive login session)
     created_key = await ext.create_api_key("Notebook Agent", expires_in_days=90)
     print(f"Created key {created_key.id}: {created_key.key}")
 
@@ -242,6 +234,34 @@ async def query_knowledge_base(sn: Supernote, file_id: int) -> None:
         print(f"{k.id}: {k.name} ({k.key_prefix}...)")
 
     await ext.delete_api_key(created_key.id)
+```
+
+### Polling Incremental Domain Events (`EventsClient`)
+
+`supernote.client.events.EventsClient` polls the append-only per-user domain event feed (`GET /api/extended/events`) using opaque `sync_token` cursors:
+
+```python
+from supernote.client import Supernote
+from supernote.client.events import EventsClient
+
+
+async def poll_domain_events(sn: Supernote, saved_token: str | None = None) -> str:
+    events_client = EventsClient(sn.client)
+    sync_token = saved_token
+
+    while True:
+        feed = await events_client.list_events(
+            sync_token=sync_token,
+            event_types=["vfs.*", "note.*", "summary.*"],
+            limit=200,
+        )
+        for ev in feed.events:
+            print(f"[{ev.seq}] {ev.event_type} ({ev.entity_type}={ev.entity_id})")
+        sync_token = feed.next_sync_token
+        if not feed.has_more:
+            break
+
+    return sync_token
 ```
 
 ### Listening to Real-Time Push Events (`SupernoteSocketClient`)
@@ -287,6 +307,7 @@ from . import (
     admin,
     auth,
     device,
+    events,
     exceptions,
     extended,
     login_client,
@@ -304,6 +325,7 @@ __all__ = [
     "admin",
     "auth",
     "device",
+    "events",
     "exceptions",
     "extended",
     "login_client",

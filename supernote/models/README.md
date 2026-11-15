@@ -248,9 +248,10 @@ Models in `supernote.models.extended` power the custom `/api/extended/*` endpoin
 
 * **Hybrid Semantic Search** (`POST /api/extended/search`): `WebSearchRequestDTO` (`query`, `top_n`, `name_filter`, `date_after`, `date_before`) -> `WebSearchResponseVO` (list of `SearchResultVO` with stringified `file_id`, `file_name`, `page_index`, `page_id`, `score`, `text_preview`, `date`).
 * **OCR Page Transcripts** (`POST /api/extended/transcript`): `WebTranscriptRequestDTO` (stringified `file_id`, optional `start_index` / `end_index`) -> `WebTranscriptResponseVO` (`pages: list[PageTranscriptVO]`).
-* **Web Summaries & Note Cover Previews**:
+* **Web Summaries, Structured Notebook Metadata & Note Cover Previews**:
   * `POST /api/extended/file/summary/list`: `WebSummaryListRequestDTO` -> `WebSummaryListVO`
   * `POST /api/extended/file/note/cover`: `WebNoteCoverRequestDTO` -> `WebNoteCoverVO`
+  * `POST /api/extended/file/note/metadata`: `WebNoteMetadataRequestDTO` -> `WebNoteMetadataVO` (`file_id`, `equipment`, `total_pages`, `keywords`, `titles: list[NoteTitleVO]`, `links: list[NoteLinkVO]`, `pages: list[NotePageMetadataVO]`)
 * **Static Bearer API Keys**:
   * `POST /api/extended/keys`: `CreateApiKeyDTO` (`name`, `expires_in_days`) -> `CreateApiKeyResponseVO` (`id`, `name`, `key`, `created_at`, `expires_at`)
   * `GET /api/extended/keys`: `ApiKeyListResponseVO` (`keys: list[ApiKeyVO]`)
@@ -259,6 +260,20 @@ Models in `supernote.models.extended` power the custom `/api/extended/*` endpoin
   * `GET /api/extended/ai/status`: `WebAiStatusVO` (`has_api_key`, `ocr_enabled`, `ocr_model`, `summary_enabled`, `summary_model`, `vector_search_enabled`, `embedding_model`)
   * `POST /api/extended/file/processing/status`: `FileProcessingStatusDTO` -> `FileProcessingStatusVO`
   * `GET /api/extended/system/tasks`: `SystemTaskListVO` (`tasks: list[SystemTaskVO]`)
+
+---
+
+## Incremental Domain Event Feed (`supernote.models.events`)
+
+Models in `supernote.models.events` define the wire contract for `GET /api/extended/events` and `supernote.client.events.EventsClient`:
+
+* **Enumerations**:
+  * `DomainEventType`: `vfs.created`, `vfs.content_updated`, `vfs.moved`, `vfs.copied`, `vfs.deleted`, `note.pages_delta`, `note.page_transcribed`, `note.processing_completed`, `note.processing_failed`, `schedule.task_created`, `schedule.task_updated`, `schedule.task_deleted`, `summary.upserted`, `summary.deleted`
+  * `DomainEntityType`: `file`, `note_page`, `schedule_task`, `summary`
+* **Request & Response Envelopes**:
+  * `EventFeedRequestDTO` (`sync_token`, `event_types`, `file_id`, `limit`)
+  * `DomainEventVO` (`seq`, `timestamp`, `event_type`, `actor`, `entity_type`, `entity_id`, `related_file_id`, `payload`)
+  * `EventFeedListVO` (`events: list[DomainEventVO]`, `next_sync_token`, `has_more`)
 
 ---
 

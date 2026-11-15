@@ -1,14 +1,32 @@
 """Unit tests for EventLogService append, cursor querying, and retention pruning."""
 
+import hashlib
 import time
+from pathlib import Path
 
 import pytest
 
+from supernote.models.base import BooleanEnum
+from supernote.models.events import DomainEntityType, DomainEventType
+from supernote.models.summary import AddSummaryDTO, AddSummaryGroupDTO, SummaryItem
+from supernote.models.user import UserRegisterDTO
+from supernote.server.constants import USER_DATA_BUCKET
+from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.events import DomainEventRecorded, LocalEventBus
+from supernote.server.events import (
+    DomainEventRecorded,
+    LocalEventBus,
+    SummaryDeletedEvent,
+    SummaryUpsertedEvent,
+)
 from supernote.server.exceptions import CursorExpiredError, InvalidInputError
+from supernote.server.services.blob import BlobStorage
 from supernote.server.services.coordination import CoordinationService
-from supernote.server.services.event_log import EventLogService
+from supernote.server.services.event_log import EventLogService, encode_sync_token
+from supernote.server.services.file import FileService
+from supernote.server.services.processor_modules.summary import SummaryModule
+from supernote.server.services.summary import SummaryService
+from supernote.server.services.user import UserService
 
 
 @pytest.fixture
@@ -67,15 +85,14 @@ async def test_append_persists_and_publishes_domain_event(
     assert published == [e1, e2]
 
 
-async def test_list_events_cursors_filters_and_user_isolation(
+async def test_list_events_sync_tokens_filters_and_user_isolation(
     event_log_service: EventLogService,
 ) -> None:
-    """Verify cursor='0', cursor='head', pagination, type globbing, file_id, and exclude_actor."""
-    empty_head = await event_log_service.list_events(user_id=1, cursor="head")
-    assert empty_head.events == []
-    assert empty_head.next_cursor == "0"
-    assert empty_head.head_cursor == "0"
-    assert empty_head.has_more is False
+    """Verify sync_token=None/empty, pagination, type globbing, file_id, and exclude_actor."""
+    empty_page = await event_log_service.list_events(user_id=1)
+    assert empty_page.events == []
+    assert empty_page.next_sync_token is None
+    assert empty_page.has_more is False
 
     ev1 = await event_log_service.append(
         user_id=1,
@@ -111,53 +128,51 @@ async def test_list_events_cursors_filters_and_user_isolation(
     assert ev1.seq < ev2.seq < ev3.seq < ev4.seq
 
     # User 1 sees only user 1 events; paginate 2 at a time
-    page1 = await event_log_service.list_events(user_id=1, cursor="0", limit=2)
+    page1 = await event_log_service.list_events(user_id=1, limit=2)
     assert [e.seq for e in page1.events] == [ev1.seq, ev3.seq]
     assert page1.has_more is True
-    assert page1.next_cursor == str(ev3.seq)
-    assert page1.head_cursor == str(ev4.seq)
+    assert page1.next_sync_token == encode_sync_token(ev3.seq)
+    assert page1.next_sync_token != str(ev3.seq)
 
     page2 = await event_log_service.list_events(
-        user_id=1, cursor=page1.next_cursor, limit=2
+        user_id=1, sync_token=page1.next_sync_token, limit=2
     )
     assert [e.seq for e in page2.events] == [ev4.seq]
     assert page2.has_more is False
-    assert page2.next_cursor == str(ev4.seq)
+    assert page2.next_sync_token == encode_sync_token(ev4.seq)
 
     # Prefix type globbing + exact type matching
     filtered_types = await event_log_service.list_events(
-        user_id=1, cursor="0", types=["note.*", "schedule.task_created"]
+        user_id=1, event_types=["note.*", "schedule.task_created"]
     )
     assert [e.seq for e in filtered_types.events] == [ev3.seq, ev4.seq]
 
-    # When a filtered query has 0 matches, next_cursor advances to head_cursor
-    no_match = await event_log_service.list_events(
-        user_id=1, cursor="0", types=["summary.*"]
-    )
+    # When a filtered query has 0 matches, next_sync_token advances to user's latest seq
+    no_match = await event_log_service.list_events(user_id=1, event_types=["summary.*"])
     assert no_match.events == []
-    assert no_match.next_cursor == str(ev4.seq)
-    assert no_match.head_cursor == str(ev4.seq)
+    assert no_match.next_sync_token == encode_sync_token(ev4.seq)
 
-    # file_id and exclude_actor filters
-    by_file = await event_log_service.list_events(
-        user_id=1, cursor="0", file_id=10, exclude_actor="device:SN1"
-    )
-    assert [e.seq for e in by_file.events] == [ev3.seq]
-
-    # cursor="head" fast-forwards to user 1's latest seq
-    head_page = await event_log_service.list_events(user_id=1, cursor="head")
-    assert head_page.events == []
-    assert head_page.next_cursor == str(ev4.seq)
-    assert head_page.head_cursor == str(ev4.seq)
+    # file_id filter
+    by_file = await event_log_service.list_events(user_id=1, file_id=10)
+    assert [e.seq for e in by_file.events] == [ev1.seq, ev3.seq]
 
 
 async def test_list_events_validation_errors(
     event_log_service: EventLogService,
 ) -> None:
-    """Verify invalid cursors and out-of-range limits raise InvalidInputError."""
-    for bad_cursor in ("", "-1", "abc", "12.3", "head "):
+    """Verify invalid sync tokens (including raw integers) and out-of-range limits raise InvalidInputError."""
+    for bad_token in (
+        "0",
+        "100",
+        "-1",
+        "abc",
+        "head",
+        "!!!",
+        encode_sync_token(0),
+        f"{encode_sync_token(10)}=",
+    ):
         with pytest.raises(InvalidInputError):
-            await event_log_service.list_events(user_id=1, cursor=bad_cursor)
+            await event_log_service.list_events(user_id=1, sync_token=bad_token)
 
     for bad_limit in (0, -5, 1001):
         with pytest.raises(InvalidInputError):
@@ -167,7 +182,7 @@ async def test_list_events_validation_errors(
 async def test_prune_expired_events_and_cursor_expiration(
     event_log_service: EventLogService,
 ) -> None:
-    """Verify pruning deletes expired history and raises 410 only for cursors < pruned_seq."""
+    """Verify pruning deletes expired history and raises 410 only for sync_token < pruned_seq."""
     now_ms = int(time.time() * 1000)
     old1 = await event_log_service.append(
         user_id=1,
@@ -194,18 +209,24 @@ async def test_prune_expired_events_and_cursor_expiration(
     deleted = await event_log_service.prune_expired_events(max_age_ms=5_000)
     assert deleted == 2
 
-    # cursor < old2.seq is expired (410 Gone)
+    # sync_token < old2.seq is expired (410 Gone)
     with pytest.raises(CursorExpiredError) as exc_info:
-        await event_log_service.list_events(user_id=1, cursor=str(old1.seq))
+        await event_log_service.list_events(
+            user_id=1, sync_token=encode_sync_token(old1.seq)
+        )
     assert exc_info.value.status_code == 410
 
-    # cursor == old2.seq is still valid because client already consumed up through old2.seq
-    from_boundary = await event_log_service.list_events(user_id=1, cursor=str(old2.seq))
+    # sync_token == old2.seq is still valid because client already consumed up through old2.seq
+    from_boundary = await event_log_service.list_events(
+        user_id=1, sync_token=encode_sync_token(old2.seq)
+    )
     assert [e.seq for e in from_boundary.events] == [recent.seq]
 
-    # cursor == "0" always returns retained history without raising 410
-    from_zero = await event_log_service.list_events(user_id=1, cursor="0")
-    assert [e.seq for e in from_zero.events] == [recent.seq]
+    # sync_token == None or "" always returns retained history without raising 410
+    from_start = await event_log_service.list_events(user_id=1)
+    assert [e.seq for e in from_start.events] == [recent.seq]
+    from_empty = await event_log_service.list_events(user_id=1, sync_token="")
+    assert [e.seq for e in from_empty.events] == [recent.seq]
 
     # Pruning again with no expired rows or disabled retention is a safe no-op
     assert await event_log_service.prune_expired_events(max_age_ms=5_000) == 0
@@ -231,3 +252,255 @@ async def test_prune_disabled_when_retention_days_is_zero(
         timestamp_ms=1_000,
     )
     assert await svc.prune_expired_events() == 0
+
+
+async def test_summary_domain_events_recorded(
+    event_log_service: EventLogService,
+    event_bus: LocalEventBus,
+    session_manager: DatabaseSessionManager,
+    user_service: UserService,
+    storage_root: Path,
+    blob_storage: BlobStorage,
+) -> None:
+    """Verify summary upserts, group cascade deletes, and file cleanup record summary.* events."""
+    test_user = "summary_events@example.com"
+    await user_service.register(UserRegisterDTO(email=test_user, password="a" * 32))
+    test_user_id = await user_service.get_user_id(test_user)
+    assert test_user_id is not None
+
+    summary_service = SummaryService(user_service, session_manager, event_bus)
+    file_service = FileService(
+        storage_root, blob_storage, user_service, session_manager, event_bus
+    )
+    summary_module = SummaryModule(
+        file_service=file_service,
+        summary_service=summary_service,
+        summary_model=None,
+    )
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=501,
+                user_id=test_user_id,
+                file_name="notes.note",
+                directory_id=0,
+            )
+        )
+        await session.commit()
+
+    group = await summary_service.add_group(
+        test_user,
+        AddSummaryGroupDTO(
+            unique_identifier="grp-1",
+            name="notes.note",
+            md5_hash="g-md5",
+        ),
+    )
+    leaf = await summary_service.add_summary(
+        test_user,
+        AddSummaryDTO(
+            file_id=501,
+            unique_identifier="leaf-1",
+            parent_unique_identifier="grp-1",
+            content="Summary text",
+            source_path="/NOTE/notes.note",
+            data_source="AI",
+        ),
+    )
+    assert group.id is not None and leaf.id is not None
+
+    # Deleting a group cascades a summary.deleted tombstone for both the group and its child leaf
+    await summary_service.delete_group(test_user, group.id)
+
+    page = await event_log_service.list_events(
+        user_id=test_user_id, event_types=["summary.*"]
+    )
+    assert [
+        (e.event_type, e.entity_type, e.entity_id, e.related_file_id)
+        for e in page.events
+    ] == [
+        (
+            DomainEventType.SUMMARY_UPSERTED,
+            DomainEntityType.SUMMARY,
+            str(group.id),
+            None,
+        ),
+        (DomainEventType.SUMMARY_UPSERTED, DomainEntityType.SUMMARY, str(leaf.id), 501),
+        (
+            DomainEventType.SUMMARY_DELETED,
+            DomainEntityType.SUMMARY,
+            str(group.id),
+            None,
+        ),
+        (DomainEventType.SUMMARY_DELETED, DomainEntityType.SUMMARY, str(leaf.id), 501),
+    ]
+    assert page.events[0].payload["summary"]["isSummaryGroup"] == "Y"
+    assert page.events[1].payload["is_new"] is True
+    assert page.events[3].payload == {
+        "summary_id": str(leaf.id),
+        "file_id": "501",
+        "unique_identifier": "leaf-1",
+        "is_summary_group": False,
+    }
+
+    # Recreate group + leaf and verify SummaryModule.cleanup_file emits summary.deleted tombstones
+    group2 = await summary_service.add_group(
+        test_user,
+        AddSummaryGroupDTO(
+            unique_identifier="grp-2",
+            name="notes.note",
+            md5_hash="g-md5",
+        ),
+    )
+    leaf2 = await summary_service.add_summary(
+        test_user,
+        AddSummaryDTO(
+            file_id=501,
+            unique_identifier="leaf-2",
+            parent_unique_identifier="grp-2",
+            content="Summary text 2",
+        ),
+    )
+    before_cleanup = await event_log_service.list_events(user_id=test_user_id)
+    await summary_module.cleanup_file(501, test_user_id, session_manager)
+
+    after_cleanup = await event_log_service.list_events(
+        user_id=test_user_id, sync_token=before_cleanup.next_sync_token
+    )
+    assert [
+        (e.event_type, e.entity_id, e.payload["is_summary_group"])
+        for e in after_cleanup.events
+    ] == [
+        (DomainEventType.SUMMARY_DELETED, str(leaf2.id), False),
+        (DomainEventType.SUMMARY_DELETED, str(group2.id), True),
+    ]
+
+    # Device actor provenance via equipment_no
+    await event_bus.publish(
+        SummaryUpsertedEvent(
+            user_id=test_user_id,
+            summary=SummaryItem(
+                id=999,
+                unique_identifier="dev-sum",
+                is_summary_group=BooleanEnum.NO,
+            ),
+            is_new=False,
+            equipment_no="SN777",
+        )
+    )
+    await event_bus.publish(
+        SummaryDeletedEvent(
+            user_id=test_user_id,
+            summary_id=999,
+            unique_identifier="dev-sum",
+            equipment_no="SN777",
+        )
+    )
+    dev_events = await event_log_service.list_events(
+        user_id=test_user_id, sync_token=after_cleanup.next_sync_token
+    )
+    assert [e.actor for e in dev_events.events] == ["device:SN777", "device:SN777"]
+
+
+async def test_vfs_file_and_folder_domain_events_recorded(
+    event_log_service: EventLogService,
+    event_bus: LocalEventBus,
+    session_manager: DatabaseSessionManager,
+    user_service: UserService,
+    storage_root: Path,
+    blob_storage: BlobStorage,
+) -> None:
+    """Verify VFS create, content update, MD5 no-op suppression, and recursive folder mutations."""
+    test_user = "vfs_events@example.com"
+    await user_service.register(UserRegisterDTO(email=test_user, password="a" * 32))
+    test_user_id = await user_service.get_user_id(test_user)
+    assert test_user_id is not None
+
+    file_service = FileService(
+        storage_root, blob_storage, user_service, session_manager, event_bus
+    )
+
+    # Create a subfolder under /Note
+    note_dir = await file_service.get_file_info(test_user, "Note")
+    assert note_dir is not None
+    sub_dir = await file_service.create_directory_by_id(
+        test_user, note_dir.id, "Projects"
+    )
+
+    # Upload a .note file into /Note/Projects
+    blob1 = b"note-v1"
+    md5_1 = hashlib.md5(blob1).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "inner-v1", blob1)
+    await file_service.upload_finish_web(
+        test_user, sub_dir.id, "todo.note", md5_1, "inner-v1"
+    )
+    note_info = await file_service.get_file_info(test_user, "Note/Projects/todo.note")
+    assert note_info is not None
+
+    # Re-uploading identical MD5 suppresses duplicate vfs.content_updated
+    await file_service.upload_finish_web(
+        test_user, sub_dir.id, "todo.note", md5_1, "inner-v1"
+    )
+
+    # Uploading modified content records vfs.content_updated with old_md5 and new_md5
+    blob2 = b"note-v2-updated"
+    md5_2 = hashlib.md5(blob2).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, "inner-v2", blob2)
+    await file_service.upload_finish_web(
+        test_user, sub_dir.id, "todo.note", md5_2, "inner-v2"
+    )
+
+    p1 = await event_log_service.list_events(
+        user_id=test_user_id, event_types=["vfs.*"]
+    )
+    assert [(e.event_type, e.entity_id, e.related_file_id) for e in p1.events] == [
+        (DomainEventType.VFS_CREATED, str(sub_dir.id), None),
+        (DomainEventType.VFS_CREATED, str(note_info.id), note_info.id),
+        (DomainEventType.VFS_CONTENT_UPDATED, str(note_info.id), note_info.id),
+    ]
+    assert p1.events[2].payload["old_md5"] == md5_1
+    assert p1.events[2].payload["new_md5"] == md5_2
+
+    # Rename folder -> emits vfs.moved for the folder
+    await file_service.rename_item(test_user, sub_dir.id, "Roadmap")
+    p2 = await event_log_service.list_events(
+        user_id=test_user_id, sync_token=p1.next_sync_token
+    )
+    assert [
+        (
+            e.event_type,
+            e.entity_id,
+            e.payload["original_full_path"],
+            e.payload["new_full_path"],
+        )
+        for e in p2.events
+    ] == [
+        (
+            DomainEventType.VFS_MOVED,
+            str(sub_dir.id),
+            "NOTE/Note/Projects",
+            "NOTE/Note/Roadmap",
+        ),
+    ]
+
+    # Copy folder -> emits vfs.copied for the folder
+    copied_dir = await file_service.copy_item(
+        test_user, sub_dir.id, "NOTE/Note/RoadmapCopy", autorename=True
+    )
+    p3 = await event_log_service.list_events(
+        user_id=test_user_id, sync_token=p2.next_sync_token
+    )
+    assert len(p3.events) == 1
+    assert p3.events[0].event_type == DomainEventType.VFS_COPIED
+    assert p3.events[0].entity_id == str(copied_dir.id)
+    assert p3.events[0].payload["source_id"] == str(sub_dir.id)
+    assert p3.events[0].payload["original_full_path"] == "NOTE/Note/Roadmap"
+
+    # Delete folder -> emits vfs.deleted for the folder
+    await file_service.delete_item(test_user, copied_dir.id)
+    p4 = await event_log_service.list_events(
+        user_id=test_user_id, sync_token=p3.next_sync_token
+    )
+    assert [e.event_type for e in p4.events] == [DomainEventType.VFS_DELETED]
+    assert p4.events[0].entity_id == str(copied_dir.id)

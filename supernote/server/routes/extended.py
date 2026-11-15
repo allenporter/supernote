@@ -30,6 +30,8 @@ from supernote.models.extended import (
     WebAiStatusVO,
     WebNoteCoverRequestDTO,
     WebNoteCoverVO,
+    WebNoteMetadataRequestDTO,
+    WebNoteMetadataVO,
     WebSearchRequestDTO,
     WebSearchResponseVO,
     WebSummaryListRequestDTO,
@@ -350,6 +352,49 @@ async def handle_extended_note_cover(request: web.Request) -> web.Response:
         return err.to_response()
     except Exception as err:
         logger.exception("Error fetching note cover preview")
+        return SupernoteError.uncaught(err).to_response()
+
+
+@routes.post("/api/extended/file/note/metadata")
+async def handle_extended_note_metadata(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/file/note/metadata
+    # Purpose: Return structured notebook and per-page metadata.
+    user_email = request[REQUEST_USER_KEY]
+    try:
+        data = await request.json()
+        req_dto = WebNoteMetadataRequestDTO.from_dict(data)
+    except (
+        json.JSONDecodeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        MissingField,
+        InvalidFieldValue,
+    ) as err:
+        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
+
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    processor_service: ProcessorService = request.app[PROCESSOR_SERVICE_KEY]
+
+    user_id = await user_service.get_user_id(user_email)
+    if not user_id:
+        return web.json_response({"error": "User not found"}, status=404)
+
+    try:
+        metadata_vo: (
+            WebNoteMetadataVO | None
+        ) = await processor_service.get_note_metadata(
+            user_id=user_id,
+            file_id=req_dto.file_id,
+        )
+        if metadata_vo is None:
+            return web.json_response(
+                {"error": f"No metadata found for notebook {req_dto.file_id}"},
+                status=404,
+            )
+        return web.json_response(metadata_vo.to_dict())
+    except Exception as err:
+        logger.exception("Error fetching notebook metadata")
         return SupernoteError.uncaught(err).to_response()
 
 

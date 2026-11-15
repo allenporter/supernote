@@ -8,6 +8,9 @@ from supernote.models.extended import (
     CreateApiKeyResponseVO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
+    NoteLinkVO,
+    NotePageMetadataVO,
+    NoteTitleVO,
     PageTranscriptVO,
     SearchResultVO,
     SystemTaskListVO,
@@ -15,6 +18,8 @@ from supernote.models.extended import (
     WebAiStatusVO,
     WebNoteCoverRequestDTO,
     WebNoteCoverVO,
+    WebNoteMetadataRequestDTO,
+    WebNoteMetadataVO,
     WebSearchRequestDTO,
     WebSearchResponseVO,
     WebSummaryListRequestDTO,
@@ -290,3 +295,72 @@ def test_web_ai_status_model() -> None:
         "model": "apple-vision",
     }
     assert WebAiStatusVO.from_dict(data) == vo
+
+
+def test_web_note_metadata_models() -> None:
+    snowflake_id = 772252421643567298
+    target_snowflake_id = 772252421643567999
+    req = WebNoteMetadataRequestDTO(file_id=snowflake_id)
+    assert req.to_dict() == {"fileId": str(snowflake_id)}
+    assert WebNoteMetadataRequestDTO.from_dict({"fileId": str(snowflake_id)}) == req
+    assert WebNoteMetadataRequestDTO.from_dict({"fileId": snowflake_id}) == req
+
+    vo = WebNoteMetadataVO(
+        file_id=snowflake_id,
+        equipment="N5",
+        total_pages=2,
+        keywords={"Sprint": [0, 1]},
+        titles=[NoteTitleVO(page_index=0, level=2)],
+        links=[
+            NoteLinkVO(
+                page_index=1,
+                link_type="page",
+                target="/Note/Target.note",
+                target_file_id=target_snowflake_id,
+                target_page_index=2,
+            )
+        ],
+        pages=[
+            NotePageMetadataVO(
+                page_index=0,
+                page_id="P20261101120000abc",
+                date="2026-11-01",
+                style="5mm_dots",
+                is_blank=False,
+                has_five_star=True,
+                keywords=["Sprint"],
+            )
+        ],
+    )
+    data = vo.to_dict()
+    assert data == {
+        "success": True,
+        "errorCode": None,
+        "errorMsg": None,
+        "fileId": str(snowflake_id),
+        "equipment": "N5",
+        "totalPages": 2,
+        "keywords": {"Sprint": [0, 1]},
+        "titles": [{"pageIndex": 0, "level": 2}],
+        "links": [
+            {
+                "pageIndex": 1,
+                "linkType": "page",
+                "target": "/Note/Target.note",
+                "targetFileId": str(target_snowflake_id),
+                "targetPageIndex": 2,
+            }
+        ],
+        "pages": [
+            {
+                "pageIndex": 0,
+                "pageId": "P20261101120000abc",
+                "date": "2026-11-01",
+                "style": "5mm_dots",
+                "isBlank": False,
+                "hasFiveStar": True,
+                "keywords": ["Sprint"],
+            }
+        ],
+    }
+    assert WebNoteMetadataVO.from_dict(data) == vo

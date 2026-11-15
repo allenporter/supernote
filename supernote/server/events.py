@@ -14,8 +14,12 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
+from mashumaro import field_options
+from mashumaro.mixins.json import DataClassJSONMixin
+
+from supernote.models.events import DomainEntityType, DomainEventType
 from supernote.models.summary import SummaryItem, SummaryTagItem
 
 logger = logging.getLogger(__name__)
@@ -24,6 +28,38 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Event:
     """Base class for all events."""
+
+
+@dataclass
+class DomainEvent(Event, DataClassJSONMixin):
+    """Base class for domain events recorded in `f_user_event` and dumped directly to the wire."""
+
+    EVENT_TYPE: ClassVar[DomainEventType]
+    ENTITY_TYPE: ClassVar[DomainEntityType]
+
+    user_id: int
+
+    @property
+    def entity_id(self) -> str:
+        """Stable identifier of the affected entity."""
+        raise NotImplementedError
+
+    @property
+    def related_file_id(self) -> int | None:
+        """Associated VFS file ID when applicable."""
+        return None
+
+    @property
+    def actor_equipment_no(self) -> str | None:
+        """Optional originating device equipment number."""
+        return getattr(self, "equipment_no", None)
+
+    def to_payload(self) -> dict[str, Any]:
+        """Serialize event fields into the wire `payload` dict, omitting envelope metadata."""
+        data = self.to_dict()
+        data.pop("user_id", None)
+        data.pop("equipment_no", None)
+        return data
 
 
 @dataclass
@@ -91,32 +127,56 @@ class SummaryTagDeletedEvent(Event):
 
 
 @dataclass
-class SummaryUpsertedEvent(Event):
+class SummaryUpsertedEvent(DomainEvent):
     """Triggered when a summary group or leaf summary item is created or updated."""
 
-    user_id: int
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.SUMMARY_UPSERTED
+    ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.SUMMARY
+
     summary: SummaryItem
     is_new: bool
     equipment_no: str | None = None
 
+    @property
+    def entity_id(self) -> str:
+        return str(self.summary.id or self.summary.unique_identifier or "unknown")
+
+    @property
+    def related_file_id(self) -> int | None:
+        return self.summary.file_id
+
 
 @dataclass
-class SummaryDeletedEvent(Event):
-    """Triggered when a summary group or leaf summary item is soft-deleted."""
+class SummaryDeletedEvent(DomainEvent):
+    """Triggered when a summary group or leaf summary item is deleted."""
 
-    user_id: int
-    summary_id: int
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.SUMMARY_DELETED
+    ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.SUMMARY
+
+    summary_id: int = field(metadata=field_options(serialize=str))
     is_summary_group: bool = False
+    file_id: int | None = field(default=None, metadata=field_options(serialize=str))
+    unique_identifier: str | None = None
     equipment_no: str | None = None
 
+    @property
+    def entity_id(self) -> str:
+        return str(self.summary_id)
+
+    @property
+    def related_file_id(self) -> int | None:
+        return self.file_id
+
 
 @dataclass
-class VfsItemCreatedEvent(Event):
+class VfsItemCreatedEvent(DomainEvent):
     """Triggered when a VFS file or directory is created, uploaded, or restored from recycle."""
 
-    user_id: int
-    item_id: int
-    parent_id: int
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.VFS_CREATED
+    ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.FILE
+
+    item_id: int = field(metadata=field_options(serialize=str))
+    parent_id: int = field(metadata=field_options(serialize=str))
     name: str
     is_folder: bool
     full_path: str
@@ -124,15 +184,50 @@ class VfsItemCreatedEvent(Event):
     md5: str | None = None
     equipment_no: str | None = None
 
+    @property
+    def entity_id(self) -> str:
+        return str(self.item_id)
+
+    @property
+    def related_file_id(self) -> int | None:
+        return None if self.is_folder else self.item_id
+
 
 @dataclass
-class VfsItemMovedEvent(Event):
+class VfsContentUpdatedEvent(DomainEvent):
+    """Triggered when an existing VFS file is overwritten with new content."""
+
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.VFS_CONTENT_UPDATED
+    ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.FILE
+
+    item_id: int = field(metadata=field_options(serialize=str))
+    parent_id: int = field(metadata=field_options(serialize=str))
+    name: str
+    full_path: str
+    size: int = 0
+    old_md5: str | None = None
+    new_md5: str | None = None
+    equipment_no: str | None = None
+
+    @property
+    def entity_id(self) -> str:
+        return str(self.item_id)
+
+    @property
+    def related_file_id(self) -> int | None:
+        return self.item_id
+
+
+@dataclass
+class VfsItemMovedEvent(DomainEvent):
     """Triggered when a VFS file or directory is renamed in-place or moved to a new directory."""
 
-    user_id: int
-    item_id: int
-    original_parent_id: int
-    new_parent_id: int
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.VFS_MOVED
+    ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.FILE
+
+    item_id: int = field(metadata=field_options(serialize=str))
+    original_parent_id: int = field(metadata=field_options(serialize=str))
+    new_parent_id: int = field(metadata=field_options(serialize=str))
     original_name: str
     new_name: str
     original_full_path: str
@@ -142,16 +237,26 @@ class VfsItemMovedEvent(Event):
     md5: str | None = None
     equipment_no: str | None = None
 
+    @property
+    def entity_id(self) -> str:
+        return str(self.item_id)
+
+    @property
+    def related_file_id(self) -> int | None:
+        return None if self.is_folder else self.item_id
+
 
 @dataclass
-class VfsItemCopiedEvent(Event):
+class VfsItemCopiedEvent(DomainEvent):
     """Triggered when a VFS file or directory is copied."""
 
-    user_id: int
-    source_id: int
-    new_id: int
-    source_parent_id: int
-    new_parent_id: int
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.VFS_COPIED
+    ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.FILE
+
+    source_id: int = field(metadata=field_options(serialize=str))
+    new_id: int = field(metadata=field_options(serialize=str))
+    source_parent_id: int = field(metadata=field_options(serialize=str))
+    new_parent_id: int = field(metadata=field_options(serialize=str))
     original_name: str
     new_name: str
     original_full_path: str
@@ -161,20 +266,38 @@ class VfsItemCopiedEvent(Event):
     md5: str | None = None
     equipment_no: str | None = None
 
+    @property
+    def entity_id(self) -> str:
+        return str(self.new_id)
+
+    @property
+    def related_file_id(self) -> int | None:
+        return None if self.is_folder else self.new_id
+
 
 @dataclass
-class VfsItemDeletedEvent(Event):
+class VfsItemDeletedEvent(DomainEvent):
     """Triggered when a VFS file or directory is soft-deleted into the recycle bin."""
 
-    user_id: int
-    item_id: int
-    parent_id: int
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.VFS_DELETED
+    ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.FILE
+
+    item_id: int = field(metadata=field_options(serialize=str))
+    parent_id: int = field(metadata=field_options(serialize=str))
     name: str
     full_path: str
     is_folder: bool
     size: int = 0
     md5: str | None = None
     equipment_no: str | None = None
+
+    @property
+    def entity_id(self) -> str:
+        return str(self.item_id)
+
+    @property
+    def related_file_id(self) -> int | None:
+        return None if self.is_folder else self.item_id
 
 
 @dataclass

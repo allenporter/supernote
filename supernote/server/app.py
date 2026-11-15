@@ -47,6 +47,7 @@ from .keys import (
     COORDINATION_SERVICE_KEY,
     EMBEDDING_MODEL_KEY,
     EVENT_BUS_KEY,
+    EVENT_LOG_SERVICE_KEY,
     FILE_SERVICE_KEY,
     INTEGRITY_SERVICE_KEY,
     MCP_ASGI_RESOURCE_KEY,
@@ -74,6 +75,7 @@ from .metrics import (
 from .routes import (
     admin,
     auth,
+    events,
     extended,
     file_device,
     file_web,
@@ -86,6 +88,7 @@ from .routes.decorators import public_route
 from .services.blob import LocalBlobStorage
 from .services.conversion import ConversionService
 from .services.coordination import CoordinationService, SqliteCoordinationService
+from .services.event_log import EventLogService
 from .services.file import FileService
 from .services.integrity import IntegrityService
 from .services.processor import ProcessorService
@@ -302,6 +305,13 @@ def create_app(config: ServerConfig) -> web.Application:
     app[BLOB_STORAGE_KEY] = blob_storage
     event_bus = LocalEventBus()
     app[EVENT_BUS_KEY] = event_bus
+    event_log_service = EventLogService(
+        session_manager=session_manager,
+        coordination_service=coordination_service,
+        event_bus=event_bus,
+        retention_days=config.event_log_retention_days,
+    )
+    app[EVENT_LOG_SERVICE_KEY] = event_log_service
 
     user_service = create_user_service(
         config.auth, coordination_service, session_manager
@@ -337,7 +347,12 @@ def create_app(config: ServerConfig) -> web.Application:
     app[RATE_LIMITER_KEY] = RateLimiter(coordination_service)
 
     processor_service = ProcessorService(
-        event_bus, session_manager, file_service, summary_service, coordination_service
+        event_bus,
+        session_manager,
+        file_service,
+        summary_service,
+        coordination_service,
+        event_log_service=event_log_service,
     )
     app[PROCESSOR_SERVICE_KEY] = processor_service
     app[CONVERSION_SERVICE_KEY] = ConversionService(
@@ -378,6 +393,7 @@ def create_app(config: ServerConfig) -> web.Application:
     app.add_routes(schedule.routes)
     app.add_routes(summary.routes)
     app.add_routes(extended.routes)
+    app.add_routes(events.routes)
 
     # Attach Socket.IO real-time server manager
     setup_socketio(app, config, user_service, event_bus)

@@ -6,6 +6,7 @@ __all__ = [
     "auth",
     "base",
     "equipment",
+    "events",
     "extended",
     "file_common",
     "file_device",
