@@ -1,4 +1,4 @@
-import { createApp, ref, onMounted, onUnmounted, computed, watch, nextTick } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
+import { createApp, ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
 import { useFileSystem } from './composables/useFileSystem.js';
 import { useProcessingStatus } from './composables/useProcessingStatus.js';
 import { useToast } from './composables/useToast.js';
