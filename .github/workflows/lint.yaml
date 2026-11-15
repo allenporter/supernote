@@ -61,4 +61,4 @@ jobs:
 
       - name: Static typing for frontend JS (tsc)
         run: |
-          npx --yes --package=typescript@5.8.3 -- tsc -p tsconfig.json --noEmit
+          npx --yes --package=typescript@7.0.2 -- tsc -p tsconfig.json --noEmit
