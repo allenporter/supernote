@@ -11,3 +11,11 @@ def public_route(
     """Decorator to mark a route handler as public (no authentication required)."""
     setattr(handler, "is_public", True)
     return handler
+
+
+def interactive_session_only(
+    handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
+) -> Callable[[web.Request], Awaitable[web.StreamResponse]]:
+    """Decorator to mark a route handler as requiring an interactive login session (denying static API keys)."""
+    setattr(handler, "interactive_session_only", True)
+    return handler
