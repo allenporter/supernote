@@ -7,6 +7,11 @@ from aiohttp.test_utils import TestClient
 
 from supernote.client.client import Client
 from supernote.client.events import EventsClient
+from supernote.client.exceptions import (
+    ApiException,
+    BadRequestException,
+    NotFoundException,
+)
 from supernote.server.keys import EVENT_LOG_SERVICE_KEY
 from supernote.server.services.user import UserService
 
@@ -65,35 +70,40 @@ async def test_list_events_pagination_and_filtering(
     assert [e.seq for e in filtered.events] == [str(ev2.seq)]
 
 
-@pytest.mark.parametrize(
-    "bad_query",
-    ["fileId=abc", "limit=abc", "limit=0", "syncToken=bad"],
-)
 async def test_list_events_invalid_query_params(
-    client: TestClient,
-    auth_headers: dict[str, str],
-    bad_query: str,
+    events_client: EventsClient,
+    authenticated_client: Client,
 ) -> None:
-    """Verify invalid fileId, limit, or syncToken query parameters return HTTP 400."""
-    resp = await client.get(f"/api/extended/events?{bad_query}", headers=auth_headers)
-    assert resp.status == 400
+    """Verify invalid limit, syncToken, or query field types raise BadRequestException."""
+    with pytest.raises(BadRequestException):
+        await events_client.list_events(limit=0)
+
+    with pytest.raises(BadRequestException):
+        await events_client.list_events(sync_token="bad")
+
+    with pytest.raises(BadRequestException):
+        await authenticated_client.get("/api/extended/events", params={"fileId": "abc"})
 
 
 async def test_list_events_error_responses(
     client: TestClient,
-    auth_headers: dict[str, str],
+    events_client: EventsClient,
     user_service: UserService,
 ) -> None:
     """Verify user-not-found (404) and unexpected service failure (500) responses."""
     assert client.app is not None
     event_log_service = client.app[EVENT_LOG_SERVICE_KEY]
 
-    with patch.object(user_service, "get_user_id", return_value=None):
-        not_found = await client.get("/api/extended/events", headers=auth_headers)
-        assert not_found.status == 404
-
-    with patch.object(
-        event_log_service, "list_events", side_effect=RuntimeError("boom")
+    with (
+        patch.object(user_service, "get_user_id", return_value=None),
+        pytest.raises(NotFoundException),
     ):
-        err_resp = await client.get("/api/extended/events", headers=auth_headers)
-        assert err_resp.status == 500
+        await events_client.list_events()
+
+    with (
+        patch.object(
+            event_log_service, "list_events", side_effect=RuntimeError("boom")
+        ),
+        pytest.raises(ApiException),
+    ):
+        await events_client.list_events()
