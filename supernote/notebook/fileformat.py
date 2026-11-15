@@ -12,12 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Loaded domain objects for the Supernote `.note` / `.mark` file format.
+"""Loaded domain objects for the Supernote `.note` and `.mark` binary file format.
 
-The Supernote file format relies on a "Footer-first" parsing strategy.
-The last 4 bytes of the file contain the offset to the Footer Block, which
-references all other metadata blocks (Header, Pages, Titles, Keywords, Links).
-Wire-level metadata blocks and enums live in `supernote.notebook.schema`.
+The Supernote file format relies on a "Footer-first" parsing strategy: the last 4 bytes of the
+file (the "Tail") store the byte offset of the Footer Block, which indexes all metadata blocks
+(`Page`, `Layer`, `Title`, `Keyword`, `Link`, `Cover`, and the Header Block). This module defines
+the in-memory `Notebook` and page/layer domain structures populated by `supernote.notebook.parser`,
+while wire-level metadata blocks and enums live in `supernote.notebook.schema`.
+See `supernote.notebook` and `supernote.guides.notebook_spec` for format specifications.
 """
 
 import base64

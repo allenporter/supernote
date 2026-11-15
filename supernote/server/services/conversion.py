@@ -1,4 +1,12 @@
-"""Service for on-demand notebook PNG and PDF conversions and cache lookup."""
+"""On-demand `.note` to PNG and PDF conversion service with blob cache lookup.
+
+`ConversionService` serves page PNG previews and multi-page vector PDF exports
+requested by hardware devices (`supernote.server.routes.file_device`), the Web UI
+(`supernote.server.routes.file_web`), and signed OSS URLs (`supernote.server.routes.oss`).
+It checks `CACHE_BUCKET` via `supernote.server.services.blob.BlobStorage` first and
+delegates missing page PNGs to `supernote.server.services.processor.ProcessorService`
+or renders PDFs in a worker thread via `supernote.notebook.converter.PdfConverter`.
+"""
 
 import asyncio
 from dataclasses import dataclass

@@ -12,7 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Parser classes for Supernote `.note` and `.mark` binary streams."""
+"""Footer-first binary `.note` and `.mark` stream parsers and loading entry points.
+
+This module provides `load_notebook`, `load`, and `parse_metadata` (re-exported in
+`supernote.notebook`), along with `SupernoteXParser` and `SupernoteParser`. Parsers locate the
+4-byte tail pointer at the end of a `.note` or `.mark` file, decode `<KEY:VALUE>` metadata blocks
+from the footer, and construct a `supernote.notebook.fileformat.Notebook` or
+`supernote.notebook.schema.SupernoteMetadata` instance under `"strict"` or `"loose"` signature
+policies. See `supernote.guides.notebook_spec` for details.
+"""
 
 import os
 import re

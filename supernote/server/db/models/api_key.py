@@ -1,3 +1,10 @@
+"""SQLAlchemy ORM model for static Bearer API keys (`api_keys`).
+
+This module defines `ApiKeyDO`, storing SHA-256 digests (`sha256_hash`), key prefixes (`key_prefix`),
+creation/usage timestamps, and optional expiration dates for user-scoped static API keys (`sn_...`)
+managed by `supernote.server.services.user.UserService`. See `supernote.server.db.models`.
+"""
+
 from sqlalchemy import ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 

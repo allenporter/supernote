@@ -1,3 +1,14 @@
+"""Official Supernote hardware synchronization routes (`/api/file/2/*` and `/api/file/3/*`).
+
+Implements the native Private Cloud device synchronization protocol for physical Supernote
+tablets (Nomad, A5 X2 Manta, A5 X, A6 X), including directory listings (`list_folder_v2`,
+`list_folder_v3`), path/ID metadata queries, folder creation/deletion, move/copy,
+three-phase upload/download coordination (`upload_apply`, `upload_finish`, `download_v3`)
+using signed `/api/oss/*` URLs (`supernote.server.utils.url_signer.UrlSigner`), and
+on-demand `.note` to PNG/PDF conversion (`supernote.server.services.conversion.ConversionService`).
+Delegates VFS state transitions to `supernote.server.services.file.FileService`.
+"""
+
 import logging
 import urllib.parse
 

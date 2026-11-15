@@ -1,4 +1,10 @@
-"""Provider-agnostic OCR evaluation dataset, Rapid Logging metrics, and runner."""
+"""Provider-agnostic OCR evaluation dataset, Rapid Logging metrics, and benchmark runner.
+
+This module defines the evaluation harness for benchmarking `supernote.server.ai.models.ocr.OcrModel`
+implementations (Gemini, OpenAI-compatible vision, Apple Vision, and on-device `RECOGNTEXT`) against
+synthetic and real `.note` fixtures (`OcrEvalDataset`, `OcrEvalCase`, `OcrEvalSuiteReport`), scoring
+character/word error rates alongside Bullet Journal Rapid Logging signifier accuracy.
+"""
 
 from __future__ import annotations
 

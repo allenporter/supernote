@@ -1,4 +1,11 @@
-"""Supernote session wrapper."""
+"""High-level `Supernote` session facade and authentication entry point.
+
+This module defines `supernote.client.api.Supernote` (re-exported as `supernote.client.Supernote`),
+an async context manager that coordinates `aiohttp.ClientSession` lifecycle, token authentication
+(`Supernote.login`, `Supernote.from_token`, `Supernote.from_auth`), and convenient properties for
+`supernote.client.device.DeviceClient`, `supernote.client.web.WebClient`, and
+`supernote.client.login_client.LoginClient`. See `supernote.client` for end-to-end SDK usage examples.
+"""
 
 from typing import Self
 
@@ -16,18 +23,18 @@ class Supernote:
     """A session-managed entry point for Supernote clients.
 
     Example:
+        ```python
         async with await Supernote.login("email@example.com", "password", host="http://localhost:8080") as sn:
             # Access Web and Device APIs directly through the session object
-            # Example: List root folder using path-based Device API
             result = await sn.device.list_folder("/")
 
             # sn.token contains the access token for use with `Supernote.from_token`
             print(sn.token)
 
-    Example using an existing token:
-        sn = Supernote.from_token("your-token", host="http://localhost:8080")
-        # Note: When created this way, you are responsible for closing the session
-        # or passing an existing one.
+        # Or authenticate with a static API key (`sn_...`) or existing JWT token:
+        async with Supernote.from_token("sn_...", host="http://localhost:8080") as sn:
+            result = await sn.device.list_folder("/")
+        ```
     """
 
     def __init__(

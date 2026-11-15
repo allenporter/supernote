@@ -1,4 +1,9 @@
-"""Module for generating unique ids."""
+"""Thread-safe 64-bit time-ordered integer ID generator (`next_id`).
+
+Generates monotonically increasing Snowflake-style 64-bit integers (`41-bit timestamp ms | 22-bit sequence/random`)
+used as primary keys for `UserFileDO`, `RecycleFileDO`, `NotePageContentDO`, `SystemTaskDO`,
+`SummaryDO`, and `ScheduleTaskDO`.
+"""
 
 import random
 import threading

@@ -1,3 +1,16 @@
+"""Streamable HTTP Model Context Protocol (MCP) Resource Server and tool handlers.
+
+Defines `create_mcp_server`, `run_server`, `SupernoteTokenVerifier`, and the three MCP
+tools exposed to authenticated AI agents:
+- `list_notebooks`: Lists active `.note` files ordered by update timestamp.
+- `search_notebook_chunks`: Performs vector similarity search via `supernote.server.services.search.SearchService`.
+- `get_notebook_transcript`: Retrieves full or page-sliced OCR transcripts.
+
+Validates both OAuth 2.1 Bearer tokens issued by `supernote.server.mcp.auth.SupernoteOAuthProvider`
+and static Bearer API keys (`sn_...`) via `supernote.server.services.user.UserService`.
+See `supernote.guides.mcp`.
+"""
+
 import functools
 import json
 import logging

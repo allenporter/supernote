@@ -1,4 +1,10 @@
-"""Append-only domain event log storage and cursor query service."""
+"""Append-only domain event log storage and cursor query service (`EventLogService`).
+
+This module implements `EventLogService` and `EventFeedPage`, subscribing to
+`supernote.server.events.LocalEventBus` domain events, persisting ordered `UserEventDO` records in
+`f_user_event`, pruning expired history, and serving cursor-paginated delta feeds.
+See `supernote.server.services` and `supernote.guides.architecture`.
+"""
 
 import base64
 import logging

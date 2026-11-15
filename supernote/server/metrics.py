@@ -1,4 +1,10 @@
-"""Prometheus metrics definition module for Open Private Cloud Server."""
+"""Prometheus metrics definitions for Open Private Cloud HTTP, MCP, AI, storage, and pipeline tasks.
+
+Defines `Counter`, `Gauge`, and `Histogram` collectors exposed at `ServerConfig.metrics_path`
+(`/metrics` by default) in `supernote.server.app.create_app`, tracking HTTP/MCP latency,
+background queue depth, per-module task execution, `.note` page-diff ratios, AI request/token usage,
+OSS transfer bytes, and blob storage inventory. See `supernote.guides.monitoring` and `supernote.guides.configuration`.
+"""
 
 from __future__ import annotations
 

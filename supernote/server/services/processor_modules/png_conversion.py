@@ -1,3 +1,12 @@
+"""Stage 2 of the `.note` processing pipeline: per-page PNG rasterization (`TaskType.PNG_CONVERSION`).
+
+`PngConversionModule` converts modified `.note` pages into PNG images using
+`supernote.notebook.converter.ImageConverter` in a thread pool and stores the rendered
+bytes in `CACHE_BUCKET` (`supernote.server.services.blob.BlobStorage`). These cached PNGs
+serve both Web UI page previews and the downstream `supernote.server.services.processor_modules.ocr.OcrModule`.
+See `supernote.guides.note_processing_design`.
+"""
+
 import asyncio
 import io
 import logging

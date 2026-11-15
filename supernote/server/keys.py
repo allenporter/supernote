@@ -1,4 +1,10 @@
-"""Typed aiohttp Application and Request context keys."""
+"""Typed `aiohttp.web.AppKey` registry for application and request state.
+
+This module centralizes all `web.AppKey` constants (`CONFIG_KEY`, `SESSION_MANAGER_KEY`,
+`FILE_SERVICE_KEY`, `USER_SERVICE_KEY`, `PROCESSOR_SERVICE_KEY`, `SEARCH_SERVICE_KEY`, etc.)
+populated during `supernote.server.app.create_app` startup and consumed by route handlers in
+`supernote.server.routes`.
+"""
 
 from __future__ import annotations
 

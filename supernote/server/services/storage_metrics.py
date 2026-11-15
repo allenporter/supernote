@@ -1,4 +1,9 @@
-"""Periodic background collector for blob storage and cache inventory metrics."""
+"""Periodic background collector (`StorageMetricsCollector`) for blob storage metrics.
+
+This module implements `StorageMetricsCollector`, which periodically scans `USER_DATA_BUCKET` and
+`CACHE_BUCKET` via `supernote.server.services.blob.BlobStorage` and updates Prometheus storage
+inventory gauges (`supernote.server.metrics`). See `supernote.server.services`.
+"""
 
 from __future__ import annotations
 

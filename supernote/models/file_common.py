@@ -1,3 +1,11 @@
+"""Shared file/folder metadata models, upload grant VOs, and sorting enums.
+
+This module defines common data structures shared between the Web UI API (`supernote.models.file_web`)
+and the Hardware Device Sync API (`supernote.models.file_device`), including directory entry metadata
+(`EntriesVO`), 3-step upload ticket responses (`FileUploadApplyLocalVO`), and file listing enums
+(`FileSortOrder`, `FileSortSequence`, `DownloadType`, `UploadType`). See `supernote.models` for an overview.
+"""
+
 from dataclasses import dataclass, field
 
 from mashumaro import field_options

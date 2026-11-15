@@ -1,3 +1,13 @@
+"""Web UI file and user management client (`WebClient`).
+
+This module implements `supernote.client.web.WebClient` (accessible via `sn.web` on
+`supernote.client.Supernote`), supporting ID-based directory pagination (`list_query`,
+`folder_list_query`), breadcrumb path resolution (`path_query`), keyword search (`file_label_search`),
+recycle bin operations (`recycle_list`, `recycle_revert`, `recycle_delete`, `recycle_clear`),
+3-step web uploads (`upload_file`), and user profile queries (`query_user`) using models from
+`supernote.models.file_web` and `supernote.models.user`.
+"""
+
 import hashlib
 
 from supernote.models.base import BaseResponse

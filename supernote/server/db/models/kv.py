@@ -1,3 +1,10 @@
+"""ORM model (`KeyValueDO`) for the TTL-backed key-value coordination table (`key_values`).
+
+Used by `supernote.server.services.coordination.SqliteCoordinationService` to store
+session tokens, OAuth 2.1 authorization codes, rate-limit counters, signed URL nonces,
+and distributed locks with Unix timestamp expiration (`expiry`).
+"""
+
 from sqlalchemy import Float, String
 from sqlalchemy.orm import Mapped, mapped_column
 

@@ -1,4 +1,10 @@
-"""Parser for Bullet Journal Rapid Logging notation and Markdown checkboxes in OCR transcripts."""
+"""Parser for Bullet Journal Rapid Logging notation and Markdown checkboxes in OCR transcripts.
+
+This module defines `parse_rapid_log`, `RapidLogItem`, `RapidLogKind` (`TASK`, `EVENT`, `NOTE`),
+and `RapidLogTaskState` (`INCOMPLETE`, `COMPLETED`, `MIGRATED_FORWARD`, `MIGRATED_SCHEDULED`,
+`CANCELLED`) for extracting structured tasks, signifiers (`*`, `!`), and nested hierarchy from
+handwritten page transcripts.
+"""
 
 import re
 from dataclasses import dataclass, field

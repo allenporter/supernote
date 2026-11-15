@@ -12,7 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Decoder classes."""
+"""Bitmap, vector, and text block decoders for Supernote `.note` files.
+
+This module implements decompression protocols used across Supernote firmware generations,
+including `RattaRleDecoder` and `RattaRleX2Decoder` (`RATTA_RLE` run-length encoded layer bitmaps),
+`FlateDecoder` (`SN_ASA_COMPRESS` zlib streams for original A5 devices), `PngDecoder` (embedded PNG
+templates and covers), and `TextDecoder` (base64-encoded JSON `RECOGNTEXT` blocks).
+See `supernote.notebook` and `supernote.guides.notebook_spec` for RLE encoding details.
+"""
 
 import base64
 import json

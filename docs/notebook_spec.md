@@ -73,7 +73,7 @@ All metadata blocks encode UTF-8 sequences of angle-bracketed `<KEY:VALUE>` tags
 
 Every block below maps 1:1 to a typed dataclass in [`supernote/notebook/schema.py`](../supernote/notebook/schema.py), which preserves unknown future firmware tags in `.extra` and supports lossless wire round-tripping via `.to_params()` / `.to_wire_dict()`.
 
-### 1. Header Block (`HeaderMetadata`)
+### Header Block (`HeaderMetadata`)
 
 Referenced by `FILE_FEATURE` in the Footer. Stores notebook-wide identity, hardware model (`APPLY_EQUIPMENT`), DPI, template defaults, and real-time handwriting recognition settings (`FILE_RECOGN_TYPE=1`).
 
@@ -82,7 +82,7 @@ Referenced by `FILE_FEATURE` in the Footer. Stores notebook-wide identity, hardw
 <FILE_TYPE:NOTE><APPLY_EQUIPMENT:N6><FILE_ID:F202512072214597017338I6OJBpDccy1><FILE_RECOGN_TYPE:0><DEVICE_DPI:0><SOFT_DPI:0><FILE_PARSE_TYPE:0><RATTA_ETMD:0>
 ```
 
-### 2. Footer Block (`FooterMetadata`)
+### Footer Block (`FooterMetadata`)
 
 Located via the final 4-byte offset at EOF. Indexes all top-level blocks using positional and prefix-addressed keys:
 
@@ -99,7 +99,7 @@ Located via the final 4-byte offset at EOF. Indexes all top-level blocks using p
 <FILE_FEATURE:24><PAGE1:1148><PAGE2:2410><COVER_2:0><STYLE_style_white:312><KEYWORD_00010020:916><TITLE_000100570121:589><LINKO_00010060005000800070:900><DIRTY:0>
 ```
 
-### 3. Page Block (`PageMetadata`)
+### Page Block (`PageMetadata`)
 
 Each `PAGE<N>` footer pointer addresses a `PageMetadata` block describing page identity (`PAGEID`), orientation (`ORIENTATION`), background template (`PAGESTYLE` / `PAGESTYLEMD5`), vector strokes (`TOTALPATH`), recognition status/streams (`RECOGNSTATUS`, `RECOGNTEXT`, `RECOGNFILE`), optional 5-pointed star marks (`FIVESTAR`), and layer slots (`MAINLAYER`, `LAYER1`, `LAYER2`, `LAYER3`, `BGLAYER`):
 
@@ -114,7 +114,7 @@ Each `PAGE<N>` footer pointer addresses a `PageMetadata` block describing page i
 - **Base64 JSON (Chauvet 3.25.39+)**: Base64-encodes the UTF-8 JSON array so user-defined layer names containing `#` or `:` round-trip safely.
 - **`none` Sentinel**: Used in `.mark` annotation files, where visibility falls back to showing layers with `LAYERTYPE == "MARK"`.
 
-### 4. Layer Block (`LayerMetadata`)
+### Layer Block (`LayerMetadata`)
 
 Each non-zero layer offset on a page (`MAINLAYER`, `LAYER1..3`, `BGLAYER`) points to a `LayerMetadata` block specifying the layer's slot name, compression protocol, and compressed bitmap address (`LAYERBITMAP`):
 
@@ -123,7 +123,7 @@ Each non-zero layer offset on a page (`MAINLAYER`, `LAYER1..3`, `BGLAYER`) point
 <LAYERTYPE:NOTE><LAYERPROTOCOL:RATTA_RLE><LAYERNAME:MAINLAYER><LAYERPATH:0><LAYERBITMAP:447><LAYERVECTORGRAPH:0><LAYERRECOGN:0>
 ```
 
-### 5. Keyword, Title & Link Blocks (`KeywordMetadata`, `TitleMetadata`, `LinkMetadata`)
+### Keyword, Title & Link Blocks (`KeywordMetadata`, `TitleMetadata`, `LinkMetadata`)
 
 Specialty index entries pointed to by the Footer store bounding-box geometry and payload pointers:
 
@@ -169,7 +169,7 @@ See [`supernote/notebook/schema.py`](../supernote/notebook/schema.py) for comple
 
 ## Binary Payloads & Compression Protocols
 
-### 1. `RATTA_RLE` & X2 High-Res Grayscale (`RattaRleDecoder` / `RattaRleX2Decoder`)
+### `RATTA_RLE` & X2 High-Res Grayscale (`RattaRleDecoder` / `RattaRleX2Decoder`)
 
 Used for `MAINLAYER`, `LAYER1..3`, built-in `BGLAYER` styles on modern firmware, and title/link bitmaps. Encodes a stream of `[color_code, length_byte]` byte pairs in [`decoder.py`](../supernote/notebook/decoder.py):
 
@@ -188,18 +188,18 @@ Used for `MAINLAYER`, `LAYER1..3`, built-in `BGLAYER` styles on modern firmware,
   - **Special blank marker (`length_byte == 0xFF`)**: Emits `16384` (`0x4000`) pixels (`1024` when `all_blank` hint applies).
   - **Extended run (`length_byte & 0x80 != 0`, `!= 0xFF`)**: Holds `(prev_color, prev_len)`. If the next pair has the same `color_code`, emits `1 + next_len + (((prev_len & 0x7F) + 1) << 7)` pixels; otherwise flushes `((prev_len & 0x7F) + 1) << 7` pixels of `prev_color` first. At EOF, any held run is bit-shifted via `_adjust_tail_length` to fill the remaining scanline gap.
 
-### 2. `SN_ASA_COMPRESS` (`FlateDecoder`)
+### `SN_ASA_COMPRESS` (`FlateDecoder`)
 
 Zlib-compressed `uint16_le` bitmap used on legacy A5 pages and older backgrounds:
 1. Decompresses via `zlib` to `1404 * 1888 * 2` bytes (`uint16_le`).
 2. Reshapes to `(1404, 1888)`, rotates 90° clockwise, and trims the bottom 16 padding rows to yield `(1404, 1872)`.
 3. Maps `uint16` color keys: `0x0000` (Black), `0x2104` (Dark Gray), `0xE1E2` (Gray), `0xFFFF` (White/Background).
 
-### 3. Background PNGs (`PngDecoder`)
+### Background PNGs (`PngDecoder`)
 
 When a page uses a custom (`user_*`) or InkHub/plugin PNG template, `BGLAYER`'s `LAYERBITMAP` block stores raw PNG bytes (`\x89PNG\r\n\x1a\n...`) matching the page canvas dimensions (`(width, height)` in portrait or `(height, width)` in landscape), decoded directly via Pillow (`PngDecoder`). Firmware may record `<LAYERPROTOCOL:PNG>`, `<LAYERPROTOCOL:RATTA_RLE>`, or omit `<LAYERPROTOCOL>` on PNG `BGLAYER` blocks, and occasionally stamps `<LAYERPROTOCOL:PNG>` onto foreground `MAINLAYER` blocks whose `LAYERBITMAP` remains `RATTA_RLE`; `Layer.bitmap_protocol` resolves the effective codec from the PNG file signature and layer slot.
 
-### 4. Embedded Recognition Text (`TextDecoder`)
+### Embedded Recognition Text (`TextDecoder`)
 
 When `FILE_RECOGN_TYPE == 1` and `RECOGNSTATUS == 1`, `RECOGNTEXT` points to a length-prefixed block containing **base64-encoded UTF-8 JSON** (`{"elements": [{"type": "Text", "label": "...", "words": [{"bounding-box": {"y": ...}}]}]}`), decoded and spatially ordered by `TextDecoder` in [`decoder.py`](../supernote/notebook/decoder.py).
 

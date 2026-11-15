@@ -1,4 +1,10 @@
-"""Authentication and signature verification helpers for Socket.IO connections."""
+"""Authentication and HMAC-SHA256 signature verification for Socket.IO handshakes.
+
+Provides `compute_handshake_signature` and `verify_handshake_signature`, which validate
+`supernote.models.socket.SocketHandshakeParams` (`token`, `type`, `random`, `sign`)
+sent by Supernote hardware tablets and `supernote.client.socket.SupernoteSocketClient`
+when connecting to `supernote.server.socket`.
+"""
 
 import base64
 import hashlib

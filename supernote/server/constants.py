@@ -1,4 +1,10 @@
-"""Server constants."""
+"""Server-wide constants for VFS system directories, blob storage buckets, and limits.
+
+Defines immutable Supernote folder names (`SYSTEM_ROOT_DIRECTORIES`,
+`SYSTEM_CATEGORY_CONTAINER_MAP`), logical blob buckets (`USER_DATA_BUCKET`, `CACHE_BUCKET`),
+upload size limits (`MAX_UPLOAD_SIZE` = 1 GB), SQLite busy timeouts, and the 30-day
+recycle bin retention window (`RECYCLE_RETENTION_MS`).
+"""
 
 # Folders a Supernote device expects at fixed locations. Whether a folder is a
 # system folder depends on where it is, see `VirtualFileSystem.is_system_directory`.

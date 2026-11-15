@@ -1,3 +1,12 @@
+"""ORM models (`SummaryDO` and `SummaryTagDO`) for AI and handwritten notebook summaries.
+
+`SummaryDO` (`f_summary`) represents both summary groups (`is_summary_group=True`) and
+individual summary/transcript items linked to a `UserFileDO.id`, storing Markdown text,
+structured segment metadata (`metadata_str`), and optional handwriting blob references
+(`handwrite_inner_name`). `SummaryTagDO` (`f_summary_tag`) stores user-defined tags.
+Managed by `supernote.server.services.summary.SummaryService`. See `supernote.guides.summary_api`.
+"""
+
 import time
 
 from sqlalchemy import BigInteger, String, Text, UniqueConstraint

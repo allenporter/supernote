@@ -1,4 +1,9 @@
-"""Apple Vision page OCR model."""
+"""Apple Vision page OCR model (`AppleOcrModel`).
+
+This module implements `supernote.server.ai.models.ocr.OcrModel` using macOS `VNRecognizeTextRequest`
+via `supernote.server.ai.models.apple.backend.AppleVisionBackend`, supporting `accurate` and `fast`
+recognition levels (`RecognitionLevel`) for local on-device `.note` page transcription.
+"""
 
 from __future__ import annotations
 

@@ -1,3 +1,10 @@
+"""Alembic database migration runner (`run_migrations`) invoked during server startup.
+
+Upgrades the SQLite database schema (`supernote/alembic/versions/`) to `head` when
+`supernote.server.app.create_app` starts, passing `ServerConfig` into the Alembic
+runtime context for data migrations. See `supernote.guides.schema_migration_guide`.
+"""
+
 import importlib.resources
 import logging
 from pathlib import Path

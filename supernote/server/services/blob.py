@@ -1,3 +1,15 @@
+"""Content-addressable blob storage interface and local filesystem implementation.
+
+Defines the abstract `BlobStorage` interface and `LocalBlobStorage`, which stores
+immutable user files (`USER_DATA_BUCKET`) and derived cache artifacts (`CACHE_BUCKET`)
+under `<storage_dir>/<bucket>/<key[:2]>/<key>`. Writes are staged to `<storage_dir>/temp`
+and atomically renamed on completion, while expired `.tmp` staging files and abandoned
+`.part.N` multipart upload chunks are periodically reclaimed.
+
+Used by `supernote.server.services.file.FileService`, `supernote.server.routes.oss`,
+and `supernote.server.services.integrity.IntegrityService`.
+"""
+
 import asyncio
 import hashlib
 import logging

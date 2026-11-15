@@ -1,4 +1,12 @@
-"""Exceptions for supernote cloud."""
+"""Exception hierarchy for the Supernote client SDK.
+
+This module defines `SupernoteException` and its specialized subclasses raised by
+`supernote.client.client.Client`, `supernote.client.login_client.LoginClient`, and
+`supernote.client.socket.SupernoteSocketClient`, including HTTP/API error mappings
+(`ApiException`, `UnauthorizedException`, `ForbiddenException`, `NotFoundException`,
+`BadRequestException`), `SmsVerificationRequired`, and `SupernoteSocketError`.
+See `supernote.client` for error-handling examples.
+"""
 
 
 class SupernoteException(Exception):

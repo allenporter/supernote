@@ -1,3 +1,13 @@
+"""Hardware synchronization client (`DeviceClient`) for V2/V3 device APIs.
+
+This module implements `supernote.client.device.DeviceClient` (accessible via `sn.device` on
+`supernote.client.Supernote`), providing path-based and ID-based directory queries (`list_folder`,
+`list_folder_v2`, `query_by_path`, `query_by_id`), 3-step file uploads and downloads
+(`upload_content`, `download_content`), hardware synchronization locks (`sync_start`, `sync_end`),
+and server-side `.note` rendering (`note_to_png`, `note_to_pdf`) using DTOs/VOs from
+`supernote.models.file_device`.
+"""
+
 import hashlib
 import logging
 from pathlib import Path
