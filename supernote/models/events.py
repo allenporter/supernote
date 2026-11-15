@@ -25,30 +25,19 @@ class DomainEventType(StrEnum):
     """
 
     VFS_CREATED = "vfs.created"
-    """File or folder created (or copied) in the VFS (`entity_type='file'`).
-
-    Payload keys: `name`, `parent_id`, `full_path`, `is_folder`, `size`, `md5`,
-    and optional `copied_from_id`, `copied_from_path`.
-    """
+    """File or folder created in the VFS (`entity_type='file'`, serialized from `VfsItemCreatedEvent`)."""
 
     VFS_CONTENT_UPDATED = "vfs.content_updated"
-    """Existing VFS file overwritten with new content (`entity_type='file'`).
-
-    Payload keys: `name`, `parent_id`, `full_path`, `size`, `old_md5`, `new_md5`.
-    """
+    """Existing VFS file overwritten with new content (`entity_type='file'`, serialized from `VfsContentUpdatedEvent`)."""
 
     VFS_MOVED = "vfs.moved"
-    """File or folder renamed or moved to a new parent (`entity_type='file'`).
+    """File or folder renamed or moved (`entity_type='file'`, serialized from `VfsItemMovedEvent`)."""
 
-    Payload keys: `old_path`, `new_path`, `old_name`, `new_name`,
-    `old_parent_id`, `new_parent_id`, `is_folder`, `size`, `md5`.
-    """
+    VFS_COPIED = "vfs.copied"
+    """File or folder copied (`entity_type='file'`, serialized from `VfsItemCopiedEvent`)."""
 
     VFS_DELETED = "vfs.deleted"
-    """File or folder deleted from the VFS (`entity_type='file'`).
-
-    Payload keys: `name`, `parent_id`, `full_path`, `is_folder`, `size`, `md5`.
-    """
+    """File or folder deleted from the VFS (`entity_type='file'`, serialized from `VfsItemDeletedEvent`)."""
 
     NOTE_PAGES_DELTA = "note.pages_delta"
     """Structural page changes detected in a `.note` file (`entity_type='file'`).

@@ -34,6 +34,7 @@ from ..events import (
     LocalEventBus,
     NoteDeletedEvent,
     NoteUpdatedEvent,
+    VfsContentUpdatedEvent,
     VfsItemCopiedEvent,
     VfsItemCreatedEvent,
     VfsItemDeletedEvent,
@@ -159,6 +160,8 @@ class _FileUpsertResult:
     node: UserFileDO
     superseded_storage_key: str | None = None
     superseded_md5: str | None = None
+    was_existing: bool = False
+    previous_md5: str | None = None
 
 
 class FileService:
@@ -514,26 +517,12 @@ class FileService:
 
         # Emit domain events (fire and forget)
         if self.event_bus:
-            if filename.endswith(".note"):
-                await self.event_bus.publish(
-                    NoteUpdatedEvent(
-                        file_id=new_file.id,
-                        user_id=user_id,
-                        file_path=full_path,
-                        defer_processing=True,
-                    )
-                )
-            await self.event_bus.publish(
-                VfsItemCreatedEvent(
-                    user_id=user_id,
-                    item_id=entity.id,
-                    parent_id=entity.parent_id,
-                    name=entity.name,
-                    is_folder=False,
-                    full_path=canonical_full_path,
-                    size=entity.size,
-                    md5=entity.md5,
-                )
+            await self._publish_file_upsert_events(
+                user_id=user_id,
+                upsert_result=upsert_result,
+                vfs_full_path=canonical_full_path,
+                note_file_path=full_path,
+                defer_note_processing=True,
             )
 
         return entity
@@ -605,22 +594,61 @@ class FileService:
         # Emit domain events (fire and forget)
         if self.event_bus:
             full_path = await self.get_full_path_by_node(user_id, new_file.id)
-            if file_name.endswith(".note"):
+            await self._publish_file_upsert_events(
+                user_id=user_id,
+                upsert_result=upsert_result,
+                vfs_full_path=full_path,
+                note_file_path=full_path,
+                defer_note_processing=False,
+            )
+
+    async def _publish_file_upsert_events(
+        self,
+        *,
+        user_id: int,
+        upsert_result: _FileUpsertResult,
+        vfs_full_path: str,
+        note_file_path: str,
+        defer_note_processing: bool,
+    ) -> None:
+        """Publish VFS create/content-update and note processing events for a committed file upload."""
+        if not self.event_bus:
+            return
+        node = upsert_result.node
+        if upsert_result.was_existing:
+            if upsert_result.previous_md5 != node.md5:
                 await self.event_bus.publish(
-                    NoteUpdatedEvent(
-                        file_id=new_file.id, user_id=user_id, file_path=full_path
+                    VfsContentUpdatedEvent(
+                        user_id=user_id,
+                        item_id=node.id,
+                        parent_id=node.directory_id,
+                        name=node.file_name,
+                        full_path=vfs_full_path,
+                        size=node.size,
+                        old_md5=upsert_result.previous_md5,
+                        new_md5=node.md5,
                     )
                 )
+        else:
             await self.event_bus.publish(
                 VfsItemCreatedEvent(
                     user_id=user_id,
-                    item_id=new_file.id,
-                    parent_id=new_file.directory_id,
-                    name=new_file.file_name,
+                    item_id=node.id,
+                    parent_id=node.directory_id,
+                    name=node.file_name,
                     is_folder=False,
-                    full_path=full_path,
-                    size=new_file.size,
-                    md5=new_file.md5,
+                    full_path=vfs_full_path,
+                    size=node.size,
+                    md5=node.md5,
+                )
+            )
+        if node.file_name.endswith(".note"):
+            await self.event_bus.publish(
+                NoteUpdatedEvent(
+                    file_id=node.id,
+                    user_id=user_id,
+                    file_path=note_file_path,
+                    defer_processing=defer_note_processing,
                 )
             )
 
@@ -636,6 +664,7 @@ class FileService:
     ) -> _FileUpsertResult:
         """Create or update a VFS file node and record any superseded artifacts to clean up."""
         existing = await vfs.get_active_file(user_id, parent_id, name)
+        was_existing = existing is not None
         old_storage_key: str | None = existing.storage_key if existing else None
         old_md5: str | None = existing.md5 if existing else None
 
@@ -659,6 +688,8 @@ class FileService:
             node=new_file,
             superseded_storage_key=superseded_storage_key,
             superseded_md5=superseded_md5,
+            was_existing=was_existing,
+            previous_md5=old_md5,
         )
 
     async def _cleanup_superseded_artifacts(
