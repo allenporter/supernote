@@ -1,5 +1,6 @@
 """Append-only domain event log storage and cursor query service."""
 
+import base64
 import logging
 import time
 from dataclasses import dataclass
@@ -109,15 +110,11 @@ class EventLogService:
 
         after_seq = 0
         if sync_token:
-            if not (
-                sync_token.isascii() and sync_token.isdigit() and int(sync_token) > 0
-            ):
-                raise InvalidInputError(f"Invalid sync_token: {sync_token!r}")
-            after_seq = int(sync_token)
+            after_seq = _decode_sync_token(sync_token)
             pruned_seq = await self._get_pruned_seq()
             if after_seq < pruned_seq:
                 raise CursorExpiredError(
-                    f"Sync token {after_seq} has expired (oldest retained seq is {pruned_seq})"
+                    "Sync token has expired (predates retained event history)"
                 )
 
         async with self._session_manager.session() as session:
@@ -146,7 +143,7 @@ class EventLogService:
             has_more = len(rows) > limit
             page_rows = rows[:limit]
             if page_rows:
-                next_sync_token: str | None = str(int(page_rows[-1].seq))
+                next_sync_token: str | None = encode_sync_token(int(page_rows[-1].seq))
             else:
                 max_user_seq = await session.scalar(
                     select(func.max(UserEventDO.seq)).where(
@@ -154,7 +151,9 @@ class EventLogService:
                     )
                 )
                 effective_seq = max(after_seq, int(max_user_seq or 0))
-                next_sync_token = str(effective_seq) if effective_seq > 0 else None
+                next_sync_token = (
+                    encode_sync_token(effective_seq) if effective_seq > 0 else None
+                )
 
         return EventFeedPage(
             events=[_row_to_recorded(row) for row in page_rows],
@@ -217,3 +216,25 @@ def _row_to_recorded(row: UserEventDO) -> DomainEventRecorded:
         else None,
         payload=dict(row.payload) if isinstance(row.payload, dict) else {},
     )
+
+
+def encode_sync_token(seq: int) -> str:
+    """Encode an internal sequence number into an opaque URL-safe sync token."""
+    raw = f"v1:{seq}".encode("ascii")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _decode_sync_token(token: str) -> int:
+    """Decode an opaque sync token back into a positive sequence number."""
+    try:
+        padded = token + "=" * (-len(token) % 4)
+        decoded = base64.urlsafe_b64decode(padded.encode("ascii")).decode("ascii")
+    except (ValueError, UnicodeDecodeError) as err:
+        raise InvalidInputError(f"Invalid sync_token: {token!r}") from err
+    prefix, sep, raw_seq = decoded.partition(":")
+    if prefix != "v1" or sep != ":" or not (raw_seq.isascii() and raw_seq.isdigit()):
+        raise InvalidInputError(f"Invalid sync_token: {token!r}")
+    seq = int(raw_seq)
+    if seq <= 0 or encode_sync_token(seq) != token:
+        raise InvalidInputError(f"Invalid sync_token: {token!r}")
+    return seq

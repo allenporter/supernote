@@ -782,11 +782,16 @@ async def test_extended_events_route_and_client(
         timestamp_ms=1_700_000_002_000,
     )
 
-    feed = await extended_client.list_events()
-    assert [e.seq for e in feed.events] == [str(ev1.seq), str(ev2.seq)]
+    feed = await extended_client.list_events(limit=1)
+    assert [e.seq for e in feed.events] == [str(ev1.seq)]
     assert feed.events[0].related_file_id == 772252421643567298
-    assert feed.next_sync_token == str(ev2.seq)
-    assert feed.has_more is False
+    assert feed.next_sync_token is not None
+    assert feed.next_sync_token != str(ev1.seq)
+    assert feed.has_more is True
+
+    feed2 = await extended_client.list_events(sync_token=feed.next_sync_token)
+    assert [e.seq for e in feed2.events] == [str(ev2.seq)]
+    assert feed2.has_more is False
 
     # Filter by types, file_id, and exclude_actor
     filtered = await extended_client.list_events(

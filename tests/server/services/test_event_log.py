@@ -8,7 +8,7 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import DomainEventRecorded, LocalEventBus
 from supernote.server.exceptions import CursorExpiredError, InvalidInputError
 from supernote.server.services.coordination import CoordinationService
-from supernote.server.services.event_log import EventLogService
+from supernote.server.services.event_log import EventLogService, encode_sync_token
 
 
 @pytest.fixture
@@ -113,14 +113,15 @@ async def test_list_events_sync_tokens_filters_and_user_isolation(
     page1 = await event_log_service.list_events(user_id=1, limit=2)
     assert [e.seq for e in page1.events] == [ev1.seq, ev3.seq]
     assert page1.has_more is True
-    assert page1.next_sync_token == str(ev3.seq)
+    assert page1.next_sync_token == encode_sync_token(ev3.seq)
+    assert page1.next_sync_token != str(ev3.seq)
 
     page2 = await event_log_service.list_events(
         user_id=1, sync_token=page1.next_sync_token, limit=2
     )
     assert [e.seq for e in page2.events] == [ev4.seq]
     assert page2.has_more is False
-    assert page2.next_sync_token == str(ev4.seq)
+    assert page2.next_sync_token == encode_sync_token(ev4.seq)
 
     # Prefix type globbing + exact type matching
     filtered_types = await event_log_service.list_events(
@@ -131,7 +132,7 @@ async def test_list_events_sync_tokens_filters_and_user_isolation(
     # When a filtered query has 0 matches, next_sync_token advances to user's latest seq
     no_match = await event_log_service.list_events(user_id=1, types=["summary.*"])
     assert no_match.events == []
-    assert no_match.next_sync_token == str(ev4.seq)
+    assert no_match.next_sync_token == encode_sync_token(ev4.seq)
 
     # file_id and exclude_actor filters
     by_file = await event_log_service.list_events(
@@ -143,8 +144,17 @@ async def test_list_events_sync_tokens_filters_and_user_isolation(
 async def test_list_events_validation_errors(
     event_log_service: EventLogService,
 ) -> None:
-    """Verify invalid sync tokens and out-of-range limits raise InvalidInputError."""
-    for bad_token in ("0", "-1", "abc", "12.3", "head"):
+    """Verify invalid sync tokens (including raw integers) and out-of-range limits raise InvalidInputError."""
+    for bad_token in (
+        "0",
+        "100",
+        "-1",
+        "abc",
+        "head",
+        "!!!",
+        encode_sync_token(0),
+        f"{encode_sync_token(10)}=",
+    ):
         with pytest.raises(InvalidInputError):
             await event_log_service.list_events(user_id=1, sync_token=bad_token)
 
@@ -185,12 +195,14 @@ async def test_prune_expired_events_and_cursor_expiration(
 
     # sync_token < old2.seq is expired (410 Gone)
     with pytest.raises(CursorExpiredError) as exc_info:
-        await event_log_service.list_events(user_id=1, sync_token=str(old1.seq))
+        await event_log_service.list_events(
+            user_id=1, sync_token=encode_sync_token(old1.seq)
+        )
     assert exc_info.value.status_code == 410
 
     # sync_token == old2.seq is still valid because client already consumed up through old2.seq
     from_boundary = await event_log_service.list_events(
-        user_id=1, sync_token=str(old2.seq)
+        user_id=1, sync_token=encode_sync_token(old2.seq)
     )
     assert [e.seq for e in from_boundary.events] == [recent.seq]
 
