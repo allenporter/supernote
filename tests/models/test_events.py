@@ -9,7 +9,7 @@ from supernote.models.events import (
 )
 
 
-def test_domain_event_feed_models() -> None:
+def test_event_feed_request_dto() -> None:
     assert DomainEventType.NOTE_PAGE_TRANSCRIBED == "note.page_transcribed"
     assert DomainEntityType.NOTE_PAGE == "note_page"
 
@@ -29,6 +29,8 @@ def test_domain_event_feed_models() -> None:
     assert EventFeedRequestDTO.from_dict(req.to_dict()) == req
     assert EventFeedRequestDTO().event_type_list is None
 
+
+def test_event_feed_list_vo() -> None:
     ev = DomainEventVO(
         seq="772252421643567001",
         timestamp=1_700_000_000_000,

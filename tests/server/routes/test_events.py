@@ -17,14 +17,12 @@ def events_client(authenticated_client: Client) -> EventsClient:
     return EventsClient(authenticated_client)
 
 
-async def test_events_route_and_client(
+async def test_list_events_pagination_and_filtering(
     client: TestClient,
-    auth_headers: dict[str, str],
     events_client: EventsClient,
-    user_service: UserService,
     test_user_id: int,
 ) -> None:
-    """Verify GET /api/extended/events sync_token querying, filtering, and error responses."""
+    """Verify GET /api/extended/events sync_token pagination and event filtering."""
     assert client.app is not None
     event_log_service = client.app[EVENT_LOG_SERVICE_KEY]
 
@@ -60,26 +58,40 @@ async def test_events_route_and_client(
     assert [e.seq for e in feed2.events] == [str(ev2.seq)]
     assert feed2.has_more is False
 
-    # Filter by event_types and file_id
     filtered = await events_client.list_events(
         event_types=["note.*"],
         file_id=772252421643567298,
     )
     assert [e.seq for e in filtered.events] == [str(ev2.seq)]
 
-    # Invalid fileId, limit, or syncToken returns 400
-    for bad_query in ("fileId=abc", "limit=abc", "limit=0", "syncToken=bad"):
-        resp = await client.get(
-            f"/api/extended/events?{bad_query}", headers=auth_headers
-        )
-        assert resp.status == 400
 
-    # User not found returns 404
+@pytest.mark.parametrize(
+    "bad_query",
+    ["fileId=abc", "limit=abc", "limit=0", "syncToken=bad"],
+)
+async def test_list_events_invalid_query_params(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    bad_query: str,
+) -> None:
+    """Verify invalid fileId, limit, or syncToken query parameters return HTTP 400."""
+    resp = await client.get(f"/api/extended/events?{bad_query}", headers=auth_headers)
+    assert resp.status == 400
+
+
+async def test_list_events_error_responses(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    user_service: UserService,
+) -> None:
+    """Verify user-not-found (404) and unexpected service failure (500) responses."""
+    assert client.app is not None
+    event_log_service = client.app[EVENT_LOG_SERVICE_KEY]
+
     with patch.object(user_service, "get_user_id", return_value=None):
         not_found = await client.get("/api/extended/events", headers=auth_headers)
         assert not_found.status == 404
 
-    # Unexpected exception returns 500
     with patch.object(
         event_log_service, "list_events", side_effect=RuntimeError("boom")
     ):
