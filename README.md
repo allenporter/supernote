@@ -18,7 +18,7 @@
 
 ---
 
-## Why Open Private Cloud for Supernote? (Killer Features)
+## Why Open Private Cloud for Supernote?
 
 ### Native Tablet Sync in ~135 MB of RAM (No Java, MariaDB, or Redis)
 While the official Supernote Private Cloud stack orchestrates multi-container Java/Spring Boot, MariaDB, and Redis services (~2 GB+ RAM), Open Private Cloud runs in a single Python `asyncio` process backed by a single SQLite file and content-addressable blob storage. Point your tablet's native **Settings → Sync → Private Cloud** to your server and tap **Sync**—it runs effortlessly on a Raspberry Pi, NAS, or low-memory home lab server with two-tier volume and per-user storage quotas.
