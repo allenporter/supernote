@@ -8,6 +8,7 @@ from mashumaro import field_options
 from mashumaro.mixins.json import DataClassJSONMixin
 
 from supernote.models.events import DomainEntityType, DomainEventType
+from supernote.models.schedule import ScheduleTaskLinkDTO
 from supernote.models.summary import SummaryItem, SummaryTagItem
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,74 @@ class ScheduleUpdatedEvent(Event):
     task_list_id: str | None = None
     task_id: str | None = None
     equipment_no: str | None = None
+
+
+def _link_file_id(links: str | None) -> int | None:
+    """Extract numeric `file_id` from a Base64-encoded `ScheduleTaskLinkDTO` when present."""
+    if not links:
+        return None
+    try:
+        dto = ScheduleTaskLinkDTO.from_b64(links)
+    except Exception:
+        return None
+    if dto.file_id and dto.file_id.strip().isdigit():
+        return int(dto.file_id.strip())
+    return None
+
+
+@dataclass
+class ScheduleTaskCreatedEvent(DomainEvent):
+    """Triggered when a schedule task is created."""
+
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.SCHEDULE_TASK_CREATED
+    ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.SCHEDULE_TASK
+
+    task_id: str
+    task_list_id: str | None = None
+    title: str = ""
+    detail: str | None = None
+    status: str = "needsAction"
+    due_time: int | None = None
+    links: str | None = None
+    equipment_no: str | None = None
+
+    @property
+    def entity_id(self) -> str:
+        return self.task_id
+
+    @property
+    def related_file_id(self) -> int | None:
+        return _link_file_id(self.links)
+
+
+@dataclass
+class ScheduleTaskUpdatedEvent(ScheduleTaskCreatedEvent):
+    """Triggered when semantic fields on a schedule task are updated."""
+
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.SCHEDULE_TASK_UPDATED
+
+
+@dataclass
+class ScheduleTaskDeletedEvent(DomainEvent):
+    """Triggered when a schedule task is deleted."""
+
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.SCHEDULE_TASK_DELETED
+    ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.SCHEDULE_TASK
+
+    task_id: str
+    task_list_id: str | None = None
+    title: str = ""
+    status: str = "needsAction"
+    links: str | None = None
+    equipment_no: str | None = None
+
+    @property
+    def entity_id(self) -> str:
+        return self.task_id
+
+    @property
+    def related_file_id(self) -> int | None:
+        return _link_file_id(self.links)
 
 
 @dataclass
