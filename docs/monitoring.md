@@ -1,11 +1,11 @@
 # Prometheus Monitoring & Grafana Dashboard
 
-Supernote Private Cloud exposes operational metrics in Prometheus format at `/metrics` (when `metrics_enabled: true` in `config.yaml`, enabled by default).
+Open Private Cloud for Supernote exposes operational metrics in Prometheus format at `/metrics` (when `metrics_enabled: true` in `config.yaml`, enabled by default).
 
 Reference monitoring assets are included in [`docs/monitoring/`](./monitoring/):
 
-- [`docs/monitoring/prometheus_rules.yaml`](./monitoring/prometheus_rules.yaml): Recording rules (`supernote_recording_rules`) and alerting rules (`supernote_alerting_rules`).
-- [`docs/monitoring/grafana_dashboard.json`](./monitoring/grafana_dashboard.json): Reference Grafana dashboard consuming both raw series and recording rules.
+- [`docs/monitoring/grafana_dashboard.json`](./monitoring/grafana_dashboard.json): Reference Grafana dashboard (**Open Private Cloud for Supernote**) querying raw `/metrics` series directly without requiring recording rules.
+- [`docs/monitoring/prometheus_rules.yaml`](./monitoring/prometheus_rules.yaml): Optional recording rules (`supernote_recording_rules`) and alerting rules (`supernote_alerting_rules`).
 
 ---
 

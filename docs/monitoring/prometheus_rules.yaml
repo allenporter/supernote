@@ -11,7 +11,7 @@ groups:
         expr: |
           sum(rate(supernote_http_requests_total{status=~"5.."}[5m]))
           /
-          clamp_min(sum(rate(supernote_http_requests_total[5m])), 1e-9)
+          (sum(rate(supernote_http_requests_total[5m])) > 0)
 
       - record: supernote:http_request_duration_seconds:p95_rate5m
         expr: |
@@ -32,25 +32,25 @@ groups:
         expr: |
           sum(rate(supernote_note_pages_parsed_total{change_type!="deleted"}[5m]))
           /
-          clamp_min(sum(rate(supernote_note_processing_runs_total{status!="cancelled"}[5m])), 1e-9)
+          (sum(rate(supernote_note_processing_runs_total{status!="cancelled"}[5m])) > 0)
 
       - record: supernote:note_dirty_pages_per_run:ratio_rate5m
         expr: |
           sum(rate(supernote_note_pages_parsed_total{change_type=~"added|modified"}[5m]))
           /
-          clamp_min(sum(rate(supernote_note_processing_runs_total{status!="cancelled"}[5m])), 1e-9)
+          (sum(rate(supernote_note_processing_runs_total{status!="cancelled"}[5m])) > 0)
 
       - record: supernote:note_page_cache_hit:ratio_rate5m
         expr: |
           sum(rate(supernote_note_pages_parsed_total{change_type=~"unchanged|moved"}[5m]))
           /
-          clamp_min(sum(rate(supernote_note_pages_parsed_total{change_type!="deleted"}[5m])), 1e-9)
+          (sum(rate(supernote_note_pages_parsed_total{change_type!="deleted"}[5m])) > 0)
 
       - record: supernote:processor_task_skip:ratio_rate5m
         expr: |
           sum by (module) (rate(supernote_processor_tasks_total{status="skipped"}[5m]))
           /
-          clamp_min(sum by (module) (rate(supernote_processor_tasks_total{status=~"success|skipped"}[5m])), 1e-9)
+          (sum by (module) (rate(supernote_processor_tasks_total{status=~"success|skipped"}[5m])) > 0)
 
       - record: supernote:note_processing_duration_seconds:p95_rate5m
         expr: |
@@ -64,13 +64,13 @@ groups:
         expr: |
           sum by (stage) (rate(supernote_ai_requests_total{stage=~"ocr|summary|embedding_doc"}[5m]))
           /
-          clamp_min(sum(rate(supernote_note_processing_runs_total{mode="full", status!="cancelled"}[5m])), 1e-9)
+          (sum(rate(supernote_note_processing_runs_total{mode="full", status!="cancelled"}[5m])) > 0)
 
       - record: supernote:ai_tokens_per_note_run:ratio_rate5m
         expr: |
           sum by (stage, token_type) (rate(supernote_ai_tokens_total{stage=~"ocr|summary|embedding_doc"}[5m]))
           /
-          clamp_min(sum(rate(supernote_note_processing_runs_total{mode="full", status!="cancelled"}[5m])), 1e-9)
+          (sum(rate(supernote_note_processing_runs_total{mode="full", status!="cancelled"}[5m])) > 0)
 
       - record: supernote:ai_tokens:rate5m
         expr: sum by (provider, model, stage, token_type) (rate(supernote_ai_tokens_total[5m]))
@@ -79,7 +79,7 @@ groups:
         expr: |
           sum by (provider, model, stage) (rate(supernote_ai_requests_total{status="failure"}[5m]))
           /
-          clamp_min(sum by (provider, model, stage) (rate(supernote_ai_requests_total{status!="cancelled"}[5m])), 1e-9)
+          (sum by (provider, model, stage) (rate(supernote_ai_requests_total{status!="cancelled"}[5m])) > 0)
 
       - record: supernote:ai_request_duration_seconds:p95_rate5m
         expr: |
@@ -117,15 +117,13 @@ groups:
           and
           supernote_processor_queue_paused == 0
           and
-          supernote_processor_files_processing == 0
-          and
           sum(increase(supernote_processor_tasks_total[15m])) == 0
         for: 15m
         labels:
           severity: warning
         annotations:
           summary: Background processor queue is backlogged without progress
-          description: Queued tasks have remained pending for 15m while the processor is unpaused and idle.
+          description: Queued tasks have remained pending for 15m while the processor is unpaused without completing any pipeline tasks.
 
       - alert: SupernoteHighAiFailureRate
         expr: |
