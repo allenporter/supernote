@@ -50,6 +50,12 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
+TRANSCRIPT_TAGS = "Transcript,OCR"
+"""Tags stored on the aggregated OCR transcript, in the comma-separated form `SummaryDO.tags` uses."""
+
+AI_SUMMARY_TAG = "AI Summary"
+"""Tag every AI summary carries, ahead of the provider tag the Partner App filters on."""
+
 
 class SummaryModule(ProcessorModule):
     """Module responsible for aggregating OCR text and generating summaries for a note."""
@@ -277,6 +283,9 @@ class SummaryModule(ProcessorModule):
         summary_uuid = get_summary_id(file_basis)
         transcript_uuid = get_transcript_id(file_basis)
         full_text = "\n\n".join(text_parts)
+        summary_tags = f"{AI_SUMMARY_TAG},{self.summary_model.provider.title()}"
+
+        await self._ensure_tags(user_email, TRANSCRIPT_TAGS, summary_tags)
 
         await self._upsert_group(
             user_email,
@@ -296,6 +305,7 @@ class SummaryModule(ProcessorModule):
                 content=full_text,
                 data_source="OCR",
                 source_path=file_do.file_name,
+                tags=TRANSCRIPT_TAGS,
             ),
         )
 
@@ -356,6 +366,7 @@ class SummaryModule(ProcessorModule):
                 data_source=self.summary_model.model_id,
                 source_path=file_do.file_name,
                 metadata=metadata_str,
+                tags=summary_tags,
             ),
         )
 
@@ -401,10 +412,30 @@ class SummaryModule(ProcessorModule):
                     data_source=dto.data_source,
                     source_path=dto.source_path,
                     metadata=dto.metadata,
+                    tags=dto.tags,
                 ),
             )
         else:
             await self.summary_service.add_summary(user_email, dto)
+
+    async def _ensure_tags(self, user_email: str, *tag_strings: str) -> None:
+        """Register the given comma-separated tag names for the user's tag list.
+
+        `SummaryDO.tags` is a loose association: a name that only ever appears there is
+        absent from `SummaryTagDO`, which is what the Partner App reads to offer tags for
+        filtering, so the generated names are registered here before they are used.
+        """
+        wanted: list[str] = []
+        for tag_string in tag_strings:
+            for name in tag_string.split(","):
+                clean = name.strip()
+                if clean and clean not in wanted:
+                    wanted.append(clean)
+
+        existing = {tag.name for tag in await self.summary_service.list_tags(user_email)}
+        for name in wanted:
+            if name not in existing:
+                await self.summary_service.add_tag(user_email, name)
 
     async def _delete_generated_summaries(
         self, user_email: str, file_basis: str

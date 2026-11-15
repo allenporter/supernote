@@ -755,3 +755,139 @@ async def test_summary_includes_page_keywords_in_transcript(
     )
     assert transcript is not None and transcript.content is not None
     assert "Page Keywords: OKR" in transcript.content
+
+async def test_summary_tags_attach_and_register(
+    file_service: FileService,
+    session_manager: DatabaseSessionManager,
+    summary_service: SummaryService,
+) -> None:
+    """Generated items carry the Partner App tags, and the names exist as tag records."""
+    user_id = 102
+    user_email = "tags@example.com"
+    file_id = 777
+    storage_key = "tags_key"
+
+    async with session_manager.session() as session:
+        session.add(UserDO(id=user_id, email=user_email, password_md5="hash"))
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key=storage_key,
+                file_name="tags.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="p0",
+                content_hash="h1",
+                text_content="Page text",
+            )
+        )
+        await session.commit()
+
+    summary_module = SummaryModule(
+        file_service=file_service,
+        summary_service=summary_service,
+        summary_model=FakeSummaryModel(),
+    )
+    await summary_module.process(file_id, session_manager)
+
+    transcript = await summary_service.get_summary_by_uuid(
+        user_email, get_transcript_id(storage_key)
+    )
+    assert transcript is not None
+    assert transcript.tags == "Transcript,OCR"
+
+    ai_summary = await summary_service.get_summary_by_uuid(
+        user_email, get_summary_id(storage_key)
+    )
+    assert ai_summary is not None
+    assert ai_summary.tags == "AI Summary,Fake"
+
+    tags = await summary_service.list_tags(user_email)
+    assert sorted(tag.name for tag in tags) == [
+        "AI Summary",
+        "Fake",
+        "OCR",
+        "Transcript",
+    ]
+
+
+async def test_summary_tags_restored_on_update(
+    file_service: FileService,
+    session_manager: DatabaseSessionManager,
+    summary_service: SummaryService,
+) -> None:
+    """Rows written before tags existed pick them up when the module re-runs."""
+    user_id = 103
+    user_email = "tags-update@example.com"
+    file_id = 778
+    storage_key = "tags_update_key"
+
+    async with session_manager.session() as session:
+        session.add(UserDO(id=user_id, email=user_email, password_md5="hash"))
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key=storage_key,
+                file_name="tags-update.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="p0",
+                content_hash="h1",
+                text_content="Page text",
+            )
+        )
+        await session.commit()
+
+    await summary_service.add_group(
+        user_email,
+        AddSummaryGroupDTO(
+            unique_identifier=get_summary_group_id(storage_key),
+            name="tags-update.note",
+            md5_hash="hash",
+        ),
+    )
+    for item_uuid, data_source in (
+        (get_transcript_id(storage_key), "OCR"),
+        (get_summary_id(storage_key), "fake-summary-v1"),
+    ):
+        await summary_service.add_summary(
+            user_email,
+            AddSummaryDTO(
+                file_id=file_id,
+                unique_identifier=item_uuid,
+                parent_unique_identifier=get_summary_group_id(storage_key),
+                content="Old content",
+                data_source=data_source,
+            ),
+        )
+
+    summary_module = SummaryModule(
+        file_service=file_service,
+        summary_service=summary_service,
+        summary_model=FakeSummaryModel(),
+    )
+    await summary_module.process(file_id, session_manager)
+
+    transcript = await summary_service.get_summary_by_uuid(
+        user_email, get_transcript_id(storage_key)
+    )
+    assert transcript is not None
+    assert transcript.tags == "Transcript,OCR"
+
+    ai_summary = await summary_service.get_summary_by_uuid(
+        user_email, get_summary_id(storage_key)
+    )
+    assert ai_summary is not None
+    assert ai_summary.tags == "AI Summary,Fake"
