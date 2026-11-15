@@ -11,13 +11,15 @@ from __future__ import annotations
 import asyncio
 import math
 import time
-from collections.abc import Generator, Mapping
+from collections.abc import Generator, Iterable, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import StrEnum
 
 from prometheus_client import Counter, Gauge, Histogram
+
+from supernote.models.base import ProcessingStatus, TaskType
 
 __all__ = [
     "AIStage",
@@ -37,17 +39,21 @@ __all__ = [
     "PROCESSOR_QUEUE_PAUSED",
     "PROCESSOR_QUEUE_SIZE",
     "PROCESSOR_STALLED_TASKS_RECOVERED_TOTAL",
+    "PROCESSOR_TASKS_IN_PROGRESS",
     "PROCESSOR_TASKS_TOTAL",
     "PROCESSOR_TASK_DURATION_SECONDS",
     "init_ai_metrics",
+    "init_http_metrics",
     "init_mcp_metrics",
     "init_note_processing_metrics",
     "init_oss_and_upload_metrics",
+    "init_processor_module_metrics",
     "record_ai_tokens",
     "record_note_page_diff",
     "record_note_upload",
     "record_oss_transfer_bytes",
     "set_blob_storage_metrics",
+    "set_processor_system_task_metrics",
     "track_ai_request",
     "track_mcp_tool_call",
     "track_note_processing_run",
@@ -206,6 +212,13 @@ HTTP_REQUESTS_IN_PROGRESS: Gauge = Gauge(
     ["method"],
 )
 
+
+def init_http_metrics(methods: Iterable[str]) -> None:
+    """Pre-initialize in-progress HTTP request gauges at 0 for each normalized method."""
+    for method in methods:
+        HTTP_REQUESTS_IN_PROGRESS.labels(method=method)
+
+
 # Processor metrics
 PROCESSOR_TASKS_TOTAL: Counter = Counter(
     "supernote_processor_tasks_total",
@@ -218,6 +231,12 @@ PROCESSOR_TASK_DURATION_SECONDS: Histogram = Histogram(
     "Latency of background pipeline tasks in seconds.",
     ["module"],
     buckets=PIPELINE_DURATION_BUCKETS,
+)
+
+PROCESSOR_TASKS_IN_PROGRESS: Gauge = Gauge(
+    "supernote_processor_tasks_in_progress",
+    "Current number of pipeline module tasks actively executing.",
+    ["module"],
 )
 
 PROCESSOR_QUEUE_SIZE: Gauge = Gauge(
@@ -233,6 +252,26 @@ PROCESSOR_QUEUE_PAUSED: Gauge = Gauge(
 PROCESSOR_FILES_PROCESSING: Gauge = Gauge(
     "supernote_processor_files_processing",
     "Current number of files actively undergoing background pipeline processing.",
+)
+
+_PROCESSOR_SYSTEM_TASKS: Gauge = Gauge(
+    "supernote_processor_system_tasks",
+    "Current number of persistent pipeline task checkpoints for active files by task type and status.",
+    ["task_type", "status"],
+)
+
+_TRACKED_TASK_STATUSES: tuple[ProcessingStatus, ...] = (
+    ProcessingStatus.PENDING,
+    ProcessingStatus.PROCESSING,
+    ProcessingStatus.COMPLETED,
+    ProcessingStatus.FAILED,
+)
+
+_MODULE_TASK_OUTCOMES: tuple[str, ...] = (
+    _OutcomeStatus.SUCCESS.value,
+    _OutcomeStatus.FAILURE.value,
+    "skipped",
+    _OutcomeStatus.CANCELLED.value,
 )
 
 PROCESSOR_STALLED_TASKS_RECOVERED_TOTAL: Counter = Counter(
@@ -265,10 +304,36 @@ _NOTE_PAGES_PARSED_TOTAL: Counter = Counter(
 )
 
 
+def init_processor_module_metrics(module_names: Iterable[str]) -> None:
+    """Pre-initialize per-module task counters, active gauges, and latency histograms at 0."""
+    for module_name in module_names:
+        PROCESSOR_TASKS_IN_PROGRESS.labels(module=module_name)
+        PROCESSOR_TASK_DURATION_SECONDS.labels(module=module_name)
+        for status in _MODULE_TASK_OUTCOMES:
+            PROCESSOR_TASKS_TOTAL.labels(module=module_name, status=status)
+
+
+def set_processor_system_task_metrics(
+    counts: Mapping[tuple[str, str], int],
+) -> None:
+    """Update persistent `f_system_task` checkpoint gauges across all task types and statuses."""
+    for task_type in TaskType:
+        for status in _TRACKED_TASK_STATUSES:
+            count = counts.get((task_type.value, status.value), 0)
+            _PROCESSOR_SYSTEM_TASKS.labels(
+                task_type=task_type.value,
+                status=status.value,
+            ).set(max(0, count))
+
+
 def init_note_processing_metrics() -> None:
-    """Pre-initialize `.note` run and page-diff counter series at 0."""
+    """Pre-initialize `.note` queue gauges, run/page-diff counters, and histograms at 0."""
+    PROCESSOR_QUEUE_SIZE.set(0)
+    PROCESSOR_FILES_PROCESSING.set(0)
+    set_processor_system_task_metrics({})
     for mode in NoteProcessingMode:
-        for status in (_OutcomeStatus.SUCCESS, _OutcomeStatus.FAILURE):
+        _NOTE_PROCESSING_DURATION_SECONDS.labels(mode=mode.value)
+        for status in _OutcomeStatus:
             _NOTE_PROCESSING_RUNS_TOTAL.labels(
                 mode=mode.value,
                 status=status.value,
@@ -459,13 +524,30 @@ def init_ai_metrics(
     model: str,
     stage: AIStage,
 ) -> None:
-    """Pre-initialize `success` and `failure` counter series at 0 for rate()/increase()."""
+    """Pre-initialize AI request counters, token counters, and latency histograms at 0."""
+    _AI_REQUEST_DURATION_SECONDS.labels(
+        provider=provider,
+        model=model,
+        stage=stage.value,
+    )
     for status in (_OutcomeStatus.SUCCESS, _OutcomeStatus.FAILURE):
         _AI_REQUESTS_TOTAL.labels(
             provider=provider,
             model=model,
             stage=stage.value,
             status=status.value,
+        )
+    token_types: tuple[_AITokenType, ...] = (
+        (_AITokenType.INPUT,)
+        if stage in (AIStage.EMBEDDING_DOCUMENT, AIStage.EMBEDDING_QUERY)
+        else tuple(_AITokenType)
+    )
+    for token_type in token_types:
+        _AI_TOKENS_TOTAL.labels(
+            provider=provider,
+            model=model,
+            stage=stage.value,
+            token_type=token_type.value,
         )
 
 
@@ -563,8 +645,9 @@ _MCP_TOOL_DURATION_SECONDS: Histogram = Histogram(
 
 
 def init_mcp_metrics() -> None:
-    """Pre-initialize MCP tool call `success` and `failure` counter series at 0."""
+    """Pre-initialize MCP tool call counters and latency histograms at 0."""
     for tool in MCPToolName:
+        _MCP_TOOL_DURATION_SECONDS.labels(tool=tool.value)
         for status in (_OutcomeStatus.SUCCESS, _OutcomeStatus.FAILURE):
             _MCP_TOOL_CALLS_TOTAL.labels(
                 tool=tool.value,

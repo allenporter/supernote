@@ -56,6 +56,8 @@ scrape_configs:
 | `supernote_processor_queue_size` | Gauge | — | Files currently waiting in the background processor queue. |
 | `supernote_processor_queue_paused` | Gauge | — | `1` when background queue execution is paused, `0` when active. |
 | `supernote_processor_files_processing` | Gauge | — | Files actively undergoing background pipeline processing. |
+| `supernote_processor_tasks_in_progress` | Gauge | `module` | Per-module pipeline tasks actively executing right now. |
+| `supernote_processor_system_tasks` | Gauge | `task_type`, `status` | Persistent `f_system_task` checkpoints for active files (`PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`). |
 | `supernote_processor_tasks_total` | Counter | `module`, `status` | Per-module task executions (`success`, `failure`, `skipped`, `cancelled`). |
 | `supernote_processor_task_duration_seconds` | Histogram | `module` | Completed task latency (`PIPELINE_DURATION_BUCKETS` up to `600s`; excludes `skipped`/`cancelled`). |
 | `supernote_processor_stalled_tasks_recovered_total` | Counter | — | Stalled `PROCESSING` tasks recovered on startup/sweep. |

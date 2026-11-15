@@ -21,7 +21,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, func, or_, select
 
 from supernote.models.base import ProcessingStatus, TaskType
 from supernote.models.extended import (
@@ -46,6 +46,8 @@ from supernote.server.metrics import (
     PROCESSOR_STALLED_TASKS_RECOVERED_TOTAL,
     NoteProcessingMode,
     init_note_processing_metrics,
+    init_processor_module_metrics,
+    set_processor_system_task_metrics,
     track_note_processing_run,
 )
 
@@ -68,6 +70,7 @@ from ..events import (
     NoteUpdatedEvent,
     SyncCompletedEvent,
 )
+from ..exceptions import DatabaseError
 from ..services.event_log import EventLogService
 from ..services.file import FileService
 from ..services.processor_modules import ProcessorModule
@@ -109,6 +112,7 @@ class ProcessorService:
 
         self.queue: asyncio.Queue[int] = asyncio.Queue()  # Queue of file_ids
         self.processing_files: set[int] = set()
+        self._active_files: set[int] = set()
         self._file_locks: dict[int, asyncio.Lock] = {}
         self._file_lock_refcounts: dict[int, int] = {}
         self.workers: list[asyncio.Task] = []
@@ -117,6 +121,7 @@ class ProcessorService:
         self._processing_enabled = asyncio.Event()
         init_note_processing_metrics()
         self._set_processing_enabled(True)
+        self._update_queue_metrics()
 
         # Module registry
         self.global_pre_modules: list[ProcessorModule] = []
@@ -133,7 +138,35 @@ class ProcessorService:
 
     def _update_queue_metrics(self) -> None:
         PROCESSOR_QUEUE_SIZE.set(self.queue.qsize())
-        PROCESSOR_FILES_PROCESSING.set(len(self.processing_files))
+        PROCESSOR_FILES_PROCESSING.set(len(self._active_files))
+
+    async def refresh_system_task_metrics(self) -> None:
+        """Query active-file `SystemTaskDO` checkpoint counts and update Prometheus gauges."""
+        if self._shutdown_event.is_set():
+            return
+        try:
+            async with self.session_manager.session() as session:
+                result = await session.execute(
+                    select(
+                        SystemTaskDO.task_type,
+                        SystemTaskDO.status,
+                        func.count(SystemTaskDO.id),
+                    )
+                    .join(UserFileDO, UserFileDO.id == SystemTaskDO.file_id)
+                    .where(UserFileDO.is_active == "Y")
+                    .group_by(SystemTaskDO.task_type, SystemTaskDO.status)
+                )
+                counts = {
+                    (str(task_type), str(status)): int(count)
+                    for task_type, status, count in result.all()
+                }
+            set_processor_system_task_metrics(counts)
+        except asyncio.CancelledError:
+            raise
+        except DatabaseError:
+            logger.warning(
+                "Failed to refresh system task Prometheus metrics", exc_info=True
+            )
 
     @asynccontextmanager
     async def _file_lock(self, file_id: int) -> AsyncGenerator[None]:
@@ -165,6 +198,15 @@ class ProcessorService:
         self.global_pre_modules = [hashing]
         self.page_modules = [m for m in (png, ocr, embedding) if m is not None]
         self.global_post_modules = [m for m in (summary,) if m is not None]
+        init_processor_module_metrics(
+            m.name
+            for m in (
+                *self.global_pre_modules,
+                *self.page_modules,
+                *self.global_post_modules,
+            )
+            if m.enabled
+        )
         logger.info("Registered all processor modules.")
 
     async def start(self) -> None:
@@ -270,6 +312,7 @@ class ProcessorService:
                     )
                 )
                 await session.commit()
+            await self.refresh_system_task_metrics()
             return
         logger.info(f"Received update for note: {event.file_id} ({event.file_path})")
         if event.file_id not in self.processing_files:
@@ -309,6 +352,7 @@ class ProcessorService:
                 )
                 await session.commit()
 
+        await self.refresh_system_task_metrics()
         logger.info(f"Cleanup complete for deleted note: {file_id}")
 
     async def handle_blob_cleanup(self, event: Event) -> None:
@@ -336,6 +380,7 @@ class ProcessorService:
                 self.processing_files.add(file_id)
                 await self.queue.put(file_id)
         self._update_queue_metrics()
+        await self.refresh_system_task_metrics()
 
     async def poll_loop(self) -> None:
         """Background loop to poll for stalled tasks."""
@@ -345,6 +390,7 @@ class ProcessorService:
                 # Wait for 5 minutes (adjustable)
                 # We wait first to avoid thundering herd on startup (recover_tasks handles that)
                 await asyncio.sleep(300)
+                await self.refresh_system_task_metrics()
                 if self.is_processing_enabled():
                     await self.recover_stalled_tasks()
                     await self.recover_missing_tasks()
@@ -493,15 +539,27 @@ class ProcessorService:
             if task_types is None and page_indices is None
             else NoteProcessingMode.ON_DEMAND
         )
+        cancelled = False
         async with self._file_lock(file_id):
-            with track_note_processing_run(mode=mode) as run:
-                ok = await self._process_file_locked(
-                    file_id,
-                    task_types=task_types,
-                    page_indices=page_indices,
-                )
-                run.set_succeeded(ok)
-                return ok
+            self._active_files.add(file_id)
+            self._update_queue_metrics()
+            try:
+                with track_note_processing_run(mode=mode) as run:
+                    ok = await self._process_file_locked(
+                        file_id,
+                        task_types=task_types,
+                        page_indices=page_indices,
+                    )
+                    run.set_succeeded(ok)
+                    return ok
+            except asyncio.CancelledError:
+                cancelled = True
+                raise
+            finally:
+                self._active_files.discard(file_id)
+                self._update_queue_metrics()
+                if not cancelled:
+                    await self.refresh_system_task_metrics()
 
     async def _process_file_locked(
         self,

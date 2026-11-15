@@ -71,6 +71,7 @@ from .metrics import (
     HTTP_REQUEST_DURATION_SECONDS,
     HTTP_REQUESTS_IN_PROGRESS,
     HTTP_REQUESTS_TOTAL,
+    init_http_metrics,
 )
 from .routes import (
     admin,
@@ -159,6 +160,7 @@ def create_metrics_middleware(
     mcp_auth_paths: AbstractSet[str] = frozenset(),
 ) -> Middleware:
     """Create HTTP Prometheus metrics middleware with explicit path configuration."""
+    init_http_metrics((*_KNOWN_HTTP_METHODS, "OTHER"))
 
     @web.middleware
     async def _middleware(

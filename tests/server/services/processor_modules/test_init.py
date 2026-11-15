@@ -179,3 +179,47 @@ async def test_processor_module_failure_and_cancellation_metrics(
     assert _duration_count(cancel_name) == 0.0
 
     assert await cancel_module.cleanup_file(304, 1, session_manager) is None
+
+
+async def test_processor_module_in_progress_gauge_tracks_active_execution(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Verify `supernote_processor_tasks_in_progress` increments while active and resets on exit."""
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    module_name = "TestInProgressModule"
+
+    class _BlockingModule(_StubModule):
+        async def process(
+            self,
+            file_id: int,
+            session_manager: DatabaseSessionManager,
+            page_index: int | None = None,
+            page_id: str | None = None,
+            **kwargs: object,
+        ) -> None:
+            entered.set()
+            await release.wait()
+            await super().process(
+                file_id, session_manager, page_index, page_id, **kwargs
+            )
+
+    module = _BlockingModule(module_name=module_name)
+    task = asyncio.create_task(module.run(401, session_manager, page_id="p1"))
+    await entered.wait()
+
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_processor_tasks_in_progress", {"module": module_name}
+        )
+        == 1.0
+    )
+
+    release.set()
+    assert await task is True
+    assert (
+        REGISTRY.get_sample_value(
+            "supernote_processor_tasks_in_progress", {"module": module_name}
+        )
+        == 0.0
+    )
