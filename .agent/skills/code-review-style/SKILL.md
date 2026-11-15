@@ -49,7 +49,7 @@ Execute this prescriptive task list when reviewing code changes, auditing PRs, o
 
 1. **Map Diffs**: Identify changed implementation and test modules via `git diff --name-only`.
 2. **Run Linter & Tests**: Execute `uv run ruff check .` and `uv run pytest --cov=supernote --cov-report=term-missing`.
-3. **Audit Diffs**: Inspect changes against Steps 1–6 checklist items.
+3. **Audit Diffs**: Inspect Python changes against Steps 1–6 checklist items. Whenever diffs touch Web UI assets (`supernote/server/static/` or supporting UI routes), also activate [`../server-ui/SKILL.md`](../server-ui/SKILL.md) and audit against the 7-point rubric and Playwright E2E/mobile checks in [`../server-ui/references/ui-review-and-testing.md`](../server-ui/references/ui-review-and-testing.md).
 4. **Format Output**: Synthesize review results using the audit report template below.
 
 ---
