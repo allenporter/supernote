@@ -1,0 +1,177 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "title": "Supernote Private Cloud — Overview",
+  "uid": "supernote-private-cloud-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "tags": ["supernote", "prometheus"],
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "query": "prometheus",
+        "label": "Prometheus"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "HTTP Request Rate by Status (req/s)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        { "refId": "A", "expr": "sum by (status) (supernote:http_requests:rate5m)", "legendFormat": "HTTP {{status}}" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "HTTP & MCP p95 Latency",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        { "refId": "A", "expr": "topk(5, supernote:http_request_duration_seconds:p95_rate5m)", "legendFormat": "{{method}} {{path}}" },
+        { "refId": "B", "expr": "supernote:mcp_tool_duration_seconds:p95_rate5m", "legendFormat": "MCP {{tool}}" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Active Requests, DB Sessions & DB Error Rate",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 0 },
+      "targets": [
+        { "refId": "A", "expr": "sum(supernote_http_requests_in_progress)", "legendFormat": "HTTP In Flight" },
+        { "refId": "B", "expr": "supernote_db_sessions_active", "legendFormat": "DB Sessions Active" },
+        { "refId": "C", "expr": "rate(supernote_db_session_errors_total[5m])", "legendFormat": "DB Errors/s" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Processor Queue & Active Files",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 7 },
+      "targets": [
+        { "refId": "A", "expr": "supernote_processor_queue_size", "legendFormat": "Queued Files" },
+        { "refId": "B", "expr": "supernote_processor_files_processing", "legendFormat": "Active Files" },
+        { "refId": "C", "expr": "supernote_processor_queue_paused", "legendFormat": "Queue Paused" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Pages Parsed & Dirty Pages per .note Run",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 7 },
+      "targets": [
+        { "refId": "A", "expr": "supernote:note_pages_parsed_per_run:ratio_rate5m", "legendFormat": "Pages / Run" },
+        { "refId": "B", "expr": "supernote:note_dirty_pages_per_run:ratio_rate5m", "legendFormat": "Dirty Pages / Run" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Incremental Cache Hit & Checkpoint Skip Ratio",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 7 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" } },
+      "targets": [
+        { "refId": "A", "expr": "supernote:note_page_cache_hit:ratio_rate5m", "legendFormat": "Page Unchanged/Moved Ratio" },
+        { "refId": "B", "expr": "supernote:processor_task_skip:ratio_rate5m", "legendFormat": "{{module}} Skip Ratio" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": ".note Pipeline Run p95 Duration",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 7 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        { "refId": "A", "expr": "supernote:note_processing_duration_seconds:p95_rate5m", "legendFormat": "{{mode}}" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "AI Calls & Tokens per .note Run",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 14 },
+      "targets": [
+        { "refId": "A", "expr": "supernote:ai_requests_per_note_run:ratio_rate5m", "legendFormat": "{{stage}} calls / run" },
+        { "refId": "B", "expr": "supernote:ai_tokens_per_note_run:ratio_rate5m", "legendFormat": "{{stage}} {{token_type}} tokens / run" }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "AI Token Burn Rate (tokens/s)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 14 },
+      "targets": [
+        { "refId": "A", "expr": "supernote:ai_tokens:rate5m", "legendFormat": "{{provider}}/{{model}} {{stage}} ({{token_type}})" }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "AI Request p95 Latency & Failure Ratio",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 14 },
+      "targets": [
+        { "refId": "A", "expr": "supernote:ai_request_duration_seconds:p95_rate5m", "legendFormat": "p95 {{provider}}/{{model}} ({{stage}})" },
+        { "refId": "B", "expr": "supernote:ai_request_errors:ratio_rate5m", "legendFormat": "err ratio {{provider}}/{{model}} ({{stage}})" }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": ".note Upload Rate & OSS Transfer Throughput",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 21 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (source) (rate(supernote_note_uploads_total[5m]))", "legendFormat": ".note uploads ({{source}})" },
+        { "refId": "B", "expr": "sum by (direction, kind) (rate(supernote_oss_transfer_bytes_total[5m]))", "legendFormat": "{{direction}} {{kind}} (B/s)" }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Blob Storage Inventory (Bytes & Objects)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 21 },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [
+        { "refId": "A", "expr": "supernote_blob_storage_bytes", "legendFormat": "{{bucket}}/{{kind}} bytes" },
+        { "refId": "B", "expr": "supernote_blob_storage_objects", "legendFormat": "{{bucket}}/{{kind}} objects" }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Available Blob Storage Free Space",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 21 },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [
+        { "refId": "A", "expr": "supernote_blob_storage_available_bytes", "legendFormat": "Free Space" }
+      ]
+    }
+  ]
+}
