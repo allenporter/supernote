@@ -4,11 +4,7 @@ import { useProcessingStatus } from './composables/useProcessingStatus.js';
 import { useToast } from './composables/useToast.js';
 import { setToken, getToken, login, logout, fetchPathInfo, connectSocket } from './api/client.js';
 import { normalizeEpochMs } from './utils/format.js';
-import {
-    parseOAuthBridgeReturnTo,
-    isAllowedOAuthRedirectUri,
-    buildOAuthDeniedRedirectUrl
-} from './utils/oauth.js';
+import { parseOAuthBridgeReturnTo } from './utils/oauth.js';
 import SearchModal from './components/SearchModal.js';
 import TaskPanel from './components/TaskPanel.js';
 import FileCard from './components/FileCard.js';
@@ -966,7 +962,7 @@ createApp({
             }
         }
 
-        async function handleOAuthApprove() {
+        async function submitOAuthDecision(decision) {
             const req = pendingOAuthRequest.value;
             if (!req || !req.isValid || isSubmittingOAuth.value) return;
             const token = getToken();
@@ -981,9 +977,11 @@ createApp({
                 const resp = await fetch(req.bridgePathWithQuery, {
                     method: 'POST',
                     headers: {
+                        'Content-Type': 'application/json',
                         'x-access-token': token,
                         'Accept': 'application/json'
-                    }
+                    },
+                    body: JSON.stringify({ decision })
                 });
                 if (resp.status === 401) {
                     await logout({ reload: false });
@@ -994,15 +992,15 @@ createApp({
                 const data = await resp.json().catch(() => null);
                 if (!resp.ok || !data?.redirect_url) {
                     const msg = data?.error_description || data?.error || `Authorization failed (HTTP ${resp.status})`;
-                    showToast(msg, 'error');
-                    return;
-                }
-                if (!isAllowedOAuthRedirectUri(req.clientId, data.redirect_url)) {
-                    showToast('Blocked unsafe redirect URI returned by server.', 'error');
+                    if (resp.status === 400) {
+                        pendingOAuthRequest.value = { ...req, isValid: false, error: msg };
+                    } else {
+                        showToast(msg, 'error');
+                    }
                     return;
                 }
                 if (req.redirectTarget?.isCustomScheme) {
-                    oauthCompletedOutcome.value = 'approved';
+                    oauthCompletedOutcome.value = decision === 'approve' ? 'approved' : 'denied';
                 } else {
                     keepLockedForNavigation = true;
                 }
@@ -1016,21 +1014,8 @@ createApp({
             }
         }
 
-        function handleOAuthDeny() {
-            const req = pendingOAuthRequest.value;
-            if (!req || !req.isValid || isSubmittingOAuth.value) return;
-            const denyUrl = buildOAuthDeniedRedirectUrl(req.redirectUri, req.state);
-            if (!denyUrl || !isAllowedOAuthRedirectUri(req.clientId, denyUrl)) {
-                showToast('Blocked redirect to unverified callback URI.', 'error');
-                return;
-            }
-            if (req.redirectTarget?.isCustomScheme) {
-                oauthCompletedOutcome.value = 'denied';
-            } else {
-                isSubmittingOAuth.value = true;
-            }
-            window.location.assign(denyUrl);
-        }
+        const handleOAuthApprove = () => submitOAuthDecision('approve');
+        const handleOAuthDeny = () => submitOAuthDecision('deny');
 
         async function dismissOAuthConsent() {
             pendingOAuthRequest.value = null;

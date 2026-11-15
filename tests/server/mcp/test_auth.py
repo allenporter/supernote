@@ -16,6 +16,7 @@ from supernote.server.mcp.auth import (
     SupernoteOAuthProvider,
     create_auth_app,
 )
+from supernote.server.mcp.models import MCPScope
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
 
@@ -156,9 +157,9 @@ async def test_authorize_and_login_bridge_consent_invariants(
         client_info,
         AuthorizationParams(
             state=None,
-            scopes=["supernote:all"],
+            scopes=[MCPScope.ALL],
             code_challenge="pkce_challenge_123",
-            redirect_uri=AnyUrl("http://localhost:3000/callback"),
+            redirect_uri=AnyUrl("http://localhost:3000"),
             redirect_uri_provided_explicitly=False,
             resource=None,
         ),
@@ -167,10 +168,8 @@ async def test_authorize_and_login_bridge_consent_invariants(
     bridge_qs = parse_qs(parsed_bridge.query)
     assert bridge_qs == {
         "client_id": ["http://localhost:3000"],
-        "redirect_uri": ["http://localhost:3000/callback"],
         "code_challenge": ["pkce_challenge_123"],
-        "scope": ["supernote:all"],
-        "redirect_uri_provided_explicitly": ["false"],
+        "scope": [MCPScope.ALL],
     }
 
     auth_app = create_auth_app(
@@ -195,6 +194,17 @@ async def test_authorize_and_login_bridge_consent_invariants(
         decoded_return_to = unquote(location.removeprefix("/#login?return_to="))
         assert decoded_return_to == bridge_path_qs
 
+        # POST /login-bridge with decision=deny returns error=access_denied without minting a code
+        deny_resp = client.post(
+            f"{bridge_path_qs}&state=deny-st",
+            json={"decision": "deny"},
+            headers={"x-access-token": session_jwt},
+        )
+        assert deny_resp.status_code == 200
+        assert deny_resp.headers["cache-control"] == "no-store"
+        deny_qs = parse_qs(urlparse(deny_resp.json()["redirect_url"]).query)
+        assert deny_qs == {"error": ["access_denied"], "state": ["deny-st"]}
+
         # POST /login-bridge with unsupported scope returns 400 invalid_scope
         bad_scope_resp = client.post(
             "/login-bridge",
@@ -207,9 +217,10 @@ async def test_authorize_and_login_bridge_consent_invariants(
             headers={"x-access-token": session_jwt},
         )
         assert bad_scope_resp.status_code == 400
-        assert bad_scope_resp.json() == {"error": "invalid_scope"}
+        assert bad_scope_resp.json()["error"] == "invalid_scope"
 
-        # POST /login-bridge with valid scope mints code without spurious state=None
+        # POST /login-bridge with omitted redirect_uri resolves single registered URI
+        # and records redirect_uri_provided_explicitly=False naturally.
         ok_resp = client.post(
             f"{bridge_path_qs}&resource=http%3A%2F%2Flocalhost%3A8081%2Fmcp",
             headers={"x-access-token": session_jwt},
@@ -224,7 +235,7 @@ async def test_authorize_and_login_bridge_consent_invariants(
     stored = await provider.load_authorization_code(client_info, code_str)
     assert stored is not None
     assert stored.user_id == user.id
-    assert stored.scopes == ["supernote:all"]
+    assert stored.scopes == [MCPScope.ALL]
     assert stored.redirect_uri_provided_explicitly is False
     assert stored.resource == "http://localhost:8081/mcp"
 
@@ -271,9 +282,11 @@ def test_validate_redirect_uri_default_and_custom_scheme_traversal() -> None:
     with pytest.raises(InvalidRedirectUriError):
         empty_client.validate_redirect_uri(None)
 
-    for traversal_uri in (
+    for invalid_uri in (
         "obsidian://supernote-sync/app/%2e%2e/evil",
         "obsidian://supernote-sync/app%5c..%5cevil",
+        "obsidian://supernote-sync/app#frag",
+        "obsidian://user:pass@supernote-sync/app",
     ):
         with pytest.raises(InvalidRedirectUriError):
-            single_client.validate_redirect_uri(AnyUrl(traversal_uri))
+            single_client.validate_redirect_uri(AnyUrl(invalid_uri))

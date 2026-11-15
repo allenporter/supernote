@@ -12,8 +12,9 @@ import json
 import secrets
 import time
 from typing import Any, override
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import quote
 
+import yarl
 from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationParams,
@@ -23,7 +24,7 @@ from mcp.server.auth.provider import (
     construct_redirect_uri,
 )
 from mcp.server.auth.routes import create_auth_routes
-from mcp.server.auth.settings import RevocationOptions
+from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 from mcp.shared.auth import (
     InvalidRedirectUriError,
     InvalidScopeError,
@@ -40,10 +41,31 @@ from supernote.server.services.user import UserService
 from supernote.server.utils.auth_utils import get_token_from_request
 
 from .models import (
+    MCPScope,
     SupernoteAccessToken,
     SupernoteAuthorizationCode,
     SupernoteRefreshToken,
 )
+
+
+def _parse_oauth_url(raw: str) -> yarl.URL | None:
+    """Parse an RFC 6749 / IndieAuth endpoint URL (canonical path, no userinfo or fragment)."""
+    try:
+        normalized = yarl.URL(raw)
+        unnormalized = yarl.URL(raw, encoded=True)
+    except ValueError:
+        return None
+    if (
+        not normalized.scheme
+        or not normalized.host
+        or normalized.user is not None
+        or normalized.password is not None
+        or normalized.fragment
+        or "\\" in unnormalized.path
+        or unnormalized.path != normalized.path
+    ):
+        return None
+    return normalized
 
 
 class SupernoteOAuthClientInformationFull(OAuthClientInformationFull):
@@ -51,28 +73,23 @@ class SupernoteOAuthClientInformationFull(OAuthClientInformationFull):
 
     @override
     def validate_redirect_uri(self, redirect_uri: AnyUrl | None) -> AnyUrl:
-        """Allows redirect uri prefixes matching the registered origin and path boundary."""
+        """Allows redirect URI prefixes matching the registered origin and path boundary."""
         if redirect_uri is None:
             if self.redirect_uris and len(self.redirect_uris) == 1:
                 return self.redirect_uris[0]
             raise InvalidRedirectUriError("Redirect URI must be specified")
-        redirect_parsed = urlparse(str(redirect_uri))
-        if ".." in unquote(redirect_parsed.path).replace("\\", "/").split("/"):
-            raise InvalidRedirectUriError(
-                f"Redirect URI '{redirect_uri}' contains disallowed path traversal"
-            )
+        candidate = _parse_oauth_url(str(redirect_uri))
+        if candidate is None:
+            raise InvalidRedirectUriError(f"Redirect URI '{redirect_uri}' is invalid")
         for registered_redirect_uri in self.redirect_uris or ():
-            reg_parsed = urlparse(str(registered_redirect_uri))
-            if (
-                redirect_parsed.scheme != reg_parsed.scheme
-                or redirect_parsed.netloc != reg_parsed.netloc
-            ):
+            registered = _parse_oauth_url(str(registered_redirect_uri))
+            if registered is None or candidate.origin() != registered.origin():
                 continue
-            reg_path = reg_parsed.path.rstrip("/")
+            reg_path = registered.path.rstrip("/")
             if (
                 not reg_path
-                or redirect_parsed.path == reg_path
-                or redirect_parsed.path.startswith(f"{reg_path}/")
+                or candidate.path == reg_path
+                or candidate.path.startswith(f"{reg_path}/")
             ):
                 return redirect_uri
         raise InvalidRedirectUriError(
@@ -98,20 +115,9 @@ class SupernoteOAuthProvider(
         self._coordination = coordination_service
 
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
-        """Retrieve client information by client ID."""
-        # Support dynamic IndieAuth-style clients (Client ID is a URL)
-        try:
-            parsed = urlparse(client_id)
-        except ValueError:
-            return None
-        if (
-            parsed.scheme not in ("http", "https")
-            or not parsed.netloc
-            or parsed.username
-            or parsed.password
-            or parsed.fragment
-            or ".." in unquote(parsed.path).replace("\\", "/").split("/")
-        ):
+        """Retrieve client information by IndieAuth HTTP(S) client URL."""
+        parsed = _parse_oauth_url(client_id)
+        if parsed is None or parsed.scheme not in ("http", "https"):
             return None
         try:
             validated_client_url = AnyHttpUrl(client_id)
@@ -122,7 +128,7 @@ class SupernoteOAuthProvider(
             redirect_uris=[validated_client_url],
             grant_types=["authorization_code", "refresh_token"],
             response_types=["code"],
-            scope="supernote:all",
+            scope=MCPScope.ALL,
             token_endpoint_auth_method="none",
         )
 
@@ -135,17 +141,18 @@ class SupernoteOAuthProvider(
     ) -> str:
         """Called as part of the /authorize endpoint."""
         resolved_scopes = params.scopes or (
-            client.scope.split() if client.scope else ["supernote:all"]
+            client.scope.split() if client.scope else [MCPScope.ALL]
         )
         return construct_redirect_uri(
             f"{self.issuer_url}/login-bridge",
             client_id=client.client_id,
-            redirect_uri=str(params.redirect_uri),
+            redirect_uri=(
+                str(params.redirect_uri)
+                if params.redirect_uri_provided_explicitly
+                else None
+            ),
             code_challenge=params.code_challenge,
             scope=" ".join(resolved_scopes),
-            redirect_uri_provided_explicitly=(
-                "true" if params.redirect_uri_provided_explicitly else "false"
-            ),
             state=params.state,
             resource=params.resource,
         )
@@ -292,6 +299,11 @@ def create_auth_app(
     routes = create_auth_routes(
         provider=provider,
         issuer_url=AnyHttpUrl(issuer_url),
+        client_registration_options=ClientRegistrationOptions(
+            enabled=False,
+            valid_scopes=list(MCPScope),
+            default_scopes=[MCPScope.ALL],
+        ),
         revocation_options=RevocationOptions(enabled=True),
     )
     app = Starlette(routes=routes, debug=True)
@@ -302,8 +314,9 @@ def create_auth_app(
 
         Browser GET requests redirect to ``/#login?return_to=<bridge_url>`` so the Web UI
         authenticates the user (if needed) and renders an explicit OAuth Consent Card.
-        Once the user clicks Approve, the SPA issues an authenticated ``POST /login-bridge``
-        request with ``x-access-token`` to mint a single-use authorization code.
+        Once the user approves or denies, the SPA issues an authenticated ``POST /login-bridge``
+        request with ``x-access-token`` to validate the redirect target and mint a single-use
+        authorization code (on approve) or return an ``access_denied`` redirect (on deny).
         """
         token = get_token_from_request(request)
         session = await user_service.verify_token(token) if token else None
@@ -330,29 +343,64 @@ def create_auth_app(
         if not session:
             return JSONResponse({"error": "unauthorized"}, status_code=401)
 
+        decision = "approve"
+        if request.headers.get("content-type", "").startswith("application/json"):
+            try:
+                body = await request.json()
+            except json.JSONDecodeError:
+                return JSONResponse({"error": "invalid_request"}, status_code=400)
+            if isinstance(body, dict) and "decision" in body:
+                if body["decision"] not in ("approve", "deny"):
+                    return JSONResponse({"error": "invalid_request"}, status_code=400)
+                decision = body["decision"]
+
         # Extract OAuth params from query
         client_id = request.query_params.get("client_id")
-        redirect_uri = request.query_params.get("redirect_uri")
+        raw_redirect_uri = request.query_params.get("redirect_uri")
         code_challenge = request.query_params.get("code_challenge")
         state = request.query_params.get("state")
         raw_scope = request.query_params.get("scope")
         resource = request.query_params.get("resource")
-        raw_explicit = request.query_params.get("redirect_uri_provided_explicitly")
 
-        if not client_id or not redirect_uri or not code_challenge:
+        if not client_id or not code_challenge:
             return JSONResponse({"error": "invalid_request"}, status_code=400)
 
-        # Validate Client compatibility
         client_info = await provider.get_client(client_id)
         if not client_info:
-            return JSONResponse({"error": "invalid_client"}, status_code=400)
+            return JSONResponse(
+                {
+                    "error": "invalid_client",
+                    "error_description": "Unrecognized or invalid client_id URL.",
+                },
+                status_code=400,
+            )
 
         try:
+            parsed_redirect_arg = AnyUrl(raw_redirect_uri) if raw_redirect_uri else None
             validated_redirect_uri = client_info.validate_redirect_uri(
-                AnyUrl(redirect_uri)
+                parsed_redirect_arg
             )
         except (ValidationError, InvalidRedirectUriError):
-            return JSONResponse({"error": "invalid_redirect_uri"}, status_code=400)
+            return JSONResponse(
+                {
+                    "error": "invalid_redirect_uri",
+                    "error_description": (
+                        "Redirect URI does not match the requesting client origin and path."
+                    ),
+                },
+                status_code=400,
+            )
+
+        if decision == "deny":
+            denied_url = construct_redirect_uri(
+                str(validated_redirect_uri),
+                error="access_denied",
+                state=state or None,
+            )
+            return JSONResponse(
+                {"redirect_url": denied_url},
+                headers={"Cache-Control": "no-store"},
+            )
 
         normalized_scope = (
             " ".join(raw_scope.split()) if raw_scope and raw_scope.strip() else None
@@ -360,12 +408,15 @@ def create_auth_app(
         try:
             validated_scopes = client_info.validate_scope(normalized_scope)
         except InvalidScopeError:
-            return JSONResponse({"error": "invalid_scope"}, status_code=400)
+            return JSONResponse(
+                {
+                    "error": "invalid_scope",
+                    "error_description": "Requested scope is not supported.",
+                },
+                status_code=400,
+            )
         scopes = validated_scopes or (
-            client_info.scope.split() if client_info.scope else ["supernote:all"]
-        )
-        redirect_uri_provided_explicitly = (
-            raw_explicit.lower() != "false" if raw_explicit else True
+            client_info.scope.split() if client_info.scope else [MCPScope.ALL]
         )
 
         # Create the authorization code
@@ -378,11 +429,10 @@ def create_auth_app(
             scopes=scopes,
             code_challenge=code_challenge,
             expires_at=int(time.time() + 600),
-            redirect_uri_provided_explicitly=redirect_uri_provided_explicitly,
+            redirect_uri_provided_explicitly=raw_redirect_uri is not None,
             resource=resource or None,
         )
 
-        # Store auth code
         await coordination_service.set_value(
             f"mcp:auth_code:{code_str}",
             auth_code.model_dump_json(),

@@ -9,6 +9,7 @@ See `supernote.guides.mcp`.
 """
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from mashumaro import field_options
 from mashumaro.config import BaseConfig
@@ -20,6 +21,13 @@ from mcp.server.auth.provider import (
 )
 
 from supernote.models.base import BaseResponse
+
+
+class MCPScope(StrEnum):
+    """OAuth 2.1 scopes supported by the Supernote MCP server."""
+
+    ALL = "supernote:all"
+    """Full access to Supernote MCP retrieval tools (notebooks, search, transcripts)."""
 
 
 class SupernoteAuthorizationCode(AuthorizationCode):
