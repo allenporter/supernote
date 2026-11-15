@@ -1,0 +1,149 @@
+---
+groups:
+  - name: supernote_recording_rules
+    interval: 1m
+    rules:
+      # HTTP and MCP endpoint health
+      - record: supernote:http_requests:rate5m
+        expr: sum by (method, path, status) (rate(supernote_http_requests_total[5m]))
+
+      - record: supernote:http_request_errors:ratio_rate5m
+        expr: |
+          sum(rate(supernote_http_requests_total{status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(supernote_http_requests_total[5m])), 1e-9)
+
+      - record: supernote:http_request_duration_seconds:p95_rate5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, method, path) (rate(supernote_http_request_duration_seconds_bucket[5m]))
+          )
+
+      - record: supernote:mcp_tool_duration_seconds:p95_rate5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, tool) (rate(supernote_mcp_tool_duration_seconds_bucket[5m]))
+          )
+
+      # .note pipeline throughput, incremental cache efficiency, and per-run ratios
+      - record: supernote:note_pages_parsed_per_run:ratio_rate5m
+        expr: |
+          sum(rate(supernote_note_pages_parsed_total{change_type!="deleted"}[5m]))
+          /
+          clamp_min(sum(rate(supernote_note_processing_runs_total{status!="cancelled"}[5m])), 1e-9)
+
+      - record: supernote:note_dirty_pages_per_run:ratio_rate5m
+        expr: |
+          sum(rate(supernote_note_pages_parsed_total{change_type=~"added|modified"}[5m]))
+          /
+          clamp_min(sum(rate(supernote_note_processing_runs_total{status!="cancelled"}[5m])), 1e-9)
+
+      - record: supernote:note_page_cache_hit:ratio_rate5m
+        expr: |
+          sum(rate(supernote_note_pages_parsed_total{change_type=~"unchanged|moved"}[5m]))
+          /
+          clamp_min(sum(rate(supernote_note_pages_parsed_total{change_type!="deleted"}[5m])), 1e-9)
+
+      - record: supernote:processor_task_skip:ratio_rate5m
+        expr: |
+          sum by (module) (rate(supernote_processor_tasks_total{status="skipped"}[5m]))
+          /
+          clamp_min(sum by (module) (rate(supernote_processor_tasks_total{status=~"success|skipped"}[5m])), 1e-9)
+
+      - record: supernote:note_processing_duration_seconds:p95_rate5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, mode) (rate(supernote_note_processing_duration_seconds_bucket[5m]))
+          )
+
+      # AI model efficiency, latency, and per-notebook cost ratios
+      - record: supernote:ai_requests_per_note_run:ratio_rate5m
+        expr: |
+          sum by (stage) (rate(supernote_ai_requests_total{stage=~"ocr|summary|embedding_doc"}[5m]))
+          /
+          clamp_min(sum(rate(supernote_note_processing_runs_total{mode="full", status!="cancelled"}[5m])), 1e-9)
+
+      - record: supernote:ai_tokens_per_note_run:ratio_rate5m
+        expr: |
+          sum by (stage, token_type) (rate(supernote_ai_tokens_total{stage=~"ocr|summary|embedding_doc"}[5m]))
+          /
+          clamp_min(sum(rate(supernote_note_processing_runs_total{mode="full", status!="cancelled"}[5m])), 1e-9)
+
+      - record: supernote:ai_tokens:rate5m
+        expr: sum by (provider, model, stage, token_type) (rate(supernote_ai_tokens_total[5m]))
+
+      - record: supernote:ai_request_errors:ratio_rate5m
+        expr: |
+          sum by (provider, model, stage) (rate(supernote_ai_requests_total{status="failure"}[5m]))
+          /
+          clamp_min(sum by (provider, model, stage) (rate(supernote_ai_requests_total{status!="cancelled"}[5m])), 1e-9)
+
+      - record: supernote:ai_request_duration_seconds:p95_rate5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, provider, model, stage) (rate(supernote_ai_request_duration_seconds_bucket[5m]))
+          )
+
+  - name: supernote_alerting_rules
+    rules:
+      - alert: SupernoteHighHttp5xxRate
+        expr: |
+          supernote:http_request_errors:ratio_rate5m > 0.05
+          and
+          sum(rate(supernote_http_requests_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High HTTP 5xx error ratio on Supernote server
+          description: More than 5% of HTTP requests over the last 5m returned 5xx responses.
+
+      - alert: SupernoteDatabaseSessionErrors
+        expr: increase(supernote_db_session_errors_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Database session errors detected
+          description: Database or SQLAlchemy session errors occurred during the last 5m.
+
+      - alert: SupernoteProcessorQueueStalled
+        expr: |
+          supernote_processor_queue_size > 0
+          and
+          supernote_processor_queue_paused == 0
+          and
+          supernote_processor_files_processing == 0
+          and
+          sum(increase(supernote_processor_tasks_total[15m])) == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Background processor queue is backlogged without progress
+          description: Queued tasks have remained pending for 15m while the processor is unpaused and idle.
+
+      - alert: SupernoteHighAiFailureRate
+        expr: |
+          supernote:ai_request_errors:ratio_rate5m > 0.10
+          and
+          sum by (provider, model, stage) (increase(supernote_ai_requests_total{status!="cancelled"}[10m])) >= 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: High AI model failure ratio
+          description: Over 10% of AI requests for a provider/model/stage failed over the last 10m.
+
+      - alert: SupernoteLowBlobStorageSpace
+        expr: supernote_blob_storage_available_bytes < 1073741824
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Low available disk space on blob storage volume
+          description: Less than 1 GiB of free space remains on the blob storage filesystem.
