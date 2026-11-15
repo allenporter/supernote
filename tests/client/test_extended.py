@@ -108,6 +108,34 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
             }
         )
 
+    async def handle_note_metadata(request: web.Request) -> web.Response:
+        recorded.append((request.method, request.path, await request.json()))
+        return web.json_response(
+            {
+                "success": True,
+                "fileId": "10",
+                "equipment": "N5",
+                "width": 1920,
+                "height": 2560,
+                "totalPages": 1,
+                "keywords": [],
+                "titles": [],
+                "links": [],
+                "pages": [
+                    {
+                        "pageIndex": 0,
+                        "pageId": "P20261101120000abc",
+                        "date": "2026-11-01",
+                        "style": "style_5mm_dots",
+                        "hasInk": True,
+                        "hasDrawables": True,
+                        "fiveStar": [],
+                        "keywords": [],
+                    }
+                ],
+            }
+        )
+
     app = web.Application()
     app.router.add_get("/api/csrf", handle_csrf)
     app.router.add_post("/api/extended/file/summary/list", handle_summaries)
@@ -119,6 +147,7 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
     app.router.add_get("/api/extended/system/tasks", handle_system_tasks)
     app.router.add_get("/api/extended/ai/status", handle_ai_status)
     app.router.add_post("/api/extended/file/note/cover", handle_note_cover)
+    app.router.add_post("/api/extended/file/note/metadata", handle_note_metadata)
 
     test_client = await aiohttp_client(app)
     base_client = Client(
@@ -159,6 +188,13 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
     cover_vo = await ext.get_note_cover(file_id=10)
     assert cover_vo.url == "http://127.0.0.1/api/oss/png/10/0?sig=abc"
 
+    meta_vo = await ext.get_note_metadata(file_id=10)
+    assert meta_vo.file_id == 10
+    assert meta_vo.equipment == "N5"
+    assert meta_vo.total_pages == 1
+    assert len(meta_vo.pages) == 1
+    assert meta_vo.pages[0].has_ink is True
+
     assert recorded == [
         ("POST", "/api/extended/file/summary/list", {"fileId": "10"}),
         (
@@ -181,6 +217,7 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
         ("GET", "/api/extended/system/tasks", None),
         ("GET", "/api/extended/ai/status", None),
         ("POST", "/api/extended/file/note/cover", {"fileId": "10"}),
+        ("POST", "/api/extended/file/note/metadata", {"fileId": "10"}),
     ]
 
 
