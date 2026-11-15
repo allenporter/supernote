@@ -17,13 +17,16 @@ The Open Private Cloud MCP server is available at:
 > [!NOTE]
 > The MCP service runs on port `8081` by default, while the main Open Private Cloud web interface and OAuth endpoints run on `8080`.
 
-### Secure Authentication (IndieAuth/OAuth 2.1)
+### Authentication
 
-Open Private Cloud implements modern **Dynamic OAuth 2.1** (IndieAuth style).
+Open Private Cloud supports two authentication modes for MCP and REST clients:
 
-- **Client ID**: Your Client ID should be a URL identifying the application or agent (e.g., `https://<your home assistant url>`).
-- **Dynamic Registration**: You don't need to pre-register clients. The server will dynamically recognize and authorize clients based on their URL.
-- **Login**: When an agent requests access, you will be redirected to the Open Private Cloud login page to authorize the session.
+1. **Interactive OAuth 2.1 (IndieAuth)**:
+   - **Client ID**: Your Client ID should be a URL identifying the application or agent (e.g., `https://<your home assistant url>`).
+   - **Dynamic Registration**: You don't need to pre-register clients. The server dynamically recognizes and authorizes clients based on their URL.
+   - **Login**: When an agent requests access, you are redirected to the Open Private Cloud login page to authorize the session.
+2. **Static Bearer API Keys (`sn_...`)**:
+   - For headless CLI agents, local scripts, and MCP clients that do not use interactive browser OAuth redirects, generate a revocable API key with `supernote cloud keys create <name>` (or `POST /api/extended/keys`) and pass `Authorization: Bearer sn_...` on requests to `/mcp` or any REST API endpoint.
 
 ## Configuration for Popular Agents
 

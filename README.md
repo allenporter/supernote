@@ -257,7 +257,15 @@ supernote cloud insights /Note.note # View synthesis from CLI
 # File Operations
 supernote cloud ls /                # List remote files
 supernote cloud download /Note.note # Download to local machine
+
+# API Keys & Headless Automation
+supernote cloud keys create "Automation" --expires-days 90
+supernote cloud keys list
+supernote cloud keys revoke <key-id>
+supernote cloud --url http://localhost:8080 --api-key sn_... ls /
 ```
+
+Headless scripts can also set `SUPERNOTE_URL` and `SUPERNOTE_API_KEY` in the environment instead of running `supernote cloud login`.
 
 ## Notebook Operations & Developer API
 
@@ -275,7 +283,8 @@ Path("journal.pdf").write_bytes(pdf_bytes)
 ```python
 from supernote.client import Supernote
 
-async with await Supernote.login("user@example.com", "password", host="http://localhost:8080") as sn:
+# Authenticate with email/password or a static API key (sn_...)
+async with Supernote.from_token("sn_...", host="http://localhost:8080") as sn:
     files = await sn.device.list_folder("/")
 ```
 
