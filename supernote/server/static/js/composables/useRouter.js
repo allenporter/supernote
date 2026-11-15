@@ -20,6 +20,10 @@ export function formatCrumbName(name, index) {
     return name;
 }
 
+/**
+ * @param {{ path?: string, idPath?: string } | null | undefined} info
+ * @returns {BreadcrumbItem[]}
+ */
 export function buildCrumbsFromPathInfo(info) {
     const crumbs = [{ id: '0', name: 'Cloud' }];
     if (info && info.path && info.idPath) {
@@ -36,9 +40,13 @@ export function buildCrumbsFromPathInfo(info) {
     return crumbs;
 }
 
+/**
+ * @param {URLSearchParams | null} params
+ * @returns {number | null}
+ */
 function parsePageParam(params) {
     if (!params || !params.has('page')) return null;
-    const rawPage = Number.parseInt(params.get('page'), 10);
+    const rawPage = Number.parseInt(params.get('page') || '', 10);
     if (Number.isNaN(rawPage) || rawPage < 1) return 0;
     return rawPage - 1;
 }
@@ -151,6 +159,18 @@ function hasRoutingQueryParams(searchStr) {
     return ROUTING_QUERY_KEYS.some(key => params.has(key));
 }
 
+/**
+ * @param {Object} options
+ * @param {import('vue').Ref<boolean>} options.isLoggedIn
+ * @param {import('vue').Ref<FileItem[]>} options.files
+ * @param {import('vue').Ref<string>} options.currentDirectoryId
+ * @param {import('vue').Ref<string | null>} options.loadedDirectoryId
+ * @param {(directoryId?: string | number) => Promise<void>} options.loadDirectory
+ * @param {import('vue').Ref<Array<string | number>>} options.selectedIds
+ * @param {(() => void) | null} [options.onBeforeNavigate=null]
+ * @param {(() => void) | null} [options.onOAuthRouteEnter=null]
+ * @param {(() => void) | null} [options.onOAuthRouteClear=null]
+ */
 export function useRouter({
     isLoggedIn,
     files,
@@ -246,6 +266,12 @@ export function useRouter({
         ]);
     }
 
+    /**
+     * @param {string} targetFileId
+     * @param {number} seq
+     * @param {Record<string, any> | null} [fallbackItem=null]
+     * @param {(() => void | Promise<void>) | null} [onViewerReady=null]
+     */
     async function restoreViewerState(targetFileId, seq, fallbackItem = null, onViewerReady = null) {
         const hasMatchingLoadedDir =
             loadedDirectoryId.value === String(currentDirectoryId.value) &&
@@ -267,7 +293,7 @@ export function useRouter({
         const fallbackName = fallbackItem?.name || `File ${targetFileId}`;
         const fallbackExt = fallbackItem?.extension || (
             fallbackItem?.name && fallbackName.includes('.')
-                ? fallbackName.split('.').pop().toLowerCase()
+                ? (fallbackName.split('.').pop() || '').toLowerCase()
                 : ''
         );
 
@@ -277,7 +303,7 @@ export function useRouter({
             const allCrumbs = buildCrumbsFromPathInfo(info);
             if (allCrumbs.length <= 1) {
                 selectedFile.value = {
-                    ...fallbackItem,
+                    ...(fallbackItem || {}),
                     id: targetFileId,
                     name: fallbackName,
                     extension: fallbackExt
@@ -291,13 +317,13 @@ export function useRouter({
             const folderCrumbs = allCrumbs.slice(0, -1);
             const parentDirId = String(folderCrumbs[folderCrumbs.length - 1].id);
             const ext = fileCrumb.name.includes('.')
-                ? fileCrumb.name.split('.').pop().toLowerCase()
+                ? (fileCrumb.name.split('.').pop() || '').toLowerCase()
                 : fallbackExt;
 
             breadcrumbs.value = folderCrumbs;
             currentDirectoryId.value = parentDirId;
             selectedFile.value = {
-                ...fallbackItem,
+                ...(fallbackItem || {}),
                 id: targetFileId,
                 name: fileCrumb.name,
                 extension: ext
@@ -315,7 +341,7 @@ export function useRouter({
             if (seq !== activeSyncSeq) return;
             console.error('Failed to resolve file path info:', e);
             selectedFile.value = {
-                ...fallbackItem,
+                ...(fallbackItem || {}),
                 id: targetFileId,
                 name: fallbackName,
                 extension: fallbackExt

@@ -25,15 +25,23 @@ export const PAGE_STYLE_LABELS = {
     'custom': 'Custom template'
 };
 
+/**
+ * @param {Partial<FileItem> | null | undefined} file
+ * @returns {string}
+ */
 export function resolveFileExt(file) {
     if (!file) return '';
     if (file.extension) return String(file.extension).toLowerCase();
     if (file.name && file.name.includes('.')) {
-        return file.name.split('.').pop().toLowerCase();
+        return (file.name.split('.').pop() || '').toLowerCase();
     }
     return '';
 }
 
+/**
+ * @param {string} ext
+ * @returns {'note' | 'image' | 'pdf' | 'text' | 'unsupported'}
+ */
 export function resolveFileCategory(ext) {
     if (ext === 'note') return 'note';
     if (IMAGE_EXTENSIONS.has(ext)) return 'image';
@@ -42,6 +50,10 @@ export function resolveFileCategory(ext) {
     return 'unsupported';
 }
 
+/**
+ * @param {unknown} rawPages
+ * @returns {TranscriptPage[]}
+ */
 export function normalizeTranscriptPages(rawPages) {
     if (!Array.isArray(rawPages)) return [];
     return rawPages.map((p, idx) => ({
@@ -54,6 +66,10 @@ export function normalizeTranscriptPages(rawPages) {
     }));
 }
 
+/**
+ * @param {string | null | undefined} style
+ * @returns {string | null}
+ */
 export function formatPageStyle(style) {
     if (!style || style === 'white') return null;
     if (PAGE_STYLE_LABELS[style]) return PAGE_STYLE_LABELS[style];
@@ -61,6 +77,11 @@ export function formatPageStyle(style) {
     return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
+/**
+ * @param {NoteLink | null | undefined} link
+ * @param {string | number | null | undefined} currentFileId
+ * @returns {string}
+ */
 export function formatLinkLabel(link, currentFileId) {
     if (!link) return 'Link';
     const isExternalFile = Boolean(
@@ -91,6 +112,13 @@ export function formatContent(str) {
     return str.replaceAll('\\n', '\n');
 }
 
+/**
+ * @param {TranscriptPage[]} transcriptPages
+ * @param {NoteMetadata | null | undefined} noteMetadata
+ * @param {Map<number, NotePageMeta>} pageMetaByIndex
+ * @param {Map<number, NoteLink[]>} linksByPageIndex
+ * @returns {TranscriptPage[]}
+ */
 export function buildDisplayTranscriptPages(transcriptPages, noteMetadata, pageMetaByIndex, linksByPageIndex) {
     const merged = new Map();
     for (const item of transcriptPages) {

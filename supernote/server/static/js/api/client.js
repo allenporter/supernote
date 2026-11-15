@@ -185,12 +185,20 @@ async function sha256(message) {
 const DEFAULT_FILE_PAGE_SIZE = 100;
 const MAX_DIRECTORY_PAGES = 100;
 
+/**
+ * @param {string} filename
+ * @returns {string | null}
+ */
 function getExtension(filename) {
     if (!filename) return null;
     const parts = filename.split('.');
-    return parts.length > 1 ? parts.pop().toLowerCase() : null;
+    return parts.length > 1 ? (parts.pop() || '').toLowerCase() : null;
 }
 
+/**
+ * @param {Record<string, any>} file
+ * @returns {FileItem}
+ */
 function mapUserFileVO(file) {
     const isDirectory = file.isFolder === 'Y' || file.isFolder === true || file.isFolder === 1;
     return {
@@ -218,6 +226,9 @@ function fetchFilesPage(directoryId, pageNo, pageSize) {
 
 /**
  * Fetch all files and folders for a given directory across pages.
+ * @param {string | number} [directoryId='0']
+ * @param {number} [pageSize]
+ * @returns {Promise<FileItem[]>}
  */
 export async function fetchFiles(directoryId = '0', pageSize = DEFAULT_FILE_PAGE_SIZE) {
     const firstPage = await fetchFilesPage(directoryId, 1, pageSize);
@@ -325,6 +336,7 @@ const DEFAULT_AI_STATUS = {
 
 /**
  * Fetch server AI processing configuration status.
+ * @returns {Promise<AiStatus>}
  */
 export async function fetchAiStatus() {
     const data = await apiRequest('/api/extended/ai/status', {
@@ -456,11 +468,19 @@ export async function uploadFile(directoryId, file) {
     return await uploadFinish(directoryId, file.name, file.size, md5, innerName);
 }
 
+/**
+ * @param {Blob} file
+ * @returns {Promise<string>}
+ */
 function calculateFileMd5(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = (e) => {
-            const hash = SparkMD5.ArrayBuffer.hash(e.target.result);
+        reader.onload = () => {
+            if (!(reader.result instanceof ArrayBuffer)) {
+                reject(new Error('Expected ArrayBuffer from FileReader'));
+                return;
+            }
+            const hash = SparkMD5.ArrayBuffer.hash(reader.result);
             resolve(hash);
         };
         reader.onerror = reject;
@@ -531,7 +551,7 @@ export async function fetchNoteCover(fileId) {
 /**
  * Fetch structural and per-page metadata for a .note file.
  * @param {string|number} fileId
- * @returns {Promise<Object|null>}
+ * @returns {Promise<NoteMetadata|null>}
  */
 export function fetchNoteMetadata(fileId) {
     return apiRequest('/api/extended/file/note/metadata', {

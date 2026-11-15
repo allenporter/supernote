@@ -4,14 +4,22 @@
 
 const TOKEN_STORAGE_KEY = 'supernote_token';
 
+/** @type {string | null} */
 let authToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+/** @type {Set<() => void>} */
 const logoutListeners = new Set();
 
+/**
+ * @param {string} token
+ */
 export function setToken(token) {
     authToken = token;
     localStorage.setItem(TOKEN_STORAGE_KEY, token);
 }
 
+/**
+ * @returns {string | null}
+ */
 export function getToken() {
     return authToken;
 }
@@ -82,6 +90,7 @@ export async function apiRequest(
         throw new Error('Unauthorized');
     }
 
+    /** @type {Record<string, string>} */
     const headers = {};
     if (body !== undefined) {
         headers['Content-Type'] = 'application/json';

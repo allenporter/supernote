@@ -2,10 +2,14 @@ import { ref } from 'vue';
 import { fetchFiles, createFolder, deleteItems, moveItems, renameItem, uploadFile } from '../api/client.js';
 
 export function useFileSystem() {
+    /** @type {import('vue').Ref<FileItem[]>} */
     const files = ref([]);
+    /** @type {import('vue').Ref<string>} */
     const currentDirectoryId = ref("0");
+    /** @type {import('vue').Ref<string | null>} */
     const loadedDirectoryId = ref(null);
     const isLoading = ref(false);
+    /** @type {import('vue').Ref<string | null>} */
     const error = ref(null);
     let activeLoadSeq = 0;
 

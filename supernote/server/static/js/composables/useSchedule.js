@@ -13,13 +13,18 @@ import {
 } from '../api/schedule.js';
 
 export function useSchedule() {
+    /** @type {import('vue').Ref<ScheduleTaskGroup[]>} */
     const taskGroups = ref([]);
+    /** @type {import('vue').Ref<ScheduleTask[]>} */
     const tasks = ref([]);
     const isLoading = ref(false);
+    /** @type {import('vue').Ref<string | null>} */
     const error = ref(null);
 
     // Filters
+    /** @type {import('vue').Ref<'all' | 'today' | 'high' | 'completed'>} */
     const selectedFilter = ref('all'); // 'all', 'today', 'high', 'completed'
+    /** @type {import('vue').Ref<string | null>} */
     const selectedGroupId = ref(null);
     const searchQuery = ref('');
 
