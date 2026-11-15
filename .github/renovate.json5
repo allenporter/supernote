@@ -32,6 +32,14 @@
       assignees: [],
     },
     {
+      description: 'Group TypeScript updates across pre-commit and GitHub Actions workflows',
+      matchPackageNames: ['typescript'],
+      groupName: 'typescript',
+      automerge: true,
+      automergeType: 'branch',
+      assignees: [],
+    },
+    {
       description: 'Manage .python-version via cookiecutter/cruft template instead of Renovate',
       matchManagers: ['pyenv'],
       enabled: false,
@@ -61,6 +69,17 @@
         'https://cdn\\.socket\\.io/(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)/socket\\.io\\.min\\.js',
       ],
       depNameTemplate: 'socket.io-client',
+      datasourceTemplate: 'npm',
+    },
+    {
+      customType: 'regex',
+      description: 'Track npx --package npm versions in GitHub Actions workflows',
+      fileMatch: [
+        '^\\.github/workflows/.*\\.ya?ml$',
+      ],
+      matchStrings: [
+        '--package=(?<depName>@?[^@\\s"\']+)@(?<currentValue>[0-9]+(?:\\.[0-9]+){0,2})',
+      ],
       datasourceTemplate: 'npm',
     },
   ],

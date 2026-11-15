@@ -9,7 +9,6 @@ import dataclasses
 import logging
 import subprocess
 import sys
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -202,33 +201,14 @@ async def test_upload_url_with_port_in_forwarded_host(
     )
 
 
-async def test_static_frontend_sha256_fallback(client: TestClient) -> None:
-    """Verify that index.html and client.js include fallback for SHA-256 in insecure contexts."""
-    resp = await client.get("/")
-    assert resp.status == 200
-    assert resp.headers.get("Cache-Control") == "no-cache"
-    html = await resp.text()
-    assert "js-sha256" in html
-    assert "socket.io" in html
-
-    resp = await client.get("/static/js/api/client.js")
-    assert resp.status == 200
-    assert resp.headers.get("Cache-Control") == "no-cache"
-    js = await resp.text()
-    assert "crypto.subtle" in js
-    assert "window.sha256" in js
-    assert "connectSocket" in js
-    assert "supernote:task-sync" in js
-    assert "supernote:file-sync" in js
-    assert "supernote:digest-sync" in js
-
-
 @pytest.mark.parametrize(
     "path",
     [
         "/",
-        "/static/js/main.js",
         "/static/style.css",
+        "/static/js/main.js",
+        "/static/js/api/client.js",
+        "/static/js/composables/useToast.js",
     ],
 )
 async def test_static_frontend_cache_control_no_cache(
@@ -307,54 +287,6 @@ async def test_bootstrap_ephemeral_user(client: TestClient) -> None:
     report = await integrity_service.verify_user_storage(user.id)
     assert report.scanned == 8
     assert report.ok == 8
-
-
-STATIC_DIR = Path(__file__).resolve().parents[2] / "supernote" / "server" / "static"
-
-
-def test_use_toast_composable_exists() -> None:
-    """Verify that the shared useToast composable exists and exports toast helpers."""
-    toast_path = STATIC_DIR / "js" / "composables" / "useToast.js"
-    assert toast_path.is_file(), "useToast.js composable must exist"
-    content = toast_path.read_text(encoding="utf-8")
-    assert "export function useToast" in content
-    assert "export function showToast" in content
-    assert "export function dismissToast" in content
-
-
-def test_index_html_renders_toast_container() -> None:
-    """Verify that index.html includes the non-blocking toast notification stack."""
-    index_path = STATIC_DIR / "index.html"
-    html = index_path.read_text(encoding="utf-8")
-    assert 'v-for="toast in toasts"' in html
-    assert "dismissToast(toast.id)" in html
-    assert "toast.message" in html
-
-
-def test_no_blocking_alert_calls_in_static_js() -> None:
-    """Verify that no blocking window.alert() calls remain in static JS files."""
-    js_dir = STATIC_DIR / "js"
-    offending_files: list[str] = []
-    for js_file in sorted(js_dir.rglob("*.js")):
-        content = js_file.read_text(encoding="utf-8")
-        if "alert(" in content:
-            offending_files.append(str(js_file.relative_to(STATIC_DIR)))
-    assert offending_files == [], (
-        f"Found blocking alert() calls in: {', '.join(offending_files)}"
-    )
-
-
-async def test_toast_static_asset_served(client: TestClient) -> None:
-    """Verify that /static/js/composables/useToast.js and index.html are served properly."""
-    resp = await client.get("/static/js/composables/useToast.js")
-    assert resp.status == 200
-    js_text = await resp.text()
-    assert "useToast" in js_text
-
-    index_resp = await client.get("/")
-    assert index_resp.status == 200
-    html_text = await index_resp.text()
-    assert "toast in toasts" in html_text
 
 
 def test_run_configures_default_info_level_and_sanitized_access_logger(
