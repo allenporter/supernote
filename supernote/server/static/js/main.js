@@ -3,6 +3,7 @@ import { useFileSystem } from './composables/useFileSystem.js';
 import { useProcessingStatus } from './composables/useProcessingStatus.js';
 import { useToast } from './composables/useToast.js';
 import { setToken, getToken, login, logout, fetchPathInfo, connectSocket } from './api/client.js';
+import { normalizeEpochMs } from './utils/format.js';
 import SearchModal from './components/SearchModal.js';
 import TaskPanel from './components/TaskPanel.js';
 import FileCard from './components/FileCard.js';
@@ -144,6 +145,31 @@ export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false,
     return '#/files';
 }
 
+export function compareItems(a, b, sortBy, sortOrder) {
+    if (Boolean(a.isFolder) !== Boolean(b.isFolder)) {
+        return a.isFolder ? -1 : 1;
+    }
+    if (sortBy === 'updatedAt') {
+        const tsA = normalizeEpochMs(a.updatedAt);
+        const tsB = normalizeEpochMs(b.updatedAt);
+        if (tsA === null && tsB !== null) return 1;
+        if (tsA !== null && tsB === null) return -1;
+        if (tsA !== null && tsB !== null && tsA !== tsB) {
+            return sortOrder === 'desc' ? tsB - tsA : tsA - tsB;
+        }
+    } else if (sortBy === 'size') {
+        const sizeCmp = (Number(a.size) || 0) - (Number(b.size) || 0);
+        if (sizeCmp !== 0) {
+            return sortOrder === 'desc' ? -sizeCmp : sizeCmp;
+        }
+    }
+    const nameCmp = String(a.name || '').localeCompare(String(b.name || ''), undefined, {
+        numeric: true,
+        sensitivity: 'base'
+    });
+    return sortOrder === 'desc' ? -nameCmp : nameCmp;
+}
+
 createApp({
     components: {
         SearchModal,
@@ -163,13 +189,17 @@ createApp({
         const loginError = ref(null);
         const showSystemPanel = ref(false);
 
-        // Navigation State
+        // Navigation & Display State
         const activeTab = ref('files'); // 'files' | 'tasks'
         const showSearchModal = ref(false);
         const searchShortcutLabel = typeof navigator !== 'undefined' &&
             /Mac|iPod|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '')
             ? '⌘K'
             : 'Ctrl K';
+        const displayMode = ref('grid'); // 'grid' | 'list'
+        const sortBy = ref('name'); // 'name' | 'updatedAt' | 'size'
+        const sortOrder = ref('asc'); // 'asc' | 'desc'
+        const isDraggingOver = ref(false);
         const focusedTaskRequest = ref(null);
 
         // UI Modals State
@@ -178,6 +208,7 @@ createApp({
         const newFolderInput = ref(null);
         const showMoveModal = ref(false);
         const showRenameModal = ref(false);
+        const showDeleteModal = ref(false);
         const itemToRename = ref(null);
         const selectedIds = ref([]);
 
@@ -206,6 +237,7 @@ createApp({
         const visibleLimit = ref(GRID_PAGE_SIZE);
         watch(currentDirectoryId, () => {
             visibleLimit.value = GRID_PAGE_SIZE;
+            isDraggingOver.value = false;
         });
 
         watch(showNewFolderModal, (isOpen) => {
@@ -216,8 +248,14 @@ createApp({
             }
         });
 
-        const allFolders = computed(() => files.value.filter(f => f.isDirectory));
-        const allRegularFiles = computed(() => files.value.filter(f => !f.isDirectory));
+        const allFolders = computed(() => {
+            const list = files.value.filter(f => f.isDirectory);
+            return [...list].sort((a, b) => compareItems(a, b, sortBy.value, sortOrder.value));
+        });
+        const allRegularFiles = computed(() => {
+            const list = files.value.filter(f => !f.isDirectory);
+            return [...list].sort((a, b) => compareItems(a, b, sortBy.value, sortOrder.value));
+        });
         const folders = computed(() => allFolders.value.slice(0, visibleLimit.value));
         const regularFiles = computed(() => {
             const remaining = Math.max(0, visibleLimit.value - folders.value.length);
@@ -230,6 +268,24 @@ createApp({
         function loadMoreItems() {
             visibleLimit.value += GRID_PAGE_SIZE;
         }
+
+        function handleSortByChange() {
+            sortOrder.value = (sortBy.value === 'updatedAt' || sortBy.value === 'size') ? 'desc' : 'asc';
+        }
+
+        function toggleSortOrder() {
+            sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
+        }
+
+        watch([sortBy, sortOrder], () => {
+            if (hasMoreItems.value && selectedIds.value.length > 0) {
+                const visibleSet = new Set([
+                    ...folders.value.map(f => f.id),
+                    ...regularFiles.value.map(f => f.id)
+                ]);
+                selectedIds.value = selectedIds.value.filter(id => visibleSet.has(id));
+            }
+        });
 
         // URL Routing Synchronization
         const ROUTING_QUERY_KEYS = ['dir', 'folder', 'file', 'tab', 'view', 'page'];
@@ -449,6 +505,7 @@ createApp({
 
         // Methods
         async function switchTab(tab) {
+            isDraggingOver.value = false;
             showSystemPanel.value = false;
             systemOpenedFromHistory = false;
             activeTab.value = tab;
@@ -497,7 +554,23 @@ createApp({
             await restoreDirectoryState(String(currentDirectoryId.value || '0'), false, ++activeSyncSeq);
         }
 
+        async function handleViewerPageChange(pageIdx) {
+            if (view.value !== 'viewer' || typeof pageIdx !== 'number' || Number.isNaN(pageIdx) || pageIdx < 0) {
+                return;
+            }
+            if (selectedPageIndex.value === pageIdx) return;
+            urlSyncDepth++;
+            try {
+                selectedPageIndex.value = pageIdx;
+                await nextTick();
+            } finally {
+                urlSyncDepth--;
+            }
+            updateUrl(true);
+        }
+
         async function openItem(item) {
+            isDraggingOver.value = false;
             if (item.isDirectory) {
                 activeTab.value = 'files';
                 view.value = 'grid';
@@ -534,6 +607,7 @@ createApp({
         }
 
         async function navigateFolder(folder) {
+            isDraggingOver.value = false;
             activeTab.value = 'files';
             view.value = 'grid';
             selectedFile.value = null;
@@ -547,6 +621,7 @@ createApp({
         }
 
         async function navigateTo(index) {
+            isDraggingOver.value = false;
             const crumbs = breadcrumbs.value.slice(0, index + 1);
             breadcrumbs.value = crumbs;
             const target = crumbs[crumbs.length - 1];
@@ -591,12 +666,32 @@ createApp({
         }
 
         // Selection
+        const visibleIdsList = computed(() => [
+            ...folders.value.map(f => f.id),
+            ...regularFiles.value.map(f => f.id)
+        ]);
+
+        const allVisibleSelected = computed(() => {
+            const ids = visibleIdsList.value;
+            if (ids.length === 0) return false;
+            const selectedSet = new Set(selectedIds.value);
+            return ids.every(id => selectedSet.has(id));
+        });
+
         function toggleSelection(id) {
             const index = selectedIds.value.indexOf(id);
             if (index > -1) {
                 selectedIds.value.splice(index, 1);
             } else {
                 selectedIds.value.push(id);
+            }
+        }
+
+        function toggleSelectAllVisible() {
+            if (allVisibleSelected.value) {
+                selectedIds.value = [];
+            } else {
+                selectedIds.value = [...visibleIdsList.value];
             }
         }
 
@@ -624,6 +719,7 @@ createApp({
             if (selectedFiles.length === 0) return;
             try {
                 await uploadFiles(selectedFiles);
+                showToast(`Uploaded ${selectedFiles.length} ${selectedFiles.length === 1 ? 'file' : 'files'}`, 'success');
             } catch (e) {
                 showToast("Upload failed: " + e.message);
             } finally {
@@ -631,11 +727,51 @@ createApp({
             }
         }
 
-        async function handleDeleteSelected() {
-            if (!confirm(`Are you sure you want to delete ${selectedIds.value.length} items?`)) return;
+        function isFileDragEvent(event) {
+            const types = event?.dataTransfer?.types;
+            return Boolean(types && Array.from(types).includes('Files'));
+        }
+
+        function handleDragOver(event) {
+            if (!isFileDragEvent(event)) return;
+            event.preventDefault();
+            isDraggingOver.value = true;
+        }
+
+        function handleDragLeave(event) {
+            if (!isDraggingOver.value) return;
+            if (!event.currentTarget.contains(event.relatedTarget)) {
+                isDraggingOver.value = false;
+            }
+        }
+
+        async function handleDrop(event) {
+            isDraggingOver.value = false;
+            if (!isFileDragEvent(event)) return;
+            event.preventDefault();
+            const droppedFiles = event.dataTransfer?.files;
+            if (!droppedFiles || droppedFiles.length === 0) return;
+            try {
+                await uploadFiles(droppedFiles);
+                showToast(`Uploaded ${droppedFiles.length} ${droppedFiles.length === 1 ? 'file' : 'files'}`, 'success');
+            } catch (e) {
+                showToast("Upload failed: " + e.message);
+            }
+        }
+
+        function handleDeleteSelected() {
+            if (selectedIds.value.length === 0) return;
+            showDeleteModal.value = true;
+        }
+
+        async function confirmDeleteSelected() {
+            const count = selectedIds.value.length;
+            showDeleteModal.value = false;
+            if (count === 0) return;
             try {
                 await deleteSelectedItems(selectedIds.value);
                 selectedIds.value = [];
+                showToast(`Deleted ${count} ${count === 1 ? 'item' : 'items'}`, 'success');
             } catch (e) {
                 showToast("Delete failed: " + e.message);
             }
@@ -711,6 +847,10 @@ createApp({
             view
         });
 
+        const clearDragState = () => {
+            isDraggingOver.value = false;
+        };
+
         const handleGlobalKeydown = (e) => {
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
                 if (!isLoggedIn.value) return;
@@ -718,9 +858,15 @@ createApp({
                 showSearchModal.value = !showSearchModal.value;
                 return;
             }
-            if (e.key === 'Escape' && showNewFolderModal.value) {
-                showNewFolderModal.value = false;
-                e.preventDefault();
+            if (e.key === 'Escape') {
+                isDraggingOver.value = false;
+                if (showDeleteModal.value) {
+                    showDeleteModal.value = false;
+                    e.preventDefault();
+                } else if (showNewFolderModal.value) {
+                    showNewFolderModal.value = false;
+                    e.preventDefault();
+                }
             }
         };
 
@@ -740,6 +886,8 @@ createApp({
             window.addEventListener('popstate', handlePopStateOrHash);
             window.addEventListener('hashchange', handlePopStateOrHash);
             window.addEventListener('supernote:file-sync', handleFileSyncEvent);
+            window.addEventListener('dragend', clearDragState);
+            window.addEventListener('drop', clearDragState);
             window.addEventListener('keydown', handleGlobalKeydown);
         });
 
@@ -747,6 +895,8 @@ createApp({
             window.removeEventListener('popstate', handlePopStateOrHash);
             window.removeEventListener('hashchange', handlePopStateOrHash);
             window.removeEventListener('supernote:file-sync', handleFileSyncEvent);
+            window.removeEventListener('dragend', clearDragState);
+            window.removeEventListener('drop', clearDragState);
             window.removeEventListener('keydown', handleGlobalKeydown);
         });
 
@@ -757,9 +907,20 @@ createApp({
             activeTab,
             showSearchModal,
             searchShortcutLabel,
+            displayMode,
+            sortBy,
+            sortOrder,
+            handleSortByChange,
+            toggleSortOrder,
+            isDraggingOver,
+            handleDragOver,
+            handleDragLeave,
+            handleDrop,
             focusedTaskRequest,
             view,
             files,
+            allFolders,
+            allRegularFiles,
             folders,
             regularFiles,
             totalItemCount,
@@ -774,6 +935,7 @@ createApp({
             openSystemPanel,
             closeSystemPanel,
             closeViewer,
+            handleViewerPageChange,
             openItem,
             navigateFolder,
             navigateTo,
@@ -786,14 +948,18 @@ createApp({
             newFolderInput,
             showMoveModal,
             showRenameModal,
+            showDeleteModal,
             itemToRename,
             selectedIds,
+            allVisibleSelected,
             fileInput,
             toggleSelection,
+            toggleSelectAllVisible,
             handleCreateFolder,
             triggerUpload,
             handleFileUpload,
             handleDeleteSelected,
+            confirmDeleteSelected,
             handleMoveSelected,
             onConfirmMove,
             triggerRename,
