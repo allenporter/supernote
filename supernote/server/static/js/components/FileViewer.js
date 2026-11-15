@@ -1,4 +1,4 @@
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import {
     convertNoteToPng,
     fetchTranscript,
@@ -9,13 +9,13 @@ import {
     downloadFile,
     searchFiles
 } from '../api/client.js';
+import { useCanvasScrollSync } from '../composables/useCanvasScrollSync.js';
 import { showToast } from '../composables/useToast.js';
 import ViewerToolbar from './viewer/ViewerToolbar.js';
 import ViewerMediaPreview from './viewer/ViewerMediaPreview.js';
 import ViewerSidePanel from './viewer/ViewerSidePanel.js';
 import {
     MAX_TEXT_PREVIEW_BYTES,
-    ZOOM_STEPS,
     resolveFileExt,
     resolveFileCategory,
     normalizeTranscriptPages,
@@ -40,28 +40,36 @@ export default {
         const isLoading = ref(true);
         const error = ref(null);
         const downloading = ref(false);
-        const zoomPercent = ref(100);
 
         const activeRightTab = ref('transcription'); // 'transcription' | 'insights'
         const isMobileSidePanelOpen = ref(false);
         const transcriptPages = ref([]);
         const noteMetadata = ref(null);
-        const activePageIndex = ref(0);
         const realSummaries = ref([]);
         const aiStatus = ref(null);
         const isLoadingTranscript = ref(false);
 
-        const leftScrollPane = ref(null);
-        const sidePanelRef = ref(null);
-        /** @type {IntersectionObserver | null} */
-        let pageObserver = null;
-        let isProgrammaticScroll = false;
-        /** @type {ReturnType<typeof setTimeout> | null} */
-        let programmaticScrollTimer = null;
-        /** @type {number | null} */
-        let pendingTargetPage = null;
-        /** @type {ReturnType<typeof setTimeout> | null} */
-        let pendingTargetTimer = null;
+        const {
+            activePageIndex,
+            leftScrollPane,
+            sidePanelRef,
+            zoomPercent,
+            canvasMaxWidthPx,
+            zoomIn,
+            zoomOut,
+            resetZoom,
+            prevPage,
+            nextPage,
+            jumpToTargetPage,
+            scrollToCanvasPage,
+            scrollTranscriptToPage,
+            handlePageImageLoad,
+            updateActivePageFromScroll,
+            setupPageObserver,
+            teardownPageObserver,
+            clearPendingTargetPage
+        } = useCanvasScrollSync({ pages, transcriptPages });
+
         let activeLoadSeq = 0;
 
         const fileExt = computed(() => resolveFileExt(props.file));
@@ -74,26 +82,6 @@ export default {
                 realSummaries.value.length > 0
             );
         });
-
-        const canvasMaxWidthPx = computed(() => {
-            return Math.round(540 * (zoomPercent.value / 100));
-        });
-
-        const zoomOut = () => {
-            const idx = ZOOM_STEPS.indexOf(zoomPercent.value);
-            if (idx > 0) zoomPercent.value = ZOOM_STEPS[idx - 1];
-        };
-
-        const zoomIn = () => {
-            const idx = ZOOM_STEPS.indexOf(zoomPercent.value);
-            if (idx !== -1 && idx < ZOOM_STEPS.length - 1) {
-                zoomPercent.value = ZOOM_STEPS[idx + 1];
-            }
-        };
-
-        const resetZoom = () => {
-            zoomPercent.value = 100;
-        };
 
         const pageMetaByIndex = computed(() => {
             const map = new Map();
@@ -159,58 +147,20 @@ export default {
             emit('search', trimmed);
         };
 
-        const scrollTranscriptToPage = (pageIndex, options = {}) => {
-            sidePanelRef.value?.scrollToPage(pageIndex, options);
-        };
-
-        const clearPendingTargetPage = () => {
-            pendingTargetPage = null;
-            if (pendingTargetTimer) {
-                clearTimeout(pendingTargetTimer);
-                pendingTargetTimer = null;
-            }
-        };
-
-        const armPendingTargetPage = (pageIndex) => {
-            clearPendingTargetPage();
-            pendingTargetPage = pageIndex;
-            pendingTargetTimer = setTimeout(() => {
-                pendingTargetPage = null;
-                pendingTargetTimer = null;
-            }, 2000);
-        };
-
-        const armProgrammaticScrollRelease = () => {
-            if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer);
-            programmaticScrollTimer = setTimeout(() => {
-                isProgrammaticScroll = false;
-                programmaticScrollTimer = null;
-            }, 180);
-        };
-
-        const scrollToCanvasPage = (pageIndex, options = {}) => {
-            const behavior = options.behavior || 'smooth';
-            if (!options.keepAnchor) {
-                armPendingTargetPage(pageIndex);
-            }
-            activePageIndex.value = pageIndex;
-            const pane = leftScrollPane.value;
-            if (!pane) return;
-            const pageEl = pane.querySelector(`[data-page-index="${pageIndex}"]`);
-            if (!pageEl) return;
-
-            isProgrammaticScroll = true;
-            armProgrammaticScrollRelease();
-
-            if (pane.scrollHeight > pane.clientHeight) {
-                const paneRect = pane.getBoundingClientRect();
-                const elRect = pageEl.getBoundingClientRect();
-                const targetTop = pageIndex === 0 ? 0 : pane.scrollTop + (elRect.top - paneRect.top) - 16;
-                pane.scrollTo({ top: Math.max(0, targetTop), behavior });
-            } else if (pane.scrollTop !== 0) {
-                pane.scrollTo({ top: 0, behavior: 'auto' });
-            }
-        };
+        /**
+         * @param {string | number} fileId
+         * @param {string} fileName
+         * @param {number | null | undefined} targetPageIndex
+         */
+        const buildLinkedFilePayload = (fileId, fileName, targetPageIndex) => ({
+            id: String(fileId),
+            name: fileName || undefined,
+            extension: fileName && fileName.includes('.')
+                ? (fileName.split('.').pop() ?? '').toLowerCase()
+                : 'note',
+            isDirectory: false,
+            pageIndex: typeof targetPageIndex === 'number' ? targetPageIndex : 0
+        });
 
         const handleNoteLinkClick = async (link) => {
             if (!link) return;
@@ -223,16 +173,7 @@ export default {
                 : '';
             if (link.targetFileId && String(link.targetFileId) !== String(props.file?.id)) {
                 isMobileSidePanelOpen.value = false;
-                const ext = targetBaseName.includes('.')
-                    ? targetBaseName.split('.').pop().toLowerCase()
-                    : 'note';
-                emit('open-file', {
-                    id: String(link.targetFileId),
-                    name: targetBaseName || undefined,
-                    extension: ext,
-                    isDirectory: false,
-                    pageIndex: typeof link.targetPageIndex === 'number' ? link.targetPageIndex : 0
-                });
+                emit('open-file', buildLinkedFilePayload(link.targetFileId, targetBaseName, link.targetPageIndex));
                 return;
             }
             if (link.linkType === 'file' && targetBaseName) {
@@ -244,16 +185,7 @@ export default {
                         : null;
                     if (exact && exact.id) {
                         const fileName = exact.name || exact.fileName || targetBaseName;
-                        const ext = fileName.includes('.')
-                            ? fileName.split('.').pop().toLowerCase()
-                            : 'note';
-                        emit('open-file', {
-                            id: String(exact.id),
-                            name: fileName,
-                            extension: ext,
-                            isDirectory: false,
-                            pageIndex: typeof link.targetPageIndex === 'number' ? link.targetPageIndex : 0
-                        });
+                        emit('open-file', buildLinkedFilePayload(exact.id, fileName, link.targetPageIndex));
                         return;
                     }
                 } catch {
@@ -267,138 +199,6 @@ export default {
                 scrollTranscriptToPage(link.targetPageIndex);
                 isMobileSidePanelOpen.value = false;
             }
-        };
-
-        const prevPage = () => {
-            if (activePageIndex.value > 0) {
-                const target = activePageIndex.value - 1;
-                scrollToCanvasPage(target);
-                scrollTranscriptToPage(target);
-            }
-        };
-
-        const nextPage = () => {
-            if (activePageIndex.value < pages.value.length - 1) {
-                const target = activePageIndex.value + 1;
-                scrollToCanvasPage(target);
-                scrollTranscriptToPage(target);
-            }
-        };
-
-        const jumpToTargetPage = async (rawPageIndex, { smooth = false } = {}) => {
-            if (typeof rawPageIndex !== 'number' || Number.isNaN(rawPageIndex) || rawPageIndex < 0) {
-                return;
-            }
-            const maxPageIdx = pages.value.length > 0
-                ? pages.value.length - 1
-                : (transcriptPages.value.length > 0 ? transcriptPages.value.length - 1 : rawPageIndex);
-            const targetIdx = Math.max(0, Math.min(rawPageIndex, maxPageIdx));
-            const behavior = smooth ? 'smooth' : 'auto';
-
-            activePageIndex.value = targetIdx;
-            await nextTick();
-            if (pages.value.length > 0) {
-                scrollToCanvasPage(targetIdx, { behavior });
-            }
-            scrollTranscriptToPage(targetIdx, { behavior });
-        };
-
-        const handlePageImageLoad = () => {
-            if (pendingTargetPage !== null) {
-                scrollToCanvasPage(pendingTargetPage, { behavior: 'auto', keepAnchor: true });
-                scrollTranscriptToPage(pendingTargetPage, { behavior: 'auto' });
-            }
-        };
-
-        const updateActivePageFromScroll = () => {
-            if (isProgrammaticScroll || pendingTargetPage !== null) {
-                if (isProgrammaticScroll) armProgrammaticScrollRelease();
-                return;
-            }
-            if (!leftScrollPane.value) return;
-            const pane = leftScrollPane.value;
-            const paneRect = pane.getBoundingClientRect();
-            const cards = pane.querySelectorAll('[data-page-index]');
-            if (!cards.length) return;
-
-            let bestIdx = activePageIndex.value;
-            let bestScore = -Infinity;
-
-            cards.forEach((card) => {
-                const idx = Number(card.getAttribute('data-page-index'));
-                if (Number.isNaN(idx)) return;
-                const rect = card.getBoundingClientRect();
-                const visibleTop = Math.max(rect.top, paneRect.top);
-                const visibleBottom = Math.min(rect.bottom, paneRect.bottom);
-                const visibleHeight = Math.max(0, visibleBottom - visibleTop);
-                if (visibleHeight > 0) {
-                    const topOffset = Math.max(0, visibleTop - paneRect.top);
-                    const score = visibleHeight - topOffset * 0.25;
-                    if (score > bestScore) {
-                        bestScore = score;
-                        bestIdx = idx;
-                    }
-                }
-            });
-
-            if (bestScore > -Infinity && bestIdx !== activePageIndex.value) {
-                activePageIndex.value = bestIdx;
-                scrollTranscriptToPage(bestIdx);
-            }
-        };
-
-        const teardownPageObserver = () => {
-            if (pageObserver) {
-                pageObserver.disconnect();
-                pageObserver = null;
-            }
-        };
-
-        const setupPageObserver = async () => {
-            teardownPageObserver();
-            await nextTick();
-            if (!leftScrollPane.value || typeof IntersectionObserver === 'undefined') return;
-            const cards = leftScrollPane.value.querySelectorAll('[data-page-index]');
-            if (!cards.length) return;
-
-            const observer = new IntersectionObserver(
-                (entries) => {
-                    if (isProgrammaticScroll || pendingTargetPage !== null) return;
-                    let updated = false;
-                    if (leftScrollPane.value) {
-                        const paneRect = leftScrollPane.value.getBoundingClientRect();
-                        if (paneRect.height > 0) {
-                            updateActivePageFromScroll();
-                            updated = true;
-                        }
-                    }
-                    if (!updated) {
-                        /** @type {IntersectionObserverEntry | null} */
-                        let bestEntry = null;
-                        for (const entry of entries) {
-                            if (entry.isIntersecting) {
-                                if (!bestEntry || entry.intersectionRatio > bestEntry.intersectionRatio) {
-                                    bestEntry = entry;
-                                }
-                            }
-                        }
-                        if (bestEntry) {
-                            const idx = Number(bestEntry.target.getAttribute('data-page-index'));
-                            if (!Number.isNaN(idx) && idx !== activePageIndex.value) {
-                                activePageIndex.value = idx;
-                                scrollTranscriptToPage(idx);
-                            }
-                        }
-                    }
-                },
-                {
-                    root: leftScrollPane.value,
-                    threshold: [0, 0.15, 0.3, 0.5, 0.75, 1.0]
-                }
-            );
-            pageObserver = observer;
-
-            cards.forEach((card) => observer.observe(card));
         };
 
         const loadingMessage = computed(() => {
@@ -426,6 +226,32 @@ export default {
             } finally {
                 downloading.value = false;
             }
+        };
+
+        /**
+         * @param {string | number} fileId
+         * @param {number} seq
+         * @param {{ preserveMetaOnNull?: boolean }} [options={}]
+         * @returns {Promise<boolean>}
+         */
+        const fetchAndApplyNoteInsights = async (fileId, seq, { preserveMetaOnNull = false } = {}) => {
+            const id = String(fileId);
+            isLoadingTranscript.value = true;
+            const [rawPages, summariesData, metaData] = await Promise.all([
+                fetchTranscript(id).catch(() => []),
+                fetchSummaries(id).catch(() => []),
+                fetchNoteMetadata(id).catch(() => null)
+            ]);
+            if (seq !== activeLoadSeq) return false;
+
+            transcriptPages.value = normalizeTranscriptPages(rawPages);
+            if (!preserveMetaOnNull || metaData) {
+                noteMetadata.value = metaData;
+            }
+            if (summariesData && Array.isArray(summariesData)) {
+                realSummaries.value = summariesData.filter(s => (s.dataSource || '').toUpperCase() !== 'OCR');
+            }
+            return true;
         };
 
         const loadFileContent = async () => {
@@ -488,20 +314,8 @@ export default {
                 }
 
                 if (category === 'note') {
-                    isLoadingTranscript.value = true;
-                    const [rawPages, summariesData, metaData] = await Promise.all([
-                        fetchTranscript(props.file.id).catch(() => []),
-                        fetchSummaries(props.file.id).catch(() => []),
-                        fetchNoteMetadata(props.file.id).catch(() => null)
-                    ]);
-                    if (seq !== activeLoadSeq) return;
-
-                    transcriptPages.value = normalizeTranscriptPages(rawPages);
-                    noteMetadata.value = metaData;
-
-                    if (summariesData && Array.isArray(summariesData)) {
-                        realSummaries.value = summariesData.filter(s => (s.dataSource || '').toUpperCase() !== 'OCR');
-                    }
+                    const applied = await fetchAndApplyNoteInsights(props.file.id, seq);
+                    if (!applied) return;
                     activeRightTab.value = (displayTranscriptPages.value.length === 0 && realSummaries.value.length > 0)
                         ? 'insights'
                         : 'transcription';
@@ -540,23 +354,8 @@ export default {
                 return;
             }
             const seq = activeLoadSeq;
-            isLoadingTranscript.value = true;
             try {
-                const [rawPages, summariesData, metaData] = await Promise.all([
-                    fetchTranscript(props.file.id).catch(() => []),
-                    fetchSummaries(props.file.id).catch(() => []),
-                    fetchNoteMetadata(props.file.id).catch(() => null)
-                ]);
-                if (seq !== activeLoadSeq) return;
-
-                transcriptPages.value = normalizeTranscriptPages(rawPages);
-                if (metaData) {
-                    noteMetadata.value = metaData;
-                }
-
-                if (summariesData && Array.isArray(summariesData)) {
-                    realSummaries.value = summariesData.filter(s => (s.dataSource || '').toUpperCase() !== 'OCR');
-                }
+                await fetchAndApplyNoteInsights(props.file.id, seq, { preserveMetaOnNull: true });
             } finally {
                 if (seq === activeLoadSeq) {
                     isLoadingTranscript.value = false;
@@ -588,9 +387,6 @@ export default {
         onMounted(() => {
             window.addEventListener('supernote:digest-sync', handleDigestSync);
             window.addEventListener('supernote:file-sync', handleFileSync);
-            window.addEventListener('wheel', clearPendingTargetPage, { passive: true });
-            window.addEventListener('touchstart', clearPendingTargetPage, { passive: true });
-            window.addEventListener('pointerdown', clearPendingTargetPage, { passive: true });
             fetchAiStatus().then((status) => {
                 aiStatus.value = status;
             }).catch(() => {});
@@ -600,12 +396,6 @@ export default {
         onUnmounted(() => {
             window.removeEventListener('supernote:digest-sync', handleDigestSync);
             window.removeEventListener('supernote:file-sync', handleFileSync);
-            window.removeEventListener('wheel', clearPendingTargetPage);
-            window.removeEventListener('touchstart', clearPendingTargetPage);
-            window.removeEventListener('pointerdown', clearPendingTargetPage);
-            teardownPageObserver();
-            clearPendingTargetPage();
-            if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer);
         });
 
         watch(
