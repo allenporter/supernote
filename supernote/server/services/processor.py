@@ -729,30 +729,19 @@ class ProcessorService:
                 .all()
             )
 
-        try:
-            header_dict = json.loads(meta_do.header_json)
-            footer_dict = json.loads(meta_do.footer_json)
-            if not isinstance(header_dict, dict) or not isinstance(footer_dict, dict):
-                raise ValueError("header_json and footer_json must be JSON objects")
-            notebook = Notebook(
-                SupernoteMetadata(
-                    type=meta_do.file_type or "note",
-                    signature=meta_do.signature or "",
-                    header=header_dict,
-                    footer=footer_dict,
-                    pages=[],
-                )
+        header_dict = json.loads(meta_do.header_json)
+        footer_dict = json.loads(meta_do.footer_json)
+        if not isinstance(header_dict, dict) or not isinstance(footer_dict, dict):
+            raise ValueError("header_json and footer_json must be JSON objects")
+        notebook = Notebook(
+            SupernoteMetadata(
+                type=meta_do.file_type or "note",
+                signature=meta_do.signature or "",
+                header=header_dict,
+                footer=footer_dict,
+                pages=[],
             )
-        except (
-            json.JSONDecodeError,
-            ValueError,
-            TypeError,
-            notebook_exceptions.ParserException,
-        ) as err:
-            logger.error(
-                f"Failed to deserialize persisted NoteMetadataDO for file {file_id}: {err}"
-            )
-            return None
+        )
 
         page_vos: list[NotePageMetadataVO] = []
         for pm in page_rows:
@@ -766,7 +755,10 @@ class ProcessorService:
                 ValueError,
                 TypeError,
                 notebook_exceptions.ParserException,
-            ):
+            ) as err:
+                logger.warning(
+                    f"Failed to deserialize page_json for file {file_id} page {pm.page_index}: {err}"
+                )
                 five_star = []
 
             inferred_dt = infer_page_date(pm.page_id)

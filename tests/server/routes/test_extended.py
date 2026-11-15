@@ -19,7 +19,11 @@ from supernote.server.ai.models.embedding import EmbeddingTaskType
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
+from supernote.server.db.models.note_processing import (
+    NoteMetadataDO,
+    NotePageContentDO,
+    SystemTaskDO,
+)
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
@@ -1028,3 +1032,33 @@ async def test_extended_note_metadata_invalid_dto_and_errors(
         pytest.raises(ApiException),
     ):
         await extended_client.get_note_metadata(file_id=101)
+
+
+async def test_extended_note_metadata_corrupt_header_raises_server_error(
+    extended_client: ExtendedClient,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    """Verify corrupt NoteMetadataDO.header_json raises a 500 error rather than returning 404."""
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=9203,
+                user_id=test_user_id,
+                directory_id=0,
+                file_name="Corrupt.note",
+                is_folder="N",
+            )
+        )
+        session.add(
+            NoteMetadataDO(
+                user_id=test_user_id,
+                file_id=9203,
+                header_json="not-valid-json",
+                footer_json="{}",
+            )
+        )
+        await session.commit()
+
+    with pytest.raises(ApiException, match="500"):
+        await extended_client.get_note_metadata(file_id=9203)
