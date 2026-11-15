@@ -29,11 +29,8 @@ flowchart TD
     PRE --> DIFF{"Page Changed?"}
     DIFF -- "No" --> REUSE["Reuse cached task & page state"]
     DIFF -- "Yes" --> PNG["2. PngConversionModule<br/>Render page PNG to cache"]
-    PNG --> BLANK{"Blank Page?"}
-    BLANK -- "Yes" --> SKIP_OCR["Set text_content = ''"]
-    BLANK -- "No" --> OCR["3. OcrModule<br/>Extract Markdown transcript"]
-    SKIP_OCR --> EMB["4. EmbeddingModule<br/>Embed non-blank transcript"]
-    OCR --> EMB
+    PNG --> OCR["3. OcrModule<br/>Extract Markdown transcript"]
+    OCR --> EMB["4. EmbeddingModule<br/>Generate vector embedding"]
     REUSE --> POST["5. SummaryModule (Global)<br/>Assemble transcript & AI summary"]
     EMB --> POST
     POST --> DONE["Publish NoteProcessingCompletedEvent"]
