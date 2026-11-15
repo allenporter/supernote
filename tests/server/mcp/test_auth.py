@@ -2,13 +2,20 @@
 
 import hashlib
 import json
+from urllib.parse import parse_qs, unquote, urlparse
 
-from mcp.shared.auth import OAuthClientInformationFull
-from pydantic import AnyHttpUrl
+import pytest
+from mcp.server.auth.provider import AuthorizationParams
+from mcp.shared.auth import InvalidRedirectUriError, OAuthClientInformationFull
+from pydantic import AnyHttpUrl, AnyUrl
 from starlette.testclient import TestClient
 
 from supernote.models.user import UserRegisterDTO
-from supernote.server.mcp.auth import SupernoteOAuthProvider, create_auth_app
+from supernote.server.mcp.auth import (
+    SupernoteOAuthClientInformationFull,
+    SupernoteOAuthProvider,
+    create_auth_app,
+)
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
 
@@ -124,3 +131,149 @@ async def test_oauth_provider_migrates_legacy_email_tokens(
     )
     assert await provider.load_refresh_token(dummy_client, "rt_unknown") is None
     assert await provider.load_access_token("at_missing") is None
+
+
+async def test_authorize_and_login_bridge_consent_invariants(
+    user_service: UserService,
+    coordination_service: CoordinationService,
+) -> None:
+    """Verify /authorize omits None params, GET /login-bridge always redirects to UI, and POST validates scopes."""
+    pw_md5 = hashlib.md5(b"password123").hexdigest()
+    user = await user_service.register(
+        UserRegisterDTO(email="consent@example.com", password=pw_md5)
+    )
+    session_jwt = await user_service.create_session("consent@example.com")
+
+    provider = SupernoteOAuthProvider(
+        user_service=user_service,
+        coordination_service=coordination_service,
+        issuer_url="http://localhost:8080",
+    )
+    client_info = await provider.get_client("http://localhost:3000")
+    assert client_info is not None
+
+    bridge_url = await provider.authorize(
+        client_info,
+        AuthorizationParams(
+            state=None,
+            scopes=["supernote:all"],
+            code_challenge="pkce_challenge_123",
+            redirect_uri=AnyUrl("http://localhost:3000/callback"),
+            redirect_uri_provided_explicitly=False,
+            resource=None,
+        ),
+    )
+    parsed_bridge = urlparse(bridge_url)
+    bridge_qs = parse_qs(parsed_bridge.query)
+    assert bridge_qs == {
+        "client_id": ["http://localhost:3000"],
+        "redirect_uri": ["http://localhost:3000/callback"],
+        "code_challenge": ["pkce_challenge_123"],
+        "scope": ["supernote:all"],
+        "redirect_uri_provided_explicitly": ["false"],
+    }
+
+    auth_app = create_auth_app(
+        user_service=user_service,
+        coordination_service=coordination_service,
+        issuer_url="http://localhost:8080",
+    )
+    bridge_path_qs = f"{parsed_bridge.path}?{parsed_bridge.query}"
+
+    with TestClient(auth_app, base_url="http://localhost:8080") as client:
+        # GET /login-bridge even with a valid session JWT redirects to SPA consent card
+        # using an origin-relative return_to path so TLS-terminating reverse proxies work.
+        get_resp = client.get(
+            bridge_path_qs,
+            headers={"x-access-token": session_jwt},
+            follow_redirects=False,
+        )
+        assert get_resp.status_code == 302
+        assert get_resp.headers["cache-control"] == "no-store"
+        location = get_resp.headers["location"]
+        assert location.startswith("/#login?return_to=")
+        decoded_return_to = unquote(location.removeprefix("/#login?return_to="))
+        assert decoded_return_to == bridge_path_qs
+
+        # POST /login-bridge with unsupported scope returns 400 invalid_scope
+        bad_scope_resp = client.post(
+            "/login-bridge",
+            params={
+                "client_id": "http://localhost:3000",
+                "redirect_uri": "http://localhost:3000/callback",
+                "code_challenge": "pkce_challenge_123",
+                "scope": "unsupported:admin",
+            },
+            headers={"x-access-token": session_jwt},
+        )
+        assert bad_scope_resp.status_code == 400
+        assert bad_scope_resp.json() == {"error": "invalid_scope"}
+
+        # POST /login-bridge with valid scope mints code without spurious state=None
+        ok_resp = client.post(
+            f"{bridge_path_qs}&resource=http%3A%2F%2Flocalhost%3A8081%2Fmcp",
+            headers={"x-access-token": session_jwt},
+        )
+        assert ok_resp.status_code == 200
+        assert ok_resp.headers["cache-control"] == "no-store"
+        redirect_url = ok_resp.json()["redirect_url"]
+        cb_qs = parse_qs(urlparse(redirect_url).query)
+        assert "state" not in cb_qs
+        code_str = cb_qs["code"][0]
+
+    stored = await provider.load_authorization_code(client_info, code_str)
+    assert stored is not None
+    assert stored.user_id == user.id
+    assert stored.scopes == ["supernote:all"]
+    assert stored.redirect_uri_provided_explicitly is False
+    assert stored.resource == "http://localhost:8081/mcp"
+
+
+@pytest.mark.parametrize(
+    "bad_client_id",
+    [
+        "not-a-url",
+        "http://localhost:99999",
+        "http://user:pass@localhost:3000",
+        "http://localhost:3000/app#frag",
+        "http://localhost:3000/app/../evil",
+        "http://localhost:3000/app/%2e%2e/evil",
+    ],
+)
+async def test_get_client_rejects_malformed_or_unsafe_client_ids(
+    user_service: UserService,
+    coordination_service: CoordinationService,
+    bad_client_id: str,
+) -> None:
+    """Verify get_client rejects malformed ports, userinfo, fragments, and dot-segments cleanly."""
+    provider = SupernoteOAuthProvider(
+        user_service=user_service,
+        coordination_service=coordination_service,
+        issuer_url="http://localhost:8080",
+    )
+    assert await provider.get_client(bad_client_id) is None
+
+
+def test_validate_redirect_uri_default_and_custom_scheme_traversal() -> None:
+    """Verify validate_redirect_uri resolves omitted single URI and blocks dot-segment traversal."""
+    single_client = SupernoteOAuthClientInformationFull(
+        client_id="obsidian://supernote-sync/app",
+        redirect_uris=[AnyUrl("obsidian://supernote-sync/app")],
+    )
+    assert single_client.validate_redirect_uri(None) == AnyUrl(
+        "obsidian://supernote-sync/app"
+    )
+
+    empty_client = SupernoteOAuthClientInformationFull(
+        client_id="obsidian://supernote-sync",
+        redirect_uris=[],
+    )
+    with pytest.raises(InvalidRedirectUriError):
+        empty_client.validate_redirect_uri(None)
+
+    for traversal_uri in (
+        "obsidian://supernote-sync/app/%2e%2e/evil",
+        "obsidian://supernote-sync/app%5c..%5cevil",
+    ):
+        with pytest.raises(InvalidRedirectUriError):
+            single_client.validate_redirect_uri(AnyUrl(traversal_uri))

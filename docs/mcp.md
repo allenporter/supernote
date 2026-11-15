@@ -229,8 +229,8 @@ sequenceDiagram
     Client->>AS: GET /.well-known/oauth-authorization-server
     AS-->>Client: OAuth 2.1 metadata (/authorize, /token)
     Client->>Browser: Open /authorize?client_id=http://...&code_challenge=...
-    Browser->>AS: Redirects through /login-bridge -> /#login
-    Browser->>AS: User logs in; POST /login-bridge issues auth code
+    Browser->>AS: Redirects through /login-bridge -> /#login?return_to=...
+    Browser->>AS: User signs in & approves OAuth Consent Card; POST /login-bridge issues auth code
     AS-->>Client: Redirect to callback with ?code=...
     Client->>AS: POST /token (PKCE code_verifier)
     AS-->>Client: Bearer access_token (1h TTL) + refresh_token (30d TTL)

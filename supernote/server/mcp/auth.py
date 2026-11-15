@@ -12,7 +12,7 @@ import json
 import secrets
 import time
 from typing import Any, override
-from urllib.parse import quote, urlencode, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 from mcp.server.auth.provider import (
     AccessToken,
@@ -20,11 +20,13 @@ from mcp.server.auth.provider import (
     OAuthAuthorizationServerProvider,
     RefreshToken,
     TokenError,
+    construct_redirect_uri,
 )
 from mcp.server.auth.routes import create_auth_routes
 from mcp.server.auth.settings import RevocationOptions
 from mcp.shared.auth import (
     InvalidRedirectUriError,
+    InvalidScopeError,
     OAuthClientInformationFull,
     OAuthToken,
 )
@@ -51,8 +53,14 @@ class SupernoteOAuthClientInformationFull(OAuthClientInformationFull):
     def validate_redirect_uri(self, redirect_uri: AnyUrl | None) -> AnyUrl:
         """Allows redirect uri prefixes matching the registered origin and path boundary."""
         if redirect_uri is None:
+            if self.redirect_uris and len(self.redirect_uris) == 1:
+                return self.redirect_uris[0]
             raise InvalidRedirectUriError("Redirect URI must be specified")
         redirect_parsed = urlparse(str(redirect_uri))
+        if ".." in unquote(redirect_parsed.path).replace("\\", "/").split("/"):
+            raise InvalidRedirectUriError(
+                f"Redirect URI '{redirect_uri}' contains disallowed path traversal"
+            )
         for registered_redirect_uri in self.redirect_uris or ():
             reg_parsed = urlparse(str(registered_redirect_uri))
             if (
@@ -96,16 +104,27 @@ class SupernoteOAuthProvider(
             parsed = urlparse(client_id)
         except ValueError:
             return None
-        if parsed.scheme in ("http", "https") and parsed.netloc:
-            return SupernoteOAuthClientInformationFull(
-                client_id=client_id,
-                redirect_uris=[AnyHttpUrl(client_id)],
-                grant_types=["authorization_code", "refresh_token"],
-                response_types=["code"],
-                scope="supernote:all",
-                token_endpoint_auth_method="none",
-            )
-        return None
+        if (
+            parsed.scheme not in ("http", "https")
+            or not parsed.netloc
+            or parsed.username
+            or parsed.password
+            or parsed.fragment
+            or ".." in unquote(parsed.path).replace("\\", "/").split("/")
+        ):
+            return None
+        try:
+            validated_client_url = AnyHttpUrl(client_id)
+        except ValidationError:
+            return None
+        return SupernoteOAuthClientInformationFull(
+            client_id=client_id,
+            redirect_uris=[validated_client_url],
+            grant_types=["authorization_code", "refresh_token"],
+            response_types=["code"],
+            scope="supernote:all",
+            token_endpoint_auth_method="none",
+        )
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         """Saves client information as part of registering it."""
@@ -115,12 +134,21 @@ class SupernoteOAuthProvider(
         self, client: OAuthClientInformationFull, params: AuthorizationParams
     ) -> str:
         """Called as part of the /authorize endpoint."""
-        # We redirect to a bridge that handles login/session check, passing
-        # the full set of OAuth params.
-        query_params = params.model_dump()
-        query_params["client_id"] = client.client_id
-        query = urlencode(query_params)
-        return f"{self.issuer_url}/login-bridge?{query}"
+        resolved_scopes = params.scopes or (
+            client.scope.split() if client.scope else ["supernote:all"]
+        )
+        return construct_redirect_uri(
+            f"{self.issuer_url}/login-bridge",
+            client_id=client.client_id,
+            redirect_uri=str(params.redirect_uri),
+            code_challenge=params.code_challenge,
+            scope=" ".join(resolved_scopes),
+            redirect_uri_provided_explicitly=(
+                "true" if params.redirect_uri_provided_explicitly else "false"
+            ),
+            state=params.state,
+            resource=params.resource,
+        )
 
     async def load_authorization_code(
         self, client: OAuthClientInformationFull, authorization_code: str
@@ -270,20 +298,13 @@ def create_auth_app(
 
     # Add login-bridge route
     async def login_bridge(request: Request) -> RedirectResponse | JSONResponse:
-        """Handling the OAuth login flow bridging the SPA and the MCP server.
+        """Handle the OAuth 2.1 login & consent bridge between the Web UI and MCP server.
 
-        1. Browser visits /authorize -> Redirects here (/login-bridge).
-        2. If User is NOT logged in:
-           - GET request: Redirects to SPA login page (/#login) with return_to set to this URL.
-           - SPA handles login, then sees return_to pointing to /login-bridge.
-           - SPA makes background POST request to this URL with x-access-token header.
-        3. If User IS logged in (or via POST with token):
-           - Validates session.
-           - Generates OAuth Authorization Code.
-           - Returns JSON with 'redirect_url' containing the code (callback URL).
-           - SPA redirects the browser to that callback URL.
+        Browser GET requests redirect to ``/#login?return_to=<bridge_url>`` so the Web UI
+        authenticates the user (if needed) and renders an explicit OAuth Consent Card.
+        Once the user clicks Approve, the SPA issues an authenticated ``POST /login-bridge``
+        request with ``x-access-token`` to mint a single-use authorization code.
         """
-        # Extract and verify token
         token = get_token_from_request(request)
         session = await user_service.verify_token(token) if token else None
         if session and session.is_api_key:
@@ -294,22 +315,29 @@ def create_auth_app(
                 },
                 status_code=403,
             )
+        if request.method != "POST":
+            return_target = (
+                f"{request.url.path}?{request.url.query}"
+                if request.url.query
+                else request.url.path
+            )
+            login_url = f"/#login?return_to={quote(return_target, safe='')}"
+            return RedirectResponse(
+                url=login_url,
+                status_code=302,
+                headers={"Cache-Control": "no-store"},
+            )
         if not session:
-            # If this was an API background call (POST), return 401 JSON
-            if request.method == "POST":
-                return JSONResponse({"error": "unauthorized"}, status_code=401)
-
-            # Not logged in: Redirect to web UI login page.
-            # We pass the bridge URL as return_to so the SPA knows where to return.
-            # We keep the query params (OAuth params) so they are preserved.
-            login_url = f"/#login?return_to={quote(str(request.url))}"
-            return RedirectResponse(url=login_url)
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
 
         # Extract OAuth params from query
         client_id = request.query_params.get("client_id")
         redirect_uri = request.query_params.get("redirect_uri")
         code_challenge = request.query_params.get("code_challenge")
         state = request.query_params.get("state")
+        raw_scope = request.query_params.get("scope")
+        resource = request.query_params.get("resource")
+        raw_explicit = request.query_params.get("redirect_uri_provided_explicitly")
 
         if not client_id or not redirect_uri or not code_challenge:
             return JSONResponse({"error": "invalid_request"}, status_code=400)
@@ -321,10 +349,24 @@ def create_auth_app(
 
         try:
             validated_redirect_uri = client_info.validate_redirect_uri(
-                AnyHttpUrl(redirect_uri)
+                AnyUrl(redirect_uri)
             )
         except (ValidationError, InvalidRedirectUriError):
             return JSONResponse({"error": "invalid_redirect_uri"}, status_code=400)
+
+        normalized_scope = (
+            " ".join(raw_scope.split()) if raw_scope and raw_scope.strip() else None
+        )
+        try:
+            validated_scopes = client_info.validate_scope(normalized_scope)
+        except InvalidScopeError:
+            return JSONResponse({"error": "invalid_scope"}, status_code=400)
+        scopes = validated_scopes or (
+            client_info.scope.split() if client_info.scope else ["supernote:all"]
+        )
+        redirect_uri_provided_explicitly = (
+            raw_explicit.lower() != "false" if raw_explicit else True
+        )
 
         # Create the authorization code
         code_str = secrets.token_urlsafe(16)
@@ -332,11 +374,12 @@ def create_auth_app(
             code=code_str,
             user_id=session.user_id,
             client_id=client_id,
-            redirect_uri=AnyHttpUrl(str(validated_redirect_uri)),
-            scopes=["supernote:all"],
+            redirect_uri=validated_redirect_uri,
+            scopes=scopes,
             code_challenge=code_challenge,
             expires_at=int(time.time() + 600),
-            redirect_uri_provided_explicitly=True,
+            redirect_uri_provided_explicitly=redirect_uri_provided_explicitly,
+            resource=resource or None,
         )
 
         # Store auth code
@@ -346,15 +389,15 @@ def create_auth_app(
             ttl=600,
         )
 
-        # Return result
-        callback_params = {"code": code_str}
-        if state:
-            callback_params["state"] = state
-
-        sep = "&" if "?" in redirect_uri else "?"
-        final_url = f"{redirect_uri}{sep}{urlencode(callback_params)}"
-
-        return JSONResponse({"redirect_url": final_url})
+        final_url = construct_redirect_uri(
+            str(validated_redirect_uri),
+            code=code_str,
+            state=state or None,
+        )
+        return JSONResponse(
+            {"redirect_url": final_url},
+            headers={"Cache-Control": "no-store"},
+        )
 
     app.add_route("/login-bridge", login_bridge, methods=["GET", "POST"])
     return app

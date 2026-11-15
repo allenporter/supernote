@@ -4,10 +4,16 @@ import { useProcessingStatus } from './composables/useProcessingStatus.js';
 import { useToast } from './composables/useToast.js';
 import { setToken, getToken, login, logout, fetchPathInfo, connectSocket } from './api/client.js';
 import { normalizeEpochMs } from './utils/format.js';
+import {
+    parseOAuthBridgeReturnTo,
+    isAllowedOAuthRedirectUri,
+    buildOAuthDeniedRedirectUrl
+} from './utils/oauth.js';
 import SearchModal from './components/SearchModal.js';
 import TaskPanel from './components/TaskPanel.js';
 import FileCard from './components/FileCard.js';
 import LoginCard from './components/LoginCard.js';
+import OAuthConsentCard from './components/OAuthConsentCard.js';
 import FileViewer from './components/FileViewer.js';
 import SystemPanel from './components/SystemPanel.js';
 import MoveModal from './components/MoveModal.js';
@@ -178,6 +184,7 @@ createApp({
         TaskPanel,
         FileCard,
         LoginCard,
+        'oauth-consent-card': OAuthConsentCard,
         FileViewer,
         SystemPanel,
         MoveModal,
@@ -186,10 +193,13 @@ createApp({
     setup() {
         const { toasts, showToast, dismissToast } = useToast();
 
-        // Auth State
+        // Auth & OAuth Consent State
         const isLoggedIn = ref(false);
         const loginError = ref(null);
         const showSystemPanel = ref(false);
+        const pendingOAuthRequest = ref(null);
+        const isSubmittingOAuth = ref(false);
+        const oauthCompletedOutcome = ref(null);
 
         // Navigation & Display State
         const activeTab = ref('files'); // 'files' | 'tasks'
@@ -329,7 +339,7 @@ createApp({
         }
 
         function updateUrl(replace = false) {
-            if (urlSyncDepth > 0) return;
+            if (urlSyncDepth > 0 || pendingOAuthRequest.value) return;
             const targetHash = buildUrlHash(
                 activeTab.value,
                 currentDirectoryId.value,
@@ -477,7 +487,25 @@ createApp({
         }
 
         async function syncFromUrl(isInitial = false) {
-            const currentHash = window.location.hash || window.location.search || '';
+            const rawHash = window.location.hash || '';
+            const oauthReq = parseOAuthBridgeReturnTo(rawHash, window.location.origin);
+            if (oauthReq) {
+                lastSyncedHash = rawHash;
+                pendingOAuthRequest.value = oauthReq;
+                isSubmittingOAuth.value = false;
+                oauthCompletedOutcome.value = null;
+                showSystemPanel.value = false;
+                showSearchModal.value = false;
+                return;
+            }
+            pendingOAuthRequest.value = null;
+            isSubmittingOAuth.value = false;
+            oauthCompletedOutcome.value = null;
+            if (!isLoggedIn.value) {
+                return;
+            }
+
+            const currentHash = rawHash || window.location.search || '';
             if (!isInitial && currentHash === lastSyncedHash) {
                 return;
             }
@@ -486,8 +514,13 @@ createApp({
                 inAppHistoryDepth--;
             }
 
+            const isStaleLoginHash = /^#\/?login(?:\?|$)/i.test(rawHash);
+            if (isStaleLoginHash) {
+                lastSyncedHash = '#/files';
+                window.history.replaceState(null, '', '#/files');
+            }
             const seq = ++activeSyncSeq;
-            const parsed = parseUrlHash(currentHash);
+            const parsed = parseUrlHash(isStaleLoginHash ? '#/files' : currentHash);
             urlSyncDepth++;
             try {
                 if (parsed.tab === 'system' || parsed.showSystem) {
@@ -933,13 +966,90 @@ createApp({
             }
         }
 
+        async function handleOAuthApprove() {
+            const req = pendingOAuthRequest.value;
+            if (!req || !req.isValid || isSubmittingOAuth.value) return;
+            const token = getToken();
+            if (!token) {
+                isLoggedIn.value = false;
+                showToast('Please sign in to authorize this application.', 'error');
+                return;
+            }
+            isSubmittingOAuth.value = true;
+            let keepLockedForNavigation = false;
+            try {
+                const resp = await fetch(req.bridgePathWithQuery, {
+                    method: 'POST',
+                    headers: {
+                        'x-access-token': token,
+                        'Accept': 'application/json'
+                    }
+                });
+                if (resp.status === 401) {
+                    await logout({ reload: false });
+                    isLoggedIn.value = false;
+                    showToast('Your session expired. Please sign in again.', 'error');
+                    return;
+                }
+                const data = await resp.json().catch(() => null);
+                if (!resp.ok || !data?.redirect_url) {
+                    const msg = data?.error_description || data?.error || `Authorization failed (HTTP ${resp.status})`;
+                    showToast(msg, 'error');
+                    return;
+                }
+                if (!isAllowedOAuthRedirectUri(req.clientId, data.redirect_url)) {
+                    showToast('Blocked unsafe redirect URI returned by server.', 'error');
+                    return;
+                }
+                if (req.redirectTarget?.isCustomScheme) {
+                    oauthCompletedOutcome.value = 'approved';
+                } else {
+                    keepLockedForNavigation = true;
+                }
+                window.location.assign(data.redirect_url);
+            } catch (e) {
+                showToast('Authorization failed: ' + e.message, 'error');
+            } finally {
+                if (!keepLockedForNavigation) {
+                    isSubmittingOAuth.value = false;
+                }
+            }
+        }
+
+        function handleOAuthDeny() {
+            const req = pendingOAuthRequest.value;
+            if (!req || !req.isValid || isSubmittingOAuth.value) return;
+            const denyUrl = buildOAuthDeniedRedirectUrl(req.redirectUri, req.state);
+            if (!denyUrl || !isAllowedOAuthRedirectUri(req.clientId, denyUrl)) {
+                showToast('Blocked redirect to unverified callback URI.', 'error');
+                return;
+            }
+            if (req.redirectTarget?.isCustomScheme) {
+                oauthCompletedOutcome.value = 'denied';
+            } else {
+                isSubmittingOAuth.value = true;
+            }
+            window.location.assign(denyUrl);
+        }
+
+        async function dismissOAuthConsent() {
+            pendingOAuthRequest.value = null;
+            isSubmittingOAuth.value = false;
+            oauthCompletedOutcome.value = null;
+            lastSyncedHash = '#/files';
+            window.history.replaceState(null, '', '#/files');
+            if (isLoggedIn.value) {
+                await restoreDirectoryState('0', true, ++activeSyncSeq);
+            }
+        }
+
         function handleLogout() {
             logout();
         }
 
         const { processingStatuses } = useProcessingStatus({
             files,
-            isLoggedIn,
+            isLoggedIn: computed(() => isLoggedIn.value && !pendingOAuthRequest.value),
             activeTab,
             view
         });
@@ -960,7 +1070,7 @@ createApp({
 
         const handleGlobalKeydown = (e) => {
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-                if (!isLoggedIn.value) return;
+                if (!isLoggedIn.value || pendingOAuthRequest.value) return;
                 e.preventDefault();
                 if (showSearchModal.value) {
                     closeSearchModal();
@@ -983,14 +1093,14 @@ createApp({
 
         const handlePopStateOrHash = () => syncFromUrl();
         const handleFileSyncEvent = () => {
-            if (!isLoggedIn.value) return;
+            if (!isLoggedIn.value || pendingOAuthRequest.value) return;
             loadDirectory(currentDirectoryId.value || '0');
         };
 
         onMounted(async () => {
             const loggedIn = await resumeSession();
+            await syncFromUrl(true);
             if (loggedIn) {
-                await syncFromUrl(true);
                 updateUrl(true);
             }
 
@@ -1013,6 +1123,12 @@ createApp({
 
         return {
             isLoggedIn,
+            pendingOAuthRequest,
+            isSubmittingOAuth,
+            oauthCompletedOutcome,
+            handleOAuthApprove,
+            handleOAuthDeny,
+            dismissOAuthConsent,
             handleLogin,
             handleLogout,
             activeTab,
