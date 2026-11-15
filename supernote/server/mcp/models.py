@@ -9,6 +9,7 @@ See `supernote.guides.mcp`.
 """
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from mashumaro import field_options
 from mashumaro.config import BaseConfig
@@ -20,6 +21,45 @@ from mcp.server.auth.provider import (
 )
 
 from supernote.models.base import BaseResponse
+
+
+class MCPScope(StrEnum):
+    """OAuth 2.1 scopes supported by the Supernote MCP server."""
+
+    ALL = "supernote:all"
+    """Full access to Supernote MCP retrieval tools (notebooks, search, transcripts)."""
+
+
+class LoginBridgeDecision(StrEnum):
+    """User consent decision submitted to POST /login-bridge."""
+
+    APPROVE = "approve"
+    DENY = "deny"
+
+
+@dataclass
+class LoginBridgeRequestDTO(DataClassJSONMixin):
+    """Request DTO submitted by the Web UI to POST /login-bridge."""
+
+    decision: LoginBridgeDecision = LoginBridgeDecision.APPROVE
+
+
+@dataclass
+class LoginBridgeResponseVO(DataClassJSONMixin):
+    """Redirect response VO returned by POST /login-bridge."""
+
+    redirect_url: str
+
+
+@dataclass
+class OAuthErrorResponseVO(DataClassJSONMixin):
+    """RFC 6749 OAuth error response VO returned by /login-bridge."""
+
+    error: str
+    error_description: str | None = None
+
+    class Config(BaseConfig):
+        omit_none = True
 
 
 class SupernoteAuthorizationCode(AuthorizationCode):

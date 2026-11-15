@@ -31,7 +31,7 @@
                 <div class="flex justify-between items-center gap-1.5 sm:gap-2 h-14">
                     <!-- Brand Identity -->
                     <div class="flex items-center min-w-0">
-                        <button @click="isLoggedIn ? switchTab('files') : null" type="button"
+                        <button @click="isLoggedIn && !pendingOAuthRequest ? switchTab('files') : null" type="button"
                             aria-label="Open Private Cloud"
                             class="flex items-center gap-2 sm:gap-2.5 min-w-0 text-left group focus:outline-none">
                             <div class="w-7 h-7 sm:w-8 sm:h-8 bg-slate-900 rounded-lg flex items-center justify-center text-white shadow-sm group-hover:bg-slate-800 transition-colors shrink-0">
@@ -42,14 +42,14 @@
                                 </svg>
                             </div>
                             <div class="flex items-baseline gap-1.5 min-w-0">
-                                <span class="text-sm sm:text-base font-bold tracking-tight text-slate-900 truncate"><span v-if="isLoggedIn" class="hidden sm:inline">Open </span><template v-else>Open </template>Private Cloud</span>
+                                <span class="text-sm sm:text-base font-bold tracking-tight text-slate-900 truncate"><span v-if="isLoggedIn && !pendingOAuthRequest" class="hidden sm:inline">Open </span><template v-else>Open </template>Private Cloud</span>
                                 <span class="hidden md:inline text-xs font-mono font-medium uppercase tracking-widest text-stone-500 shrink-0">for Supernote</span>
                             </div>
                         </button>
                     </div>
 
                     <!-- Primary View Switcher -->
-                    <div v-if="isLoggedIn" class="flex items-center gap-0.5 sm:gap-1 bg-stone-200/70 p-0.5 sm:p-1 rounded-xl border border-stone-300/40 shrink-0">
+                    <div v-if="isLoggedIn && !pendingOAuthRequest" class="flex items-center gap-0.5 sm:gap-1 bg-stone-200/70 p-0.5 sm:p-1 rounded-xl border border-stone-300/40 shrink-0">
                         <button @click="switchTab('files')" type="button"
                             :class="activeTab === 'files' ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-stone-600 hover:text-slate-900 font-medium'"
                             class="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all">
@@ -70,30 +70,32 @@
 
                     <!-- Right Utilities -->
                     <div v-if="isLoggedIn" class="flex items-center gap-0.5 sm:gap-2 shrink-0">
-                        <button @click="openSearchWithQuery('')" type="button"
-                            aria-label="Global Search"
-                            :title="'Global Search (' + searchShortcutLabel + ')'"
-                            class="flex items-center gap-2 p-2 sm:px-3 sm:py-1.5 bg-white hover:bg-stone-50 text-stone-600 hover:text-slate-900 rounded-lg text-xs font-medium border border-stone-200/90 shadow-sm transition-all">
-                            <svg class="w-3.5 h-3.5 text-stone-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                            </svg>
-                            <span class="hidden sm:inline text-stone-500">Search...</span>
-                            <kbd class="hidden md:inline-block px-1.5 py-0.5 bg-stone-100 text-stone-600 text-[10px] font-mono rounded border border-stone-200/80">{{ searchShortcutLabel }}</kbd>
-                        </button>
+                        <template v-if="!pendingOAuthRequest">
+                            <button @click="openSearchWithQuery('')" type="button"
+                                aria-label="Global Search"
+                                :title="'Global Search (' + searchShortcutLabel + ')'"
+                                class="flex items-center gap-2 p-2 sm:px-3 sm:py-1.5 bg-white hover:bg-stone-50 text-stone-600 hover:text-slate-900 rounded-lg text-xs font-medium border border-stone-200/90 shadow-sm transition-all">
+                                <svg class="w-3.5 h-3.5 text-stone-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                </svg>
+                                <span class="hidden sm:inline text-stone-500">Search...</span>
+                                <kbd class="hidden md:inline-block px-1.5 py-0.5 bg-stone-100 text-stone-600 text-[10px] font-mono rounded border border-stone-200/80">{{ searchShortcutLabel }}</kbd>
+                            </button>
 
-                        <button @click="openSystemPanel" type="button"
-                            aria-label="System Status"
-                            title="System Status"
-                            class="flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-medium text-stone-600 hover:text-slate-900 hover:bg-stone-200/60 transition-colors">
-                            <svg class="w-4 h-4 text-stone-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
-                                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
-                                </path>
-                            </svg>
-                            <span class="hidden md:inline">System</span>
-                        </button>
+                            <button @click="openSystemPanel" type="button"
+                                aria-label="System Status"
+                                title="System Status"
+                                class="flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-lg text-xs font-medium text-stone-600 hover:text-slate-900 hover:bg-stone-200/60 transition-colors">
+                                <svg class="w-4 h-4 text-stone-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+                                        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
+                                    </path>
+                                </svg>
+                                <span class="hidden md:inline">System</span>
+                            </button>
 
-                        <div class="h-4 w-px bg-stone-200 hidden sm:block"></div>
+                            <div class="h-4 w-px bg-stone-200 hidden sm:block"></div>
+                        </template>
 
                         <button @click="handleLogout" type="button"
                             aria-label="Sign Out"
@@ -114,7 +116,14 @@
         <!-- Main Workspace Container -->
         <main class="flex-grow max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-6">
             <template v-if="isLoggedIn">
-                <template v-if="activeTab === 'files'">
+                <oauth-consent-card v-if="pendingOAuthRequest"
+                    :request="pendingOAuthRequest"
+                    :is-submitting="isSubmittingOAuth"
+                    :completed-outcome="oauthCompletedOutcome"
+                    @approve="handleOAuthApprove"
+                    @deny="handleOAuthDeny"
+                    @dismiss="dismissOAuthConsent"></oauth-consent-card>
+                <template v-else-if="activeTab === 'files'">
                     <!-- Directory Browser View -->
                     <div v-if="view === 'grid'"
                         @dragover="handleDragOver"
@@ -455,7 +464,7 @@
 
             <!-- Login Screen -->
             <template v-else>
-                <login-card @login="handleLogin"></login-card>
+                <login-card :oauth-request="pendingOAuthRequest" @login="handleLogin"></login-card>
             </template>
 
             <!-- Global Search Modal -->

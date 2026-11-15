@@ -1,6 +1,12 @@
 import { ref } from 'vue';
 
 export default {
+    props: {
+        oauthRequest: {
+            type: Object,
+            default: null
+        }
+    },
     emits: ['login'],
     setup(props, { emit }) {
         const email = ref('');
@@ -25,8 +31,8 @@ export default {
         };
     },
     template: `
-    <div class="max-w-md mx-auto bg-white rounded-2xl border border-stone-200/90 shadow-lg overflow-hidden mt-16 animate-fade-in">
-        <div class="p-8 sm:p-10">
+    <div class="max-w-md mx-auto bg-white rounded-2xl border border-stone-200/90 shadow-lg overflow-hidden mt-6 sm:mt-16 animate-fade-in">
+        <div class="p-6 sm:p-10">
             <div class="text-center mb-8">
                 <div class="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center text-white shadow-sm mx-auto mb-4">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -37,6 +43,12 @@ export default {
                 </div>
                 <h2 class="text-xl font-bold text-slate-900 tracking-tight">Sign in to Open Private Cloud</h2>
                 <p class="text-xs text-stone-500 mt-1.5">Self-hosted sync, notebooks, and schedule for your Supernote</p>
+            </div>
+
+            <div v-if="oauthRequest?.isValid"
+                class="mb-5 px-3.5 py-2.5 bg-stone-50 border border-stone-200/90 rounded-xl text-xs text-stone-600 leading-relaxed">
+                Sign in to review an authorization request from
+                <span class="font-mono font-semibold text-slate-900 [overflow-wrap:anywhere]">{{ oauthRequest.clientId }}</span>.
             </div>
 
             <form @submit.prevent="handleSubmit" class="space-y-5">

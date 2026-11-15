@@ -28,6 +28,7 @@ from supernote.models.base import ErrorCode, create_error_response
 from supernote.server.mcp.models import (
     ListNotebooksRequestDTO,
     ListNotebooksResponseVO,
+    MCPScope,
     NotebookVO,
     SearchRequestDTO,
     SearchResponseVO,
@@ -111,7 +112,7 @@ class SupernoteTokenVerifier(TokenVerifier):
             token=token,
             user_id=session.user_id,
             client_id="api_key" if session.is_api_key else "session",
-            scopes=["supernote:all"],
+            scopes=[MCPScope.ALL],
             expires_at=session.expires_at,
         )
 
@@ -331,6 +332,7 @@ def create_mcp_server(issuer_url: str, resource_server_url: str) -> MCPServer:
         auth=AuthSettings(
             issuer_url=AnyHttpUrl(issuer_url),
             resource_server_url=AnyHttpUrl(resource_server_url),
+            required_scopes=[MCPScope.ALL],
             # SupernoteTokenVerifier validates opaque tokens stored in the
             # server-local mcp:access_token:* namespace exclusively for this
             # embedded MCP resource server.

@@ -12,36 +12,78 @@ import json
 import secrets
 import time
 from typing import Any, override
-from urllib.parse import quote, urlencode, urlparse
+from urllib.parse import quote
 
+import yarl
+from mashumaro.exceptions import InvalidFieldValue, MissingField
+from mashumaro.mixins.json import DataClassJSONMixin
 from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationParams,
     OAuthAuthorizationServerProvider,
     RefreshToken,
     TokenError,
+    construct_redirect_uri,
 )
 from mcp.server.auth.routes import create_auth_routes
-from mcp.server.auth.settings import RevocationOptions
+from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 from mcp.shared.auth import (
     InvalidRedirectUriError,
+    InvalidScopeError,
     OAuthClientInformationFull,
     OAuthToken,
 )
 from pydantic import AnyHttpUrl, AnyUrl, ValidationError
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse, RedirectResponse
+from starlette.responses import RedirectResponse, Response
 
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
 from supernote.server.utils.auth_utils import get_token_from_request
 
 from .models import (
+    LoginBridgeDecision,
+    LoginBridgeRequestDTO,
+    LoginBridgeResponseVO,
+    MCPScope,
+    OAuthErrorResponseVO,
     SupernoteAccessToken,
     SupernoteAuthorizationCode,
     SupernoteRefreshToken,
 )
+
+
+def _json_model_response(
+    payload: DataClassJSONMixin, status_code: int = 200
+) -> Response:
+    """Serialize a Mashumaro DTO/VO as a non-cacheable JSON Starlette response."""
+    return Response(
+        content=payload.to_json(),
+        status_code=status_code,
+        media_type="application/json",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def _parse_oauth_url(raw: str) -> yarl.URL | None:
+    """Parse an RFC 6749 / IndieAuth endpoint URL (canonical path, no userinfo or fragment)."""
+    try:
+        normalized = yarl.URL(raw)
+        unnormalized = yarl.URL(raw, encoded=True)
+    except ValueError:
+        return None
+    if (
+        not normalized.scheme
+        or not normalized.host
+        or normalized.user is not None
+        or normalized.password is not None
+        or normalized.fragment
+        or "\\" in unnormalized.path
+        or unnormalized.path != normalized.path
+    ):
+        return None
+    return normalized
 
 
 class SupernoteOAuthClientInformationFull(OAuthClientInformationFull):
@@ -49,22 +91,23 @@ class SupernoteOAuthClientInformationFull(OAuthClientInformationFull):
 
     @override
     def validate_redirect_uri(self, redirect_uri: AnyUrl | None) -> AnyUrl:
-        """Allows redirect uri prefixes matching the registered origin and path boundary."""
+        """Allows redirect URI prefixes matching the registered origin and path boundary."""
         if redirect_uri is None:
+            if self.redirect_uris and len(self.redirect_uris) == 1:
+                return self.redirect_uris[0]
             raise InvalidRedirectUriError("Redirect URI must be specified")
-        redirect_parsed = urlparse(str(redirect_uri))
+        candidate = _parse_oauth_url(str(redirect_uri))
+        if candidate is None:
+            raise InvalidRedirectUriError(f"Redirect URI '{redirect_uri}' is invalid")
         for registered_redirect_uri in self.redirect_uris or ():
-            reg_parsed = urlparse(str(registered_redirect_uri))
-            if (
-                redirect_parsed.scheme != reg_parsed.scheme
-                or redirect_parsed.netloc != reg_parsed.netloc
-            ):
+            registered = _parse_oauth_url(str(registered_redirect_uri))
+            if registered is None or candidate.origin() != registered.origin():
                 continue
-            reg_path = reg_parsed.path.rstrip("/")
+            reg_path = registered.path.rstrip("/")
             if (
                 not reg_path
-                or redirect_parsed.path == reg_path
-                or redirect_parsed.path.startswith(f"{reg_path}/")
+                or candidate.path == reg_path
+                or candidate.path.startswith(f"{reg_path}/")
             ):
                 return redirect_uri
         raise InvalidRedirectUriError(
@@ -90,22 +133,22 @@ class SupernoteOAuthProvider(
         self._coordination = coordination_service
 
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
-        """Retrieve client information by client ID."""
-        # Support dynamic IndieAuth-style clients (Client ID is a URL)
-        try:
-            parsed = urlparse(client_id)
-        except ValueError:
+        """Retrieve client information by IndieAuth HTTP(S) client URL."""
+        parsed = _parse_oauth_url(client_id)
+        if parsed is None or parsed.scheme not in ("http", "https"):
             return None
-        if parsed.scheme in ("http", "https") and parsed.netloc:
-            return SupernoteOAuthClientInformationFull(
-                client_id=client_id,
-                redirect_uris=[AnyHttpUrl(client_id)],
-                grant_types=["authorization_code", "refresh_token"],
-                response_types=["code"],
-                scope="supernote:all",
-                token_endpoint_auth_method="none",
-            )
-        return None
+        try:
+            validated_client_url = AnyHttpUrl(client_id)
+        except ValidationError:
+            return None
+        return SupernoteOAuthClientInformationFull(
+            client_id=client_id,
+            redirect_uris=[validated_client_url],
+            grant_types=["authorization_code", "refresh_token"],
+            response_types=["code"],
+            scope=MCPScope.ALL,
+            token_endpoint_auth_method="none",
+        )
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         """Saves client information as part of registering it."""
@@ -115,12 +158,22 @@ class SupernoteOAuthProvider(
         self, client: OAuthClientInformationFull, params: AuthorizationParams
     ) -> str:
         """Called as part of the /authorize endpoint."""
-        # We redirect to a bridge that handles login/session check, passing
-        # the full set of OAuth params.
-        query_params = params.model_dump()
-        query_params["client_id"] = client.client_id
-        query = urlencode(query_params)
-        return f"{self.issuer_url}/login-bridge?{query}"
+        resolved_scopes = params.scopes or (
+            client.scope.split() if client.scope else [MCPScope.ALL]
+        )
+        return construct_redirect_uri(
+            f"{self.issuer_url}/login-bridge",
+            client_id=client.client_id,
+            redirect_uri=(
+                str(params.redirect_uri)
+                if params.redirect_uri_provided_explicitly
+                else None
+            ),
+            code_challenge=params.code_challenge,
+            scope=" ".join(resolved_scopes),
+            state=params.state,
+            resource=params.resource,
+        )
 
     async def load_authorization_code(
         self, client: OAuthClientInformationFull, authorization_code: str
@@ -264,67 +317,129 @@ def create_auth_app(
     routes = create_auth_routes(
         provider=provider,
         issuer_url=AnyHttpUrl(issuer_url),
+        client_registration_options=ClientRegistrationOptions(
+            enabled=False,
+            valid_scopes=list(MCPScope),
+            default_scopes=[MCPScope.ALL],
+        ),
         revocation_options=RevocationOptions(enabled=True),
     )
     app = Starlette(routes=routes, debug=True)
 
     # Add login-bridge route
-    async def login_bridge(request: Request) -> RedirectResponse | JSONResponse:
-        """Handling the OAuth login flow bridging the SPA and the MCP server.
+    async def login_bridge(request: Request) -> Response:
+        """Handle the OAuth 2.1 login & consent bridge between the Web UI and MCP server.
 
-        1. Browser visits /authorize -> Redirects here (/login-bridge).
-        2. If User is NOT logged in:
-           - GET request: Redirects to SPA login page (/#login) with return_to set to this URL.
-           - SPA handles login, then sees return_to pointing to /login-bridge.
-           - SPA makes background POST request to this URL with x-access-token header.
-        3. If User IS logged in (or via POST with token):
-           - Validates session.
-           - Generates OAuth Authorization Code.
-           - Returns JSON with 'redirect_url' containing the code (callback URL).
-           - SPA redirects the browser to that callback URL.
+        Browser GET requests redirect to ``/#login?return_to=<bridge_url>`` so the Web UI
+        authenticates the user (if needed) and renders an explicit OAuth Consent Card.
+        Once the user approves or denies, the SPA issues an authenticated ``POST /login-bridge``
+        request with ``x-access-token`` to validate the redirect target and mint a single-use
+        authorization code (on approve) or return an ``access_denied`` redirect (on deny).
         """
-        # Extract and verify token
         token = get_token_from_request(request)
         session = await user_service.verify_token(token) if token else None
         if session and session.is_api_key:
-            return JSONResponse(
-                {
-                    "error": "forbidden",
-                    "error_description": "API keys cannot authorize OAuth clients",
-                },
+            return _json_model_response(
+                OAuthErrorResponseVO(
+                    error="forbidden",
+                    error_description="API keys cannot authorize OAuth clients",
+                ),
                 status_code=403,
             )
+        if request.method != "POST":
+            return_target = (
+                f"{request.url.path}?{request.url.query}"
+                if request.url.query
+                else request.url.path
+            )
+            login_url = f"/#login?return_to={quote(return_target, safe='')}"
+            return RedirectResponse(
+                url=login_url,
+                status_code=302,
+                headers={"Cache-Control": "no-store"},
+            )
         if not session:
-            # If this was an API background call (POST), return 401 JSON
-            if request.method == "POST":
-                return JSONResponse({"error": "unauthorized"}, status_code=401)
+            return _json_model_response(
+                OAuthErrorResponseVO(error="unauthorized"),
+                status_code=401,
+            )
 
-            # Not logged in: Redirect to web UI login page.
-            # We pass the bridge URL as return_to so the SPA knows where to return.
-            # We keep the query params (OAuth params) so they are preserved.
-            login_url = f"/#login?return_to={quote(str(request.url))}"
-            return RedirectResponse(url=login_url)
+        raw_body = await request.body()
+        if raw_body.strip():
+            try:
+                bridge_req = LoginBridgeRequestDTO.from_json(raw_body)
+            except (MissingField, InvalidFieldValue, ValueError, TypeError):
+                return _json_model_response(
+                    OAuthErrorResponseVO(error="invalid_request"),
+                    status_code=400,
+                )
+        else:
+            bridge_req = LoginBridgeRequestDTO()
 
         # Extract OAuth params from query
         client_id = request.query_params.get("client_id")
-        redirect_uri = request.query_params.get("redirect_uri")
+        raw_redirect_uri = request.query_params.get("redirect_uri")
         code_challenge = request.query_params.get("code_challenge")
         state = request.query_params.get("state")
+        raw_scope = request.query_params.get("scope")
+        resource = request.query_params.get("resource")
 
-        if not client_id or not redirect_uri or not code_challenge:
-            return JSONResponse({"error": "invalid_request"}, status_code=400)
+        if not client_id or not code_challenge:
+            return _json_model_response(
+                OAuthErrorResponseVO(error="invalid_request"),
+                status_code=400,
+            )
 
-        # Validate Client compatibility
         client_info = await provider.get_client(client_id)
         if not client_info:
-            return JSONResponse({"error": "invalid_client"}, status_code=400)
+            return _json_model_response(
+                OAuthErrorResponseVO(
+                    error="invalid_client",
+                    error_description="Unrecognized or invalid client_id URL.",
+                ),
+                status_code=400,
+            )
 
         try:
+            parsed_redirect_arg = AnyUrl(raw_redirect_uri) if raw_redirect_uri else None
             validated_redirect_uri = client_info.validate_redirect_uri(
-                AnyHttpUrl(redirect_uri)
+                parsed_redirect_arg
             )
         except (ValidationError, InvalidRedirectUriError):
-            return JSONResponse({"error": "invalid_redirect_uri"}, status_code=400)
+            return _json_model_response(
+                OAuthErrorResponseVO(
+                    error="invalid_redirect_uri",
+                    error_description=(
+                        "Redirect URI does not match the requesting client origin and path."
+                    ),
+                ),
+                status_code=400,
+            )
+
+        if bridge_req.decision == LoginBridgeDecision.DENY:
+            denied_url = construct_redirect_uri(
+                str(validated_redirect_uri),
+                error="access_denied",
+                state=state or None,
+            )
+            return _json_model_response(LoginBridgeResponseVO(redirect_url=denied_url))
+
+        normalized_scope = (
+            " ".join(raw_scope.split()) if raw_scope and raw_scope.strip() else None
+        )
+        try:
+            validated_scopes = client_info.validate_scope(normalized_scope)
+        except InvalidScopeError:
+            return _json_model_response(
+                OAuthErrorResponseVO(
+                    error="invalid_scope",
+                    error_description="Requested scope is not supported.",
+                ),
+                status_code=400,
+            )
+        scopes = validated_scopes or (
+            client_info.scope.split() if client_info.scope else [MCPScope.ALL]
+        )
 
         # Create the authorization code
         code_str = secrets.token_urlsafe(16)
@@ -332,29 +447,26 @@ def create_auth_app(
             code=code_str,
             user_id=session.user_id,
             client_id=client_id,
-            redirect_uri=AnyHttpUrl(str(validated_redirect_uri)),
-            scopes=["supernote:all"],
+            redirect_uri=validated_redirect_uri,
+            scopes=scopes,
             code_challenge=code_challenge,
             expires_at=int(time.time() + 600),
-            redirect_uri_provided_explicitly=True,
+            redirect_uri_provided_explicitly=raw_redirect_uri is not None,
+            resource=resource or None,
         )
 
-        # Store auth code
         await coordination_service.set_value(
             f"mcp:auth_code:{code_str}",
             auth_code.model_dump_json(),
             ttl=600,
         )
 
-        # Return result
-        callback_params = {"code": code_str}
-        if state:
-            callback_params["state"] = state
-
-        sep = "&" if "?" in redirect_uri else "?"
-        final_url = f"{redirect_uri}{sep}{urlencode(callback_params)}"
-
-        return JSONResponse({"redirect_url": final_url})
+        final_url = construct_redirect_uri(
+            str(validated_redirect_uri),
+            code=code_str,
+            state=state or None,
+        )
+        return _json_model_response(LoginBridgeResponseVO(redirect_url=final_url))
 
     app.add_route("/login-bridge", login_bridge, methods=["GET", "POST"])
     return app
