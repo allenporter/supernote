@@ -4,7 +4,7 @@ The **Open Private Cloud for Supernote** server transforms binary `.note` files 
 
 ---
 
-## 1. Background Processing Pipeline
+## Background Processing Pipeline
 
 When a `.note` file is uploaded or synchronized, `supernote.server.services.processor.ProcessorService` orchestrates an incremental, idempotent 5-stage pipeline tracked in SQLite (`SystemTaskDO`, `NoteMetadataDO`, `NotePageMetadataDO`, and `NotePageContentDO`):
 
@@ -53,7 +53,7 @@ supernote admin reprocess --type all --file-id 42
 
 ---
 
-## 2. Configuring Cloud, Local & On-Device AI Models
+## Configuring Cloud, Local & On-Device AI Models
 
 AI capabilities (`ocr`, `summary`, `embedding`) are configured independently in `config/config.yaml` via `supernote.server.config.AiConfig`. You can use cloud providers (`gemini`, hosted `openai`), local inference servers (`openai` provider pointed at Ollama, vLLM, llama.cpp, or LM Studio), macOS on-device Vision (`apple`), or mix them per capability.
 
@@ -121,7 +121,7 @@ ai:
 
 ---
 
-## 3. Customizing AI Prompts, Page-Style Routing & Page Keywords
+## Customizing AI Prompts, Page-Style Routing & Page Keywords
 
 Prompts are managed by `supernote.server.utils.prompt_loader.PromptLoader` (`PROMPT_LOADER`). By default, the server loads built-in Bullet Journal / Rapid Logging prompts from `supernote/server/resources/prompts/`.
 
@@ -198,7 +198,7 @@ This grounds both the vision OCR model (improving domain terminology recognition
 
 ---
 
-## 4. Model Context Protocol (MCP) Server & Authentication
+## Model Context Protocol (MCP) Server & Authentication
 
 When `mcp_enabled: true` (default), Open Private Cloud runs a Streamable HTTP **MCP Resource Server** on `http://<your-server-ip>:8081/mcp` alongside an **OAuth 2.1 / IndieAuth Authorization Server** on port `8080` (`supernote.server.mcp.server` and `supernote.server.mcp.auth`).
 
@@ -262,9 +262,9 @@ Pass `Authorization: Bearer sn_...` directly to `http://localhost:8081/mcp` (or 
 
 ---
 
-## 5. Connecting MCP Clients
+## Connecting MCP Clients
 
-### 1. Claude Desktop / Cursor via OAuth (`claude_desktop_config.json`)
+### Claude Desktop / Cursor via OAuth (`claude_desktop_config.json`)
 
 ```json
 {
@@ -281,7 +281,7 @@ Pass `Authorization: Bearer sn_...` directly to `http://localhost:8081/mcp` (or 
 }
 ```
 
-### 2. Headless MCP Clients via Static Bearer API Key (`sn_...`)
+### Headless MCP Clients via Static Bearer API Key (`sn_...`)
 
 For MCP clients that support static `headers` on Streamable HTTP connections:
 
@@ -298,7 +298,7 @@ For MCP clients that support static `headers` on Streamable HTTP connections:
 }
 ```
 
-### 3. Custom OAuth 2.1 Agents (IndieAuth)
+### Custom OAuth 2.1 Agents (IndieAuth)
 
 When building a custom web agent, use your application's URL as the `client_id`:
 
@@ -314,11 +314,11 @@ params = {
 
 ---
 
-## 6. Exposed MCP Tools Reference
+## Exposed MCP Tools Reference
 
 Defined in `supernote.server.mcp.server` and validated by DTOs/VOs in `supernote.server.mcp.models`. All tools scope queries strictly to the authenticated user's notebooks.
 
-### 1. `list_notebooks`
+### `list_notebooks`
 
 Lists active `.note` notebooks ordered by most recently updated (`update_time` descending).
 
@@ -345,7 +345,7 @@ Lists active `.note` notebooks ordered by most recently updated (`update_time` d
   }
   ```
 
-### 2. `search_notebook_chunks`
+### `search_notebook_chunks`
 
 Performs semantic vector similarity search across all embedded notebook pages (`NotePageContentDO`), with optional filename and ISO 8601 date filtering.
 
@@ -378,7 +378,7 @@ Performs semantic vector similarity search across all embedded notebook pages (`
   }
   ```
 
-### 3. `get_notebook_transcript`
+### `get_notebook_transcript`
 
 Retrieves the full OCR transcript for a notebook or slices a specific 0-based page range (`[start_index, end_index]` inclusive).
 

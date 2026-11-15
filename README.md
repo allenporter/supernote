@@ -20,27 +20,27 @@
 
 ## Why Open Private Cloud for Supernote? (Killer Features)
 
-### 1. Native Tablet Sync in ~135 MB of RAM (No Java, MariaDB, or Redis)
+### Native Tablet Sync in ~135 MB of RAM (No Java, MariaDB, or Redis)
 While the official Supernote Private Cloud stack orchestrates multi-container Java/Spring Boot, MariaDB, and Redis services (~2 GB+ RAM), Open Private Cloud runs in a single Python `asyncio` process backed by a single SQLite file and content-addressable blob storage. Point your tablet's native **Settings → Sync → Private Cloud** to your server and tap **Sync**—it runs effortlessly on a Raspberry Pi, NAS, or low-memory home lab server with two-tier volume and per-user storage quotas.
 
-### 2. Incremental Handwriting OCR, Summaries & Semantic Search
+### Incremental Handwriting OCR, Summaries & Semantic Search
 Handwriting recognition on e-ink hardware drains battery and struggles with dense cursive, diagrams, and Bullet Journal signifiers. When a notebook syncs to Open Private Cloud, a background pipeline hashes every page (`PageHashingModule`), skips unchanged and blank pages automatically, and processes only modified pages using Vision LLMs (**Google Gemini** `gemini-3.5-flash-lite` by default, or **local models via Ollama / vLLM / llama.cpp**):
 - **High-Fidelity Transcripts**: Converts handwritten pages, tables, diagrams, and Bullet Journal Rapid Logging symbols (`•`, `X`, `>`, `<`, `-`, `*`, `~~strikethroughs~~`) into structured Markdown.
 - **Executive Summaries**: Synthesizes multi-page notebooks into scannable summaries with key takeaways.
 - **Concept Search**: Vectorizes content so you can search across years of handwritten notebooks by meaning (`"Where did I sketch the backyard drainage plan?"`), not just filenames.
 
-### 3. Built-In MCP Server & Static Bearer API Keys (`sn_...`)
+### Built-In MCP Server & Static Bearer API Keys (`sn_...`)
 Out of the box, the server hosts a spec-compliant **[Model Context Protocol (MCP)](docs/mcp.md)** server (`list_notebooks`, `search_notebook_chunks`, `get_notebook_transcript`) supporting both **Dynamic OAuth 2.1 (IndieAuth)** for interactive desktop agents (Claude Desktop, Cursor) and revocable **Static Bearer API Keys (`sn_...`)** for headless scripts and CLI automation.
 
-### 4. Filename & Page-Style Driven Custom AI Prompts
+### Filename & Page-Style Driven Custom AI Prompts
 Drop custom Markdown prompt templates into your `prompts_dir` (`ocr/daily/prompt.md`, `summary/meeting_notes/prompt.md`, or `ocr/style_cornell/prompt.md`), and the server automatically routes matching notebooks (by filename stem or page stationery style) through your custom instructions while injecting native device page keywords (`PAGE_KEYWORDS`). See **[AI Pipeline, Custom Prompts & MCP Server](docs/mcp.md)** for full prompt routing details.
 
-### 5. Live Calendar Feeds (`.ics`), Webhooks & Prometheus/Grafana Observability
+### Live Calendar Feeds (`.ics`), Webhooks & Prometheus/Grafana Observability
 - **iCalendar (`VTODO`) Feeds**: Tasks created on your Supernote tablet are automatically exposed as an RFC 5545 `.ics` feed (`/api/schedule/feed.ics`) for Apple Reminders/Calendar, Google Calendar, Outlook, and **Home Assistant**.
 - **Signed Outbound Webhooks**: Receive HMAC-SHA256 signed HTTP callbacks (`note.sync_completed`) the instant a notebook finishes syncing.
 - **Production Monitoring**: Built-in `/metrics` endpoint with reference [Prometheus recording/alerting rules and a 13-panel Grafana dashboard](docs/monitoring.md).
 
-### 6. Offline Binary `.note` Parser, Converter & Cooperative Markdown Authoring
+### Offline Binary `.note` Parser, Converter & Cooperative Markdown Authoring
 You don't need to run a server to use `supernote`. Use the CLI (`supernote analyze`, `supernote convert`, `supernote create`, `supernote merge`, `supernote reconstruct`) or `supernote.notebook` to export `.note` files to PDF/PNG/SVG, or programmatically generate and append stylized stationery templates, simulated handwriting, and hidden flashcard layers (`LAYER1`–`LAYER3`) onto `.note` files.
 
 ---
@@ -97,7 +97,7 @@ While the official Supernote Private Cloud by Ratta provides a production-grade 
 
 For full deployment instructions (including `docker-compose.yml`, Caddy/Nginx reverse proxies, and backups), see the **[Self-Hosting & Quickstart Guide](docs/bootstrap_guide.md)**.
 
-### 1. Launch the Server
+### Launch the Server
 
 #### Option A: Lite Sync Server (Zero-Config)
 No API keys or external services required. Runs locally with SQLite (~160 MB idle, ~310 MB peak when rendering notebook previews).
@@ -151,7 +151,7 @@ Runs the same features against a model server on your own hardware, such as [Oll
 
 When the server runs in Docker and Ollama runs on the host, use `http://host.docker.internal:11434/v1` as the `base_url` (on Linux, also pass `--add-host=host.docker.internal:host-gateway`).
 
-### 2. Bootstrap Your User
+### Bootstrap Your User
 
 Once the server is running, register your administrator account (the first user registered automatically receives Admin privileges and closes public registration):
 
@@ -168,14 +168,14 @@ Once the server is running, register your administrator account (the first user 
     docker exec -it supernote-server supernote admin --url http://localhost:8080 user add you@example.com
     ```
 
-### 3. Connect Your Device
+### Connect Your Device
 
 1. On your Supernote, go to **Settings > Sync > Supernote Cloud** and select **Private Cloud**.
 2. Enter your server URL (e.g., `http://192.168.1.5:8080`).
 3. Log in with the email and password you created in Step 2.
 4. Tap **Sync** to begin syncing your notes.
 
-### 4. Explore Your Insights
+### Explore Your Insights
 
 Once your notes sync and process, you can view the AI synthesis from the terminal, browser, or MCP server (`http://<your-ip>:8081/mcp`):
 
@@ -304,7 +304,7 @@ Headless scripts can also set `SUPERNOTE_URL` and `SUPERNOTE_API_KEY` in the env
 
 ## Notebook Operations & Developer API
 
-### 1. Parse, Convert & Author `.note` Files (`supernote.notebook`)
+### Parse, Convert & Author `.note` Files (`supernote.notebook`)
 See the **[Notebook Parser, Converter & Authoring Guide](supernote/notebook/README.md)** for full details:
 
 ```python
@@ -327,7 +327,7 @@ note_bytes = create_notebook(
 Path("daily.note").write_bytes(note_bytes)
 ```
 
-### 2. Automate Cloud Sync, Tasks & Search (`supernote.client`)
+### Automate Cloud Sync, Tasks & Search (`supernote.client`)
 See the **[Python Client SDK Guide](supernote/client/__init__.py)** for the complete async API:
 
 ```python

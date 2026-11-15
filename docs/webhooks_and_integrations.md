@@ -6,7 +6,7 @@ Open Private Cloud for Supernote provides two primary integration mechanisms for
 
 ---
 
-## 1. iCalendar (`.ics`) Task Feeds
+## iCalendar (`.ics`) Task Feeds
 
 Tasks created on your physical Supernote tablet (including handwritten tasks converted via the To-Do app with notebook page deep-links) or via the Web UI / Python SDK can be exported as an RFC 5545 `VCALENDAR` stream of `VTODO` items.
 
@@ -97,7 +97,7 @@ END:VCALENDAR
 
 ---
 
-## 2. Outbound Webhooks
+## Outbound Webhooks
 
 `supernote.server.services.webhook.WebhookService` listens on the internal `LocalEventBus` and dispatches signed, non-blocking HTTP `POST` notifications whenever notes finish syncing or finish background AI processing.
 
@@ -182,7 +182,7 @@ webhooks:
 
 ---
 
-## 3. Verifying `X-Supernote-Signature` (HMAC-SHA256)
+## Verifying `X-Supernote-Signature` (HMAC-SHA256)
 
 When `secret` is set on an endpoint, `supernote.server.services.webhook.sign_payload` signs the raw UTF-8 JSON request body using HMAC-SHA256 and sends `X-Supernote-Signature: sha256=<hex>`. Always verify this header using a constant-time digest comparison before trusting the payload.
 
@@ -232,13 +232,13 @@ export function verifySupernoteWebhook(
 
 ---
 
-## 4. Home Assistant Integration
+## Home Assistant Integration
 
 ### Triggering Automations on Note Processing Completion
 
 Configure a Home Assistant webhook automation to react whenever a handwritten note finishes OCR and summarization:
 
-#### 1. Add the Home Assistant webhook URL to `config/config.yaml`
+#### Add the Home Assistant webhook URL to `config/config.yaml`
 
 ```yaml
 webhooks:
@@ -250,7 +250,7 @@ webhooks:
         - "note.processing_completed"
 ```
 
-#### 2. Create the Home Assistant Automation (`automations.yaml`)
+#### Create the Home Assistant Automation (`automations.yaml`)
 
 ```yaml
 alias: "Supernote: Notify when Daily Note is summarized"

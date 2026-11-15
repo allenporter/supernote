@@ -43,7 +43,7 @@ flowchart TD
 
 `supernote.client.Supernote` supports three authentication patterns:
 
-### 1. Interactive Challenge-Response Login (`Supernote.login`)
+### Interactive Challenge-Response Login (`Supernote.login`)
 
 Performs the two-step random challenge + salted `SHA256(MD5(password) + randomCode)` handshake and returns an authenticated `Supernote` session:
 
@@ -66,7 +66,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-### 2. Static API Key (`sn_...`) or JWT Access Token (`Supernote.from_token`)
+### Static API Key (`sn_...`) or JWT Access Token (`Supernote.from_token`)
 
 Wrap a long-lived static Bearer API key (`sn_...`, minted via `supernote cloud keys create` or `sn.extended.create_api_key`) or an existing `x-access-token` JWT using `supernote.client.auth.ConstantAuth`:
 
@@ -81,7 +81,7 @@ async with Supernote.from_token(
     print(f"Used: {capacity.used_capacity} / {capacity.total_capacity} bytes")
 ```
 
-### 3. Persistent File Cache (`Supernote.from_auth` + `FileCacheAuth`)
+### Persistent File Cache (`Supernote.from_auth` + `FileCacheAuth`)
 
 Share credentials with the `supernote cloud` CLI (`~/.cache/supernote.pkl`) or manage custom token storage by subclassing `supernote.client.auth.AbstractAuth`:
 

@@ -4,7 +4,7 @@ This document describes the architecture of the asynchronous, multi-stage `.note
 
 ---
 
-## 1. Core Principles
+## Core Principles
 
 - **Incremental & Page-Atomic**: The **Page** (identified by its stable `.note` `PAGEID`) is the unit of processing. Only modified or newly added pages trigger expensive operations (PNG rendering, LLM OCR, and vector embedding generation).
 - **Blank Page Short-Circuiting**: `PageHashingModule` inspects each changed page's foreground layers (`has_drawables`). Blank pages (`has_drawables == False`) skip the OCR LLM call, vector embedding generation, and summary synthesis automatically.
@@ -21,7 +21,7 @@ This document describes the architecture of the asynchronous, multi-stage `.note
 
 ---
 
-## 2. Pipeline Architecture
+## Pipeline Architecture
 
 ```mermaid
 flowchart TD
@@ -38,7 +38,7 @@ flowchart TD
 
 ---
 
-## 3. Data Schema (`supernote.server.db.models`)
+## Data Schema (`supernote.server.db.models`)
 
 ### `SystemTaskDO` (`f_system_task` — Pipeline Checkpoint & Error Tracking)
 
@@ -126,7 +126,7 @@ Stores per-page change hashes, extracted OCR text, and vector embeddings:
 
 ---
 
-## 4. Pipeline Stages (`supernote.server.services.processor_modules`)
+## Pipeline Stages (`supernote.server.services.processor_modules`)
 
 1. **`PageHashingModule` (`TaskType.PAGE_HASHING`, Global Pre-Module, `version="v2"`)**:
    - Parses `.note` metadata once via `supernote.notebook.parse_metadata` and inspects existing `NotePageMetadataDO` rows.
@@ -156,7 +156,7 @@ Stores per-page change hashes, extracted OCR text, and vector embeddings:
 
 ---
 
-## 5. Rapid Logging Markdown Parser (`supernote.server.utils.rapid_log`)
+## Rapid Logging Markdown Parser (`supernote.server.utils.rapid_log`)
 
 The built-in OCR prompts (`supernote/server/resources/prompts/ocr/`) transcribe handwritten Bullet Journal / Rapid Logging syntax into structured Markdown signifiers. `supernote.server.utils.rapid_log.parse_rapid_log` parses these OCR transcripts into typed `RapidLogItem` hierarchies for downstream task extraction and analysis:
 
@@ -174,7 +174,7 @@ Indented lines under a top-level bullet are attached as nested `children` (`Rapi
 
 ---
 
-## 6. Extended Intelligence & Admin API Surface
+## Extended Intelligence & Admin API Surface
 
 ### Extended Web & SDK Endpoints (`supernote.server.routes.extended` / `ExtendedClient`)
 
@@ -202,7 +202,7 @@ Indented lines under a top-level bullet are attached as nested `children` (`Rapi
 
 ---
 
-## 7. ProcessorModule API Contract
+## ProcessorModule API Contract
 
 Each stage inherits from `supernote.server.services.processor_modules.ProcessorModule`:
 

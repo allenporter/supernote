@@ -32,7 +32,7 @@ All request DTOs and response VOs are Python `@dataclass` models backed by `mash
 
 ---
 
-## 1. Authentication & User Management (`supernote.models.auth`, `supernote.models.user`)
+## Authentication & User Management (`supernote.models.auth`, `supernote.models.user`)
 
 See `supernote.models.auth` and `supernote.models.user` for more information on the data models related to these API endpoints.
 
@@ -93,7 +93,7 @@ Endpoints for updating account settings.
 
 ---
 
-## 2. File Management — Web & General (`supernote.models.file_web`, `supernote.models.file_common`)
+## File Management — Web & General (`supernote.models.file_web`, `supernote.models.file_common`)
 
 See `supernote.models.file_web` and `supernote.models.file_common` for more information on the data models related to these API endpoints.
 
@@ -144,7 +144,7 @@ Endpoints for device terminal file upload workflows.
 
 ---
 
-## 3. Cloud/NAS Synchronization — Device API (`supernote.models.file_device`)
+## Cloud/NAS Synchronization — Device API (`supernote.models.file_device`)
 
 Endpoints used by physical Supernote devices during Cloud/Private Cloud synchronization. See `supernote.models.file_device` for more information on the data models related to these API endpoints.
 
@@ -193,7 +193,7 @@ Endpoints for checking server reachability from devices.
 
 ---
 
-## 4. Schedule, Summaries & Sharing (`supernote.models.schedule`, `supernote.models.summary`)
+## Schedule, Summaries & Sharing (`supernote.models.schedule`, `supernote.models.summary`)
 
 ### Sharing
 
@@ -242,7 +242,7 @@ Endpoints for managing document summaries, digests, tags, and summary blobs. See
 
 ---
 
-## 5. Server Extensions, API Keys & Semantic Search (`supernote.models.extended`)
+## Server Extensions, API Keys & Semantic Search (`supernote.models.extended`)
 
 Models in `supernote.models.extended` power the custom `/api/extended/*` endpoints on the self-hosted server, consumed by `supernote.client.extended.ExtendedClient` and `supernote.client.admin.AdminClient`. See `supernote.guides.note_processing_design` for the background pipeline architecture.
 
@@ -262,7 +262,7 @@ Models in `supernote.models.extended` power the custom `/api/extended/*` endpoin
 
 ---
 
-## 6. Outbound Webhooks (`supernote.models.webhook`)
+## Outbound Webhooks (`supernote.models.webhook`)
 
 Models in `supernote.models.webhook` define the JSON payloads dispatched by `supernote.server.services.webhook.WebhookService` when a `.note` file completes synchronization or background AI processing:
 
@@ -273,7 +273,7 @@ See `supernote.guides.webhooks_and_integrations` for HMAC-SHA256 signature verif
 
 ---
 
-## 7. Real-Time Socket.IO Events (`supernote.models.socket`)
+## Real-Time Socket.IO Events (`supernote.models.socket`)
 
 Models in `supernote.models.socket` define the real-time event protocol between the server's `/socket.io` namespace and connected clients (`supernote.client.socket.SupernoteSocketClient`):
 
@@ -286,7 +286,7 @@ Models in `supernote.models.socket` define the real-time event protocol between 
 
 ---
 
-## 8. System, Equipment & Object Storage (`supernote.models.equipment`, `supernote.models.system`)
+## System, Equipment & Object Storage (`supernote.models.equipment`, `supernote.models.system`)
 
 ### Equipment Management (`supernote.models.equipment`)
 

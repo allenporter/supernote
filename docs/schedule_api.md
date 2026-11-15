@@ -4,7 +4,7 @@ This document defines the architecture, endpoint specifications, data models, an
 
 ---
 
-## 1. Overview & Core Concepts
+## Overview & Core Concepts
 
 The Schedule ecosystem manages user tasks, task lists (groups), recurrence rules, and sort orders for both physical Supernote hardware tablets (Nomad, A5X, A6X) and client applications (Web UI, Python SDK).
 
@@ -27,7 +27,7 @@ The Schedule ecosystem manages user tasks, task lists (groups), recurrence rules
 
 ---
 
-## 2. Official Device & Server API Endpoints
+## Official Device & Server API Endpoints
 
 All schedule endpoints are unified under the `/api/file/schedule/` namespace:
 
@@ -58,26 +58,26 @@ All schedule endpoints are unified under the `/api/file/schedule/` namespace:
 
 ---
 
-## 3. Mandatory Behavioral Requirements & Semantics
+## Mandatory Behavioral Requirements & Semantics
 
 Implementing compliant Schedule service handlers requires enforcing the following behavioral contracts:
 
-### A. Task & Group ID Generation
+### Task & Group ID Generation
 * **Client-Supplied IDs**: Physical tablets and clients supply their own string UUIDs for `taskId` and `taskListId`.
 * **Server Fallback Requirement**: If `taskId` or `taskListId` is omitted/empty during creation:
   1. The server MUST auto-generate a unique string key (e.g., hash of `title + timestamp`).
   2. If the generated ID collides with an existing record, the server MUST handle collisions (e.g., appending incrementing suffixes) until a unique ID is assigned.
 
-### B. All-or-Nothing Atomic Batch Guarantee (`PUT /api/file/schedule/task/list`)
+### All-or-Nothing Atomic Batch Guarantee (`PUT /api/file/schedule/task/list`)
 * `updateScheduleTaskList` accepts a list of task updates.
 * **Transactional Rule**: The batch operation **MUST be atomic (all-or-nothing)**. If *any single task ID* in the batch list does not exist in the database, the server MUST roll back the entire transaction and return error `E0329` ("Task does not exist"). Partial batch updates are prohibited.
 
-### C. Cascade Soft-Deletes
+### Cascade Soft-Deletes
 * **Group Deletion**: Deleting a task group (`DELETE /api/file/schedule/group/{taskListId}`) MUST soft-delete (`is_deleted = 'Y'`) the group record AND automatically soft-delete all child tasks sharing that `taskListId`.
 * **Group Clearing**: Clearing a group (`POST /api/file/schedule/group/clear`) MUST update the group's `lastModified` timestamp and soft-delete all tasks under that `taskListId` while leaving the group active.
 * **Parent-Recurrence Soft-Delete**: Soft-deleting a parent task MUST soft-delete all linked recurrence instance overrides in `t_schedule_recur_task` (`recurrence_id = parent_task_id`).
 
-### D. Foreign Key Validation & Default Values
+### Foreign Key Validation & Default Values
 * **Group Existence**: When creating or updating a task with a non-empty `taskListId`, the server MUST verify that the target task group exists. If missing, return error `E0328` ("Task list group does not exist").
 * **Default Values**:
   * `isReminderOn` defaults to `"N"` if omitted.
@@ -85,12 +85,12 @@ Implementing compliant Schedule service handlers requires enforcing the followin
   * `isDeleted` defaults to `"N"` if omitted.
   * `lastModified` defaults to `0` if omitted.
 
-### E. Real-Time Socket.IO Event Broadcasting
+### Real-Time Socket.IO Event Broadcasting
 Every mutating API call (`create`, `update`, `delete`, `clear` on groups, tasks, or sorts) MUST emit a Socket.IO event (`scheduleTaskMessage`) to notify active user hardware sessions to trigger auto-sync.
 
 ---
 
-## 4. Client SDK Abstraction Strategy (`ScheduleClient`)
+## Client SDK Abstraction Strategy (`ScheduleClient`)
 
 The Python SDK ([supernote/client/schedule.py](../supernote/client/schedule.py)) provides a high-level, Pythonic interface.
 

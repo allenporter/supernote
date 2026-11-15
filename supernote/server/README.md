@@ -42,7 +42,7 @@ flowchart TD
 
 ## Quick Start
 
-### 1. Start the Server
+### Start the Server
 
 ```bash
 # Start on 0.0.0.0:8080 (MCP on :8081)
@@ -52,7 +52,7 @@ supernote serve
 supernote serve --ephemeral
 ```
 
-### 2. Bootstrap the Admin User & API Keys
+### Bootstrap the Admin User & API Keys
 
 `supernote.server` uses an **Admin-First** bootstrap model: when zero users exist in SQLite, the first registered account automatically receives administrator privileges and locks public registration.
 
@@ -64,7 +64,7 @@ supernote cloud login you@example.com --url http://localhost:8080
 supernote cloud keys create "local-agent"
 ```
 
-### 3. Configure AI & Webhooks (`config/config.yaml`)
+### Configure AI & Webhooks (`config/config.yaml`)
 
 #### AI Configuration
 
@@ -162,7 +162,7 @@ webhooks:
         - "note.processing_completed"
 ```
 
-### 4. Running with Docker
+### Running with Docker
 
 ```bash
 # Build the image
@@ -178,7 +178,7 @@ docker run -d \
   supernote
 ```
 
-### 5. Connecting Your Device
+### Connecting Your Device
 
 1. Review the [official Private Cloud setup guide](https://support.supernote.com/Whats-New/setting-up-your-own-supernote-private-cloud-beta).
 2. Ensure your Supernote device and server are on the same network (or reachable via VPN / HTTPS reverse proxy).
@@ -204,7 +204,7 @@ Open Private Cloud is built for long-term stability:
 
 If an access token or signing secret may have been exposed (for example, in older log files prior to upgrading), you can invalidate active credentials at four levels:
 
-### 1. Rotate the Server-Wide JWT Signing Key (Invalidates All Session Tokens Globally)
+### Rotate the Server-Wide JWT Signing Key (Invalidates All Session Tokens Globally)
 Generate a new 256-bit secret and configure it via `SUPERNOTE_JWT_SECRET` (or `auth.secret_key` in `config/config.yaml`), then restart the server:
 
 ```bash
@@ -213,14 +213,14 @@ export SUPERNOTE_JWT_SECRET="$(openssl rand -hex 32)"
 
 `SUPERNOTE_JWT_SECRET` and `auth.secret_key` take precedence over the auto-generated database key (`system:jwt_secret_key`). Restarting with a new secret immediately invalidates all previously issued device, web, CLI, and signed OSS URL tokens across every user. Devices and web clients will prompt to sign in again.
 
-### 2. Revoke All Sessions for a Single User
+### Revoke All Sessions for a Single User
 Every JWT is validated against persisted session state in `CoordinationService`. Changing or resetting a user's password immediately revokes all active web, CLI, and device sessions for that user without affecting other accounts:
 
 ```bash
 supernote admin --url http://localhost:8080 user reset-password user@example.com
 ```
 
-### 3. Revoke a Static Bearer API Key (`sn_...`)
+### Revoke a Static Bearer API Key (`sn_...`)
 Static API keys (`ApiKeyDO`) can be inspected and revoked individually without resetting your password:
 
 ```bash
@@ -228,10 +228,10 @@ supernote cloud keys list
 supernote cloud keys revoke <key_id>
 ```
 
-### 4. Revoke a Single Device's Token
+### Revoke a Single Device's Token
 Signing out and signing back in on the Supernote tablet (**Settings** > **My Account** > **Sign Out**) revokes all prior session tokens bound to that device (`equipmentNo`).
 
-### 5. Tighten Token Lifetimes & Purge Old Logs
+### Tighten Token Lifetimes & Purge Old Logs
 - Configure shorter token lifetimes via `SUPERNOTE_DEVICE_EXPIRATION_HOURS` (`auth.device_expiration_hours`, default `87600`) and `SUPERNOTE_JWT_EXPIRATION_HOURS` (`auth.expiration_hours`, default `24`).
 - After rotating keys, truncate or delete historical trace logs (`: > storage/system/trace.log`) and rotate container or systemd logs.
 

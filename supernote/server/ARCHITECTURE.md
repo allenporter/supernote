@@ -17,11 +17,11 @@ Open Private Cloud is an asynchronous Python server built to run as a lightweigh
 
 ---
 
-## Part 1: Supernote Private Cloud Wire Protocol
+## Supernote Private Cloud Wire Protocol
 
 Ratta's original Supernote Private Cloud server was designed around a Java/Spring Boot + MySQL + Redis + external TCP `QTServer` stack. To remain 100% wire-compatible with unmodified Supernote hardware firmware, `supernote.server` implements the exact REST endpoints, JSON payload conventions (`mashumaro` DTOs/VOs in `supernote.models`), cryptographic handshakes, and real-time Socket.IO events expected by the devices.
 
-### 1.1. Challenge-Response Authentication & API Keys
+### Challenge-Response Authentication & API Keys
 
 Hardware devices and web clients authenticate via a two-step challenge-response flow to prevent credential replay without requiring plaintext password transmission on the wire.
 
@@ -41,7 +41,7 @@ sequenceDiagram
     Server-->>Client: LoginVO (token=JWT, userId)
 ```
 
-#### Step 1: Get Random Code (Challenge)
+#### Get Random Code (Challenge)
 
 **Endpoint**: `POST /api/official/user/query/random/code`
 
@@ -64,7 +64,7 @@ sequenceDiagram
 
 `UserService` stores the challenge in `CoordinationService` under `challenge:{account}:{timestamp}` with a 5-minute TTL.
 
-#### Step 2: Submit Salted Login Hash
+#### Submit Salted Login Hash
 
 **Endpoint**: `POST /api/official/user/account/login/new` (or `POST /api/official/user/account/login/equipment` for hardware device logins)
 
@@ -100,7 +100,7 @@ sequenceDiagram
 }
 ```
 
-#### Step 3: Token Usage, Revocation & Static Bearer API Keys (`sn_...`)
+#### Token Usage, Revocation & Static Bearer API Keys (`sn_...`)
 
 - **Session JWT Header**: `x-access-token: <token>` (also accepted via `Authorization: Bearer <token>`, cookie, or query parameter where applicable, plus CSRF validation via `GET /api/csrf` and `X-XSRF-TOKEN` on cookie-backed web routes).
 - **Signing Key**: Configured via `SUPERNOTE_JWT_SECRET` / `auth.secret_key`, or auto-generated as a random 256-bit secret and persisted in `CoordinationService` (`system:jwt_secret_key`).
@@ -109,7 +109,7 @@ sequenceDiagram
 
 ---
 
-### 1.2. 3-Step File Synchronization Protocol
+### 3-Step File Synchronization Protocol
 
 Device synchronization (`/api/file/2/*` and `/api/file/3/*`) runs inside a locked session lifecycle (`Start -> List / Upload / Download / Delete -> End`) with a 3-step upload flow (`Apply -> Transfer -> Finish`):
 
@@ -135,7 +135,7 @@ sequenceDiagram
     API->>Bus: Publish SyncCompletedEvent
 ```
 
-#### 1. Start Sync Session (`POST /api/file/2/files/synchronous/start`)
+#### Start Sync Session (`POST /api/file/2/files/synchronous/start`)
 
 **Request (`SynchronousStartLocalDTO`)**:
 ```json
@@ -146,7 +146,7 @@ sequenceDiagram
 
 Checks `CoordinationService` (`sync:lock:{user_id}`, 300 s TTL) to ensure no other device is concurrently syncing the same account. If another device holds the lock, the server returns HTTP `409` with error code `E0078` (`ErrorCode.ANOTHER_DEVICE_SYNCING`). Also returns `synType` indicating whether initial sync has already completed (`sync:initialized:{user_id}`).
 
-#### 2. List Files (`POST /api/file/3/files/list_folder_v3`)
+#### List Files (`POST /api/file/3/files/list_folder_v3`)
 
 **Request (`ListFolderLocalDTO`)**:
 ```json
@@ -180,7 +180,7 @@ Checks `CoordinationService` (`sync:lock:{user_id}`, 300 s TTL) to ensure no oth
 
 Synchronization is **state-based**: the client compares server MD5 hashes (`content_hash`) and paths against local state to decide uploads, downloads, or deletions (`POST /api/file/3/files/delete_folder_v3`).
 
-#### 3. Upload File (`Apply -> Transfer -> Finish`)
+#### Upload File (`Apply -> Transfer -> Finish`)
 
 - **Step A: Apply (`POST /api/file/3/files/upload/apply` or web `/api/file/upload/apply`)**:
   Validates prospective upload `size` against the user's effective quota (`UserDO.total_capacity` or `default_user_quota`) and physical disk headroom (`LocalBlobStorage.get_available_bytes()`), raising `QuotaExceeded` (`E0012`) if exceeded. Allocates a `storage_key` (`innerName`) and returns signed URLs (`fullUploadUrl` and `partUploadUrl`).
@@ -197,12 +197,12 @@ Synchronization is **state-based**: the client compares server MD5 hashes (`cont
 - **Step C: Finish (`POST /api/file/2/files/upload/finish` or web `/api/file/upload/finish`)**:
   Verifies the stored blob's MD5 against `content_hash`, re-verifies quota constraints inside the VFS transaction, commits the `UserFileDO` row in SQLite, and publishes domain events (`VfsItemCreatedEvent` / `VfsItemUpdatedEvent`, `NoteUpdatedEvent`) onto `LocalEventBus`.
 
-#### 4. Download File (`POST /api/file/3/files/download_v3` -> `GET /api/oss/download`)
+#### Download File (`POST /api/file/3/files/download_v3` -> `GET /api/oss/download`)
 
 1. **Apply**: Looks up the `UserFileDO` entry by `id`, verifies ownership, and returns `FileDownloadLocalVO` containing a signed `url` (`/api/oss/download?path={id}&signature=...`).
 2. **Transfer**: Verifies the URL signature via `UrlSigner` (`single_use=False`) and streams bytes with HTTP `Range` support from `LocalBlobStorage`.
 
-#### 5. End Sync Session (`POST /api/file/2/files/synchronous/end`)
+#### End Sync Session (`POST /api/file/2/files/synchronous/end`)
 
 **Request (`SynchronousEndLocalDTO`)**:
 ```json
@@ -216,7 +216,7 @@ Releases `sync:lock:{user_id}` if held by `equipmentNo`. When `flag != "N"`, mar
 
 ---
 
-### 1.3. Signed Object Storage URLs (`/api/oss/`)
+### Signed Object Storage URLs (`/api/oss/`)
 
 `UrlSigner` (`supernote.server.utils.url_signer.UrlSigner`) secures `/api/oss/*` upload and download URLs without requiring `x-access-token` headers on direct blob transfers:
 
@@ -226,7 +226,7 @@ Releases `sync:lock:{user_id}` if held by `equipmentNo`. When `flag != "N"`, mar
 
 ---
 
-### 1.4. Real-Time Socket.IO Push Protocol (Engine.IO v3 & v4)
+### Real-Time Socket.IO Push Protocol (Engine.IO v3 & v4)
 
 Physical Supernote tablets maintain a persistent Socket.IO connection to receive instant push notifications when files, tasks, or digests change on the cloud.
 
@@ -242,7 +242,7 @@ Physical Supernote tablets maintain a persistent Socket.IO connection to receive
 
 ---
 
-## Part 2: Python/Asyncio Server Architecture
+## Python/Asyncio Server Architecture
 
 Rather than requiring a heavy multi-container deployment (Java + MySQL + Redis + S3 + QTServer), `supernote.server` consolidates the entire stack into a single self-contained Python `asyncio` application built on `aiohttp`, `SQLAlchemy[asyncio]`, and `aiosqlite`.
 
@@ -256,7 +256,7 @@ flowchart TB
     Pipeline --> Storage
 ```
 
-### 2.1. Replacing External Infrastructure with Embedded Components
+### Replacing External Infrastructure with Embedded Components
 
 | Legacy Java Component | `supernote.server` Component | Architectural Design |
 | :--- | :--- | :--- |
@@ -268,7 +268,7 @@ flowchart TB
 
 ---
 
-### 2.2. Core Database Schema (`supernote.server.db.models`)
+### Core Database Schema (`supernote.server.db.models`)
 
 All timestamps follow the Supernote protocol convention of 64-bit Unix epoch milliseconds (`int(time.time() * 1000)`), and user-owned tables enforce multi-tenant scoping by `user_id`.
 
@@ -291,7 +291,7 @@ All timestamps follow the Supernote protocol convention of 64-bit Unix epoch mil
 
 ---
 
-### 2.3. Asynchronous Note Processing Pipeline (`ProcessorService`)
+### Asynchronous Note Processing Pipeline (`ProcessorService`)
 
 When a `.note` file is uploaded or updated (`NoteUpdatedEvent`) or when a device sync session finishes (`SyncCompletedEvent`), `supernote.server.services.processor.ProcessorService` enqueues the `file_id` for background processing without blocking the HTTP response.
 
@@ -309,7 +309,7 @@ For full pipeline semantics, state machine rules, and failure recovery details, 
 
 ---
 
-### 2.4. Dual-Port Model Context Protocol (MCP) Server
+### Dual-Port Model Context Protocol (MCP) Server
 
 When `mcp_enabled` is configured, `create_app` in `supernote.server.app` exposes the user's notebook knowledge base to AI assistants using a dual-port OAuth 2.1 + FastMCP architecture:
 

@@ -6,7 +6,7 @@ This guide covers deploying **Open Private Cloud for Supernote** (`supernote`), 
 
 ---
 
-## 1. Deployment Modes & Resource Footprint
+## Deployment Modes & Resource Footprint
 
 The server can run either as a lightweight synchronization target for Supernote hardware or as a full knowledge hub with web previews, vector search, and AI synthesis.
 
@@ -35,7 +35,7 @@ export SUPERNOTE_MCP_ENABLED=false
 
 ---
 
-## 2. Installation & Launch
+## Installation & Launch
 
 ### Option A: Python CLI (`pip` / `uv`)
 
@@ -117,7 +117,7 @@ services:
 
 ---
 
-## 3. Admin Bootstrap & Authentication
+## Admin Bootstrap & Authentication
 
 Open Private Cloud uses a zero-config **Admin-First** security model controlled by `supernote.server.config.AuthConfig`:
 
@@ -142,7 +142,7 @@ sequenceDiagram
 
 ### Step-by-Step Bootstrap via CLI
 
-#### 1. Register the initial administrator
+#### Register the initial administrator
 
 ```bash
 supernote admin --url http://localhost:8080 user add you@example.com --name "Admin"
@@ -150,7 +150,7 @@ supernote admin --url http://localhost:8080 user add you@example.com --name "Adm
 
 You will be prompted interactively for a password (or pass `--password`). Because no users exist yet, `supernote admin user add` registers the account via the bootstrap registration endpoint and promotes it to administrator.
 
-#### 2. Authenticate your CLI session
+#### Authenticate your CLI session
 
 ```bash
 supernote cloud login you@example.com --url http://localhost:8080
@@ -158,7 +158,7 @@ supernote cloud login you@example.com --url http://localhost:8080
 
 This authenticates against the server and caches your session token in `~/.cache/supernote.pkl` so subsequent `supernote admin` and `supernote cloud` commands do not require `--url` or re-entering credentials.
 
-#### 3. Create Static Bearer API Keys (`sn_...`) for Scripts & MCP
+#### Create Static Bearer API Keys (`sn_...`) for Scripts & MCP
 
 For headless CLI scripts, automation workflows, and MCP clients, you can issue revocable static API keys (`sn_...`, stored as SHA-256 hashes in `ApiKeyDO` / `f_api_key`):
 
@@ -183,7 +183,7 @@ supernote cloud ls --url http://localhost:8080
 > [!NOTE]
 > Sensitive account-mutation and key-management endpoints (`/api/extended/keys`, password changes) are guarded by `@interactive_session_only` (`supernote.server.routes.decorators.interactive_session_only`), so a leaked `sn_...` API key cannot mint additional keys or change account credentials.
 
-#### 4. Manage Users, Quotas & Server Queue
+#### Manage Users, Quotas & Server Queue
 
 Open Private Cloud enforces two-tier storage quotas in `supernote.server.services.file.FileService`:
 - **Per-User Quota Override**: Configured on `UserDO.total_capacity` via `supernote admin user set-quota`.
@@ -209,7 +209,7 @@ supernote admin queue status
 
 ---
 
-## 4. Connecting a Physical Supernote Device
+## Connecting a Physical Supernote Device
 
 Compatible with **Supernote Nomad (A6 X2)**, **A5 X2 Manta**, **A5 X**, and **A6 X** running firmware with Private Cloud support.
 
@@ -235,7 +235,7 @@ Compatible with **Supernote Nomad (A6 X2)**, **A5 X2 Manta**, **A5 X**, and **A6
 
 ---
 
-## 5. Reverse Proxy & TLS Setup
+## Reverse Proxy & TLS Setup
 
 When exposing `supernote` behind Nginx, Caddy, or Traefik, configure the external URLs and proxy header trust in `supernote.server.config.ServerConfig` (see `supernote.guides.configuration` for all options).
 
@@ -305,7 +305,7 @@ server {
 
 ---
 
-## 6. Storage Layout & Backups
+## Storage Layout & Backups
 
 All persistent state lives inside `storage_dir` (`./storage` locally or `/data` in Docker):
 

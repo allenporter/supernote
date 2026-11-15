@@ -11,7 +11,7 @@ Alembic allows us to:
 
 ## Workflow
 
-### 1. Make Changes to Models
+### Make Changes to Models
 
 Edit the Python files in `supernote/models/` or `supernote/server/db/models/`.
 For example, add a new field to `User`:
@@ -24,7 +24,7 @@ class UserVO(BaseResponse):
     nickname: str | None = None  # <--- New field
 ```
 
-### 2. Generate Migration Script
+### Generate Migration Script
 
 Run the following command to generate a new migration script:
 
@@ -38,7 +38,7 @@ This will create a new file in `alembic/versions/` (e.g., `alembic/versions/a1b2
 > Always inspect the generated file!
 > Alembic is good, but not perfect. Check that it detected your changes correctly and didn't drop anything unexpectedly.
 
-### 3. Verify Locally
+### Verify Locally
 
 Apply the migration to your local database to make sure it works:
 
@@ -46,7 +46,7 @@ Apply the migration to your local database to make sure it works:
 alembic -c supernote/alembic.ini upgrade head
 ```
 
-### 4. Commit
+### Commit
 
 Commit both your model changes and the new migration file to Git.
 

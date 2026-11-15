@@ -4,7 +4,7 @@ The **Open Private Cloud for Supernote** server is configured via a YAML configu
 
 ---
 
-## 1. Configuration Resolution & Priority
+## Configuration Resolution & Priority
 
 When `supernote.server.config.ServerConfig.load` runs at server startup:
 
@@ -21,7 +21,7 @@ When `supernote.server.config.ServerConfig.load` runs at server startup:
 
 ---
 
-## 2. Complete `config.yaml` Examples
+## Complete `config.yaml` Examples
 
 ### Example 1: Zero-Config / Bare Sync Server
 
@@ -174,7 +174,7 @@ webhooks:
 
 ---
 
-## 3. Top-Level Server Settings (`supernote.server.config.ServerConfig`)
+## Top-Level Server Settings (`supernote.server.config.ServerConfig`)
 
 | YAML Key | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -201,7 +201,7 @@ webhooks:
 
 ---
 
-## 4. Authentication Settings (`supernote.server.config.AuthConfig`)
+## Authentication Settings (`supernote.server.config.AuthConfig`)
 
 Configured under the `auth:` block in `config.yaml`.
 
@@ -215,7 +215,7 @@ Configured under the `auth:` block in `config.yaml`.
 
 ---
 
-## 5. AI Pipeline Settings (`supernote.server.config.AiConfig`)
+## AI Pipeline Settings (`supernote.server.config.AiConfig`)
 
 Configured under the `ai:` block in `config.yaml`. Each capability (`ocr`, `summary`, `embedding`) is optional; omitting a capability disables that stage of the pipeline.
 
@@ -252,7 +252,7 @@ For single-variable Docker deployments, `supernote.server.config.ServerConfig` a
 
 ---
 
-## 6. Outbound Webhook Settings (`supernote.server.config.WebhookConfig`)
+## Outbound Webhook Settings (`supernote.server.config.WebhookConfig`)
 
 Configured under the `webhooks:` block in `config.yaml`, consumed by `supernote.server.services.webhook.WebhookService` (see `supernote.guides.webhooks_and_integrations`).
 

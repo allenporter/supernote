@@ -9,7 +9,7 @@ Reference monitoring assets are included in [`docs/monitoring/`](./monitoring/):
 
 ---
 
-## 1. Server & Prometheus Setup
+## Server & Prometheus Setup
 
 ### Server Configuration (`config.yaml`)
 
@@ -42,7 +42,7 @@ scrape_configs:
 
 ---
 
-## 2. Exported Metric Catalog
+## Exported Metric Catalog
 
 | Metric Family | Type | Labels | Description |
 | :--- | :---: | :--- | :--- |
