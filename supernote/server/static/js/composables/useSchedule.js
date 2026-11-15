@@ -86,8 +86,10 @@ export function useSchedule() {
         try {
             await deleteScheduleTask(taskId);
             tasks.value = tasks.value.filter(t => t.id !== String(taskId));
+            return true;
         } catch (e) {
             showToast("Failed to delete task: " + e.message);
+            return false;
         }
     }
 
@@ -100,13 +102,7 @@ export function useSchedule() {
         }
     }
 
-    async function removeGroup(groupId, groupTitle = '') {
-        const count = tasks.value.filter(t => String(t.taskListId) === String(groupId)).length;
-        const warningText = count > 0
-            ? `Are you sure you want to delete "${groupTitle || 'this group'}"?\n\n⚠️ WARNING: Deleting this group will permanently delete all ${count} task(s) inside it!`
-            : `Are you sure you want to delete "${groupTitle || 'this group'}"?`;
-
-        if (!confirm(warningText)) return;
+    async function removeGroup(groupId) {
         try {
             await deleteTaskGroup(groupId);
             if (selectedGroupId.value === String(groupId)) {
@@ -114,8 +110,10 @@ export function useSchedule() {
             }
             await loadGroups();
             await loadTasks();
+            return true;
         } catch (e) {
             showToast("Failed to delete group: " + e.message);
+            return false;
         }
     }
 
