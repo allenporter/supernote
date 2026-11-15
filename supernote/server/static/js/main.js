@@ -85,9 +85,7 @@ createApp({
             closeViewer,
             handleViewerPageChange,
             openItem,
-            navigateFolder,
-            navigateTo,
-            navigateToTarget
+            navigateTo
         } = useRouter({
             isLoggedIn,
             files,
@@ -117,7 +115,7 @@ createApp({
         async function handleSearchSelectFile(item) {
             if (!item) return;
             showSearchModal.value = false;
-            await navigateToTarget(item);
+            await openItem(item);
         }
 
         async function handleSearchSelectTask(task) {
@@ -135,7 +133,7 @@ createApp({
 
         async function handleSystemOpenFile(fileId) {
             if (!fileId) return;
-            await navigateToTarget({ id: String(fileId), isDirectory: false });
+            await openItem({ id: String(fileId), isDirectory: false });
         }
 
         async function resumeSession() {
@@ -309,7 +307,6 @@ createApp({
             closeViewer,
             handleViewerPageChange,
             openItem,
-            navigateFolder,
             navigateTo,
             selectedFile,
             selectedPageIndex,

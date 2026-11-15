@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { ref } from 'vue';
 
 import { computeSocketSignature } from '../../supernote/server/static/js/api/client.js';
 import { apiRequest, getToken, logout, onLogout, setToken } from '../../supernote/server/static/js/api/http.js';
@@ -26,6 +27,7 @@ import {
     buildUrlHash,
     formatCrumbName,
     parseUrlHash,
+    useRouter,
 } from '../../supernote/server/static/js/composables/useRouter.js';
 import { copyTextToClipboard } from '../../supernote/server/static/js/utils/clipboard.js';
 import { formatSize, normalizeEpochMs } from '../../supernote/server/static/js/utils/format.js';
@@ -188,6 +190,160 @@ test('useRouter.js: parseUrlHash, buildUrlHash, and breadcrumb builders', () => 
             { id: '20', name: 'Specs' },
         ]
     );
+});
+
+test('useRouter.js: stateful navigation, history back/replace, and cross-directory file resolution', async () => {
+    const origWindow = globalThis.window;
+    const origFetch = globalThis.fetch;
+
+    try {
+        /** @type {string[]} */
+        const historyStack = [''];
+        let historyIdx = 0;
+        let routerRef = null;
+
+        globalThis.window = {
+            location: {
+                origin: 'http://127.0.0.1:8080',
+                get hash() {
+                    return historyStack[historyIdx] || '';
+                },
+            },
+            history: {
+                pushState(_state, _title, url) {
+                    historyStack.splice(historyIdx + 1);
+                    historyStack.push(String(url));
+                    historyIdx = historyStack.length - 1;
+                },
+                replaceState(_state, _title, url) {
+                    historyStack[historyIdx] = String(url);
+                },
+                back() {
+                    if (historyIdx > 0) {
+                        historyIdx--;
+                        void routerRef?.syncFromUrl();
+                    }
+                },
+            },
+            addEventListener() {},
+            removeEventListener() {},
+        };
+
+        let pathQueries = 0;
+        setToken('router-tok');
+        globalThis.fetch = async (_url, init) => {
+            pathQueries++;
+            const body = JSON.parse(String(init?.body || '{}'));
+            if (body.id === '99') {
+                return new Response(
+                    JSON.stringify({ success: true, path: '/EXPORT/Summary.note', idPath: '/20/99' }),
+                    { status: 200 }
+                );
+            }
+            if (body.id === '404') {
+                return new Response(
+                    JSON.stringify({ success: true, path: '', idPath: '' }),
+                    { status: 200 }
+                );
+            }
+            return new Response(
+                JSON.stringify({ success: true, path: '/INBOX', idPath: '/10' }),
+                { status: 200 }
+            );
+        };
+
+        const isLoggedIn = ref(true);
+        const files = ref([]);
+        const currentDirectoryId = ref('0');
+        const loadedDirectoryId = ref(null);
+        const selectedIds = ref(['stale']);
+
+        /** @type {Record<string, Array<Record<string, any>>>} */
+        const mockVfs = {
+            '0': [{ id: '10', name: 'INBOX', isDirectory: true }],
+            '10': [{ id: '55', name: 'Notes.note', isDirectory: false, extension: 'note' }],
+            '20': [{ id: '99', name: 'Summary.note', isDirectory: false, extension: 'note' }],
+        };
+
+        async function loadDirectory(dirId = '0') {
+            const id = String(dirId);
+            currentDirectoryId.value = id;
+            files.value = mockVfs[id] || [];
+            loadedDirectoryId.value = id;
+        }
+
+        const router = useRouter({
+            isLoggedIn,
+            files,
+            currentDirectoryId,
+            loadedDirectoryId,
+            loadDirectory,
+            selectedIds,
+        });
+        routerRef = router;
+
+        // 1. Initial boot on empty hash normalizes to #/files and loads root directory '0'
+        await router.syncFromUrl(true);
+        router.updateUrl(true);
+        assert.equal(globalThis.window.location.hash, '#/files');
+        assert.equal(currentDirectoryId.value, '0');
+        assert.deepEqual(selectedIds.value, []);
+
+        // 2. Opening a child folder in the loaded directory appends crumb with zero path-query calls
+        await router.openItem({ id: '10', name: 'INBOX', isDirectory: true });
+        assert.equal(globalThis.window.location.hash, '#/files/10');
+        assert.equal(pathQueries, 0);
+        assert.deepEqual(router.breadcrumbs.value, [
+            { id: '0', name: 'Cloud' },
+            { id: '10', name: 'Inbox' },
+        ]);
+
+        // 3. Opening a file in the loaded directory opens viewer with zero path-query calls
+        await router.openItem(files.value[0]);
+        assert.equal(globalThis.window.location.hash, '#/file/55');
+        assert.equal(router.view.value, 'viewer');
+        assert.equal(router.selectedFile.value?.id, '55');
+        assert.equal(pathQueries, 0);
+
+        // 4. Page scroll replaces hash in-place without growing history stack
+        const stackLenBeforeScroll = historyStack.length;
+        router.handleViewerPageChange(2);
+        assert.equal(globalThis.window.location.hash, '#/file/55?page=3');
+        assert.equal(historyStack.length, stackLenBeforeScroll);
+
+        // 5. Closing viewer pops in-app history back to #/files/10
+        await router.closeViewer();
+        assert.equal(globalThis.window.location.hash, '#/files/10');
+        assert.equal(router.view.value, 'grid');
+        assert.equal(router.selectedFile.value, null);
+
+        // 6. Opening System drawer then jumping to a file in another folder replaces #/system in-place
+        router.openSystemPanel();
+        assert.equal(globalThis.window.location.hash, '#/system');
+        assert.equal(router.showSystemPanel.value, true);
+        const stackLenOnSystem = historyStack.length;
+
+        await router.openItem({ id: '99', isDirectory: false });
+        assert.equal(router.showSystemPanel.value, false);
+        assert.equal(globalThis.window.location.hash, '#/file/99');
+        assert.equal(historyStack.length, stackLenOnSystem);
+        assert.equal(currentDirectoryId.value, '20');
+        assert.deepEqual(router.breadcrumbs.value, [
+            { id: '0', name: 'Cloud' },
+            { id: '20', name: 'Export' },
+        ]);
+        assert.equal(router.selectedFile.value?.name, 'Summary.note');
+
+        // 7. Missing deep-linked folder falls back to #/files
+        globalThis.window.history.pushState(null, '', '#/files/404');
+        await router.syncFromUrl();
+        assert.equal(globalThis.window.location.hash, '#/files');
+        assert.equal(currentDirectoryId.value, '0');
+    } finally {
+        await logout({ reload: false });
+        globalThis.window = origWindow;
+        globalThis.fetch = origFetch;
+    }
 });
 
 test('format.js & oauth.js: epoch normalization, byte sizes, and OAuth /login-bridge safety', () => {
