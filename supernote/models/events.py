@@ -1,4 +1,9 @@
-"""Data models for the per-user domain event feed."""
+"""Data models for the per-user domain event feed.
+
+These models define the event types, entity categories, request parameters, and
+wire envelopes shared by `GET /api/extended/events`, `EventsClient`, and MCP
+event tools/notifications.
+"""
 
 from dataclasses import dataclass, field
 from enum import StrEnum

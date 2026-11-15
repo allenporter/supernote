@@ -3,11 +3,15 @@
 The domain event feed (`GET /api/extended/events`) exposes an append-only,
 strictly ordered per-user log of state transitions across VFS files and
 folders (`vfs.*`), notebook page structures and OCR transcripts (`note.*`),
-schedule tasks (`schedule.*`), and AI summaries (`summary.*`).
+schedule tasks (`schedule.*`), and AI summaries (`summary.*`). The same
+unified event log and `sync_token` checkpointing also back MCP (Model Context
+Protocol) event tools and resource update notifications so MCP clients and
+external agents can consume workspace changes through a single consistent
+contract.
 
 Instead of polling and diffing full folder trees, notebook transcripts, or
-task lists on a timer, consumers (such as background agents, sync workers, or
-UI clients) can:
+task lists on a timer, consumers (such as MCP clients, background agents, sync
+workers, or UI clients) can:
 1. Call `EventsClient.list_events()` with `sync_token=None` on initial
    bootstrap (or resume from a persisted `next_sync_token`).
 2. Page forward while `has_more` is `True`, persisting `next_sync_token` after
