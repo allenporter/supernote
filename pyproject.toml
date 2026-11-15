@@ -128,6 +128,11 @@ markers = [
     "integration: mark test as out-of-process integration test",
 ]
 
+[tool.coverage.run]
+# Enable PEP 669 sys.monitoring on Python 3.13+ (coverage only defaults to it on
+# Python 3.14+, falling back to ~2x slower sys.settrace on Python 3.13).
+core = "sysmon"
+
 [tool.ty.src]
 exclude = [
     "supernote/cli/",

@@ -112,7 +112,11 @@ async def test_http_request_tracking(client: TestClient) -> None:
         assert bucket_val is not None
 
 
-async def test_http_mcp_oauth_known_path_preserved(client: TestClient) -> None:
+@pytest.mark.parametrize("mcp_enabled", [True])
+async def test_http_mcp_oauth_known_path_preserved(
+    client: TestClient,
+    mcp_enabled: bool,
+) -> None:
     """Verify known MCP OAuth discovery requests retain their canonical route path label."""
     oauth_labels = {
         "method": "GET",
@@ -131,7 +135,11 @@ async def test_http_mcp_oauth_known_path_preserved(client: TestClient) -> None:
     )
 
 
-async def test_http_mcp_unmatched_scanner_path_collapsed(client: TestClient) -> None:
+@pytest.mark.parametrize("mcp_enabled", [True])
+async def test_http_mcp_unmatched_scanner_path_collapsed(
+    client: TestClient,
+    mcp_enabled: bool,
+) -> None:
     """Verify unmatched scanner paths caught by MCP ASGIResource collapse to 'HTTP 404'."""
     scanner_path = "/unmatched/scanner/path"
     not_found_labels = {"method": "GET", "path": "HTTP 404", "status": "404"}

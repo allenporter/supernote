@@ -95,9 +95,19 @@ def server_port() -> int:
 
 
 @pytest.fixture
-def mcp_port() -> int:
-    """Find a free port for the MCP server."""
-    return pick_port()
+def mcp_enabled() -> bool:
+    """Default MCP server toggle for tests.
+
+    Disabled by default to avoid booting an embedded Uvicorn ASGI server
+    on every non-MCP HTTP route test. Override to True in MCP test suites.
+    """
+    return False
+
+
+@pytest.fixture
+def mcp_port(mcp_enabled: bool) -> int:
+    """Find a free port for the MCP server when enabled."""
+    return pick_port() if mcp_enabled else 0
 
 
 @pytest.fixture
@@ -107,6 +117,7 @@ def server_config(
     proxy_mode: str | None,
     configured_base_url: str | None,
     server_port: int,
+    mcp_enabled: bool,
     mcp_port: int,
 ) -> ServerConfig:
     """Create a ServerConfig object for testing."""
@@ -115,6 +126,7 @@ def server_config(
         trace_log_file=mock_trace_log,
         storage_dir=str(storage_root),
         port=server_port,
+        mcp_enabled=mcp_enabled,
         mcp_port=mcp_port,
         proxy_mode=proxy_mode,
         _base_url=configured_base_url,
@@ -240,6 +252,12 @@ async def _session_manager_shared(
         db_url,
         engine_kwargs={
             "connect_args": {"check_same_thread": False},
+        },
+        # Disable fsyncs and keep temp tables in RAM for ephemeral test DBs to
+        # avoid 0.5s+ SQLite WAL flush stalls during per-test table truncation.
+        sqlite_pragmas={
+            "synchronous": "OFF",
+            "temp_store": "MEMORY",
         },
     )
     await session_manager.create_all_tables()

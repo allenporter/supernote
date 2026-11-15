@@ -16,7 +16,7 @@ await session_manager.close()
 ```
 """
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager, suppress
 from typing import Any
 
@@ -40,6 +40,12 @@ ENGINE_KWARGS: dict[str, Any] = {
     "echo": False,
 }
 
+DEFAULT_SQLITE_PRAGMAS: dict[str, str | int] = {
+    "journal_mode": "WAL",
+    "synchronous": "NORMAL",
+    "foreign_keys": "ON",
+}
+
 
 async def _rollback_quietly(session: AsyncSession) -> None:
     """Perform a best-effort session rollback without masking the active exception."""
@@ -50,7 +56,12 @@ async def _rollback_quietly(session: AsyncSession) -> None:
 class DatabaseSessionManager:
     """Database session manager."""
 
-    def __init__(self, host: str, engine_kwargs: dict[str, Any] | None = None):
+    def __init__(
+        self,
+        host: str,
+        engine_kwargs: dict[str, Any] | None = None,
+        sqlite_pragmas: Mapping[str, str | int] | None = None,
+    ) -> None:
         """Initialize the database session manager."""
         if engine_kwargs is None:
             engine_kwargs = dict(ENGINE_KWARGS)
@@ -71,13 +82,18 @@ class DatabaseSessionManager:
         # Enable WAL (Write-Ahead Logging) and Normal synchronous mode for SQLite
         if "sqlite" in host:
             assert self._engine is not None
+            pragmas = {**DEFAULT_SQLITE_PRAGMAS, **(sqlite_pragmas or {})}
+            pragma_statements = tuple(
+                f"PRAGMA {name}={value}" for name, value in pragmas.items()
+            )
 
             @event.listens_for(self._engine.sync_engine, "connect")
-            def set_sqlite_pragma(dbapi_connection, connection_record):
+            def set_sqlite_pragma(
+                dbapi_connection: Any, _connection_record: Any
+            ) -> None:
                 cursor = dbapi_connection.cursor()
-                cursor.execute("PRAGMA journal_mode=WAL")
-                cursor.execute("PRAGMA synchronous=NORMAL")
-                cursor.execute("PRAGMA foreign_keys=ON")
+                for stmt in pragma_statements:
+                    cursor.execute(stmt)
                 cursor.close()
 
     async def close(self) -> None:

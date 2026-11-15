@@ -437,8 +437,10 @@ def test_normalize_http_method_bounds_cardinality(
     assert _normalize_http_method(raw_method) == expected
 
 
+@pytest.mark.parametrize("mcp_enabled", [True])
 async def test_resolve_metrics_path_preserves_known_mcp_auth_route(
     client: TestClient,
+    mcp_enabled: bool,
 ) -> None:
     """Verify _resolve_metrics_path keeps canonical paths for known MCP OAuth routes."""
     assert client.app is not None
@@ -451,8 +453,10 @@ async def test_resolve_metrics_path_preserves_known_mcp_auth_route(
     )
 
 
+@pytest.mark.parametrize("mcp_enabled", [True])
 async def test_resolve_metrics_path_collapses_unknown_mcp_asgi_path(
     client: TestClient,
+    mcp_enabled: bool,
 ) -> None:
     """Verify _resolve_metrics_path collapses unmatched paths routed to MCP ASGIResource."""
     assert client.app is not None

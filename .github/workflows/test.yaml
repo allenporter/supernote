@@ -34,7 +34,7 @@ jobs:
           uv pip install -r requirements_dev.txt
       - name: Test with pytest
         run: |
-          pytest --cov=supernote --cov-report=term-missing
+          pytest -n auto --dist worksteal --cov=supernote --cov-report=term-missing
       - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
