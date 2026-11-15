@@ -275,35 +275,98 @@ class WebAiStatusVO(BaseResponse):
 
 
 class DomainEventType(StrEnum):
-    """Canonical domain event type identifiers recorded in `f_user_event`."""
+    """Canonical domain event type identifiers recorded in `f_user_event`.
+
+    Each event carries a domain-specific `payload` dictionary on `DomainEventVO`
+    describing the mutation delta so incremental consumers can react without
+    re-fetching unchanged resources.
+    """
 
     VFS_CREATED = "vfs.created"
+    """File or folder created (or copied) in the VFS (`entity_type='file'`).
+
+    Payload keys: `name`, `parent_id`, `full_path`, `is_folder`, `size`, `md5`,
+    and optional `copied_from_id`, `copied_from_path`.
+    """
+
     VFS_CONTENT_UPDATED = "vfs.content_updated"
+    """Existing VFS file overwritten with new content (`entity_type='file'`).
+
+    Payload keys: `name`, `parent_id`, `full_path`, `size`, `old_md5`, `new_md5`.
+    """
+
     VFS_MOVED = "vfs.moved"
-    VFS_COPIED = "vfs.copied"
+    """File or folder renamed or moved to a new parent (`entity_type='file'`).
+
+    Payload keys: `old_path`, `new_path`, `old_name`, `new_name`,
+    `old_parent_id`, `new_parent_id`, `is_folder`, `size`, `md5`.
+    """
+
     VFS_DELETED = "vfs.deleted"
+    """File or folder deleted from the VFS (`entity_type='file'`).
+
+    Payload keys: `name`, `parent_id`, `full_path`, `is_folder`, `size`, `md5`.
+    """
 
     NOTE_PAGES_DELTA = "note.pages_delta"
+    """Structural page changes detected in a `.note` file (`entity_type='file'`).
+
+    Payload keys: `file_path`, `added_pages`, `modified_pages`, `moved_pages`,
+    `deleted_pages`.
+    """
+
     NOTE_PAGE_TRANSCRIBED = "note.page_transcribed"
+    """Single notebook page OCR text updated (`entity_type='note_page'`, `entity_id='<file_id>:<page_id>'`).
+
+    Payload keys: `file_path`, `page_id`, `page_index`, `page_modified_ms`,
+    `previous_text`, `current_text`.
+    """
+
     NOTE_PROCESSING_COMPLETED = "note.processing_completed"
+    """Background processing pipeline finished for a `.note` file (`entity_type='file'`).
+
+    Payload keys: `file_path`, `page_count`.
+    """
+
     NOTE_PROCESSING_FAILED = "note.processing_failed"
+    """Background processing pipeline failed for a `.note` file (`entity_type='file'`).
+
+    Payload keys: `file_path`, `module_name`, `page_id`, `error`.
+    """
 
     SCHEDULE_TASK_CREATED = "schedule.task_created"
-    SCHEDULE_TASK_UPDATED = "schedule.task_updated"
-    SCHEDULE_TASK_DELETED = "schedule.task_deleted"
-    SCHEDULE_GROUP_CREATED = "schedule.group_created"
-    SCHEDULE_GROUP_UPDATED = "schedule.group_updated"
-    SCHEDULE_GROUP_DELETED = "schedule.group_deleted"
+    """Schedule to-do task created (`entity_type='schedule_task'`).
 
-    SUMMARY_CREATED = "summary.created"
-    SUMMARY_UPDATED = "summary.updated"
+    Payload keys: `task_id`, `task_list_id`, `title`, `detail`, `status`,
+    `due_time`, `links`, `linked_page_id`.
+    """
+
+    SCHEDULE_TASK_UPDATED = "schedule.task_updated"
+    """Schedule to-do task updated (`entity_type='schedule_task'`).
+
+    Payload keys: `task_id`, `task_list_id`, `title`, `status`,
+    `changed_fields`, `linked_page_id`.
+    """
+
+    SCHEDULE_TASK_DELETED = "schedule.task_deleted"
+    """Schedule to-do task deleted (`entity_type='schedule_task'`).
+
+    Payload keys: `task_id`, `task_list_id`, `title`, `previous_status`,
+    `linked_page_id`.
+    """
+
+    SUMMARY_UPSERTED = "summary.upserted"
+    """Summary or synthesis item created or updated (`entity_type='summary'`).
+
+    Payload keys: `id`, `unique_identifier`, `is_new`, `is_summary_group`,
+    `name`, `source_path`, `data_source`, `md5_hash`.
+    """
+
     SUMMARY_DELETED = "summary.deleted"
-    SUMMARY_GROUP_CREATED = "summary.group_created"
-    SUMMARY_GROUP_UPDATED = "summary.group_updated"
-    SUMMARY_GROUP_DELETED = "summary.group_deleted"
-    SUMMARY_TAG_CREATED = "summary.tag_created"
-    SUMMARY_TAG_UPDATED = "summary.tag_updated"
-    SUMMARY_TAG_DELETED = "summary.tag_deleted"
+    """Summary or synthesis item deleted (`entity_type='summary'`).
+
+    Payload keys: `summary_id`, `unique_identifier`, `is_summary_group`.
+    """
 
 
 class DomainEntityType(StrEnum):
@@ -312,10 +375,7 @@ class DomainEntityType(StrEnum):
     FILE = "file"
     NOTE_PAGE = "note_page"
     SCHEDULE_TASK = "schedule_task"
-    SCHEDULE_GROUP = "schedule_group"
     SUMMARY = "summary"
-    SUMMARY_GROUP = "summary_group"
-    SUMMARY_TAG = "summary_tag"
 
 
 @dataclass
@@ -330,7 +390,9 @@ class EventFeedRequestDTO(DataClassJSONMixin):
     )
     """Opaque checkpoint token returned as `nextSyncToken` by a prior call (`None` to start from the beginning)."""
 
-    types: str | None = None
+    event_types: str | None = field(
+        metadata=field_options(alias="eventTypes"), default=None
+    )
     """Optional comma-separated `DomainEventType` values or namespace globs (`'vfs.*'`, `'note.*'`, `'schedule.*'`, `'summary.*'`)."""
 
     file_id: int | None = field(
@@ -342,11 +404,13 @@ class EventFeedRequestDTO(DataClassJSONMixin):
     """Maximum number of events to return (`1..1000`, default `200`)."""
 
     @property
-    def type_list(self) -> list[str] | None:
+    def event_type_list(self) -> list[str] | None:
         """Return parsed event type filter strings, or `None` when unset."""
-        if not self.types:
+        if not self.event_types:
             return None
-        return [part.strip() for part in self.types.split(",") if part.strip()] or None
+        return [
+            part.strip() for part in self.event_types.split(",") if part.strip()
+        ] or None
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -366,7 +430,7 @@ class DomainEventVO(DataClassJSONMixin):
     timestamp: int
     """Event recording timestamp in UTC epoch milliseconds."""
 
-    type: str
+    event_type: str = field(metadata=field_options(alias="eventType"))
     """Domain event type identifier (see `DomainEventType` in `supernote.models.extended`)."""
 
     actor: str

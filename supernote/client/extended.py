@@ -114,7 +114,7 @@ class ExtendedClient:
         self,
         *,
         sync_token: str | None = None,
-        types: list[str] | None = None,
+        event_types: list[str] | None = None,
         file_id: int | None = None,
         limit: int = 200,
     ) -> EventFeedListVO:
@@ -123,7 +123,7 @@ class ExtendedClient:
         Args:
             sync_token: Opaque `next_sync_token` from a previous response, or
                 `None` to read from the beginning of retained event history.
-            types: Optional list of event type filters. Accepts exact
+            event_types: Optional list of event type filters. Accepts exact
                 `DomainEventType` values (defined in `supernote.models.extended`,
                 e.g. `DomainEventType.NOTE_PAGE_TRANSCRIBED`) or namespace prefix
                 globs (`'vfs.*'`, `'note.*'`, `'schedule.*'`, `'summary.*'`).
@@ -137,7 +137,7 @@ class ExtendedClient:
         """
         dto = EventFeedRequestDTO(
             sync_token=sync_token,
-            types=",".join(types) if types else None,
+            event_types=",".join(event_types) if event_types else None,
             file_id=file_id,
             limit=limit,
         )

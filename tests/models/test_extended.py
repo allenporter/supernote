@@ -244,24 +244,24 @@ def test_domain_event_feed_models() -> None:
 
     req = EventFeedRequestDTO(
         sync_token="djE6MTAw",
-        types="vfs.*, note.*",
+        event_types="vfs.*, note.*",
         file_id=772252421643567298,
         limit=50,
     )
-    assert req.type_list == ["vfs.*", "note.*"]
+    assert req.event_type_list == ["vfs.*", "note.*"]
     assert req.to_dict() == {
         "syncToken": "djE6MTAw",
-        "types": "vfs.*, note.*",
+        "eventTypes": "vfs.*, note.*",
         "fileId": "772252421643567298",
         "limit": 50,
     }
     assert EventFeedRequestDTO.from_dict(req.to_dict()) == req
-    assert EventFeedRequestDTO().type_list is None
+    assert EventFeedRequestDTO().event_type_list is None
 
     ev = DomainEventVO(
         seq="772252421643567001",
         timestamp=1_700_000_000_000,
-        type="note.page_transcribed",
+        event_type="note.page_transcribed",
         actor="system:processor",
         entity_type="note_page",
         entity_id="772252421643567298:0",
@@ -282,7 +282,7 @@ def test_domain_event_feed_models() -> None:
             {
                 "seq": "772252421643567001",
                 "timestamp": 1_700_000_000_000,
-                "type": "note.page_transcribed",
+                "eventType": "note.page_transcribed",
                 "actor": "system:processor",
                 "entityType": "note_page",
                 "entityId": "772252421643567298:0",

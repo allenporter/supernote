@@ -368,7 +368,7 @@ async def handle_list_events(request: web.Request) -> web.Response:
         page = await event_log_service.list_events(
             user_id=user_id,
             sync_token=req_dto.sync_token,
-            types=req_dto.type_list,
+            event_types=req_dto.event_type_list,
             file_id=req_dto.file_id,
             limit=req_dto.limit,
         )
@@ -377,7 +377,7 @@ async def handle_list_events(request: web.Request) -> web.Response:
                 DomainEventVO(
                     seq=str(ev.seq),
                     timestamp=ev.timestamp_ms,
-                    type=ev.event_type,
+                    event_type=ev.event_type,
                     actor=ev.actor,
                     entity_type=ev.entity_type,
                     entity_id=ev.entity_id,

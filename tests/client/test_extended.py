@@ -117,7 +117,7 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
                     {
                         "seq": "105",
                         "timestamp": 1700000000000,
-                        "type": "vfs.created",
+                        "eventType": "vfs.created",
                         "actor": "user:web",
                         "entityType": "file",
                         "entityId": "10",
@@ -184,7 +184,7 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
 
     events_vo = await ext.list_events(
         sync_token="100",
-        types=["vfs.*", "note.*"],
+        event_types=["vfs.*", "note.*"],
         file_id=10,
         limit=50,
     )
@@ -221,7 +221,7 @@ async def test_extended_client_methods(aiohttp_client: AiohttpClient) -> None:
             {
                 "syncToken": "100",
                 "limit": "50",
-                "types": "vfs.*,note.*",
+                "eventTypes": "vfs.*,note.*",
                 "fileId": "10",
             },
         ),

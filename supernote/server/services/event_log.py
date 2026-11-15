@@ -110,7 +110,7 @@ class EventLogService:
         user_id: int,
         *,
         sync_token: str | None = None,
-        types: list[str] | None = None,
+        event_types: list[str] | None = None,
         file_id: int | None = None,
         limit: int = DEFAULT_FEED_LIMIT,
     ) -> EventFeedPage:
@@ -120,7 +120,7 @@ class EventLogService:
             user_id: Owner user ID whose event log to query.
             sync_token: Opaque `next_sync_token` returned by a previous call.
                 When `None` or empty, returns retained events from the beginning.
-            types: Optional list of event type filters supporting exact
+            event_types: Optional list of event type filters supporting exact
                 `DomainEventType` values (defined in `supernote.models.extended`)
                 or namespace prefix wildcards ending with `'.*'` (`'note.*'`,
                 `'vfs.*'`, `'schedule.*'`, `'summary.*'`).
@@ -158,12 +158,12 @@ class EventLogService:
             )
             if file_id is not None:
                 stmt = stmt.where(UserEventDO.related_file_id == file_id)
-            if types:
+            if event_types:
                 type_clauses = [
                     UserEventDO.event_type.startswith(t[:-1], autoescape=True)
                     if t.endswith(".*")
                     else UserEventDO.event_type == t
-                    for t in types
+                    for t in event_types
                     if t
                 ]
                 if type_clauses:

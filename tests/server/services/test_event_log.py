@@ -125,12 +125,12 @@ async def test_list_events_sync_tokens_filters_and_user_isolation(
 
     # Prefix type globbing + exact type matching
     filtered_types = await event_log_service.list_events(
-        user_id=1, types=["note.*", "schedule.task_created"]
+        user_id=1, event_types=["note.*", "schedule.task_created"]
     )
     assert [e.seq for e in filtered_types.events] == [ev3.seq, ev4.seq]
 
     # When a filtered query has 0 matches, next_sync_token advances to user's latest seq
-    no_match = await event_log_service.list_events(user_id=1, types=["summary.*"])
+    no_match = await event_log_service.list_events(user_id=1, event_types=["summary.*"])
     assert no_match.events == []
     assert no_match.next_sync_token == encode_sync_token(ev4.seq)
 
