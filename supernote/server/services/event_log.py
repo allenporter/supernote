@@ -8,9 +8,16 @@ from typing import Any
 
 from sqlalchemy import delete, func, or_, select
 
+from supernote.models.base import BooleanEnum
+from supernote.models.events import DomainEntityType, DomainEventType
 from supernote.server.db.models.event_log import UserEventDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.events import DomainEventRecorded, LocalEventBus
+from supernote.server.events import (
+    DomainEventRecorded,
+    LocalEventBus,
+    SummaryDeletedEvent,
+    SummaryUpsertedEvent,
+)
 from supernote.server.exceptions import CursorExpiredError, InvalidInputError
 from supernote.server.services.coordination import CoordinationService
 
@@ -58,6 +65,13 @@ class EventLogService:
         self._coordination_service = coordination_service
         self._event_bus = event_bus
         self._retention_days = retention_days
+        if self._event_bus is not None:
+            self._event_bus.subscribe(
+                SummaryUpsertedEvent, self._on_summary_upserted, inline=True
+            )
+            self._event_bus.subscribe(
+                SummaryDeletedEvent, self._on_summary_deleted, inline=True
+            )
 
     async def append(
         self,
@@ -232,6 +246,47 @@ class EventLogService:
         if raw and raw.isascii() and raw.isdigit():
             return int(raw)
         return 0
+
+    async def _on_summary_upserted(self, event: SummaryUpsertedEvent) -> None:
+        summary = event.summary
+        entity_id = str(summary.id or summary.unique_identifier or "unknown")
+        await self.append(
+            user_id=event.user_id,
+            event_type=DomainEventType.SUMMARY_UPSERTED,
+            entity_type=DomainEntityType.SUMMARY,
+            entity_id=entity_id,
+            actor=_resolve_actor(event.equipment_no),
+            related_file_id=summary.file_id,
+            payload={
+                "id": str(summary.id) if summary.id is not None else None,
+                "unique_identifier": summary.unique_identifier,
+                "is_new": event.is_new,
+                "is_summary_group": summary.is_summary_group == BooleanEnum.YES,
+                "name": summary.name,
+                "source_path": summary.source_path,
+                "data_source": summary.data_source,
+                "md5_hash": summary.md5_hash,
+            },
+        )
+
+    async def _on_summary_deleted(self, event: SummaryDeletedEvent) -> None:
+        await self.append(
+            user_id=event.user_id,
+            event_type=DomainEventType.SUMMARY_DELETED,
+            entity_type=DomainEntityType.SUMMARY,
+            entity_id=str(event.summary_id),
+            actor=_resolve_actor(event.equipment_no),
+            related_file_id=event.file_id,
+            payload={
+                "summary_id": str(event.summary_id),
+                "unique_identifier": event.unique_identifier,
+                "is_summary_group": event.is_summary_group,
+            },
+        )
+
+
+def _resolve_actor(equipment_no: str | None = None) -> str:
+    return f"device:{equipment_no}" if equipment_no else "user:web"
 
 
 def _row_to_recorded(row: UserEventDO) -> DomainEventRecorded:

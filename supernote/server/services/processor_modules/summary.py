@@ -20,6 +20,7 @@ from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.events import SummaryDeletedEvent
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.services.summary import SummaryService
@@ -114,20 +115,38 @@ class SummaryModule(ProcessorModule):
         session_manager: DatabaseSessionManager,
     ) -> None:
         """Delete SummaryDO records, now-empty parent summary groups, and unreferenced handwriting blobs."""
+        deleted_events: list[SummaryDeletedEvent] = []
         async with session_manager.session() as session:
             summary_rows_stmt = select(
+                SummaryDO.id,
+                SummaryDO.unique_identifier,
                 SummaryDO.parent_unique_identifier,
                 SummaryDO.handwrite_inner_name,
+                SummaryDO.is_deleted,
             ).where(SummaryDO.file_id == file_id)
             summary_rows = (await session.execute(summary_rows_stmt)).all()
-            parent_uuids = {u for u, _ in summary_rows if u}
-            candidate_blob_keys = {k for _, k in summary_rows if k}
+            parent_uuids = {p_uuid for _, _, p_uuid, _, _ in summary_rows if p_uuid}
+            candidate_blob_keys = {k for _, _, _, k, _ in summary_rows if k}
+            for s_id, s_uuid, _, _, is_del in summary_rows:
+                if not is_del:
+                    deleted_events.append(
+                        SummaryDeletedEvent(
+                            user_id=user_id,
+                            summary_id=int(s_id),
+                            is_summary_group=False,
+                            file_id=file_id,
+                            unique_identifier=s_uuid,
+                        )
+                    )
 
             await session.execute(delete(SummaryDO).where(SummaryDO.file_id == file_id))
             if parent_uuids:
                 surviving_parent_stmt = (
                     select(SummaryDO.parent_unique_identifier)
-                    .where(SummaryDO.parent_unique_identifier.in_(parent_uuids))
+                    .where(
+                        SummaryDO.user_id == user_id,
+                        SummaryDO.parent_unique_identifier.in_(parent_uuids),
+                    )
                     .group_by(SummaryDO.parent_unique_identifier)
                 )
                 surviving_parents = {
@@ -139,26 +158,43 @@ class SummaryModule(ProcessorModule):
                 }
                 empty_parent_uuids = parent_uuids - surviving_parents
                 if empty_parent_uuids:
-                    group_blobs_stmt = select(SummaryDO.handwrite_inner_name).where(
+                    group_rows_stmt = select(
+                        SummaryDO.id,
+                        SummaryDO.unique_identifier,
+                        SummaryDO.handwrite_inner_name,
+                        SummaryDO.is_deleted,
+                    ).where(
+                        SummaryDO.user_id == user_id,
                         SummaryDO.unique_identifier.in_(empty_parent_uuids),
                         SummaryDO.is_summary_group.is_(True),
-                        SummaryDO.handwrite_inner_name.is_not(None),
                     )
-                    candidate_blob_keys.update(
-                        k
-                        for k in (await session.execute(group_blobs_stmt))
-                        .scalars()
-                        .all()
-                        if k
-                    )
+                    for g_id, g_uuid, g_blob, g_del in (
+                        await session.execute(group_rows_stmt)
+                    ).all():
+                        if g_blob:
+                            candidate_blob_keys.add(g_blob)
+                        if not g_del:
+                            deleted_events.append(
+                                SummaryDeletedEvent(
+                                    user_id=user_id,
+                                    summary_id=int(g_id),
+                                    is_summary_group=True,
+                                    file_id=file_id,
+                                    unique_identifier=g_uuid,
+                                )
+                            )
                     await session.execute(
                         delete(SummaryDO).where(
+                            SummaryDO.user_id == user_id,
                             SummaryDO.unique_identifier.in_(empty_parent_uuids),
                             SummaryDO.is_summary_group.is_(True),
                         )
                     )
             await session.commit()
 
+        if self.summary_service.event_bus is not None:
+            for ev in deleted_events:
+                await self.summary_service.event_bus.publish(ev)
         await self.file_service.cleanup_unreferenced_blobs(candidate_blob_keys)
 
     async def process(
