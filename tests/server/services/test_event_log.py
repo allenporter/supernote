@@ -28,7 +28,11 @@ from supernote.server.events import (
 from supernote.server.exceptions import CursorExpiredError, InvalidInputError
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.coordination import CoordinationService
-from supernote.server.services.event_log import EventLogService, encode_sync_token
+from supernote.server.services.event_log import (
+    _SUBSCRIBED_DOMAIN_EVENTS,
+    EventLogService,
+    encode_sync_token,
+)
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.ocr import OcrModule
 from supernote.server.services.processor_modules.summary import SummaryModule
@@ -711,3 +715,9 @@ async def test_note_processing_domain_events_recorded(
     assert page.events[0].payload["added_pages"] == ["P20261115000001abcdef"]
     assert page.events[1].payload["text_content"] == "Transcribed bullet item"
     assert page.events[3].payload["module_name"] == "OcrModule"
+
+
+def test_all_domain_event_types_are_subscribed() -> None:
+    """Verify every DomainEventType is backed by a subscribed DomainEvent class."""
+    subscribed_types = {cls.EVENT_TYPE for cls in _SUBSCRIBED_DOMAIN_EVENTS}
+    assert subscribed_types == set(DomainEventType)
