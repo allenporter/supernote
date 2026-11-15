@@ -213,7 +213,7 @@ class SummaryModule(ProcessorModule):
                     page_id=p.page_id or "",
                     file_name=file_do.file_name,
                     notebook_create_time=file_do.create_time,
-                    keywords=keywords_map.get((p.page_id or "", p.content_hash or "")),
+                    keywords=keywords_map.get(p.page_id or ""),
                     include_section_divider=True,
                 )
                 text_parts.append(f"{metadata}\n{p.text_content}")

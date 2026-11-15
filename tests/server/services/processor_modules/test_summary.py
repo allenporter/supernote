@@ -705,13 +705,13 @@ async def test_summary_preserves_manual_digests_when_notebook_erased(
     assert await summary_service.get_summary_by_uuid(user_email, group_uuid) is not None
 
 
-async def test_summary_includes_verified_page_keywords_in_transcript(
+async def test_summary_includes_page_keywords_in_transcript(
     summary_module: SummaryModule,
     session_manager: DatabaseSessionManager,
     fake_summary_model: FakeSummaryModel,
     summary_service: SummaryService,
 ) -> None:
-    """Verify SummaryModule includes Page Keywords only when NotePageMetadataDO matches (page_id, content_hash)."""
+    """Verify SummaryModule includes Page Keywords from NotePageMetadataDO in the transcript."""
     user_id = 112
     user_email = "kw_summary@example.com"
     file_id = 812
@@ -728,39 +728,24 @@ async def test_summary_includes_verified_page_keywords_in_transcript(
                 directory_id=0,
             )
         )
-        session.add_all(
-            [
-                NotePageContentDO(
-                    file_id=file_id,
-                    page_index=0,
-                    page_id="p0",
-                    content_hash="h0",
-                    text_content="Page 1 text",
-                ),
-                NotePageContentDO(
-                    file_id=file_id,
-                    page_index=1,
-                    page_id="p1",
-                    content_hash="h1_v2",
-                    text_content="Page 2 text",
-                ),
-                NotePageMetadataDO(
-                    user_id=user_id,
-                    file_id=file_id,
-                    page_index=0,
-                    page_id="p0",
-                    content_hash="h0",
-                    keywords_json='[{"KEYWORDPAGE": "1", "KEYWORD": "OKR"}]',
-                ),
-                NotePageMetadataDO(
-                    user_id=user_id,
-                    file_id=file_id,
-                    page_index=1,
-                    page_id="p1",
-                    content_hash="h1_stale",
-                    keywords_json='[{"KEYWORDPAGE": "2", "KEYWORD": "StaleTag"}]',
-                ),
-            ]
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="p0",
+                content_hash="h0",
+                text_content="Page 1 text",
+            )
+        )
+        session.add(
+            NotePageMetadataDO(
+                user_id=user_id,
+                file_id=file_id,
+                page_index=0,
+                page_id="p0",
+                content_hash="h0",
+                keywords_json='[{"KEYWORDPAGE": "1", "KEYWORD": "OKR"}]',
+            )
         )
         await session.commit()
 
@@ -770,4 +755,3 @@ async def test_summary_includes_verified_page_keywords_in_transcript(
     )
     assert transcript is not None and transcript.content is not None
     assert "Page Keywords: OKR" in transcript.content
-    assert "StaleTag" not in transcript.content

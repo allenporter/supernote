@@ -307,7 +307,7 @@ class SearchService:
                     page_id=p.page_id,
                     file_name=file_do.file_name,
                     notebook_create_time=file_do.create_time,
-                    keywords=keywords_map.get((p.page_id, p.content_hash or "")),
+                    keywords=keywords_map.get(p.page_id),
                     include_section_divider=True,
                 )
                 text_parts.append(f"{metadata}\n{p.text_content}")

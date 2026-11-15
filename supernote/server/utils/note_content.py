@@ -34,8 +34,8 @@ async def get_page_keywords_map(
     session: AsyncSession,
     user_id: int,
     file_id: int,
-) -> dict[tuple[str, str], list[str]]:
-    """Return a map of `(page_id, content_hash) -> keyword_texts` for a file's pages."""
+) -> dict[str, list[str]]:
+    """Return a map of `page_id -> keyword_texts` for a file's pages."""
     rows = (
         (
             await session.execute(
@@ -49,9 +49,7 @@ async def get_page_keywords_map(
         .all()
     )
     return {
-        (pm.page_id, pm.content_hash): pm.keyword_texts
-        for pm in rows
-        if pm.page_id and pm.content_hash
+        pm.page_id: pm.keyword_texts for pm in rows if pm.page_id and pm.keyword_texts
     }
 
 
