@@ -380,7 +380,8 @@
 
                         <file-viewer :file="selectedFile" :initial-page="selectedPageIndex"
                             :page-jump-seq="selectedPageJumpSeq" @close="closeViewer"
-                            @page-change="handleViewerPageChange"></file-viewer>
+                            @page-change="handleViewerPageChange"
+                            @open-file="handleSearchSelectFile"></file-viewer>
                     </div>
 
                     <!-- Hidden Upload Input -->
