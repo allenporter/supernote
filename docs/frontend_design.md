@@ -1,197 +1,72 @@
-# Supernote Web Viewer - Architecture & Design Proposal
+# Supernote Cloud Web UI Architecture
 
-This document outlines the recommended architecture for building an open-source web viewer for Supernote files. The goal is to replace the legacy, proprietary Vue 2 frontend with a modern, maintainable, and clean codebase that interfaces with a Python backend.
+The Supernote Cloud Web UI (`supernote/server/static/`) is a zero-build Vue 3 single-page application served directly by the `aiohttp` backend.
 
-## 1. Architectural Overview
+## 1. Design Principles
 
-The system consists of two main components:
-1.  **Backend (Python):** Handles file system operations, acts as the API, and performs the heavy lifting of converting `.note` files to simpler formats (PDF/PNG) using tools like `supernote-tool`.
-2.  **Frontend (Vue 3 SPA):** A lightweight "dumb" client that requests file lists and displays them. It delegates rendering logic to the backend.
+- **Zero Build Step**: Browser-native ES modules (`<script type="module">`) and an `<script type="importmap">` in `index.html` load pinned CDN dependencies (`vue`, `tailwindcss`, `socket.io-client`, `spark-md5`, `js-sha256`) tracked by Renovate. No `package.json`, bundler, or Node runtime is required in production containers.
+- **Vue 3 Composition API**: All components use Vue 3 `setup(props, { emit, expose })` and shared composables.
+- **Compile-Time Type Safety via JSDoc + `tsc --noEmit`**: `tsconfig.json` (`allowJs: true`, `checkJs: true`, `strictNullChecks: true`) and ambient declarations (`supernote/server/static/js/types.d.ts`) type-check every `.js` module in `./script/lint` and CI without transpilation.
+- **Host UI Separation**: URL routing, authentication/token transport, and view shells are decoupled from domain panels so dynamic ES-module plugins can register tabs, toolbar actions, and viewer actions against a stable `PluginHostContext` contract.
 
-### Deployment Strategy
-To simplify deployment (and avoid CORS issues), the Vue app should be built into static files (`html`, `css`, `js`) and served directly by the Python backend.
-
-```text
-[Browser]  <-- HTTP -->  [Python Backend]  <-- File System -->  [Supernote Data]
-    |                           |
-    |                           +-- Serve API (/api/*)
-    |                           +-- Serve Static Assets (index.html, assets/*)
-    |
-    v
-[Vue App] (Running in browser)
-```
-
-## 2. Technology Stack
-
-We recommend a modern "Vite" stack to avoid the complexity and bloat of the legacy Webpack/Vue 2 setup.
-
-| Component | Choice | Reason |
-| :--- | :--- | :--- |
-| **Build Tool** | **Vite** | Extremely fast build times, native ES modules, zero-config for simple setups. |
-| **Framework** | **Vue 3** | Uses the **Composition API** (`<script setup>`) for cleaner, reusable logic hooks (composables) instead of "Options API" spaghetti. |
-| **Language** | **TypeScript** | Crucial for defining the data contracts (`.note` file structure) to prevent runtime errors. |
-| **Styling** | **Tailwind CSS** | rapid UI development; avoids the overhead of component libraries like ElementUI when you just need a simple file grid. |
-| **Icons** | **Heroicons** | Simple, clean SVG icons that integrate well with Tailwind. |
-
-## 3. Project Structure
-
-Recommended folder structure for the new repository:
+## 2. Directory Layout
 
 ```text
-my-supernote-viewer/
-├── backend/                  # Your Python Backend
-│   ├── app.py                # Entry point (FastAPI/Flask)
-│   ├── services/             # Logic for interfacing with supernote-tool
-│   └── static/               # (Generated) Where frontend build artifacts go
-├── web/                      # The New Frontend Source
-│   ├── index.html
-│   ├── vite.config.ts        # Vite config (proxies /api to backend in dev)
-│   ├── tailwind.config.js
-│   └── src/
-│       ├── App.vue
-│       ├── main.ts
-│       ├── api/              # API Client Layer
-│       │   └── client.ts     # Axios or Fetch wrapper
-│       ├── components/       # Presentational Components
-│       │   ├── FileGrid.vue
-│       │   ├── FileRow.vue
-│       │   └── Breadcrumbs.vue
-│       ├── composables/      # Business Logic (The "Brains")
-│       │   ├── useFileSystem.ts
-│       │   └── useFileViewer.ts
-│       ├── types/            # TypeScript Interfaces
-│       │   └── file.ts
-│       └── views/
-│           └── FileBrowser.vue
-└── README.md
+supernote/server/static/
+├── index.html                        # App shell, pinned CDN scripts & Vue 3 importmap
+├── style.css                         # Custom tokens, scrollbars, and touch/focus helpers
+└── js/
+    ├── main.js                       # Host UI root app composition & global shortcuts
+    ├── types.d.ts                    # Ambient DTOs, CDN globals & PluginHostContext contract
+    ├── api/
+    │   ├── http.js                   # Shared apiRequest(), token storage & 401 logout hooks
+    │   ├── client.js                 # Auth, VFS CRUD, OSS upload, search, note metadata & Socket.IO
+    │   └── schedule.js               # Task groups, tasks CRUD & iCalendar (.ics) feed client
+    ├── composables/
+    │   ├── useRouter.js              # Hash router (#/files, #/file/<id>?page=N, #/tasks, #/system, OAuth)
+    │   ├── useFileSystem.js          # Directory listing & file mutation state
+    │   ├── useProcessingStatus.js    # Background OCR/indexing status polling & digest-sync listener
+    │   ├── useSchedule.js            # Task list filtering, device sort order & mutation actions
+    │   └── useToast.js               # Non-blocking toast notification queue
+    ├── utils/
+    │   ├── format.js                 # Epoch ms normalization, human byte sizes & date formatting
+    │   └── oauth.js                  # OAuth 2.1 /login-bridge return_to validation & display helpers
+    └── components/
+        ├── FileCard.js               # Grid, compact folder & list-row item card with lazy covers
+        ├── FileViewer.js             # Split-pane document & .note canvas coordinator
+        ├── viewer/
+        │   ├── noteMeta.js           # Pure file category, page style, link & transcript helpers
+        │   ├── ViewerToolbar.js      # Header bar, page stepper & zoom controls
+        │   ├── ViewerMediaPreview.js # Inline image, PDF, text & unsupported fallback views
+        │   └── ViewerSidePanel.js    # Responsive OCR transcript & summaries drawer
+        ├── TaskPanel.js              # Tasks & Schedule workspace coordinator
+        ├── tasks/
+        │   ├── TaskSidebar.js        # Quick views, task lists & .ics export trigger
+        │   ├── TaskRow.js            # Task row with due badges & hover/touch actions
+        │   ├── TaskEditorModal.js    # New / Edit task dialog
+        │   └── TaskIcsModal.js       # iCalendar (.ics) feed preview & download modal
+        ├── LoginCard.js              # Challenge-response sign-in form
+        ├── OAuthConsentCard.js       # OAuth 2.1 PKCE authorization consent screen
+        ├── SearchModal.js            # Filename, transcript & semantic search dialog (Cmd/Ctrl+K)
+        ├── SystemPanel.js            # Storage quota, AI status & processing queue drawer
+        ├── MoveModal.js              # Folder tree destination picker
+        └── RenameModal.js            # Item rename dialog
 ```
 
-## 4. Implementation Details
+## 3. Linting, Type Checking & Automated Tests
 
-### A. Data Contracts (`src/types/file.ts`)
+- **Static Type Check & Lint**:
+  ```bash
+  ./script/lint
+  ```
+  Runs `tsc -p tsconfig.json --noEmit` (via `pre-commit`), `ruff`, `ty`, `codespell`, and `yamllint`.
 
-Define the shape of your data upfront. This serves as the contract between your Python backend and the Vue frontend.
+- **Pure ES Module Unit Tests** (`node:test`, zero npm dependencies):
+  ```bash
+  node --import ./tests/frontend/helpers/register_vue_stub.mjs --test tests/frontend/unit.test.mjs
+  ```
 
-```typescript
-export interface SupernoteFile {
-  id: string;          // Unique identifier or path
-  name: string;        // Display name (e.g., "Meeting Notes.note")
-  isDirectory: boolean;
-  size: number;        // In bytes
-  updatedAt: string;   // ISO date string
-  extension: 'note' | 'pdf' | 'epub' | null;
-}
-```
-
-### B. Composable Pattern
-
-Avoid putting logic inside components. Use Composables to manage state.
-
-**`src/composables/useFileSystem.ts`**
-*Manages the current directory state and fetching files.*
-
-```typescript
-import { ref } from 'vue';
-import { fetchFiles } from '../api/client';
-import type { SupernoteFile } from '../types/file';
-
-export function useFileSystem() {
-  const files = ref<SupernoteFile[]>([]);
-  const currentPath = ref('/');
-  const isLoading = ref(false);
-  const error = ref<string | null>(null);
-
-  async function loadDirectory(path: string) {
-    isLoading.value = true;
-    error.value = null;
-    try {
-      files.value = await fetchFiles(path); // Call to Python API
-      currentPath.value = path;
-    } catch (e) {
-      error.value = "Failed to load directory";
-    } finally {
-      isLoading.value = false;
-    }
-  }
-
-  return { files, currentPath, isLoading, error, loadDirectory };
-}
-```
-
-**`src/composables/useFileViewer.ts`**
-*Manages the "View" action and on-demand page rendering.*
-
-```typescript
-import { convertNoteUrl } from '../api/client';
-
-export function useFileViewer() {
-  async function openFile(file: SupernoteFile) {
-    // 1. If it's a folder, ignore (handled by navigation)
-    if (file.isDirectory) return;
-
-    // 2. If it is already a web-friendly format, open directly
-    if (['pdf', 'png', 'jpg'].includes(file.extension)) {
-       window.open(`/api/files/download?path=${file.id}`, '_blank');
-       return;
-    }
-
-    // 3. If it is a .note file, request a conversion first
-    if (file.extension === 'note') {
-      try {
-        // Python backend converts .note -> JSON map or temporary PDF
-        const response = await convertNoteUrl(file.id);
-        // Open the generated/static URL
-        window.open(response.viewUrl, '_blank');
-      } catch (e) {
-        console.error("Conversion failed", e);
-      }
-    }
-  }
-
-  return { openFile };
-}
-```
-
-### C. Development vs Production Configuration
-
-**Development (`vite.config.ts`):**
-Use the proxy feature to forward API requests to your running Python server so you don't need CORS or running builds.
-
-```typescript
-export default defineConfig({
-  server: {
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8000', // Your Python Backend Port
-        changeOrigin: true,
-      }
-    }
-  }
-})
-```
-
-**Production (Python):**
-Serve the `dist/` folder generated by `npm run build`.
-
-*Example (FastAPI):*
-```python
-from fastapi.staticfiles import StaticFiles
-
-# Mount assets (JS/CSS)
-app.mount("/assets", StaticFiles(directory="web/dist/assets"), name="assets")
-
-
-# Catch-all route for SPA (Standard Pattern)
-@app.get("/{full_path:path}")
-async def serve_app(full_path: str):
-    # Retrieve file if it exists in dist, otherwise serve index.html
-    return FileResponse("web/dist/index.html")
-```
-
-## 5. Migration Checklist
-When you are ready to start the new repo:
-1.  Initialize backend with your Python `supernote-tool` logic.
-2.  Initialize frontend with `npm create vite@latest web -- --template vue-ts`.
-3.  Install Tailwind (follow their Vite guide).
-4.  Copy the types and composables structure from above.
-5.  Build the API endpoint `/api/list?path=...` in Python to match the `SupernoteFile` interface.
+- **Headless Playwright E2E Smoke Suite**:
+  ```bash
+  uv run --no-sync --with playwright pytest tests/integration/test_web_ui.py -v
+  ```

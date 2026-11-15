@@ -36,12 +36,9 @@
       matchManagers: ['pyenv'],
       enabled: false,
     },
-    {
-      description: 'Keep Tailwind Play CDN on v3 (cdn.tailwindcss.com only serves v3)',
-      matchPackageNames: ['tailwindcss'],
-      allowedVersions: '<4.0.0',
-    },
   ],
+  // Note: cdn.tailwindcss.com is pinned at 3.4.17 (the final v3 Play CDN build
+  // published by Tailwind Labs; 3.4.18+ exist on npm but return console.error on cdn.tailwindcss.com).
   customManagers: [
     {
       customType: 'regex',
@@ -64,18 +61,6 @@
         'https://cdn\\.socket\\.io/(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)/socket\\.io\\.min\\.js',
       ],
       depNameTemplate: 'socket.io-client',
-      datasourceTemplate: 'npm',
-    },
-    {
-      customType: 'regex',
-      description: 'Track Tailwind Play CDN versions in static HTML',
-      fileMatch: [
-        '^supernote/server/static/.*\\.html$',
-      ],
-      matchStrings: [
-        'https://cdn\\.tailwindcss\\.com/(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)',
-      ],
-      depNameTemplate: 'tailwindcss',
       datasourceTemplate: 'npm',
     },
   ],
