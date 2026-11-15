@@ -4,42 +4,34 @@ The **Open Private Cloud for Supernote** server transforms binary `.note` files 
 
 ---
 
-## 1. The 5-Stage Background Processing Pipeline
+## 1. Background Processing Pipeline
 
 When a `.note` file is uploaded or synchronized, `supernote.server.services.processor.ProcessorService` orchestrates an incremental, idempotent 5-stage pipeline tracked in SQLite (`SystemTaskDO`, `NoteMetadataDO`, `NotePageMetadataDO`, and `NotePageContentDO`):
 
 ```mermaid
-flowchart LR
-    Sync[".note File Synced\n(NoteUpdatedEvent)"] --> S1
-    subgraph Pre["1. Global Pre-Stage"]
-        S1["PageHashingModule\n(Metadata + MD5 + Drawable Detection)"]
-    end
-    S1 -->|Changed/New Pages| S2
-    subgraph Page["2–4. Per-Page Pipeline (Parallel)"]
-        S2["PngConversionModule\n(Rasterize to PNG)"] --> S3["OcrModule\n(Vision LLM Transcript)"]
-        S3 --> S4["EmbeddingModule\n(Vector Embedding)"]
-    end
-    S4 -->|All Pages Complete| S5
-    subgraph Post["5. Global Post-Stage"]
-        S5["SummaryModule\n(Transcript + Structured Summary)"]
-    end
-    S5 --> Done["NoteProcessingCompletedEvent\n(Web UI & Outbound Webhooks)"]
+flowchart TD
+    Sync[".note File Synced (NoteUpdatedEvent)"] --> S1["1. PageHashingModule (Global Pre-Stage)\nParse metadata, compute page MD5s & detect drawables"]
+    S1 -->|Changed or New Pages| S2["2. PngConversionModule (Per-Page)\nRasterize page to PNG"]
+    S2 --> S3["3. OcrModule (Per-Page)\nVision LLM Markdown transcript (skips blank pages)"]
+    S3 --> S4["4. EmbeddingModule (Per-Page)\nVector embedding for semantic search"]
+    S4 -->|All Pages Complete| S5["5. SummaryModule (Global Post-Stage)\nFull transcript + structured notebook summary"]
+    S5 --> Done["NoteProcessingCompletedEvent (Web UI & Webhooks)"]
 ```
 
 ### Stage Breakdown
 
-| Stage | Module Class | Scope | Task Type | Behavior & Invalidation Rules |
-| :---: | :--- | :---: | :--- | :--- |
-| **1** | `supernote.server.services.processor_modules.page_hashing.PageHashingModule` | File | `PAGE_HASHING` | Parses the binary `.note` header/footer (`NoteMetadataDO`) and per-page metadata (`NotePageMetadataDO`: `page_style`, `has_ink`, `has_drawables`, `keywords_json`, `titles_json`, `links_json`). Computes an MD5 `content_hash` per page (`PAGEID`). Only pages whose hash changed have their downstream checkpoints invalidated; unchanged pages reuse cached ink/drawable state without re-parsing layer streams. |
-| **2** | `supernote.server.services.processor_modules.png_conversion.PngConversionModule` | Page | `PNG_CONVERSION` | Rasterizes modified pages into PNG blobs in `supernote-cache/`. Enabled when `web_enabled` + `web_notebook_preview` is `true`, or whenever `ai.ocr` is configured. |
-| **3** | `supernote.server.services.processor_modules.ocr.OcrModule` | Page | `OCR_EXTRACTION` | If `NotePageMetadataDO.has_drawables` is `False` (blank page), immediately writes `text_content = ""` without requiring a PNG or calling the LLM. Otherwise sends the page PNG and formatted prompt (`supernote.server.ai.prompts.format_ocr_prompt`) to `supernote.server.ai.models.ocr.OcrModel` and stores the Markdown transcript in `NotePageContentDO.text_content`. |
-| **4** | `supernote.server.services.processor_modules.embedding.EmbeddingModule` | Page | `EMBEDDING_GENERATION` | Skips blank pages (`content.is_blank`). Embeds non-blank `text_content` via `supernote.server.ai.models.embedding.EmbeddingModel` (`RETRIEVAL_DOCUMENT`). Tracks `model_id` as the task version—switching `ai.embedding.model` automatically re-embeds existing pages in the background. |
-| **5** | `supernote.server.services.processor_modules.summary.SummaryModule` | File | `SUMMARY_GENERATION` | Concatenates non-blank page transcripts with `--- Page N ---` headers (including `Page Keywords:` when present), stores the full notebook transcript record (`data_source="OCR"`), and invokes `supernote.server.ai.models.summary.SummaryModel` to produce date-segmented Markdown summaries with page citations (`SummaryResponse`). |
+| Stage | Module | Scope | Behavior & Invalidation Rules |
+| :---: | :--- | :---: | :--- |
+| **1** | `supernote.server.services.processor_modules.page_hashing.PageHashingModule` (`PAGE_HASHING`) | File | Parses the binary `.note` header/footer (`NoteMetadataDO`) and per-page metadata (`NotePageMetadataDO`: `page_style`, `has_ink`, `has_drawables`, `keywords_json`, `titles_json`, `links_json`). Computes an MD5 `content_hash` per page (`PAGEID`). Only pages whose hash changed have their downstream checkpoints invalidated; unchanged pages reuse cached ink/drawable state without re-parsing layer streams. |
+| **2** | `supernote.server.services.processor_modules.png_conversion.PngConversionModule` (`PNG_CONVERSION`) | Page | Rasterizes modified pages into PNG blobs in `supernote-cache/`. Enabled when `web_enabled` + `web_notebook_preview` is `true`, or whenever `ai.ocr` is configured. |
+| **3** | `supernote.server.services.processor_modules.ocr.OcrModule` (`OCR_EXTRACTION`) | Page | If `NotePageMetadataDO.has_drawables` is `False` (blank page), immediately writes `text_content = ""` without requiring a PNG or calling the LLM. Otherwise sends the page PNG and formatted prompt (`supernote.server.ai.prompts.format_ocr_prompt`) to `supernote.server.ai.models.ocr.OcrModel` and stores the Markdown transcript in `NotePageContentDO.text_content`. |
+| **4** | `supernote.server.services.processor_modules.embedding.EmbeddingModule` (`EMBEDDING_GENERATION`) | Page | Skips blank pages (`content.is_blank`). Embeds non-blank `text_content` via `supernote.server.ai.models.embedding.EmbeddingModel` (`RETRIEVAL_DOCUMENT`). Tracks `model_id` as the task version—switching `ai.embedding.model` automatically re-embeds existing pages in the background. |
+| **5** | `supernote.server.services.processor_modules.summary.SummaryModule` (`SUMMARY_GENERATION`) | File | Concatenates non-blank page transcripts with `--- Page N ---` headers (including `Page Keywords:` when present), stores the full notebook transcript record (`data_source="OCR"`), and invokes `supernote.server.ai.models.summary.SummaryModel` to produce date-segmented Markdown summaries with page citations (`SummaryResponse`). |
 
 > [!TIP]
 > **Blank Page Skipping**: Pages with no foreground ink, textboxes, or vector graphics (`NotePageMetadataDO.has_drawables == False`) automatically short-circuit OCR, vector embedding, and summary calls—saving API tokens and latency on pre-created template notebooks.
 
-### Managing the Pipeline via CLI
+### Managing Pipeline Tasks via CLI
 
 Administrators can inspect, pause, resume, or force-reprocess pipeline stages at any time:
 

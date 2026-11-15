@@ -402,6 +402,37 @@ def _install_markdown_link_rewriter() -> None:
         rewrite_links
     )
 
+    orig_linkify = pdoc.render_helpers.linkify
+
+    def short_linkify(
+        context: Context, code: str, namespace: str = "", shorten: bool = True
+    ) -> Any:
+        result = str(orig_linkify(context, code, namespace=namespace, shorten=shorten))
+
+        def _shorten_anchor(m: re.Match[str]) -> str:
+            href = m.group("href")
+            label = m.group("label")
+            suffix = "()" if label.endswith("()") else ""
+            raw = label.removesuffix("()")
+            if not raw.startswith("supernote.") or raw.count(".") < 2:
+                return m.group(0)
+            if "#" in href:
+                frag = href.split("#", 1)[1]
+                short = frag + suffix if frag else raw.rsplit(".", 1)[-1] + suffix
+            else:
+                short = raw.rsplit(".", 1)[-1] + suffix
+            return f'<a href="{href}" title="{label}">{short}</a>'
+
+        return pdoc.render_helpers.Markup(
+            re.sub(
+                r'<a href="(?P<href>[^"]+)">(?P<label>supernote\.[A-Za-z0-9_.]+(?:\(\))?)</a>',
+                _shorten_anchor,
+                result,
+            )
+        )
+
+    pdoc.render.env.filters["linkify"] = pdoc.render_helpers.pass_context(short_linkify)
+
 
 def get_child_modules(
     parent_name: str, all_modules: dict[str, pdoc.doc.Module]

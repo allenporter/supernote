@@ -83,7 +83,7 @@ export interface SupernoteFile {
 }
 ```
 
-### B. The "Composable" Pattern
+### B. Composable Pattern
 
 Avoid putting logic inside components. Use Composables to manage state.
 

@@ -1,4 +1,4 @@
-# Contributing to the Supernote Toolkit
+# Contributing
 
 This project is evolving from a set of utilities into a comprehensive **Personal Knowledge Management Hub**. We welcome contributions that help realize this vision—whether through better parsing, more robust server features, or new AI-powered insights.
 

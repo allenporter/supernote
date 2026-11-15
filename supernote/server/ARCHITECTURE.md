@@ -17,7 +17,7 @@ Open Private Cloud is an asynchronous Python server built to run as a lightweigh
 
 ---
 
-## Part 1: The Supernote Private Cloud Wire Protocol
+## Part 1: Supernote Private Cloud Wire Protocol
 
 Ratta's original Supernote Private Cloud server was designed around a Java/Spring Boot + MySQL + Redis + external TCP `QTServer` stack. To remain 100% wire-compatible with unmodified Supernote hardware firmware, `supernote.server` implements the exact REST endpoints, JSON payload conventions (`mashumaro` DTOs/VOs in `supernote.models`), cryptographic handshakes, and real-time Socket.IO events expected by the devices.
 
@@ -242,7 +242,7 @@ Physical Supernote tablets maintain a persistent Socket.IO connection to receive
 
 ---
 
-## Part 2: This Project's Python/Asyncio Server Architecture
+## Part 2: Python/Asyncio Server Architecture
 
 Rather than requiring a heavy multi-container deployment (Java + MySQL + Redis + S3 + QTServer), `supernote.server` consolidates the entire stack into a single self-contained Python `asyncio` application built on `aiohttp`, `SQLAlchemy[asyncio]`, and `aiosqlite`.
 

@@ -117,7 +117,7 @@ services:
 
 ---
 
-## 3. The "Admin-First" Bootstrap Model & Authentication
+## 3. Admin Bootstrap & Authentication
 
 Open Private Cloud uses a zero-config **Admin-First** security model controlled by `supernote.server.config.AuthConfig`:
 
