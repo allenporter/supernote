@@ -123,8 +123,11 @@ onLogout(disconnectSocket);
  * Secure Login Flow
  */
 export async function login(email, password) {
+    // 1. Pre-check / wakeup token endpoint (mirrors the CLI client session flow
+    // before starting the challenge-response handshake).
     await fetch('/api/user/query/token', { method: 'POST', body: '{}' });
 
+    // 2. Request login challenge (randomCode + timestamp)
     const randomCodeResp = await fetch('/api/official/user/query/random/code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -134,9 +137,12 @@ export async function login(email, password) {
     if (!randomCodeResp.ok) throw new Error('Failed to get login challenge');
     const { randomCode, timestamp } = await randomCodeResp.json();
 
+    // 3. Hash password with challenge: SHA256(MD5(password) + randomCode)
+    // SparkMD5 is loaded globally via CDN in index.html
     const md5Password = SparkMD5.hash(password);
     const sha256Hash = await sha256(md5Password + randomCode);
 
+    // 4. Authenticate
     const loginResp = await fetch('/api/official/user/account/login/new', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -144,8 +150,8 @@ export async function login(email, password) {
             account: email,
             password: sha256Hash,
             timestamp,
-            loginMethod: '2',
-            equipment: 1
+            loginMethod: '2', // Email
+            equipment: 1 // WEB
         })
     });
 
@@ -200,7 +206,7 @@ function mapUserFileVO(file) {
 function fetchFilesPage(directoryId, pageNo, pageSize) {
     return apiRequest('/api/file/list/query', {
         body: {
-            directoryId,
+            directoryId, // Pass as string/raw to preserve 64-bit VFS ID precision
             pageNo,
             pageSize,
             order: 'filename',
@@ -250,7 +256,7 @@ export function fetchPathInfo(nodeId) {
  */
 export async function convertNoteToPng(fileId) {
     const data = await apiRequest('/api/file/note/to/png', {
-        body: { id: fileId },
+        body: { id: fileId }, // Pass as string to preserve 64-bit precision
         errorPrefix: 'Conversion failed'
     });
     return data.pngPageVOList || [];
@@ -276,6 +282,7 @@ export async function fetchTranscript(fileId) {
  */
 export async function fetchSummaries(fileId) {
     const data = await apiRequest('/api/extended/file/summary/list', {
+        // Extended endpoint expects { fileId } rather than official { id }
         body: { fileId: String(fileId) },
         errorPrefix: 'Summary fetch failed'
     });
@@ -377,7 +384,7 @@ export function moveItems(idList, targetDirectoryId) {
     return apiRequest('/api/file/move', {
         body: {
             idList,
-            directoryId: '0',
+            directoryId: '0', // Not strictly required for move, included for official DTO compliance
             goDirectoryId: targetDirectoryId
         },
         errorPrefix: 'Failed to move items'
@@ -394,6 +401,9 @@ export function renameItem(id, newName) {
     });
 }
 
+/**
+ * File Upload: Step 1 - Apply
+ */
 function uploadApply(directoryId, fileName, size, md5) {
     return apiRequest('/api/file/upload/apply', {
         body: { directoryId, fileName, size, md5 },
@@ -401,6 +411,9 @@ function uploadApply(directoryId, fileName, size, md5) {
     });
 }
 
+/**
+ * File Upload: Step 2 - Finish
+ */
 function uploadFinish(directoryId, fileName, size, md5, innerName) {
     return apiRequest('/api/file/upload/finish', {
         body: {
@@ -409,7 +422,7 @@ function uploadFinish(directoryId, fileName, size, md5, innerName) {
             fileSize: size,
             md5,
             innerName,
-            type: '2'
+            type: '2' // CLOUD
         },
         errorPrefix: 'Upload finish failed'
     });
@@ -419,21 +432,27 @@ function uploadFinish(directoryId, fileName, size, md5, innerName) {
  * Upload a file (orchestrates apply, put, and finish).
  */
 export async function uploadFile(directoryId, file) {
+    // 1. Calculate MD5 (used for apply/finish integrity verification)
     const md5 = await calculateFileMd5(file);
+
+    // 2. Apply for signed OSS upload URL
     const { fullUploadUrl, innerName } = await uploadApply(directoryId, file.name, file.size, md5);
 
+    // 3. Upload binary to blob storage as multipart FormData
     const formData = new FormData();
     formData.append('file', file);
 
     const uploadResp = await fetch(fullUploadUrl, {
-        method: 'POST',
+        method: 'POST', // Both POST and PUT are supported by oss.py handle_oss_upload
         body: formData,
+        // Note: Do NOT set Content-Type header; fetch sets it with the multipart boundary
     });
 
     if (!uploadResp.ok) {
         throw new Error(`File binary upload failed: ${uploadResp.statusText}`);
     }
 
+    // 4. Finish (commit in VFS)
     return await uploadFinish(directoryId, file.name, file.size, md5, innerName);
 }
 
@@ -479,6 +498,12 @@ export async function fetchDownloadUrl(fileId) {
 
 /**
  * Trigger a browser download of a stored file.
+ *
+ * Navigates to the signed URL rather than fetching the bytes into a Blob the
+ * way the .ics export does: a notebook can be hundreds of megabytes, and this
+ * way the browser streams it to disk with a progress bar and the server never
+ * holds it in memory. The signature carries the identity, so no header is
+ * needed on the request that actually moves the file.
  */
 export async function downloadFile(fileId) {
     const url = await fetchDownloadUrl(fileId);
