@@ -11,12 +11,17 @@ from supernote.models.events import DomainEntityType, DomainEventType
 from supernote.models.schedule import ScheduleTaskLinkDTO
 from supernote.models.summary import AddSummaryDTO, AddSummaryGroupDTO, SummaryItem
 from supernote.models.user import UserRegisterDTO
-from supernote.server.constants import USER_DATA_BUCKET
+from supernote.server.ai.models.ocr import OcrModel
+from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
+from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
     DomainEventRecorded,
     LocalEventBus,
+    NotePagesDeltaEvent,
+    NoteProcessingCompletedEvent,
+    NoteProcessingFailedEvent,
     SummaryDeletedEvent,
     SummaryUpsertedEvent,
 )
@@ -25,10 +30,12 @@ from supernote.server.services.blob import BlobStorage
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.event_log import EventLogService, encode_sync_token
 from supernote.server.services.file import FileService
+from supernote.server.services.processor_modules.ocr import OcrModule
 from supernote.server.services.processor_modules.summary import SummaryModule
 from supernote.server.services.schedule import ScheduleService
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
+from supernote.server.utils.paths import get_page_png_path
 
 
 @pytest.fixture
@@ -575,3 +582,132 @@ async def test_schedule_task_domain_events_recorded(
     assert page.events[0].payload["title"] == "Ship slice"
     assert page.events[1].payload["status"] == "completed"
     assert page.events[2].payload["status"] == "completed"
+
+
+async def test_note_processing_domain_events_recorded(
+    event_log_service: EventLogService,
+    event_bus: LocalEventBus,
+    session_manager: DatabaseSessionManager,
+    user_service: UserService,
+    storage_root: Path,
+    blob_storage: BlobStorage,
+) -> None:
+    """Verify note.pages_delta, note.page_transcribed, and note.processing_* events."""
+    test_user = "note_events@example.com"
+    await user_service.register(UserRegisterDTO(email=test_user, password="a" * 32))
+    uid = await user_service.get_user_id(test_user)
+    assert uid is not None
+
+    file_service = FileService(
+        storage_root, blob_storage, user_service, session_manager, event_bus
+    )
+
+    class _StubOcrModel(OcrModel):
+        @property
+        def provider(self) -> str:
+            return "stub"
+
+        @property
+        def model_id(self) -> str:
+            return "stub-ocr"
+
+        async def extract_text(self, png_data: bytes, prompt: str) -> str:
+            return "Transcribed bullet item"
+
+    ocr_module = OcrModule(file_service=file_service, ocr_model=_StubOcrModel())
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=801,
+                user_id=uid,
+                file_name="Journal.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=801,
+                page_index=0,
+                page_id="P20261115000001abcdef",
+                content_hash="h1",
+            )
+        )
+        await session.commit()
+
+    await event_bus.publish(
+        NotePagesDeltaEvent(
+            user_id=uid,
+            file_id=801,
+            file_path="Journal.note",
+            added_pages=["P20261115000001abcdef"],
+        )
+    )
+
+    await blob_storage.put(
+        CACHE_BUCKET,
+        get_page_png_path(801, "P20261115000001abcdef"),
+        b"fake-png",
+    )
+    await ocr_module.process(
+        801,
+        session_manager,
+        page_index=0,
+        page_id="P20261115000001abcdef",
+    )
+
+    await event_bus.publish(
+        NoteProcessingCompletedEvent(
+            user_id=uid,
+            file_id=801,
+            file_path="Journal.note",
+        )
+    )
+    await event_bus.publish(
+        NoteProcessingFailedEvent(
+            user_id=uid,
+            file_id=801,
+            file_path="Journal.note",
+            module_name="OcrModule",
+            error="rate limited",
+            page_id="P20261115000001abcdef",
+        )
+    )
+
+    page = await event_log_service.list_events(user_id=uid, event_types=["note.*"])
+    assert [
+        (e.event_type, e.entity_type, e.entity_id, e.related_file_id, e.actor)
+        for e in page.events
+    ] == [
+        (
+            DomainEventType.NOTE_PAGES_DELTA,
+            DomainEntityType.FILE,
+            "801",
+            801,
+            "system:processor",
+        ),
+        (
+            DomainEventType.NOTE_PAGE_TRANSCRIBED,
+            DomainEntityType.NOTE_PAGE,
+            "801:P20261115000001abcdef",
+            801,
+            "system:processor",
+        ),
+        (
+            DomainEventType.NOTE_PROCESSING_COMPLETED,
+            DomainEntityType.FILE,
+            "801",
+            801,
+            "system:processor",
+        ),
+        (
+            DomainEventType.NOTE_PROCESSING_FAILED,
+            DomainEntityType.FILE,
+            "801",
+            801,
+            "system:processor",
+        ),
+    ]
+    assert page.events[0].payload["added_pages"] == ["P20261115000001abcdef"]
+    assert page.events[1].payload["text_content"] == "Transcribed bullet item"
+    assert page.events[3].payload["module_name"] == "OcrModule"

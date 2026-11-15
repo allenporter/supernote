@@ -19,6 +19,7 @@ from supernote.server.constants import CACHE_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageMetadataDO
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.events import NotePageTranscribedEvent
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.utils.note_content import get_page_content_by_id
@@ -132,6 +133,7 @@ class OcrModule(ProcessorModule):
         if self.ocr_model is None:
             raise ValueError("OCR model not configured")
 
+        user_id: int | None = None
         file_name: str | None = None
         notebook_create_time: int | None = None
         page_style: str | None = None
@@ -140,6 +142,7 @@ class OcrModule(ProcessorModule):
             content = await get_page_content_by_id(session, file_id, page_id)
             file_do = await session.get(UserFileDO, file_id)
             if file_do is not None:
+                user_id = file_do.user_id
                 file_name = file_do.file_name
                 notebook_create_time = file_do.create_time
                 page_meta = (
@@ -185,14 +188,31 @@ class OcrModule(ProcessorModule):
         text_content = await self.ocr_model.extract_text(png_data, prompt)
 
         # Save Result
+        saved_page_index = page_index or 0
+        saved = False
         async with session_manager.session() as session:
             content = await get_page_content_by_id(session, file_id, page_id)
             if content:
                 content.text_content = text_content
+                saved_page_index = int(content.page_index)
+                saved = True
             else:
                 logger.warning(
                     f"NotePageContentDO missing for {file_id} page {page_id} during OCR"
                 )
             await session.commit()
+
+        if saved and user_id is not None and self.file_service.event_bus:
+            file_path = await self.file_service.get_full_path_by_node(user_id, file_id)
+            await self.file_service.event_bus.publish(
+                NotePageTranscribedEvent(
+                    user_id=user_id,
+                    file_id=file_id,
+                    file_path=file_path,
+                    page_id=page_id,
+                    page_index=saved_page_index,
+                    text_content=text_content,
+                )
+            )
 
         logger.info(f"Completed OCR for file {file_id} page {page_id}")

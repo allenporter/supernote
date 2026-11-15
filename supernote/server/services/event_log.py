@@ -20,6 +20,10 @@ from supernote.server.events import (
     DomainEvent,
     DomainEventRecorded,
     LocalEventBus,
+    NotePagesDeltaEvent,
+    NotePageTranscribedEvent,
+    NoteProcessingCompletedEvent,
+    NoteProcessingFailedEvent,
     ScheduleTaskCreatedEvent,
     ScheduleTaskDeletedEvent,
     ScheduleTaskUpdatedEvent,
@@ -54,6 +58,10 @@ _SUBSCRIBED_DOMAIN_EVENTS: tuple[type[DomainEvent], ...] = (
     ScheduleTaskDeletedEvent,
     SummaryUpsertedEvent,
     SummaryDeletedEvent,
+    NotePagesDeltaEvent,
+    NotePageTranscribedEvent,
+    NoteProcessingCompletedEvent,
+    NoteProcessingFailedEvent,
 )
 
 
@@ -275,14 +283,10 @@ class EventLogService:
             event_type=event.EVENT_TYPE,
             entity_type=event.ENTITY_TYPE,
             entity_id=event.entity_id,
-            actor=_resolve_actor(event.actor_equipment_no),
+            actor=event.actor,
             related_file_id=event.related_file_id,
             payload=event.to_payload(),
         )
-
-
-def _resolve_actor(equipment_no: str | None = None) -> str:
-    return f"device:{equipment_no}" if equipment_no else "user:web"
 
 
 def _row_to_recorded(row: UserEventDO) -> DomainEventRecorded:

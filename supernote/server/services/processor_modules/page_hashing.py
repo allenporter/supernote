@@ -30,6 +30,7 @@ from supernote.server.db.models.note_processing import (
     SystemTaskDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.events import NotePagesDeltaEvent
 from supernote.server.metrics import record_note_page_diff
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
@@ -48,6 +49,10 @@ class _PageDiffCounts:
     moved: int = 0
     unchanged: int = 0
     deleted: int = 0
+    added_pages: tuple[str, ...] = ()
+    modified_pages: tuple[str, ...] = ()
+    moved_pages: tuple[str, ...] = ()
+    deleted_pages: tuple[str, ...] = ()
 
 
 def _serialize_page_annotations(page_obj: Page) -> tuple[str, str, str]:
@@ -235,6 +240,25 @@ class PageHashingModule(ProcessorModule):
             deleted=legacy_diff.deleted + content_diff.deleted,
         )
 
+        if self.file_service.event_bus and (
+            content_diff.added_pages
+            or content_diff.modified_pages
+            or content_diff.moved_pages
+            or content_diff.deleted_pages
+        ):
+            file_path = await self.file_service.get_full_path_by_node(user_id, file_id)
+            await self.file_service.event_bus.publish(
+                NotePagesDeltaEvent(
+                    user_id=user_id,
+                    file_id=file_id,
+                    file_path=file_path,
+                    added_pages=list(content_diff.added_pages),
+                    modified_pages=list(content_diff.modified_pages),
+                    moved_pages=list(content_diff.moved_pages),
+                    deleted_pages=list(content_diff.deleted_pages),
+                )
+            )
+
     async def _sync_note_and_page_metadata(
         self,
         session: AsyncSession,
@@ -372,6 +396,10 @@ class PageHashingModule(ProcessorModule):
         moved = 0
         unchanged = 0
         deleted = 0
+        added_pages: list[str] = []
+        modified_pages: list[str] = []
+        moved_pages: list[str] = []
+        deleted_pages: list[str] = []
 
         for i, (page_id, current_hash) in enumerate(page_identities):
             if not page_id:
@@ -400,6 +428,7 @@ class PageHashingModule(ProcessorModule):
                     row.embedding_model = None
                     any_page_changed = True
                     modified += 1
+                    modified_pages.append(page_id)
 
                     # SystemTaskDO rows act as completion checkpoints; deleting
                     # the page's task rows causes downstream page modules (PNG,
@@ -413,12 +442,14 @@ class PageHashingModule(ProcessorModule):
                     )
                 elif index_changed:
                     moved += 1
+                    moved_pages.append(page_id)
                 else:
                     unchanged += 1
             else:
                 logger.info(f"New page {page_id} at index {i} detected.")
                 any_page_changed = True
                 added += 1
+                added_pages.append(page_id)
                 session.add(
                     NotePageContentDO(
                         file_id=file_id,
@@ -436,6 +467,7 @@ class PageHashingModule(ProcessorModule):
                 logger.info(f"Page {pid} deleted (was at {row.page_index}).")
                 any_page_changed = True
                 deleted += 1
+                deleted_pages.append(pid)
                 await session.delete(row)
 
                 png_path = get_page_png_path(file_id, pid)
@@ -468,4 +500,8 @@ class PageHashingModule(ProcessorModule):
             moved=moved,
             unchanged=unchanged,
             deleted=deleted,
+            added_pages=tuple(added_pages),
+            modified_pages=tuple(modified_pages),
+            moved_pages=tuple(moved_pages),
+            deleted_pages=tuple(deleted_pages),
         )

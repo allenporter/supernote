@@ -64,6 +64,7 @@ from ..events import (
     LocalEventBus,
     NoteDeletedEvent,
     NoteProcessingCompletedEvent,
+    NoteProcessingFailedEvent,
     NoteUpdatedEvent,
     SyncCompletedEvent,
 )
@@ -535,6 +536,7 @@ class ProcessorService:
         for module in pre_modules:
             if not await module.run(file_id, self.session_manager):
                 logger.error(f"Pre-module {module.name} failed. Aborting pipeline.")
+                await self._publish_processing_failed(file_id, module.name)
                 return False
 
         all_pages_ok = True
@@ -576,6 +578,7 @@ class ProcessorService:
         post_ok = True
         for module in post_modules:
             if not await module.run(file_id, self.session_manager):
+                await self._publish_processing_failed(file_id, module.name)
                 post_ok = False
 
         if task_types is None and page_indices is None:
@@ -604,6 +607,41 @@ class ProcessorService:
             )
         )
 
+    async def _publish_processing_failed(
+        self, file_id: int, module_name: str, page_id: str | None = None
+    ) -> None:
+        """Publish NoteProcessingFailedEvent when a module fails."""
+        async with self.session_manager.session() as session:
+            result = await session.execute(
+                select(UserFileDO).where(UserFileDO.id == file_id)
+            )
+            user_file = result.scalar_one_or_none()
+            if not isinstance(user_file, UserFileDO):
+                return
+            key = f"page_{page_id}" if page_id else "global"
+            task_err = await session.scalar(
+                select(SystemTaskDO.last_error)
+                .where(
+                    SystemTaskDO.file_id == file_id,
+                    SystemTaskDO.key == key,
+                )
+                .order_by(SystemTaskDO.update_time.desc())
+            )
+
+        file_path = await self.file_service.get_full_path_by_node(
+            user_file.user_id, file_id
+        )
+        await self.event_bus.publish(
+            NoteProcessingFailedEvent(
+                file_id=file_id,
+                user_id=user_file.user_id,
+                file_path=file_path,
+                module_name=module_name,
+                error=task_err or f"{module_name} failed",
+                page_id=page_id,
+            )
+        )
+
     async def _process_page(
         self,
         file_id: int,
@@ -625,6 +663,9 @@ class ProcessorService:
                 if not success:
                     logger.warning(
                         f"Page {page_id} (idx {page_index}) processing stalled at {module.name} for file {file_id}"
+                    )
+                    await self._publish_processing_failed(
+                        file_id, module.name, page_id=page_id
                     )
                     return False
             return True
