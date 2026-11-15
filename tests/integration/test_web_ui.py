@@ -5,15 +5,24 @@ installed in minimal Python environments, and executed in CI via
 `.github/workflows/frontend.yaml`.
 """
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
 import pytest
 from aiohttp.test_utils import TestClient
+from sqlalchemy import select
 
 from supernote.client.client import Client
 from supernote.client.schedule import ScheduleClient
 from supernote.client.web import WebClient
+from supernote.models.summary import AddSummaryDTO, AddSummaryGroupDTO
+from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.keys import (
+    PROCESSOR_SERVICE_KEY,
+    SESSION_MANAGER_KEY,
+    SUMMARY_SERVICE_KEY,
+)
 
 SAMPLE_UI_NOTE = Path(__file__).resolve().parents[1] / "testdata/philips/1to10.note"
 
@@ -62,6 +71,69 @@ async def test_web_ui_desktop_and_mobile_smoke(
     await web_client.upload_file(
         note_dir_id, "Numbered_1to10.note", SAMPLE_UI_NOTE.read_bytes()
     )
+    assert client.app is not None
+    await asyncio.wait_for(client.app[PROCESSOR_SERVICE_KEY].queue.join(), timeout=15.0)
+
+    note_list = await web_client.list_query(note_dir_id)
+    uploaded_note = next(
+        f for f in note_list.user_file_vo_list if f.file_name == "Numbered_1to10.note"
+    )
+    note_file_id = int(uploaded_note.id)
+
+    page1_transcript = "Seeded Page 1 OCR Transcript\n- Verified copy button"
+    async with client.app[SESSION_MANAGER_KEY].session() as db_session:
+        page_rows = (
+            (
+                await db_session.execute(
+                    select(NotePageContentDO)
+                    .where(NotePageContentDO.file_id == note_file_id)
+                    .order_by(NotePageContentDO.page_index)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if page_rows:
+            page_rows[0].text_content = page1_transcript
+        else:
+            db_session.add(
+                NotePageContentDO(
+                    file_id=note_file_id,
+                    page_index=0,
+                    page_id="P202606180001",
+                    text_content=page1_transcript,
+                )
+            )
+        await db_session.commit()
+
+    user_email = (await web_client.query_user()).email
+    assert user_email is not None
+    summary_service = client.app[SUMMARY_SERVICE_KEY]
+    await summary_service.add_group(
+        user_email,
+        AddSummaryGroupDTO(
+            unique_identifier="smoke-note-group",
+            name="Numbered_1to10.note",
+            md5_hash="0123456789abcdef",
+        ),
+    )
+    await summary_service.add_summary(
+        user_email,
+        AddSummaryDTO(
+            file_id=note_file_id,
+            unique_identifier="smoke-note-summary",
+            parent_unique_identifier="smoke-note-group",
+            content=(
+                "## 2026-06-18 (Page 1)\n"
+                "- **Decision**: Shipped Markdown summaries\n"
+                "- [x] Verify [Spec](https://example.com/spec)\n\n"
+                "<script>window.__xss = true;</script>"
+            ),
+            data_source="gemini-2.5-flash",
+            source_path="/Note/Numbered_1to10.note",
+        ),
+    )
+
     schedule_client = ScheduleClient(authenticated_client)
     group = await schedule_client.create_group("Inbox Tasks")
     await schedule_client.create_task(
@@ -78,7 +150,10 @@ async def test_web_ui_desktop_and_mobile_smoke(
 
         try:
             # 1. Desktop E2E flow (1360x860)
-            desktop = await browser.new_context(viewport={"width": 1360, "height": 860})
+            desktop = await browser.new_context(
+                viewport={"width": 1360, "height": 860},
+                permissions=["clipboard-read", "clipboard-write"],
+            )
             await desktop.add_init_script(
                 f"localStorage.setItem('supernote_token', {token!r});"
             )
@@ -91,17 +166,49 @@ async def test_web_ui_desktop_and_mobile_smoke(
             await page.get_by_role("button", name="List view").click()
             await page.get_by_role("button", name="Grid view").click()
 
-            # Open .note viewer, step page, toggle tabs
+            # Open .note viewer, copy OCR page transcript, step page, verify Markdown summary
             await page.get_by_text("Numbered_1to10.note").first.click()
             await page.locator('[data-page-index="0"] img').wait_for(
                 state="visible", timeout=15000
             )
+            copy_btn = page.locator('[data-copy-page="0"]')
+            await copy_btn.wait_for(state="visible")
+            await copy_btn.click()
+            await page.wait_for_function(
+                """() => {
+                    const el = document.querySelector('[data-copy-page="0"]');
+                    return el && el.textContent.includes('Copied');
+                }"""
+            )
+            assert (
+                await page.evaluate("() => navigator.clipboard.readText()")
+                == page1_transcript
+            )
+
             await page.get_by_role("button", name="Next page").first.click()
             await page.wait_for_timeout(200)
             assert "page=2" in page.url
 
             await page.get_by_role("button", name="Summaries").click()
             await page.get_by_text("Notebook Summaries").wait_for(state="visible")
+            summary_prose = page.locator("[data-summary-card] .markdown-prose").first
+            await summary_prose.wait_for(state="visible")
+            md_checks = await summary_prose.evaluate(
+                """(el) => ({
+                    h2: el.querySelector('h2')?.textContent?.trim() || '',
+                    hasCheckedTask: Boolean(el.querySelector('.md-task-box.is-checked')),
+                    linkTarget: el.querySelector('a')?.getAttribute('target') || '',
+                    linkRel: el.querySelector('a')?.getAttribute('rel') || '',
+                    scriptCount: el.querySelectorAll('script').length,
+                })"""
+            )
+            assert md_checks == {
+                "h2": "2026-06-18 (Page 1)",
+                "hasCheckedTask": True,
+                "linkTarget": "_blank",
+                "linkRel": "noopener noreferrer",
+                "scriptCount": 0,
+            }
             await page.get_by_role("button", name="Back to files").click()
 
             # Tasks & Schedule view + ICS modal

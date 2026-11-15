@@ -1,5 +1,8 @@
-import { ref, watch, nextTick } from 'vue';
-import { formatContent, formatLinkLabel } from './noteMeta.js';
+import { ref, watch, nextTick, onUnmounted } from 'vue';
+import { formatContent, formatLinkLabel, hasCopyablePageText } from './noteMeta.js';
+import { copyTextToClipboard } from '../../utils/clipboard.js';
+import { renderMarkdown } from '../../utils/markdown.js';
+import { showToast } from '../../composables/useToast.js';
 
 export default {
     name: 'ViewerSidePanel',
@@ -26,6 +29,17 @@ export default {
     ],
     setup(props, { expose }) {
         const transcriptScrollPane = ref(null);
+        const copiedPageKey = ref(null);
+        /** @type {ReturnType<typeof setTimeout> | null} */
+        let copyResetTimer = null;
+
+        function clearCopiedState() {
+            if (copyResetTimer) {
+                clearTimeout(copyResetTimer);
+                copyResetTimer = null;
+            }
+            copiedPageKey.value = null;
+        }
 
         function scrollToPage(pageIndex, options = {}) {
             const behavior = options.behavior || 'smooth';
@@ -53,6 +67,17 @@ export default {
             }
         );
 
+        watch(
+            () => props.fileId,
+            () => {
+                clearCopiedState();
+            }
+        );
+
+        onUnmounted(() => {
+            clearCopiedState();
+        });
+
         const getPageMeta = (pageIdx) => props.pageMetaByIndex.get(pageIdx) || null;
         const getPageKeywords = (pageIdx) => {
             const kws = getPageMeta(pageIdx)?.keywords;
@@ -60,6 +85,30 @@ export default {
         };
         const getPageLinks = (pageIdx) => props.linksByPageIndex.get(pageIdx) || [];
         const renderLinkLabel = (link) => formatLinkLabel(link, props.fileId);
+
+        const isPageCopied = (pageIndex) => copiedPageKey.value === `page-${pageIndex}`;
+
+        async function copyPageTranscript(pageItem) {
+            const text = formatContent(pageItem?.text);
+            if (!text.trim()) return;
+            const ok = await copyTextToClipboard(text);
+            if (!ok) {
+                showToast('Failed to copy transcript to clipboard', 'error');
+                return;
+            }
+            const key = `page-${pageItem.pageIndex}`;
+            copiedPageKey.value = key;
+            if (copyResetTimer) clearTimeout(copyResetTimer);
+            copyResetTimer = setTimeout(() => {
+                if (copiedPageKey.value === key) {
+                    copiedPageKey.value = null;
+                }
+                copyResetTimer = null;
+            }, 2000);
+        }
+
+        const renderSummaryMarkdown = (summaryItem) =>
+            renderMarkdown(summaryItem?.content || summaryItem?.summary || '');
 
         expose({ scrollToPage });
 
@@ -69,7 +118,11 @@ export default {
             getPageKeywords,
             getPageLinks,
             renderLinkLabel,
-            formatContent
+            formatContent,
+            hasCopyablePageText,
+            isPageCopied,
+            copyPageTranscript,
+            renderSummaryMarkdown
         };
     },
     template: `
@@ -133,34 +186,54 @@ export default {
                             ? 'border-slate-900 ring-1 ring-slate-900/15 bg-stone-50/70'
                             : 'border-stone-200/80 bg-white'"
                         class="rounded-xl border overflow-hidden transition-all">
-                        <button v-if="hasCanvasPages" type="button"
-                            @click="$emit('select-page', pageItem.pageIndex)"
-                            class="w-full px-3.5 py-2 border-b border-stone-100 flex items-center justify-between text-left hover:bg-stone-100/70 transition-colors cursor-pointer">
-                            <div class="flex items-center gap-2">
-                                <span :class="activePageIndex === pageItem.pageIndex
-                                    ? 'bg-slate-900 text-white'
-                                    : 'bg-stone-200/80 text-stone-700'"
-                                    class="px-2 py-0.5 rounded-md text-[11px] font-bold font-mono transition-colors tabular-nums">
+                        <div class="w-full px-3.5 py-2 border-b border-stone-100 flex items-center justify-between gap-2">
+                            <button v-if="hasCanvasPages" type="button"
+                                @click="$emit('select-page', pageItem.pageIndex)"
+                                class="flex items-center justify-between gap-2 flex-1 min-w-0 text-left rounded-md -ml-1.5 px-1.5 py-0.5 hover:bg-stone-100/80 transition-colors cursor-pointer">
+                                <div class="flex items-center gap-1.5 min-w-0">
+                                    <span :class="activePageIndex === pageItem.pageIndex
+                                        ? 'bg-slate-900 text-white'
+                                        : 'bg-stone-200/80 text-stone-700'"
+                                        class="px-2 py-0.5 rounded-md text-[11px] font-bold font-mono transition-colors tabular-nums shrink-0">
+                                        Page {{ pageItem.pageIndex + 1 }}
+                                    </span>
+                                    <span v-if="pageItem.date || getPageMeta(pageItem.pageIndex)?.date" class="text-[11px] text-stone-500 font-mono tabular-nums truncate">
+                                        {{ pageItem.date || getPageMeta(pageItem.pageIndex)?.date }}
+                                    </span>
+                                    <span v-if="getPageMeta(pageItem.pageIndex)?.hasFiveStar" class="text-xs text-amber-600 font-bold shrink-0" title="Starred page">★</span>
+                                </div>
+                                <span class="text-[10px] font-semibold text-stone-500 shrink-0">
+                                    {{ activePageIndex === pageItem.pageIndex ? 'Viewing' : 'Jump →' }}
+                                </span>
+                            </button>
+                            <div v-else class="flex items-center gap-1.5 min-w-0 flex-1">
+                                <span class="px-2 py-0.5 rounded-md text-[11px] font-bold font-mono bg-stone-200/80 text-stone-700 tabular-nums shrink-0">
                                     Page {{ pageItem.pageIndex + 1 }}
                                 </span>
-                                <span v-if="pageItem.date || getPageMeta(pageItem.pageIndex)?.date" class="text-[11px] text-stone-500 font-mono tabular-nums">
+                                <span v-if="pageItem.date || getPageMeta(pageItem.pageIndex)?.date" class="text-[11px] text-stone-500 font-mono tabular-nums truncate">
                                     {{ pageItem.date || getPageMeta(pageItem.pageIndex)?.date }}
                                 </span>
-                                <span v-if="getPageMeta(pageItem.pageIndex)?.hasFiveStar" class="text-xs text-amber-600 font-bold" title="Starred page">★</span>
+                                <span v-if="getPageMeta(pageItem.pageIndex)?.hasFiveStar" class="text-xs text-amber-600 font-bold shrink-0" title="Starred page">★</span>
                             </div>
-                            <span class="text-[10px] font-semibold text-stone-500">
-                                {{ activePageIndex === pageItem.pageIndex ? 'Viewing' : 'Jump →' }}
-                            </span>
-                        </button>
-                        <div v-else class="w-full px-3.5 py-2 border-b border-stone-100 flex items-center justify-between">
-                            <div class="flex items-center gap-2">
-                                <span class="px-2 py-0.5 rounded-md text-[11px] font-bold font-mono bg-stone-200/80 text-stone-700 tabular-nums">
-                                    Page {{ pageItem.pageIndex + 1 }}
-                                </span>
-                                <span v-if="pageItem.date || getPageMeta(pageItem.pageIndex)?.date" class="text-[11px] text-stone-500 font-mono tabular-nums">
-                                    {{ pageItem.date || getPageMeta(pageItem.pageIndex)?.date }}
-                                </span>
-                            </div>
+
+                            <button v-if="hasCopyablePageText(pageItem)"
+                                type="button"
+                                @click="copyPageTranscript(pageItem)"
+                                :data-copy-page="pageItem.pageIndex"
+                                :aria-label="isPageCopied(pageItem.pageIndex) ? ('Copied Page ' + (pageItem.pageIndex + 1) + ' transcript') : ('Copy Page ' + (pageItem.pageIndex + 1) + ' transcript')"
+                                :title="isPageCopied(pageItem.pageIndex) ? 'Copied!' : ('Copy Page ' + (pageItem.pageIndex + 1) + ' transcript')"
+                                :class="isPageCopied(pageItem.pageIndex)
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : 'bg-white hover:bg-stone-100 text-stone-600 hover:text-slate-900 border-stone-200/90'"
+                                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-semibold transition-colors shrink-0 cursor-pointer">
+                                <svg v-if="isPageCopied(pageItem.pageIndex)" class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.25" d="M5 13l4 4L19 7"></path>
+                                </svg>
+                                <svg v-else class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                </svg>
+                                <span>{{ isPageCopied(pageItem.pageIndex) ? 'Copied' : 'Copy' }}</span>
+                            </button>
                         </div>
 
                         <!-- Per-Page Keywords & Outgoing Links -->
@@ -219,10 +292,12 @@ export default {
                 </div>
 
                 <div v-if="summaries.length > 0" class="space-y-3">
-                    <div v-for="s in summaries" :key="s.id"
-                        class="p-3.5 bg-stone-50 rounded-xl border border-stone-200/80 text-xs text-slate-800 leading-relaxed whitespace-pre-wrap">
-                        <p v-if="s.title" class="font-bold text-slate-900 mb-1.5">{{ s.title }}</p>
-                        {{ formatContent(s.content || s.summary) }}
+                    <div v-for="(s, sIdx) in summaries" :key="s.id ?? sIdx"
+                        data-summary-card
+                        class="p-3.5 bg-stone-50 rounded-xl border border-stone-200/80 text-xs text-slate-800 leading-relaxed select-text">
+                        <p v-if="s.title" class="font-bold text-slate-900 mb-2">{{ s.title }}</p>
+                        <div v-if="renderSummaryMarkdown(s)" class="markdown-prose" v-html="renderSummaryMarkdown(s)"></div>
+                        <p v-else class="italic text-stone-500">No summary content.</p>
                     </div>
                 </div>
 

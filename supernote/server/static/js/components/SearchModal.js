@@ -18,6 +18,7 @@ export default {
         const taskResults = ref([]);
         const searchInput = ref(null);
 
+        /** @type {ReturnType<typeof setTimeout> | null} */
         let searchTimeout = null;
         let activeSearchSeq = 0;
 

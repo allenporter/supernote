@@ -107,9 +107,21 @@ export function formatLinkLabel(link, currentFileId) {
     return targetBaseName || 'Linked notebook';
 }
 
+/**
+ * @param {string | null | undefined} str
+ * @returns {string}
+ */
 export function formatContent(str) {
     if (!str) return '';
     return str.replaceAll('\\n', '\n');
+}
+
+/**
+ * @param {Partial<TranscriptPage> | null | undefined} pageItem
+ * @returns {boolean}
+ */
+export function hasCopyablePageText(pageItem) {
+    return Boolean(pageItem?.hasTranscript && formatContent(pageItem.text).trim());
 }
 
 /**

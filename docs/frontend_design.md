@@ -4,7 +4,7 @@ The Supernote Cloud Web UI (`supernote/server/static/`) is a zero-build Vue 3 si
 
 ## 1. Design Principles
 
-- **Zero Build Step**: Browser-native ES modules (`<script type="module">`) and an `<script type="importmap">` in `index.html` load pinned CDN dependencies (`vue`, `tailwindcss`, `socket.io-client`, `spark-md5`, `js-sha256`) tracked by Renovate. No `package.json`, bundler, or Node runtime is required in production containers.
+- **Zero Build Step**: Browser-native ES modules (`<script type="module">`) and an `<script type="importmap">` in `index.html` load pinned CDN dependencies (`vue`, `marked`, `dompurify`, `tailwindcss`, `socket.io-client`, `spark-md5`, `js-sha256`) tracked by Renovate. No `package.json`, bundler, or Node runtime is required in production containers.
 - **Vue 3 Composition API**: All components use Vue 3 `setup(props, { emit, expose })` and shared composables.
 - **Compile-Time Type Safety via JSDoc + `tsc --noEmit`**: `tsconfig.json` (`allowJs: true`, `checkJs: true`, `strictNullChecks: true`) and ambient declarations (`supernote/server/static/js/types.d.ts`) type-check every `.js` module in `./script/lint` and CI without transpilation.
 - **Host UI Separation**: URL routing, authentication/token transport, and view shells are decoupled from domain panels so dynamic ES-module plugins can register tabs, toolbar actions, and viewer actions against a stable `PluginHostContext` contract.
@@ -29,7 +29,9 @@ supernote/server/static/
     │   ├── useSchedule.js            # Task list filtering, device sort order & mutation actions
     │   └── useToast.js               # Non-blocking toast notification queue
     ├── utils/
+    │   ├── clipboard.js              # Clipboard copy helper with plain-HTTP LAN fallback
     │   ├── format.js                 # Epoch ms normalization, human byte sizes & date formatting
+    │   ├── markdown.js               # CommonMark + GFM Markdown renderer sanitized via DOMPurify
     │   └── oauth.js                  # OAuth 2.1 /login-bridge return_to validation & display helpers
     └── components/
         ├── FileCard.js               # Grid, compact folder & list-row item card with lazy covers

@@ -6,6 +6,7 @@ const STATUS_POLL_INTERVAL_MS = 3000;
 
 export function useProcessingStatus({ files, isLoggedIn, activeTab, view }) {
     const processingStatuses = ref({});
+    /** @type {ReturnType<typeof setTimeout> | null} */
     let statusPollTimer = null;
     let statusPollInFlight = false;
 
