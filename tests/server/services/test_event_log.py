@@ -16,7 +16,6 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
     DomainEventRecorded,
     LocalEventBus,
-    NoteUpdatedEvent,
     SummaryDeletedEvent,
     SummaryUpsertedEvent,
 )
@@ -336,10 +335,11 @@ async def test_summary_domain_events_recorded(
         ),
         (DomainEventType.SUMMARY_DELETED, DomainEntityType.SUMMARY, str(leaf.id), 501),
     ]
-    assert page.events[0].payload["is_summary_group"] is True
+    assert page.events[0].payload["summary"]["isSummaryGroup"] == "Y"
     assert page.events[1].payload["is_new"] is True
     assert page.events[3].payload == {
         "summary_id": str(leaf.id),
+        "file_id": "501",
         "unique_identifier": "leaf-1",
         "is_summary_group": False,
     }
@@ -417,13 +417,6 @@ async def test_vfs_file_and_folder_domain_events_recorded(
     test_user_id = await user_service.get_user_id(test_user)
     assert test_user_id is not None
 
-    note_updates: list[NoteUpdatedEvent] = []
-
-    async def on_note_updated(ev: NoteUpdatedEvent) -> None:
-        note_updates.append(ev)
-
-    event_bus.subscribe(NoteUpdatedEvent, on_note_updated, inline=True)
-
     file_service = FileService(
         storage_root, blob_storage, user_service, session_manager, event_bus
     )
@@ -469,13 +462,18 @@ async def test_vfs_file_and_folder_domain_events_recorded(
     assert p1.events[2].payload["old_md5"] == md5_1
     assert p1.events[2].payload["new_md5"] == md5_2
 
-    # Rename folder -> emits vfs.moved for both folder and descendant file
+    # Rename folder -> emits vfs.moved for the folder
     await file_service.rename_item(test_user, sub_dir.id, "Roadmap")
     p2 = await event_log_service.list_events(
         user_id=test_user_id, sync_token=p1.next_sync_token
     )
     assert [
-        (e.event_type, e.entity_id, e.payload["old_path"], e.payload["new_path"])
+        (
+            e.event_type,
+            e.entity_id,
+            e.payload["original_full_path"],
+            e.payload["new_full_path"],
+        )
         for e in p2.events
     ] == [
         (
@@ -484,39 +482,25 @@ async def test_vfs_file_and_folder_domain_events_recorded(
             "NOTE/Note/Projects",
             "NOTE/Note/Roadmap",
         ),
-        (
-            DomainEventType.VFS_MOVED,
-            str(note_info.id),
-            "NOTE/Note/Projects/todo.note",
-            "NOTE/Note/Roadmap/todo.note",
-        ),
     ]
 
-    # Copy folder -> emits vfs.created (with copied_from_id/path) for folder + descendant file
-    note_updates.clear()
+    # Copy folder -> emits vfs.copied for the folder
     copied_dir = await file_service.copy_item(
         test_user, sub_dir.id, "NOTE/Note/RoadmapCopy", autorename=True
     )
     p3 = await event_log_service.list_events(
         user_id=test_user_id, sync_token=p2.next_sync_token
     )
-    assert len(p3.events) == 2
-    assert p3.events[0].event_type == DomainEventType.VFS_CREATED
+    assert len(p3.events) == 1
+    assert p3.events[0].event_type == DomainEventType.VFS_COPIED
     assert p3.events[0].entity_id == str(copied_dir.id)
-    assert p3.events[0].payload["copied_from_id"] == str(sub_dir.id)
-    assert p3.events[1].event_type == DomainEventType.VFS_CREATED
-    assert p3.events[1].payload["copied_from_id"] == str(note_info.id)
-    assert p3.events[1].payload["copied_from_path"] == "NOTE/Note/Roadmap/todo.note"
-    assert len(note_updates) == 1
+    assert p3.events[0].payload["source_id"] == str(sub_dir.id)
+    assert p3.events[0].payload["original_full_path"] == "NOTE/Note/Roadmap"
 
-    # Delete folder -> emits vfs.deleted for folder + descendant file
+    # Delete folder -> emits vfs.deleted for the folder
     await file_service.delete_item(test_user, copied_dir.id)
     p4 = await event_log_service.list_events(
         user_id=test_user_id, sync_token=p3.next_sync_token
     )
-    assert [e.event_type for e in p4.events] == [
-        DomainEventType.VFS_DELETED,
-        DomainEventType.VFS_DELETED,
-    ]
+    assert [e.event_type for e in p4.events] == [DomainEventType.VFS_DELETED]
     assert p4.events[0].entity_id == str(copied_dir.id)
-    assert p4.events[1].entity_id == p3.events[1].entity_id

@@ -31,7 +31,6 @@ from ..db.models.summary import SummaryDO
 from ..db.models.user import FALLBACK_QUOTA, UNLIMITED_QUOTA
 from ..db.session import DatabaseSessionManager
 from ..events import (
-    AffectedVfsFile,
     LocalEventBus,
     NoteDeletedEvent,
     NoteUpdatedEvent,
@@ -159,10 +158,10 @@ class _FileUpsertResult:
     """Result of creating or updating a VFS file node, tracking any superseded artifacts to clean up."""
 
     node: UserFileDO
-    was_existing: bool = False
-    previous_md5: str | None = None
     superseded_storage_key: str | None = None
     superseded_md5: str | None = None
+    was_existing: bool = False
+    previous_md5: str | None = None
 
 
 class FileService:
@@ -516,14 +515,15 @@ class FileService:
         full_path = f"{clean_path}/{filename}" if clean_path else filename
         entity = _to_file_entity(new_file, full_path)
 
-        # Emit domain events (VFS creation/update precedes note pipeline triggers)
-        await self._publish_file_upsert_events(
-            user_id=user_id,
-            upsert_result=upsert_result,
-            canonical_full_path=canonical_full_path,
-            note_file_path=full_path,
-            defer_processing=True,
-        )
+        # Emit domain events (fire and forget)
+        if self.event_bus:
+            await self._publish_file_upsert_events(
+                user_id=user_id,
+                upsert_result=upsert_result,
+                vfs_full_path=canonical_full_path,
+                note_file_path=full_path,
+                defer_note_processing=True,
+            )
 
         return entity
 
@@ -591,15 +591,15 @@ class FileService:
 
         await self._cleanup_superseded_artifacts(upsert_result)
 
-        # Emit domain events (VFS creation/update precedes note pipeline triggers)
+        # Emit domain events (fire and forget)
         if self.event_bus:
             full_path = await self.get_full_path_by_node(user_id, new_file.id)
             await self._publish_file_upsert_events(
                 user_id=user_id,
                 upsert_result=upsert_result,
-                canonical_full_path=full_path,
+                vfs_full_path=full_path,
                 note_file_path=full_path,
-                defer_processing=False,
+                defer_note_processing=False,
             )
 
     async def _publish_file_upsert_events(
@@ -607,10 +607,11 @@ class FileService:
         *,
         user_id: int,
         upsert_result: _FileUpsertResult,
-        canonical_full_path: str,
+        vfs_full_path: str,
         note_file_path: str,
-        defer_processing: bool,
+        defer_note_processing: bool,
     ) -> None:
+        """Publish VFS create/content-update and note processing events for a committed file upload."""
         if not self.event_bus:
             return
         node = upsert_result.node
@@ -622,7 +623,7 @@ class FileService:
                         item_id=node.id,
                         parent_id=node.directory_id,
                         name=node.file_name,
-                        full_path=canonical_full_path,
+                        full_path=vfs_full_path,
                         size=node.size,
                         old_md5=upsert_result.previous_md5,
                         new_md5=node.md5,
@@ -636,7 +637,7 @@ class FileService:
                     parent_id=node.directory_id,
                     name=node.file_name,
                     is_folder=False,
-                    full_path=canonical_full_path,
+                    full_path=vfs_full_path,
                     size=node.size,
                     md5=node.md5,
                 )
@@ -647,66 +648,9 @@ class FileService:
                     file_id=node.id,
                     user_id=user_id,
                     file_path=note_file_path,
-                    defer_processing=defer_processing,
+                    defer_processing=defer_note_processing,
                 )
             )
-
-    @staticmethod
-    async def _collect_descendant_files(
-        vfs: VirtualFileSystem,
-        user_id: int,
-        folder_id: int,
-        full_path: str,
-        *,
-        original_full_path: str | None = None,
-        src_by_rel: dict[str, UserFileDO] | None = None,
-        note_events: list[NoteUpdatedEvent] | None = None,
-        defer_processing: bool = False,
-    ) -> tuple[AffectedVfsFile, ...]:
-        """Collect leaf descendant file metadata for folder-level VFS events."""
-        descendants = await vfs.list_recursive(user_id, folder_id)
-        items: list[AffectedVfsFile] = []
-        for child, rel in descendants:
-            if child.is_folder != "N":
-                continue
-            child_path = f"{full_path}/{rel}"
-            src_child = src_by_rel.get(rel) if src_by_rel else None
-            items.append(
-                AffectedVfsFile(
-                    item_id=child.id,
-                    parent_id=child.directory_id,
-                    name=child.file_name,
-                    full_path=child_path,
-                    size=child.size,
-                    md5=child.md5,
-                    source_id=src_child.id if src_child else None,
-                    original_parent_id=(
-                        src_child.directory_id
-                        if src_child
-                        else (child.directory_id if original_full_path else None)
-                    ),
-                    original_name=(
-                        src_child.file_name
-                        if src_child
-                        else (child.file_name if original_full_path else None)
-                    ),
-                    original_full_path=(
-                        f"{original_full_path}/{rel}"
-                        if original_full_path and (src_by_rel is None or src_child)
-                        else None
-                    ),
-                )
-            )
-            if note_events is not None and child.file_name.endswith(".note"):
-                note_events.append(
-                    NoteUpdatedEvent(
-                        file_id=child.id,
-                        user_id=user_id,
-                        file_path=child_path,
-                        defer_processing=defer_processing,
-                    )
-                )
-        return tuple(items)
 
     async def _upsert_vfs_file(
         self,
@@ -742,10 +686,10 @@ class FileService:
 
         return _FileUpsertResult(
             node=new_file,
-            was_existing=was_existing,
-            previous_md5=old_md5,
             superseded_storage_key=superseded_storage_key,
             superseded_md5=superseded_md5,
+            was_existing=was_existing,
+            previous_md5=old_md5,
         )
 
     async def _cleanup_superseded_artifacts(
@@ -836,7 +780,6 @@ class FileService:
     async def delete_item(self, email: str, id: int) -> FileEntity:
         """Delete a file or directory for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(email)
-        descendant_files: tuple[AffectedVfsFile, ...] = ()
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
 
@@ -850,14 +793,11 @@ class FileService:
 
             path_display = await vfs.get_full_path(user_id, node.id)
             entity = _to_file_entity(node, path_display)
-            if node.is_folder == "Y":
-                descendant_files = await self._collect_descendant_files(
-                    vfs, user_id, node.id, path_display
-                )
 
             success = await vfs.delete_node(user_id, id)
             if not success:
                 raise FileNotFound(f"Node {id} not found for user {email}")
+        await self.prune_expired_recycle(user_id)
         if self.event_bus:
             await self.event_bus.publish(
                 VfsItemDeletedEvent(
@@ -869,21 +809,14 @@ class FileService:
                     is_folder=entity.is_folder,
                     size=entity.size,
                     md5=entity.md5,
-                    descendant_files=descendant_files,
                 )
-            )
-        try:
-            await self.prune_expired_recycle(user_id)
-        except Exception as e:
-            logger.warning(
-                f"Opportunistic recycle prune failed for user {user_id}: {e}"
             )
         return entity
 
     async def delete_items(self, user: str, id_list: list[int], parent_id: int) -> None:
         """Delete files or directories for a specific user using VFS (Web API)."""
         user_id = await self.user_service.get_user_id(user)
-        deleted_items: list[tuple[FileEntity, tuple[AffectedVfsFile, ...]]] = []
+        deleted_entities: list[FileEntity] = []
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
             for file_id in id_list:
@@ -893,10 +826,16 @@ class FileService:
                     continue  # Already gone?
 
                 if node.directory_id != parent_id:
-                    parent_node = await vfs.get_node_by_id(user_id, node.directory_id)
-                    is_categorized = bool(
-                        parent_node and parent_node.file_name in CATEGORY_CONTAINERS
-                    )
+                    # Special case for flattened Web API: allow parent_id=0 if it's a categorized folder
+                    is_categorized = False
+                    # We need to know if it's a child of a category container
+                    async with self.session_manager.session() as sess:
+                        vfs_i = VirtualFileSystem(sess)
+                        parent_node = await vfs_i.get_node_by_id(
+                            user_id, node.directory_id
+                        )
+                        if parent_node and parent_node.file_name in CATEGORY_CONTAINERS:
+                            is_categorized = True
 
                     if not (parent_id == 0 and is_categorized):
                         raise InvalidPath(
@@ -911,17 +850,11 @@ class FileService:
 
                 full_path = await vfs.get_full_path(user_id, node.id)
                 entity = _to_file_entity(node, full_path)
-                descendant_files = (
-                    await self._collect_descendant_files(
-                        vfs, user_id, node.id, full_path
-                    )
-                    if node.is_folder == "Y"
-                    else ()
-                )
                 if await vfs.delete_node(user_id, file_id):
-                    deleted_items.append((entity, descendant_files))
+                    deleted_entities.append(entity)
+        await self.prune_expired_recycle(user_id)
         if self.event_bus:
-            for entity, descendant_files in deleted_items:
+            for entity in deleted_entities:
                 await self.event_bus.publish(
                     VfsItemDeletedEvent(
                         user_id=user_id,
@@ -932,15 +865,8 @@ class FileService:
                         is_folder=entity.is_folder,
                         size=entity.size,
                         md5=entity.md5,
-                        descendant_files=descendant_files,
                     )
                 )
-        try:
-            await self.prune_expired_recycle(user_id)
-        except Exception as e:
-            logger.warning(
-                f"Opportunistic recycle prune failed for user {user_id}: {e}"
-            )
 
     async def get_storage_usage(self, user: str) -> int:
         """Get total storage usage for a specific user using VFS."""
@@ -1028,17 +954,6 @@ class FileService:
                     or original_name != moved_node.file_name
                 ):
                     new_full_path = await vfs.get_full_path(user_id, moved_node.id)
-                    descendant_files = (
-                        await self._collect_descendant_files(
-                            vfs,
-                            user_id,
-                            moved_node.id,
-                            new_full_path,
-                            original_full_path=original_full_path,
-                        )
-                        if moved_node.is_folder == "Y"
-                        else ()
-                    )
                     moved_events.append(
                         VfsItemMovedEvent(
                             user_id=user_id,
@@ -1052,7 +967,6 @@ class FileService:
                             is_folder=moved_node.is_folder == "Y",
                             size=moved_node.size,
                             md5=moved_node.md5,
-                            descendant_files=descendant_files,
                         )
                     )
 
@@ -1065,7 +979,6 @@ class FileService:
     ) -> FileEntity:
         """Move a file or directory for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
-        descendant_files: tuple[AffectedVfsFile, ...] = ()
 
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
@@ -1091,16 +1004,6 @@ class FileService:
             # rebuild it.
             full_path = await vfs.get_full_path(user_id, new_node.id)
             entity = _to_file_entity(new_node, full_path)
-            if new_node.is_folder == "Y" and (
-                original_parent_id != entity.parent_id or original_name != entity.name
-            ):
-                descendant_files = await self._collect_descendant_files(
-                    vfs,
-                    user_id,
-                    new_node.id,
-                    full_path,
-                    original_full_path=original_full_path,
-                )
 
         if self.event_bus and (
             original_parent_id != entity.parent_id or original_name != entity.name
@@ -1118,7 +1021,6 @@ class FileService:
                     is_folder=entity.is_folder,
                     size=entity.size,
                     md5=entity.md5,
-                    descendant_files=descendant_files,
                 )
             )
         return entity
@@ -1132,7 +1034,6 @@ class FileService:
         """Batch copy items for a specific user."""
         user_id = await self.user_service.get_user_id(user)
         copied_events: list[VfsItemCopiedEvent] = []
-        note_events: list[NoteUpdatedEvent] = []
 
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
@@ -1141,6 +1042,8 @@ class FileService:
                 if not node:
                     raise FileNotFound(f"Source item {item_id} not found")
 
+                # Check immutability? Usually copy is allowed, but let's be safe.
+                # Actually device API copy_item blocks it too.
                 if await vfs.is_system_directory(user_id, node):
                     raise AccessDenied(
                         f"Cannot copy system directory: {node.file_name}"
@@ -1149,16 +1052,8 @@ class FileService:
                 source_parent_id = node.directory_id
                 original_name = node.file_name
                 original_full_path = await vfs.get_full_path(user_id, node.id)
-                src_by_rel = (
-                    {
-                        rel: c
-                        for c, rel in await vfs.list_recursive(user_id, node.id)
-                        if c.is_folder == "N"
-                    }
-                    if node.is_folder == "Y"
-                    else {}
-                )
 
+                # Copy logic (no source parent check usually required for copy but we can add it for completeness)
                 new_node = await vfs.copy_node(
                     user_id,
                     item_id,
@@ -1168,29 +1063,6 @@ class FileService:
                 )
                 if new_node:
                     new_full_path = await vfs.get_full_path(user_id, new_node.id)
-                    descendant_files = (
-                        await self._collect_descendant_files(
-                            vfs,
-                            user_id,
-                            new_node.id,
-                            new_full_path,
-                            original_full_path=original_full_path,
-                            src_by_rel=src_by_rel,
-                            note_events=note_events,
-                        )
-                        if new_node.is_folder == "Y"
-                        else ()
-                    )
-                    if new_node.is_folder == "N" and new_node.file_name.endswith(
-                        ".note"
-                    ):
-                        note_events.append(
-                            NoteUpdatedEvent(
-                                file_id=new_node.id,
-                                user_id=user_id,
-                                file_path=new_full_path,
-                            )
-                        )
                     copied_events.append(
                         VfsItemCopiedEvent(
                             user_id=user_id,
@@ -1205,23 +1077,18 @@ class FileService:
                             is_folder=new_node.is_folder == "Y",
                             size=new_node.size,
                             md5=new_node.md5,
-                            descendant_files=descendant_files,
                         )
                     )
 
         if self.event_bus:
             for ev in copied_events:
                 await self.event_bus.publish(ev)
-            for note_ev in note_events:
-                await self.event_bus.publish(note_ev)
 
     async def copy_item(
         self, email: str, id: int, to_path: str, autorename: bool
     ) -> FileEntity:
         """Copy a file or directory for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(email)
-        descendant_files: tuple[AffectedVfsFile, ...] = ()
-        note_events: list[NoteUpdatedEvent] = []
 
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
@@ -1236,15 +1103,6 @@ class FileService:
             source_parent_id = node.directory_id
             original_name = node.file_name
             original_full_path = await vfs.get_full_path(user_id, node.id)
-            src_by_rel = (
-                {
-                    rel: c
-                    for c, rel in await vfs.list_recursive(user_id, node.id)
-                    if c.is_folder == "N"
-                }
-                if node.is_folder == "Y"
-                else {}
-            )
 
             # Resolve destination parent
             clean_to_path = to_path.strip("/")
@@ -1279,26 +1137,6 @@ class FileService:
             # rebuild it.
             full_path = await vfs.get_full_path(user_id, new_node.id)
             entity = _to_file_entity(new_node, full_path)
-            if new_node.is_folder == "Y":
-                descendant_files = await self._collect_descendant_files(
-                    vfs,
-                    user_id,
-                    new_node.id,
-                    full_path,
-                    original_full_path=original_full_path,
-                    src_by_rel=src_by_rel,
-                    note_events=note_events,
-                    defer_processing=True,
-                )
-            elif new_node.file_name.endswith(".note"):
-                note_events.append(
-                    NoteUpdatedEvent(
-                        file_id=new_node.id,
-                        user_id=user_id,
-                        file_path=full_path,
-                        defer_processing=True,
-                    )
-                )
 
         if self.event_bus:
             await self.event_bus.publish(
@@ -1315,17 +1153,13 @@ class FileService:
                     is_folder=entity.is_folder,
                     size=entity.size,
                     md5=entity.md5,
-                    descendant_files=descendant_files,
                 )
             )
-            for note_ev in note_events:
-                await self.event_bus.publish(note_ev)
         return entity
 
     async def rename_item(self, user: str, id: int, new_name: str) -> None:
         """Rename a file or directory for a specific user using VFS."""
         user_id = await self.user_service.get_user_id(user)
-        descendant_files: tuple[AffectedVfsFile, ...] = ()
 
         async with self.session_manager.session() as session:
             vfs = VirtualFileSystem(session)
@@ -1355,14 +1189,6 @@ class FileService:
             )
             new_full_path = await vfs.get_full_path(user_id, node.id)
             entity = _to_file_entity(node, new_full_path)
-            if node.is_folder == "Y" and original_name != entity.name:
-                descendant_files = await self._collect_descendant_files(
-                    vfs,
-                    user_id,
-                    node.id,
-                    new_full_path,
-                    original_full_path=original_full_path,
-                )
 
         if self.event_bus and original_name != entity.name:
             await self.event_bus.publish(
@@ -1378,7 +1204,6 @@ class FileService:
                     is_folder=entity.is_folder,
                     size=entity.size,
                     md5=entity.md5,
-                    descendant_files=descendant_files,
                 )
             )
 
@@ -1562,13 +1387,6 @@ class FileService:
                     node = await vfs.get_node_by_id(user_id, file_id)
                     if node is not None:
                         full_path = await vfs.get_full_path(user_id, node.id)
-                        descendant_files = (
-                            await self._collect_descendant_files(
-                                vfs, user_id, node.id, full_path
-                            )
-                            if node.is_folder == "Y"
-                            else ()
-                        )
                         restored_events.append(
                             VfsItemCreatedEvent(
                                 user_id=user_id,
@@ -1579,7 +1397,6 @@ class FileService:
                                 full_path=full_path,
                                 size=node.size,
                                 md5=node.md5,
-                                descendant_files=descendant_files,
                             )
                         )
         if self.event_bus:
