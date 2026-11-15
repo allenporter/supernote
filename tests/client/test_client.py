@@ -1,5 +1,6 @@
 """Tests for the client library."""
 
+import logging
 from dataclasses import dataclass, field
 
 import pytest
@@ -226,3 +227,106 @@ async def test_auth_token_missing(aiohttp_client: AiohttpClient) -> None:
     assert response.success
     headers = response.data
     assert "x-access-token" not in headers
+
+
+async def test_api_key_sends_authorization_bearer_header(
+    aiohttp_client: AiohttpClient,
+) -> None:
+    """Test that static sn_... API keys send Authorization: Bearer rather than x-access-token."""
+
+    @dataclass
+    class HeadersResponse(BaseResponse):
+        data: dict[str, str] = field(default_factory=dict)
+
+    async def handler_headers(request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "success": True,
+                "data": dict(request.headers),
+            }
+        )
+
+    async def handler_csrf(request: web.Request) -> web.Response:
+        return web.Response(text="ok", headers={"X-XSRF-TOKEN": "test-token"})
+
+    app = web.Application()
+    app.router.add_get("/api/csrf", handler_csrf)
+    app.router.add_get("/headers", handler_headers)
+
+    test_client = await aiohttp_client(app)
+    base_url = str(test_client.make_url(""))
+
+    api_key = "sn_0123456789abcdef0123456789abcdef"
+    client = Client(
+        test_client.session,
+        host=base_url,
+        auth=ConstantAuth(api_key),
+    )
+
+    response = await client.get_json("headers", HeadersResponse)
+    assert response.success
+    headers = response.data
+    assert headers.get("Authorization") == f"Bearer {api_key}"
+    assert "x-access-token" not in headers
+
+
+async def test_cross_origin_requests_strip_credentials_and_csrf(
+    aiohttp_client: AiohttpClient,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verify Client never sends Bearer/x-access-token/XSRF headers to cross-origin OSS URLs or debug logs."""
+
+    @dataclass
+    class HeadersResponse(BaseResponse):
+        data: dict[str, str] = field(default_factory=dict)
+        key: str = ""
+
+    api_key = "sn_fedcba9876543210fedcba9876543210"
+
+    async def handler_csrf(_request: web.Request) -> web.Response:
+        return web.Response(text="ok", headers={"X-XSRF-TOKEN": "csrf-tok"})
+
+    async def handler_same_origin(request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "success": True,
+                "data": dict(request.headers),
+                "key": api_key,
+            }
+        )
+
+    async def handler_external_oss(request: web.Request) -> web.Response:
+        return web.json_response({"success": True, "data": dict(request.headers)})
+
+    api_app = web.Application()
+    api_app.router.add_get("/api/csrf", handler_csrf)
+    api_app.router.add_get("/headers", handler_same_origin)
+
+    oss_app = web.Application()
+    oss_app.router.add_get("/presigned-blob", handler_external_oss)
+
+    api_server = await aiohttp_client(api_app)
+    oss_server = await aiohttp_client(oss_app)
+    api_base = str(api_server.make_url(""))
+    oss_url = str(oss_server.make_url("/presigned-blob?X-Amz-Signature=sig"))
+
+    client = Client(
+        api_server.session,
+        host=api_base,
+        auth=ConstantAuth(api_key),
+    )
+
+    with caplog.at_level(logging.DEBUG, logger="supernote.client.client"):
+        # Full same-origin URL receives Authorization + X-XSRF-TOKEN, but debug logs redact raw key
+        same_resp = await client.get_json(f"{api_base}/headers", HeadersResponse)
+        assert same_resp.data.get("Authorization") == f"Bearer {api_key}"
+        assert same_resp.data.get("X-XSRF-TOKEN") == "csrf-tok"
+        assert api_key not in caplog.text
+
+        # Cross-origin presigned OSS URL must NOT receive Authorization, x-access-token, X-XSRF-TOKEN, or Origin
+        cross_resp = await client.get_json(oss_url, HeadersResponse)
+        assert "Authorization" not in cross_resp.data
+        assert "x-access-token" not in cross_resp.data
+        assert "X-XSRF-TOKEN" not in cross_resp.data
+        assert "Origin" not in cross_resp.data
+        assert "Referer" not in cross_resp.data
