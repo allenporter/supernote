@@ -33,7 +33,7 @@ Handwriting recognition on e-ink hardware drains battery and struggles with dens
 Out of the box, the server hosts a spec-compliant **[Model Context Protocol (MCP)](docs/mcp.md)** server (`list_notebooks`, `search_notebook_chunks`, `get_notebook_transcript`) supporting both **Dynamic OAuth 2.1 (IndieAuth)** for interactive desktop agents (Claude Desktop, Cursor) and revocable **Static Bearer API Keys (`sn_...`)** for headless scripts and CLI automation.
 
 ### 4. Filename & Page-Style Driven Custom AI Prompts
-Drop custom Markdown prompt templates into your `prompts_dir` (`ocr/daily/prompt.md`, `summary/meeting_notes/prompt.md`, or `ocr/style_cornell/prompt.md`), and the server automatically routes matching notebooks (by filename stem or page stationery style) through your custom instructions while injecting native device page keywords (`PAGE_KEYWORDS`).
+Drop custom Markdown prompt templates into your `prompts_dir` (`ocr/daily/prompt.md`, `summary/meeting_notes/prompt.md`, or `ocr/style_cornell/prompt.md`), and the server automatically routes matching notebooks (by filename stem or page stationery style) through your custom instructions while injecting native device page keywords (`PAGE_KEYWORDS`). See **[AI Pipeline, Custom Prompts & MCP Server](docs/mcp.md)** for full prompt routing details.
 
 ### 5. Live Calendar Feeds (`.ics`), Webhooks & Prometheus/Grafana Observability
 - **iCalendar (`VTODO`) Feeds**: Tasks created on your Supernote tablet are automatically exposed as an RFC 5545 `.ics` feed (`/api/schedule/feed.ics`) for Apple Reminders/Calendar, Google Calendar, Outlook, and **Home Assistant**.
@@ -345,12 +345,6 @@ async with Supernote.from_token("sn_...", host="http://localhost:8080") as sn:
 ```
 
 The notebook parser originally started as a fork of [supernote-tool](https://github.com/jya-dev/supernote-tool) with lighter dependencies and modern type hints. All credit goes to the original authors for providing the foundational parser utility.
-
----
-
-## Customizing AI Prompts
-
-You can customize the prompts used for OCR transcription and Summarization by pointing the server to a custom `prompts_dir` (`SUPERNOTE_PROMPTS_DIR` or `prompts_dir` in `config.yaml`). See **[AI Pipeline, Custom Prompts & MCP Server](docs/mcp.md)** for full details on directory layout, filename-based routing, `page_style` stationery routing, and `PAGE_KEYWORDS` injection.
 
 ---
 

@@ -15,10 +15,14 @@
 
     <div class="sn-brand">
         <a href="{{ rootprefix }}supernote.html" class="sn-brand-link">
-            <span class="sn-brand-icon">📓</span>
+            <span class="sn-brand-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
+                </svg>
+            </span>
             <div class="sn-brand-text">
                 <span class="sn-brand-title">Open Private Cloud</span>
-                <span class="sn-brand-subtitle">for Supernote &amp; SDK</span>
+                <span class="sn-brand-subtitle">for Supernote</span>
             </div>
         </a>
     </div>
@@ -27,7 +31,7 @@
         {{ super() }}
     {% endblock %}
 
-    {% set toc_html = module.docstring | to_markdown | to_html | attr("toc_html") %}
+    {% set toc_html = module.docstring | to_markdown | to_html | attr("toc_html") | clean_sidebar_toc %}
 
     <div class="sn-nav-sections">
         {# Overview link #}
@@ -156,13 +160,21 @@
 {% block module_info %}
     {% set is_guide = module.modulename.startswith("supernote.guides") %}
     {% set is_home = (module.modulename == "supernote") %}
+    {% set is_pkg_guide = module.modulename in ["supernote.server", "supernote.notebook", "supernote.models"] %}
+    {% set custom_edit_url = nav_edit_urls.get(module.modulename, edit_url) %}
     <section class="module-info {{ 'sn-guide-page' if (is_guide or is_home) else 'sn-api-page' }}">
         {% block edit_button %}
-            {% if edit_url %}
-                <a class="pdoc-button git-button" href="{{ edit_url }}">Edit on GitHub</a>
+            {% if custom_edit_url and module.modulename != "supernote.guides" %}
+                <a class="pdoc-button git-button" href="{{ custom_edit_url }}">Edit on GitHub</a>
             {% endif %}
         {% endblock %}
-        {% if not is_guide and not is_home %}
+        {% if is_pkg_guide %}
+            <div class="sn-guide-breadcrumb">
+                <a href="{{ '../' * module.modulename.count('.') }}supernote.html">Documentation</a>
+                <span>/</span>
+                <code>{{ module.modulename }}</code>
+            </div>
+        {% elif not is_guide and not is_home %}
             {{ module_name() }}
         {% elif is_guide and module.modulename != "supernote.guides" %}
             <div class="sn-guide-breadcrumb">

@@ -1,6 +1,6 @@
-# Lite Server Security Architecture
+# Security Architecture — Open Private Cloud for Supernote
 
-This document outlines the security architecture, design decisions, accepted risks, and mitigation strategies for the Lite Private Cloud server.
+This document outlines the security architecture, design decisions, accepted risks, and mitigation strategies for the Open Private Cloud for Supernote server.
 
 ## Overview
 

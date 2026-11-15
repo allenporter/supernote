@@ -15,6 +15,7 @@ This script pushes pdoc beyond single-level Python module dumps by:
 from __future__ import annotations
 
 import argparse
+import base64
 import re
 import shutil
 import sys
@@ -74,7 +75,7 @@ GUIDE_SPECS: list[GuideSpec] = [
         slug="ocr_benchmarks",
         title="OCR Provider Benchmarks",
         section="Self-Hosting & Guides",
-        path=ROOT_DIR / "evals" / "ocr" / "RESULTS.md",
+        path=ROOT_DIR / "evals" / "ocr" / "README.md",
     ),
     GuideSpec(
         slug="monitoring",
@@ -186,9 +187,21 @@ class MarkdownGuideModule(pdoc.doc.Module):
 
     @cached_property
     def docstring(self) -> str:
-        return self._guide_spec.path.read_text(encoding="utf-8").replace(
-            r"$\rightarrow$", "→"
-        )
+        text = self._guide_spec.path.read_text(encoding="utf-8")
+        if self._guide_spec.slug == "ocr_benchmarks":
+            results_path = ROOT_DIR / "evals" / "ocr" / "RESULTS.md"
+            if results_path.exists():
+                results_body = results_path.read_text(encoding="utf-8")
+                # Strip the top-level H1 from RESULTS.md before embedding into README.md
+                results_body = re.sub(r"^#\s+[^\n]+\n+", "", results_body, count=1)
+                target = (
+                    "![OCR Quality vs. Latency Pareto Frontier](pareto_frontier.svg)"
+                )
+                if target in text:
+                    text = text.replace(target, f"{target}\n\n{results_body.strip()}\n")
+                else:
+                    text = f"{text}\n\n{results_body}"
+        return text.replace(r"$\rightarrow$", "→")
 
     @cached_property
     def source_file(self) -> Path | None:
@@ -251,6 +264,35 @@ class GuideIndexModule(pdoc.doc.Module):
         return list(self._guide_modules)
 
 
+def _clean_sidebar_toc(toc_html: str | None) -> str:
+    """Unwrap redundant outer H1 bullet and strip H3/H4 nesting from sidebar TOC."""
+    if not toc_html:
+        return ""
+    cleaned = toc_html.strip()
+    # If the entire TOC is wrapped in a single top-level H1 <li><a>...</a><ul>...</ul></li>, unwrap it
+    m = re.match(
+        r"^\s*<ul>\s*<li>\s*<a\b[^>]*>.*?</a>\s*(<ul>.*</ul>)\s*</li>\s*</ul>\s*$",
+        cleaned,
+        flags=re.S,
+    )
+    if m:
+        cleaned = m.group(1)
+    # Remove nested <ul>...</ul> (H3/H4 levels) inside top-level <li> items
+    inner = re.sub(r"^\s*<ul>\s*(.*?)\s*</ul>\s*$", r"\1", cleaned, flags=re.S)
+    prev = None
+    while prev != inner:
+        prev = inner
+        inner = re.sub(
+            r"\s*<ul>\s*(?:<li>(?:(?!<ul\b).)*?</li>\s*)*</ul>",
+            "",
+            inner,
+            flags=re.S,
+        )
+    if not re.search(r"<li\b", inner):
+        return ""
+    return f"<ul>\n{inner}\n</ul>"
+
+
 def _install_markdown_link_rewriter() -> None:
     """Install a markdown pre-processor that rewrites relative .md links to pdoc HTML links."""
     # Map known markdown filenames to their target pdoc module names
@@ -261,11 +303,15 @@ def _install_markdown_link_rewriter() -> None:
         "supernote/models/README.md": "supernote.models",
         "supernote/server/ARCHITECTURE.md": "supernote.guides.architecture",
         "docs/CONTRIBUTING.md": "supernote.guides.contributing",
+        "evals/ocr/RESULTS.md": "supernote.guides.ocr_benchmarks",
+        "evals/ocr/README.md": "supernote.guides.ocr_benchmarks",
+        "RESULTS.md": "supernote.guides.ocr_benchmarks",
     }
     for spec in GUIDE_SPECS:
         rel = spec.path.relative_to(ROOT_DIR).as_posix()
         md_to_module[rel] = spec.modulename
-        md_to_module[spec.path.name] = spec.modulename
+        if spec.path.name != "README.md":
+            md_to_module[spec.path.name] = spec.modulename
 
     def rewrite_links(context: Context, docstring: str) -> str:
         converted = pdoc.render_helpers.to_markdown_with_context(context, docstring)
@@ -373,13 +419,20 @@ def get_child_modules(
 
 def configure_pdoc() -> None:
     """Configure pdoc templates, globals, and navigation metadata."""
+    favicon_path = ROOT_DIR / "supernote" / "server" / "static" / "favicon.ico"
+    if favicon_path.exists():
+        favicon_b64 = base64.b64encode(favicon_path.read_bytes()).decode("ascii")
+        favicon_uri = f"data:image/x-icon;base64,{favicon_b64}"
+    else:
+        favicon_uri = "https://raw.githubusercontent.com/allenporter/supernote/main/supernote/server/static/favicon.ico"
+
     pdoc.render.configure(
         docformat="google",
         include_undocumented=True,
         edit_url_map={
             "supernote": "https://github.com/allenporter/supernote/blob/main/supernote/",
         },
-        favicon="https://raw.githubusercontent.com/allenporter/supernote/main/supernote/server/static/favicon.ico",
+        favicon=favicon_uri,
         footer_text="Open Private Cloud for Supernote & Python SDK",
         math=False,
         mermaid=True,
@@ -394,6 +447,12 @@ def configure_pdoc() -> None:
         "supernote": "Overview & Quick Start",
         "supernote.guides": "Guides & Specifications",
     }
+    edit_urls: dict[str, str] = {
+        "supernote": "https://github.com/allenporter/supernote/blob/main/README.md",
+        "supernote.server": "https://github.com/allenporter/supernote/blob/main/supernote/server/README.md",
+        "supernote.notebook": "https://github.com/allenporter/supernote/blob/main/supernote/notebook/README.md",
+        "supernote.models": "https://github.com/allenporter/supernote/blob/main/supernote/models/README.md",
+    }
 
     for spec in GUIDE_SPECS:
         if not spec.path.exists():
@@ -405,6 +464,10 @@ def configure_pdoc() -> None:
             {"module": spec.modulename, "title": spec.title}
         )
         page_titles[spec.modulename] = spec.title
+        rel_path = spec.path.relative_to(ROOT_DIR).as_posix()
+        edit_urls[spec.modulename] = (
+            f"https://github.com/allenporter/supernote/blob/main/{rel_path}"
+        )
 
     for pkg in API_PACKAGES:
         page_titles[pkg["module"]] = pkg["title"]
@@ -414,10 +477,13 @@ def configure_pdoc() -> None:
     ]
 
     env_globals = cast(dict[str, Any], pdoc.render.env.globals)
+    env_globals["docformat"] = "google,numpy"
     env_globals["nav_guide_sections"] = nav_guide_sections
     env_globals["nav_api_packages"] = API_PACKAGES
     env_globals["nav_page_titles"] = page_titles
+    env_globals["nav_edit_urls"] = edit_urls
     env_globals["get_child_modules"] = get_child_modules
+    pdoc.render.env.filters["clean_sidebar_toc"] = _clean_sidebar_toc
 
     _install_markdown_link_rewriter()
 
@@ -479,6 +545,10 @@ def build_site(output_dir: Path) -> None:
     search = pdoc.render.search_index(all_modules)
     if search:
         (output_dir / "search.js").write_bytes(search.encode("utf-8"))
+
+    favicon_src = ROOT_DIR / "supernote" / "server" / "static" / "favicon.ico"
+    if favicon_src.exists():
+        shutil.copy2(favicon_src, output_dir / "favicon.ico")
 
     # If building to an external directory (e.g. site/), copy static assets if needed
     for asset_dir_name in ("static-assets", "images"):
