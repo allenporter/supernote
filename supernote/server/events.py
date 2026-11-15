@@ -90,11 +90,13 @@ class SummaryUpsertedEvent(Event):
 
 @dataclass
 class SummaryDeletedEvent(Event):
-    """Triggered when a summary group or leaf summary item is soft-deleted."""
+    """Triggered when a summary group or leaf summary item is deleted."""
 
     user_id: int
     summary_id: int
     is_summary_group: bool = False
+    file_id: int | None = None
+    unique_identifier: str | None = None
     equipment_no: str | None = None
 
 

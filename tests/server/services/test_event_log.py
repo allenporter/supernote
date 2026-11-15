@@ -1,14 +1,30 @@
 """Unit tests for EventLogService append, cursor querying, and retention pruning."""
 
 import time
+from pathlib import Path
 
 import pytest
 
+from supernote.models.base import BooleanEnum
+from supernote.models.events import DomainEntityType, DomainEventType
+from supernote.models.summary import AddSummaryDTO, AddSummaryGroupDTO, SummaryItem
+from supernote.models.user import UserRegisterDTO
+from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.events import DomainEventRecorded, LocalEventBus
+from supernote.server.events import (
+    DomainEventRecorded,
+    LocalEventBus,
+    SummaryDeletedEvent,
+    SummaryUpsertedEvent,
+)
 from supernote.server.exceptions import CursorExpiredError, InvalidInputError
+from supernote.server.services.blob import BlobStorage
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.event_log import EventLogService, encode_sync_token
+from supernote.server.services.file import FileService
+from supernote.server.services.processor_modules.summary import SummaryModule
+from supernote.server.services.summary import SummaryService
+from supernote.server.services.user import UserService
 
 
 @pytest.fixture
@@ -234,3 +250,151 @@ async def test_prune_disabled_when_retention_days_is_zero(
         timestamp_ms=1_000,
     )
     assert await svc.prune_expired_events() == 0
+
+
+async def test_summary_domain_events_recorded(
+    event_log_service: EventLogService,
+    event_bus: LocalEventBus,
+    session_manager: DatabaseSessionManager,
+    user_service: UserService,
+    storage_root: Path,
+    blob_storage: BlobStorage,
+) -> None:
+    """Verify summary upserts, group cascade deletes, and file cleanup record summary.* events."""
+    test_user = "summary_events@example.com"
+    await user_service.register(UserRegisterDTO(email=test_user, password="a" * 32))
+    test_user_id = await user_service.get_user_id(test_user)
+    assert test_user_id is not None
+
+    summary_service = SummaryService(user_service, session_manager, event_bus)
+    file_service = FileService(
+        storage_root, blob_storage, user_service, session_manager, event_bus
+    )
+    summary_module = SummaryModule(
+        file_service=file_service,
+        summary_service=summary_service,
+        summary_model=None,
+    )
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=501,
+                user_id=test_user_id,
+                file_name="notes.note",
+                directory_id=0,
+            )
+        )
+        await session.commit()
+
+    group = await summary_service.add_group(
+        test_user,
+        AddSummaryGroupDTO(
+            unique_identifier="grp-1",
+            name="notes.note",
+            md5_hash="g-md5",
+        ),
+    )
+    leaf = await summary_service.add_summary(
+        test_user,
+        AddSummaryDTO(
+            file_id=501,
+            unique_identifier="leaf-1",
+            parent_unique_identifier="grp-1",
+            content="Summary text",
+            source_path="/NOTE/notes.note",
+            data_source="AI",
+        ),
+    )
+    assert group.id is not None and leaf.id is not None
+
+    # Deleting a group cascades a summary.deleted tombstone for both the group and its child leaf
+    await summary_service.delete_group(test_user, group.id)
+
+    page = await event_log_service.list_events(
+        user_id=test_user_id, event_types=["summary.*"]
+    )
+    assert [
+        (e.event_type, e.entity_type, e.entity_id, e.related_file_id)
+        for e in page.events
+    ] == [
+        (
+            DomainEventType.SUMMARY_UPSERTED,
+            DomainEntityType.SUMMARY,
+            str(group.id),
+            None,
+        ),
+        (DomainEventType.SUMMARY_UPSERTED, DomainEntityType.SUMMARY, str(leaf.id), 501),
+        (
+            DomainEventType.SUMMARY_DELETED,
+            DomainEntityType.SUMMARY,
+            str(group.id),
+            None,
+        ),
+        (DomainEventType.SUMMARY_DELETED, DomainEntityType.SUMMARY, str(leaf.id), 501),
+    ]
+    assert page.events[0].payload["is_summary_group"] is True
+    assert page.events[1].payload["is_new"] is True
+    assert page.events[3].payload == {
+        "summary_id": str(leaf.id),
+        "unique_identifier": "leaf-1",
+        "is_summary_group": False,
+    }
+
+    # Recreate group + leaf and verify SummaryModule.cleanup_file emits summary.deleted tombstones
+    group2 = await summary_service.add_group(
+        test_user,
+        AddSummaryGroupDTO(
+            unique_identifier="grp-2",
+            name="notes.note",
+            md5_hash="g-md5",
+        ),
+    )
+    leaf2 = await summary_service.add_summary(
+        test_user,
+        AddSummaryDTO(
+            file_id=501,
+            unique_identifier="leaf-2",
+            parent_unique_identifier="grp-2",
+            content="Summary text 2",
+        ),
+    )
+    before_cleanup = await event_log_service.list_events(user_id=test_user_id)
+    await summary_module.cleanup_file(501, test_user_id, session_manager)
+
+    after_cleanup = await event_log_service.list_events(
+        user_id=test_user_id, sync_token=before_cleanup.next_sync_token
+    )
+    assert [
+        (e.event_type, e.entity_id, e.payload["is_summary_group"])
+        for e in after_cleanup.events
+    ] == [
+        (DomainEventType.SUMMARY_DELETED, str(leaf2.id), False),
+        (DomainEventType.SUMMARY_DELETED, str(group2.id), True),
+    ]
+
+    # Device actor provenance via equipment_no
+    await event_bus.publish(
+        SummaryUpsertedEvent(
+            user_id=test_user_id,
+            summary=SummaryItem(
+                id=999,
+                unique_identifier="dev-sum",
+                is_summary_group=BooleanEnum.NO,
+            ),
+            is_new=False,
+            equipment_no="SN777",
+        )
+    )
+    await event_bus.publish(
+        SummaryDeletedEvent(
+            user_id=test_user_id,
+            summary_id=999,
+            unique_identifier="dev-sum",
+            equipment_no="SN777",
+        )
+    )
+    dev_events = await event_log_service.list_events(
+        user_id=test_user_id, sync_token=after_cleanup.next_sync_token
+    )
+    assert [e.actor for e in dev_events.events] == ["device:SN777", "device:SN777"]

@@ -297,6 +297,7 @@ class SummaryService:
     async def delete_summary(self, user_email: str, summary_id: int) -> bool:
         """Soft delete a summary (retaining its row and blob for RECYCLE_RETENTION_MS before hard purge)."""
         user_id = await self.user_service.get_user_id(user_email)
+        deleted_events: list[SummaryDeletedEvent] = []
         async with self.session_manager.session() as session:
             summary_do = await self._get_summary(session, user_id, summary_id)
             if not summary_do:
@@ -304,6 +305,15 @@ class SummaryService:
 
             is_summary_group = bool(summary_do.is_summary_group)
             summary_do.is_deleted = True
+            deleted_events.append(
+                SummaryDeletedEvent(
+                    user_id=user_id,
+                    summary_id=summary_id,
+                    is_summary_group=is_summary_group,
+                    file_id=summary_do.file_id,
+                    unique_identifier=summary_do.unique_identifier,
+                )
+            )
 
             if is_summary_group:
                 child_stmt = select(SummaryDO).where(
@@ -314,16 +324,20 @@ class SummaryService:
                 children = list((await session.execute(child_stmt)).scalars().all())
                 for child in children:
                     child.is_deleted = True
+                    deleted_events.append(
+                        SummaryDeletedEvent(
+                            user_id=user_id,
+                            summary_id=child.id,
+                            is_summary_group=False,
+                            file_id=child.file_id,
+                            unique_identifier=child.unique_identifier,
+                        )
+                    )
 
             await session.commit()
         if self.event_bus is not None:
-            await self.event_bus.publish(
-                SummaryDeletedEvent(
-                    user_id=user_id,
-                    summary_id=summary_id,
-                    is_summary_group=is_summary_group,
-                )
-            )
+            for ev in deleted_events:
+                await self.event_bus.publish(ev)
         return True
 
     @staticmethod
