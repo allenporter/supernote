@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from .services.blob import BlobStorage
     from .services.conversion import ConversionService
     from .services.coordination import CoordinationService
+    from .services.event_log import EventLogService
     from .services.file import FileService
     from .services.integrity import IntegrityService
     from .services.processor import ProcessorService
@@ -39,6 +40,7 @@ COORDINATION_SERVICE_KEY: web.AppKey[CoordinationService] = web.AppKey(
 )
 BLOB_STORAGE_KEY: web.AppKey[BlobStorage] = web.AppKey("blob_storage")
 EVENT_BUS_KEY: web.AppKey[LocalEventBus] = web.AppKey("event_bus")
+EVENT_LOG_SERVICE_KEY: web.AppKey[EventLogService] = web.AppKey("event_log_service")
 USER_SERVICE_KEY: web.AppKey[UserService] = web.AppKey("user_service")
 FILE_SERVICE_KEY: web.AppKey[FileService] = web.AppKey("file_service")
 INTEGRITY_SERVICE_KEY: web.AppKey[IntegrityService] = web.AppKey("integrity_service")

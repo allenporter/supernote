@@ -1,5 +1,6 @@
 """Append-only domain event log storage and cursor query service."""
 
+import base64
 import logging
 import time
 from dataclasses import dataclass
@@ -25,11 +26,21 @@ _PRUNED_SEQ_TTL = 100 * 365 * 86400
 
 @dataclass(slots=True)
 class EventFeedPage:
-    """Paginated cursor response for per-user domain event queries."""
+    """Paginated response for per-user domain event queries.
+
+    Attributes:
+        events: Ordered list of matching domain events in ascending sequence order.
+        next_sync_token: Opaque checkpoint token to pass as `sync_token` on the
+            subsequent call, or `None` if the user has no recorded events yet.
+            When `events` is empty because of filters, `next_sync_token` still
+            advances to the user's latest sequence so callers do not re-scan
+            filtered history.
+        has_more: `True` if more matching events exist beyond `limit` and the
+            caller should immediately fetch the next page using `next_sync_token`.
+    """
 
     events: list[DomainEventRecorded]
-    next_cursor: str
-    head_cursor: str
+    next_sync_token: str | None
     has_more: bool
 
 
@@ -98,55 +109,61 @@ class EventLogService:
         self,
         user_id: int,
         *,
-        cursor: str = "0",
-        types: list[str] | None = None,
+        sync_token: str | None = None,
+        event_types: list[str] | None = None,
         file_id: int | None = None,
-        exclude_actor: str | None = None,
         limit: int = DEFAULT_FEED_LIMIT,
     ) -> EventFeedPage:
-        """Query a user's domain event feed after `cursor`."""
+        """Query a user's domain event feed incrementally after `sync_token`.
+
+        Args:
+            user_id: Owner user ID whose event log to query.
+            sync_token: Opaque `next_sync_token` returned by a previous call.
+                When `None` or empty, returns retained events from the beginning.
+            event_types: Optional list of event type filters supporting exact
+                `DomainEventType` values (defined in `supernote.models.events`)
+                or namespace prefix wildcards ending with `'.*'` (`'note.*'`,
+                `'vfs.*'`, `'schedule.*'`, `'summary.*'`).
+            file_id: Optional VFS file ID filter (`related_file_id == file_id`).
+            limit: Maximum number of events to return (`1..1000`, default `200`).
+
+        Returns:
+            An `EventFeedPage` containing the ordered events, `next_sync_token`
+            checkpoint, and `has_more` pagination flag.
+
+        Raises:
+            InvalidInputError: If `sync_token` is malformed or `limit` is outside
+                `1..MAX_FEED_LIMIT` (HTTP 400).
+            CursorExpiredError: If `sync_token` predates the retained event log
+                window after pruning (HTTP 410 Gone); callers should discard the
+                expired token, perform a full state resync, and resume from the
+                new `next_sync_token`.
+        """
         if limit < 1 or limit > MAX_FEED_LIMIT:
             raise InvalidInputError(f"limit must be between 1 and {MAX_FEED_LIMIT}")
 
-        if cursor != "head" and not (cursor.isascii() and cursor.isdigit()):
-            raise InvalidInputError(f"Invalid cursor: {cursor!r}")
-
-        pruned_seq = await self._get_pruned_seq()
+        after_seq = 0
+        if sync_token:
+            after_seq = _decode_sync_token(sync_token)
+            pruned_seq = await self._get_pruned_seq()
+            if after_seq < pruned_seq:
+                raise CursorExpiredError(
+                    "Sync token has expired (predates retained event history)"
+                )
 
         async with self._session_manager.session() as session:
-            max_user_seq = await session.scalar(
-                select(func.max(UserEventDO.seq)).where(UserEventDO.user_id == user_id)
-            )
-            head_seq = int(max_user_seq or 0)
-
-            if cursor == "head":
-                return EventFeedPage(
-                    events=[],
-                    next_cursor=str(head_seq),
-                    head_cursor=str(head_seq),
-                    has_more=False,
-                )
-
-            cursor_seq = int(cursor)
-            if 0 < cursor_seq < pruned_seq:
-                raise CursorExpiredError(
-                    f"Cursor {cursor_seq} has expired (oldest retained seq is {pruned_seq})"
-                )
-
             stmt = select(UserEventDO).where(
                 UserEventDO.user_id == user_id,
-                UserEventDO.seq > cursor_seq,
+                UserEventDO.seq > after_seq,
             )
             if file_id is not None:
                 stmt = stmt.where(UserEventDO.related_file_id == file_id)
-            if exclude_actor:
-                stmt = stmt.where(UserEventDO.actor != exclude_actor)
-            if types:
+            if event_types:
                 type_clauses = [
                     UserEventDO.event_type.startswith(t[:-1], autoescape=True)
                     if t.endswith(".*")
                     else UserEventDO.event_type == t
-                    for t in types
+                    for t in event_types
                     if t
                 ]
                 if type_clauses:
@@ -155,19 +172,24 @@ class EventLogService:
             stmt = stmt.order_by(UserEventDO.seq.asc()).limit(limit + 1)
             rows = list((await session.execute(stmt)).scalars().all())
 
-        has_more = len(rows) > limit
-        page_rows = rows[:limit]
-        if page_rows:
-            last_seq = int(page_rows[-1].seq)
-            head_seq = max(head_seq, last_seq)
-            next_cursor = str(last_seq)
-        else:
-            next_cursor = str(max(cursor_seq, head_seq))
+            has_more = len(rows) > limit
+            page_rows = rows[:limit]
+            if page_rows:
+                next_sync_token: str | None = encode_sync_token(int(page_rows[-1].seq))
+            else:
+                max_user_seq = await session.scalar(
+                    select(func.max(UserEventDO.seq)).where(
+                        UserEventDO.user_id == user_id
+                    )
+                )
+                effective_seq = max(after_seq, int(max_user_seq or 0))
+                next_sync_token = (
+                    encode_sync_token(effective_seq) if effective_seq > 0 else None
+                )
 
         return EventFeedPage(
             events=[_row_to_recorded(row) for row in page_rows],
-            next_cursor=next_cursor,
-            head_cursor=str(head_seq),
+            next_sync_token=next_sync_token,
             has_more=has_more,
         )
 
@@ -226,3 +248,25 @@ def _row_to_recorded(row: UserEventDO) -> DomainEventRecorded:
         else None,
         payload=dict(row.payload) if isinstance(row.payload, dict) else {},
     )
+
+
+def encode_sync_token(seq: int) -> str:
+    """Encode an internal sequence number into an opaque URL-safe sync token."""
+    raw = f"v1:{seq}".encode("ascii")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _decode_sync_token(token: str) -> int:
+    """Decode an opaque sync token back into a positive sequence number."""
+    try:
+        padded = token + "=" * (-len(token) % 4)
+        decoded = base64.urlsafe_b64decode(padded.encode("ascii")).decode("ascii")
+    except (ValueError, UnicodeDecodeError) as err:
+        raise InvalidInputError(f"Invalid sync_token: {token!r}") from err
+    prefix, sep, raw_seq = decoded.partition(":")
+    if prefix != "v1" or sep != ":" or not (raw_seq.isascii() and raw_seq.isdigit()):
+        raise InvalidInputError(f"Invalid sync_token: {token!r}")
+    seq = int(raw_seq)
+    if seq <= 0 or encode_sync_token(seq) != token:
+        raise InvalidInputError(f"Invalid sync_token: {token!r}")
+    return seq

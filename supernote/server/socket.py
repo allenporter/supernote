@@ -29,6 +29,7 @@ from supernote.models.socket import (
 )
 from supernote.server.config import ServerConfig
 from supernote.server.events import (
+    DomainEventRecorded,
     LocalEventBus,
     ScheduleUpdatedEvent,
     SummaryDeletedEvent,
@@ -305,6 +306,29 @@ class SocketIOServerManager:
         self.event_bus.subscribe(VfsItemMovedEvent, self._handle_vfs_item_moved)
         self.event_bus.subscribe(VfsItemCopiedEvent, self._handle_vfs_item_copied)
         self.event_bus.subscribe(VfsItemDeletedEvent, self._handle_vfs_item_deleted)
+        self.event_bus.subscribe(
+            DomainEventRecorded, self._handle_domain_event_recorded
+        )
+
+    async def _handle_domain_event_recorded(self, event: DomainEventRecorded) -> None:
+        """Emit a lightweight cursor advance hint to connected user sessions."""
+        await self._sio.emit(
+            "event_log_cursor",
+            {
+                "seq": str(event.seq),
+                "type": event.event_type,
+                "entityType": event.entity_type,
+                "entityId": event.entity_id,
+                "relatedFileId": (
+                    str(event.related_file_id)
+                    if event.related_file_id is not None
+                    else None
+                ),
+                "actor": event.actor,
+                "timestamp": event.timestamp_ms,
+            },
+            room=f"user_{event.user_id}",
+        )
 
     async def _handle_sync_completed(self, event: SyncCompletedEvent) -> None:
         """Emit a STARTSYNC FILE-SYN notification when a device completes a sync session."""
