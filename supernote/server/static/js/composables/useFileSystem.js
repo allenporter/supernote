@@ -1,4 +1,4 @@
-import { ref } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
+import { ref } from 'vue';
 import { fetchFiles, createFolder, deleteItems, moveItems, renameItem, uploadFile } from '../api/client.js';
 
 export function useFileSystem() {

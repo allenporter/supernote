@@ -2,7 +2,10 @@
  * API Client for Supernote Backend
  */
 
-let authToken = localStorage.getItem('supernote_token');
+import { apiRequest, getToken, logout, onLogout, setToken } from './http.js';
+
+export { apiRequest, getToken, logout, setToken };
+
 let socketInstance = null;
 const SOCKET_IO_KEY = 'K+5xFzxbnB1iSZWqmu3Etw==';
 
@@ -43,7 +46,7 @@ function parseSocketPayload(raw) {
         if (raw === 'true' || raw === 'Received') return null;
         try {
             return JSON.parse(raw);
-        } catch (e) {
+        } catch {
             return null;
         }
     }
@@ -114,63 +117,30 @@ export function disconnectSocket() {
     }
 }
 
-export function setToken(token) {
-    authToken = token;
-    localStorage.setItem('supernote_token', token);
-}
-
-export function getToken() {
-    return authToken;
-}
-
-export async function logout() {
-    const token = authToken;
-    authToken = null;
-    localStorage.removeItem('supernote_token');
-    disconnectSocket();
-    if (token) {
-        try {
-            await fetch('/api/user/logout', {
-                method: 'POST',
-                headers: { 'x-access-token': token },
-                keepalive: true,
-            });
-        } catch (e) {
-            // Ignore network errors during logout
-        }
-    }
-    window.location.reload();
-}
+onLogout(disconnectSocket);
 
 /**
  * Secure Login Flow
  */
 export async function login(email, password) {
-    // 1. Wakeup / Get Token (Using query/token endpoint as a pre-check/wakeup)
-    // This step in the CLI client ensures a clean session/CSRF token if needed,
-    // although for the Web API we primarily rely on the random code flow.
+    // 1. Pre-check / wakeup token endpoint (mirrors the CLI client session flow
+    // before starting the challenge-response handshake).
     await fetch('/api/user/query/token', { method: 'POST', body: '{}' });
 
-    // 2. Get Random Code (Challenge)
+    // 2. Request login challenge (randomCode + timestamp)
     const randomCodeResp = await fetch('/api/official/user/query/random/code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ account: email })
     });
 
-    if (!randomCodeResp.ok) throw new Error("Failed to get login challenge");
+    if (!randomCodeResp.ok) throw new Error('Failed to get login challenge');
     const { randomCode, timestamp } = await randomCodeResp.json();
 
-    // 3. Hash Password
-    // Schema: SHA256(MD5(password) + randomCode)
-
-    // Step 3a: MD5(password)
-    // Using SparkMD5 global from CDN
+    // 3. Hash password with challenge: SHA256(MD5(password) + randomCode)
+    // SparkMD5 is loaded globally via CDN in index.html
     const md5Password = SparkMD5.hash(password);
-
-    // Step 3b: SHA256(md5Password + randomCode)
-    const contentToHash = md5Password + randomCode;
-    const sha256Hash = await sha256(contentToHash);
+    const sha256Hash = await sha256(md5Password + randomCode);
 
     // 4. Authenticate
     const loginResp = await fetch('/api/official/user/account/login/new', {
@@ -179,26 +149,26 @@ export async function login(email, password) {
         body: JSON.stringify({
             account: email,
             password: sha256Hash,
-            timestamp: timestamp,
-            loginMethod: "2", // Email
+            timestamp,
+            loginMethod: '2', // Email
             equipment: 1 // WEB
         })
     });
 
     if (!loginResp.ok) {
-        if (loginResp.status === 401) throw new Error("Invalid credentials");
-        throw new Error("Login failed");
+        if (loginResp.status === 401) throw new Error('Invalid credentials');
+        throw new Error('Login failed');
     }
 
     const loginData = await loginResp.json();
     if (!loginData.success) {
-        throw new Error(loginData.errorMsg || "Invalid credentials");
+        throw new Error(loginData.errorMsg || 'Invalid credentials');
     }
     setToken(loginData.token);
     return loginData;
 }
 
-// Helper: SHA-256 using Web Crypto API with fallback for non-secure contexts (e.g. plain HTTP on LAN IP)
+// SHA-256 using Web Crypto API with fallback for non-secure contexts (e.g. plain HTTP on LAN IP)
 async function sha256(message) {
     if (window.crypto && window.crypto.subtle) {
         const msgBuffer = new TextEncoder().encode(message);
@@ -209,14 +179,20 @@ async function sha256(message) {
     if (typeof window.sha256 === 'function') {
         return window.sha256(message);
     }
-    throw new Error("SHA-256 is not available. Please access via HTTPS/localhost or ensure js-sha256 is loaded.");
+    throw new Error('SHA-256 is not available. Please access via HTTPS/localhost or ensure js-sha256 is loaded.');
 }
 
 const DEFAULT_FILE_PAGE_SIZE = 100;
 const MAX_DIRECTORY_PAGES = 100;
 
+function getExtension(filename) {
+    if (!filename) return null;
+    const parts = filename.split('.');
+    return parts.length > 1 ? parts.pop().toLowerCase() : null;
+}
+
 function mapUserFileVO(file) {
-    const isDirectory = file.isFolder === "Y" || file.isFolder === true || file.isFolder === 1;
+    const isDirectory = file.isFolder === 'Y' || file.isFolder === true || file.isFolder === 1;
     return {
         id: file.id,
         name: file.fileName,
@@ -227,45 +203,23 @@ function mapUserFileVO(file) {
     };
 }
 
-async function fetchFilesPage(directoryId, pageNo, pageSize) {
-    const headers = {
-        'Content-Type': 'application/json'
-    };
-    if (authToken) {
-        headers['x-access-token'] = authToken;
-    }
-
-    const response = await fetch('/api/file/list/query', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-            directoryId: directoryId, // Pass as string/raw to preserve precision
+function fetchFilesPage(directoryId, pageNo, pageSize) {
+    return apiRequest('/api/file/list/query', {
+        body: {
+            directoryId, // Pass as string/raw to preserve 64-bit VFS ID precision
             pageNo,
             pageSize,
-            order: "filename",
-            sequence: "asc"
-        })
+            order: 'filename',
+            sequence: 'asc'
+        },
+        errorPrefix: 'Failed to fetch files'
     });
-
-    if (!response.ok) {
-        if (response.status === 401) {
-            // If the token is invalid, clear it
-            if (authToken) {
-                logout();
-                throw new Error("Unauthorized");
-            }
-            throw new Error("Unauthorized");
-        }
-        throw new Error(`Failed to fetch files: ${response.statusText}`);
-    }
-
-    return await response.json();
 }
 
 /**
  * Fetch all files and folders for a given directory across pages.
  */
-export async function fetchFiles(directoryId = "0", pageSize = DEFAULT_FILE_PAGE_SIZE) {
+export async function fetchFiles(directoryId = '0', pageSize = DEFAULT_FILE_PAGE_SIZE) {
     const firstPage = await fetchFilesPage(directoryId, 1, pageSize);
     const items = (firstPage.userFileVOList || []).map(mapUserFileVO);
     const totalPages = Math.min(
@@ -288,34 +242,11 @@ export async function fetchFiles(directoryId = "0", pageSize = DEFAULT_FILE_PAGE
  * @param {string|number} nodeId
  * @returns {Promise<{success: boolean, path: string, idPath: string}>}
  */
-export async function fetchPathInfo(nodeId) {
-    const currentToken = getToken();
-    if (!currentToken) throw new Error("Unauthorized");
-
-    const response = await fetch('/api/file/path/query', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': currentToken
-        },
-        body: JSON.stringify({ id: String(nodeId) })
+export function fetchPathInfo(nodeId) {
+    return apiRequest('/api/file/path/query', {
+        body: { id: String(nodeId) },
+        errorPrefix: 'Path query failed'
     });
-
-    if (!response.ok) {
-        if (response.status === 401) {
-            logout();
-            throw new Error("Unauthorized");
-        }
-        throw new Error(`Path query failed: ${response.statusText}`);
-    }
-
-    return await response.json();
-}
-
-function getExtension(filename) {
-    if (!filename) return null;
-    const parts = filename.split('.');
-    return parts.length > 1 ? parts.pop().toLowerCase() : null;
 }
 
 /**
@@ -324,29 +255,10 @@ function getExtension(filename) {
  * @returns {Promise<Array<{pageNo: number, url: string}>>}
  */
 export async function convertNoteToPng(fileId) {
-    // 1. Get Token
-    const currentToken = getToken();
-    if (!currentToken) throw new Error("Unauthorized");
-
-    // 2. Call API
-    const response = await fetch('/api/file/note/to/png', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': currentToken
-        },
-        body: JSON.stringify({ id: fileId }) // Pass as string to preserve 64-bit precision
+    const data = await apiRequest('/api/file/note/to/png', {
+        body: { id: fileId }, // Pass as string to preserve 64-bit precision
+        errorPrefix: 'Conversion failed'
     });
-
-    if (!response.ok) {
-        if (response.status === 401) {
-            logout();
-            throw new Error("Unauthorized");
-        }
-        throw new Error(`Conversion failed: ${response.statusText}`);
-    }
-
-    const data = await response.json();
     return data.pngPageVOList || [];
 }
 
@@ -356,26 +268,11 @@ export async function convertNoteToPng(fileId) {
  * @returns {Promise<Array<{pageIndex: number, pageId: string, text: string|null, date: string|null}>>}
  */
 export async function fetchTranscript(fileId) {
-    const currentToken = getToken();
-    if (!currentToken) throw new Error("Unauthorized");
-
-    const response = await fetch('/api/extended/transcript', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': currentToken
-        },
-        body: JSON.stringify({ fileId: String(fileId) })
+    const data = await apiRequest('/api/extended/transcript', {
+        body: { fileId: String(fileId) },
+        fallbackValue: null
     });
-
-    if (response.status === 401) {
-        logout();
-        throw new Error("Unauthorized");
-    }
-
-    if (!response.ok) return [];
-    const data = await response.json();
-    return Array.isArray(data.pages) ? data.pages : [];
+    return data && Array.isArray(data.pages) ? data.pages : [];
 }
 
 /**
@@ -384,28 +281,11 @@ export async function fetchTranscript(fileId) {
  * @returns {Promise<Array<Object>>}
  */
 export async function fetchSummaries(fileId) {
-    const currentToken = getToken();
-    if (!currentToken) throw new Error("Unauthorized");
-
-    const response = await fetch('/api/extended/file/summary/list', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': currentToken
-        },
-        // Extension endpoint expects { fileId: ... }
-        body: JSON.stringify({ fileId: String(fileId) })
+    const data = await apiRequest('/api/extended/file/summary/list', {
+        // Extended endpoint expects { fileId } rather than official { id }
+        body: { fileId: String(fileId) },
+        errorPrefix: 'Summary fetch failed'
     });
-
-    if (!response.ok) {
-        if (response.status === 401) {
-            logout();
-            throw new Error("Unauthorized");
-        }
-        throw new Error(`Summary fetch failed: ${response.statusText}`);
-    }
-
-    const data = await response.json();
     return data.summaryDOList || [];
 }
 
@@ -413,338 +293,169 @@ export async function fetchSummaries(fileId) {
  * Search files by keyword.
  */
 export async function searchFiles(keyword) {
-    const currentToken = getToken();
-    if (!currentToken) throw new Error("Unauthorized");
-
-    const response = await fetch('/api/file/label/list/search', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': currentToken
-        },
-        body: JSON.stringify({ keyword })
+    const data = await apiRequest('/api/file/label/list/search', {
+        body: { keyword },
+        fallbackValue: null
     });
-
-    if (response.status === 401) {
-        logout();
-        throw new Error("Unauthorized");
-    }
-    if (!response.ok) return [];
-    const data = await response.json();
-    return data.entries || [];
+    return (data && data.entries) || [];
 }
 
 /**
  * Perform semantic vector search across notebook embeddings.
  */
 export async function searchSemantic(query, topN = 5) {
-    const currentToken = getToken();
-    if (!currentToken) throw new Error("Unauthorized");
-
-    const response = await fetch('/api/extended/search', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': currentToken
-        },
-        body: JSON.stringify({ query, topN })
+    const data = await apiRequest('/api/extended/search', {
+        body: { query, topN },
+        fallbackValue: null
     });
-
-    if (response.status === 401) {
-        logout();
-        throw new Error("Unauthorized");
-    }
-    if (!response.ok) return [];
-    const data = await response.json();
-    return data.results || [];
+    return (data && data.results) || [];
 }
+
+const DEFAULT_AI_STATUS = {
+    success: false,
+    hasApiKey: false,
+    ocrEnabled: false,
+    ocrModel: null,
+    summaryEnabled: false,
+    summaryModel: null,
+    vectorSearchEnabled: false,
+    embeddingModel: null,
+    model: null,
+};
 
 /**
  * Fetch server AI processing configuration status.
  */
 export async function fetchAiStatus() {
-    const currentToken = getToken();
-    const headers = { 'Content-Type': 'application/json' };
-    if (currentToken) headers['x-access-token'] = currentToken;
-
-    const response = await fetch('/api/extended/ai/status', {
+    const data = await apiRequest('/api/extended/ai/status', {
         method: 'GET',
-        headers
+        requireAuth: false,
+        fallbackValue: null
     });
-
-    if (response.status === 401) {
-        logout();
-        throw new Error("Unauthorized");
-    }
-    if (!response.ok) {
-        return {
-            success: false,
-            hasApiKey: false,
-            ocrEnabled: false,
-            ocrModel: null,
-            summaryEnabled: false,
-            summaryModel: null,
-            vectorSearchEnabled: false,
-            embeddingModel: null,
-            model: null,
-        };
-    }
-    return await response.json();
+    return data || { ...DEFAULT_AI_STATUS };
 }
 
 /**
  * Fetch system tasks (Extended API).
  * @returns {Promise<Object>} The system task list response.
  */
-export async function fetchSystemTasks() {
-    const currentToken = getToken();
-    if (!currentToken) throw new Error("Unauthorized");
-
-    const response = await fetch('/api/extended/system/tasks', {
+export function fetchSystemTasks() {
+    return apiRequest('/api/extended/system/tasks', {
         method: 'GET',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': currentToken
-        }
+        errorPrefix: 'Failed to fetch system tasks'
     });
-
-    if (response.status === 401) {
-        logout();
-        throw new Error("Unauthorized");
-    }
-
-    if (!response.ok) {
-        throw new Error(`Failed to fetch system tasks: ${response.statusText}`);
-    }
-
-    return await response.json();
 }
 
 /**
  * Fetch storage capacity/quota.
  * @returns {Promise<{usedCapacity: number, totalCapacity: number}>}
  */
-export async function fetchCapacity() {
-    const currentToken = getToken();
-    if (!currentToken) throw new Error("Unauthorized");
-
-    const response = await fetch('/api/file/capacity/query', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': currentToken
-        },
-        body: JSON.stringify({})
+export function fetchCapacity() {
+    return apiRequest('/api/file/capacity/query', {
+        body: {},
+        errorPrefix: 'Failed to fetch capacity'
     });
-
-    if (response.status === 401) {
-        logout();
-        throw new Error("Unauthorized");
-    }
-
-    if (!response.ok) {
-        throw new Error(`Failed to fetch capacity: ${response.statusText}`);
-    }
-
-    return await response.json();
 }
 
 /**
  * Create a new folder.
  */
-export async function createFolder(directoryId, folderName) {
-    const currentToken = getToken();
-    if (!currentToken) throw new Error("Unauthorized");
-
-    const response = await fetch('/api/file/folder/add', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': currentToken
-        },
-        body: JSON.stringify({
-            directoryId: directoryId,
-            fileName: folderName
-        })
+export function createFolder(directoryId, folderName) {
+    return apiRequest('/api/file/folder/add', {
+        body: { directoryId, fileName: folderName },
+        errorPrefix: 'Failed to create folder'
     });
-
-    if (!response.ok) {
-        throw new Error(`Failed to create folder: ${response.statusText}`);
-    }
-
-    return await response.json();
 }
 
 /**
  * Delete items (files or folders).
  */
-export async function deleteItems(directoryId, idList) {
-    const currentToken = getToken();
-    if (!currentToken) throw new Error("Unauthorized");
-
-    const response = await fetch('/api/file/delete', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': currentToken
-        },
-        body: JSON.stringify({
-            directoryId: directoryId,
-            idList: idList
-        })
+export function deleteItems(directoryId, idList) {
+    return apiRequest('/api/file/delete', {
+        body: { directoryId, idList },
+        errorPrefix: 'Failed to delete items'
     });
-
-    if (!response.ok) {
-        throw new Error(`Failed to delete items: ${response.statusText}`);
-    }
-
-    return await response.json();
 }
 
 /**
  * Move items to a new directory.
  */
-export async function moveItems(idList, targetDirectoryId) {
-    const currentToken = getToken();
-    if (!currentToken) throw new Error("Unauthorized");
-
-    const response = await fetch('/api/file/move', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': currentToken
-        },
-        body: JSON.stringify({
-            idList: idList,
-            directoryId: "0", // Not strictly required for move but good for DTO compliance if needed
+export function moveItems(idList, targetDirectoryId) {
+    return apiRequest('/api/file/move', {
+        body: {
+            idList,
+            directoryId: '0', // Not strictly required for move, included for official DTO compliance
             goDirectoryId: targetDirectoryId
-        })
+        },
+        errorPrefix: 'Failed to move items'
     });
-
-    if (!response.ok) {
-        throw new Error(`Failed to move items: ${response.statusText}`);
-    }
-
-    return await response.json();
 }
 
 /**
  * Rename an item.
  */
-export async function renameItem(id, newName) {
-    const currentToken = getToken();
-    if (!currentToken) throw new Error("Unauthorized");
-
-    const response = await fetch('/api/file/rename', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': currentToken
-        },
-        body: JSON.stringify({
-            id: id,
-            newName: newName
-        })
+export function renameItem(id, newName) {
+    return apiRequest('/api/file/rename', {
+        body: { id, newName },
+        errorPrefix: 'Failed to rename item'
     });
-
-    if (!response.ok) {
-        throw new Error(`Failed to rename item: ${response.statusText}`);
-    }
-
-    return await response.json();
 }
 
 /**
  * File Upload: Step 1 - Apply
  */
-async function uploadApply(directoryId, fileName, size, md5) {
-    const currentToken = getToken();
-    if (!currentToken) throw new Error("Unauthorized");
-
-    const response = await fetch('/api/file/upload/apply', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': currentToken
-        },
-        body: JSON.stringify({
-            directoryId: directoryId,
-            fileName: fileName,
-            size: size,
-            md5: md5
-        })
+function uploadApply(directoryId, fileName, size, md5) {
+    return apiRequest('/api/file/upload/apply', {
+        body: { directoryId, fileName, size, md5 },
+        errorPrefix: 'Upload apply failed'
     });
-
-    if (!response.ok) {
-        throw new Error(`Upload apply failed: ${response.statusText}`);
-    }
-
-    return await response.json();
 }
 
 /**
  * File Upload: Step 2 - Finish
  */
-async function uploadFinish(directoryId, fileName, size, md5, innerName) {
-    const currentToken = getToken();
-    if (!currentToken) throw new Error("Unauthorized");
-
-    const response = await fetch('/api/file/upload/finish', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': currentToken
-        },
-        body: JSON.stringify({
-            directoryId: directoryId,
-            fileName: fileName,
+function uploadFinish(directoryId, fileName, size, md5, innerName) {
+    return apiRequest('/api/file/upload/finish', {
+        body: {
+            directoryId,
+            fileName,
             fileSize: size,
-            md5: md5,
-            innerName: innerName,
-            type: "2" // CLOUD
-        })
+            md5,
+            innerName,
+            type: '2' // CLOUD
+        },
+        errorPrefix: 'Upload finish failed'
     });
-
-    if (!response.ok) {
-        throw new Error(`Upload finish failed: ${response.statusText}`);
-    }
-
-    return await response.json();
 }
 
 /**
  * Upload a file (orchestrates apply, put, and finish).
  */
-export async function uploadFile(directoryId, file, onProgress) {
-    // 1. Calculate MD5 (optional but good for finish)
+export async function uploadFile(directoryId, file) {
+    // 1. Calculate MD5 (used for apply/finish integrity verification)
     const md5 = await calculateFileMd5(file);
 
-    // 2. Apply
-    const applyData = await uploadApply(directoryId, file.name, file.size, md5);
-    const { fullUploadUrl, innerName } = applyData;
+    // 2. Apply for signed OSS upload URL
+    const { fullUploadUrl, innerName } = await uploadApply(directoryId, file.name, file.size, md5);
 
-    // 3. POST/PUT file to blob storage as multipart
-    // We use FormData to ensure the server receives a multipart request.
+    // 3. Upload binary to blob storage as multipart FormData
     const formData = new FormData();
     formData.append('file', file);
 
     const uploadResp = await fetch(fullUploadUrl, {
-        method: 'POST', // Both POST and PUT are supported by our oss.py handle_oss_upload
+        method: 'POST', // Both POST and PUT are supported by oss.py handle_oss_upload
         body: formData,
-        // Note: Do NOT set Content-Type header; fetch will set it with the correct boundary
+        // Note: Do NOT set Content-Type header; fetch sets it with the multipart boundary
     });
 
     if (!uploadResp.ok) {
         throw new Error(`File binary upload failed: ${uploadResp.statusText}`);
     }
 
-    // 4. Finish
+    // 4. Finish (commit in VFS)
     return await uploadFinish(directoryId, file.name, file.size, md5, innerName);
 }
 
-/**
- * Helper to calculate file MD5.
- */
 function calculateFileMd5(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -756,34 +467,17 @@ function calculateFileMd5(file) {
         reader.readAsArrayBuffer(file);
     });
 }
+
 /**
  * Fetch processing status for a list of files.
  * @param {Array<string|number>} fileIds
  * @returns {Promise<{success: boolean, statusMap: Object}>}
  */
 export async function fetchProcessingStatus(fileIds) {
-    const currentToken = getToken();
-    if (!currentToken) throw new Error("Unauthorized");
-
-    const response = await fetch('/api/extended/file/processing/status', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': currentToken
-        },
-        body: JSON.stringify({ fileIds: fileIds.map(String) })
+    const data = await apiRequest('/api/extended/file/processing/status', {
+        body: { fileIds: fileIds.map(String) },
+        errorPrefix: 'Failed to fetch processing status'
     });
-
-    if (response.status === 401) {
-        logout();
-        throw new Error("Unauthorized");
-    }
-
-    if (!response.ok) {
-        throw new Error(`Failed to fetch processing status: ${response.statusText}`);
-    }
-
-    const data = await response.json();
     return {
         success: true,
         statusMap: data.statusMap
@@ -794,28 +488,11 @@ export async function fetchProcessingStatus(fileIds) {
  * Get a signed download URL for a stored file.
  */
 export async function fetchDownloadUrl(fileId) {
-    const currentToken = getToken();
-    if (!currentToken) throw new Error("Unauthorized");
-
-    const response = await fetch('/api/file/download/url', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': currentToken
-        },
-        body: JSON.stringify({ id: fileId })
+    const data = await apiRequest('/api/file/download/url', {
+        body: { id: fileId },
+        errorPrefix: 'Download failed'
     });
-
-    if (!response.ok) {
-        if (response.status === 401) {
-            logout();
-            throw new Error("Unauthorized");
-        }
-        throw new Error(`Download failed: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    if (!data.url) throw new Error("No download URL returned");
+    if (!data.url) throw new Error('No download URL returned');
     return data.url;
 }
 
@@ -844,25 +521,11 @@ export async function downloadFile(fileId) {
  * @returns {Promise<string|null>}
  */
 export async function fetchNoteCover(fileId) {
-    const currentToken = getToken();
-    if (!currentToken) throw new Error("Unauthorized");
-
-    const response = await fetch('/api/extended/file/note/cover', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': currentToken
-        },
-        body: JSON.stringify({ fileId: String(fileId) })
+    const data = await apiRequest('/api/extended/file/note/cover', {
+        body: { fileId: String(fileId) },
+        fallbackValue: null
     });
-
-    if (response.status === 401) {
-        logout();
-        throw new Error("Unauthorized");
-    }
-    if (!response.ok) return null;
-    const data = await response.json();
-    return data.url || null;
+    return (data && data.url) || null;
 }
 
 /**
@@ -870,23 +533,9 @@ export async function fetchNoteCover(fileId) {
  * @param {string|number} fileId
  * @returns {Promise<Object|null>}
  */
-export async function fetchNoteMetadata(fileId) {
-    const currentToken = getToken();
-    if (!currentToken) throw new Error("Unauthorized");
-
-    const response = await fetch('/api/extended/file/note/metadata', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-access-token': currentToken
-        },
-        body: JSON.stringify({ fileId: String(fileId) })
+export function fetchNoteMetadata(fileId) {
+    return apiRequest('/api/extended/file/note/metadata', {
+        body: { fileId: String(fileId) },
+        fallbackValue: null
     });
-
-    if (response.status === 401) {
-        logout();
-        throw new Error("Unauthorized");
-    }
-    if (!response.ok) return null;
-    return await response.json();
 }

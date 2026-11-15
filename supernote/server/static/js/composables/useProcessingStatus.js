@@ -1,4 +1,4 @@
-import { ref, watch, onMounted, onUnmounted } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
+import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { fetchProcessingStatus } from '../api/client.js';
 
 const ACTIVE_PROCESSING_STATUSES = new Set(['PENDING', 'PROCESSING']);
