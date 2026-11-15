@@ -1,6 +1,6 @@
-# Supernote Private Cloud & Knowledge Hub
+# Open Private Cloud for Supernote
 
-**A lightweight, self-hosted private cloud server and optional AI intelligence layer for your Ratta Supernote.**
+**A lightweight, self-hosted Python private cloud server and optional AI intelligence layer for your Ratta Supernote.**
 
 This toolkit is a self-hosted, SQLite-based implementation of the **Supernote Private Cloud** protocol. It provides a simple and resource-efficient sync server with a minimal resource footprint (~135MB flat in bare sync mode, or ~160MB idle and ~310MB peak when rendering and processing large notebooks). It implements **100% of the community [Supernote OpenAPI Specification](api-spec/openapi.yaml)**, and can optionally be enhanced with an **AI-driven synthesis engine**—transforming your handwritten notes into structured, searchable knowledge using Google Gemini or local OpenAI-compatible models (such as Ollama).
 
@@ -11,7 +11,9 @@ This toolkit is a self-hosted, SQLite-based implementation of the **Supernote Pr
 [![Documentation](https://img.shields.io/badge/docs-manual-blue.svg)](https://allenporter.github.io/supernote/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-## Why Supernote Private Cloud & Knowledge Hub?
+> **Unofficial Community Project:** We love [Ratta](https://supernote.com/)'s products and built this toolkit to support the Supernote community. It is an independent, open-source project and is not affiliated with, endorsed by, or sponsored by Shanghai Ratta Smart Technology Co., Ltd. *Supernote* and *Ratta* are trademarks of Shanghai Ratta Smart Technology Co., Ltd.
+
+## Why Open Private Cloud for Supernote?
 
 This project is designed to be **fully compatible** with the official Supernote Private Cloud protocol, serving as a lightweight alternative that operates on a single SQLite database and runs comfortably on low-power NAS setups and home lab servers:
 
@@ -25,7 +27,7 @@ This project is designed to be **fully compatible** with the official Supernote 
 
 ## Synthesis & AI in Action
 
-Beyond simple storage, Supernote provides an active processing pipeline to increase the utility of your notes:
+Beyond simple storage, this server provides an active processing pipeline to increase the utility of your notes:
 
 1.  **Sync**: Your device uploads `.note` files using the official Private Cloud protocol.
 2.  **Transcribe**: The server extracts pages and uses a vision model (Gemini or local VLM) to OCR your handwriting.
@@ -155,7 +157,7 @@ supernote cloud search "What were my project goals for February?"
 You can access the insights from the MCP server at `http://<your ip:port>/mcp`
 
 > [!TIP]
-> **Semantic Search**: Supernote doesn't just look for words—it understands concepts. Searching for "budget" will find notes about "expenses" or "money," even if the specific word isn't there.
+> **Semantic Search**: Concept search doesn't just match exact words—it understands meaning. Searching for "budget" will find notes about "expenses" or "money," even if the specific word isn't there.
 
 ## Choosing an AI Provider
 
@@ -331,19 +333,19 @@ We welcome contributions! Please see our [Contributing Guide](docs/CONTRIBUTING.
 
 ## Acknowledgments
 
-This project is in support of the amazing [Ratta Supernote](https://supernote.com/) product and community. It aims to be a complementary, unofficial offering that is fully compatible with the official [Private Cloud protocol](https://support.supernote.com/Whats-New/setting-up-your-own-supernote-private-cloud-beta).
+This project is built in support of the [Ratta Supernote](https://supernote.com/) community and aims to be a complementary, open-source implementation compatible with the official [Private Cloud protocol](https://support.supernote.com/Whats-New/setting-up-your-own-supernote-private-cloud-beta).
 
 ### Choosing Your Private Cloud Experience
 
-While the official Supernote Private Cloud by Ratta provides a production-grade managed sync experience, this toolkit offers a highly efficient self-hosted alternative with opt-in AI enhancement.
+While the official Supernote Private Cloud by Ratta provides a production-grade managed sync experience, Open Private Cloud offers a lightweight self-hosted alternative with opt-in AI enhancement.
 
-| Capability | Official Private Cloud (Ratta) | Supernote Private Cloud (This Project) |
+| Capability | Official Private Cloud (Ratta) | Open Private Cloud (This Project) |
 |------------|-------------------------------|-----------------------------|
 | **Core Sync** | ✅ Robust & Validated | ✅ Fully Compatible (100% OpenAPI compliant) |
 | **Memory Footprint**| ⚠️ High (~2 GB+ RAM required) | **⚡ Low (~135MB bare sync, ~160MB idle / ~310MB active full)** |
 | **AI Analysis** | Basic OCR (Device-side) | **Optional: AI-powered Transcriptions & Synthesis (Gemini or Local Models)** |
 | **Search** | Path/Filename | **Optional: Semantic Concept Search** |
-| **Stack** | Java / Spring Boot + Redis + MariaDB | Python / Asyncio + SQLite |
+| **Stack** | Multi-container (Java + Redis + MariaDB) | Python / Asyncio + SQLite |
 | **Database** | Heavy MariaDB Instance | **Single SQLite File** |
 
 **This toolkit is a great fit if:**

@@ -1,4 +1,4 @@
-"""Prometheus metrics definition module for Supernote Private Cloud Server."""
+"""Prometheus metrics definition module for Open Private Cloud Server."""
 
 from __future__ import annotations
 

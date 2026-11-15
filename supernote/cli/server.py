@@ -74,7 +74,7 @@ def add_parser(subparsers):
     parser_serve = subparsers.add_parser(
         "serve",
         parents=[base_parser],
-        help="Start the Supernote Private Cloud server",
+        help="Start the Open Private Cloud server",
     )
     parser_serve.add_argument(
         "--ephemeral",

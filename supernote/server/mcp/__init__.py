@@ -1,1 +1,1 @@
-"""MCP server for Supernote Knowledge Hub server."""
+"""MCP server for Open Private Cloud server."""

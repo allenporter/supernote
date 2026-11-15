@@ -1,6 +1,8 @@
-# Supernote Private Cloud Server
+# Open Private Cloud for Supernote
 
-This package provides a self-hosted implementation of the Supernote Cloud server, enhanced with AI-powered insights, a modern Web UI, and robust background processing.
+This package provides a lightweight, self-hosted Python private cloud server for Ratta Supernote devices, enhanced with optional AI-powered insights, a modern Web UI, and background processing.
+
+> **Unofficial Community Project:** Built in appreciation of Ratta's Supernote products; not affiliated with, endorsed by, or sponsored by Shanghai Ratta Smart Technology Co., Ltd.
 
 ## Core Features
 
@@ -30,7 +32,7 @@ For a comprehensive reference, see the [ServerConfig documentation](https://alle
 | Mode | Idle RAM | Peak Active RAM | Description |
 | :--- | :---: | :---: | :--- |
 | **Bare Sync Server** | **~133 MB** | **~135 MB** | Device sync only; disables Web UI, background PNG rendering, and MCP server. |
-| **Full Knowledge Hub (Default)** | **~160 MB** | **~310 MB** | Enables Web UI, notebook page rendering, MCP server, and optional AI pipeline. |
+| **Full Server + Knowledge Hub (Default)** | **~160 MB** | **~310 MB** | Enables Web UI, notebook page rendering, MCP server, and optional AI pipeline. |
 
 To run in **Bare Sync Mode** (ideal for low-memory VPS instances or Raspberry Pi setups where only device synchronization is needed), disable `mcp_enabled` and `web_enabled` in `config/config.yaml`:
 ```yaml
@@ -172,7 +174,7 @@ docker run -d \
 
 ## Robustness & Maintenance
 
-Supernote Knowledge Hub is built for long-term stability:
+Open Private Cloud is built for long-term stability:
 
 - **Database Migrations**: Uses Alembic for seamless schema and data updates (see [Alembic Migration History & Conventions](../alembic/README.md)).
 - **Background Polling**: Automatically recovers stalled processing tasks.

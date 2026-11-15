@@ -1,4 +1,4 @@
-# Supernote Private Cloud Implementation Plan
+# Open Private Cloud Implementation Plan
 
 ## Phase 1: Skeleton & Tracing (Current)
 - [x] Scaffold `aiohttp` server structure (`app.py`, `config.py`).
@@ -55,7 +55,7 @@
 ## Phase 6: Refactoring & Architecture (Completed)
 - [x] **Data Models (Type Safety)**:
     - [x] Create `supernote/server/models/` package using `mashumaro.DataClassJSONMixin`.
-    - [x] Define Request/Response dataclasses mirroring the Java DTOs/VOs (e.g., `ListFolderRequest`, `FileUploadApplyResponse`).
+    - [x] Define Request/Response dataclasses for the wire-protocol DTOs/VOs (e.g., `ListFolderRequest`, `FileUploadApplyResponse`).
     - [x] Replace ad-hoc dictionary responses in `app.py` with typed objects.
 - [x] **Service Layer (Business Logic)**:
     - [x] Create `supernote/server/services/` package.

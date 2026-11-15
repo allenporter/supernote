@@ -1,10 +1,10 @@
 # Bootstrap Guide
 
-This guide describes how to set up your Supernote Private Cloud server. This server is a community-developed implementation that is compatible with the official **Supernote Private Cloud** protocol, designed to work seamlessly with your Nomad, A6 X, or A5 X device.
+This guide describes how to set up your Open Private Cloud server. This server is a community-developed Python implementation compatible with the official **Supernote Private Cloud** protocol, designed to work seamlessly with your Nomad, A6 X, or A5 X device.
 
 ## Overview
 
-Supernote Private Cloud uses an **"Admin-First"** bootstrap model:
+Open Private Cloud uses an **"Admin-First"** bootstrap model:
 1. The server starts with no users.
 2. The **first user registered** is automatically granted **Admin** privileges.
 3. Once an admin exists, **Public Registration is closed** by default for security.
