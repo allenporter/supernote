@@ -155,7 +155,9 @@ export function useSchedule() {
 
         // Sort based on current view tab & device sort indexes with robust fallbacks
         return result.sort((a, b) => {
+            /** @type {number | null | undefined} */
             let valA = null;
+            /** @type {number | null | undefined} */
             let valB = null;
 
             if (selectedFilter.value === 'completed') {

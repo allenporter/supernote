@@ -20,6 +20,7 @@ export default {
         const icsPreviewContent = ref('');
         const isIcsLoading = ref(false);
         const copySuccess = ref(false);
+        /** @type {ReturnType<typeof setTimeout> | null} */
         let copyResetTimer = null;
 
         async function refreshIcsPreview() {

@@ -62,6 +62,7 @@ export function parseUrlHash(hashString) {
     }
 
     let pathPart = clean;
+    /** @type {URLSearchParams | null} */
     let params = null;
     const qIdx = clean.indexOf('?');
     if (qIdx !== -1) {

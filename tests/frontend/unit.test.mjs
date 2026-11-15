@@ -11,8 +11,10 @@ import { toLocalDateInputValue } from '../../supernote/server/static/js/componen
 import { getDueMeta } from '../../supernote/server/static/js/components/tasks/TaskRow.js';
 import {
     buildDisplayTranscriptPages,
+    formatContent,
     formatLinkLabel,
     formatPageStyle,
+    hasCopyablePageText,
     normalizeTranscriptPages,
     resolveFileCategory,
     resolveFileExt,
@@ -23,7 +25,9 @@ import {
     formatCrumbName,
     parseUrlHash,
 } from '../../supernote/server/static/js/composables/useRouter.js';
+import { copyTextToClipboard } from '../../supernote/server/static/js/utils/clipboard.js';
 import { formatSize, normalizeEpochMs } from '../../supernote/server/static/js/utils/format.js';
+import { renderMarkdown } from '../../supernote/server/static/js/utils/markdown.js';
 import {
     describeRedirectTarget,
     describeScope,
@@ -255,4 +259,106 @@ test('noteMeta.js & task helpers: file categories, merged transcript pages, and 
     assert.equal(getDueMeta({ dueTime: todayNoon, status: 'needsAction' })?.label, 'Due Today');
     const pastMs = new Date(2020, 0, 2, 12, 0, 0).getTime();
     assert.match(getDueMeta({ dueTime: pastMs, status: 'needsAction' })?.label || '', /^Overdue/);
+
+    assert.equal(formatContent('Line 1\\nLine 2'), 'Line 1\nLine 2');
+    assert.equal(hasCopyablePageText({ hasTranscript: true, text: 'OCR text' }), true);
+    assert.equal(hasCopyablePageText({ hasTranscript: true, text: '   ' }), false);
+    assert.equal(hasCopyablePageText({ hasTranscript: false, text: 'OCR text' }), false);
+});
+
+test('clipboard.js & markdown.js: clipboard write + plain-HTTP fallback and sanitized Markdown', async () => {
+    assert.equal(await copyTextToClipboard(''), false);
+    assert.equal(await copyTextToClipboard(null), false);
+
+    const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+
+    try {
+        // 1. Modern navigator.clipboard.writeText path
+        let writtenText = null;
+        Object.defineProperty(globalThis, 'navigator', {
+            value: {
+                clipboard: {
+                    async writeText(val) {
+                        writtenText = val;
+                    },
+                },
+            },
+            configurable: true,
+        });
+        assert.equal(await copyTextToClipboard('Page 1 transcript'), true);
+        assert.equal(writtenText, 'Page 1 transcript');
+
+        // 2. Fallback textarea + execCommand('copy') when clipboard API rejects (e.g. plain HTTP LAN)
+        const appended = [];
+        let copiedViaExec = false;
+        Object.defineProperty(globalThis, 'navigator', {
+            value: {
+                clipboard: {
+                    async writeText() {
+                        throw new Error('Insecure context');
+                    },
+                },
+            },
+            configurable: true,
+        });
+        Object.defineProperty(globalThis, 'document', {
+            value: {
+                body: {
+                    appendChild(el) {
+                        appended.push(el);
+                    },
+                    removeChild(el) {
+                        const idx = appended.indexOf(el);
+                        if (idx !== -1) appended.splice(idx, 1);
+                    },
+                },
+                createElement(tag) {
+                    if (tag === 'textarea') {
+                        return {
+                            value: '',
+                            style: {},
+                            setAttribute() {},
+                            focus() {},
+                            select() {},
+                            setSelectionRange() {},
+                        };
+                    }
+                    return {
+                        innerHTML: '',
+                        content: { querySelectorAll: () => [] },
+                    };
+                },
+                execCommand(cmd) {
+                    if (cmd === 'copy') {
+                        copiedViaExec = true;
+                        return true;
+                    }
+                    return false;
+                },
+            },
+            configurable: true,
+        });
+
+        assert.equal(await copyTextToClipboard('LAN fallback transcript'), true);
+        assert.equal(copiedViaExec, true);
+        assert.equal(appended.length, 0);
+    } finally {
+        if (originalNavigator) {
+            Object.defineProperty(globalThis, 'navigator', originalNavigator);
+        } else {
+            delete globalThis.navigator;
+        }
+        if (originalDocument) {
+            Object.defineProperty(globalThis, 'document', originalDocument);
+        } else {
+            delete globalThis.document;
+        }
+    }
+
+    assert.equal(renderMarkdown(''), '');
+    assert.equal(renderMarkdown(null), '');
+    const rendered = renderMarkdown('## 2026-06-18\\n\\nSummary body<script>evil()</script>');
+    assert.match(rendered, /<h2>2026-06-18<\/h2>/);
+    assert.doesNotMatch(rendered, /<script>/);
 });

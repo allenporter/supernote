@@ -77,6 +77,63 @@ declare module 'vue' {
     export function createApp(rootComponent: Record<string, any>): AppInstance;
 }
 
+declare module 'marked' {
+    export interface MarkedCheckboxToken {
+        checked: boolean;
+    }
+
+    export interface MarkedListItemToken {
+        tokens: unknown[];
+        task: boolean;
+        checked?: boolean;
+    }
+
+    export interface MarkedRendererThis {
+        parser: {
+            parse(tokens: unknown[]): string;
+            parseInline(tokens: unknown[]): string;
+        };
+    }
+
+    export interface MarkedRendererExtension {
+        checkbox?: (this: MarkedRendererThis, token: MarkedCheckboxToken) => string | false;
+        listitem?: (this: MarkedRendererThis, token: MarkedListItemToken) => string | false;
+        [key: string]: ((this: MarkedRendererThis, token: any) => string | false) | undefined;
+    }
+
+    export interface MarkedExtension {
+        gfm?: boolean;
+        breaks?: boolean;
+        renderer?: MarkedRendererExtension;
+    }
+
+    export class Marked {
+        constructor(...extensions: MarkedExtension[]);
+        parse(src: string, options?: { async?: false }): string;
+    }
+}
+
+declare module 'dompurify' {
+    export interface DOMPurifyConfig {
+        USE_PROFILES?: {
+            html?: boolean;
+            svg?: boolean;
+            svgFilters?: boolean;
+            mathMl?: boolean;
+        };
+        FORBID_TAGS?: string[];
+        FORBID_ATTR?: string[];
+        ADD_TAGS?: string[];
+        ADD_ATTR?: string[];
+    }
+
+    const DOMPurify: {
+        sanitize(dirty: string, cfg?: DOMPurifyConfig): string;
+    };
+
+    export default DOMPurify;
+}
+
 // ---------------------------------------------------------------------------
 // Core Frontend Domain & API DTO Models
 // ---------------------------------------------------------------------------
