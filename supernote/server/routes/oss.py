@@ -503,7 +503,9 @@ async def handle_oss_pdf_download(request: web.Request) -> web.StreamResponse:
     conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
     blob_storage: BlobStorage = request.app[BLOB_STORAGE_KEY]
     try:
-        payload = await url_signer.verify(request.path_qs, consume=False)
+        payload = await url_signer.verify(
+            request.path_qs, consume=False, signed_query_keys=("pages",)
+        )
     except SupernoteError as err:
         return err.to_response()
 
@@ -516,14 +518,18 @@ async def handle_oss_pdf_download(request: web.Request) -> web.StreamResponse:
 
     try:
         file_id = int(request.match_info["file_id"])
+        pages = request.query.get("pages")
+        page_no_list = (
+            [int(page_no) for page_no in pages.split(",")] if pages is not None else []
+        )
     except (KeyError, ValueError):
         return web.json_response(
-            create_error_response("Invalid file_id").to_dict(),
+            create_error_response("Invalid file_id or pages").to_dict(),
             status=HTTPStatus.BAD_REQUEST,
         )
 
     try:
-        blob = await conversion_service.get_note_pdf(user_email, file_id)
+        blob = await conversion_service.get_note_pdf(user_email, file_id, page_no_list)
     except SupernoteError as err:
         return err.to_response()
     if not blob:

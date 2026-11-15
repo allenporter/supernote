@@ -460,13 +460,15 @@ async def test_oss_download_content_type_and_disposition(
 async def test_oss_png_and_pdf_routes_require_matching_signed_path_and_ownership(
     device_client: DeviceClient,
     server_config: ServerConfig,
-    test_note_path: Path,
+    test_data_dir: Path,
     client: Client,
 ) -> None:
     """Verify /api/oss/png/{file_id}/{page_no} and /api/oss/pdf/{file_id} enforce signature and user ownership."""
     url_signer = UrlSigner(secret_key=server_config.auth.secret_key)
 
-    note_content = test_note_path.read_bytes()
+    note_content = (
+        test_data_dir / "philips" / "blank-a6x-3.26.40-two-pages.note"
+    ).read_bytes()
     upload_res = await device_client.upload_content(
         path="/oss_route_note.note", content=note_content, equipment_no="SN_TEST"
     )
@@ -495,6 +497,38 @@ async def test_oss_png_and_pdf_routes_require_matching_signed_path_and_ownership
         resp_pdf.headers.get("Content-Disposition")
         == 'attachment; filename="oss_route_note.pdf"'
     )
+    full_pdf_bytes = await resp_pdf.read()
+
+    # A page selection is signed with its pages and served from its own blob
+    pages_vo = await device_client.note_to_pdf(file_id, [0])
+    assert pages_vo.url is not None
+    parsed_pages = urllib.parse.urlparse(pages_vo.url)
+    assert parsed_pages.path == f"/api/oss/pdf/{file_id}"
+    assert urllib.parse.parse_qs(parsed_pages.query)["pages"] == ["0"]
+    resp_pages = await client.get(
+        f"{parsed_pages.path}?{parsed_pages.query}", headers={}
+    )
+    assert resp_pages.status == HTTPStatus.OK
+    pages_pdf_bytes = await resp_pages.read()
+    assert pages_pdf_bytes != full_pdf_bytes
+
+    resp_full = await client.get(f"{parsed_pdf.path}?{parsed_pdf.query}", headers={})
+    assert resp_full.status == HTTPStatus.OK
+    assert await resp_full.read() == full_pdf_bytes
+
+    # Appending an unsigned pages query parameter to a full-export URL is rejected
+    resp_unsigned_pages = await client.get(
+        f"{parsed_pdf.path}?{parsed_pdf.query}&pages=0", headers={}
+    )
+    assert resp_unsigned_pages.status == HTTPStatus.FORBIDDEN
+
+    bad_pages_url = await url_signer.sign(
+        f"/api/oss/pdf/{file_id}?pages=first",
+        user="test@example.com",
+        single_use=False,
+    )
+    resp_bad_pages = await client.get(bad_pages_url, headers={})
+    assert resp_bad_pages.status == HTTPStatus.BAD_REQUEST
 
     # Using a PNG signature on the PDF endpoint (or another page) is rejected
     tampered_path = f"/api/oss/pdf/{file_id}?{parsed_png.query}"

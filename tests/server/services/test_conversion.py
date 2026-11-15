@@ -22,6 +22,10 @@ from supernote.server.services.user import UserService
 from supernote.server.utils.paths import get_conversion_pdf_path
 
 
+async def _read(blob_storage: BlobStorage, key: str) -> bytes:
+    return b"".join([chunk async for chunk in blob_storage.get(CACHE_BUCKET, key)])
+
+
 @pytest.fixture
 def conversion_service(
     storage_root: Path,
@@ -146,13 +150,14 @@ async def test_convert_note_to_pdf_and_resolve(
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
     test_user_id: int,
-    test_note_path: Path,
+    test_data_dir: Path,
 ) -> None:
     user_email = "test@example.com"
     file_id = 5002
     storage_key = "note_5002.note"
+    two_page_note = test_data_dir / "philips" / "blank-a6x-3.26.40-two-pages.note"
 
-    await blob_storage.put(USER_DATA_BUCKET, storage_key, test_note_path.read_bytes())
+    await blob_storage.put(USER_DATA_BUCKET, storage_key, two_page_note.read_bytes())
     async with session_manager.session() as session:
         session.add(
             UserFileDO(
@@ -169,14 +174,29 @@ async def test_convert_note_to_pdf_and_resolve(
 
     assert await conversion_service.get_note_pdf(user_email, file_id) is None
 
-    await conversion_service.convert_note_to_pdf(user_email, file_id, page_no_list=[0])
+    await conversion_service.convert_note_to_pdf(user_email, file_id, page_no_list=[])
+    full_key = get_conversion_pdf_path(test_user_id, file_id, "md5_5002")
+    full_pdf = await _read(blob_storage, full_key)
 
-    expected_key = get_conversion_pdf_path(test_user_id, file_id, "md5_5002")
-    blob = await conversion_service.get_note_pdf(user_email, file_id)
-    assert blob == ConvertedBlob(
-        storage_key=expected_key,
+    # A page selection is stored apart from the full export it must not replace
+    assert await conversion_service.get_note_pdf(user_email, file_id, [0]) is None
+    await conversion_service.convert_note_to_pdf(user_email, file_id, page_no_list=[0])
+    selection_key = get_conversion_pdf_path(test_user_id, file_id, "md5_5002", [0])
+
+    assert await conversion_service.get_note_pdf(user_email, file_id) == ConvertedBlob(
+        storage_key=full_key,
         file_name="Project_Plan.pdf",
     )
+    assert await _read(blob_storage, full_key) == full_pdf
+    assert await conversion_service.get_note_pdf(
+        user_email, file_id, [0]
+    ) == ConvertedBlob(
+        storage_key=selection_key,
+        file_name="Project_Plan.pdf",
+    )
+    selection_pdf = await _read(blob_storage, selection_key)
+    assert selection_pdf.startswith(b"%PDF")
+    assert selection_pdf != full_pdf
 
 
 async def test_conversion_service_validation_errors(
