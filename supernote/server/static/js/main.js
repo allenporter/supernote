@@ -146,8 +146,10 @@ export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false,
 }
 
 export function compareItems(a, b, sortBy, sortOrder) {
-    if (Boolean(a.isFolder) !== Boolean(b.isFolder)) {
-        return a.isFolder ? -1 : 1;
+    const aIsFolder = Boolean(a.isDirectory || (a.isFolder && a.isFolder !== 'N'));
+    const bIsFolder = Boolean(b.isDirectory || (b.isFolder && b.isFolder !== 'N'));
+    if (aIsFolder !== bIsFolder) {
+        return aIsFolder ? -1 : 1;
     }
     if (sortBy === 'updatedAt') {
         const tsA = normalizeEpochMs(a.updatedAt);
@@ -350,6 +352,9 @@ createApp({
 
         async function restoreSystemView(isInitial, seq) {
             showSystemPanel.value = true;
+            view.value = 'grid';
+            selectedFile.value = null;
+            selectedPageIndex.value = null;
             if (activeTab.value === 'system') {
                 activeTab.value = 'files';
             }
@@ -361,11 +366,17 @@ createApp({
             ]);
         }
 
-        async function restoreViewerState(targetFileId, seq) {
-            const existingFile = files.value.find(f => String(f.id) === targetFileId);
+        async function restoreViewerState(targetFileId, seq, fallbackItem = null, onViewerReady = null) {
+            const hasMatchingLoadedDir =
+                loadedDirectoryId.value === String(currentDirectoryId.value) &&
+                (fallbackItem?.parentId === undefined || String(fallbackItem.parentId) === String(currentDirectoryId.value));
+            const existingFile = hasMatchingLoadedDir
+                ? files.value.find(f => !f.isDirectory && String(f.id) === targetFileId)
+                : null;
             if (existingFile) {
                 selectedFile.value = existingFile;
                 view.value = 'viewer';
+                if (onViewerReady) await onViewerReady();
                 const currentLastCrumbId = String(breadcrumbs.value[breadcrumbs.value.length - 1]?.id || '0');
                 if (currentLastCrumbId !== String(currentDirectoryId.value)) {
                     await syncBreadcrumbsForDirectory(currentDirectoryId.value, seq);
@@ -373,17 +384,26 @@ createApp({
                 return;
             }
 
+            const fallbackName = fallbackItem?.name || `File ${targetFileId}`;
+            const fallbackExt = fallbackItem?.extension || (
+                fallbackItem?.name && fallbackName.includes('.')
+                    ? fallbackName.split('.').pop().toLowerCase()
+                    : ''
+            );
+
             try {
                 const info = await fetchPathInfo(targetFileId);
                 if (seq !== activeSyncSeq) return;
                 const allCrumbs = buildCrumbsFromPathInfo(info);
                 if (allCrumbs.length <= 1) {
                     selectedFile.value = {
+                        ...fallbackItem,
                         id: targetFileId,
-                        name: `File ${targetFileId}`,
-                        extension: ''
+                        name: fallbackName,
+                        extension: fallbackExt
                     };
                     view.value = 'viewer';
+                    if (onViewerReady) await onViewerReady();
                     return;
                 }
 
@@ -392,16 +412,18 @@ createApp({
                 const parentDirId = String(folderCrumbs[folderCrumbs.length - 1].id);
                 const ext = fileCrumb.name.includes('.')
                     ? fileCrumb.name.split('.').pop().toLowerCase()
-                    : '';
+                    : fallbackExt;
 
                 breadcrumbs.value = folderCrumbs;
                 currentDirectoryId.value = parentDirId;
                 selectedFile.value = {
+                    ...fallbackItem,
                     id: targetFileId,
                     name: fileCrumb.name,
                     extension: ext
                 };
                 view.value = 'viewer';
+                if (onViewerReady) await onViewerReady();
 
                 await loadDirectory(parentDirId);
                 if (seq !== activeSyncSeq) return;
@@ -413,11 +435,13 @@ createApp({
                 if (seq !== activeSyncSeq) return;
                 console.error("Failed to resolve file path info:", e);
                 selectedFile.value = {
+                    ...fallbackItem,
                     id: targetFileId,
-                    name: `File ${targetFileId}`,
-                    extension: ''
+                    name: fallbackName,
+                    extension: fallbackExt
                 };
                 view.value = 'viewer';
+                if (onViewerReady) await onViewerReady();
             }
         }
 
@@ -635,18 +659,92 @@ createApp({
 
         async function handleSearchSelectFile(item) {
             if (!item) return;
-            showSystemPanel.value = false;
-            systemOpenedFromHistory = false;
+            const replaceModalHistory = systemOpenedFromHistory && inAppHistoryDepth > 0;
+            const wasSystemUrl = window.location.hash.startsWith('#/system');
+            isDraggingOver.value = false;
+            showSearchModal.value = false;
+
             if (item.isDirectory) {
-                await navigateFolder(item);
+                urlSyncDepth++;
+                try {
+                    showSystemPanel.value = false;
+                    systemOpenedFromHistory = false;
+                    activeTab.value = 'files';
+                    view.value = 'grid';
+                    selectedFile.value = null;
+                    selectedPageIndex.value = null;
+                    viewerOpenedFromHistory = false;
+                    currentDirectoryId.value = String(item.id);
+                    selectedIds.value = [];
+                    await nextTick();
+                } finally {
+                    urlSyncDepth--;
+                }
+                updateUrl(replaceModalHistory);
+                const seq = ++activeSyncSeq;
+                await Promise.all([
+                    loadDirectory(item.id),
+                    syncBreadcrumbsForDirectory(item.id, seq)
+                ]);
                 return;
             }
-            activeTab.value = 'files';
-            const existingFile = files.value.find(f => String(f.id) === String(item.id));
-            await openItem(existingFile ? { ...existingFile, pageIndex: item.pageIndex } : item);
+
+            const targetFileId = String(item.id);
+            const targetPage = typeof item.pageIndex === 'number' ? item.pageIndex : null;
+
+            if (view.value === 'viewer' && String(selectedFile.value?.id) === targetFileId) {
+                urlSyncDepth++;
+                try {
+                    showSystemPanel.value = false;
+                    systemOpenedFromHistory = false;
+                    activeTab.value = 'files';
+                    selectedPageIndex.value = targetPage ?? 0;
+                    selectedPageJumpSeq.value++;
+                    await nextTick();
+                } finally {
+                    urlSyncDepth--;
+                }
+                updateUrl(wasSystemUrl ? replaceModalHistory : true);
+                const currentLastCrumbId = String(breadcrumbs.value[breadcrumbs.value.length - 1]?.id || '0');
+                if (currentLastCrumbId !== String(currentDirectoryId.value)) {
+                    await syncBreadcrumbsForDirectory(currentDirectoryId.value, ++activeSyncSeq);
+                }
+                return;
+            }
+
+            const seq = ++activeSyncSeq;
+            let urlReleased = false;
+            const releaseAndSyncUrl = async () => {
+                if (urlReleased) return;
+                urlReleased = true;
+                await nextTick();
+                urlSyncDepth--;
+                if (seq === activeSyncSeq) {
+                    updateUrl(replaceModalHistory);
+                }
+            };
+
+            urlSyncDepth++;
+            try {
+                showSystemPanel.value = false;
+                systemOpenedFromHistory = false;
+                activeTab.value = 'files';
+                viewerOpenedFromHistory = true;
+                selectedPageIndex.value = targetPage;
+                if (targetPage !== null) {
+                    selectedPageJumpSeq.value++;
+                }
+                await restoreViewerState(targetFileId, seq, item, releaseAndSyncUrl);
+            } finally {
+                if (!urlReleased) {
+                    await nextTick();
+                    urlSyncDepth--;
+                }
+            }
         }
 
         async function handleSearchSelectTask(task) {
+            showSearchModal.value = false;
             focusedTaskRequest.value = task
                 ? {
                     id: task.id,
@@ -660,8 +758,6 @@ createApp({
 
         async function handleSystemOpenFile(fileId) {
             if (!fileId) return;
-            showSystemPanel.value = false;
-            systemOpenedFromHistory = false;
             await handleSearchSelectFile({ id: String(fileId), isDirectory: false });
         }
 
