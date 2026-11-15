@@ -1,0 +1,71 @@
+---
+name: Frontend
+
+on:
+  push:
+    branches:
+      - main
+      - renovate/**
+    paths:
+      - "supernote/server/static/**"
+      - "supernote/server/routes/**"
+      - "supernote/server/app.py"
+      - "tests/frontend/**"
+      - "tests/integration/test_web_ui.py"
+      - ".github/workflows/frontend.yaml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "supernote/server/static/**"
+      - "supernote/server/routes/**"
+      - "supernote/server/app.py"
+      - "tests/frontend/**"
+      - "tests/integration/test_web_ui.py"
+      - ".github/workflows/frontend.yaml"
+  workflow_dispatch:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+
+      - name: Run frontend ES module unit tests
+        run: |
+          node --import ./tests/frontend/helpers/register_vue_stub.mjs --test tests/frontend/unit.test.mjs
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "requirements_dev.txt"
+          activate-environment: true
+
+      - name: Install Python & Playwright dependencies
+        run: |
+          uv pip install -r requirements_dev.txt playwright
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('requirements_dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      - name: Install headless Chromium
+        run: |
+          playwright install --with-deps chromium
+
+      - name: Run Playwright UI smoke suite
+        run: |
+          pytest tests/integration/test_web_ui.py -v
