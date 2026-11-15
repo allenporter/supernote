@@ -39,7 +39,6 @@ from supernote.notebook.schema import (
     SupernoteMetadata,
 )
 from supernote.server.metrics import (
-    PROCESSOR_FILES_PROCESSING,
     PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL,
     PROCESSOR_QUEUE_PAUSED,
     PROCESSOR_QUEUE_SIZE,
@@ -110,7 +109,6 @@ class ProcessorService:
 
         self.queue: asyncio.Queue[int] = asyncio.Queue()  # Queue of file_ids
         self.processing_files: set[int] = set()
-        self._active_files: set[int] = set()
         self._file_locks: dict[int, asyncio.Lock] = {}
         self._file_lock_refcounts: dict[int, int] = {}
         self.workers: list[asyncio.Task] = []
@@ -136,7 +134,6 @@ class ProcessorService:
 
     def _update_queue_metrics(self) -> None:
         PROCESSOR_QUEUE_SIZE.set(self.queue.qsize())
-        PROCESSOR_FILES_PROCESSING.set(len(self._active_files))
 
     @asynccontextmanager
     async def _file_lock(self, file_id: int) -> AsyncGenerator[None]:
@@ -506,20 +503,14 @@ class ProcessorService:
             else NoteProcessingMode.ON_DEMAND
         )
         async with self._file_lock(file_id):
-            self._active_files.add(file_id)
-            self._update_queue_metrics()
-            try:
-                with track_note_processing_run(mode=mode) as run:
-                    ok = await self._process_file_locked(
-                        file_id,
-                        task_types=task_types,
-                        page_indices=page_indices,
-                    )
-                    run.set_succeeded(ok)
-                    return ok
-            finally:
-                self._active_files.discard(file_id)
-                self._update_queue_metrics()
+            with track_note_processing_run(mode=mode) as run:
+                ok = await self._process_file_locked(
+                    file_id,
+                    task_types=task_types,
+                    page_indices=page_indices,
+                )
+                run.set_succeeded(ok)
+                return ok
 
     async def _process_file_locked(
         self,

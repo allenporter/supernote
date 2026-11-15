@@ -142,7 +142,6 @@ async def test_session_rollback_failure_still_propagates_original_error(
     errors_before = (
         REGISTRY.get_sample_value("supernote_db_session_errors_total") or 0.0
     )
-    active_before = REGISTRY.get_sample_value("supernote_db_sessions_active") or 0.0
 
     with pytest.raises(FileNotFound, match="still propagates"):
         async with seeded_manager.session() as session:
@@ -152,6 +151,3 @@ async def test_session_rollback_failure_still_propagates_original_error(
     assert (
         REGISTRY.get_sample_value("supernote_db_session_errors_total") or 0.0
     ) == errors_before
-    assert (
-        REGISTRY.get_sample_value("supernote_db_sessions_active") or 0.0
-    ) == active_before

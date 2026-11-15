@@ -24,7 +24,6 @@ from supernote.server.ai.models.openai.summary import OpenAISummaryModel
 from supernote.server.ai.models.summary import InstrumentedSummaryModel
 from supernote.server.app import create_app, metrics_middleware
 from supernote.server.config import ServerConfig
-from supernote.server.keys import SESSION_MANAGER_KEY
 from supernote.server.metrics import (
     PIPELINE_DURATION_BUCKETS,
     REQUEST_DURATION_BUCKETS,
@@ -47,6 +46,9 @@ REMOVED_LEGACY_METRICS = (
     "supernote_openai_api_duration_seconds",
     "supernote_apple_ai_calls_total",
     "supernote_apple_ai_duration_seconds",
+    "supernote_http_requests_in_progress",
+    "supernote_db_sessions_active",
+    "supernote_processor_files_processing",
 )
 
 
@@ -62,9 +64,8 @@ async def test_metrics_endpoint(client: TestClient) -> None:
         "python_gc_objects_collected_total" in body
         or "process_cpu_seconds_total" in body
     )
-    # Should contain our custom metrics and exclude removed vendor-specific families
+    # Should contain our custom metrics and exclude removed families
     assert "supernote_http_requests_total" in body
-    assert "supernote_http_requests_in_progress" in body
     assert "supernote_note_processing_runs_total" in body
     assert "supernote_note_processing_duration_seconds" in body
     assert "supernote_note_pages_parsed_total" in body
@@ -173,78 +174,46 @@ async def test_http_mcp_unmatched_scanner_path_collapsed(
     )
 
 
-async def test_http_in_progress_gauge_and_nonstandard_method_normalized(
+async def test_http_nonstandard_method_normalized(
     aiohttp_client: Any,
 ) -> None:
-    """Verify active requests update in-progress gauge and normalize non-standard HTTP verbs to 'OTHER'."""
-    entered = asyncio.Event()
-    release = asyncio.Event()
+    """Verify non-standard HTTP verbs normalize to 'OTHER'."""
 
-    async def slow_handler(_request: web.Request) -> web.Response:
-        entered.set()
-        await release.wait()
+    async def ok_handler(_request: web.Request) -> web.Response:
         return web.Response(text="ok")
 
     app = web.Application(middlewares=[metrics_middleware])
-    app.router.add_route("*", "/slow", slow_handler)
+    app.router.add_route("*", "/webdav", ok_handler)
     custom_client = await aiohttp_client(app)
 
-    before_other_in_flight = (
-        REGISTRY.get_sample_value(
-            "supernote_http_requests_in_progress", {"method": "OTHER"}
-        )
-        or 0.0
-    )
     before_other_total = (
         REGISTRY.get_sample_value(
             "supernote_http_requests_total",
-            {"method": "OTHER", "path": "/slow", "status": "200"},
+            {"method": "OTHER", "path": "/webdav", "status": "200"},
         )
         or 0.0
     )
 
-    req_task = asyncio.create_task(custom_client.request("PROPFIND", "/slow"))
-    await entered.wait()
-    assert (
-        REGISTRY.get_sample_value(
-            "supernote_http_requests_in_progress", {"method": "OTHER"}
-        )
-        == before_other_in_flight + 1.0
-    )
-    assert (
-        REGISTRY.get_sample_value(
-            "supernote_http_requests_in_progress", {"method": "PROPFIND"}
-        )
-        is None
-    )
-
-    release.set()
-    slow_resp = await req_task
-    assert slow_resp.status == 200
-    assert (
-        REGISTRY.get_sample_value(
-            "supernote_http_requests_in_progress", {"method": "OTHER"}
-        )
-        == before_other_in_flight
-    )
+    resp = await custom_client.request("PROPFIND", "/webdav")
+    assert resp.status == 200
     assert (
         REGISTRY.get_sample_value(
             "supernote_http_requests_total",
-            {"method": "OTHER", "path": "/slow", "status": "200"},
+            {"method": "OTHER", "path": "/webdav", "status": "200"},
         )
         == before_other_total + 1.0
     )
     assert (
         REGISTRY.get_sample_value(
             "supernote_http_requests_total",
-            {"method": "PROPFIND", "path": "/slow", "status": "200"},
+            {"method": "PROPFIND", "path": "/webdav", "status": "200"},
         )
         is None
     )
 
 
 async def test_http_cancelled_request_records_499_without_duration() -> None:
-    """Verify CancelledError records status='499', decrements in-progress gauge, and skips latency observation."""
+    """Verify CancelledError records status='499' and skips latency observation."""
 
     async def _noop_long_poll(_r: web.Request) -> web.Response:
         return web.Response()
@@ -255,12 +224,6 @@ async def test_http_cancelled_request_records_499_without_duration() -> None:
     cancel_499_labels = {"method": "GET", "path": "/long-poll", "status": "499"}
     cancel_500_labels = {"method": "GET", "path": "/long-poll", "status": "500"}
     cancel_dur_labels = {"method": "GET", "path": "/long-poll"}
-    before_get_in_flight = (
-        REGISTRY.get_sample_value(
-            "supernote_http_requests_in_progress", {"method": "GET"}
-        )
-        or 0.0
-    )
     before_499 = (
         REGISTRY.get_sample_value("supernote_http_requests_total", cancel_499_labels)
         or 0.0
@@ -282,23 +245,11 @@ async def test_http_cancelled_request_records_499_without_duration() -> None:
     fake_request._match_info = match_info
 
     async def _raise_cancelled(_req: web.Request) -> web.StreamResponse:
-        assert (
-            REGISTRY.get_sample_value(
-                "supernote_http_requests_in_progress", {"method": "GET"}
-            )
-            == before_get_in_flight + 1.0
-        )
         raise asyncio.CancelledError
 
     with pytest.raises(asyncio.CancelledError):
         await metrics_middleware(fake_request, _raise_cancelled)
 
-    assert (
-        REGISTRY.get_sample_value(
-            "supernote_http_requests_in_progress", {"method": "GET"}
-        )
-        == before_get_in_flight
-    )
     assert (
         REGISTRY.get_sample_value("supernote_http_requests_total", cancel_499_labels)
         == before_499 + 1.0
@@ -326,20 +277,6 @@ async def test_metrics_disabled(
 
     resp = await client.get("/metrics")
     assert resp.status == 404
-
-
-async def test_db_session_active_gauge(client: TestClient) -> None:
-    """Verify DatabaseSessionManager increments and decrements active sessions gauge."""
-    assert client.app is not None
-    session_manager = client.app[SESSION_MANAGER_KEY]
-    before = REGISTRY.get_sample_value("supernote_db_sessions_active") or 0.0
-
-    async with session_manager.session():
-        active_inside = REGISTRY.get_sample_value("supernote_db_sessions_active") or 0.0
-        assert active_inside == before + 1.0
-
-    after = REGISTRY.get_sample_value("supernote_db_sessions_active") or 0.0
-    assert after == before
 
 
 async def test_gemini_ai_metrics_and_tokens(aiohttp_server: Any) -> None:

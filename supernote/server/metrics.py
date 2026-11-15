@@ -22,9 +22,7 @@ from prometheus_client import Counter, Gauge, Histogram
 __all__ = [
     "AIStage",
     "BlobStorageKind",
-    "DB_SESSIONS_ACTIVE",
     "DB_SESSION_ERRORS_TOTAL",
-    "HTTP_REQUESTS_IN_PROGRESS",
     "HTTP_REQUESTS_TOTAL",
     "HTTP_REQUEST_DURATION_SECONDS",
     "MCPToolName",
@@ -32,7 +30,6 @@ __all__ = [
     "NoteUploadSource",
     "OSSTransferDirection",
     "OSSTransferKind",
-    "PROCESSOR_FILES_PROCESSING",
     "PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL",
     "PROCESSOR_QUEUE_PAUSED",
     "PROCESSOR_QUEUE_SIZE",
@@ -201,12 +198,6 @@ HTTP_REQUEST_DURATION_SECONDS: Histogram = Histogram(
     buckets=REQUEST_DURATION_BUCKETS,
 )
 
-HTTP_REQUESTS_IN_PROGRESS: Gauge = Gauge(
-    "supernote_http_requests_in_progress",
-    "Current number of HTTP requests actively being processed.",
-    ["method"],
-)
-
 # Processor metrics
 PROCESSOR_TASKS_TOTAL: Counter = Counter(
     "supernote_processor_tasks_total",
@@ -229,11 +220,6 @@ PROCESSOR_QUEUE_SIZE: Gauge = Gauge(
 PROCESSOR_QUEUE_PAUSED: Gauge = Gauge(
     "supernote_processor_queue_paused",
     "Whether background processor queue execution is currently paused (1 = paused, 0 = active).",
-)
-
-PROCESSOR_FILES_PROCESSING: Gauge = Gauge(
-    "supernote_processor_files_processing",
-    "Current number of files actively undergoing background pipeline processing.",
 )
 
 _MODULE_TASK_OUTCOMES: tuple[str, ...] = (
@@ -282,9 +268,8 @@ def init_processor_module_metrics(module_names: Iterable[str]) -> None:
 
 
 def init_note_processing_metrics() -> None:
-    """Pre-initialize `.note` queue gauges, run/page-diff counters, and histograms at 0."""
+    """Pre-initialize `.note` queue gauge, run/page-diff counters, and histograms at 0."""
     PROCESSOR_QUEUE_SIZE.set(0)
-    PROCESSOR_FILES_PROCESSING.set(0)
     for mode in NoteProcessingMode:
         _NOTE_PROCESSING_DURATION_SECONDS.labels(mode=mode.value)
         for status in _OutcomeStatus:
@@ -624,11 +609,6 @@ def track_mcp_tool_call(
 
 
 # Database metrics
-DB_SESSIONS_ACTIVE: Gauge = Gauge(
-    "supernote_db_sessions_active",
-    "Current number of active/open database sessions.",
-)
-
 DB_SESSION_ERRORS_TOTAL: Counter = Counter(
     "supernote_db_session_errors_total",
     "Total number of database and SQLAlchemy session errors.",

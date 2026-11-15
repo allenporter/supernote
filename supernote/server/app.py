@@ -69,7 +69,6 @@ from .keys import (
 )
 from .metrics import (
     HTTP_REQUEST_DURATION_SECONDS,
-    HTTP_REQUESTS_IN_PROGRESS,
     HTTP_REQUESTS_TOTAL,
 )
 from .routes import (
@@ -169,8 +168,6 @@ def create_metrics_middleware(
             return await handler(request)
 
         method = _normalize_http_method(request.method)
-        in_progress = HTTP_REQUESTS_IN_PROGRESS.labels(method=method)
-        in_progress.inc()
         start_time = time.perf_counter()
         status = 500
         cancelled = False
@@ -187,7 +184,6 @@ def create_metrics_middleware(
             raise
         finally:
             duration = time.perf_counter() - start_time
-            in_progress.dec()
             path_pattern = _resolve_metrics_path(request, status, mcp_auth_paths)
             HTTP_REQUESTS_TOTAL.labels(
                 method=method, path=path_pattern, status=str(status)

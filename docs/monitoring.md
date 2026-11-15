@@ -48,14 +48,11 @@ scrape_configs:
 | :--- | :---: | :--- | :--- |
 | `supernote_http_requests_total` | Counter | `method`, `path`, `status` | HTTP requests processed (unmatched paths collapse to `HTTP <status>`; non-standard verbs map to `OTHER`; client disconnects record `status="499"`). |
 | `supernote_http_request_duration_seconds` | Histogram | `method`, `path` | Completed HTTP request latency (`REQUEST_DURATION_BUCKETS` up to `300s`). |
-| `supernote_http_requests_in_progress` | Gauge | `method` | Currently active HTTP requests. |
 | `supernote_mcp_tool_calls_total` | Counter | `tool`, `status` | MCP server tool invocations (`list_notebooks`, `search_notebook_chunks`, `get_notebook_transcript`). |
 | `supernote_mcp_tool_duration_seconds` | Histogram | `tool` | Completed MCP tool latency (`REQUEST_DURATION_BUCKETS` up to `300s`). |
-| `supernote_db_sessions_active` | Gauge | — | Active database sessions. |
 | `supernote_db_session_errors_total` | Counter | — | Database and SQLAlchemy session errors. |
 | `supernote_processor_queue_size` | Gauge | — | Files currently waiting in the background processor queue. |
 | `supernote_processor_queue_paused` | Gauge | — | `1` when background queue execution is paused, `0` when active. |
-| `supernote_processor_files_processing` | Gauge | — | Files actively undergoing background pipeline processing. |
 | `supernote_processor_tasks_total` | Counter | `module`, `status` | Per-module task executions (`success`, `failure`, `skipped`, `cancelled`). |
 | `supernote_processor_task_duration_seconds` | Histogram | `module` | Completed task latency (`PIPELINE_DURATION_BUCKETS` up to `600s`; excludes `skipped`/`cancelled`). |
 | `supernote_processor_stalled_tasks_recovered_total` | Counter | — | Stalled `PROCESSING` tasks recovered on startup/sweep. |

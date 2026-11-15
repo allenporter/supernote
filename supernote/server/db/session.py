@@ -2,8 +2,8 @@
 
 `DatabaseSessionManager` manages an `AsyncEngine` (`sqlite+aiosqlite`) configured with
 `PRAGMA journal_mode=WAL`, `PRAGMA synchronous=NORMAL`, and `PRAGMA busy_timeout`,
-exposing an `@asynccontextmanager` `session()` helper that tracks active session metrics
-(`supernote.server.metrics.DB_SESSIONS_ACTIVE`) and rolls back automatically on error:
+exposing an `@asynccontextmanager` `session()` helper that records database session
+errors (`supernote.server.metrics.DB_SESSION_ERRORS_TOTAL`) and rolls back automatically on error:
 
 ```python
 session_manager = DatabaseSessionManager("sqlite+aiosqlite:///supernote.db")
@@ -31,7 +31,7 @@ from sqlalchemy.ext.asyncio import (
 
 from supernote.server.constants import SQLITE_TIMEOUT_SECONDS
 from supernote.server.exceptions import DatabaseError
-from supernote.server.metrics import DB_SESSION_ERRORS_TOTAL, DB_SESSIONS_ACTIVE
+from supernote.server.metrics import DB_SESSION_ERRORS_TOTAL
 
 from .base import Base
 
@@ -110,7 +110,6 @@ class DatabaseSessionManager:
         if self._sessionmaker is None:
             raise DatabaseError("DatabaseSessionManager has been closed")
         session = self._sessionmaker()
-        DB_SESSIONS_ACTIVE.inc()
         try:
             yield session
         except DatabaseError:
@@ -125,7 +124,6 @@ class DatabaseSessionManager:
             await _rollback_quietly(session)
             raise
         finally:
-            DB_SESSIONS_ACTIVE.dec()
             await session.close()
 
     async def create_all_tables(self) -> None:

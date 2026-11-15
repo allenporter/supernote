@@ -1619,12 +1619,12 @@ async def test_process_file_and_queue_pause_metrics(
     )
 
 
-async def test_active_files_gauge_excludes_queued_backlog(
+async def test_processor_queue_size_and_module_metric_seeding(
     session_manager: DatabaseSessionManager,
     file_service: FileService,
     summary_service: SummaryService,
 ) -> None:
-    """Verify `files_processing` tracks actively executing runs rather than queued backlog."""
+    """Verify `queue_size` tracks queued backlog and `register_modules` seeds per-module metrics."""
     processor = ProcessorService(
         event_bus=LocalEventBus(),
         session_manager=session_manager,
@@ -1633,7 +1633,6 @@ async def test_active_files_gauge_excludes_queued_backlog(
         concurrency=0,
     )
 
-    # Enqueue 2 files without workers running: queue_size == 2, active files_processing == 0
     await processor.handle_note_updated(
         NoteUpdatedEvent(file_id=9501, user_id=1, file_path="/Note/a.note")
     )
@@ -1641,37 +1640,32 @@ async def test_active_files_gauge_excludes_queued_backlog(
         NoteUpdatedEvent(file_id=9503, user_id=1, file_path="/Note/b.note")
     )
     assert REGISTRY.get_sample_value("supernote_processor_queue_size") == 2.0
-    assert REGISTRY.get_sample_value("supernote_processor_files_processing") == 0.0
 
-    entered = asyncio.Event()
-    release = asyncio.Event()
-
-    class _BlockingHashing(ProcessorModule):
+    class _NoopHashing(ProcessorModule):
         @property
         def name(self) -> str:
-            return "BlockingHashing9501"
+            return "NoopHashing9501"
 
         @property
         def task_type(self) -> TaskType:
             return TaskType.PAGE_HASHING
 
         async def process(self, *args: object, **kwargs: object) -> None:
-            entered.set()
-            await release.wait()
+            return None
 
-    processor.register_modules(hashing=_BlockingHashing())
+    processor.register_modules(hashing=_NoopHashing())
+    for status in ("success", "failure", "skipped", "cancelled"):
+        assert (
+            REGISTRY.get_sample_value(
+                "supernote_processor_tasks_total",
+                {"module": "NoopHashing9501", "status": status},
+            )
+            == 0.0
+        )
     assert (
         REGISTRY.get_sample_value(
-            "supernote_processor_tasks_total",
-            {"module": "BlockingHashing9501", "status": "success"},
+            "supernote_processor_task_duration_seconds_count",
+            {"module": "NoopHashing9501"},
         )
         == 0.0
     )
-
-    run_task = asyncio.create_task(processor.process_file(9501))
-    await entered.wait()
-    assert REGISTRY.get_sample_value("supernote_processor_files_processing") == 1.0
-
-    release.set()
-    assert await run_task is True
-    assert REGISTRY.get_sample_value("supernote_processor_files_processing") == 0.0
