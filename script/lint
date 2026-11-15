@@ -8,7 +8,10 @@ cd "$(dirname "$0")/.."
 echo "==> Running linters..."
 
 if command -v uv >/dev/null 2>&1; then
-  uv run pre-commit run --all-files
+  if [ ! -x ".venv/bin/pre-commit" ]; then
+    ./script/bootstrap
+  fi
+  uv run --no-sync pre-commit run --all-files
 else
   pre-commit run --all-files
 fi

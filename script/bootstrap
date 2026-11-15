@@ -9,7 +9,7 @@ echo "==> Bootstrapping..."
 
 if command -v uv >/dev/null 2>&1; then
   echo "==> Using uv for synchronization..."
-  uv sync --all-extras
+  uv venv --allow-existing
   uv pip install -r requirements_dev.txt
 elif command -v python3 >/dev/null 2>&1; then
   echo "==> Using pip for installation..."
@@ -23,7 +23,7 @@ fi
 
 echo "==> Installing pre-commit hooks..."
 if command -v uv >/dev/null 2>&1; then
-  uv run pre-commit install
+  uv run --no-sync pre-commit install
 else
   pre-commit install
 fi
