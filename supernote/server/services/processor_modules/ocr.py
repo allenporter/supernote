@@ -18,16 +18,16 @@ from supernote.server.utils.paths import get_page_png_path
 logger = logging.getLogger(__name__)
 
 
-async def _is_verified_blank_page(
+async def _get_verified_page_metadata(
     session: AsyncSession,
     user_id: int,
     file_id: int,
     page_id: str,
     content_hash: str | None,
-) -> bool:
-    """Return True when matching-revision page metadata confirms there are no drawables."""
+) -> NotePageMetadataDO | None:
+    """Return page metadata only when its revision hash matches the page content row."""
     if not content_hash:
-        return False
+        return None
     page_meta = (
         await session.execute(
             select(NotePageMetadataDO).where(
@@ -37,11 +37,9 @@ async def _is_verified_blank_page(
             )
         )
     ).scalar_one_or_none()
-    return (
-        page_meta is not None
-        and page_meta.content_hash == content_hash
-        and not page_meta.has_drawables
-    )
+    if page_meta is None or page_meta.content_hash != content_hash:
+        return None
+    return page_meta
 
 
 class OcrModule(ProcessorModule):
@@ -93,10 +91,12 @@ class OcrModule(ProcessorModule):
                 )
                 return False
             file_do = await session.get(UserFileDO, file_id)
-            if file_do is not None and await _is_verified_blank_page(
-                session, file_do.user_id, file_id, page_id, content.content_hash
-            ):
-                return True
+            if file_do is not None:
+                page_meta = await _get_verified_page_metadata(
+                    session, file_do.user_id, file_id, page_id, content.content_hash
+                )
+                if page_meta is not None and not page_meta.has_drawables:
+                    return True
 
         # Check if PNG exists (Prerequisite)
         png_path = get_page_png_path(file_id, page_id)
@@ -125,14 +125,25 @@ class OcrModule(ProcessorModule):
 
         file_name: str | None = None
         notebook_create_time: int | None = None
+        page_style: str | None = None
+        page_keywords: list[str] = []
         async with session_manager.session() as session:
             content = await get_page_content_by_id(session, file_id, page_id)
             file_do = await session.get(UserFileDO, file_id)
             if file_do is not None:
                 file_name = file_do.file_name
                 notebook_create_time = file_do.create_time
-                if content is not None and await _is_verified_blank_page(
-                    session, file_do.user_id, file_id, page_id, content.content_hash
+                page_meta = (
+                    await _get_verified_page_metadata(
+                        session, file_do.user_id, file_id, page_id, content.content_hash
+                    )
+                    if content is not None
+                    else None
+                )
+                if (
+                    page_meta is not None
+                    and not page_meta.has_drawables
+                    and content is not None
                 ):
                     content.text_content = ""
                     await session.commit()
@@ -140,6 +151,9 @@ class OcrModule(ProcessorModule):
                         f"Skipping OCR LLM call for blank page {page_id} of file {file_id}"
                     )
                     return
+                if page_meta is not None:
+                    page_style = page_meta.page_style
+                    page_keywords = page_meta.keyword_texts
 
         png_path = get_page_png_path(file_id, page_id)
         chunks = [
@@ -155,6 +169,8 @@ class OcrModule(ProcessorModule):
             page_index=page_index or 0,
             page_id=page_id,
             notebook_create_time=notebook_create_time,
+            page_style=page_style,
+            keywords=page_keywords,
         )
         prompt = format_ocr_prompt(page_metadata)
         text_content = await self.ocr_model.extract_text(png_data, prompt)

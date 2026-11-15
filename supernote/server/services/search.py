@@ -11,7 +11,11 @@ from supernote.server.ai.models.embedding import EmbeddingModel, EmbeddingTaskTy
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.utils.note_content import format_page_metadata, infer_page_date
+from supernote.server.utils.note_content import (
+    format_page_metadata,
+    get_page_keywords_map,
+    infer_page_date,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -291,15 +295,19 @@ class SearchService:
         if page_index is not None:
             return pages[0].text_content
 
+        async with self.session_manager.session() as session:
+            keywords_map = await get_page_keywords_map(session, user_id, file_id)
+
         # Aggregated transcript with metadata
         text_parts = []
         for p in pages:
-            if p.text_content:
+            if not p.is_blank:
                 metadata = format_page_metadata(
                     page_index=p.page_index,
                     page_id=p.page_id,
                     file_name=file_do.file_name,
                     notebook_create_time=file_do.create_time,
+                    keywords=keywords_map.get(p.page_id),
                     include_section_divider=True,
                 )
                 text_parts.append(f"{metadata}\n{p.text_content}")

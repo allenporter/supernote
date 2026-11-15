@@ -1,3 +1,4 @@
+import json
 import time
 
 from sqlalchemy import (
@@ -12,6 +13,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from supernote.models.base import ProcessingStatus
+from supernote.notebook.exceptions import ParserException
+from supernote.notebook.schema import KeywordMetadata
 from supernote.server.db.base import Base
 from supernote.server.utils.unique_id import next_id
 
@@ -146,6 +149,29 @@ class NotePageMetadataDO(Base):
             "page_id",
         ),
     )
+
+    @property
+    def keyword_texts(self) -> list[str]:
+        """Return non-empty keyword strings decoded from `keywords_json`."""
+        if not self.keywords_json:
+            return []
+        try:
+            raw = json.loads(self.keywords_json)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(raw, list):
+            return []
+        texts: list[str] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            try:
+                kw = KeywordMetadata.from_params(item).keyword
+            except ParserException:
+                continue
+            if kw and kw.strip():
+                texts.append(kw.strip())
+        return texts
 
 
 class NotePageContentDO(Base):

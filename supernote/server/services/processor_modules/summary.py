@@ -23,7 +23,10 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.services.summary import SummaryService
-from supernote.server.utils.note_content import format_page_metadata
+from supernote.server.utils.note_content import (
+    format_page_metadata,
+    get_page_keywords_map,
+)
 from supernote.server.utils.paths import (
     get_summary_group_id,
     get_summary_id,
@@ -193,6 +196,9 @@ class SummaryModule(ProcessorModule):
             )
             result = await session.execute(stmt)
             pages = result.scalars().all()
+            keywords_map = await get_page_keywords_map(
+                session, file_do.user_id, file_id
+            )
 
         if not pages:
             logger.info(f"No OCR pages found for file {file_id}. Skipping summary.")
@@ -207,6 +213,7 @@ class SummaryModule(ProcessorModule):
                     page_id=p.page_id or "",
                     file_name=file_do.file_name,
                     notebook_create_time=file_do.create_time,
+                    keywords=keywords_map.get(p.page_id or ""),
                     include_section_divider=True,
                 )
                 text_parts.append(f"{metadata}\n{p.text_content}")
