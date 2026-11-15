@@ -25,6 +25,7 @@ class DomainEvent(Event, DataClassJSONMixin):
 
     EVENT_TYPE: ClassVar[DomainEventType]
     ENTITY_TYPE: ClassVar[DomainEntityType]
+    DEFAULT_ACTOR: ClassVar[str] = "user:web"
 
     user_id: int
 
@@ -39,9 +40,10 @@ class DomainEvent(Event, DataClassJSONMixin):
         return None
 
     @property
-    def actor_equipment_no(self) -> str | None:
-        """Optional originating device equipment number."""
-        return getattr(self, "equipment_no", None)
+    def actor(self) -> str:
+        """Originating actor identifier (e.g. 'user:web', 'device:<id>', 'system:processor')."""
+        equipment_no = getattr(self, "equipment_no", None)
+        return f"device:{equipment_no}" if equipment_no else self.DEFAULT_ACTOR
 
     def to_payload(self) -> dict[str, Any]:
         """Serialize event fields into the wire `payload` dict, omitting envelope metadata."""
@@ -70,12 +72,62 @@ class NoteDeletedEvent(Event):
 
 
 @dataclass
-class NoteProcessingCompletedEvent(Event):
+class NoteProcessingCompletedEvent(DomainEvent):
     """Triggered when the asynchronous processing pipeline for a .note file completes."""
 
-    file_id: int
-    user_id: int
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.NOTE_PROCESSING_COMPLETED
+    ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.FILE
+    DEFAULT_ACTOR: ClassVar[str] = "system:processor"
+
+    file_id: int = field(metadata=field_options(serialize=str))
     file_path: str
+
+    @property
+    def entity_id(self) -> str:
+        return str(self.file_id)
+
+    @property
+    def related_file_id(self) -> int | None:
+        return self.file_id
+
+
+@dataclass
+class NoteProcessingFailedEvent(NoteProcessingCompletedEvent):
+    """Triggered when a processing module fails for a .note file or page."""
+
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.NOTE_PROCESSING_FAILED
+
+    module_name: str = ""
+    error: str = ""
+    page_id: str | None = None
+
+
+@dataclass
+class NotePagesDeltaEvent(NoteProcessingCompletedEvent):
+    """Triggered when structural page changes (add/modify/move/delete) are detected in a .note file."""
+
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.NOTE_PAGES_DELTA
+
+    added_pages: list[str] = field(default_factory=list)
+    modified_pages: list[str] = field(default_factory=list)
+    moved_pages: list[str] = field(default_factory=list)
+    deleted_pages: list[str] = field(default_factory=list)
+
+
+@dataclass
+class NotePageTranscribedEvent(NoteProcessingCompletedEvent):
+    """Triggered when OCR finishes updating a single notebook page's text transcript."""
+
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.NOTE_PAGE_TRANSCRIBED
+    ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.NOTE_PAGE
+
+    page_id: str = ""
+    page_index: int = 0
+    text_content: str = ""
+
+    @property
+    def entity_id(self) -> str:
+        return f"{self.file_id}:{self.page_id}"
 
 
 @dataclass
