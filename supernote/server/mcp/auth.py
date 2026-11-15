@@ -15,6 +15,8 @@ from typing import Any, override
 from urllib.parse import quote
 
 import yarl
+from mashumaro.exceptions import InvalidFieldValue, MissingField
+from mashumaro.mixins.json import DataClassJSONMixin
 from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationParams,
@@ -34,18 +36,34 @@ from mcp.shared.auth import (
 from pydantic import AnyHttpUrl, AnyUrl, ValidationError
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse, RedirectResponse
+from starlette.responses import RedirectResponse, Response
 
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
 from supernote.server.utils.auth_utils import get_token_from_request
 
 from .models import (
+    LoginBridgeDecision,
+    LoginBridgeRequestDTO,
+    LoginBridgeResponseVO,
     MCPScope,
+    OAuthErrorResponseVO,
     SupernoteAccessToken,
     SupernoteAuthorizationCode,
     SupernoteRefreshToken,
 )
+
+
+def _json_model_response(
+    payload: DataClassJSONMixin, status_code: int = 200
+) -> Response:
+    """Serialize a Mashumaro DTO/VO as a non-cacheable JSON Starlette response."""
+    return Response(
+        content=payload.to_json(),
+        status_code=status_code,
+        media_type="application/json",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 def _parse_oauth_url(raw: str) -> yarl.URL | None:
@@ -309,7 +327,7 @@ def create_auth_app(
     app = Starlette(routes=routes, debug=True)
 
     # Add login-bridge route
-    async def login_bridge(request: Request) -> RedirectResponse | JSONResponse:
+    async def login_bridge(request: Request) -> Response:
         """Handle the OAuth 2.1 login & consent bridge between the Web UI and MCP server.
 
         Browser GET requests redirect to ``/#login?return_to=<bridge_url>`` so the Web UI
@@ -321,11 +339,11 @@ def create_auth_app(
         token = get_token_from_request(request)
         session = await user_service.verify_token(token) if token else None
         if session and session.is_api_key:
-            return JSONResponse(
-                {
-                    "error": "forbidden",
-                    "error_description": "API keys cannot authorize OAuth clients",
-                },
+            return _json_model_response(
+                OAuthErrorResponseVO(
+                    error="forbidden",
+                    error_description="API keys cannot authorize OAuth clients",
+                ),
                 status_code=403,
             )
         if request.method != "POST":
@@ -341,18 +359,22 @@ def create_auth_app(
                 headers={"Cache-Control": "no-store"},
             )
         if not session:
-            return JSONResponse({"error": "unauthorized"}, status_code=401)
+            return _json_model_response(
+                OAuthErrorResponseVO(error="unauthorized"),
+                status_code=401,
+            )
 
-        decision = "approve"
-        if request.headers.get("content-type", "").startswith("application/json"):
+        raw_body = await request.body()
+        if raw_body.strip():
             try:
-                body = await request.json()
-            except json.JSONDecodeError:
-                return JSONResponse({"error": "invalid_request"}, status_code=400)
-            if isinstance(body, dict) and "decision" in body:
-                if body["decision"] not in ("approve", "deny"):
-                    return JSONResponse({"error": "invalid_request"}, status_code=400)
-                decision = body["decision"]
+                bridge_req = LoginBridgeRequestDTO.from_json(raw_body)
+            except (MissingField, InvalidFieldValue, ValueError, TypeError):
+                return _json_model_response(
+                    OAuthErrorResponseVO(error="invalid_request"),
+                    status_code=400,
+                )
+        else:
+            bridge_req = LoginBridgeRequestDTO()
 
         # Extract OAuth params from query
         client_id = request.query_params.get("client_id")
@@ -363,15 +385,18 @@ def create_auth_app(
         resource = request.query_params.get("resource")
 
         if not client_id or not code_challenge:
-            return JSONResponse({"error": "invalid_request"}, status_code=400)
+            return _json_model_response(
+                OAuthErrorResponseVO(error="invalid_request"),
+                status_code=400,
+            )
 
         client_info = await provider.get_client(client_id)
         if not client_info:
-            return JSONResponse(
-                {
-                    "error": "invalid_client",
-                    "error_description": "Unrecognized or invalid client_id URL.",
-                },
+            return _json_model_response(
+                OAuthErrorResponseVO(
+                    error="invalid_client",
+                    error_description="Unrecognized or invalid client_id URL.",
+                ),
                 status_code=400,
             )
 
@@ -381,26 +406,23 @@ def create_auth_app(
                 parsed_redirect_arg
             )
         except (ValidationError, InvalidRedirectUriError):
-            return JSONResponse(
-                {
-                    "error": "invalid_redirect_uri",
-                    "error_description": (
+            return _json_model_response(
+                OAuthErrorResponseVO(
+                    error="invalid_redirect_uri",
+                    error_description=(
                         "Redirect URI does not match the requesting client origin and path."
                     ),
-                },
+                ),
                 status_code=400,
             )
 
-        if decision == "deny":
+        if bridge_req.decision == LoginBridgeDecision.DENY:
             denied_url = construct_redirect_uri(
                 str(validated_redirect_uri),
                 error="access_denied",
                 state=state or None,
             )
-            return JSONResponse(
-                {"redirect_url": denied_url},
-                headers={"Cache-Control": "no-store"},
-            )
+            return _json_model_response(LoginBridgeResponseVO(redirect_url=denied_url))
 
         normalized_scope = (
             " ".join(raw_scope.split()) if raw_scope and raw_scope.strip() else None
@@ -408,11 +430,11 @@ def create_auth_app(
         try:
             validated_scopes = client_info.validate_scope(normalized_scope)
         except InvalidScopeError:
-            return JSONResponse(
-                {
-                    "error": "invalid_scope",
-                    "error_description": "Requested scope is not supported.",
-                },
+            return _json_model_response(
+                OAuthErrorResponseVO(
+                    error="invalid_scope",
+                    error_description="Requested scope is not supported.",
+                ),
                 status_code=400,
             )
         scopes = validated_scopes or (
@@ -444,10 +466,7 @@ def create_auth_app(
             code=code_str,
             state=state or None,
         )
-        return JSONResponse(
-            {"redirect_url": final_url},
-            headers={"Cache-Control": "no-store"},
-        )
+        return _json_model_response(LoginBridgeResponseVO(redirect_url=final_url))
 
     app.add_route("/login-bridge", login_bridge, methods=["GET", "POST"])
     return app

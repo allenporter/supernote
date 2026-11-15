@@ -16,7 +16,12 @@ from supernote.server.mcp.auth import (
     SupernoteOAuthProvider,
     create_auth_app,
 )
-from supernote.server.mcp.models import MCPScope
+from supernote.server.mcp.models import (
+    LoginBridgeDecision,
+    LoginBridgeResponseVO,
+    MCPScope,
+    OAuthErrorResponseVO,
+)
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
 
@@ -197,13 +202,30 @@ async def test_authorize_and_login_bridge_consent_invariants(
         # POST /login-bridge with decision=deny returns error=access_denied without minting a code
         deny_resp = client.post(
             f"{bridge_path_qs}&state=deny-st",
-            json={"decision": "deny"},
+            json={"decision": LoginBridgeDecision.DENY},
             headers={"x-access-token": session_jwt},
         )
         assert deny_resp.status_code == 200
         assert deny_resp.headers["cache-control"] == "no-store"
-        deny_qs = parse_qs(urlparse(deny_resp.json()["redirect_url"]).query)
+        deny_vo = LoginBridgeResponseVO.from_json(deny_resp.text)
+        deny_qs = parse_qs(urlparse(deny_vo.redirect_url).query)
         assert deny_qs == {"error": ["access_denied"], "state": ["deny-st"]}
+
+        # POST /login-bridge with unknown decision enum or malformed JSON returns 400 invalid_request
+        for bad_body in (b'{"decision": "maybe"}', b"{not-json"):
+            bad_body_resp = client.post(
+                bridge_path_qs,
+                content=bad_body,
+                headers={
+                    "x-access-token": session_jwt,
+                    "content-type": "application/json",
+                },
+            )
+            assert bad_body_resp.status_code == 400
+            assert bad_body_resp.headers["cache-control"] == "no-store"
+            assert OAuthErrorResponseVO.from_json(
+                bad_body_resp.text
+            ) == OAuthErrorResponseVO(error="invalid_request")
 
         # POST /login-bridge with unsupported scope returns 400 invalid_scope
         bad_scope_resp = client.post(
@@ -217,7 +239,9 @@ async def test_authorize_and_login_bridge_consent_invariants(
             headers={"x-access-token": session_jwt},
         )
         assert bad_scope_resp.status_code == 400
-        assert bad_scope_resp.json()["error"] == "invalid_scope"
+        bad_scope_vo = OAuthErrorResponseVO.from_json(bad_scope_resp.text)
+        assert bad_scope_vo.error == "invalid_scope"
+        assert bad_scope_vo.error_description == "Requested scope is not supported."
 
         # POST /login-bridge with omitted redirect_uri resolves single registered URI
         # and records redirect_uri_provided_explicitly=False naturally.
