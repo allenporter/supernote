@@ -70,11 +70,11 @@ async def test_append_persists_and_publishes_domain_event(
 async def test_list_events_cursors_filters_and_user_isolation(
     event_log_service: EventLogService,
 ) -> None:
-    """Verify cursor='0', cursor='head', pagination, type globbing, file_id, and exclude_actor."""
+    """Verify cursor=None/empty, cursor='head', pagination, type globbing, file_id, and exclude_actor."""
     empty_head = await event_log_service.list_events(user_id=1, cursor="head")
     assert empty_head.events == []
-    assert empty_head.next_cursor == "0"
-    assert empty_head.head_cursor == "0"
+    assert empty_head.next_cursor is None
+    assert empty_head.head_cursor is None
     assert empty_head.has_more is False
 
     ev1 = await event_log_service.append(
@@ -111,7 +111,7 @@ async def test_list_events_cursors_filters_and_user_isolation(
     assert ev1.seq < ev2.seq < ev3.seq < ev4.seq
 
     # User 1 sees only user 1 events; paginate 2 at a time
-    page1 = await event_log_service.list_events(user_id=1, cursor="0", limit=2)
+    page1 = await event_log_service.list_events(user_id=1, limit=2)
     assert [e.seq for e in page1.events] == [ev1.seq, ev3.seq]
     assert page1.has_more is True
     assert page1.next_cursor == str(ev3.seq)
@@ -126,21 +126,19 @@ async def test_list_events_cursors_filters_and_user_isolation(
 
     # Prefix type globbing + exact type matching
     filtered_types = await event_log_service.list_events(
-        user_id=1, cursor="0", types=["note.*", "schedule.task_created"]
+        user_id=1, types=["note.*", "schedule.task_created"]
     )
     assert [e.seq for e in filtered_types.events] == [ev3.seq, ev4.seq]
 
     # When a filtered query has 0 matches, next_cursor advances to head_cursor
-    no_match = await event_log_service.list_events(
-        user_id=1, cursor="0", types=["summary.*"]
-    )
+    no_match = await event_log_service.list_events(user_id=1, types=["summary.*"])
     assert no_match.events == []
     assert no_match.next_cursor == str(ev4.seq)
     assert no_match.head_cursor == str(ev4.seq)
 
     # file_id and exclude_actor filters
     by_file = await event_log_service.list_events(
-        user_id=1, cursor="0", file_id=10, exclude_actor="device:SN1"
+        user_id=1, file_id=10, exclude_actor="device:SN1"
     )
     assert [e.seq for e in by_file.events] == [ev3.seq]
 
@@ -155,7 +153,7 @@ async def test_list_events_validation_errors(
     event_log_service: EventLogService,
 ) -> None:
     """Verify invalid cursors and out-of-range limits raise InvalidInputError."""
-    for bad_cursor in ("", "-1", "abc", "12.3", "head "):
+    for bad_cursor in ("0", "-1", "abc", "12.3", "head "):
         with pytest.raises(InvalidInputError):
             await event_log_service.list_events(user_id=1, cursor=bad_cursor)
 
@@ -203,9 +201,11 @@ async def test_prune_expired_events_and_cursor_expiration(
     from_boundary = await event_log_service.list_events(user_id=1, cursor=str(old2.seq))
     assert [e.seq for e in from_boundary.events] == [recent.seq]
 
-    # cursor == "0" always returns retained history without raising 410
-    from_zero = await event_log_service.list_events(user_id=1, cursor="0")
-    assert [e.seq for e in from_zero.events] == [recent.seq]
+    # cursor == None or "" always returns retained history without raising 410
+    from_start = await event_log_service.list_events(user_id=1)
+    assert [e.seq for e in from_start.events] == [recent.seq]
+    from_empty = await event_log_service.list_events(user_id=1, cursor="")
+    assert [e.seq for e in from_empty.events] == [recent.seq]
 
     # Pruning again with no expired rows or disabled retention is a safe no-op
     assert await event_log_service.prune_expired_events(max_age_ms=5_000) == 0

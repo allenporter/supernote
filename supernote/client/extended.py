@@ -103,14 +103,16 @@ class ExtendedClient:
     async def list_events(
         self,
         *,
-        cursor: str = "0",
+        cursor: str | None = None,
         types: list[str] | None = None,
         file_id: int | None = None,
         exclude_actor: str | None = None,
         limit: int = 200,
     ) -> EventFeedListVO:
         """List per-user domain events after `cursor` (Extension)."""
-        params: dict[str, str] = {"cursor": cursor, "limit": str(limit)}
+        params: dict[str, str] = {"limit": str(limit)}
+        if cursor:
+            params["cursor"] = cursor
         if types:
             params["types"] = ",".join(types)
         if file_id is not None:

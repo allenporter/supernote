@@ -28,8 +28,8 @@ class EventFeedPage:
     """Paginated cursor response for per-user domain event queries."""
 
     events: list[DomainEventRecorded]
-    next_cursor: str
-    head_cursor: str
+    next_cursor: str | None
+    head_cursor: str | None
     has_more: bool
 
 
@@ -98,7 +98,7 @@ class EventLogService:
         self,
         user_id: int,
         *,
-        cursor: str = "0",
+        cursor: str | None = None,
         types: list[str] | None = None,
         file_id: int | None = None,
         exclude_actor: str | None = None,
@@ -108,8 +108,11 @@ class EventLogService:
         if limit < 1 or limit > MAX_FEED_LIMIT:
             raise InvalidInputError(f"limit must be between 1 and {MAX_FEED_LIMIT}")
 
-        if cursor != "head" and not (cursor.isascii() and cursor.isdigit()):
-            raise InvalidInputError(f"Invalid cursor: {cursor!r}")
+        cursor_seq = 0
+        if cursor and cursor != "head":
+            if not (cursor.isascii() and cursor.isdigit() and int(cursor) > 0):
+                raise InvalidInputError(f"Invalid cursor: {cursor!r}")
+            cursor_seq = int(cursor)
 
         pruned_seq = await self._get_pruned_seq()
 
@@ -118,16 +121,16 @@ class EventLogService:
                 select(func.max(UserEventDO.seq)).where(UserEventDO.user_id == user_id)
             )
             head_seq = int(max_user_seq or 0)
+            head_cursor = str(head_seq) if head_seq > 0 else None
 
             if cursor == "head":
                 return EventFeedPage(
                     events=[],
-                    next_cursor=str(head_seq),
-                    head_cursor=str(head_seq),
+                    next_cursor=head_cursor,
+                    head_cursor=head_cursor,
                     has_more=False,
                 )
 
-            cursor_seq = int(cursor)
             if 0 < cursor_seq < pruned_seq:
                 raise CursorExpiredError(
                     f"Cursor {cursor_seq} has expired (oldest retained seq is {pruned_seq})"
@@ -160,14 +163,15 @@ class EventLogService:
         if page_rows:
             last_seq = int(page_rows[-1].seq)
             head_seq = max(head_seq, last_seq)
-            next_cursor = str(last_seq)
+            next_cursor: str | None = str(last_seq)
         else:
-            next_cursor = str(max(cursor_seq, head_seq))
+            effective_seq = max(cursor_seq, head_seq)
+            next_cursor = str(effective_seq) if effective_seq > 0 else None
 
         return EventFeedPage(
             events=[_row_to_recorded(row) for row in page_rows],
             next_cursor=next_cursor,
-            head_cursor=str(head_seq),
+            head_cursor=str(head_seq) if head_seq > 0 else None,
             has_more=has_more,
         )
 

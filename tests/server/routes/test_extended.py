@@ -782,7 +782,7 @@ async def test_extended_events_route_and_client(
         timestamp_ms=1_700_000_002_000,
     )
 
-    feed = await extended_client.list_events(cursor="0")
+    feed = await extended_client.list_events()
     assert [e.seq for e in feed.events] == [str(ev1.seq), str(ev2.seq)]
     assert feed.events[0].related_file_id == 772252421643567298
     assert feed.next_cursor == str(ev2.seq)
@@ -791,7 +791,6 @@ async def test_extended_events_route_and_client(
 
     # Filter by types, file_id, and exclude_actor
     filtered = await extended_client.list_events(
-        cursor="0",
         types=["note.*"],
         file_id=772252421643567298,
         exclude_actor="device:SN001",

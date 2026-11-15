@@ -358,7 +358,7 @@ async def handle_list_events(request: web.Request) -> web.Response:
     if not user_id:
         return web.json_response({"error": "User not found"}, status=404)
 
-    cursor = request.query.get("cursor", "0")
+    cursor = request.query.get("cursor") or None
     raw_types = [
         *request.query.getall("types", []),
         *request.query.getall("type", []),
