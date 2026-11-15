@@ -27,6 +27,14 @@ This skill teaches you how to interact with the Supernote codebase using standar
 5. **Test**: `./script/test` to run the test suite.
 6. **Verify**: `./script/server` to run an ephemeral server for manual checks.
 
+### Inner-Loop vs Pre-PR Verification
+- **Fast inner loop (`<2s`, during edits)**: Target only the modified files and matching test modules:
+  ```bash
+  uv run --no-sync ruff check --fix <changed_files> && uv run --no-sync ruff format <changed_files> && uv run --no-sync pytest <target_test_files> -q
+  ```
+- **Pre-PR gate (once per slice before commit/push)**: Run `./script/lint && ./script/test`.
+- **Direct `uv run` & CI checks**: Always include `--no-sync` on ad-hoc `uv run` commands so `requirements_dev.txt` packages remain installed; batch independent `read_file` calls in parallel; watch GitHub Actions with a single backgrounded `gh pr checks <pr_number> --watch` (`WaitMsBeforeAsync: 500`) rather than polling loops.
+
 ### Notes
 - All scripts are located in the `script/` directory at the project root.
 - Scripts are designed to be run from the project root.
