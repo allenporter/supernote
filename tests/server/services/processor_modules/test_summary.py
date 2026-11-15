@@ -13,7 +13,11 @@ from supernote.server.ai.base import AIError
 from supernote.server.ai.models.fake.summary import FakeSummaryModel
 from supernote.server.ai.prompts import SummarySegment
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
+from supernote.server.db.models.note_processing import (
+    NotePageContentDO,
+    NotePageMetadataDO,
+    SystemTaskDO,
+)
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
@@ -699,3 +703,71 @@ async def test_summary_preserves_manual_digests_when_notebook_erased(
     assert manual is not None
     assert manual.content == "User handwritten highlight"
     assert await summary_service.get_summary_by_uuid(user_email, group_uuid) is not None
+
+
+async def test_summary_includes_verified_page_keywords_in_transcript(
+    summary_module: SummaryModule,
+    session_manager: DatabaseSessionManager,
+    fake_summary_model: FakeSummaryModel,
+    summary_service: SummaryService,
+) -> None:
+    """Verify SummaryModule includes Page Keywords only when NotePageMetadataDO matches (page_id, content_hash)."""
+    user_id = 112
+    user_email = "kw_summary@example.com"
+    file_id = 812
+    storage_key = "kw_summary_key"
+
+    async with session_manager.session() as session:
+        session.add(UserDO(id=user_id, email=user_email, password_md5="hash"))
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key=storage_key,
+                file_name="roadmap.note",
+                directory_id=0,
+            )
+        )
+        session.add_all(
+            [
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="p0",
+                    content_hash="h0",
+                    text_content="Page 1 text",
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=1,
+                    page_id="p1",
+                    content_hash="h1_v2",
+                    text_content="Page 2 text",
+                ),
+                NotePageMetadataDO(
+                    user_id=user_id,
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="p0",
+                    content_hash="h0",
+                    keywords_json='[{"KEYWORDPAGE": "1", "KEYWORD": "OKR"}]',
+                ),
+                NotePageMetadataDO(
+                    user_id=user_id,
+                    file_id=file_id,
+                    page_index=1,
+                    page_id="p1",
+                    content_hash="h1_stale",
+                    keywords_json='[{"KEYWORDPAGE": "2", "KEYWORD": "StaleTag"}]',
+                ),
+            ]
+        )
+        await session.commit()
+
+    assert await summary_module.run(file_id, session_manager) is True
+    transcript = await summary_service.get_summary_by_uuid(
+        user_email, get_transcript_id(storage_key)
+    )
+    assert transcript is not None and transcript.content is not None
+    assert "Page Keywords: OKR" in transcript.content
+    assert "StaleTag" not in transcript.content

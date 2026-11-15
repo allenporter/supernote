@@ -320,3 +320,56 @@ async def test_ocr_run_if_needed_requires_page_content_row(
         )
         is False
     )
+
+
+async def test_ocr_passes_verified_keywords_and_page_style_prompt(
+    ocr_module: OcrModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    fake_ocr_model: FakeOcrModel,
+) -> None:
+    """Verify OcrModule injects decoded page keywords and routes page_style to matching custom prompt."""
+    file_id = 1009
+    await blob_storage.put(CACHE_BUCKET, get_page_png_path(file_id, "p0"), b"inked-png")
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=7,
+                storage_key="kw_style_key",
+                file_name="WorkNotes.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="p0",
+                content_hash="h_match",
+            )
+        )
+        session.add(
+            NotePageMetadataDO(
+                user_id=7,
+                file_id=file_id,
+                page_index=0,
+                page_id="p0",
+                content_hash="h_match",
+                page_style="user_Daily_a5x2",
+                has_ink=True,
+                has_drawables=True,
+                keywords_json='[{"KEYWORDPAGE": "1", "KEYWORD": "Project Mercury"}]',
+            )
+        )
+        await session.commit()
+
+    assert (
+        await ocr_module.run(file_id, session_manager, page_index=0, page_id="p0")
+        is True
+    )
+    assert len(fake_ocr_model.calls) == 1
+    _, prompt = fake_ocr_model.calls[0]
+    assert "Page Keywords: Project Mercury" in prompt
+    assert "Daily Log" in prompt
