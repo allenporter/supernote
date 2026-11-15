@@ -13,7 +13,7 @@ export default {
                     @keyup.enter="handleRename" ref="nameInput">
                 <div class="flex justify-end gap-2.5">
                     <button @click="$emit('close')" type="button" class="px-4 py-2 text-xs text-stone-600 hover:text-slate-900 font-semibold">Cancel</button>
-                    <button @click="handleRename" type="button" :disabled="!newName || newName === item.name"
+                    <button @click="handleRename" type="button" :disabled="!trimmedName || trimmedName === item.name"
                         class="px-5 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white rounded-xl text-xs font-semibold transition-all">
                         Rename
                     </button>
@@ -25,6 +25,11 @@ export default {
         return {
             newName: this.item.name
         };
+    },
+    computed: {
+        trimmedName() {
+            return (this.newName || '').trim();
+        }
     },
     mounted() {
         this._handleKeydown = (e) => {
@@ -47,8 +52,8 @@ export default {
     },
     methods: {
         handleRename() {
-            if (this.newName && this.newName !== this.item.name) {
-                this.$emit('confirm', this.newName);
+            if (this.trimmedName && this.trimmedName !== this.item.name) {
+                this.$emit('confirm', this.trimmedName);
             }
         }
     }
