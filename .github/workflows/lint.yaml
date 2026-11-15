@@ -50,3 +50,15 @@ jobs:
       - name: Static typing with ty
         run: |
           ty check . --ignore import-not-found
+
+      - name: Cache npm packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-tsc-${{ hashFiles('.github/workflows/lint.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-tsc-
+
+      - name: Static typing for frontend JS (tsc)
+        run: |
+          npx --yes --package=typescript@5.8.3 -- tsc -p tsconfig.json --noEmit

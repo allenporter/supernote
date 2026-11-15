@@ -2,6 +2,10 @@
  * Shared formatting utilities for file sizes, timestamps, and dates.
  */
 
+/**
+ * @param {number | string | null | undefined} timestamp
+ * @returns {number | null}
+ */
 export function normalizeEpochMs(timestamp) {
     if (timestamp === null || timestamp === undefined || timestamp === '') {
         return null;
@@ -21,6 +25,11 @@ export function normalizeEpochMs(timestamp) {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+/**
+ * @param {number | string | null | undefined} bytes
+ * @param {string} [emptyFallback='']
+ * @returns {string}
+ */
 export function formatSize(bytes, emptyFallback = '') {
     if (!bytes || bytes === '0' || bytes === 0) return emptyFallback;
     const num = Number(bytes);
@@ -31,6 +40,11 @@ export function formatSize(bytes, emptyFallback = '') {
     return `${parseFloat((num / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
 
+/**
+ * @param {number | string | null | undefined} timestamp
+ * @param {{ includeTime?: boolean }} [options]
+ * @returns {string}
+ */
 export function formatShortDate(timestamp, { includeTime = true } = {}) {
     const ms = normalizeEpochMs(timestamp);
     if (ms === null) return '';
@@ -48,6 +62,10 @@ export function formatShortDate(timestamp, { includeTime = true } = {}) {
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/**
+ * @param {number | string | null | undefined} timestamp
+ * @returns {string}
+ */
 export function formatSystemTimestamp(timestamp) {
     const ms = normalizeEpochMs(timestamp);
     if (ms === null) return '—';

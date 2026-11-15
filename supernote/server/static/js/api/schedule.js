@@ -6,6 +6,8 @@ import { apiRequest } from './http.js';
 /**
  * Normalize Supernote device/CLI task importance values ('high'/'1',
  * 'normal'/'medium'/'5', 'low'/'9') into canonical UI levels ('high' | 'medium' | 'low').
+ * @param {unknown} importance
+ * @returns {TaskImportance}
  */
 export function normalizeTaskImportance(importance) {
     if (importance === null || importance === undefined) return 'low';
@@ -17,6 +19,7 @@ export function normalizeTaskImportance(importance) {
 
 /**
  * Fetch all task groups via POST /api/file/schedule/group/all
+ * @returns {Promise<RawScheduleTaskGroup[]>}
  */
 export async function fetchTaskGroups() {
     const data = await apiRequest('/api/file/schedule/group/all', {
@@ -48,6 +51,8 @@ export function deleteTaskGroup(taskListId) {
 
 /**
  * Fetch tasks via POST /api/file/schedule/task/all (optionally filtered by taskListId).
+ * @param {string | number | null} [taskListId=null]
+ * @returns {Promise<{ tasks: ScheduleTask[], nextPageToken: string | null }>}
  */
 export async function fetchTasks(taskListId = null) {
     const payload = taskListId ? { taskListId: String(taskListId) } : {};
@@ -82,6 +87,7 @@ export async function fetchTasks(taskListId = null) {
 
 /**
  * Create a new task via POST /api/file/schedule/task
+ * @param {ScheduleTaskInput} taskData
  */
 export function createScheduleTask(taskData) {
     return apiRequest('/api/file/schedule/task', {
@@ -100,9 +106,11 @@ export function createScheduleTask(taskData) {
 
 /**
  * Update an existing task via PUT /api/file/schedule/task
+ * @param {ScheduleTaskInput} taskData
  */
 export function updateScheduleTask(taskData) {
     const taskId = String(taskData.id || taskData.taskId);
+    /** @type {Record<string, unknown>} */
     const payload = {
         taskId,
         title: taskData.title,
@@ -137,6 +145,8 @@ export function deleteScheduleTask(taskId) {
 
 /**
  * Fetch ICS calendar feed content via GET /api/schedule/feed.ics
+ * @param {string | number | null} [taskListId=null]
+ * @returns {Promise<string>}
  */
 export function fetchIcsFeed(taskListId = null) {
     const url = taskListId
@@ -152,6 +162,9 @@ export function fetchIcsFeed(taskListId = null) {
 
 /**
  * Trigger direct browser download of the .ics calendar file
+ * @param {string | number | null} [taskListId=null]
+ * @param {string} [filename='tasks.ics']
+ * @returns {Promise<void>}
  */
 export async function downloadIcsFeed(taskListId = null, filename = 'tasks.ics') {
     const content = await fetchIcsFeed(taskListId);

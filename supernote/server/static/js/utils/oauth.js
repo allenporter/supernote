@@ -58,6 +58,11 @@ export function describeRedirectTarget(redirectUri) {
     }
 }
 
+/**
+ * @param {string} hashString
+ * @param {string} currentOrigin
+ * @returns {OAuthBridgeRequest | null}
+ */
 export function parseOAuthBridgeReturnTo(hashString, currentOrigin) {
     if (typeof hashString !== 'string' || !hashString.trim() || !currentOrigin) {
         return null;
