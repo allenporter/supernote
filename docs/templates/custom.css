@@ -43,6 +43,10 @@ nav.pdoc > div {
 
 /* Brand Header */
 .sn-brand {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
     padding: 0.25rem 0.5rem 1rem;
     margin-bottom: 0.75rem;
     border-bottom: 1px solid #e2e8f0;
@@ -54,6 +58,39 @@ nav.pdoc > div {
     gap: 0.75rem;
     text-decoration: none;
     color: #0f172a !important;
+    min-width: 0;
+}
+
+.sn-github-badge {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0 !important;
+    border-radius: 0.5rem;
+    color: #475569 !important;
+    background-color: #eef2f6;
+    border: 1px solid #e2e8f0;
+    flex-shrink: 0;
+    transition: background-color 120ms, color 120ms, border-color 120ms;
+}
+
+.sn-github-badge:hover {
+    background-color: #e2e8f0;
+    color: #0f172a !important;
+    border-color: #cbd5e1;
+}
+
+.sn-github-badge svg {
+    width: 1.1rem;
+    height: 1.1rem;
+}
+
+.sn-external-arrow {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    font-weight: 500;
 }
 
 .sn-brand-icon {
