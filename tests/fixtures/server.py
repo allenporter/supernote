@@ -1,11 +1,16 @@
 """Shared pytest plugin for in-process server and client harness fixtures.
 
-Registered via `pytest_plugins = ["tests.fixtures.server"]` in `tests/conftest.py`
-so `pytest` discovers a single shared definition across `tests/server/`,
-`tests/cli/`, and integration suites without cross-conftest fixture imports.
-Server runtime modules are imported lazily inside fixture bodies so pure unit
-suites (e.g. `tests/notebook/`) do not pay server import overhead unless a
-server fixture is requested.
+`pytest` only permits `pytest_plugins` in the top-level `tests/conftest.py`
+because plugins are always registered globally on the session. As a result,
+this module is imported during collection on *every* `pytest` invocation—even
+targeted non-server runs like `pytest tests/notebook/test_parser.py`.
+
+To keep collection fast and decoupled from optional `[server]`/`[client]`
+extras, `supernote.server.*`, `supernote.client.*`, and `sqlalchemy` are only
+imported at module level under `TYPE_CHECKING` (paired with
+`from __future__ import annotations`, since `pytest` inspects fixture parameter
+names rather than runtime annotations) and imported lazily inside the fixture
+bodies when a test actually requests a server fixture.
 """
 
 from __future__ import annotations
@@ -22,6 +27,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import pytest_asyncio
 
+# Keep server/client/SQLAlchemy imports behind TYPE_CHECKING at module import
+# time so collecting non-server tests does not pay the ~2s server bootstrap
+# import cost; import runtime modules inside the fixtures that construct them.
 if TYPE_CHECKING:
     from aiohttp.test_utils import TestClient
     from pytest_aiohttp import AiohttpClient
