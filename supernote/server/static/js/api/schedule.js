@@ -3,6 +3,18 @@
  */
 import { getToken, logout } from './client.js';
 
+/**
+ * Normalize Supernote device/CLI task importance values ('high'/'1',
+ * 'normal'/'medium'/'5', 'low'/'9') into canonical UI levels ('high' | 'medium' | 'low').
+ */
+export function normalizeTaskImportance(importance) {
+    if (importance === null || importance === undefined) return 'low';
+    const normalized = String(importance).trim().toLowerCase();
+    if (normalized === 'high' || normalized === '1') return 'high';
+    if (normalized === 'normal' || normalized === 'medium' || normalized === '5') return 'medium';
+    return 'low';
+}
+
 function getAuthHeaders() {
     const token = getToken();
     if (!token) throw new Error("Unauthorized");
@@ -99,7 +111,7 @@ export async function fetchTasks(taskListId = null) {
             title: t.title || "Untitled Task",
             detail: t.detail || "",
             status: t.status || "needsAction",
-            importance: t.importance || "low",
+            importance: normalizeTaskImportance(t.importance),
             dueTime: t.dueTime || 0,
             completedTime: t.completedTime || 0,
             isReminderOn: t.isReminderOn === "Y" || t.isReminderOn === true,
@@ -126,7 +138,7 @@ export async function createScheduleTask(taskData) {
             taskListId: taskData.taskListId ? String(taskData.taskListId) : null,
             title: taskData.title,
             detail: taskData.detail || "",
-            importance: taskData.importance || "low",
+            importance: normalizeTaskImportance(taskData.importance),
             status: taskData.status || "needsAction",
             dueTime: taskData.dueTime || 0,
             isReminderOn: taskData.isReminderOn ? "Y" : "N"
@@ -149,7 +161,7 @@ export async function updateScheduleTask(taskData) {
         taskId: taskId,
         title: taskData.title,
         detail: taskData.detail,
-        importance: taskData.importance,
+        importance: taskData.importance !== undefined ? normalizeTaskImportance(taskData.importance) : undefined,
         status: taskData.status,
         dueTime: taskData.dueTime,
         completedTime: taskData.completedTime,

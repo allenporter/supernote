@@ -1,4 +1,5 @@
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
+import { normalizeTaskImportance } from '../api/schedule.js';
 import { useSchedule } from '../composables/useSchedule.js';
 import { showToast } from '../composables/useToast.js';
 import { normalizeEpochMs } from '../utils/format.js';
@@ -223,7 +224,7 @@ export default {
                 taskListId: task.taskListId ? String(task.taskListId) : null,
                 title: task.title,
                 detail: task.detail || '',
-                importance: task.importance || 'low',
+                importance: normalizeTaskImportance(task.importance),
                 dueDate: formattedDate,
                 status: task.status || 'needsAction'
             };
@@ -244,7 +245,7 @@ export default {
                 taskListId: taskForm.value.taskListId,
                 title: taskForm.value.title.trim(),
                 detail: taskForm.value.detail.trim(),
-                importance: taskForm.value.importance,
+                importance: normalizeTaskImportance(taskForm.value.importance),
                 dueTime: epochDue,
                 status: taskForm.value.status
             };
@@ -397,6 +398,7 @@ export default {
             openEditTaskModal,
             handleSaveTask,
             handleCreateGroup,
+            normalizeTaskImportance,
             getDueMeta,
             selectFilterMode,
             selectGroup,
@@ -615,10 +617,10 @@ export default {
                                 </span>
 
                                 <!-- Priority Badge -->
-                                <span v-if="task.importance === 'high'" class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 font-semibold border border-rose-200/70 flex items-center gap-1">
+                                <span v-if="normalizeTaskImportance(task.importance) === 'high'" class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 font-semibold border border-rose-200/70 flex items-center gap-1">
                                     <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> High
                                 </span>
-                                <span v-else-if="task.importance === 'medium'" class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-semibold border border-amber-200/70 flex items-center gap-1">
+                                <span v-else-if="normalizeTaskImportance(task.importance) === 'medium'" class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-semibold border border-amber-200/70 flex items-center gap-1">
                                     <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Medium
                                 </span>
                                 <span v-else class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-stone-100 text-stone-600 font-medium">
