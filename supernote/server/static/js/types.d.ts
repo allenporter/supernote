@@ -236,8 +236,8 @@ interface ScheduleTask {
 }
 
 interface ScheduleTaskInput {
-    id?: string | number;
-    taskId?: string | number;
+    id?: string | number | null;
+    taskId?: string | number | null;
     taskListId?: string | number | null;
     title?: string;
     detail?: string;

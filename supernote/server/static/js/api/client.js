@@ -7,6 +7,9 @@ import { ApiError, apiRequest, getToken, onLogout, setToken } from './http.js';
 
 /** @type {SocketClient | null} */
 let socketInstance = null;
+/** @type {Promise<SocketClient | null> | null} */
+let connectingSocketPromise = null;
+let socketEpoch = 0;
 const SOCKET_IO_KEY = 'K+5xFzxbnB1iSZWqmu3Etw==';
 
 /**
@@ -67,64 +70,81 @@ function parseSocketPayload(raw) {
     return null;
 }
 
-export async function connectSocket() {
+export function connectSocket() {
     const token = getToken();
-    if (!token || typeof window.io !== 'function') return null;
-    if (socketInstance?.connected) return socketInstance;
+    const ioFactory = window.io;
+    if (!token || typeof ioFactory !== 'function') return Promise.resolve(null);
+    if (socketInstance?.connected) return Promise.resolve(socketInstance);
+    if (connectingSocketPromise) return connectingSocketPromise;
+
+    const epoch = ++socketEpoch;
     if (socketInstance) {
         socketInstance.disconnect();
         socketInstance = null;
     }
 
-    try {
-        const connType = 'WEB';
-        const randomVal = String(Date.now());
-        const sign = await computeSocketSignature(token, connType, randomVal);
-        const socket = window.io('/', {
-            path: '/socket.io',
-            query: {
-                token,
-                type: connType,
-                random: randomVal,
-                sign,
-            },
-            transports: ['polling', 'websocket'],
-        });
-
-        socket.on('ServerMessage', (data) => {
-            const parsed = parseSocketPayload(data);
-            if (!parsed) return;
-            if (String(parsed.code) === '403') {
-                disconnectSocket();
-                return;
+    connectingSocketPromise = (async () => {
+        try {
+            const connType = 'WEB';
+            const randomVal = String(Date.now());
+            const sign = await computeSocketSignature(token, connType, randomVal);
+            if (epoch !== socketEpoch || getToken() !== token) {
+                return null;
             }
-            socket.emit('ClientMessage', 'Received');
-            window.dispatchEvent(new CustomEvent('supernote:file-sync', { detail: parsed }));
-        });
+            const socket = ioFactory('/', {
+                path: '/socket.io',
+                query: {
+                    token,
+                    type: connType,
+                    random: randomVal,
+                    sign,
+                },
+                transports: ['polling', 'websocket'],
+            });
 
-        socket.on('to-do', (data) => {
-            const parsed = parseSocketPayload(data);
-            if (!parsed) return;
-            socket.emit('to-do', 'Received');
-            window.dispatchEvent(new CustomEvent('supernote:task-sync', { detail: parsed }));
-        });
+            socket.on('ServerMessage', (data) => {
+                const parsed = parseSocketPayload(data);
+                if (!parsed) return;
+                if (String(parsed.code) === '403') {
+                    disconnectSocket();
+                    return;
+                }
+                socket.emit('ClientMessage', 'Received');
+                window.dispatchEvent(new CustomEvent('supernote:file-sync', { detail: parsed }));
+            });
 
-        socket.on('digest', (data) => {
-            const parsed = parseSocketPayload(data);
-            if (!parsed) return;
-            socket.emit('digest', 'Received');
-            window.dispatchEvent(new CustomEvent('supernote:digest-sync', { detail: parsed }));
-        });
+            socket.on('to-do', (data) => {
+                const parsed = parseSocketPayload(data);
+                if (!parsed) return;
+                socket.emit('to-do', 'Received');
+                window.dispatchEvent(new CustomEvent('supernote:task-sync', { detail: parsed }));
+            });
 
-        socketInstance = socket;
-        return socket;
-    } catch (e) {
-        console.error('Failed to connect Socket.IO:', e);
-        return null;
-    }
+            socket.on('digest', (data) => {
+                const parsed = parseSocketPayload(data);
+                if (!parsed) return;
+                socket.emit('digest', 'Received');
+                window.dispatchEvent(new CustomEvent('supernote:digest-sync', { detail: parsed }));
+            });
+
+            socketInstance = socket;
+            return socket;
+        } catch (e) {
+            console.error('Failed to connect Socket.IO:', e);
+            return null;
+        } finally {
+            if (epoch === socketEpoch) {
+                connectingSocketPromise = null;
+            }
+        }
+    })();
+
+    return connectingSocketPromise;
 }
 
 export function disconnectSocket() {
+    socketEpoch++;
+    connectingSocketPromise = null;
     if (socketInstance) {
         socketInstance.disconnect();
         socketInstance = null;

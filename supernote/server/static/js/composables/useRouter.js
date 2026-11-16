@@ -179,6 +179,18 @@ export function useRouter({
         selectedPageIndex.value = null;
     }
 
+    function resetSessionRoutes() {
+        activeSyncSeq++;
+        lastSyncedHash = '';
+        inAppHistoryDepth = 0;
+        viewerOpenedFromHistory = false;
+        systemOpenedFromHistory = false;
+        activeTab.value = 'files';
+        resetViewerSelection();
+        breadcrumbs.value = [{ id: '0', name: 'Cloud' }];
+        showSystemPanel.value = false;
+    }
+
     /**
      * @param {string | number} dirId
      * @param {number} [seq]
@@ -654,5 +666,6 @@ export function useRouter({
         handleViewerPageChange,
         openItem,
         navigateTo,
+        resetSessionRoutes,
     };
 }

@@ -6,31 +6,28 @@ export default {
             type: Object,
             default: null,
         },
+        isSubmitting: {
+            type: Boolean,
+            default: false,
+        },
     },
     emits: ['login'],
     /**
-     * @param {Record<string, any>} _props
+     * @param {{ oauthRequest?: OAuthBridgeRequest | null, isSubmitting?: boolean }} props
      * @param {{ emit: (event: string, ...args: any[]) => void }} context
      */
-    setup(_props, { emit }) {
+    setup(props, { emit }) {
         const email = ref('');
         const password = ref('');
-        const isLoading = ref(false);
 
-        const handleSubmit = async () => {
-            if (!email.value || !password.value) return;
-            isLoading.value = true;
-            try {
-                await emit('login', { email: email.value, password: password.value });
-            } finally {
-                isLoading.value = false;
-            }
+        const handleSubmit = () => {
+            if (props.isSubmitting || !email.value || !password.value) return;
+            emit('login', { email: email.value, password: password.value });
         };
 
         return {
             email,
             password,
-            isLoading,
             handleSubmit,
         };
     },
@@ -71,10 +68,10 @@ export default {
                 </div>
 
                 <button type="submit"
-                    :disabled="isLoading"
+                    :disabled="isSubmitting"
                     class="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm py-2.5 px-4 rounded-xl shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center">
-                    <span v-if="isLoading" class="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white mr-2"></span>
-                    {{ isLoading ? 'Signing in...' : 'Sign In' }}
+                    <span v-if="isSubmitting" class="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white mr-2"></span>
+                    {{ isSubmitting ? 'Signing in...' : 'Sign In' }}
                 </button>
             </form>
         </div>

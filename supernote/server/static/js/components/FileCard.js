@@ -137,12 +137,7 @@ export default {
         watch(
             () => props.processingStatus,
             (newStatus, oldStatus) => {
-                if (
-                    newStatus === 'COMPLETED' &&
-                    oldStatus &&
-                    oldStatus !== 'COMPLETED' &&
-                    !coverUrl.value
-                ) {
+                if (newStatus === 'COMPLETED' && oldStatus !== 'COMPLETED' && !coverUrl.value) {
                     loadCover();
                 }
             },
@@ -291,6 +286,7 @@ export default {
             <!-- Full Portrait Notebook/Image Cover -->
             <div v-if="coverUrl" class="w-full h-full bg-white rounded-lg notebook-page-shadow overflow-hidden flex items-center justify-center">
                 <img :src="coverUrl" loading="lazy" decoding="async"
+                    @error="coverUrl = null"
                     class="w-full h-full object-contain transition-transform duration-200 group-hover:scale-[1.02]"
                     alt="Cover Preview" />
             </div>

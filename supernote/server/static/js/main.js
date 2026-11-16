@@ -34,16 +34,14 @@ createApp({
         SystemPanel,
     },
     setup() {
-        const { toasts, showToast, dismissToast } = useToast();
+        const { toasts, showToast, dismissToast, clearToasts } = useToast();
 
         // Auth & OAuth Consent State
         const isLoggedIn = ref(false);
+        const isLoggingIn = ref(false);
         const isSubmittingOAuth = ref(false);
         /** @type {import('vue').Ref<'approved' | 'denied' | null>} */
         const oauthCompletedOutcome = ref(null);
-        const unsubscribeLogout = onLogout(() => {
-            isLoggedIn.value = false;
-        });
 
         // Search & Cross-Tab Focus State
         const showSearchModal = ref(false);
@@ -71,6 +69,7 @@ createApp({
             moveSelectedItems,
             uploadFiles,
             renameSelectedItem,
+            resetFileSystem,
         } = useFileSystem();
 
         // Host Navigation & URL Routing
@@ -93,6 +92,7 @@ createApp({
             handleViewerPageChange,
             openItem,
             navigateTo,
+            resetSessionRoutes,
         } = useRouter({
             isLoggedIn,
             files,
@@ -168,6 +168,8 @@ createApp({
          * @param {{ email: string, password: string }} credentials
          */
         async function handleLogin({ email, password }) {
+            if (isLoggingIn.value) return;
+            isLoggingIn.value = true;
             try {
                 await login(email, password);
                 const loggedIn = await resumeSession();
@@ -177,6 +179,8 @@ createApp({
                 }
             } catch (e) {
                 showToast(getErrorMessage(e));
+            } finally {
+                isLoggingIn.value = false;
             }
         }
 
@@ -232,11 +236,23 @@ createApp({
             logout();
         }
 
-        const { processingStatuses } = useProcessingStatus({
+        const { processingStatuses, resetProcessingStatuses } = useProcessingStatus({
             files,
             isLoggedIn: computed(() => isLoggedIn.value && !pendingOAuthRequest.value),
             activeTab,
             view,
+        });
+
+        const unsubscribeLogout = onLogout(() => {
+            isLoggedIn.value = false;
+            showSearchModal.value = false;
+            searchInitialQuery.value = '';
+            focusedTaskRequest.value = null;
+            selectedIds.value = [];
+            resetFileSystem();
+            resetSessionRoutes();
+            resetProcessingStatuses();
+            clearToasts();
         });
 
         /**
@@ -291,6 +307,7 @@ createApp({
 
         return {
             isLoggedIn,
+            isLoggingIn,
             pendingOAuthRequest,
             isSubmittingOAuth,
             oauthCompletedOutcome,
