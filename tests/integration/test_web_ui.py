@@ -166,6 +166,21 @@ async def test_web_ui_desktop_and_mobile_smoke(
             await page.get_by_role("button", name="List view").click()
             await page.get_by_role("button", name="Grid view").click()
 
+            # Verify Escape dismisses OS file-drag dropzone overlay
+            await page.evaluate(
+                """() => {
+                    const dt = new DataTransfer();
+                    dt.items.add(new File(['x'], 'demo.note'));
+                    document.querySelector('main [class*="relative"]')?.dispatchEvent(
+                        new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt })
+                    );
+                }"""
+            )
+            drop_banner = page.get_by_text("Drop files to upload")
+            await drop_banner.wait_for(state="visible")
+            await page.keyboard.press("Escape")
+            await drop_banner.wait_for(state="hidden")
+
             # Open .note viewer, copy OCR page transcript, step page, verify Markdown summary
             await page.get_by_text("Numbered_1to10.note").first.click()
             await page.locator('[data-page-index="0"] img').wait_for(
@@ -213,16 +228,23 @@ async def test_web_ui_desktop_and_mobile_smoke(
             }
             await page.get_by_role("button", name="Back to files").click()
 
-            # Tasks & Schedule view + ICS modal
+            # Tasks & Schedule view + stacked Search over ICS modal LIFO Escape dismissal
             await page.get_by_role("button", name="Tasks").click()
             await page.get_by_text("Seeded Smoke Task").first.wait_for(state="visible")
             await page.get_by_role("button", name="Export .ics Feed").click()
-            ics_textarea = page.get_by_role(
-                "dialog", name="Export iCalendar Feed"
-            ).locator("textarea")
+            ics_dialog = page.get_by_role("dialog", name="Export iCalendar Feed")
+            ics_textarea = ics_dialog.locator("textarea")
             await ics_textarea.wait_for(state="visible")
             assert "BEGIN:VCALENDAR" in await ics_textarea.input_value()
+
+            await page.keyboard.press("Control+k")
+            search_dialog = page.get_by_role("dialog", name="Global Search")
+            await search_dialog.wait_for(state="visible")
             await page.keyboard.press("Escape")
+            await search_dialog.wait_for(state="hidden")
+            assert await ics_dialog.is_visible()
+            await page.keyboard.press("Escape")
+            await ics_dialog.wait_for(state="hidden")
 
             # System status panel & global search modal
             await page.get_by_role("button", name="System Status").click()
@@ -272,6 +294,10 @@ async def test_web_ui_desktop_and_mobile_smoke(
             )
             await mpage.get_by_role("button", name="Transcript", exact=True).click()
             await mpage.get_by_role("button", name="Hide Panel").wait_for(
+                state="visible"
+            )
+            await mpage.keyboard.press("Escape")
+            await mpage.get_by_role("button", name="Transcript", exact=True).wait_for(
                 state="visible"
             )
             await mobile.close()

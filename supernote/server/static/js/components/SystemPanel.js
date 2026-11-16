@@ -1,5 +1,6 @@
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import { fetchAiStatus, fetchCapacity, fetchSystemTasks } from '../api/client.js';
+import { useModalEscape } from '../composables/useModalEscape.js';
 import { formatSize, formatSystemTimestamp, getErrorMessage } from '../utils/format.js';
 
 /** @type {Record<string, string>} */
@@ -16,9 +17,9 @@ export default {
     name: 'SystemPanel',
     emits: ['close', 'open-file'],
     template: `
-        <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center p-4 z-50 animate-fade-in" @click.self="$emit('close')">
-            <div role="dialog" aria-modal="true" aria-label="System Status"
-                class="bg-white rounded-2xl border border-stone-200 shadow-2xl w-full max-w-4xl max-h-[88vh] flex flex-col overflow-hidden">
+        <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center p-4 z-[120] animate-fade-in" @click.self="$emit('close')">
+            <div ref="dialogRef" tabindex="-1" role="dialog" aria-modal="true" aria-label="System Status"
+                class="bg-white rounded-2xl border border-stone-200 shadow-2xl w-full max-w-4xl max-h-[88vh] flex flex-col overflow-hidden outline-none">
                 <!-- Header -->
                 <div class="flex items-center justify-between px-6 py-4 border-b border-stone-200/80 bg-[#F7F6F2]/60">
                     <div>
@@ -191,6 +192,8 @@ export default {
      * @param {{ emit: (event: string, ...args: any[]) => void }} context
      */
     setup(_props, { emit }) {
+        /** @type {import('vue').Ref<HTMLElement | null>} */
+        const dialogRef = ref(null);
         const loading = ref(true);
         /** @type {import('vue').Ref<string | null>} */
         const error = ref(null);
@@ -278,27 +281,15 @@ export default {
             return classes[status] || 'bg-stone-100 text-stone-600 border-stone-200';
         };
 
-        /**
-         * @param {KeyboardEvent} e
-         */
-        const handleKeydown = (e) => {
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                e.stopPropagation();
-                emit('close');
-            }
-        };
+        useModalEscape(() => emit('close'));
 
         onMounted(() => {
-            window.addEventListener('keydown', handleKeydown);
             loadData();
-        });
-
-        onUnmounted(() => {
-            window.removeEventListener('keydown', handleKeydown);
+            nextTick(() => dialogRef.value?.focus());
         });
 
         return {
+            dialogRef,
             loading,
             error,
             tasks,

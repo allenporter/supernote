@@ -1,4 +1,5 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { useModalEscape } from '../composables/useModalEscape.js';
 import { useSchedule } from '../composables/useSchedule.js';
 import { showToast } from '../composables/useToast.js';
 import { normalizeEpochMs } from '../utils/format.js';
@@ -43,10 +44,15 @@ export default {
 
         // Modals
         const showNewTaskModal = ref(false);
+        const isSavingTask = ref(false);
         const showNewGroupModal = ref(false);
+        const isCreatingGroup = ref(false);
         const showIcsModal = ref(false);
         /** @type {import('vue').Ref<{ type: 'task' | 'group', id: string, title: string, count: number } | null>} */
         const pendingDelete = ref(null);
+        const isDeletingPending = ref(false);
+        /** @type {import('vue').Ref<HTMLButtonElement | null>} */
+        const deleteCancelBtn = ref(null);
         /** @type {import('vue').Ref<ScheduleTask | null>} */
         const editingTask = ref(null);
         /** @type {import('vue').Ref<HTMLInputElement | null>} */
@@ -67,21 +73,16 @@ export default {
             searchQuery.value = task.title || '';
         }
 
-        /**
-         * @param {KeyboardEvent} e
-         */
-        function handleKeydown(e) {
-            if (e.key !== 'Escape') return;
-            if (pendingDelete.value) {
-                pendingDelete.value = null;
-                e.preventDefault();
-                e.stopImmediatePropagation();
-            } else if (showNewGroupModal.value) {
-                showNewGroupModal.value = false;
-                e.preventDefault();
-                e.stopImmediatePropagation();
-            }
-        }
+        useModalEscape(() => {
+            if (!isCreatingGroup.value) showNewGroupModal.value = false;
+        }, showNewGroupModal);
+
+        useModalEscape(
+            () => {
+                if (!isDeletingPending.value) pendingDelete.value = null;
+            },
+            () => Boolean(pendingDelete.value),
+        );
 
         watch(
             () => props.focusTask?.seq,
@@ -98,16 +99,20 @@ export default {
             }
         });
 
+        watch(pendingDelete, (target) => {
+            if (target) {
+                nextTick(() => deleteCancelBtn.value?.focus());
+            }
+        });
+
         onMounted(async () => {
             window.addEventListener('supernote:task-sync', handleTaskSyncEvent);
-            window.addEventListener('keydown', handleKeydown);
             await Promise.all([loadGroups(), loadTasks()]);
             applyFocusedTask(props.focusTask);
         });
 
         onUnmounted(() => {
             window.removeEventListener('supernote:task-sync', handleTaskSyncEvent);
-            window.removeEventListener('keydown', handleKeydown);
         });
 
         const groupNameMap = computed(() => {
@@ -169,19 +174,30 @@ export default {
          * @param {ScheduleTaskInput} payload
          */
         async function handleSaveTask(payload) {
-            const ok = editingTask.value ? await modifyTask(payload) : await addTask(payload);
-            if (ok) {
-                showNewTaskModal.value = false;
+            if (isSavingTask.value) return;
+            isSavingTask.value = true;
+            try {
+                const ok = editingTask.value ? await modifyTask(payload) : await addTask(payload);
+                if (ok) {
+                    showNewTaskModal.value = false;
+                }
+            } finally {
+                isSavingTask.value = false;
             }
         }
 
         async function handleCreateGroup() {
             const title = newGroupTitle.value.trim();
-            if (!title) return;
-            const ok = await addGroup(title);
-            if (ok) {
-                newGroupTitle.value = '';
-                showNewGroupModal.value = false;
+            if (!title || isCreatingGroup.value) return;
+            isCreatingGroup.value = true;
+            try {
+                const ok = await addGroup(title);
+                if (ok) {
+                    newGroupTitle.value = '';
+                    showNewGroupModal.value = false;
+                }
+            } finally {
+                isCreatingGroup.value = false;
             }
         }
 
@@ -215,15 +231,26 @@ export default {
         }
 
         async function confirmDeletePending() {
+            if (isDeletingPending.value) return;
             const target = pendingDelete.value;
-            pendingDelete.value = null;
             if (!target) return;
-            if (target.type === 'group') {
-                const ok = await removeGroup(target.id);
-                if (ok) showToast('Task list deleted', 'success');
-            } else {
-                const ok = await removeTask(target.id);
-                if (ok) showToast('Task deleted', 'success');
+            isDeletingPending.value = true;
+            try {
+                if (target.type === 'group') {
+                    const ok = await removeGroup(target.id);
+                    if (ok) {
+                        pendingDelete.value = null;
+                        showToast('Task list deleted', 'success');
+                    }
+                } else {
+                    const ok = await removeTask(target.id);
+                    if (ok) {
+                        pendingDelete.value = null;
+                        showToast('Task deleted', 'success');
+                    }
+                }
+            } finally {
+                isDeletingPending.value = false;
             }
         }
 
@@ -262,9 +289,13 @@ export default {
 
             // Modals
             showNewTaskModal,
+            isSavingTask,
             showNewGroupModal,
+            isCreatingGroup,
             showIcsModal,
             pendingDelete,
+            isDeletingPending,
+            deleteCancelBtn,
             editingTask,
             newGroupTitle,
             newGroupInput,
@@ -400,31 +431,32 @@ export default {
             :task-groups="taskGroups"
             :default-due-date="defaultNewTaskDueDate"
             :default-group-id="selectedGroupId"
+            :is-submitting="isSavingTask"
             @save="handleSaveTask"
-            @close="showNewTaskModal = false"
+            @close="!isSavingTask && (showNewTaskModal = false)"
         />
 
         <!-- New Group Modal -->
         <div v-if="showNewGroupModal" role="dialog" aria-modal="true" aria-label="Create Task List"
-            class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px]" @click.self="showNewGroupModal = false">
-            <div class="bg-white rounded-2xl border border-stone-200 shadow-2xl w-full max-w-md p-6 space-y-4 animate-fade-in">
+            class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px]" @click.self="!isCreatingGroup && (showNewGroupModal = false)">
+            <form @submit.prevent="handleCreateGroup" class="bg-white rounded-2xl border border-stone-200 shadow-2xl w-full max-w-md p-6 space-y-4 animate-fade-in">
                 <h3 class="text-base font-bold text-slate-900">Create Task List</h3>
-                <input ref="newGroupInput" v-model="newGroupTitle" type="text" placeholder="List name (e.g. Work, Personal)..."
-                    class="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 text-sm mb-4"
-                    @keyup.enter="handleCreateGroup">
+                <input id="new-group-title" ref="newGroupInput" v-model="newGroupTitle" type="text" aria-label="Task list name" placeholder="List name (e.g. Work, Personal)..."
+                    :disabled="isCreatingGroup"
+                    class="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 text-sm mb-4 disabled:opacity-60">
                 <div class="flex justify-end gap-2.5">
-                    <button @click="showNewGroupModal = false" type="button" class="px-4 py-2 text-stone-600 hover:text-slate-900 text-xs font-semibold">Cancel</button>
-                    <button @click="handleCreateGroup" :disabled="!newGroupTitle.trim()" type="button"
+                    <button @click="showNewGroupModal = false" :disabled="isCreatingGroup" type="button" class="px-4 py-2 text-stone-600 hover:text-slate-900 text-xs font-semibold disabled:opacity-40">Cancel</button>
+                    <button :disabled="isCreatingGroup || !newGroupTitle.trim()" type="submit"
                         class="px-5 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white rounded-xl text-xs font-semibold transition-all">
-                        Create List
+                        {{ isCreatingGroup ? 'Creating...' : 'Create List' }}
                     </button>
                 </div>
-            </div>
+            </form>
         </div>
 
         <!-- In-App Task / List Delete Confirmation Modal -->
         <div v-if="pendingDelete" role="dialog" aria-modal="true" aria-label="Confirm Task Delete"
-            class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px]" @click.self="pendingDelete = null">
+            class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px]" @click.self="!isDeletingPending && (pendingDelete = null)">
             <div class="bg-white rounded-2xl border border-stone-200 shadow-2xl w-full max-w-sm p-6 animate-fade-in">
                 <div class="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mb-3">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -446,11 +478,11 @@ export default {
                     </template>
                 </p>
                 <div class="flex justify-end gap-2.5">
-                    <button @click="pendingDelete = null" type="button"
-                        class="px-4 py-2 text-xs text-stone-600 hover:text-slate-900 font-semibold">Cancel</button>
-                    <button @click="confirmDeletePending" type="button"
-                        class="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold transition-all">
-                        Delete
+                    <button ref="deleteCancelBtn" @click="pendingDelete = null" :disabled="isDeletingPending" type="button"
+                        class="px-4 py-2 text-xs text-stone-600 hover:text-slate-900 font-semibold rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 disabled:opacity-40">Cancel</button>
+                    <button @click="confirmDeletePending" :disabled="isDeletingPending" type="button"
+                        class="px-5 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-all">
+                        {{ isDeletingPending ? 'Deleting...' : 'Delete' }}
                     </button>
                 </div>
             </div>

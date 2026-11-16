@@ -1,5 +1,6 @@
-import { onMounted, onUnmounted, ref } from 'vue';
+import { nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { downloadIcsFeed, fetchIcsFeed } from '../../api/schedule.js';
+import { useModalEscape } from '../../composables/useModalEscape.js';
 import { showToast } from '../../composables/useToast.js';
 import { copyTextToClipboard } from '../../utils/clipboard.js';
 import { getErrorMessage } from '../../utils/format.js';
@@ -22,6 +23,8 @@ export default {
      * @param {{ emit: (event: string, ...args: any[]) => void }} context
      */
     setup(props, { emit }) {
+        /** @type {import('vue').Ref<HTMLSelectElement | null>} */
+        const filterSelectRef = ref(null);
         const icsFilterGroupId = ref(props.initialGroupId ? String(props.initialGroupId) : 'all');
         const icsPreviewContent = ref('');
         /** @type {import('vue').Ref<string | null>} */
@@ -83,29 +86,20 @@ export default {
             }, 2500);
         }
 
-        /**
-         * @param {KeyboardEvent} e
-         */
-        function handleKeydown(e) {
-            if (e.key === 'Escape' && !e.defaultPrevented) {
-                e.preventDefault();
-                e.stopPropagation();
-                emit('close');
-            }
-        }
+        useModalEscape(() => emit('close'));
 
         onMounted(() => {
-            window.addEventListener('keydown', handleKeydown);
             refreshIcsPreview();
+            nextTick(() => filterSelectRef.value?.focus());
         });
 
         onUnmounted(() => {
             activeFetchSeq++;
-            window.removeEventListener('keydown', handleKeydown);
             if (copyResetTimer) clearTimeout(copyResetTimer);
         });
 
         return {
+            filterSelectRef,
             icsFilterGroupId,
             icsPreviewContent,
             icsError,
@@ -142,8 +136,8 @@ export default {
 
             <div class="space-y-4">
                 <div>
-                    <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1.5">Filter Feed by Task List</label>
-                    <select v-model="icsFilterGroupId" @change="refreshIcsPreview" class="w-full px-3.5 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-slate-900">
+                    <label for="ics-group-filter" class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1.5">Filter Feed by Task List</label>
+                    <select id="ics-group-filter" ref="filterSelectRef" v-model="icsFilterGroupId" @change="refreshIcsPreview" class="w-full px-3.5 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-slate-900">
                         <option value="all">All Task Lists (Complete Feed)</option>
                         <option v-for="g in taskGroups" :key="g.id" :value="g.id">{{ g.title }}</option>
                     </select>
@@ -151,7 +145,7 @@ export default {
 
                 <div>
                     <div class="flex items-center justify-between mb-1.5">
-                        <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider">ICS Content Preview</label>
+                        <label for="ics-preview-textarea" class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider">ICS Content Preview</label>
                         <button @click="copyIcsContent" :disabled="!icsPreviewContent || Boolean(icsError) || isIcsLoading" type="button"
                             class="text-xs font-semibold text-slate-900 hover:text-stone-600 disabled:opacity-40 flex items-center gap-1">
                             <span v-if="copySuccess" class="text-emerald-600 flex items-center gap-1">
@@ -172,7 +166,7 @@ export default {
                             Retry
                         </button>
                     </div>
-                    <textarea v-else readOnly v-model="icsPreviewContent" rows="8"
+                    <textarea v-else id="ics-preview-textarea" readOnly v-model="icsPreviewContent" rows="8"
                         class="w-full p-3 font-mono text-xs bg-slate-900 text-stone-200 border border-slate-800 rounded-xl outline-none resize-none leading-relaxed"></textarea>
                 </div>
             </div>

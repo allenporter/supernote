@@ -1,5 +1,6 @@
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { nextTick, onMounted, ref, watch } from 'vue';
 import { normalizeTaskImportance } from '../../api/schedule.js';
+import { useModalEscape } from '../../composables/useModalEscape.js';
 import { normalizeEpochMs } from '../../utils/format.js';
 
 /**
@@ -57,6 +58,10 @@ export default {
             type: [String, Number],
             default: null,
         },
+        isSubmitting: {
+            type: Boolean,
+            default: false,
+        },
     },
     emits: ['save', 'close'],
     /**
@@ -111,7 +116,7 @@ export default {
         );
 
         function handleSaveTask() {
-            if (!taskForm.value.title.trim()) return;
+            if (props.isSubmitting || !taskForm.value.title.trim()) return;
 
             const epochDue = parseLocalDateInputToEpochMs(taskForm.value.dueDate);
 
@@ -126,24 +131,12 @@ export default {
             });
         }
 
-        /**
-         * @param {KeyboardEvent} e
-         */
-        function handleKeydown(e) {
-            if (e.key === 'Escape' && !e.defaultPrevented) {
-                e.preventDefault();
-                e.stopPropagation();
-                emit('close');
-            }
-        }
-
-        onMounted(() => {
-            window.addEventListener('keydown', handleKeydown);
-            nextTick(() => taskTitleInput.value?.focus());
+        useModalEscape(() => {
+            if (!props.isSubmitting) emit('close');
         });
 
-        onUnmounted(() => {
-            window.removeEventListener('keydown', handleKeydown);
+        onMounted(() => {
+            nextTick(() => taskTitleInput.value?.focus());
         });
 
         return {
@@ -154,30 +147,32 @@ export default {
     },
     template: `
     <div role="dialog" aria-modal="true" :aria-label="task ? 'Edit Task' : 'New Task'"
-        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px]" @click.self="$emit('close')">
-        <div class="bg-white rounded-2xl border border-stone-200 shadow-2xl w-full max-w-lg p-6 space-y-5 animate-fade-in">
+        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px]" @click.self="!isSubmitting && $emit('close')">
+        <form @submit.prevent="handleSaveTask" class="bg-white rounded-2xl border border-stone-200 shadow-2xl w-full max-w-lg p-6 space-y-5 animate-fade-in">
             <h3 class="text-base font-bold text-slate-900">
                 {{ task ? 'Edit Task' : 'New Task' }}
             </h3>
 
             <div class="space-y-4">
                 <div>
-                    <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Title</label>
-                    <input ref="taskTitleInput" v-model="taskForm.title" type="text" placeholder="Task title..."
-                        class="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all text-sm"
-                        @keyup.enter="handleSaveTask">
+                    <label for="task-title-input" class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Title</label>
+                    <input id="task-title-input" ref="taskTitleInput" v-model="taskForm.title" type="text" placeholder="Task title..."
+                        :disabled="isSubmitting"
+                        class="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all text-sm disabled:opacity-60">
                 </div>
 
                 <div>
-                    <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Details</label>
-                    <textarea v-model="taskForm.detail" rows="3" placeholder="Optional notes or details..."
-                        class="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all text-sm"></textarea>
+                    <label for="task-detail-input" class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Details</label>
+                    <textarea id="task-detail-input" v-model="taskForm.detail" rows="3" placeholder="Optional notes or details..."
+                        :disabled="isSubmitting"
+                        class="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all text-sm disabled:opacity-60"></textarea>
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
                     <div>
-                        <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Priority</label>
-                        <select v-model="taskForm.importance" class="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-slate-900">
+                        <label for="task-priority-select" class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Priority</label>
+                        <select id="task-priority-select" v-model="taskForm.importance" :disabled="isSubmitting"
+                            class="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-slate-900 disabled:opacity-60">
                             <option value="low">Low Priority</option>
                             <option value="medium">Medium Priority</option>
                             <option value="high">High Priority</option>
@@ -185,8 +180,9 @@ export default {
                     </div>
 
                     <div>
-                        <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Task List</label>
-                        <select v-model="taskForm.taskListId" class="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-slate-900">
+                        <label for="task-group-select" class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Task List</label>
+                        <select id="task-group-select" v-model="taskForm.taskListId" :disabled="isSubmitting"
+                            class="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-slate-900 disabled:opacity-60">
                             <option :value="null">Inbox (General)</option>
                             <option v-for="g in taskGroups" :key="g.id" :value="g.id">{{ g.title }}</option>
                         </select>
@@ -194,22 +190,22 @@ export default {
                 </div>
 
                 <div>
-                    <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Due Date</label>
-                    <input v-model="taskForm.dueDate" type="date"
-                        class="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 text-xs font-mono">
+                    <label for="task-due-input" class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Due Date</label>
+                    <input id="task-due-input" v-model="taskForm.dueDate" type="date" :disabled="isSubmitting"
+                        class="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 text-xs font-mono disabled:opacity-60">
                 </div>
             </div>
 
             <div class="flex justify-end gap-2.5 pt-3 border-t border-stone-100">
-                <button @click="$emit('close')" type="button" class="px-4 py-2 text-stone-600 hover:text-slate-900 text-xs font-semibold">
+                <button @click="$emit('close')" :disabled="isSubmitting" type="button" class="px-4 py-2 text-stone-600 hover:text-slate-900 text-xs font-semibold disabled:opacity-40">
                     Cancel
                 </button>
-                <button @click="handleSaveTask" :disabled="!taskForm.title.trim()" type="button"
+                <button :disabled="isSubmitting || !taskForm.title.trim()" type="submit"
                     class="px-5 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white rounded-xl text-xs font-semibold transition-all">
-                    {{ task ? 'Save Changes' : 'Save Task' }}
+                    {{ isSubmitting ? 'Saving...' : (task ? 'Save Changes' : 'Save Task') }}
                 </button>
             </div>
-        </div>
+        </form>
     </div>
     `,
 };
