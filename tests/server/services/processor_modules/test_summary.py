@@ -813,12 +813,34 @@ async def test_summary_storage_key_rotation_updates_in_place_and_resolves_vfs_so
         await session.commit()
 
     assert await summary_module.run(file_id, session_manager) is True
-    first_items = await summary_service.list_summaries_for_file_internal(
-        user_email, file_id
+    first_items = sorted(
+        await summary_service.list_summaries_for_file_internal(user_email, file_id),
+        key=lambda x: x.data_source or "",
     )
-    assert len(first_items) == 2
-    assert {item.source_path for item in first_items} == {"Note/Work/daily.note"}
-    first_ids = {item.id for item in first_items}
+    expected_group_uuid = get_summary_group_id(user_id, file_id)
+    assert [
+        (
+            i.unique_identifier,
+            i.parent_unique_identifier,
+            i.source_path,
+            i.data_source,
+        )
+        for i in first_items
+    ] == [
+        (
+            get_transcript_id(user_id, file_id),
+            expected_group_uuid,
+            "Note/Work/daily.note",
+            "OCR",
+        ),
+        (
+            get_summary_id(user_id, file_id),
+            expected_group_uuid,
+            "Note/Work/daily.note",
+            "fake-summary-v1",
+        ),
+    ]
+    first_ids = [item.id for item in first_items]
 
     # Simulate tablet sync rotating storage_key and updating page text
     async with session_manager.session() as session:
@@ -834,11 +856,11 @@ async def test_summary_storage_key_rotation_updates_in_place_and_resolves_vfs_so
         await session.commit()
 
     await summary_module.process(file_id, session_manager)
-    second_items = await summary_service.list_summaries_for_file_internal(
-        user_email, file_id
+    second_items = sorted(
+        await summary_service.list_summaries_for_file_internal(user_email, file_id),
+        key=lambda x: x.data_source or "",
     )
-    assert len(second_items) == 2
-    assert {item.id for item in second_items} == first_ids
+    assert [item.id for item in second_items] == first_ids
     assert any("Sync 2 updated content" in (i.content or "") for i in second_items)
 
 

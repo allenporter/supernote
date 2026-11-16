@@ -193,8 +193,10 @@ class SummaryService:
             md5 = hashlib.md5(dto.content.encode("utf-8")).hexdigest()
 
         now_ms = int(time.time() * 1000)
-        creation_time = dto.creation_time or now_ms
-        last_modified_time = dto.last_modified_time or now_ms
+        creation_time = dto.creation_time if dto.creation_time is not None else now_ms
+        last_modified_time = (
+            dto.last_modified_time if dto.last_modified_time is not None else now_ms
+        )
         unique_identifier = dto.unique_identifier or str(uuid.uuid4())
 
         async with self.session_manager.session() as session:
@@ -426,8 +428,10 @@ class SummaryService:
         """Add a new summary group, reviving any existing row with the same unique_identifier."""
         user_id = await self.user_service.get_user_id(user_email)
         now_ms = int(time.time() * 1000)
-        creation_time = dto.creation_time or now_ms
-        last_modified_time = dto.last_modified_time or now_ms
+        creation_time = dto.creation_time if dto.creation_time is not None else now_ms
+        last_modified_time = (
+            dto.last_modified_time if dto.last_modified_time is not None else now_ms
+        )
         unique_identifier = dto.unique_identifier or str(uuid.uuid4())
 
         async with self.session_manager.session() as session:

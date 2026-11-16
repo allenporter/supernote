@@ -54,8 +54,13 @@ logger = logging.getLogger(__name__)
 
 def _has_user_annotations(item: SummaryItem) -> bool:
     """Return True if a summary or group carries user comments or handwriting."""
-    return bool((item.comment_str or "").strip()) or bool(
-        (item.handwrite_inner_name or "").strip()
+    return any(
+        (val or "").strip()
+        for val in (
+            item.comment_str,
+            item.comment_handwrite_name,
+            item.handwrite_inner_name,
+        )
     )
 
 
@@ -441,8 +446,6 @@ class SummaryModule(ProcessorModule):
     ) -> None:
         """Soft-delete candidate summary groups with no remaining active summaries or user annotations."""
         for candidate_uuid in group_uuids:
-            if not candidate_uuid:
-                continue
             existing_group = await self.summary_service.get_summary_by_uuid(
                 user_email, candidate_uuid
             )
