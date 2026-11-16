@@ -2,14 +2,18 @@
  * API Client for Supernote Backend
  */
 
-import { apiRequest, getToken, logout, onLogout, setToken } from './http.js';
+import { ApiError, apiRequest, getToken, logout, onLogout, setToken } from './http.js';
 
-export { apiRequest, getToken, logout, setToken };
+export { ApiError, apiRequest, getToken, logout, onLogout, setToken };
 
 /** @type {SocketClient | null} */
 let socketInstance = null;
 const SOCKET_IO_KEY = 'K+5xFzxbnB1iSZWqmu3Etw==';
 
+/**
+ * @param {ArrayBuffer} buffer
+ * @returns {string}
+ */
 function arrayBufferToBase64Alnum(buffer) {
     const bytes = new Uint8Array(buffer);
     let binary = '';
@@ -19,6 +23,12 @@ function arrayBufferToBase64Alnum(buffer) {
     return btoa(binary).replace(/[^a-zA-Z0-9]/g, '');
 }
 
+/**
+ * @param {string} token
+ * @param {string} connType
+ * @param {string} randomVal
+ * @returns {Promise<string>}
+ */
 export async function computeSocketSignature(token, connType, randomVal) {
     const raw = `${token}_${connType}_${randomVal}`;
     if (window.crypto && window.crypto.subtle) {
@@ -40,9 +50,13 @@ export async function computeSocketSignature(token, connType, randomVal) {
     throw new Error('HMAC-SHA256 is not available.');
 }
 
+/**
+ * @param {unknown} raw
+ * @returns {Record<string, any> | null}
+ */
 function parseSocketPayload(raw) {
     if (!raw) return null;
-    if (typeof raw === 'object') return raw;
+    if (typeof raw === 'object') return /** @type {Record<string, any>} */ (raw);
     if (typeof raw === 'string') {
         if (raw === 'true' || raw === 'Received') return null;
         try {
@@ -122,6 +136,8 @@ onLogout(disconnectSocket);
 
 /**
  * Secure Login Flow
+ * @param {string} email
+ * @param {string} password
  */
 export async function login(email, password) {
     // 1. Pre-check / wakeup token endpoint (mirrors the CLI client session flow
@@ -169,7 +185,30 @@ export async function login(email, password) {
     return loginData;
 }
 
-// SHA-256 using Web Crypto API with fallback for non-secure contexts (e.g. plain HTTP on LAN IP)
+/**
+ * Submit an OAuth 2.1 consent decision (`approve` or `deny`) to `/login-bridge`.
+ * @param {string} bridgePathWithQuery
+ * @param {'approve' | 'deny'} decision
+ * @returns {Promise<{ redirect_url: string }>}
+ */
+export async function submitOAuthBridgeDecision(bridgePathWithQuery, decision) {
+    const data = await apiRequest(bridgePathWithQuery, {
+        body: { decision },
+        headers: { Accept: 'application/json' },
+        reloadOnUnauthorized: false,
+        errorPrefix: 'Authorization failed'
+    });
+    if (!data?.redirect_url) {
+        throw new Error('Authorization failed: missing redirect URL');
+    }
+    return data;
+}
+
+/**
+ * SHA-256 using Web Crypto API with fallback for non-secure contexts (e.g. plain HTTP on LAN IP).
+ * @param {string} message
+ * @returns {Promise<string>}
+ */
 async function sha256(message) {
     if (window.crypto && window.crypto.subtle) {
         const msgBuffer = new TextEncoder().encode(message);
@@ -212,6 +251,11 @@ function mapUserFileVO(file) {
     };
 }
 
+/**
+ * @param {string | number} directoryId
+ * @param {number} pageNo
+ * @param {number} pageSize
+ */
 function fetchFilesPage(directoryId, pageNo, pageSize) {
     return apiRequest('/api/file/list/query', {
         body: {
@@ -290,7 +334,7 @@ export async function fetchTranscript(fileId) {
 /**
  * Fetch summaries for a file
  * @param {string} fileId
- * @returns {Promise<Array<Object>>}
+ * @returns {Promise<Array<Record<string, any>>>}
  */
 export async function fetchSummaries(fileId) {
     const data = await apiRequest('/api/extended/file/summary/list', {
@@ -303,6 +347,8 @@ export async function fetchSummaries(fileId) {
 
 /**
  * Search files by keyword.
+ * @param {string} keyword
+ * @returns {Promise<Array<Record<string, any>>>}
  */
 export async function searchFiles(keyword) {
     const data = await apiRequest('/api/file/label/list/search', {
@@ -314,6 +360,9 @@ export async function searchFiles(keyword) {
 
 /**
  * Perform semantic vector search across notebook embeddings.
+ * @param {string} query
+ * @param {number} [topN=5]
+ * @returns {Promise<Array<Record<string, any>>>}
  */
 export async function searchSemantic(query, topN = 5) {
     const data = await apiRequest('/api/extended/search', {
@@ -350,7 +399,7 @@ export async function fetchAiStatus() {
 
 /**
  * Fetch system tasks (Extended API).
- * @returns {Promise<Object>} The system task list response.
+ * @returns {Promise<Record<string, any>>} The system task list response.
  */
 export function fetchSystemTasks() {
     return apiRequest('/api/extended/system/tasks', {
@@ -372,6 +421,8 @@ export function fetchCapacity() {
 
 /**
  * Create a new folder.
+ * @param {string | number} directoryId
+ * @param {string} folderName
  */
 export function createFolder(directoryId, folderName) {
     return apiRequest('/api/file/folder/add', {
@@ -382,6 +433,8 @@ export function createFolder(directoryId, folderName) {
 
 /**
  * Delete items (files or folders).
+ * @param {string | number} directoryId
+ * @param {Array<string | number>} idList
  */
 export function deleteItems(directoryId, idList) {
     return apiRequest('/api/file/delete', {
@@ -392,6 +445,8 @@ export function deleteItems(directoryId, idList) {
 
 /**
  * Move items to a new directory.
+ * @param {Array<string | number>} idList
+ * @param {string | number} targetDirectoryId
  */
 export function moveItems(idList, targetDirectoryId) {
     return apiRequest('/api/file/move', {
@@ -406,6 +461,8 @@ export function moveItems(idList, targetDirectoryId) {
 
 /**
  * Rename an item.
+ * @param {string | number} id
+ * @param {string} newName
  */
 export function renameItem(id, newName) {
     return apiRequest('/api/file/rename', {
@@ -416,6 +473,10 @@ export function renameItem(id, newName) {
 
 /**
  * File Upload: Step 1 - Apply
+ * @param {string | number} directoryId
+ * @param {string} fileName
+ * @param {number} size
+ * @param {string} md5
  */
 function uploadApply(directoryId, fileName, size, md5) {
     return apiRequest('/api/file/upload/apply', {
@@ -426,6 +487,11 @@ function uploadApply(directoryId, fileName, size, md5) {
 
 /**
  * File Upload: Step 2 - Finish
+ * @param {string | number} directoryId
+ * @param {string} fileName
+ * @param {number} size
+ * @param {string} md5
+ * @param {string} innerName
  */
 function uploadFinish(directoryId, fileName, size, md5, innerName) {
     return apiRequest('/api/file/upload/finish', {
@@ -443,6 +509,8 @@ function uploadFinish(directoryId, fileName, size, md5, innerName) {
 
 /**
  * Upload a file (orchestrates apply, put, and finish).
+ * @param {string | number} directoryId
+ * @param {File} file
  */
 export async function uploadFile(directoryId, file) {
     // 1. Calculate MD5 (used for apply/finish integrity verification)
@@ -492,7 +560,7 @@ function calculateFileMd5(file) {
 /**
  * Fetch processing status for a list of files.
  * @param {Array<string|number>} fileIds
- * @returns {Promise<{success: boolean, statusMap: Object}>}
+ * @returns {Promise<{success: boolean, statusMap: Record<string, string>}>}
  */
 export async function fetchProcessingStatus(fileIds) {
     const data = await apiRequest('/api/extended/file/processing/status', {
@@ -507,6 +575,8 @@ export async function fetchProcessingStatus(fileIds) {
 
 /**
  * Get a signed download URL for a stored file.
+ * @param {string | number} fileId
+ * @returns {Promise<string>}
  */
 export async function fetchDownloadUrl(fileId) {
     const data = await apiRequest('/api/file/download/url', {
@@ -525,6 +595,8 @@ export async function fetchDownloadUrl(fileId) {
  * way the browser streams it to disk with a progress bar and the server never
  * holds it in memory. The signature carries the identity, so no header is
  * needed on the request that actually moves the file.
+ *
+ * @param {string | number} fileId
  */
 export async function downloadFile(fileId) {
     const url = await fetchDownloadUrl(fileId);

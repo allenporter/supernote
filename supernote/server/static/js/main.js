@@ -12,7 +12,15 @@ import { useFileSystem } from './composables/useFileSystem.js';
 import { useProcessingStatus } from './composables/useProcessingStatus.js';
 import { useRouter, parseUrlHash, buildUrlHash } from './composables/useRouter.js';
 import { useToast } from './composables/useToast.js';
-import { getToken, login, logout, connectSocket } from './api/client.js';
+import {
+    ApiError,
+    getToken,
+    login,
+    logout,
+    onLogout,
+    connectSocket,
+    submitOAuthBridgeDecision
+} from './api/client.js';
 import FileBrowserPanel, { compareItems } from './components/FileBrowserPanel.js';
 import SearchModal from './components/SearchModal.js';
 import TaskPanel from './components/TaskPanel.js';
@@ -39,7 +47,11 @@ createApp({
         // Auth & OAuth Consent State
         const isLoggedIn = ref(false);
         const isSubmittingOAuth = ref(false);
+        /** @type {import('vue').Ref<'approved' | 'denied' | null>} */
         const oauthCompletedOutcome = ref(null);
+        const unsubscribeLogout = onLogout(() => {
+            isLoggedIn.value = false;
+        });
 
         // Search & Cross-Tab Focus State
         const showSearchModal = ref(false);
@@ -48,7 +60,9 @@ createApp({
             /Mac|iPod|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '')
             ? '⌘K'
             : 'Ctrl K';
+        /** @type {import('vue').Ref<Record<string, any> | null>} */
         const focusedTaskRequest = ref(null);
+        /** @type {import('vue').Ref<Array<string | number>>} */
         const selectedIds = ref([]);
 
         // Shared VFS State
@@ -104,6 +118,10 @@ createApp({
             }
         });
 
+        /**
+         * @param {string | number} itemId
+         * @param {string} newName
+         */
         async function handleRenameItem(itemId, newName) {
             await renameSelectedItem(itemId, newName);
             const crumb = breadcrumbs.value.find(c => String(c.id) === String(itemId));
@@ -112,12 +130,18 @@ createApp({
             }
         }
 
+        /**
+         * @param {Record<string, any> | null} item
+         */
         async function handleSearchSelectFile(item) {
             if (!item) return;
             showSearchModal.value = false;
             await openItem(item);
         }
 
+        /**
+         * @param {Record<string, any> | null} task
+         */
         async function handleSearchSelectTask(task) {
             showSearchModal.value = false;
             focusedTaskRequest.value = task
@@ -131,6 +155,9 @@ createApp({
             await switchTab('tasks');
         }
 
+        /**
+         * @param {string | number | null} fileId
+         */
         async function handleSystemOpenFile(fileId) {
             if (!fileId) return;
             await openItem({ id: String(fileId), isDirectory: false });
@@ -144,6 +171,9 @@ createApp({
             return true;
         }
 
+        /**
+         * @param {{ email: string, password: string }} credentials
+         */
         async function handleLogin({ email, password }) {
             try {
                 await login(email, password);
@@ -157,11 +187,13 @@ createApp({
             }
         }
 
+        /**
+         * @param {'approve' | 'deny'} decision
+         */
         async function submitOAuthDecision(decision) {
             const req = pendingOAuthRequest.value;
             if (!req || !req.isValid || !req.bridgePathWithQuery || isSubmittingOAuth.value) return;
-            const token = getToken();
-            if (!token) {
+            if (!getToken()) {
                 isLoggedIn.value = false;
                 showToast('Please sign in to authorize this application.', 'error');
                 return;
@@ -169,31 +201,7 @@ createApp({
             isSubmittingOAuth.value = true;
             let keepLockedForNavigation = false;
             try {
-                const resp = await fetch(req.bridgePathWithQuery, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-access-token': token,
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({ decision })
-                });
-                if (resp.status === 401) {
-                    await logout({ reload: false });
-                    isLoggedIn.value = false;
-                    showToast('Your session expired. Please sign in again.', 'error');
-                    return;
-                }
-                const data = await resp.json().catch(() => null);
-                if (!resp.ok || !data?.redirect_url) {
-                    const msg = data?.error_description || data?.error || `Authorization failed (HTTP ${resp.status})`;
-                    if (resp.status === 400) {
-                        pendingOAuthRequest.value = { ...req, isValid: false, error: msg };
-                    } else {
-                        showToast(msg, 'error');
-                    }
-                    return;
-                }
+                const data = await submitOAuthBridgeDecision(req.bridgePathWithQuery, decision);
                 if (req.redirectTarget?.isCustomScheme) {
                     oauthCompletedOutcome.value = decision === 'approve' ? 'approved' : 'denied';
                 } else {
@@ -201,7 +209,14 @@ createApp({
                 }
                 window.location.assign(data.redirect_url);
             } catch (e) {
-                showToast('Authorization failed: ' + e.message, 'error');
+                if (e instanceof ApiError && e.status === 401) {
+                    showToast('Your session expired. Please sign in again.', 'error');
+                } else if (e instanceof ApiError && e.status === 400) {
+                    pendingOAuthRequest.value = { ...req, isValid: false, error: e.message };
+                } else {
+                    const message = e instanceof Error ? e.message : String(e);
+                    showToast('Authorization failed: ' + message, 'error');
+                }
             } finally {
                 if (!keepLockedForNavigation) {
                     isSubmittingOAuth.value = false;
@@ -229,6 +244,9 @@ createApp({
             view
         });
 
+        /**
+         * @param {string} [initialQuery='']
+         */
         function openSearchWithQuery(initialQuery = '') {
             searchInitialQuery.value = typeof initialQuery === 'string' ? initialQuery : '';
             showSearchModal.value = true;
@@ -239,6 +257,9 @@ createApp({
             searchInitialQuery.value = '';
         }
 
+        /**
+         * @param {KeyboardEvent} e
+         */
         const handleGlobalKeydown = (e) => {
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
                 if (!isLoggedIn.value || pendingOAuthRequest.value) return;
@@ -268,6 +289,7 @@ createApp({
         });
 
         onUnmounted(() => {
+            unsubscribeLogout();
             window.removeEventListener('supernote:file-sync', handleFileSyncEvent);
             window.removeEventListener('keydown', handleGlobalKeydown);
         });

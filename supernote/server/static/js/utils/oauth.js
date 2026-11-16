@@ -8,14 +8,23 @@
 
 const DEFAULT_MCP_SCOPE = 'supernote:all';
 
+/** @type {Record<string, string>} */
 const SCOPE_DESCRIPTIONS = {
     [DEFAULT_MCP_SCOPE]: 'Full access to notebooks, OCR transcripts, and semantic search'
 };
 
+/**
+ * @param {string} scope
+ * @returns {string}
+ */
 export function describeScope(scope) {
     return SCOPE_DESCRIPTIONS[scope] || 'Application-requested access scope';
 }
 
+/**
+ * @param {string | null | undefined} redirectUri
+ * @returns {OAuthRedirectTarget}
+ */
 export function describeRedirectTarget(redirectUri) {
     if (typeof redirectUri !== 'string' || !redirectUri.trim()) {
         return {

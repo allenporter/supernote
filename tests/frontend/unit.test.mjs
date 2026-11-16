@@ -2,8 +2,18 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ref } from 'vue';
 
-import { computeSocketSignature } from '../../supernote/server/static/js/api/client.js';
-import { apiRequest, getToken, logout, onLogout, setToken } from '../../supernote/server/static/js/api/http.js';
+import {
+    computeSocketSignature,
+    submitOAuthBridgeDecision,
+} from '../../supernote/server/static/js/api/client.js';
+import {
+    ApiError,
+    apiRequest,
+    getToken,
+    logout,
+    onLogout,
+    setToken,
+} from '../../supernote/server/static/js/api/http.js';
 import {
     fetchIcsFeed,
     fetchTasks,
@@ -555,6 +565,72 @@ test('FileBrowserPanel compareItems & client computeSocketSignature', async () =
         const sigFallback = await computeSocketSignature('tok1', 'WEB', '12345');
         assert.equal(sigFallback, 'QUJDw');
     } finally {
+        globalThis.window = origWindow;
+    }
+});
+
+test('submitOAuthBridgeDecision: routes consent POST via http.js with 400 detail and non-reloading 401 teardown', async () => {
+    const origFetch = globalThis.fetch;
+    const origWindow = globalThis.window;
+    let reloaded = false;
+    let logoutCalled = 0;
+    const unsub = onLogout(() => {
+        logoutCalled++;
+    });
+
+    try {
+        globalThis.window = {
+            location: {
+                reload() {
+                    reloaded = true;
+                },
+            },
+        };
+        setToken('oauth-tok');
+
+        /** @type {Array<{ url: string, init: any }>} */
+        const calls = [];
+        globalThis.fetch = async (url, init) => {
+            calls.push({ url: String(url), init });
+            if (String(url).includes('case=ok')) {
+                return new Response(
+                    JSON.stringify({ redirect_url: 'https://claude.ai/cb?code=123' }),
+                    { status: 200 }
+                );
+            }
+            if (String(url).includes('case=bad')) {
+                return new Response(
+                    JSON.stringify({ error: 'invalid_scope', error_description: 'Unsupported scope' }),
+                    { status: 400 }
+                );
+            }
+            if (String(url).includes('case=expired')) {
+                return new Response('Unauthorized', { status: 401 });
+            }
+            return new Response('{}', { status: 200 });
+        };
+
+        const okRes = await submitOAuthBridgeDecision('/login-bridge?case=ok', 'approve');
+        assert.equal(okRes.redirect_url, 'https://claude.ai/cb?code=123');
+        assert.equal(calls[0].init.headers['x-access-token'], 'oauth-tok');
+        assert.equal(calls[0].init.headers.Accept, 'application/json');
+
+        await assert.rejects(
+            () => submitOAuthBridgeDecision('/login-bridge?case=bad', 'approve'),
+            (err) => err instanceof ApiError && err.status === 400 && err.message === 'Unsupported scope'
+        );
+
+        await assert.rejects(
+            () => submitOAuthBridgeDecision('/login-bridge?case=expired', 'deny'),
+            (err) => err instanceof ApiError && err.status === 401 && /Unauthorized/.test(err.message)
+        );
+        assert.equal(getToken(), null);
+        assert.equal(logoutCalled, 1);
+        assert.equal(reloaded, false);
+    } finally {
+        unsub();
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
         globalThis.window = origWindow;
     }
 });
