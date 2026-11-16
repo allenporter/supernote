@@ -276,8 +276,11 @@ class SummaryService:
                 summary_do.handwrite_inner_name = dto.handwrite_inner_name
             if dto.handwrite_md5 is not None:
                 summary_do.handwrite_md5 = dto.handwrite_md5
-            if dto.last_modified_time is not None:
-                summary_do.last_modified_time = dto.last_modified_time
+            summary_do.last_modified_time = (
+                dto.last_modified_time
+                if dto.last_modified_time is not None
+                else int(time.time() * 1000)
+            )
             if dto.md5_hash is not None:
                 summary_do.md5_hash = dto.md5_hash
             if dto.author is not None:
@@ -422,6 +425,9 @@ class SummaryService:
     async def add_group(self, user_email: str, dto: AddSummaryGroupDTO) -> SummaryItem:
         """Add a new summary group, reviving any existing row with the same unique_identifier."""
         user_id = await self.user_service.get_user_id(user_email)
+        now_ms = int(time.time() * 1000)
+        creation_time = dto.creation_time or now_ms
+        last_modified_time = dto.last_modified_time or now_ms
         unique_identifier = dto.unique_identifier or str(uuid.uuid4())
 
         async with self.session_manager.session() as session:
@@ -434,8 +440,8 @@ class SummaryService:
                 name=dto.name,
                 md5_hash=dto.md5_hash,
                 description=dto.description,
-                creation_time=dto.creation_time,
-                last_modified_time=dto.last_modified_time,
+                creation_time=creation_time,
+                last_modified_time=last_modified_time,
                 is_summary_group=True,
             )
             session.add(summary_do)
@@ -484,8 +490,11 @@ class SummaryService:
                 group_do.comment_handwrite_name = dto.comment_handwrite_name
             if dto.handwrite_inner_name is not None:
                 group_do.handwrite_inner_name = dto.handwrite_inner_name
-            if dto.last_modified_time is not None:
-                group_do.last_modified_time = dto.last_modified_time
+            group_do.last_modified_time = (
+                dto.last_modified_time
+                if dto.last_modified_time is not None
+                else int(time.time() * 1000)
+            )
 
             new_inner_name = group_do.handwrite_inner_name
             await session.commit()
@@ -698,6 +707,7 @@ class SummaryService:
                 SummaryDO.user_id == user_id,
                 SummaryDO.file_id == file_id,
                 SummaryDO.is_deleted.is_(False),
+                SummaryDO.is_summary_group.is_(False),
             )
             result = await session.execute(stmt)
             summaries = list(result.scalars().all())

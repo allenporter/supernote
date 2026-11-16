@@ -8,6 +8,7 @@ from supernote.models.summary import (
     METADATA_SEGMENTS,
     AddSummaryDTO,
     AddSummaryGroupDTO,
+    UpdateSummaryDTO,
 )
 from supernote.server.ai.base import AIError
 from supernote.server.ai.models.fake.summary import FakeSummaryModel
@@ -94,27 +95,27 @@ async def test_summary_success(
     assert "Page 2 text" in prompt_arg
 
     group = await summary_service.get_summary_by_uuid(
-        user_email, get_summary_group_id(storage_key)
+        user_email, get_summary_group_id(user_id, file_id)
     )
     assert group is not None
     assert group.is_summary_group == BooleanEnum.YES
     assert group.name == "real.note"
 
     transcript = await summary_service.get_summary_by_uuid(
-        user_email, get_transcript_id(storage_key)
+        user_email, get_transcript_id(user_id, file_id)
     )
     assert transcript is not None
-    assert transcript.parent_unique_identifier == get_summary_group_id(storage_key)
+    assert transcript.parent_unique_identifier == get_summary_group_id(user_id, file_id)
     assert transcript.content is not None
     assert "Page 1 text" in transcript.content
     assert "Page 2 text" in transcript.content
     assert transcript.data_source == "OCR"
 
     ai_summary = await summary_service.get_summary_by_uuid(
-        user_email, get_summary_id(storage_key)
+        user_email, get_summary_id(user_id, file_id)
     )
     assert ai_summary is not None
-    assert ai_summary.parent_unique_identifier == get_summary_group_id(storage_key)
+    assert ai_summary.parent_unique_identifier == get_summary_group_id(user_id, file_id)
     assert ai_summary.content is not None
     assert "## 2023-10-27 (Pages 1)" in ai_summary.content
     assert "Summary of (" in ai_summary.content
@@ -176,7 +177,7 @@ async def test_summary_idempotency_update(
     existing_group = await summary_service.add_group(
         user_email,
         AddSummaryGroupDTO(
-            unique_identifier=get_summary_group_id(storage_key),
+            unique_identifier=get_summary_group_id(user_id, file_id),
             name="old.note",
             md5_hash="old_hash",
         ),
@@ -185,8 +186,8 @@ async def test_summary_idempotency_update(
         user_email,
         AddSummaryDTO(
             file_id=file_id,
-            unique_identifier=get_summary_id(storage_key),
-            parent_unique_identifier=get_summary_group_id(storage_key),
+            unique_identifier=get_summary_id(user_id, file_id),
+            parent_unique_identifier=get_summary_group_id(user_id, file_id),
             content="Old AI Summary",
             data_source="fake-summary-v1",
         ),
@@ -211,24 +212,26 @@ async def test_summary_idempotency_update(
     await summary_module.run(file_id, session_manager)
 
     updated_group = await summary_service.get_summary_by_uuid(
-        user_email, get_summary_group_id(storage_key)
+        user_email, get_summary_group_id(user_id, file_id)
     )
     assert updated_group is not None
     assert updated_group.id == existing_group.id
     assert updated_group.name == "update.note"
 
     transcript = await summary_service.get_summary_by_uuid(
-        user_email, get_transcript_id(storage_key)
+        user_email, get_transcript_id(user_id, file_id)
     )
     assert transcript is not None
-    assert transcript.parent_unique_identifier == get_summary_group_id(storage_key)
+    assert transcript.parent_unique_identifier == get_summary_group_id(user_id, file_id)
 
     updated_summary = await summary_service.get_summary_by_uuid(
-        user_email, get_summary_id(storage_key)
+        user_email, get_summary_id(user_id, file_id)
     )
     assert updated_summary is not None
     assert updated_summary.id == existing_summary.id
-    assert updated_summary.parent_unique_identifier == get_summary_group_id(storage_key)
+    assert updated_summary.parent_unique_identifier == get_summary_group_id(
+        user_id, file_id
+    )
     assert updated_summary.content is not None
     assert "## 2023-10-28 (Pages 3, 4)" in updated_summary.content
     assert "New AI Summary" in updated_summary.content
@@ -242,20 +245,20 @@ async def test_summary_idempotency_update(
     await summary_service.delete_group(user_email, updated_group.id)
     assert (
         await summary_service.get_summary_by_uuid(
-            user_email, get_summary_group_id(storage_key)
+            user_email, get_summary_group_id(user_id, file_id)
         )
         is None
     )
     await summary_module.process(file_id, session_manager)
     assert (
         await summary_service.get_summary_by_uuid(
-            user_email, get_summary_group_id(storage_key)
+            user_email, get_summary_group_id(user_id, file_id)
         )
         is not None
     )
     assert (
         await summary_service.get_summary_by_uuid(
-            user_email, get_summary_id(storage_key)
+            user_email, get_summary_id(user_id, file_id)
         )
         is not None
     )
@@ -303,16 +306,16 @@ async def test_summary_transcript_with_dates(
     await summary_module.run(file_id, session_manager)
 
     group = await summary_service.get_summary_by_uuid(
-        user_email, get_summary_group_id(storage_key)
+        user_email, get_summary_group_id(user_id, file_id)
     )
     assert group is not None
     assert group.name == "dates.note"
 
     transcript = await summary_service.get_summary_by_uuid(
-        user_email, get_transcript_id(storage_key)
+        user_email, get_transcript_id(user_id, file_id)
     )
     assert transcript is not None
-    assert transcript.parent_unique_identifier == get_summary_group_id(storage_key)
+    assert transcript.parent_unique_identifier == get_summary_group_id(user_id, file_id)
     assert transcript.content is not None
     assert "--- Page 1 ---" in transcript.content
     assert "Page ID: P20231027120000abc" in transcript.content
@@ -428,13 +431,13 @@ async def test_summary_failure_marks_task_failed(
     assert result is False
 
     transcript = await summary_service.get_summary_by_uuid(
-        user_email, get_transcript_id(storage_key)
+        user_email, get_transcript_id(user_id, file_id)
     )
     assert transcript is not None
     assert transcript.data_source == "OCR"
 
     ai_summary = await summary_service.get_summary_by_uuid(
-        user_email, get_summary_id(storage_key)
+        user_email, get_summary_id(user_id, file_id)
     )
     assert ai_summary is None
 
@@ -503,7 +506,7 @@ async def test_summary_skips_llm_and_group_creation_when_all_pages_blank(
     assert fake_summary_model.calls == []
     assert (
         await summary_service.get_summary_by_uuid(
-            user_email, get_summary_group_id(storage_key)
+            user_email, get_summary_group_id(user_id, file_id)
         )
         is None
     )
@@ -561,19 +564,19 @@ async def test_summary_deletes_existing_group_when_all_pages_erased(
 
     assert (
         await summary_service.get_summary_by_uuid(
-            user_email, get_summary_group_id(storage_key)
+            user_email, get_summary_group_id(user_id, file_id)
         )
         is None
     )
     assert (
         await summary_service.get_summary_by_uuid(
-            user_email, get_transcript_id(storage_key)
+            user_email, get_transcript_id(user_id, file_id)
         )
         is None
     )
     assert (
         await summary_service.get_summary_by_uuid(
-            user_email, get_summary_id(storage_key)
+            user_email, get_summary_id(user_id, file_id)
         )
         is None
     )
@@ -617,7 +620,7 @@ async def test_summary_skips_whitespace_only_pages(
     assert fake_summary_model.calls == []
     assert (
         await summary_service.get_summary_by_uuid(
-            user_email, get_summary_group_id(storage_key)
+            user_email, get_summary_group_id(user_id, file_id)
         )
         is None
     )
@@ -634,7 +637,7 @@ async def test_summary_preserves_manual_digests_when_notebook_erased(
     user_email = "manual_digest@example.com"
     file_id = 811
     storage_key = "manual_digest_note_key"
-    group_uuid = get_summary_group_id(storage_key)
+    group_uuid = get_summary_group_id(user_id, file_id)
 
     async with session_manager.session() as session:
         session.add(UserDO(id=user_id, email=user_email, password_md5="hash"))
@@ -687,13 +690,13 @@ async def test_summary_preserves_manual_digests_when_notebook_erased(
     # AI transcript and AI summary are removed, while the user digest and parent group survive
     assert (
         await summary_service.get_summary_by_uuid(
-            user_email, get_transcript_id(storage_key)
+            user_email, get_transcript_id(user_id, file_id)
         )
         is None
     )
     assert (
         await summary_service.get_summary_by_uuid(
-            user_email, get_summary_id(storage_key)
+            user_email, get_summary_id(user_id, file_id)
         )
         is None
     )
@@ -751,7 +754,285 @@ async def test_summary_includes_page_keywords_in_transcript(
 
     assert await summary_module.run(file_id, session_manager) is True
     transcript = await summary_service.get_summary_by_uuid(
-        user_email, get_transcript_id(storage_key)
+        user_email, get_transcript_id(user_id, file_id)
     )
     assert transcript is not None and transcript.content is not None
     assert "Page Keywords: OKR" in transcript.content
+
+
+async def test_summary_storage_key_rotation_updates_in_place_and_resolves_vfs_source_path(
+    summary_module: SummaryModule,
+    session_manager: DatabaseSessionManager,
+    summary_service: SummaryService,
+) -> None:
+    """Verify rotating storage_key across syncs updates the same summary rows and uses full VFS source_path."""
+    user_id = 113
+    user_email = "rotation@example.com"
+    note_dir_id = 900
+    work_dir_id = 901
+    file_id = 902
+
+    async with session_manager.session() as session:
+        session.add(UserDO(id=user_id, email=user_email, password_md5="hash"))
+        session.add_all(
+            [
+                UserFileDO(
+                    id=note_dir_id,
+                    user_id=user_id,
+                    file_name="Note",
+                    directory_id=0,
+                    is_folder="Y",
+                    is_active="Y",
+                ),
+                UserFileDO(
+                    id=work_dir_id,
+                    user_id=user_id,
+                    file_name="Work",
+                    directory_id=note_dir_id,
+                    is_folder="Y",
+                    is_active="Y",
+                ),
+                UserFileDO(
+                    id=file_id,
+                    user_id=user_id,
+                    storage_key="uuid-v1-550.note",
+                    file_name="daily.note",
+                    directory_id=work_dir_id,
+                    is_folder="N",
+                    is_active="Y",
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="p0",
+                    content_hash="h1",
+                    text_content="Sync 1 content",
+                ),
+            ]
+        )
+        await session.commit()
+
+    assert await summary_module.run(file_id, session_manager) is True
+    first_items = await summary_service.list_summaries_for_file_internal(
+        user_email, file_id
+    )
+    assert len(first_items) == 2
+    assert {item.source_path for item in first_items} == {"Note/Work/daily.note"}
+    first_ids = {item.id for item in first_items}
+
+    # Simulate tablet sync rotating storage_key and updating page text
+    async with session_manager.session() as session:
+        uf = await session.get(UserFileDO, file_id)
+        assert uf is not None
+        uf.storage_key = "uuid-v2-550.note"
+        p0 = (
+            await session.execute(
+                select(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
+            )
+        ).scalar_one()
+        p0.text_content = "Sync 2 updated content"
+        await session.commit()
+
+    await summary_module.process(file_id, session_manager)
+    second_items = await summary_service.list_summaries_for_file_internal(
+        user_email, file_id
+    )
+    assert len(second_items) == 2
+    assert {item.id for item in second_items} == first_ids
+    assert any("Sync 2 updated content" in (i.content or "") for i in second_items)
+
+
+async def test_summary_cleans_up_legacy_storage_key_duplicates_while_preserving_annotated_rows(
+    summary_module: SummaryModule,
+    session_manager: DatabaseSessionManager,
+    summary_service: SummaryService,
+) -> None:
+    """Verify legacy storage_key-keyed duplicates and empty groups are soft-deleted while user-annotated rows survive."""
+    user_id = 114
+    user_email = "legacy_cleanup@example.com"
+    file_id = 914
+
+    async with session_manager.session() as session:
+        session.add(UserDO(id=user_id, email=user_email, password_md5="hash"))
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key="current-key.note",
+                file_name="daily.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="p0",
+                content_hash="h0",
+                text_content="Active page text",
+            )
+        )
+        await session.commit()
+
+    # Legacy unannotated sync artifacts -> should be soft-deleted along with their empty group
+    await summary_service.add_group(
+        user_email,
+        AddSummaryGroupDTO(
+            unique_identifier="legacy-1.note-group",
+            name="daily.note",
+            md5_hash="m1",
+        ),
+    )
+    await summary_service.add_summary(
+        user_email,
+        AddSummaryDTO(
+            file_id=file_id,
+            unique_identifier="legacy-1.note-transcript",
+            parent_unique_identifier="legacy-1.note-group",
+            content="Old transcript",
+            data_source="OCR",
+        ),
+    )
+    await summary_service.add_summary(
+        user_email,
+        AddSummaryDTO(
+            file_id=file_id,
+            unique_identifier="legacy-1.note-summary",
+            parent_unique_identifier="legacy-1.note-group",
+            content="Old summary",
+            data_source="GEMINI",
+        ),
+    )
+
+    # Legacy user-annotated sync artifacts -> must NEVER be deleted
+    await summary_service.add_group(
+        user_email,
+        AddSummaryGroupDTO(
+            unique_identifier="legacy-2.note-group",
+            name="daily.note",
+            md5_hash="m2",
+        ),
+    )
+    await summary_service.add_summary(
+        user_email,
+        AddSummaryDTO(
+            file_id=file_id,
+            unique_identifier="legacy-2.note-summary",
+            parent_unique_identifier="legacy-2.note-group",
+            content="Annotated summary",
+            data_source="GEMINI",
+            comment_str="Important user note",
+        ),
+    )
+    await summary_service.add_summary(
+        user_email,
+        AddSummaryDTO(
+            file_id=file_id,
+            unique_identifier="legacy-3.note-summary",
+            content="Handwritten annotated summary",
+            data_source="GEMINI",
+            handwrite_inner_name="user-ink.bin",
+        ),
+    )
+
+    assert await summary_module.run(file_id, session_manager) is True
+
+    assert (
+        await summary_service.get_summary_by_uuid(
+            user_email, "legacy-1.note-transcript"
+        )
+        is None
+    )
+    assert (
+        await summary_service.get_summary_by_uuid(user_email, "legacy-1.note-summary")
+        is None
+    )
+    assert (
+        await summary_service.get_summary_by_uuid(user_email, "legacy-1.note-group")
+        is None
+    )
+
+    assert (
+        await summary_service.get_summary_by_uuid(user_email, "legacy-2.note-summary")
+        is not None
+    )
+    assert (
+        await summary_service.get_summary_by_uuid(user_email, "legacy-2.note-group")
+        is not None
+    )
+    assert (
+        await summary_service.get_summary_by_uuid(user_email, "legacy-3.note-summary")
+        is not None
+    )
+
+
+async def test_summary_erase_preserves_annotated_generated_rows(
+    summary_module: SummaryModule,
+    session_manager: DatabaseSessionManager,
+    summary_service: SummaryService,
+) -> None:
+    """Verify erasing all pages deletes unannotated generated rows while preserving user-annotated ones."""
+    user_id = 115
+    user_email = "erase_annotated@example.com"
+    file_id = 915
+
+    async with session_manager.session() as session:
+        session.add(UserDO(id=user_id, email=user_email, password_md5="hash"))
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key="annotated.note",
+                file_name="annotated.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="p0",
+                content_hash="h0",
+                text_content="Initial note",
+            )
+        )
+        await session.commit()
+
+    assert await summary_module.run(file_id, session_manager) is True
+    summary_item = await summary_service.get_summary_by_uuid(
+        user_email, get_summary_id(user_id, file_id)
+    )
+    assert summary_item is not None and summary_item.id is not None
+
+    await summary_service.update_summary(
+        user_email,
+        UpdateSummaryDTO(id=summary_item.id, comment_str="Keep my reflection"),
+    )
+
+    async with session_manager.session() as session:
+        p0 = (
+            await session.execute(
+                select(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
+            )
+        ).scalar_one()
+        p0.text_content = ""
+        await session.commit()
+
+    await summary_module.process(file_id, session_manager)
+    assert (
+        await summary_service.get_summary_by_uuid(
+            user_email, get_transcript_id(user_id, file_id)
+        )
+        is None
+    )
+    preserved = await summary_service.get_summary_by_uuid(
+        user_email, get_summary_id(user_id, file_id)
+    )
+    assert preserved is not None
+    assert preserved.comment_str == "Keep my reflection"
+    assert (
+        await summary_service.get_summary_by_uuid(
+            user_email, get_summary_group_id(user_id, file_id)
+        )
+        is not None
+    )

@@ -168,9 +168,9 @@ async def test_full_processing_pipeline_with_real_file(
 
         summary_client = SummaryClient(authenticated_client)
 
-        group_uuid = get_summary_group_id(storage_key)
-        transcript_uuid = get_transcript_id(storage_key)
-        summary_uuid = get_summary_id(storage_key)
+        group_uuid = get_summary_group_id(user_id, file_id)
+        transcript_uuid = get_transcript_id(user_id, file_id)
+        summary_uuid = get_summary_id(user_id, file_id)
 
         # Query groups
         group_response = await summary_client.query_groups()
