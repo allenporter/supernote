@@ -1,6 +1,18 @@
 /**
- * Shared formatting utilities for file sizes, timestamps, and dates.
+ * Shared formatting utilities for file sizes, timestamps, dates, and error messages.
  */
+
+/**
+ * Extract a human-readable message from an unknown caught error value.
+ * @param {unknown} err
+ * @param {string} [fallback='Unknown error']
+ * @returns {string}
+ */
+export function getErrorMessage(err, fallback = 'Unknown error') {
+    if (err instanceof Error && err.message) return err.message;
+    if (typeof err === 'string' && err) return err;
+    return fallback;
+}
 
 /**
  * @param {number | string | null | undefined} timestamp

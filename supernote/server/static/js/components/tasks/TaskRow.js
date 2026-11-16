@@ -7,7 +7,7 @@ import { normalizeEpochMs } from '../../utils/format.js';
  * @returns {{ label: string, classes: string } | null}
  */
 export function getDueMeta(task) {
-    if (!task || !task.dueTime) return null;
+    if (!task?.dueTime) return null;
     const dueMs = normalizeEpochMs(task.dueTime);
     if (dueMs === null) return null;
     const due = new Date(dueMs);

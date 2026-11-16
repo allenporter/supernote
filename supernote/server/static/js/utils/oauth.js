@@ -83,7 +83,7 @@ export function parseOAuthBridgeReturnTo(hashString, currentOrigin) {
     }
 
     const rawReturnTo = new URLSearchParams(clean.slice(qIdx + 1)).get('return_to');
-    if (!rawReturnTo || !rawReturnTo.trim()) {
+    if (!rawReturnTo?.trim()) {
         return null;
     }
 

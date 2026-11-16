@@ -33,6 +33,14 @@ repos:
           - typescript@7.0.2
         files: '^(tsconfig\.json|supernote/server/static/js/.*\.(js|d\.ts))$'
         pass_filenames: false
+      - id: biome
+        name: biome lint
+        entry: biome lint --error-on-warnings supernote/server/static/js tests/frontend
+        language: node
+        additional_dependencies:
+          - "@biomejs/biome@2.6.8"
+        files: '^(biome\.json|supernote/server/static/js/.*\.js|tests/frontend/.*\.mjs)$'
+        pass_filenames: false
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.3
     hooks:

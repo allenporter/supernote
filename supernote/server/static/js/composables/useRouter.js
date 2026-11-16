@@ -37,7 +37,7 @@ export function formatCrumbName(name, index) {
  */
 export function buildCrumbsFromPathInfo(info) {
     const crumbs = [{ id: '0', name: 'Cloud' }];
-    if (info && info.path && info.idPath) {
+    if (info?.path && info.idPath) {
         const names = info.path.split('/').filter(Boolean);
         const ids = info.idPath.split('/').filter(Boolean);
         const len = Math.min(names.length, ids.length);
@@ -56,7 +56,7 @@ export function buildCrumbsFromPathInfo(info) {
  * @returns {number | null}
  */
 function parsePageParam(params) {
-    if (!params || !params.has('page')) return null;
+    if (!params?.has('page')) return null;
     const rawPage = Number.parseInt(params.get('page') || '', 10);
     if (Number.isNaN(rawPage) || rawPage < 1) return 0;
     return rawPage - 1;
@@ -117,7 +117,7 @@ export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false,
     if (tab === 'tasks') {
         return '#/tasks';
     }
-    if (viewState === 'viewer' && fileObj && fileObj.id) {
+    if (viewState === 'viewer' && fileObj?.id) {
         if (typeof pageIndex === 'number' && pageIndex > 0) {
             return `#/file/${fileObj.id}?page=${pageIndex + 1}`;
         }

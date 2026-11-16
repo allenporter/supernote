@@ -1,6 +1,8 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import { fetchIcsFeed, downloadIcsFeed } from '../../api/schedule.js';
 import { showToast } from '../../composables/useToast.js';
+import { copyTextToClipboard } from '../../utils/clipboard.js';
+import { getErrorMessage } from '../../utils/format.js';
 
 export default {
     name: 'TaskIcsModal',
@@ -33,7 +35,7 @@ export default {
                 const targetGroupId = icsFilterGroupId.value === 'all' ? null : icsFilterGroupId.value;
                 icsPreviewContent.value = await fetchIcsFeed(targetGroupId);
             } catch (e) {
-                icsPreviewContent.value = 'Error loading ICS feed: ' + e.message;
+                icsPreviewContent.value = `Error loading ICS feed: ${getErrorMessage(e)}`;
             } finally {
                 isIcsLoading.value = false;
             }
@@ -46,20 +48,20 @@ export default {
                 const nameSlug = groupObj ? groupObj.title.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'supernote_tasks';
                 await downloadIcsFeed(targetGroupId, `${nameSlug}.ics`);
             } catch (e) {
-                showToast('Failed to download ICS feed: ' + e.message);
+                showToast(`Failed to download ICS feed: ${getErrorMessage(e)}`);
             }
         }
 
         async function copyIcsContent() {
             if (!icsPreviewContent.value) return;
-            try {
-                await navigator.clipboard.writeText(icsPreviewContent.value);
-                copySuccess.value = true;
-                if (copyResetTimer) clearTimeout(copyResetTimer);
-                copyResetTimer = setTimeout(() => { copySuccess.value = false; }, 2500);
-            } catch (e) {
+            const copied = await copyTextToClipboard(icsPreviewContent.value);
+            if (!copied) {
                 showToast('Failed to copy to clipboard');
+                return;
             }
+            copySuccess.value = true;
+            if (copyResetTimer) clearTimeout(copyResetTimer);
+            copyResetTimer = setTimeout(() => { copySuccess.value = false; }, 2500);
         }
 
         /**

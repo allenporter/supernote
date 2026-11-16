@@ -40,7 +40,7 @@ import {
     useRouter,
 } from '../../supernote/server/static/js/composables/useRouter.js';
 import { copyTextToClipboard } from '../../supernote/server/static/js/utils/clipboard.js';
-import { formatSize, normalizeEpochMs } from '../../supernote/server/static/js/utils/format.js';
+import { formatSize, getErrorMessage, normalizeEpochMs } from '../../supernote/server/static/js/utils/format.js';
 import { renderMarkdown } from '../../supernote/server/static/js/utils/markdown.js';
 import {
     describeRedirectTarget,
@@ -292,14 +292,14 @@ test('useRouter.js: stateful navigation, history back/replace, and cross-directo
         });
         routerRef = router;
 
-        // 1. Initial boot on empty hash normalizes to #/files and loads root directory '0'
+        // Initial boot on empty hash normalizes to #/files and loads root directory '0'
         await router.syncFromUrl(true);
         router.updateUrl(true);
         assert.equal(globalThis.window.location.hash, '#/files');
         assert.equal(currentDirectoryId.value, '0');
         assert.deepEqual(selectedIds.value, []);
 
-        // 2. Opening a child folder in the loaded directory appends crumb with zero path-query calls
+        // Opening a child folder in the loaded directory appends crumb with zero path-query calls
         await router.openItem({ id: '10', name: 'INBOX', isDirectory: true });
         assert.equal(globalThis.window.location.hash, '#/files/10');
         assert.equal(pathQueries, 0);
@@ -308,26 +308,26 @@ test('useRouter.js: stateful navigation, history back/replace, and cross-directo
             { id: '10', name: 'Inbox' },
         ]);
 
-        // 3. Opening a file in the loaded directory opens viewer with zero path-query calls
+        // Opening a file in the loaded directory opens viewer with zero path-query calls
         await router.openItem(files.value[0]);
         assert.equal(globalThis.window.location.hash, '#/file/55');
         assert.equal(router.view.value, 'viewer');
         assert.equal(router.selectedFile.value?.id, '55');
         assert.equal(pathQueries, 0);
 
-        // 4. Page scroll replaces hash in-place without growing history stack
+        // Page scroll replaces hash in-place without growing history stack
         const stackLenBeforeScroll = historyStack.length;
         router.handleViewerPageChange(2);
         assert.equal(globalThis.window.location.hash, '#/file/55?page=3');
         assert.equal(historyStack.length, stackLenBeforeScroll);
 
-        // 5. Closing viewer pops in-app history back to #/files/10
+        // Closing viewer pops in-app history back to #/files/10
         await router.closeViewer();
         assert.equal(globalThis.window.location.hash, '#/files/10');
         assert.equal(router.view.value, 'grid');
         assert.equal(router.selectedFile.value, null);
 
-        // 6. Opening System drawer then jumping to a file in another folder replaces #/system in-place
+        // Opening System drawer then jumping to a file in another folder replaces #/system in-place
         router.openSystemPanel();
         assert.equal(globalThis.window.location.hash, '#/system');
         assert.equal(router.showSystemPanel.value, true);
@@ -344,7 +344,7 @@ test('useRouter.js: stateful navigation, history back/replace, and cross-directo
         ]);
         assert.equal(router.selectedFile.value?.name, 'Summary.note');
 
-        // 7. Missing deep-linked folder falls back to #/files
+        // Missing deep-linked folder falls back to #/files
         globalThis.window.history.pushState(null, '', '#/files/404');
         await router.syncFromUrl();
         assert.equal(globalThis.window.location.hash, '#/files');
@@ -356,7 +356,7 @@ test('useRouter.js: stateful navigation, history back/replace, and cross-directo
     }
 });
 
-test('format.js & oauth.js: epoch normalization, byte sizes, and OAuth /login-bridge safety', () => {
+test('format.js: epoch normalization, byte sizes, and error message extraction', () => {
     assert.equal(normalizeEpochMs(1700000000), 1700000000000);
     assert.equal(normalizeEpochMs('1700000000000'), 1700000000000);
     assert.equal(normalizeEpochMs('2026-01-15T00:00:00Z'), Date.parse('2026-01-15T00:00:00Z'));
@@ -366,6 +366,12 @@ test('format.js & oauth.js: epoch normalization, byte sizes, and OAuth /login-br
     assert.equal(formatSize(0, '—'), '—');
     assert.equal(formatSize(1536), '1.5 KB');
 
+    assert.equal(getErrorMessage(new Error('Disk full')), 'Disk full');
+    assert.equal(getErrorMessage('Plain string failure'), 'Plain string failure');
+    assert.equal(getErrorMessage(null, 'Fallback'), 'Fallback');
+});
+
+test('oauth.js: scope descriptions, redirect targets, and same-origin /login-bridge validation', () => {
     assert.match(describeScope('supernote:all'), /Full access/);
     assert.equal(describeRedirectTarget('cursor://anysphere.cursor-mcp/cb').isCustomScheme, true);
     assert.equal(describeRedirectTarget('https://claude.ai/api/mcp/auth_callback').hostLabel, 'claude.ai');
@@ -373,17 +379,16 @@ test('format.js & oauth.js: epoch normalization, byte sizes, and OAuth /login-br
     // Cross-origin return_to must be rejected
     assert.equal(
         parseOAuthBridgeReturnTo(
-            '#/login?return_to=' + encodeURIComponent('https://evil.example/login-bridge?client_id=x&code_challenge=y'),
+            `#/login?return_to=${encodeURIComponent('https://evil.example/login-bridge?client_id=x&code_challenge=y')}`,
             'http://127.0.0.1:8080'
         ),
         null
     );
 
     const valid = parseOAuthBridgeReturnTo(
-        '#/login?return_to=' +
-            encodeURIComponent(
-                '/login-bridge?client_id=https%3A%2F%2Fclaude.ai%2Fcb&code_challenge=abc123&state=s1'
-            ),
+        `#/login?return_to=${encodeURIComponent(
+            '/login-bridge?client_id=https%3A%2F%2Fclaude.ai%2Fcb&code_challenge=abc123&state=s1'
+        )}`,
         'http://127.0.0.1:8080'
     );
     assert.equal(valid?.isValid, true);
@@ -391,7 +396,7 @@ test('format.js & oauth.js: epoch normalization, byte sizes, and OAuth /login-br
     assert.deepEqual(valid?.scopes, ['supernote:all']);
 });
 
-test('noteMeta.js & task helpers: file categories, merged transcript pages, and due badges', () => {
+test('noteMeta.js: file categories, page styles, links, and merged transcript pages', () => {
     assert.equal(resolveFileExt({ name: 'Sketch.NOTE' }), 'note');
     assert.equal(resolveFileCategory('note'), 'note');
     assert.equal(resolveFileCategory('png'), 'image');
@@ -421,20 +426,22 @@ test('noteMeta.js & task helpers: file categories, merged transcript pages, and 
         ]
     );
 
-    assert.equal(toLocalDateInputValue(new Date(2026, 0, 5)), '2026-01-05');
-    const now = new Date();
-    const todayNoon = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0).getTime();
-    assert.equal(getDueMeta({ dueTime: todayNoon, status: 'needsAction' })?.label, 'Due Today');
-    const pastMs = new Date(2020, 0, 2, 12, 0, 0).getTime();
-    assert.match(getDueMeta({ dueTime: pastMs, status: 'needsAction' })?.label || '', /^Overdue/);
-
     assert.equal(formatContent('Line 1\\nLine 2'), 'Line 1\nLine 2');
     assert.equal(hasCopyablePageText({ hasTranscript: true, text: 'OCR text' }), true);
     assert.equal(hasCopyablePageText({ hasTranscript: true, text: '   ' }), false);
     assert.equal(hasCopyablePageText({ hasTranscript: false, text: 'OCR text' }), false);
 });
 
-test('clipboard.js & markdown.js: clipboard write + plain-HTTP fallback and sanitized Markdown', async () => {
+test('TaskEditorModal & TaskRow: local date input formatting and due badges', () => {
+    assert.equal(toLocalDateInputValue(new Date(2026, 0, 5)), '2026-01-05');
+    const now = new Date();
+    const todayNoon = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0).getTime();
+    assert.equal(getDueMeta({ dueTime: todayNoon, status: 'needsAction' })?.label, 'Due Today');
+    const pastMs = new Date(2020, 0, 2, 12, 0, 0).getTime();
+    assert.match(getDueMeta({ dueTime: pastMs, status: 'needsAction' })?.label || '', /^Overdue/);
+});
+
+test('clipboard.js: modern navigator.clipboard write and plain-HTTP LAN textarea fallback', async () => {
     assert.equal(await copyTextToClipboard(''), false);
     assert.equal(await copyTextToClipboard(null), false);
 
@@ -442,7 +449,7 @@ test('clipboard.js & markdown.js: clipboard write + plain-HTTP fallback and sani
     const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
 
     try {
-        // 1. Modern navigator.clipboard.writeText path
+        // Modern navigator.clipboard.writeText path
         let writtenText = null;
         Object.defineProperty(globalThis, 'navigator', {
             value: {
@@ -457,7 +464,7 @@ test('clipboard.js & markdown.js: clipboard write + plain-HTTP fallback and sani
         assert.equal(await copyTextToClipboard('Page 1 transcript'), true);
         assert.equal(writtenText, 'Page 1 transcript');
 
-        // 2. Fallback textarea + execCommand('copy') when clipboard API rejects (e.g. plain HTTP LAN)
+        // Fallback textarea + execCommand('copy') when clipboard API rejects (e.g. plain HTTP LAN)
         const appended = [];
         let copiedViaExec = false;
         Object.defineProperty(globalThis, 'navigator', {
@@ -523,7 +530,9 @@ test('clipboard.js & markdown.js: clipboard write + plain-HTTP fallback and sani
             delete globalThis.document;
         }
     }
+});
 
+test('markdown.js: CommonMark + GFM rendering with DOMPurify XSS sanitization', () => {
     assert.equal(renderMarkdown(''), '');
     assert.equal(renderMarkdown(null), '');
     const rendered = renderMarkdown('## 2026-06-18\\n\\nSummary body<script>evil()</script>');
@@ -531,7 +540,7 @@ test('clipboard.js & markdown.js: clipboard write + plain-HTTP fallback and sani
     assert.doesNotMatch(rendered, /<script>/);
 });
 
-test('FileBrowserPanel compareItems & client computeSocketSignature', async () => {
+test('FileBrowserPanel.js: compareItems keeps folders grouped first across sort modes', () => {
     const items = [
         { id: '1', name: 'Note 10.note', isDirectory: false, size: 500, updatedAt: 2000 },
         { id: '2', name: 'Archive', isDirectory: true, size: 0, updatedAt: 1000 },
@@ -546,7 +555,9 @@ test('FileBrowserPanel compareItems & client computeSocketSignature', async () =
 
     const byDateAsc = [...items].sort((a, b) => compareItems(a, b, 'updatedAt', 'asc'));
     assert.deepEqual(byDateAsc.map((i) => i.name), ['Archive', 'Note 10.note', 'Note 2.note']);
+});
 
+test('client.js: computeSocketSignature supports Web Crypto and plain-HTTP LAN fallback', async () => {
     const origWindow = globalThis.window;
     try {
         globalThis.window = { crypto: globalThis.crypto };

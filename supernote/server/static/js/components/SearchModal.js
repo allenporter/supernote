@@ -117,7 +117,7 @@ export default {
                 });
 
                 taskResults.value = allTasks.filter((t) =>
-                    t.title.toLowerCase().includes(qLower) || (t.detail && t.detail.toLowerCase().includes(qLower))
+                    t.title.toLowerCase().includes(qLower) || t.detail?.toLowerCase().includes(qLower)
                 );
             } catch (e) {
                 if (seq !== activeSearchSeq) return;

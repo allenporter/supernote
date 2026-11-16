@@ -1,4 +1,5 @@
 import { ref, computed } from 'vue';
+import { getErrorMessage } from '../utils/format.js';
 import { showToast } from './useToast.js';
 import {
     fetchTaskGroups,
@@ -47,7 +48,7 @@ export function useSchedule() {
             const { tasks: fetchedTasks } = await fetchTasks();
             tasks.value = fetchedTasks;
         } catch (e) {
-            error.value = e.message;
+            error.value = getErrorMessage(e);
         } finally {
             isLoading.value = false;
         }
@@ -61,7 +62,7 @@ export function useSchedule() {
             await createScheduleTask(taskData);
             await loadTasks();
         } catch (e) {
-            showToast("Failed to create task: " + e.message);
+            showToast(`Failed to create task: ${getErrorMessage(e)}`);
         }
     }
 
@@ -80,7 +81,7 @@ export function useSchedule() {
             task.status = newStatus;
             task.completedTime = newCompletedTime;
         } catch (e) {
-            showToast("Failed to update task: " + e.message);
+            showToast(`Failed to update task: ${getErrorMessage(e)}`);
         }
     }
 
@@ -92,7 +93,7 @@ export function useSchedule() {
             await updateScheduleTask(taskData);
             await loadTasks();
         } catch (e) {
-            showToast("Failed to update task: " + e.message);
+            showToast(`Failed to update task: ${getErrorMessage(e)}`);
         }
     }
 
@@ -105,7 +106,7 @@ export function useSchedule() {
             tasks.value = tasks.value.filter(t => t.id !== String(taskId));
             return true;
         } catch (e) {
-            showToast("Failed to delete task: " + e.message);
+            showToast(`Failed to delete task: ${getErrorMessage(e)}`);
             return false;
         }
     }
@@ -118,7 +119,7 @@ export function useSchedule() {
             await createTaskGroup(title);
             await loadGroups();
         } catch (e) {
-            showToast("Failed to create group: " + e.message);
+            showToast(`Failed to create group: ${getErrorMessage(e)}`);
         }
     }
 
@@ -135,7 +136,7 @@ export function useSchedule() {
             await loadTasks();
             return true;
         } catch (e) {
-            showToast("Failed to delete group: " + e.message);
+            showToast(`Failed to delete group: ${getErrorMessage(e)}`);
             return false;
         }
     }

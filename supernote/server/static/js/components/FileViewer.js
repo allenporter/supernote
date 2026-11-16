@@ -11,6 +11,7 @@ import {
 } from '../api/client.js';
 import { useCanvasScrollSync } from '../composables/useCanvasScrollSync.js';
 import { showToast } from '../composables/useToast.js';
+import { getErrorMessage } from '../utils/format.js';
 import ViewerToolbar from './viewer/ViewerToolbar.js';
 import ViewerMediaPreview from './viewer/ViewerMediaPreview.js';
 import ViewerSidePanel from './viewer/ViewerSidePanel.js';
@@ -175,7 +176,7 @@ export default {
         const buildLinkedFilePayload = (fileId, fileName, targetPageIndex) => ({
             id: String(fileId),
             name: fileName || undefined,
-            extension: fileName && fileName.includes('.')
+            extension: fileName?.includes('.')
                 ? (fileName.split('.').pop() ?? '').toLowerCase()
                 : 'note',
             isDirectory: false,
@@ -206,7 +207,7 @@ export default {
                     const exact = Array.isArray(matches)
                         ? (matches.find(m => (m.name || m.fileName) === targetBaseName) || matches[0])
                         : null;
-                    if (exact && exact.id) {
+                    if (exact?.id) {
                         const fileName = exact.name || exact.fileName || targetBaseName;
                         emit('open-file', buildLinkedFilePayload(exact.id, fileName, link.targetPageIndex));
                         return;
@@ -245,7 +246,7 @@ export default {
             try {
                 await downloadFile(props.file.id);
             } catch (e) {
-                showToast('Failed to download: ' + e.message);
+                showToast(`Failed to download: ${getErrorMessage(e)}`);
             } finally {
                 downloading.value = false;
             }
@@ -351,7 +352,7 @@ export default {
                 console.error('Failed to load file content:', e);
                 error.value = category === 'note'
                     ? 'Failed to render notebook pages.'
-                    : `Failed to load file preview: ${e.message || 'Unknown error'}`;
+                    : `Failed to load file preview: ${getErrorMessage(e)}`;
             } finally {
                 if (seq === activeLoadSeq) {
                     isLoading.value = false;
