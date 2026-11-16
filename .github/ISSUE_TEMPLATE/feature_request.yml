@@ -1,0 +1,22 @@
+---
+name: Feature or Design Proposal
+description: Propose an enhancement, polish item, or architectural idea
+title: "feat: "
+labels: ["enhancement", "needs-design"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Problem / Use Case
+      description: What workflow or problem are you trying to solve? (Check ROADMAP.md and open issues first.)
+    validations:
+      required: true
+  - type: textarea
+    id: goals
+    attributes:
+      label: Proposed Goals & Scope
+      description: High-level goals, acceptance criteria, or open design tradeoffs to align on before implementation.
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true

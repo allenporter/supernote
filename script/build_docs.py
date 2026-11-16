@@ -134,6 +134,12 @@ GUIDE_SPECS: list[GuideSpec] = [
     ),
     # Contributing & Maintenance
     GuideSpec(
+        slug="roadmap",
+        title="Roadmap & Priorities",
+        section="Development",
+        path=ROOT_DIR / "ROADMAP.md",
+    ),
+    GuideSpec(
         slug="contributing",
         title="Contributing & Local Dev",
         section="Development",
