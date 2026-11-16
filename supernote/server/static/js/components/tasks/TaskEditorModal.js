@@ -39,6 +39,7 @@ export default {
      * @param {{ emit: (event: string, ...args: any[]) => void }} context
      */
     setup(props, { emit }) {
+        /** @type {import('vue').Ref<HTMLInputElement | null>} */
         const taskTitleInput = ref(null);
 
         /**

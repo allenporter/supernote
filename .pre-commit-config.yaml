@@ -39,7 +39,7 @@ repos:
         language: node
         additional_dependencies:
           - "@biomejs/biome@2.6.8"
-        files: '^(biome\.json|supernote/server/static/js/.*\.js|tests/frontend/.*\.mjs)$'
+        files: '^(biome\.json|supernote/server/static/js/.*\.(js|d\.ts)|tests/frontend/.*\.mjs)$'
         pass_filenames: false
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.3

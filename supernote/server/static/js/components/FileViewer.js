@@ -11,12 +11,11 @@ import {
 } from '../api/client.js';
 import { useCanvasScrollSync } from '../composables/useCanvasScrollSync.js';
 import { showToast } from '../composables/useToast.js';
-import { getErrorMessage } from '../utils/format.js';
+import { getErrorMessage, getFileExtension } from '../utils/format.js';
 import {
     buildDisplayTranscriptPages,
     formatPageStyle,
     MAX_TEXT_PREVIEW_BYTES,
-    normalizeTranscriptPages,
     resolveFileCategory,
     resolveFileExt,
 } from './viewer/noteMeta.js';
@@ -38,11 +37,14 @@ export default {
      * @param {{ emit: (event: string, ...args: any[]) => void }} context
      */
     setup(props, { emit }) {
+        /** @type {import('vue').Ref<NotePngPage[]>} */
         const pages = ref([]);
+        /** @type {import('vue').Ref<string | null>} */
         const previewUrl = ref(null);
         const textContent = ref('');
         const isTextTooLarge = ref(false);
         const isLoading = ref(true);
+        /** @type {import('vue').Ref<string | null>} */
         const error = ref(null);
         const downloading = ref(false);
 
@@ -52,7 +54,7 @@ export default {
         const transcriptPages = ref([]);
         /** @type {import('vue').Ref<NoteMetadata | null>} */
         const noteMetadata = ref(null);
-        /** @type {import('vue').Ref<Record<string, any>[]>} */
+        /** @type {import('vue').Ref<NoteSummary[]>} */
         const realSummaries = ref([]);
         /** @type {import('vue').Ref<AiStatus | null>} */
         const aiStatus = ref(null);
@@ -176,9 +178,7 @@ export default {
         const buildLinkedFilePayload = (fileId, fileName, targetPageIndex) => ({
             id: String(fileId),
             name: fileName || undefined,
-            extension: fileName?.includes('.')
-                ? (fileName.split('.').pop() ?? '').toLowerCase()
-                : 'note',
+            extension: getFileExtension(fileName) || 'note',
             isDirectory: false,
             pageIndex: typeof targetPageIndex === 'number' ? targetPageIndex : 0,
         });
@@ -205,12 +205,13 @@ export default {
                 isMobileSidePanelOpen.value = false;
                 try {
                     const matches = await searchFiles(targetBaseName);
-                    const exact = Array.isArray(matches)
-                        ? matches.find((m) => (m.name || m.fileName) === targetBaseName) ||
-                          matches[0]
-                        : null;
+                    const fileMatches = matches.filter((m) => !m.isDirectory);
+                    const exact =
+                        fileMatches.find((m) => m.name === targetBaseName) ||
+                        fileMatches[0] ||
+                        null;
                     if (exact?.id) {
-                        const fileName = exact.name || exact.fileName || targetBaseName;
+                        const fileName = exact.name || targetBaseName;
                         emit(
                             'open-file',
                             buildLinkedFilePayload(exact.id, fileName, link.targetPageIndex),
@@ -270,23 +271,19 @@ export default {
         ) => {
             const id = String(fileId);
             isLoadingTranscript.value = true;
-            /** @type {[any[], Record<string, any>[], NoteMetadata | null]} */
-            const [rawPages, summariesData, metaData] = await Promise.all([
+            /** @type {[TranscriptPage[], NoteSummary[], NoteMetadata | null]} */
+            const [pagesData, summariesData, metaData] = await Promise.all([
                 fetchTranscript(id).catch(() => []),
                 fetchSummaries(id).catch(() => []),
                 fetchNoteMetadata(id).catch(() => null),
             ]);
             if (seq !== activeLoadSeq) return false;
 
-            transcriptPages.value = normalizeTranscriptPages(rawPages);
+            transcriptPages.value = pagesData;
             if (!preserveMetaOnNull || metaData) {
                 noteMetadata.value = metaData;
             }
-            if (summariesData && Array.isArray(summariesData)) {
-                realSummaries.value = summariesData.filter(
-                    (s) => (s.dataSource || '').toUpperCase() !== 'OCR',
-                );
-            }
+            realSummaries.value = summariesData;
             return true;
         };
 

@@ -3,6 +3,11 @@
  * for the FileViewer component suite.
  */
 
+import { normalizeTranscriptPages } from '../../api/client.js';
+import { resolveFileExt } from '../../utils/format.js';
+
+export { normalizeTranscriptPages, resolveFileExt };
+
 export const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
 export const TEXT_EXTENSIONS = new Set(['txt', 'md', 'csv', 'json', 'yaml', 'yml', 'log']);
 export const MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024; // 2 MB
@@ -27,19 +32,6 @@ export const PAGE_STYLE_LABELS = {
 };
 
 /**
- * @param {Partial<FileItem> | null | undefined} file
- * @returns {string}
- */
-export function resolveFileExt(file) {
-    if (!file) return '';
-    if (file.extension) return String(file.extension).toLowerCase();
-    if (file.name?.includes('.')) {
-        return (file.name.split('.').pop() || '').toLowerCase();
-    }
-    return '';
-}
-
-/**
  * @param {string} ext
  * @returns {'note' | 'image' | 'pdf' | 'text' | 'unsupported'}
  */
@@ -49,25 +41,6 @@ export function resolveFileCategory(ext) {
     if (ext === 'pdf') return 'pdf';
     if (TEXT_EXTENSIONS.has(ext)) return 'text';
     return 'unsupported';
-}
-
-/**
- * @param {unknown} rawPages
- * @returns {TranscriptPage[]}
- */
-export function normalizeTranscriptPages(rawPages) {
-    if (!Array.isArray(rawPages)) return [];
-    return rawPages.map((p, idx) => ({
-        pageIndex:
-            typeof p.pageIndex === 'number'
-                ? p.pageIndex
-                : typeof p.page_index === 'number'
-                  ? p.page_index
-                  : idx,
-        pageId: p.pageId || p.page_id || `page-${idx}`,
-        text: p.text ?? '',
-        date: p.date || null,
-    }));
 }
 
 /**

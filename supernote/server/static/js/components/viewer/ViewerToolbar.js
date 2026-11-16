@@ -1,4 +1,9 @@
+import { computed } from 'vue';
 import { formatSize } from '../../utils/format.js';
+import { ZOOM_STEPS } from './noteMeta.js';
+
+const MIN_ZOOM = ZOOM_STEPS[0];
+const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1];
 
 export default {
     name: 'ViewerToolbar',
@@ -24,8 +29,12 @@ export default {
         'download',
         'toggle-side-panel',
     ],
-    setup() {
-        return { formatSize };
+    /**
+     * @param {{ file?: Partial<FileItem> | null }} props
+     */
+    setup(props) {
+        const formattedSize = computed(() => formatSize(props.file?.size));
+        return { formattedSize, MIN_ZOOM, MAX_ZOOM };
     },
     template: `
     <!-- Top Viewer Header Bar -->
@@ -48,10 +57,10 @@ export default {
                     </div>
                     <p class="text-[11px] font-mono text-stone-500 tabular-nums truncate">
                         <span v-if="equipment" class="font-semibold text-stone-600">{{ equipment }}</span>
-                        <span v-if="equipment && (pageCount > 0 || formatSize(file?.size))"> · </span>
+                        <span v-if="equipment && (pageCount > 0 || formattedSize)"> · </span>
                         <span v-if="pageCount > 0">{{ pageCount }} {{ pageCount === 1 ? 'page' : 'pages' }}</span>
-                        <span v-if="pageCount > 0 && formatSize(file?.size)"> · </span>
-                        <span v-if="formatSize(file?.size)">{{ formatSize(file?.size) }}</span>
+                        <span v-if="pageCount > 0 && formattedSize"> · </span>
+                        <span v-if="formattedSize">{{ formattedSize }}</span>
                     </p>
                 </div>
             </div>
@@ -83,7 +92,7 @@ export default {
 
                 <!-- Zoom Control -->
                 <div class="flex items-center bg-stone-100 rounded-lg p-0.5 border border-stone-200/60">
-                    <button @click="$emit('zoom-out')" :disabled="zoomPercent <= 75" type="button"
+                    <button @click="$emit('zoom-out')" :disabled="zoomPercent <= MIN_ZOOM" type="button"
                         aria-label="Zoom out"
                         class="px-2 py-0.5 rounded-md text-xs font-mono font-bold text-stone-600 hover:text-slate-900 hover:bg-white disabled:opacity-35 transition-all"
                         title="Zoom out">−</button>
@@ -93,7 +102,7 @@ export default {
                         title="Reset zoom">
                         {{ zoomPercent }}%
                     </button>
-                    <button @click="$emit('zoom-in')" :disabled="zoomPercent >= 150" type="button"
+                    <button @click="$emit('zoom-in')" :disabled="zoomPercent >= MAX_ZOOM" type="button"
                         aria-label="Zoom in"
                         class="px-2 py-0.5 rounded-md text-xs font-mono font-bold text-stone-600 hover:text-slate-900 hover:bg-white disabled:opacity-35 transition-all"
                         title="Zoom in">+</button>
@@ -152,7 +161,7 @@ export default {
                     class="px-1.5 py-0.5 text-[11px] font-mono font-medium text-stone-600 hover:text-slate-900 tabular-nums">
                     {{ zoomPercent }}%
                 </button>
-            <button @click="$emit('zoom-in')" :disabled="zoomPercent >= 150" type="button"
+            <button @click="$emit('zoom-in')" :disabled="zoomPercent >= MAX_ZOOM" type="button"
                 aria-label="Zoom in"
                 class="px-2 py-0.5 rounded-md text-xs font-mono font-bold text-stone-600 hover:text-slate-900 disabled:opacity-35 transition-all">+</button>
         </div>

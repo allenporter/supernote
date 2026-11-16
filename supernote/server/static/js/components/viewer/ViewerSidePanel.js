@@ -1,4 +1,4 @@
-import { nextTick, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
 import { showToast } from '../../composables/useToast.js';
 import { copyTextToClipboard } from '../../utils/clipboard.js';
 import { renderMarkdown } from '../../utils/markdown.js';
@@ -33,13 +33,15 @@ export default {
      *   displayTranscriptPages: TranscriptPage[],
      *   pageMetaByIndex: Map<number, NotePageMeta>,
      *   linksByPageIndex: Map<number, NoteLink[]>,
-     *   summaries: Record<string, any>[],
+     *   summaries: NoteSummary[],
      *   aiStatus: AiStatus | null
      * }} props
      * @param {{ expose: (exposed: Record<string, any>) => void }} context
      */
     setup(props, { expose }) {
+        /** @type {import('vue').Ref<HTMLElement | null>} */
         const transcriptScrollPane = ref(null);
+        /** @type {import('vue').Ref<string | null>} */
         const copiedPageKey = ref(null);
         /** @type {ReturnType<typeof setTimeout> | null} */
         let copyResetTimer = null;
@@ -140,11 +142,13 @@ export default {
             }, 2000);
         }
 
-        /**
-         * @param {Record<string, any> | null | undefined} summaryItem
-         */
-        const renderSummaryMarkdown = (summaryItem) =>
-            renderMarkdown(summaryItem?.content || summaryItem?.summary || '');
+        const renderedSummaries = computed(() =>
+            props.summaries.map((s, idx) => ({
+                id: s.id || String(idx),
+                name: s.name || null,
+                html: renderMarkdown(s.content || ''),
+            })),
+        );
 
         expose({ scrollToPage });
 
@@ -158,7 +162,7 @@ export default {
             hasCopyablePageText,
             isPageCopied,
             copyPageTranscript,
-            renderSummaryMarkdown,
+            renderedSummaries,
         };
     },
     template: `
@@ -327,12 +331,12 @@ export default {
                     <button @click="$emit('close-mobile')" type="button" class="md:hidden shrink-0 text-xs text-stone-500 hover:text-slate-700">Done</button>
                 </div>
 
-                <div v-if="summaries.length > 0" class="space-y-3">
-                    <div v-for="(s, sIdx) in summaries" :key="s.id ?? sIdx"
+                <div v-if="renderedSummaries.length > 0" class="space-y-3">
+                    <div v-for="s in renderedSummaries" :key="s.id"
                         data-summary-card
                         class="p-3.5 bg-stone-50 rounded-xl border border-stone-200/80 text-xs text-slate-800 leading-relaxed select-text">
-                        <p v-if="s.title" class="font-bold text-slate-900 mb-2">{{ s.title }}</p>
-                        <div v-if="renderSummaryMarkdown(s)" class="markdown-prose" v-html="renderSummaryMarkdown(s)"></div>
+                        <p v-if="s.name" class="font-bold text-slate-900 mb-2">{{ s.name }}</p>
+                        <div v-if="s.html" class="markdown-prose" v-html="s.html"></div>
                         <p v-else class="italic text-stone-500">No summary content.</p>
                     </div>
                 </div>

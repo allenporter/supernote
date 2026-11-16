@@ -8,16 +8,9 @@
  */
 
 import { computed, createApp, onMounted, onUnmounted, ref } from 'vue';
-import {
-    ApiError,
-    connectSocket,
-    getToken,
-    login,
-    logout,
-    onLogout,
-    submitOAuthBridgeDecision,
-} from './api/client.js';
-import FileBrowserPanel, { compareItems } from './components/FileBrowserPanel.js';
+import { connectSocket, login, submitOAuthBridgeDecision } from './api/client.js';
+import { ApiError, getToken, logout, onLogout } from './api/http.js';
+import FileBrowserPanel from './components/FileBrowserPanel.js';
 import FileViewer from './components/FileViewer.js';
 import LoginCard from './components/LoginCard.js';
 import OAuthConsentCard from './components/OAuthConsentCard.js';
@@ -26,11 +19,9 @@ import SystemPanel from './components/SystemPanel.js';
 import TaskPanel from './components/TaskPanel.js';
 import { useFileSystem } from './composables/useFileSystem.js';
 import { useProcessingStatus } from './composables/useProcessingStatus.js';
-import { buildUrlHash, parseUrlHash, useRouter } from './composables/useRouter.js';
+import { useRouter } from './composables/useRouter.js';
 import { useToast } from './composables/useToast.js';
 import { getErrorMessage } from './utils/format.js';
-
-export { buildUrlHash, compareItems, parseUrlHash };
 
 createApp({
     components: {
@@ -62,9 +53,9 @@ createApp({
             /Mac|iPod|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '')
                 ? '⌘K'
                 : 'Ctrl K';
-        /** @type {import('vue').Ref<Record<string, any> | null>} */
+        /** @type {import('vue').Ref<FocusedTaskRequest | null>} */
         const focusedTaskRequest = ref(null);
-        /** @type {import('vue').Ref<Array<string | number>>} */
+        /** @type {import('vue').Ref<string[]>} */
         const selectedIds = ref([]);
 
         // Shared VFS State
@@ -133,7 +124,7 @@ createApp({
         }
 
         /**
-         * @param {Record<string, any> | null} item
+         * @param {Partial<FileItem> | null} item
          */
         async function handleSearchSelectFile(item) {
             if (!item) return;
@@ -142,15 +133,15 @@ createApp({
         }
 
         /**
-         * @param {Record<string, any> | null} task
+         * @param {Partial<ScheduleTask> | null} task
          */
         async function handleSearchSelectTask(task) {
             showSearchModal.value = false;
-            focusedTaskRequest.value = task
+            focusedTaskRequest.value = task?.id
                 ? {
-                      id: task.id,
+                      id: String(task.id),
                       title: task.title || '',
-                      status: task.status || 'needsAction',
+                      status: task.status === 'completed' ? 'completed' : 'needsAction',
                       seq: Date.now(),
                   }
                 : null;
@@ -203,13 +194,16 @@ createApp({
             isSubmittingOAuth.value = true;
             let keepLockedForNavigation = false;
             try {
-                const data = await submitOAuthBridgeDecision(req.bridgePathWithQuery, decision);
+                const redirectUrl = await submitOAuthBridgeDecision(
+                    req.bridgePathWithQuery,
+                    decision,
+                );
                 if (req.redirectTarget?.isCustomScheme) {
                     oauthCompletedOutcome.value = decision === 'approve' ? 'approved' : 'denied';
                 } else {
                     keepLockedForNavigation = true;
                 }
-                window.location.assign(data.redirect_url);
+                window.location.assign(redirectUrl);
             } catch (e) {
                 if (e instanceof ApiError && e.status === 401) {
                     showToast('Your session expired. Please sign in again.', 'error');

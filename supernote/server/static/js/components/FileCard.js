@@ -1,9 +1,9 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { downloadFile, fetchDownloadUrl, fetchNoteCover } from '../api/client.js';
 import { showToast } from '../composables/useToast.js';
-import { formatShortDate, formatSize, getErrorMessage } from '../utils/format.js';
+import { formatShortDate, formatSize, getErrorMessage, resolveFileExt } from '../utils/format.js';
+import { IMAGE_EXTENSIONS } from './viewer/noteMeta.js';
 
-const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg']);
 const DOCUMENT_EXTENSIONS = new Set([
     'epub',
     'doc',
@@ -24,7 +24,9 @@ export default {
      * @param {Record<string, any>} props
      */
     setup(props) {
+        /** @type {import('vue').Ref<HTMLElement | null>} */
         const cardRef = ref(null);
+        /** @type {import('vue').Ref<string | null>} */
         const coverUrl = ref(null);
         const downloading = ref(false);
         const isInViewport = ref(false);
@@ -32,14 +34,7 @@ export default {
         let visibilityObserver = null;
         let activeCoverSeq = 0;
 
-        const fileExt = computed(() => {
-            if (!props.file) return '';
-            if (props.file.extension) return String(props.file.extension).toLowerCase();
-            if (props.file.name?.includes('.')) {
-                return props.file.name.split('.').pop().toLowerCase();
-            }
-            return '';
-        });
+        const fileExt = computed(() => resolveFileExt(props.file));
 
         const iconType = computed(() => {
             const ext = fileExt.value;

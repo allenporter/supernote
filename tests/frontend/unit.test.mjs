@@ -4,6 +4,8 @@ import { ref } from 'vue';
 
 import {
     computeSocketSignature,
+    fetchSummaries,
+    searchFiles,
     submitOAuthBridgeDecision,
 } from '../../supernote/server/static/js/api/client.js';
 import {
@@ -16,6 +18,7 @@ import {
 } from '../../supernote/server/static/js/api/http.js';
 import {
     fetchIcsFeed,
+    fetchTaskGroups,
     fetchTasks,
     normalizeTaskImportance,
 } from '../../supernote/server/static/js/api/schedule.js';
@@ -43,6 +46,7 @@ import { copyTextToClipboard } from '../../supernote/server/static/js/utils/clip
 import {
     formatSize,
     getErrorMessage,
+    getFileExtension,
     normalizeEpochMs,
 } from '../../supernote/server/static/js/utils/format.js';
 import { renderMarkdown } from '../../supernote/server/static/js/utils/markdown.js';
@@ -120,6 +124,14 @@ test('schedule.js: normalizeTaskImportance, fetchTasks mapping, and fetchIcsFeed
             if (url.startsWith('/api/schedule/feed.ics')) {
                 return new Response('BEGIN:VCALENDAR\nEND:VCALENDAR', { status: 200 });
             }
+            if (url === '/api/file/schedule/group/all') {
+                return new Response(
+                    JSON.stringify({
+                        scheduleTaskGroup: [{ taskListId: 7, title: 'Inbox' }, { taskListId: 8 }],
+                    }),
+                    { status: 200 },
+                );
+            }
             return new Response(
                 JSON.stringify({
                     scheduleTask: [
@@ -129,21 +141,40 @@ test('schedule.js: normalizeTaskImportance, fetchTasks mapping, and fetchIcsFeed
                             title: 'Review notebook',
                             importance: '1',
                             isReminderOn: 'Y',
+                            lastModified: 1700000000000,
                         },
                     ],
-                    nextPageToken: 'next-1',
                 }),
                 { status: 200 },
             );
         };
 
-        const { tasks, nextPageToken } = await fetchTasks('7');
-        assert.equal(nextPageToken, 'next-1');
-        assert.equal(tasks.length, 1);
-        assert.equal(tasks[0].id, '99');
-        assert.equal(tasks[0].taskListId, '7');
-        assert.equal(tasks[0].importance, 'high');
-        assert.equal(tasks[0].isReminderOn, true);
+        const groups = await fetchTaskGroups();
+        assert.deepEqual(groups, [
+            { id: '7', title: 'Inbox' },
+            { id: '8', title: 'Untitled Group' },
+        ]);
+
+        const tasks = await fetchTasks('7');
+        assert.deepEqual(tasks, [
+            {
+                id: '99',
+                taskListId: '7',
+                title: 'Review notebook',
+                detail: '',
+                status: 'needsAction',
+                importance: 'high',
+                dueTime: 0,
+                completedTime: 0,
+                isReminderOn: true,
+                links: null,
+                sort: null,
+                sortCompleted: null,
+                planerSort: null,
+                allSort: null,
+                updateTime: 1700000000000,
+            },
+        ]);
 
         const ics = await fetchIcsFeed('list a/b');
         assert.match(ics, /BEGIN:VCALENDAR/);
@@ -649,8 +680,8 @@ test('submitOAuthBridgeDecision: routes consent POST via http.js with 400 detail
             return new Response('{}', { status: 200 });
         };
 
-        const okRes = await submitOAuthBridgeDecision('/login-bridge?case=ok', 'approve');
-        assert.equal(okRes.redirect_url, 'https://claude.ai/cb?code=123');
+        const redirectUrl = await submitOAuthBridgeDecision('/login-bridge?case=ok', 'approve');
+        assert.equal(redirectUrl, 'https://claude.ai/cb?code=123');
         assert.equal(calls[0].init.headers['x-access-token'], 'oauth-tok');
         assert.equal(calls[0].init.headers.Accept, 'application/json');
 
@@ -675,5 +706,93 @@ test('submitOAuthBridgeDecision: routes consent POST via http.js with 400 detail
         await logout({ reload: false });
         globalThis.fetch = origFetch;
         globalThis.window = origWindow;
+    }
+});
+
+test('client.js & format.js: searchFiles/fetchSummaries DTO normalization and dotfile-safe extensions', async () => {
+    assert.equal(getFileExtension('.gitignore'), '');
+    assert.equal(getFileExtension('/Note/.hidden'), '');
+    assert.equal(getFileExtension('Archive.tar.GZ'), 'gz');
+    assert.equal(resolveFileExt({ name: '.env' }), '');
+    assert.equal(resolveFileExt({ name: 'Notes.NOTE' }), 'note');
+
+    const origFetch = globalThis.fetch;
+    try {
+        setToken('norm-tok');
+        globalThis.fetch = async (url) => {
+            if (url === '/api/file/label/list/search') {
+                return new Response(
+                    JSON.stringify({
+                        entries: [
+                            {
+                                id: '10',
+                                name: 'Projects',
+                                tag: 'folder',
+                                path_display: '/Projects',
+                            },
+                            {
+                                id: '20',
+                                name: 'Spec.note',
+                                tag: 'file',
+                                path_display: '/Projects/Spec.note',
+                                size: 4096,
+                                lastUpdateTime: 1700000000000,
+                            },
+                        ],
+                    }),
+                    { status: 200 },
+                );
+            }
+            return new Response(
+                JSON.stringify({
+                    summaryDOList: [
+                        { id: 1, content: 'raw ocr', dataSource: 'OCR' },
+                        { id: 2, name: 'Group', isSummaryGroup: 'Y' },
+                        {
+                            id: 3,
+                            name: 'Weekly Digest',
+                            content: '## Highlights',
+                            dataSource: 'gemini-2.5-flash',
+                        },
+                    ],
+                }),
+                { status: 200 },
+            );
+        };
+
+        const matches = await searchFiles('Spec');
+        assert.deepEqual(matches, [
+            {
+                id: '10',
+                name: 'Projects',
+                path: '/Projects',
+                isDirectory: true,
+                size: 0,
+                updatedAt: 0,
+                extension: null,
+            },
+            {
+                id: '20',
+                name: 'Spec.note',
+                path: '/Projects/Spec.note',
+                isDirectory: false,
+                size: 4096,
+                updatedAt: 1700000000000,
+                extension: 'note',
+            },
+        ]);
+
+        const summaries = await fetchSummaries('20');
+        assert.deepEqual(summaries, [
+            {
+                id: '3',
+                name: 'Weekly Digest',
+                content: '## Highlights',
+                dataSource: 'gemini-2.5-flash',
+            },
+        ]);
+    } finally {
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
     }
 });

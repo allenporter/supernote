@@ -22,6 +22,7 @@ export default {
      * @param {Record<string, any>} props
      */
     setup(props) {
+        /** @type {import('vue').Ref<HTMLButtonElement | null>} */
         const primaryButtonRef = ref(null);
 
         onMounted(() => {

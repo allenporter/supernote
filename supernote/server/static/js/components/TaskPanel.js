@@ -45,8 +45,11 @@ export default {
         const showNewTaskModal = ref(false);
         const showNewGroupModal = ref(false);
         const showIcsModal = ref(false);
+        /** @type {import('vue').Ref<{ type: 'task' | 'group', id: string, title: string, count: number } | null>} */
         const pendingDelete = ref(null);
+        /** @type {import('vue').Ref<ScheduleTask | null>} */
         const editingTask = ref(null);
+        /** @type {import('vue').Ref<HTMLInputElement | null>} */
         const newGroupInput = ref(null);
         const newGroupTitle = ref('');
 

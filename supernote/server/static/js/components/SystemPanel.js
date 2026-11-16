@@ -192,9 +192,13 @@ export default {
      */
     setup(_props, { emit }) {
         const loading = ref(true);
+        /** @type {import('vue').Ref<string | null>} */
         const error = ref(null);
+        /** @type {import('vue').Ref<SystemTaskItem[]>} */
         const tasks = ref([]);
+        /** @type {import('vue').Ref<CapacityInfo | null>} */
         const capacity = ref(null);
+        /** @type {import('vue').Ref<AiStatus | null>} */
         const aiStatus = ref(null);
 
         const usagePercent = computed(() => {
@@ -209,19 +213,13 @@ export default {
             loading.value = true;
             error.value = null;
             try {
-                /** @type {[Record<string, any>, { usedCapacity: number, totalCapacity: number }, AiStatus]} */
                 const [tasksResult, capacityResult, aiStatusResult] = await Promise.all([
                     fetchSystemTasks(),
                     fetchCapacity(),
                     fetchAiStatus(),
                 ]);
 
-                if (tasksResult.success) {
-                    tasks.value = tasksResult.tasks;
-                } else {
-                    error.value = 'Failed to load tasks';
-                }
-
+                tasks.value = tasksResult;
                 capacity.value = capacityResult;
                 aiStatus.value = aiStatusResult;
             } catch (e) {

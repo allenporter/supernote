@@ -66,16 +66,16 @@ async def run_batched_checks() -> None:
                 # Unit-test pure ES module exports directly inside Chromium
                 unit_ok = await page.evaluate(
                     """async () => {
-                        const mainSrc = document.querySelector('script[type="module"]').src;
-                        const mainMod = await import(mainSrc);
+                        const routerMod = await import(new URL('/static/js/composables/useRouter.js', location.origin).href);
+                        const browserMod = await import(new URL('/static/js/components/FileBrowserPanel.js', location.origin).href);
                         const fmtMod = await import(new URL('/static/js/utils/format.js', location.origin).href);
 
-                        const parsed = mainMod.parseUrlHash('#/files/42?page=3');
+                        const parsed = routerMod.parseUrlHash('#/files/42');
                         if (parsed.tab !== 'files' || parsed.dirId !== '42') return false;
 
-                        const aFolder = { isDirectory: true, name: 'Beta', updateTime: 100 };
-                        const bFile = { isDirectory: false, name: 'Alpha.note', updateTime: 999 };
-                        if (mainMod.compareItems(aFolder, bFile, 'date', 'desc') >= 0) return false;
+                        const aFolder = { isDirectory: true, name: 'Beta', updatedAt: 100 };
+                        const bFile = { isDirectory: false, name: 'Alpha.note', updatedAt: 999 };
+                        if (browserMod.compareItems(aFolder, bFile, 'updatedAt', 'desc') >= 0) return false;
 
                         return fmtMod.normalizeEpochMs(1700000000) === 1700000000000;
                     }"""

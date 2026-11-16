@@ -4,8 +4,6 @@ import {
     createTaskGroup,
     deleteScheduleTask,
     deleteTaskGroup,
-    downloadIcsFeed,
-    fetchIcsFeed,
     fetchTaskGroups,
     fetchTasks,
     updateScheduleTask,
@@ -31,11 +29,7 @@ export function useSchedule() {
 
     async function loadGroups() {
         try {
-            const groups = await fetchTaskGroups();
-            taskGroups.value = groups.map((g) => ({
-                id: String(g.taskListId),
-                title: g.title || 'Untitled Group',
-            }));
+            taskGroups.value = await fetchTaskGroups();
         } catch (e) {
             console.error('Failed to load task groups:', e);
         }
@@ -45,8 +39,7 @@ export function useSchedule() {
         isLoading.value = true;
         error.value = null;
         try {
-            const { tasks: fetchedTasks } = await fetchTasks();
-            tasks.value = fetchedTasks;
+            tasks.value = await fetchTasks();
         } catch (e) {
             error.value = getErrorMessage(e);
         } finally {
@@ -212,8 +205,8 @@ export function useSchedule() {
                 return a.dueTime - b.dueTime;
             }
 
-            // Fallback: Creation time descending (newest first)
-            return (b.createTime || 0) - (a.createTime || 0);
+            // Fallback: Last modified time descending (newest first)
+            return (b.updateTime || 0) - (a.updateTime || 0);
         });
     });
 
@@ -243,7 +236,5 @@ export function useSchedule() {
         removeTask,
         addGroup,
         removeGroup,
-        fetchIcsFeed,
-        downloadIcsFeed,
     };
 }

@@ -19,22 +19,28 @@ export function normalizeTaskImportance(importance) {
 
 /**
  * Fetch all task groups via POST /api/file/schedule/group/all
- * @returns {Promise<RawScheduleTaskGroup[]>}
+ * @returns {Promise<ScheduleTaskGroup[]>}
  */
 export async function fetchTaskGroups() {
     const data = await apiRequest('/api/file/schedule/group/all', {
         body: {},
         errorPrefix: 'Failed to fetch task groups',
     });
-    return data.scheduleTaskGroup || [];
+    /** @type {Array<Record<string, any>>} */
+    const rawGroups = Array.isArray(data?.scheduleTaskGroup) ? data.scheduleTaskGroup : [];
+    return rawGroups.map((g) => ({
+        id: String(g.taskListId),
+        title: g.title || 'Untitled Group',
+    }));
 }
 
 /**
  * Create a new task group via POST /api/file/schedule/group
  * @param {string} title
+ * @returns {Promise<void>}
  */
-export function createTaskGroup(title) {
-    return apiRequest('/api/file/schedule/group', {
+export async function createTaskGroup(title) {
+    await apiRequest('/api/file/schedule/group', {
         body: { title },
         errorPrefix: 'Failed to create task group',
     });
@@ -43,9 +49,10 @@ export function createTaskGroup(title) {
 /**
  * Delete a task group via DELETE /api/file/schedule/group/{taskListId}
  * @param {string | number} taskListId
+ * @returns {Promise<void>}
  */
-export function deleteTaskGroup(taskListId) {
-    return apiRequest(`/api/file/schedule/group/${encodeURIComponent(taskListId)}`, {
+export async function deleteTaskGroup(taskListId) {
+    await apiRequest(`/api/file/schedule/group/${encodeURIComponent(taskListId)}`, {
         method: 'DELETE',
         errorPrefix: 'Failed to delete task group',
     });
@@ -54,7 +61,7 @@ export function deleteTaskGroup(taskListId) {
 /**
  * Fetch tasks via POST /api/file/schedule/task/all (optionally filtered by taskListId).
  * @param {string | number | null} [taskListId=null]
- * @returns {Promise<{ tasks: ScheduleTask[], nextPageToken: string | null }>}
+ * @returns {Promise<ScheduleTask[]>}
  */
 export async function fetchTasks(taskListId = null) {
     const payload = taskListId ? { taskListId: String(taskListId) } : {};
@@ -62,38 +69,35 @@ export async function fetchTasks(taskListId = null) {
         body: payload,
         errorPrefix: 'Failed to fetch tasks',
     });
-    /** @type {Record<string, any>[]} */
-    const rawTasks = data.scheduleTask || [];
+    /** @type {Array<Record<string, any>>} */
+    const rawTasks = Array.isArray(data?.scheduleTask) ? data.scheduleTask : [];
 
-    return {
-        tasks: rawTasks.map((t) => ({
-            id: String(t.taskId),
-            taskListId: t.taskListId ? String(t.taskListId) : null,
-            title: t.title || 'Untitled Task',
-            detail: t.detail || '',
-            status: t.status || 'needsAction',
-            importance: normalizeTaskImportance(t.importance),
-            dueTime: t.dueTime || 0,
-            completedTime: t.completedTime || 0,
-            isReminderOn: t.isReminderOn === 'Y' || t.isReminderOn === true,
-            links: t.links || null,
-            sort: t.sort ?? null,
-            sortCompleted: t.sortCompleted ?? null,
-            planerSort: t.planerSort ?? null,
-            allSort: t.allSort ?? null,
-            createTime: t.createTime || 0,
-            updateTime: t.lastModified || 0,
-        })),
-        nextPageToken: data.nextPageToken || null,
-    };
+    return rawTasks.map((t) => ({
+        id: String(t.taskId),
+        taskListId: t.taskListId ? String(t.taskListId) : null,
+        title: t.title || 'Untitled Task',
+        detail: t.detail || '',
+        status: t.status === 'completed' ? 'completed' : 'needsAction',
+        importance: normalizeTaskImportance(t.importance),
+        dueTime: t.dueTime || 0,
+        completedTime: t.completedTime || 0,
+        isReminderOn: t.isReminderOn === 'Y' || t.isReminderOn === true,
+        links: typeof t.links === 'string' ? t.links : null,
+        sort: t.sort ?? null,
+        sortCompleted: t.sortCompleted ?? null,
+        planerSort: t.planerSort ?? null,
+        allSort: t.allSort ?? null,
+        updateTime: t.lastModified || 0,
+    }));
 }
 
 /**
  * Create a new task via POST /api/file/schedule/task
  * @param {ScheduleTaskInput} taskData
+ * @returns {Promise<void>}
  */
-export function createScheduleTask(taskData) {
-    return apiRequest('/api/file/schedule/task', {
+export async function createScheduleTask(taskData) {
+    await apiRequest('/api/file/schedule/task', {
         body: {
             taskListId: taskData.taskListId ? String(taskData.taskListId) : null,
             title: taskData.title,
@@ -110,8 +114,9 @@ export function createScheduleTask(taskData) {
 /**
  * Update an existing task via PUT /api/file/schedule/task
  * @param {ScheduleTaskInput} taskData
+ * @returns {Promise<void>}
  */
-export function updateScheduleTask(taskData) {
+export async function updateScheduleTask(taskData) {
     const taskId = String(taskData.id || taskData.taskId);
     /** @type {Record<string, unknown>} */
     const payload = {
@@ -133,7 +138,7 @@ export function updateScheduleTask(taskData) {
         payload.taskListId = taskData.taskListId ? String(taskData.taskListId) : null;
     }
 
-    return apiRequest('/api/file/schedule/task', {
+    await apiRequest('/api/file/schedule/task', {
         method: 'PUT',
         body: payload,
         errorPrefix: 'Failed to update task',
@@ -143,9 +148,10 @@ export function updateScheduleTask(taskData) {
 /**
  * Delete a task via DELETE /api/file/schedule/task/{taskId}
  * @param {string | number} taskId
+ * @returns {Promise<void>}
  */
-export function deleteScheduleTask(taskId) {
-    return apiRequest(`/api/file/schedule/task/${encodeURIComponent(taskId)}`, {
+export async function deleteScheduleTask(taskId) {
+    await apiRequest(`/api/file/schedule/task/${encodeURIComponent(taskId)}`, {
         method: 'DELETE',
         errorPrefix: 'Failed to delete task',
     });
