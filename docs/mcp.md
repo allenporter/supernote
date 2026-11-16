@@ -14,7 +14,7 @@ flowchart TD
     S1 -->|Changed Pages| S2["2. PngConversionModule<br/>Rasterize page to PNG"]
     S2 --> S3["3. OcrModule<br/>Vision LLM transcript (skips blank pages)"]
     S3 --> S4["4. EmbeddingModule<br/>Vector embedding for search"]
-    S4 --> S5["5. SummaryModule<br/>Full transcript + notebook summary"]
+    S4 --> S5["5. SummaryModule<br/>Notebook AI summary"]
 ```
 
 ### Stage Breakdown
@@ -25,7 +25,7 @@ flowchart TD
 | **2** | `supernote.server.services.processor_modules.png_conversion.PngConversionModule` (`PNG_CONVERSION`) | Page | Rasterizes modified pages into PNG blobs in `supernote-cache/`. Enabled when `web_enabled` + `web_notebook_preview` is `true`, or whenever `ai.ocr` is configured. |
 | **3** | `supernote.server.services.processor_modules.ocr.OcrModule` (`OCR_EXTRACTION`) | Page | If `NotePageMetadataDO.has_drawables` is `False` (blank page), immediately writes `text_content = ""` without requiring a PNG or calling the LLM. Otherwise sends the page PNG and formatted prompt (`supernote.server.ai.prompts.format_ocr_prompt`) to `supernote.server.ai.models.ocr.OcrModel` and stores the Markdown transcript in `NotePageContentDO.text_content`. |
 | **4** | `supernote.server.services.processor_modules.embedding.EmbeddingModule` (`EMBEDDING_GENERATION`) | Page | Skips blank pages (`content.is_blank`). Embeds non-blank `text_content` via `supernote.server.ai.models.embedding.EmbeddingModel` (`RETRIEVAL_DOCUMENT`). Tracks `model_id` as the task version—switching `ai.embedding.model` automatically re-embeds existing pages in the background. |
-| **5** | `supernote.server.services.processor_modules.summary.SummaryModule` (`SUMMARY_GENERATION`) | File | Concatenates non-blank page transcripts with `--- Page N ---` headers (including `Page Keywords:` when present), stores the full notebook transcript record (`data_source="OCR"`), and invokes `supernote.server.ai.models.summary.SummaryModel` to produce date-segmented Markdown summaries with page citations (`SummaryResponse`). |
+| **5** | `supernote.server.services.processor_modules.summary.SummaryModule` (`SUMMARY_GENERATION`) | File | Concatenates non-blank page transcripts in memory with `--- Page N ---` headers (including `Page Keywords:` when present) and invokes `supernote.server.ai.models.summary.SummaryModel` to produce date-segmented Markdown summaries (`SummaryResponse`) filed under the shared `"AI Summaries"` Digest category. |
 
 > [!TIP]
 > **Blank Page Skipping**: Pages with no foreground ink, textboxes, or vector graphics (`NotePageMetadataDO.has_drawables == False`) automatically short-circuit OCR, vector embedding, and summary calls—saving API tokens and latency on pre-created template notebooks.

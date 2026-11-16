@@ -11,7 +11,7 @@ This document describes the architecture of the asynchronous, multi-stage `.note
 - **Hierarchical Knowledge**: Intelligence is captured at three levels:
   1. **Binary Structural Metadata** (`NoteMetadataDO` and `NotePageMetadataDO`) for native `.note` headers, `PAGESTYLE` templates, keywords (`PAGE_KEYWORDS`), titles (`PAGE_TITLES`), links (`PAGE_LINKS`), and ink presence.
   2. **Page Chunks** (`NotePageContentDO`) for OCR transcripts and granular semantic vector search.
-  3. **Documents** (`SummaryDO`) for full-notebook transcripts and chronological AI syntheses.
+  3. **Documents** (`SummaryDO`) for chronological AI notebook syntheses synced to Digest.
 - **Asynchronous & Event-Driven**: Processing is triggered by domain events on `LocalEventBus` (`NoteUpdatedEvent`, `SyncCompletedEvent`) and runs in background `asyncio` workers. Device sync is never blocked. During active hardware sync sessions (`defer_processing=True`), processing is deferred until `SyncCompletedEvent` fires.
 - **Operation-Level Checkpoints**: Every stage (`HASHING`, `PNG_CONVERSION`, `OCR_EXTRACTION`, `EMBEDDING_GENERATION`, `SUMMARY_GENERATION`) is tracked independently in `SystemTaskDO` (`f_system_task`), including module/model version tags (`SystemTaskDO.data`).
 - **Personal-Scale Concurrency**: Uses a bounded `asyncio.Queue` of file IDs with configurable file worker concurrency (`concurrency=2`) and per-page semaphore concurrency (`DEFAULT_PAGE_CONCURRENCY`).
@@ -110,19 +110,15 @@ Stores per-page change hashes, extracted OCR text, and vector embeddings:
 | `embedding` | `Text` (nullable) | JSON array of floats representing the page's vector embedding. |
 | `embedding_model` | `String` (nullable) | Model ID that generated `embedding` (e.g. `gemini-embedding-001`). |
 
-### `SummaryDO` (`f_summary` — User-Facing Transcripts & AI Synthesis)
+### `SummaryDO` (`f_summary` — User-Facing AI Synthesis)
 
-`SummaryModule` persists document-level outputs via `SummaryService` into `f_summary` under a parent Summary Group (`is_summary_group=True`, `unique_identifier=get_summary_group_id(user_id, file_id)`):
+`SummaryModule` persists each notebook's chronological AI synthesis via `SummaryService` into `f_summary` under a shared per-user `"AI Summaries"` Digest category (`is_summary_group=True`, `unique_identifier=get_ai_summaries_group_id(user_id)`):
 
-1. **OCR Transcript Summary**:
-   - `unique_identifier`: `get_transcript_id(user_id, file_id)`
-   - `data_source`: `"OCR"`
-   - `content`: Full concatenated transcript of all non-blank pages in the notebook, with page headers (including `Page Keywords:` when present) and inferred dates.
-2. **AI Synthesis Summary**:
-   - `unique_identifier`: `get_summary_id(user_id, file_id)`
-   - `data_source`: `summary_model.model_id`
-   - `content`: Chronological Markdown synthesis with date-range headings and page citations (e.g., `## 2026-06-18 (Pages 1, 2)`).
-   - `extra_metadata`: JSON object containing structured `segments` (`date_range`, `summary`, `extracted_dates`, `page_refs`).
+- `unique_identifier`: `get_summary_id(user_id, file_id)`
+- `data_source`: `summary_model.model_id`
+- `source_path`: VFS-relative notebook path (e.g. `Note/Daily.note`)
+- `content`: Chronological Markdown synthesis with date-range headings and page citations (e.g., `## 2026-06-18 (Pages 1, 2)`).
+- `extra_metadata`: JSON object containing structured `segments` (`date_range`, `summary`, `extracted_dates`, `page_refs`).
 
 ---
 
@@ -137,7 +133,7 @@ Stores per-page change hashes, extracted OCR text, and vector embeddings:
      - **Moved page**: Updates `page_index` in place without re-running OCR/Embeddings if `content_hash` is unchanged.
      - **Modified page**: Updates `content_hash`, clears `text_content` and `embedding`, and deletes the page's `SystemTaskDO` rows (`key="page_{page_id}"`) so downstream page modules re-run.
      - **Deleted page**: Deletes the `NotePageContentDO` row, removes the cached PNG from `CACHE_BUCKET`, and deletes associated `SystemTaskDO` rows.
-   - If any page was added, moved, modified, or deleted, deletes the `SUMMARY_GENERATION` `SystemTaskDO` checkpoint so `SummaryModule` regenerates the document transcript and synthesis.
+   - If any page was added, moved, modified, or deleted, deletes the `SUMMARY_GENERATION` `SystemTaskDO` checkpoint so `SummaryModule` regenerates the notebook AI synthesis.
 2. **`PngConversionModule` (`TaskType.PNG_CONVERSION`, Page Module, `version="v2"`)**:
    - Uses single-page lazy loading (`load_notebook(path, policy="loose", page_number=page_index)`) and `ImageConverter` to render the page to PNG (`compress_level=1`) and stores it in `CACHE_BUCKET` at `get_page_png_path(file_id, page_id)`.
 3. **`OcrModule` (`TaskType.OCR_EXTRACTION`, Page Module)**:
@@ -152,7 +148,7 @@ Stores per-page change hashes, extracted OCR text, and vector embeddings:
    - For non-blank pages, calls `embedding_model.embed(text_content, task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT)` and stores the vector JSON and `model_id` in `NotePageContentDO`.
 5. **`SummaryModule` (`TaskType.SUMMARY_GENERATION`, Global Post-Module)**:
    - Verifies that `summary_model` is configured and every page in `NotePageContentDO` for `file_id` has completed OCR (`text_content is not None`).
-   - Filters out blank pages (`not p.is_blank`), formats each non-blank page with `format_page_metadata` (including `Page Keywords:`), and upserts the parent Summary Group, the full `"OCR"` transcript `SummaryDO`, and the segmented AI synthesis `SummaryDO` (skipping the LLM call if all pages in the notebook are blank).
+   - Filters out blank pages (`not p.is_blank`), formats each non-blank page in memory with `format_page_metadata` (including `Page Keywords:`), and upserts the segmented AI synthesis `SummaryDO` under the shared `"AI Summaries"` category (skipping the LLM call if all pages in the notebook are blank, and preserving manual Partner App category reassignments).
 
 ---
 
@@ -183,7 +179,7 @@ Indented lines under a top-level bullet are attached as nested `children` (`Rapi
 - **Notebook Transcript**: `POST /api/extended/transcript` (`ExtendedClient.get_transcript`)
   - Returns the formatted OCR transcript for an entire notebook or a specific `[start_index, end_index]` page range.
 - **File Summaries**: `POST /api/extended/file/summary/list` (`ExtendedClient.list_summaries`)
-  - Lists the `OCR` transcript and AI synthesis `SummaryDO` records for a `file_id`.
+  - Lists the active `SummaryDO` records associated with a `file_id`.
 - **Structured Notebook Metadata**: `POST /api/extended/file/note/metadata` (`ExtendedClient.get_note_metadata`)
   - Returns `WebNoteMetadataVO` combining notebook-level metadata (`equipment`, `total_pages`, aggregated `keywords`, `titles`, `links`) and per-page metadata (`NotePageMetadataVO`: `page_index`, `page_id`, `date`, `style`, `is_blank`, `has_five_star`, `keywords`).
 - **File Processing Status**: `POST /api/extended/file/processing/status` (`ExtendedClient.get_processing_status`)

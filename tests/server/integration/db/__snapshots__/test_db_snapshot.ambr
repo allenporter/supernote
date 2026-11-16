@@ -1,4 +1,328 @@
 # serializer version: 1
+# name: test_sqlite_fixture_matches_snapshot[db_legacy_generated_summaries.sqlite][db_legacy_generated_summaries_sql_dump]
+  '''
+  BEGIN TRANSACTION;
+  CREATE TABLE alembic_version (
+  	version_num VARCHAR(32) NOT NULL,
+  	CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)
+  );
+  INSERT INTO "alembic_version" VALUES('e8f9a0b1c2d3');
+  CREATE TABLE api_keys (
+  	user_id INTEGER NOT NULL,
+  	id VARCHAR(32) NOT NULL,
+  	name VARCHAR(128) NOT NULL,
+  	key_prefix VARCHAR(32) NOT NULL,
+  	sha256_hash VARCHAR(64) NOT NULL,
+  	created_at INTEGER NOT NULL,
+  	last_used_at INTEGER,
+  	expires_at INTEGER,
+  	PRIMARY KEY (user_id, id),
+  	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
+  );
+  CREATE TABLE devices (
+  	id INTEGER NOT NULL,
+  	user_id INTEGER NOT NULL,
+  	equipment_no VARCHAR NOT NULL,
+  	PRIMARY KEY (id),
+  	FOREIGN KEY(user_id) REFERENCES users (id)
+  );
+  CREATE TABLE f_capacity (
+  	user_id BIGINT NOT NULL,
+  	used_capacity BIGINT NOT NULL,
+  	total_capacity BIGINT NOT NULL,
+  	PRIMARY KEY (user_id)
+  );
+  CREATE TABLE f_note_metadata (
+  	user_id BIGINT NOT NULL,
+  	file_id BIGINT NOT NULL,
+  	native_file_id VARCHAR,
+  	file_type VARCHAR,
+  	signature VARCHAR,
+  	total_pages INTEGER NOT NULL,
+  	header_json TEXT NOT NULL,
+  	footer_json TEXT NOT NULL,
+  	create_time BIGINT NOT NULL,
+  	update_time BIGINT NOT NULL,
+  	PRIMARY KEY (user_id, file_id)
+  );
+  INSERT INTO "f_note_metadata" VALUES(1,750000000000000001,'F20260210090000000000OhbVrpoiVgRV','note','SN_FILE_VER_20230015',2,'{"MODULE_LABEL": "SNFILE_FEATURE", "FILE_TYPE": "NOTE", "APPLY_EQUIPMENT": "N6", "FINALOPERATION_PAGE": "2", "FINALOPERATION_LAYER": "1", "DEVICE_DPI": "0", "SOFT_DPI": "0", "FILE_PARSE_TYPE": "0", "RATTA_ETMD": "0", "APP_VERSION": "0", "FILE_ID": "F20260210090000000000OhbVrpoiVgRV", "FILE_RECOGN_TYPE": "0", "FILE_RECOGN_LANGUAGE": "none", "HORIZONTAL_CHECK": "0", "IS_OLD_APPLY_EQUIPMENT": "1", "ANTIALIASING_CONVERT": "2"}','{"FILE_FEATURE": "24", "PAGE1": "51688", "PAGE2": "73739", "TITLE_000101700092": "11400", "TITLE_000201700092": "20497", "COVER_0": "0", "STYLE_style_8mm_ruled_line": "20646", "__titles__": [{"TITLESEQNO": "0", "TITLELEVEL": "1", "TITLERECT": "92,170,477,91", "TITLERECTORI": "92,170,477,91", "TITLEBITMAP": "374", "TITLEPROTOCOL": "RATTA_RLE", "TITLESTYLE": "1000254"}, {"TITLESEQNO": "0", "TITLELEVEL": "1", "TITLERECT": "92,170,426,91", "TITLERECTORI": "92,170,426,91", "TITLEBITMAP": "11547", "TITLEPROTOCOL": "RATTA_RLE", "TITLESTYLE": "1000254"}]}',1794806656112,1794806656457);
+  CREATE TABLE f_note_page_content (
+  	id BIGINT NOT NULL,
+  	file_id BIGINT NOT NULL,
+  	page_index BIGINT NOT NULL,
+  	page_id VARCHAR NOT NULL,
+  	content_hash VARCHAR,
+  	text_content TEXT,
+  	embedding TEXT,
+  	create_time BIGINT NOT NULL,
+  	update_time BIGINT NOT NULL, embedding_model VARCHAR,
+  	PRIMARY KEY (id),
+  	CONSTRAINT uq_note_page_content UNIQUE (file_id, page_id)
+  );
+  INSERT INTO "f_note_page_content" VALUES(777403576589746419,750000000000000001,0,'P202602100900000000005IfLBcbfnoGM','b1b5c2a70ccddb285bc943a247515f2c','Transcribed (68700 bytes)','[0.0938, 0.5742, 0.1055]',1794806656119,1794806656565,'fake-embedding-v1');
+  INSERT INTO "f_note_page_content" VALUES(777403578032587174,750000000000000001,1,'P20260211100000000000zymMlopiWfqU','5ccaae1646c67f6814c1e165b8011bf0','Transcribed (68345 bytes)','[0.6094, 0.8477, 0.7422]',1794806656463,1794806656571,'fake-embedding-v1');
+  CREATE TABLE f_note_page_metadata (
+  	user_id BIGINT NOT NULL,
+  	file_id BIGINT NOT NULL,
+  	page_index INTEGER NOT NULL,
+  	page_id VARCHAR NOT NULL,
+  	content_hash VARCHAR NOT NULL,
+  	page_style VARCHAR,
+  	has_ink BOOLEAN NOT NULL,
+  	has_drawables BOOLEAN NOT NULL,
+  	page_json TEXT NOT NULL,
+  	keywords_json TEXT NOT NULL,
+  	titles_json TEXT NOT NULL,
+  	links_json TEXT NOT NULL,
+  	create_time BIGINT NOT NULL,
+  	update_time BIGINT NOT NULL,
+  	PRIMARY KEY (user_id, file_id, page_index)
+  );
+  INSERT INTO "f_note_page_metadata" VALUES(1,750000000000000001,0,'P202602100900000000005IfLBcbfnoGM','b1b5c2a70ccddb285bc943a247515f2c','style_8mm_ruled_line',1,1,'{"PAGESTYLE": "style_8mm_ruled_line", "PAGESTYLEMD5": "0", "LAYERINFO": "[{\"layerId\"#3,\"name\"#\"Layer 3\",\"isBackgroundLayer\"#false,\"isAllowAdd\"#false,\"isCurrentLayer\"#false,\"isVisible\"#true,\"isDeleted\"#true,\"isAllowUp\"#false,\"isAllowDown\"#false},{\"layerId\"#2,\"name\"#\"Layer 2\",\"isBackgroundLayer\"#false,\"isAllowAdd\"#false,\"isCurrentLayer\"#false,\"isVisible\"#true,\"isDeleted\"#true,\"isAllowUp\"#false,\"isAllowDown\"#false},{\"layerId\"#1,\"name\"#\"Layer 1\",\"isBackgroundLayer\"#false,\"isAllowAdd\"#false,\"isCurrentLayer\"#false,\"isVisible\"#true,\"isDeleted\"#true,\"isAllowUp\"#false,\"isAllowDown\"#false},{\"layerId\"#0,\"name\"#\"Main Layer\",\"isBackgroundLayer\"#false,\"isAllowAdd\"#false,\"isCurrentLayer\"#true,\"isVisible\"#true,\"isDeleted\"#false,\"isAllowUp\"#false,\"isAllowDown\"#false},{\"layerId\"#-1,\"name\"#\"Background Layer\",\"isBackgroundLayer\"#true,\"isAllowAdd\"#true,\"isCurrentLayer\"#false,\"isVisible\"#true,\"isDeleted\"#false,\"isAllowUp\"#false,\"isAllowDown\"#false}]", "LAYERSEQ": "MAINLAYER,BGLAYER", "MAINLAYER": "51424", "LAYER1": "0", "LAYER2": "0", "LAYER3": "0", "BGLAYER": "51557", "TOTALPATH": "0", "THUMBNAILTYPE": "0", "RECOGNSTATUS": "0", "RECOGNTEXT": "0", "RECOGNFILE": "0", "PAGEID": "P202602100900000000005IfLBcbfnoGM", "RECOGNTYPE": "0", "RECOGNFILESTATUS": "0", "RECOGNLANGUAGE": "none", "EXTERNALLINKINFO": "0", "IDTABLE": "0", "ORIENTATION": "1000", "PAGETEXTBOX": "0", "DISABLE": "none", "__layers__": [{"LAYERTYPE": "NOTE", "LAYERPROTOCOL": "RATTA_RLE", "LAYERNAME": "MAINLAYER", "LAYERPATH": "0", "LAYERBITMAP": "29988", "LAYERVECTORGRAPH": "0", "LAYERRECOGN": "0"}, {}, {}, {}, {"LAYERTYPE": "NOTE", "LAYERPROTOCOL": "RATTA_RLE", "LAYERNAME": "BGLAYER", "LAYERPATH": "0", "LAYERBITMAP": "20646", "LAYERVECTORGRAPH": "0", "LAYERRECOGN": "0"}]}','[]','[{"TITLESEQNO": "0", "TITLELEVEL": "1", "TITLERECT": "92,170,477,91", "TITLERECTORI": "92,170,477,91", "TITLEBITMAP": "374", "TITLEPROTOCOL": "RATTA_RLE", "TITLESTYLE": "1000254"}]','[]',1794806656116,1794806656459);
+  INSERT INTO "f_note_page_metadata" VALUES(1,750000000000000001,1,'P20260211100000000000zymMlopiWfqU','5ccaae1646c67f6814c1e165b8011bf0','style_8mm_ruled_line',1,1,'{"PAGESTYLE": "style_8mm_ruled_line", "PAGESTYLEMD5": "0", "LAYERINFO": "[{\"layerId\"#3,\"name\"#\"Layer 3\",\"isBackgroundLayer\"#false,\"isAllowAdd\"#false,\"isCurrentLayer\"#false,\"isVisible\"#true,\"isDeleted\"#true,\"isAllowUp\"#false,\"isAllowDown\"#false},{\"layerId\"#2,\"name\"#\"Layer 2\",\"isBackgroundLayer\"#false,\"isAllowAdd\"#false,\"isCurrentLayer\"#false,\"isVisible\"#true,\"isDeleted\"#true,\"isAllowUp\"#false,\"isAllowDown\"#false},{\"layerId\"#1,\"name\"#\"Layer 1\",\"isBackgroundLayer\"#false,\"isAllowAdd\"#false,\"isCurrentLayer\"#false,\"isVisible\"#true,\"isDeleted\"#true,\"isAllowUp\"#false,\"isAllowDown\"#false},{\"layerId\"#0,\"name\"#\"Main Layer\",\"isBackgroundLayer\"#false,\"isAllowAdd\"#false,\"isCurrentLayer\"#true,\"isVisible\"#true,\"isDeleted\"#false,\"isAllowUp\"#false,\"isAllowDown\"#false},{\"layerId\"#-1,\"name\"#\"Background Layer\",\"isBackgroundLayer\"#true,\"isAllowAdd\"#true,\"isCurrentLayer\"#false,\"isVisible\"#true,\"isDeleted\"#false,\"isAllowUp\"#false,\"isAllowDown\"#false}]", "LAYERSEQ": "MAINLAYER,BGLAYER", "MAINLAYER": "73475", "LAYER1": "0", "LAYER2": "0", "LAYER3": "0", "BGLAYER": "73608", "TOTALPATH": "0", "THUMBNAILTYPE": "0", "RECOGNSTATUS": "0", "RECOGNTEXT": "0", "RECOGNFILE": "0", "PAGEID": "P20260211100000000000zymMlopiWfqU", "RECOGNTYPE": "0", "RECOGNFILESTATUS": "0", "RECOGNLANGUAGE": "none", "EXTERNALLINKINFO": "0", "IDTABLE": "0", "ORIENTATION": "1000", "PAGETEXTBOX": "0", "DISABLE": "none", "__layers__": [{"LAYERTYPE": "NOTE", "LAYERPROTOCOL": "RATTA_RLE", "LAYERNAME": "MAINLAYER", "LAYERPATH": "0", "LAYERBITMAP": "52959", "LAYERVECTORGRAPH": "0", "LAYERRECOGN": "0"}, {}, {}, {}, {"LAYERTYPE": "NOTE", "LAYERPROTOCOL": "RATTA_RLE", "LAYERNAME": "BGLAYER", "LAYERPATH": "0", "LAYERBITMAP": "20646", "LAYERVECTORGRAPH": "0", "LAYERRECOGN": "0"}]}','[]','[{"TITLESEQNO": "0", "TITLELEVEL": "1", "TITLERECT": "92,170,426,91", "TITLERECTORI": "92,170,426,91", "TITLEBITMAP": "11547", "TITLEPROTOCOL": "RATTA_RLE", "TITLESTYLE": "1000254"}]','[]',1794806656459,1794806656459);
+  CREATE TABLE f_recycle_file (
+  	id BIGINT NOT NULL,
+  	file_id BIGINT NOT NULL,
+  	user_id BIGINT NOT NULL,
+  	file_name VARCHAR NOT NULL,
+  	size BIGINT NOT NULL,
+  	is_folder VARCHAR(1) NOT NULL,
+  	delete_time BIGINT NOT NULL,
+  	PRIMARY KEY (id)
+  );
+  CREATE TABLE "f_summary" (
+  	id BIGINT NOT NULL,
+  	user_id BIGINT NOT NULL,
+  	file_id BIGINT,
+  	name VARCHAR,
+  	unique_identifier VARCHAR NOT NULL,
+  	parent_unique_identifier VARCHAR,
+  	content TEXT,
+  	source_path VARCHAR,
+  	data_source VARCHAR,
+  	source_type BIGINT,
+  	is_summary_group BOOLEAN NOT NULL,
+  	description VARCHAR,
+  	tags VARCHAR,
+  	md5_hash VARCHAR,
+  	extra_metadata TEXT,
+  	comment_str VARCHAR,
+  	comment_handwrite_name VARCHAR,
+  	handwrite_inner_name VARCHAR,
+  	handwrite_md5 VARCHAR,
+  	creation_time BIGINT,
+  	last_modified_time BIGINT,
+  	is_deleted BOOLEAN NOT NULL,
+  	create_time BIGINT NOT NULL,
+  	update_time BIGINT NOT NULL,
+  	author VARCHAR,
+  	CONSTRAINT pk_f_summary PRIMARY KEY (id, user_id),
+  	CONSTRAINT uq_f_summary_user_uuid UNIQUE (user_id, unique_identifier)
+  );
+  INSERT INTO "f_summary" VALUES(777403577122423011,1,NULL,'Sprint.note','11111111-aaaa-4bbb-8ccc-000000000001-095.note-group',NULL,NULL,NULL,NULL,NULL,1,NULL,NULL,'b812a68d5b7c8b45d5b0d57988be0532',NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,1794806656246,1794806656246,NULL);
+  INSERT INTO "f_summary" VALUES(777403577155978029,1,750000000000000001,NULL,'11111111-aaaa-4bbb-8ccc-000000000001-095.note-transcript','11111111-aaaa-4bbb-8ccc-000000000001-095.note-group','--- Page 1 ---
+  Notebook Filename: Sprint.note
+  Notebook Created: 2026-02-10 09:00:00
+  Page ID: P202602100900000000005IfLBcbfnoGM
+  Page Date (Inferred): 2026-02-10
+  ---
+  Transcribed (68700 bytes)','Sprint.note','OCR',NULL,0,NULL,NULL,'6c1c9a924cc822627364b24a1f2c0aa4',NULL,NULL,NULL,NULL,NULL,1794806656253,1794806656253,0,1794806656254,1794806656254,NULL);
+  INSERT INTO "f_summary" VALUES(777403577185337947,1,750000000000000001,NULL,'11111111-aaaa-4bbb-8ccc-000000000001-095.note-summary','11111111-aaaa-4bbb-8ccc-000000000001-095.note-group','## 2023-10-27 (Pages 1)
+  Summary of (1577 chars)','Sprint.note','fake-summary-v1',NULL,0,NULL,NULL,'d98e3d3c64c0a367b75d142c3b77a68e','{"segments": [{"date_range": "2023-10-27", "summary": "Summary of (1577 chars)", "extracted_dates": ["2023-10-27"], "page_refs": [1]}]}',NULL,NULL,NULL,NULL,1794806656260,1794806656260,0,1794806656261,1794806656261,NULL);
+  INSERT INTO "f_summary" VALUES(777403578519126634,1,NULL,'Sprint.note','22222222-bbbb-4ccc-8ddd-000000000002-095.note-group',NULL,NULL,NULL,NULL,NULL,1,NULL,NULL,'b812a68d5b7c8b45d5b0d57988be0532',NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,1794806656579,1794806656579,NULL);
+  INSERT INTO "f_summary" VALUES(777403578540098017,1,750000000000000001,NULL,'22222222-bbbb-4ccc-8ddd-000000000002-095.note-transcript','22222222-bbbb-4ccc-8ddd-000000000002-095.note-group','--- Page 1 ---
+  Notebook Filename: Sprint.note
+  Notebook Created: 2026-02-10 09:00:00
+  Page ID: P202602100900000000005IfLBcbfnoGM
+  Page Date (Inferred): 2026-02-10
+  ---
+  Transcribed (68700 bytes)
+
+  --- Page 2 ---
+  Notebook Filename: Sprint.note
+  Notebook Created: 2026-02-10 09:00:00
+  Page ID: P20260211100000000000zymMlopiWfqU
+  Page Date (Inferred): 2026-02-11
+  ---
+  Transcribed (68345 bytes)','Sprint.note','OCR',NULL,0,NULL,NULL,'9e096a15f1ba3a59eb93100cc27f4391',NULL,NULL,NULL,NULL,NULL,1794806656583,1794806656583,0,1794806656584,1794806656584,NULL);
+  INSERT INTO "f_summary" VALUES(777403578561069670,1,750000000000000001,NULL,'22222222-bbbb-4ccc-8ddd-000000000002-095.note-summary','22222222-bbbb-4ccc-8ddd-000000000002-095.note-group','## 2023-10-27 (Pages 1)
+  Summary of (1768 chars)','Sprint.note','fake-summary-v1',NULL,0,NULL,NULL,'2f22593888bcbe7cd7918efff28ca6bf','{"segments": [{"date_range": "2023-10-27", "summary": "Summary of (1768 chars)", "extracted_dates": ["2023-10-27"], "page_refs": [1]}]}',NULL,NULL,NULL,NULL,1794806656588,1794806656588,0,1794806656589,1794806656589,NULL);
+  INSERT INTO "f_summary" VALUES(777403578594624421,1,NULL,'Reading Notes','2799b74528407f6aeeeff095f7685e9e',NULL,NULL,NULL,NULL,NULL,1,NULL,NULL,'0ac70c76cabde620afe89ed138332161',NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,1794806656597,1794806656597,NULL);
+  INSERT INTO "f_summary" VALUES(777403578607207197,1,NULL,NULL,'aabbccdd11223344556677889900ff00','2799b74528407f6aeeeff095f7685e9e','Standalone PDF highlight excerpt.','Document/Paper.pdf','USER',NULL,0,NULL,NULL,'bd8ccf3b7093ddd686fa30d1aee0b918',NULL,NULL,NULL,NULL,NULL,1794806656600,1794806656600,0,1794806656600,1794806656600,NULL);
+  CREATE TABLE "f_summary_tag" (
+  	id BIGINT NOT NULL,
+  	user_id BIGINT NOT NULL,
+  	name VARCHAR NOT NULL,
+  	unique_identifier VARCHAR NOT NULL,
+  	create_time BIGINT NOT NULL,
+  	CONSTRAINT pk_f_summary_tag PRIMARY KEY (id, user_id),
+  	CONSTRAINT uq_f_summary_tag_user_uuid UNIQUE (user_id, unique_identifier)
+  );
+  CREATE TABLE f_system_task (
+  	id BIGINT NOT NULL,
+  	file_id BIGINT NOT NULL,
+  	task_type VARCHAR NOT NULL,
+  	"key" VARCHAR NOT NULL,
+  	status VARCHAR NOT NULL,
+  	data TEXT,
+  	retry_count BIGINT NOT NULL,
+  	last_error TEXT,
+  	create_time BIGINT NOT NULL,
+  	update_time BIGINT NOT NULL,
+  	PRIMARY KEY (id),
+  	CONSTRAINT uq_system_task UNIQUE (file_id, task_type, "key")
+  );
+  INSERT INTO "f_system_task" VALUES(777403576619107099,750000000000000001,'HASHING','global','COMPLETED','v2',0,NULL,1794806656126,1794806656468);
+  INSERT INTO "f_system_task" VALUES(777403578347159760,750000000000000001,'PNG_CONVERSION','page_P202602100900000000005IfLBcbfnoGM','COMPLETED','v2',0,NULL,1794806656538,1794806656538);
+  INSERT INTO "f_system_task" VALUES(777403578376520521,750000000000000001,'PNG_CONVERSION','page_P20260211100000000000zymMlopiWfqU','COMPLETED','v2',0,NULL,1794806656545,1794806656545);
+  INSERT INTO "f_system_task" VALUES(777403578435240624,750000000000000001,'OCR_EXTRACTION','page_P202602100900000000005IfLBcbfnoGM','COMPLETED',NULL,0,NULL,1794806656559,1794806656559);
+  INSERT INTO "f_system_task" VALUES(777403578468794745,750000000000000001,'OCR_EXTRACTION','page_P20260211100000000000zymMlopiWfqU','COMPLETED',NULL,0,NULL,1794806656567,1794806656567);
+  INSERT INTO "f_system_task" VALUES(777403578464600076,750000000000000001,'EMBEDDING_GENERATION','page_P202602100900000000005IfLBcbfnoGM','COMPLETED','fake-embedding-v1',0,NULL,1794806656566,1794806656566);
+  INSERT INTO "f_system_task" VALUES(777403578489766855,750000000000000001,'EMBEDDING_GENERATION','page_P20260211100000000000zymMlopiWfqU','COMPLETED','fake-embedding-v1',0,NULL,1794806656572,1794806656572);
+  INSERT INTO "f_system_task" VALUES(777403578569457845,750000000000000001,'SUMMARY_GENERATION','global','COMPLETED',NULL,0,NULL,1794806656591,1794806656591);
+  CREATE TABLE f_user_event (
+  	user_id BIGINT NOT NULL,
+  	seq BIGINT NOT NULL,
+  	timestamp_ms BIGINT NOT NULL,
+  	event_type VARCHAR(64) NOT NULL,
+  	actor VARCHAR(64) NOT NULL,
+  	entity_type VARCHAR(32) NOT NULL,
+  	entity_id VARCHAR(128) NOT NULL,
+  	related_file_id BIGINT,
+  	payload JSON NOT NULL,
+  	PRIMARY KEY (user_id, seq)
+  );
+  INSERT INTO "f_user_event" VALUES(1,777403576614912617,1794806656124,'note.pages_delta','system:processor','file','750000000000000001',750000000000000001,'{"file_id": "750000000000000001", "file_path": "NOTE/Note/Work/Sprint.note", "added_pages": ["P202602100900000000005IfLBcbfnoGM"], "modified_pages": [], "moved_pages": [], "deleted_pages": []}');
+  INSERT INTO "f_user_event" VALUES(1,777403577030148177,1794806656224,'note.page_transcribed','system:processor','note_page','750000000000000001:P202602100900000000005IfLBcbfnoGM',750000000000000001,'{"file_id": "750000000000000001", "file_path": "NOTE/Note/Work/Sprint.note", "page_id": "P202602100900000000005IfLBcbfnoGM", "page_index": 0, "text_content": "Transcribed (68700 bytes)"}');
+  INSERT INTO "f_user_event" VALUES(1,777403577139200847,1794806656249,'summary.upserted','user:web','summary','777403577122423011',NULL,'{"summary": {"id": 777403577122423011, "fileId": null, "name": "Sprint.note", "userId": 1, "uniqueIdentifier": "11111111-aaaa-4bbb-8ccc-000000000001-095.note-group", "parentUniqueIdentifier": null, "content": null, "sourcePath": null, "dataSource": null, "sourceType": null, "isSummaryGroup": "Y", "description": null, "tags": null, "md5Hash": "b812a68d5b7c8b45d5b0d57988be0532", "metadata": null, "commentStr": null, "commentHandwriteName": null, "handwriteInnerName": null, "handwriteMD5": null, "creationTime": 1794806656246, "lastModifiedTime": 1794806656246, "isDeleted": "N", "createTime": 1794806656246, "updateTime": 1794806656246, "author": null}, "is_new": true}');
+  INSERT INTO "f_user_event" VALUES(1,777403577164366705,1794806656256,'summary.upserted','user:web','summary','777403577155978029',750000000000000001,'{"summary": {"id": 777403577155978029, "fileId": 750000000000000001, "name": null, "userId": 1, "uniqueIdentifier": "11111111-aaaa-4bbb-8ccc-000000000001-095.note-transcript", "parentUniqueIdentifier": "11111111-aaaa-4bbb-8ccc-000000000001-095.note-group", "content": "--- Page 1 ---\nNotebook Filename: Sprint.note\nNotebook Created: 2026-02-10 09:00:00\nPage ID: P202602100900000000005IfLBcbfnoGM\nPage Date (Inferred): 2026-02-10\n---\nTranscribed (68700 bytes)", "sourcePath": "Sprint.note", "dataSource": "OCR", "sourceType": null, "isSummaryGroup": "N", "description": null, "tags": null, "md5Hash": "6c1c9a924cc822627364b24a1f2c0aa4", "metadata": null, "commentStr": null, "commentHandwriteName": null, "handwriteInnerName": null, "handwriteMD5": null, "creationTime": 1794806656253, "lastModifiedTime": 1794806656253, "isDeleted": "N", "createTime": 1794806656254, "updateTime": 1794806656254, "author": null}, "is_new": true}');
+  INSERT INTO "f_user_event" VALUES(1,777403577193726404,1794806656263,'summary.upserted','user:web','summary','777403577185337947',750000000000000001,'{"summary": {"id": 777403577185337947, "fileId": 750000000000000001, "name": null, "userId": 1, "uniqueIdentifier": "11111111-aaaa-4bbb-8ccc-000000000001-095.note-summary", "parentUniqueIdentifier": "11111111-aaaa-4bbb-8ccc-000000000001-095.note-group", "content": "## 2023-10-27 (Pages 1)\nSummary of (1577 chars)", "sourcePath": "Sprint.note", "dataSource": "fake-summary-v1", "sourceType": null, "isSummaryGroup": "N", "description": null, "tags": null, "md5Hash": "d98e3d3c64c0a367b75d142c3b77a68e", "metadata": "{\"segments\": [{\"date_range\": \"2023-10-27\", \"summary\": \"Summary of (1577 chars)\", \"extracted_dates\": [\"2023-10-27\"], \"page_refs\": [1]}]}", "commentStr": null, "commentHandwriteName": null, "handwriteInnerName": null, "handwriteMD5": null, "creationTime": 1794806656260, "lastModifiedTime": 1794806656260, "isDeleted": "N", "createTime": 1794806656261, "updateTime": 1794806656261, "author": null}, "is_new": true}');
+  INSERT INTO "f_user_event" VALUES(1,777403577223086295,1794806656269,'note.processing_completed','system:processor','file','750000000000000001',750000000000000001,'{"file_id": "750000000000000001", "file_path": "NOTE/Note/Work/Sprint.note"}');
+  INSERT INTO "f_user_event" VALUES(1,777403578049364322,1794806656467,'note.pages_delta','system:processor','file','750000000000000001',750000000000000001,'{"file_id": "750000000000000001", "file_path": "NOTE/Note/Work/Sprint.note", "added_pages": ["P20260211100000000000zymMlopiWfqU"], "modified_pages": ["P202602100900000000005IfLBcbfnoGM"], "moved_pages": [], "deleted_pages": []}');
+  INSERT INTO "f_user_event" VALUES(1,777403578426851501,1794806656557,'note.page_transcribed','system:processor','note_page','750000000000000001:P202602100900000000005IfLBcbfnoGM',750000000000000001,'{"file_id": "750000000000000001", "file_path": "NOTE/Note/Work/Sprint.note", "page_id": "P202602100900000000005IfLBcbfnoGM", "page_index": 0, "text_content": "Transcribed (68700 bytes)"}');
+  INSERT INTO "f_user_event" VALUES(1,777403578464600075,1794806656566,'note.page_transcribed','system:processor','note_page','750000000000000001:P20260211100000000000zymMlopiWfqU',750000000000000001,'{"file_id": "750000000000000001", "file_path": "NOTE/Note/Work/Sprint.note", "page_id": "P20260211100000000000zymMlopiWfqU", "page_index": 1, "text_content": "Transcribed (68345 bytes)"}');
+  INSERT INTO "f_user_event" VALUES(1,777403578527515293,1794806656580,'summary.upserted','user:web','summary','777403578519126634',NULL,'{"summary": {"id": 777403578519126634, "fileId": null, "name": "Sprint.note", "userId": 1, "uniqueIdentifier": "22222222-bbbb-4ccc-8ddd-000000000002-095.note-group", "parentUniqueIdentifier": null, "content": null, "sourcePath": null, "dataSource": null, "sourceType": null, "isSummaryGroup": "Y", "description": null, "tags": null, "md5Hash": "b812a68d5b7c8b45d5b0d57988be0532", "metadata": null, "commentStr": null, "commentHandwriteName": null, "handwriteInnerName": null, "handwriteMD5": null, "creationTime": 1794806656579, "lastModifiedTime": 1794806656579, "isDeleted": "N", "createTime": 1794806656579, "updateTime": 1794806656579, "author": null}, "is_new": true}');
+  INSERT INTO "f_user_event" VALUES(1,777403578548486266,1794806656585,'summary.upserted','user:web','summary','777403578540098017',750000000000000001,'{"summary": {"id": 777403578540098017, "fileId": 750000000000000001, "name": null, "userId": 1, "uniqueIdentifier": "22222222-bbbb-4ccc-8ddd-000000000002-095.note-transcript", "parentUniqueIdentifier": "22222222-bbbb-4ccc-8ddd-000000000002-095.note-group", "content": "--- Page 1 ---\nNotebook Filename: Sprint.note\nNotebook Created: 2026-02-10 09:00:00\nPage ID: P202602100900000000005IfLBcbfnoGM\nPage Date (Inferred): 2026-02-10\n---\nTranscribed (68700 bytes)\n\n--- Page 2 ---\nNotebook Filename: Sprint.note\nNotebook Created: 2026-02-10 09:00:00\nPage ID: P20260211100000000000zymMlopiWfqU\nPage Date (Inferred): 2026-02-11\n---\nTranscribed (68345 bytes)", "sourcePath": "Sprint.note", "dataSource": "OCR", "sourceType": null, "isSummaryGroup": "N", "description": null, "tags": null, "md5Hash": "9e096a15f1ba3a59eb93100cc27f4391", "metadata": null, "commentStr": null, "commentHandwriteName": null, "handwriteInnerName": null, "handwriteMD5": null, "creationTime": 1794806656583, "lastModifiedTime": 1794806656583, "isDeleted": "N", "createTime": 1794806656584, "updateTime": 1794806656584, "author": null}, "is_new": true}');
+  INSERT INTO "f_user_event" VALUES(1,777403578565263613,1794806656590,'summary.upserted','user:web','summary','777403578561069670',750000000000000001,'{"summary": {"id": 777403578561069670, "fileId": 750000000000000001, "name": null, "userId": 1, "uniqueIdentifier": "22222222-bbbb-4ccc-8ddd-000000000002-095.note-summary", "parentUniqueIdentifier": "22222222-bbbb-4ccc-8ddd-000000000002-095.note-group", "content": "## 2023-10-27 (Pages 1)\nSummary of (1768 chars)", "sourcePath": "Sprint.note", "dataSource": "fake-summary-v1", "sourceType": null, "isSummaryGroup": "N", "description": null, "tags": null, "md5Hash": "2f22593888bcbe7cd7918efff28ca6bf", "metadata": "{\"segments\": [{\"date_range\": \"2023-10-27\", \"summary\": \"Summary of (1768 chars)\", \"extracted_dates\": [\"2023-10-27\"], \"page_refs\": [1]}]}", "commentStr": null, "commentHandwriteName": null, "handwriteInnerName": null, "handwriteMD5": null, "creationTime": 1794806656588, "lastModifiedTime": 1794806656588, "isDeleted": "N", "createTime": 1794806656589, "updateTime": 1794806656589, "author": null}, "is_new": true}');
+  INSERT INTO "f_user_event" VALUES(1,777403578586235893,1794806656595,'note.processing_completed','system:processor','file','750000000000000001',750000000000000001,'{"file_id": "750000000000000001", "file_path": "NOTE/Note/Work/Sprint.note"}');
+  INSERT INTO "f_user_event" VALUES(1,777403578598818086,1794806656598,'summary.upserted','user:web','summary','777403578594624421',NULL,'{"summary": {"id": 777403578594624421, "fileId": null, "name": "Reading Notes", "userId": 1, "uniqueIdentifier": "2799b74528407f6aeeeff095f7685e9e", "parentUniqueIdentifier": null, "content": null, "sourcePath": null, "dataSource": null, "sourceType": null, "isSummaryGroup": "Y", "description": null, "tags": null, "md5Hash": "0ac70c76cabde620afe89ed138332161", "metadata": null, "commentStr": null, "commentHandwriteName": null, "handwriteInnerName": null, "handwriteMD5": null, "creationTime": 1794806656597, "lastModifiedTime": 1794806656597, "isDeleted": "N", "createTime": 1794806656597, "updateTime": 1794806656597, "author": null}, "is_new": true}');
+  INSERT INTO "f_user_event" VALUES(1,777403578615595819,1794806656601,'summary.upserted','user:web','summary','777403578607207197',NULL,'{"summary": {"id": 777403578607207197, "fileId": null, "name": null, "userId": 1, "uniqueIdentifier": "aabbccdd11223344556677889900ff00", "parentUniqueIdentifier": "2799b74528407f6aeeeff095f7685e9e", "content": "Standalone PDF highlight excerpt.", "sourcePath": "Document/Paper.pdf", "dataSource": "USER", "sourceType": null, "isSummaryGroup": "N", "description": null, "tags": null, "md5Hash": "bd8ccf3b7093ddd686fa30d1aee0b918", "metadata": null, "commentStr": null, "commentHandwriteName": null, "handwriteInnerName": null, "handwriteMD5": null, "creationTime": 1794806656600, "lastModifiedTime": 1794806656600, "isDeleted": "N", "createTime": 1794806656600, "updateTime": 1794806656600, "author": null}, "is_new": true}');
+  CREATE TABLE f_user_file (
+  	id BIGINT NOT NULL,
+  	user_id BIGINT NOT NULL,
+  	directory_id BIGINT NOT NULL,
+  	file_name VARCHAR NOT NULL,
+  	is_folder VARCHAR(1) NOT NULL,
+  	size BIGINT NOT NULL,
+  	md5 VARCHAR,
+  	storage_key VARCHAR,
+  	is_active VARCHAR(1) NOT NULL,
+  	create_time BIGINT NOT NULL,
+  	update_time BIGINT NOT NULL,
+  	PRIMARY KEY (id)
+  );
+  INSERT INTO "f_user_file" VALUES(777403575889297964,1,0,'EXPORT','Y',0,NULL,NULL,'Y',1794806655951,1794806655951);
+  INSERT INTO "f_user_file" VALUES(777403575906074683,1,0,'INBOX','Y',0,NULL,NULL,'Y',1794806655955,1794806655955);
+  INSERT INTO "f_user_file" VALUES(777403575914463742,1,0,'SCREENSHOT','Y',0,NULL,NULL,'Y',1794806655958,1794806655958);
+  INSERT INTO "f_user_file" VALUES(777403575922852399,1,0,'NOTE','Y',0,NULL,NULL,'Y',1794806655960,1794806655960);
+  INSERT INTO "f_user_file" VALUES(777403575931241218,1,777403575922852399,'Note','Y',0,NULL,NULL,'Y',1794806655962,1794806655962);
+  INSERT INTO "f_user_file" VALUES(777403575939629077,1,777403575922852399,'MyStyle','Y',0,NULL,NULL,'Y',1794806655964,1794806655964);
+  INSERT INTO "f_user_file" VALUES(777403575948018441,1,0,'DOCUMENT','Y',0,NULL,NULL,'Y',1794806655966,1794806655966);
+  INSERT INTO "f_user_file" VALUES(777403575956406476,1,777403575948018441,'Document','Y',0,NULL,NULL,'Y',1794806655968,1794806655968);
+  INSERT INTO "f_user_file" VALUES(777403576522638151,1,777403575931241218,'Work','Y',0,NULL,NULL,'Y',1794806656103,1794806656103);
+  INSERT INTO "f_user_file" VALUES(750000000000000001,1,777403576522638151,'Sprint.note','N',75162,'da1a9f7d21be3a06bc13260753eafd57','22222222-bbbb-4ccc-8ddd-000000000002-095.note','Y',1770714000000,1770800400000);
+  CREATE TABLE key_values (
+  	"key" VARCHAR NOT NULL,
+  	value VARCHAR NOT NULL,
+  	expiry FLOAT NOT NULL,
+  	PRIMARY KEY ("key")
+  );
+  CREATE TABLE login_records (
+  	id INTEGER NOT NULL,
+  	user_id INTEGER NOT NULL,
+  	login_method VARCHAR,
+  	equipment VARCHAR,
+  	ip VARCHAR,
+  	create_time VARCHAR NOT NULL,
+  	PRIMARY KEY (id),
+  	FOREIGN KEY(user_id) REFERENCES users (id)
+  );
+  CREATE TABLE "t_schedule_task" (
+  	task_id VARCHAR NOT NULL,
+  	task_list_id VARCHAR,
+  	user_id BIGINT NOT NULL,
+  	title VARCHAR NOT NULL,
+  	detail VARCHAR,
+  	status VARCHAR NOT NULL,
+  	importance VARCHAR,
+  	due_time BIGINT,
+  	completed_time BIGINT,
+  	recurrence VARCHAR,
+  	is_reminder_on BOOLEAN NOT NULL,
+  	create_time BIGINT NOT NULL,
+  	update_time BIGINT NOT NULL,
+  	links VARCHAR,
+  	sort BIGINT,
+  	sort_completed BIGINT,
+  	planer_sort BIGINT,
+  	all_sort BIGINT,
+  	all_sort_completed BIGINT,
+  	sort_time BIGINT,
+  	planer_sort_time BIGINT,
+  	all_sort_time BIGINT,
+  	CONSTRAINT pk_t_schedule_task PRIMARY KEY (task_id, user_id)
+  );
+  CREATE TABLE "t_schedule_task_group" (
+  	task_list_id VARCHAR NOT NULL,
+  	user_id BIGINT NOT NULL,
+  	title VARCHAR NOT NULL,
+  	create_time BIGINT NOT NULL, update_time BIGINT DEFAULT '0' NOT NULL,
+  	CONSTRAINT pk_t_schedule_task_group PRIMARY KEY (task_list_id, user_id)
+  );
+  CREATE TABLE "users" (
+  	id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  	email VARCHAR NOT NULL,
+  	password_md5 VARCHAR NOT NULL,
+  	is_active BOOLEAN NOT NULL,
+  	display_name VARCHAR,
+  	phone VARCHAR,
+  	avatar VARCHAR,
+  	total_capacity VARCHAR NOT NULL,
+  	is_admin BOOLEAN NOT NULL
+  );
+  INSERT INTO "users" VALUES(1,'legacy_summary@example.com','482c811da5d5b4bc6d497ffa98491e38',1,NULL,NULL,NULL,'0',1);
+  CREATE INDEX ix_f_note_page_content_file_id ON f_note_page_content (file_id);
+  CREATE INDEX ix_f_system_task_file_id ON f_system_task (file_id);
+  CREATE INDEX ix_f_system_task_task_type ON f_system_task (task_type);
+  CREATE INDEX idx_user_dir_active ON f_user_file (user_id, directory_id, is_active);
+  CREATE INDEX ix_f_user_file_directory_id ON f_user_file (directory_id);
+  CREATE INDEX ix_f_user_file_user_id ON f_user_file (user_id);
+  CREATE INDEX ix_key_values_expiry ON key_values (expiry);
+  CREATE UNIQUE INDEX ix_devices_equipment_no ON devices (equipment_no);
+  CREATE INDEX ix_devices_user_id ON devices (user_id);
+  CREATE INDEX ix_login_records_create_time ON login_records (create_time);
+  CREATE INDEX ix_login_records_user_id ON login_records (user_id);
+  CREATE UNIQUE INDEX ix_users_email ON users (email);
+  CREATE INDEX ix_t_schedule_task_group_user_id ON t_schedule_task_group (user_id);
+  CREATE INDEX ix_t_schedule_task_task_list_id ON t_schedule_task (task_list_id);
+  CREATE INDEX ix_t_schedule_task_user_id ON t_schedule_task (user_id);
+  CREATE INDEX ix_f_summary_user_id ON f_summary (user_id);
+  CREATE INDEX ix_f_summary_file_id ON f_summary (file_id);
+  CREATE INDEX ix_f_summary_parent_unique_identifier ON f_summary (parent_unique_identifier);
+  CREATE INDEX ix_f_summary_tag_user_id ON f_summary_tag (user_id);
+  CREATE INDEX ix_f_note_metadata_file_id ON f_note_metadata (file_id);
+  CREATE INDEX ix_f_note_metadata_user_native_file_id ON f_note_metadata (user_id, native_file_id);
+  CREATE INDEX ix_f_note_page_metadata_file_id ON f_note_page_metadata (file_id);
+  CREATE INDEX ix_f_note_page_metadata_user_file_page_id ON f_note_page_metadata (user_id, file_id, page_id);
+  CREATE INDEX ix_f_user_event_user_file_seq ON f_user_event (user_id, related_file_id, seq);
+  CREATE INDEX ix_f_user_event_ts ON f_user_event (timestamp_ms);
+  CREATE INDEX ix_api_keys_user_id ON api_keys (user_id);
+  CREATE UNIQUE INDEX ix_api_keys_sha256_hash ON api_keys (sha256_hash);
+  DELETE FROM "sqlite_sequence";
+  INSERT INTO "sqlite_sequence" VALUES('users',1);
+  COMMIT;
+  '''
+# ---
 # name: test_sqlite_fixture_matches_snapshot[db_v0_20_0_schedule.sqlite][db_v0_20_0_schedule_sql_dump]
   '''
   BEGIN TRANSACTION;

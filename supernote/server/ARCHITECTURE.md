@@ -285,7 +285,7 @@ All timestamps follow the Supernote protocol convention of 64-bit Unix epoch mil
   - `NotePageContentDO` (`f_note_page_content`): Keyed by `(user_id, file_id, page_id)`. Stores the page's 0-based `page_index`, layer metadata `content_hash`, extracted `text_content` (OCR), JSON `embedding` vector, and `embedding_model` identifier.
   - `SystemTaskDO` (`f_system_task`): Keyed by `(user_id, file_id, task_type, key)` where `key` is `"global"` or `"page_{page_id}"`. Tracks `ProcessingStatus` (`PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`), module `data` (version/model tag), `retry_count`, and `last_error`.
 - **Summaries, Schedule & Domain Event Log (`supernote/server/db/models/summary.py`, `schedule.py`, `event_log.py`)**:
-  - `SummaryDO` (`f_summary`) & `SummaryTagDO` (`f_summary_tag`): Store both user-created digests/annotations and server-generated `OCR` transcripts and AI synthesis summaries.
+  - `SummaryDO` (`f_summary`) & `SummaryTagDO` (`f_summary_tag`): Store user-created digests/categories/annotations and server-generated AI synthesis summaries.
   - `ScheduleTaskGroupDO` (`t_schedule_task_group`), `ScheduleTaskDO` (`t_schedule_task`), `ScheduleRecurTaskDO` (`t_schedule_recur_task`), and `ScheduleSortDO` (`t_schedule_sort`): Store synced device tasks and task lists.
   - `UserEventDO` (`f_user_event`): Append-only domain event log keyed by monotonic `seq` with `(user_id, seq)` index, storing `event_type`, `actor`, `entity_type`, `entity_id`, `related_file_id`, and JSON `payload` (pruned after `event_log_retention_days`).
 
@@ -302,7 +302,7 @@ When a `.note` file is uploaded or updated (`NoteUpdatedEvent`) or when a device
    - `OcrModule` (`TaskType.OCR_EXTRACTION`): If `NotePageMetadataDO.has_drawables` is `False` (blank page), writes `text_content = ""` without requiring a PNG or calling the OCR LLM. Otherwise formats the prompt (routing by filename stem -> normalized `page_style` -> `default` and injecting `Page Keywords:` from `NotePageMetadataDO.keyword_texts`), sends the cached page PNG to `OcrModel`, and writes `text_content` to `NotePageContentDO`.
    - `EmbeddingModule` (`TaskType.EMBEDDING_GENERATION`): Skips blank pages (`content.is_blank`); generates a vector embedding from non-blank `text_content` via `EmbeddingModel` and stores it on `NotePageContentDO`.
 3. **Global Post-Processing (`SummaryModule`)**:
-   - Once all pages have completed OCR, assembles the full notebook transcript (`OCR` `SummaryDO` from non-blank pages) and invokes `SummaryModel` to generate a chronological synthesis (`SummaryDO`) inside a parent Summary Group.
+   - Once all pages have completed OCR, assembles the non-blank page transcripts in memory and invokes `SummaryModel` to generate a chronological synthesis (`SummaryDO`) under the shared `"AI Summaries"` Digest category.
    - Emits `NoteProcessingCompletedEvent` upon completion.
 
 For full pipeline semantics, state machine rules, and failure recovery details, see `supernote.guides.note_processing_design` ([`docs/note_processing_design.md`](../../docs/note_processing_design.md)).

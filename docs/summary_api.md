@@ -7,57 +7,50 @@ This document provides a high-level overview of the Summary ecosystem in the Sup
 The system revolves around three main entities: **Summaries**, **Summary Groups**, and **Summary Tags**.
 
 ### Summaries (`SummaryDO`)
-A "Summary" is a generic container for derived content associated with a user's file (e.g., a handwritten note).
+A "Summary" represents an individual **Digest** entry in the Supernote Partner App and tablet Digest UI—such as a PDF/EPUB highlight excerpt or a server-generated AI notebook synthesis.
 
-*   **Conceptual Role**: It holds the "result" of an operation on a file. This could be OCR text, a digest, or user notes.
+*   **Conceptual Role**: Holds a single Digest card (quote, excerpt, or AI synthesis) plus optional text/handwriting annotations.
 *   **Key Fields**:
-    *   `uniqueIdentifier`: **Client-Provided UUID**. This is the primary key used to link the summary to the source file on the device. It must be unique.
-    *   `content`: The actual text content (e.g., OCR result).
-    *   `sourcePath`: path to the original file (e.g., `/Note/Meeting.note`).
-    *   `isSummaryGroup`: Set to `"N"` for standard summaries.
-    *   `parentUniqueIdentifier`: If the summary belongs to a group (folder), this points to the group's UUID.
+    *   `uniqueIdentifier`: **32-character lowercase hex identifier** (or client UUID) used for device/Partner App Digest synchronization.
+    *   `content`: Primary text content (excerpt or Markdown synthesis).
+    *   `sourcePath`: VFS-relative path to the source file without a leading slash (e.g., `Note/Meeting.note` or `Document/Archive/Paper.pdf`).
+    *   `isSummaryGroup`: Set to `"N"` for Digest items.
+    *   `parentUniqueIdentifier`: Points to the `uniqueIdentifier` of the Digest's **Category** (`SummaryGroup`). Empty (`""`) or `None` appears under **Uncategorized** in the Partner App.
 
 ### Summary Groups (`SummaryDO` with `isSummaryGroup='Y'`)
-A "Summary Group" is simply a folder or container for other summaries.
+A "Summary Group" maps directly to a **Category** in the Supernote Partner App and tablet Digest filter bar (*All*, *Uncategorized*, and custom categories).
 
-*   **Conceptual Role**: Acts as a directory to organize summaries.
+*   **Conceptual Role**: Top-level Digest Category. Because each `SummaryDO` has a single `parentUniqueIdentifier`, a Digest entry belongs to at most one Category.
 *   **Key Fields**:
-    *   `uniqueIdentifier`: The group's own UUID.
+    *   `uniqueIdentifier`: 32-character lowercase hex identifier for the category.
     *   `isSummaryGroup`: Set to `"Y"`.
-    *   `name`: The display name of the group.
+    *   `name`: Category display name (for example, `"AI Summaries"` for server-generated notebook syntheses).
 
 ### Summary Tags (`SummaryTagDO`)
-Tags are labels that can be created and managed separately to categorize content.
+Legacy/auxiliary tag endpoints (`/api/file/*/summary/tag`) defined in the cloud API schema.
 
-*   **Conceptual Role**: A pool of available tags (e.g., "Work", "Urgent", "Ideas").
-*   **Usage**: While `SummaryTagDO` manages the *existence* of tags, the `SummaryDO` object itself has a `tags` string field where you likely store a comma-separated list of tag names or IDs to associate them with a specific summary.
+*   **Usage Note**: The Supernote Partner App and Digest 2.0 UI organize digests by **Categories** (`SummaryGroup` via `parentUniqueIdentifier`) and **Sources** (`sourcePath`), leaving `SummaryTagDO` and `SummaryDO.tags` unused (`null`).
 
 ---
 
-## Interoperability Workflow (e.g., Gemini OCR)
+## Interoperability Workflow (Custom Digest / AI Synthesis)
 
-If you are building an external tool (like a Gemini OCR bot) to generate summaries for Supernote files, follow this workflow:
+If you are building an integration that publishes Digest cards (such as AI syntheses or reading excerpts) for Supernote files:
 
-### Identify the Source File
-You need the **UUID** that the device/client uses to refer to the file.
-*   *Note*: This is NOT the cloud database ID (`fileId`). It is the consistent ID used by the client validation logic.
-*   **Action**: Ensure your client tracks this UUID.
+### Identify the Source File & Path
+Use the VFS-relative path without a leading slash (e.g., `Note/Daily.note` or `Document/Archive/Paper.pdf`) for `sourcePath` so the Partner App groups items accurately under **Sources**.
 
-### Generate Content
-Run your OCR or processing logic on the file to generate the text string.
+### Ensure a Category (`SummaryGroup`) If Desired
+If you want the Digest card filed under a named **Category** rather than **Uncategorized**:
+1. Query existing categories via `POST /api/file/query/summary/group` (`QuerySummaryGroupDTO`).
+2. If absent, create one via `POST /api/file/add/summary/group` (`AddSummaryGroupDTO`) using a 32-character lowercase hex `uniqueIdentifier` (for example `uuid.uuid5(...).hex`).
 
-### Create the Summary
-Call the `POST /api/file/add/summary` endpoint (represented by `AddSummaryDTO`).
-*   **Payload Construction**:
-    *   `uniqueIdentifier`: Provide the file's UUID (or a new UUID if this is a standalone summary).
-    *   `content`: Your Gemini OCR text.
-    *   `sourcePath`: The file path (for reference).
-    *   `md5Hash`: (Optional) Hash of the content for integrity.
-    *   `isSummaryGroup`: `"N"`
-
-### Organization (Optional)
-*   **Grouping**: If you want this summary inside a specific folder, create a group first (via `add/summary/group`), get its UUID, and pass that as `parentUniqueIdentifier` when creating the summary.
-*   **Tagging**: If you want to tag it, passed a string to the `tags` field.
+### Create or Update the Digest Entry
+Call `POST /api/file/add/summary` (`AddSummaryDTO`) or `PUT /api/file/update/summary` (`UpdateSummaryDTO`):
+*   `uniqueIdentifier`: Deterministic 32-character lowercase hex identifier (or client UUID).
+*   `parentUniqueIdentifier`: The target Category's `uniqueIdentifier` (or `""` / omitted for **Uncategorized**).
+*   `content`: Markdown synthesis or excerpt text.
+*   `sourcePath`: VFS-relative path (e.g., `Note/Daily.note`).
 
 ## Data Model Reference
 
@@ -65,26 +58,21 @@ Call the `POST /api/file/add/summary` endpoint (represented by `AddSummaryDTO`).
 
 | Field | Type | Description |
 | :--- | :--- | :--- |
-| `uniqueIdentifier` | `string` | **Crucial**: The primary key for device-to-cloud mapping. Should match the source `fileId` UUID on the Supernote device. |
-| `parentUniqueIdentifier` | `string` | Links a summary to a Summary Group (Folder). |
-| `isSummaryGroup` | `string` | `"Y"` if this item is a container, `"N"` for content items. |
-| `content` | `string` | Typically stores OCR-derived text or user-provided summary markdown. |
-| `tags` | `string` | Comma-separated list of tag names. Loose association with `SummaryTagDO`. |
+| `uniqueIdentifier` | `string` | 32-character lowercase hex identifier (or client UUID) used for Digest sync. |
+| `parentUniqueIdentifier` | `string` | Links a Digest item to a **Category** (`SummaryGroup`); `""` or `null` renders under **Uncategorized**. |
+| `isSummaryGroup` | `string` | `"Y"` if this item is a Category (`SummaryGroup`), `"N"` for leaf Digest cards. |
+| `content` | `string` | Excerpt text or Markdown synthesis. |
+| `sourcePath` | `string` | VFS-relative path without leading `/` (e.g., `Note/Daily.note`, `Document/Book.pdf`). |
+| `tags` | `string` | Legacy comma-separated tag names (unused by Partner App Digest 2.0). |
 | `creationTime` | `int64` | Unix timestamp in **milliseconds**. |
-| `metadata` | `string` | JSON-encoded string for extensible plugin/system data. |
+| `metadata` | `string` | JSON-encoded string (e.g., `segments` on AI summaries, or `document_location_data` / `author` on device PDF digests). |
 
 ---
 
 ## Technical Implementation Nuances
 
-### UUID Mapping (`uniqueIdentifier`)
-The `uniqueIdentifier` is used by the Supernote device to locate summaries associated with its local files. When generating a summary for a specific note, this field must perfectly match the UUID the device uses to identify that note. If they mismatch, the summary won't "attach" to the file in the device UI.
-
-### Loose Tagging
-The system uses "loose association" for tags:
-*   `SummaryTagDO` entries define the *existence* of a tag (name/UI color).
-*   `SummaryDO` items store tag names as a static string in the `tags` field.
-*   **Implication**: Renaming a tag in `SummaryTagDO` does not automatically update the `tags` string in related summaries. The client must handle these cascading updates if strict consistency is desired.
+### Category Assignment & Preservation
+Each `SummaryDO` links to at most one `SummaryGroup` (`Category`) via `parentUniqueIdentifier`. Server-generated notebook syntheses default to a per-user `"AI Summaries"` category on initial creation, and leave `parentUniqueIdentifier` unchanged on subsequent updates so manual Partner App category moves stick permanently.
 
 ### Handwriting Metadata
 The fields `handwriteInnerName` and `handwriteMD5` refer to binary stroke data stored in the Object Storage (OSS).
