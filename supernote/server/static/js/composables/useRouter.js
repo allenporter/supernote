@@ -1,18 +1,29 @@
 /**
  * Client-side hash router and Host UI view synchronization composable.
  *
+ * Canonical routes:
+ * - `#/files` and `#/files/<dirId>`
+ * - `#/file/<fileId>` and `#/file/<fileId>?page=<1-based>`
+ * - `#/tasks`
+ * - `#/system`
+ * - `#/login?return_to=...` (OAuth 2.1 `/login-bridge` consent handoff)
+ *
  * Pure URL helpers (`parseUrlHash`, `buildUrlHash`, `buildCrumbsFromPathInfo`,
  * `formatCrumbName`) are exported at module top level with zero DOM/Vue side
- * effects so they can be imported directly in unit tests and plugin helpers.
+ * effects so they can be imported directly in unit tests.
  */
 
-import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { fetchPathInfo } from '../api/client.js';
 import { parseOAuthBridgeReturnTo } from '../utils/oauth.js';
 
 const SYSTEM_ROOT_UPPER = new Set(['EXPORT', 'INBOX', 'SCREENSHOT']);
-const ROUTING_QUERY_KEYS = ['dir', 'folder', 'file', 'tab', 'view', 'page'];
 
+/**
+ * @param {string} name
+ * @param {number} index
+ * @returns {string}
+ */
 export function formatCrumbName(name, index) {
     if (index === 0 && SYSTEM_ROOT_UPPER.has(name)) {
         return name.charAt(0) + name.slice(1).toLowerCase();
@@ -51,90 +62,54 @@ function parsePageParam(params) {
     return rawPage - 1;
 }
 
+/**
+ * @param {string} [hashString]
+ */
 export function parseUrlHash(hashString) {
     const raw = hashString !== undefined
         ? hashString
-        : (window.location.hash || window.location.search || '');
-    const clean = raw.replace(/^[#?]\/?/, '').trim();
+        : (typeof window !== 'undefined' ? window.location.hash || '' : '');
+    const clean = raw.replace(/^#\/?/, '').trim();
 
     if (!clean) {
         return { tab: 'files', view: 'grid', dirId: '0', showSystem: false };
     }
 
-    let pathPart = clean;
-    /** @type {URLSearchParams | null} */
-    let params = null;
     const qIdx = clean.indexOf('?');
-    if (qIdx !== -1) {
-        pathPart = clean.slice(0, qIdx);
-        params = new URLSearchParams(clean.slice(qIdx + 1));
-    } else if (clean.includes('=') && !clean.includes('/')) {
-        pathPart = '';
-        params = new URLSearchParams(clean);
-    }
-
-    const pageIndex = parsePageParam(params);
-
-    if (params) {
-        if (params.get('tab') === 'system' || params.get('view') === 'system') {
-            return { tab: 'system', view: 'grid', dirId: params.get('dir') || '0', showSystem: true };
-        }
-        if (params.get('tab') === 'tasks' || params.get('view') === 'tasks') {
-            return { tab: 'tasks', view: 'grid', dirId: '0', showSystem: false };
-        }
-        if (params.has('file')) {
-            return {
-                tab: 'files',
-                view: 'viewer',
-                fileId: params.get('file'),
-                dirId: params.get('dir') || null,
-                pageIndex,
-                showSystem: false
-            };
-        }
-        if (params.has('dir') || params.has('folder')) {
-            return {
-                tab: 'files',
-                view: 'grid',
-                dirId: params.get('dir') || params.get('folder') || '0',
-                showSystem: false
-            };
-        }
-    }
-
+    const pathPart = qIdx !== -1 ? clean.slice(0, qIdx) : clean;
+    const params = qIdx !== -1 ? new URLSearchParams(clean.slice(qIdx + 1)) : null;
     const parts = pathPart.split('/').filter(Boolean);
 
     if (parts[0] === 'system') {
         return { tab: 'system', view: 'grid', dirId: '0', showSystem: true };
     }
-
     if (parts[0] === 'tasks') {
         return { tab: 'tasks', view: 'grid', dirId: '0', showSystem: false };
     }
-
     if (parts[0] === 'file' && parts[1]) {
-        return { tab: 'files', view: 'viewer', fileId: parts[1], pageIndex, showSystem: false };
+        return {
+            tab: 'files',
+            view: 'viewer',
+            fileId: parts[1],
+            pageIndex: parsePageParam(params),
+            showSystem: false
+        };
     }
-
-    if ((parts[0] === 'files' || parts[0] === 'explorer') && parts[1] === 'file' && parts[2]) {
-        return { tab: 'files', view: 'viewer', fileId: parts[2], pageIndex, showSystem: false };
-    }
-
-    if ((parts[0] === 'files' || parts[0] === 'explorer') && parts[2] === 'file' && parts[3]) {
-        return { tab: 'files', view: 'viewer', dirId: parts[1], fileId: parts[3], pageIndex, showSystem: false };
-    }
-
-    if ((parts[0] === 'files' || parts[0] === 'explorer' || parts[0] === 'folder') && parts[1]) {
+    if (parts[0] === 'files' && parts[1]) {
         return { tab: 'files', view: 'grid', dirId: parts[1], showSystem: false };
     }
-
-    if (parts[0] === 'files' || parts[0] === 'explorer') {
-        return { tab: 'files', view: 'grid', dirId: '0', showSystem: false };
-    }
-
     return { tab: 'files', view: 'grid', dirId: '0', showSystem: false };
 }
 
+/**
+ * @param {string} tab
+ * @param {string | number | null} dirId
+ * @param {string} viewState
+ * @param {{ id?: string | number } | null} fileObj
+ * @param {boolean} [showSystem=false]
+ * @param {number | null} [pageIndex=null]
+ * @returns {string}
+ */
 export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false, pageIndex = null) {
     if (showSystem || tab === 'system') {
         return '#/system';
@@ -154,12 +129,6 @@ export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false,
     return '#/files';
 }
 
-function hasRoutingQueryParams(searchStr) {
-    if (!searchStr) return false;
-    const params = new URLSearchParams(searchStr);
-    return ROUTING_QUERY_KEYS.some(key => params.has(key));
-}
-
 /**
  * @param {Object} options
  * @param {import('vue').Ref<boolean>} options.isLoggedIn
@@ -168,7 +137,6 @@ function hasRoutingQueryParams(searchStr) {
  * @param {import('vue').Ref<string | null>} options.loadedDirectoryId
  * @param {(directoryId?: string | number) => Promise<void>} options.loadDirectory
  * @param {import('vue').Ref<Array<string | number>>} options.selectedIds
- * @param {(() => void) | null} [options.onBeforeNavigate=null]
  * @param {(() => void) | null} [options.onOAuthRouteEnter=null]
  * @param {(() => void) | null} [options.onOAuthRouteClear=null]
  */
@@ -179,32 +147,39 @@ export function useRouter({
     loadedDirectoryId,
     loadDirectory,
     selectedIds,
-    onBeforeNavigate = null,
     onOAuthRouteEnter = null,
     onOAuthRouteClear = null
 }) {
     const activeTab = ref('files'); // 'files' | 'tasks'
     const view = ref('grid'); // 'grid' | 'viewer'
+    /** @type {import('vue').Ref<Record<string, any> | null>} */
     const selectedFile = ref(null);
+    /** @type {import('vue').Ref<number | null>} */
     const selectedPageIndex = ref(null);
     const selectedPageJumpSeq = ref(0);
+    /** @type {import('vue').Ref<BreadcrumbItem[]>} */
     const breadcrumbs = ref([{ id: '0', name: 'Cloud' }]);
     const showSystemPanel = ref(false);
+    /** @type {import('vue').Ref<OAuthBridgeRequest | null>} */
     const pendingOAuthRequest = ref(null);
 
-    let urlSyncDepth = 0;
     let activeSyncSeq = 0;
     let lastSyncedHash = '';
     let inAppHistoryDepth = 0;
     let viewerOpenedFromHistory = false;
     let systemOpenedFromHistory = false;
 
-    function notifyBeforeNavigate() {
-        if (onBeforeNavigate) {
-            onBeforeNavigate();
-        }
+    function resetViewerSelection() {
+        view.value = 'grid';
+        selectedFile.value = null;
+        selectedPageIndex.value = null;
     }
 
+    /**
+     * @param {string | number} dirId
+     * @param {number} [seq]
+     * @returns {Promise<boolean>}
+     */
     async function syncBreadcrumbsForDirectory(dirId, seq = activeSyncSeq) {
         const targetId = String(dirId || '0');
         if (targetId === '0') {
@@ -229,7 +204,7 @@ export function useRouter({
     }
 
     function updateUrl(replace = false) {
-        if (urlSyncDepth > 0 || pendingOAuthRequest.value) return;
+        if (!isLoggedIn.value || pendingOAuthRequest.value) return;
         const targetHash = buildUrlHash(
             activeTab.value,
             currentDirectoryId.value,
@@ -239,23 +214,23 @@ export function useRouter({
             selectedPageIndex.value
         );
         lastSyncedHash = targetHash;
-        const stripQuery = hasRoutingQueryParams(window.location.search);
-        const targetUrl = stripQuery ? `${window.location.pathname}${targetHash}` : targetHash;
-        if (window.location.hash !== targetHash || stripQuery) {
+        if (window.location.hash !== targetHash) {
             if (replace) {
-                window.history.replaceState(null, '', targetUrl);
+                window.history.replaceState(null, '', targetHash);
             } else {
                 inAppHistoryDepth++;
-                window.history.pushState(null, '', targetUrl);
+                window.history.pushState(null, '', targetHash);
             }
         }
     }
 
+    /**
+     * @param {boolean} isInitial
+     * @param {number} seq
+     */
     async function restoreSystemView(isInitial, seq) {
         showSystemPanel.value = true;
-        view.value = 'grid';
-        selectedFile.value = null;
-        selectedPageIndex.value = null;
+        resetViewerSelection();
         if (activeTab.value === 'system') {
             activeTab.value = 'files';
         }
@@ -271,7 +246,7 @@ export function useRouter({
      * @param {string} targetFileId
      * @param {number} seq
      * @param {Record<string, any> | null} [fallbackItem=null]
-     * @param {(() => void | Promise<void>) | null} [onViewerReady=null]
+     * @param {(() => void) | null} [onViewerReady=null]
      */
     async function restoreViewerState(targetFileId, seq, fallbackItem = null, onViewerReady = null) {
         const hasMatchingLoadedDir =
@@ -283,7 +258,7 @@ export function useRouter({
         if (existingFile) {
             selectedFile.value = existingFile;
             view.value = 'viewer';
-            if (onViewerReady) await onViewerReady();
+            if (onViewerReady) onViewerReady();
             const currentLastCrumbId = String(breadcrumbs.value[breadcrumbs.value.length - 1]?.id || '0');
             if (currentLastCrumbId !== String(currentDirectoryId.value)) {
                 await syncBreadcrumbsForDirectory(currentDirectoryId.value, seq);
@@ -310,7 +285,7 @@ export function useRouter({
                     extension: fallbackExt
                 };
                 view.value = 'viewer';
-                if (onViewerReady) await onViewerReady();
+                if (onViewerReady) onViewerReady();
                 return;
             }
 
@@ -330,7 +305,7 @@ export function useRouter({
                 extension: ext
             };
             view.value = 'viewer';
-            if (onViewerReady) await onViewerReady();
+            if (onViewerReady) onViewerReady();
 
             await loadDirectory(parentDirId);
             if (seq !== activeSyncSeq) return;
@@ -348,14 +323,17 @@ export function useRouter({
                 extension: fallbackExt
             };
             view.value = 'viewer';
-            if (onViewerReady) await onViewerReady();
+            if (onViewerReady) onViewerReady();
         }
     }
 
+    /**
+     * @param {string} targetDirId
+     * @param {boolean} isInitial
+     * @param {number} seq
+     */
     async function restoreDirectoryState(targetDirId, isInitial, seq) {
-        view.value = 'grid';
-        selectedFile.value = null;
-        selectedPageIndex.value = null;
+        resetViewerSelection();
         selectedIds.value = [];
 
         const dirChanged = String(currentDirectoryId.value) !== targetDirId;
@@ -398,11 +376,10 @@ export function useRouter({
             return;
         }
 
-        const currentHash = rawHash || window.location.search || '';
-        if (!isInitial && currentHash === lastSyncedHash) {
+        if (!isInitial && rawHash === lastSyncedHash) {
             return;
         }
-        lastSyncedHash = currentHash;
+        lastSyncedHash = rawHash;
         if (!isInitial && inAppHistoryDepth > 0) {
             inAppHistoryDepth--;
         }
@@ -413,41 +390,34 @@ export function useRouter({
             window.history.replaceState(null, '', '#/files');
         }
         const seq = ++activeSyncSeq;
-        const parsed = parseUrlHash(isStaleLoginHash ? '#/files' : currentHash);
-        urlSyncDepth++;
-        try {
-            if (parsed.tab === 'system' || parsed.showSystem) {
-                await restoreSystemView(isInitial, seq);
-                return;
-            }
-            showSystemPanel.value = false;
-            systemOpenedFromHistory = false;
+        const parsed = parseUrlHash(isStaleLoginHash ? '#/files' : rawHash);
 
-            if (parsed.tab === 'tasks') {
-                activeTab.value = 'tasks';
-                view.value = 'grid';
-                selectedFile.value = null;
-                selectedPageIndex.value = null;
-                viewerOpenedFromHistory = false;
-                return;
-            }
-
-            activeTab.value = 'files';
-            if (parsed.view === 'viewer' && parsed.fileId) {
-                selectedPageIndex.value = typeof parsed.pageIndex === 'number' ? parsed.pageIndex : null;
-                if (typeof parsed.pageIndex === 'number') {
-                    selectedPageJumpSeq.value++;
-                }
-                await restoreViewerState(String(parsed.fileId), seq);
-                return;
-            }
-
-            viewerOpenedFromHistory = false;
-            await restoreDirectoryState(String(parsed.dirId || '0'), isInitial, seq);
-        } finally {
-            await nextTick();
-            urlSyncDepth--;
+        if (parsed.tab === 'system' || parsed.showSystem) {
+            await restoreSystemView(isInitial, seq);
+            return;
         }
+        showSystemPanel.value = false;
+        systemOpenedFromHistory = false;
+
+        if (parsed.tab === 'tasks') {
+            activeTab.value = 'tasks';
+            resetViewerSelection();
+            viewerOpenedFromHistory = false;
+            return;
+        }
+
+        activeTab.value = 'files';
+        if (parsed.view === 'viewer' && parsed.fileId) {
+            selectedPageIndex.value = typeof parsed.pageIndex === 'number' ? parsed.pageIndex : null;
+            if (typeof parsed.pageIndex === 'number') {
+                selectedPageJumpSeq.value++;
+            }
+            await restoreViewerState(String(parsed.fileId), seq);
+            return;
+        }
+
+        viewerOpenedFromHistory = false;
+        await restoreDirectoryState(String(parsed.dirId || '0'), isInitial, seq);
     }
 
     async function clearOAuthRoute() {
@@ -459,28 +429,27 @@ export function useRouter({
         }
     }
 
-    watch(
-        [activeTab, currentDirectoryId, view, () => selectedFile.value?.id, selectedPageIndex, showSystemPanel],
-        () => {
-            if (!isLoggedIn.value || pendingOAuthRequest.value) return;
-            updateUrl();
-        }
-    );
-
+    /**
+     * @param {'files' | 'tasks'} tab
+     */
     async function switchTab(tab) {
-        notifyBeforeNavigate();
         showSystemPanel.value = false;
         systemOpenedFromHistory = false;
         activeTab.value = tab;
         if (tab === 'files') {
             viewerOpenedFromHistory = false;
+            resetViewerSelection();
+            updateUrl();
             await restoreDirectoryState(String(currentDirectoryId.value || '0'), false, ++activeSyncSeq);
+        } else {
+            updateUrl();
         }
     }
 
     function openSystemPanel() {
         systemOpenedFromHistory = true;
         showSystemPanel.value = true;
+        updateUrl();
     }
 
     async function closeSystemPanel() {
@@ -490,10 +459,7 @@ export function useRouter({
             return;
         }
         systemOpenedFromHistory = false;
-        urlSyncDepth++;
         showSystemPanel.value = false;
-        await nextTick();
-        urlSyncDepth--;
         updateUrl(true);
         if (activeTab.value === 'files' && view.value === 'grid') {
             await restoreDirectoryState(String(currentDirectoryId.value || '0'), false, ++activeSyncSeq);
@@ -507,123 +473,91 @@ export function useRouter({
             return;
         }
         viewerOpenedFromHistory = false;
-        urlSyncDepth++;
-        view.value = 'grid';
-        selectedFile.value = null;
-        selectedPageIndex.value = null;
-        await nextTick();
-        urlSyncDepth--;
+        resetViewerSelection();
         updateUrl(true);
         await restoreDirectoryState(String(currentDirectoryId.value || '0'), false, ++activeSyncSeq);
     }
 
-    async function handleViewerPageChange(pageIdx) {
+    /**
+     * @param {number} pageIdx
+     */
+    function handleViewerPageChange(pageIdx) {
         if (view.value !== 'viewer' || typeof pageIdx !== 'number' || Number.isNaN(pageIdx) || pageIdx < 0) {
             return;
         }
         if (selectedPageIndex.value === pageIdx) return;
-        urlSyncDepth++;
-        try {
-            selectedPageIndex.value = pageIdx;
-            await nextTick();
-        } finally {
-            urlSyncDepth--;
-        }
+        selectedPageIndex.value = pageIdx;
         updateUrl(true);
     }
 
-    async function openItem(item) {
-        notifyBeforeNavigate();
-        if (item.isDirectory) {
-            activeTab.value = 'files';
-            view.value = 'grid';
-            selectedFile.value = null;
-            selectedPageIndex.value = null;
-            viewerOpenedFromHistory = false;
-            currentDirectoryId.value = String(item.id);
-            const existingIndex = breadcrumbs.value.findIndex(c => String(c.id) === String(item.id));
-            if (existingIndex > -1) {
-                breadcrumbs.value = breadcrumbs.value.slice(0, existingIndex + 1);
-            } else {
-                breadcrumbs.value.push({ id: String(item.id), name: item.name });
-            }
-            selectedIds.value = [];
-            await loadDirectory(item.id);
-        } else {
-            const targetPage = typeof item.pageIndex === 'number' ? item.pageIndex : null;
-            if (
-                view.value === 'viewer' &&
-                String(selectedFile.value?.id) === String(item.id)
-            ) {
-                selectedPageIndex.value = targetPage ?? 0;
-                selectedPageJumpSeq.value++;
-                return;
-            }
-            viewerOpenedFromHistory = true;
-            selectedPageIndex.value = targetPage;
-            if (targetPage !== null) {
-                selectedPageJumpSeq.value++;
-            }
-            selectedFile.value = item;
-            view.value = 'viewer';
-        }
-    }
-
-    async function navigateFolder(folder) {
-        notifyBeforeNavigate();
-        activeTab.value = 'files';
-        view.value = 'grid';
-        selectedFile.value = null;
-        viewerOpenedFromHistory = false;
-        currentDirectoryId.value = String(folder.id);
-        selectedIds.value = [];
-        await Promise.all([
-            loadDirectory(folder.id),
-            syncBreadcrumbsForDirectory(folder.id)
-        ]);
-    }
-
+    /**
+     * Navigate to a breadcrumb index in the current path hierarchy.
+     * @param {number} index
+     */
     async function navigateTo(index) {
-        notifyBeforeNavigate();
         const crumbs = breadcrumbs.value.slice(0, index + 1);
-        breadcrumbs.value = crumbs;
         const target = crumbs[crumbs.length - 1];
-        view.value = 'grid';
-        selectedFile.value = null;
+        if (!target) return;
+        breadcrumbs.value = crumbs;
+        showSystemPanel.value = false;
+        systemOpenedFromHistory = false;
+        activeTab.value = 'files';
+        resetViewerSelection();
         viewerOpenedFromHistory = false;
         currentDirectoryId.value = String(target.id);
         selectedIds.value = [];
+        updateUrl();
         await loadDirectory(target.id);
     }
 
-    async function navigateToTarget(item) {
+    /**
+     * Open a directory or file item from the file browser, global search,
+     * cross-notebook link, or system status drawer.
+     *
+     * @param {Record<string, any> | null | undefined} item
+     */
+    async function openItem(item) {
         if (!item) return;
         const replaceModalHistory = systemOpenedFromHistory && inAppHistoryDepth > 0;
         const wasSystemUrl = window.location.hash.startsWith('#/system');
-        notifyBeforeNavigate();
 
         if (item.isDirectory) {
-            urlSyncDepth++;
-            try {
-                showSystemPanel.value = false;
-                systemOpenedFromHistory = false;
-                activeTab.value = 'files';
-                view.value = 'grid';
-                selectedFile.value = null;
-                selectedPageIndex.value = null;
-                viewerOpenedFromHistory = false;
-                currentDirectoryId.value = String(item.id);
-                selectedIds.value = [];
-                await nextTick();
-            } finally {
-                urlSyncDepth--;
+            const targetId = String(item.id);
+            const prevDirId = String(currentDirectoryId.value || '0');
+            const existingIndex = breadcrumbs.value.findIndex(c => String(c.id) === targetId);
+            const isChildOfLoadedDir =
+                existingIndex === -1 &&
+                loadedDirectoryId.value === prevDirId &&
+                Boolean(item.name) &&
+                files.value.some(f => f.isDirectory && String(f.id) === targetId);
+
+            showSystemPanel.value = false;
+            systemOpenedFromHistory = false;
+            activeTab.value = 'files';
+            resetViewerSelection();
+            viewerOpenedFromHistory = false;
+            currentDirectoryId.value = targetId;
+            selectedIds.value = [];
+            if (existingIndex > -1) {
+                breadcrumbs.value = breadcrumbs.value.slice(0, existingIndex + 1);
+            } else if (isChildOfLoadedDir) {
+                const depthIndex = Math.max(0, breadcrumbs.value.length - 1);
+                breadcrumbs.value = [
+                    ...breadcrumbs.value,
+                    { id: targetId, name: formatCrumbName(item.name, depthIndex) }
+                ];
             }
             updateUrl(replaceModalHistory);
+
             const seq = ++activeSyncSeq;
-            await Promise.all([
-                loadDirectory(item.id),
-                syncBreadcrumbsForDirectory(item.id, seq)
-            ]);
+            if (existingIndex > -1 || isChildOfLoadedDir) {
+                await loadDirectory(targetId);
+            } else {
+                await Promise.all([
+                    loadDirectory(targetId),
+                    syncBreadcrumbsForDirectory(targetId, seq)
+                ]);
+            }
             return;
         }
 
@@ -631,17 +565,11 @@ export function useRouter({
         const targetPage = typeof item.pageIndex === 'number' ? item.pageIndex : null;
 
         if (view.value === 'viewer' && String(selectedFile.value?.id) === targetFileId) {
-            urlSyncDepth++;
-            try {
-                showSystemPanel.value = false;
-                systemOpenedFromHistory = false;
-                activeTab.value = 'files';
-                selectedPageIndex.value = targetPage ?? 0;
-                selectedPageJumpSeq.value++;
-                await nextTick();
-            } finally {
-                urlSyncDepth--;
-            }
+            showSystemPanel.value = false;
+            systemOpenedFromHistory = false;
+            activeTab.value = 'files';
+            selectedPageIndex.value = targetPage ?? 0;
+            selectedPageJumpSeq.value++;
             updateUrl(wasSystemUrl ? replaceModalHistory : true);
             const currentLastCrumbId = String(breadcrumbs.value[breadcrumbs.value.length - 1]?.id || '0');
             if (currentLastCrumbId !== String(currentDirectoryId.value)) {
@@ -651,34 +579,19 @@ export function useRouter({
         }
 
         const seq = ++activeSyncSeq;
-        let urlReleased = false;
-        const releaseAndSyncUrl = async () => {
-            if (urlReleased) return;
-            urlReleased = true;
-            await nextTick();
-            urlSyncDepth--;
+        showSystemPanel.value = false;
+        systemOpenedFromHistory = false;
+        activeTab.value = 'files';
+        viewerOpenedFromHistory = true;
+        selectedPageIndex.value = targetPage;
+        if (targetPage !== null) {
+            selectedPageJumpSeq.value++;
+        }
+        await restoreViewerState(targetFileId, seq, item, () => {
             if (seq === activeSyncSeq) {
                 updateUrl(replaceModalHistory);
             }
-        };
-
-        urlSyncDepth++;
-        try {
-            showSystemPanel.value = false;
-            systemOpenedFromHistory = false;
-            activeTab.value = 'files';
-            viewerOpenedFromHistory = true;
-            selectedPageIndex.value = targetPage;
-            if (targetPage !== null) {
-                selectedPageJumpSeq.value++;
-            }
-            await restoreViewerState(targetFileId, seq, item, releaseAndSyncUrl);
-        } finally {
-            if (!urlReleased) {
-                await nextTick();
-                urlSyncDepth--;
-            }
-        }
+        });
     }
 
     const handlePopStateOrHash = () => syncFromUrl();
@@ -711,8 +624,6 @@ export function useRouter({
         closeViewer,
         handleViewerPageChange,
         openItem,
-        navigateFolder,
-        navigateTo,
-        navigateToTarget
+        navigateTo
     };
 }
