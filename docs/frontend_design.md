@@ -23,6 +23,7 @@ supernote/server/static/
     │   ├── client.js                 # Auth, VFS CRUD, OSS upload, search, note metadata & Socket.IO
     │   └── schedule.js               # Task groups, tasks CRUD & iCalendar (.ics) feed client
     ├── composables/
+    │   ├── useCanvasScrollSync.js    # Bidirectional canvas/transcript scroll sync & zoom controls
     │   ├── useRouter.js              # Hash router (#/files, #/file/<id>?page=N, #/tasks, #/system, OAuth)
     │   ├── useFileSystem.js          # Directory listing & file mutation state
     │   ├── useProcessingStatus.js    # Background OCR/indexing status polling & digest-sync listener
