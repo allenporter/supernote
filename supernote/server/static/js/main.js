@@ -12,6 +12,7 @@ import { useFileSystem } from './composables/useFileSystem.js';
 import { useProcessingStatus } from './composables/useProcessingStatus.js';
 import { useRouter, parseUrlHash, buildUrlHash } from './composables/useRouter.js';
 import { useToast } from './composables/useToast.js';
+import { getErrorMessage } from './utils/format.js';
 import {
     ApiError,
     getToken,
@@ -183,7 +184,7 @@ createApp({
                     updateUrl(true);
                 }
             } catch (e) {
-                showToast(e.message);
+                showToast(getErrorMessage(e));
             }
         }
 
@@ -192,7 +193,7 @@ createApp({
          */
         async function submitOAuthDecision(decision) {
             const req = pendingOAuthRequest.value;
-            if (!req || !req.isValid || !req.bridgePathWithQuery || isSubmittingOAuth.value) return;
+            if (!req?.isValid || !req.bridgePathWithQuery || isSubmittingOAuth.value) return;
             if (!getToken()) {
                 isLoggedIn.value = false;
                 showToast('Please sign in to authorize this application.', 'error');

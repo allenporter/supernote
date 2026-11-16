@@ -1,0 +1,20 @@
+{
+  "files": {
+    "includes": [
+      "supernote/server/static/js/**/*.js",
+      "tests/frontend/**/*.mjs"
+    ]
+  },
+  "formatter": {
+    "enabled": false
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "suspicious": {
+        "noAlert": "error"
+      }
+    }
+  }
+}

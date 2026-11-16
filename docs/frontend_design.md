@@ -6,7 +6,7 @@ The Supernote Cloud Web UI (`supernote/server/static/`) is a zero-build Vue 3 si
 
 - **Zero Build Step**: Browser-native ES modules (`<script type="module">`) and an `<script type="importmap">` in `index.html` load pinned CDN dependencies (`vue`, `marked`, `dompurify`, `tailwindcss`, `socket.io-client`, `spark-md5`, `js-sha256`) tracked by Renovate. No `package.json`, bundler, or Node runtime is required in production containers.
 - **Vue 3 Composition API**: All components use Vue 3 `setup(props, { emit, expose })` and shared composables.
-- **Compile-Time Type Safety via JSDoc + `tsc --noEmit`**: `tsconfig.json` (`allowJs: true`, `checkJs: true`, `strictNullChecks: true`) and ambient declarations (`supernote/server/static/js/types.d.ts`) type-check every `.js` module in `./script/lint` and CI without transpilation.
+- **Compile-Time Type Safety & JS Linting**: `tsconfig.json` (`allowJs: true`, `checkJs: true`, `strict: true`) and ambient declarations (`supernote/server/static/js/types.d.ts`) strictly type-check every `.js` module via TypeScript (`tsc --noEmit`), while Biome (`biome.json`) enforces static JavaScript lint rules in `./script/lint` and CI without transpilation.
 - **Host UI Separation**: URL routing, authentication/token transport, and view shells are decoupled from domain panels so dynamic ES-module plugins can register tabs, toolbar actions, and viewer actions against a stable `PluginHostContext` contract.
 
 ## 2. Directory Layout
@@ -63,7 +63,7 @@ supernote/server/static/
   ```bash
   ./script/lint
   ```
-  Runs `tsc -p tsconfig.json --noEmit` (via `pre-commit`), `ruff`, `ty`, `codespell`, and `yamllint`.
+  Runs `tsc -p tsconfig.json --noEmit` (`strict: true`), `biome lint --error-on-warnings`, `ruff`, `ty`, `codespell`, and `yamllint` via `pre-commit`.
 
 - **Pure ES Module Unit Tests** (`node:test`, zero npm dependencies):
   ```bash

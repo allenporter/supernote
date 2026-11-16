@@ -254,7 +254,9 @@ export function useCanvasScrollSync({ pages, transcriptPages }) {
         );
         pageObserver = observer;
 
-        cards.forEach((card) => observer.observe(card));
+        for (const card of cards) {
+            observer.observe(card);
+        }
     };
 
     onMounted(() => {

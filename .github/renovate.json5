@@ -40,6 +40,14 @@
       assignees: [],
     },
     {
+      description: 'Group Biome updates across pre-commit and GitHub Actions workflows',
+      matchPackageNames: ['@biomejs/biome'],
+      groupName: 'biome',
+      automerge: true,
+      automergeType: 'branch',
+      assignees: [],
+    },
+    {
       description: 'Manage .python-version via cookiecutter/cruft template instead of Renovate',
       matchManagers: ['pyenv'],
       enabled: false,

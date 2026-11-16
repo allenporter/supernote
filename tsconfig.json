@@ -7,14 +7,9 @@
     "allowJs": true,
     "checkJs": true,
     "noEmit": true,
-    "strict": false,
-    "strictNullChecks": true,
-    "strictBindCallApply": true,
-    "strictFunctionTypes": true,
-    "noImplicitThis": true,
+    "strict": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
-    "useUnknownInCatchVariables": false,
     "skipLibCheck": true
   },
   "include": [

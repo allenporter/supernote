@@ -62,3 +62,7 @@ jobs:
       - name: Static typing for frontend JS (tsc)
         run: |
           npx --yes --package=typescript@7.0.2 -- tsc -p tsconfig.json --noEmit
+
+      - name: Lint frontend JS (biome)
+        run: |
+          npx --yes --package=@biomejs/biome@2.6.8 -- biome lint --error-on-warnings supernote/server/static/js tests/frontend

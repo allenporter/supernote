@@ -1,11 +1,19 @@
 import { ref } from 'vue';
-import { fetchFiles, createFolder, deleteItems, moveItems, renameItem, uploadFile } from '../api/client.js';
+import {
+    ApiError,
+    fetchFiles,
+    createFolder,
+    deleteItems,
+    moveItems,
+    renameItem,
+    uploadFile
+} from '../api/client.js';
 
 export function useFileSystem() {
     /** @type {import('vue').Ref<FileItem[]>} */
     const files = ref([]);
     /** @type {import('vue').Ref<string>} */
-    const currentDirectoryId = ref("0");
+    const currentDirectoryId = ref('0');
     /** @type {import('vue').Ref<string | null>} */
     const loadedDirectoryId = ref(null);
     const isLoading = ref(false);
@@ -31,11 +39,9 @@ export function useFileSystem() {
             if (seq !== activeLoadSeq) return;
             console.error(e);
             loadedDirectoryId.value = null;
-            if (e.message === "Unauthorized") {
-                error.value = "Unauthorized";
-            } else {
-                error.value = "Failed to load directory";
-            }
+            error.value = e instanceof ApiError && e.status === 401
+                ? 'Unauthorized'
+                : 'Failed to load directory';
         } finally {
             if (seq === activeLoadSeq) {
                 isLoading.value = false;
@@ -44,16 +50,18 @@ export function useFileSystem() {
     }
 
     /**
-     * @param {string} name
+     * Execute a VFS mutation, refresh the active directory, and surface failure state.
+     * @param {() => Promise<unknown>} action
+     * @param {string} failureMessage
      */
-    async function createNewFolder(name) {
+    async function runMutation(action, failureMessage) {
         isLoading.value = true;
         try {
-            await createFolder(currentDirectoryId.value, name);
+            await action();
             await loadDirectory();
         } catch (e) {
             console.error(e);
-            error.value = "Failed to create folder";
+            error.value = failureMessage;
             throw e;
         } finally {
             isLoading.value = false;
@@ -61,20 +69,17 @@ export function useFileSystem() {
     }
 
     /**
+     * @param {string} name
+     */
+    async function createNewFolder(name) {
+        await runMutation(() => createFolder(currentDirectoryId.value, name), 'Failed to create folder');
+    }
+
+    /**
      * @param {string[]} itemIds
      */
     async function deleteSelectedItems(itemIds) {
-        isLoading.value = true;
-        try {
-            await deleteItems(currentDirectoryId.value, itemIds);
-            await loadDirectory();
-        } catch (e) {
-            console.error(e);
-            error.value = "Failed to delete items";
-            throw e;
-        } finally {
-            isLoading.value = false;
-        }
+        await runMutation(() => deleteItems(currentDirectoryId.value, itemIds), 'Failed to delete items');
     }
 
     /**
@@ -82,36 +87,18 @@ export function useFileSystem() {
      * @param {string} targetDirId
      */
     async function moveSelectedItems(itemIds, targetDirId) {
-        isLoading.value = true;
-        try {
-            await moveItems(itemIds, targetDirId);
-            await loadDirectory();
-        } catch (e) {
-            console.error(e);
-            error.value = "Failed to move items";
-            throw e;
-        } finally {
-            isLoading.value = false;
-        }
+        await runMutation(() => moveItems(itemIds, targetDirId), 'Failed to move items');
     }
 
     /**
      * @param {FileList | File[]} fileList
      */
     async function uploadFiles(fileList) {
-        isLoading.value = true;
-        try {
+        await runMutation(async () => {
             for (const file of fileList) {
                 await uploadFile(currentDirectoryId.value, file);
             }
-            await loadDirectory();
-        } catch (e) {
-            console.error(e);
-            error.value = "Failed to upload files";
-            throw e;
-        } finally {
-            isLoading.value = false;
-        }
+        }, 'Failed to upload files');
     }
 
     /**
@@ -119,17 +106,7 @@ export function useFileSystem() {
      * @param {string} newName
      */
     async function renameSelectedItem(id, newName) {
-        isLoading.value = true;
-        try {
-            await renameItem(id, newName);
-            await loadDirectory();
-        } catch (e) {
-            console.error(e);
-            error.value = "Failed to rename item";
-            throw e;
-        } finally {
-            isLoading.value = false;
-        }
+        await runMutation(() => renameItem(id, newName), 'Failed to rename item');
     }
 
     return {

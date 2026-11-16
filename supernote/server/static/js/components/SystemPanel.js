@@ -1,6 +1,6 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { fetchSystemTasks, fetchCapacity, fetchAiStatus } from '../api/client.js';
-import { formatSize, formatSystemTimestamp } from '../utils/format.js';
+import { formatSize, formatSystemTimestamp, getErrorMessage } from '../utils/format.js';
 
 /** @type {Record<string, string>} */
 const TASK_TYPE_LABELS = {
@@ -187,10 +187,10 @@ export default {
         </div>
     `,
     /**
-     * @param {Record<string, any>} props
+     * @param {Record<string, any>} _props
      * @param {{ emit: (event: string, ...args: any[]) => void }} context
      */
-    setup(props, { emit }) {
+    setup(_props, { emit }) {
         const loading = ref(true);
         const error = ref(null);
         const tasks = ref([]);
@@ -222,7 +222,7 @@ export default {
                 capacity.value = capacityResult;
                 aiStatus.value = aiStatusResult;
             } catch (e) {
-                error.value = e.message;
+                error.value = getErrorMessage(e);
             } finally {
                 loading.value = false;
             }

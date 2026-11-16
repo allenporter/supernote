@@ -33,7 +33,7 @@ export const PAGE_STYLE_LABELS = {
 export function resolveFileExt(file) {
     if (!file) return '';
     if (file.extension) return String(file.extension).toLowerCase();
-    if (file.name && file.name.includes('.')) {
+    if (file.name?.includes('.')) {
         return (file.name.split('.').pop() || '').toLowerCase();
     }
     return '';

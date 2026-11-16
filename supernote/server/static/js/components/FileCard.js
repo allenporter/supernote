@@ -1,7 +1,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { fetchNoteCover, fetchDownloadUrl, downloadFile } from '../api/client.js';
 import { showToast } from '../composables/useToast.js';
-import { formatSize, formatShortDate } from '../utils/format.js';
+import { formatSize, formatShortDate, getErrorMessage } from '../utils/format.js';
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg']);
 const DOCUMENT_EXTENSIONS = new Set(['epub', 'doc', 'docx', 'txt', 'md', 'csv', 'json', 'yaml', 'yml', 'log']);
@@ -24,7 +24,7 @@ export default {
         const fileExt = computed(() => {
             if (!props.file) return '';
             if (props.file.extension) return String(props.file.extension).toLowerCase();
-            if (props.file.name && props.file.name.includes('.')) {
+            if (props.file.name?.includes('.')) {
                 return props.file.name.split('.').pop().toLowerCase();
             }
             return '';
@@ -45,7 +45,7 @@ export default {
             try {
                 await downloadFile(props.file.id);
             } catch (e) {
-                showToast("Failed to download: " + e.message);
+                showToast(`Failed to download: ${getErrorMessage(e)}`);
             } finally {
                 downloading.value = false;
             }
@@ -79,7 +79,7 @@ export default {
                 if (seq === activeCoverSeq && String(props.file?.id) === String(targetId)) {
                     coverUrl.value = resolvedUrl;
                 }
-            } catch (e) {
+            } catch {
                 if (seq === activeCoverSeq) {
                     coverUrl.value = null;
                 }

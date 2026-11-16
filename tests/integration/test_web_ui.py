@@ -149,7 +149,7 @@ async def test_web_ui_desktop_and_mobile_smoke(
             pytest.skip(f"Chromium browser binary not installed: {exc}")
 
         try:
-            # 1. Desktop E2E flow (1360x860)
+            # Desktop E2E flow (1360x860)
             desktop = await browser.new_context(
                 viewport={"width": 1360, "height": 860},
                 permissions=["clipboard-read", "clipboard-write"],
@@ -186,7 +186,9 @@ async def test_web_ui_desktop_and_mobile_smoke(
             )
 
             await page.get_by_role("button", name="Next page").first.click()
-            await page.wait_for_timeout(200)
+            await page.wait_for_function(
+                "() => window.location.hash.includes('page=2')"
+            )
             assert "page=2" in page.url
 
             await page.get_by_role("button", name="Summaries").click()
@@ -232,7 +234,7 @@ async def test_web_ui_desktop_and_mobile_smoke(
             await page.keyboard.press("Escape")
             await desktop.close()
 
-            # 2. Mobile responsive check (375x812)
+            # Mobile responsive check (375x812)
             mobile = await browser.new_context(viewport={"width": 375, "height": 812})
             await mobile.add_init_script(
                 f"localStorage.setItem('supernote_token', {token!r});"

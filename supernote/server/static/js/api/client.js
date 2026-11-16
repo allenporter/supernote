@@ -31,7 +31,7 @@ function arrayBufferToBase64Alnum(buffer) {
  */
 export async function computeSocketSignature(token, connType, randomVal) {
     const raw = `${token}_${connType}_${randomVal}`;
-    if (window.crypto && window.crypto.subtle) {
+    if (window.crypto?.subtle) {
         const enc = new TextEncoder();
         const cryptoKey = await window.crypto.subtle.importKey(
             'raw',
@@ -43,7 +43,7 @@ export async function computeSocketSignature(token, connType, randomVal) {
         const sigBuffer = await window.crypto.subtle.sign('HMAC', cryptoKey, enc.encode(raw));
         return arrayBufferToBase64Alnum(sigBuffer);
     }
-    if (window.sha256 && window.sha256.hmac && typeof window.sha256.hmac.arrayBuffer === 'function') {
+    if (typeof window.sha256?.hmac?.arrayBuffer === 'function') {
         const sigBuffer = window.sha256.hmac.arrayBuffer(SOCKET_IO_KEY, raw);
         return arrayBufferToBase64Alnum(sigBuffer);
     }
@@ -71,7 +71,7 @@ function parseSocketPayload(raw) {
 export async function connectSocket() {
     const token = getToken();
     if (!token || typeof window.io !== 'function') return null;
-    if (socketInstance && socketInstance.connected) return socketInstance;
+    if (socketInstance?.connected) return socketInstance;
     if (socketInstance) {
         socketInstance.disconnect();
         socketInstance = null;
@@ -140,11 +140,11 @@ onLogout(disconnectSocket);
  * @param {string} password
  */
 export async function login(email, password) {
-    // 1. Pre-check / wakeup token endpoint (mirrors the CLI client session flow
+    // Pre-check / wakeup token endpoint (mirrors the CLI client session flow
     // before starting the challenge-response handshake).
     await fetch('/api/user/query/token', { method: 'POST', body: '{}' });
 
-    // 2. Request login challenge (randomCode + timestamp)
+    // Request login challenge (randomCode + timestamp)
     const randomCodeResp = await fetch('/api/official/user/query/random/code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -154,12 +154,12 @@ export async function login(email, password) {
     if (!randomCodeResp.ok) throw new Error('Failed to get login challenge');
     const { randomCode, timestamp } = await randomCodeResp.json();
 
-    // 3. Hash password with challenge: SHA256(MD5(password) + randomCode)
+    // Hash password with challenge: SHA256(MD5(password) + randomCode)
     // SparkMD5 is loaded globally via CDN in index.html
     const md5Password = SparkMD5.hash(password);
     const sha256Hash = await sha256(md5Password + randomCode);
 
-    // 4. Authenticate
+    // Submit challenge-response credentials
     const loginResp = await fetch('/api/official/user/account/login/new', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -210,7 +210,7 @@ export async function submitOAuthBridgeDecision(bridgePathWithQuery, decision) {
  * @returns {Promise<string>}
  */
 async function sha256(message) {
-    if (window.crypto && window.crypto.subtle) {
+    if (window.crypto?.subtle) {
         const msgBuffer = new TextEncoder().encode(message);
         const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
         const hashArray = Array.from(new Uint8Array(hashBuffer));
@@ -355,7 +355,7 @@ export async function searchFiles(keyword) {
         body: { keyword },
         fallbackValue: null
     });
-    return (data && data.entries) || [];
+    return data?.entries || [];
 }
 
 /**
@@ -369,7 +369,7 @@ export async function searchSemantic(query, topN = 5) {
         body: { query, topN },
         fallbackValue: null
     });
-    return (data && data.results) || [];
+    return data?.results || [];
 }
 
 const DEFAULT_AI_STATUS = {
@@ -513,13 +513,13 @@ function uploadFinish(directoryId, fileName, size, md5, innerName) {
  * @param {File} file
  */
 export async function uploadFile(directoryId, file) {
-    // 1. Calculate MD5 (used for apply/finish integrity verification)
+    // Calculate MD5 digest used for apply/finish integrity verification
     const md5 = await calculateFileMd5(file);
 
-    // 2. Apply for signed OSS upload URL
+    // Apply for signed OSS upload URL
     const { fullUploadUrl, innerName } = await uploadApply(directoryId, file.name, file.size, md5);
 
-    // 3. Upload binary to blob storage as multipart FormData
+    // Upload binary to blob storage as multipart FormData
     const formData = new FormData();
     formData.append('file', file);
 
@@ -533,7 +533,7 @@ export async function uploadFile(directoryId, file) {
         throw new Error(`File binary upload failed: ${uploadResp.statusText}`);
     }
 
-    // 4. Finish (commit in VFS)
+    // Commit uploaded blob into the VFS
     return await uploadFinish(directoryId, file.name, file.size, md5, innerName);
 }
 
@@ -618,7 +618,7 @@ export async function fetchNoteCover(fileId) {
         body: { fileId: String(fileId) },
         fallbackValue: null
     });
-    return (data && data.url) || null;
+    return data?.url || null;
 }
 
 /**

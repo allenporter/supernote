@@ -8,8 +8,9 @@
  */
 
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { onLogout } from '../api/client.js';
 import { showToast } from '../composables/useToast.js';
-import { normalizeEpochMs } from '../utils/format.js';
+import { getErrorMessage, normalizeEpochMs } from '../utils/format.js';
 import FileCard from './FileCard.js';
 import MoveModal from './MoveModal.js';
 import RenameModal from './RenameModal.js';
@@ -20,6 +21,12 @@ const GRID_PAGE_SIZE = 50;
 const sharedDisplayMode = ref('grid'); // 'grid' | 'list'
 const sharedSortBy = ref('name'); // 'name' | 'updatedAt' | 'size'
 const sharedSortOrder = ref('asc'); // 'asc' | 'desc'
+
+onLogout(() => {
+    sharedDisplayMode.value = 'grid';
+    sharedSortBy.value = 'name';
+    sharedSortOrder.value = 'asc';
+});
 
 /**
  * Compare two VFS items, keeping folders grouped before regular files.
@@ -257,7 +264,7 @@ export default {
                 newFolderName.value = '';
                 showToast('Folder created', 'success');
             } catch (e) {
-                showToast('Failed to create folder: ' + e.message);
+                showToast(`Failed to create folder: ${getErrorMessage(e)}`);
             }
         }
 
@@ -275,7 +282,7 @@ export default {
                 await props.uploadFiles(selectedFiles);
                 showToast(`Uploaded ${selectedFiles.length} ${selectedFiles.length === 1 ? 'file' : 'files'}`, 'success');
             } catch (e) {
-                showToast('Upload failed: ' + e.message);
+                showToast(`Upload failed: ${getErrorMessage(e)}`);
             } finally {
                 event.target.value = '';
             }
@@ -321,7 +328,7 @@ export default {
                 await props.uploadFiles(droppedFiles);
                 showToast(`Uploaded ${droppedFiles.length} ${droppedFiles.length === 1 ? 'file' : 'files'}`, 'success');
             } catch (e) {
-                showToast('Upload failed: ' + e.message);
+                showToast(`Upload failed: ${getErrorMessage(e)}`);
             }
         }
 
@@ -340,7 +347,7 @@ export default {
                 clearSelection();
                 showToast(`Deleted ${count} ${count === 1 ? 'item' : 'items'}`, 'success');
             } catch (e) {
-                showToast('Delete failed: ' + e.message);
+                showToast(`Delete failed: ${getErrorMessage(e)}`);
             }
         }
 
@@ -358,7 +365,7 @@ export default {
                 showMoveModal.value = false;
                 showToast('Moved successfully', 'success');
             } catch (e) {
-                showToast('Move failed: ' + e.message);
+                showToast(`Move failed: ${getErrorMessage(e)}`);
             }
         }
 
@@ -381,7 +388,7 @@ export default {
                 itemToRename.value = null;
                 showToast('Renamed successfully', 'success');
             } catch (e) {
-                showToast('Rename failed: ' + e.message);
+                showToast(`Rename failed: ${getErrorMessage(e)}`);
             }
         }
 
