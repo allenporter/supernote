@@ -11,6 +11,7 @@ from sqlalchemy import MetaData, create_engine, text
 from supernote.server.config import ServerConfig
 from supernote.server.db.base import Base
 from supernote.server.db.migrations import run_migrations
+from supernote.server.utils.paths import get_ai_summaries_group_id, get_summary_id
 from tests.server.db.models.test_init import (
     INTERNAL_TABLES_ALLOWLIST,
     assert_metadata_user_id_conformance,
@@ -85,7 +86,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "e8f9a0b1c2d3"
+        assert version == "f3b4c5d6e7f8"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -181,7 +182,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "e8f9a0b1c2d3"
+        assert version == "f3b4c5d6e7f8"
 
         # Verify task columns and types
         tasks = conn.execute(
@@ -912,3 +913,79 @@ def test_api_keys_table_migration(tmp_path: Path, alembic_config: Config) -> Non
     reflected.reflect(bind=engine)
     assert "api_keys" not in reflected.tables
     engine.dispose()
+
+
+def test_migrate_generated_summaries_preserves_annotations_and_categories(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify migration f3b4c5d6e7f8 preserves annotations, custom/Uncategorized placements, and detaches deleted files."""
+    db_path = tmp_path / "legacy_summary_edges.db"
+    shutil.copy(
+        Path("tests/fixtures/db_legacy_generated_summaries.sqlite").absolute(), db_path
+    )
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO f_user_file (id, user_id, directory_id, file_name, is_folder, size, is_active, create_time, update_time) VALUES "
+                "(8002, 1, 0, 'Custom.note', 'N', 100, 'Y', 100, 100), "
+                "(8003, 1, 0, 'Uncat.note', 'N', 100, 'Y', 100, 100), "
+                "(8004, 1, 0, 'Recycled.note', 'N', 100, 'N', 100, 100)"
+            )
+        )
+        # Annotate first-sync summary so it survives alongside second-sync winner
+        conn.execute(
+            text(
+                "UPDATE f_summary SET comment_str = 'Keep v1 note' "
+                "WHERE unique_identifier = '11111111-aaaa-4bbb-8ccc-000000000001-095.note-summary'"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO f_summary (id, user_id, file_id, unique_identifier, parent_unique_identifier, "
+                "content, data_source, comment_str, is_summary_group, is_deleted, create_time, update_time) VALUES "
+                "(901, 1, 8002, 'cust-summary', '2799b74528407f6aeeeff095f7685e9e', 'c', 'GEMINI', NULL, 0, 0, 100, 100), "
+                "(902, 1, 8003, 'uncat-summary', '', 'u', 'GEMINI', NULL, 0, 0, 100, 100), "
+                "(903, 1, 8004, 'rec-stale-summary', NULL, 'r1', 'GEMINI', NULL, 0, 0, 100, 100), "
+                "(904, 1, 8004, 'rec-kept-summary', NULL, 'r2', 'GEMINI', 'Saved note', 0, 0, 100, 100)"
+            )
+        )
+
+    command.upgrade(alembic_config, "f3b4c5d6e7f8")
+    command.downgrade(alembic_config, "e8f9a0b1c2d3")
+    command.upgrade(alembic_config, "f3b4c5d6e7f8")
+
+    with engine.connect() as conn:
+        leaves = {
+            r.unique_identifier: (r.file_id, r.parent_unique_identifier, r.comment_str)
+            for r in conn.execute(
+                text(
+                    "SELECT unique_identifier, file_id, parent_unique_identifier, comment_str "
+                    "FROM f_summary WHERE user_id = 1 AND is_deleted = 0 AND is_summary_group = 0"
+                )
+            )
+        }
+    engine.dispose()
+
+    ai_group = get_ai_summaries_group_id(1)
+    assert leaves[get_summary_id(1, 750000000000000001)] == (
+        750000000000000001,
+        ai_group,
+        None,
+    )
+    assert leaves["11111111-aaaa-4bbb-8ccc-000000000001-095.note-summary"] == (
+        750000000000000001,
+        "11111111-aaaa-4bbb-8ccc-000000000001-095.note-group",
+        "Keep v1 note",
+    )
+    assert leaves[get_summary_id(1, 8002)] == (
+        8002,
+        "2799b74528407f6aeeeff095f7685e9e",
+        None,
+    )
+    assert leaves[get_summary_id(1, 8003)] == (8003, "", None)
+    assert leaves["rec-kept-summary"] == (None, None, "Saved note")
+    assert "rec-stale-summary" not in leaves
