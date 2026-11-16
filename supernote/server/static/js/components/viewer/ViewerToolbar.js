@@ -121,6 +121,7 @@ export default {
                     <span class="hidden sm:inline">{{ downloading ? 'Downloading…' : 'Download' }}</span>
                 </button>
                 <button v-if="showSidePanel" @click="$emit('toggle-side-panel')" type="button"
+                    :aria-expanded="isMobileSidePanelOpen"
                     class="md:hidden px-2.5 sm:px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold">
                     {{ isMobileSidePanelOpen ? 'Hide Panel' : 'Transcript' }}
                 </button>

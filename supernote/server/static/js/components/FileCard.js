@@ -157,10 +157,13 @@ export default {
     },
     template: `
     <!-- 1. LIST ROW LAYOUT -->
-    <div v-if="layout === 'list'" ref="cardRef"
+    <div v-if="layout === 'list'" ref="cardRef" tabindex="0"
+        :aria-label="'Open ' + file.name"
         @click="$emit('open', file)"
+        @keydown.enter.self.prevent="$emit('open', file)"
+        @keydown.space.self.prevent="$emit('open', file)"
         :class="isSelected ? 'bg-stone-100/90' : 'hover:bg-stone-50/90'"
-        class="group file-card grid grid-cols-12 items-center gap-4 px-4 py-2.5 transition-colors cursor-pointer">
+        class="group file-card grid grid-cols-12 items-center gap-4 px-4 py-2.5 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-900">
         <div class="col-span-7 sm:col-span-5 flex items-center gap-3 min-w-0">
             <input type="checkbox" :checked="isSelected" @click.stop @change.stop="$emit('select', file.id)"
                 :aria-label="'Select ' + file.name"
@@ -218,12 +221,15 @@ export default {
     </div>
 
     <!-- 2. COMPACT FOLDER PILL LAYOUT -->
-    <div v-else-if="file.isDirectory" ref="cardRef"
+    <div v-else-if="file.isDirectory" ref="cardRef" tabindex="0"
+        :aria-label="'Open folder ' + file.name"
         @click="$emit('open', file)"
+        @keydown.enter.self.prevent="$emit('open', file)"
+        @keydown.space.self.prevent="$emit('open', file)"
         :class="isSelected
             ? 'ring-2 ring-slate-900 bg-stone-100/80 border-slate-900'
             : 'bg-white border-stone-200/90 hover:border-stone-300 hover:shadow-md'"
-        class="group file-card rounded-xl border px-3.5 py-3 shadow-sm transition-all cursor-pointer flex items-center justify-between gap-3 relative">
+        class="group file-card rounded-xl border px-3.5 py-3 shadow-sm transition-all cursor-pointer flex items-center justify-between gap-3 relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900">
         <div class="flex items-center gap-3 min-w-0 flex-1">
             <!-- Folder Icon -->
             <div class="w-9 h-9 rounded-lg bg-amber-50/90 border border-amber-200/60 text-amber-600 flex items-center justify-center shrink-0 group-hover:bg-amber-100/70 transition-colors">
@@ -258,12 +264,15 @@ export default {
     </div>
 
     <!-- 3. PORTRAIT (3:4) NOTEBOOK / FILE CARD LAYOUT -->
-    <div v-else ref="cardRef"
+    <div v-else ref="cardRef" tabindex="0"
+        :aria-label="'Open ' + file.name"
         @click="$emit('open', file)"
+        @keydown.enter.self.prevent="$emit('open', file)"
+        @keydown.space.self.prevent="$emit('open', file)"
         :class="isSelected
             ? 'ring-2 ring-slate-900 border-slate-900 bg-stone-50'
             : 'bg-white border-stone-200/90 hover:border-stone-300 hover:shadow-md hover:-translate-y-0.5'"
-        class="group file-card rounded-2xl border shadow-sm transition-all duration-200 cursor-pointer overflow-hidden flex flex-col relative">
+        class="group file-card rounded-2xl border shadow-sm transition-all duration-200 cursor-pointer overflow-hidden flex flex-col relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900">
         <!-- Selection Checkbox -->
         <div class="absolute top-3 left-3 z-20 hover-reveal" :class="{'is-visible': isSelected || selectionMode}" @click.stop>
             <div class="bg-white/90 backdrop-blur-sm rounded-md p-0.5 shadow-sm border border-stone-200/80 flex items-center justify-center">

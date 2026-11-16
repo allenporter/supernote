@@ -1,4 +1,5 @@
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
+import { useModalEscape } from '../../composables/useModalEscape.js';
 import { showToast } from '../../composables/useToast.js';
 import { copyTextToClipboard } from '../../utils/clipboard.js';
 import { renderMarkdown } from '../../utils/markdown.js';
@@ -36,9 +37,12 @@ export default {
      *   summaries: NoteSummary[],
      *   aiStatus: AiStatus | null
      * }} props
-     * @param {{ expose: (exposed: Record<string, any>) => void }} context
+     * @param {{
+     *   expose: (exposed: Record<string, any>) => void,
+     *   emit: (event: string, ...args: any[]) => void
+     * }} context
      */
-    setup(props, { expose }) {
+    setup(props, { expose, emit }) {
         /** @type {import('vue').Ref<HTMLElement | null>} */
         const transcriptScrollPane = ref(null);
         /** @type {import('vue').Ref<string | null>} */
@@ -89,6 +93,11 @@ export default {
             () => {
                 clearCopiedState();
             },
+        );
+
+        useModalEscape(
+            () => emit('close-mobile'),
+            () => props.isOpenMobile,
         );
 
         onUnmounted(() => {
@@ -170,7 +179,7 @@ export default {
     <div v-if="isOpenMobile" @click="$emit('close-mobile')" class="fixed inset-0 z-[60] bg-black/30 md:hidden"></div>
 
         <!-- Right Pane: Notebook Outline, OCR Transcript & Summaries -->
-        <div :class="isOpenMobile ? 'translate-y-0' : 'translate-y-full md:translate-y-0'"
+        <div :class="isOpenMobile ? 'translate-y-0 visible pointer-events-auto' : 'translate-y-full invisible pointer-events-none md:translate-y-0 md:visible md:pointer-events-auto'"
             class="fixed md:static inset-x-0 bottom-0 z-[70] md:z-10 h-[65vh] md:h-full w-full max-w-[100vw] md:max-w-none md:w-80 lg:w-96 border-t md:border-t-0 md:border-l border-stone-200/80 bg-white flex flex-col shadow-2xl md:shadow-none transition-transform duration-200 ease-in-out flex-shrink-0 rounded-t-2xl md:rounded-none">
 
             <!-- Segmented Tab Selector -->

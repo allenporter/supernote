@@ -1,6 +1,7 @@
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { searchFiles, searchSemantic } from '../api/client.js';
 import { fetchTasks } from '../api/schedule.js';
+import { useModalEscape } from '../composables/useModalEscape.js';
 
 export default {
     props: {
@@ -51,16 +52,7 @@ export default {
             return cachedTasksPromise;
         };
 
-        /**
-         * @param {KeyboardEvent} e
-         */
-        const handleKeydown = (e) => {
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                e.stopPropagation();
-                emit('close');
-            }
-        };
+        useModalEscape(() => emit('close'));
 
         /**
          * @param {string} trimmed
@@ -146,7 +138,6 @@ export default {
         };
 
         onMounted(() => {
-            window.addEventListener('keydown', handleKeydown);
             window.addEventListener('supernote:task-sync', invalidateTaskCache);
             if (query.value.trim()) {
                 handleSearch(true);
@@ -159,7 +150,6 @@ export default {
         });
 
         onUnmounted(() => {
-            window.removeEventListener('keydown', handleKeydown);
             window.removeEventListener('supernote:task-sync', invalidateTaskCache);
             if (searchTimeout) clearTimeout(searchTimeout);
         });
@@ -177,7 +167,7 @@ export default {
         };
     },
     template: `
-    <div class="fixed inset-0 z-[100] flex items-start justify-center pt-16 px-4 bg-slate-900/40 backdrop-blur-[2px] animate-fade-in"
+    <div class="fixed inset-0 z-[150] flex items-start justify-center pt-16 px-4 bg-slate-900/40 backdrop-blur-[2px] animate-fade-in"
         @click.self="$emit('close')">
         <div class="bg-white border border-stone-200 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[80vh]"
             role="dialog" aria-modal="true" aria-label="Global Search">
@@ -185,6 +175,7 @@ export default {
             <div class="p-3.5 border-b border-stone-200/80 bg-[#F7F6F2]/60 flex items-center gap-3">
                 <svg class="w-4 h-4 text-stone-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 <input ref="searchInput" v-model="query" @input="handleSearch" type="text"
+                    aria-label="Global Search"
                     placeholder="Global Search (notebooks, transcripts, files, or tasks)..."
                     class="w-full bg-transparent text-slate-900 placeholder-stone-500 outline-none text-sm font-medium">
                 <button type="button" @click="$emit('close')" title="Close search (Escape)" aria-label="Close search"

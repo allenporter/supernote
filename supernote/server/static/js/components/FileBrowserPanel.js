@@ -9,6 +9,7 @@
 
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { onLogout } from '../api/http.js';
+import { useModalEscape } from '../composables/useModalEscape.js';
 import { showToast } from '../composables/useToast.js';
 import { getErrorMessage, normalizeEpochMs } from '../utils/format.js';
 import FileCard from './FileCard.js';
@@ -148,11 +149,17 @@ export default {
 
         const showNewFolderModal = ref(false);
         const newFolderName = ref('');
+        const isCreatingFolder = ref(false);
         /** @type {import('vue').Ref<HTMLInputElement | null>} */
         const newFolderInput = ref(null);
         const showMoveModal = ref(false);
+        const isMovingItems = ref(false);
         const showRenameModal = ref(false);
+        const isRenamingItem = ref(false);
         const showDeleteModal = ref(false);
+        const isDeletingItems = ref(false);
+        /** @type {import('vue').Ref<HTMLButtonElement | null>} */
+        const deleteCancelBtn = ref(null);
         /** @type {import('vue').Ref<FileItem | null>} */
         const itemToRename = ref(null);
         /** @type {import('vue').Ref<HTMLInputElement | null>} */
@@ -182,6 +189,12 @@ export default {
                 nextTick(() => newFolderInput.value?.focus());
             } else {
                 newFolderName.value = '';
+            }
+        });
+
+        watch(showDeleteModal, (isOpen) => {
+            if (isOpen) {
+                nextTick(() => deleteCancelBtn.value?.focus());
             }
         });
 
@@ -264,7 +277,8 @@ export default {
 
         async function handleCreateFolder() {
             const trimmed = newFolderName.value.trim();
-            if (!trimmed) return;
+            if (!trimmed || isCreatingFolder.value) return;
+            isCreatingFolder.value = true;
             try {
                 await props.createFolder(trimmed);
                 showNewFolderModal.value = false;
@@ -272,6 +286,8 @@ export default {
                 showToast('Folder created', 'success');
             } catch (e) {
                 showToast(`Failed to create folder: ${getErrorMessage(e)}`);
+            } finally {
+                isCreatingFolder.value = false;
             }
         }
 
@@ -351,16 +367,23 @@ export default {
         }
 
         async function confirmDeleteSelected() {
+            if (isDeletingItems.value) return;
             const idsToDelete = [...props.selectedIds];
             const count = idsToDelete.length;
-            showDeleteModal.value = false;
-            if (count === 0) return;
+            if (count === 0) {
+                showDeleteModal.value = false;
+                return;
+            }
+            isDeletingItems.value = true;
             try {
                 await props.deleteItems(idsToDelete);
                 clearSelection();
+                showDeleteModal.value = false;
                 showToast(`Deleted ${count} ${count === 1 ? 'item' : 'items'}`, 'success');
             } catch (e) {
                 showToast(`Delete failed: ${getErrorMessage(e)}`);
+            } finally {
+                isDeletingItems.value = false;
             }
         }
 
@@ -372,6 +395,8 @@ export default {
          * @param {string} targetDirId
          */
         async function onConfirmMove(targetDirId) {
+            if (isMovingItems.value) return;
+            isMovingItems.value = true;
             try {
                 await props.moveItems(props.selectedIds, targetDirId);
                 clearSelection();
@@ -379,6 +404,8 @@ export default {
                 showToast('Moved successfully', 'success');
             } catch (e) {
                 showToast(`Move failed: ${getErrorMessage(e)}`);
+            } finally {
+                isMovingItems.value = false;
             }
         }
 
@@ -394,7 +421,8 @@ export default {
          * @param {string} newName
          */
         async function onConfirmRename(newName) {
-            if (!itemToRename.value) return;
+            if (!itemToRename.value || isRenamingItem.value) return;
+            isRenamingItem.value = true;
             try {
                 await props.renameItem(itemToRename.value.id, newName);
                 showRenameModal.value = false;
@@ -402,6 +430,8 @@ export default {
                 showToast('Renamed successfully', 'success');
             } catch (e) {
                 showToast(`Rename failed: ${getErrorMessage(e)}`);
+            } finally {
+                isRenamingItem.value = false;
             }
         }
 
@@ -409,31 +439,22 @@ export default {
             isDraggingOver.value = false;
         };
 
-        /**
-         * @param {KeyboardEvent} e
-         */
-        const handleKeydown = (e) => {
-            if (e.key !== 'Escape') return;
-            isDraggingOver.value = false;
-            if (showDeleteModal.value) {
-                showDeleteModal.value = false;
-                e.preventDefault();
-            } else if (showNewFolderModal.value) {
-                showNewFolderModal.value = false;
-                e.preventDefault();
-            }
-        };
+        useModalEscape(() => {
+            if (!isCreatingFolder.value) showNewFolderModal.value = false;
+        }, showNewFolderModal);
+
+        useModalEscape(() => {
+            if (!isDeletingItems.value) showDeleteModal.value = false;
+        }, showDeleteModal);
 
         onMounted(() => {
             window.addEventListener('dragend', clearDragState);
             window.addEventListener('drop', clearDragState);
-            window.addEventListener('keydown', handleKeydown);
         });
 
         onUnmounted(() => {
             window.removeEventListener('dragend', clearDragState);
             window.removeEventListener('drop', clearDragState);
-            window.removeEventListener('keydown', handleKeydown);
         });
 
         return {
@@ -460,10 +481,15 @@ export default {
             clearSelection,
             showNewFolderModal,
             newFolderName,
+            isCreatingFolder,
             newFolderInput,
             showMoveModal,
+            isMovingItems,
             showRenameModal,
+            isRenamingItem,
             showDeleteModal,
+            isDeletingItems,
+            deleteCancelBtn,
             itemToRename,
             fileInput,
             handleCreateFolder,
@@ -723,29 +749,29 @@ export default {
         <div v-if="showNewFolderModal"
             role="dialog" aria-modal="true" aria-label="Create New Folder"
             class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px]"
-            @click.self="showNewFolderModal = false">
-            <div class="bg-white rounded-2xl border border-stone-200 shadow-2xl w-full max-w-md p-6 animate-fade-in">
+            @click.self="!isCreatingFolder && (showNewFolderModal = false)">
+            <form @submit.prevent="handleCreateFolder" class="bg-white rounded-2xl border border-stone-200 shadow-2xl w-full max-w-md p-6 animate-fade-in">
                 <h3 class="text-base font-bold text-slate-900 mb-1">Create New Folder</h3>
                 <p class="text-xs text-stone-500 mb-4">Create a subfolder inside {{ breadcrumbs[breadcrumbs.length - 1]?.name || 'Cloud' }}.</p>
-                <input ref="newFolderInput" v-model="newFolderName" type="text" placeholder="Folder name"
-                    class="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none transition-all mb-5"
-                    @keyup.enter="handleCreateFolder">
+                <input id="new-folder-name" ref="newFolderInput" v-model="newFolderName" type="text" placeholder="Folder name" aria-label="Folder name"
+                    :disabled="isCreatingFolder"
+                    class="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none transition-all mb-5 disabled:opacity-60">
                 <div class="flex justify-end gap-2.5">
-                    <button @click="showNewFolderModal = false" type="button"
-                        class="px-4 py-2 text-xs text-stone-600 hover:text-slate-900 font-semibold">Cancel</button>
-                    <button @click="handleCreateFolder" type="button" :disabled="!newFolderName.trim()"
+                    <button @click="showNewFolderModal = false" :disabled="isCreatingFolder" type="button"
+                        class="px-4 py-2 text-xs text-stone-600 hover:text-slate-900 font-semibold disabled:opacity-40">Cancel</button>
+                    <button type="submit" :disabled="isCreatingFolder || !newFolderName.trim()"
                         class="px-5 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white rounded-xl text-xs font-semibold transition-all">
-                        Create Folder
+                        {{ isCreatingFolder ? 'Creating...' : 'Create Folder' }}
                     </button>
                 </div>
-            </div>
+            </form>
         </div>
 
         <!-- In-App Delete Confirmation Modal -->
         <div v-if="showDeleteModal"
             role="dialog" aria-modal="true" aria-label="Confirm Delete"
             class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px]"
-            @click.self="showDeleteModal = false">
+            @click.self="!isDeletingItems && (showDeleteModal = false)">
             <div class="bg-white rounded-2xl border border-stone-200 shadow-2xl w-full max-w-sm p-6 animate-fade-in">
                 <div class="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mb-3">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -759,21 +785,21 @@ export default {
                     This action will permanently remove the selected {{ selectedIds.length === 1 ? 'item' : 'items' }} from your Supernote Cloud.
                 </p>
                 <div class="flex justify-end gap-2.5">
-                    <button @click="showDeleteModal = false" type="button"
-                        class="px-4 py-2 text-xs text-stone-600 hover:text-slate-900 font-semibold">Cancel</button>
-                    <button @click="confirmDeleteSelected" type="button"
-                        class="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold transition-all">
-                        Delete
+                    <button ref="deleteCancelBtn" @click="showDeleteModal = false" :disabled="isDeletingItems" type="button"
+                        class="px-4 py-2 text-xs text-stone-600 hover:text-slate-900 font-semibold rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 disabled:opacity-40">Cancel</button>
+                    <button @click="confirmDeleteSelected" :disabled="isDeletingItems" type="button"
+                        class="px-5 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-all">
+                        {{ isDeletingItems ? 'Deleting...' : 'Delete' }}
                     </button>
                 </div>
             </div>
         </div>
 
         <!-- Move & Rename Modals -->
-        <MoveModal v-if="showMoveModal" :item-ids="selectedIds" @close="showMoveModal = false"
+        <MoveModal v-if="showMoveModal" :item-ids="selectedIds" :is-submitting="isMovingItems" @close="!isMovingItems && (showMoveModal = false)"
             @confirm="onConfirmMove" />
 
-        <RenameModal v-if="showRenameModal" :item="itemToRename" @close="showRenameModal = false"
+        <RenameModal v-if="showRenameModal" :item="itemToRename" :is-submitting="isRenamingItem" @close="!isRenamingItem && (showRenameModal = false)"
             @confirm="onConfirmRename" />
     </div>
     `,

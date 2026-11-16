@@ -18,6 +18,7 @@ import SearchModal from './components/SearchModal.js';
 import SystemPanel from './components/SystemPanel.js';
 import TaskPanel from './components/TaskPanel.js';
 import { useFileSystem } from './composables/useFileSystem.js';
+import { resetEscapeStack } from './composables/useModalEscape.js';
 import { useProcessingStatus } from './composables/useProcessingStatus.js';
 import { useRouter } from './composables/useRouter.js';
 import { useToast } from './composables/useToast.js';
@@ -249,6 +250,7 @@ createApp({
             searchInitialQuery.value = '';
             focusedTaskRequest.value = null;
             selectedIds.value = [];
+            resetEscapeStack();
             resetFileSystem();
             resetSessionRoutes();
             resetProcessingStatuses();

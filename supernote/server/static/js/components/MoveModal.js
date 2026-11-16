@@ -1,14 +1,24 @@
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { fetchFiles } from '../api/client.js';
+import { useModalEscape } from '../composables/useModalEscape.js';
 
 export default {
     name: 'MoveModal',
-    props: ['itemIds'],
+    props: {
+        itemIds: {
+            type: Array,
+            default: () => [],
+        },
+        isSubmitting: {
+            type: Boolean,
+            default: false,
+        },
+    },
     emits: ['close', 'confirm'],
     template: `
-        <div class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px] animate-fade-in" @click.self="$emit('close')">
-            <div role="dialog" aria-modal="true" aria-label="Move Items"
-                class="bg-white border border-stone-200 rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[80vh] overflow-hidden">
+        <div class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px] animate-fade-in" @click.self="!isSubmitting && $emit('close')">
+            <div ref="dialogRef" tabindex="-1" role="dialog" aria-modal="true" aria-label="Move Items"
+                class="bg-white border border-stone-200 rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[80vh] overflow-hidden outline-none">
                 <!-- Header -->
                 <div class="px-5 py-4 border-b border-stone-200/80 bg-[#F7F6F2]/60 flex items-center justify-between">
                     <div class="min-w-0">
@@ -17,7 +27,7 @@ export default {
                             Destination: <span class="font-semibold text-slate-900">{{ destinationPath }}</span>
                         </p>
                     </div>
-                    <button @click="$emit('close')" type="button" class="p-1.5 rounded-lg text-stone-500 hover:text-slate-900 hover:bg-stone-200/60 transition-colors" aria-label="Close move modal">
+                    <button @click="$emit('close')" :disabled="isSubmitting" type="button" class="p-1.5 rounded-lg text-stone-500 hover:text-slate-900 hover:bg-stone-200/60 transition-colors disabled:opacity-40" aria-label="Close move modal">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
                 </div>
@@ -42,9 +52,9 @@ export default {
                 <!-- Folder Browser List -->
                 <div class="flex-1 overflow-y-auto p-2.5 space-y-1">
                     <!-- Current Opened Directory Option -->
-                    <div @click="selectTarget(currentBrowserDirId)"
+                    <button type="button" @click="selectTarget(currentBrowserDirId)"
                         data-testid="move-current-folder-option"
-                        class="flex items-center justify-between gap-3 p-3 rounded-xl hover:bg-stone-50 cursor-pointer transition-colors border"
+                        class="w-full text-left flex items-center justify-between gap-3 p-3 rounded-xl hover:bg-stone-50 cursor-pointer transition-colors border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
                         :class="String(targetDirId) === String(currentBrowserDirId) ? 'bg-stone-100/80 border-slate-900' : 'border-transparent'">
                         <div class="flex items-center gap-3 min-w-0">
                             <div class="w-9 h-9 bg-stone-200/70 text-slate-800 rounded-lg flex items-center justify-center shrink-0">
@@ -62,7 +72,7 @@ export default {
                         <span v-if="String(targetDirId) === String(currentBrowserDirId)" class="text-[10px] font-mono font-semibold text-white px-2 py-0.5 bg-slate-900 rounded-md shrink-0">
                             Selected
                         </span>
-                    </div>
+                    </button>
 
                     <!-- Loading State -->
                     <div v-if="isLoading" class="py-8 flex justify-center">
@@ -73,10 +83,14 @@ export default {
                     <template v-else>
                         <div v-for="folder in availableFolders"
                             :key="folder.id"
+                            tabindex="0"
+                            :aria-label="'Select destination folder ' + folder.name"
                             :data-testid="'move-folder-' + folder.id"
                             @click="selectTarget(folder.id)"
                             @dblclick="enterFolder(folder)"
-                            class="flex items-center justify-between gap-3 p-3 rounded-xl hover:bg-stone-50 cursor-pointer transition-colors border"
+                            @keydown.enter.self.prevent="selectTarget(folder.id)"
+                            @keydown.space.self.prevent="selectTarget(folder.id)"
+                            class="flex items-center justify-between gap-3 p-3 rounded-xl hover:bg-stone-50 cursor-pointer transition-colors border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
                             :class="String(targetDirId) === String(folder.id) ? 'bg-stone-100/80 border-slate-900' : 'border-transparent'">
                             <div class="flex items-center gap-3 min-w-0 flex-1">
                                 <div class="w-9 h-9 bg-amber-50 border border-amber-200/60 text-amber-600 rounded-lg flex items-center justify-center shrink-0">
@@ -104,23 +118,25 @@ export default {
 
                 <!-- Footer -->
                 <div class="px-5 py-3.5 border-t border-stone-200/80 bg-[#F7F6F2]/60 flex justify-end gap-2.5">
-                    <button type="button" @click="$emit('close')" class="px-4 py-2 text-xs text-stone-600 hover:text-slate-900 font-semibold transition-colors">
+                    <button type="button" @click="$emit('close')" :disabled="isSubmitting" class="px-4 py-2 text-xs text-stone-600 hover:text-slate-900 font-semibold transition-colors disabled:opacity-40">
                         Cancel
                     </button>
-                    <button type="button" @click="confirmMove" :disabled="!targetDirId"
+                    <button type="button" @click="confirmMove" :disabled="isSubmitting || !targetDirId"
                         data-testid="move-confirm-btn"
                         class="px-5 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white rounded-xl text-xs font-semibold transition-all">
-                        Move Here
+                        {{ isSubmitting ? 'Moving...' : 'Move Here' }}
                     </button>
                 </div>
             </div>
         </div>
     `,
     /**
-     * @param {{ itemIds?: Array<string | number> }} props
+     * @param {{ itemIds?: Array<string | number>, isSubmitting?: boolean }} props
      * @param {{ emit: (event: string, ...args: any[]) => void }} context
      */
     setup(props, { emit }) {
+        /** @type {import('vue').Ref<HTMLElement | null>} */
+        const dialogRef = ref(null);
         /** @type {import('vue').Ref<FileItem[]>} */
         const folders = ref([]);
         const currentBrowserDirId = ref('0');
@@ -228,32 +244,25 @@ export default {
         };
 
         const confirmMove = () => {
-            if (!targetDirId.value || isExcluded(targetDirId.value)) return;
+            if (props.isSubmitting || !targetDirId.value || isExcluded(targetDirId.value)) return;
             emit('confirm', String(targetDirId.value));
         };
 
-        /**
-         * @param {KeyboardEvent} e
-         */
-        const handleKeydown = (e) => {
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                e.stopPropagation();
-                emit('close');
-            }
-        };
+        useModalEscape(() => {
+            if (!props.isSubmitting) emit('close');
+        });
 
         onMounted(() => {
-            window.addEventListener('keydown', handleKeydown);
             loadFolders('0');
+            nextTick(() => dialogRef.value?.focus());
         });
 
         onUnmounted(() => {
             activeLoadSeq++;
-            window.removeEventListener('keydown', handleKeydown);
         });
 
         return {
+            dialogRef,
             folders,
             currentBrowserDirId,
             breadcrumbs,

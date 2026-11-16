@@ -54,15 +54,15 @@ export default {
 
             <form @submit.prevent="handleSubmit" class="space-y-5">
                 <div>
-                    <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1.5">Email Address</label>
-                    <input type="email" v-model="email" required
+                    <label for="login-email" class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1.5">Email Address</label>
+                    <input id="login-email" type="email" v-model="email" autocomplete="username" required
                         class="w-full px-3.5 py-2.5 bg-stone-50 rounded-xl border border-stone-200 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-900/15 outline-none transition-all"
                         placeholder="you@example.com">
                 </div>
 
                 <div>
-                    <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1.5">Password</label>
-                    <input type="password" v-model="password" required
+                    <label for="login-password" class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1.5">Password</label>
+                    <input id="login-password" type="password" v-model="password" autocomplete="current-password" required
                         class="w-full px-3.5 py-2.5 bg-stone-50 rounded-xl border border-stone-200 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-900/15 outline-none transition-all"
                         placeholder="••••••••">
                 </div>

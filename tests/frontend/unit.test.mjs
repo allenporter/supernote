@@ -42,6 +42,11 @@ import {
     resolveFileExt,
 } from '../../supernote/server/static/js/components/viewer/noteMeta.js';
 import {
+    dispatchEscapeKey,
+    pushEscapeHandler,
+    resetEscapeStack,
+} from '../../supernote/server/static/js/composables/useModalEscape.js';
+import {
     buildCrumbsFromPathInfo,
     buildUrlHash,
     formatCrumbName,
@@ -989,6 +994,65 @@ test('client.js: connectSocket deduplicates concurrent calls and aborts if logou
     } finally {
         disconnectSocket();
         await logout({ reload: false });
+        globalThis.window = origWindow;
+    }
+});
+
+test('useModalEscape.js: LIFO Escape stack dismisses only topmost overlay and detaches window listener when empty', () => {
+    const origWindow = globalThis.window;
+    let addedListeners = 0;
+    let removedListeners = 0;
+    /** @type {string[]} */
+    const closed = [];
+
+    try {
+        globalThis.window = /** @type {any} */ ({
+            addEventListener(type) {
+                if (type === 'keydown') addedListeners++;
+            },
+            removeEventListener(type) {
+                if (type === 'keydown') removedListeners++;
+            },
+        });
+
+        const popBase = pushEscapeHandler(() => closed.push('ics-modal'));
+        const popOverlay = pushEscapeHandler(() => closed.push('search-modal'));
+        assert.equal(addedListeners, 1);
+        assert.equal(removedListeners, 0);
+
+        let prevented = 0;
+        const makeEsc = () => ({
+            key: 'Escape',
+            defaultPrevented: false,
+            preventDefault() {
+                prevented++;
+            },
+        });
+
+        assert.equal(
+            dispatchEscapeKey({ key: 'Enter', defaultPrevented: false, preventDefault() {} }),
+            false,
+        );
+        assert.deepEqual(closed, []);
+
+        // First Escape hits topmost handler ('search-modal') only
+        assert.equal(dispatchEscapeKey(makeEsc()), true);
+        assert.deepEqual(closed, ['search-modal']);
+        assert.equal(prevented, 1);
+
+        popOverlay();
+        assert.equal(removedListeners, 0);
+
+        // Second Escape after popping overlay hits 'ics-modal'
+        assert.equal(dispatchEscapeKey(makeEsc()), true);
+        assert.deepEqual(closed, ['search-modal', 'ics-modal']);
+        assert.equal(prevented, 2);
+
+        popBase();
+        assert.equal(removedListeners, 1);
+        assert.equal(dispatchEscapeKey(makeEsc()), false);
+    } finally {
+        resetEscapeStack();
         globalThis.window = origWindow;
     }
 });
