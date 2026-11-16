@@ -19,7 +19,9 @@ def normalize_sql_line(stmt: str) -> str:
 
     lines = stmt.splitlines()
     norm_lines = [
-        re.sub(r"\b\d+\.\d+(?:e[+-]\d+)?\b", norm_num, line).rstrip() for line in lines
+        re.sub(r"\b\d+\.\d+(?:e[+-]\d+)?\b", norm_num, line).rstrip()
+        for line in lines
+        if line.strip()
     ]
     return "\n".join(norm_lines)
 
