@@ -1,12 +1,12 @@
 import { ref } from 'vue';
 import {
     ApiError,
-    fetchFiles,
     createFolder,
     deleteItems,
+    fetchFiles,
     moveItems,
     renameItem,
-    uploadFile
+    uploadFile,
 } from '../api/client.js';
 
 export function useFileSystem() {
@@ -29,7 +29,8 @@ export function useFileSystem() {
         isLoading.value = true;
         error.value = null;
         try {
-            const targetId = directoryId !== undefined ? String(directoryId) : String(currentDirectoryId.value);
+            const targetId =
+                directoryId !== undefined ? String(directoryId) : String(currentDirectoryId.value);
             const result = await fetchFiles(targetId);
             if (seq !== activeLoadSeq) return;
             files.value = result;
@@ -39,9 +40,10 @@ export function useFileSystem() {
             if (seq !== activeLoadSeq) return;
             console.error(e);
             loadedDirectoryId.value = null;
-            error.value = e instanceof ApiError && e.status === 401
-                ? 'Unauthorized'
-                : 'Failed to load directory';
+            error.value =
+                e instanceof ApiError && e.status === 401
+                    ? 'Unauthorized'
+                    : 'Failed to load directory';
         } finally {
             if (seq === activeLoadSeq) {
                 isLoading.value = false;
@@ -72,14 +74,20 @@ export function useFileSystem() {
      * @param {string} name
      */
     async function createNewFolder(name) {
-        await runMutation(() => createFolder(currentDirectoryId.value, name), 'Failed to create folder');
+        await runMutation(
+            () => createFolder(currentDirectoryId.value, name),
+            'Failed to create folder',
+        );
     }
 
     /**
      * @param {string[]} itemIds
      */
     async function deleteSelectedItems(itemIds) {
-        await runMutation(() => deleteItems(currentDirectoryId.value, itemIds), 'Failed to delete items');
+        await runMutation(
+            () => deleteItems(currentDirectoryId.value, itemIds),
+            'Failed to delete items',
+        );
     }
 
     /**
@@ -120,6 +128,6 @@ export function useFileSystem() {
         deleteSelectedItems,
         moveSelectedItems,
         uploadFiles,
-        renameSelectedItem
+        renameSelectedItem,
     };
 }

@@ -1,4 +1,4 @@
-import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue';
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { searchFiles, searchSemantic } from '../api/client.js';
 import { fetchTasks } from '../api/schedule.js';
 
@@ -6,8 +6,8 @@ export default {
     props: {
         initialQuery: {
             type: String,
-            default: ''
-        }
+            default: '',
+        },
     },
     emits: ['close', 'select-file', 'select-task'],
     /**
@@ -74,32 +74,36 @@ export default {
                 const [fileMatches, vectorMatches, allTasks] = await Promise.all([
                     searchFiles(trimmed).catch(() => []),
                     searchSemantic(trimmed).catch(() => []),
-                    getModalTasks()
+                    getModalTasks(),
                 ]);
                 if (seq !== activeSearchSeq) return;
 
                 results.value = fileMatches.map((f) => {
                     const fileName = f.name || f.fileName || '';
                     const isDir = f.tag === 'folder' || f.isDirectory;
-                    const ext = !isDir && fileName.includes('.')
-                        ? (fileName.split('.').pop() || '').toLowerCase()
-                        : null;
+                    const ext =
+                        !isDir && fileName.includes('.')
+                            ? (fileName.split('.').pop() || '').toLowerCase()
+                            : null;
                     return {
                         id: f.id,
                         name: fileName,
                         path: f.path_display || f.parent_path || fileName,
                         isDirectory: isDir,
                         size: f.size,
-                        extension: ext
+                        extension: ext,
                     };
                 });
 
                 semanticResults.value = vectorMatches.map((r, idx) => {
                     const fileId = r.fileId ?? r.file_id;
                     const fileName = r.fileName ?? r.file_name ?? `Notebook ${fileId}`;
-                    const pageIndex = typeof r.pageIndex === 'number'
-                        ? r.pageIndex
-                        : (typeof r.page_index === 'number' ? r.page_index : 0);
+                    const pageIndex =
+                        typeof r.pageIndex === 'number'
+                            ? r.pageIndex
+                            : typeof r.page_index === 'number'
+                              ? r.page_index
+                              : 0;
                     const ext = fileName.includes('.')
                         ? (fileName.split('.').pop() || '').toLowerCase()
                         : 'note';
@@ -112,12 +116,14 @@ export default {
                         pageNumber: pageIndex + 1,
                         score: typeof r.score === 'number' ? r.score : 0,
                         textPreview: r.textPreview ?? r.text_preview ?? '',
-                        date: r.date || null
+                        date: r.date || null,
                     };
                 });
 
-                taskResults.value = allTasks.filter((t) =>
-                    t.title.toLowerCase().includes(qLower) || t.detail?.toLowerCase().includes(qLower)
+                taskResults.value = allTasks.filter(
+                    (t) =>
+                        t.title.toLowerCase().includes(qLower) ||
+                        t.detail?.toLowerCase().includes(qLower),
                 );
             } catch (e) {
                 if (seq !== activeSearchSeq) return;
@@ -155,12 +161,15 @@ export default {
             }
         };
 
-        watch(() => props.initialQuery, (newVal) => {
-            if (typeof newVal === 'string' && newVal !== query.value) {
-                query.value = newVal;
-                handleSearch(true);
-            }
-        });
+        watch(
+            () => props.initialQuery,
+            (newVal) => {
+                if (typeof newVal === 'string' && newVal !== query.value) {
+                    query.value = newVal;
+                    handleSearch(true);
+                }
+            },
+        );
 
         /**
          * @param {Record<string, any>} item
@@ -206,7 +215,7 @@ export default {
             searchInput,
             handleSearch,
             handleSelect,
-            handleSelectTaskItem
+            handleSelectTaskItem,
         };
     },
     template: `
@@ -304,5 +313,5 @@ export default {
             </div>
         </div>
     </div>
-    `
+    `,
 };

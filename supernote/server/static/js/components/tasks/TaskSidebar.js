@@ -3,36 +3,36 @@ export default {
     props: {
         taskGroups: {
             type: Array,
-            required: true
+            required: true,
         },
         selectedFilter: {
             type: String,
-            required: true
+            required: true,
         },
         selectedGroupId: {
             type: [String, Number],
-            default: null
+            default: null,
         },
         openTasksCount: {
             type: Number,
-            default: 0
+            default: 0,
         },
         todayTasksCount: {
             type: Number,
-            default: 0
+            default: 0,
         },
         highPriorityCount: {
             type: Number,
-            default: 0
+            default: 0,
         },
         completedTasksCount: {
             type: Number,
-            default: 0
+            default: 0,
         },
         groupTaskCounts: {
             type: Object,
-            default: () => ({})
-        }
+            default: () => ({}),
+        },
     },
     emits: ['select-filter', 'select-group', 'create-group', 'delete-group', 'open-ics'],
     /**
@@ -50,12 +50,14 @@ export default {
          * @param {string | number} groupId
          */
         function isGroupSelected(groupId) {
-            return props.selectedGroupId !== null && String(props.selectedGroupId) === String(groupId);
+            return (
+                props.selectedGroupId !== null && String(props.selectedGroupId) === String(groupId)
+            );
         }
 
         return {
             getTaskCountForGroup,
-            isGroupSelected
+            isGroupSelected,
         };
     },
     template: `
@@ -162,5 +164,5 @@ export default {
             </div>
         </div>
     </aside>
-    `
+    `,
 };

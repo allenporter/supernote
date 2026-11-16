@@ -1,4 +1,4 @@
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 
 export default {
     name: 'RenameModal',
@@ -68,7 +68,7 @@ export default {
             newName,
             nameInput,
             trimmedName,
-            handleRename
+            handleRename,
         };
-    }
+    },
 };

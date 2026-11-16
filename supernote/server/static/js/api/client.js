@@ -38,7 +38,7 @@ export async function computeSocketSignature(token, connType, randomVal) {
             enc.encode(SOCKET_IO_KEY),
             { name: 'HMAC', hash: 'SHA-256' },
             false,
-            ['sign']
+            ['sign'],
         );
         const sigBuffer = await window.crypto.subtle.sign('HMAC', cryptoKey, enc.encode(raw));
         return arrayBufferToBase64Alnum(sigBuffer);
@@ -87,9 +87,9 @@ export async function connectSocket() {
                 token,
                 type: connType,
                 random: randomVal,
-                sign
+                sign,
             },
-            transports: ['polling', 'websocket']
+            transports: ['polling', 'websocket'],
         });
 
         socket.on('ServerMessage', (data) => {
@@ -148,7 +148,7 @@ export async function login(email, password) {
     const randomCodeResp = await fetch('/api/official/user/query/random/code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account: email })
+        body: JSON.stringify({ account: email }),
     });
 
     if (!randomCodeResp.ok) throw new Error('Failed to get login challenge');
@@ -168,8 +168,8 @@ export async function login(email, password) {
             password: sha256Hash,
             timestamp,
             loginMethod: '2', // Email
-            equipment: 1 // WEB
-        })
+            equipment: 1, // WEB
+        }),
     });
 
     if (!loginResp.ok) {
@@ -196,7 +196,7 @@ export async function submitOAuthBridgeDecision(bridgePathWithQuery, decision) {
         body: { decision },
         headers: { Accept: 'application/json' },
         reloadOnUnauthorized: false,
-        errorPrefix: 'Authorization failed'
+        errorPrefix: 'Authorization failed',
     });
     if (!data?.redirect_url) {
         throw new Error('Authorization failed: missing redirect URL');
@@ -214,12 +214,14 @@ async function sha256(message) {
         const msgBuffer = new TextEncoder().encode(message);
         const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
         const hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
     }
     if (typeof window.sha256 === 'function') {
         return window.sha256(message);
     }
-    throw new Error('SHA-256 is not available. Please access via HTTPS/localhost or ensure js-sha256 is loaded.');
+    throw new Error(
+        'SHA-256 is not available. Please access via HTTPS/localhost or ensure js-sha256 is loaded.',
+    );
 }
 
 const DEFAULT_FILE_PAGE_SIZE = 100;
@@ -247,7 +249,7 @@ function mapUserFileVO(file) {
         isDirectory,
         size: file.size,
         updatedAt: file.updateTime,
-        extension: isDirectory ? null : getExtension(file.fileName)
+        extension: isDirectory ? null : getExtension(file.fileName),
     };
 }
 
@@ -263,9 +265,9 @@ function fetchFilesPage(directoryId, pageNo, pageSize) {
             pageNo,
             pageSize,
             order: 'filename',
-            sequence: 'asc'
+            sequence: 'asc',
         },
-        errorPrefix: 'Failed to fetch files'
+        errorPrefix: 'Failed to fetch files',
     });
 }
 
@@ -278,10 +280,7 @@ function fetchFilesPage(directoryId, pageNo, pageSize) {
 export async function fetchFiles(directoryId = '0', pageSize = DEFAULT_FILE_PAGE_SIZE) {
     const firstPage = await fetchFilesPage(directoryId, 1, pageSize);
     const items = (firstPage.userFileVOList || []).map(mapUserFileVO);
-    const totalPages = Math.min(
-        MAX_DIRECTORY_PAGES,
-        Math.max(1, Number(firstPage.pages) || 1)
-    );
+    const totalPages = Math.min(MAX_DIRECTORY_PAGES, Math.max(1, Number(firstPage.pages) || 1));
 
     for (let pageNo = 2; pageNo <= totalPages; pageNo++) {
         const nextPage = await fetchFilesPage(directoryId, pageNo, pageSize);
@@ -301,7 +300,7 @@ export async function fetchFiles(directoryId = '0', pageSize = DEFAULT_FILE_PAGE
 export function fetchPathInfo(nodeId) {
     return apiRequest('/api/file/path/query', {
         body: { id: String(nodeId) },
-        errorPrefix: 'Path query failed'
+        errorPrefix: 'Path query failed',
     });
 }
 
@@ -313,7 +312,7 @@ export function fetchPathInfo(nodeId) {
 export async function convertNoteToPng(fileId) {
     const data = await apiRequest('/api/file/note/to/png', {
         body: { id: fileId }, // Pass as string to preserve 64-bit precision
-        errorPrefix: 'Conversion failed'
+        errorPrefix: 'Conversion failed',
     });
     return data.pngPageVOList || [];
 }
@@ -326,7 +325,7 @@ export async function convertNoteToPng(fileId) {
 export async function fetchTranscript(fileId) {
     const data = await apiRequest('/api/extended/transcript', {
         body: { fileId: String(fileId) },
-        fallbackValue: null
+        fallbackValue: null,
     });
     return data && Array.isArray(data.pages) ? data.pages : [];
 }
@@ -340,7 +339,7 @@ export async function fetchSummaries(fileId) {
     const data = await apiRequest('/api/extended/file/summary/list', {
         // Extended endpoint expects { fileId } rather than official { id }
         body: { fileId: String(fileId) },
-        errorPrefix: 'Summary fetch failed'
+        errorPrefix: 'Summary fetch failed',
     });
     return data.summaryDOList || [];
 }
@@ -353,7 +352,7 @@ export async function fetchSummaries(fileId) {
 export async function searchFiles(keyword) {
     const data = await apiRequest('/api/file/label/list/search', {
         body: { keyword },
-        fallbackValue: null
+        fallbackValue: null,
     });
     return data?.entries || [];
 }
@@ -367,7 +366,7 @@ export async function searchFiles(keyword) {
 export async function searchSemantic(query, topN = 5) {
     const data = await apiRequest('/api/extended/search', {
         body: { query, topN },
-        fallbackValue: null
+        fallbackValue: null,
     });
     return data?.results || [];
 }
@@ -392,7 +391,7 @@ export async function fetchAiStatus() {
     const data = await apiRequest('/api/extended/ai/status', {
         method: 'GET',
         requireAuth: false,
-        fallbackValue: null
+        fallbackValue: null,
     });
     return data || { ...DEFAULT_AI_STATUS };
 }
@@ -404,7 +403,7 @@ export async function fetchAiStatus() {
 export function fetchSystemTasks() {
     return apiRequest('/api/extended/system/tasks', {
         method: 'GET',
-        errorPrefix: 'Failed to fetch system tasks'
+        errorPrefix: 'Failed to fetch system tasks',
     });
 }
 
@@ -415,7 +414,7 @@ export function fetchSystemTasks() {
 export function fetchCapacity() {
     return apiRequest('/api/file/capacity/query', {
         body: {},
-        errorPrefix: 'Failed to fetch capacity'
+        errorPrefix: 'Failed to fetch capacity',
     });
 }
 
@@ -427,7 +426,7 @@ export function fetchCapacity() {
 export function createFolder(directoryId, folderName) {
     return apiRequest('/api/file/folder/add', {
         body: { directoryId, fileName: folderName },
-        errorPrefix: 'Failed to create folder'
+        errorPrefix: 'Failed to create folder',
     });
 }
 
@@ -439,7 +438,7 @@ export function createFolder(directoryId, folderName) {
 export function deleteItems(directoryId, idList) {
     return apiRequest('/api/file/delete', {
         body: { directoryId, idList },
-        errorPrefix: 'Failed to delete items'
+        errorPrefix: 'Failed to delete items',
     });
 }
 
@@ -453,9 +452,9 @@ export function moveItems(idList, targetDirectoryId) {
         body: {
             idList,
             directoryId: '0', // Not strictly required for move, included for official DTO compliance
-            goDirectoryId: targetDirectoryId
+            goDirectoryId: targetDirectoryId,
         },
-        errorPrefix: 'Failed to move items'
+        errorPrefix: 'Failed to move items',
     });
 }
 
@@ -467,7 +466,7 @@ export function moveItems(idList, targetDirectoryId) {
 export function renameItem(id, newName) {
     return apiRequest('/api/file/rename', {
         body: { id, newName },
-        errorPrefix: 'Failed to rename item'
+        errorPrefix: 'Failed to rename item',
     });
 }
 
@@ -481,7 +480,7 @@ export function renameItem(id, newName) {
 function uploadApply(directoryId, fileName, size, md5) {
     return apiRequest('/api/file/upload/apply', {
         body: { directoryId, fileName, size, md5 },
-        errorPrefix: 'Upload apply failed'
+        errorPrefix: 'Upload apply failed',
     });
 }
 
@@ -501,9 +500,9 @@ function uploadFinish(directoryId, fileName, size, md5, innerName) {
             fileSize: size,
             md5,
             innerName,
-            type: '2' // CLOUD
+            type: '2', // CLOUD
         },
-        errorPrefix: 'Upload finish failed'
+        errorPrefix: 'Upload finish failed',
     });
 }
 
@@ -565,11 +564,11 @@ function calculateFileMd5(file) {
 export async function fetchProcessingStatus(fileIds) {
     const data = await apiRequest('/api/extended/file/processing/status', {
         body: { fileIds: fileIds.map(String) },
-        errorPrefix: 'Failed to fetch processing status'
+        errorPrefix: 'Failed to fetch processing status',
     });
     return {
         success: true,
-        statusMap: data.statusMap
+        statusMap: data.statusMap,
     };
 }
 
@@ -581,7 +580,7 @@ export async function fetchProcessingStatus(fileIds) {
 export async function fetchDownloadUrl(fileId) {
     const data = await apiRequest('/api/file/download/url', {
         body: { id: fileId },
-        errorPrefix: 'Download failed'
+        errorPrefix: 'Download failed',
     });
     if (!data.url) throw new Error('No download URL returned');
     return data.url;
@@ -616,7 +615,7 @@ export async function downloadFile(fileId) {
 export async function fetchNoteCover(fileId) {
     const data = await apiRequest('/api/extended/file/note/cover', {
         body: { fileId: String(fileId) },
-        fallbackValue: null
+        fallbackValue: null,
     });
     return data?.url || null;
 }
@@ -629,6 +628,6 @@ export async function fetchNoteCover(fileId) {
 export function fetchNoteMetadata(fileId) {
     return apiRequest('/api/extended/file/note/metadata', {
         body: { fileId: String(fileId) },
-        fallbackValue: null
+        fallbackValue: null,
     });
 }

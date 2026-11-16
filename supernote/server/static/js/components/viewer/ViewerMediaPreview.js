@@ -9,7 +9,7 @@ export default {
         previewUrl: { type: String, default: null },
         textContent: { type: String, default: '' },
         isTextTooLarge: { type: Boolean, default: false },
-        downloading: { type: Boolean, default: false }
+        downloading: { type: Boolean, default: false },
     },
     emits: ['download'],
     setup() {
@@ -85,5 +85,5 @@ export default {
             <span>{{ downloading ? 'Preparing download…' : 'Download File' }}</span>
         </button>
     </div>
-    `
+    `,
 };

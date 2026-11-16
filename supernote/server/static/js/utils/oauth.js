@@ -10,7 +10,7 @@ const DEFAULT_MCP_SCOPE = 'supernote:all';
 
 /** @type {Record<string, string>} */
 const SCOPE_DESCRIPTIONS = {
-    [DEFAULT_MCP_SCOPE]: 'Full access to notebooks, OCR transcripts, and semantic search'
+    [DEFAULT_MCP_SCOPE]: 'Full access to notebooks, OCR transcripts, and semantic search',
 };
 
 /**
@@ -31,7 +31,7 @@ export function describeRedirectTarget(redirectUri) {
             scheme: '',
             isCustomScheme: false,
             hostLabel: 'Unspecified',
-            fullUri: ''
+            fullUri: '',
         };
     }
     const trimmed = redirectUri.trim();
@@ -44,25 +44,27 @@ export function describeRedirectTarget(redirectUri) {
                 scheme,
                 isCustomScheme: false,
                 hostLabel: parsed.host,
-                fullUri: parsed.href
+                fullUri: parsed.href,
             };
         }
         const firstSeg = (parsed.pathname || '').split('/').filter(Boolean)[0] || '';
         const hostLabel = parsed.host
             ? `${scheme}://${parsed.host}`
-            : (firstSeg ? `${scheme}:${firstSeg}` : `${scheme}:`);
+            : firstSeg
+              ? `${scheme}:${firstSeg}`
+              : `${scheme}:`;
         return {
             scheme,
             isCustomScheme: true,
             hostLabel,
-            fullUri: parsed.href
+            fullUri: parsed.href,
         };
     } catch {
         return {
             scheme: '',
             isCustomScheme: false,
             hostLabel: trimmed,
-            fullUri: trimmed
+            fullUri: trimmed,
         };
     }
 }
@@ -122,7 +124,7 @@ export function parseOAuthBridgeReturnTo(hashString, currentOrigin) {
             resource,
             scopes,
             redirectTarget,
-            bridgePathWithQuery: null
+            bridgePathWithQuery: null,
         };
     }
 
@@ -136,6 +138,6 @@ export function parseOAuthBridgeReturnTo(hashString, currentOrigin) {
         resource,
         scopes,
         redirectTarget,
-        bridgePathWithQuery: `${bridgeUrl.pathname}${bridgeUrl.search}`
+        bridgePathWithQuery: `${bridgeUrl.pathname}${bridgeUrl.search}`,
     };
 }

@@ -1,17 +1,17 @@
-import { ref, computed } from 'vue';
+import { computed, ref } from 'vue';
+import {
+    createScheduleTask,
+    createTaskGroup,
+    deleteScheduleTask,
+    deleteTaskGroup,
+    downloadIcsFeed,
+    fetchIcsFeed,
+    fetchTaskGroups,
+    fetchTasks,
+    updateScheduleTask,
+} from '../api/schedule.js';
 import { getErrorMessage } from '../utils/format.js';
 import { showToast } from './useToast.js';
-import {
-    fetchTaskGroups,
-    createTaskGroup,
-    deleteTaskGroup,
-    fetchTasks,
-    createScheduleTask,
-    updateScheduleTask,
-    deleteScheduleTask,
-    fetchIcsFeed,
-    downloadIcsFeed
-} from '../api/schedule.js';
 
 export function useSchedule() {
     /** @type {import('vue').Ref<ScheduleTaskGroup[]>} */
@@ -32,12 +32,12 @@ export function useSchedule() {
     async function loadGroups() {
         try {
             const groups = await fetchTaskGroups();
-            taskGroups.value = groups.map(g => ({
+            taskGroups.value = groups.map((g) => ({
                 id: String(g.taskListId),
-                title: g.title || "Untitled Group"
+                title: g.title || 'Untitled Group',
             }));
         } catch (e) {
-            console.error("Failed to load task groups:", e);
+            console.error('Failed to load task groups:', e);
         }
     }
 
@@ -76,7 +76,7 @@ export function useSchedule() {
             await updateScheduleTask({
                 ...task,
                 status: newStatus,
-                completedTime: newCompletedTime
+                completedTime: newCompletedTime,
             });
             task.status = newStatus;
             task.completedTime = newCompletedTime;
@@ -103,7 +103,7 @@ export function useSchedule() {
     async function removeTask(taskId) {
         try {
             await deleteScheduleTask(taskId);
-            tasks.value = tasks.value.filter(t => t.id !== String(taskId));
+            tasks.value = tasks.value.filter((t) => t.id !== String(taskId));
             return true;
         } catch (e) {
             showToast(`Failed to delete task: ${getErrorMessage(e)}`);
@@ -143,9 +143,12 @@ export function useSchedule() {
 
     // Filtered & Sorted Tasks COMPUTED
     const filteredTasks = computed(() => {
-        const result = tasks.value.filter(task => {
+        const result = tasks.value.filter((task) => {
             // Group Filter
-            if (selectedGroupId.value !== null && String(task.taskListId) !== String(selectedGroupId.value)) {
+            if (
+                selectedGroupId.value !== null &&
+                String(task.taskListId) !== String(selectedGroupId.value)
+            ) {
                 return false;
             }
 
@@ -214,8 +217,12 @@ export function useSchedule() {
         });
     });
 
-    const openTasksCount = computed(() => tasks.value.filter(t => t.status !== 'completed').length);
-    const highPriorityCount = computed(() => tasks.value.filter(t => t.importance === 'high' && t.status !== 'completed').length);
+    const openTasksCount = computed(
+        () => tasks.value.filter((t) => t.status !== 'completed').length,
+    );
+    const highPriorityCount = computed(
+        () => tasks.value.filter((t) => t.importance === 'high' && t.status !== 'completed').length,
+    );
 
     return {
         taskGroups,
@@ -237,6 +244,6 @@ export function useSchedule() {
         addGroup,
         removeGroup,
         fetchIcsFeed,
-        downloadIcsFeed
+        downloadIcsFeed,
     };
 }

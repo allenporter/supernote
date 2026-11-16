@@ -16,14 +16,14 @@ export const PAGE_STYLE_LABELS = {
     '5mm_dots': '5mm dots',
     '5mm_engineering_grid': '5mm grid',
     '10mm_engineering_grid': '10mm grid',
-    'cornell_note': 'Cornell',
-    'four_wire_grid': 'Four-wire',
-    'task_list': 'Task list',
-    'weekly_2_columns': 'Weekly (2 col)',
-    'daily': 'Daily',
-    'weekly': 'Weekly',
-    'monthly': 'Monthly',
-    'custom': 'Custom template'
+    cornell_note: 'Cornell',
+    four_wire_grid: 'Four-wire',
+    task_list: 'Task list',
+    weekly_2_columns: 'Weekly (2 col)',
+    daily: 'Daily',
+    weekly: 'Weekly',
+    monthly: 'Monthly',
+    custom: 'Custom template',
 };
 
 /**
@@ -58,12 +58,15 @@ export function resolveFileCategory(ext) {
 export function normalizeTranscriptPages(rawPages) {
     if (!Array.isArray(rawPages)) return [];
     return rawPages.map((p, idx) => ({
-        pageIndex: typeof p.pageIndex === 'number'
-            ? p.pageIndex
-            : (typeof p.page_index === 'number' ? p.page_index : idx),
+        pageIndex:
+            typeof p.pageIndex === 'number'
+                ? p.pageIndex
+                : typeof p.page_index === 'number'
+                  ? p.page_index
+                  : idx,
         pageId: p.pageId || p.page_id || `page-${idx}`,
         text: p.text ?? '',
-        date: p.date || null
+        date: p.date || null,
     }));
 }
 
@@ -87,11 +90,9 @@ export function formatLinkLabel(link, currentFileId) {
     if (!link) return 'Link';
     const isExternalFile = Boolean(
         (link.targetFileId && String(link.targetFileId) !== String(currentFileId ?? '')) ||
-        link.linkType === 'file'
+            link.linkType === 'file',
     );
-    const targetBaseName = link.target
-        ? (link.target.split('/').pop() || link.target)
-        : null;
+    const targetBaseName = link.target ? link.target.split('/').pop() || link.target : null;
     if (link.linkType === 'web') {
         return link.target ? link.target.replace(/^https?:\/\//i, '') : 'Web link';
     }
@@ -132,7 +133,12 @@ export function hasCopyablePageText(pageItem) {
  * @param {Map<number, NoteLink[]>} linksByPageIndex
  * @returns {TranscriptPage[]}
  */
-export function buildDisplayTranscriptPages(transcriptPages, noteMetadata, pageMetaByIndex, linksByPageIndex) {
+export function buildDisplayTranscriptPages(
+    transcriptPages,
+    noteMetadata,
+    pageMetaByIndex,
+    linksByPageIndex,
+) {
     const merged = new Map();
     for (const item of transcriptPages) {
         if (typeof item.pageIndex === 'number') {
@@ -141,7 +147,7 @@ export function buildDisplayTranscriptPages(transcriptPages, noteMetadata, pageM
                 pageId: item.pageId,
                 text: item.text ?? '',
                 date: item.date || pageMetaByIndex.get(item.pageIndex)?.date || null,
-                hasTranscript: true
+                hasTranscript: true,
             });
         }
     }
@@ -158,7 +164,7 @@ export function buildDisplayTranscriptPages(transcriptPages, noteMetadata, pageM
                     pageId: mp.pageId || `page-${idx}`,
                     text: '',
                     date: mp.date || null,
-                    hasTranscript: false
+                    hasTranscript: false,
                 });
             }
         }

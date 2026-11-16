@@ -1,5 +1,5 @@
-import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { fetchSystemTasks, fetchCapacity, fetchAiStatus } from '../api/client.js';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { fetchAiStatus, fetchCapacity, fetchSystemTasks } from '../api/client.js';
 import { formatSize, formatSystemTimestamp, getErrorMessage } from '../utils/format.js';
 
 /** @type {Record<string, string>} */
@@ -9,7 +9,7 @@ const TASK_TYPE_LABELS = {
     SUMMARY: 'Page Summary',
     SYNTHESIS: 'Notebook Summary',
     EMBEDDING: 'Vector Index',
-    RAPID_LOG: 'Rapid Log'
+    RAPID_LOG: 'Rapid Log',
 };
 
 export default {
@@ -199,7 +199,10 @@ export default {
 
         const usagePercent = computed(() => {
             if (!capacity.value || capacity.value.totalCapacity === 0) return 0;
-            return Math.min(100, (capacity.value.usedCapacity / capacity.value.totalCapacity) * 100);
+            return Math.min(
+                100,
+                (capacity.value.usedCapacity / capacity.value.totalCapacity) * 100,
+            );
         });
 
         const loadData = async () => {
@@ -210,13 +213,13 @@ export default {
                 const [tasksResult, capacityResult, aiStatusResult] = await Promise.all([
                     fetchSystemTasks(),
                     fetchCapacity(),
-                    fetchAiStatus()
+                    fetchAiStatus(),
                 ]);
 
                 if (tasksResult.success) {
                     tasks.value = tasksResult.tasks;
                 } else {
-                    error.value = "Failed to load tasks";
+                    error.value = 'Failed to load tasks';
                 }
 
                 capacity.value = capacityResult;
@@ -269,10 +272,10 @@ export default {
         const statusClass = (status) => {
             /** @type {Record<string, string>} */
             const classes = {
-                'PENDING': 'bg-amber-50 text-amber-700 border-amber-200',
-                'PROCESSING': 'bg-sky-50 text-sky-700 border-sky-200',
-                'COMPLETED': 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                'FAILED': 'bg-rose-50 text-rose-700 border-rose-200'
+                PENDING: 'bg-amber-50 text-amber-700 border-amber-200',
+                PROCESSING: 'bg-sky-50 text-sky-700 border-sky-200',
+                COMPLETED: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                FAILED: 'bg-rose-50 text-rose-700 border-rose-200',
             };
             return classes[status] || 'bg-stone-100 text-stone-600 border-stone-200';
         };
@@ -310,7 +313,7 @@ export default {
             formatTaskType,
             formatTaskKey,
             formatShortId,
-            statusClass
+            statusClass,
         };
-    }
+    },
 };

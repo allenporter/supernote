@@ -1,5 +1,5 @@
-import { ref, onMounted, onUnmounted } from 'vue';
-import { fetchIcsFeed, downloadIcsFeed } from '../../api/schedule.js';
+import { onMounted, onUnmounted, ref } from 'vue';
+import { downloadIcsFeed, fetchIcsFeed } from '../../api/schedule.js';
 import { showToast } from '../../composables/useToast.js';
 import { copyTextToClipboard } from '../../utils/clipboard.js';
 import { getErrorMessage } from '../../utils/format.js';
@@ -9,12 +9,12 @@ export default {
     props: {
         taskGroups: {
             type: Array,
-            default: () => []
+            default: () => [],
         },
         initialGroupId: {
             type: [String, Number],
-            default: null
-        }
+            default: null,
+        },
     },
     emits: ['close'],
     /**
@@ -32,7 +32,8 @@ export default {
         async function refreshIcsPreview() {
             isIcsLoading.value = true;
             try {
-                const targetGroupId = icsFilterGroupId.value === 'all' ? null : icsFilterGroupId.value;
+                const targetGroupId =
+                    icsFilterGroupId.value === 'all' ? null : icsFilterGroupId.value;
                 icsPreviewContent.value = await fetchIcsFeed(targetGroupId);
             } catch (e) {
                 icsPreviewContent.value = `Error loading ICS feed: ${getErrorMessage(e)}`;
@@ -43,9 +44,14 @@ export default {
 
         async function handleDownloadIcs() {
             try {
-                const targetGroupId = icsFilterGroupId.value === 'all' ? null : icsFilterGroupId.value;
-                const groupObj = props.taskGroups.find(g => String(g.id) === String(targetGroupId));
-                const nameSlug = groupObj ? groupObj.title.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'supernote_tasks';
+                const targetGroupId =
+                    icsFilterGroupId.value === 'all' ? null : icsFilterGroupId.value;
+                const groupObj = props.taskGroups.find(
+                    (g) => String(g.id) === String(targetGroupId),
+                );
+                const nameSlug = groupObj
+                    ? groupObj.title.toLowerCase().replace(/[^a-z0-9]/g, '_')
+                    : 'supernote_tasks';
                 await downloadIcsFeed(targetGroupId, `${nameSlug}.ics`);
             } catch (e) {
                 showToast(`Failed to download ICS feed: ${getErrorMessage(e)}`);
@@ -61,7 +67,9 @@ export default {
             }
             copySuccess.value = true;
             if (copyResetTimer) clearTimeout(copyResetTimer);
-            copyResetTimer = setTimeout(() => { copySuccess.value = false; }, 2500);
+            copyResetTimer = setTimeout(() => {
+                copySuccess.value = false;
+            }, 2500);
         }
 
         /**
@@ -92,7 +100,7 @@ export default {
             copySuccess,
             refreshIcsPreview,
             handleDownloadIcs,
-            copyIcsContent
+            copyIcsContent,
         };
     },
     template: `
@@ -164,5 +172,5 @@ export default {
             </div>
         </div>
     </div>
-    `
+    `,
 };

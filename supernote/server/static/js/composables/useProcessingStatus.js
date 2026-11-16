@@ -1,4 +1,4 @@
-import { ref, watch, onMounted, onUnmounted } from 'vue';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { fetchProcessingStatus } from '../api/client.js';
 
 const ACTIVE_PROCESSING_STATUSES = new Set(['PENDING', 'PROCESSING']);
@@ -27,8 +27,8 @@ export function useProcessingStatus({ files, isLoggedIn, activeTab, view }) {
 
     function getDirectoryNoteIds() {
         return files.value
-            .filter(f => f.extension === 'note' && f.id !== undefined && f.id !== null)
-            .map(f => String(f.id));
+            .filter((f) => f.extension === 'note' && f.id !== undefined && f.id !== null)
+            .map((f) => String(f.id));
     }
 
     /**
@@ -41,7 +41,7 @@ export function useProcessingStatus({ files, isLoggedIn, activeTab, view }) {
         if (typeof document !== 'undefined' && document.hidden) {
             return false;
         }
-        return noteIds.some(id => {
+        return noteIds.some((id) => {
             const status = processingStatuses.value[String(id)] ?? processingStatuses.value[id];
             return status === undefined || ACTIVE_PROCESSING_STATUSES.has(status);
         });
@@ -74,7 +74,7 @@ export function useProcessingStatus({ files, isLoggedIn, activeTab, view }) {
             if (result.success) {
                 processingStatuses.value = {
                     ...processingStatuses.value,
-                    ...result.statusMap
+                    ...result.statusMap,
                 };
             } else {
                 pollFailed = true;
@@ -132,6 +132,6 @@ export function useProcessingStatus({ files, isLoggedIn, activeTab, view }) {
     return {
         processingStatuses,
         refreshProcessingStatuses,
-        stopStatusPoll
+        stopStatusPoll,
     };
 }
