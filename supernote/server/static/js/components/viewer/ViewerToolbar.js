@@ -12,7 +12,7 @@ export default {
         zoomPercent: { type: Number, default: 100 },
         downloading: { type: Boolean, default: false },
         showSidePanel: { type: Boolean, default: false },
-        isMobileSidePanelOpen: { type: Boolean, default: false }
+        isMobileSidePanelOpen: { type: Boolean, default: false },
     },
     emits: [
         'close',
@@ -22,7 +22,7 @@ export default {
         'zoom-out',
         'reset-zoom',
         'download',
-        'toggle-side-panel'
+        'toggle-side-panel',
     ],
     setup() {
         return { formatSize };
@@ -157,5 +157,5 @@ export default {
                 class="px-2 py-0.5 rounded-md text-xs font-mono font-bold text-stone-600 hover:text-slate-900 disabled:opacity-35 transition-all">+</button>
         </div>
     </div>
-    `
+    `,
 };

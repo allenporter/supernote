@@ -13,7 +13,7 @@
  * effects so they can be imported directly in unit tests.
  */
 
-import { ref, onMounted, onUnmounted } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { fetchPathInfo } from '../api/client.js';
 import { parseOAuthBridgeReturnTo } from '../utils/oauth.js';
 
@@ -44,7 +44,7 @@ export function buildCrumbsFromPathInfo(info) {
         for (let i = 0; i < len; i++) {
             crumbs.push({
                 id: String(ids[i]),
-                name: formatCrumbName(names[i], i)
+                name: formatCrumbName(names[i], i),
             });
         }
     }
@@ -66,9 +66,12 @@ function parsePageParam(params) {
  * @param {string} [hashString]
  */
 export function parseUrlHash(hashString) {
-    const raw = hashString !== undefined
-        ? hashString
-        : (typeof window !== 'undefined' ? window.location.hash || '' : '');
+    const raw =
+        hashString !== undefined
+            ? hashString
+            : typeof window !== 'undefined'
+              ? window.location.hash || ''
+              : '';
     const clean = raw.replace(/^#\/?/, '').trim();
 
     if (!clean) {
@@ -92,7 +95,7 @@ export function parseUrlHash(hashString) {
             view: 'viewer',
             fileId: parts[1],
             pageIndex: parsePageParam(params),
-            showSystem: false
+            showSystem: false,
         };
     }
     if (parts[0] === 'files' && parts[1]) {
@@ -148,7 +151,7 @@ export function useRouter({
     loadDirectory,
     selectedIds,
     onOAuthRouteEnter = null,
-    onOAuthRouteClear = null
+    onOAuthRouteClear = null,
 }) {
     const activeTab = ref('files'); // 'files' | 'tasks'
     const view = ref('grid'); // 'grid' | 'viewer'
@@ -211,7 +214,7 @@ export function useRouter({
             view.value,
             selectedFile.value,
             showSystemPanel.value,
-            selectedPageIndex.value
+            selectedPageIndex.value,
         );
         lastSyncedHash = targetHash;
         if (window.location.hash !== targetHash) {
@@ -238,7 +241,7 @@ export function useRouter({
         if (!isInitial && loadedDirectoryId.value === targetDirId) return;
         await Promise.all([
             loadDirectory(targetDirId),
-            syncBreadcrumbsForDirectory(targetDirId, seq)
+            syncBreadcrumbsForDirectory(targetDirId, seq),
         ]);
     }
 
@@ -248,18 +251,26 @@ export function useRouter({
      * @param {Record<string, any> | null} [fallbackItem=null]
      * @param {(() => void) | null} [onViewerReady=null]
      */
-    async function restoreViewerState(targetFileId, seq, fallbackItem = null, onViewerReady = null) {
+    async function restoreViewerState(
+        targetFileId,
+        seq,
+        fallbackItem = null,
+        onViewerReady = null,
+    ) {
         const hasMatchingLoadedDir =
             loadedDirectoryId.value === String(currentDirectoryId.value) &&
-            (fallbackItem?.parentId === undefined || String(fallbackItem.parentId) === String(currentDirectoryId.value));
+            (fallbackItem?.parentId === undefined ||
+                String(fallbackItem.parentId) === String(currentDirectoryId.value));
         const existingFile = hasMatchingLoadedDir
-            ? files.value.find(f => !f.isDirectory && String(f.id) === targetFileId)
+            ? files.value.find((f) => !f.isDirectory && String(f.id) === targetFileId)
             : null;
         if (existingFile) {
             selectedFile.value = existingFile;
             view.value = 'viewer';
             if (onViewerReady) onViewerReady();
-            const currentLastCrumbId = String(breadcrumbs.value[breadcrumbs.value.length - 1]?.id || '0');
+            const currentLastCrumbId = String(
+                breadcrumbs.value[breadcrumbs.value.length - 1]?.id || '0',
+            );
             if (currentLastCrumbId !== String(currentDirectoryId.value)) {
                 await syncBreadcrumbsForDirectory(currentDirectoryId.value, seq);
             }
@@ -267,11 +278,11 @@ export function useRouter({
         }
 
         const fallbackName = fallbackItem?.name || `File ${targetFileId}`;
-        const fallbackExt = fallbackItem?.extension || (
-            fallbackItem?.name && fallbackName.includes('.')
+        const fallbackExt =
+            fallbackItem?.extension ||
+            (fallbackItem?.name && fallbackName.includes('.')
                 ? (fallbackName.split('.').pop() || '').toLowerCase()
-                : ''
-        );
+                : '');
 
         try {
             const info = await fetchPathInfo(targetFileId);
@@ -282,7 +293,7 @@ export function useRouter({
                     ...(fallbackItem || {}),
                     id: targetFileId,
                     name: fallbackName,
-                    extension: fallbackExt
+                    extension: fallbackExt,
                 };
                 view.value = 'viewer';
                 if (onViewerReady) onViewerReady();
@@ -302,14 +313,14 @@ export function useRouter({
                 ...(fallbackItem || {}),
                 id: targetFileId,
                 name: fileCrumb.name,
-                extension: ext
+                extension: ext,
             };
             view.value = 'viewer';
             if (onViewerReady) onViewerReady();
 
             await loadDirectory(parentDirId);
             if (seq !== activeSyncSeq) return;
-            const loadedFile = files.value.find(f => String(f.id) === targetFileId);
+            const loadedFile = files.value.find((f) => String(f.id) === targetFileId);
             if (loadedFile) {
                 selectedFile.value = loadedFile;
             }
@@ -320,7 +331,7 @@ export function useRouter({
                 ...(fallbackItem || {}),
                 id: targetFileId,
                 name: fallbackName,
-                extension: fallbackExt
+                extension: fallbackExt,
             };
             view.value = 'viewer';
             if (onViewerReady) onViewerReady();
@@ -348,7 +359,7 @@ export function useRouter({
         currentDirectoryId.value = targetDirId;
         const [, dirExists] = await Promise.all([
             loadDirectory(targetDirId),
-            syncBreadcrumbsForDirectory(targetDirId, seq)
+            syncBreadcrumbsForDirectory(targetDirId, seq),
         ]);
         if (seq !== activeSyncSeq) return;
         if (!dirExists && targetDirId !== '0') {
@@ -408,7 +419,8 @@ export function useRouter({
 
         activeTab.value = 'files';
         if (parsed.view === 'viewer' && parsed.fileId) {
-            selectedPageIndex.value = typeof parsed.pageIndex === 'number' ? parsed.pageIndex : null;
+            selectedPageIndex.value =
+                typeof parsed.pageIndex === 'number' ? parsed.pageIndex : null;
             if (typeof parsed.pageIndex === 'number') {
                 selectedPageJumpSeq.value++;
             }
@@ -440,7 +452,11 @@ export function useRouter({
             viewerOpenedFromHistory = false;
             resetViewerSelection();
             updateUrl();
-            await restoreDirectoryState(String(currentDirectoryId.value || '0'), false, ++activeSyncSeq);
+            await restoreDirectoryState(
+                String(currentDirectoryId.value || '0'),
+                false,
+                ++activeSyncSeq,
+            );
         } else {
             updateUrl();
         }
@@ -462,7 +478,11 @@ export function useRouter({
         showSystemPanel.value = false;
         updateUrl(true);
         if (activeTab.value === 'files' && view.value === 'grid') {
-            await restoreDirectoryState(String(currentDirectoryId.value || '0'), false, ++activeSyncSeq);
+            await restoreDirectoryState(
+                String(currentDirectoryId.value || '0'),
+                false,
+                ++activeSyncSeq,
+            );
         }
     }
 
@@ -475,14 +495,23 @@ export function useRouter({
         viewerOpenedFromHistory = false;
         resetViewerSelection();
         updateUrl(true);
-        await restoreDirectoryState(String(currentDirectoryId.value || '0'), false, ++activeSyncSeq);
+        await restoreDirectoryState(
+            String(currentDirectoryId.value || '0'),
+            false,
+            ++activeSyncSeq,
+        );
     }
 
     /**
      * @param {number} pageIdx
      */
     function handleViewerPageChange(pageIdx) {
-        if (view.value !== 'viewer' || typeof pageIdx !== 'number' || Number.isNaN(pageIdx) || pageIdx < 0) {
+        if (
+            view.value !== 'viewer' ||
+            typeof pageIdx !== 'number' ||
+            Number.isNaN(pageIdx) ||
+            pageIdx < 0
+        ) {
             return;
         }
         if (selectedPageIndex.value === pageIdx) return;
@@ -524,12 +553,12 @@ export function useRouter({
         if (item.isDirectory) {
             const targetId = String(item.id);
             const prevDirId = String(currentDirectoryId.value || '0');
-            const existingIndex = breadcrumbs.value.findIndex(c => String(c.id) === targetId);
+            const existingIndex = breadcrumbs.value.findIndex((c) => String(c.id) === targetId);
             const isChildOfLoadedDir =
                 existingIndex === -1 &&
                 loadedDirectoryId.value === prevDirId &&
                 Boolean(item.name) &&
-                files.value.some(f => f.isDirectory && String(f.id) === targetId);
+                files.value.some((f) => f.isDirectory && String(f.id) === targetId);
 
             showSystemPanel.value = false;
             systemOpenedFromHistory = false;
@@ -544,7 +573,7 @@ export function useRouter({
                 const depthIndex = Math.max(0, breadcrumbs.value.length - 1);
                 breadcrumbs.value = [
                     ...breadcrumbs.value,
-                    { id: targetId, name: formatCrumbName(item.name, depthIndex) }
+                    { id: targetId, name: formatCrumbName(item.name, depthIndex) },
                 ];
             }
             updateUrl(replaceModalHistory);
@@ -555,7 +584,7 @@ export function useRouter({
             } else {
                 await Promise.all([
                     loadDirectory(targetId),
-                    syncBreadcrumbsForDirectory(targetId, seq)
+                    syncBreadcrumbsForDirectory(targetId, seq),
                 ]);
             }
             return;
@@ -571,7 +600,9 @@ export function useRouter({
             selectedPageIndex.value = targetPage ?? 0;
             selectedPageJumpSeq.value++;
             updateUrl(wasSystemUrl ? replaceModalHistory : true);
-            const currentLastCrumbId = String(breadcrumbs.value[breadcrumbs.value.length - 1]?.id || '0');
+            const currentLastCrumbId = String(
+                breadcrumbs.value[breadcrumbs.value.length - 1]?.id || '0',
+            );
             if (currentLastCrumbId !== String(currentDirectoryId.value)) {
                 await syncBreadcrumbsForDirectory(currentDirectoryId.value, ++activeSyncSeq);
             }
@@ -624,6 +655,6 @@ export function useRouter({
         closeViewer,
         handleViewerPageChange,
         openItem,
-        navigateTo
+        navigateTo,
     };
 }

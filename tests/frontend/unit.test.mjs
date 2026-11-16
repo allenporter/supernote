@@ -40,7 +40,11 @@ import {
     useRouter,
 } from '../../supernote/server/static/js/composables/useRouter.js';
 import { copyTextToClipboard } from '../../supernote/server/static/js/utils/clipboard.js';
-import { formatSize, getErrorMessage, normalizeEpochMs } from '../../supernote/server/static/js/utils/format.js';
+import {
+    formatSize,
+    getErrorMessage,
+    normalizeEpochMs,
+} from '../../supernote/server/static/js/utils/format.js';
 import { renderMarkdown } from '../../supernote/server/static/js/utils/markdown.js';
 import {
     describeRedirectTarget,
@@ -129,7 +133,7 @@ test('schedule.js: normalizeTaskImportance, fetchTasks mapping, and fetchIcsFeed
                     ],
                     nextPageToken: 'next-1',
                 }),
-                { status: 200 }
+                { status: 200 },
             );
         };
 
@@ -186,20 +190,20 @@ test('useRouter.js: parseUrlHash, buildUrlHash, and breadcrumb builders', () => 
     assert.equal(buildUrlHash('files', '0', 'grid', null, false, null), '#/files');
     assert.equal(buildUrlHash('files', '42', 'grid', null, false, null), '#/files/42');
     assert.equal(buildUrlHash('files', '42', 'viewer', { id: '9001' }, false, 0), '#/file/9001');
-    assert.equal(buildUrlHash('files', '42', 'viewer', { id: '9001' }, false, 2), '#/file/9001?page=3');
+    assert.equal(
+        buildUrlHash('files', '42', 'viewer', { id: '9001' }, false, 2),
+        '#/file/9001?page=3',
+    );
     assert.equal(buildUrlHash('tasks', '0', 'grid', null, false, null), '#/tasks');
     assert.equal(buildUrlHash('files', '0', 'grid', null, true, null), '#/system');
 
     assert.equal(formatCrumbName('INBOX', 0), 'Inbox');
     assert.equal(formatCrumbName('Projects', 1), 'Projects');
-    assert.deepEqual(
-        buildCrumbsFromPathInfo({ path: '/INBOX/Specs', idPath: '/10/20' }),
-        [
-            { id: '0', name: 'Cloud' },
-            { id: '10', name: 'Inbox' },
-            { id: '20', name: 'Specs' },
-        ]
-    );
+    assert.deepEqual(buildCrumbsFromPathInfo({ path: '/INBOX/Specs', idPath: '/10/20' }), [
+        { id: '0', name: 'Cloud' },
+        { id: '10', name: 'Inbox' },
+        { id: '20', name: 'Specs' },
+    ]);
 });
 
 test('useRouter.js: stateful navigation, history back/replace, and cross-directory file resolution', async () => {
@@ -246,20 +250,22 @@ test('useRouter.js: stateful navigation, history back/replace, and cross-directo
             const body = JSON.parse(String(init?.body || '{}'));
             if (body.id === '99') {
                 return new Response(
-                    JSON.stringify({ success: true, path: '/EXPORT/Summary.note', idPath: '/20/99' }),
-                    { status: 200 }
+                    JSON.stringify({
+                        success: true,
+                        path: '/EXPORT/Summary.note',
+                        idPath: '/20/99',
+                    }),
+                    { status: 200 },
                 );
             }
             if (body.id === '404') {
-                return new Response(
-                    JSON.stringify({ success: true, path: '', idPath: '' }),
-                    { status: 200 }
-                );
+                return new Response(JSON.stringify({ success: true, path: '', idPath: '' }), {
+                    status: 200,
+                });
             }
-            return new Response(
-                JSON.stringify({ success: true, path: '/INBOX', idPath: '/10' }),
-                { status: 200 }
-            );
+            return new Response(JSON.stringify({ success: true, path: '/INBOX', idPath: '/10' }), {
+                status: 200,
+            });
         };
 
         const isLoggedIn = ref(true);
@@ -270,9 +276,9 @@ test('useRouter.js: stateful navigation, history back/replace, and cross-directo
 
         /** @type {Record<string, Array<Record<string, any>>>} */
         const mockVfs = {
-            '0': [{ id: '10', name: 'INBOX', isDirectory: true }],
-            '10': [{ id: '55', name: 'Notes.note', isDirectory: false, extension: 'note' }],
-            '20': [{ id: '99', name: 'Summary.note', isDirectory: false, extension: 'note' }],
+            0: [{ id: '10', name: 'INBOX', isDirectory: true }],
+            10: [{ id: '55', name: 'Notes.note', isDirectory: false, extension: 'note' }],
+            20: [{ id: '99', name: 'Summary.note', isDirectory: false, extension: 'note' }],
         };
 
         async function loadDirectory(dirId = '0') {
@@ -374,22 +380,25 @@ test('format.js: epoch normalization, byte sizes, and error message extraction',
 test('oauth.js: scope descriptions, redirect targets, and same-origin /login-bridge validation', () => {
     assert.match(describeScope('supernote:all'), /Full access/);
     assert.equal(describeRedirectTarget('cursor://anysphere.cursor-mcp/cb').isCustomScheme, true);
-    assert.equal(describeRedirectTarget('https://claude.ai/api/mcp/auth_callback').hostLabel, 'claude.ai');
+    assert.equal(
+        describeRedirectTarget('https://claude.ai/api/mcp/auth_callback').hostLabel,
+        'claude.ai',
+    );
 
     // Cross-origin return_to must be rejected
     assert.equal(
         parseOAuthBridgeReturnTo(
             `#/login?return_to=${encodeURIComponent('https://evil.example/login-bridge?client_id=x&code_challenge=y')}`,
-            'http://127.0.0.1:8080'
+            'http://127.0.0.1:8080',
         ),
-        null
+        null,
     );
 
     const valid = parseOAuthBridgeReturnTo(
         `#/login?return_to=${encodeURIComponent(
-            '/login-bridge?client_id=https%3A%2F%2Fclaude.ai%2Fcb&code_challenge=abc123&state=s1'
+            '/login-bridge?client_id=https%3A%2F%2Fclaude.ai%2Fcb&code_challenge=abc123&state=s1',
         )}`,
-        'http://127.0.0.1:8080'
+        'http://127.0.0.1:8080',
     );
     assert.equal(valid?.isValid, true);
     assert.equal(valid?.state, 's1');
@@ -408,7 +417,7 @@ test('noteMeta.js: file categories, page styles, links, and merged transcript pa
     assert.equal(formatPageStyle('8mm_ruled_line'), '8mm ruled');
     assert.equal(
         formatLinkLabel({ targetFileId: '2', target: '/Note/Ref.note', targetPageIndex: 4 }, '1'),
-        'Ref.note · p.5'
+        'Ref.note · p.5',
     );
 
     const norm = normalizeTranscriptPages([{ page_index: 1, page_id: 'p-1', text: 'hello' }]);
@@ -416,14 +425,14 @@ test('noteMeta.js: file categories, page styles, links, and merged transcript pa
         norm,
         { pages: [{ pageIndex: 0, keywords: ['todo'] }] },
         new Map([[0, { pageIndex: 0, date: '2026-03-01', keywords: ['todo'] }]]),
-        new Map()
+        new Map(),
     );
     assert.deepEqual(
         merged.map((p) => ({ idx: p.pageIndex, hasTranscript: p.hasTranscript })),
         [
             { idx: 0, hasTranscript: false },
             { idx: 1, hasTranscript: true },
-        ]
+        ],
     );
 
     assert.equal(formatContent('Line 1\\nLine 2'), 'Line 1\nLine 2');
@@ -435,7 +444,14 @@ test('noteMeta.js: file categories, page styles, links, and merged transcript pa
 test('TaskEditorModal & TaskRow: local date input formatting and due badges', () => {
     assert.equal(toLocalDateInputValue(new Date(2026, 0, 5)), '2026-01-05');
     const now = new Date();
-    const todayNoon = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0).getTime();
+    const todayNoon = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+        12,
+        0,
+        0,
+    ).getTime();
     assert.equal(getDueMeta({ dueTime: todayNoon, status: 'needsAction' })?.label, 'Due Today');
     const pastMs = new Date(2020, 0, 2, 12, 0, 0).getTime();
     assert.match(getDueMeta({ dueTime: pastMs, status: 'needsAction' })?.label || '', /^Overdue/);
@@ -548,13 +564,22 @@ test('FileBrowserPanel.js: compareItems keeps folders grouped first across sort 
     ];
 
     const byNameAsc = [...items].sort((a, b) => compareItems(a, b, 'name', 'asc'));
-    assert.deepEqual(byNameAsc.map((i) => i.name), ['Archive', 'Note 2.note', 'Note 10.note']);
+    assert.deepEqual(
+        byNameAsc.map((i) => i.name),
+        ['Archive', 'Note 2.note', 'Note 10.note'],
+    );
 
     const bySizeDesc = [...items].sort((a, b) => compareItems(a, b, 'size', 'desc'));
-    assert.deepEqual(bySizeDesc.map((i) => i.name), ['Archive', 'Note 2.note', 'Note 10.note']);
+    assert.deepEqual(
+        bySizeDesc.map((i) => i.name),
+        ['Archive', 'Note 2.note', 'Note 10.note'],
+    );
 
     const byDateAsc = [...items].sort((a, b) => compareItems(a, b, 'updatedAt', 'asc'));
-    assert.deepEqual(byDateAsc.map((i) => i.name), ['Archive', 'Note 10.note', 'Note 2.note']);
+    assert.deepEqual(
+        byDateAsc.map((i) => i.name),
+        ['Archive', 'Note 10.note', 'Note 2.note'],
+    );
 });
 
 test('client.js: computeSocketSignature supports Web Crypto and plain-HTTP LAN fallback', async () => {
@@ -606,13 +631,16 @@ test('submitOAuthBridgeDecision: routes consent POST via http.js with 400 detail
             if (String(url).includes('case=ok')) {
                 return new Response(
                     JSON.stringify({ redirect_url: 'https://claude.ai/cb?code=123' }),
-                    { status: 200 }
+                    { status: 200 },
                 );
             }
             if (String(url).includes('case=bad')) {
                 return new Response(
-                    JSON.stringify({ error: 'invalid_scope', error_description: 'Unsupported scope' }),
-                    { status: 400 }
+                    JSON.stringify({
+                        error: 'invalid_scope',
+                        error_description: 'Unsupported scope',
+                    }),
+                    { status: 400 },
                 );
             }
             if (String(url).includes('case=expired')) {
@@ -628,12 +656,16 @@ test('submitOAuthBridgeDecision: routes consent POST via http.js with 400 detail
 
         await assert.rejects(
             () => submitOAuthBridgeDecision('/login-bridge?case=bad', 'approve'),
-            (err) => err instanceof ApiError && err.status === 400 && err.message === 'Unsupported scope'
+            (err) =>
+                err instanceof ApiError &&
+                err.status === 400 &&
+                err.message === 'Unsupported scope',
         );
 
         await assert.rejects(
             () => submitOAuthBridgeDecision('/login-bridge?case=expired', 'deny'),
-            (err) => err instanceof ApiError && err.status === 401 && /Unauthorized/.test(err.message)
+            (err) =>
+                err instanceof ApiError && err.status === 401 && /Unauthorized/.test(err.message),
         );
         assert.equal(getToken(), null);
         assert.equal(logoutCalled, 1);

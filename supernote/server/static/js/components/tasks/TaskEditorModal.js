@@ -1,4 +1,4 @@
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { normalizeTaskImportance } from '../../api/schedule.js';
 import { normalizeEpochMs } from '../../utils/format.js';
 
@@ -18,20 +18,20 @@ export default {
     props: {
         task: {
             type: Object,
-            default: null
+            default: null,
         },
         taskGroups: {
             type: Array,
-            default: () => []
+            default: () => [],
         },
         defaultDueDate: {
             type: String,
-            default: ''
+            default: '',
         },
         defaultGroupId: {
             type: [String, Number],
-            default: null
-        }
+            default: null,
+        },
     },
     emits: ['save', 'close'],
     /**
@@ -60,7 +60,7 @@ export default {
                     detail: task.detail || '',
                     importance: normalizeTaskImportance(task.importance),
                     dueDate: formattedDate,
-                    status: task.status || 'needsAction'
+                    status: task.status || 'needsAction',
                 };
             }
 
@@ -71,22 +71,25 @@ export default {
                 detail: '',
                 importance: 'low',
                 dueDate: props.defaultDueDate || '',
-                status: 'needsAction'
+                status: 'needsAction',
             };
         }
 
         const taskForm = ref(buildFormState(props.task));
 
-        watch(() => props.task, (nextTask) => {
-            taskForm.value = buildFormState(nextTask);
-        });
+        watch(
+            () => props.task,
+            (nextTask) => {
+                taskForm.value = buildFormState(nextTask);
+            },
+        );
 
         function handleSaveTask() {
             if (!taskForm.value.title.trim()) return;
 
             let epochDue = 0;
             if (taskForm.value.dueDate) {
-                const parsedDate = new Date(taskForm.value.dueDate + 'T12:00:00Z');
+                const parsedDate = new Date(`${taskForm.value.dueDate}T12:00:00Z`);
                 epochDue = parsedDate.getTime();
             }
 
@@ -97,7 +100,7 @@ export default {
                 detail: taskForm.value.detail.trim(),
                 importance: normalizeTaskImportance(taskForm.value.importance),
                 dueTime: epochDue,
-                status: taskForm.value.status
+                status: taskForm.value.status,
             });
         }
 
@@ -124,7 +127,7 @@ export default {
         return {
             taskTitleInput,
             taskForm,
-            handleSaveTask
+            handleSaveTask,
         };
     },
     template: `
@@ -186,5 +189,5 @@ export default {
             </div>
         </div>
     </div>
-    `
+    `,
 };

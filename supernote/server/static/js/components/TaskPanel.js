@@ -1,11 +1,11 @@
-import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useSchedule } from '../composables/useSchedule.js';
 import { showToast } from '../composables/useToast.js';
 import { normalizeEpochMs } from '../utils/format.js';
-import TaskSidebar from './tasks/TaskSidebar.js';
-import TaskRow from './tasks/TaskRow.js';
 import TaskEditorModal, { toLocalDateInputValue } from './tasks/TaskEditorModal.js';
 import TaskIcsModal from './tasks/TaskIcsModal.js';
+import TaskRow from './tasks/TaskRow.js';
+import TaskSidebar from './tasks/TaskSidebar.js';
 
 export default {
     name: 'TaskPanel',
@@ -13,7 +13,7 @@ export default {
         TaskSidebar,
         TaskRow,
         TaskEditorModal,
-        TaskIcsModal
+        TaskIcsModal,
     },
     props: ['focusTask'],
     /**
@@ -38,7 +38,7 @@ export default {
             modifyTask,
             removeTask,
             addGroup,
-            removeGroup
+            removeGroup,
         } = useSchedule();
 
         // Modals
@@ -80,9 +80,12 @@ export default {
             }
         }
 
-        watch(() => props.focusTask?.seq, () => {
-            applyFocusedTask(props.focusTask);
-        });
+        watch(
+            () => props.focusTask?.seq,
+            () => {
+                applyFocusedTask(props.focusTask);
+            },
+        );
 
         watch(showNewGroupModal, (isOpen) => {
             if (isOpen) {
@@ -107,7 +110,7 @@ export default {
         const groupNameMap = computed(() => {
             /** @type {Record<string, string>} */
             const map = {};
-            taskGroups.value.forEach(g => {
+            taskGroups.value.forEach((g) => {
                 map[g.id] = g.title;
             });
             return map;
@@ -117,7 +120,11 @@ export default {
             /** @type {Record<string, number>} */
             const counts = {};
             for (const task of tasks.value) {
-                if (task.status !== 'completed' && task.taskListId !== null && task.taskListId !== undefined) {
+                if (
+                    task.status !== 'completed' &&
+                    task.taskListId !== null &&
+                    task.taskListId !== undefined
+                ) {
                     const key = String(task.taskListId);
                     counts[key] = (counts[key] || 0) + 1;
                 }
@@ -127,7 +134,7 @@ export default {
 
         const todayTasksCount = computed(() => {
             const todayStr = new Date().toDateString();
-            return tasks.value.filter(t => {
+            return tasks.value.filter((t) => {
                 if (!t.dueTime || t.status === 'completed') return false;
                 const dueMs = normalizeEpochMs(t.dueTime);
                 return dueMs !== null && new Date(dueMs).toDateString() === todayStr;
@@ -135,12 +142,12 @@ export default {
         });
 
         const completedTasksCount = computed(() => {
-            return tasks.value.filter(t => t.status === 'completed').length;
+            return tasks.value.filter((t) => t.status === 'completed').length;
         });
 
-        const defaultNewTaskDueDate = computed(() => (
-            selectedFilter.value === 'today' ? toLocalDateInputValue(new Date()) : ''
-        ));
+        const defaultNewTaskDueDate = computed(() =>
+            selectedFilter.value === 'today' ? toLocalDateInputValue(new Date()) : '',
+        );
 
         function openCreateTaskModal() {
             editingTask.value = null;
@@ -183,7 +190,7 @@ export default {
                 type: 'task',
                 id: task.id,
                 title: task.title || 'this task',
-                count: 0
+                count: 0,
             };
         }
 
@@ -192,12 +199,14 @@ export default {
          */
         function requestDeleteGroup(group) {
             if (!group) return;
-            const count = tasks.value.filter(t => String(t.taskListId) === String(group.id)).length;
+            const count = tasks.value.filter(
+                (t) => String(t.taskListId) === String(group.id),
+            ).length;
             pendingDelete.value = {
                 type: 'group',
                 id: group.id,
                 title: group.title || 'this list',
-                count
+                count,
             };
         }
 
@@ -266,7 +275,7 @@ export default {
             handleSaveTask,
             handleCreateGroup,
             selectFilterMode,
-            selectGroup
+            selectGroup,
         };
     },
     template: `
@@ -440,5 +449,5 @@ export default {
             @close="showIcsModal = false"
         />
     </div>
-    `
+    `,
 };

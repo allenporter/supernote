@@ -2,12 +2,12 @@
  * Safe CommonMark + GFM Markdown renderer backed by marked and DOMPurify.
  */
 
-import { Marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { Marked } from 'marked';
 
 const SANITIZE_OPTIONS = {
     USE_PROFILES: { html: true },
-    FORBID_TAGS: ['form', 'input', 'button', 'textarea', 'select', 'style', 'img']
+    FORBID_TAGS: ['form', 'input', 'button', 'textarea', 'select', 'style', 'img'],
 };
 
 const markdownParser = new Marked({
@@ -25,8 +25,8 @@ const markdownParser = new Marked({
                 return `<li class="md-task-item">${inner}</li>\n`;
             }
             return `<li>${inner}</li>\n`;
-        }
-    }
+        },
+    },
 });
 
 /**

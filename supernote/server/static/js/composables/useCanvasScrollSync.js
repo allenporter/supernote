@@ -4,7 +4,7 @@
  * for FileViewer.
  */
 
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { ZOOM_STEPS } from '../components/viewer/noteMeta.js';
 
 /**
@@ -113,7 +113,8 @@ export function useCanvasScrollSync({ pages, transcriptPages }) {
         if (pane.scrollHeight > pane.clientHeight) {
             const paneRect = pane.getBoundingClientRect();
             const elRect = pageEl.getBoundingClientRect();
-            const targetTop = pageIndex === 0 ? 0 : pane.scrollTop + (elRect.top - paneRect.top) - 16;
+            const targetTop =
+                pageIndex === 0 ? 0 : pane.scrollTop + (elRect.top - paneRect.top) - 16;
             pane.scrollTo({ top: Math.max(0, targetTop), behavior });
         } else if (pane.scrollTop !== 0) {
             pane.scrollTo({ top: 0, behavior: 'auto' });
@@ -144,9 +145,12 @@ export function useCanvasScrollSync({ pages, transcriptPages }) {
         if (typeof rawPageIndex !== 'number' || Number.isNaN(rawPageIndex) || rawPageIndex < 0) {
             return;
         }
-        const maxPageIdx = pages.value.length > 0
-            ? pages.value.length - 1
-            : (transcriptPages.value.length > 0 ? transcriptPages.value.length - 1 : rawPageIndex);
+        const maxPageIdx =
+            pages.value.length > 0
+                ? pages.value.length - 1
+                : transcriptPages.value.length > 0
+                  ? transcriptPages.value.length - 1
+                  : rawPageIndex;
         const targetIdx = Math.max(0, Math.min(rawPageIndex, maxPageIdx));
         /** @type {ScrollBehavior} */
         const behavior = smooth ? 'smooth' : 'auto';
@@ -233,7 +237,10 @@ export function useCanvasScrollSync({ pages, transcriptPages }) {
                     let bestEntry = null;
                     for (const entry of entries) {
                         if (entry.isIntersecting) {
-                            if (!bestEntry || entry.intersectionRatio > bestEntry.intersectionRatio) {
+                            if (
+                                !bestEntry ||
+                                entry.intersectionRatio > bestEntry.intersectionRatio
+                            ) {
                                 bestEntry = entry;
                             }
                         }
@@ -249,8 +256,8 @@ export function useCanvasScrollSync({ pages, transcriptPages }) {
             },
             {
                 root: leftScrollPane.value,
-                threshold: [0, 0.15, 0.3, 0.5, 0.75, 1.0]
-            }
+                threshold: [0, 0.15, 0.3, 0.5, 0.75, 1.0],
+            },
         );
         pageObserver = observer;
 
@@ -295,6 +302,6 @@ export function useCanvasScrollSync({ pages, transcriptPages }) {
         updateActivePageFromScroll,
         setupPageObserver,
         teardownPageObserver,
-        clearPendingTargetPage
+        clearPendingTargetPage,
     };
 }

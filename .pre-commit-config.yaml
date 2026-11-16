@@ -34,8 +34,8 @@ repos:
         files: '^(tsconfig\.json|supernote/server/static/js/.*\.(js|d\.ts))$'
         pass_filenames: false
       - id: biome
-        name: biome lint
-        entry: biome lint --error-on-warnings supernote/server/static/js tests/frontend
+        name: biome check
+        entry: biome check --write --error-on-warnings supernote/server/static/js tests/frontend
         language: node
         additional_dependencies:
           - "@biomejs/biome@2.6.8"

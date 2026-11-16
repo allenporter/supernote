@@ -1,4 +1,4 @@
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { fetchFiles } from '../api/client.js';
 
 export default {
@@ -128,13 +128,13 @@ export default {
         const targetDirId = ref('0');
         const isLoading = ref(false);
 
-        const excludedIdSet = computed(() => (
-            new Set((props.itemIds || []).map(id => String(id)))
-        ));
+        const excludedIdSet = computed(
+            () => new Set((props.itemIds || []).map((id) => String(id))),
+        );
 
-        const availableFolders = computed(() => (
-            folders.value.filter(folder => !excludedIdSet.value.has(String(folder.id)))
-        ));
+        const availableFolders = computed(() =>
+            folders.value.filter((folder) => !excludedIdSet.value.has(String(folder.id))),
+        );
 
         const currentFolderName = computed(() => {
             const last = breadcrumbs.value[breadcrumbs.value.length - 1];
@@ -143,12 +143,12 @@ export default {
 
         const destinationPath = computed(() => {
             if (!targetDirId.value) return 'None selected';
-            const basePath = breadcrumbs.value.map(c => c.name).join(' / ');
+            const basePath = breadcrumbs.value.map((c) => c.name).join(' / ');
             if (String(targetDirId.value) === String(currentBrowserDirId.value)) {
                 return basePath;
             }
             const selectedSubfolder = availableFolders.value.find(
-                f => String(f.id) === String(targetDirId.value)
+                (f) => String(f.id) === String(targetDirId.value),
             );
             if (selectedSubfolder) {
                 return `${basePath} / ${selectedSubfolder.name}`;
@@ -169,9 +169,7 @@ export default {
             isLoading.value = true;
             try {
                 const files = await fetchFiles(targetId);
-                folders.value = files.filter(
-                    f => f.isDirectory && !isExcluded(f.id)
-                );
+                folders.value = files.filter((f) => f.isDirectory && !isExcluded(f.id));
             } catch (e) {
                 console.error(e);
                 folders.value = [];
@@ -201,7 +199,7 @@ export default {
             currentBrowserDirId.value = folderId;
             targetDirId.value = folderId;
 
-            const existingIndex = breadcrumbs.value.findIndex(c => String(c.id) === folderId);
+            const existingIndex = breadcrumbs.value.findIndex((c) => String(c.id) === folderId);
             if (existingIndex > -1) {
                 breadcrumbs.value = breadcrumbs.value.slice(0, existingIndex + 1);
             } else {
@@ -261,7 +259,7 @@ export default {
             selectTarget,
             enterFolder,
             navigateToBreadcrumb,
-            confirmMove
+            confirmMove,
         };
-    }
+    },
 };

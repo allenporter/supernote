@@ -8,7 +8,7 @@ let nextToastId = 1;
  * @param {number} id
  */
 export function dismissToast(id) {
-    toasts.value = toasts.value.filter(t => t.id !== id);
+    toasts.value = toasts.value.filter((t) => t.id !== id);
 }
 
 /**
@@ -22,7 +22,7 @@ export function showToast(message, type = 'error', duration = 4000) {
     toasts.value.push({
         id,
         message: String(message || ''),
-        type
+        type,
     });
     if (duration > 0) {
         setTimeout(() => {
@@ -36,6 +36,6 @@ export function useToast() {
     return {
         toasts,
         showToast,
-        dismissToast
+        dismissToast,
     };
 }

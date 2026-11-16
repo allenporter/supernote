@@ -1,4 +1,4 @@
-import { ref, watch, nextTick, onMounted } from 'vue';
+import { nextTick, onMounted, ref, watch } from 'vue';
 import { describeScope } from '../utils/oauth.js';
 
 export default {
@@ -6,16 +6,16 @@ export default {
     props: {
         request: {
             type: Object,
-            required: true
+            required: true,
         },
         isSubmitting: {
             type: Boolean,
-            default: false
+            default: false,
         },
         completedOutcome: {
             type: String,
-            default: null
-        }
+            default: null,
+        },
     },
     emits: ['approve', 'deny', 'dismiss'],
     /**
@@ -35,12 +35,12 @@ export default {
             () => {
                 primaryButtonRef.value?.focus({ preventScroll: true });
             },
-            { flush: 'post' }
+            { flush: 'post' },
         );
 
         return {
             primaryButtonRef,
-            describeScope
+            describeScope,
         };
     },
     template: `
@@ -188,5 +188,5 @@ export default {
             OAuth 2.1 · PKCE S256 · Authorize only applications you trust
         </div>
     </div>
-    `
+    `,
 };

@@ -22,35 +22,41 @@ export function getDueMeta(task) {
         const shortDate = due.toLocaleDateString(undefined, {
             month: 'short',
             day: 'numeric',
-            ...(due.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {})
+            ...(due.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}),
         });
         return {
             label: `Overdue · ${shortDate}`,
-            classes: 'bg-rose-50 text-rose-700 border-rose-200 font-semibold'
+            classes: 'bg-rose-50 text-rose-700 border-rose-200 font-semibold',
         };
     }
 
     if (dueDayStart === todayStart) {
         return {
             label: 'Due Today',
-            classes: task.status === 'completed'
-                ? 'bg-stone-50 text-stone-500 border-stone-200'
-                : 'bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold'
+            classes:
+                task.status === 'completed'
+                    ? 'bg-stone-50 text-stone-500 border-stone-200'
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold',
         };
     }
 
     if (dueDayStart === tomorrowStart) {
         return {
             label: 'Due Tomorrow',
-            classes: task.status === 'completed'
-                ? 'bg-stone-50 text-stone-500 border-stone-200'
-                : 'bg-amber-50 text-amber-700 border-amber-200 font-semibold'
+            classes:
+                task.status === 'completed'
+                    ? 'bg-stone-50 text-stone-500 border-stone-200'
+                    : 'bg-amber-50 text-amber-700 border-amber-200 font-semibold',
         };
     }
 
     return {
-        label: due.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }),
-        classes: 'bg-stone-50 text-stone-500 border-stone-200'
+        label: due.toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+        }),
+        classes: 'bg-stone-50 text-stone-500 border-stone-200',
     };
 }
 
@@ -59,12 +65,12 @@ export default {
     props: {
         task: {
             type: Object,
-            required: true
+            required: true,
         },
         groupName: {
             type: String,
-            default: null
-        }
+            default: null,
+        },
     },
     emits: ['toggle-complete', 'edit', 'delete'],
     /**
@@ -76,7 +82,7 @@ export default {
 
         return {
             importanceLevel,
-            dueMeta
+            dueMeta,
         };
     },
     template: `
@@ -158,5 +164,5 @@ export default {
             </button>
         </div>
     </div>
-    `
+    `,
 };

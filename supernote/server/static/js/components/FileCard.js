@@ -1,10 +1,21 @@
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
-import { fetchNoteCover, fetchDownloadUrl, downloadFile } from '../api/client.js';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { downloadFile, fetchDownloadUrl, fetchNoteCover } from '../api/client.js';
 import { showToast } from '../composables/useToast.js';
-import { formatSize, formatShortDate, getErrorMessage } from '../utils/format.js';
+import { formatShortDate, formatSize, getErrorMessage } from '../utils/format.js';
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg']);
-const DOCUMENT_EXTENSIONS = new Set(['epub', 'doc', 'docx', 'txt', 'md', 'csv', 'json', 'yaml', 'yml', 'log']);
+const DOCUMENT_EXTENSIONS = new Set([
+    'epub',
+    'doc',
+    'docx',
+    'txt',
+    'md',
+    'csv',
+    'json',
+    'yaml',
+    'yml',
+    'log',
+]);
 
 export default {
     props: ['file', 'isSelected', 'processingStatus', 'layout', 'selectionMode'],
@@ -73,9 +84,10 @@ export default {
 
             const targetId = props.file.id;
             try {
-                const resolvedUrl = ext === 'note'
-                    ? await fetchNoteCover(targetId)
-                    : await fetchDownloadUrl(targetId);
+                const resolvedUrl =
+                    ext === 'note'
+                        ? await fetchNoteCover(targetId)
+                        : await fetchDownloadUrl(targetId);
                 if (seq === activeCoverSeq && String(props.file?.id) === String(targetId)) {
                     coverUrl.value = resolvedUrl;
                 }
@@ -104,7 +116,7 @@ export default {
                         loadCover();
                     }
                 },
-                { rootMargin: '200px' }
+                { rootMargin: '200px' },
             );
             visibilityObserver = observer;
             observer.observe(cardRef.value);
@@ -112,7 +124,9 @@ export default {
 
         const formattedSize = computed(() => formatSize(props.file?.size));
         const formattedDate = computed(() => formatShortDate(props.file?.updatedAt));
-        const compactDate = computed(() => formatShortDate(props.file?.updatedAt, { includeTime: false }));
+        const compactDate = computed(() =>
+            formatShortDate(props.file?.updatedAt, { includeTime: false }),
+        );
 
         onMounted(observeCardVisibility);
         onUnmounted(teardownObserver);
@@ -123,15 +137,33 @@ export default {
                 isInViewport.value = false;
                 observeCardVisibility();
             },
-            { flush: 'post' }
+            { flush: 'post' },
         );
-        watch(() => props.processingStatus, (newStatus, oldStatus) => {
-            if (newStatus === 'COMPLETED' && oldStatus && oldStatus !== 'COMPLETED' && !coverUrl.value) {
-                loadCover();
-            }
-        });
+        watch(
+            () => props.processingStatus,
+            (newStatus, oldStatus) => {
+                if (
+                    newStatus === 'COMPLETED' &&
+                    oldStatus &&
+                    oldStatus !== 'COMPLETED' &&
+                    !coverUrl.value
+                ) {
+                    loadCover();
+                }
+            },
+        );
 
-        return { cardRef, coverUrl, downloading, download, fileExt, iconType, formattedSize, formattedDate, compactDate };
+        return {
+            cardRef,
+            coverUrl,
+            downloading,
+            download,
+            fileExt,
+            iconType,
+            formattedSize,
+            formattedDate,
+            compactDate,
+        };
     },
     template: `
     <!-- 1. LIST ROW LAYOUT -->
@@ -337,5 +369,5 @@ export default {
             </div>
         </div>
     </div>
-    `
-}
+    `,
+};

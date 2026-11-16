@@ -49,7 +49,7 @@ export function formatSize(bytes, emptyFallback = '') {
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.max(0, Math.min(sizes.length - 1, Math.floor(Math.log(num) / Math.log(k))));
-    return `${parseFloat((num / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+    return `${parseFloat((num / k ** i).toFixed(2))} ${sizes[i]}`;
 }
 
 /**
@@ -84,6 +84,11 @@ export function formatSystemTimestamp(timestamp) {
     const d = new Date(ms);
     if (Number.isNaN(d.getTime())) return '—';
     const datePart = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    const timePart = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    const timePart = d.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+    });
     return `${datePart}, ${timePart}`;
 }

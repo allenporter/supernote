@@ -107,7 +107,7 @@ export async function apiRequest(
         responseType = 'json',
         errorPrefix = 'Request failed',
         fallbackValue = undefined,
-    } = {}
+    } = {},
 ) {
     const token = getToken();
     if (requireAuth && !token) {

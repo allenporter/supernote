@@ -7,30 +7,30 @@
  * `FileViewer`, and `TaskPanel`.
  */
 
-import { createApp, ref, onMounted, onUnmounted, computed } from 'vue';
-import { useFileSystem } from './composables/useFileSystem.js';
-import { useProcessingStatus } from './composables/useProcessingStatus.js';
-import { useRouter, parseUrlHash, buildUrlHash } from './composables/useRouter.js';
-import { useToast } from './composables/useToast.js';
-import { getErrorMessage } from './utils/format.js';
+import { computed, createApp, onMounted, onUnmounted, ref } from 'vue';
 import {
     ApiError,
+    connectSocket,
     getToken,
     login,
     logout,
     onLogout,
-    connectSocket,
-    submitOAuthBridgeDecision
+    submitOAuthBridgeDecision,
 } from './api/client.js';
 import FileBrowserPanel, { compareItems } from './components/FileBrowserPanel.js';
-import SearchModal from './components/SearchModal.js';
-import TaskPanel from './components/TaskPanel.js';
+import FileViewer from './components/FileViewer.js';
 import LoginCard from './components/LoginCard.js';
 import OAuthConsentCard from './components/OAuthConsentCard.js';
-import FileViewer from './components/FileViewer.js';
+import SearchModal from './components/SearchModal.js';
 import SystemPanel from './components/SystemPanel.js';
+import TaskPanel from './components/TaskPanel.js';
+import { useFileSystem } from './composables/useFileSystem.js';
+import { useProcessingStatus } from './composables/useProcessingStatus.js';
+import { buildUrlHash, parseUrlHash, useRouter } from './composables/useRouter.js';
+import { useToast } from './composables/useToast.js';
+import { getErrorMessage } from './utils/format.js';
 
-export { parseUrlHash, buildUrlHash, compareItems };
+export { buildUrlHash, compareItems, parseUrlHash };
 
 createApp({
     components: {
@@ -40,7 +40,7 @@ createApp({
         LoginCard,
         'oauth-consent-card': OAuthConsentCard,
         FileViewer,
-        SystemPanel
+        SystemPanel,
     },
     setup() {
         const { toasts, showToast, dismissToast } = useToast();
@@ -57,10 +57,11 @@ createApp({
         // Search & Cross-Tab Focus State
         const showSearchModal = ref(false);
         const searchInitialQuery = ref('');
-        const searchShortcutLabel = typeof navigator !== 'undefined' &&
+        const searchShortcutLabel =
+            typeof navigator !== 'undefined' &&
             /Mac|iPod|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '')
-            ? '⌘K'
-            : 'Ctrl K';
+                ? '⌘K'
+                : 'Ctrl K';
         /** @type {import('vue').Ref<Record<string, any> | null>} */
         const focusedTaskRequest = ref(null);
         /** @type {import('vue').Ref<Array<string | number>>} */
@@ -78,7 +79,7 @@ createApp({
             deleteSelectedItems,
             moveSelectedItems,
             uploadFiles,
-            renameSelectedItem
+            renameSelectedItem,
         } = useFileSystem();
 
         // Host Navigation & URL Routing
@@ -100,7 +101,7 @@ createApp({
             closeViewer,
             handleViewerPageChange,
             openItem,
-            navigateTo
+            navigateTo,
         } = useRouter({
             isLoggedIn,
             files,
@@ -116,7 +117,7 @@ createApp({
             onOAuthRouteClear: () => {
                 isSubmittingOAuth.value = false;
                 oauthCompletedOutcome.value = null;
-            }
+            },
         });
 
         /**
@@ -125,7 +126,7 @@ createApp({
          */
         async function handleRenameItem(itemId, newName) {
             await renameSelectedItem(itemId, newName);
-            const crumb = breadcrumbs.value.find(c => String(c.id) === String(itemId));
+            const crumb = breadcrumbs.value.find((c) => String(c.id) === String(itemId));
             if (crumb) {
                 crumb.name = newName;
             }
@@ -147,11 +148,11 @@ createApp({
             showSearchModal.value = false;
             focusedTaskRequest.value = task
                 ? {
-                    id: task.id,
-                    title: task.title || '',
-                    status: task.status || 'needsAction',
-                    seq: Date.now()
-                }
+                      id: task.id,
+                      title: task.title || '',
+                      status: task.status || 'needsAction',
+                      seq: Date.now(),
+                  }
                 : null;
             await switchTab('tasks');
         }
@@ -215,8 +216,7 @@ createApp({
                 } else if (e instanceof ApiError && e.status === 400) {
                     pendingOAuthRequest.value = { ...req, isValid: false, error: e.message };
                 } else {
-                    const message = e instanceof Error ? e.message : String(e);
-                    showToast('Authorization failed: ' + message, 'error');
+                    showToast(`Authorization failed: ${getErrorMessage(e)}`, 'error');
                 }
             } finally {
                 if (!keepLockedForNavigation) {
@@ -242,7 +242,7 @@ createApp({
             files,
             isLoggedIn: computed(() => isLoggedIn.value && !pendingOAuthRequest.value),
             activeTab,
-            view
+            view,
         });
 
         /**
@@ -341,7 +341,7 @@ createApp({
             dismissToast,
             handleSearchSelectFile,
             handleSearchSelectTask,
-            handleSystemOpenFile
+            handleSystemOpenFile,
         };
-    }
+    },
 }).mount('#app');

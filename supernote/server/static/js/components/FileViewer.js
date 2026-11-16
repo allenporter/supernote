@@ -1,35 +1,35 @@
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
     convertNoteToPng,
-    fetchTranscript,
-    fetchSummaries,
-    fetchNoteMetadata,
+    downloadFile,
     fetchAiStatus,
     fetchDownloadUrl,
-    downloadFile,
-    searchFiles
+    fetchNoteMetadata,
+    fetchSummaries,
+    fetchTranscript,
+    searchFiles,
 } from '../api/client.js';
 import { useCanvasScrollSync } from '../composables/useCanvasScrollSync.js';
 import { showToast } from '../composables/useToast.js';
 import { getErrorMessage } from '../utils/format.js';
-import ViewerToolbar from './viewer/ViewerToolbar.js';
+import {
+    buildDisplayTranscriptPages,
+    formatPageStyle,
+    MAX_TEXT_PREVIEW_BYTES,
+    normalizeTranscriptPages,
+    resolveFileCategory,
+    resolveFileExt,
+} from './viewer/noteMeta.js';
 import ViewerMediaPreview from './viewer/ViewerMediaPreview.js';
 import ViewerSidePanel from './viewer/ViewerSidePanel.js';
-import {
-    MAX_TEXT_PREVIEW_BYTES,
-    resolveFileExt,
-    resolveFileCategory,
-    normalizeTranscriptPages,
-    formatPageStyle,
-    buildDisplayTranscriptPages
-} from './viewer/noteMeta.js';
+import ViewerToolbar from './viewer/ViewerToolbar.js';
 
 export default {
     name: 'FileViewer',
     components: {
         ViewerToolbar,
         ViewerMediaPreview,
-        ViewerSidePanel
+        ViewerSidePanel,
     },
     props: ['file', 'initialPage', 'pageJumpSeq'],
     emits: ['close', 'page-change', 'open-file', 'search'],
@@ -76,7 +76,7 @@ export default {
             updateActivePageFromScroll,
             setupPageObserver,
             teardownPageObserver,
-            clearPendingTargetPage
+            clearPendingTargetPage,
         } = useCanvasScrollSync({ pages, transcriptPages });
 
         let activeLoadSeq = 0;
@@ -154,8 +154,8 @@ export default {
                 transcriptPages.value,
                 noteMetadata.value,
                 pageMetaByIndex.value,
-                linksByPageIndex.value
-            )
+                linksByPageIndex.value,
+            ),
         );
 
         /**
@@ -180,7 +180,7 @@ export default {
                 ? (fileName.split('.').pop() ?? '').toLowerCase()
                 : 'note',
             isDirectory: false,
-            pageIndex: typeof targetPageIndex === 'number' ? targetPageIndex : 0
+            pageIndex: typeof targetPageIndex === 'number' ? targetPageIndex : 0,
         });
 
         /**
@@ -192,12 +192,13 @@ export default {
                 window.open(link.target, '_blank', 'noopener,noreferrer');
                 return;
             }
-            const targetBaseName = link.target
-                ? (link.target.split('/').pop() || '').trim()
-                : '';
+            const targetBaseName = link.target ? (link.target.split('/').pop() || '').trim() : '';
             if (link.targetFileId && String(link.targetFileId) !== String(props.file?.id)) {
                 isMobileSidePanelOpen.value = false;
-                emit('open-file', buildLinkedFilePayload(link.targetFileId, targetBaseName, link.targetPageIndex));
+                emit(
+                    'open-file',
+                    buildLinkedFilePayload(link.targetFileId, targetBaseName, link.targetPageIndex),
+                );
                 return;
             }
             if (link.linkType === 'file' && targetBaseName) {
@@ -205,11 +206,15 @@ export default {
                 try {
                     const matches = await searchFiles(targetBaseName);
                     const exact = Array.isArray(matches)
-                        ? (matches.find(m => (m.name || m.fileName) === targetBaseName) || matches[0])
+                        ? matches.find((m) => (m.name || m.fileName) === targetBaseName) ||
+                          matches[0]
                         : null;
                     if (exact?.id) {
                         const fileName = exact.name || exact.fileName || targetBaseName;
-                        emit('open-file', buildLinkedFilePayload(exact.id, fileName, link.targetPageIndex));
+                        emit(
+                            'open-file',
+                            buildLinkedFilePayload(exact.id, fileName, link.targetPageIndex),
+                        );
                         return;
                     }
                 } catch {
@@ -258,14 +263,18 @@ export default {
          * @param {{ preserveMetaOnNull?: boolean }} [options={}]
          * @returns {Promise<boolean>}
          */
-        const fetchAndApplyNoteInsights = async (fileId, seq, { preserveMetaOnNull = false } = {}) => {
+        const fetchAndApplyNoteInsights = async (
+            fileId,
+            seq,
+            { preserveMetaOnNull = false } = {},
+        ) => {
             const id = String(fileId);
             isLoadingTranscript.value = true;
             /** @type {[any[], Record<string, any>[], NoteMetadata | null]} */
             const [rawPages, summariesData, metaData] = await Promise.all([
                 fetchTranscript(id).catch(() => []),
                 fetchSummaries(id).catch(() => []),
-                fetchNoteMetadata(id).catch(() => null)
+                fetchNoteMetadata(id).catch(() => null),
             ]);
             if (seq !== activeLoadSeq) return false;
 
@@ -274,7 +283,9 @@ export default {
                 noteMetadata.value = metaData;
             }
             if (summariesData && Array.isArray(summariesData)) {
-                realSummaries.value = summariesData.filter(s => (s.dataSource || '').toUpperCase() !== 'OCR');
+                realSummaries.value = summariesData.filter(
+                    (s) => (s.dataSource || '').toUpperCase() !== 'OCR',
+                );
             }
             return true;
         };
@@ -291,9 +302,10 @@ export default {
             isTextTooLarge.value = false;
             transcriptPages.value = [];
             noteMetadata.value = null;
-            activePageIndex.value = (typeof props.initialPage === 'number' && props.initialPage >= 0)
-                ? props.initialPage
-                : 0;
+            activePageIndex.value =
+                typeof props.initialPage === 'number' && props.initialPage >= 0
+                    ? props.initialPage
+                    : 0;
             realSummaries.value = [];
             isLoading.value = true;
             error.value = null;
@@ -312,7 +324,9 @@ export default {
                 } else if (category === 'pdf') {
                     const signedUrl = await fetchDownloadUrl(props.file.id);
                     if (seq !== activeLoadSeq) return;
-                    previewUrl.value = signedUrl.includes('?') ? `${signedUrl}&inline=1` : `${signedUrl}?inline=1`;
+                    previewUrl.value = signedUrl.includes('?')
+                        ? `${signedUrl}&inline=1`
+                        : `${signedUrl}?inline=1`;
                 } else if (category === 'text') {
                     const fileSize = Number(props.file.size || 0);
                     if (fileSize > MAX_TEXT_PREVIEW_BYTES) {
@@ -341,26 +355,29 @@ export default {
                 if (category === 'note') {
                     const applied = await fetchAndApplyNoteInsights(props.file.id, seq);
                     if (!applied) return;
-                    activeRightTab.value = (displayTranscriptPages.value.length === 0 && realSummaries.value.length > 0)
-                        ? 'insights'
-                        : 'transcription';
+                    activeRightTab.value =
+                        displayTranscriptPages.value.length === 0 && realSummaries.value.length > 0
+                            ? 'insights'
+                            : 'transcription';
                 } else {
                     activeRightTab.value = 'transcription';
                 }
             } catch (e) {
                 if (seq !== activeLoadSeq) return;
                 console.error('Failed to load file content:', e);
-                error.value = category === 'note'
-                    ? 'Failed to render notebook pages.'
-                    : `Failed to load file preview: ${getErrorMessage(e)}`;
+                error.value =
+                    category === 'note'
+                        ? 'Failed to render notebook pages.'
+                        : `Failed to load file preview: ${getErrorMessage(e)}`;
             } finally {
                 if (seq === activeLoadSeq) {
                     isLoading.value = false;
                     isLoadingTranscript.value = false;
                     if (category === 'note' && pages.value.length > 0) {
-                        const initialTarget = (typeof props.initialPage === 'number' && props.initialPage >= 0)
-                            ? props.initialPage
-                            : 0;
+                        const initialTarget =
+                            typeof props.initialPage === 'number' && props.initialPage >= 0
+                                ? props.initialPage
+                                : 0;
                         await jumpToTargetPage(initialTarget, { smooth: false });
                         await setupPageObserver();
                     } else if (typeof props.initialPage === 'number' && props.initialPage >= 0) {
@@ -399,10 +416,11 @@ export default {
             if (!props.file) return;
             const entries = event?.detail?.data;
             if (Array.isArray(entries)) {
-                const matchesFile = entries.some(item =>
-                    String(item.id) === String(props.file.id) ||
-                    String(item.newId) === String(props.file.id) ||
-                    item.messageType === 'STARTSYNC'
+                const matchesFile = entries.some(
+                    (item) =>
+                        String(item.id) === String(props.file.id) ||
+                        String(item.newId) === String(props.file.id) ||
+                        item.messageType === 'STARTSYNC',
                 );
                 if (matchesFile) {
                     loadFileContent();
@@ -415,9 +433,11 @@ export default {
         onMounted(() => {
             window.addEventListener('supernote:digest-sync', handleDigestSync);
             window.addEventListener('supernote:file-sync', handleFileSync);
-            fetchAiStatus().then((status) => {
-                aiStatus.value = status;
-            }).catch(() => {});
+            fetchAiStatus()
+                .then((status) => {
+                    aiStatus.value = status;
+                })
+                .catch(() => {});
             loadFileContent();
         });
 
@@ -435,7 +455,7 @@ export default {
                 if (newId && (newId !== oldId || newCategory !== oldCategory)) {
                     loadFileContent();
                 }
-            }
+            },
         );
 
         watch(
@@ -444,7 +464,7 @@ export default {
                 if (!isLoading.value && typeof newPage === 'number' && newPage >= 0) {
                     jumpToTargetPage(newPage, { smooth: true });
                 }
-            }
+            },
         );
 
         watch(activePageIndex, (newIdx) => {
@@ -492,7 +512,7 @@ export default {
             handlePageImageLoad,
             updateActivePageFromScroll,
             realSummaries,
-            aiStatus
+            aiStatus,
         };
     },
     template: `
@@ -607,5 +627,5 @@ export default {
             />
         </div>
     </div>
-    `
+    `,
 };

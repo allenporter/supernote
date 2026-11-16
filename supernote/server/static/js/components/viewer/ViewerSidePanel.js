@@ -1,8 +1,8 @@
-import { ref, watch, nextTick, onUnmounted } from 'vue';
-import { formatContent, formatLinkLabel, hasCopyablePageText } from './noteMeta.js';
+import { nextTick, onUnmounted, ref, watch } from 'vue';
+import { showToast } from '../../composables/useToast.js';
 import { copyTextToClipboard } from '../../utils/clipboard.js';
 import { renderMarkdown } from '../../utils/markdown.js';
-import { showToast } from '../../composables/useToast.js';
+import { formatContent, formatLinkLabel, hasCopyablePageText } from './noteMeta.js';
 
 export default {
     name: 'ViewerSidePanel',
@@ -18,15 +18,9 @@ export default {
         pageMetaByIndex: { type: Map, default: () => new Map() },
         linksByPageIndex: { type: Map, default: () => new Map() },
         summaries: { type: Array, default: () => [] },
-        aiStatus: { type: Object, default: null }
+        aiStatus: { type: Object, default: null },
     },
-    emits: [
-        'update:activeTab',
-        'close-mobile',
-        'select-page',
-        'keyword-click',
-        'link-click'
-    ],
+    emits: ['update:activeTab', 'close-mobile', 'select-page', 'keyword-click', 'link-click'],
     /**
      * @param {{
      *   fileId: string | number | null,
@@ -85,14 +79,14 @@ export default {
                 if (tab === 'transcription') {
                     nextTick(() => scrollToPage(props.activePageIndex));
                 }
-            }
+            },
         );
 
         watch(
             () => props.fileId,
             () => {
                 clearCopiedState();
-            }
+            },
         );
 
         onUnmounted(() => {
@@ -164,7 +158,7 @@ export default {
             hasCopyablePageText,
             isPageCopied,
             copyPageTranscript,
-            renderSummaryMarkdown
+            renderSummaryMarkdown,
         };
     },
     template: `
@@ -348,5 +342,5 @@ export default {
                 </div>
             </div>
         </div>
-    `
+    `,
 };

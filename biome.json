@@ -6,12 +6,19 @@
     ]
   },
   "formatter": {
-    "enabled": false
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 4,
+    "lineWidth": 100
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single"
+    }
   },
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
       "suspicious": {
         "noAlert": "error"
       }

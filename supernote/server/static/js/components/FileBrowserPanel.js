@@ -7,7 +7,7 @@
  * delegating Host UI routing and VFS API persistence to parent props/events.
  */
 
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { onLogout } from '../api/client.js';
 import { showToast } from '../composables/useToast.js';
 import { getErrorMessage, normalizeEpochMs } from '../utils/format.js';
@@ -58,7 +58,7 @@ export function compareItems(a, b, sortBy, sortOrder) {
     }
     const nameCmp = String(a.name || '').localeCompare(String(b.name || ''), undefined, {
         numeric: true,
-        sensitivity: 'base'
+        sensitivity: 'base',
     });
     return sortOrder === 'desc' ? -nameCmp : nameCmp;
 }
@@ -68,57 +68,57 @@ export default {
     components: {
         FileCard,
         MoveModal,
-        RenameModal
+        RenameModal,
     },
     props: {
         files: {
             type: Array,
-            default: () => []
+            default: () => [],
         },
         currentDirectoryId: {
             type: String,
-            default: '0'
+            default: '0',
         },
         breadcrumbs: {
             type: Array,
-            default: () => [{ id: '0', name: 'Cloud' }]
+            default: () => [{ id: '0', name: 'Cloud' }],
         },
         isLoading: {
             type: Boolean,
-            default: false
+            default: false,
         },
         error: {
             type: String,
-            default: null
+            default: null,
         },
         processingStatuses: {
             type: Object,
-            default: () => ({})
+            default: () => ({}),
         },
         selectedIds: {
             type: Array,
-            default: () => []
+            default: () => [],
         },
         createFolder: {
             type: Function,
-            required: true
+            required: true,
         },
         uploadFiles: {
             type: Function,
-            required: true
+            required: true,
         },
         deleteItems: {
             type: Function,
-            required: true
+            required: true,
         },
         moveItems: {
             type: Function,
-            required: true
+            required: true,
         },
         renameItem: {
             type: Function,
-            required: true
-        }
+            required: true,
+        },
     },
     emits: ['open-item', 'navigate-to', 'update-selected-ids'],
     /**
@@ -166,10 +166,13 @@ export default {
             setSelectedIds([]);
         }
 
-        watch(() => props.currentDirectoryId, () => {
-            visibleLimit.value = GRID_PAGE_SIZE;
-            isDraggingOver.value = false;
-        });
+        watch(
+            () => props.currentDirectoryId,
+            () => {
+                visibleLimit.value = GRID_PAGE_SIZE;
+                isDraggingOver.value = false;
+            },
+        );
 
         watch(showNewFolderModal, (isOpen) => {
             if (isOpen) {
@@ -180,12 +183,12 @@ export default {
         });
 
         const allFolders = computed(() => {
-            const list = props.files.filter(f => f.isDirectory);
+            const list = props.files.filter((f) => f.isDirectory);
             return [...list].sort((a, b) => compareItems(a, b, sortBy.value, sortOrder.value));
         });
 
         const allRegularFiles = computed(() => {
-            const list = props.files.filter(f => !f.isDirectory);
+            const list = props.files.filter((f) => !f.isDirectory);
             return [...list].sort((a, b) => compareItems(a, b, sortBy.value, sortOrder.value));
         });
 
@@ -204,7 +207,8 @@ export default {
         }
 
         function handleSortByChange() {
-            sortOrder.value = (sortBy.value === 'updatedAt' || sortBy.value === 'size') ? 'desc' : 'asc';
+            sortOrder.value =
+                sortBy.value === 'updatedAt' || sortBy.value === 'size' ? 'desc' : 'asc';
         }
 
         function toggleSortOrder() {
@@ -214,23 +218,23 @@ export default {
         watch([sortBy, sortOrder], () => {
             if (hasMoreItems.value && props.selectedIds.length > 0) {
                 const visibleSet = new Set([
-                    ...folders.value.map(f => f.id),
-                    ...regularFiles.value.map(f => f.id)
+                    ...folders.value.map((f) => f.id),
+                    ...regularFiles.value.map((f) => f.id),
                 ]);
-                setSelectedIds(props.selectedIds.filter(id => visibleSet.has(id)));
+                setSelectedIds(props.selectedIds.filter((id) => visibleSet.has(id)));
             }
         });
 
         const visibleIdsList = computed(() => [
-            ...folders.value.map(f => f.id),
-            ...regularFiles.value.map(f => f.id)
+            ...folders.value.map((f) => f.id),
+            ...regularFiles.value.map((f) => f.id),
         ]);
 
         const allVisibleSelected = computed(() => {
             const ids = visibleIdsList.value;
             if (ids.length === 0) return false;
             const selectedSet = new Set(props.selectedIds);
-            return ids.every(id => selectedSet.has(id));
+            return ids.every((id) => selectedSet.has(id));
         });
 
         /**
@@ -280,7 +284,10 @@ export default {
             if (!selectedFiles || selectedFiles.length === 0) return;
             try {
                 await props.uploadFiles(selectedFiles);
-                showToast(`Uploaded ${selectedFiles.length} ${selectedFiles.length === 1 ? 'file' : 'files'}`, 'success');
+                showToast(
+                    `Uploaded ${selectedFiles.length} ${selectedFiles.length === 1 ? 'file' : 'files'}`,
+                    'success',
+                );
             } catch (e) {
                 showToast(`Upload failed: ${getErrorMessage(e)}`);
             } finally {
@@ -326,7 +333,10 @@ export default {
             if (!droppedFiles || droppedFiles.length === 0) return;
             try {
                 await props.uploadFiles(droppedFiles);
-                showToast(`Uploaded ${droppedFiles.length} ${droppedFiles.length === 1 ? 'file' : 'files'}`, 'success');
+                showToast(
+                    `Uploaded ${droppedFiles.length} ${droppedFiles.length === 1 ? 'file' : 'files'}`,
+                    'success',
+                );
             } catch (e) {
                 showToast(`Upload failed: ${getErrorMessage(e)}`);
             }
@@ -461,7 +471,7 @@ export default {
             handleMoveSelected,
             onConfirmMove,
             triggerRename,
-            onConfirmRename
+            onConfirmRename,
         };
     },
     template: `
@@ -763,5 +773,5 @@ export default {
         <RenameModal v-if="showRenameModal" :item="itemToRename" @close="showRenameModal = false"
             @confirm="onConfirmRename" />
     </div>
-    `
+    `,
 };

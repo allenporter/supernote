@@ -24,7 +24,7 @@ export function normalizeTaskImportance(importance) {
 export async function fetchTaskGroups() {
     const data = await apiRequest('/api/file/schedule/group/all', {
         body: {},
-        errorPrefix: 'Failed to fetch task groups'
+        errorPrefix: 'Failed to fetch task groups',
     });
     return data.scheduleTaskGroup || [];
 }
@@ -36,7 +36,7 @@ export async function fetchTaskGroups() {
 export function createTaskGroup(title) {
     return apiRequest('/api/file/schedule/group', {
         body: { title },
-        errorPrefix: 'Failed to create task group'
+        errorPrefix: 'Failed to create task group',
     });
 }
 
@@ -47,7 +47,7 @@ export function createTaskGroup(title) {
 export function deleteTaskGroup(taskListId) {
     return apiRequest(`/api/file/schedule/group/${encodeURIComponent(taskListId)}`, {
         method: 'DELETE',
-        errorPrefix: 'Failed to delete task group'
+        errorPrefix: 'Failed to delete task group',
     });
 }
 
@@ -60,13 +60,13 @@ export async function fetchTasks(taskListId = null) {
     const payload = taskListId ? { taskListId: String(taskListId) } : {};
     const data = await apiRequest('/api/file/schedule/task/all', {
         body: payload,
-        errorPrefix: 'Failed to fetch tasks'
+        errorPrefix: 'Failed to fetch tasks',
     });
     /** @type {Record<string, any>[]} */
     const rawTasks = data.scheduleTask || [];
 
     return {
-        tasks: rawTasks.map(t => ({
+        tasks: rawTasks.map((t) => ({
             id: String(t.taskId),
             taskListId: t.taskListId ? String(t.taskListId) : null,
             title: t.title || 'Untitled Task',
@@ -84,7 +84,7 @@ export async function fetchTasks(taskListId = null) {
             createTime: t.createTime || 0,
             updateTime: t.lastModified || 0,
         })),
-        nextPageToken: data.nextPageToken || null
+        nextPageToken: data.nextPageToken || null,
     };
 }
 
@@ -101,9 +101,9 @@ export function createScheduleTask(taskData) {
             importance: normalizeTaskImportance(taskData.importance),
             status: taskData.status || 'needsAction',
             dueTime: taskData.dueTime || 0,
-            isReminderOn: taskData.isReminderOn ? 'Y' : 'N'
+            isReminderOn: taskData.isReminderOn ? 'Y' : 'N',
         },
-        errorPrefix: 'Failed to create task'
+        errorPrefix: 'Failed to create task',
     });
 }
 
@@ -118,12 +118,16 @@ export function updateScheduleTask(taskData) {
         taskId,
         title: taskData.title,
         detail: taskData.detail,
-        importance: taskData.importance !== undefined ? normalizeTaskImportance(taskData.importance) : undefined,
+        importance:
+            taskData.importance !== undefined
+                ? normalizeTaskImportance(taskData.importance)
+                : undefined,
         status: taskData.status,
         dueTime: taskData.dueTime,
         completedTime: taskData.completedTime,
         lastModified: taskData.lastModified || Date.now(),
-        isReminderOn: taskData.isReminderOn !== undefined ? (taskData.isReminderOn ? 'Y' : 'N') : undefined
+        isReminderOn:
+            taskData.isReminderOn !== undefined ? (taskData.isReminderOn ? 'Y' : 'N') : undefined,
     };
     if ('taskListId' in taskData) {
         payload.taskListId = taskData.taskListId ? String(taskData.taskListId) : null;
@@ -132,7 +136,7 @@ export function updateScheduleTask(taskData) {
     return apiRequest('/api/file/schedule/task', {
         method: 'PUT',
         body: payload,
-        errorPrefix: 'Failed to update task'
+        errorPrefix: 'Failed to update task',
     });
 }
 
@@ -143,7 +147,7 @@ export function updateScheduleTask(taskData) {
 export function deleteScheduleTask(taskId) {
     return apiRequest(`/api/file/schedule/task/${encodeURIComponent(taskId)}`, {
         method: 'DELETE',
-        errorPrefix: 'Failed to delete task'
+        errorPrefix: 'Failed to delete task',
     });
 }
 
@@ -160,7 +164,7 @@ export function fetchIcsFeed(taskListId = null) {
     return apiRequest(url, {
         method: 'GET',
         responseType: 'text',
-        errorPrefix: 'Failed to fetch ICS feed'
+        errorPrefix: 'Failed to fetch ICS feed',
     });
 }
 

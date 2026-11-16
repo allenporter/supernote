@@ -4,8 +4,8 @@ export default {
     props: {
         oauthRequest: {
             type: Object,
-            default: null
-        }
+            default: null,
+        },
     },
     emits: ['login'],
     /**
@@ -31,7 +31,7 @@ export default {
             email,
             password,
             isLoading,
-            handleSubmit
+            handleSubmit,
         };
     },
     template: `
@@ -82,5 +82,5 @@ export default {
             Unofficial server for Supernote · Not affiliated with Ratta
         </div>
     </div>
-    `
-}
+    `,
+};
