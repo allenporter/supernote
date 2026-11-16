@@ -169,19 +169,20 @@ export default {
          * @param {ScheduleTaskInput} payload
          */
         async function handleSaveTask(payload) {
-            if (editingTask.value) {
-                await modifyTask(payload);
-            } else {
-                await addTask(payload);
+            const ok = editingTask.value ? await modifyTask(payload) : await addTask(payload);
+            if (ok) {
+                showNewTaskModal.value = false;
             }
-            showNewTaskModal.value = false;
         }
 
         async function handleCreateGroup() {
-            if (!newGroupTitle.value.trim()) return;
-            await addGroup(newGroupTitle.value.trim());
-            newGroupTitle.value = '';
-            showNewGroupModal.value = false;
+            const title = newGroupTitle.value.trim();
+            if (!title) return;
+            const ok = await addGroup(title);
+            if (ok) {
+                newGroupTitle.value = '';
+                showNewGroupModal.value = false;
+            }
         }
 
         /**
@@ -269,6 +270,7 @@ export default {
             newGroupInput,
 
             // Methods
+            loadTasks,
             toggleTaskCompleted,
             requestDeleteTask,
             requestDeleteGroup,
@@ -341,6 +343,16 @@ export default {
             <!-- Loading State -->
             <div v-if="isLoading" class="flex justify-center py-16">
                 <div class="animate-spin rounded-full h-8 w-8 border-2 border-stone-300 border-t-slate-900"></div>
+            </div>
+
+            <!-- Error State -->
+            <div v-else-if="error" class="bg-white border border-rose-200 rounded-2xl p-8 text-center shadow-sm space-y-3">
+                <p class="text-sm font-bold text-slate-900">Failed to load tasks</p>
+                <p class="text-xs text-stone-500">{{ error }}</p>
+                <button @click="loadTasks" type="button"
+                    class="inline-flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-semibold transition-colors shadow-sm">
+                    Retry
+                </button>
             </div>
 
             <!-- Empty State -->

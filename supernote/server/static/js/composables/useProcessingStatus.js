@@ -17,12 +17,23 @@ export function useProcessingStatus({ files, isLoggedIn, activeTab, view }) {
     /** @type {ReturnType<typeof setTimeout> | null} */
     let statusPollTimer = null;
     let statusPollInFlight = false;
+    let pendingRefresh = false;
+    let pendingForce = false;
+    let pollEpoch = 0;
 
     function stopStatusPoll() {
         if (statusPollTimer !== null) {
             clearTimeout(statusPollTimer);
             statusPollTimer = null;
         }
+    }
+
+    function resetProcessingStatuses() {
+        pollEpoch++;
+        stopStatusPoll();
+        pendingRefresh = false;
+        pendingForce = false;
+        processingStatuses.value = {};
     }
 
     function getDirectoryNoteIds() {
@@ -63,13 +74,17 @@ export function useProcessingStatus({ files, isLoggedIn, activeTab, view }) {
             return;
         }
         if (statusPollInFlight) {
+            pendingRefresh = true;
+            pendingForce = pendingForce || force;
             return;
         }
 
+        const epoch = pollEpoch;
         statusPollInFlight = true;
         let pollFailed = false;
         try {
             const statusMap = await fetchProcessingStatus(noteFileIds);
+            if (epoch !== pollEpoch) return;
             processingStatuses.value = {
                 ...processingStatuses.value,
                 ...statusMap,
@@ -79,6 +94,15 @@ export function useProcessingStatus({ files, isLoggedIn, activeTab, view }) {
             console.error('Status poll error:', e);
         } finally {
             statusPollInFlight = false;
+        }
+
+        if (epoch !== pollEpoch) return;
+        if (pendingRefresh) {
+            const nextForce = pendingForce;
+            pendingRefresh = false;
+            pendingForce = false;
+            await refreshProcessingStatuses({ force: nextForce });
+            return;
         }
 
         if (!pollFailed && shouldKeepPollingStatuses(getDirectoryNoteIds())) {
@@ -113,12 +137,23 @@ export function useProcessingStatus({ files, isLoggedIn, activeTab, view }) {
         }
     });
 
+    watch(isLoggedIn, (loggedIn) => {
+        if (loggedIn) {
+            refreshProcessingStatuses();
+        } else {
+            stopStatusPoll();
+            pendingRefresh = false;
+            pendingForce = false;
+        }
+    });
+
     onMounted(() => {
         window.addEventListener('supernote:digest-sync', handleDigestSync);
         document.addEventListener('visibilitychange', handleVisibilityChange);
     });
 
     onUnmounted(() => {
+        pollEpoch++;
         stopStatusPoll();
         window.removeEventListener('supernote:digest-sync', handleDigestSync);
         document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -128,5 +163,6 @@ export function useProcessingStatus({ files, isLoggedIn, activeTab, view }) {
         processingStatuses,
         refreshProcessingStatuses,
         stopStatusPoll,
+        resetProcessingStatuses,
     };
 }

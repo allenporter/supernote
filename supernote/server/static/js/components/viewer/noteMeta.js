@@ -55,6 +55,24 @@ export function formatPageStyle(style) {
 }
 
 /**
+ * Return a normalized `http:` / `https:` URL string, or `null` for unsafe or malformed schemes.
+ * @param {string | null | undefined} rawUrl
+ * @returns {string | null}
+ */
+export function parseSafeHttpUrl(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string') return null;
+    try {
+        const parsed = new URL(rawUrl.trim());
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+            return parsed.href;
+        }
+    } catch {
+        // Reject malformed or relative non-HTTP URLs
+    }
+    return null;
+}
+
+/**
  * @param {NoteLink | null | undefined} link
  * @param {string | number | null | undefined} currentFileId
  * @returns {string}

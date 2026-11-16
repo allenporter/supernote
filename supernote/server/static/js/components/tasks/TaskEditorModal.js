@@ -13,6 +13,31 @@ export function toLocalDateInputValue(dateObj) {
     return `${year}-${month}-${day}`;
 }
 
+/**
+ * Parse a `YYYY-MM-DD` date input string into local-calendar noon epoch milliseconds
+ * so round-tripping through `toLocalDateInputValue` preserves the calendar day in every timezone.
+ * @param {string | null | undefined} dateStr
+ * @returns {number}
+ */
+export function parseLocalDateInputToEpochMs(dateStr) {
+    if (!dateStr) return 0;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
+    if (!match) return 0;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const parsed = new Date(year, month - 1, day, 12, 0, 0, 0);
+    if (
+        Number.isNaN(parsed.getTime()) ||
+        parsed.getFullYear() !== year ||
+        parsed.getMonth() !== month - 1 ||
+        parsed.getDate() !== day
+    ) {
+        return 0;
+    }
+    return parsed.getTime();
+}
+
 export default {
     name: 'TaskEditorModal',
     props: {
@@ -88,11 +113,7 @@ export default {
         function handleSaveTask() {
             if (!taskForm.value.title.trim()) return;
 
-            let epochDue = 0;
-            if (taskForm.value.dueDate) {
-                const parsedDate = new Date(`${taskForm.value.dueDate}T12:00:00Z`);
-                epochDue = parsedDate.getTime();
-            }
+            const epochDue = parseLocalDateInputToEpochMs(taskForm.value.dueDate);
 
             emit('save', {
                 id: taskForm.value.id,

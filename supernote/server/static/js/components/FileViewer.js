@@ -16,6 +16,7 @@ import {
     buildDisplayTranscriptPages,
     formatPageStyle,
     MAX_TEXT_PREVIEW_BYTES,
+    parseSafeHttpUrl,
     resolveFileCategory,
     resolveFileExt,
 } from './viewer/noteMeta.js';
@@ -82,6 +83,15 @@ export default {
         } = useCanvasScrollSync({ pages, transcriptPages });
 
         let activeLoadSeq = 0;
+        /** @type {AbortController | null} */
+        let textFetchController = null;
+
+        function abortTextFetch() {
+            if (textFetchController) {
+                textFetchController.abort();
+                textFetchController = null;
+            }
+        }
 
         const fileExt = computed(() => resolveFileExt(props.file));
         const fileCategory = computed(() => resolveFileCategory(fileExt.value));
@@ -189,7 +199,12 @@ export default {
         const handleNoteLinkClick = async (link) => {
             if (!link) return;
             if (link.linkType === 'web' && link.target) {
-                window.open(link.target, '_blank', 'noopener,noreferrer');
+                const safeUrl = parseSafeHttpUrl(link.target);
+                if (safeUrl) {
+                    window.open(safeUrl, '_blank', 'noopener,noreferrer');
+                } else {
+                    showToast('Blocked unsafe or invalid web link URL.');
+                }
                 return;
             }
             const targetBaseName = link.target ? (link.target.split('/').pop() || '').trim() : '';
@@ -290,6 +305,7 @@ export default {
         const loadFileContent = async () => {
             if (!props.file) return;
             const seq = ++activeLoadSeq;
+            abortTextFetch();
 
             teardownPageObserver();
             clearPendingTargetPage();
@@ -331,7 +347,10 @@ export default {
                     } else {
                         const signedUrl = await fetchDownloadUrl(props.file.id);
                         if (seq !== activeLoadSeq) return;
-                        const resp = await fetch(signedUrl);
+                        const controller = new AbortController();
+                        textFetchController = controller;
+                        const resp = await fetch(signedUrl, { signal: controller.signal });
+                        if (seq !== activeLoadSeq) return;
                         if (!resp.ok) {
                             throw new Error(`Failed to fetch text file (${resp.status})`);
                         }
@@ -368,6 +387,7 @@ export default {
                         : `Failed to load file preview: ${getErrorMessage(e)}`;
             } finally {
                 if (seq === activeLoadSeq) {
+                    textFetchController = null;
                     isLoading.value = false;
                     isLoadingTranscript.value = false;
                     if (category === 'note' && pages.value.length > 0) {
@@ -376,7 +396,9 @@ export default {
                                 ? props.initialPage
                                 : 0;
                         await jumpToTargetPage(initialTarget, { smooth: false });
-                        await setupPageObserver();
+                        if (seq === activeLoadSeq) {
+                            await setupPageObserver();
+                        }
                     } else if (typeof props.initialPage === 'number' && props.initialPage >= 0) {
                         await jumpToTargetPage(props.initialPage, { smooth: false });
                     }
@@ -439,6 +461,8 @@ export default {
         });
 
         onUnmounted(() => {
+            activeLoadSeq++;
+            abortTextFetch();
             window.removeEventListener('supernote:digest-sync', handleDigestSync);
             window.removeEventListener('supernote:file-sync', handleFileSync);
         });

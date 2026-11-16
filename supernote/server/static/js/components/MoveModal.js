@@ -127,6 +127,7 @@ export default {
         const breadcrumbs = ref([{ id: '0', name: 'Cloud Root' }]);
         const targetDirId = ref('0');
         const isLoading = ref(false);
+        let activeLoadSeq = 0;
 
         const excludedIdSet = computed(
             () => new Set((props.itemIds || []).map((id) => String(id))),
@@ -165,16 +166,21 @@ export default {
         const isExcluded = (id) => excludedIdSet.value.has(String(id));
 
         const loadFolders = async (dirId = currentBrowserDirId.value) => {
+            const seq = ++activeLoadSeq;
             const targetId = String(dirId || '0');
             isLoading.value = true;
             try {
                 const files = await fetchFiles(targetId);
+                if (seq !== activeLoadSeq) return;
                 folders.value = files.filter((f) => f.isDirectory && !isExcluded(f.id));
             } catch (e) {
+                if (seq !== activeLoadSeq) return;
                 console.error(e);
                 folders.value = [];
             } finally {
-                isLoading.value = false;
+                if (seq === activeLoadSeq) {
+                    isLoading.value = false;
+                }
             }
         };
 
@@ -243,6 +249,7 @@ export default {
         });
 
         onUnmounted(() => {
+            activeLoadSeq++;
             window.removeEventListener('keydown', handleKeydown);
         });
 

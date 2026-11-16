@@ -4,6 +4,8 @@ import { ref } from 'vue';
 
 import {
     computeSocketSignature,
+    connectSocket,
+    disconnectSocket,
     fetchSummaries,
     searchFiles,
     submitOAuthBridgeDecision,
@@ -23,7 +25,10 @@ import {
     normalizeTaskImportance,
 } from '../../supernote/server/static/js/api/schedule.js';
 import { compareItems } from '../../supernote/server/static/js/components/FileBrowserPanel.js';
-import { toLocalDateInputValue } from '../../supernote/server/static/js/components/tasks/TaskEditorModal.js';
+import {
+    parseLocalDateInputToEpochMs,
+    toLocalDateInputValue,
+} from '../../supernote/server/static/js/components/tasks/TaskEditorModal.js';
 import { getDueMeta } from '../../supernote/server/static/js/components/tasks/TaskRow.js';
 import {
     buildDisplayTranscriptPages,
@@ -32,6 +37,7 @@ import {
     formatPageStyle,
     hasCopyablePageText,
     normalizeTranscriptPages,
+    parseSafeHttpUrl,
     resolveFileCategory,
     resolveFileExt,
 } from '../../supernote/server/static/js/components/viewer/noteMeta.js';
@@ -42,6 +48,11 @@ import {
     parseUrlHash,
     useRouter,
 } from '../../supernote/server/static/js/composables/useRouter.js';
+import {
+    compareScheduleTasks,
+    useSchedule,
+} from '../../supernote/server/static/js/composables/useSchedule.js';
+import { clearToasts } from '../../supernote/server/static/js/composables/useToast.js';
 import { copyTextToClipboard } from '../../supernote/server/static/js/utils/clipboard.js';
 import {
     formatSize,
@@ -794,5 +805,190 @@ test('client.js & format.js: searchFiles/fetchSummaries DTO normalization and do
     } finally {
         await logout({ reload: false });
         globalThis.fetch = origFetch;
+    }
+});
+
+test('noteMeta.js: parseSafeHttpUrl allows only http/https and blocks dangerous URI schemes', () => {
+    assert.equal(
+        parseSafeHttpUrl('https://supernote.com/docs?q=1'),
+        'https://supernote.com/docs?q=1',
+    );
+    assert.equal(parseSafeHttpUrl('  http://localhost:8080/test  '), 'http://localhost:8080/test');
+    assert.equal(parseSafeHttpUrl('javascript:alert(1)'), null);
+    assert.equal(parseSafeHttpUrl('data:text/html,<script>alert(1)</script>'), null);
+    assert.equal(parseSafeHttpUrl('file:///etc/passwd'), null);
+    assert.equal(parseSafeHttpUrl('not a url'), null);
+    assert.equal(parseSafeHttpUrl(''), null);
+    assert.equal(parseSafeHttpUrl(null), null);
+});
+
+test('TaskEditorModal.js: parseLocalDateInputToEpochMs preserves local calendar day round-trip', () => {
+    for (const dateStr of ['2026-01-01', '2026-06-18', '2026-12-31']) {
+        const epochMs = parseLocalDateInputToEpochMs(dateStr);
+        assert.ok(epochMs > 0);
+        const d = new Date(epochMs);
+        assert.equal(d.getHours(), 12);
+        assert.equal(toLocalDateInputValue(d), dateStr);
+    }
+    assert.equal(parseLocalDateInputToEpochMs('2026-02-30'), 0);
+    assert.equal(parseLocalDateInputToEpochMs('invalid'), 0);
+    assert.equal(parseLocalDateInputToEpochMs(''), 0);
+});
+
+test('useSchedule.js: transitive comparator, open-only filters, boolean mutation status, and minimal toggle PUT', async () => {
+    // Verify strict weak ordering when mixing dated and undated fallback tasks
+    const taskDatedLate = /** @type {any} */ ({ id: 'a', dueTime: 200000, updateTime: 10000 });
+    const taskUndated = /** @type {any} */ ({ id: 'b', dueTime: 0, updateTime: 20000 });
+    const taskDatedEarly = /** @type {any} */ ({ id: 'c', dueTime: 100000, updateTime: 30000 });
+
+    const sorted = [taskUndated, taskDatedLate, taskDatedEarly].sort((x, y) =>
+        compareScheduleTasks(x, y, 'all', null),
+    );
+    assert.deepEqual(
+        sorted.map((t) => t.id),
+        ['c', 'a', 'b'],
+    );
+
+    const origFetch = globalThis.fetch;
+    try {
+        setToken('sched-tok');
+        const todayEpoch = parseLocalDateInputToEpochMs(toLocalDateInputValue(new Date()));
+        /** @type {Array<{ url: string, body: any }>} */
+        const putPayloads = [];
+        let failCreate = false;
+
+        globalThis.fetch = async (url, init) => {
+            if (url === '/api/file/schedule/task' && init?.method === 'POST') {
+                if (failCreate) {
+                    return new Response(JSON.stringify({ errorMsg: 'Quota exceeded' }), {
+                        status: 400,
+                    });
+                }
+                return new Response(JSON.stringify({ success: true }), { status: 200 });
+            }
+            if (url === '/api/file/schedule/task' && init?.method === 'PUT') {
+                putPayloads.push({
+                    url: String(url),
+                    body: JSON.parse(String(init.body)),
+                });
+                return new Response(JSON.stringify({ success: true }), { status: 200 });
+            }
+            return new Response(
+                JSON.stringify({
+                    scheduleTask: [
+                        {
+                            taskId: 't-open',
+                            title: 'Open High Today',
+                            status: 'needsAction',
+                            importance: 'high',
+                            dueTime: todayEpoch,
+                        },
+                        {
+                            taskId: 't-done',
+                            title: null,
+                            status: 'completed',
+                            importance: 'high',
+                            dueTime: todayEpoch,
+                        },
+                    ],
+                }),
+                { status: 200 },
+            );
+        };
+
+        const sched = useSchedule();
+        await sched.loadTasks();
+
+        sched.selectedFilter.value = 'today';
+        assert.deepEqual(
+            sched.filteredTasks.value.map((t) => t.id),
+            ['t-open'],
+        );
+
+        sched.selectedFilter.value = 'high';
+        assert.deepEqual(
+            sched.filteredTasks.value.map((t) => t.id),
+            ['t-open'],
+        );
+
+        failCreate = true;
+        assert.equal(await sched.addTask({ title: 'Draft' }), false);
+        failCreate = false;
+        assert.equal(await sched.addTask({ title: 'Saved' }), true);
+
+        const untitledTask = sched.tasks.value.find((t) => t.id === 't-done');
+        assert.ok(untitledTask);
+        assert.equal(await sched.toggleTaskCompleted(untitledTask), true);
+        assert.equal(putPayloads.length, 1);
+        assert.equal(putPayloads[0].body.taskId, 't-done');
+        assert.equal(putPayloads[0].body.status, 'needsAction');
+        assert.equal('title' in putPayloads[0].body, false);
+        assert.equal('taskListId' in putPayloads[0].body, false);
+    } finally {
+        clearToasts();
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
+    }
+});
+
+test('client.js: connectSocket deduplicates concurrent calls and aborts if logout races signature', async () => {
+    const origWindow = globalThis.window;
+    let ioCalls = 0;
+    /** @type {(() => void) | null} */
+    let releaseSign = null;
+    try {
+        setToken('sock-tok');
+        globalThis.window = {
+            crypto: {
+                subtle: {
+                    async importKey() {
+                        return /** @type {any} */ ({});
+                    },
+                    sign() {
+                        return new Promise((resolve) => {
+                            releaseSign = () => resolve(new Uint8Array([1, 2, 3, 4]).buffer);
+                        });
+                    },
+                },
+            },
+            io() {
+                ioCalls++;
+                return {
+                    connected: true,
+                    on() {
+                        return this;
+                    },
+                    emit() {
+                        return this;
+                    },
+                    disconnect() {
+                        this.connected = false;
+                    },
+                };
+            },
+        };
+
+        // Case 1: logout races in-flight HMAC signature -> socket is never created
+        const pendingAbort = connectSocket();
+        await Promise.resolve();
+        await logout({ reload: false });
+        releaseSign?.();
+        assert.equal(await pendingAbort, null);
+        assert.equal(ioCalls, 0);
+
+        // Case 2: concurrent connectSocket() calls share a single socket handshake
+        setToken('sock-tok-2');
+        const p1 = connectSocket();
+        const p2 = connectSocket();
+        await Promise.resolve();
+        releaseSign?.();
+        const [s1, s2] = await Promise.all([p1, p2]);
+        assert.ok(s1);
+        assert.equal(s1, s2);
+        assert.equal(ioCalls, 1);
+    } finally {
+        disconnectSocket();
+        await logout({ reload: false });
+        globalThis.window = origWindow;
     }
 });

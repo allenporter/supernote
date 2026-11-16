@@ -179,16 +179,16 @@
 
             <!-- Login Screen -->
             <template v-else>
-                <login-card :oauth-request="pendingOAuthRequest" @login="handleLogin"></login-card>
+                <login-card :oauth-request="pendingOAuthRequest" :is-submitting="isLoggingIn" @login="handleLogin"></login-card>
             </template>
 
             <!-- Global Search Modal -->
-            <search-modal v-if="isLoggedIn && showSearchModal" :initial-query="searchInitialQuery"
+            <search-modal v-if="isLoggedIn && !pendingOAuthRequest && showSearchModal" :initial-query="searchInitialQuery"
                 @close="closeSearchModal"
                 @select-file="handleSearchSelectFile" @select-task="handleSearchSelectTask"></search-modal>
 
             <!-- System Panel -->
-            <system-panel v-if="showSystemPanel" @close="closeSystemPanel" @open-file="handleSystemOpenFile"></system-panel>
+            <system-panel v-if="isLoggedIn && !pendingOAuthRequest && showSystemPanel" @close="closeSystemPanel" @open-file="handleSystemOpenFile"></system-panel>
         </main>
 
         <!-- Toast Notifications Stack -->

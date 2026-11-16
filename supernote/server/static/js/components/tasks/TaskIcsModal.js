@@ -24,21 +24,32 @@ export default {
     setup(props, { emit }) {
         const icsFilterGroupId = ref(props.initialGroupId ? String(props.initialGroupId) : 'all');
         const icsPreviewContent = ref('');
+        /** @type {import('vue').Ref<string | null>} */
+        const icsError = ref(null);
         const isIcsLoading = ref(false);
         const copySuccess = ref(false);
+        let activeFetchSeq = 0;
         /** @type {ReturnType<typeof setTimeout> | null} */
         let copyResetTimer = null;
 
         async function refreshIcsPreview() {
+            const seq = ++activeFetchSeq;
             isIcsLoading.value = true;
+            icsError.value = null;
             try {
                 const targetGroupId =
                     icsFilterGroupId.value === 'all' ? null : icsFilterGroupId.value;
-                icsPreviewContent.value = await fetchIcsFeed(targetGroupId);
+                const content = await fetchIcsFeed(targetGroupId);
+                if (seq !== activeFetchSeq) return;
+                icsPreviewContent.value = content;
             } catch (e) {
-                icsPreviewContent.value = `Error loading ICS feed: ${getErrorMessage(e)}`;
+                if (seq !== activeFetchSeq) return;
+                icsPreviewContent.value = '';
+                icsError.value = getErrorMessage(e);
             } finally {
-                isIcsLoading.value = false;
+                if (seq === activeFetchSeq) {
+                    isIcsLoading.value = false;
+                }
             }
         }
 
@@ -59,7 +70,7 @@ export default {
         }
 
         async function copyIcsContent() {
-            if (!icsPreviewContent.value) return;
+            if (!icsPreviewContent.value || icsError.value) return;
             const copied = await copyTextToClipboard(icsPreviewContent.value);
             if (!copied) {
                 showToast('Failed to copy to clipboard');
@@ -89,6 +100,7 @@ export default {
         });
 
         onUnmounted(() => {
+            activeFetchSeq++;
             window.removeEventListener('keydown', handleKeydown);
             if (copyResetTimer) clearTimeout(copyResetTimer);
         });
@@ -96,6 +108,7 @@ export default {
         return {
             icsFilterGroupId,
             icsPreviewContent,
+            icsError,
             isIcsLoading,
             copySuccess,
             refreshIcsPreview,
@@ -139,7 +152,8 @@ export default {
                 <div>
                     <div class="flex items-center justify-between mb-1.5">
                         <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider">ICS Content Preview</label>
-                        <button @click="copyIcsContent" type="button" class="text-xs font-semibold text-slate-900 hover:text-stone-600 flex items-center gap-1">
+                        <button @click="copyIcsContent" :disabled="!icsPreviewContent || Boolean(icsError) || isIcsLoading" type="button"
+                            class="text-xs font-semibold text-slate-900 hover:text-stone-600 disabled:opacity-40 flex items-center gap-1">
                             <span v-if="copySuccess" class="text-emerald-600 flex items-center gap-1">
                                 Copied!
                             </span>
@@ -151,6 +165,13 @@ export default {
                     <div v-if="isIcsLoading" class="flex justify-center items-center py-12 bg-stone-50 rounded-xl border border-stone-200">
                         <div class="animate-spin rounded-full h-6 w-6 border-2 border-stone-300 border-t-slate-900"></div>
                     </div>
+                    <div v-else-if="icsError" class="p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center justify-between gap-3">
+                        <span>Failed to load ICS feed: {{ icsError }}</span>
+                        <button @click="refreshIcsPreview" type="button"
+                            class="px-3 py-1.5 bg-white hover:bg-rose-100 border border-rose-200 rounded-lg font-semibold shrink-0 transition-colors">
+                            Retry
+                        </button>
+                    </div>
                     <textarea v-else readOnly v-model="icsPreviewContent" rows="8"
                         class="w-full p-3 font-mono text-xs bg-slate-900 text-stone-200 border border-slate-800 rounded-xl outline-none resize-none leading-relaxed"></textarea>
                 </div>
@@ -161,7 +182,8 @@ export default {
                     Close
                 </button>
                 <div class="flex items-center gap-2.5">
-                    <button @click="copyIcsContent" type="button" class="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-slate-800 rounded-xl text-xs font-semibold transition-colors">
+                    <button @click="copyIcsContent" :disabled="!icsPreviewContent || Boolean(icsError) || isIcsLoading" type="button"
+                        class="px-4 py-2 bg-stone-100 hover:bg-stone-200 disabled:opacity-40 text-slate-800 rounded-xl text-xs font-semibold transition-colors">
                         Copy Content
                     </button>
                     <button @click="handleDownloadIcs" type="button"
