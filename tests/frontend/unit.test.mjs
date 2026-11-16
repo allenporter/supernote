@@ -6,7 +6,14 @@ import {
     computeSocketSignature,
     submitOAuthBridgeDecision,
 } from '../../supernote/server/static/js/api/client.js';
-import { apiRequest, getToken, logout, onLogout, setToken } from '../../supernote/server/static/js/api/http.js';
+import {
+    ApiError,
+    apiRequest,
+    getToken,
+    logout,
+    onLogout,
+    setToken,
+} from '../../supernote/server/static/js/api/http.js';
 import {
     fetchIcsFeed,
     fetchTasks,
@@ -610,12 +617,12 @@ test('submitOAuthBridgeDecision: routes consent POST via http.js with 400 detail
 
         await assert.rejects(
             () => submitOAuthBridgeDecision('/login-bridge?case=bad', 'approve'),
-            (err) => err.status === 400 && err.message === 'Unsupported scope'
+            (err) => err instanceof ApiError && err.status === 400 && err.message === 'Unsupported scope'
         );
 
         await assert.rejects(
             () => submitOAuthBridgeDecision('/login-bridge?case=expired', 'deny'),
-            (err) => err.status === 401 && /Unauthorized/.test(err.message)
+            (err) => err instanceof ApiError && err.status === 401 && /Unauthorized/.test(err.message)
         );
         assert.equal(getToken(), null);
         assert.equal(logoutCalled, 1);

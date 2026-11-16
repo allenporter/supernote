@@ -13,6 +13,7 @@ import { useProcessingStatus } from './composables/useProcessingStatus.js';
 import { useRouter, parseUrlHash, buildUrlHash } from './composables/useRouter.js';
 import { useToast } from './composables/useToast.js';
 import {
+    ApiError,
     getToken,
     login,
     logout,
@@ -208,12 +209,13 @@ createApp({
                 }
                 window.location.assign(data.redirect_url);
             } catch (e) {
-                if (e.status === 401) {
+                if (e instanceof ApiError && e.status === 401) {
                     showToast('Your session expired. Please sign in again.', 'error');
-                } else if (e.status === 400) {
+                } else if (e instanceof ApiError && e.status === 400) {
                     pendingOAuthRequest.value = { ...req, isValid: false, error: e.message };
                 } else {
-                    showToast('Authorization failed: ' + e.message, 'error');
+                    const message = e instanceof Error ? e.message : String(e);
+                    showToast('Authorization failed: ' + message, 'error');
                 }
             } finally {
                 if (!keepLockedForNavigation) {

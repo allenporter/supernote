@@ -4,6 +4,23 @@
 
 const TOKEN_STORAGE_KEY = 'supernote_token';
 
+/**
+ * Structured HTTP error raised by `apiRequest` with status code and parsed body.
+ */
+export class ApiError extends Error {
+    /**
+     * @param {string} message
+     * @param {number} status
+     * @param {unknown} [data=null]
+     */
+    constructor(message, status, data = null) {
+        super(message);
+        this.name = 'ApiError';
+        this.status = status;
+        this.data = data;
+    }
+}
+
 /** @type {string | null} */
 let authToken = localStorage.getItem(TOKEN_STORAGE_KEY);
 /** @type {Set<() => void>} */
@@ -94,7 +111,7 @@ export async function apiRequest(
 ) {
     const token = getToken();
     if (requireAuth && !token) {
-        throw Object.assign(new Error('Unauthorized'), { status: 401 });
+        throw new ApiError('Unauthorized', 401);
     }
 
     /** @type {Record<string, string>} */
@@ -116,7 +133,7 @@ export async function apiRequest(
         if (token) {
             await logout({ reload: reloadOnUnauthorized });
         }
-        throw Object.assign(new Error('Unauthorized'), { status: 401 });
+        throw new ApiError('Unauthorized', 401);
     }
 
     if (!response.ok) {
@@ -132,10 +149,7 @@ export async function apiRequest(
         const message = serverDetail
             ? String(serverDetail)
             : `${errorPrefix}: ${response.statusText || `HTTP ${response.status}`}`;
-        throw Object.assign(new Error(message), {
-            status: response.status,
-            data: errorData,
-        });
+        throw new ApiError(message, response.status, errorData);
     }
 
     if (responseType === 'text') {

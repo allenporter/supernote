@@ -2,9 +2,9 @@
  * API Client for Supernote Backend
  */
 
-import { apiRequest, getToken, logout, onLogout, setToken } from './http.js';
+import { ApiError, apiRequest, getToken, logout, onLogout, setToken } from './http.js';
 
-export { apiRequest, getToken, logout, onLogout, setToken };
+export { ApiError, apiRequest, getToken, logout, onLogout, setToken };
 
 /** @type {SocketClient | null} */
 let socketInstance = null;
