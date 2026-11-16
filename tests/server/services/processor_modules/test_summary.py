@@ -9,6 +9,7 @@ from supernote.models.summary import (
     AddSummaryDTO,
     AddSummaryGroupDTO,
     UpdateSummaryDTO,
+    UpdateSummaryGroupDTO,
 )
 from supernote.server.ai.base import AIError
 from supernote.server.ai.models.fake.summary import FakeSummaryModel
@@ -1055,6 +1056,116 @@ async def test_summary_erase_preserves_annotated_generated_rows(
     assert (
         await summary_service.get_summary_by_uuid(
             user_email, get_summary_group_id(user_id, file_id)
+        )
+        is not None
+    )
+
+
+async def test_summary_pruning_preserves_user_categories_and_annotated_groups(
+    summary_module: SummaryModule,
+    session_manager: DatabaseSessionManager,
+    summary_service: SummaryService,
+) -> None:
+    """Verify pruning never deletes user-created categories or groups carrying user annotations."""
+    user_id = 116
+    user_email = "preserve_groups@example.com"
+    file_id = 916
+
+    async with session_manager.session() as session:
+        session.add(UserDO(id=user_id, email=user_email, password_md5="hash"))
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=user_id,
+                storage_key="note.note",
+                file_name="note.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="p0",
+                content_hash="h0",
+                text_content="Active page",
+            )
+        )
+        await session.commit()
+
+    # User-created Partner App category (32-char hex UUID, not ending in '-group')
+    user_category = await summary_service.add_group(
+        user_email,
+        AddSummaryGroupDTO(
+            unique_identifier="2799b74528407f6aeeeff095f7685e9e",
+            name="example category",
+            md5_hash="cat-md5",
+        ),
+    )
+    await summary_service.add_summary(
+        user_email,
+        AddSummaryDTO(
+            file_id=file_id,
+            unique_identifier="legacy-user-cat.note-summary",
+            parent_unique_identifier=user_category.unique_identifier,
+            content="Old summary moved to user category",
+            data_source="GEMINI",
+        ),
+    )
+
+    # Legacy '-group' that itself has a group-level user comment
+    annotated_group = await summary_service.add_group(
+        user_email,
+        AddSummaryGroupDTO(
+            unique_identifier="legacy-annotated.note-group",
+            name="note.note",
+            md5_hash="grp-md5",
+        ),
+    )
+    assert annotated_group.id is not None
+    await summary_service.update_group(
+        user_email,
+        UpdateSummaryGroupDTO(
+            id=annotated_group.id,
+            md5_hash="grp-md5",
+            comment_str="Group-level note",
+        ),
+    )
+    await summary_service.add_summary(
+        user_email,
+        AddSummaryDTO(
+            file_id=file_id,
+            unique_identifier="legacy-annotated.note-summary",
+            parent_unique_identifier=annotated_group.unique_identifier,
+            content="Unannotated child summary",
+            data_source="GEMINI",
+        ),
+    )
+
+    assert await summary_module.run(file_id, session_manager) is True
+
+    # Both unannotated legacy child summaries were pruned, while both groups survive
+    assert (
+        await summary_service.get_summary_by_uuid(
+            user_email, "legacy-user-cat.note-summary"
+        )
+        is None
+    )
+    assert (
+        await summary_service.get_summary_by_uuid(
+            user_email, "legacy-annotated.note-summary"
+        )
+        is None
+    )
+    assert (
+        await summary_service.get_summary_by_uuid(
+            user_email, "2799b74528407f6aeeeff095f7685e9e"
+        )
+        is not None
+    )
+    assert (
+        await summary_service.get_summary_by_uuid(
+            user_email, "legacy-annotated.note-group"
         )
         is not None
     )

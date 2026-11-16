@@ -15,7 +15,7 @@ from pathlib import Path
 
 from sqlalchemy import delete, select
 
-from supernote.models.base import TaskType
+from supernote.models.base import BooleanEnum, TaskType
 from supernote.models.summary import (
     METADATA_SEGMENTS,
     AddSummaryDTO,
@@ -402,6 +402,12 @@ class SummaryModule(ProcessorModule):
             user_email, dto.unique_identifier
         )
         if existing and existing.id is not None:
+            if (existing.name, existing.md5_hash, existing.description) == (
+                dto.name,
+                dto.md5_hash,
+                dto.description,
+            ):
+                return
             await self.summary_service.update_group(
                 user_email,
                 UpdateSummaryGroupDTO(
@@ -452,6 +458,7 @@ class SummaryModule(ProcessorModule):
             if (
                 existing_group is None
                 or existing_group.id is None
+                or existing_group.is_summary_group != BooleanEnum.YES
                 or _has_user_annotations(existing_group)
             ):
                 continue
