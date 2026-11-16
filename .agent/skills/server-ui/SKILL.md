@@ -13,24 +13,34 @@ Use this workflow whenever adding, modifying, debugging, or reviewing any Web UI
 
 ## 1. Frontend Architecture & Conventions
 
-- **No-Build Vue 3 ESM**: Components live in `supernote/server/static/js/components/`, composables in `supernote/server/static/js/composables/`, API helpers in `supernote/server/static/js/api/`, pure formatting/parsing utilities in `supernote/server/static/js/utils/format.js`, and root shell/templates in `supernote/server/static/index.html` + `supernote/server/static/js/main.js`. Do not introduce a bundler or build step.
+- **No-Build Vue 3 ESM + Strict TypeScript & Biome**:
+  - Components live in `supernote/server/static/js/components/`, composables in `supernote/server/static/js/composables/`, API clients in `supernote/server/static/js/api/`, pure utilities in `supernote/server/static/js/utils/`, ambient DTO/Vue declarations in `supernote/server/static/js/types.d.ts`, and the host shell in `supernote/server/static/index.html` + `supernote/server/static/js/main.js`. Do not introduce a bundler, `package.json`, or Node runtime into production containers.
+  - Every `.js` and `.d.ts` file is checked by TypeScript 7 (`tsconfig.json`: `checkJs: true`, `strict: true`—never reintroduce `ref(null): Ref<any>` loopholes in `types.d.ts`) and formatted/linted by Biome (`biome.json`). Note: `biome check --write` reformats modified JS files and exits non-zero on its first `./script/lint` pass; re-run `./script/lint` to verify a clean pass.
+- **API Transport & Wire Normalization (`api/http.js`, `api/client.js`, `api/schedule.js`)**:
+  - Route all HTTP calls through `apiRequest()` in `api/http.js` and represent HTTP errors via `export class ApiError extends Error` (`e instanceof ApiError && e.status === 401`, `getErrorMessage(e)`)—never monkey-patch `Error` instances via `Object.assign(new Error(...), { status })`.
+  - Unwrap backend wire envelopes (`userFileVOList`, `summaryDOList`, `entries`, `scheduleTask`, `statusMap`, etc.) inside `api/client.js` and `api/schedule.js` so composables and components only consume normalized domain models (`FileItem`, `NoteSummary`, `ScheduleTask`, `SearchFileMatch`).
+  - Keep official Supernote device/cloud protocol DTOs (`supernote/models/file_device.py`, `supernote/models/file_web.py`) faithful to the official protocol, and add Web UI endpoints in `supernote/server/routes/extended.py` with `DataClassJSONMixin` models in `supernote/models/extended.py` (`serialize_by_alias = True`; pass 64-bit VFS IDs as strings from JS).
 - **Tailwind Play CDN (v3) & Dark Mode**: `index.html` loads Tailwind Play CDN (v3) and configures `tailwind.config = { darkMode: 'class' }` so OS `prefers-color-scheme: dark` does not activate partial `dark:` classes inside the light shell. Stick to Tailwind v3 utilities (`shadow-sm`, `backdrop-blur-sm`, `rounded-sm`)—avoid Tailwind v4-only classes (`shadow-2xs`, `shadow-xs`, `backdrop-blur-xs`, `rounded-xs`), which fail silently.
-- **Notifications & Confirmations**: Always use `showToast` from `supernote/server/static/js/composables/useToast.js` and in-app confirmation modals (`role="dialog" aria-modal="true"`)—never `window.alert()`, `window.confirm()`, or `prompt()` (`tests/server/test_app.py` enforces zero `alert(` calls).
-- **CSS, Scrolling & Touch Accessibility**:
-  - Keep `.hover-reveal` actions visible under `(hover: none)` and `:focus-within` for touch screens and keyboard navigation.
+- **Modals, Overlays & Notifications**:
+  - Always use `showToast` (`composables/useToast.js`) and in-app confirmation modals (`role="dialog" aria-modal="true"`)—never `window.alert()`, `window.confirm()`, or `prompt()` (`biome.json` enforces `noAlert: "error"`).
+  - Register all modal and mobile-drawer `Escape` dismissal via `useModalEscape()` (`composables/useModalEscape.js`)—never attach per-component `window.addEventListener('keydown', ...)` listeners, which fire in FIFO order and dismiss underlying modals when overlays stack.
+  - Follow the overlay z-index hierarchy: `z-40` dropzone < `z-50` sticky header < `z-[60]`/`z-[70]` mobile viewer drawer < `z-[100]` creation/export modals < `z-[110]` confirmation/move/rename modals < `z-[120]` `SystemPanel` < `z-[150]` `SearchModal` < `z-[200]` toasts.
+  - Wrap modal inputs in `<form @submit.prevent>` with an `isSubmitting` guard, keep modals open with user input intact when a save fails, and reset transient session/modal/toast state on `onLogout`.
+- **CSS, Scrolling, Keyboard & Touch Accessibility**:
+  - Keep `.hover-reveal` actions visible under `(hover: none)` and `:focus-within`; hide closed off-screen mobile drawers from `Tab` order using `invisible pointer-events-none md:visible md:pointer-events-auto`.
   - Keep `.animate-fade-in` opacity-only so persistent `transform` values never trap `position: fixed` drawers inside `overflow-hidden` ancestors.
-  - Scroll viewer containers directly via `pane.scrollTo(...)` rather than `element.scrollIntoView()` (which can shift `overflow: hidden` ancestors), and reserve `min-h-[240px] sm:min-h-[360px]` on `loading="lazy"` `.note` page images to avoid `0px` collapse and scroll-spy jumps.
-  - Export pure helpers cleanly from ES modules (`utils/format.js`, `main.js`) so Playwright can unit-test them directly in Chromium.
-- **API Boundary**:
-  - Keep official Supernote device/cloud protocol DTOs (`supernote/models/file_device.py`, `supernote/models/file_web.py`) faithful to the official protocol.
-  - Add server-specific Web UI endpoints in `supernote/server/routes/extended.py` with `DataClassJSONMixin` models in `supernote/models/extended.py` (`serialize_by_alias = True` camelCase JSON; pass 64-bit VFS IDs as strings from JS).
-- **PR Granularity**: Keep UI PRs small and single-purpose on separate branches off `origin/main` (verify `git merge-tree --write-tree` when opening parallel PRs).
+  - Scroll viewer containers directly via `pane.scrollTo(...)` rather than `element.scrollIntoView()`, and reserve `min-h-[240px] sm:min-h-[360px]` on `loading="lazy"` `.note` page images to avoid `0px` collapse and scroll-spy jumps.
+- **PR Granularity**: Keep UI PRs small (~150–300 LoC) and single-purpose on separate branches off `origin/main` (verify `git merge-tree --write-tree` when opening parallel PRs).
 
 ## 2. Testing Guardrails
 
 - **Never write Python substring assertions on frontend source files**: Do **not** add tests in `tests/server/test_app.py` (or elsewhere) that read `.js` or `.html` files as text and run `assert "..." in js_text`.
+- **1:1 Frontend ESM Unit Suite (`tests/frontend/*.test.mjs`)**: Add or update matching `node:test` modules for every `api/`, `composables/`, and `utils/` change (using `mountComposable()` from `tests/frontend/helpers/vue_test_scope.mjs` and `t.mock.timers.enable({ apis: ['setTimeout'] })` instead of wall-clock `setTimeout` sleeps):
+  ```bash
+  node --import ./tests/frontend/helpers/register_vue_stub.mjs --test 'tests/frontend/**/*.test.mjs'
+  ```
 - **Backend changes**: Add real `aiohttp` / `pytest` behavioral tests in `tests/server/routes/test_*.py` or `tests/server/services/test_*.py` asserting HTTP status codes and full JSON contracts.
-- **Frontend changes**: Verify visually and behaviorally against a live ephemeral server using headless Chromium + Playwright across desktop (`1360x860`) and mobile (`375x812`) `@2x` viewports, plus run `UV_NO_SYNC=1 ./script/lint` and relevant server pytest suites (`UV_NO_SYNC=1 ./script/test tests/server/...`).
+- **Playwright E2E & Visual Verification**: Run `uv run --no-sync --with playwright pytest tests/integration/test_web_ui.py -v` and verify user-visible UI changes across desktop (`1360x860`) and mobile (`375x812`) `@2x` viewports, plus `./script/lint`.
 
 ## 3. Fast Visual & Behavioral Verification Loop (Playwright)
 
