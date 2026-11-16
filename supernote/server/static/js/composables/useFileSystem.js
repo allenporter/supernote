@@ -13,6 +13,9 @@ export function useFileSystem() {
     const error = ref(null);
     let activeLoadSeq = 0;
 
+    /**
+     * @param {string | number} [directoryId]
+     */
     async function loadDirectory(directoryId) {
         const seq = ++activeLoadSeq;
         isLoading.value = true;
@@ -40,6 +43,9 @@ export function useFileSystem() {
         }
     }
 
+    /**
+     * @param {string} name
+     */
     async function createNewFolder(name) {
         isLoading.value = true;
         try {
@@ -54,6 +60,9 @@ export function useFileSystem() {
         }
     }
 
+    /**
+     * @param {string[]} itemIds
+     */
     async function deleteSelectedItems(itemIds) {
         isLoading.value = true;
         try {
@@ -68,6 +77,10 @@ export function useFileSystem() {
         }
     }
 
+    /**
+     * @param {string[]} itemIds
+     * @param {string} targetDirId
+     */
     async function moveSelectedItems(itemIds, targetDirId) {
         isLoading.value = true;
         try {
@@ -82,6 +95,9 @@ export function useFileSystem() {
         }
     }
 
+    /**
+     * @param {FileList | File[]} fileList
+     */
     async function uploadFiles(fileList) {
         isLoading.value = true;
         try {
@@ -98,6 +114,10 @@ export function useFileSystem() {
         }
     }
 
+    /**
+     * @param {string | number} id
+     * @param {string} newName
+     */
     async function renameSelectedItem(id, newName) {
         isLoading.value = true;
         try {

@@ -8,6 +8,7 @@ export const TEXT_EXTENSIONS = new Set(['txt', 'md', 'csv', 'json', 'yaml', 'yml
 export const MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024; // 2 MB
 export const ZOOM_STEPS = [75, 100, 125, 150];
 
+/** @type {Record<string, string>} */
 export const PAGE_STYLE_LABELS = {
     '8mm_ruled_line': '8mm ruled',
     '9mm_ruled_line': '9mm ruled',

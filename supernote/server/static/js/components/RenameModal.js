@@ -23,12 +23,19 @@ export default {
             </div>
         </div>
     `,
+    /**
+     * @param {Record<string, any>} props
+     * @param {{ emit: (event: string, ...args: any[]) => void }} context
+     */
     setup(props, { emit }) {
         const newName = ref(props.item ? props.item.name : '');
         const nameInput = ref(null);
 
         const trimmedName = computed(() => (newName.value || '').trim());
 
+        /**
+         * @param {KeyboardEvent} e
+         */
         const handleKeydown = (e) => {
             if (e.key === 'Escape') {
                 e.preventDefault();

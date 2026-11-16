@@ -35,11 +35,20 @@ export default {
         }
     },
     emits: ['select-filter', 'select-group', 'create-group', 'delete-group', 'open-ics'],
+    /**
+     * @param {Record<string, any>} props
+     */
     setup(props) {
+        /**
+         * @param {string | number} groupId
+         */
         function getTaskCountForGroup(groupId) {
             return props.groupTaskCounts[String(groupId)] || 0;
         }
 
+        /**
+         * @param {string | number} groupId
+         */
         function isGroupSelected(groupId) {
             return props.selectedGroupId !== null && String(props.selectedGroupId) === String(groupId);
         }

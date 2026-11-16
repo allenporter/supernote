@@ -8,6 +8,10 @@ export default {
         }
     },
     emits: ['login'],
+    /**
+     * @param {Record<string, any>} props
+     * @param {{ emit: (event: string, ...args: any[]) => void }} context
+     */
     setup(props, { emit }) {
         const email = ref('');
         const password = ref('');

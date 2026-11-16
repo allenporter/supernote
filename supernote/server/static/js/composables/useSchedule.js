@@ -53,6 +53,9 @@ export function useSchedule() {
         }
     }
 
+    /**
+     * @param {ScheduleTaskInput} taskData
+     */
     async function addTask(taskData) {
         try {
             await createScheduleTask(taskData);
@@ -62,6 +65,9 @@ export function useSchedule() {
         }
     }
 
+    /**
+     * @param {ScheduleTask} task
+     */
     async function toggleTaskCompleted(task) {
         const newStatus = task.status === 'completed' ? 'needsAction' : 'completed';
         const newCompletedTime = newStatus === 'completed' ? Date.now() : 0;
@@ -78,6 +84,9 @@ export function useSchedule() {
         }
     }
 
+    /**
+     * @param {ScheduleTaskInput} taskData
+     */
     async function modifyTask(taskData) {
         try {
             await updateScheduleTask(taskData);
@@ -87,6 +96,9 @@ export function useSchedule() {
         }
     }
 
+    /**
+     * @param {string | number} taskId
+     */
     async function removeTask(taskId) {
         try {
             await deleteScheduleTask(taskId);
@@ -98,6 +110,9 @@ export function useSchedule() {
         }
     }
 
+    /**
+     * @param {string} title
+     */
     async function addGroup(title) {
         try {
             await createTaskGroup(title);
@@ -107,6 +122,9 @@ export function useSchedule() {
         }
     }
 
+    /**
+     * @param {string | number} groupId
+     */
     async function removeGroup(groupId) {
         try {
             await deleteTaskGroup(groupId);

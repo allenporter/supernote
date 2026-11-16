@@ -2,6 +2,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { fetchSystemTasks, fetchCapacity, fetchAiStatus } from '../api/client.js';
 import { formatSize, formatSystemTimestamp } from '../utils/format.js';
 
+/** @type {Record<string, string>} */
 const TASK_TYPE_LABELS = {
     PNG_CONVERSION: 'Page Render',
     OCR: 'OCR Transcript',
@@ -185,6 +186,10 @@ export default {
             </div>
         </div>
     `,
+    /**
+     * @param {Record<string, any>} props
+     * @param {{ emit: (event: string, ...args: any[]) => void }} context
+     */
     setup(props, { emit }) {
         const loading = ref(true);
         const error = ref(null);
@@ -201,6 +206,7 @@ export default {
             loading.value = true;
             error.value = null;
             try {
+                /** @type {[Record<string, any>, { usedCapacity: number, totalCapacity: number }, AiStatus]} */
                 const [tasksResult, capacityResult, aiStatusResult] = await Promise.all([
                     fetchSystemTasks(),
                     fetchCapacity(),
@@ -222,11 +228,17 @@ export default {
             }
         };
 
+        /**
+         * @param {string | null | undefined} rawType
+         */
         const formatTaskType = (rawType) => {
             if (!rawType) return 'Task';
             return TASK_TYPE_LABELS[rawType] || rawType;
         };
 
+        /**
+         * @param {string | null | undefined} rawKey
+         */
         const formatTaskKey = (rawKey) => {
             if (!rawKey) return '—';
             const str = String(rawKey);
@@ -239,6 +251,9 @@ export default {
             return str;
         };
 
+        /**
+         * @param {string | number | null | undefined} fileId
+         */
         const formatShortId = (fileId) => {
             if (!fileId) return '—';
             const str = String(fileId);
@@ -248,7 +263,11 @@ export default {
             return `#${str}`;
         };
 
+        /**
+         * @param {string} status
+         */
         const statusClass = (status) => {
+            /** @type {Record<string, string>} */
             const classes = {
                 'PENDING': 'bg-amber-50 text-amber-700 border-amber-200',
                 'PROCESSING': 'bg-sky-50 text-sky-700 border-sky-200',
@@ -258,6 +277,9 @@ export default {
             return classes[status] || 'bg-stone-100 text-stone-600 border-stone-200';
         };
 
+        /**
+         * @param {KeyboardEvent} e
+         */
         const handleKeydown = (e) => {
             if (e.key === 'Escape') {
                 e.preventDefault();

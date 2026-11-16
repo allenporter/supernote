@@ -27,6 +27,23 @@ export default {
         'keyword-click',
         'link-click'
     ],
+    /**
+     * @param {{
+     *   fileId: string | number | null,
+     *   isOpenMobile: boolean,
+     *   activeTab: string,
+     *   activePageIndex: number,
+     *   hasCanvasPages: boolean,
+     *   isLoadingTranscript: boolean,
+     *   transcriptPages: TranscriptPage[],
+     *   displayTranscriptPages: TranscriptPage[],
+     *   pageMetaByIndex: Map<number, NotePageMeta>,
+     *   linksByPageIndex: Map<number, NoteLink[]>,
+     *   summaries: Record<string, any>[],
+     *   aiStatus: AiStatus | null
+     * }} props
+     * @param {{ expose: (exposed: Record<string, any>) => void }} context
+     */
     setup(props, { expose }) {
         const transcriptScrollPane = ref(null);
         const copiedPageKey = ref(null);
@@ -41,6 +58,10 @@ export default {
             copiedPageKey.value = null;
         }
 
+        /**
+         * @param {number} pageIndex
+         * @param {{ behavior?: ScrollBehavior }} [options={}]
+         */
         function scrollToPage(pageIndex, options = {}) {
             const behavior = options.behavior || 'smooth';
             const pane = transcriptScrollPane.value;
@@ -78,16 +99,34 @@ export default {
             clearCopiedState();
         });
 
+        /**
+         * @param {number} pageIdx
+         */
         const getPageMeta = (pageIdx) => props.pageMetaByIndex.get(pageIdx) || null;
+        /**
+         * @param {number} pageIdx
+         */
         const getPageKeywords = (pageIdx) => {
             const kws = getPageMeta(pageIdx)?.keywords;
             return Array.isArray(kws) ? kws : [];
         };
+        /**
+         * @param {number} pageIdx
+         */
         const getPageLinks = (pageIdx) => props.linksByPageIndex.get(pageIdx) || [];
+        /**
+         * @param {NoteLink | null | undefined} link
+         */
         const renderLinkLabel = (link) => formatLinkLabel(link, props.fileId);
 
+        /**
+         * @param {number} pageIndex
+         */
         const isPageCopied = (pageIndex) => copiedPageKey.value === `page-${pageIndex}`;
 
+        /**
+         * @param {TranscriptPage} pageItem
+         */
         async function copyPageTranscript(pageItem) {
             const text = formatContent(pageItem?.text);
             if (!text.trim()) return;
@@ -107,6 +146,9 @@ export default {
             }, 2000);
         }
 
+        /**
+         * @param {Record<string, any> | null | undefined} summaryItem
+         */
         const renderSummaryMarkdown = (summaryItem) =>
             renderMarkdown(summaryItem?.content || summaryItem?.summary || '');
 

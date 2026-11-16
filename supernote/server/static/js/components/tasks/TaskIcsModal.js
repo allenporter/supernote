@@ -15,6 +15,10 @@ export default {
         }
     },
     emits: ['close'],
+    /**
+     * @param {{ taskGroups: ScheduleTaskGroup[], initialGroupId: string | number | null }} props
+     * @param {{ emit: (event: string, ...args: any[]) => void }} context
+     */
     setup(props, { emit }) {
         const icsFilterGroupId = ref(props.initialGroupId ? String(props.initialGroupId) : 'all');
         const icsPreviewContent = ref('');
@@ -58,6 +62,9 @@ export default {
             }
         }
 
+        /**
+         * @param {KeyboardEvent} e
+         */
         function handleKeydown(e) {
             if (e.key === 'Escape' && !e.defaultPrevented) {
                 e.preventDefault();

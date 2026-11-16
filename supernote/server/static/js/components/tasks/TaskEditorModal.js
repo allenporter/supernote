@@ -2,6 +2,10 @@ import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { normalizeTaskImportance } from '../../api/schedule.js';
 import { normalizeEpochMs } from '../../utils/format.js';
 
+/**
+ * @param {Date} dateObj
+ * @returns {string}
+ */
 export function toLocalDateInputValue(dateObj) {
     const year = dateObj.getFullYear();
     const month = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -30,9 +34,16 @@ export default {
         }
     },
     emits: ['save', 'close'],
+    /**
+     * @param {Record<string, any>} props
+     * @param {{ emit: (event: string, ...args: any[]) => void }} context
+     */
     setup(props, { emit }) {
         const taskTitleInput = ref(null);
 
+        /**
+         * @param {ScheduleTask | null | undefined} task
+         */
         function buildFormState(task) {
             if (task) {
                 let formattedDate = '';
@@ -90,6 +101,9 @@ export default {
             });
         }
 
+        /**
+         * @param {KeyboardEvent} e
+         */
         function handleKeydown(e) {
             if (e.key === 'Escape' && !e.defaultPrevented) {
                 e.preventDefault();
