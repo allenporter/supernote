@@ -24,6 +24,7 @@ supernote/server/static/
     │   └── schedule.js               # Task groups, tasks CRUD & iCalendar (.ics) feed client
     ├── composables/
     │   ├── useCanvasScrollSync.js    # Bidirectional canvas/transcript scroll sync & zoom controls
+    │   ├── useModalEscape.js         # Shared LIFO Escape dismissal stack for overlays & drawers
     │   ├── useRouter.js              # Hash router (#/files, #/file/<id>?page=N, #/tasks, #/system, OAuth)
     │   ├── useFileSystem.js          # Directory listing & file mutation state
     │   ├── useProcessingStatus.js    # Background OCR/indexing status polling & digest-sync listener
@@ -67,7 +68,7 @@ supernote/server/static/
 
 - **Pure ES Module Unit Tests** (`node:test`, zero npm dependencies):
   ```bash
-  node --import ./tests/frontend/helpers/register_vue_stub.mjs --test tests/frontend/unit.test.mjs
+  node --import ./tests/frontend/helpers/register_vue_stub.mjs --test 'tests/frontend/**/*.test.mjs'
   ```
 
 - **Headless Playwright E2E Smoke Suite**:
