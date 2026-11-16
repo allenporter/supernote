@@ -68,6 +68,9 @@ def parse_file_chunk_name(filename: str) -> str | None:
     return match.group(1) if match else None
 
 
+AI_SUMMARIES_GROUP_NAME = "AI Summaries"
+
+
 def get_summary_id(user_id: int, file_id: int) -> str:
     """Generate a deterministic 32-char hex identifier for a file's AI summary."""
     return uuid.uuid5(
@@ -75,19 +78,10 @@ def get_summary_id(user_id: int, file_id: int) -> str:
     ).hex
 
 
-def get_summary_group_id(user_id: int, file_id: int) -> str:
-    """Generate a deterministic 32-char hex identifier for a file's summary group."""
+def get_ai_summaries_group_id(user_id: int) -> str:
+    """Generate a deterministic 32-char hex identifier for a user's AI Summaries category."""
     return uuid.uuid5(
-        uuid.NAMESPACE_URL,
-        f"https://supernote.local/summary-group/{user_id}/{file_id}",
-    ).hex
-
-
-def get_transcript_id(user_id: int, file_id: int) -> str:
-    """Generate a deterministic 32-char hex identifier for a file's OCR transcript."""
-    return uuid.uuid5(
-        uuid.NAMESPACE_URL,
-        f"https://supernote.local/transcript/{user_id}/{file_id}",
+        uuid.NAMESPACE_URL, f"https://supernote.local/ai-summaries-group/{user_id}"
     ).hex
 
 

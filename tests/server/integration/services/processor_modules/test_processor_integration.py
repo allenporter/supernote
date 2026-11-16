@@ -27,10 +27,10 @@ from supernote.server.services.processor_modules.summary import SummaryModule
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 from supernote.server.utils.paths import (
+    AI_SUMMARIES_GROUP_NAME,
+    get_ai_summaries_group_id,
     get_page_png_path,
-    get_summary_group_id,
     get_summary_id,
-    get_transcript_id,
 )
 
 
@@ -168,8 +168,7 @@ async def test_full_processing_pipeline_with_real_file(
 
         summary_client = SummaryClient(authenticated_client)
 
-        group_uuid = get_summary_group_id(user_id, file_id)
-        transcript_uuid = get_transcript_id(user_id, file_id)
+        group_uuid = get_ai_summaries_group_id(user_id)
         summary_uuid = get_summary_id(user_id, file_id)
 
         # Query groups
@@ -186,39 +185,21 @@ async def test_full_processing_pipeline_with_real_file(
         assert group is not None, (
             f"Group {group_uuid} not found in {group_response.summary_do_list}"
         )
-        assert group.name == "real.note"
+        assert group.name == AI_SUMMARIES_GROUP_NAME
 
         # Query all summaries
         query_response = await summary_client.query_summaries()
         assert query_response.success
         summaries = query_response.summary_do_list
-        assert len(summaries) >= 2  # At least transcript and AI summary
+        assert all((s.data_source or "").upper() != "OCR" for s in summaries)
 
-        # Find our specific summaries by unique identifier
-        transcript = next(
-            (s for s in summaries if s.unique_identifier == transcript_uuid), None
-        )
         ai_summary = next(
             (s for s in summaries if s.unique_identifier == summary_uuid), None
-        )
-
-        assert transcript is not None, (
-            f"Transcript {transcript_uuid} not found in {summaries}"
         )
         assert ai_summary is not None, (
             f"AI Summary {summary_uuid} not found in {summaries}"
         )
-
-        # Check parent group linkage
-        assert transcript.parent_unique_identifier == group_uuid
         assert ai_summary.parent_unique_identifier == group_uuid
-
-        # Check transcript content
-        assert transcript.content is not None
-        assert "Transcribed (" in transcript.content
-        assert transcript.data_source == "OCR"
-
-        # Check AI summary content
         assert ai_summary.content is not None
         assert "Summary of (" in ai_summary.content
         assert ai_summary.data_source == "fake-summary-v1"

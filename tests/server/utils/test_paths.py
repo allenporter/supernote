@@ -4,16 +4,16 @@ from unittest.mock import patch
 import pytest
 
 from supernote.server.utils.paths import (
+    AI_SUMMARIES_GROUP_NAME,
     flatten_vfs_path,
     generate_inner_name,
+    get_ai_summaries_group_id,
     get_conversion_pdf_path,
     get_conversion_pdf_prefix,
     get_file_chunk_path,
     get_full_conversion_pdf_path,
     get_page_png_path,
-    get_summary_group_id,
     get_summary_id,
-    get_transcript_id,
     is_valid_page_id,
     parse_file_chunk_name,
 )
@@ -63,20 +63,15 @@ def test_get_summary_id() -> None:
     assert sid != get_summary_id(2, 42)
 
 
-def test_get_summary_group_id() -> None:
-    gid = get_summary_group_id(1, 42)
+def test_get_ai_summaries_group_id() -> None:
+    assert AI_SUMMARIES_GROUP_NAME == "AI Summaries"
+    gid = get_ai_summaries_group_id(1)
     assert len(gid) == 32
+    assert gid == gid.lower()
     int(gid, 16)
-    assert gid == get_summary_group_id(1, 42)
+    assert gid == get_ai_summaries_group_id(1)
+    assert gid != get_ai_summaries_group_id(2)
     assert gid != get_summary_id(1, 42)
-
-
-def test_get_transcript_id() -> None:
-    tid = get_transcript_id(1, 42)
-    assert len(tid) == 32
-    int(tid, 16)
-    assert tid == get_transcript_id(1, 42)
-    assert tid not in {get_summary_id(1, 42), get_summary_group_id(1, 42)}
 
 
 def test_get_conversion_pdf_path() -> None:

@@ -1,13 +1,15 @@
-"""Stage 5 of the `.note` processing pipeline: transcript aggregation and AI summarization (`TaskType.SUMMARY_GENERATION`).
+"""Stage 5 of the `.note` processing pipeline: AI notebook summarization (`TaskType.SUMMARY_GENERATION`).
 
 After all pages of a `.note` file have completed OCR, `SummaryModule` assembles the full
-page-annotated transcript (`data_source="OCR"`), formats a notebook-specific prompt via
-`supernote.server.ai.prompts.format_summary_prompt`, calls
-`supernote.server.ai.models.summary.SummaryModel.summarize`, and upserts both the transcript
-and date-grouped Markdown summary into `supernote.server.services.summary.SummaryService`.
+page-annotated transcript in memory from `NotePageContentDO`, formats a notebook-specific prompt
+via `supernote.server.ai.prompts.format_summary_prompt`, calls
+`supernote.server.ai.models.summary.SummaryModel.summarize`, and upserts the date-grouped
+Markdown summary under the shared `"AI Summaries"` Digest category (`SummaryGroup`) via
+`supernote.server.services.summary.SummaryService`.
 See `supernote.guides.mcp` and `supernote.guides.summary_api`.
 """
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -15,14 +17,13 @@ from pathlib import Path
 
 from sqlalchemy import delete, select
 
-from supernote.models.base import BooleanEnum, TaskType
+from supernote.models.base import TaskType
 from supernote.models.summary import (
     METADATA_SEGMENTS,
     AddSummaryDTO,
     AddSummaryGroupDTO,
     SummaryItem,
     UpdateSummaryDTO,
-    UpdateSummaryGroupDTO,
 )
 from supernote.server.ai.models.summary import SummaryModel
 from supernote.server.ai.prompts import format_summary_prompt
@@ -40,10 +41,10 @@ from supernote.server.utils.note_content import (
     get_page_keywords_map,
 )
 from supernote.server.utils.paths import (
+    AI_SUMMARIES_GROUP_NAME,
     flatten_vfs_path,
-    get_summary_group_id,
+    get_ai_summaries_group_id,
     get_summary_id,
-    get_transcript_id,
 )
 
 __all__ = [
@@ -53,16 +54,28 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-def _has_user_annotations(item: SummaryItem) -> bool:
-    """Return True if a summary or group carries user comments or handwriting."""
+def _has_raw_annotations(
+    comment_str: str | None,
+    comment_handwrite_name: str | None,
+    handwrite_inner_name: str | None,
+) -> bool:
+    """Return True if any user comment or handwriting field is non-empty."""
     return any(
         (val or "").strip()
-        for val in (
-            item.comment_str,
-            item.comment_handwrite_name,
-            item.handwrite_inner_name,
-        )
+        for val in (comment_str, comment_handwrite_name, handwrite_inner_name)
     )
+
+
+def _has_user_annotations(item: SummaryItem) -> bool:
+    """Return True if a summary or group carries user comments or handwriting."""
+    return _has_raw_annotations(
+        item.comment_str, item.comment_handwrite_name, item.handwrite_inner_name
+    )
+
+
+def _is_legacy_group_uuid(unique_identifier: str | None) -> bool:
+    """Return True for legacy per-file `-group` summary group identifiers."""
+    return bool(unique_identifier) and unique_identifier.endswith("-group")
 
 
 class SummaryModule(ProcessorModule):
@@ -77,6 +90,7 @@ class SummaryModule(ProcessorModule):
         self.file_service = file_service
         self.summary_service = summary_service
         self.summary_model = summary_model
+        self._group_lock = asyncio.Lock()
 
     @property
     def name(self) -> str:
@@ -138,32 +152,63 @@ class SummaryModule(ProcessorModule):
         user_id: int,
         session_manager: DatabaseSessionManager,
     ) -> None:
-        """Delete SummaryDO records, now-empty parent summary groups, and unreferenced handwriting blobs."""
+        """Delete unannotated generated summaries and empty legacy groups while detaching user Digests."""
         deleted_events: list[SummaryDeletedEvent] = []
+        summary_uuid = get_summary_id(user_id, file_id)
         async with session_manager.session() as session:
-            summary_rows_stmt = select(
-                SummaryDO.id,
-                SummaryDO.unique_identifier,
-                SummaryDO.parent_unique_identifier,
-                SummaryDO.handwrite_inner_name,
-                SummaryDO.is_deleted,
-            ).where(SummaryDO.file_id == file_id)
-            summary_rows = (await session.execute(summary_rows_stmt)).all()
-            parent_uuids = {p_uuid for _, _, p_uuid, _, _ in summary_rows if p_uuid}
-            candidate_blob_keys = {k for _, _, _, k, _ in summary_rows if k}
-            for s_id, s_uuid, _, _, is_del in summary_rows:
-                if not is_del:
+            summary_rows = (
+                (
+                    await session.execute(
+                        select(SummaryDO).where(
+                            SummaryDO.user_id == user_id,
+                            SummaryDO.file_id == file_id,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            ids_to_delete: list[int] = []
+            parent_uuids: set[str] = set()
+            for row in summary_rows:
+                is_generated = not row.is_summary_group and (
+                    row.unique_identifier == summary_uuid
+                    or (row.data_source or "").upper() == "OCR"
+                    or row.unique_identifier.endswith(("-transcript", "-summary"))
+                )
+                has_annotations = _has_raw_annotations(
+                    row.comment_str,
+                    row.comment_handwrite_name,
+                    row.handwrite_inner_name,
+                )
+                if not is_generated or has_annotations:
+                    row.file_id = None
+                    continue
+
+                ids_to_delete.append(int(row.id))
+                if row.parent_unique_identifier and _is_legacy_group_uuid(
+                    row.parent_unique_identifier
+                ):
+                    parent_uuids.add(row.parent_unique_identifier)
+                if not row.is_deleted:
                     deleted_events.append(
                         SummaryDeletedEvent(
                             user_id=user_id,
-                            summary_id=int(s_id),
+                            summary_id=int(row.id),
                             is_summary_group=False,
                             file_id=file_id,
-                            unique_identifier=s_uuid,
+                            unique_identifier=row.unique_identifier,
                         )
                     )
 
-            await session.execute(delete(SummaryDO).where(SummaryDO.file_id == file_id))
+            if ids_to_delete:
+                await session.execute(
+                    delete(SummaryDO).where(
+                        SummaryDO.user_id == user_id,
+                        SummaryDO.id.in_(ids_to_delete),
+                    )
+                )
+
             if parent_uuids:
                 surviving_parent_stmt = (
                     select(SummaryDO.parent_unique_identifier)
@@ -182,44 +227,50 @@ class SummaryModule(ProcessorModule):
                 }
                 empty_parent_uuids = parent_uuids - surviving_parents
                 if empty_parent_uuids:
-                    group_rows_stmt = select(
-                        SummaryDO.id,
-                        SummaryDO.unique_identifier,
-                        SummaryDO.handwrite_inner_name,
-                        SummaryDO.is_deleted,
-                    ).where(
-                        SummaryDO.user_id == user_id,
-                        SummaryDO.unique_identifier.in_(empty_parent_uuids),
-                        SummaryDO.is_summary_group.is_(True),
+                    group_rows = (
+                        (
+                            await session.execute(
+                                select(SummaryDO).where(
+                                    SummaryDO.user_id == user_id,
+                                    SummaryDO.unique_identifier.in_(empty_parent_uuids),
+                                    SummaryDO.is_summary_group.is_(True),
+                                )
+                            )
+                        )
+                        .scalars()
+                        .all()
                     )
-                    for g_id, g_uuid, g_blob, g_del in (
-                        await session.execute(group_rows_stmt)
-                    ).all():
-                        if g_blob:
-                            candidate_blob_keys.add(g_blob)
-                        if not g_del:
+                    group_ids_to_delete: list[int] = []
+                    for g_row in group_rows:
+                        if _has_raw_annotations(
+                            g_row.comment_str,
+                            g_row.comment_handwrite_name,
+                            g_row.handwrite_inner_name,
+                        ):
+                            continue
+                        group_ids_to_delete.append(int(g_row.id))
+                        if not g_row.is_deleted:
                             deleted_events.append(
                                 SummaryDeletedEvent(
                                     user_id=user_id,
-                                    summary_id=int(g_id),
+                                    summary_id=int(g_row.id),
                                     is_summary_group=True,
                                     file_id=file_id,
-                                    unique_identifier=g_uuid,
+                                    unique_identifier=g_row.unique_identifier,
                                 )
                             )
-                    await session.execute(
-                        delete(SummaryDO).where(
-                            SummaryDO.user_id == user_id,
-                            SummaryDO.unique_identifier.in_(empty_parent_uuids),
-                            SummaryDO.is_summary_group.is_(True),
+                    if group_ids_to_delete:
+                        await session.execute(
+                            delete(SummaryDO).where(
+                                SummaryDO.user_id == user_id,
+                                SummaryDO.id.in_(group_ids_to_delete),
+                            )
                         )
-                    )
             await session.commit()
 
         if self.summary_service.event_bus is not None:
             for ev in deleted_events:
                 await self.summary_service.event_bus.publish(ev)
-        await self.file_service.cleanup_unreferenced_blobs(candidate_blob_keys)
 
     async def process(
         self,
@@ -229,7 +280,7 @@ class SummaryModule(ProcessorModule):
         page_id: str | None = None,
         **kwargs: object,
     ) -> None:
-        """Aggregate OCR text for the file and store transcript and AI summary records."""
+        """Aggregate OCR text in memory and upsert the notebook's AI summary record."""
         if self.summary_model is None:
             raise ValueError("Summary model not configured")
 
@@ -275,8 +326,9 @@ class SummaryModule(ProcessorModule):
                 )
                 text_parts.append(f"{metadata}\n{p.text_content}")
 
+        summary_uuid = get_summary_id(user_id, file_id)
         if not text_parts:
-            await self._delete_blank_file_summaries(user_email, user_id, file_id)
+            await self._delete_blank_file_summary(user_email, summary_uuid)
             logger.info(
                 f"All pages in file {file_id} are blank; skipping summary generation."
             )
@@ -288,33 +340,7 @@ class SummaryModule(ProcessorModule):
             )
             or file_do.file_name
         )
-        group_uuid = get_summary_group_id(user_id, file_id)
-        group_name = Path(file_do.file_name).name
-        group_md5 = hashlib.md5(group_name.encode("utf-8")).hexdigest()
-        summary_uuid = get_summary_id(user_id, file_id)
-        transcript_uuid = get_transcript_id(user_id, file_id)
         full_text = "\n\n".join(text_parts)
-
-        await self._upsert_group(
-            user_email,
-            AddSummaryGroupDTO(
-                unique_identifier=group_uuid,
-                name=group_name,
-                md5_hash=group_md5,
-            ),
-        )
-
-        await self._upsert_summary(
-            user_email,
-            AddSummaryDTO(
-                file_id=file_id,
-                unique_identifier=transcript_uuid,
-                parent_unique_identifier=group_uuid,
-                content=full_text,
-                data_source="OCR",
-                source_path=source_path,
-            ),
-        )
 
         custom_type = Path(file_do.file_name).stem.lower()
         prompt = format_summary_prompt(full_text, custom_type=custom_type)
@@ -363,105 +389,104 @@ class SummaryModule(ProcessorModule):
                 f"Generated metadata for file {file_id}: segments={len(clean_segments)}"
             )
 
-        await self._upsert_summary(
+        await self._upsert_ai_summary(
+            user_email=user_email,
+            user_id=user_id,
+            file_id=file_id,
+            summary_uuid=summary_uuid,
+            content=ai_summary,
+            data_source=self.summary_model.model_id,
+            source_path=source_path,
+            metadata=metadata_str,
+        )
+
+    async def _ensure_ai_summaries_group(self, user_email: str, user_id: int) -> str:
+        """Ensure the shared 'AI Summaries' Digest category exists without overwriting user renames."""
+        group_uuid = get_ai_summaries_group_id(user_id)
+        async with self._group_lock:
+            existing = await self.summary_service.get_summary_by_uuid(
+                user_email, group_uuid
+            )
+            if existing is None or existing.id is None:
+                group_md5 = hashlib.md5(
+                    AI_SUMMARIES_GROUP_NAME.encode("utf-8")
+                ).hexdigest()
+                await self.summary_service.add_group(
+                    user_email,
+                    AddSummaryGroupDTO(
+                        unique_identifier=group_uuid,
+                        name=AI_SUMMARIES_GROUP_NAME,
+                        md5_hash=group_md5,
+                    ),
+                )
+        return group_uuid
+
+    async def _upsert_ai_summary(
+        self,
+        *,
+        user_email: str,
+        user_id: int,
+        file_id: int,
+        summary_uuid: str,
+        content: str,
+        data_source: str,
+        source_path: str,
+        metadata: str | None,
+    ) -> None:
+        """Upsert a file's AI summary while preserving manual Partner App category assignments."""
+        existing = await self.summary_service.get_summary_by_uuid(
+            user_email, summary_uuid
+        )
+        if existing and existing.id is not None:
+            parent_uuid = (
+                await self._ensure_ai_summaries_group(user_email, user_id)
+                if _is_legacy_group_uuid(existing.parent_unique_identifier)
+                else None
+            )
+            effective_metadata = (
+                metadata
+                if metadata is not None
+                else ("" if existing.metadata else None)
+            )
+            await self.summary_service.update_summary(
+                user_email,
+                UpdateSummaryDTO(
+                    id=existing.id,
+                    parent_unique_identifier=parent_uuid,
+                    content=content,
+                    data_source=data_source,
+                    source_path=source_path,
+                    metadata=effective_metadata,
+                ),
+            )
+            return
+
+        group_uuid = await self._ensure_ai_summaries_group(user_email, user_id)
+        await self.summary_service.add_summary(
             user_email,
             AddSummaryDTO(
                 file_id=file_id,
                 unique_identifier=summary_uuid,
                 parent_unique_identifier=group_uuid,
-                content=ai_summary,
-                data_source=self.summary_model.model_id,
+                content=content,
+                data_source=data_source,
                 source_path=source_path,
-                metadata=metadata_str,
+                metadata=metadata,
             ),
         )
 
-    async def _upsert_group(self, user_email: str, dto: AddSummaryGroupDTO) -> None:
-        """Helper to either add or update a summary group based on its unique identifier."""
-        if not dto.unique_identifier:
-            logger.error("Cannot upsert summary group without a unique identifier")
-            return
-
-        existing = await self.summary_service.get_summary_by_uuid(
-            user_email, dto.unique_identifier
-        )
-        if existing and existing.id is not None:
-            if (existing.name, existing.md5_hash, existing.description) == (
-                dto.name,
-                dto.md5_hash,
-                dto.description,
-            ):
-                return
-            await self.summary_service.update_group(
-                user_email,
-                UpdateSummaryGroupDTO(
-                    id=existing.id,
-                    unique_identifier=dto.unique_identifier,
-                    name=dto.name,
-                    md5_hash=dto.md5_hash,
-                    description=dto.description,
-                ),
-            )
-        else:
-            await self.summary_service.add_group(user_email, dto)
-
-    async def _upsert_summary(self, user_email: str, dto: AddSummaryDTO) -> None:
-        """Helper to either add or update a summary based on its unique identifier."""
-        if not dto.unique_identifier:
-            logger.error("Cannot upsert summary without a unique identifier")
-            return
-
-        existing = await self.summary_service.get_summary_by_uuid(
-            user_email, dto.unique_identifier
-        )
-        if existing and existing.id is not None:
-            await self.summary_service.update_summary(
-                user_email,
-                UpdateSummaryDTO(
-                    id=existing.id,
-                    parent_unique_identifier=dto.parent_unique_identifier,
-                    content=dto.content,
-                    data_source=dto.data_source,
-                    source_path=dto.source_path,
-                    metadata=dto.metadata,
-                ),
-            )
-        else:
-            await self.summary_service.add_summary(user_email, dto)
-
-    async def _delete_blank_file_summaries(
+    async def _delete_blank_file_summary(
         self,
         user_email: str,
-        user_id: int,
-        file_id: int,
+        summary_uuid: str,
     ) -> None:
-        """Soft-delete unannotated generated rows for an all-blank notebook."""
-        for target_uuid in (
-            get_transcript_id(user_id, file_id),
-            get_summary_id(user_id, file_id),
-        ):
-            existing = await self.summary_service.get_summary_by_uuid(
-                user_email, target_uuid
-            )
-            if (
-                existing is not None
-                and existing.id is not None
-                and not _has_user_annotations(existing)
-            ):
-                await self.summary_service.delete_summary(user_email, existing.id)
-
-        group_uuid = get_summary_group_id(user_id, file_id)
-        existing_group = await self.summary_service.get_summary_by_uuid(
-            user_email, group_uuid
+        """Soft-delete a file's unannotated AI summary when all notebook pages become blank."""
+        existing = await self.summary_service.get_summary_by_uuid(
+            user_email, summary_uuid
         )
         if (
-            existing_group is not None
-            and existing_group.id is not None
-            and existing_group.is_summary_group == BooleanEnum.YES
-            and not _has_user_annotations(existing_group)
+            existing is not None
+            and existing.id is not None
+            and not _has_user_annotations(existing)
         ):
-            remaining = await self.summary_service.count_summaries(
-                user_email, parent_uuid=group_uuid
-            )
-            if remaining == 0:
-                await self.summary_service.delete_group(user_email, existing_group.id)
+            await self.summary_service.delete_summary(user_email, existing.id)

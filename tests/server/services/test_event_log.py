@@ -357,11 +357,11 @@ async def test_summary_domain_events_recorded(
         "is_summary_group": False,
     }
 
-    # Recreate group + leaf and verify SummaryModule.cleanup_file emits summary.deleted tombstones
+    # Recreate legacy per-file group + leaf and verify SummaryModule.cleanup_file emits summary.deleted tombstones
     group2 = await summary_service.add_group(
         test_user,
         AddSummaryGroupDTO(
-            unique_identifier="grp-2",
+            unique_identifier="notes.note-group",
             name="notes.note",
             md5_hash="g-md5",
         ),
@@ -370,8 +370,8 @@ async def test_summary_domain_events_recorded(
         test_user,
         AddSummaryDTO(
             file_id=501,
-            unique_identifier="leaf-2",
-            parent_unique_identifier="grp-2",
+            unique_identifier="legacy-501.note-summary",
+            parent_unique_identifier="notes.note-group",
             content="Summary text 2",
         ),
     )

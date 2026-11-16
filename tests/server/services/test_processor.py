@@ -51,7 +51,11 @@ from supernote.server.services.processor_modules.summary import SummaryModule
 from supernote.server.services.search import SearchService
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
-from supernote.server.utils.paths import get_page_png_path
+from supernote.server.utils.paths import (
+    get_ai_summaries_group_id,
+    get_page_png_path,
+    get_summary_id,
+)
 from supernote.testing.notebook_fixtures import (
     SyntheticNotebook,
     append_synthetic_page,
@@ -236,29 +240,34 @@ async def test_handle_note_deleted_cleanup(
     )
     assert await summary_module.run(file_id, session_manager) is True
 
-    # Attach handwriting blobs to the note's summary and group, plus a shared group with another child
+    # Seed annotated and legacy records alongside the unannotated AI summary
     await blob_storage.put(USER_DATA_BUCKET, "note_sum_hw.bin", b"sum-hw")
-    await blob_storage.put(USER_DATA_BUCKET, "note_grp_hw.bin", b"grp-hw")
     await blob_storage.put(USER_DATA_BUCKET, "shared_grp_hw.bin", b"shared-grp-hw")
     async with session_manager.session() as session:
-        rows = (
-            (
-                await session.execute(
-                    select(SummaryDO).where(SummaryDO.user_id == test_user_id)
-                )
-            )
-            .scalars()
-            .all()
-        )
-        for row in rows:
-            if row.is_summary_group:
-                row.handwrite_inner_name = "note_grp_hw.bin"
-            elif row.file_id == file_id:
-                row.handwrite_inner_name = "note_sum_hw.bin"
-
-        # Near-miss: a parent group shared by both file_id and another digest must survive
         session.add_all(
             [
+                SummaryDO(
+                    user_id=test_user_id,
+                    unique_identifier="delete_test_key-group",
+                    name="delete_me.note",
+                    is_summary_group=True,
+                ),
+                SummaryDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    unique_identifier="delete_test_key-summary",
+                    parent_unique_identifier="delete_test_key-group",
+                    is_summary_group=False,
+                ),
+                SummaryDO(
+                    user_id=test_user_id,
+                    file_id=file_id,
+                    unique_identifier="annotated-note-summary",
+                    parent_unique_identifier=get_ai_summaries_group_id(test_user_id),
+                    data_source="gemini-2.5-flash",
+                    handwrite_inner_name="note_sum_hw.bin",
+                    is_summary_group=False,
+                ),
                 SummaryDO(
                     user_id=test_user_id,
                     unique_identifier="shared-grp-uuid",
@@ -269,7 +278,7 @@ async def test_handle_note_deleted_cleanup(
                 SummaryDO(
                     user_id=test_user_id,
                     file_id=file_id,
-                    unique_identifier="deleted-note-in-shared-grp",
+                    unique_identifier="user-digest-in-shared-grp",
                     parent_unique_identifier="shared-grp-uuid",
                     is_summary_group=False,
                 ),
@@ -297,7 +306,8 @@ async def test_handle_note_deleted_cleanup(
     event = NoteDeletedEvent(file_id=file_id, user_id=test_user_id)
     await processor_service.handle_note_deleted(event)
 
-    # Verify DB records for file_id and its now-empty group are gone, while shared group & surviving child remain
+    # Unannotated generated summaries and empty legacy -group are deleted;
+    # AI Summaries category, shared groups, and user/annotated digests survive detached.
     async with session_manager.session() as session:
         contents = (
             (
@@ -319,29 +329,30 @@ async def test_handle_note_deleted_cleanup(
             .scalars()
             .all()
         )
-        surviving_uuids = set(
-            (
-                await session.execute(
-                    select(SummaryDO.unique_identifier).where(
-                        SummaryDO.user_id == test_user_id
-                    )
+        surviving_rows = (
+            await session.execute(
+                select(SummaryDO.unique_identifier, SummaryDO.file_id).where(
+                    SummaryDO.user_id == test_user_id
                 )
             )
-            .scalars()
-            .all()
-        )
+        ).all()
         assert len(contents) == 0
         assert len(tasks) == 0
-        assert surviving_uuids == {
-            "shared-grp-uuid",
-            "surviving-digest-in-shared-grp",
+        assert get_summary_id(test_user_id, file_id) not in {
+            uid for uid, _ in surviving_rows
+        }
+        assert {uid: fid for uid, fid in surviving_rows} == {
+            get_ai_summaries_group_id(test_user_id): None,
+            "annotated-note-summary": None,
+            "shared-grp-uuid": None,
+            "user-digest-in-shared-grp": None,
+            "surviving-digest-in-shared-grp": None,
         }
 
-    # Verify Blobs are deleted only for unreferenced note summaries/groups
+    # Page PNGs are deleted while handwriting blobs on surviving rows remain intact
     assert not await blob_storage.exists(CACHE_BUCKET, get_page_png_path(file_id, "p0"))
     assert not await blob_storage.exists(CACHE_BUCKET, get_page_png_path(file_id, "p1"))
-    assert not await blob_storage.exists(USER_DATA_BUCKET, "note_sum_hw.bin")
-    assert not await blob_storage.exists(USER_DATA_BUCKET, "note_grp_hw.bin")
+    assert await blob_storage.exists(USER_DATA_BUCKET, "note_sum_hw.bin")
     assert await blob_storage.exists(USER_DATA_BUCKET, "shared_grp_hw.bin")
 
 
@@ -1292,7 +1303,11 @@ async def test_synthetic_handwriting_notebook_full_pipeline_and_incremental_appe
             .scalars()
             .all()
         )
-        assert len(summaries) == 2
+        assert len(summaries) == 1
+        assert summaries[0].unique_identifier == get_summary_id(test_user_id, file_id)
+        assert summaries[0].parent_unique_identifier == get_ai_summaries_group_id(
+            test_user_id
+        )
 
     ocr_model.processed_page_ids.clear()
     updated_synth = append_synthetic_page(
