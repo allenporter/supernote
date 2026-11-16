@@ -15,7 +15,7 @@ import { ZOOM_STEPS } from '../components/viewer/noteMeta.js';
 
 /**
  * @param {Object} options
- * @param {import('vue').Ref<any[]>} options.pages
+ * @param {import('vue').Ref<NotePngPage[]>} options.pages
  * @param {import('vue').Ref<TranscriptPage[]>} options.transcriptPages
  */
 export function useCanvasScrollSync({ pages, transcriptPages }) {

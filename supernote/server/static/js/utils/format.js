@@ -15,6 +15,31 @@ export function getErrorMessage(err, fallback = 'Unknown error') {
 }
 
 /**
+ * Extract the lowercase file extension from a filename or path, ignoring leading dotfiles
+ * (e.g. `.gitignore` -> `''`, `Meeting.NOTE` -> `'note'`).
+ * @param {string | null | undefined} filename
+ * @returns {string}
+ */
+export function getFileExtension(filename) {
+    if (!filename) return '';
+    const base = String(filename).split('/').pop() || '';
+    const dot = base.lastIndexOf('.');
+    if (dot <= 0 || dot === base.length - 1) return '';
+    return base.slice(dot + 1).toLowerCase();
+}
+
+/**
+ * Resolve the normalized lowercase extension for a `FileItem`-like object.
+ * @param {{ extension?: string | null, name?: string | null } | null | undefined} file
+ * @returns {string}
+ */
+export function resolveFileExt(file) {
+    if (!file) return '';
+    if (file.extension) return String(file.extension).toLowerCase();
+    return getFileExtension(file.name);
+}
+
+/**
  * @param {number | string | null | undefined} timestamp
  * @returns {number | null}
  */

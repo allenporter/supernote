@@ -7,8 +7,8 @@
 
 interface SocketClient {
     connected: boolean;
-    on(event: string, listener: (data: any) => void): this;
-    emit(event: string, ...args: any[]): this;
+    on(event: string, listener: (data: unknown) => void): this;
+    emit(event: string, ...args: unknown[]): this;
     disconnect(): this;
 }
 
@@ -29,17 +29,17 @@ interface Window {
 }
 
 interface WindowEventMap {
-    'supernote:file-sync': CustomEvent<any>;
-    'supernote:task-sync': CustomEvent<any>;
-    'supernote:digest-sync': CustomEvent<any>;
+    'supernote:file-sync': CustomEvent<Record<string, unknown>>;
+    'supernote:task-sync': CustomEvent<Record<string, unknown>>;
+    'supernote:digest-sync': CustomEvent<Record<string, unknown>>;
 }
 
 declare module 'vue' {
-    export interface Ref<T = any> {
+    export interface Ref<T = unknown> {
         value: T;
     }
 
-    export interface ComputedRef<T = any> {
+    export interface ComputedRef<T = unknown> {
         readonly value: T;
     }
 
@@ -50,31 +50,29 @@ declare module 'vue' {
         once?: boolean;
     }
 
-    export function ref(value: null): Ref<any>;
-    export function ref(value: never[]): Ref<any[]>;
     export function ref<T>(value: T): Ref<T>;
-    export function ref<T = any>(): Ref<T | undefined>;
+    export function ref<T = undefined>(): Ref<T | undefined>;
     export function computed<T>(getter: () => T): ComputedRef<T>;
     export function watch<T>(
         source: Ref<T> | ComputedRef<T> | (() => T),
         callback: (newValue: T, oldValue: T) => void | Promise<void>,
-        options?: WatchOptions
+        options?: WatchOptions,
     ): () => void;
     export function watch(
-        sources: ReadonlyArray<any>,
+        sources: ReadonlyArray<unknown>,
         callback: (newValues: any[], oldValues: any[]) => void | Promise<void>,
-        options?: WatchOptions
+        options?: WatchOptions,
     ): () => void;
     export function nextTick(fn?: () => void): Promise<void>;
     export function onMounted(hook: () => void | Promise<void>): void;
     export function onUnmounted(hook: () => void): void;
 
     export interface AppInstance {
-        component(name: string, definition: Record<string, any>): AppInstance;
-        mount(rootContainer: string | Element): any;
+        component(name: string, definition: Record<string, unknown>): AppInstance;
+        mount(rootContainer: string | Element): unknown;
     }
 
-    export function createApp(rootComponent: Record<string, any>): AppInstance;
+    export function createApp(rootComponent: Record<string, unknown>): AppInstance;
 }
 
 declare module 'marked' {
@@ -139,6 +137,7 @@ declare module 'dompurify' {
 // ---------------------------------------------------------------------------
 
 type ToastType = 'error' | 'success' | 'info';
+type ProcessingStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
 
 interface ToastMessage {
     id: number;
@@ -156,9 +155,58 @@ interface FileItem {
     pageIndex?: number;
 }
 
+interface SearchFileMatch extends FileItem {
+    path: string;
+}
+
+interface SemanticSearchMatch {
+    key: string;
+    fileId: string;
+    fileName: string;
+    extension: string;
+    pageIndex: number;
+    pageNumber: number;
+    score: number;
+    textPreview: string;
+    date: string | null;
+}
+
 interface BreadcrumbItem {
     id: string;
     name: string;
+}
+
+interface PathInfo {
+    path: string;
+    idPath: string;
+}
+
+interface CapacityInfo {
+    usedCapacity: number;
+    totalCapacity: number;
+}
+
+interface NotePngPage {
+    pageNo: number;
+    url: string;
+}
+
+interface NoteSummary {
+    id: string;
+    name: string | null;
+    content: string;
+    dataSource: string | null;
+}
+
+interface SystemTaskItem {
+    id: string;
+    fileId: string;
+    taskType: string;
+    key: string;
+    status: ProcessingStatus;
+    retryCount: number;
+    updateTime: number;
+    lastError: string | null;
 }
 
 type TaskImportance = 'high' | 'medium' | 'low';
@@ -169,27 +217,21 @@ interface ScheduleTaskGroup {
     title: string;
 }
 
-interface RawScheduleTaskGroup {
-    taskListId: string | number;
-    title?: string;
-}
-
 interface ScheduleTask {
     id: string;
     taskListId: string | null;
     title: string;
     detail: string;
-    status: TaskStatus | string;
+    status: TaskStatus;
     importance: TaskImportance;
     dueTime: number;
     completedTime: number;
     isReminderOn: boolean;
-    links: unknown;
+    links: string | null;
     sort: number | null;
     sortCompleted: number | null;
     planerSort: number | null;
     allSort: number | null;
-    createTime: number;
     updateTime: number;
 }
 
@@ -200,11 +242,18 @@ interface ScheduleTaskInput {
     title?: string;
     detail?: string;
     importance?: string;
-    status?: string;
+    status?: TaskStatus | string;
     dueTime?: number;
     completedTime?: number;
     lastModified?: number;
     isReminderOn?: boolean;
+}
+
+interface FocusedTaskRequest {
+    id: string;
+    title: string;
+    status: TaskStatus;
+    seq: number;
 }
 
 interface TranscriptPage {
@@ -215,31 +264,40 @@ interface TranscriptPage {
     hasTranscript?: boolean;
 }
 
+interface NoteTitle {
+    pageIndex: number;
+    level: number;
+}
+
 interface NotePageMeta {
     pageIndex: number;
     pageId?: string;
     date?: string | null;
     style?: string | null;
+    isBlank?: boolean;
     hasFiveStar?: boolean;
     keywords?: string[];
 }
 
 interface NoteLink {
     pageIndex: number;
-    linkType?: 'page' | 'file' | 'web' | string;
+    linkType?: 'page' | 'file' | 'web';
     target?: string | null;
     targetFileId?: string | number | null;
     targetPageIndex?: number | null;
 }
 
 interface NoteMetadata {
+    fileId?: string;
     equipment?: string | null;
+    totalPages?: number;
+    keywords?: Record<string, number[]>;
+    titles?: NoteTitle[];
     pages?: NotePageMeta[];
     links?: NoteLink[];
 }
 
 interface AiStatus {
-    success: boolean;
     hasApiKey: boolean;
     ocrEnabled: boolean;
     ocrModel: string | null;
@@ -286,7 +344,7 @@ interface PluginNavTab {
     id: string;
     label: string;
     iconSvg?: string;
-    component: Record<string, any>;
+    component: Record<string, unknown>;
 }
 
 interface PluginToolbarAction {
@@ -305,13 +363,15 @@ interface PluginViewerAction {
 }
 
 interface PluginHostContext {
-    fetchJson<T = any>(
+    fetchJson<T = unknown>(
         path: string,
-        options?: { method?: string; body?: unknown; headers?: Record<string, string> }
+        options?: { method?: string; body?: unknown; headers?: Record<string, string> },
     ): Promise<T>;
     showToast(message: string, type?: ToastType, duration?: number): number;
     openTab(tabId: string, props?: Record<string, unknown>): void;
-    openFileByPath(fileOrPath: string | { id?: string; name?: string; path?: string }): Promise<void>;
+    openFileByPath(
+        fileOrPath: string | { id?: string; name?: string; path?: string },
+    ): Promise<void>;
     refreshFiles(): Promise<void>;
     getCurrentFolderPath(): string;
     registerNavTab(tab: PluginNavTab): void;

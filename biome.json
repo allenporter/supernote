@@ -2,6 +2,7 @@
   "files": {
     "includes": [
       "supernote/server/static/js/**/*.js",
+      "supernote/server/static/js/**/*.d.ts",
       "tests/frontend/**/*.mjs"
     ]
   },
@@ -23,5 +24,17 @@
         "noAlert": "error"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["supernote/server/static/js/**/*.d.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noExplicitAny": "off"
+          }
+        }
+      }
+    }
+  ]
 }

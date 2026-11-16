@@ -29,6 +29,7 @@ export default {
      */
     setup(props, { emit }) {
         const newName = ref(props.item ? props.item.name : '');
+        /** @type {import('vue').Ref<HTMLInputElement | null>} */
         const nameInput = ref(null);
 
         const trimmedName = computed(() => (newName.value || '').trim());

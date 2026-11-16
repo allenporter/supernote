@@ -17,9 +17,9 @@ export default {
     setup(props, { emit }) {
         const query = ref(props.initialQuery || '');
         const isSearching = ref(false);
-        /** @type {import('vue').Ref<Array<Record<string, any>>>} */
+        /** @type {import('vue').Ref<SearchFileMatch[]>} */
         const results = ref([]);
-        /** @type {import('vue').Ref<Array<Record<string, any>>>} */
+        /** @type {import('vue').Ref<SemanticSearchMatch[]>} */
         const semanticResults = ref([]);
         /** @type {import('vue').Ref<ScheduleTask[]>} */
         const taskResults = ref([]);
@@ -43,12 +43,10 @@ export default {
          */
         const getModalTasks = () => {
             if (!cachedTasksPromise) {
-                cachedTasksPromise = fetchTasks()
-                    .then((res) => res.tasks || [])
-                    .catch(() => {
-                        cachedTasksPromise = null;
-                        return [];
-                    });
+                cachedTasksPromise = fetchTasks().catch(() => {
+                    cachedTasksPromise = null;
+                    return [];
+                });
             }
             return cachedTasksPromise;
         };
@@ -78,48 +76,8 @@ export default {
                 ]);
                 if (seq !== activeSearchSeq) return;
 
-                results.value = fileMatches.map((f) => {
-                    const fileName = f.name || f.fileName || '';
-                    const isDir = f.tag === 'folder' || f.isDirectory;
-                    const ext =
-                        !isDir && fileName.includes('.')
-                            ? (fileName.split('.').pop() || '').toLowerCase()
-                            : null;
-                    return {
-                        id: f.id,
-                        name: fileName,
-                        path: f.path_display || f.parent_path || fileName,
-                        isDirectory: isDir,
-                        size: f.size,
-                        extension: ext,
-                    };
-                });
-
-                semanticResults.value = vectorMatches.map((r, idx) => {
-                    const fileId = r.fileId ?? r.file_id;
-                    const fileName = r.fileName ?? r.file_name ?? `Notebook ${fileId}`;
-                    const pageIndex =
-                        typeof r.pageIndex === 'number'
-                            ? r.pageIndex
-                            : typeof r.page_index === 'number'
-                              ? r.page_index
-                              : 0;
-                    const ext = fileName.includes('.')
-                        ? (fileName.split('.').pop() || '').toLowerCase()
-                        : 'note';
-                    return {
-                        key: r.pageId ?? r.page_id ?? `${fileId}-${pageIndex}-${idx}`,
-                        fileId: String(fileId),
-                        fileName,
-                        extension: ext,
-                        pageIndex,
-                        pageNumber: pageIndex + 1,
-                        score: typeof r.score === 'number' ? r.score : 0,
-                        textPreview: r.textPreview ?? r.text_preview ?? '',
-                        date: r.date || null,
-                    };
-                });
-
+                results.value = fileMatches;
+                semanticResults.value = vectorMatches;
                 taskResults.value = allTasks.filter(
                     (t) =>
                         t.title.toLowerCase().includes(qLower) ||

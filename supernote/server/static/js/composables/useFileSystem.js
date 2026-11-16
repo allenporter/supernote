@@ -1,6 +1,5 @@
 import { ref } from 'vue';
 import {
-    ApiError,
     createFolder,
     deleteItems,
     fetchFiles,
@@ -8,6 +7,7 @@ import {
     renameItem,
     uploadFile,
 } from '../api/client.js';
+import { ApiError } from '../api/http.js';
 
 export function useFileSystem() {
     /** @type {import('vue').Ref<FileItem[]>} */

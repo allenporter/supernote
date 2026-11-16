@@ -8,7 +8,7 @@
  */
 
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import { onLogout } from '../api/client.js';
+import { onLogout } from '../api/http.js';
 import { showToast } from '../composables/useToast.js';
 import { getErrorMessage, normalizeEpochMs } from '../utils/format.js';
 import FileCard from './FileCard.js';
@@ -30,15 +30,15 @@ onLogout(() => {
 
 /**
  * Compare two VFS items, keeping folders grouped before regular files.
- * @param {Record<string, any>} a
- * @param {Record<string, any>} b
+ * @param {Partial<FileItem>} a
+ * @param {Partial<FileItem>} b
  * @param {'name' | 'updatedAt' | 'size' | string} sortBy
  * @param {'asc' | 'desc' | string} sortOrder
  * @returns {number}
  */
 export function compareItems(a, b, sortBy, sortOrder) {
-    const aIsFolder = Boolean(a.isDirectory || (a.isFolder && a.isFolder !== 'N'));
-    const bIsFolder = Boolean(b.isDirectory || (b.isFolder && b.isFolder !== 'N'));
+    const aIsFolder = Boolean(a.isDirectory);
+    const bIsFolder = Boolean(b.isDirectory);
     if (aIsFolder !== bIsFolder) {
         return aIsFolder ? -1 : 1;
     }
@@ -148,15 +148,18 @@ export default {
 
         const showNewFolderModal = ref(false);
         const newFolderName = ref('');
+        /** @type {import('vue').Ref<HTMLInputElement | null>} */
         const newFolderInput = ref(null);
         const showMoveModal = ref(false);
         const showRenameModal = ref(false);
         const showDeleteModal = ref(false);
+        /** @type {import('vue').Ref<FileItem | null>} */
         const itemToRename = ref(null);
+        /** @type {import('vue').Ref<HTMLInputElement | null>} */
         const fileInput = ref(null);
 
         /**
-         * @param {Array<string | number>} ids
+         * @param {string[]} ids
          */
         function setSelectedIds(ids) {
             emit('update-selected-ids', ids);

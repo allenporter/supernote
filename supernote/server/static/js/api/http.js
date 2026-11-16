@@ -85,6 +85,7 @@ export async function logout({ reload = true } = {}) {
  * Perform an API request with unified token headers, 401 session teardown,
  * and consistent error/fallback handling.
  *
+ * @template [T=any]
  * @param {string} path
  * @param {Object} [options]
  * @param {string} [options.method='POST']
@@ -95,6 +96,7 @@ export async function logout({ reload = true } = {}) {
  * @param {'json'|'text'} [options.responseType='json']
  * @param {string} [options.errorPrefix='Request failed']
  * @param {unknown} [options.fallbackValue]
+ * @returns {Promise<T>}
  */
 export async function apiRequest(
     path,
@@ -138,7 +140,7 @@ export async function apiRequest(
 
     if (!response.ok) {
         if (fallbackValue !== undefined) {
-            return fallbackValue;
+            return /** @type {T} */ (fallbackValue);
         }
         const errorData = await response.json().catch(() => null);
         const serverDetail =
@@ -153,7 +155,7 @@ export async function apiRequest(
     }
 
     if (responseType === 'text') {
-        return await response.text();
+        return /** @type {T} */ (await response.text());
     }
     return await response.json();
 }

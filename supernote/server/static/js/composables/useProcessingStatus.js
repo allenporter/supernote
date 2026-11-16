@@ -12,7 +12,7 @@ const STATUS_POLL_INTERVAL_MS = 3000;
  * @param {import('vue').Ref<string>} options.view
  */
 export function useProcessingStatus({ files, isLoggedIn, activeTab, view }) {
-    /** @type {import('vue').Ref<Record<string, string>>} */
+    /** @type {import('vue').Ref<Record<string, ProcessingStatus>>} */
     const processingStatuses = ref({});
     /** @type {ReturnType<typeof setTimeout> | null} */
     let statusPollTimer = null;
@@ -69,16 +69,11 @@ export function useProcessingStatus({ files, isLoggedIn, activeTab, view }) {
         statusPollInFlight = true;
         let pollFailed = false;
         try {
-            /** @type {{ success: boolean, statusMap: Record<string, any> }} */
-            const result = await fetchProcessingStatus(noteFileIds);
-            if (result.success) {
-                processingStatuses.value = {
-                    ...processingStatuses.value,
-                    ...result.statusMap,
-                };
-            } else {
-                pollFailed = true;
-            }
+            const statusMap = await fetchProcessingStatus(noteFileIds);
+            processingStatuses.value = {
+                ...processingStatuses.value,
+                ...statusMap,
+            };
         } catch (e) {
             pollFailed = true;
             console.error('Status poll error:', e);

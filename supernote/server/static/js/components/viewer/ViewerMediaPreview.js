@@ -1,3 +1,4 @@
+import { computed } from 'vue';
 import { formatSize } from '../../utils/format.js';
 
 export default {
@@ -12,8 +13,12 @@ export default {
         downloading: { type: Boolean, default: false },
     },
     emits: ['download'],
-    setup() {
-        return { formatSize };
+    /**
+     * @param {{ file?: Partial<FileItem> | null }} props
+     */
+    setup(props) {
+        const formattedSize = computed(() => formatSize(props.file?.size));
+        return { formattedSize };
     },
     template: `
     <!-- Image Preview -->
@@ -39,7 +44,7 @@ export default {
             <div class="space-y-1">
                 <h4 class="text-sm font-bold text-slate-900">{{ file?.name }}</h4>
                 <p class="text-xs text-stone-500">
-                    This file ({{ formatSize(file?.size) || 'large' }}) exceeds the 2 MB inline preview limit.
+                    This file ({{ formattedSize || 'large' }}) exceeds the 2 MB inline preview limit.
                 </p>
             </div>
             <button @click="$emit('download')" :disabled="downloading" type="button"
@@ -72,7 +77,7 @@ export default {
                 {{ fileExt || 'FILE' }}
             </div>
             <h4 class="text-sm font-bold text-slate-900 break-all">{{ file?.name }}</h4>
-            <p v-if="formatSize(file?.size)" class="text-xs text-stone-500 font-mono tabular-nums">{{ formatSize(file?.size) }}</p>
+            <p v-if="formattedSize" class="text-xs text-stone-500 font-mono tabular-nums">{{ formattedSize }}</p>
             <p class="text-xs text-stone-500 pt-1">
                 Inline preview is not available for this file format.
             </p>

@@ -15,6 +15,7 @@
 
 import { onMounted, onUnmounted, ref } from 'vue';
 import { fetchPathInfo } from '../api/client.js';
+import { getFileExtension } from '../utils/format.js';
 import { parseOAuthBridgeReturnTo } from '../utils/oauth.js';
 
 const SYSTEM_ROOT_UPPER = new Set(['EXPORT', 'INBOX', 'SCREENSHOT']);
@@ -139,7 +140,7 @@ export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false,
  * @param {import('vue').Ref<string>} options.currentDirectoryId
  * @param {import('vue').Ref<string | null>} options.loadedDirectoryId
  * @param {(directoryId?: string | number) => Promise<void>} options.loadDirectory
- * @param {import('vue').Ref<Array<string | number>>} options.selectedIds
+ * @param {import('vue').Ref<string[]>} options.selectedIds
  * @param {(() => void) | null} [options.onOAuthRouteEnter=null]
  * @param {(() => void) | null} [options.onOAuthRouteClear=null]
  */
@@ -155,7 +156,7 @@ export function useRouter({
 }) {
     const activeTab = ref('files'); // 'files' | 'tasks'
     const view = ref('grid'); // 'grid' | 'viewer'
-    /** @type {import('vue').Ref<Record<string, any> | null>} */
+    /** @type {import('vue').Ref<FileItem | null>} */
     const selectedFile = ref(null);
     /** @type {import('vue').Ref<number | null>} */
     const selectedPageIndex = ref(null);
@@ -278,11 +279,7 @@ export function useRouter({
         }
 
         const fallbackName = fallbackItem?.name || `File ${targetFileId}`;
-        const fallbackExt =
-            fallbackItem?.extension ||
-            (fallbackItem?.name && fallbackName.includes('.')
-                ? (fallbackName.split('.').pop() || '').toLowerCase()
-                : '');
+        const fallbackExt = fallbackItem?.extension || getFileExtension(fallbackItem?.name);
 
         try {
             const info = await fetchPathInfo(targetFileId);
@@ -293,6 +290,7 @@ export function useRouter({
                     ...(fallbackItem || {}),
                     id: targetFileId,
                     name: fallbackName,
+                    isDirectory: false,
                     extension: fallbackExt,
                 };
                 view.value = 'viewer';
@@ -303,9 +301,7 @@ export function useRouter({
             const fileCrumb = allCrumbs[allCrumbs.length - 1];
             const folderCrumbs = allCrumbs.slice(0, -1);
             const parentDirId = String(folderCrumbs[folderCrumbs.length - 1].id);
-            const ext = fileCrumb.name.includes('.')
-                ? (fileCrumb.name.split('.').pop() || '').toLowerCase()
-                : fallbackExt;
+            const ext = getFileExtension(fileCrumb.name) || fallbackExt;
 
             breadcrumbs.value = folderCrumbs;
             currentDirectoryId.value = parentDirId;
@@ -313,6 +309,7 @@ export function useRouter({
                 ...(fallbackItem || {}),
                 id: targetFileId,
                 name: fileCrumb.name,
+                isDirectory: false,
                 extension: ext,
             };
             view.value = 'viewer';
@@ -331,6 +328,7 @@ export function useRouter({
                 ...(fallbackItem || {}),
                 id: targetFileId,
                 name: fallbackName,
+                isDirectory: false,
                 extension: fallbackExt,
             };
             view.value = 'viewer';
