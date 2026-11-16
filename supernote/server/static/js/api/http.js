@@ -34,6 +34,9 @@ export function onLogout(listener) {
     return () => logoutListeners.delete(listener);
 }
 
+/**
+ * @param {{ reload?: boolean }} [options]
+ */
 export async function logout({ reload = true } = {}) {
     const token = authToken;
     authToken = null;
@@ -69,7 +72,9 @@ export async function logout({ reload = true } = {}) {
  * @param {Object} [options]
  * @param {string} [options.method='POST']
  * @param {unknown} [options.body]
+ * @param {Record<string, string>} [options.headers]
  * @param {boolean} [options.requireAuth=true]
+ * @param {boolean} [options.reloadOnUnauthorized=true]
  * @param {'json'|'text'} [options.responseType='json']
  * @param {string} [options.errorPrefix='Request failed']
  * @param {unknown} [options.fallbackValue]
@@ -79,7 +84,9 @@ export async function apiRequest(
     {
         method = 'POST',
         body = undefined,
+        headers: extraHeaders = undefined,
         requireAuth = true,
+        reloadOnUnauthorized = true,
         responseType = 'json',
         errorPrefix = 'Request failed',
         fallbackValue = undefined,
@@ -87,12 +94,12 @@ export async function apiRequest(
 ) {
     const token = getToken();
     if (requireAuth && !token) {
-        throw new Error('Unauthorized');
+        throw Object.assign(new Error('Unauthorized'), { status: 401 });
     }
 
     /** @type {Record<string, string>} */
-    const headers = {};
-    if (body !== undefined) {
+    const headers = { ...(extraHeaders || {}) };
+    if (body !== undefined && !headers['Content-Type']) {
         headers['Content-Type'] = 'application/json';
     }
     if (token) {
@@ -107,16 +114,28 @@ export async function apiRequest(
 
     if (response.status === 401) {
         if (token) {
-            logout();
+            await logout({ reload: reloadOnUnauthorized });
         }
-        throw new Error('Unauthorized');
+        throw Object.assign(new Error('Unauthorized'), { status: 401 });
     }
 
     if (!response.ok) {
         if (fallbackValue !== undefined) {
             return fallbackValue;
         }
-        throw new Error(`${errorPrefix}: ${response.statusText}`);
+        const errorData = await response.json().catch(() => null);
+        const serverDetail =
+            errorData?.error_description ||
+            errorData?.errorMsg ||
+            errorData?.error ||
+            errorData?.message;
+        const message = serverDetail
+            ? String(serverDetail)
+            : `${errorPrefix}: ${response.statusText || `HTTP ${response.status}`}`;
+        throw Object.assign(new Error(message), {
+            status: response.status,
+            data: errorData,
+        });
     }
 
     if (responseType === 'text') {

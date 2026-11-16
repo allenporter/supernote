@@ -10,18 +10,52 @@ export default {
         }
     },
     emits: ['close', 'select-file', 'select-task'],
+    /**
+     * @param {{ initialQuery?: string }} props
+     * @param {{ emit: (event: string, ...args: any[]) => void }} context
+     */
     setup(props, { emit }) {
         const query = ref(props.initialQuery || '');
         const isSearching = ref(false);
+        /** @type {import('vue').Ref<Array<Record<string, any>>>} */
         const results = ref([]);
+        /** @type {import('vue').Ref<Array<Record<string, any>>>} */
         const semanticResults = ref([]);
+        /** @type {import('vue').Ref<ScheduleTask[]>} */
         const taskResults = ref([]);
+        /** @type {import('vue').Ref<HTMLInputElement | null>} */
         const searchInput = ref(null);
 
         /** @type {ReturnType<typeof setTimeout> | null} */
         let searchTimeout = null;
+        /** @type {Promise<ScheduleTask[]> | null} */
+        let cachedTasksPromise = null;
         let activeSearchSeq = 0;
 
+        const invalidateTaskCache = () => {
+            cachedTasksPromise = null;
+        };
+
+        /**
+         * Cache tasks for the duration of the open modal session (invalidated on `supernote:task-sync`)
+         * so typing debounced queries does not re-fetch the entire task list on every keystroke.
+         * @returns {Promise<ScheduleTask[]>}
+         */
+        const getModalTasks = () => {
+            if (!cachedTasksPromise) {
+                cachedTasksPromise = fetchTasks()
+                    .then((res) => res.tasks || [])
+                    .catch(() => {
+                        cachedTasksPromise = null;
+                        return [];
+                    });
+            }
+            return cachedTasksPromise;
+        };
+
+        /**
+         * @param {KeyboardEvent} e
+         */
         const handleKeydown = (e) => {
             if (e.key === 'Escape') {
                 e.preventDefault();
@@ -30,21 +64,25 @@ export default {
             }
         };
 
+        /**
+         * @param {string} trimmed
+         * @param {number} seq
+         */
         const runSearchNow = async (trimmed, seq) => {
             try {
                 const qLower = trimmed.toLowerCase();
-                const [fileMatches, vectorMatches, { tasks: allTasks }] = await Promise.all([
+                const [fileMatches, vectorMatches, allTasks] = await Promise.all([
                     searchFiles(trimmed).catch(() => []),
                     searchSemantic(trimmed).catch(() => []),
-                    fetchTasks().catch(() => ({ tasks: [] }))
+                    getModalTasks()
                 ]);
                 if (seq !== activeSearchSeq) return;
 
-                results.value = fileMatches.map(f => {
+                results.value = fileMatches.map((f) => {
                     const fileName = f.name || f.fileName || '';
                     const isDir = f.tag === 'folder' || f.isDirectory;
                     const ext = !isDir && fileName.includes('.')
-                        ? fileName.split('.').pop().toLowerCase()
+                        ? (fileName.split('.').pop() || '').toLowerCase()
                         : null;
                     return {
                         id: f.id,
@@ -63,7 +101,7 @@ export default {
                         ? r.pageIndex
                         : (typeof r.page_index === 'number' ? r.page_index : 0);
                     const ext = fileName.includes('.')
-                        ? fileName.split('.').pop().toLowerCase()
+                        ? (fileName.split('.').pop() || '').toLowerCase()
                         : 'note';
                     return {
                         key: r.pageId ?? r.page_id ?? `${fileId}-${pageIndex}-${idx}`,
@@ -78,12 +116,12 @@ export default {
                     };
                 });
 
-                taskResults.value = allTasks.filter(t =>
+                taskResults.value = allTasks.filter((t) =>
                     t.title.toLowerCase().includes(qLower) || (t.detail && t.detail.toLowerCase().includes(qLower))
                 );
             } catch (e) {
                 if (seq !== activeSearchSeq) return;
-                console.error("Search failed:", e);
+                console.error('Search failed:', e);
             } finally {
                 if (seq === activeSearchSeq) {
                     isSearching.value = false;
@@ -91,6 +129,9 @@ export default {
             }
         };
 
+        /**
+         * @param {boolean | Event} [immediate=false]
+         */
         const handleSearch = (immediate = false) => {
             if (searchTimeout) clearTimeout(searchTimeout);
             const trimmed = query.value.trim();
@@ -121,11 +162,17 @@ export default {
             }
         });
 
+        /**
+         * @param {Record<string, any>} item
+         */
         const handleSelect = (item) => {
             emit('select-file', item);
             emit('close');
         };
 
+        /**
+         * @param {ScheduleTask} task
+         */
         const handleSelectTaskItem = (task) => {
             emit('select-task', task);
             emit('close');
@@ -133,6 +180,7 @@ export default {
 
         onMounted(() => {
             window.addEventListener('keydown', handleKeydown);
+            window.addEventListener('supernote:task-sync', invalidateTaskCache);
             if (query.value.trim()) {
                 handleSearch(true);
             }
@@ -145,6 +193,7 @@ export default {
 
         onUnmounted(() => {
             window.removeEventListener('keydown', handleKeydown);
+            window.removeEventListener('supernote:task-sync', invalidateTaskCache);
             if (searchTimeout) clearTimeout(searchTimeout);
         });
 
@@ -256,4 +305,4 @@ export default {
         </div>
     </div>
     `
-}
+};
