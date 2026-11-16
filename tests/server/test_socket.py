@@ -745,6 +745,10 @@ async def test_socketio_summary_service_events_publish_digest_syn(
         ),
     )
     updated_group = await summary_service.get_summary(user_email, group.id)
+    assert (
+        updated_group.last_modified_time is not None
+        and updated_group.last_modified_time > 1700000002000
+    )
     msg = await _next_digest_msg()
     assert msg == SocketDigestMessageData(
         code="200",
@@ -764,7 +768,7 @@ async def test_socketio_summary_service_events_publish_digest_syn(
                 description="Books",
                 md5_hash="grp-md5-2",
                 creation_time=1700000001000,
-                last_modified_time=1700000002000,
+                last_modified_time=updated_group.last_modified_time,
                 is_deleted="N",
                 create_time=str(updated_group.create_time),
                 update_time=str(updated_group.update_time),
@@ -840,6 +844,10 @@ async def test_socketio_summary_service_events_publish_digest_syn(
         ),
     )
     updated_summary = await summary_service.get_summary(user_email, summary.id)
+    assert (
+        updated_summary.last_modified_time is not None
+        and updated_summary.last_modified_time > 1700000004000
+    )
     msg = await _next_digest_msg()
     assert msg == SocketDigestMessageData(
         code="200",
@@ -866,7 +874,7 @@ async def test_socketio_summary_service_events_publish_digest_syn(
                 metadata='{"page": 1}',
                 comment_str="My comment",
                 creation_time=1700000003000,
-                last_modified_time=1700000004000,
+                last_modified_time=updated_summary.last_modified_time,
                 is_deleted="N",
                 create_time=str(updated_summary.create_time),
                 update_time=str(updated_summary.update_time),

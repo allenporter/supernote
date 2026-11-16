@@ -15,11 +15,12 @@ from pathlib import Path
 
 from sqlalchemy import delete, select
 
-from supernote.models.base import TaskType
+from supernote.models.base import BooleanEnum, TaskType
 from supernote.models.summary import (
     METADATA_SEGMENTS,
     AddSummaryDTO,
     AddSummaryGroupDTO,
+    SummaryItem,
     UpdateSummaryDTO,
     UpdateSummaryGroupDTO,
 )
@@ -39,6 +40,7 @@ from supernote.server.utils.note_content import (
     get_page_keywords_map,
 )
 from supernote.server.utils.paths import (
+    flatten_vfs_path,
     get_summary_group_id,
     get_summary_id,
     get_transcript_id,
@@ -49,6 +51,18 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+def _has_user_annotations(item: SummaryItem) -> bool:
+    """Return True if a summary or group carries user comments or handwriting."""
+    return any(
+        (val or "").strip()
+        for val in (
+            item.comment_str,
+            item.comment_handwrite_name,
+            item.handwrite_inner_name,
+        )
+    )
 
 
 class SummaryModule(ProcessorModule):
@@ -232,8 +246,7 @@ class SummaryModule(ProcessorModule):
                 logger.error(f"User for file {file_id} not found.")
                 return
             user_email = user.email
-
-            file_basis = file_do.storage_key or str(file_do.id)
+            user_id = file_do.user_id
 
             stmt = (
                 select(NotePageContentDO)
@@ -242,9 +255,7 @@ class SummaryModule(ProcessorModule):
             )
             result = await session.execute(stmt)
             pages = result.scalars().all()
-            keywords_map = await get_page_keywords_map(
-                session, file_do.user_id, file_id
-            )
+            keywords_map = await get_page_keywords_map(session, user_id, file_id)
 
         if not pages:
             logger.info(f"No OCR pages found for file {file_id}. Skipping summary.")
@@ -265,17 +276,23 @@ class SummaryModule(ProcessorModule):
                 text_parts.append(f"{metadata}\n{p.text_content}")
 
         if not text_parts:
-            await self._delete_generated_summaries(user_email, file_basis)
+            await self._delete_blank_file_summaries(user_email, user_id, file_id)
             logger.info(
                 f"All pages in file {file_id} are blank; skipping summary generation."
             )
             return
 
-        group_uuid = get_summary_group_id(file_basis)
+        source_path = (
+            flatten_vfs_path(
+                await self.file_service.get_full_path_by_node(user_id, file_id)
+            )
+            or file_do.file_name
+        )
+        group_uuid = get_summary_group_id(user_id, file_id)
         group_name = Path(file_do.file_name).name
         group_md5 = hashlib.md5(group_name.encode("utf-8")).hexdigest()
-        summary_uuid = get_summary_id(file_basis)
-        transcript_uuid = get_transcript_id(file_basis)
+        summary_uuid = get_summary_id(user_id, file_id)
+        transcript_uuid = get_transcript_id(user_id, file_id)
         full_text = "\n\n".join(text_parts)
 
         await self._upsert_group(
@@ -295,7 +312,7 @@ class SummaryModule(ProcessorModule):
                 parent_unique_identifier=group_uuid,
                 content=full_text,
                 data_source="OCR",
-                source_path=file_do.file_name,
+                source_path=source_path,
             ),
         )
 
@@ -354,7 +371,7 @@ class SummaryModule(ProcessorModule):
                 parent_unique_identifier=group_uuid,
                 content=ai_summary,
                 data_source=self.summary_model.model_id,
-                source_path=file_do.file_name,
+                source_path=source_path,
                 metadata=metadata_str,
             ),
         )
@@ -369,6 +386,12 @@ class SummaryModule(ProcessorModule):
             user_email, dto.unique_identifier
         )
         if existing and existing.id is not None:
+            if (existing.name, existing.md5_hash, existing.description) == (
+                dto.name,
+                dto.md5_hash,
+                dto.description,
+            ):
+                return
             await self.summary_service.update_group(
                 user_email,
                 UpdateSummaryGroupDTO(
@@ -406,27 +429,37 @@ class SummaryModule(ProcessorModule):
         else:
             await self.summary_service.add_summary(user_email, dto)
 
-    async def _delete_generated_summaries(
-        self, user_email: str, file_basis: str
+    async def _delete_blank_file_summaries(
+        self,
+        user_email: str,
+        user_id: int,
+        file_id: int,
     ) -> None:
-        """Soft-delete SummaryModule's deterministic transcript/summary items and now-empty group.
-
-        Server-generated entries are keyed by the synthetic `{file_basis}-transcript` and
-        `{file_basis}-summary` UUIDs (whereas device-created digests use client UUIDs), so
-        any manual digests filed under `{file_basis}-group` remain intact.
-        """
-        for item_uuid in (get_transcript_id(file_basis), get_summary_id(file_basis)):
-            existing_item = await self.summary_service.get_summary_by_uuid(
-                user_email, item_uuid
+        """Soft-delete unannotated generated rows for an all-blank notebook."""
+        for target_uuid in (
+            get_transcript_id(user_id, file_id),
+            get_summary_id(user_id, file_id),
+        ):
+            existing = await self.summary_service.get_summary_by_uuid(
+                user_email, target_uuid
             )
-            if existing_item and existing_item.id is not None:
-                await self.summary_service.delete_summary(user_email, existing_item.id)
+            if (
+                existing is not None
+                and existing.id is not None
+                and not _has_user_annotations(existing)
+            ):
+                await self.summary_service.delete_summary(user_email, existing.id)
 
-        group_uuid = get_summary_group_id(file_basis)
+        group_uuid = get_summary_group_id(user_id, file_id)
         existing_group = await self.summary_service.get_summary_by_uuid(
             user_email, group_uuid
         )
-        if existing_group and existing_group.id is not None:
+        if (
+            existing_group is not None
+            and existing_group.id is not None
+            and existing_group.is_summary_group == BooleanEnum.YES
+            and not _has_user_annotations(existing_group)
+        ):
             remaining = await self.summary_service.count_summaries(
                 user_email, parent_uuid=group_uuid
             )

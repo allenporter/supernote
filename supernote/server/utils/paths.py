@@ -24,9 +24,25 @@ import os
 import re
 import uuid
 
+from supernote.server.constants import CATEGORY_CONTAINERS, SYSTEM_ROOT_DIRECTORIES
+
 CHUNK_PATTERN = re.compile(r"^(.+)\.part\.(\d+)$")
 SAFE_PAGE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 PDF_SELECTION_PATTERN = re.compile(r"^(conversions/.+)_pages_[0-9a-f]{16}\.pdf$")
+
+
+def flatten_vfs_path(path: str) -> str:
+    """Flatten internal VFS category containers into device/web-visible relative paths."""
+    stripped = path.strip("/")
+    if not stripped:
+        return ""
+    path_parts = stripped.split("/")
+    if len(path_parts) >= 2 and path_parts[0] in CATEGORY_CONTAINERS:
+        return "/".join(path_parts[1:])
+    if path_parts[0] in SYSTEM_ROOT_DIRECTORIES:
+        path_parts[0] = path_parts[0].capitalize()
+        return "/".join(path_parts)
+    return stripped
 
 
 def is_valid_page_id(page_id: str) -> bool:
@@ -52,19 +68,27 @@ def parse_file_chunk_name(filename: str) -> str | None:
     return match.group(1) if match else None
 
 
-def get_summary_id(file_basis: str) -> str:
-    """Generate a unique identifier for an AI summary."""
-    return f"{file_basis}-summary"
+def get_summary_id(user_id: int, file_id: int) -> str:
+    """Generate a deterministic 32-char hex identifier for a file's AI summary."""
+    return uuid.uuid5(
+        uuid.NAMESPACE_URL, f"https://supernote.local/summary/{user_id}/{file_id}"
+    ).hex
 
 
-def get_summary_group_id(file_basis: str) -> str:
-    """Generate a unique identifier for a summary group."""
-    return f"{file_basis}-group"
+def get_summary_group_id(user_id: int, file_id: int) -> str:
+    """Generate a deterministic 32-char hex identifier for a file's summary group."""
+    return uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"https://supernote.local/summary-group/{user_id}/{file_id}",
+    ).hex
 
 
-def get_transcript_id(file_basis: str) -> str:
-    """Generate a unique identifier for an OCR transcript."""
-    return f"{file_basis}-transcript"
+def get_transcript_id(user_id: int, file_id: int) -> str:
+    """Generate a deterministic 32-char hex identifier for a file's OCR transcript."""
+    return uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"https://supernote.local/transcript/{user_id}/{file_id}",
+    ).hex
 
 
 def get_conversion_pdf_prefix(user_id: int, file_id: int, file_md5: str) -> str:

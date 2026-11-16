@@ -65,7 +65,7 @@ from supernote.server.services.file import (
     FileService,
     FolderDetail,
 )
-from supernote.server.utils.paths import generate_inner_name
+from supernote.server.utils.paths import flatten_vfs_path, generate_inner_name
 from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
 routes = web.RouteTableDef()
@@ -109,19 +109,6 @@ def _sort_and_page(
     end = start + page_size
     page_items = items[start:end]
     return page_items, total
-
-
-def _flatten_path(path: str) -> str:
-    """Flatten paths for items inside category containers (e.g., NOTE/Note -> Note)."""
-
-    path_parts = path.strip("/").split("/")
-    if len(path_parts) >= 2 and path_parts[0] in CATEGORY_CONTAINERS:
-        # Convert NOTE/Note/Sub -> Note/Sub
-        return "/".join(path_parts[1:])
-    if path_parts and path_parts[0] in SYSTEM_ROOT_DIRECTORIES:
-        path_parts[0] = path_parts[0].capitalize()
-        return "/".join(path_parts)
-    return path
 
 
 @routes.post("/api/file/capacity/query")
@@ -419,7 +406,7 @@ async def handle_file_search(request: web.Request) -> web.Response:
         search_vos: list[UserFileSearchVO] = []
         for entity in file_entities:
             # Web API expects flattened paths for system directories
-            path_display = _flatten_path(entity.full_path)
+            path_display = flatten_vfs_path(entity.full_path)
             parent_path = str(Path(path_display).parent)
             if parent_path == ".":
                 parent_path = ""

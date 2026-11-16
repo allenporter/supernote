@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pytest
 
 from supernote.server.utils.paths import (
+    flatten_vfs_path,
     generate_inner_name,
     get_conversion_pdf_path,
     get_conversion_pdf_prefix,
@@ -16,6 +17,17 @@ from supernote.server.utils.paths import (
     is_valid_page_id,
     parse_file_chunk_name,
 )
+
+
+def test_flatten_vfs_path() -> None:
+    assert flatten_vfs_path("/NOTE/Note/Work/daily.note") == "Note/Work/daily.note"
+    assert (
+        flatten_vfs_path("DOCUMENT/Document/Archive/paper.pdf")
+        == "Document/Archive/paper.pdf"
+    )
+    assert flatten_vfs_path("/EXPORT/summary.pdf") == "Export/summary.pdf"
+    assert flatten_vfs_path("Note/daily.note") == "Note/daily.note"
+    assert flatten_vfs_path("") == ""
 
 
 def test_get_page_png_path() -> None:
@@ -42,15 +54,29 @@ def test_parse_file_chunk_name() -> None:
 
 
 def test_get_summary_id() -> None:
-    assert get_summary_id("file_key") == "file_key-summary"
+    sid = get_summary_id(1, 42)
+    assert len(sid) == 32
+    assert sid == sid.lower()
+    int(sid, 16)
+    assert sid == get_summary_id(1, 42)
+    assert sid != get_summary_id(1, 43)
+    assert sid != get_summary_id(2, 42)
 
 
 def test_get_summary_group_id() -> None:
-    assert get_summary_group_id("file_key") == "file_key-group"
+    gid = get_summary_group_id(1, 42)
+    assert len(gid) == 32
+    int(gid, 16)
+    assert gid == get_summary_group_id(1, 42)
+    assert gid != get_summary_id(1, 42)
 
 
 def test_get_transcript_id() -> None:
-    assert get_transcript_id("file_key") == "file_key-transcript"
+    tid = get_transcript_id(1, 42)
+    assert len(tid) == 32
+    int(tid, 16)
+    assert tid == get_transcript_id(1, 42)
+    assert tid not in {get_summary_id(1, 42), get_summary_group_id(1, 42)}
 
 
 def test_get_conversion_pdf_path() -> None:

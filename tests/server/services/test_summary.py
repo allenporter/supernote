@@ -167,6 +167,13 @@ async def test_summary_crud_and_lookup_helpers(
     )
     rehashed = await summary_service.get_summary(USER_EMAIL, created.id)
     assert rehashed.md5_hash == hashlib.md5(b"Rehashed content").hexdigest()
+    assert rehashed.last_modified_time is not None
+    assert rehashed.last_modified_time > 1700000005000
+    infos = await summary_service.list_summary_infos(
+        USER_EMAIL, QuerySummaryDTO(ids=[created.id])
+    )
+    assert len(infos) == 1
+    assert infos[0].last_modified_time == rehashed.last_modified_time
 
     assert await summary_service.delete_summary(USER_EMAIL, created.id)
 
@@ -196,6 +203,8 @@ async def test_group_crud_and_fallback_lookup_by_id(
         ),
     )
     assert group.id is not None
+    assert group.creation_time is not None
+    assert group.last_modified_time is not None
 
     assert await summary_service.update_group(
         USER_EMAIL,
@@ -226,6 +235,14 @@ async def test_group_crud_and_fallback_lookup_by_id(
         last_modified_time=1700000010000,
         update_time=groups[0].update_time,
     )
+
+    assert await summary_service.update_group(
+        USER_EMAIL,
+        UpdateSummaryGroupDTO(id=group.id, md5_hash="h2-auto-ts"),
+    )
+    refreshed_group = await summary_service.get_summary(USER_EMAIL, group.id)
+    assert refreshed_group.last_modified_time is not None
+    assert refreshed_group.last_modified_time > 1700000010000
 
     with pytest.raises(SummaryNotFound):
         await summary_service.update_group(

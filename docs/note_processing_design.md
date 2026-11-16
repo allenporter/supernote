@@ -112,14 +112,14 @@ Stores per-page change hashes, extracted OCR text, and vector embeddings:
 
 ### `SummaryDO` (`f_summary` — User-Facing Transcripts & AI Synthesis)
 
-`SummaryModule` persists document-level outputs via `SummaryService` into `f_summary` under a parent Summary Group (`is_summary_group=True`, `unique_identifier=get_summary_group_id(file_basis)`):
+`SummaryModule` persists document-level outputs via `SummaryService` into `f_summary` under a parent Summary Group (`is_summary_group=True`, `unique_identifier=get_summary_group_id(user_id, file_id)`):
 
 1. **OCR Transcript Summary**:
-   - `unique_identifier`: `get_transcript_id(file_basis)`
+   - `unique_identifier`: `get_transcript_id(user_id, file_id)`
    - `data_source`: `"OCR"`
    - `content`: Full concatenated transcript of all non-blank pages in the notebook, with page headers (including `Page Keywords:` when present) and inferred dates.
 2. **AI Synthesis Summary**:
-   - `unique_identifier`: `get_summary_id(file_basis)`
+   - `unique_identifier`: `get_summary_id(user_id, file_id)`
    - `data_source`: `summary_model.model_id`
    - `content`: Chronological Markdown synthesis with date-range headings and page citations (e.g., `## 2026-06-18 (Pages 1, 2)`).
    - `extra_metadata`: JSON object containing structured `segments` (`date_range`, `summary`, `extracted_dates`, `page_refs`).
