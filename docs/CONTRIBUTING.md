@@ -1,6 +1,16 @@
 # Contributing
 
-This project is evolving from a set of utilities into a comprehensive **Personal Knowledge Management Hub**. We welcome contributions that help realize this vision—whether through better parsing, more robust server features, or new AI-powered insights.
+We welcome bug fixes, documentation improvements, and feature contributions to **Open Private Cloud for Supernote**—across the `.note` parser/converter library, async Python SDK & CLI, and self-hosted server + Web UI.
+
+## Picking Up Issues & Pull Request Sizing
+
+Live priorities and active tracks are organized in **[ROADMAP.md](../ROADMAP.md)** and **[GitHub Milestones](https://github.com/allenporter/supernote/milestones)**:
+
+- **Ready to implement (`agent-ready`)**: Browse the **[P1 Next-Up Queue](https://github.com/allenporter/supernote/issues?q=is%3Aopen+is%3Aissue+label%3Ap1+label%3Aagent-ready)** or **[Quick Polish Wins (`polish` + `agent-ready`)](https://github.com/allenporter/supernote/issues?q=is%3Aopen+is%3Aissue+label%3Apolish+label%3Aagent-ready)** for well-scoped tasks with clear acceptance criteria. Check [open Pull Requests](https://github.com/allenporter/supernote/pulls) first so you don't duplicate in-flight work.
+- **Design alignment first (`needs-design`)**: Issues labeled **[`needs-design`](https://github.com/allenporter/supernote/issues?q=is%3Aopen+is%3Aissue+label%3Aneeds-design)** have open architectural, schema, or UX tradeoffs. Please discuss options on the issue and align on an approach *before* opening an implementation PR.
+- **Small, incremental PRs (~150–300 LoC)**: Keep pull requests focused on a single cohesive slice that builds, migrates cleanly, and passes `./script/lint` and `./script/test` on its own. If a feature spans multiple layers (schema, backend service, SDK/CLI, Web UI) or exceeds ~300 lines of production code, propose an incremental PR breakdown on the issue first.
+
+---
 
 ## Code Style & Standards
 
@@ -17,7 +27,7 @@ This project uses `pytest` and `pytest-asyncio` for testing.
 
 ### Typing & Data Models
 
-- **Dataclasses**: Use standard Python `dataclasses` with `DataClassORJSONMixin`.
+- **Dataclasses**: Use standard Python `dataclasses` with `DataClassJSONMixin`.
 - **Serialization**: Use `mashumaro`.
 - **Strictness**: Define explicit types for all DTOs in `supernote.models`.
 

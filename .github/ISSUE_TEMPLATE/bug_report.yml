@@ -1,0 +1,20 @@
+---
+name: Bug Report
+description: Report broken behavior, sync issues, or regressions
+title: "fix: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary & Steps to Reproduce
+      description: Describe what happened, how to reproduce it, and any relevant device/firmware or server logs (redact tokens/passwords).
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior / Acceptance Criteria
+      description: What should happen instead?
+    validations:
+      required: true
