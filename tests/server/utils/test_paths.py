@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pytest
 
 from supernote.server.utils.paths import (
+    flatten_vfs_path,
     generate_inner_name,
     get_conversion_pdf_path,
     get_conversion_pdf_prefix,
@@ -16,6 +17,17 @@ from supernote.server.utils.paths import (
     is_valid_page_id,
     parse_file_chunk_name,
 )
+
+
+def test_flatten_vfs_path() -> None:
+    assert flatten_vfs_path("/NOTE/Note/Work/daily.note") == "Note/Work/daily.note"
+    assert (
+        flatten_vfs_path("DOCUMENT/Document/Archive/paper.pdf")
+        == "Document/Archive/paper.pdf"
+    )
+    assert flatten_vfs_path("/EXPORT/summary.pdf") == "Export/summary.pdf"
+    assert flatten_vfs_path("Note/daily.note") == "Note/daily.note"
+    assert flatten_vfs_path("") == ""
 
 
 def test_get_page_png_path() -> None:

@@ -40,6 +40,7 @@ from supernote.server.utils.note_content import (
     get_page_keywords_map,
 )
 from supernote.server.utils.paths import (
+    flatten_vfs_path,
     get_summary_group_id,
     get_summary_id,
     get_transcript_id,
@@ -297,8 +298,11 @@ class SummaryModule(ProcessorModule):
             return
 
         source_path = (
-            await self.file_service.get_full_path_by_node(user_id, file_id)
-        ).lstrip("/") or file_do.file_name
+            flatten_vfs_path(
+                await self.file_service.get_full_path_by_node(user_id, file_id)
+            )
+            or file_do.file_name
+        )
         group_uuid = get_summary_group_id(user_id, file_id)
         group_name = Path(file_do.file_name).name
         group_md5 = hashlib.md5(group_name.encode("utf-8")).hexdigest()

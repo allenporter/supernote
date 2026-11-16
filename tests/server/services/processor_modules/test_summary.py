@@ -769,6 +769,7 @@ async def test_summary_storage_key_rotation_updates_in_place_and_resolves_vfs_so
     """Verify rotating storage_key across syncs updates the same summary rows and uses full VFS source_path."""
     user_id = 113
     user_email = "rotation@example.com"
+    container_dir_id = 899
     note_dir_id = 900
     work_dir_id = 901
     file_id = 902
@@ -778,10 +779,18 @@ async def test_summary_storage_key_rotation_updates_in_place_and_resolves_vfs_so
         session.add_all(
             [
                 UserFileDO(
+                    id=container_dir_id,
+                    user_id=user_id,
+                    file_name="NOTE",
+                    directory_id=0,
+                    is_folder="Y",
+                    is_active="Y",
+                ),
+                UserFileDO(
                     id=note_dir_id,
                     user_id=user_id,
                     file_name="Note",
-                    directory_id=0,
+                    directory_id=container_dir_id,
                     is_folder="Y",
                     is_active="Y",
                 ),

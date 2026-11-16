@@ -24,9 +24,25 @@ import os
 import re
 import uuid
 
+from supernote.server.constants import CATEGORY_CONTAINERS, SYSTEM_ROOT_DIRECTORIES
+
 CHUNK_PATTERN = re.compile(r"^(.+)\.part\.(\d+)$")
 SAFE_PAGE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 PDF_SELECTION_PATTERN = re.compile(r"^(conversions/.+)_pages_[0-9a-f]{16}\.pdf$")
+
+
+def flatten_vfs_path(path: str) -> str:
+    """Flatten internal VFS category containers into device/web-visible relative paths."""
+    stripped = path.strip("/")
+    if not stripped:
+        return ""
+    path_parts = stripped.split("/")
+    if len(path_parts) >= 2 and path_parts[0] in CATEGORY_CONTAINERS:
+        return "/".join(path_parts[1:])
+    if path_parts[0] in SYSTEM_ROOT_DIRECTORIES:
+        path_parts[0] = path_parts[0].capitalize()
+        return "/".join(path_parts)
+    return stripped
 
 
 def is_valid_page_id(page_id: str) -> bool:
