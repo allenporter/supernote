@@ -9,11 +9,21 @@ Use this skill when triaging GitHub issues/PRs, proposing roadmap priorities, or
 
 ## 1. Source of Truth
 
-**GitHub Issues + Labels** are the single operational source of truth for live backlog status, priority, and agent readiness. `ROADMAP.md` holds high-level strategic phases and prioritization principles rather than per-issue checkboxes.
+**GitHub Issues + Labels + Strategic Milestones** are the single operational source of truth for live backlog status, priority, strategic track, and agent readiness. `ROADMAP.md` holds high-level strategic phases and prioritization principles rather than per-issue checkboxes.
 
-## 2. Label Taxonomy (4 Orthogonal Dimensions)
+## 2. Strategic Milestones (Vertical Tracks)
 
-Every open engineering issue (excluding Renovate's Dependency Dashboard `#1`) should have **exactly 1 Type**, **exactly 1 Priority**, **1–3 Area labels**, and an optional **Agent Readiness** label:
+Every open engineering issue (excluding Renovate's Dependency Dashboard `#1`) belongs to **exactly 1 GitHub Milestone** aligned with `ROADMAP.md`:
+
+1. **`Trustworthy Storage & Sync Safety`** *(Phase 2)*: Recycle Bin recovery, account-deletion cleanup, version history, and protocol/route conformance.
+2. **`Notebook Structure, Search & Document Workflows`** *(Phase 3)*: Native `.note` headings (`TITLEBITMAP`/`TITLESTYLE`), links/backlinks, keyword search, PDF/SVG/`.pdf.mark` exports, and Chauvet `3.31+` compatibility.
+3. **`Scalable AI, Transcripts & Digests`** *(Phase 4)*: Multi-provider AI lifecycle, chunked summarization, human transcript edits, prompt management, and Digest curation.
+4. **`MCP, Event Log, Schedule & Companion Ecosystem`** *(Phase 5)*: API key/OAuth UI, MCP tools/resources/prompts, Domain Event Log & Activity UI, recurring tasks, and companion sync.
+5. **`Long-Horizon & Protocol Extensions`** *(Icebox / `p3`)*: Standalone protocol surfaces (CalDAV, WebDAV), Atelier (`.spd`), `/INBOX` converters, and multi-notebook RAG chat/rollups.
+
+## 3. Label Taxonomy (4 Orthogonal Dimensions + Optional Modifiers)
+
+Every open engineering issue (excluding `#1`) must have **exactly 1 Type**, **exactly 1 Priority**, **exactly 1 Agent Readiness**, and **1–3 Area labels**:
 
 ### A. Priority (`p1`, `p2`, `p3`) — Mutually Exclusive
 Apply this prioritization rubric from highest to lowest:
@@ -46,28 +56,38 @@ Apply this prioritization rubric from highest to lowest:
 - `schedule`: To-Do tasks, task groups, recurring tasks, `.ics` feeds, and CalDAV.
 - `cli-client`: `supernote` CLI commands and `supernote.client` Python SDK.
 
+### E. Optional Modifiers (`polish`, `good first issue`)
+- `polish`: Single-PR UX, API, or reliability polish (<~200 LoC) closing a high-value seam on an existing feature.
+- `good first issue`: Self-contained task suitable for new contributors.
+
 *(Note: Pull Requests are automatically labeled by file path and branch prefix via `.github/labeler.yml`.)*
 
-## 3. Standard `gh` Queries for Agents
+## 4. Standard `gh` Queries for Agents
 
 ```bash
 # 1. Pick the next highest-priority autonomous task
-gh issue list --state open --label "p1" --label "agent-ready" --json number,title,labels
+gh issue list --state open --label "p1" --label "agent-ready" --json number,title,labels,milestone
 
-# 2. Fall back to p2 agent-ready tasks (optionally filtered by area, e.g. --label "notebook")
-gh issue list --state open --label "p2" --label "agent-ready" --json number,title,labels
+# 2. Pick a quick single-PR polish win
+gh issue list --state open --label "polish" --label "agent-ready" --json number,title,labels,milestone
 
-# 3. Find issues needing triage (missing priority p1/p2/p3)
-gh issue list --state open --limit 100 --json number,title,labels \
-  --jq '.[] | select(.number != 1) | select(([.labels[].name] | inside(["p1","p2","p3"]) | not) and (([.labels[].name] | any(. == "p1" or . == "p2" or . == "p3")) | not))'
+# 3. Pick agent-ready work within a specific Strategic Milestone
+gh issue list --state open --milestone "Notebook Structure, Search & Document Workflows" --label "agent-ready" --json number,title,labels
 
-# 4. Review open design discussions
-gh issue list --state open --label "needs-design" --json number,title,labels
+# 4. Fall back to p2 agent-ready tasks (optionally filtered by area, e.g. --label "notebook")
+gh issue list --state open --label "p2" --label "agent-ready" --json number,title,labels,milestone
+
+# 5. Audit full taxonomy compliance (missing priority, readiness, type, area, or milestone)
+gh issue list --state open --limit 100 --json number,title,labels,milestone \
+  --jq '.[] | select(.number != 1) | select(.milestone == null or ([.labels[].name] | any(. == "p1" or . == "p2" or . == "p3") | not) or ([.labels[].name] | any(. == "agent-ready" or . == "needs-design") | not))'
+
+# 6. Review open design discussions
+gh issue list --state open --label "needs-design" --json number,title,labels,milestone
 ```
 
-## 4. Triage Checklist When Creating or Reviewing Issues
+## 5. Triage Checklist When Creating or Reviewing Issues
 
 1. Ensure the title uses Conventional Commit style where natural (`feat(area): ...`, `fix(area): ...`, `refactor(area): ...`, `test(area): ...`).
 2. Include a concise `## Summary` and checkable `## Goals` acceptance criteria.
-3. Assign **1 Type** + **1 Priority (`p1`/`p2`/`p3`)** + **1–3 Area labels** + **`agent-ready` or `needs-design`**.
+3. Assign **1 Strategic Milestone** + **1 Type** + **1 Priority (`p1`/`p2`/`p3`)** + **1 Readiness (`agent-ready` or `needs-design`)** + **1–3 Area labels** (+ optional `polish` for <~200 LoC single-PR seams).
 4. Check open PRs (`gh pr list --state open`) before picking up an `agent-ready` issue so you do not duplicate in-flight work.
