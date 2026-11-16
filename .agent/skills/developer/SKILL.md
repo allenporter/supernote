@@ -28,12 +28,16 @@ This skill teaches you how to interact with the Supernote codebase using standar
 6. **Verify**: `./script/server` to run an ephemeral server for manual checks.
 
 ### Inner-Loop vs Pre-PR Verification
-- **Fast inner loop (`<2s`, during edits)**: Target only the modified files and matching test modules:
+- **Fast Python inner loop (`<2s`, during edits)**: Target only the modified files and matching test modules:
   ```bash
   uv run --no-sync ruff check --fix <changed_files> && uv run --no-sync ruff format <changed_files> && uv run --no-sync pytest <target_test_files> -q
   ```
-- **Pre-PR gate (once per slice before commit/push)**: Run `./script/lint && ./script/test`.
-- **Direct `uv run` & CI checks**: Always include `--no-sync` on ad-hoc `uv run` commands so `requirements_dev.txt` packages remain installed; batch independent `read_file` calls in parallel; watch GitHub Actions with a single backgrounded `gh pr checks <pr_number> --watch` (`WaitMsBeforeAsync: 500`) rather than polling loops.
+- **Fast Frontend inner loop (`<1s`, during `supernote/server/static/` or `tests/frontend/` edits)**:
+  ```bash
+  node --import ./tests/frontend/helpers/register_vue_stub.mjs --test 'tests/frontend/**/*.test.mjs'
+  ```
+- **Pre-PR gate (once per slice before commit/push)**: Run `(./script/lint || ./script/lint) && ./script/test` (the first `./script/lint` run lets `biome check --write` / `ruff` auto-format modified files; the second confirms zero remaining issues).
+- **Direct `uv run`, CI & Worktree Notes**: Always include `--no-sync` on ad-hoc `uv run` commands so `requirements_dev.txt` packages remain installed; batch independent `read_file` calls in parallel; watch GitHub Actions with `sleep 3 && gh pr checks --watch <pr_number>` after pushing so new workflow runs register before checking; in secondary git worktrees where `main` is checked out elsewhere, `gh pr merge <pr_number> --squash` merges the PR on GitHub before exiting non-zero on local `git checkout main`—follow with `git fetch origin main` and switch off `origin/main`.
 
 ### Notes
 - All scripts are located in the `script/` directory at the project root.

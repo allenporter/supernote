@@ -13,11 +13,12 @@ Execute this prescriptive task list when reviewing code changes, auditing PRs, o
 
 ### Step 1: Verify 1:1 Test Parity & Relative Links
 - [ ] Verify that every implementation file has a corresponding test file matching its exact module name.
-  - *Rule*: `supernote/path/to/module.py` $\rightarrow$ `tests/path/to/test_module.py`.
+  - *Python rule*: `supernote/path/to/module.py` $\rightarrow$ `tests/path/to/test_module.py`.
+  - *Frontend JS rule*: `supernote/server/static/js/{api,composables,utils}/<module>.js` $\rightarrow$ `tests/frontend/<module>.test.mjs` (plus `components.test.mjs` & `tests/integration/test_web_ui.py`).
 - [ ] Ensure all committed markdown files and skill definitions use relative repository paths instead of `file://` URIs.
 
 ### Step 2: Audit Abstraction Boundaries (Zero Leaky Abstractions)
-- [ ] Inspect API method signatures: verify high-level methods use domain models and standard exception semantics (`None` on success, typed exceptions on failure).
+- [ ] Inspect API method signatures: verify high-level methods use domain models and standard exception semantics (`None` on success, typed exceptions on failure; in frontend JS, subclass `Error` via `ApiError extends Error` rather than `Object.assign(new Error(...), { status })`, and unwrap wire envelopes inside `api/client.js` & `api/schedule.js` rather than inside Vue components).
 - [ ] Confirm no transport tokens, wire literals (e.g. `"Received"`, `"true"`), or status strings leak to upper layers.
 - [ ] Audit role cohesion: verify interfaces do not leak caller concerns (storage, scheduling, query building) downward into implementations, and prefer declarative properties over bespoke per-subclass hooks.
 - [ ] Check exception blocks: ensure broad `except Exception:` is replaced with narrow parse errors (`(json.JSONDecodeError, ValueError, TypeError, KeyError)`).
@@ -43,8 +44,10 @@ Execute this prescriptive task list when reviewing code changes, auditing PRs, o
 - [ ] Verify assertions check full dictionary structures (`assert data_dict == {...}`).
 - [ ] Ensure test setup boilerplate is delegated to reusable fixtures (`socket_client`, `create_socket_client`), preferring real fakes/fixtures and explicit DI; when mocking is unavoidable, use `unittest.mock.patch` rather than pytest `monkeypatch`.
 - [ ] Reject structural meta-tests (never write tests asserting `__all__` exports, AST/docstring formatting, or substring checks against Python/JS/HTML source files).
-- [ ] Run linter: `uv run --no-sync ruff check --fix . && uv run --no-sync ruff format .`.
-- [ ] Run test suite with coverage: `uv run --no-sync pytest --cov=supernote --cov-report=term-missing`.
+- [ ] In frontend `node:test` suites (`tests/frontend/*.test.mjs`), use `t.mock.timers.enable({ apis: ['setTimeout'] })` and `mountComposable()` (`tests/frontend/helpers/vue_test_scope.mjs`) instead of wall-clock `setTimeout` sleeps, and verify zero dropped assertions when splitting or refactoring test files.
+- [ ] When executing multi-slice PR plans, run a fresh-context `research` subagent review against `origin/main...HEAD` before merging each slice.
+- [ ] Run linters & type checks: `./script/lint` (covers `ruff`, `ty`, `tsc --noEmit`, `biome check`, `codespell`, `yamllint`).
+- [ ] Run test suites: `uv run --no-sync pytest --cov=supernote --cov-report=term-missing` (and `node --import ./tests/frontend/helpers/register_vue_stub.mjs --test 'tests/frontend/**/*.test.mjs'` when frontend files change).
 
 ---
 
