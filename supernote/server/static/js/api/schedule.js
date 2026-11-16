@@ -31,6 +31,7 @@ export async function fetchTaskGroups() {
 
 /**
  * Create a new task group via POST /api/file/schedule/group
+ * @param {string} title
  */
 export function createTaskGroup(title) {
     return apiRequest('/api/file/schedule/group', {
@@ -41,6 +42,7 @@ export function createTaskGroup(title) {
 
 /**
  * Delete a task group via DELETE /api/file/schedule/group/{taskListId}
+ * @param {string | number} taskListId
  */
 export function deleteTaskGroup(taskListId) {
     return apiRequest(`/api/file/schedule/group/${encodeURIComponent(taskListId)}`, {
@@ -60,6 +62,7 @@ export async function fetchTasks(taskListId = null) {
         body: payload,
         errorPrefix: 'Failed to fetch tasks'
     });
+    /** @type {Record<string, any>[]} */
     const rawTasks = data.scheduleTask || [];
 
     return {
@@ -135,6 +138,7 @@ export function updateScheduleTask(taskData) {
 
 /**
  * Delete a task via DELETE /api/file/schedule/task/{taskId}
+ * @param {string | number} taskId
  */
 export function deleteScheduleTask(taskId) {
     return apiRequest(`/api/file/schedule/task/${encodeURIComponent(taskId)}`, {

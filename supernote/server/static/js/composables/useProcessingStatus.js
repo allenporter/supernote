@@ -4,7 +4,15 @@ import { fetchProcessingStatus } from '../api/client.js';
 const ACTIVE_PROCESSING_STATUSES = new Set(['PENDING', 'PROCESSING']);
 const STATUS_POLL_INTERVAL_MS = 3000;
 
+/**
+ * @param {Object} options
+ * @param {import('vue').Ref<FileItem[]>} options.files
+ * @param {import('vue').Ref<boolean> | import('vue').ComputedRef<boolean>} options.isLoggedIn
+ * @param {import('vue').Ref<string>} options.activeTab
+ * @param {import('vue').Ref<string>} options.view
+ */
 export function useProcessingStatus({ files, isLoggedIn, activeTab, view }) {
+    /** @type {import('vue').Ref<Record<string, string>>} */
     const processingStatuses = ref({});
     /** @type {ReturnType<typeof setTimeout> | null} */
     let statusPollTimer = null;
@@ -23,6 +31,9 @@ export function useProcessingStatus({ files, isLoggedIn, activeTab, view }) {
             .map(f => String(f.id));
     }
 
+    /**
+     * @param {string[]} noteIds
+     */
     function shouldKeepPollingStatuses(noteIds) {
         if (!isLoggedIn.value || activeTab.value !== 'files' || view.value !== 'grid') {
             return false;
@@ -58,6 +69,7 @@ export function useProcessingStatus({ files, isLoggedIn, activeTab, view }) {
         statusPollInFlight = true;
         let pollFailed = false;
         try {
+            /** @type {{ success: boolean, statusMap: Record<string, any> }} */
             const result = await fetchProcessingStatus(noteFileIds);
             if (result.success) {
                 processingStatuses.value = {

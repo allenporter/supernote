@@ -114,6 +114,23 @@ export default {
         }
     },
     emits: ['open-item', 'navigate-to', 'update-selected-ids'],
+    /**
+     * @param {{
+     *   files: FileItem[],
+     *   currentDirectoryId: string,
+     *   breadcrumbs: BreadcrumbItem[],
+     *   isLoading: boolean,
+     *   error: string | null,
+     *   processingStatuses: Record<string, string>,
+     *   selectedIds: string[],
+     *   createFolder: (name: string) => Promise<any>,
+     *   uploadFiles: (files: FileList | File[]) => Promise<any>,
+     *   deleteItems: (ids: string[]) => Promise<any>,
+     *   moveItems: (ids: string[], targetDirId: string) => Promise<any>,
+     *   renameItem: (id: string | number, newName: string) => Promise<any>
+     * }} props
+     * @param {{ emit: (event: string, ...args: any[]) => void }} context
+     */
     setup(props, { emit }) {
         const displayMode = sharedDisplayMode;
         const sortBy = sharedSortBy;
@@ -209,6 +226,9 @@ export default {
             return ids.every(id => selectedSet.has(id));
         });
 
+        /**
+         * @param {string} id
+         */
         function toggleSelection(id) {
             const next = [...props.selectedIds];
             const index = next.indexOf(id);
@@ -245,6 +265,9 @@ export default {
             fileInput.value?.click();
         }
 
+        /**
+         * @param {Event & { target: HTMLInputElement }} event
+         */
         async function handleFileUpload(event) {
             const selectedFiles = event.target.files;
             if (!selectedFiles || selectedFiles.length === 0) return;
@@ -258,17 +281,26 @@ export default {
             }
         }
 
+        /**
+         * @param {DragEvent} event
+         */
         function isFileDragEvent(event) {
             const types = event?.dataTransfer?.types;
             return Boolean(types && Array.from(types).includes('Files'));
         }
 
+        /**
+         * @param {DragEvent} event
+         */
         function handleDragOver(event) {
             if (!isFileDragEvent(event)) return;
             event.preventDefault();
             isDraggingOver.value = true;
         }
 
+        /**
+         * @param {DragEvent & { currentTarget: HTMLElement, relatedTarget: Node | null }} event
+         */
         function handleDragLeave(event) {
             if (!isDraggingOver.value) return;
             if (!event.currentTarget.contains(event.relatedTarget)) {
@@ -276,6 +308,9 @@ export default {
             }
         }
 
+        /**
+         * @param {DragEvent} event
+         */
         async function handleDrop(event) {
             isDraggingOver.value = false;
             if (!isFileDragEvent(event)) return;
@@ -313,6 +348,9 @@ export default {
             showMoveModal.value = true;
         }
 
+        /**
+         * @param {string} targetDirId
+         */
         async function onConfirmMove(targetDirId) {
             try {
                 await props.moveItems(props.selectedIds, targetDirId);
@@ -324,11 +362,17 @@ export default {
             }
         }
 
+        /**
+         * @param {FileItem} item
+         */
         function triggerRename(item) {
             itemToRename.value = item;
             showRenameModal.value = true;
         }
 
+        /**
+         * @param {string} newName
+         */
         async function onConfirmRename(newName) {
             if (!itemToRename.value) return;
             try {
@@ -345,6 +389,9 @@ export default {
             isDraggingOver.value = false;
         };
 
+        /**
+         * @param {KeyboardEvent} e
+         */
         const handleKeydown = (e) => {
             if (e.key !== 'Escape') return;
             isDraggingOver.value = false;

@@ -18,6 +18,9 @@ export default {
         }
     },
     emits: ['approve', 'deny', 'dismiss'],
+    /**
+     * @param {Record<string, any>} props
+     */
     setup(props) {
         const primaryButtonRef = ref(null);
 

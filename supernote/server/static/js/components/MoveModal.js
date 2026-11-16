@@ -116,7 +116,12 @@ export default {
             </div>
         </div>
     `,
+    /**
+     * @param {{ itemIds?: Array<string | number> }} props
+     * @param {{ emit: (event: string, ...args: any[]) => void }} context
+     */
     setup(props, { emit }) {
+        /** @type {import('vue').Ref<FileItem[]>} */
         const folders = ref([]);
         const currentBrowserDirId = ref('0');
         const breadcrumbs = ref([{ id: '0', name: 'Cloud Root' }]);
@@ -154,6 +159,9 @@ export default {
             return basePath;
         });
 
+        /**
+         * @param {string | number} id
+         */
         const isExcluded = (id) => excludedIdSet.value.has(String(id));
 
         const loadFolders = async (dirId = currentBrowserDirId.value) => {
@@ -172,6 +180,9 @@ export default {
             }
         };
 
+        /**
+         * @param {string | number | null | undefined} id
+         */
         const selectTarget = (id) => {
             if (id === null || id === undefined) return;
             const targetId = String(id);
@@ -179,6 +190,9 @@ export default {
             targetDirId.value = targetId;
         };
 
+        /**
+         * @param {FileItem | null | undefined} folder
+         */
         const enterFolder = async (folder) => {
             if (!folder || folder.id === null || folder.id === undefined) return;
             const folderId = String(folder.id);
@@ -197,6 +211,9 @@ export default {
             await loadFolders(folderId);
         };
 
+        /**
+         * @param {number} index
+         */
         const navigateToBreadcrumb = async (index) => {
             if (index < 0 || index >= breadcrumbs.value.length) return;
             breadcrumbs.value = breadcrumbs.value.slice(0, index + 1);
@@ -211,6 +228,9 @@ export default {
             emit('confirm', String(targetDirId.value));
         };
 
+        /**
+         * @param {KeyboardEvent} e
+         */
         const handleKeydown = (e) => {
             if (e.key === 'Escape') {
                 e.preventDefault();

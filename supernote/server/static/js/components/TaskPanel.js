@@ -16,6 +16,9 @@ export default {
         TaskIcsModal
     },
     props: ['focusTask'],
+    /**
+     * @param {Record<string, any>} props
+     */
     setup(props) {
         const {
             taskGroups,
@@ -51,6 +54,9 @@ export default {
             Promise.all([loadGroups(), loadTasks()]).catch(() => {});
         }
 
+        /**
+         * @param {{ id?: string, title?: string, status?: string } | null | undefined} task
+         */
         function applyFocusedTask(task) {
             if (!task) return;
             selectedGroupId.value = null;
@@ -58,6 +64,9 @@ export default {
             searchQuery.value = task.title || '';
         }
 
+        /**
+         * @param {KeyboardEvent} e
+         */
         function handleKeydown(e) {
             if (e.key !== 'Escape') return;
             if (pendingDelete.value) {
@@ -96,6 +105,7 @@ export default {
         });
 
         const groupNameMap = computed(() => {
+            /** @type {Record<string, string>} */
             const map = {};
             taskGroups.value.forEach(g => {
                 map[g.id] = g.title;
@@ -104,6 +114,7 @@ export default {
         });
 
         const groupTaskCounts = computed(() => {
+            /** @type {Record<string, number>} */
             const counts = {};
             for (const task of tasks.value) {
                 if (task.status !== 'completed' && task.taskListId !== null && task.taskListId !== undefined) {
@@ -136,11 +147,17 @@ export default {
             showNewTaskModal.value = true;
         }
 
+        /**
+         * @param {ScheduleTask} task
+         */
         function openEditTaskModal(task) {
             editingTask.value = task;
             showNewTaskModal.value = true;
         }
 
+        /**
+         * @param {ScheduleTaskInput} payload
+         */
         async function handleSaveTask(payload) {
             if (editingTask.value) {
                 await modifyTask(payload);
@@ -157,6 +174,9 @@ export default {
             showNewGroupModal.value = false;
         }
 
+        /**
+         * @param {ScheduleTask | null | undefined} task
+         */
         function requestDeleteTask(task) {
             if (!task) return;
             pendingDelete.value = {
@@ -167,6 +187,9 @@ export default {
             };
         }
 
+        /**
+         * @param {ScheduleTaskGroup | null | undefined} group
+         */
         function requestDeleteGroup(group) {
             if (!group) return;
             const count = tasks.value.filter(t => String(t.taskListId) === String(group.id)).length;
@@ -191,11 +214,17 @@ export default {
             }
         }
 
+        /**
+         * @param {'all' | 'today' | 'high' | 'completed'} filter
+         */
         function selectFilterMode(filter) {
             selectedFilter.value = filter;
             selectedGroupId.value = null;
         }
 
+        /**
+         * @param {string | null} groupId
+         */
         function selectGroup(groupId) {
             selectedGroupId.value = groupId;
             selectedFilter.value = 'all';

@@ -2,6 +2,10 @@ import { computed } from 'vue';
 import { normalizeTaskImportance } from '../../api/schedule.js';
 import { normalizeEpochMs } from '../../utils/format.js';
 
+/**
+ * @param {Partial<ScheduleTask> | null | undefined} task
+ * @returns {{ label: string, classes: string } | null}
+ */
 export function getDueMeta(task) {
     if (!task || !task.dueTime) return null;
     const dueMs = normalizeEpochMs(task.dueTime);
@@ -63,6 +67,9 @@ export default {
         }
     },
     emits: ['toggle-complete', 'edit', 'delete'],
+    /**
+     * @param {Record<string, any>} props
+     */
     setup(props) {
         const importanceLevel = computed(() => normalizeTaskImportance(props.task.importance));
         const dueMeta = computed(() => getDueMeta(props.task));

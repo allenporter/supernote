@@ -32,6 +32,10 @@ export default {
     },
     props: ['file', 'initialPage', 'pageJumpSeq'],
     emits: ['close', 'page-change', 'open-file', 'search'],
+    /**
+     * @param {Record<string, any>} props
+     * @param {{ emit: (event: string, ...args: any[]) => void }} context
+     */
     setup(props, { emit }) {
         const pages = ref([]);
         const previewUrl = ref(null);
@@ -43,9 +47,13 @@ export default {
 
         const activeRightTab = ref('transcription'); // 'transcription' | 'insights'
         const isMobileSidePanelOpen = ref(false);
+        /** @type {import('vue').Ref<TranscriptPage[]>} */
         const transcriptPages = ref([]);
+        /** @type {import('vue').Ref<NoteMetadata | null>} */
         const noteMetadata = ref(null);
+        /** @type {import('vue').Ref<Record<string, any>[]>} */
         const realSummaries = ref([]);
+        /** @type {import('vue').Ref<AiStatus | null>} */
         const aiStatus = ref(null);
         const isLoadingTranscript = ref(false);
 
@@ -84,6 +92,7 @@ export default {
         });
 
         const pageMetaByIndex = computed(() => {
+            /** @type {Map<number, NotePageMeta>} */
             const map = new Map();
             const list = noteMetadata.value?.pages;
             if (Array.isArray(list)) {
@@ -97,6 +106,7 @@ export default {
         });
 
         const transcriptByIndex = computed(() => {
+            /** @type {Map<number, TranscriptPage>} */
             const map = new Map();
             for (const item of transcriptPages.value) {
                 if (typeof item.pageIndex === 'number') {
@@ -107,6 +117,7 @@ export default {
         });
 
         const linksByPageIndex = computed(() => {
+            /** @type {Map<number, NoteLink[]>} */
             const map = new Map();
             const list = noteMetadata.value?.links;
             if (Array.isArray(list)) {
@@ -121,8 +132,14 @@ export default {
             return map;
         });
 
+        /**
+         * @param {number} pageIdx
+         */
         const getPageMeta = (pageIdx) => pageMetaByIndex.value.get(pageIdx) || null;
 
+        /**
+         * @param {number} pageIdx
+         */
         const getPageRightMeta = (pageIdx) => {
             const meta = getPageMeta(pageIdx);
             const date = meta?.date || transcriptByIndex.value.get(pageIdx)?.date || null;
@@ -140,6 +157,9 @@ export default {
             )
         );
 
+        /**
+         * @param {string} keyword
+         */
         const handleKeywordClick = (keyword) => {
             const trimmed = String(keyword || '').trim();
             if (!trimmed) return;
@@ -162,6 +182,9 @@ export default {
             pageIndex: typeof targetPageIndex === 'number' ? targetPageIndex : 0
         });
 
+        /**
+         * @param {NoteLink | null | undefined} link
+         */
         const handleNoteLinkClick = async (link) => {
             if (!link) return;
             if (link.linkType === 'web' && link.target) {
@@ -237,6 +260,7 @@ export default {
         const fetchAndApplyNoteInsights = async (fileId, seq, { preserveMetaOnNull = false } = {}) => {
             const id = String(fileId);
             isLoadingTranscript.value = true;
+            /** @type {[any[], Record<string, any>[], NoteMetadata | null]} */
             const [rawPages, summariesData, metaData] = await Promise.all([
                 fetchTranscript(id).catch(() => []),
                 fetchSummaries(id).catch(() => []),
@@ -367,6 +391,9 @@ export default {
             refreshInsights();
         };
 
+        /**
+         * @param {CustomEvent<any>} event
+         */
         const handleFileSync = (event) => {
             if (!props.file) return;
             const entries = event?.detail?.data;

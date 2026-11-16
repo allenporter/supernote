@@ -9,6 +9,9 @@ const DOCUMENT_EXTENSIONS = new Set(['epub', 'doc', 'docx', 'txt', 'md', 'csv', 
 export default {
     props: ['file', 'isSelected', 'processingStatus', 'layout', 'selectionMode'],
     emits: ['open', 'select', 'rename'],
+    /**
+     * @param {Record<string, any>} props
+     */
     setup(props) {
         const cardRef = ref(null);
         const coverUrl = ref(null);
