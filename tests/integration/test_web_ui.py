@@ -166,6 +166,21 @@ async def test_web_ui_desktop_and_mobile_smoke(
             await page.get_by_role("button", name="List view").click()
             await page.get_by_role("button", name="Grid view").click()
 
+            # Verify Escape dismisses OS file-drag dropzone overlay
+            await page.evaluate(
+                """() => {
+                    const dt = new DataTransfer();
+                    dt.items.add(new File(['x'], 'demo.note'));
+                    document.querySelector('main [class*="relative"]')?.dispatchEvent(
+                        new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt })
+                    );
+                }"""
+            )
+            drop_banner = page.get_by_text("Drop files to upload")
+            await drop_banner.wait_for(state="visible")
+            await page.keyboard.press("Escape")
+            await drop_banner.wait_for(state="hidden")
+
             # Open .note viewer, copy OCR page transcript, step page, verify Markdown summary
             await page.get_by_text("Numbered_1to10.note").first.click()
             await page.locator('[data-page-index="0"] img').wait_for(

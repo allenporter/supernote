@@ -439,6 +439,8 @@ export default {
             isDraggingOver.value = false;
         };
 
+        useModalEscape(clearDragState, isDraggingOver);
+
         useModalEscape(() => {
             if (!isCreatingFolder.value) showNewFolderModal.value = false;
         }, showNewFolderModal);

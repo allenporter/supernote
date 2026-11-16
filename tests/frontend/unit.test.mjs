@@ -1033,6 +1033,10 @@ test('useModalEscape.js: LIFO Escape stack dismisses only topmost overlay and de
             dispatchEscapeKey({ key: 'Enter', defaultPrevented: false, preventDefault() {} }),
             false,
         );
+        assert.equal(
+            dispatchEscapeKey({ key: 'Escape', defaultPrevented: true, preventDefault() {} }),
+            false,
+        );
         assert.deepEqual(closed, []);
 
         // First Escape hits topmost handler ('search-modal') only
@@ -1041,6 +1045,7 @@ test('useModalEscape.js: LIFO Escape stack dismisses only topmost overlay and de
         assert.equal(prevented, 1);
 
         popOverlay();
+        popOverlay(); // Idempotent double-pop
         assert.equal(removedListeners, 0);
 
         // Second Escape after popping overlay hits 'ics-modal'
