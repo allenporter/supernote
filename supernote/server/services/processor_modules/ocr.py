@@ -27,6 +27,26 @@ from supernote.server.utils.paths import get_page_png_path
 
 logger = logging.getLogger(__name__)
 
+# Dedicated OCR models are trained on a single native instruction. Given a long
+# custom prompt they describe the page instead of transcribing it, or emit nothing,
+# and they ignore the page-metadata header, so send only their native prompt.
+DEDICATED_OCR_PROMPT = "Convert the document to markdown."
+DEDICATED_OCR_MODEL_MARKERS = (
+    "deepseek-ocr",
+    "deepseekocr",
+    "glm-ocr",
+    "glm_ocr",
+    "dots.ocr",
+    "dots_ocr",
+    "unlimited-ocr",
+)
+
+
+def _is_dedicated_ocr_model(model_id: str) -> bool:
+    """Return True for OCR-specialised models with a fixed trained prompt."""
+    lowered = model_id.lower()
+    return any(marker in lowered for marker in DEDICATED_OCR_MODEL_MARKERS)
+
 
 async def _get_verified_page_metadata(
     session: AsyncSession,
@@ -185,6 +205,8 @@ class OcrModule(ProcessorModule):
             keywords=page_keywords,
         )
         prompt = format_ocr_prompt(page_metadata)
+        if _is_dedicated_ocr_model(self.ocr_model.model_id or ""):
+            prompt = DEDICATED_OCR_PROMPT
         text_content = await self.ocr_model.extract_text(png_data, prompt)
 
         # Save Result
