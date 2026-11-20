@@ -229,16 +229,21 @@ async def trace_middleware(
 
     try:
         response = await handler(request)
+        # Socket.IO's aiohttp handler returns a list of responses instead of a
+        # single response object. Normalise for logging, but return the original.
+        logged_response = response
+        if isinstance(logged_response, (list, tuple)):
+            logged_response = logged_response[0] if logged_response else None
         req_body_str = await _capture_request_body(request)
 
         res_body_str = None
-        if isinstance(response, web.Response) and response.body:
-            if is_binary_content_type(response.content_type):
+        if isinstance(logged_response, web.Response) and logged_response.body:
+            if is_binary_content_type(logged_response.content_type):
                 res_body_str = "<binary data>"
             else:
                 try:
-                    if isinstance(response.body, bytes):
-                        res_body_str = response.body.decode("utf-8", errors="replace")
+                    if isinstance(logged_response.body, bytes):
+                        res_body_str = logged_response.body.decode("utf-8", errors="replace")
                         if len(res_body_str) > TRUNCATE_BODY_LOG:
                             res_body_str = (
                                 res_body_str[:TRUNCATE_BODY_LOG] + "... (truncated)"
@@ -261,17 +266,20 @@ async def trace_middleware(
                 "body": parsed_req_body if unsafe else sanitize_body(parsed_req_body),
             },
             "response": {
-                "status": response.status,
+                "status": getattr(logged_response, "status", 0) or 0,
                 "headers": (
-                    dict(response.headers)
+                    dict(getattr(logged_response, "headers", {}) or {})
                     if unsafe
-                    else sanitize_headers(dict(response.headers))
+                    else sanitize_headers(
+                        dict(getattr(logged_response, "headers", {}) or {})
+                    )
                 ),
                 "body": parsed_res_body if unsafe else sanitize_body(parsed_res_body),
             },
         }
         await _write_trace_log(config, log_entry)
-        return response
+        # aiohttp accepts a single response; unwrap a Socket.IO response list.
+        return logged_response if logged_response is not None else response
 
     except Exception as e:
         logger.exception(f"Error handling request: {e}")

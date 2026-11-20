@@ -271,3 +271,30 @@ async def test_trace_redacts_static_sn_api_keys_across_response_bodies_and_prese
     disk_contents = trace_file.read_text(encoding="utf-8")
     assert raw_api_key not in disk_contents
     assert '"key": "***"' in disk_contents
+
+
+async def test_trace_middleware_handles_socketio_list_response(tmp_path) -> None:
+    """Socket.IO handlers return a list of responses; tracing must not raise."""
+    trace_file = tmp_path / "trace.jsonl"
+    config = ServerConfig(trace_log_file=str(trace_file), trace_log_unsafe=False)
+    app = web.Application(middlewares=[trace_middleware])
+    app[CONFIG_KEY] = config
+
+    async def list_handler(_request: web.Request) -> list[web.StreamResponse]:
+        return [web.json_response({"ok": True})]
+
+    app.router.add_get("/socket.io/", list_handler)
+
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        async with TestClient(server) as test_client:
+            resp = await test_client.get("/socket.io/")
+            assert resp.status == 200
+            assert await resp.json() == {"ok": True}
+    finally:
+        await server.close()
+
+    trace = trace_file.read_text(encoding="utf-8")
+    assert "socket.io" in trace
+    assert '"status": 200' in trace
