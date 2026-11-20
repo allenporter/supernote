@@ -373,3 +373,48 @@ async def test_ocr_passes_verified_keywords_and_page_style_prompt(
     _, prompt = fake_ocr_model.calls[0]
     assert "Page Keywords: Project Mercury" in prompt
     assert "Daily Log" in prompt
+
+
+async def test_process_ocr_uses_native_prompt_for_dedicated_ocr_model(
+    file_service: FileService,
+    blob_storage: BlobStorage,
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Dedicated OCR models get their native prompt, not the composed one."""
+    dedicated = FakeOcrModel(model_id="DeepSeek-OCR-8bit")
+    module = OcrModule(file_service=file_service, ocr_model=dedicated)
+
+    file_id = 1010
+    page_id = "p_dedicated"
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=7,
+                storage_key="dedicated_key",
+                file_name="dedicated.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id=page_id,
+                content_hash="h_ded",
+                text_content=None,
+            )
+        )
+        await session.commit()
+
+    png_path = get_page_png_path(file_id, page_id)
+    await blob_storage.put(CACHE_BUCKET, png_path, b"fake-png-data")
+
+    assert (
+        await module.run(file_id, session_manager, page_index=0, page_id=page_id)
+        is True
+    )
+
+    assert len(dedicated.calls) == 1
+    _png, called_prompt = dedicated.calls[0]
+    assert called_prompt == "Convert the document to markdown."
