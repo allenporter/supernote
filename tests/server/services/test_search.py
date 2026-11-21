@@ -1,16 +1,26 @@
+import hashlib
 import json
+from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 
-from supernote.server.ai.models.embedding import EmbeddingTaskType
+from supernote.server.ai.models.embedding import EmbeddingModel, EmbeddingTaskType
 from supernote.server.ai.models.fake.embedding import FakeEmbeddingModel
+from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NotePageContentDO,
     NotePageMetadataDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.services.search import PageTranscript, SearchService
+from supernote.server.services.blob import BlobStorage
+from supernote.server.services.file import FileService
+from supernote.server.services.processor_modules.page_hashing import PageHashingModule
+from supernote.server.services.search import PageTranscript, SearchResult, SearchService
+from supernote.server.services.user import UserService
+from supernote.testing.notebook_fixtures import build_synthetic_notebook
 
 
 @pytest.fixture
@@ -599,3 +609,306 @@ async def test_get_transcript_includes_verified_page_keywords(
     transcript = await search_service.get_transcript(user_id=user_id, file_id=file_id)
     assert transcript is not None
     assert "Page Keywords: SQLite" in transcript
+
+
+class _TokenEmbeddingModel(EmbeddingModel):
+    """Deterministic per-token test embedding model with graded overlap similarity."""
+
+    def __init__(self, dimensions: int = 64, model_id: str = "test-token-v1") -> None:
+        self._dimensions = dimensions
+        self._model_id = model_id
+
+    @property
+    def provider(self) -> str:
+        return "fake"
+
+    @property
+    def model_id(self) -> str:
+        return self._model_id
+
+    async def embed(self, text: str, task_type: EmbeddingTaskType) -> list[float]:
+        tokens = [t.strip("#.,:;!?").lower() for t in text.split()]
+        tokens = [t for t in tokens if t] or [text]
+        vec = [0.0] * self._dimensions
+        for tok in tokens:
+            digest = hashlib.sha256(tok.encode()).digest()
+            for i in range(self._dimensions):
+                vec[i] += (digest[i % len(digest)] / 127.5) - 1.0
+        norm = sum(v * v for v in vec) ** 0.5 or 1.0
+        return [v / norm for v in vec]
+
+
+async def test_search_chunks_keyword_only_without_embedding_model(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Keyword search matches native keywords and OCR text when `embedding_model` is `None`."""
+    user_id = 1
+    service = SearchService(session_manager=session_manager, embedding_model=None)
+
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=201,
+                    user_id=user_id,
+                    file_name="Sketchbook.note",
+                    directory_id=0,
+                    is_active="Y",
+                    is_folder="N",
+                ),
+                UserFileDO(
+                    id=202,
+                    user_id=user_id,
+                    file_name="FieldLog.note",
+                    directory_id=0,
+                    is_active="Y",
+                    is_folder="N",
+                ),
+                UserFileDO(
+                    id=203,
+                    user_id=999,
+                    file_name="OtherUser.note",
+                    directory_id=0,
+                    is_active="Y",
+                    is_folder="N",
+                ),
+                NotePageMetadataDO(
+                    user_id=user_id,
+                    file_id=201,
+                    page_index=0,
+                    page_id="P20260401090000abc",
+                    keywords_json=json.dumps(
+                        [{"KEYWORDPAGE": "1", "KEYWORD": "ks-tilt"}]
+                    ),
+                ),
+                NotePageContentDO(
+                    file_id=202,
+                    page_index=1,
+                    page_id="P20260402090000def",
+                    text_content="Verified ks-tilt stylus response.",
+                ),
+                NotePageMetadataDO(
+                    user_id=999,
+                    file_id=203,
+                    page_index=0,
+                    page_id="P20260401090000xyz",
+                    keywords_json=json.dumps(
+                        [{"KEYWORDPAGE": "1", "KEYWORD": "ks-tilt"}]
+                    ),
+                ),
+            ]
+        )
+        await session.commit()
+
+    results = await service.search_chunks(user_id=user_id, query="#KS-Tilt", top_n=5)
+    assert results == [
+        SearchResult(
+            file_id=201,
+            file_name="Sketchbook.note",
+            page_index=0,
+            page_id="P20260401090000abc",
+            score=1.0,
+            text_preview="Keywords: #ks-tilt",
+            date="2026-04-01",
+        ),
+        SearchResult(
+            file_id=202,
+            file_name="FieldLog.note",
+            page_index=1,
+            page_id="P20260402090000def",
+            score=0.85,
+            text_preview="Verified ks-tilt stylus response.",
+            date="2026-04-02",
+        ),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("query", "top_n", "date_after", "date_before"),
+    [
+        ("###", 5, None, None),
+        ("   ", 5, None, None),
+        ("---", 5, None, None),
+        ("#ks-tilt", 0, None, None),
+        ("#ks-tilt", -1, None, None),
+        ("#ks-tilt", 5, "2026-05-01", "2026-04-01"),
+        ("#ks-tilt", 5, "not-a-date", None),
+    ],
+)
+async def test_search_chunks_guard_clauses(
+    session_manager: DatabaseSessionManager,
+    query: str,
+    top_n: int,
+    date_after: str | None,
+    date_before: str | None,
+) -> None:
+    service = SearchService(session_manager=session_manager, embedding_model=None)
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=210,
+                user_id=1,
+                file_name="Sketch.note",
+                directory_id=0,
+                is_active="Y",
+                is_folder="N",
+            )
+        )
+        session.add(
+            NotePageMetadataDO(
+                user_id=1,
+                file_id=210,
+                page_index=0,
+                page_id="P20260415090000abc",
+                keywords_json=json.dumps([{"KEYWORDPAGE": "1", "KEYWORD": "ks-tilt"}]),
+            )
+        )
+        await session.commit()
+
+    assert (
+        await service.search_chunks(
+            user_id=1,
+            query=query,
+            top_n=top_n,
+            date_after=date_after,
+            date_before=date_before,
+        )
+        == []
+    )
+
+
+async def test_search_chunks_post_init_embedding_model_rebind(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Assigning `search_service.embedding_model` after init updates the vector searcher."""
+    user_id = 1
+    service = SearchService(session_manager=session_manager, embedding_model=None)
+    token_model = _TokenEmbeddingModel()
+    doc_text = "Observing celestial constellations and nebulae"
+    doc_vec = await token_model.embed(
+        doc_text, task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT
+    )
+
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=301,
+                user_id=user_id,
+                file_name="NightSky.note",
+                directory_id=0,
+                is_active="Y",
+                is_folder="N",
+            )
+        )
+        session.add(
+            NotePageContentDO(
+                file_id=301,
+                page_index=0,
+                page_id="P20260410220000abc",
+                text_content=doc_text,
+                embedding=json.dumps(doc_vec),
+                embedding_model=token_model.model_id,
+            )
+        )
+        await session.commit()
+
+    assert await service.search_chunks(user_id=user_id, query="celestial galaxy") == []
+
+    service.embedding_model = token_model
+    assert service.embedding_model is token_model
+
+    hits = await service.search_chunks(user_id=user_id, query="celestial galaxy")
+    assert len(hits) == 1
+    assert hits[0].file_id == 301
+    assert 0.25 < hits[0].score < 0.85
+
+
+async def test_hybrid_search_end_to_end_with_synthetic_notebooks(
+    session_manager: DatabaseSessionManager,
+    storage_root: Path,
+    blob_storage: BlobStorage,
+    user_service: UserService,
+) -> None:
+    """End-to-end hybrid ranking across synthetic `.note` files hashed via `PageHashingModule`."""
+    user_id = 1
+    file_service = FileService(
+        storage_root=storage_root,
+        blob_storage=blob_storage,
+        user_service=user_service,
+        session_manager=session_manager,
+    )
+    hashing_module = PageHashingModule(file_service=file_service)
+    token_model = _TokenEmbeddingModel()
+    service = SearchService(
+        session_manager=session_manager, embedding_model=token_model
+    )
+
+    unprocessed_nb = build_synthetic_notebook(
+        pages=[
+            "# Optics Sketch\n\n- Collimation diagram #optics #astronomy",
+        ],
+        base_date=datetime(2026, 3, 10, 9, 0, tzinfo=UTC),
+        seed=11,
+    )
+    processed_nb = build_synthetic_notebook(
+        pages=[
+            "# Mirror Grinding\n\n- Parabolic mirror focal ratio and lens aberration #optics",
+            "# Star Party Log\n\n- Checked lens aberration on Jupiter moons",
+        ],
+        base_date=datetime(2026, 3, 12, 9, 0, tzinfo=UTC),
+        seed=22,
+    )
+
+    for fid, fname, synth in [
+        (401, "Unprocessed_Sketch.note", unprocessed_nb),
+        (402, "Optics_Lab.note", processed_nb),
+    ]:
+        skey = f"hybrid-{fid}.note"
+        await file_service.blob_storage.put(USER_DATA_BUCKET, skey, synth.data)
+        async with session_manager.session() as session:
+            session.add(
+                UserFileDO(
+                    id=fid,
+                    user_id=user_id,
+                    directory_id=0,
+                    file_name=fname,
+                    is_folder="N",
+                    is_active="Y",
+                    storage_key=skey,
+                    md5=hashlib.md5(synth.data).hexdigest(),
+                    size=len(synth.data),
+                )
+            )
+            await session.commit()
+        await hashing_module.process(fid, session_manager)
+
+    async with session_manager.session() as session:
+        for page in processed_nb.pages:
+            vec = await token_model.embed(
+                page.text, task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT
+            )
+            content_row = (
+                await session.execute(
+                    select(NotePageContentDO).where(
+                        NotePageContentDO.file_id == 402,
+                        NotePageContentDO.page_id == page.page_id,
+                    )
+                )
+            ).scalar_one()
+            content_row.text_content = page.text
+            content_row.embedding = json.dumps(vec)
+            content_row.embedding_model = token_model.model_id
+        await session.commit()
+
+    ranked = await service.search_chunks(
+        user_id=user_id, query="#optics aberration", top_n=5
+    )
+    assert [(r.file_id, r.page_index) for r in ranked] == [
+        (402, 0),
+        (401, 0),
+        (402, 1),
+    ]
+    assert ranked[0].score > ranked[1].score > ranked[2].score > 0.15
+    assert "Parabolic mirror" in ranked[0].text_preview
+    assert ranked[1].text_preview == "Keywords: #optics, #astronomy"
+    assert ranked[1].date == "2026-03-10"
