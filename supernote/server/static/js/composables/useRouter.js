@@ -5,6 +5,7 @@
  * - `#/files` and `#/files/<dirId>`
  * - `#/file/<fileId>` and `#/file/<fileId>?page=<1-based>`
  * - `#/tasks`
+ * - `#/settings`
  * - `#/system`
  * - `#/login?return_to=...` (OAuth 2.1 `/login-bridge` consent handoff)
  *
@@ -90,6 +91,9 @@ export function parseUrlHash(hashString) {
     if (parts[0] === 'tasks') {
         return { tab: 'tasks', view: 'grid', dirId: '0', showSystem: false };
     }
+    if (parts[0] === 'settings') {
+        return { tab: 'settings', view: 'grid', dirId: '0', showSystem: false };
+    }
     if (parts[0] === 'file' && parts[1]) {
         return {
             tab: 'files',
@@ -120,6 +124,9 @@ export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false,
     }
     if (tab === 'tasks') {
         return '#/tasks';
+    }
+    if (tab === 'settings') {
+        return '#/settings';
     }
     if (viewState === 'viewer' && fileObj?.id) {
         if (typeof pageIndex === 'number' && pageIndex > 0) {
@@ -154,7 +161,7 @@ export function useRouter({
     onOAuthRouteEnter = null,
     onOAuthRouteClear = null,
 }) {
-    const activeTab = ref('files'); // 'files' | 'tasks'
+    const activeTab = ref('files'); // 'files' | 'tasks' | 'settings'
     const view = ref('grid'); // 'grid' | 'viewer'
     /** @type {import('vue').Ref<FileItem | null>} */
     const selectedFile = ref(null);
@@ -420,8 +427,8 @@ export function useRouter({
         showSystemPanel.value = false;
         systemOpenedFromHistory = false;
 
-        if (parsed.tab === 'tasks') {
-            activeTab.value = 'tasks';
+        if (parsed.tab === 'tasks' || parsed.tab === 'settings') {
+            activeTab.value = parsed.tab;
             resetViewerSelection();
             viewerOpenedFromHistory = false;
             return;
@@ -452,7 +459,7 @@ export function useRouter({
     }
 
     /**
-     * @param {'files' | 'tasks'} tab
+     * @param {'files' | 'tasks' | 'settings'} tab
      */
     async function switchTab(tab) {
         showSystemPanel.value = false;

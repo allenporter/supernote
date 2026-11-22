@@ -730,3 +730,71 @@ export function fetchNoteMetadata(fileId) {
         fallbackValue: null,
     });
 }
+
+/**
+ * List MCP OAuth clients the user has authorized.
+ * @returns {Promise<OAuthGrant[]>}
+ */
+export async function fetchOAuthGrants() {
+    const data = await apiRequest('/api/extended/oauth/grants', {
+        method: 'GET',
+        errorPrefix: 'Failed to load connected clients',
+    });
+    return Array.isArray(data?.grants) ? data.grants : [];
+}
+
+/**
+ * Disconnect an MCP OAuth client, ending its access and refresh tokens.
+ * @param {string} grantId
+ * @returns {Promise<void>}
+ */
+export async function revokeOAuthGrant(grantId) {
+    await apiRequest(`/api/extended/oauth/grants/${encodeURIComponent(grantId)}`, {
+        method: 'DELETE',
+        errorPrefix: 'Failed to disconnect client',
+    });
+}
+
+/**
+ * List the user's static Bearer API keys.
+ * @returns {Promise<ApiKeyInfo[]>}
+ */
+export async function fetchApiKeys() {
+    const data = await apiRequest('/api/extended/keys', {
+        method: 'GET',
+        errorPrefix: 'Failed to load API keys',
+    });
+    return Array.isArray(data?.keys) ? data.keys : [];
+}
+
+/**
+ * Create a static Bearer API key. The raw `key` is only ever returned here.
+ * @param {string} name
+ * @param {number | null} [expiresInDays=null]
+ * @returns {Promise<CreatedApiKey>}
+ */
+export async function createApiKey(name, expiresInDays = null) {
+    const data = await apiRequest('/api/extended/keys', {
+        body: { name, expiresInDays },
+        errorPrefix: 'Failed to create API key',
+    });
+    return {
+        id: data.id,
+        name: data.name,
+        key: data.key,
+        createdAt: data.createdAt,
+        expiresAt: data.expiresAt ?? null,
+    };
+}
+
+/**
+ * Revoke a static Bearer API key.
+ * @param {string} keyId
+ * @returns {Promise<void>}
+ */
+export async function revokeApiKey(keyId) {
+    await apiRequest(`/api/extended/keys/${encodeURIComponent(keyId)}`, {
+        method: 'DELETE',
+        errorPrefix: 'Failed to revoke API key',
+    });
+}

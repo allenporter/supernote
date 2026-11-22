@@ -137,6 +137,12 @@ test('useRouter.js: parseUrlHash, buildUrlHash, and breadcrumb builders', () => 
         dirId: '0',
         showSystem: false,
     });
+    assert.deepEqual(parseUrlHash('#/settings'), {
+        tab: 'settings',
+        view: 'grid',
+        dirId: '0',
+        showSystem: false,
+    });
     assert.deepEqual(parseUrlHash('#/system'), {
         tab: 'system',
         view: 'grid',
@@ -152,6 +158,7 @@ test('useRouter.js: parseUrlHash, buildUrlHash, and breadcrumb builders', () => 
         '#/file/9001?page=3',
     );
     assert.equal(buildUrlHash('tasks', '0', 'grid', null, false, null), '#/tasks');
+    assert.equal(buildUrlHash('settings', '0', 'grid', null, false, null), '#/settings');
     assert.equal(buildUrlHash('files', '0', 'grid', null, true, null), '#/system');
 
     assert.equal(formatCrumbName('INBOX', 0), 'Inbox');

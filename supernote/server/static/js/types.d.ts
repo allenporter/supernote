@@ -308,6 +308,32 @@ interface AiStatus {
     model: string | null;
 }
 
+interface OAuthGrant {
+    id: string;
+    clientId: string;
+    scopes: string[];
+    createdAt: number;
+    expiresAt: number;
+    lastUsedAt: number | null;
+}
+
+interface ApiKeyInfo {
+    id: string;
+    name: string;
+    keyPrefix: string;
+    createdAt: number;
+    lastUsedAt: number | null;
+    expiresAt: number | null;
+}
+
+interface CreatedApiKey {
+    id: string;
+    name: string;
+    key: string;
+    createdAt: number;
+    expiresAt: number | null;
+}
+
 interface OAuthRedirectTarget {
     scheme: string;
     isCustomScheme: boolean;
