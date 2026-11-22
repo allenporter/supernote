@@ -101,6 +101,7 @@ from .services.search import SearchService
 from .services.storage_metrics import StorageMetricsCollector
 from .services.summary import SummaryService
 from .services.user import UserService
+from .services.vocabulary import VocabularyService
 from .services.webhook import WebhookService
 from .socket import setup_socketio
 from .trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger, trace_middleware
@@ -368,7 +369,13 @@ def create_app(config: ServerConfig) -> web.Application:
     processor_service.register_modules(
         hashing=PageHashingModule(file_service=file_service),
         png=PngConversionModule(file_service=file_service) if png_enabled else None,
-        ocr=OcrModule(file_service=file_service, ocr_model=ocr_model),
+        ocr=OcrModule(
+            file_service=file_service,
+            ocr_model=ocr_model,
+            vocabulary_service=(
+                VocabularyService(session_manager) if config.ai.ocr_vocabulary else None
+            ),
+        ),
         embedding=EmbeddingModule(
             file_service=file_service, embedding_model=embedding_model
         ),

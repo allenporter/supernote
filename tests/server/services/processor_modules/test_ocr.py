@@ -13,6 +13,7 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.ocr import OcrModule
+from supernote.server.services.vocabulary import VocabularyService
 from supernote.server.utils.paths import get_page_png_path
 
 
@@ -373,3 +374,52 @@ async def test_ocr_passes_verified_keywords_and_page_style_prompt(
     _, prompt = fake_ocr_model.calls[0]
     assert "Page Keywords: Project Mercury" in prompt
     assert "Daily Log" in prompt
+
+
+async def test_ocr_prompt_gets_keywords_from_the_notebooks_folder(
+    file_service: FileService,
+    fake_ocr_model: FakeOcrModel,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    """A keyword marked in another notebook nearby is offered as a spelling."""
+    ocr_module = OcrModule(
+        file_service=file_service,
+        ocr_model=fake_ocr_model,
+        vocabulary_service=VocabularyService(session_manager),
+    )
+    user_id = 100
+    file_id = 1001
+    sibling_id = 1002
+    await blob_storage.put(CACHE_BUCKET, get_page_png_path(file_id, "p0"), b"png")
+    async with session_manager.session() as session:
+        for note_id, name in ((file_id, "Plan.note"), (sibling_id, "Notes.note")):
+            session.add(
+                UserFileDO(
+                    id=note_id,
+                    user_id=user_id,
+                    storage_key=f"k{note_id}",
+                    file_name=name,
+                    directory_id=0,
+                )
+            )
+        session.add(
+            NotePageContentDO(
+                file_id=file_id, page_index=0, page_id="p0", content_hash="h"
+            )
+        )
+        session.add(
+            NotePageMetadataDO(
+                user_id=user_id,
+                file_id=sibling_id,
+                page_index=0,
+                page_id="s0",
+                keywords_json='[{"KEYWORDPAGE": "1", "KEYWORD": "Lovelace"}]',
+            )
+        )
+        await session.commit()
+
+    assert await ocr_module.run(file_id, session_manager, page_index=0, page_id="p0")
+
+    [(_, prompt)] = fake_ocr_model.calls
+    assert "These names and terms may appear in the text: Lovelace." in prompt

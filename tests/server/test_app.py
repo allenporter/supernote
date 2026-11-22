@@ -25,13 +25,14 @@ from supernote.server.app import (
     create_app,
     run,
 )
-from supernote.server.config import ServerConfig
+from supernote.server.config import AiConfig, ModelConfig, ServerConfig
 from supernote.server.db.models.user import UserDO
 from supernote.server.keys import (
     INTEGRITY_SERVICE_KEY,
     PROCESSOR_SERVICE_KEY,
     SESSION_MANAGER_KEY,
 )
+from supernote.server.services.processor_modules.ocr import OcrModule
 from supernote.server.services.processor_modules.png_conversion import (
     PngConversionModule,
 )
@@ -473,3 +474,21 @@ async def test_jwt_auth_middleware_blocks_api_key_on_interactive_route(
     forbidden_resp = await client.get("/api/extended/keys", headers=api_key_headers)
     assert forbidden_resp.status == 403
     assert "Interactive session required" in (await forbidden_resp.json())["errorMsg"]
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_ocr_vocabulary_toggle(server_config: ServerConfig, enabled: bool) -> None:
+    """`ai.ocr_vocabulary` decides whether OCR prompts get device keywords."""
+    cfg = dataclasses.replace(
+        server_config,
+        web_enabled=False,
+        ai=AiConfig(
+            ocr=ModelConfig(provider="fake", model="fake-ocr"),
+            ocr_vocabulary=enabled,
+        ),
+    )
+    app = create_app(cfg)
+    [ocr] = [
+        m for m in app[PROCESSOR_SERVICE_KEY].page_modules if isinstance(m, OcrModule)
+    ]
+    assert (ocr.vocabulary_service is not None) is enabled

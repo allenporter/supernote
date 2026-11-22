@@ -22,6 +22,7 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import NotePageTranscribedEvent
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
+from supernote.server.services.vocabulary import VocabularyService
 from supernote.server.utils.note_content import get_page_content_by_id
 from supernote.server.utils.paths import get_page_png_path
 
@@ -59,9 +60,11 @@ class OcrModule(ProcessorModule):
         self,
         file_service: FileService,
         ocr_model: OcrModel | None,
+        vocabulary_service: VocabularyService | None = None,
     ) -> None:
         self.file_service = file_service
         self.ocr_model = ocr_model
+        self.vocabulary_service = vocabulary_service
 
     @property
     def name(self) -> str:
@@ -184,7 +187,12 @@ class OcrModule(ProcessorModule):
             page_style=page_style,
             keywords=page_keywords,
         )
-        prompt = format_ocr_prompt(page_metadata)
+        vocabulary: list[str] = []
+        if self.vocabulary_service is not None and user_id is not None:
+            vocabulary = await self.vocabulary_service.terms_for_notebook(
+                user_id, file_id
+            )
+        prompt = format_ocr_prompt(page_metadata, vocabulary=vocabulary)
         text_content = await self.ocr_model.extract_text(png_data, prompt)
 
         # Save Result

@@ -207,6 +207,10 @@ class AiConfig(DataClassYAMLMixin):
     embedding: ModelConfig | None = None
     """Model configuration for page embedding generation."""
 
+    ocr_vocabulary: bool = True
+    """Offer the OCR prompt the keywords marked on the device, as spellings the
+    writer uses. Costs a few input tokens per term on every page."""
+
     def provider_type(self, name: str) -> str:
         """Return the backend implementation for the `ai.providers` entry `name`."""
         provider_cfg = self.providers.get(name)
