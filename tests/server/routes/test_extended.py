@@ -910,6 +910,38 @@ async def test_api_keys_denied_on_key_management_endpoints(
     ).status == 403
 
 
+async def test_extended_oauth_grants_unauthorized(client: TestClient) -> None:
+    """Test that OAuth grant endpoints return 401 without authentication."""
+    assert (await client.get("/api/extended/oauth/grants")).status == 401
+    assert (await client.delete("/api/extended/oauth/grants/g1")).status == 401
+
+
+async def test_api_keys_denied_on_oauth_grant_endpoints(
+    client: TestClient,
+    extended_client: ExtendedClient,
+) -> None:
+    """Verify static API keys cannot list or revoke OAuth client grants."""
+    created = await extended_client.create_api_key("Restricted Agent")
+    sn_api_key = Supernote.from_token(
+        created.key, host=str(client.make_url("")), session=client.session
+    )
+
+    with pytest.raises(ApiException):
+        await sn_api_key.extended.list_oauth_grants()
+
+    with pytest.raises(ApiException):
+        await sn_api_key.extended.revoke_oauth_grant("g1")
+
+
+async def test_extended_oauth_grants_empty_for_new_user(
+    extended_client: ExtendedClient,
+) -> None:
+    """Test that a user with no authorized clients gets an empty grant list."""
+    listed = await extended_client.list_oauth_grants()
+    assert listed.success is True
+    assert listed.grants == []
+
+
 async def test_extended_note_metadata_returns_notebook_and_pages(
     client: TestClient,
     auth_headers: dict[str, str],

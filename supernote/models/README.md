@@ -256,6 +256,9 @@ Models in `supernote.models.extended` power the custom `/api/extended/*` endpoin
   * `POST /api/extended/keys`: `CreateApiKeyDTO` (`name`, `expires_in_days`) -> `CreateApiKeyResponseVO` (`id`, `name`, `key`, `created_at`, `expires_at`)
   * `GET /api/extended/keys`: `ApiKeyListResponseVO` (`keys: list[ApiKeyVO]`)
   * `DELETE /api/extended/keys/{keyId}`: `BaseResponse`
+* **MCP OAuth Client Grants**:
+  * `GET /api/extended/oauth/grants`: `OAuthGrantListResponseVO` (`grants: list[OAuthGrantVO]`: `id`, `client_id`, `scopes`, `created_at`, `expires_at`, `last_used_at`)
+  * `DELETE /api/extended/oauth/grants/{grantId}`: `BaseResponse`
 * **AI Configuration & Processing Tasks**:
   * `GET /api/extended/ai/status`: `WebAiStatusVO` (`has_api_key`, `ocr_enabled`, `ocr_model`, `summary_enabled`, `summary_model`, `vector_search_enabled`, `embedding_model`)
   * `POST /api/extended/file/processing/status`: `FileProcessingStatusDTO` -> `FileProcessingStatusVO`

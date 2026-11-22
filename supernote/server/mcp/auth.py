@@ -4,8 +4,8 @@ Implements `SupernoteOAuthProvider` and `create_auth_app` (mounted as an ASGI re
 on the main server port `8080` in `supernote.server.app.create_app`). Supports dynamic
 IndieAuth-style URL client IDs, PKCE authorization code exchange (`/authorize`, `/token`),
 token revocation (`/revoke`), and `/login-bridge` integration with the Web UI login flow.
-Tokens are persisted with TTLs in `supernote.server.services.coordination.CoordinationService`
-and verified by `supernote.server.mcp.server.SupernoteTokenVerifier`. See `supernote.guides.mcp`.
+Tokens are persisted with TTLs in `supernote.server.services.coordination.CoordinationService`,
+tied to an `OAuthGrantDO` row the user can revoke, and verified by `supernote.server.mcp.server.SupernoteTokenVerifier`. See `supernote.guides.mcp`.
 """
 
 import json
@@ -200,19 +200,28 @@ class SupernoteOAuthProvider(
                 error_description="authorization code has already been used",
             )
 
+        refresh_expires_at = int(time.time() + 86400 * 30)
+        grant_id = await self.user_service.create_oauth_grant(
+            authorization_code.user_id,
+            authorization_code.client_id,
+            authorization_code.scopes,
+            expires_at=refresh_expires_at,
+        )
         access_token = SupernoteAccessToken(
             token=secrets.token_urlsafe(32),
             user_id=authorization_code.user_id,
             client_id=authorization_code.client_id,
             scopes=authorization_code.scopes,
             expires_at=int(time.time() + 3600),
+            grant_id=grant_id,
         )
         refresh_token = SupernoteRefreshToken(
             token=secrets.token_urlsafe(32),
             user_id=authorization_code.user_id,
             client_id=authorization_code.client_id,
             scopes=authorization_code.scopes,
-            expires_at=int(time.time() + 86400 * 30),
+            expires_at=refresh_expires_at,
+            grant_id=grant_id,
         )
 
         # Store tokens
@@ -247,6 +256,15 @@ class SupernoteOAuthProvider(
                 return None
         return payload
 
+    async def _grant_is_live(
+        self, token: SupernoteAccessToken | SupernoteRefreshToken
+    ) -> bool:
+        """Whether the grant a stored token was issued under has not been revoked."""
+        # TODO(#443): Reject tokens without a grant once 30-day pre-grant refresh tokens expire.
+        if token.grant_id is None:
+            return True
+        return await self.user_service.verify_oauth_grant(token.user_id, token.grant_id)
+
     async def load_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: str
     ) -> SupernoteRefreshToken | None:
@@ -258,7 +276,10 @@ class SupernoteOAuthProvider(
         payload = await self._parse_stored_token_data(data)
         if payload is None:
             return None
-        return SupernoteRefreshToken.model_validate(payload)
+        token = SupernoteRefreshToken.model_validate(payload)
+        if not await self._grant_is_live(token):
+            return None
+        return token
 
     async def exchange_refresh_token(
         self,
@@ -273,6 +294,7 @@ class SupernoteOAuthProvider(
             client_id=refresh_token.client_id,
             scopes=scopes or refresh_token.scopes,
             expires_at=int(time.time() + 3600),
+            grant_id=refresh_token.grant_id,
         )
         await self._coordination.set_value(
             f"mcp:access_token:{new_access_token.token}",
@@ -297,12 +319,19 @@ class SupernoteOAuthProvider(
         payload = await self._parse_stored_token_data(data)
         if payload is None:
             return None
-        return SupernoteAccessToken.model_validate(payload)
+        access_token = SupernoteAccessToken.model_validate(payload)
+        if not await self._grant_is_live(access_token):
+            return None
+        return access_token
 
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
         """Revokes an access or refresh token."""
         if isinstance(token, RefreshToken):
             await self._coordination.delete_value(f"mcp:refresh_token:{token.token}")
+            if isinstance(token, SupernoteRefreshToken) and token.grant_id:
+                await self.user_service.revoke_oauth_grant(
+                    token.user_id, token.grant_id
+                )
         else:
             await self._coordination.delete_value(f"mcp:access_token:{token.token}")
 

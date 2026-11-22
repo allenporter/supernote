@@ -86,7 +86,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "f3b4c5d6e7f8"
+        assert version == "a4b5c6d7e8f9"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -182,7 +182,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "f3b4c5d6e7f8"
+        assert version == "a4b5c6d7e8f9"
 
         # Verify task columns and types
         tasks = conn.execute(
@@ -989,3 +989,48 @@ def test_migrate_generated_summaries_preserves_annotations_and_categories(
     assert leaves[get_summary_id(1, 8003)] == (8003, "", None)
     assert leaves["rec-kept-summary"] == (None, None, "Saved note")
     assert "rec-stale-summary" not in leaves
+
+
+def test_oauth_grants_table_migration(tmp_path: Path, alembic_config: Config) -> None:
+    """Verify migration a4b5c6d7e8f9 creates and drops the oauth_grants table cleanly."""
+    db_path = tmp_path / "oauth_grants_migration.db"
+    shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+    command.upgrade(alembic_config, "a4b5c6d7e8f9")
+
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO users (id, email, password_md5, is_active, total_capacity, is_admin) "
+                "VALUES (202, 'grantowner@example.com', '098f6bcd4621d373cade4e832627b4f6', 1, '0', 0)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO oauth_grants (user_id, id, client_id, scopes, created_at, last_used_at, expires_at) "
+                "VALUES (202, 'grant001', 'https://client.example.com/', 'supernote:all', 1700000000, NULL, 1702592000)"
+            )
+        )
+
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                "SELECT user_id, id, client_id, scopes, expires_at FROM oauth_grants WHERE id = 'grant001'"
+            )
+        ).fetchone()
+        assert row is not None
+        assert tuple(row) == (
+            202,
+            "grant001",
+            "https://client.example.com/",
+            "supernote:all",
+            1702592000,
+        )
+
+    command.downgrade(alembic_config, "f3b4c5d6e7f8")
+    reflected = MetaData()
+    reflected.reflect(bind=engine)
+    assert "oauth_grants" not in reflected.tables
+    engine.dispose()

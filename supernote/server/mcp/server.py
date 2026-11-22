@@ -97,12 +97,22 @@ class SupernoteTokenVerifier(TokenVerifier):
                         return None
                 if raw_user_id is None:
                     return None
+                grant_id = token_data.get("grant_id")
+                # TODO(#443): Reject tokens without a grant once 30-day pre-grant refresh tokens expire.
+                if (
+                    grant_id is not None
+                    and not await self.user_service.verify_oauth_grant(
+                        int(raw_user_id), grant_id, touch=True
+                    )
+                ):
+                    return None
                 return SupernoteAccessToken(
                     token=token,
                     user_id=int(raw_user_id),
                     client_id=token_data.get("client_id", "unknown"),
                     scopes=token_data.get("scopes", []),
                     resource=token_data.get("resource"),
+                    grant_id=grant_id,
                 )
 
         session = await self.user_service.verify_token(token)

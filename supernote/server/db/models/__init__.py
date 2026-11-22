@@ -4,6 +4,7 @@
 | :--- | :--- | :--- |
 | `supernote.server.db.models.user` | `UserDO` (`users`) | `supernote.server.services.user.UserService` |
 | `supernote.server.db.models.api_key` | `ApiKeyDO` (`api_keys`) | `supernote.server.services.user.UserService` |
+| `supernote.server.db.models.oauth_grant` | `OAuthGrantDO` (`oauth_grants`) | `supernote.server.services.user.UserService` |
 | `supernote.server.db.models.device` | `DeviceDO` (`devices`) | `supernote.server.services.user.UserService` |
 | `supernote.server.db.models.login_record` | `LoginRecordDO` (`login_records`) | `supernote.server.services.user.UserService` |
 | `supernote.server.db.models.file` | `UserFileDO` (`f_user_file`), `RecycleFileDO` (`f_recycle_file`) | `supernote.server.services.vfs.VirtualFileSystem` |
@@ -24,6 +25,7 @@ from . import (
     kv,
     login_record,
     note_processing,
+    oauth_grant,
     schedule,
     summary,
     user,
@@ -37,6 +39,7 @@ __all__ = [
     "kv",
     "login_record",
     "note_processing",
+    "oauth_grant",
     "schedule",
     "summary",
     "user",

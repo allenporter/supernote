@@ -19,6 +19,7 @@ from supernote.models.user import (
 )
 from supernote.server.config import AuthConfig, ServerConfig
 from supernote.server.db.models.api_key import ApiKeyDO
+from supernote.server.db.models.oauth_grant import OAuthGrantDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.coordination import CoordinationService
@@ -1103,3 +1104,149 @@ async def test_api_key_adversarial_bounds_expiry_debouncing_and_recovery(
         await db.execute(delete(UserDO).where(UserDO.id == user.id))
         await db.commit()
     assert await user_service.list_api_keys(user.id) == []
+
+
+GRANT_CLIENT_ID = "https://client.example.com/"
+
+
+async def _register(user_service: UserService, email: str) -> int:
+    pw_md5 = hashlib.md5(b"password123").hexdigest()
+    user = await user_service.register(UserRegisterDTO(email=email, password=pw_md5))
+    return user.id
+
+
+async def test_oauth_grant_lifecycle(user_service: UserService) -> None:
+    """Verify an OAuth grant is listed, verified, and ended by revocation."""
+    user_id = await _register(user_service, "grant@example.com")
+    now = int(time.time())
+    grant_id = await user_service.create_oauth_grant(
+        user_id, GRANT_CLIENT_ID, ["supernote:all"], expires_at=now + 3600
+    )
+    assert len(grant_id) == 16
+
+    grants = await user_service.list_oauth_grants(user_id)
+    assert [g.to_dict() for g in grants] == [
+        {
+            "id": grant_id,
+            "clientId": GRANT_CLIENT_ID,
+            "scopes": ["supernote:all"],
+            "createdAt": grants[0].created_at,
+            "expiresAt": now + 3600,
+            "lastUsedAt": None,
+        }
+    ]
+    assert await user_service.verify_oauth_grant(user_id, grant_id) is True
+
+    assert await user_service.revoke_oauth_grant(user_id, grant_id) is True
+    assert await user_service.revoke_oauth_grant(user_id, grant_id) is False
+    assert await user_service.verify_oauth_grant(user_id, grant_id) is False
+    assert await user_service.list_oauth_grants(user_id) == []
+
+
+async def test_oauth_grant_scoped_to_owner(user_service: UserService) -> None:
+    """Verify one user cannot see, verify, or revoke another user's grant."""
+    owner_id = await _register(user_service, "grantowner@example.com")
+    other_id = await _register(user_service, "grantother@example.com")
+    grant_id = await user_service.create_oauth_grant(
+        owner_id, GRANT_CLIENT_ID, ["supernote:all"], expires_at=int(time.time()) + 60
+    )
+
+    assert await user_service.list_oauth_grants(other_id) == []
+    assert await user_service.verify_oauth_grant(other_id, grant_id) is False
+    assert await user_service.revoke_oauth_grant(other_id, grant_id) is False
+    assert await user_service.verify_oauth_grant(owner_id, grant_id) is True
+
+
+async def test_oauth_grant_expiry_hides_and_prunes(
+    user_service: UserService, session_manager: DatabaseSessionManager
+) -> None:
+    """Verify expired grants stop verifying, drop out of the list, and are pruned on the next grant."""
+    user_id = await _register(user_service, "grantexpiry@example.com")
+    now = int(time.time())
+    expired_id = await user_service.create_oauth_grant(
+        user_id, GRANT_CLIENT_ID, ["supernote:all"], expires_at=now + 10
+    )
+    with patch(
+        "supernote.server.services.user.time.time", return_value=float(now + 10)
+    ):
+        assert await user_service.verify_oauth_grant(user_id, expired_id) is False
+        assert await user_service.list_oauth_grants(user_id) == []
+        fresh_id = await user_service.create_oauth_grant(
+            user_id, GRANT_CLIENT_ID, ["supernote:all"], expires_at=now + 3600
+        )
+
+    async with session_manager.session() as session:
+        ids = (
+            (
+                await session.execute(
+                    select(OAuthGrantDO.id).where(OAuthGrantDO.user_id == user_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert ids == [fresh_id]
+
+
+async def test_oauth_grant_touch_is_debounced(user_service: UserService) -> None:
+    """Verify last_used_at is recorded only on touch, at most once per 60 seconds."""
+    user_id = await _register(user_service, "granttouch@example.com")
+    t0 = 1_800_000_000
+    grant_id = await user_service.create_oauth_grant(
+        user_id, GRANT_CLIENT_ID, ["supernote:all"], expires_at=t0 + 86400
+    )
+
+    async def last_used() -> int | None:
+        return (await user_service.list_oauth_grants(user_id))[0].last_used_at
+
+    with patch("supernote.server.services.user.time.time", return_value=float(t0)):
+        assert await user_service.verify_oauth_grant(user_id, grant_id) is True
+        assert await last_used() is None
+        assert await user_service.verify_oauth_grant(user_id, grant_id, touch=True)
+        assert await last_used() == t0
+    with patch("supernote.server.services.user.time.time", return_value=float(t0 + 30)):
+        assert await user_service.verify_oauth_grant(user_id, grant_id, touch=True)
+        assert await last_used() == t0
+    with patch("supernote.server.services.user.time.time", return_value=float(t0 + 61)):
+        assert await user_service.verify_oauth_grant(user_id, grant_id, touch=True)
+        assert await last_used() == t0 + 61
+
+
+async def test_oauth_grant_rejected_for_inactive_user(
+    user_service: UserService, session_manager: DatabaseSessionManager
+) -> None:
+    """Verify a deactivated user's grants stop verifying."""
+    user_id = await _register(user_service, "grantinactive@example.com")
+    grant_id = await user_service.create_oauth_grant(
+        user_id, GRANT_CLIENT_ID, ["supernote:all"], expires_at=int(time.time()) + 60
+    )
+    async with session_manager.session() as session:
+        user = await session.get(UserDO, user_id)
+        assert user is not None
+        user.is_active = False
+        await session.commit()
+
+    assert await user_service.verify_oauth_grant(user_id, grant_id) is False
+
+
+async def test_clear_account_deletes_oauth_grants(
+    user_service: UserService, session_manager: DatabaseSessionManager
+) -> None:
+    """Verify clearing an account removes its OAuth grants."""
+    user_id = await _register(user_service, "grantclear@example.com")
+    await user_service.create_oauth_grant(
+        user_id, GRANT_CLIENT_ID, ["supernote:all"], expires_at=int(time.time()) + 60
+    )
+    await user_service.clear_account("grantclear@example.com")
+
+    async with session_manager.session() as session:
+        remaining = (
+            (
+                await session.execute(
+                    select(OAuthGrantDO).where(OAuthGrantDO.user_id == user_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert remaining == []

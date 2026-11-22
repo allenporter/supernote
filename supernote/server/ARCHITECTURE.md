@@ -106,6 +106,7 @@ sequenceDiagram
 - **Signing Key**: Configured via `SUPERNOTE_JWT_SECRET` / `auth.secret_key`, or auto-generated as a random 256-bit secret and persisted in `CoordinationService` (`system:jwt_secret_key`).
 - **Stateful Session Validation**: Every authenticated JWT request verifies both the signature/expiration (`auth.expiration_hours` for web/CLI, `auth.device_expiration_hours` for hardware) and active session state in `CoordinationService`, allowing individual device unlinks, password resets, or global key rotation to revoke tokens immediately.
 - **Static Bearer API Keys (`sn_...`)**: Headless scripts, CLI automation, and MCP clients can authenticate with `Authorization: Bearer sn_...` keys created via `POST /api/extended/keys` (`supernote cloud keys create`). Raw keys are hashed with SHA-256 into `ApiKeyDO` (`f_api_key`). Sensitive account/key-mutation routes use `@interactive_session_only` (`supernote.server.routes.decorators.interactive_session_only`) to reject static API keys (`request["auth_method"] == "api_key"`).
+- **MCP OAuth Client Grants**: Each OAuth authorization approved through `/login-bridge` is recorded as an `OAuthGrantDO` (`oauth_grants`) row when its code is exchanged, and the access and refresh tokens carry its id. `GET /api/extended/oauth/grants` lists a user's authorized clients and `DELETE /api/extended/oauth/grants/{grantId}` (both `@interactive_session_only`) deletes the row, so the client's tokens stop working on their next use. Revoking a refresh token through `/revoke` ends its grant too.
 
 ---
 

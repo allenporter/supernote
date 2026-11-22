@@ -14,6 +14,7 @@ from supernote.models.extended import (
     CreateApiKeyResponseVO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
+    OAuthGrantListResponseVO,
     SystemTaskListVO,
     WebAiStatusVO,
     WebNoteCoverRequestDTO,
@@ -115,6 +116,18 @@ class ExtendedClient:
         """Revoke an existing static Bearer API key (Extension)."""
         return await self._client.delete_json(
             f"/api/extended/keys/{key_id}", BaseResponse
+        )
+
+    async def list_oauth_grants(self) -> OAuthGrantListResponseVO:
+        """List MCP OAuth clients the current user has authorized (Extension)."""
+        return await self._client.get_json(
+            "/api/extended/oauth/grants", OAuthGrantListResponseVO
+        )
+
+    async def revoke_oauth_grant(self, grant_id: str) -> BaseResponse:
+        """Disconnect an authorized MCP OAuth client (Extension)."""
+        return await self._client.delete_json(
+            f"/api/extended/oauth/grants/{grant_id}", BaseResponse
         )
 
     async def get_ai_status(self) -> WebAiStatusVO:

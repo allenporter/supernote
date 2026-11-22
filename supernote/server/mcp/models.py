@@ -72,12 +72,16 @@ class SupernoteAccessToken(AccessToken):
     """OAuth 2.1 access token associated with a Supernote user account."""
 
     user_id: int
+    grant_id: str | None = None
+    """`OAuthGrantDO` id the token was issued under; `None` for tokens issued before grants existed."""
 
 
 class SupernoteRefreshToken(RefreshToken):
     """OAuth 2.1 refresh token associated with a Supernote user account."""
 
     user_id: int
+    grant_id: str | None = None
+    """`OAuthGrantDO` id the token was issued under; `None` for tokens issued before grants existed."""
 
 
 @dataclass

@@ -32,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from supernote.models.auth import Equipment, LoginVO, UserVO
 from supernote.models.base import ErrorCode
 from supernote.models.equipment import UserEquipmentVO
-from supernote.models.extended import ApiKeyVO
+from supernote.models.extended import ApiKeyVO, OAuthGrantVO
 from supernote.models.user import (
     LoginRecordVO,
     UpdateEmailDTO,
@@ -47,6 +47,7 @@ from ..config import AuthConfig
 from ..db.models.api_key import ApiKeyDO
 from ..db.models.device import DeviceDO
 from ..db.models.login_record import LoginRecordDO
+from ..db.models.oauth_grant import OAuthGrantDO
 from ..db.models.user import UserDO
 from ..db.session import DatabaseSessionManager
 from .coordination import CoordinationService
@@ -367,6 +368,9 @@ class UserService:
 
         async with self._session_manager.session() as session:
             await session.execute(delete(ApiKeyDO).where(ApiKeyDO.user_id == user_id))
+            await session.execute(
+                delete(OAuthGrantDO).where(OAuthGrantDO.user_id == user_id)
+            )
             await session.execute(delete(DeviceDO).where(DeviceDO.user_id == user_id))
             await session.execute(
                 delete(LoginRecordDO).where(LoginRecordDO.user_id == user_id)
@@ -740,6 +744,105 @@ class UserService:
             expires_at=expires_at,
             auth_method=AuthMethod.API_KEY,
         )
+
+    async def create_oauth_grant(
+        self, user_id: int, client_id: str, scopes: list[str], expires_at: int
+    ) -> str:
+        """Record an approved OAuth authorization and return its grant id.
+
+        Expired grants of the same user are pruned here, so the table stays bounded
+        without a background sweep.
+        """
+        grant_id = secrets.token_hex(8)
+        now = int(time.time())
+        async with self._session_manager.session() as session:
+            await session.execute(
+                delete(OAuthGrantDO).where(
+                    OAuthGrantDO.user_id == user_id,
+                    OAuthGrantDO.expires_at <= now,
+                )
+            )
+            session.add(
+                OAuthGrantDO(
+                    user_id=user_id,
+                    id=grant_id,
+                    client_id=client_id,
+                    scopes=" ".join(scopes),
+                    created_at=now,
+                    last_used_at=None,
+                    expires_at=expires_at,
+                )
+            )
+            await session.commit()
+        return grant_id
+
+    async def list_oauth_grants(self, user_id: int) -> list[OAuthGrantVO]:
+        """List unexpired OAuth client grants for a user."""
+        async with self._session_manager.session() as session:
+            stmt = (
+                select(OAuthGrantDO)
+                .where(
+                    OAuthGrantDO.user_id == user_id,
+                    OAuthGrantDO.expires_at > int(time.time()),
+                )
+                .order_by(OAuthGrantDO.created_at.asc(), OAuthGrantDO.id.asc())
+            )
+            rows = (await session.execute(stmt)).scalars().all()
+            return [
+                OAuthGrantVO(
+                    id=row.id,
+                    client_id=row.client_id,
+                    scopes=row.scopes.split(),
+                    created_at=row.created_at,
+                    expires_at=row.expires_at,
+                    last_used_at=row.last_used_at,
+                )
+                for row in rows
+            ]
+
+    async def revoke_oauth_grant(self, user_id: int, grant_id: str) -> bool:
+        """Revoke an OAuth client grant belonging to `user_id`, ending all of its tokens."""
+        async with self._session_manager.session() as session:
+            result = await session.execute(
+                delete(OAuthGrantDO).where(
+                    OAuthGrantDO.user_id == user_id,
+                    OAuthGrantDO.id == grant_id,
+                )
+            )
+            await session.commit()
+            return bool(getattr(result, "rowcount", 0))
+
+    async def verify_oauth_grant(
+        self, user_id: int, grant_id: str, touch: bool = False
+    ) -> bool:
+        """Return whether a grant is unrevoked, unexpired, and its user active.
+
+        With `touch`, records the use in `last_used_at` (debounced like API keys).
+        """
+        now = int(time.time())
+        async with self._session_manager.session() as session:
+            stmt = (
+                select(OAuthGrantDO, UserDO)
+                .join(UserDO, OAuthGrantDO.user_id == UserDO.id)
+                .where(
+                    OAuthGrantDO.user_id == user_id,
+                    OAuthGrantDO.id == grant_id,
+                )
+            )
+            row = (await session.execute(stmt)).one_or_none()
+            if not row:
+                return False
+            grant, user = row
+            if not user.is_active or grant.expires_at <= now:
+                return False
+            if touch and (
+                grant.last_used_at is None
+                or (now - grant.last_used_at)
+                >= API_KEY_LAST_USED_TOUCH_INTERVAL_SECONDS
+            ):
+                grant.last_used_at = now
+                await session.commit()
+        return True
 
     async def verify_token(self, token: str) -> SessionState | None:
         """Verify a session JWT or static Bearer API key against persisted state and active user record."""

@@ -1,13 +1,17 @@
 import base64
 import hashlib
+import json
+from typing import Any
 
+import aiohttp
 import pytest
 import yarl
 from aiohttp.test_utils import TestClient
 
 from supernote.client.client import Client
 from supernote.client.login_client import LoginClient
-from supernote.server.keys import COORDINATION_SERVICE_KEY
+from supernote.server.keys import COORDINATION_SERVICE_KEY, USER_SERVICE_KEY
+from supernote.server.mcp.server import SupernoteTokenVerifier
 from tests.fixtures.server import TEST_PASSWORD, TEST_USERNAME
 
 
@@ -409,3 +413,158 @@ async def test_oauth_token_revocation(
     )
     assert refresh_attempt.status == 400
     assert (await refresh_attempt.json())["error"] == "invalid_grant"
+
+
+async def _issue_oauth_tokens(client: TestClient, session_token: str) -> dict[str, Any]:
+    """Run /login-bridge and /token for a test client and return the token response."""
+    verifier = "v" * 50
+    bridge_resp = await client.post(
+        "/login-bridge",
+        params={
+            "client_id": "http://localhost:3000",
+            "redirect_uri": "http://localhost:3000/callback",
+            "code_challenge": calculate_s256(verifier),
+        },
+        headers={"x-access-token": session_token},
+    )
+    code = yarl.URL((await bridge_resp.json())["redirect_url"]).query["code"]
+    token_resp = await client.post(
+        "/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": "http://localhost:3000",
+            "redirect_uri": "http://localhost:3000/callback",
+            "code_verifier": verifier,
+        },
+    )
+    assert token_resp.status == 200
+    return await token_resp.json()
+
+
+async def _refresh(client: TestClient, refresh_token: str) -> aiohttp.ClientResponse:
+    return await client.post(
+        "/token",
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": "http://localhost:3000",
+        },
+    )
+
+
+async def test_revoking_grant_ends_its_tokens(
+    client: TestClient,
+    login_client: LoginClient,
+    create_test_user: None,
+) -> None:
+    """Verify a code exchange records a grant and deleting it ends its access and refresh tokens."""
+    session_token = await login_client.login(TEST_USERNAME, TEST_PASSWORD)
+    session_headers = {"x-access-token": session_token}
+    tokens = await _issue_oauth_tokens(client, session_token)
+    verifier = SupernoteTokenVerifier(
+        client.app[USER_SERVICE_KEY], client.app[COORDINATION_SERVICE_KEY]
+    )
+
+    list_resp = await client.get("/api/extended/oauth/grants", headers=session_headers)
+    assert list_resp.status == 200
+    grants = (await list_resp.json())["grants"]
+    assert len(grants) == 1
+    grant = grants[0]
+    assert grant["clientId"] == "http://localhost:3000"
+    assert grant["scopes"] == ["supernote:all"]
+    assert grant["lastUsedAt"] is None
+
+    access = await verifier.verify_token(tokens["access_token"])
+    assert access is not None
+    assert access.grant_id == grant["id"]
+    list_resp = await client.get("/api/extended/oauth/grants", headers=session_headers)
+    assert (await list_resp.json())["grants"][0]["lastUsedAt"] is not None
+
+    refreshed = await _refresh(client, tokens["refresh_token"])
+    assert refreshed.status == 200
+    new_access = await verifier.verify_token((await refreshed.json())["access_token"])
+    assert new_access is not None
+    assert new_access.grant_id == grant["id"]
+
+    del_resp = await client.delete(
+        f"/api/extended/oauth/grants/{grant['id']}", headers=session_headers
+    )
+    assert del_resp.status == 200
+    assert await verifier.verify_token(tokens["access_token"]) is None
+    assert await verifier.verify_token(new_access.token) is None
+    refresh_attempt = await _refresh(client, tokens["refresh_token"])
+    assert refresh_attempt.status == 400
+    assert (await refresh_attempt.json())["error"] == "invalid_grant"
+
+    missing = await client.delete(
+        f"/api/extended/oauth/grants/{grant['id']}", headers=session_headers
+    )
+    assert missing.status == 404
+
+    # RFC 7009: revoking a token that no longer verifies still succeeds
+    late_revoke = await client.post(
+        "/revoke",
+        data={
+            "token": tokens["access_token"],
+            "client_id": "http://localhost:3000",
+            "client_secret": "",
+        },
+    )
+    assert late_revoke.status == 200
+
+
+async def test_revoking_refresh_token_ends_grant(
+    client: TestClient,
+    login_client: LoginClient,
+    create_test_user: None,
+) -> None:
+    """Verify RFC 7009 revocation of a refresh token removes its grant and access tokens."""
+    session_token = await login_client.login(TEST_USERNAME, TEST_PASSWORD)
+    tokens = await _issue_oauth_tokens(client, session_token)
+    verifier = SupernoteTokenVerifier(
+        client.app[USER_SERVICE_KEY], client.app[COORDINATION_SERVICE_KEY]
+    )
+
+    revoke_resp = await client.post(
+        "/revoke",
+        data={
+            "token": tokens["refresh_token"],
+            "token_type_hint": "refresh_token",
+            "client_id": "http://localhost:3000",
+            "client_secret": "",
+        },
+    )
+    assert revoke_resp.status == 200
+    assert await verifier.verify_token(tokens["access_token"]) is None
+    list_resp = await client.get(
+        "/api/extended/oauth/grants", headers={"x-access-token": session_token}
+    )
+    assert (await list_resp.json())["grants"] == []
+
+
+async def test_tokens_issued_before_grants_still_verify(
+    client: TestClient,
+    create_test_user: None,
+) -> None:
+    """Verify stored access tokens without a grant_id keep working until they expire."""
+    coordination = client.app[COORDINATION_SERVICE_KEY]
+    user_service = client.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(TEST_USERNAME)
+    await coordination.set_value(
+        "mcp:access_token:pre-grant-token",
+        json.dumps(
+            {
+                "token": "pre-grant-token",
+                "user_id": user_id,
+                "client_id": "http://localhost:3000",
+                "scopes": ["supernote:all"],
+            }
+        ),
+        ttl=3600,
+    )
+    verifier = SupernoteTokenVerifier(user_service, coordination)
+
+    access = await verifier.verify_token("pre-grant-token")
+    assert access is not None
+    assert access.grant_id is None
