@@ -129,11 +129,11 @@ export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false,
     if (tab === 'tasks') {
         return '#/tasks';
     }
-    if (viewState === 'recycle') {
-        return '#/recycle';
-    }
     if (tab === 'settings') {
         return '#/settings';
+    }
+    if (viewState === 'recycle') {
+        return '#/recycle';
     }
     if (viewState === 'viewer' && fileObj?.id) {
         if (typeof pageIndex === 'number' && pageIndex > 0) {

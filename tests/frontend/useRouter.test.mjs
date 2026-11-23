@@ -159,6 +159,7 @@ test('useRouter.js: parseUrlHash, buildUrlHash, and breadcrumb builders', () => 
     );
     assert.equal(buildUrlHash('tasks', '0', 'grid', null, false, null), '#/tasks');
     assert.equal(buildUrlHash('settings', '0', 'grid', null, false, null), '#/settings');
+    assert.equal(buildUrlHash('settings', '0', 'recycle', null, false, null), '#/settings');
     assert.equal(buildUrlHash('files', '0', 'grid', null, true, null), '#/system');
 
     assert.equal(formatCrumbName('INBOX', 0), 'Inbox');
