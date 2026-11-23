@@ -11,6 +11,7 @@ from pydantic import AnyHttpUrl, AnyUrl
 from starlette.testclient import TestClient
 
 from supernote.models.user import UserRegisterDTO
+from supernote.server.components.oauth.http import create_auth_app
 from supernote.server.components.oauth.models import (
     LoginBridgeDecision,
     LoginBridgeResponseVO,
@@ -20,7 +21,6 @@ from supernote.server.components.oauth.models import (
 from supernote.server.components.oauth.provider import (
     SupernoteOAuthClientInformationFull,
     SupernoteOAuthProvider,
-    create_auth_app,
 )
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
