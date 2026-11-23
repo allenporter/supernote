@@ -139,7 +139,6 @@ def create_app(config: ServerConfig) -> web.Application:
         event_bus,
         session_manager,
         file_service,
-        summary_service,
         coordination_service,
     )
     app[PROCESSOR_SERVICE_KEY] = processor_service
@@ -227,6 +226,8 @@ def create_app(config: ServerConfig) -> web.Application:
         )
 
         logger.info("Starting background services...")
+        await file_service.start()
+        await summary_service.start()
         await processor_service.start()
         await component_loader.async_start_all(core)
         logger.info("Startup sequence complete.")
@@ -236,12 +237,14 @@ def create_app(config: ServerConfig) -> web.Application:
     async def on_shutdown_handler(app: web.Application) -> None:
         await component_loader.async_stop_all(core)
         await processor_service.stop()
+        await summary_service.stop()
         await session_manager.close()
 
     app.on_shutdown.append(on_shutdown_handler)
 
     async def on_cleanup_handler(app: web.Application) -> None:
         await component_loader.async_stop_all(core)
+        await summary_service.stop()
 
     app.on_cleanup.append(on_cleanup_handler)
 

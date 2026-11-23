@@ -809,3 +809,44 @@ async def test_add_remove_and_readd_summary_and_group_lifecycle(
         USER_EMAIL, parent_uuid="grp-lifecycle-1"
     )
     assert [s.id for s in active_summaries] == [revived_child_1.id, revived_child_2.id]
+
+
+async def test_summary_service_purge_loop_lifecycle(
+    user_service: UserService,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    """Verify SummaryService.start()/stop() periodically purges expired summaries idempotently."""
+    async with session_manager.session() as session:
+        session.add(
+            SummaryDO(
+                user_id=test_user_id,
+                unique_identifier="expired-loop-uuid",
+                is_deleted=True,
+                update_time=1,
+            )
+        )
+        await session.commit()
+
+    svc = SummaryService(
+        user_service=user_service,
+        session_manager=session_manager,
+        purge_interval_seconds=0.01,
+    )
+    await svc.start()
+    await svc.start()  # idempotent
+    try:
+        await asyncio.sleep(0.05)
+    finally:
+        await svc.stop()
+        await svc.stop()  # idempotent
+
+    async with session_manager.session() as session:
+        remaining = (
+            await session.execute(
+                select(SummaryDO).where(
+                    SummaryDO.unique_identifier == "expired-loop-uuid"
+                )
+            )
+        ).scalar_one_or_none()
+        assert remaining is None
