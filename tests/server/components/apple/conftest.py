@@ -205,18 +205,30 @@ def fake_objc() -> FakeObjCModule:
 
 
 @pytest.fixture
-def fake_vision() -> FakeVisionModule:
+def fake_vision() -> FakeVisionModule | None:
     return FakeVisionModule()
+
+
+@pytest.fixture(autouse=True)
+def mock_apple_vision(
+    request: pytest.FixtureRequest,
+    fake_objc: FakeObjCModule,
+    fake_vision: FakeVisionModule | None,
+) -> Generator[None]:
+    """Patch PyObjC `objc` and `Vision` modules for Apple component tests."""
+    if "live_macos" in request.node.name:
+        yield
+        return
+    with patch.dict(sys.modules, {"objc": fake_objc, "Vision": fake_vision}):  # type: ignore[dict-item]
+        yield
 
 
 @pytest.fixture
 def load_apple_ocr(
     component_core: ServerCore,
     load_components: LoadComponents,
-    fake_objc: FakeObjCModule,
-    fake_vision: FakeVisionModule,
-) -> Generator[LoadAppleOcr]:
-    """Install fake PyObjC modules and return a loader that boots `ai` + `apple`."""
+) -> LoadAppleOcr:
+    """Return a loader that boots `ai` + `apple` and returns the bound `OcrModel`."""
 
     async def _load(
         model: str = "vision-accurate",
@@ -233,8 +245,7 @@ def load_apple_ocr(
         assert ocr_model is not None
         return ocr_model
 
-    with patch.dict(sys.modules, {"objc": fake_objc, "Vision": fake_vision}):  # type: ignore[dict-item]
-        yield _load
+    return _load
 
 
 @pytest.fixture
