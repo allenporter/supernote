@@ -36,7 +36,6 @@ from supernote.server.ai.models.summary import (
 )
 from supernote.server.core import ServerCore
 from supernote.server.keys import (
-    AI_REGISTRAR_KEY,
     EMBEDDING_MODEL_KEY,
     OCR_MODEL_KEY,
     SUMMARY_MODEL_KEY,
@@ -50,7 +49,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     "AI_PLATFORMS",
-    "AI_REGISTRAR_KEY",
     "AiComponent",
     "AiRegistrar",
 ]
@@ -211,15 +209,28 @@ class AiComponent:
     domain = "ai"
     dependencies: tuple[str, ...] = ()
     platforms: tuple[str, ...] = ("http",)
+    hosted_platforms: tuple[str, ...] = AI_PLATFORMS
+
+    def __init__(self) -> None:
+        self._registrar: AiRegistrar | None = None
+
+    def get_platform_registrar(self) -> AiRegistrar:
+        """Return the `AiRegistrar` initialized during `async_setup`."""
+        assert self._registrar is not None
+        return self._registrar
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
-        """Configure prompt overrides and initialize `AiRegistrar` on ``core.app``."""
+        """Configure prompt overrides and initialize `AiRegistrar`."""
         if core.config.prompts_dir:
             PROMPT_LOADER.configure(Path(core.config.prompts_dir))
         core.app[OCR_MODEL_KEY] = None
         core.app[SUMMARY_MODEL_KEY] = None
         core.app[EMBEDDING_MODEL_KEY] = None
-        core.app[AI_REGISTRAR_KEY] = AiRegistrar()
+        self._registrar = AiRegistrar()
+
+    async def async_finalize_platforms(self, core: ServerCore) -> None:
+        """Instantiate configured AI models and bind them onto ``core.app``."""
+        self.get_platform_registrar().apply_to_app(core.app, core.config)
 
     async def async_start(self, core: ServerCore) -> None:
         """No-op; AI model clients are invoked on demand by workers and services."""

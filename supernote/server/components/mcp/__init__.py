@@ -20,7 +20,6 @@ from supernote.server.components.mcp.metrics import (
 )
 from supernote.server.core import ServerCore
 from supernote.server.events import bind_event_actor
-from supernote.server.keys import MCP_REGISTRAR_KEY
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -28,7 +27,6 @@ if TYPE_CHECKING:
     from supernote.server.components.oauth.models import SupernoteAccessToken
 
 __all__ = [
-    "MCP_REGISTRAR_KEY",
     "McpComponent",
     "McpRegistrar",
     "get_authenticated_actor",
@@ -135,23 +133,32 @@ class McpComponent:
     domain = "mcp"
     dependencies: tuple[str, ...] = ("oauth",)
     platforms: tuple[str, ...] = ()
+    hosted_platforms: tuple[str, ...] = ("mcp",)
 
     def __init__(self) -> None:
         self._mcp_server: MCPServer | None = None
         self._registrar: McpRegistrar | None = None
         self._task: asyncio.Task[None] | None = None
 
+    def get_platform_registrar(self) -> McpRegistrar:
+        """Return the `McpRegistrar` initialized during `async_setup`."""
+        assert self._registrar is not None
+        return self._registrar
+
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
-        """Expose `McpRegistrar` and prepare the FastMCP resource server."""
+        """Initialize `McpRegistrar` and prepare the FastMCP resource server."""
         from .server import create_mcp_server  # noqa: PLC0415
 
         rs_url = f"{core.config.mcp_base_url}/mcp"
         self._mcp_server = create_mcp_server(
             core.config.base_url, rs_url, core.user_service
         )
-        registrar = McpRegistrar()
-        core.app[MCP_REGISTRAR_KEY] = registrar
-        self._registrar = registrar
+        self._registrar = McpRegistrar()
+
+    async def async_finalize_platforms(self, core: ServerCore) -> None:
+        """Mount all registered platform MCP tools onto the FastMCP server."""
+        assert self._mcp_server is not None
+        self.get_platform_registrar().apply_to_server(self._mcp_server)
 
     async def async_start(self, core: ServerCore) -> None:
         """Apply platform tools and start the background Streamable HTTP MCP server task."""

@@ -19,6 +19,7 @@ from supernote.server.core import (
     DependencyCycleError,
     DuplicateComponentError,
     MissingDependencyError,
+    PlatformHost,
     ServerCore,
 )
 from supernote.server.db.session import DatabaseSessionManager
@@ -539,3 +540,51 @@ async def test_empty_loader_lifecycle_is_noop(
     await loader.async_setup_all(server_core, {})
     await loader.async_start_all(server_core)
     await loader.async_stop_all(server_core)
+
+
+async def test_async_load_all_platforms_requires_setup_state(
+    loader: ComponentLoader, server_core: ServerCore
+) -> None:
+    with pytest.raises(ComponentError, match="Cannot load platforms in state"):
+        await loader.async_load_all_platforms(server_core)
+
+
+async def test_async_load_all_platforms_loads_finalizes_and_rolls_back_on_error(
+    loader: ComponentLoader, server_core: ServerCore
+) -> None:
+    events: list[tuple[str, str]] = []
+
+    class _RecordingHost(RecordingComponent):
+        hosted_platforms: tuple[str, ...] = ("custom_plat",)
+
+        def __init__(self, *, fail_finalize: bool = False) -> None:
+            super().__init__(domain="host", events=events)
+            self._fail_finalize = fail_finalize
+            self.registrar: list[str] = []
+
+        def get_platform_registrar(self) -> list[str]:
+            return self.registrar
+
+        async def async_finalize_platforms(self, core: ServerCore) -> None:
+            events.append(("finalize", self.domain))
+            if self._fail_finalize:
+                raise RuntimeError("finalize boom")
+
+    host = _RecordingHost()
+    assert isinstance(host, PlatformHost)
+    loader.register(host)
+    loader.register(RecordingComponent(domain="plain", events=events))
+
+    await loader.async_setup_all(server_core, {})
+    await loader.async_load_all_platforms(server_core)
+    assert ("finalize", "host") in events
+
+    failing_events: list[tuple[str, str]] = []
+    failing_loader = ComponentLoader()
+    failing_host = _RecordingHost(fail_finalize=True)
+    failing_host.events = failing_events
+    failing_loader.register(failing_host)
+    await failing_loader.async_setup_all(server_core, {})
+    with pytest.raises(RuntimeError, match="finalize boom"):
+        await failing_loader.async_load_all_platforms(server_core)
+    assert ("stop", "host") in failing_events

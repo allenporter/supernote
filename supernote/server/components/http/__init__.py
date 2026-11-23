@@ -178,6 +178,15 @@ class HttpComponent:
     domain = "http"
     dependencies: tuple[str, ...] = ()
     platforms: tuple[str, ...] = ()
+    hosted_platforms: tuple[str, ...] = ("http",)
+
+    def __init__(self) -> None:
+        self._registrar: HttpRegistrar | None = None
+
+    def get_platform_registrar(self) -> HttpRegistrar:
+        """Return the `HttpRegistrar` initialized during `async_setup`."""
+        assert self._registrar is not None
+        return self._registrar
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         """Configure reverse-proxy handling and initialize `HttpRegistrar` on ``core.app``."""
@@ -190,7 +199,13 @@ class HttpComponent:
         elif core.config.proxy_mode == "relaxed":
             await aiohttp_remotes.setup(core.app, aiohttp_remotes.XForwardedRelaxed())
 
-        core.app[HTTP_REGISTRAR_KEY] = HttpRegistrar()
+        registrar = HttpRegistrar()
+        self._registrar = registrar
+        core.app[HTTP_REGISTRAR_KEY] = registrar
+
+    async def async_finalize_platforms(self, core: ServerCore) -> None:
+        """Mount deferred public resources and assemble the ordered middleware pipeline."""
+        self.get_platform_registrar().apply_to_app(core.app)
 
     async def async_start(self, core: ServerCore) -> None:
         """No-op; `aiohttp` starts serving after `on_startup` completes."""
