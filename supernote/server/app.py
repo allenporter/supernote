@@ -24,21 +24,21 @@ from aiohttp import web
 from supernote.models.user import UserRegisterDTO
 from supernote.server.db.migrations import run_migrations
 from supernote.server.keys import (
-    AI_REGISTRAR_KEY,
     BLOB_STORAGE_KEY,
     COMPONENT_LOADER_KEY,
     CONFIG_KEY,
     CONVERSION_SERVICE_KEY,
     COORDINATION_SERVICE_KEY,
     CORE_KEY,
+    EMBEDDING_MODEL_KEY,
     EVENT_BUS_KEY,
     FILE_SERVICE_KEY,
-    HTTP_REGISTRAR_KEY,
     INTEGRITY_SERVICE_KEY,
-    MCP_REGISTRAR_KEY,
+    OCR_MODEL_KEY,
     PROCESSOR_SERVICE_KEY,
     RATE_LIMITER_KEY,
     SESSION_MANAGER_KEY,
+    SUMMARY_MODEL_KEY,
     SUMMARY_SERVICE_KEY,
     URL_SIGNER_KEY,
     USER_SERVICE_KEY,
@@ -203,18 +203,11 @@ def create_app(config: ServerConfig) -> web.Application:
             await bootstrap_ephemeral_user(app)
 
         await component_loader.async_setup_all(core, component_configs)
-        if (ai_registrar := app.get(AI_REGISTRAR_KEY)) is not None:
-            for ai_platform in ai_registrar.platforms:
-                await component_loader.async_load_platform(
-                    ai_platform, core, ai_registrar
-                )
-            ocr_model, summary_model, embedding_model = ai_registrar.apply_to_app(
-                app, config
-            )
-        else:
-            ocr_model = None
-            summary_model = None
-            embedding_model = None
+        await component_loader.async_load_all_platforms(core)
+
+        ocr_model = app.get(OCR_MODEL_KEY)
+        summary_model = app.get(SUMMARY_MODEL_KEY)
+        embedding_model = app.get(EMBEDDING_MODEL_KEY)
 
         png_enabled = (ocr_model is not None) or (
             config.web_enabled and config.web_notebook_preview
@@ -232,12 +225,6 @@ def create_app(config: ServerConfig) -> web.Application:
                 summary_model=summary_model,
             ),
         )
-
-        http_registrar = app[HTTP_REGISTRAR_KEY]
-        await component_loader.async_load_platform("http", core, http_registrar)
-        http_registrar.apply_to_app(app)
-        if (mcp_registrar := app.get(MCP_REGISTRAR_KEY)) is not None:
-            await component_loader.async_load_platform("mcp", core, mcp_registrar)
 
         logger.info("Starting background services...")
         await processor_service.start()

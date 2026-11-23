@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from supernote.server.components.ai import AI_REGISTRAR_KEY, AiComponent
+from supernote.server.components.ai import AiComponent
 from supernote.server.components.apple import AppleComponent
 from supernote.server.core import Component, ComponentLoader, ServerCore
 
@@ -16,14 +16,14 @@ async def test_apple_component_registers_ocr_platform(
     assert component.dependencies == ("ai",)
     assert component.platforms == ("ocr",)
 
+    ai_component = AiComponent()
     loader = ComponentLoader()
-    loader.register(AiComponent())
+    loader.register(ai_component)
     loader.register(component)
 
     await loader.async_setup_all(component_core, {})
-    ai_registrar = component_core.app[AI_REGISTRAR_KEY]
-    for platform in ai_registrar.platforms:
-        await loader.async_load_platform(platform, component_core, ai_registrar)
+    await loader.async_load_all_platforms(component_core)
+    ai_registrar = ai_component.get_platform_registrar()
 
     assert ai_registrar.ocr_providers == ("apple",)
     assert ai_registrar.summary_providers == ()

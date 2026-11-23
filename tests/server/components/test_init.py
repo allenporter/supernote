@@ -19,13 +19,16 @@ from supernote.server.components import (
     load_builtin_components,
     load_component_from_spec,
 )
+from supernote.server.components.ai import AiComponent
 from supernote.server.components.http import jwt_auth_middleware
-from supernote.server.core import Component, ComponentError, ComponentLoader, ServerCore
-from supernote.server.keys import (
-    AI_REGISTRAR_KEY,
-    HTTP_REGISTRAR_KEY,
-    MCP_REGISTRAR_KEY,
+from supernote.server.core import (
+    Component,
+    ComponentError,
+    ComponentLoader,
+    PlatformHost,
+    ServerCore,
 )
+from supernote.server.keys import HTTP_REGISTRAR_KEY
 from supernote.server.trace import trace_middleware
 
 
@@ -277,17 +280,19 @@ async def test_all_builtin_components_http_platform_end_to_end(
         loader.register(load_component_from_spec(spec))
 
     await loader.async_setup_all(component_core, {})
-    ai_registrar = component_core.app[AI_REGISTRAR_KEY]
-    for ai_platform in ai_registrar.platforms:
-        await loader.async_load_platform(ai_platform, component_core, ai_registrar)
+    await loader.async_load_all_platforms(component_core)
+
+    ai_comp = loader.get("ai")
+    assert isinstance(ai_comp, AiComponent)
+    ai_registrar = ai_comp.get_platform_registrar()
     assert {"apple", "fake", "gemini", "openai"} <= set(ai_registrar.ocr_providers)
     assert {"fake", "gemini", "openai"} <= set(ai_registrar.summary_providers)
     assert {"fake", "gemini", "openai"} <= set(ai_registrar.embedding_providers)
+
     http_registrar = component_core.app[HTTP_REGISTRAR_KEY]
-    await loader.async_load_platform("http", component_core, http_registrar)
-    http_registrar.apply_to_app(component_core.app)
-    mcp_registrar = component_core.app[MCP_REGISTRAR_KEY]
-    await loader.async_load_platform("mcp", component_core, mcp_registrar)
+    mcp_comp = loader.get("mcp")
+    assert isinstance(mcp_comp, PlatformHost)
+    mcp_registrar = mcp_comp.get_platform_registrar()
     assert set(mcp_registrar.tool_names) >= {
         "list_tasks",
         "create_task",

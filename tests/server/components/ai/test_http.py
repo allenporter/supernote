@@ -4,32 +4,29 @@ from __future__ import annotations
 
 from aiohttp.test_utils import TestClient, TestServer
 
-from supernote.server.components.ai import AI_REGISTRAR_KEY, AiComponent
+from supernote.server.components.ai import AiComponent
 from supernote.server.components.fake_ai import FakeAiComponent
-from supernote.server.components.http import HTTP_REGISTRAR_KEY, HttpComponent
+from supernote.server.components.http import HttpRegistrar
 from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
 from supernote.server.core import ComponentLoader, ServerCore
 
 
-async def _setup_ai_http(core: ServerCore) -> ComponentLoader:
+async def _setup_ai_http(core: ServerCore) -> tuple[ComponentLoader, AiComponent]:
     loader = ComponentLoader()
-    loader.register(HttpComponent())
-    loader.register(AiComponent())
+    ai_component = AiComponent()
+    loader.register(ai_component)
     loader.register(FakeAiComponent())
 
     await loader.async_setup_all(core, {})
-    ai_registrar = core.app[AI_REGISTRAR_KEY]
-    for platform in ai_registrar.platforms:
-        await loader.async_load_platform(platform, core, ai_registrar)
-    http_registrar = core.app[HTTP_REGISTRAR_KEY]
-    await loader.async_load_platform("http", core, http_registrar)
-    return loader
+    await loader.async_load_all_platforms(core)
+    await loader.async_load_platform("http", core, HttpRegistrar())
+    return loader, ai_component
 
 
 async def test_ai_status_endpoint_reports_unconfigured_models(
     component_core: ServerCore,
 ) -> None:
-    loader = await _setup_ai_http(component_core)
+    loader, _ = await _setup_ai_http(component_core)
 
     async with TestClient(TestServer(component_core.app)) as client:
         resp = await client.get("/api/extended/ai/status")
@@ -54,8 +51,8 @@ async def test_ai_status_endpoint_reports_unconfigured_models(
 async def test_ai_status_endpoint_reports_configured_models(
     component_core: ServerCore,
 ) -> None:
-    loader = await _setup_ai_http(component_core)
-    component_core.app[AI_REGISTRAR_KEY].apply_to_app(
+    loader, ai_component = await _setup_ai_http(component_core)
+    ai_component.get_platform_registrar().apply_to_app(
         component_core.app,
         ServerConfig(
             ai=AiConfig(

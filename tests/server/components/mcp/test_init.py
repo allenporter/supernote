@@ -13,29 +13,30 @@ from mcp.server.mcpserver import MCPServer
 from prometheus_client import REGISTRY
 
 from supernote.server.components.mcp import (
-    MCP_REGISTRAR_KEY,
     McpComponent,
     McpRegistrar,
     get_authenticated_user_id,
 )
 from supernote.server.components.oauth import OAuthComponent
 from supernote.server.components.oauth.models import SupernoteAccessToken
-from supernote.server.core import Component, ComponentLoader, ServerCore
+from supernote.server.core import Component, ComponentLoader, PlatformHost, ServerCore
 
 
 async def test_mcp_component_lifecycle(component_core: ServerCore) -> None:
     component = McpComponent()
     assert isinstance(component, Component)
+    assert isinstance(component, PlatformHost)
     assert component.domain == "mcp"
     assert component.dependencies == ("oauth",)
     assert component.platforms == ()
+    assert component.hosted_platforms == ("mcp",)
 
     loader = ComponentLoader()
     loader.register(OAuthComponent())
     loader.register(component)
 
     await loader.async_setup_all(component_core, {})
-    registrar = component_core.app[MCP_REGISTRAR_KEY]
+    registrar = component.get_platform_registrar()
     assert isinstance(registrar, McpRegistrar)
 
     async def sample_tool() -> dict[str, Any]:

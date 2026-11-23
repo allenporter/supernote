@@ -9,7 +9,6 @@ from supernote.server.ai.models.embedding import EmbeddingModel, EmbeddingTaskTy
 from supernote.server.components import KNOWN_PLATFORMS
 from supernote.server.components.ai import (
     AI_PLATFORMS,
-    AI_REGISTRAR_KEY,
     AiComponent,
     AiRegistrar,
 )
@@ -26,7 +25,7 @@ from supernote.server.components.fake_ai.summary import (
     create_summary_model as create_fake_summary_model,
 )
 from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
-from supernote.server.core import Component, ComponentLoader, ServerCore
+from supernote.server.core import Component, ComponentLoader, PlatformHost, ServerCore
 
 
 class _ZeroVectorEmbeddingModel(EmbeddingModel):
@@ -193,15 +192,17 @@ async def test_ai_component_lifecycle_exposes_empty_registrar(
 
     component = AiComponent()
     assert isinstance(component, Component)
+    assert isinstance(component, PlatformHost)
     assert component.domain == "ai"
     assert component.dependencies == ()
     assert component.platforms == ("http",)
+    assert component.hosted_platforms == AI_PLATFORMS
 
     loader = ComponentLoader()
     loader.register(component)
 
     await loader.async_setup_all(component_core, {})
-    registrar = component_core.app[AI_REGISTRAR_KEY]
+    registrar = component.get_platform_registrar()
     assert isinstance(registrar, AiRegistrar)
     assert registrar.platforms == AI_PLATFORMS
     assert registrar.ocr_providers == ()

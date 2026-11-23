@@ -37,6 +37,7 @@ __all__ = [
     "DependencyCycleError",
     "DuplicateComponentError",
     "MissingDependencyError",
+    "PlatformHost",
     "ServerCore",
 ]
 
@@ -113,6 +114,24 @@ class Component(Protocol):
 
     async def async_stop(self, core: ServerCore) -> None:
         """Stop background work and release resources idempotently on shutdown."""
+        ...
+
+
+@runtime_checkable
+class PlatformHost(Protocol):
+    """Optional protocol for components that host one or more platforms."""
+
+    @property
+    def hosted_platforms(self) -> Sequence[str]:
+        """Platform names hosted by this component (e.g. ``('http',)``)."""
+        ...
+
+    def get_platform_registrar(self) -> Any:
+        """Return the registrar passed into ``async_setup_<platform>(core, registrar)``."""
+        ...
+
+    async def async_finalize_platforms(self, core: ServerCore) -> None:
+        """Apply or finalize all platform registrations after loading completes."""
         ...
 
 
@@ -264,6 +283,25 @@ class ComponentLoader:
                     f"Platform module {module_name!r} must define {setup_attr!r}"
                 )
             await setup_fn(core, registrar)
+
+    async def async_load_all_platforms(self, core: ServerCore) -> None:
+        """Load and finalize every platform declared by initialized `PlatformHost` components."""
+        if self._state is not _LifecycleState.SETUP:
+            raise ComponentError(
+                f"Cannot load platforms in state {self._state.value!r}; "
+                "components must complete async_setup_all first"
+            )
+        try:
+            for comp in self._initialized:
+                if not isinstance(comp, PlatformHost):
+                    continue
+                registrar = comp.get_platform_registrar()
+                for platform in comp.hosted_platforms:
+                    await self.async_load_platform(platform, core, registrar)
+                await comp.async_finalize_platforms(core)
+        except BaseException:
+            await self.async_stop_all(core)
+            raise
 
     async def async_stop_all(self, core: ServerCore) -> None:
         """Idempotently stop all initialized components in reverse topological order."""

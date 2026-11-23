@@ -11,7 +11,7 @@ from supernote.server.ai.models.embedding import (
     EmbeddingTaskType,
 )
 from supernote.server.ai.models.summary import ConcurrencyLimitedSummaryModel
-from supernote.server.components.ai import AI_REGISTRAR_KEY, AiComponent
+from supernote.server.components.ai import AiComponent
 from supernote.server.components.openai import OpenAIComponent
 from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
 from supernote.server.core import Component, ComponentLoader, ServerCore
@@ -26,14 +26,14 @@ async def test_openai_component_registers_all_ai_platforms(
     assert component.dependencies == ("ai",)
     assert component.platforms == ("ocr", "summary", "embedding")
 
+    ai_component = AiComponent()
     loader = ComponentLoader()
-    loader.register(AiComponent())
+    loader.register(ai_component)
     loader.register(component)
 
     await loader.async_setup_all(component_core, {})
-    ai_registrar = component_core.app[AI_REGISTRAR_KEY]
-    for platform in ai_registrar.platforms:
-        await loader.async_load_platform(platform, component_core, ai_registrar)
+    await loader.async_load_all_platforms(component_core)
+    ai_registrar = ai_component.get_platform_registrar()
 
     assert ai_registrar.ocr_providers == ("openai",)
     assert ai_registrar.summary_providers == ("openai",)
@@ -83,13 +83,13 @@ async def test_openai_component_routes_named_providers_to_distinct_servers(
     llamacpp_app.router.add_post("/v1/embeddings", handle_llamacpp_embed)
     llamacpp_srv = await aiohttp_server(llamacpp_app)
 
+    ai_component = AiComponent()
     loader = ComponentLoader()
-    loader.register(AiComponent())
+    loader.register(ai_component)
     loader.register(OpenAIComponent())
     await loader.async_setup_all(component_core, {})
-    ai_registrar = component_core.app[AI_REGISTRAR_KEY]
-    for platform in ai_registrar.platforms:
-        await loader.async_load_platform(platform, component_core, ai_registrar)
+    await loader.async_load_all_platforms(component_core)
+    ai_registrar = ai_component.get_platform_registrar()
 
     config = ServerConfig(
         ai=AiConfig(
