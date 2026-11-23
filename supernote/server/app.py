@@ -30,15 +30,12 @@ from supernote.server.keys import (
     CONVERSION_SERVICE_KEY,
     COORDINATION_SERVICE_KEY,
     CORE_KEY,
-    EMBEDDING_MODEL_KEY,
     EVENT_BUS_KEY,
     FILE_SERVICE_KEY,
     INTEGRITY_SERVICE_KEY,
-    OCR_MODEL_KEY,
     PROCESSOR_SERVICE_KEY,
     RATE_LIMITER_KEY,
     SESSION_MANAGER_KEY,
-    SUMMARY_MODEL_KEY,
     SUMMARY_SERVICE_KEY,
     URL_SIGNER_KEY,
     USER_SERVICE_KEY,
@@ -65,12 +62,6 @@ from .services.conversion import ConversionService
 from .services.coordination import CoordinationService, SqliteCoordinationService
 from .services.file import FileService
 from .services.integrity import IntegrityService
-from .services.processor import ProcessorService
-from .services.processor_modules.embedding import EmbeddingModule
-from .services.processor_modules.ocr import OcrModule
-from .services.processor_modules.page_hashing import PageHashingModule
-from .services.processor_modules.png_conversion import PngConversionModule
-from .services.processor_modules.summary import SummaryModule
 from .services.summary import SummaryService
 from .services.user import UserService
 from .trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger
@@ -135,20 +126,6 @@ def create_app(config: ServerConfig) -> web.Application:
 
     app[RATE_LIMITER_KEY] = RateLimiter(coordination_service)
 
-    processor_service = ProcessorService(
-        event_bus,
-        session_manager,
-        file_service,
-        coordination_service,
-    )
-    app[PROCESSOR_SERVICE_KEY] = processor_service
-    app[CONVERSION_SERVICE_KEY] = ConversionService(
-        session_manager=session_manager,
-        blob_storage=blob_storage,
-        user_service=user_service,
-        processor_service=processor_service,
-    )
-
     core = ServerCore(
         config=config,
         app=app,
@@ -202,33 +179,17 @@ def create_app(config: ServerConfig) -> web.Application:
             await bootstrap_ephemeral_user(app)
 
         await component_loader.async_setup_all(core, component_configs)
+        app[CONVERSION_SERVICE_KEY] = ConversionService(
+            session_manager=session_manager,
+            blob_storage=blob_storage,
+            user_service=user_service,
+            processor_service=app[PROCESSOR_SERVICE_KEY],
+        )
         await component_loader.async_load_all_platforms(core)
-
-        ocr_model = app.get(OCR_MODEL_KEY)
-        summary_model = app.get(SUMMARY_MODEL_KEY)
-        embedding_model = app.get(EMBEDDING_MODEL_KEY)
-
-        png_enabled = (ocr_model is not None) or (
-            config.web_enabled and config.web_notebook_preview
-        )
-        processor_service.register_modules(
-            hashing=PageHashingModule(file_service=file_service),
-            png=PngConversionModule(file_service=file_service, enabled=png_enabled),
-            ocr=OcrModule(file_service=file_service, ocr_model=ocr_model),
-            embedding=EmbeddingModule(
-                file_service=file_service, embedding_model=embedding_model
-            ),
-            summary=SummaryModule(
-                file_service=file_service,
-                summary_service=summary_service,
-                summary_model=summary_model,
-            ),
-        )
 
         logger.info("Starting background services...")
         await file_service.start()
         await summary_service.start()
-        await processor_service.start()
         await component_loader.async_start_all(core)
         logger.info("Startup sequence complete.")
 
@@ -236,7 +197,6 @@ def create_app(config: ServerConfig) -> web.Application:
 
     async def on_shutdown_handler(app: web.Application) -> None:
         await component_loader.async_stop_all(core)
-        await processor_service.stop()
         await summary_service.stop()
         await session_manager.close()
 
