@@ -7,7 +7,14 @@ from supernote.models.base import ProcessingStatus, TaskType
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.metrics import PIPELINE_DURATION_BUCKETS
 from supernote.server.services.file import FileService
-from supernote.server.services.processor_modules import ProcessorModule
+from supernote.server.services.processor_modules import (
+    DuplicateTaskError,
+    MissingTaskDependencyError,
+    ProcessorModule,
+    TaskDependencyCycleError,
+    TaskGraph,
+    TaskScope,
+)
 from supernote.server.services.processor_modules.ocr import OcrModule
 from supernote.server.utils.tasks import get_task
 
@@ -179,3 +186,139 @@ async def test_processor_module_failure_and_cancellation_metrics(
     assert _duration_count(cancel_name) == 0.0
 
     assert await cancel_module.cleanup_file(304, 1, session_manager) is None
+
+
+class _GraphModule(ProcessorModule):
+    def __init__(
+        self,
+        task_type: str,
+        *,
+        scope: TaskScope = TaskScope.FILE,
+        depends_on: tuple[str, ...] = (),
+        enabled: bool = True,
+    ) -> None:
+        self._task_type = task_type
+        self._scope = scope
+        self._depends_on = depends_on
+        self._enabled = enabled
+
+    @property
+    def name(self) -> str:
+        return f"Mod_{self._task_type}"
+
+    @property
+    def task_type(self) -> str:
+        return self._task_type
+
+    @property
+    def scope(self) -> TaskScope:
+        return self._scope
+
+    @property
+    def depends_on(self) -> tuple[str, ...]:
+        return self._depends_on
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    async def process(
+        self,
+        file_id: int,
+        session_manager: DatabaseSessionManager,
+        page_index: int | None = None,
+        page_id: str | None = None,
+        **kwargs: object,
+    ) -> None:
+        return None
+
+
+def test_task_graph_build_order_ancestors_descendants_and_subset() -> None:
+    """TaskGraph topologically sorts modules, tracks ancestry, and computes subsets."""
+    # Register in reverse/mixed order to verify topological sorting + tie-breaking.
+    summary = _GraphModule(
+        TaskType.SUMMARY_GENERATION,
+        scope=TaskScope.FILE,
+        depends_on=(TaskType.OCR_EXTRACTION,),
+    )
+    embedding = _GraphModule(
+        TaskType.EMBEDDING_GENERATION,
+        scope=TaskScope.PAGE,
+        depends_on=(TaskType.OCR_EXTRACTION,),
+    )
+    ocr = _GraphModule(
+        TaskType.OCR_EXTRACTION,
+        scope=TaskScope.PAGE,
+        depends_on=(TaskType.PNG_CONVERSION,),
+    )
+    png = _GraphModule(
+        TaskType.PNG_CONVERSION,
+        scope=TaskScope.PAGE,
+        depends_on=(TaskType.PAGE_HASHING,),
+    )
+    hashing = _GraphModule(TaskType.PAGE_HASHING, scope=TaskScope.FILE)
+
+    graph = TaskGraph.build([summary, embedding, ocr, png, hashing])
+    assert [m.task_type for m in graph.modules] == [
+        TaskType.PAGE_HASHING,
+        TaskType.PNG_CONVERSION,
+        TaskType.OCR_EXTRACTION,
+        TaskType.SUMMARY_GENERATION,
+        TaskType.EMBEDDING_GENERATION,
+    ]
+    assert graph.ancestors(TaskType.SUMMARY_GENERATION) == frozenset(
+        {"HASHING", "PNG_CONVERSION", "OCR_EXTRACTION"}
+    )
+    assert graph.descendants(TaskType.OCR_EXTRACTION) == frozenset(
+        {"EMBEDDING_GENERATION", "SUMMARY_GENERATION"}
+    )
+    assert graph.has_page_ancestor(TaskType.SUMMARY_GENERATION) is True
+    assert graph.has_page_ancestor(TaskType.PAGE_HASHING) is False
+
+    # Subset automatically pulls in transitive ancestors.
+    png_sub = graph.subset({TaskType.PNG_CONVERSION})
+    assert [m.task_type for m in png_sub.modules] == [
+        TaskType.PAGE_HASHING,
+        TaskType.PNG_CONVERSION,
+    ]
+
+    # Excluding page-dependent FILE tasks drops SUMMARY but keeps HASHING and PAGE tasks.
+    page_only = graph.subset(
+        [m.task_type for m in graph.modules],
+        exclude_page_dependent_file_tasks=True,
+    )
+    assert TaskType.SUMMARY_GENERATION not in {m.task_type for m in page_only.modules}
+    assert TaskType.PAGE_HASHING in {m.task_type for m in page_only.modules}
+
+
+def test_task_graph_validation_and_effective_enabled() -> None:
+    """TaskGraph rejects duplicates, missing deps, and cycles, and propagates disabled upstream."""
+    with pytest.raises(DuplicateTaskError):
+        TaskGraph.build([_GraphModule("A"), _GraphModule("A")])
+
+    with pytest.raises(MissingTaskDependencyError) as missing_exc:
+        TaskGraph.build([_GraphModule("B", depends_on=("A",))])
+    assert missing_exc.value.task_type == "B"
+    assert missing_exc.value.dependency == "A"
+
+    with pytest.raises(TaskDependencyCycleError):
+        TaskGraph.build([_GraphModule("A", depends_on=("A",))])
+
+    with pytest.raises(TaskDependencyCycleError):
+        TaskGraph.build(
+            [
+                _GraphModule("A", depends_on=("B",)),
+                _GraphModule("B", depends_on=("A",)),
+            ]
+        )
+
+    graph = TaskGraph.build(
+        [
+            _GraphModule("A", enabled=True),
+            _GraphModule("B", depends_on=("A",), enabled=False),
+            _GraphModule("C", depends_on=("B",), enabled=True),
+        ]
+    )
+    assert graph.is_effectively_enabled("A") is True
+    assert graph.is_effectively_enabled("B") is False
+    assert graph.is_effectively_enabled("C") is False

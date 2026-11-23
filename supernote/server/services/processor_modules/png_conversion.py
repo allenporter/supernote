@@ -22,7 +22,10 @@ from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
-from supernote.server.services.processor_modules import ProcessorModule
+from supernote.server.services.processor_modules import (
+    ProcessorModule,
+    TaskScope,
+)
 from supernote.server.utils.paths import get_page_png_path
 
 logger = logging.getLogger(__name__)
@@ -42,8 +45,9 @@ def _convert_helper(path: str, page_index: int) -> bytes:
 
 
 class PngConversionModule(ProcessorModule):
-    def __init__(self, file_service: FileService) -> None:
+    def __init__(self, file_service: FileService, *, enabled: bool = True) -> None:
         self.file_service = file_service
+        self._enabled = enabled
 
     @property
     def name(self) -> str:
@@ -52,6 +56,18 @@ class PngConversionModule(ProcessorModule):
     @property
     def task_type(self) -> TaskType:
         return TaskType.PNG_CONVERSION
+
+    @property
+    def scope(self) -> TaskScope:
+        return TaskScope.PAGE
+
+    @property
+    def depends_on(self) -> tuple[TaskType, ...]:
+        return (TaskType.PAGE_HASHING,)
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
 
     @property
     def version(self) -> str | None:

@@ -34,7 +34,7 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import NotePagesDeltaEvent
 from supernote.server.metrics import record_note_page_diff
 from supernote.server.services.file import FileService
-from supernote.server.services.processor_modules import ProcessorModule
+from supernote.server.services.processor_modules import ProcessorModule, TaskScope
 from supernote.server.utils.hashing import get_md5_hash
 from supernote.server.utils.paths import get_page_png_path, is_valid_page_id
 
@@ -129,6 +129,14 @@ class PageHashingModule(ProcessorModule):
     @property
     def task_type(self) -> TaskType:
         return TaskType.PAGE_HASHING
+
+    @property
+    def scope(self) -> TaskScope:
+        return TaskScope.FILE
+
+    @property
+    def depends_on(self) -> tuple[TaskType, ...]:
+        return ()
 
     @property
     def version(self) -> str:

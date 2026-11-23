@@ -214,7 +214,7 @@ def create_app(config: ServerConfig) -> web.Application:
         )
         processor_service.register_modules(
             hashing=PageHashingModule(file_service=file_service),
-            png=PngConversionModule(file_service=file_service) if png_enabled else None,
+            png=PngConversionModule(file_service=file_service, enabled=png_enabled),
             ocr=OcrModule(file_service=file_service, ocr_model=ocr_model),
             embedding=EmbeddingModule(
                 file_service=file_service, embedding_model=embedding_model

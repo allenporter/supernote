@@ -34,7 +34,10 @@ from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import SummaryDeletedEvent
 from supernote.server.services.file import FileService
-from supernote.server.services.processor_modules import ProcessorModule
+from supernote.server.services.processor_modules import (
+    ProcessorModule,
+    TaskScope,
+)
 from supernote.server.services.summary import SummaryService
 from supernote.server.utils.note_content import (
     format_page_metadata,
@@ -99,6 +102,14 @@ class SummaryModule(ProcessorModule):
     @property
     def task_type(self) -> TaskType:
         return TaskType.SUMMARY_GENERATION
+
+    @property
+    def scope(self) -> TaskScope:
+        return TaskScope.FILE
+
+    @property
+    def depends_on(self) -> tuple[TaskType, ...]:
+        return (TaskType.OCR_EXTRACTION,)
 
     @property
     def enabled(self) -> bool:
