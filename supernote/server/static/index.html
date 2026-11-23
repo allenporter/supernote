@@ -142,7 +142,23 @@
                         :rename-item="handleRenameItem"
                         @open-item="openItem"
                         @navigate-to="navigateTo"
+                        @open-recycle-bin="openRecycleBin"
                         @update-selected-ids="selectedIds = $event"></file-browser-panel>
+
+                    <!-- Recycle Bin View -->
+                    <recycle-bin-panel v-else-if="view === 'recycle'"
+                        :items="recycleItems"
+                        :selected-ids="recycleSelectedIds"
+                        :is-loading="isLoadingRecycle"
+                        :is-mutating="isMutatingRecycle"
+                        :error="recycleError"
+                        :load-recycle-bin="loadRecycleBin"
+                        :restore-items="restoreRecycleItems"
+                        :delete-items-permanently="deleteRecycleItemsPermanently"
+                        :empty-recycle-bin="emptyRecycleBin"
+                        @close="closeRecycleBin"
+                        @restored="handleRecycleRestored"
+                        @update-selected-ids="recycleSelectedIds = $event"></recycle-bin-panel>
 
                     <!-- Document / Notebook Viewer -->
                     <div v-else-if="view === 'viewer'" class="min-h-full">

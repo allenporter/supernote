@@ -155,6 +155,15 @@ interface FileItem {
     pageIndex?: number;
 }
 
+interface RecycleItem {
+    id: string;
+    name: string;
+    isDirectory: boolean;
+    size: number;
+    deletedAt: number | null;
+    extension: string | null;
+}
+
 interface SearchFileMatch extends FileItem {
     path: string;
 }
