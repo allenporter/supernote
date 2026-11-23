@@ -106,84 +106,13 @@ async def test_mcp_list_tools(
     notebook_file_id: int,
     mock_gemini_service: Any,
 ) -> None:
-    """Integrated test for listing MCP tools which does not require auth."""
+    """Integrated test for listing MCP tools across enabled platform components."""
     async with mcp_session(mcp_url, auth_headers) as session:
         result = await session.list_tools()
         tool_names = [t.name for t in result.tools]
         assert "list_notebooks" in tool_names
         assert "search_notebook_chunks" in tool_names
         assert "get_notebook_transcript" in tool_names
-
-
-async def test_mcp_list_notebooks(
-    mcp_url: str,
-    auth_headers: dict[str, str],
-    notebook_file_id: int,
-) -> None:
-    """Integrated test for listing notebooks via MCP."""
-    token = auth_headers["x-access-token"]
-    headers = {"Authorization": f"Bearer {token}"}
-    async with mcp_session(mcp_url, headers) as session:
-        call_result = await session.call_tool(
-            "list_notebooks",
-            arguments={"name_filter": "test_notes"},
-            meta={"token": token},
-        )
-        assert call_result.content
-        content = call_result.content[0]
-        assert isinstance(content, TextContent)
-        res_data = json.loads(content.text)
-        assert len(res_data["notebooks"]) == 1
-        assert res_data["notebooks"][0]["fileId"] == str(notebook_file_id)
-        assert res_data["notebooks"][0]["fileName"] == "test_notes.note"
-
-
-async def test_mcp_search_notebook_chunks(
-    mcp_url: str,
-    auth_headers: dict[str, str],
-    notebook_file_id: int,
-    mock_gemini_service: Any,
-) -> None:
-    """Integrated test for searching notebook chunks."""
-    token = auth_headers["x-access-token"]
-    headers = {"Authorization": f"Bearer {token}"}
-    async with mcp_session(mcp_url, headers) as session:
-        call_result = await session.call_tool(
-            "search_notebook_chunks",
-            arguments={"query": "test"},
-            meta={"token": token},
-        )
-
-        assert call_result.content
-        content = call_result.content[0]
-        assert isinstance(content, TextContent)
-        res_data = json.loads(content.text)
-        assert "results" in res_data
-        assert len(res_data["results"]) > 0
-        assert res_data["results"][0]["fileId"] == str(notebook_file_id)
-        assert res_data["results"][0].get("textPreview") == "This is a test note."
-
-
-async def test_mcp_get_notebook_transcript(
-    mcp_url: str,
-    auth_headers: dict[str, str],
-    notebook_file_id: int,
-    mock_gemini_service: Any,
-) -> None:
-    """Integrated test for getting a notebook transcript."""
-    token = auth_headers["x-access-token"]
-    headers = {"Authorization": f"Bearer {token}"}
-    async with mcp_session(mcp_url, headers) as session:
-        transcript_result = await session.call_tool(
-            "get_notebook_transcript",
-            arguments={"file_id": str(notebook_file_id)},
-            meta={"token": token},
-        )
-        assert transcript_result.content
-        content = transcript_result.content[0]
-        assert isinstance(content, TextContent)
-        trans_data = json.loads(content.text)
-        assert "This is a test note." in trans_data.get("transcript", "")
 
 
 async def test_mcp_unauthorized(

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Generator, Iterable
 from contextlib import contextmanager
-from enum import StrEnum
 
 from prometheus_client import Counter, Histogram
 
@@ -16,18 +15,9 @@ from supernote.server.metrics import (
 )
 
 __all__ = [
-    "MCPToolName",
     "init_mcp_metrics",
     "track_mcp_tool_call",
 ]
-
-
-class MCPToolName(StrEnum):
-    """Canonical tool name labels for built-in MCP server metrics."""
-
-    LIST_NOTEBOOKS = "list_notebooks"
-    SEARCH_NOTEBOOK_CHUNKS = "search_notebook_chunks"
-    GET_NOTEBOOK_TRANSCRIPT = "get_notebook_transcript"
 
 
 _MCP_TOOL_CALLS_TOTAL: Counter = Counter(
@@ -44,7 +34,7 @@ _MCP_TOOL_DURATION_SECONDS: Histogram = Histogram(
 )
 
 
-def init_mcp_metrics(tool_names: Iterable[str] = MCPToolName) -> None:
+def init_mcp_metrics(tool_names: Iterable[str] = ()) -> None:
     """Pre-initialize MCP tool call counters and latency histograms at 0."""
     for tool in tool_names:
         tool_label = str(tool)
