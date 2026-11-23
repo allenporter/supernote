@@ -8,10 +8,13 @@ delegates missing page PNGs to `supernote.server.services.processor.ProcessorSer
 or renders PDFs in a worker thread via `supernote.notebook.converter.PdfConverter`.
 """
 
+from __future__ import annotations
+
 import asyncio
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
@@ -24,10 +27,12 @@ from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import FileError, FileNotFound
 from supernote.server.services.blob import BlobStorage
-from supernote.server.services.processor import ProcessorService
 from supernote.server.services.user import UserService
 from supernote.server.services.vfs import VirtualFileSystem
 from supernote.server.utils.paths import get_conversion_pdf_path, get_page_png_path
+
+if TYPE_CHECKING:
+    from supernote.server.components.processor import ProcessorService
 
 
 @dataclass(frozen=True)

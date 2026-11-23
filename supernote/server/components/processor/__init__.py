@@ -13,12 +13,14 @@ from typing import Any
 
 from supernote.server.core import ServerCore
 from supernote.server.keys import PROCESSOR_SERVICE_KEY
-from supernote.server.services.processor import ProcessorService
 from supernote.server.services.processor_modules import ProcessorModule
+
+from .service import ProcessorService
 
 __all__ = [
     "ProcessorComponent",
     "ProcessorRegistrar",
+    "ProcessorService",
 ]
 
 
@@ -52,7 +54,7 @@ class ProcessorComponent:
 
     domain = "processor"
     dependencies: tuple[str, ...] = ("ai",)
-    platforms: tuple[str, ...] = ("processor",)
+    platforms: tuple[str, ...] = ("http", "processor")
     hosted_platforms: tuple[str, ...] = ("processor",)
 
     def __init__(self) -> None:

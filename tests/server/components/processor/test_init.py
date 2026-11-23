@@ -15,11 +15,11 @@ from supernote.server.components.ai import AiComponent
 from supernote.server.components.processor import (
     ProcessorComponent,
     ProcessorRegistrar,
+    ProcessorService,
 )
 from supernote.server.core import Component, ComponentLoader, PlatformHost, ServerCore
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.keys import PROCESSOR_SERVICE_KEY
-from supernote.server.services.processor import ProcessorService
 from supernote.server.services.processor_modules import ProcessorModule, TaskScope
 
 
