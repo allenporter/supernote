@@ -26,7 +26,7 @@ from supernote.server.db.migrations import run_migrations
 from .ai.models.embedding import create_embedding_model
 from .ai.models.ocr import create_ocr_model
 from .ai.models.summary import create_summary_model
-from .components import load_builtin_components
+from .components import load_builtin_components, load_external_plugins
 from .config import AuthConfig, ServerConfig
 from .constants import MAX_UPLOAD_SIZE
 from .core import ComponentLoader, ServerCore
@@ -194,7 +194,8 @@ def create_app(config: ServerConfig) -> web.Application:
     app[CORE_KEY] = core
     app[COMPONENT_LOADER_KEY] = component_loader
 
-    component_configs = {
+    component_configs: dict[str, Any] = {
+        **config.plugins,
         "mcp": {"enabled": config.mcp_enabled},
         "metrics": {"enabled": config.metrics_enabled},
         "oauth": {"enabled": config.mcp_enabled},
@@ -202,6 +203,7 @@ def create_app(config: ServerConfig) -> web.Application:
         "webhooks": config.webhooks,
     }
     load_builtin_components(component_loader, component_configs)
+    load_external_plugins(component_loader, config.plugins)
 
     # Register modules
     png_enabled = (ocr_model is not None) or (

@@ -20,6 +20,8 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from aiohttp import web
 
     from .config import ServerConfig
@@ -38,11 +40,21 @@ __all__ = [
     "DuplicateComponentError",
     "MissingDependencyError",
     "ServerCore",
+    "validate_domain",
 ]
 
 logger = logging.getLogger(__name__)
 
 _DOMAIN_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def validate_domain(domain: str) -> str:
+    """Validate and return a component domain identifier matching ``^[a-z][a-z0-9_]*$``."""
+    if not _DOMAIN_PATTERN.fullmatch(domain):
+        raise ComponentError(
+            f"Component domain {domain!r} must match {_DOMAIN_PATTERN.pattern}"
+        )
+    return domain
 
 
 class _LifecycleState(Enum):
@@ -137,6 +149,11 @@ class ServerCore:
     file_service: FileService
     """Core Virtual File System and blob synchronization service."""
 
+    def plugin_storage_dir(self, domain: str) -> Path:
+        """Return the isolated storage directory ``<storage_root>/plugins/<domain>``."""
+        validated = validate_domain(domain)
+        return self.config.storage_root / "plugins" / validated
+
 
 class ComponentLoader:
     """Deterministic topological loader and lifecycle orchestrator for components."""
@@ -161,11 +178,7 @@ class ComponentLoader:
             raise ComponentError(
                 f"Cannot register component after setup (state={self._state.value!r})"
             )
-        domain = component.domain
-        if not _DOMAIN_PATTERN.fullmatch(domain):
-            raise ComponentError(
-                f"Component domain {domain!r} must match {_DOMAIN_PATTERN.pattern}"
-            )
+        domain = validate_domain(component.domain)
         if domain in self._components:
             raise DuplicateComponentError(domain)
         self._components[domain] = component

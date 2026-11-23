@@ -539,3 +539,24 @@ async def test_empty_loader_lifecycle_is_noop(
     await loader.async_setup_all(server_core, {})
     await loader.async_start_all(server_core)
     await loader.async_stop_all(server_core)
+
+
+def test_plugin_storage_dir_returns_isolated_domain_path(
+    server_core: ServerCore,
+) -> None:
+    assert (
+        server_core.plugin_storage_dir("my_plugin")
+        == server_core.config.storage_root / "plugins" / "my_plugin"
+    )
+
+
+@pytest.mark.parametrize(
+    "bad_domain",
+    ["", "../escape", "a/b", "MyPlugin", "1bad", "bad-domain"],
+)
+def test_plugin_storage_dir_rejects_invalid_domain(
+    server_core: ServerCore,
+    bad_domain: str,
+) -> None:
+    with pytest.raises(ComponentError, match="must match"):
+        server_core.plugin_storage_dir(bad_domain)

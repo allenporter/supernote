@@ -93,11 +93,12 @@ Both built-in components and third-party plugins register into the same [`Compon
    - **Platform conformance**: `KNOWN_PLATFORMS` and [`tests/server/components/test_init.py`](../../tests/server/components/test_init.py) enforce 1:1 parity between `BUILTIN_COMPONENTS`, disk packages, declared `platforms` $\leftrightarrow$ `<platform>.py` modules, lazy imports, and cross-component import isolation.
    - Core routes and instrumentation libraries that other core modules import directly (such as [`supernote/server/metrics.py`](../../supernote/server/metrics.py) counters/histograms) remain shared core modules rather than being hidden inside optional component internals.
 
-2. **External Third-Party Plugins (`importlib.metadata` `[Planned]`)**:
-   - Discovered via `importlib.metadata.entry_points(group="supernote.server_components")` (sorted deterministically by entry-point `name`).
-   - Each entry point resolves either a `Component` instance or a zero-argument callable returning a `Component` (`create_component() -> Component`).
+2. **External Third-Party Plugins (`importlib.metadata`)**:
+   - Discovered via `load_external_plugins` using `importlib.metadata.entry_points(group="supernote.server_components")` (sorted deterministically by entry-point `name` and `value`).
+   - Each entry point resolves either a `Component` instance or a zero-argument callable/class returning a `Component` (`create_component() -> Component`), with `component.domain == ep.name`.
+   - Configured per domain under `ServerConfig.plugins` (`enabled: false` skips importing the entry point); isolated storage is provided by `ServerCore.plugin_storage_dir(domain)` (`<storage_root>/plugins/<domain>`).
    - Validated against `isinstance(component, Component)` before `loader.register(component)` so duplicate domains, invalid domains, missing dependencies, and cycles are caught identically to built-in components.
-   - Plugin HTTP routes must mount under `/api/ext/<domain>/*` (protected by `jwt_auth_middleware` unless decorated with `@public_route` or explicitly exempted).
+   - Plugin HTTP routes mount via `HttpRegistrar.add_extension_routes(app, domain, routes)`, enforcing `/api/ext/<domain>/*` prefix isolation (protected by `jwt_auth_middleware` unless decorated with `@public_route` or explicitly exempted).
 
 ### 3.3 Topological Ordering and Failure / Shutdown Semantics
 

@@ -554,3 +554,23 @@ def test_event_log_retention_days_config_and_env(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         ServerConfig(event_log_retention_days=-1)
+
+
+def test_server_config_load_plugins_from_file(tmp_path: Path) -> None:
+    """External plugin configs are parsed per domain from config.yaml."""
+    assert ServerConfig().plugins == {}
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    config_file = config_dir / "config.yaml"
+    data = {
+        "plugins": {
+            "demo_plugin": {"enabled": True, "api_token": "secret"},
+            "disabled_plugin": {"enabled": False},
+        }
+    }
+    with open(config_file, "w") as f:
+        yaml.safe_dump(data, f)
+
+    loaded = ServerConfig.load(config_dir)
+    assert loaded.plugins == data["plugins"]

@@ -16,7 +16,7 @@ from aiohttp.typedefs import Middleware
 from aiohttp.web_urldispatcher import SystemRoute
 
 from supernote.models.base import create_error_response
-from supernote.server.core import ServerCore
+from supernote.server.core import ComponentError, ServerCore, validate_domain
 from supernote.server.events import bind_event_actor
 from supernote.server.keys import (
     HTTP_REGISTRAR_KEY,
@@ -118,6 +118,31 @@ class HttpRegistrar:
             raise ValueError(f"Public path prefix must start with '/': {prefix!r}")
         if prefix not in self._public_prefixes:
             self._public_prefixes.append(prefix)
+
+    def add_extension_routes(
+        self,
+        app: web.Application,
+        domain: str,
+        routes: web.RouteTableDef,
+    ) -> None:
+        """Validate and mount external plugin routes strictly under ``/api/ext/<domain>/``."""
+        validated_domain = validate_domain(domain)
+        prefix = f"/api/ext/{validated_domain}"
+        for route_def in routes:
+            if not isinstance(route_def, web.RouteDef):
+                raise ComponentError(
+                    f"Extension {validated_domain!r} may only register HTTP route "
+                    f"definitions under {prefix}/ (got {type(route_def).__name__})"
+                )
+            path = route_def.path
+            if ".." in path.split("/") or not (
+                path == prefix or path.startswith(f"{prefix}/")
+            ):
+                raise ComponentError(
+                    f"Extension {validated_domain!r} route {path!r} must be under "
+                    f"{prefix}/"
+                )
+        app.add_routes(routes)
 
     def add_public_resource(
         self,

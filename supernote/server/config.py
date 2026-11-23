@@ -303,6 +303,9 @@ class ServerConfig(DataClassYAMLMixin):
     webhooks: dict[str, Any] = field(default_factory=dict)
     """Raw configuration section for the outbound webhooks component."""
 
+    plugins: dict[str, dict[str, Any]] = field(default_factory=dict)
+    """Per-domain configuration for external entry-point plugins."""
+
     web_enabled: bool = True
     """Whether to serve the web frontend dashboard and static assets.
 

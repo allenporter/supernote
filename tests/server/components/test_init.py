@@ -14,13 +14,21 @@ import supernote.server.components as components_pkg
 from supernote.server.components import (
     BUILTIN_COMPONENTS,
     KNOWN_PLATFORMS,
+    PLUGIN_ENTRY_POINT_GROUP,
     BuiltinComponentSpec,
     is_component_enabled,
     load_builtin_components,
     load_component_from_spec,
+    load_external_plugins,
 )
 from supernote.server.components.http import jwt_auth_middleware
-from supernote.server.core import Component, ComponentError, ComponentLoader, ServerCore
+from supernote.server.core import (
+    Component,
+    ComponentError,
+    ComponentLoader,
+    DuplicateComponentError,
+    ServerCore,
+)
 from supernote.server.keys import HTTP_REGISTRAR_KEY, MCP_REGISTRAR_KEY
 from supernote.server.trace import trace_middleware
 
@@ -362,3 +370,111 @@ def test_load_component_from_spec_rejects_domain_mismatch() -> None:
     )
     with pytest.raises(ComponentError, match="expected 'wrong_domain'"):
         load_component_from_spec(spec)
+
+
+class _StubExternalComponent:
+    """Minimal external plugin implementing the `Component` protocol."""
+
+    def __init__(
+        self,
+        domain: str = "demo_plugin",
+        dependencies: tuple[str, ...] = (),
+    ) -> None:
+        self.domain = domain
+        self.dependencies = dependencies
+        self.platforms: tuple[str, ...] = ()
+
+    async def async_setup(self, core: ServerCore, config: dict[str, object]) -> None:
+        return None
+
+    async def async_start(self, core: ServerCore) -> None:
+        return None
+
+    async def async_stop(self, core: ServerCore) -> None:
+        return None
+
+
+class _FakeEntryPoint:
+    """Minimal stand-in for `importlib.metadata.EntryPoint`."""
+
+    def __init__(self, name: str, target: object, value: str = "pkg:obj") -> None:
+        self.name = name
+        self.value = value
+        self.group = PLUGIN_ENTRY_POINT_GROUP
+        self._target = target
+        self.loaded = False
+
+    def load(self) -> object:
+        self.loaded = True
+        return self._target
+
+
+def test_load_external_plugins_supports_instance_class_and_factory_sorted() -> None:
+    class _ClassPlugin(_StubExternalComponent):
+        def __init__(self) -> None:
+            super().__init__(domain="alpha_plugin")
+
+    ep_zeta = _FakeEntryPoint("zeta_plugin", _StubExternalComponent("zeta_plugin"))
+    ep_alpha = _FakeEntryPoint("alpha_plugin", _ClassPlugin)
+    ep_mid = _FakeEntryPoint(
+        "mid_plugin",
+        lambda: _StubExternalComponent("mid_plugin", dependencies=("alpha_plugin",)),
+    )
+    ep_disabled = _FakeEntryPoint(
+        "disabled_plugin", _StubExternalComponent("disabled_plugin")
+    )
+
+    loader = ComponentLoader()
+    loaded = load_external_plugins(
+        loader,
+        {"disabled_plugin": {"enabled": False}},
+        entry_points=[ep_zeta, ep_alpha, ep_mid, ep_disabled],
+    )
+
+    assert [c.domain for c in loaded] == ["alpha_plugin", "mid_plugin", "zeta_plugin"]
+    assert ep_disabled.loaded is False
+    assert [c.domain for c in loader.resolve_order()] == [
+        "alpha_plugin",
+        "mid_plugin",
+        "zeta_plugin",
+    ]
+
+
+def test_load_external_plugins_rejects_invalid_targets_and_duplicates() -> None:
+    loader = ComponentLoader()
+    with pytest.raises(ComponentError, match="Component instance or zero-argument"):
+        load_external_plugins(
+            loader,
+            entry_points=[_FakeEntryPoint("bad_obj", 123)],
+        )
+
+    with pytest.raises(ComponentError, match="did not return a Component instance"):
+        load_external_plugins(
+            loader,
+            entry_points=[_FakeEntryPoint("bad_factory", lambda: "not-a-component")],
+        )
+
+    with pytest.raises(ComponentError, match="expected 'expected_name'"):
+        load_external_plugins(
+            loader,
+            entry_points=[
+                _FakeEntryPoint("expected_name", _StubExternalComponent("actual_name"))
+            ],
+        )
+
+    load_builtin_components(
+        loader,
+        {},
+        specs=(
+            BuiltinComponentSpec(
+                domain="http",
+                import_path="supernote.server.components.http:HttpComponent",
+                default_enabled=True,
+            ),
+        ),
+    )
+    with pytest.raises(DuplicateComponentError):
+        load_external_plugins(
+            loader,
+            entry_points=[_FakeEntryPoint("http", _StubExternalComponent("http"))],
+        )
