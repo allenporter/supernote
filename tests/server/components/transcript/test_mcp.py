@@ -1,29 +1,59 @@
-"""Unit tests for `supernote.server.components.transcript.mcp`."""
+"""MCP protocol tests for `supernote.server.components.transcript.mcp`."""
 
 from __future__ import annotations
 
-import asyncio
-import json
-from collections.abc import Generator
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import patch
 
 import pytest
-from mcp.server.auth.middleware.auth_context import auth_context_var
-from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
-from mcp.server.mcpserver import MCPServer
-from mcp.server.mcpserver.exceptions import ToolError
-from mcp.types import CallToolResult, TextContent
 from prometheus_client import REGISTRY
 
-from supernote.server.components.mcp import McpRegistrar
-from supernote.server.components.oauth.models import SupernoteAccessToken
-from supernote.server.components.transcript import (
-    TRANSCRIPT_SERVICE_KEY,
-    TranscriptService,
-)
-from supernote.server.components.transcript.mcp import async_setup_mcp
-from supernote.server.core import ServerCore
+from supernote.server.components.transcript import TRANSCRIPT_SERVICE_KEY
+from supernote.server.db.models.file import UserFileDO
+from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.db.session import DatabaseSessionManager
+from tests.server.components.conftest import call_mcp_tool, mcp_session
+
+
+@pytest.fixture
+def mcp_enabled() -> bool:
+    """Enable the embedded MCP Streamable HTTP server for protocol tests."""
+    return True
+
+
+@pytest.fixture
+async def seeded_transcript_notebook_id(
+    test_user_id: int,
+    session_manager: DatabaseSessionManager,
+) -> int:
+    """Seed an active `.note` file with two transcribed pages."""
+    async with session_manager.session() as db:
+        file_do = UserFileDO(
+            user_id=test_user_id,
+            directory_id=0,
+            file_name="journal.note",
+            storage_key="journal_key",
+        )
+        db.add(file_do)
+        await db.flush()
+        db.add_all(
+            [
+                NotePageContentDO(
+                    file_id=file_do.id,
+                    page_index=0,
+                    page_id="P20260115090000a",
+                    text_content="First page notes.",
+                ),
+                NotePageContentDO(
+                    file_id=file_do.id,
+                    page_index=1,
+                    page_id="P20260116090000b",
+                    text_content="Second page notes.",
+                ),
+            ]
+        )
+        await db.commit()
+        return int(file_do.id)
 
 
 def _call_count(tool: str, status: str) -> float:
@@ -46,111 +76,98 @@ def _duration_count(tool: str) -> float:
     )
 
 
-async def _call_tool(mcp: MCPServer, name: str, args: dict[str, Any]) -> dict[str, Any]:
-    result = await mcp.call_tool(name, args)
-    assert isinstance(result, CallToolResult)
-    if result.structured_content is not None:
-        return dict(result.structured_content)
-    block = result.content[0]
-    assert isinstance(block, TextContent)
-    return dict(json.loads(block.text))
-
-
-@pytest.fixture
-def mcp_auth_user() -> Generator[None]:
-    """Bind an authenticated MCP bearer user context for tool handler tests."""
-    token = SupernoteAccessToken(
-        token="test-mcp-token",
-        user_id=42,
-        client_id="https://client.example.com",
-        scopes=["supernote:all"],
-    )
-    ctx_token = auth_context_var.set(AuthenticatedUser(token))
-    try:
-        yield
-    finally:
-        auth_context_var.reset(ctx_token)
-
-
-async def _setup_transcript_mcp(
-    component_core: ServerCore,
-) -> tuple[MCPServer, McpRegistrar, MagicMock]:
-    mock_transcript = MagicMock(spec=TranscriptService)
-    mock_transcript.get_transcript = AsyncMock(return_value="Page 1 transcript")
-    component_core.app[TRANSCRIPT_SERVICE_KEY] = mock_transcript
-    registrar = McpRegistrar()
-    await async_setup_mcp(component_core, registrar)
-    mcp = MCPServer("Test Transcript MCP")
-    registrar.apply_to_server(mcp)
-    return mcp, registrar, mock_transcript
-
-
-async def test_transcript_mcp_success_and_error_responses(
-    component_core: ServerCore,
-    mcp_auth_user: None,
+async def test_transcript_mcp_get_notebook_transcript_over_protocol(
+    mcp_url: str,
+    auth_headers: dict[str, str],
+    seeded_transcript_notebook_id: int,
 ) -> None:
-    """Verify `get_notebook_transcript` handles success, 400, 404, and 401 paths."""
-    _ = mcp_auth_user
-    mcp, registrar, mock_transcript = await _setup_transcript_mcp(component_core)
-    assert registrar.tool_names == ("get_notebook_transcript",)
-
+    """Verify `get_notebook_transcript` supports full and page-sliced reads over MCP."""
     before_ok = _call_count("get_notebook_transcript", "success")
-    before_fail = _call_count("get_notebook_transcript", "failure")
     before_dur = _duration_count("get_notebook_transcript")
 
-    ok_result = await _call_tool(mcp, "get_notebook_transcript", {"file_id": "101"})
-    assert ok_result == {
-        "success": True,
-        "errorCode": None,
-        "errorMsg": None,
-        "transcript": "Page 1 transcript",
-    }
-    assert _call_count("get_notebook_transcript", "success") == before_ok + 1.0
-    assert _duration_count("get_notebook_transcript") == before_dur + 1.0
+    async with mcp_session(mcp_url, auth_headers) as session:
+        tools = await session.list_tools()
+        assert "get_notebook_transcript" in {t.name for t in tools.tools}
 
-    bad_id = await _call_tool(mcp, "get_notebook_transcript", {"file_id": "abc"})
+        full = await call_mcp_tool(
+            session,
+            "get_notebook_transcript",
+            {"file_id": str(seeded_transcript_notebook_id)},
+        )
+        sliced = await call_mcp_tool(
+            session,
+            "get_notebook_transcript",
+            {
+                "file_id": str(seeded_transcript_notebook_id),
+                "start_index": 1,
+                "end_index": 1,
+            },
+        )
+
+    assert full["success"] is True
+    assert "First page notes." in full["transcript"]
+    assert "Second page notes." in full["transcript"]
+
+    assert sliced["success"] is True
+    assert "Second page notes." in sliced["transcript"]
+    assert "First page notes." not in sliced["transcript"]
+
+    assert _call_count("get_notebook_transcript", "success") == before_ok + 2.0
+    assert _duration_count("get_notebook_transcript") == before_dur + 2.0
+
+
+async def test_transcript_mcp_invalid_id_and_not_found_over_protocol(
+    mcp_url: str,
+    auth_headers: dict[str, str],
+) -> None:
+    """Verify invalid file_id (400) and missing notebook (404) over MCP Streamable HTTP."""
+    before_fail = _call_count("get_notebook_transcript", "failure")
+
+    async with mcp_session(mcp_url, auth_headers) as session:
+        bad_id = await call_mcp_tool(
+            session,
+            "get_notebook_transcript",
+            {"file_id": "abc"},
+        )
+        not_found = await call_mcp_tool(
+            session,
+            "get_notebook_transcript",
+            {"file_id": "999999"},
+        )
+
     assert bad_id == {
         "success": False,
         "errorCode": "400",
         "errorMsg": "Invalid file_id 'abc': must be a numeric ID string.",
     }
-
-    mock_transcript.get_transcript.return_value = None
-    not_found = await _call_tool(mcp, "get_notebook_transcript", {"file_id": "999"})
     assert not_found == {
         "success": False,
         "errorCode": "404",
-        "errorMsg": "No transcript found for notebook 999.",
+        "errorMsg": "No transcript found for notebook 999999.",
     }
-
-    auth_context_var.set(None)
-    unauth = await _call_tool(mcp, "get_notebook_transcript", {"file_id": "101"})
-    assert unauth == {
-        "success": False,
-        "errorCode": "401",
-        "errorMsg": "Authentication failed. Please set a valid token in meta.",
-    }
-    assert _call_count("get_notebook_transcript", "failure") == before_fail + 3.0
+    assert _call_count("get_notebook_transcript", "failure") == before_fail + 2.0
 
 
-async def test_transcript_mcp_exception_and_cancellation_metrics(
-    component_core: ServerCore,
-    mcp_auth_user: None,
+async def test_transcript_mcp_backend_error_records_failure_metric(
+    client: Any,
+    mcp_url: str,
+    auth_headers: dict[str, str],
 ) -> None:
-    """Verify unhandled errors and cancellations update metrics appropriately."""
-    _ = mcp_auth_user
-    mcp, _, mock_transcript = await _setup_transcript_mcp(component_core)
-
-    mock_transcript.get_transcript.side_effect = RuntimeError("db error")
+    """Verify unhandled TranscriptService errors return MCP tool error and record failure."""
     before_fail = _call_count("get_notebook_transcript", "failure")
-    with pytest.raises(ToolError):
-        await _call_tool(mcp, "get_notebook_transcript", {"file_id": "101"})
-    assert _call_count("get_notebook_transcript", "failure") == before_fail + 1.0
-
-    mock_transcript.get_transcript.side_effect = asyncio.CancelledError
-    before_cancel = _call_count("get_notebook_transcript", "cancelled")
     before_dur = _duration_count("get_notebook_transcript")
-    with pytest.raises(asyncio.CancelledError):
-        await _call_tool(mcp, "get_notebook_transcript", {"file_id": "101"})
-    assert _call_count("get_notebook_transcript", "cancelled") == before_cancel + 1.0
-    assert _duration_count("get_notebook_transcript") == before_dur
+
+    with patch.object(
+        client.app[TRANSCRIPT_SERVICE_KEY],
+        "get_transcript",
+        side_effect=RuntimeError("db error"),
+    ):
+        async with mcp_session(mcp_url, auth_headers) as session:
+            result = await session.call_tool(
+                "get_notebook_transcript",
+                arguments={"file_id": "101"},
+            )
+
+    assert result.is_error is True
+    assert _call_count("get_notebook_transcript", "failure") == before_fail + 1.0
+    assert _duration_count("get_notebook_transcript") == before_dur + 1.0

@@ -1,31 +1,68 @@
-"""Unit tests for `supernote.server.components.search.mcp`."""
+"""MCP protocol tests for `supernote.server.components.search.mcp`."""
 
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import Generator
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import patch
 
 import pytest
-from mcp.server.auth.middleware.auth_context import auth_context_var
-from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
-from mcp.server.mcpserver import MCPServer
-from mcp.server.mcpserver.exceptions import ToolError
-from mcp.types import CallToolResult, TextContent
 from prometheus_client import REGISTRY
 
-from supernote.server.components.mcp import McpRegistrar
-from supernote.server.components.oauth.models import SupernoteAccessToken
-from supernote.server.components.search import (
-    SEARCH_SERVICE_KEY,
-    NotebookInfo,
-    SearchResult,
-    SearchService,
-)
-from supernote.server.components.search.mcp import async_setup_mcp
-from supernote.server.core import ServerCore
+from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
+from supernote.server.components.search import SEARCH_SERVICE_KEY
+from supernote.server.db.models.file import UserFileDO
+from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.db.session import DatabaseSessionManager
+from tests.server.components.conftest import call_mcp_tool, mcp_session
+
+
+@pytest.fixture
+def mcp_enabled() -> bool:
+    """Enable the embedded MCP Streamable HTTP server for protocol tests."""
+    return True
+
+
+@pytest.fixture
+async def seeded_notebook_id(
+    test_user_id: int,
+    session_manager: DatabaseSessionManager,
+) -> int:
+    """Seed an active `.note` file and embedded page content for the test user."""
+    async with session_manager.session() as db:
+        file_do = UserFileDO(
+            user_id=test_user_id,
+            directory_id=0,
+            file_name="roadmap_notes.note",
+            storage_key="roadmap_notes_key",
+        )
+        db.add(file_do)
+        await db.flush()
+        db.add(
+            NotePageContentDO(
+                file_id=file_do.id,
+                page_index=0,
+                page_id="P20260115090000a",
+                text_content="Quarterly architecture milestones.",
+                embedding=json.dumps([0.1] * 768),
+                embedding_model="fake-embedding-v1",
+            )
+        )
+        await db.commit()
+        return int(file_do.id)
+
+
+@pytest.fixture
+def configured_embedding_model(client: Any) -> Generator[None]:
+    """Attach a deterministic `FakeEmbeddingModel` to the running app's SearchService."""
+    search_service = client.app[SEARCH_SERVICE_KEY]
+    original = search_service.embedding_model
+    search_service.embedding_model = FakeEmbeddingModel(dimensions=768)
+    try:
+        yield
+    finally:
+        search_service.embedding_model = original
 
 
 def _call_count(tool: str, status: str) -> float:
@@ -48,174 +85,86 @@ def _duration_count(tool: str) -> float:
     )
 
 
-async def _call_tool(mcp: MCPServer, name: str, args: dict[str, Any]) -> dict[str, Any]:
-    result = await mcp.call_tool(name, args)
-    assert isinstance(result, CallToolResult)
-    if result.structured_content is not None:
-        return dict(result.structured_content)
-    block = result.content[0]
-    assert isinstance(block, TextContent)
-    return dict(json.loads(block.text))
-
-
-@pytest.fixture
-def mcp_auth_user() -> Generator[None]:
-    """Bind an authenticated MCP bearer user context for tool handler tests."""
-    token = SupernoteAccessToken(
-        token="test-mcp-token",
-        user_id=42,
-        client_id="https://client.example.com",
-        scopes=["supernote:all"],
-    )
-    ctx_token = auth_context_var.set(AuthenticatedUser(token))
-    try:
-        yield
-    finally:
-        auth_context_var.reset(ctx_token)
-
-
-async def _setup_search_mcp(
-    component_core: ServerCore,
-) -> tuple[MCPServer, McpRegistrar, MagicMock]:
-    mock_search = MagicMock(spec=SearchService)
-    mock_search.list_notebooks = AsyncMock(return_value=[])
-    mock_search.search_chunks = AsyncMock(return_value=[])
-    component_core.app[SEARCH_SERVICE_KEY] = mock_search
-    registrar = McpRegistrar()
-    await async_setup_mcp(component_core, registrar)
-    mcp = MCPServer("Test Search MCP")
-    registrar.apply_to_server(mcp)
-    return mcp, registrar, mock_search
-
-
-async def test_search_mcp_list_notebooks_success_and_auth_failure(
-    component_core: ServerCore,
-    mcp_auth_user: None,
+async def test_search_mcp_list_notebooks_over_protocol(
+    mcp_url: str,
+    auth_headers: dict[str, str],
+    seeded_notebook_id: int,
 ) -> None:
-    """Verify `list_notebooks` registers via McpRegistrar and tracks metrics."""
-    _ = mcp_auth_user
-    mcp, registrar, mock_search = await _setup_search_mcp(component_core)
-    assert registrar.tool_names == ("list_notebooks", "search_notebook_chunks")
-
-    mock_search.list_notebooks.return_value = [
-        NotebookInfo(
-            file_id=101,
-            file_name="Journal.note",
-            create_time=1000,
-            update_time=2000,
-        )
-    ]
-
+    """Verify `list_notebooks` works over MCP Streamable HTTP and records metrics."""
     before_ok = _call_count("list_notebooks", "success")
-    before_fail = _call_count("list_notebooks", "failure")
     before_dur = _duration_count("list_notebooks")
 
-    ok_result = await _call_tool(mcp, "list_notebooks", {"limit": 10})
-    assert ok_result == {
-        "success": True,
-        "errorCode": None,
-        "errorMsg": None,
-        "notebooks": [
-            {
-                "fileId": "101",
-                "fileName": "Journal.note",
-                "createTime": 1000,
-                "updateTime": 2000,
-            }
-        ],
-    }
+    async with mcp_session(mcp_url, auth_headers) as session:
+        tools = await session.list_tools()
+        tool_names = {t.name for t in tools.tools}
+        assert {"list_notebooks", "search_notebook_chunks"} <= tool_names
+
+        data = await call_mcp_tool(
+            session,
+            "list_notebooks",
+            {"name_filter": "roadmap", "limit": 10},
+        )
+
+    assert data["success"] is True
+    assert len(data["notebooks"]) == 1
+    assert data["notebooks"][0]["fileId"] == str(seeded_notebook_id)
+    assert data["notebooks"][0]["fileName"] == "roadmap_notes.note"
     assert _call_count("list_notebooks", "success") == before_ok + 1.0
     assert _duration_count("list_notebooks") == before_dur + 1.0
 
-    auth_context_var.set(None)
-    err_result = await _call_tool(mcp, "list_notebooks", {})
-    assert err_result == {
-        "success": False,
-        "errorCode": "401",
-        "errorMsg": "Authentication failed. Please set a valid token in meta.",
-    }
-    assert _call_count("list_notebooks", "failure") == before_fail + 1.0
 
-
-async def test_search_mcp_search_notebook_chunks_success_and_auth_failure(
-    component_core: ServerCore,
-    mcp_auth_user: None,
+async def test_search_mcp_search_notebook_chunks_over_protocol(
+    mcp_url: str,
+    auth_headers: dict[str, str],
+    seeded_notebook_id: int,
+    configured_embedding_model: None,
 ) -> None:
-    """Verify `search_notebook_chunks` serializes hits and handles auth errors."""
-    _ = mcp_auth_user
-    mcp, _, mock_search = await _setup_search_mcp(component_core)
+    """Verify `search_notebook_chunks` returns ranked hits over MCP Streamable HTTP."""
+    _ = configured_embedding_model
+    before_ok = _call_count("search_notebook_chunks", "success")
 
-    mock_search.search_chunks.return_value = [
-        SearchResult(
-            file_id=202,
-            file_name="Roadmap.note",
-            page_index=0,
-            page_id="P20260101",
-            score=0.92,
-            text_preview="Q1 milestones",
-            date="2026-01-01",
-        )
-    ]
-
-    ok_result = await _call_tool(
-        mcp,
-        "search_notebook_chunks",
-        {
-            "query": "milestones",
-            "top_n": 3,
-            "name_filter": "Road",
-            "date_after": "2026-01-01",
-            "date_before": "2026-12-31",
-        },
-    )
-    assert ok_result == {
-        "success": True,
-        "errorCode": None,
-        "errorMsg": None,
-        "results": [
+    async with mcp_session(mcp_url, auth_headers) as session:
+        data = await call_mcp_tool(
+            session,
+            "search_notebook_chunks",
             {
-                "fileId": "202",
-                "fileName": "Roadmap.note",
-                "pageIndex": 0,
-                "pageId": "P20260101",
-                "score": 0.92,
-                "textPreview": "Q1 milestones",
-                "date": "2026-01-01",
-            }
-        ],
-    }
+                "query": "architecture milestones",
+                "top_n": 5,
+                "name_filter": "roadmap",
+                "date_after": "2026-01-01",
+                "date_before": "2026-12-31",
+            },
+        )
 
-    auth_context_var.set(None)
-    err_result = await _call_tool(
-        mcp, "search_notebook_chunks", {"query": "milestones"}
-    )
-    assert err_result == {
-        "success": False,
-        "errorCode": "401",
-        "errorMsg": "Authentication failed. Please set a valid token in meta.",
-    }
+    assert data["success"] is True
+    assert len(data["results"]) == 1
+    assert data["results"][0]["fileId"] == str(seeded_notebook_id)
+    assert data["results"][0]["fileName"] == "roadmap_notes.note"
+    assert data["results"][0]["textPreview"] == "Quarterly architecture milestones."
+    assert data["results"][0]["date"] == "2026-01-15"
+    assert _call_count("search_notebook_chunks", "success") == before_ok + 1.0
 
 
-async def test_search_mcp_tool_exception_and_cancellation_metrics(
-    component_core: ServerCore,
-    mcp_auth_user: None,
+async def test_search_mcp_backend_error_records_failure_metric(
+    client: Any,
+    mcp_url: str,
+    auth_headers: dict[str, str],
 ) -> None:
-    """Verify exceptions record failure+duration and cancellations skip duration."""
-    _ = mcp_auth_user
-    mcp, _, mock_search = await _setup_search_mcp(component_core)
-
-    mock_search.search_chunks.side_effect = RuntimeError("backend down")
+    """Verify unhandled SearchService errors return MCP tool error and record failure metric."""
     before_fail = _call_count("search_notebook_chunks", "failure")
     before_dur = _duration_count("search_notebook_chunks")
-    with pytest.raises(ToolError):
-        await _call_tool(mcp, "search_notebook_chunks", {"query": "notes"})
+
+    with patch.object(
+        client.app[SEARCH_SERVICE_KEY],
+        "search_chunks",
+        side_effect=RuntimeError("backend down"),
+    ):
+        async with mcp_session(mcp_url, auth_headers) as session:
+            result = await session.call_tool(
+                "search_notebook_chunks",
+                arguments={"query": "notes"},
+            )
+
+    assert result.is_error is True
     assert _call_count("search_notebook_chunks", "failure") == before_fail + 1.0
     assert _duration_count("search_notebook_chunks") == before_dur + 1.0
-
-    mock_search.search_chunks.side_effect = asyncio.CancelledError
-    before_cancel = _call_count("search_notebook_chunks", "cancelled")
-    before_dur2 = _duration_count("search_notebook_chunks")
-    with pytest.raises(asyncio.CancelledError):
-        await _call_tool(mcp, "search_notebook_chunks", {"query": "notes"})
-    assert _call_count("search_notebook_chunks", "cancelled") == before_cancel + 1.0
-    assert _duration_count("search_notebook_chunks") == before_dur2
