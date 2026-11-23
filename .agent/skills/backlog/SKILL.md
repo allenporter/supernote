@@ -91,3 +91,6 @@ gh issue list --state open --label "needs-design" --json number,title,labels,mil
 2. Include a concise `## Summary` and checkable `## Goals` acceptance criteria.
 3. Assign **1 Strategic Milestone** + **1 Type** + **1 Priority (`p1`/`p2`/`p3`)** + **1 Readiness (`agent-ready` or `needs-design`)** + **1–3 Area labels** (+ optional `polish` for <~200 LoC single-PR seams).
 4. Check open PRs (`gh pr list --state open`) before picking up an `agent-ready` issue so you do not duplicate in-flight work.
+5. **Append comments instead of editing**: When updating an existing issue with new context or suggestions, add a new comment (`gh issue comment`) rather than editing the original issue body unless explicitly asked.
+6. **No reverse-engineering specifics**: Never include device firmware or APK reverse-engineering details in public GitHub issues.
+7. **Match detail to readiness**: For `needs-design` or un-designed feature issues, focus on high-level motivation, verified facts/observations, and open ideas rather than prescriptive step-by-step implementation plans.

@@ -24,3 +24,7 @@ Before adding a method, parameter, or dependency to an interface or base class, 
 5. **Never Bypass Architectural Conformance Tests or Legacy Allowlists**:
    - When a schema or architecture conformance test fails (e.g., `test_init.py` multi-user primary-key and scoping invariants), treat it as a hard design error in the new code—never add new tables or modules to legacy exemption allowlists (`TABLES_WITHOUT_USER_ID_IN_PK_ALLOWLIST`, `TABLES_WITHOUT_USER_ID_ALLOWLIST`, `UNSCOPED_UNIQUE_CONSTRAINT_ALLOWLIST`) to make the test pass.
    - If a new table genuinely appears to conflict with an invariant, stop and ask the user rather than modifying the allowlist.
+
+6. **Ground Analysis in Verified Facts & Take a Clear Stance**:
+   - In research and architectural reviews, explicitly separate verified code facts from unverified documentation or inference, and re-verify tool/CLI availability (e.g. `which gh && gh auth status`) before reporting an environment block.
+   - When evaluating design options, define any referenced option inline, commit to one clear recommendation anchored to the concrete use case, and avoid hedging with alternatives that conflict with project principles.
