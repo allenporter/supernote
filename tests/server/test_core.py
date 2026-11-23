@@ -34,7 +34,6 @@ class RecordingComponent:
 
     domain: str
     dependencies: tuple[str, ...] = ()
-    version: str = "1.0.0"
     events: list[tuple[str, str]] = field(default_factory=list)
     seen_cores: list[ServerCore] = field(default_factory=list)
     fail_on: str | None = None

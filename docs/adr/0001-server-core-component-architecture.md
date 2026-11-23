@@ -70,8 +70,6 @@ class Component(Protocol):
     @property
     def domain(self) -> str: ...
     @property
-    def version(self) -> str: ...
-    @property
     def dependencies(self) -> Sequence[str]: ...
     async def async_setup(self, core: ServerCore) -> None: ...
     async def async_start(self, core: ServerCore) -> None: ...
@@ -79,7 +77,6 @@ class Component(Protocol):
 ```
 
 - **`domain`**: Unique lowercase identifier matching `^[a-z][a-z0-9_]*$` (e.g., `"webhooks"`, `"metrics"`, `"socketio"`, `"mcp"`). Invalid or empty domains fail fast with `ComponentError`; duplicates raise `DuplicateComponentError`.
-- **`version`**: Component version string (e.g., `"1.0.0"` or distribution version).
 - **`dependencies`**: Ordered sequence of `domain` strings that must complete `async_setup` and `async_start` before this component (and execute `async_stop` after it).
 
 ### 3.2 Discovery: Built-In Components and External `importlib.metadata` Plugins

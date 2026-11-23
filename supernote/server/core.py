@@ -92,11 +92,6 @@ class Component(Protocol):
         ...
 
     @property
-    def version(self) -> str:
-        """Component version string."""
-        ...
-
-    @property
     def dependencies(self) -> Sequence[str]:
         """Domain identifiers that must set up and start before this component."""
         ...
