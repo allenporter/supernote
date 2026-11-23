@@ -17,6 +17,9 @@ from supernote.server.components.fake_ai.embedding import (
     create_embedding_model as create_fake_embedding_model,
 )
 from supernote.server.components.fake_ai.ocr import (
+    FakeOcrModel,
+)
+from supernote.server.components.fake_ai.ocr import (
     create_ocr_model as create_fake_ocr_model,
 )
 from supernote.server.components.fake_ai.summary import (
@@ -104,6 +107,29 @@ async def test_ai_registrar_validates_embedding_vectors() -> None:
     assert embedding is not None
     with pytest.raises(AIError, match="zero-norm vector"):
         await embedding.embed("hello", EmbeddingTaskType.RETRIEVAL_QUERY)
+
+
+async def test_ai_registrar_applies_ocr_prompt_override() -> None:
+    inner = FakeOcrModel(model_id="DeepSeek-OCR-8bit", provider="local")
+    registrar = AiRegistrar()
+    registrar.register_ocr("local", lambda _cfg: inner)
+
+    config = ServerConfig(
+        ai=AiConfig(
+            providers={"local": ProviderConfig()},
+            ocr=ModelConfig(
+                provider="local",
+                model="DeepSeek-OCR-8bit",
+                max_concurrency=1,
+                prompt_override="Convert the document to markdown.",
+            ),
+        )
+    )
+
+    ocr = registrar.create_ocr_model(config)
+    assert ocr is not None
+    await ocr.extract_text(b"png", "long composed prompt")
+    assert inner.calls == [(b"png", "Convert the document to markdown.")]
 
 
 def test_ai_registrar_returns_none_when_factory_returns_none() -> None:

@@ -27,6 +27,7 @@ from supernote.server.ai.models.ocr import (
     ConcurrencyLimitedOcrModel,
     InstrumentedOcrModel,
     OcrModel,
+    PromptOverrideOcrModel,
 )
 from supernote.server.ai.models.summary import (
     ConcurrencyLimitedSummaryModel,
@@ -156,6 +157,8 @@ class AiRegistrar:
         if resolved is None:
             return None
         model, model_cfg = resolved
+        if model_cfg.prompt_override is not None:
+            model = PromptOverrideOcrModel(model, model_cfg.prompt_override)
         return ConcurrencyLimitedOcrModel(
             InstrumentedOcrModel(model),
             max_concurrency=model_cfg.max_concurrency,

@@ -10,6 +10,7 @@ from prometheus_client import REGISTRY
 from supernote.server.ai.models.ocr import (
     ConcurrencyLimitedOcrModel,
     InstrumentedOcrModel,
+    PromptOverrideOcrModel,
 )
 from supernote.server.components.fake_ai.ocr import FakeOcrModel
 
@@ -105,3 +106,15 @@ async def test_instrumented_concurrency_excludes_semaphore_queue_wait() -> None:
         REGISTRY.get_sample_value("supernote_ai_requests_total", ok_labels)
         == before_ok + 2.0
     )
+
+
+async def test_prompt_override_ocr_model() -> None:
+    inner = FakeOcrModel(model_id="DeepSeek-OCR-8bit", provider="local")
+    wrapped = PromptOverrideOcrModel(inner, "Convert the document to markdown.")
+
+    assert wrapped.provider == "local"
+    assert wrapped.model_id == "DeepSeek-OCR-8bit"
+
+    result = await wrapped.extract_text(b"png-bytes", "long composed prompt")
+    assert result
+    assert inner.calls == [(b"png-bytes", "Convert the document to markdown.")]

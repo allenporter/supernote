@@ -147,7 +147,7 @@ class OpenAIBackend:
         with self._handle_api_errors("chat_completion"):
             data = await self._post("/chat/completions", payload)
             _record_usage(data, provider=self._provider)
-            text = data["choices"][0]["message"]["content"] or ""
+            text = data["choices"][0]["message"].get("content") or ""
             if not isinstance(text, str):
                 raise TypeError("chat completion content is not a string")
             return text

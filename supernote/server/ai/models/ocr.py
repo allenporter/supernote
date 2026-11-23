@@ -18,6 +18,7 @@ __all__ = [
     "ConcurrencyLimitedOcrModel",
     "InstrumentedOcrModel",
     "OcrModel",
+    "PromptOverrideOcrModel",
 ]
 
 
@@ -89,3 +90,22 @@ class ConcurrencyLimitedOcrModel(OcrModel):
     async def extract_text(self, png_data: bytes, prompt: str) -> str:
         async with self._semaphore:
             return await self._model.extract_text(png_data, prompt)
+
+
+class PromptOverrideOcrModel(OcrModel):
+    """Wraps an `OcrModel` to replace the caller's prompt with a fixed instruction."""
+
+    def __init__(self, model: OcrModel, prompt: str) -> None:
+        self._model = model
+        self._prompt = prompt
+
+    @property
+    def provider(self) -> str:
+        return self._model.provider
+
+    @property
+    def model_id(self) -> str:
+        return self._model.model_id
+
+    async def extract_text(self, png_data: bytes, prompt: str) -> str:
+        return await self._model.extract_text(png_data, self._prompt)

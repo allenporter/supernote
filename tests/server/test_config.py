@@ -387,7 +387,7 @@ def test_server_config_legacy_gemini_syncs_to_ai(tmp_path: Path) -> None:
 
 
 def test_model_config_validation() -> None:
-    """ModelConfig validates non-empty provider, model, and positive max_concurrency."""
+    """ModelConfig validates non-empty provider, model, positive max_concurrency, and prompt_override."""
     with pytest.raises(ValueError, match="non-empty provider"):
         ModelConfig(provider="  ", model="gemini-3.6-flash")
 
@@ -396,6 +396,20 @@ def test_model_config_validation() -> None:
 
     with pytest.raises(ValueError, match="max_concurrency must be >= 1"):
         ModelConfig(provider="gemini", model="gemini-3.6-flash", max_concurrency=0)
+
+    with pytest.raises(ValueError, match="prompt_override must be non-empty"):
+        ModelConfig(provider="local", model="DeepSeek-OCR-8bit", prompt_override="")
+
+    with pytest.raises(ValueError, match="prompt_override must be non-empty"):
+        ModelConfig(provider="local", model="DeepSeek-OCR-8bit", prompt_override="   ")
+
+    cfg = ModelConfig(
+        provider="local",
+        model="DeepSeek-OCR-8bit",
+        max_concurrency=1,
+        prompt_override="Convert the document to markdown.",
+    )
+    assert cfg.prompt_override == "Convert the document to markdown."
 
 
 def test_server_config_trace_log_flags(tmp_path: Path) -> None:
