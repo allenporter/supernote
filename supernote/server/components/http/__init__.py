@@ -151,16 +151,10 @@ class HttpRegistrar:
                 app.router.register_resource(resource)
                 existing.add(resource)
 
-    def apply_to_app(
-        self,
-        app: web.Application,
-        *,
-        extra_outer_middlewares: Iterable[Middleware] = (),
-    ) -> None:
+    def apply_to_app(self, app: web.Application) -> None:
         """Mount deferred resources and assemble the ordered middleware pipeline."""
         self.mount_resources(app)
         app.middlewares.extend(self._outer_middlewares)
-        app.middlewares.extend(extra_outer_middlewares)
         app.middlewares.append(trace_middleware)
         app.middlewares.append(jwt_auth_middleware)
         app.middlewares.append(static_cache_control_middleware)

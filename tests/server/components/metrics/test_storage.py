@@ -11,11 +11,13 @@ from prometheus_client import REGISTRY
 from pytest_aiohttp import AiohttpClient
 
 from supernote.server.app import create_app
+from supernote.server.components.metrics.storage import (
+    STORAGE_METRICS_COLLECTOR_KEY,
+    StorageMetricsCollector,
+)
 from supernote.server.config import ServerConfig
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
-from supernote.server.keys import STORAGE_METRICS_COLLECTOR_KEY
 from supernote.server.services.blob import LocalBlobStorage
-from supernote.server.services.storage_metrics import StorageMetricsCollector
 from supernote.server.utils.paths import (
     get_conversion_pdf_path,
     get_page_png_path,

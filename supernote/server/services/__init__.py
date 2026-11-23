@@ -20,7 +20,7 @@ or asynchronously via `supernote.server.events.LocalEventBus`.
 | `supernote.server.services.coordination.SqliteCoordinationService` | `supernote.server.services.coordination` | TTL-backed key-value store and distributed locks (`KeyValueDO`). |
 | `supernote.server.services.user.UserService` | `supernote.server.services.user` | User accounts, Admin-First bootstrap, static API keys, device bindings, and JWT sessions. |
 | `supernote.server.services.event_log.EventLogService` | `supernote.server.services.event_log` | Append-only per-user domain event log (`UserEventDO`) and cursor pagination. |
-| `supernote.server.services.storage_metrics.StorageMetricsCollector` | `supernote.server.services.storage_metrics` | Periodic background collector for blob storage and cache Prometheus gauges. |
+| `supernote.server.components.metrics.storage.StorageMetricsCollector` | `supernote.server.components.metrics.storage` | Periodic background collector for blob storage and cache Prometheus gauges. |
 
 See `supernote.guides.architecture` for the end-to-end service interaction model.
 """
@@ -37,7 +37,6 @@ __all__ = [
     "processor_modules",
     "schedule",
     "search",
-    "storage_metrics",
     "summary",
     "user",
     "vfs",

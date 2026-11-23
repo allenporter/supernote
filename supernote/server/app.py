@@ -16,16 +16,11 @@ import asyncio
 import importlib.resources
 import logging
 import os
-import time
-from collections.abc import Awaitable, Callable
-from collections.abc import Set as AbstractSet
 from pathlib import Path
 from typing import Any
 
 import aiohttp_remotes
 from aiohttp import web
-from aiohttp.typedefs import Middleware
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from supernote.models.user import UserRegisterDTO
 from supernote.server.db.migrations import run_migrations
@@ -58,15 +53,10 @@ from .keys import (
     SCHEDULE_SERVICE_KEY,
     SEARCH_SERVICE_KEY,
     SESSION_MANAGER_KEY,
-    STORAGE_METRICS_COLLECTOR_KEY,
     SUMMARY_MODEL_KEY,
     SUMMARY_SERVICE_KEY,
     URL_SIGNER_KEY,
     USER_SERVICE_KEY,
-)
-from .metrics import (
-    HTTP_REQUEST_DURATION_SECONDS,
-    HTTP_REQUESTS_TOTAL,
 )
 from .routes import (
     admin,
@@ -95,7 +85,6 @@ from .services.processor_modules.png_conversion import PngConversionModule
 from .services.processor_modules.summary import SummaryModule
 from .services.schedule import ScheduleService
 from .services.search import SearchService
-from .services.storage_metrics import StorageMetricsCollector
 from .services.summary import SummaryService
 from .services.user import UserService
 from .trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger
@@ -105,80 +94,6 @@ from .utils.rate_limit import RateLimiter
 from .utils.url_signer import UrlSigner
 
 logger = logging.getLogger(__name__)
-
-
-_KNOWN_HTTP_METHODS: frozenset[str] = frozenset(
-    {"GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"}
-)
-
-
-def _normalize_http_method(method: str) -> str:
-    """Normalize HTTP method to a bounded label set."""
-    normalized = method.upper()
-    return normalized if normalized in _KNOWN_HTTP_METHODS else "OTHER"
-
-
-def _resolve_metrics_path(
-    request: web.Request,
-    status: int,
-    mcp_auth_paths: AbstractSet[str] = frozenset(),
-) -> str:
-    """Resolve a bounded Prometheus path label without falling back to raw request paths."""
-    route = request.match_info.route
-    if route is None:
-        return request.path if request.path in mcp_auth_paths else f"HTTP {status}"
-    if route.resource is None:
-        return f"HTTP {status}"
-    if route.name == "static":
-        return "/static/{filename}"
-    info = route.resource.get_info()
-    return info.get("formatter") or info.get("path") or f"HTTP {status}"
-
-
-def create_metrics_middleware(
-    metrics_path: str = "/metrics",
-    mcp_auth_paths: AbstractSet[str] = frozenset(),
-) -> Middleware:
-    """Create HTTP Prometheus metrics middleware with explicit path configuration."""
-
-    @web.middleware
-    async def _middleware(
-        request: web.Request,
-        handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
-    ) -> web.StreamResponse:
-        if request.path == metrics_path:
-            return await handler(request)
-
-        method = _normalize_http_method(request.method)
-        start_time = time.perf_counter()
-        status = 500
-        cancelled = False
-        try:
-            response = await handler(request)
-            status = response.status
-            return response
-        except web.HTTPException as ex:
-            status = ex.status
-            raise
-        except asyncio.CancelledError:
-            status = 499
-            cancelled = True
-            raise
-        finally:
-            duration = time.perf_counter() - start_time
-            path_pattern = _resolve_metrics_path(request, status, mcp_auth_paths)
-            HTTP_REQUESTS_TOTAL.labels(
-                method=method, path=path_pattern, status=str(status)
-            ).inc()
-            if not cancelled:
-                HTTP_REQUEST_DURATION_SECONDS.labels(
-                    method=method, path=path_pattern
-                ).observe(duration)
-
-    return _middleware
-
-
-metrics_middleware: Middleware = create_metrics_middleware()
 
 
 def create_db_session_manager(db_url: str) -> DatabaseSessionManager:
@@ -287,6 +202,7 @@ def create_app(config: ServerConfig) -> web.Application:
 
     component_configs = {
         "mcp": {"enabled": config.mcp_enabled},
+        "metrics": {"enabled": config.metrics_enabled},
         "webhooks": config.webhooks,
     }
     load_builtin_components(component_loader, component_configs)
@@ -337,18 +253,6 @@ def create_app(config: ServerConfig) -> web.Application:
         app.router.add_get("/", handle_index)
         app.router.add_static("/static/", path=static_path, name="static")
 
-    if config.metrics_enabled:
-
-        @public_route
-        async def handle_metrics(request: web.Request) -> web.Response:
-            data = generate_latest()
-            return web.Response(
-                body=data, headers={"Content-Type": CONTENT_TYPE_LATEST}
-            )
-
-        app.router.add_get(config.metrics_path, handle_metrics)
-        logger.info(f"Exposing Prometheus metrics at {config.metrics_path}")
-
     # Register Middlewares
     async def on_startup_handler(app: web.Application) -> None:
         # Configure proxy middleware based on config
@@ -376,33 +280,16 @@ def create_app(config: ServerConfig) -> web.Application:
         await component_loader.async_setup_all(core, component_configs)
         http_registrar = app[HTTP_REGISTRAR_KEY]
         await component_loader.async_load_platform("http", core, http_registrar)
-
-        # TODO: Move metrics middleware into a `metrics` component/platform so
-        # `app.py` no longer wires middlewares directly.
-        extra_outer: list[Middleware] = []
-        if config.metrics_enabled:
-            extra_outer.append(
-                create_metrics_middleware(
-                    metrics_path=config.metrics_path,
-                    mcp_auth_paths=http_registrar.known_resource_paths,
-                )
-            )
-        http_registrar.apply_to_app(app, extra_outer_middlewares=extra_outer)
+        http_registrar.apply_to_app(app)
 
         logger.info("Starting background services...")
         await processor_service.start()
         await component_loader.async_start_all(core)
-        if config.metrics_enabled:
-            storage_metrics_collector = StorageMetricsCollector(blob_storage)
-            app[STORAGE_METRICS_COLLECTOR_KEY] = storage_metrics_collector
-            await storage_metrics_collector.start()
         logger.info("Startup sequence complete.")
 
     app.on_startup.append(on_startup_handler)
 
     async def on_shutdown_handler(app: web.Application) -> None:
-        if storage_metrics_collector := app.get(STORAGE_METRICS_COLLECTOR_KEY):
-            await storage_metrics_collector.stop()
         await component_loader.async_stop_all(core)
         await processor_service.stop()
         await session_manager.close()

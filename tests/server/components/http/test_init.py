@@ -24,10 +24,6 @@ def test_http_registrar_collects_middlewares_prefixes_and_resources() -> None:
         return await handler(request)
 
     @web.middleware
-    async def extra_outer_mw(request: web.Request, handler: Any) -> web.StreamResponse:
-        return await handler(request)
-
-    @web.middleware
     async def inner_mw(request: web.Request, handler: Any) -> web.StreamResponse:
         return await handler(request)
 
@@ -52,13 +48,12 @@ def test_http_registrar_collects_middlewares_prefixes_and_resources() -> None:
     assert registrar.known_resource_paths == frozenset({"/authorize", "/token"})
 
     app = web.Application()
-    registrar.apply_to_app(app, extra_outer_middlewares=(extra_outer_mw,))
+    registrar.apply_to_app(app)
     # mount_resources is idempotent on repeat calls
     registrar.mount_resources(app)
     assert list(app.router.resources()).count(resource) == 1
     assert list(app.middlewares) == [
         outer_mw,
-        extra_outer_mw,
         trace_middleware,
         jwt_auth_middleware,
         static_cache_control_middleware,

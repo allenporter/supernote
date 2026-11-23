@@ -50,6 +50,11 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         default_enabled=True,
     ),
     BuiltinComponentSpec(
+        domain="metrics",
+        import_path="supernote.server.components.metrics:MetricsComponent",
+        default_enabled=True,
+    ),
+    BuiltinComponentSpec(
         domain="socketio",
         import_path="supernote.server.components.socketio:SocketIOComponent",
         default_enabled=True,
