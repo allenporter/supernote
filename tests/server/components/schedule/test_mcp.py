@@ -8,8 +8,6 @@ import httpx2
 import pytest
 from aiohttp.test_utils import TestClient
 
-from supernote.client.auth import AbstractAuth
-from supernote.client.client import Client
 from supernote.client.schedule import ScheduleClient
 from supernote.models.base import ErrorCode
 from supernote.models.events import DomainEventType
@@ -24,22 +22,6 @@ from tests.server.components.conftest import call_mcp_tool, mcp_session
 def mcp_enabled() -> bool:
     """Enable the embedded MCP Streamable HTTP server for protocol tests."""
     return True
-
-
-@pytest.fixture
-async def schedule_client(
-    client: TestClient,
-    auth_headers: dict[str, str],
-) -> ScheduleClient:
-    token = auth_headers["x-access-token"]
-
-    class TokenAuth(AbstractAuth):
-        async def async_get_access_token(self) -> str:
-            return token
-
-    return ScheduleClient(
-        Client(client.session, auth=TokenAuth(), host=str(client.make_url("")))
-    )
 
 
 async def test_schedule_mcp_registers_crud_tools(

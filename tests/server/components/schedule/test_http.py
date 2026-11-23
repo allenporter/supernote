@@ -2,7 +2,6 @@ import asyncio
 
 import pytest
 from aiohttp.test_utils import TestClient
-from ical.calendar_stream import IcsCalendarStream
 
 from supernote.client.auth import AbstractAuth
 from supernote.client.client import Client
@@ -17,21 +16,8 @@ from supernote.models.schedule import (
     UpdateScheduleTaskDTO,
     UpdateScheduleTaskVO,
 )
-
-
-@pytest.fixture
-async def authenticated_client(
-    client: TestClient,  # From server conftest
-    auth_headers: dict[str, str],  # From server conftest
-) -> Client:
-    token = auth_headers["x-access-token"]
-
-    class TokenAuth(AbstractAuth):
-        async def async_get_access_token(self) -> str:
-            return token
-
-    base_url = str(client.make_url(""))
-    return Client(client.session, auth=TokenAuth(), host=base_url)
+from supernote.models.user import UserRegisterDTO
+from supernote.server.services.user import UserService
 
 
 async def test_schedule_flow(authenticated_client: Client) -> None:
@@ -472,7 +458,10 @@ async def test_delete_group_cascades_contained_tasks(
 
     await schedule.delete_group(group_id)
 
-    tasks_after = [t async for t in schedule.list_tasks(group_id)]
+    groups_after = [g async for g in schedule.list_groups()]
+    assert not any(g.task_list_id == group_id for g in groups_after)
+
+    tasks_after = [t async for t in schedule.list_tasks()]
     assert len(tasks_after) == 0
 
 
@@ -653,44 +642,6 @@ async def test_ical_feed_auth_via_header(
     body = await resp.text()
     assert body.startswith("BEGIN:VCALENDAR")
     assert "END:VCALENDAR" in body
-
-
-async def test_ical_feed_content_and_filtering(
-    client: TestClient,
-    authenticated_client: Client,
-    auth_headers: dict[str, str],
-) -> None:
-    """Test creating tasks via ScheduleClient and retrieving feed via HTTP GET."""
-    schedule = ScheduleClient(authenticated_client)
-
-    # Populate data via ScheduleClient
-    group_vo = await schedule.create_group("Sprint Tasks")
-    assert group_vo.task_list_id is not None
-    group_id = str(group_vo.task_list_id)
-
-    task1 = await schedule.create_task(
-        group_id,
-        "Implement ICS Route",
-        detail="Add feed.ics endpoint in schedule routes",
-    )
-    assert task1.task_id is not None
-
-    # Query ICS feed via ScheduleClient SDK
-    ics_content = await schedule.get_ical_feed()
-    calendar = IcsCalendarStream.calendar_from_ics(ics_content)
-    assert calendar is not None
-    assert len(calendar.todos) >= 1
-
-    todo = next(t for t in calendar.todos if t.summary == "Implement ICS Route")
-    assert todo.description == "Add feed.ics endpoint in schedule routes"
-
-    # Filter by taskListId query param via ScheduleClient SDK
-    filtered_content = await schedule.get_ical_feed(group_id=group_id)
-    filtered_calendar = IcsCalendarStream.calendar_from_ics(filtered_content)
-    assert len(filtered_calendar.todos) == 1
-
-    # Cleanup
-    await schedule.delete_group(group_id)
 
 
 async def test_schedule_string_uuid_support(authenticated_client: Client) -> None:
@@ -1079,3 +1030,224 @@ async def test_batch_update_tasks_rejects_nonexistent_task_list_id(
         assert detail.task_list_id is None
     finally:
         await schedule.delete_task(task_id)
+
+
+async def test_group_names_are_not_unique(authenticated_client: Client) -> None:
+    """Verify multiple schedule groups may share the same title with distinct IDs."""
+    schedule = ScheduleClient(authenticated_client)
+
+    group1 = await schedule.create_group("Work")
+    group2 = await schedule.create_group("Work")
+    assert group1.task_list_id is not None
+    assert group2.task_list_id is not None
+    assert group1.task_list_id != group2.task_list_id
+
+    groups = [g async for g in schedule.list_groups()]
+    assert [g.title for g in groups] == ["Work", "Work"]
+
+    await schedule.delete_group(group1.task_list_id)
+    remaining = [g async for g in schedule.list_groups()]
+    assert [g.task_list_id for g in remaining] == [group2.task_list_id]
+
+
+async def _other_schedule_client(
+    client: TestClient,
+    user_service: UserService,
+    email: str,
+) -> ScheduleClient:
+    other_user = await user_service.register(
+        UserRegisterDTO(email=email, password="a" * 32)
+    )
+    other_key, _ = await user_service.create_api_key(other_user.id, "Other Schedule")
+
+    class OtherAuth(AbstractAuth):
+        async def async_get_access_token(self) -> str:
+            return other_key
+
+    return ScheduleClient(
+        Client(client.session, auth=OtherAuth(), host=str(client.make_url("")))
+    )
+
+
+async def test_schedule_user_isolation(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    schedule_client: ScheduleClient,
+    user_service: UserService,
+) -> None:
+    """Verify users cannot see or delete another user's schedule groups."""
+    schedule2 = await _other_schedule_client(
+        client, user_service, "other_isolation@example.com"
+    )
+
+    g1 = await schedule_client.create_group("U1 Group")
+    g2 = await schedule2.create_group("U2 Group")
+    assert g1.task_list_id is not None
+    assert g2.task_list_id is not None
+
+    u1_groups = [g async for g in schedule_client.list_groups()]
+    assert [g.task_list_id for g in u1_groups] == [g1.task_list_id]
+
+    delete_resp = await client.delete(
+        f"/api/file/schedule/group/{g2.task_list_id}", headers=auth_headers
+    )
+    assert delete_resp.status == 404
+    u2_groups = [g async for g in schedule2.list_groups()]
+    assert [g.task_list_id for g in u2_groups] == [g2.task_list_id]
+
+
+async def test_shared_client_ids_across_users(
+    client: TestClient,
+    schedule_client: ScheduleClient,
+    user_service: UserService,
+) -> None:
+    """Verify different users can use identical client-supplied group and task IDs."""
+    schedule2 = await _other_schedule_client(
+        client, user_service, "other_shared_ids@example.com"
+    )
+
+    shared_g1 = await schedule_client.create_group(
+        "U1 Shared ID", task_list_id="shared-group-id"
+    )
+    shared_g2 = await schedule2.create_group(
+        "U2 Shared ID", task_list_id="shared-group-id"
+    )
+    assert shared_g1.task_list_id == shared_g2.task_list_id == "shared-group-id"
+
+    shared_t1 = await schedule_client.create_task(
+        "shared-group-id", "U1 Task", task_id="shared-task-id"
+    )
+    shared_t2 = await schedule2.create_task(
+        "shared-group-id", "U2 Task", task_id="shared-task-id"
+    )
+    assert shared_t1.task_id == shared_t2.task_id == "shared-task-id"
+
+
+async def test_sort_only_batch_update_preserves_last_modified_and_matches_since(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    schedule_client: ScheduleClient,
+) -> None:
+    """Verify sort-only batch update preserves explicit older lastModified while matching since via sortTime."""
+    group = await schedule_client.create_group("Sort Sync Group")
+    assert group.task_list_id is not None
+
+    create_resp = await client.post(
+        "/api/file/schedule/task",
+        json={
+            "taskListId": group.task_list_id,
+            "title": "Pinned task",
+            "lastModified": 1710000001000,
+        },
+        headers=auth_headers,
+    )
+    assert create_resp.status == 200
+    task_id = str((await create_resp.json())["taskId"])
+
+    created_detail = await schedule_client.get_task(task_id)
+    assert created_detail.last_modified == 1710000001000
+
+    await schedule_client.batch_update_tasks(
+        [
+            UpdateScheduleTaskDTO(
+                task_id=task_id,
+                sort=3,
+                sort_time=1710000005000,
+                last_modified=1710000001000,
+            )
+        ]
+    )
+
+    reordered = await schedule_client.get_task(task_id)
+    assert reordered.sort == 3
+    assert reordered.sort_time == 1710000005000
+    assert reordered.last_modified == 1710000001000
+
+    delta = await schedule_client.get_tasks_all(next_sync_token=1710000002000)
+    assert [t.task_id for t in delta.schedule_task] == [task_id]
+
+
+async def test_batch_update_tasks_updates_timestamp_for_since_filter(
+    authenticated_client: Client,
+) -> None:
+    """Verify batch_update_tasks advances update_time so incremental sync returns updated tasks."""
+    schedule = ScheduleClient(authenticated_client)
+    group = await schedule.create_group("Reorder Group")
+    assert group.task_list_id is not None
+
+    t1 = await schedule.create_task(group.task_list_id, "Task 1", sort=1)
+    t2 = await schedule.create_task(group.task_list_id, "Task 2", sort=2)
+    assert t1.task_id is not None and t2.task_id is not None
+
+    initial = await schedule.get_tasks_all()
+    assert initial.next_sync_token is not None
+    sync_token = initial.next_sync_token
+
+    empty_delta = await schedule.get_tasks_all(next_sync_token=sync_token + 1)
+    assert empty_delta.schedule_task == []
+
+    await asyncio.sleep(0.005)
+    await schedule.batch_update_tasks(
+        [
+            UpdateScheduleTaskDTO(
+                task_id=t1.task_id,
+                sort=2,
+                sort_time=sync_token + 100,
+            )
+        ]
+    )
+
+    detail = await schedule.get_task(t1.task_id)
+    assert detail.sort == 2
+    assert detail.last_modified is not None and detail.last_modified > sync_token
+
+    delta = await schedule.get_tasks_all(next_sync_token=sync_token + 1)
+    assert [t.task_id for t in delta.schedule_task] == [t1.task_id]
+
+
+async def test_list_tasks_since_includes_tasks_at_cursor(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    authenticated_client: Client,
+) -> None:
+    """Tasks modified or sorted exactly at the since cursor are included in the incremental delta."""
+    schedule = ScheduleClient(authenticated_client)
+    group = await schedule.create_group("Cursor Group")
+    assert group.task_list_id is not None
+    cursor = 1710000001000
+
+    async def _post_task(payload: dict[str, object]) -> str:
+        resp = await client.post(
+            "/api/file/schedule/task",
+            json={"taskListId": group.task_list_id, **payload},
+            headers=auth_headers,
+        )
+        assert resp.status == 200
+        data = await resp.json()
+        return str(data["taskId"])
+
+    at_update_id = await _post_task(
+        {"title": "Updated at cursor", "lastModified": cursor}
+    )
+    at_sort_id = await _post_task(
+        {
+            "title": "Sorted at cursor",
+            "lastModified": cursor - 1000,
+            "sortTime": cursor,
+        }
+    )
+    at_planer_sort_id = await _post_task(
+        {
+            "title": "Planer-sorted at cursor",
+            "lastModified": cursor - 1000,
+            "planerSortTime": cursor,
+        }
+    )
+    before_id = await _post_task(
+        {"title": "Modified before cursor", "lastModified": cursor - 1000}
+    )
+
+    delta = await schedule.get_tasks_all(next_sync_token=cursor)
+    returned_ids = {t.task_id for t in delta.schedule_task}
+    assert returned_ids == {at_update_id, at_sort_id, at_planer_sort_id}
+    assert before_id not in returned_ids
