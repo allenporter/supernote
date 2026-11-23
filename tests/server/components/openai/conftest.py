@@ -1,18 +1,25 @@
-"""Fixtures for OpenAI-compatible model tests: a fake HTTP server."""
+"""Fixtures for OpenAI-compatible component tests: a fake HTTP server and component-wired models."""
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 import pytest
 from aiohttp import web
-from aiohttp.test_utils import TestServer
+from pytest_aiohttp import AiohttpServer
 
-from supernote.server.components.openai.backend import OpenAIBackend
-
-AiohttpServer = Callable[[web.Application], Awaitable[TestServer]]
+from supernote.server.ai.models.embedding import EmbeddingModel
+from supernote.server.ai.models.ocr import OcrModel
+from supernote.server.ai.models.summary import SummaryModel
+from supernote.server.config import AiConfig, ModelConfig, ProviderConfig
+from supernote.server.core import ServerCore
+from supernote.server.keys import (
+    EMBEDDING_MODEL_KEY,
+    OCR_MODEL_KEY,
+    SUMMARY_MODEL_KEY,
+)
+from tests.server.components.conftest import LoadComponents
 
 
 @dataclass
@@ -55,6 +62,19 @@ class FakeOpenAIServer:
         return web.json_response({"data": [{"embedding": self.embedding}]})
 
 
+class LoadOpenAIModels(Protocol):
+    """Callable fixture protocol for booting `ai` + `openai` against a base URL."""
+
+    async def __call__(
+        self,
+        *,
+        ocr: ModelConfig | None = None,
+        summary: ModelConfig | None = None,
+        embedding: ModelConfig | None = None,
+        providers: dict[str, ProviderConfig] | None = None,
+    ) -> tuple[OcrModel | None, SummaryModel | None, EmbeddingModel | None]: ...
+
+
 @pytest.fixture
 def fake_openai() -> FakeOpenAIServer:
     return FakeOpenAIServer()
@@ -72,5 +92,64 @@ async def openai_base_url(
 
 
 @pytest.fixture
-def openai_backend(openai_base_url: str) -> OpenAIBackend:
-    return OpenAIBackend(openai_base_url, provider="openai")
+def load_openai_models(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+    openai_base_url: str,
+) -> LoadOpenAIModels:
+    """Return a loader that configures `AiConfig` and boots `ai` + `openai`."""
+
+    async def _load(
+        *,
+        ocr: ModelConfig | None = None,
+        summary: ModelConfig | None = None,
+        embedding: ModelConfig | None = None,
+        providers: dict[str, ProviderConfig] | None = None,
+    ) -> tuple[OcrModel | None, SummaryModel | None, EmbeddingModel | None]:
+        component_core.config.ai = AiConfig(
+            providers=(
+                providers
+                if providers is not None
+                else {"openai": ProviderConfig(base_url=openai_base_url)}
+            ),
+            ocr=ocr,
+            summary=summary,
+            embedding=embedding,
+        )
+        await load_components("ai", "openai")
+        return (
+            component_core.app[OCR_MODEL_KEY],
+            component_core.app[SUMMARY_MODEL_KEY],
+            component_core.app[EMBEDDING_MODEL_KEY],
+        )
+
+    return _load
+
+
+@pytest.fixture
+async def openai_ocr_model(load_openai_models: LoadOpenAIModels) -> OcrModel:
+    ocr, _, _ = await load_openai_models(
+        ocr=ModelConfig(provider="openai", model="gemma-vision")
+    )
+    assert ocr is not None
+    return ocr
+
+
+@pytest.fixture
+async def openai_summary_model(load_openai_models: LoadOpenAIModels) -> SummaryModel:
+    _, summary, _ = await load_openai_models(
+        summary=ModelConfig(provider="openai", model="gemma")
+    )
+    assert summary is not None
+    return summary
+
+
+@pytest.fixture
+async def openai_embedding_model(
+    load_openai_models: LoadOpenAIModels,
+) -> EmbeddingModel:
+    _, _, embedding = await load_openai_models(
+        embedding=ModelConfig(provider="openai", model="nomic-embed-text")
+    )
+    assert embedding is not None
+    return embedding

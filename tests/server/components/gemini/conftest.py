@@ -1,18 +1,25 @@
-"""Fixtures for Gemini model tests: a fake Gemini HTTP server."""
+"""Fixtures for Gemini component tests: a fake Gemini HTTP server and component-wired models."""
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 import pytest
 from aiohttp import web
-from aiohttp.test_utils import TestServer
+from pytest_aiohttp import AiohttpServer
 
-from supernote.server.components.gemini.backend import GeminiBackend
-
-AiohttpServer = Callable[[web.Application], Awaitable[TestServer]]
+from supernote.server.ai.models.embedding import EmbeddingModel
+from supernote.server.ai.models.ocr import OcrModel
+from supernote.server.ai.models.summary import SummaryModel
+from supernote.server.config import AiConfig, ModelConfig, ProviderConfig
+from supernote.server.core import ServerCore
+from supernote.server.keys import (
+    EMBEDDING_MODEL_KEY,
+    OCR_MODEL_KEY,
+    SUMMARY_MODEL_KEY,
+)
+from tests.server.components.conftest import LoadComponents
 
 
 @dataclass
@@ -73,6 +80,19 @@ class FakeGeminiServer:
         return web.json_response({"embeddings": [{"values": self.embedding}]})
 
 
+class LoadGeminiModels(Protocol):
+    """Callable fixture protocol for booting `ai` + `gemini` against a base URL."""
+
+    async def __call__(
+        self,
+        *,
+        ocr: ModelConfig | None = None,
+        summary: ModelConfig | None = None,
+        embedding: ModelConfig | None = None,
+        providers: dict[str, ProviderConfig] | None = None,
+    ) -> tuple[OcrModel | None, SummaryModel | None, EmbeddingModel | None]: ...
+
+
 @pytest.fixture
 def fake_gemini() -> FakeGeminiServer:
     return FakeGeminiServer()
@@ -95,9 +115,68 @@ async def gemini_base_url(
 
 
 @pytest.fixture
-def gemini_backend(gemini_base_url: str) -> GeminiBackend:
-    return GeminiBackend(
-        api_key="test-key",
-        base_url=gemini_base_url,
-        provider="gemini",
+def load_gemini_models(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+    gemini_base_url: str,
+) -> LoadGeminiModels:
+    """Return a loader that configures `AiConfig` and boots `ai` + `gemini`."""
+
+    async def _load(
+        *,
+        ocr: ModelConfig | None = None,
+        summary: ModelConfig | None = None,
+        embedding: ModelConfig | None = None,
+        providers: dict[str, ProviderConfig] | None = None,
+    ) -> tuple[OcrModel | None, SummaryModel | None, EmbeddingModel | None]:
+        component_core.config.ai = AiConfig(
+            providers=(
+                providers
+                if providers is not None
+                else {
+                    "gemini": ProviderConfig(
+                        api_key="test-key", base_url=gemini_base_url
+                    )
+                }
+            ),
+            ocr=ocr,
+            summary=summary,
+            embedding=embedding,
+        )
+        await load_components("ai", "gemini")
+        return (
+            component_core.app[OCR_MODEL_KEY],
+            component_core.app[SUMMARY_MODEL_KEY],
+            component_core.app[EMBEDDING_MODEL_KEY],
+        )
+
+    return _load
+
+
+@pytest.fixture
+async def gemini_ocr_model(load_gemini_models: LoadGeminiModels) -> OcrModel:
+    ocr, _, _ = await load_gemini_models(
+        ocr=ModelConfig(provider="gemini", model="gemini-2.0-flash-exp")
     )
+    assert ocr is not None
+    return ocr
+
+
+@pytest.fixture
+async def gemini_summary_model(load_gemini_models: LoadGeminiModels) -> SummaryModel:
+    _, summary, _ = await load_gemini_models(
+        summary=ModelConfig(provider="gemini", model="gemini-2.0-flash-exp")
+    )
+    assert summary is not None
+    return summary
+
+
+@pytest.fixture
+async def gemini_embedding_model(
+    load_gemini_models: LoadGeminiModels,
+) -> EmbeddingModel:
+    _, _, embedding = await load_gemini_models(
+        embedding=ModelConfig(provider="gemini", model="text-embedding-004")
+    )
+    assert embedding is not None
+    return embedding

@@ -5,26 +5,23 @@ from __future__ import annotations
 import pytest
 
 from supernote.server.ai.base import AIError
-from supernote.server.ai.models.embedding import EmbeddingTaskType
-from supernote.server.components.openai.backend import OpenAIBackend
-from supernote.server.components.openai.embedding import (
-    OpenAIEmbeddingModel,
-    create_embedding_model,
-)
-from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
+from supernote.server.ai.models.embedding import EmbeddingModel, EmbeddingTaskType
 
 from .conftest import FakeOpenAIServer
 
 
 async def test_openai_embedding_model(
-    openai_backend: OpenAIBackend, fake_openai: FakeOpenAIServer
+    openai_embedding_model: EmbeddingModel, fake_openai: FakeOpenAIServer
 ) -> None:
-    model = OpenAIEmbeddingModel(openai_backend, "nomic-embed-text")
-
     for task_type in EmbeddingTaskType:
-        assert await model.embed("some text", task_type) == [0.1, 0.2, 0.3]
+        assert await openai_embedding_model.embed("some text", task_type) == [
+            0.1,
+            0.2,
+            0.3,
+        ]
 
-    assert model.model_id == "nomic-embed-text"
+    assert openai_embedding_model.provider == "openai"
+    assert openai_embedding_model.model_id == "nomic-embed-text"
     assert fake_openai.requests == [
         (
             "/v1/embeddings",
@@ -35,23 +32,10 @@ async def test_openai_embedding_model(
 
 
 async def test_openai_embedding_model_empty_vector_raises_ai_error(
-    openai_backend: OpenAIBackend, fake_openai: FakeOpenAIServer
+    openai_embedding_model: EmbeddingModel, fake_openai: FakeOpenAIServer
 ) -> None:
     fake_openai.embedding = []
-    model = OpenAIEmbeddingModel(openai_backend, "nomic-embed-text")
     with pytest.raises(AIError):
-        await model.embed("some text", EmbeddingTaskType.RETRIEVAL_DOCUMENT)
-
-
-def test_create_embedding_model() -> None:
-    assert create_embedding_model(ServerConfig()) is None
-
-    config = ServerConfig(
-        ai=AiConfig(
-            providers={"openai": ProviderConfig(base_url="http://localhost/v1")},
-            embedding=ModelConfig(provider="openai", model="nomic-embed-text"),
+        await openai_embedding_model.embed(
+            "some text", EmbeddingTaskType.RETRIEVAL_DOCUMENT
         )
-    )
-    model = create_embedding_model(config)
-    assert isinstance(model, OpenAIEmbeddingModel)
-    assert model.model_id == "nomic-embed-text"
