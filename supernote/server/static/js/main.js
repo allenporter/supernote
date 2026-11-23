@@ -4,7 +4,7 @@
  * Coordinates session authentication, OAuth 2.1 consent bridging, top-level
  * tab/route switching, global search (`Cmd/Ctrl+K`), system status drawer,
  * and toast notifications while delegating domain panels to `FileBrowserPanel`,
- * `FileViewer`, and `TaskPanel`.
+ * `FileViewer`, `TaskPanel`, and `SettingsPanel`.
  */
 
 import { computed, createApp, onMounted, onUnmounted, ref } from 'vue';
@@ -16,6 +16,7 @@ import LoginCard from './components/LoginCard.js';
 import OAuthConsentCard from './components/OAuthConsentCard.js';
 import RecycleBinPanel from './components/RecycleBinPanel.js';
 import SearchModal from './components/SearchModal.js';
+import SettingsPanel from './components/SettingsPanel.js';
 import SystemPanel from './components/SystemPanel.js';
 import TaskPanel from './components/TaskPanel.js';
 import { useFileSystem } from './composables/useFileSystem.js';
@@ -32,6 +33,7 @@ createApp({
         'recycle-bin-panel': RecycleBinPanel,
         SearchModal,
         TaskPanel,
+        SettingsPanel,
         LoginCard,
         'oauth-consent-card': OAuthConsentCard,
         FileViewer,
