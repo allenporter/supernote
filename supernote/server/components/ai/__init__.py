@@ -1,20 +1,21 @@
-"""AI model platform host component (`AiComponent` and `AiRegistrar`).
+"""AI model registry and platform host (`AiComponent` and `AiRegistrar`).
+
+Manages the AI model backends used for notebook OCR, summarization, and
+semantic search embeddings. Rather than hardcoding vendors like Gemini, OpenAI,
+or Apple Vision in one place, each backend registers its supported capabilities
+here during server startup, and this component wraps every model with shared
+Prometheus metrics, concurrency limiting, and embedding vector validation.
 
 Provides `AiComponent`, `AI_PLATFORMS` (``("ocr", "summary", "embedding")``),
 and `AiRegistrar` (passed into
-``<component>.<platform>:async_setup_<platform>(core, registrar)`` for vendor
-backend components declaring capability platforms such as
-``platforms = ("ocr", "summary", "embedding")`` or ``platforms = ("ocr",)``).
-Applies cross-cutting wrappers (`ValidatingEmbeddingModel`,
-`Instrumented*Model`, `ConcurrencyLimited*Model`) uniformly across all
-registered providers, and registers the zero-dependency built-in ``fake``
-provider directly.
+``<component>.<platform>:async_setup_<platform>(core, registrar)``), and
+registers the zero-dependency built-in ``fake`` provider directly.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from supernote.server.ai.models.embedding import (
     ConcurrencyLimitedEmbeddingModel,
@@ -36,7 +37,7 @@ from supernote.server.core import ServerCore
 from supernote.server.keys import AI_REGISTRAR_KEY
 
 if TYPE_CHECKING:
-    from supernote.server.config import ServerConfig
+    from supernote.server.config import ModelConfig, ServerConfig
 
 __all__ = [
     "AI_PLATFORMS",
@@ -47,6 +48,7 @@ __all__ = [
 
 AI_PLATFORMS: tuple[str, ...] = ("ocr", "summary", "embedding")
 
+_ModelT = TypeVar("_ModelT")
 OcrModelFactory = Callable[["ServerConfig"], OcrModel | None]
 SummaryModelFactory = Callable[["ServerConfig"], SummaryModel | None]
 EmbeddingModelFactory = Callable[["ServerConfig"], EmbeddingModel | None]
@@ -59,6 +61,39 @@ def _normalize_provider_type(provider_type: str) -> str:
     return normalized
 
 
+def _register_factory(
+    registry: dict[str, Callable[[ServerConfig], _ModelT | None]],
+    capability: str,
+    provider_type: str,
+    factory: Callable[[ServerConfig], _ModelT | None],
+) -> None:
+    key = _normalize_provider_type(provider_type)
+    if key in registry:
+        raise ValueError(f"{capability} provider {key!r} is already registered")
+    registry[key] = factory
+
+
+def _instantiate_raw_model(
+    registry: Mapping[str, Callable[[ServerConfig], _ModelT | None]],
+    capability: str,
+    config: ServerConfig,
+    model_cfg: ModelConfig | None,
+) -> tuple[_ModelT, ModelConfig] | None:
+    if model_cfg is None:
+        return None
+    raw_provider_type = config.ai.provider_type(model_cfg.provider)
+    key = raw_provider_type.strip().lower()
+    factory = registry.get(key)
+    if factory is None:
+        raise ValueError(
+            f"Unsupported {capability} model provider type: {raw_provider_type!r}"
+        )
+    model = factory(config)
+    if model is None:
+        return None
+    return model, model_cfg
+
+
 class AiRegistrar:
     """Registrar passed into ``<component>.{ocr,summary,embedding}:async_setup_*``."""
 
@@ -67,30 +102,28 @@ class AiRegistrar:
         self._summary_factories: dict[str, SummaryModelFactory] = {}
         self._embedding_factories: dict[str, EmbeddingModelFactory] = {}
 
+    @property
+    def platforms(self) -> tuple[str, ...]:
+        """Capability platform names hosted by this registrar."""
+        return AI_PLATFORMS
+
     def register_ocr(self, provider_type: str, factory: OcrModelFactory) -> None:
         """Register an OCR model factory for ``provider_type``."""
-        key = _normalize_provider_type(provider_type)
-        if key in self._ocr_factories:
-            raise ValueError(f"OCR provider {key!r} is already registered")
-        self._ocr_factories[key] = factory
+        _register_factory(self._ocr_factories, "OCR", provider_type, factory)
 
     def register_summary(
         self, provider_type: str, factory: SummaryModelFactory
     ) -> None:
         """Register a summary model factory for ``provider_type``."""
-        key = _normalize_provider_type(provider_type)
-        if key in self._summary_factories:
-            raise ValueError(f"Summary provider {key!r} is already registered")
-        self._summary_factories[key] = factory
+        _register_factory(self._summary_factories, "Summary", provider_type, factory)
 
     def register_embedding(
         self, provider_type: str, factory: EmbeddingModelFactory
     ) -> None:
         """Register an embedding model factory for ``provider_type``."""
-        key = _normalize_provider_type(provider_type)
-        if key in self._embedding_factories:
-            raise ValueError(f"Embedding provider {key!r} is already registered")
-        self._embedding_factories[key] = factory
+        _register_factory(
+            self._embedding_factories, "Embedding", provider_type, factory
+        )
 
     @property
     def ocr_providers(self) -> tuple[str, ...]:
@@ -109,16 +142,12 @@ class AiRegistrar:
 
     def create_ocr_model(self, config: ServerConfig) -> OcrModel | None:
         """Instantiate the configured OCR model wrapped with telemetry and concurrency limiting."""
-        model_cfg = config.ai.ocr
-        if model_cfg is None:
+        resolved = _instantiate_raw_model(
+            self._ocr_factories, "OCR", config, config.ai.ocr
+        )
+        if resolved is None:
             return None
-        provider_type = config.ai.provider_type(model_cfg.provider)
-        factory = self._ocr_factories.get(provider_type)
-        if factory is None:
-            raise ValueError(f"Unsupported OCR model provider type: {provider_type!r}")
-        model = factory(config)
-        if model is None:
-            return None
+        model, model_cfg = resolved
         return ConcurrencyLimitedOcrModel(
             InstrumentedOcrModel(model),
             max_concurrency=model_cfg.max_concurrency,
@@ -126,18 +155,12 @@ class AiRegistrar:
 
     def create_summary_model(self, config: ServerConfig) -> SummaryModel | None:
         """Instantiate the configured summary model wrapped with telemetry and concurrency limiting."""
-        model_cfg = config.ai.summary
-        if model_cfg is None:
+        resolved = _instantiate_raw_model(
+            self._summary_factories, "summary", config, config.ai.summary
+        )
+        if resolved is None:
             return None
-        provider_type = config.ai.provider_type(model_cfg.provider)
-        factory = self._summary_factories.get(provider_type)
-        if factory is None:
-            raise ValueError(
-                f"Unsupported summary model provider type: {provider_type!r}"
-            )
-        model = factory(config)
-        if model is None:
-            return None
+        model, model_cfg = resolved
         return ConcurrencyLimitedSummaryModel(
             InstrumentedSummaryModel(model),
             max_concurrency=model_cfg.max_concurrency,
@@ -145,39 +168,16 @@ class AiRegistrar:
 
     def create_embedding_model(self, config: ServerConfig) -> EmbeddingModel | None:
         """Instantiate the configured embedding model with validation, telemetry, and concurrency limiting."""
-        model_cfg = config.ai.embedding
-        if model_cfg is None:
+        resolved = _instantiate_raw_model(
+            self._embedding_factories, "embedding", config, config.ai.embedding
+        )
+        if resolved is None:
             return None
-        provider_type = config.ai.provider_type(model_cfg.provider)
-        factory = self._embedding_factories.get(provider_type)
-        if factory is None:
-            raise ValueError(
-                f"Unsupported embedding model provider type: {provider_type!r}"
-            )
-        model = factory(config)
-        if model is None:
-            return None
+        model, model_cfg = resolved
         return ConcurrencyLimitedEmbeddingModel(
             InstrumentedEmbeddingModel(ValidatingEmbeddingModel(model)),
             max_concurrency=model_cfg.max_concurrency,
         )
-
-
-def _register_builtin_fake_provider(registrar: AiRegistrar) -> None:
-    """Register the zero-dependency built-in ``fake`` AI provider."""
-    from supernote.server.ai.models.fake.embedding import (  # noqa: PLC0415
-        create_embedding_model as create_fake_embedding_model,
-    )
-    from supernote.server.ai.models.fake.ocr import (  # noqa: PLC0415
-        create_ocr_model as create_fake_ocr_model,
-    )
-    from supernote.server.ai.models.fake.summary import (  # noqa: PLC0415
-        create_summary_model as create_fake_summary_model,
-    )
-
-    registrar.register_ocr("fake", create_fake_ocr_model)
-    registrar.register_summary("fake", create_fake_summary_model)
-    registrar.register_embedding("fake", create_fake_embedding_model)
 
 
 class AiComponent:
@@ -189,8 +189,20 @@ class AiComponent:
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         """Initialize `AiRegistrar` with the built-in ``fake`` provider on ``core.app``."""
+        from supernote.server.ai.models.fake.embedding import (  # noqa: PLC0415
+            create_embedding_model as create_fake_embedding_model,
+        )
+        from supernote.server.ai.models.fake.ocr import (  # noqa: PLC0415
+            create_ocr_model as create_fake_ocr_model,
+        )
+        from supernote.server.ai.models.fake.summary import (  # noqa: PLC0415
+            create_summary_model as create_fake_summary_model,
+        )
+
         registrar = AiRegistrar()
-        _register_builtin_fake_provider(registrar)
+        registrar.register_ocr("fake", create_fake_ocr_model)
+        registrar.register_summary("fake", create_fake_summary_model)
+        registrar.register_embedding("fake", create_fake_embedding_model)
         core.app[AI_REGISTRAR_KEY] = registrar
 
     async def async_start(self, core: ServerCore) -> None:

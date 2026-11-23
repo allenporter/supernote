@@ -245,7 +245,7 @@ def create_app(config: ServerConfig) -> web.Application:
 
         await component_loader.async_setup_all(core, component_configs)
         if (ai_registrar := app.get(AI_REGISTRAR_KEY)) is not None:
-            for ai_platform in ("ocr", "summary", "embedding"):
+            for ai_platform in ai_registrar.platforms:
                 await component_loader.async_load_platform(
                     ai_platform, core, ai_registrar
                 )
