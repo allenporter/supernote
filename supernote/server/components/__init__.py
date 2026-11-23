@@ -23,7 +23,9 @@ __all__ = [
     "load_component_from_spec",
 ]
 
-KNOWN_PLATFORMS: frozenset[str] = frozenset({"http", "mcp"})
+KNOWN_PLATFORMS: frozenset[str] = frozenset(
+    {"embedding", "http", "mcp", "ocr", "summary"}
+)
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,11 @@ class BuiltinComponentSpec:
 
 
 BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
+    BuiltinComponentSpec(
+        domain="ai",
+        import_path="supernote.server.components.ai:AiComponent",
+        default_enabled=True,
+    ),
     BuiltinComponentSpec(
         domain="http",
         import_path="supernote.server.components.http:HttpComponent",
