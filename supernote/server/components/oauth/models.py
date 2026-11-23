@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Self
 
 from mashumaro.config import BaseConfig
 from mashumaro.mixins.json import DataClassJSONMixin
@@ -12,6 +13,7 @@ from mcp.server.auth.provider import (
     AuthorizationCode,
     RefreshToken,
 )
+from pydantic import model_validator
 
 __all__ = [
     "LoginBridgeDecision",
@@ -74,7 +76,17 @@ class SupernoteAccessToken(AccessToken):
     """OAuth 2.1 access token associated with a Supernote user account."""
 
     user_id: int
-    actor: str | None = None
+    """Authenticated Supernote user ID."""
+
+    actor: str = ""
+    """Canonical domain event actor identifier (defaults to `oauth:<client_id>`)."""
+
+    @model_validator(mode="after")
+    def _ensure_canonical_actor(self) -> Self:
+        if not self.actor.strip():
+            client_id = (self.client_id or "").strip() or "unknown"
+            self.actor = f"oauth:{client_id}"[:64]
+        return self
 
 
 class SupernoteRefreshToken(RefreshToken):
