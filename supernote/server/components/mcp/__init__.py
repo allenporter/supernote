@@ -15,7 +15,6 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, ParamSpec, cast
 
 from supernote.server.components.mcp.metrics import (
-    MCPToolName,
     init_mcp_metrics,
     track_mcp_tool_call,
 )
@@ -135,7 +134,7 @@ class McpComponent:
     """Platform host component managing the FastMCP resource server and tool registration."""
 
     domain = "mcp"
-    dependencies: tuple[str, ...] = ("oauth", "search", "transcript")
+    dependencies: tuple[str, ...] = ("oauth",)
     platforms: tuple[str, ...] = ()
 
     def __init__(self) -> None:
@@ -144,24 +143,14 @@ class McpComponent:
         self._task: asyncio.Task[None] | None = None
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
-        """Bind services, expose `McpRegistrar`, and prepare the FastMCP server."""
-        from supernote.server.components.search import (  # noqa: PLC0415
-            SEARCH_SERVICE_KEY,
-        )
-        from supernote.server.components.transcript import (  # noqa: PLC0415
-            TRANSCRIPT_SERVICE_KEY,
-        )
+        """Expose `McpRegistrar` and prepare the FastMCP resource server."""
+        from .server import create_mcp_server  # noqa: PLC0415
 
-        from .server import create_mcp_server, set_services  # noqa: PLC0415
-
-        set_services(
-            core.app[SEARCH_SERVICE_KEY],
-            core.user_service,
-            transcript_service=core.app[TRANSCRIPT_SERVICE_KEY],
-        )
         rs_url = f"{core.config.mcp_base_url}/mcp"
-        self._mcp_server = create_mcp_server(core.config.base_url, rs_url)
-        registrar = McpRegistrar(reserved_names=MCPToolName)
+        self._mcp_server = create_mcp_server(
+            core.config.base_url, rs_url, core.user_service
+        )
+        registrar = McpRegistrar()
         core.app[MCP_REGISTRAR_KEY] = registrar
         self._registrar = registrar
 

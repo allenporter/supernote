@@ -18,11 +18,8 @@ from supernote.server.components.mcp import (
     McpRegistrar,
     get_authenticated_user_id,
 )
-from supernote.server.components.mcp.metrics import MCPToolName
 from supernote.server.components.oauth import OAuthComponent
 from supernote.server.components.oauth.models import SupernoteAccessToken
-from supernote.server.components.search import SearchComponent
-from supernote.server.components.transcript import TranscriptComponent
 from supernote.server.core import Component, ComponentLoader, ServerCore
 
 
@@ -30,13 +27,11 @@ async def test_mcp_component_lifecycle(component_core: ServerCore) -> None:
     component = McpComponent()
     assert isinstance(component, Component)
     assert component.domain == "mcp"
-    assert component.dependencies == ("oauth", "search", "transcript")
+    assert component.dependencies == ("oauth",)
     assert component.platforms == ()
 
     loader = ComponentLoader()
     loader.register(OAuthComponent())
-    loader.register(SearchComponent())
-    loader.register(TranscriptComponent())
     loader.register(component)
 
     await loader.async_setup_all(component_core, {})
@@ -62,8 +57,6 @@ async def test_mcp_component_stop_after_setup_only(
 ) -> None:
     loader = ComponentLoader()
     loader.register(OAuthComponent())
-    loader.register(SearchComponent())
-    loader.register(TranscriptComponent())
     loader.register(McpComponent())
 
     await loader.async_setup_all(component_core, {})
@@ -71,7 +64,7 @@ async def test_mcp_component_stop_after_setup_only(
 
 
 def test_mcp_registrar_rejects_invalid_duplicate_and_reserved_names() -> None:
-    registrar = McpRegistrar(reserved_names=MCPToolName)
+    registrar = McpRegistrar(reserved_names=("reserved_tool",))
 
     async def ping_tool() -> dict[str, Any]:
         return {"success": True}
@@ -83,7 +76,7 @@ def test_mcp_registrar_rejects_invalid_duplicate_and_reserved_names() -> None:
         registrar.add_tool(ping_tool, name="custom_ping")
 
     with pytest.raises(ValueError, match="already registered"):
-        registrar.add_tool(ping_tool, name=MCPToolName.LIST_NOTEBOOKS)
+        registrar.add_tool(ping_tool, name="reserved_tool")
 
     with pytest.raises(ValueError, match="non-empty"):
         registrar.add_tool(ping_tool, name="   ")

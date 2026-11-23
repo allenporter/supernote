@@ -8,7 +8,6 @@ import pytest
 from prometheus_client import REGISTRY
 
 from supernote.server.components.mcp.metrics import (
-    MCPToolName,
     init_mcp_metrics,
     track_mcp_tool_call,
 )
@@ -35,24 +34,8 @@ def _duration_count(tool: str) -> float:
     )
 
 
-def test_init_mcp_metrics_seeds_builtin_and_custom_tools() -> None:
+def test_init_mcp_metrics_seeds_tools() -> None:
     """Verify `init_mcp_metrics` pre-seeds counters and latency histograms at 0."""
-    init_mcp_metrics()
-    for tool in MCPToolName:
-        assert (
-            REGISTRY.get_sample_value(
-                "supernote_mcp_tool_duration_seconds_count",
-                {"tool": tool.value},
-            )
-            is not None
-        )
-        for status in ("success", "failure"):
-            val = REGISTRY.get_sample_value(
-                "supernote_mcp_tool_calls_total",
-                {"tool": tool.value, "status": status},
-            )
-            assert val is not None and val >= 0.0
-
     init_mcp_metrics(["custom_seeded_tool"])
     assert (
         REGISTRY.get_sample_value(
@@ -73,7 +56,8 @@ def test_init_mcp_metrics_seeds_builtin_and_custom_tools() -> None:
 
 def test_mcp_tool_duration_histogram_buckets() -> None:
     """Verify `supernote_mcp_tool_duration_seconds` exports exact `REQUEST_DURATION_BUCKETS`."""
-    init_mcp_metrics([MCPToolName.LIST_NOTEBOOKS])
+    tool_name = "bucket_test_tool"
+    init_mcp_metrics([tool_name])
 
     metric_families = {
         family.name: family
@@ -86,14 +70,14 @@ def test_mcp_tool_duration_histogram_buckets() -> None:
         float(sample.labels["le"])
         for sample in family.samples
         if sample.name == "supernote_mcp_tool_duration_seconds_bucket"
-        and sample.labels.get("tool") == MCPToolName.LIST_NOTEBOOKS.value
+        and sample.labels.get("tool") == tool_name
         and sample.labels["le"] != "+Inf"
     )
     assert finite_bounds == REQUEST_DURATION_BUCKETS
     assert (
         REGISTRY.get_sample_value(
             "supernote_mcp_tool_duration_seconds_bucket",
-            {"tool": MCPToolName.LIST_NOTEBOOKS.value, "le": "+Inf"},
+            {"tool": tool_name, "le": "+Inf"},
         )
         is not None
     )
@@ -124,7 +108,7 @@ def test_track_mcp_tool_call_success_and_failure() -> None:
 
 def test_track_mcp_tool_call_cancelled_after_set_succeeded() -> None:
     """Verify cancellation overrides a prior `set_succeeded(True)` without observing latency."""
-    tool = MCPToolName.LIST_NOTEBOOKS
+    tool = "cancelled_test_tool"
     before_ok = _call_count(tool, "success")
     before_cancel = _call_count(tool, "cancelled")
     before_dur = _duration_count(tool)
