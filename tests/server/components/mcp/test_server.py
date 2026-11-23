@@ -1,6 +1,7 @@
 """Unit and integration tests for MCP server authentication, tool handlers, and metrics."""
 
 import asyncio
+import base64
 import hashlib
 import json
 from collections.abc import Awaitable, Callable, Generator
@@ -15,6 +16,7 @@ from mcp.server.mcpserver import Context
 from prometheus_client import REGISTRY
 from starlette.testclient import TestClient
 
+from supernote.models.schedule import ScheduleTaskLinkDTO
 from supernote.models.user import UserRegisterDTO
 from supernote.server.components.mcp import server as mcp_server_module
 from supernote.server.components.mcp.models import SupernoteAccessToken
@@ -22,11 +24,18 @@ from supernote.server.components.mcp.server import (
     SupernoteTokenVerifier,
     _get_auth_user_id,
     create_mcp_server,
+    create_task,
+    delete_task,
     get_notebook_transcript,
+    list_events,
     list_notebooks,
+    list_tasks,
     search_notebook_chunks,
     set_services,
+    update_task,
 )
+from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.events import LocalEventBus
 from supernote.server.metrics import (
     REQUEST_DURATION_BUCKETS,
     MCPToolName,
@@ -34,6 +43,8 @@ from supernote.server.metrics import (
     track_mcp_tool_call,
 )
 from supernote.server.services.coordination import CoordinationService
+from supernote.server.services.event_log import EventLogService, encode_sync_token
+from supernote.server.services.schedule import ScheduleService
 from supernote.server.services.search import NotebookInfo, SearchResult, SearchService
 from supernote.server.services.user import UserService
 
@@ -610,3 +621,292 @@ async def test_mcp_http_requests_authenticate_and_succeed(
     finally:
         mcp_server_module._services.clear()
         mcp_server_module._services.update(previous_services)
+
+
+@dataclass
+class MCPScheduleTestEnv:
+    """Real ScheduleService + EventLogService harness for MCP schedule/event tool tests."""
+
+    ctx: Context
+    schedule_service: ScheduleService
+    event_log_service: EventLogService
+    user_id: int
+    other_token: SupernoteAccessToken
+
+
+@pytest.fixture
+def mcp_schedule_env(
+    session_manager: DatabaseSessionManager,
+    coordination_service: CoordinationService,
+    user_service: UserService,
+) -> Generator[MCPScheduleTestEnv]:
+    """Wire real ScheduleService and EventLogService into MCP with an OAuth bearer token."""
+    previous_services = dict(mcp_server_module._services)
+    event_bus = LocalEventBus()
+    schedule_service = ScheduleService(session_manager, event_bus=event_bus)
+    event_log_service = EventLogService(
+        session_manager=session_manager,
+        coordination_service=coordination_service,
+        event_bus=event_bus,
+    )
+    set_services(
+        MagicMock(spec=SearchService),
+        user_service,
+        coordination_service,
+        schedule_service=schedule_service,
+        event_log_service=event_log_service,
+    )
+
+    user1_token = SupernoteAccessToken(
+        token="mcp-oauth-tok",
+        user_id=701,
+        client_id="magic-todo-client",
+        scopes=["supernote:all"],
+        actor="oauth:magic-todo-client",
+    )
+    user2_token = SupernoteAccessToken(
+        token="mcp-other-tok",
+        user_id=702,
+        client_id="other-client",
+        scopes=["supernote:all"],
+        actor="oauth:other-client",
+    )
+    ctx_token = auth_context_var.set(AuthenticatedUser(user1_token))
+    try:
+        yield MCPScheduleTestEnv(
+            ctx=MagicMock(spec=Context),
+            schedule_service=schedule_service,
+            event_log_service=event_log_service,
+            user_id=701,
+            other_token=user2_token,
+        )
+    finally:
+        auth_context_var.reset(ctx_token)
+        mcp_server_module._services.clear()
+        mcp_server_module._services.update(previous_services)
+
+
+async def test_mcp_schedule_create_list_and_delete_with_deep_link(
+    mcp_schedule_env: MCPScheduleTestEnv,
+) -> None:
+    """Verify create_task, list_tasks filtering (file_id, include_completed), and delete_task."""
+    env = mcp_schedule_env
+    group = await env.schedule_service.create_group(env.user_id, "Daily")
+    human_task = await env.schedule_service.create_task(
+        env.user_id, group_id=group.task_list_id, title="Human task"
+    )
+
+    created = await create_task(
+        env.ctx,
+        title="Buy coffee beans",
+        detail="From Daily.note",
+        due_time=0,
+        group_id=group.task_list_id,
+        linked_file_id="9001",
+        linked_file_path="/Note/Daily.note",
+        linked_page_id="P20261123090500abc",
+        linked_page_number=2,
+    )
+    assert created["success"] is True
+    assert created["task"]["dueTime"] is None
+    task_id = created["task"]["taskId"]
+    assert created["task"]["link"] == {
+        "appName": "Note",
+        "filePath": "/Note/Daily.note",
+        "page": 2,
+        "fileId": "9001",
+        "pageId": "P20261123090500abc",
+        "taskTitle": None,
+    }
+
+    linked_list = await list_tasks(env.ctx, file_id="9001")
+    assert linked_list["success"] is True
+    assert [t["taskId"] for t in linked_list["tasks"]] == [task_id]
+    assert [g["taskListId"] for g in linked_list["groups"]] == [group.task_list_id]
+
+    deleted = await delete_task(env.ctx, task_id=task_id)
+    assert deleted["success"] is True
+    assert deleted["deleted"] is True
+    assert [t["taskId"] for t in (await list_tasks(env.ctx))["tasks"]] == [
+        human_task.task_id
+    ]
+
+
+async def test_mcp_update_task_preserves_task_title_completed_time_and_handles_malformed_link(
+    mcp_schedule_env: MCPScheduleTestEnv,
+) -> None:
+    """Verify partial link updates preserve task_title, repeated completion preserves completed_time, and malformed links do not crash list_tasks."""
+    env = mcp_schedule_env
+    tablet_link = ScheduleTaskLinkDTO(
+        app_name="Note",
+        path="/Note/Daily.note",
+        page=1,
+        file_id="9001",
+        page_id="P1",
+        task_title="Tablet Title",
+    ).to_b64()
+    task = await env.schedule_service.create_task(
+        env.user_id, title="Migrate me", links=tablet_link
+    )
+    bad_link = base64.b64encode(b"{}").decode("ascii")
+    await env.schedule_service.create_task(
+        env.user_id, title="Corrupt link task", links=bad_link
+    )
+
+    listed = await list_tasks(env.ctx)
+    assert listed["success"] is True
+    assert len(listed["tasks"]) == 2
+
+    completed = await update_task(
+        env.ctx,
+        task_id=task.task_id,
+        status="completed",
+        linked_page_number=3,
+    )
+    assert completed["success"] is True
+    first_completed_ms = completed["task"]["completedTime"]
+    assert first_completed_ms is not None
+    assert completed["task"]["link"]["page"] == 3
+    assert completed["task"]["link"]["taskTitle"] == "Tablet Title"
+
+    completed_again = await update_task(
+        env.ctx, task_id=task.task_id, status="completed"
+    )
+    assert completed_again["task"]["completedTime"] == first_completed_ms
+
+    reopened = await update_task(
+        env.ctx, task_id=task.task_id, status="needsAction", clear_link=True
+    )
+    assert reopened["success"] is True
+    assert reopened["task"]["completedTime"] is None
+    assert reopened["task"]["link"] is None
+
+
+async def test_mcp_schedule_and_events_enforce_user_isolation(
+    mcp_schedule_env: MCPScheduleTestEnv,
+) -> None:
+    """Verify another user cannot read, update, delete, or view events for user 701's tasks."""
+    env = mcp_schedule_env
+    created = await create_task(env.ctx, title="Private task")
+    task_id = created["task"]["taskId"]
+
+    other_tok = auth_context_var.set(AuthenticatedUser(env.other_token))
+    try:
+        assert (await list_tasks(env.ctx, include_completed=True))["tasks"] == []
+        assert (await update_task(env.ctx, task_id=task_id, title="Hijack"))[
+            "success"
+        ] is False
+        assert (await delete_task(env.ctx, task_id=task_id))["success"] is False
+        assert (await list_events(env.ctx))["events"] == []
+    finally:
+        auth_context_var.reset(other_tok)
+
+
+async def test_mcp_list_events_suppresses_self_echo_and_reports_expired_cursor(
+    mcp_schedule_env: MCPScheduleTestEnv,
+) -> None:
+    """Verify list_events supports exclude_actors=['self'] and maps CursorExpiredError to errorCode 410."""
+    env = mcp_schedule_env
+    human_task = await env.schedule_service.create_task(env.user_id, title="Human task")
+    created = await create_task(env.ctx, title="Agent task")
+    await delete_task(env.ctx, task_id=created["task"]["taskId"])
+
+    all_events = await list_events(env.ctx, event_types=["schedule.*"])
+    assert [(e["eventType"], e["actor"]) for e in all_events["events"]] == [
+        ("schedule.task_created", "user:web"),
+        ("schedule.task_created", "oauth:magic-todo-client"),
+        ("schedule.task_deleted", "oauth:magic-todo-client"),
+    ]
+
+    filtered = await list_events(
+        env.ctx, event_types=["schedule.*"], exclude_actors=["self"]
+    )
+    assert [(e["entityId"], e["actor"]) for e in filtered["events"]] == [
+        (human_task.task_id, "user:web")
+    ]
+
+    # Prune old events so an older sync_token triggers CursorExpiredError -> errorCode "410"
+    old_ev = await env.event_log_service.append(
+        user_id=env.user_id,
+        event_type="vfs.created",
+        entity_type="file",
+        entity_id="1",
+        timestamp_ms=1_000,
+    )
+    await env.event_log_service.prune_expired_events(max_age_ms=1_000)
+    expired = await list_events(env.ctx, sync_token=encode_sync_token(old_ev.seq - 1))
+    assert expired["success"] is False
+    assert expired["errorCode"] == "410"
+
+
+@pytest.mark.parametrize(
+    ("tool_fn", "kwargs"),
+    [
+        (create_task, {"title": "Bad", "status": "invalid"}),
+        (create_task, {"title": "Bad", "linked_page_number": 0}),
+        (create_task, {"title": "Bad", "due_time": -1}),
+        (list_events, {"file_id": "not-a-number"}),
+        (list_events, {"sync_token": "bad-token"}),
+    ],
+)
+async def test_mcp_schedule_and_events_reject_invalid_inputs(
+    mcp_schedule_env: MCPScheduleTestEnv,
+    tool_fn: Callable[..., Awaitable[dict[str, Any]]],
+    kwargs: dict[str, Any],
+) -> None:
+    """Verify invalid parameters return structured 400 error responses."""
+    res = await tool_fn(mcp_schedule_env.ctx, **kwargs)
+    assert res["success"] is False
+    assert res["errorCode"] == "400"
+
+
+async def test_mcp_update_task_rejects_empty_and_conflicting_link_args(
+    mcp_schedule_env: MCPScheduleTestEnv,
+) -> None:
+    """Verify update_task rejects empty updates, conflicting clear_link, and oversized titles."""
+    env = mcp_schedule_env
+    created = await create_task(env.ctx, title="Valid")
+    task_id = created["task"]["taskId"]
+
+    assert (await update_task(env.ctx, task_id=task_id))["errorCode"] == "400"
+    assert (
+        await update_task(
+            env.ctx, task_id=task_id, clear_link=True, linked_file_id="123"
+        )
+    )["errorCode"] == "400"
+    assert (await update_task(env.ctx, task_id=task_id, title="x" * 300))[
+        "errorCode"
+    ] == "400"
+
+
+async def test_supernote_token_verifier_populates_actor(
+    user_service: UserService,
+    coordination_service: CoordinationService,
+) -> None:
+    """Verify SupernoteTokenVerifier populates canonical actor for OAuth and API key tokens."""
+    pw_md5 = hashlib.md5(b"password123").hexdigest()
+    user = await user_service.register(
+        UserRegisterDTO(email="mcpactor@example.com", password=pw_md5)
+    )
+    verifier = SupernoteTokenVerifier(user_service, coordination_service)
+
+    await coordination_service.set_value(
+        "mcp:access_token:oauth_tok_actor",
+        json.dumps(
+            {
+                "token": "oauth_tok_actor",
+                "user_id": user.id,
+                "client_id": "claude-desktop",
+                "scopes": ["supernote:all"],
+            }
+        ),
+        ttl=3600,
+    )
+    oauth_tok = await verifier.verify_token("oauth_tok_actor")
+    assert oauth_tok is not None
+    assert oauth_tok.actor == "oauth:claude-desktop"
+
+    raw_key, key_vo = await user_service.create_api_key(user.id, "MCP Agent")
+    key_tok = await verifier.verify_token(raw_key)
+    assert key_tok is not None
+    assert key_tok.actor == f"api_key:{key_vo.id}"

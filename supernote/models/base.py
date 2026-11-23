@@ -156,6 +156,7 @@ class ErrorCode(str, Enum):
     UNAUTHORIZED = ("401", "Unauthorized")
     FORBIDDEN = ("403", "Forbidden")
     NOT_FOUND = ("404", "Not Found")
+    GONE = ("410", "Gone")
     CONFLICT = ("409", "Conflict")
     INTERNAL_ERROR = ("500", "Internal Server Error")
 

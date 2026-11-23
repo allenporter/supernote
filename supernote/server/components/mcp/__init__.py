@@ -12,7 +12,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from supernote.server.core import ServerCore
-from supernote.server.keys import SEARCH_SERVICE_KEY
+from supernote.server.keys import (
+    EVENT_LOG_SERVICE_KEY,
+    SCHEDULE_SERVICE_KEY,
+    SEARCH_SERVICE_KEY,
+)
 
 __all__ = ["McpComponent"]
 
@@ -36,6 +40,8 @@ class McpComponent:
             core.app[SEARCH_SERVICE_KEY],
             core.user_service,
             core.coordination,
+            schedule_service=core.app[SCHEDULE_SERVICE_KEY],
+            event_log_service=core.app[EVENT_LOG_SERVICE_KEY],
         )
         rs_url = f"{core.config.mcp_base_url}/mcp"
         self._mcp_server = create_mcp_server(core.config.base_url, rs_url)

@@ -567,6 +567,11 @@ class MCPToolName(StrEnum):
     LIST_NOTEBOOKS = "list_notebooks"
     SEARCH_NOTEBOOK_CHUNKS = "search_notebook_chunks"
     GET_NOTEBOOK_TRANSCRIPT = "get_notebook_transcript"
+    LIST_TASKS = "list_tasks"
+    CREATE_TASK = "create_task"
+    UPDATE_TASK = "update_task"
+    DELETE_TASK = "delete_task"
+    LIST_EVENTS = "list_events"
 
 
 _MCP_TOOL_CALLS_TOTAL: Counter = Counter(

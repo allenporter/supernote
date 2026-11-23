@@ -2,7 +2,8 @@
 
 Defines the request/response schemas serialized by the MCP tools in
 `supernote.server.components.mcp.server` (`ListNotebooksRequestDTO`, `ListNotebooksResponseVO`,
-`SearchRequestDTO`, `SearchResponseVO`, `TranscriptRequestDTO`, `TranscriptResponseVO`)
+`SearchRequestDTO`, `SearchResponseVO`, `TranscriptRequestDTO`, `TranscriptResponseVO`,
+`TaskGroupVO`, `TaskVO`, `ListTasksResponseVO`, `TaskResponseVO`, `DeleteTaskResponseVO`)
 as well as the user-scoped OAuth 2.1 token models (`SupernoteAuthorizationCode`,
 `SupernoteAccessToken`, `SupernoteRefreshToken`) used by `supernote.server.components.mcp.auth`.
 See `supernote.guides.mcp`.
@@ -21,13 +22,14 @@ from mcp.server.auth.provider import (
 )
 
 from supernote.models.base import BaseResponse
+from supernote.models.schedule import ScheduleTaskLinkDTO
 
 
 class MCPScope(StrEnum):
     """OAuth 2.1 scopes supported by the Supernote MCP server."""
 
     ALL = "supernote:all"
-    """Full access to Supernote MCP retrieval tools (notebooks, search, transcripts)."""
+    """Full access to Supernote MCP tools (notebooks, search, transcripts, schedule tasks, and events)."""
 
 
 class LoginBridgeDecision(StrEnum):
@@ -72,6 +74,10 @@ class SupernoteAccessToken(AccessToken):
     """OAuth 2.1 access token associated with a Supernote user account."""
 
     user_id: int
+    """Authenticated Supernote user ID."""
+
+    actor: str = "user:web"
+    """Canonical domain event actor identifier (`oauth:<client_id>`, `api_key:<id>`, or `user:web`)."""
 
 
 class SupernoteRefreshToken(RefreshToken):
@@ -224,6 +230,107 @@ class ListNotebooksResponseVO(BaseResponse):
     """
 
     notebooks: list[NotebookVO] = field(default_factory=list)
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class TaskGroupVO(DataClassJSONMixin):
+    """VO for a schedule task group returned by MCP schedule tools."""
+
+    task_list_id: str = field(metadata=field_options(alias="taskListId"))
+    """Unique task group identifier."""
+
+    title: str
+    """Task group display title."""
+
+    create_time: int = field(metadata=field_options(alias="createTime"))
+    """Creation timestamp in UTC epoch milliseconds."""
+
+    update_time: int = field(metadata=field_options(alias="updateTime"))
+    """Last modification timestamp in UTC epoch milliseconds."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class TaskVO(DataClassJSONMixin):
+    """VO for a schedule task returned by MCP schedule tools."""
+
+    task_id: str = field(metadata=field_options(alias="taskId"))
+    """Unique task identifier."""
+
+    task_list_id: str | None = field(
+        metadata=field_options(alias="taskListId"), default=None
+    )
+    """Parent task group ID, or `None` for the default inbox."""
+
+    title: str = ""
+    """Task title."""
+
+    detail: str | None = None
+    """Optional task notes or detail text."""
+
+    status: str = "needsAction"
+    """Task status (`'needsAction'` or `'completed'`)."""
+
+    importance: str | None = None
+    """Optional importance level."""
+
+    due_time: int | None = field(metadata=field_options(alias="dueTime"), default=None)
+    """Optional due timestamp in UTC epoch milliseconds."""
+
+    completed_time: int | None = field(
+        metadata=field_options(alias="completedTime"), default=None
+    )
+    """Optional completion timestamp in UTC epoch milliseconds."""
+
+    create_time: int = field(metadata=field_options(alias="createTime"), default=0)
+    """Creation timestamp in UTC epoch milliseconds."""
+
+    update_time: int = field(metadata=field_options(alias="updateTime"), default=0)
+    """Last modification timestamp in UTC epoch milliseconds."""
+
+    link: ScheduleTaskLinkDTO | None = None
+    """Decoded notebook/page deep-link metadata when present."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class ListTasksResponseVO(BaseResponse):
+    """Response VO for listing schedule task groups and tasks."""
+
+    groups: list[TaskGroupVO] = field(default_factory=list)
+    """User's schedule task groups."""
+
+    tasks: list[TaskVO] = field(default_factory=list)
+    """Matching schedule tasks."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class TaskResponseVO(BaseResponse):
+    """Response VO for single-task create or update operations."""
+
+    task: TaskVO | None = None
+    """The created or updated schedule task."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class DeleteTaskResponseVO(BaseResponse):
+    """Response VO for deleting a schedule task."""
+
+    deleted: bool = False
+    """`True` when the task was deleted."""
 
     class Config(BaseConfig):
         serialize_by_alias = True

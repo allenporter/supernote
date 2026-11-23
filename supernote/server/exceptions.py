@@ -184,9 +184,7 @@ class RateLimitExceeded(SupernoteError):
 class CursorExpiredError(SupernoteError):
     """Raised when a requested event feed cursor predates retained event history."""
 
-    def __init__(
-        self, message: str, error_code: str | ErrorCode = ErrorCode.BAD_REQUEST
-    ):
+    def __init__(self, message: str, error_code: str | ErrorCode = ErrorCode.GONE):
         super().__init__(message, error_code, status_code=410)
 
 

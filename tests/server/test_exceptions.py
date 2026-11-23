@@ -25,7 +25,7 @@ def test_cursor_expired_and_invalid_input_errors() -> None:
     """Verify CursorExpiredError (410) and InvalidInputError (400) HTTP status mapping."""
     expired = CursorExpiredError("Cursor 5 expired")
     assert expired.status_code == 410
-    assert expired.error_code == ErrorCode.BAD_REQUEST.value
+    assert expired.error_code == ErrorCode.GONE.value
 
     invalid = InvalidInputError("Invalid cursor")
     assert invalid.status_code == 400
