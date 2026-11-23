@@ -1,7 +1,8 @@
 """Authentication token providers for the Supernote HTTP client.
 
 This module defines the `supernote.client.auth.AbstractAuth` interface consumed by
-`supernote.client.client.Client` and `supernote.client.Supernote.from_auth`, along with concrete
+`supernote.client.client.Client` and `supernote.client.Supernote.from_auth` (including optional
+reactive token rotation via `AbstractAuth.async_refresh_access_token`), along with concrete
 implementations for static in-memory tokens (`ConstantAuth`) and local disk-cached tokens
 (`FileCacheAuth`, stored in `~/.cache/supernote.pkl`).
 """
@@ -13,6 +14,12 @@ from abc import ABC, abstractmethod
 
 _LOGGER = logging.getLogger(__name__)
 
+__all__ = [
+    "AbstractAuth",
+    "ConstantAuth",
+    "FileCacheAuth",
+]
+
 
 class AbstractAuth(ABC):
     """Authentication library."""
@@ -20,6 +27,20 @@ class AbstractAuth(ABC):
     @abstractmethod
     async def async_get_access_token(self) -> str:
         """Return a valid access token."""
+
+    async def async_refresh_access_token(self, failed_token: str) -> bool:
+        """Refresh the access token after a token-invalid error.
+
+        Args:
+            failed_token: The exact non-empty token sent on the failed request,
+                allowing implementations with a refresh lock to skip redundant
+                refreshes if a concurrent caller already rotated the token.
+
+        Returns:
+            True if a refreshed token is now available and the caller should
+            retry once.
+        """
+        return False
 
 
 class ConstantAuth(AbstractAuth):

@@ -1,8 +1,8 @@
 # Webhooks, Calendar (`.ics`) & Home Assistant Integrations
 
 Open Private Cloud for Supernote provides two primary integration mechanisms for external automation platforms, task managers, and smart-home systems:
-1. **RFC 5545 iCalendar (`.ics`) Task Feeds** (`supernote.server.services.ical_export.ICalExportService`)
-2. **Signed Outbound Webhooks** (`supernote.server.services.webhook.WebhookService`)
+1. **RFC 5545 iCalendar (`.ics`) Task Feeds** (`supernote.server.components.schedule.ical_export.ICalExportService`)
+2. **Signed Outbound Webhooks** (`supernote.server.components.webhooks.service.WebhookService`)
 
 ---
 
@@ -17,15 +17,15 @@ GET /api/schedule/feed.ics?taskListId=<optional_group_id>
 x-access-token: <your-jwt-access-token>
 ```
 
-- **Route Handler**: `supernote.server.routes.schedule.get_schedule_feed_ics`
-- **Service**: `supernote.server.services.ical_export.ICalExportService.export_calendar`
+- **Route Handler**: `supernote.server.components.schedule.http.get_schedule_feed_ics`
+- **Service**: `supernote.server.components.schedule.ical_export.ICalExportService.export_calendar`
 - **Response Content-Type**: `text/calendar; charset=utf-8` (`Content-Disposition: inline; filename="feed.ics"`)
 - **Query Parameters**:
   - `taskListId` *(optional)*: Restricts the exported `VTODO` items to a single Task Group (`ScheduleTaskGroupDO.task_list_id`). When omitted, exports all active tasks across all lists (including Inbox tasks where `task_list_id` is `None`).
 
 ### Supernote Task to RFC 5545 `VTODO` Field Mapping
 
-`supernote.server.services.ical_export.task_to_vtodo` maps each task (`ScheduleTaskDO` / `supernote.models.schedule.ScheduleTaskInfo`) into an RFC 5545 `VTODO` component:
+`supernote.server.components.schedule.ical_export.task_to_vtodo` maps each task (`ScheduleTaskDO` / `supernote.models.schedule.ScheduleTaskInfo`) into an RFC 5545 `VTODO` component:
 
 | Supernote Task Field | RFC 5545 `VTODO` Property | Mapping Behavior |
 | :--- | :--- | :--- |
@@ -99,7 +99,7 @@ END:VCALENDAR
 
 ## Outbound Webhooks
 
-`supernote.server.services.webhook.WebhookService` listens on the internal `LocalEventBus` and dispatches signed, non-blocking HTTP `POST` notifications whenever notes finish syncing or finish background AI processing.
+`supernote.server.components.webhooks.service.WebhookService` listens on the internal `LocalEventBus` and dispatches signed, non-blocking HTTP `POST` notifications whenever notes finish syncing or finish background AI processing.
 
 ```mermaid
 sequenceDiagram
@@ -150,7 +150,7 @@ Both events serialize a `supernote.models.webhook.WebhookPayload` with a nested 
 
 ### Delivery & Retry Semantics
 
-Defined in `supernote.server.services.webhook`:
+Defined in `supernote.server.components.webhooks.service`:
 
 | Parameter | Constant | Value | Behavior |
 | :--- | :--- | :---: | :--- |
@@ -184,11 +184,11 @@ webhooks:
 
 ## Verifying `X-Supernote-Signature` (HMAC-SHA256)
 
-When `secret` is set on an endpoint, `supernote.server.services.webhook.sign_payload` signs the raw UTF-8 JSON request body using HMAC-SHA256 and sends `X-Supernote-Signature: sha256=<hex>`. Always verify this header using a constant-time digest comparison before trusting the payload.
+When `secret` is set on an endpoint, `supernote.server.components.webhooks.service.sign_payload` signs the raw UTF-8 JSON request body using HMAC-SHA256 and sends `X-Supernote-Signature: sha256=<hex>`. Always verify this header using a constant-time digest comparison before trusting the payload.
 
 ### Python Verification Snippet
 
-You can use `supernote.server.services.webhook.verify_signature` directly, or verify with Python's standard library `hmac`:
+You can use `supernote.server.components.webhooks.service.verify_signature` directly, or verify with Python's standard library `hmac`:
 
 ```python
 import hashlib

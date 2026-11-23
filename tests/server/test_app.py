@@ -6,35 +6,41 @@ when deployed behind a reverse proxy, with different proxy modes.
 
 import argparse
 import dataclasses
+import json
 import logging
 import subprocess
 import sys
+import time
 from typing import Any
 
 import pytest
-from aiohttp import web
-from aiohttp.test_utils import TestClient, make_mocked_request
+from aiohttp.test_utils import TestClient
 from pytest_aiohttp import AiohttpClient
 from sqlalchemy import delete, select
 
 from supernote.models.file_device import FileUploadApplyLocalDTO
 from supernote.server.app import (
-    _normalize_http_method,
-    _resolve_metrics_path,
     bootstrap_ephemeral_user,
     create_app,
     run,
 )
+from supernote.server.components.webhooks import WebhooksComponent
 from supernote.server.config import ServerConfig
+from supernote.server.core import ComponentLoader, ServerCore
 from supernote.server.db.models.user import UserDO
 from supernote.server.keys import (
+    COMPONENT_LOADER_KEY,
+    COORDINATION_SERVICE_KEY,
+    CORE_KEY,
     INTEGRITY_SERVICE_KEY,
     PROCESSOR_SERVICE_KEY,
     SESSION_MANAGER_KEY,
+    USER_SERVICE_KEY,
 )
 from supernote.server.services.processor_modules.png_conversion import (
     PngConversionModule,
 )
+from supernote.server.services.user import OAUTH_ACCESS_TOKEN_KEY_PREFIX
 from supernote.server.trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger
 
 
@@ -346,109 +352,6 @@ def test_run_respects_config_and_env_log_level(
         logging.getLogger("asyncio").setLevel(logging.INFO)
 
 
-@pytest.mark.parametrize(
-    ("raw_method", "expected"),
-    [
-        ("GET", "GET"),
-        ("get", "GET"),
-        ("HEAD", "HEAD"),
-        ("POST", "POST"),
-        ("PUT", "PUT"),
-        ("DELETE", "DELETE"),
-        ("OPTIONS", "OPTIONS"),
-        ("PATCH", "PATCH"),
-        ("PROPFIND", "OTHER"),
-        ("SCANNER_VERB", "OTHER"),
-    ],
-)
-def test_normalize_http_method_bounds_cardinality(
-    raw_method: str,
-    expected: str,
-) -> None:
-    """Verify _normalize_http_method preserves standard HTTP verbs and bounds arbitrary ones."""
-    assert _normalize_http_method(raw_method) == expected
-
-
-@pytest.mark.parametrize("mcp_enabled", [True])
-async def test_resolve_metrics_path_preserves_known_mcp_auth_route(
-    client: TestClient,
-    mcp_enabled: bool,
-) -> None:
-    """Verify _resolve_metrics_path keeps canonical paths for known MCP OAuth routes."""
-    assert client.app is not None
-    known_req = make_mocked_request("GET", "/authorize", app=client.app)
-    known_match_info = await client.app.router.resolve(known_req)
-    known_match_info.add_app(client.app)
-    known_req._match_info = known_match_info
-    assert (
-        _resolve_metrics_path(known_req, 302, frozenset({"/authorize"})) == "/authorize"
-    )
-
-
-@pytest.mark.parametrize("mcp_enabled", [True])
-async def test_resolve_metrics_path_collapses_unknown_mcp_asgi_path(
-    client: TestClient,
-    mcp_enabled: bool,
-) -> None:
-    """Verify _resolve_metrics_path collapses unmatched paths routed to MCP ASGIResource."""
-    assert client.app is not None
-    unknown_req = make_mocked_request("GET", "/wp-login.php", app=client.app)
-    unknown_match_info = await client.app.router.resolve(unknown_req)
-    unknown_match_info.add_app(client.app)
-    unknown_req._match_info = unknown_match_info
-    assert (
-        _resolve_metrics_path(unknown_req, 404, frozenset({"/authorize"})) == "HTTP 404"
-    )
-
-
-async def test_resolve_metrics_path_normalizes_static_route(
-    client: TestClient,
-) -> None:
-    """Verify static asset routes normalize to '/static/{filename}'."""
-    assert client.app is not None
-    static_req = make_mocked_request("GET", "/static/app.js", app=client.app)
-    static_match_info = await client.app.router.resolve(static_req)
-    static_match_info.add_app(client.app)
-    static_req._match_info = static_match_info
-    assert _resolve_metrics_path(static_req, 200) == "/static/{filename}"
-
-
-async def test_resolve_metrics_path_uses_route_formatter() -> None:
-    """Verify parameterized routes resolve to their template formatter rather than raw IDs."""
-
-    async def _item_handler(_r: web.Request) -> web.Response:
-        return web.Response()
-
-    dyn_app = web.Application()
-    dyn_app.router.add_get("/test-items/{item_id}", _item_handler)
-    dyn_req = make_mocked_request("GET", "/test-items/42", app=dyn_app)
-    dyn_match_info = await dyn_app.router.resolve(dyn_req)
-    dyn_match_info.add_app(dyn_app)
-    dyn_req._match_info = dyn_match_info
-    assert _resolve_metrics_path(dyn_req, 200) == "/test-items/{item_id}"
-
-
-async def test_resolve_metrics_path_falls_back_when_resource_info_empty(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Verify resources with empty get_info() fall back to HTTP status."""
-
-    async def _item_handler(_r: web.Request) -> web.Response:
-        return web.Response()
-
-    dyn_app = web.Application()
-    dyn_app.router.add_get("/test-items/{item_id}", _item_handler)
-    req = make_mocked_request("GET", "/custom/probe", app=dyn_app)
-    match_info = await dyn_app.router.resolve(
-        make_mocked_request("GET", "/test-items/42", app=dyn_app)
-    )
-    match_info.add_app(dyn_app)
-    assert match_info.route.resource is not None
-    monkeypatch.setattr(match_info.route.resource, "get_info", dict)
-    req._match_info = match_info
-    assert _resolve_metrics_path(req, 204) == "HTTP 204"
-
-
 async def test_jwt_auth_middleware_blocks_api_key_on_interactive_route(
     client: TestClient,
     auth_headers: dict[str, str],
@@ -473,3 +376,93 @@ async def test_jwt_auth_middleware_blocks_api_key_on_interactive_route(
     forbidden_resp = await client.get("/api/extended/keys", headers=api_key_headers)
     assert forbidden_resp.status == 403
     assert "Interactive session required" in (await forbidden_resp.json())["errorMsg"]
+
+
+async def test_jwt_auth_middleware_accepts_oauth_token_on_file_apis_and_blocks_interactive_route(
+    client: TestClient,
+    create_test_user: None,
+) -> None:
+    """Verify OAuth 2.1 Bearer tokens authenticate file/extended APIs and are blocked on @interactive_session_only routes."""
+    user_service = client.app[USER_SERVICE_KEY]
+    coordination_service = client.app[COORDINATION_SERVICE_KEY]
+    user_id = await user_service.get_user_id("test@example.com")
+
+    oauth_token = "oauth_rest_api_test_token"
+    await coordination_service.set_value(
+        f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}{oauth_token}",
+        json.dumps(
+            {
+                "token": oauth_token,
+                "user_id": user_id,
+                "client_id": "composer_app",
+                "scopes": ["supernote:all"],
+                "expires_at": int(time.time()) + 3600,
+            }
+        ),
+        ttl=3600,
+    )
+    oauth_headers = {"Authorization": f"Bearer {oauth_token}"}
+
+    # File and extended REST endpoints succeed with OAuth 2.1 Bearer token
+    list_resp = await client.post(
+        "/api/file/list/query",
+        json={"directoryId": 0, "pageNo": 1, "pageSize": 20},
+        headers=oauth_headers,
+    )
+    assert list_resp.status == 200
+    assert (await list_resp.json())["success"] is True
+
+    events_resp = await client.get("/api/extended/events", headers=oauth_headers)
+    assert events_resp.status == 200
+
+    # @interactive_session_only routes remain forbidden (403)
+    forbidden_resp = await client.get("/api/extended/keys", headers=oauth_headers)
+    assert forbidden_resp.status == 403
+    assert "Interactive session required" in (await forbidden_resp.json())["errorMsg"]
+
+
+async def test_create_app_wires_server_core_and_skips_disabled_webhooks(
+    aiohttp_client: AiohttpClient,
+    server_config: ServerConfig,
+) -> None:
+    """Verify `create_app` exposes `ServerCore` + `ComponentLoader` and omits disabled webhooks."""
+    config = dataclasses.replace(server_config, web_enabled=False)
+    app = create_app(config)
+
+    assert isinstance(app[CORE_KEY], ServerCore)
+    assert isinstance(app[COMPONENT_LOADER_KEY], ComponentLoader)
+    assert app[COMPONENT_LOADER_KEY].get("webhooks") is None
+
+    test_client = await aiohttp_client(app)
+    resp = await test_client.get("/api/health")
+    assert resp.status == 200
+
+
+async def test_create_app_registers_and_runs_webhooks_component_when_enabled(
+    aiohttp_client: AiohttpClient,
+    server_config: ServerConfig,
+    session_manager: Any,
+) -> None:
+    """Verify enabled webhooks are registered and started via `ComponentLoader`."""
+    config = dataclasses.replace(
+        server_config,
+        web_enabled=False,
+        webhooks={
+            "enabled": True,
+            "endpoints": [
+                {
+                    "url": "http://127.0.0.1:9999/hook",
+                    "user": "test@example.com",
+                    "secret": "secret",
+                }
+            ],
+        },
+    )
+    app = create_app(config)
+
+    comp = app[COMPONENT_LOADER_KEY].get("webhooks")
+    assert isinstance(comp, WebhooksComponent)
+
+    test_client = await aiohttp_client(app)
+    resp = await test_client.get("/api/health")
+    assert resp.status == 200

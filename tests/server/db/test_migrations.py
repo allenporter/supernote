@@ -86,7 +86,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "f3b4c5d6e7f8"
+        assert version == "b5c6d7e8f9a0"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -182,7 +182,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "f3b4c5d6e7f8"
+        assert version == "b5c6d7e8f9a0"
 
         # Verify task columns and types
         tasks = conn.execute(
@@ -989,3 +989,135 @@ def test_migrate_generated_summaries_preserves_annotations_and_categories(
     assert leaves[get_summary_id(1, 8003)] == (8003, "", None)
     assert leaves["rec-kept-summary"] == (None, None, "Saved note")
     assert "rec-stale-summary" not in leaves
+
+
+def test_reparent_uncategorized_ai_summaries_migration(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify migration a4b5c6d7e8f9 reparents uncategorized AI summaries with monotonic mtimes and leaves user Digests untouched."""
+    db_path = tmp_path / "reparent_uncat_ai.db"
+    shutil.copy(
+        Path("tests/fixtures/db_legacy_generated_summaries.sqlite").absolute(), db_path
+    )
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+    command.upgrade(alembic_config, "f3b4c5d6e7f8")
+
+    ai_group_u1 = get_ai_summaries_group_id(1)
+    ai_group_u2 = get_ai_summaries_group_id(2)
+    canon_u1 = get_summary_id(1, 8003)
+    canon_u2 = get_summary_id(2, 9001)
+    skewed_mtime = 9_999_999_999_999
+
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE f_summary SET name = 'My AI Notes' WHERE user_id = 1 AND unique_identifier = :g"
+            ),
+            {"g": ai_group_u1},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO f_summary (id, user_id, name, unique_identifier, is_summary_group, is_deleted, create_time, update_time) "
+                "VALUES (900, 2, 'Deleted AI', :g, 1, 1, 100, 100)"
+            ),
+            {"g": ai_group_u2},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO f_summary (id, user_id, file_id, unique_identifier, parent_unique_identifier, "
+                "content, data_source, comment_str, last_modified_time, is_summary_group, is_deleted, create_time, update_time) VALUES "
+                "(901, 1, 8003, :c1, '', 'ai text', 'GEMINI', NULL, :skew, 0, 0, 100, 100), "
+                "(902, 1, 8003, 'v0-note-summary', NULL, 'v0 text', 'GEMINI', 'Old v0 note', 100, 0, 0, 100, 100), "
+                "(903, 1, NULL, '15027213-9df5-4ede-a4c5-e1c881c1ef0c', '', 'pdf highlight', NULL, NULL, 100, 0, 0, 100, 100), "
+                "(904, 1, 8003, 'chapter-1-summary', '', 'user digest', 'USER', NULL, 100, 0, 0, 100, 100), "
+                "(905, 1, 8003, 'blank-src-summary', '', 'unknown digest', NULL, NULL, 100, 0, 0, 100, 100), "
+                "(906, 2, 9001, :c2, '', 'u2 ai text', 'GEMINI', NULL, 100, 0, 0, 100, 100)"
+            ),
+            {"c1": canon_u1, "c2": canon_u2, "skew": skewed_mtime},
+        )
+
+    command.upgrade(alembic_config, "a4b5c6d7e8f9")
+    # Second pass exercises the no-op early return when zero uncategorized AI summaries remain
+    command.downgrade(alembic_config, "f3b4c5d6e7f8")
+    command.upgrade(alembic_config, "a4b5c6d7e8f9")
+
+    with engine.connect() as conn:
+        groups = {
+            (r.user_id, r.unique_identifier): r.name
+            for r in conn.execute(
+                text(
+                    "SELECT user_id, unique_identifier, name "
+                    "FROM f_summary WHERE is_deleted = 0 AND is_summary_group = 1"
+                )
+            )
+        }
+        seeded_leaves = {
+            (r.user_id, r.unique_identifier): (
+                r.file_id,
+                r.parent_unique_identifier,
+                r.comment_str,
+            )
+            for r in conn.execute(
+                text(
+                    "SELECT user_id, unique_identifier, file_id, parent_unique_identifier, comment_str "
+                    "FROM f_summary WHERE is_deleted = 0 AND is_summary_group = 0 AND id BETWEEN 901 AND 906"
+                )
+            )
+        }
+        canon_u1_mtime = conn.execute(
+            text(
+                "SELECT last_modified_time FROM f_summary WHERE user_id = 1 AND id = 901"
+            )
+        ).scalar_one()
+    engine.dispose()
+
+    assert groups == {
+        (1, "2799b74528407f6aeeeff095f7685e9e"): "Reading Notes",
+        (1, ai_group_u1): "My AI Notes",
+        (2, ai_group_u2): "AI Summaries",
+    }
+    assert seeded_leaves == {
+        (1, canon_u1): (8003, ai_group_u1, None),
+        (1, "v0-note-summary"): (8003, ai_group_u1, "Old v0 note"),
+        (1, "15027213-9df5-4ede-a4c5-e1c881c1ef0c"): (None, "", None),
+        (1, "chapter-1-summary"): (8003, "", None),
+        (1, "blank-src-summary"): (8003, "", None),
+        (2, canon_u2): (9001, ai_group_u2, None),
+    }
+    assert canon_u1_mtime == skewed_mtime + 1
+
+
+def test_add_previous_text_migration_upgrade_and_downgrade(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify migration b5c6d7e8f9a0 adds and drops f_note_page_content.previous_text cleanly."""
+    db_path = tmp_path / "previous_text_migration.db"
+    shutil.copy(Path("tests/fixtures/db_v1_populated.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+
+    command.upgrade(alembic_config, "a4b5c6d7e8f9")
+    command.upgrade(alembic_config, "b5c6d7e8f9a0")
+
+    engine = create_engine(url)
+    with engine.connect() as conn:
+        cols_up = {
+            row[1]
+            for row in conn.execute(
+                text("PRAGMA table_info(f_note_page_content)")
+            ).fetchall()
+        }
+        assert "previous_text" in cols_up
+
+    command.downgrade(alembic_config, "a4b5c6d7e8f9")
+    with engine.connect() as conn:
+        cols_down = {
+            row[1]
+            for row in conn.execute(
+                text("PRAGMA table_info(f_note_page_content)")
+            ).fetchall()
+        }
+        assert "previous_text" not in cols_down
+    engine.dispose()

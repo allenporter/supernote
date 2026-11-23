@@ -252,14 +252,14 @@ For single-variable Docker deployments, `supernote.server.config.ServerConfig` a
 
 ---
 
-## Outbound Webhook Settings (`supernote.server.config.WebhookConfig`)
+## Outbound Webhook Settings (`supernote.server.components.webhooks.config.WebhookConfig`)
 
-Configured under the `webhooks:` block in `config.yaml`, consumed by `supernote.server.services.webhook.WebhookService` (see `supernote.guides.webhooks_and_integrations`).
+Configured under the `webhooks:` block in `config.yaml`, consumed by `supernote.server.components.webhooks.service.WebhookService` (see `supernote.guides.webhooks_and_integrations`).
 
 | YAML Key | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `webhooks.enabled` | `SUPERNOTE_WEBHOOKS_ENABLED` | `bool` | `false` | Master switch for outbound webhook delivery. |
-| `webhooks.endpoints` | — | `list[WebhookEndpointConfig]` | `[]` | List of subscriber endpoint definitions (`supernote.server.config.WebhookEndpointConfig`). |
+| `webhooks.endpoints` | — | `list[WebhookEndpointConfig]` | `[]` | List of subscriber endpoint definitions (`supernote.server.components.webhooks.config.WebhookEndpointConfig`). |
 | `webhooks.endpoints[].url` | — | `str` | *(required)* | Target `http://` or `https://` URL to receive `POST` requests. Validated at startup. |
 | `webhooks.endpoints[].user` | — | `str` | *(required)* | Email address of the Supernote user whose events trigger this endpoint. |
 | `webhooks.endpoints[].secret` | — | `str` | `""` | Shared secret used to compute the `X-Supernote-Signature: sha256=<hex>` HMAC-SHA256 header. Never logged. |

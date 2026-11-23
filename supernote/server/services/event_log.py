@@ -156,6 +156,7 @@ class EventLogService:
         sync_token: str | None = None,
         event_types: list[str] | None = None,
         file_id: int | None = None,
+        exclude_actors: list[str] | None = None,
         limit: int = DEFAULT_FEED_LIMIT,
     ) -> EventFeedPage:
         """Query a user's domain event feed incrementally after `sync_token`.
@@ -169,6 +170,9 @@ class EventLogService:
                 or namespace prefix wildcards ending with `'.*'` (`'note.*'`,
                 `'vfs.*'`, `'schedule.*'`, `'summary.*'`).
             file_id: Optional VFS file ID filter (`related_file_id == file_id`).
+            exclude_actors: Optional list of actor identifiers to omit from
+                results (e.g. `['api_key:<id>']`). Filtered events still advance
+                `next_sync_token` so callers do not re-scan their own mutations.
             limit: Maximum number of events to return (`1..1000`, default `200`).
 
         Returns:
@@ -202,6 +206,10 @@ class EventLogService:
             )
             if file_id is not None:
                 stmt = stmt.where(UserEventDO.related_file_id == file_id)
+            if exclude_actors:
+                excluded = [a for a in exclude_actors if a]
+                if excluded:
+                    stmt = stmt.where(UserEventDO.actor.notin_(excluded))
             if event_types:
                 type_clauses = [
                     UserEventDO.event_type.startswith(t[:-1], autoescape=True)

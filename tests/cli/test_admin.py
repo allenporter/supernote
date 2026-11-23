@@ -342,11 +342,16 @@ async def test_reprocess_success(
     captured = capsys.readouterr()
     assert "Triggered reprocessing of 'summary' for file ID 42." in captured.out
 
+    # Reprocess also enqueues the file, and that background run may record its
+    # own checkpoint for file 42 before this query; only the summary must be gone.
     async with cli_env.session_manager.session() as session:
         tasks = (
             (
                 await session.execute(
-                    select(SystemTaskDO).where(SystemTaskDO.file_id == 42)
+                    select(SystemTaskDO).where(
+                        SystemTaskDO.file_id == 42,
+                        SystemTaskDO.task_type == "SUMMARY_GENERATION",
+                    )
                 )
             )
             .scalars()

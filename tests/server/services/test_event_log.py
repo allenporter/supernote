@@ -12,6 +12,7 @@ from supernote.models.schedule import ScheduleTaskLinkDTO
 from supernote.models.summary import AddSummaryDTO, AddSummaryGroupDTO, SummaryItem
 from supernote.models.user import UserRegisterDTO
 from supernote.server.ai.models.ocr import OcrModel
+from supernote.server.components.schedule.service import ScheduleService
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
@@ -36,7 +37,6 @@ from supernote.server.services.event_log import (
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.ocr import OcrModule
 from supernote.server.services.processor_modules.summary import SummaryModule
-from supernote.server.services.schedule import ScheduleService
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 from supernote.server.utils.paths import get_page_png_path
@@ -553,8 +553,28 @@ async def test_schedule_task_domain_events_recorded(
         task_list_id=group.task_list_id,
     )
 
-    # Semantic update emits schedule.task_updated
-    await schedule_service.update_task(uid, task.task_id, status="completed")
+    # Semantic update emits schedule.task_updated with changed_fields [old, new]
+    await schedule_service.update_task(
+        uid,
+        task.task_id,
+        status="completed",
+        completed_time=1710000005000,
+        update_time=1710000006000,
+    )
+
+    # Batch update clearing links still associates related_file_id via changed_fields["links"][0]
+    await schedule_service.batch_update_tasks(
+        uid,
+        [
+            {
+                "task_id": task.task_id,
+                "title": "Ship slice v2",
+                "links": None,
+                "update_time": 1710000008000,
+            }
+        ],
+        task_list_id=group.task_list_id,
+    )
 
     # Deleting the group cascades schedule.task_deleted for tasks in the group
     await schedule_service.delete_group(uid, group.task_list_id)
@@ -577,15 +597,60 @@ async def test_schedule_task_domain_events_recorded(
             901,
         ),
         (
-            DomainEventType.SCHEDULE_TASK_DELETED,
+            DomainEventType.SCHEDULE_TASK_UPDATED,
             DomainEntityType.SCHEDULE_TASK,
             task.task_id,
             901,
         ),
+        (
+            DomainEventType.SCHEDULE_TASK_DELETED,
+            DomainEntityType.SCHEDULE_TASK,
+            task.task_id,
+            None,
+        ),
     ]
-    assert page.events[0].payload["title"] == "Ship slice"
-    assert page.events[1].payload["status"] == "completed"
-    assert page.events[2].payload["status"] == "completed"
+    assert page.events[0].payload == {
+        "task_id": task.task_id,
+        "task_list_id": group.task_list_id,
+        "title": "Ship slice",
+        "detail": "Minimal PR",
+        "status": "needsAction",
+        "due_time": None,
+        "links": link_b64,
+    }
+    assert page.events[1].payload == {
+        "task_id": task.task_id,
+        "task_list_id": group.task_list_id,
+        "title": "Ship slice",
+        "detail": "Minimal PR",
+        "status": "completed",
+        "due_time": None,
+        "links": link_b64,
+        "changed_fields": {
+            "status": ["needsAction", "completed"],
+            "completed_time": [None, 1710000005000],
+        },
+    }
+    assert page.events[2].payload == {
+        "task_id": task.task_id,
+        "task_list_id": group.task_list_id,
+        "title": "Ship slice v2",
+        "detail": "Minimal PR",
+        "status": "completed",
+        "due_time": None,
+        "links": None,
+        "changed_fields": {
+            "title": ["Ship slice", "Ship slice v2"],
+            "links": [link_b64, None],
+        },
+    }
+    assert page.events[3].payload == {
+        "task_id": task.task_id,
+        "task_list_id": group.task_list_id,
+        "title": "Ship slice v2",
+        "status": "completed",
+        "links": None,
+    }
 
 
 async def test_note_processing_domain_events_recorded(
@@ -721,3 +786,62 @@ def test_all_domain_event_types_are_subscribed() -> None:
     """Verify every DomainEventType is backed by a subscribed DomainEvent class."""
     subscribed_types = {cls.EVENT_TYPE for cls in _SUBSCRIBED_DOMAIN_EVENTS}
     assert subscribed_types == set(DomainEventType)
+
+
+async def test_list_events_exclude_actors_filters_and_advances_cursor(
+    event_log_service: EventLogService,
+) -> None:
+    """Verify exclude_actors omits matching actors while advancing next_sync_token past them."""
+    ev_web = await event_log_service.append(
+        user_id=55,
+        event_type=DomainEventType.SCHEDULE_TASK_CREATED,
+        entity_type=DomainEntityType.SCHEDULE_TASK,
+        entity_id="t1",
+        actor="user:web",
+    )
+    ev_agent = await event_log_service.append(
+        user_id=55,
+        event_type=DomainEventType.SCHEDULE_TASK_CREATED,
+        entity_type=DomainEntityType.SCHEDULE_TASK,
+        entity_id="t2",
+        actor="api_key:agent_1",
+    )
+    ev_device = await event_log_service.append(
+        user_id=55,
+        event_type=DomainEventType.SCHEDULE_TASK_CREATED,
+        entity_type=DomainEntityType.SCHEDULE_TASK,
+        entity_id="t3",
+        actor="device:SN001",
+    )
+    ev_agent_tail = await event_log_service.append(
+        user_id=55,
+        event_type=DomainEventType.SCHEDULE_TASK_CREATED,
+        entity_type=DomainEntityType.SCHEDULE_TASK,
+        entity_id="t4",
+        actor="api_key:agent_1",
+    )
+
+    page1 = await event_log_service.list_events(
+        user_id=55, exclude_actors=["api_key:agent_1"], limit=1
+    )
+    assert [e.seq for e in page1.events] == [ev_web.seq]
+    assert page1.has_more is True
+
+    page2 = await event_log_service.list_events(
+        user_id=55,
+        sync_token=page1.next_sync_token,
+        exclude_actors=["api_key:agent_1"],
+        limit=1,
+    )
+    assert [e.seq for e in page2.events] == [ev_device.seq]
+    assert page2.has_more is False
+    assert ev_agent.seq < ev_device.seq
+
+    # Next poll sees no new non-excluded events and advances next_sync_token past ev_agent_tail.
+    after = await event_log_service.list_events(
+        user_id=55,
+        sync_token=page2.next_sync_token,
+        exclude_actors=["api_key:agent_1"],
+    )
+    assert after.events == []
+    assert after.next_sync_token == encode_sync_token(ev_agent_tail.seq)

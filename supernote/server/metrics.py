@@ -583,13 +583,14 @@ _MCP_TOOL_DURATION_SECONDS: Histogram = Histogram(
 )
 
 
-def init_mcp_metrics() -> None:
+def init_mcp_metrics(tool_names: Iterable[str] = MCPToolName) -> None:
     """Pre-initialize MCP tool call counters and latency histograms at 0."""
-    for tool in MCPToolName:
-        _MCP_TOOL_DURATION_SECONDS.labels(tool=tool.value)
+    for tool in tool_names:
+        tool_label = str(tool)
+        _MCP_TOOL_DURATION_SECONDS.labels(tool=tool_label)
         for status in (_OutcomeStatus.SUCCESS, _OutcomeStatus.FAILURE):
             _MCP_TOOL_CALLS_TOTAL.labels(
-                tool=tool.value,
+                tool=tool_label,
                 status=status.value,
             )
 
@@ -597,13 +598,13 @@ def init_mcp_metrics() -> None:
 @contextmanager
 def track_mcp_tool_call(
     *,
-    tool: MCPToolName,
+    tool: str,
 ) -> Generator[_OutcomeHandle]:
     """Record Prometheus call count and completed latency for an MCP tool invocation."""
     with _track_outcome(
         counter=_MCP_TOOL_CALLS_TOTAL,
         histogram=_MCP_TOOL_DURATION_SECONDS,
-        labels={"tool": tool.value},
+        labels={"tool": str(tool)},
     ) as handle:
         yield handle
 

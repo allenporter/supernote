@@ -22,7 +22,8 @@ from supernote.server.ai.models.openai.embedding import OpenAIEmbeddingModel
 from supernote.server.ai.models.openai.ocr import OpenAIOcrModel
 from supernote.server.ai.models.openai.summary import OpenAISummaryModel
 from supernote.server.ai.models.summary import InstrumentedSummaryModel
-from supernote.server.app import create_app, metrics_middleware
+from supernote.server.app import create_app
+from supernote.server.components.metrics.http import metrics_middleware
 from supernote.server.config import ServerConfig
 from supernote.server.metrics import (
     PIPELINE_DURATION_BUCKETS,

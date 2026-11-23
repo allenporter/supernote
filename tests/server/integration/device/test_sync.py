@@ -13,10 +13,11 @@ from supernote.models.socket import (
     SocketIoMessageType,
     SocketMessageData,
 )
+from supernote.server.components.socketio import SOCKETIO_MANAGER_KEY
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import RecycleFileDO, UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.keys import FILE_SERVICE_KEY, SOCKETIO_MANAGER_KEY
+from supernote.server.keys import FILE_SERVICE_KEY
 from supernote.server.routes.file_device import SYNC_LOCK_KEY_PREFIX, SYNC_LOCK_TIMEOUT
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.coordination import CoordinationService

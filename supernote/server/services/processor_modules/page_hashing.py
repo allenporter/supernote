@@ -18,6 +18,7 @@ from functools import partial
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import undefer
 
 from supernote.models.base import TaskType
 from supernote.notebook import Notebook, Page, load, parse_metadata
@@ -53,6 +54,7 @@ class _PageDiffCounts:
     modified_pages: tuple[str, ...] = ()
     moved_pages: tuple[str, ...] = ()
     deleted_pages: tuple[str, ...] = ()
+    deleted_page_texts: tuple[tuple[str, str], ...] = ()
 
 
 def _serialize_page_annotations(page_obj: Page) -> tuple[str, str, str]:
@@ -256,6 +258,7 @@ class PageHashingModule(ProcessorModule):
                     modified_pages=list(content_diff.modified_pages),
                     moved_pages=list(content_diff.moved_pages),
                     deleted_pages=list(content_diff.deleted_pages),
+                    deleted_page_texts=dict(content_diff.deleted_page_texts),
                 )
             )
 
@@ -385,7 +388,9 @@ class PageHashingModule(ProcessorModule):
     ) -> _PageDiffCounts:
         """Reconcile `NotePageContentDO` rows by `<PAGEID>` and invalidate stale checkpoints."""
         existing_pages = await session.execute(
-            select(NotePageContentDO).where(NotePageContentDO.file_id == file_id)
+            select(NotePageContentDO)
+            .options(undefer(NotePageContentDO.previous_text))
+            .where(NotePageContentDO.file_id == file_id)
         )
         existing_map = {p.page_id: p for p in existing_pages.scalars().all()}
 
@@ -400,6 +405,7 @@ class PageHashingModule(ProcessorModule):
         modified_pages: list[str] = []
         moved_pages: list[str] = []
         deleted_pages: list[str] = []
+        deleted_page_texts: list[tuple[str, str]] = []
 
         for i, (page_id, current_hash) in enumerate(page_identities):
             if not page_id:
@@ -423,6 +429,8 @@ class PageHashingModule(ProcessorModule):
                 if hash_changed:
                     logger.info(f"Page {page_id} (idx {i}) changed. Resetting content.")
                     row.content_hash = current_hash
+                    if row.text_content is not None:
+                        row.previous_text = row.text_content or None
                     row.text_content = None
                     row.embedding = None
                     row.embedding_model = None
@@ -468,6 +476,13 @@ class PageHashingModule(ProcessorModule):
                 any_page_changed = True
                 deleted += 1
                 deleted_pages.append(pid)
+                last_text = (
+                    row.text_content
+                    if row.text_content is not None
+                    else row.previous_text
+                )
+                if last_text:
+                    deleted_page_texts.append((pid, last_text))
                 await session.delete(row)
 
                 png_path = get_page_png_path(file_id, pid)
@@ -504,4 +519,5 @@ class PageHashingModule(ProcessorModule):
             modified_pages=tuple(modified_pages),
             moved_pages=tuple(moved_pages),
             deleted_pages=tuple(deleted_pages),
+            deleted_page_texts=tuple(deleted_page_texts),
         )

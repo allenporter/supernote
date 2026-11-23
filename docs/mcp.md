@@ -200,7 +200,7 @@ This grounds both the vision OCR model (improving domain terminology recognition
 
 ## Model Context Protocol (MCP) Server & Authentication
 
-When `mcp_enabled: true` (default), Open Private Cloud runs a Streamable HTTP **MCP Resource Server** on `http://<your-server-ip>:8081/mcp` alongside an **OAuth 2.1 / IndieAuth Authorization Server** on port `8080` (`supernote.server.mcp.server` and `supernote.server.mcp.auth`).
+When `mcp_enabled: true` (default), Open Private Cloud runs a Streamable HTTP **MCP Resource Server** on `http://<your-server-ip>:8081/mcp` alongside an **OAuth 2.1 / IndieAuth Authorization Server** on port `8080` (`supernote.server.components.mcp.server` and `supernote.server.components.oauth.provider`).
 
 ### Dual-Port OAuth 2.1 + Streamable HTTP Topology
 
@@ -211,7 +211,7 @@ When `mcp_enabled: true` (default), Open Private Cloud runs a Streamable HTTP **
 
 ### Two Authentication Modes for MCP Clients
 
-`supernote.server.mcp.auth.SupernoteOAuthProvider` accepts two types of Bearer credentials on `http://<host>:8081/mcp`:
+`supernote.server.components.oauth.provider.SupernoteOAuthProvider` accepts two types of Bearer credentials on `http://<host>:8081/mcp`:
 
 #### Mode 1: Interactive OAuth 2.1 with Dynamic IndieAuth Client IDs
 
@@ -316,19 +316,19 @@ params = {
 
 ## Exposed MCP Tools Reference
 
-Defined in `supernote.server.mcp.server` and validated by DTOs/VOs in `supernote.server.mcp.models`. All tools scope queries strictly to the authenticated user's notebooks.
+Defined in `supernote.server.components.mcp.server` and validated by DTOs/VOs in `supernote.server.components.mcp.models`. All tools scope queries strictly to the authenticated user's notebooks.
 
 ### `list_notebooks`
 
 Lists active `.note` notebooks ordered by most recently updated (`update_time` descending).
 
-- **Arguments (`supernote.server.mcp.models.ListNotebooksRequestDTO`)**:
+- **Arguments (`supernote.server.components.mcp.models.ListNotebooksRequestDTO`)**:
   | Parameter | Type | Default | Description |
   | :--- | :--- | :--- | :--- |
   | `limit` | `int` | `20` | Maximum number of notebooks to return. |
   | `name_filter` | `str \| None` | `None` | Optional case-insensitive substring filter on the notebook filename. |
 
-- **Response Payload (`supernote.server.mcp.models.ListNotebooksResponseVO`)**:
+- **Response Payload (`supernote.server.components.mcp.models.ListNotebooksResponseVO`)**:
   ```json
   {
     "success": true,
@@ -349,7 +349,7 @@ Lists active `.note` notebooks ordered by most recently updated (`update_time` d
 
 Performs semantic vector similarity search across all embedded notebook pages (`NotePageContentDO`), with optional filename and ISO 8601 date filtering.
 
-- **Arguments (`supernote.server.mcp.models.SearchRequestDTO`)**:
+- **Arguments (`supernote.server.components.mcp.models.SearchRequestDTO`)**:
   | Parameter | Type | Default | Description |
   | :--- | :--- | :--- | :--- |
   | `query` | `str` | *(required)* | Natural-language semantic search query (embedded with `RETRIEVAL_QUERY`). |
@@ -358,7 +358,7 @@ Performs semantic vector similarity search across all embedded notebook pages (`
   | `date_after` | `str \| None` | `None` | Include only notes/pages on or after this ISO 8601 date (`YYYY-MM-DD`). |
   | `date_before` | `str \| None` | `None` | Include only notes/pages on or before this ISO 8601 date (`YYYY-MM-DD`). |
 
-- **Response Payload (`supernote.server.mcp.models.SearchResponseVO`)**:
+- **Response Payload (`supernote.server.components.mcp.models.SearchResponseVO`)**:
   ```json
   {
     "success": true,
@@ -382,14 +382,14 @@ Performs semantic vector similarity search across all embedded notebook pages (`
 
 Retrieves the full OCR transcript for a notebook or slices a specific 0-based page range (`[start_index, end_index]` inclusive).
 
-- **Arguments (`supernote.server.mcp.models.TranscriptRequestDTO`)**:
+- **Arguments (`supernote.server.components.mcp.models.TranscriptRequestDTO`)**:
   | Parameter | Type | Default | Description |
   | :--- | :--- | :--- | :--- |
   | `file_id` | `str` | *(required)* | Numeric notebook ID string (as returned by `list_notebooks` or `search_notebook_chunks`). |
   | `start_index` | `int \| None` | `None` | 0-based starting page index (inclusive). If omitted, starts at page `0`. |
   | `end_index` | `int \| None` | `None` | 0-based ending page index (inclusive). If omitted, includes through the last page. |
 
-- **Response Payload (`supernote.server.mcp.models.TranscriptResponseVO`)**:
+- **Response Payload (`supernote.server.components.mcp.models.TranscriptResponseVO`)**:
   ```json
   {
     "success": true,

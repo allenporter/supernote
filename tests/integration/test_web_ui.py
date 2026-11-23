@@ -228,6 +228,51 @@ async def test_web_ui_desktop_and_mobile_smoke(
             }
             await page.get_by_role("button", name="Back to files").click()
 
+            # Recycle Bin E2E: create folder -> soft-delete -> open #/recycle -> restore -> delete again -> empty
+            await page.get_by_role("button", name="New Folder").click()
+            await page.get_by_placeholder("Folder name").fill("RecycleSmokeFolder")
+            await page.get_by_role("button", name="Create Folder").click()
+            await page.get_by_text("RecycleSmokeFolder").first.wait_for(state="visible")
+
+            await page.get_by_role("button", name="List view").click()
+            folder_card = page.locator(
+                ".file-card", has_text="RecycleSmokeFolder"
+            ).first
+            await folder_card.locator('input[type="checkbox"]').check()
+            await page.get_by_role("button", name="Delete", exact=True).click()
+            del_modal = page.get_by_role("dialog", name="Confirm Delete")
+            await del_modal.wait_for(state="visible")
+            await del_modal.get_by_role("button", name="Delete").click()
+            await del_modal.wait_for(state="hidden")
+
+            await page.get_by_role("button", name="Recycle Bin").click()
+            await page.wait_for_function("() => location.hash === '#/recycle'")
+            recycle_row = page.locator(".recycle-row", has_text="RecycleSmokeFolder")
+            await recycle_row.wait_for(state="visible")
+            await recycle_row.get_by_role("button", name="Restore").click()
+            await page.get_by_text("Recycle Bin is empty").wait_for(state="visible")
+
+            await page.get_by_role("button", name="Back to Files").click()
+            await page.get_by_text("RecycleSmokeFolder").first.wait_for(state="visible")
+
+            # Re-delete and empty Recycle Bin to verify destructive confirmation flow
+            folder_card = page.locator(
+                ".file-card", has_text="RecycleSmokeFolder"
+            ).first
+            await folder_card.locator('input[type="checkbox"]').check()
+            await page.get_by_role("button", name="Delete", exact=True).click()
+            await del_modal.get_by_role("button", name="Delete").click()
+            await del_modal.wait_for(state="hidden")
+
+            await page.get_by_role("button", name="Recycle Bin").click()
+            await recycle_row.wait_for(state="visible")
+            await page.get_by_role("button", name="Empty Recycle Bin").click()
+            empty_modal = page.get_by_role("dialog", name="Confirm Empty Recycle Bin")
+            await empty_modal.wait_for(state="visible")
+            await empty_modal.get_by_role("button", name="Empty Recycle Bin").click()
+            await empty_modal.wait_for(state="hidden")
+            await page.get_by_text("Recycle Bin is empty").wait_for(state="visible")
+
             # Tasks & Schedule view + stacked Search over ICS modal LIFO Escape dismissal
             await page.get_by_role("button", name="Tasks").click()
             await page.get_by_text("Seeded Smoke Task").first.wait_for(state="visible")

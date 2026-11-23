@@ -2,7 +2,7 @@
  * API Client for Supernote Backend
  */
 
-import { getFileExtension } from '../utils/format.js';
+import { getFileExtension, normalizeEpochMs } from '../utils/format.js';
 import { ApiError, apiRequest, getToken, onLogout, setToken } from './http.js';
 
 /** @type {SocketClient | null} */
@@ -536,6 +536,96 @@ export async function deleteItems(directoryId, idList) {
     await apiRequest('/api/file/delete', {
         body: { directoryId, idList },
         errorPrefix: 'Failed to delete items',
+    });
+}
+
+/**
+ * @param {Record<string, any>} item
+ * @returns {RecycleItem}
+ */
+function mapRecycleFileVO(item) {
+    const isDirectory = item.isFolder === 'Y' || item.isFolder === true || item.isFolder === 1;
+    const name = String(item.fileName || '');
+    const ext = isDirectory ? null : getFileExtension(name) || null;
+    return {
+        id: String(item.fileId),
+        name,
+        isDirectory,
+        size: Number(item.size) || 0,
+        deletedAt: normalizeEpochMs(item.updateTime),
+        extension: ext,
+    };
+}
+
+/**
+ * @param {number} pageNo
+ * @param {number} pageSize
+ */
+function fetchRecycleBinPage(pageNo, pageSize) {
+    return apiRequest('/api/file/recycle/list/query', {
+        body: {
+            order: 'time',
+            sequence: 'desc',
+            pageNo,
+            pageSize,
+        },
+        errorPrefix: 'Failed to fetch recycle bin',
+    });
+}
+
+/**
+ * Fetch all soft-deleted items in the Recycle Bin across pages.
+ * @param {number} [pageSize]
+ * @returns {Promise<RecycleItem[]>}
+ */
+export async function fetchRecycleBin(pageSize = DEFAULT_FILE_PAGE_SIZE) {
+    const firstPage = await fetchRecycleBinPage(1, pageSize);
+    const items = (firstPage.recycleFileVOList || []).map(mapRecycleFileVO);
+    const total = Number(firstPage.total) || items.length;
+    const totalPages = Math.min(MAX_DIRECTORY_PAGES, Math.max(1, Math.ceil(total / pageSize)));
+
+    for (let pageNo = 2; pageNo <= totalPages; pageNo++) {
+        const nextPage = await fetchRecycleBinPage(pageNo, pageSize);
+        const pageItems = nextPage.recycleFileVOList || [];
+        if (pageItems.length === 0) break;
+        items.push(...pageItems.map(mapRecycleFileVO));
+    }
+
+    return items;
+}
+
+/**
+ * Restore soft-deleted items from the Recycle Bin.
+ * @param {Array<string | number>} idList
+ * @returns {Promise<void>}
+ */
+export async function revertRecycleItems(idList) {
+    await apiRequest('/api/file/recycle/revert', {
+        body: { idList: idList.map(String) },
+        errorPrefix: 'Failed to restore items',
+    });
+}
+
+/**
+ * Permanently delete specific items from the Recycle Bin.
+ * @param {Array<string | number>} idList
+ * @returns {Promise<void>}
+ */
+export async function deleteRecycleItems(idList) {
+    await apiRequest('/api/file/recycle/delete', {
+        body: { idList: idList.map(String) },
+        errorPrefix: 'Failed to permanently delete items',
+    });
+}
+
+/**
+ * Permanently empty all items in the Recycle Bin.
+ * @returns {Promise<void>}
+ */
+export async function clearRecycleBin() {
+    await apiRequest('/api/file/recycle/clear', {
+        body: {},
+        errorPrefix: 'Failed to empty recycle bin',
     });
 }
 

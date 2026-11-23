@@ -1,7 +1,7 @@
 """Route handler decorators for authentication bypass in `supernote.server.app`.
 
 Provides `@public_route`, which marks an `aiohttp` route handler with `is_public = True`
-so `supernote.server.app.jwt_auth_middleware` allows unauthenticated requests (used by
+so `supernote.server.components.http.jwt_auth_middleware` allows unauthenticated requests (used by
 login challenge endpoints, health checks, Prometheus metrics, and HMAC-signed `/api/oss/*`
 file transfer endpoints).
 """
@@ -22,6 +22,6 @@ def public_route(
 def interactive_session_only(
     handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
 ) -> Callable[[web.Request], Awaitable[web.StreamResponse]]:
-    """Decorator to mark a route handler as requiring an interactive login session (denying static API keys)."""
+    """Decorator to mark a route handler as requiring an interactive login session (denying static API keys and OAuth tokens)."""
     setattr(handler, "interactive_session_only", True)
     return handler
