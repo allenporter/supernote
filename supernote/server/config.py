@@ -119,6 +119,13 @@ class ModelConfig(DataClassYAMLMixin):
     max_concurrency: int = 5
     """Maximum number of concurrent requests allowed for this model."""
 
+    prompt_override: str | None = None
+    """Optional fixed prompt that replaces the composed prompt for OCR models.
+
+    Useful for dedicated OCR models (such as DeepSeek-OCR or GLM-OCR) trained
+    on a single short instruction rather than the full metadata and legend prompt.
+    """
+
     def __post_init__(self) -> None:
         if not self.provider or not self.provider.strip():
             raise ValueError("ModelConfig must specify a non-empty provider.")
@@ -126,6 +133,8 @@ class ModelConfig(DataClassYAMLMixin):
             raise ValueError("ModelConfig must specify a non-empty model.")
         if self.max_concurrency < 1:
             raise ValueError("ModelConfig max_concurrency must be >= 1.")
+        if self.prompt_override is not None and not self.prompt_override.strip():
+            raise ValueError("ModelConfig prompt_override must be non-empty when set.")
 
     class Config(BaseConfig):
         omit_none = True

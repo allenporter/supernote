@@ -238,6 +238,22 @@ Defined at `ai.ocr`, `ai.summary`, and `ai.embedding`:
 | `ai.<capability>.provider` | `str` | `"gemini"` | Name of the provider entry in `ai.providers` (or a built-in provider type such as `"gemini"`, `"openai"`, `"apple"`). Non-empty string required. |
 | `ai.<capability>.model` | `str` | `""` | Provider-specific model identifier (e.g., `"gemini-3.5-flash-lite"`, `"gemini-3.6-flash"`, `"gemini-embedding-001"`, `"gemma3:27b"`, `"embeddinggemma"`, `"vision-accurate"`). Non-empty string required. |
 | `ai.<capability>.max_concurrency` | `int` | `5` | Maximum concurrent in-flight API requests for this capability (`>= 1`). Lower to `1` or `2` when using local GPU/CPU inference servers or macOS `apple` Vision. |
+| `ai.ocr.prompt_override` | `str \| None` | `None` | Optional fixed prompt that replaces the composed page-metadata and legend prompt when calling the OCR model. Non-empty string required when set. |
+
+For dedicated OCR models trained on a single fixed instruction (such as DeepSeek-OCR or GLM-OCR), set `prompt_override` so the model receives its native instruction instead of the composed prompt:
+
+```yaml
+ai:
+  providers:
+    local:
+      type: openai
+      base_url: "http://localhost:8000/v1"
+  ocr:
+    provider: local
+    model: DeepSeek-OCR-8bit
+    max_concurrency: 1
+    prompt_override: "Convert the document to markdown."
+```
 
 ### Legacy Top-Level Gemini Environment Variables
 

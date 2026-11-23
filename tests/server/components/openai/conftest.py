@@ -23,6 +23,7 @@ class FakeOpenAIServer:
     status: int = 200
     malformed: bool = False
     chat_content: str | None = "transcribed text"
+    omit_chat_content: bool = False
     embedding: list[float] = field(default_factory=lambda: [0.1, 0.2, 0.3])
 
     async def _record(self, request: web.Request) -> None:
@@ -40,9 +41,10 @@ class FakeOpenAIServer:
             return web.Response(status=self.status, text="model not found")
         if self.malformed:
             return web.json_response({"choices": []})
-        return web.json_response(
-            {"choices": [{"message": {"content": self.chat_content}}]}
+        message: dict[str, Any] = (
+            {} if self.omit_chat_content else {"content": self.chat_content}
         )
+        return web.json_response({"choices": [{"message": message}]})
 
     async def embeddings(self, request: web.Request) -> web.Response:
         await self._record(request)

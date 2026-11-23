@@ -77,6 +77,13 @@ async def test_chat_completion_null_content(
     assert await openai_backend.chat_completion(model="gemma", content=[]) == ""
 
 
+async def test_chat_completion_omitted_content(
+    openai_backend: OpenAIBackend, fake_openai: FakeOpenAIServer
+) -> None:
+    fake_openai.omit_chat_content = True
+    assert await openai_backend.chat_completion(model="gemma", content=[]) == ""
+
+
 async def test_embeddings_with_api_key(
     openai_base_url: str, fake_openai: FakeOpenAIServer
 ) -> None:
