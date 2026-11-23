@@ -10,16 +10,16 @@ from __future__ import annotations
 
 import graphlib
 import heapq
+import importlib
 import logging
 import re
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from aiohttp import web
-    from aiohttp.typedefs import Middleware
 
     from .config import ServerConfig
     from .db.session import DatabaseSessionManager
@@ -97,6 +97,11 @@ class Component(Protocol):
         """Domain identifiers that must set up and start before this component."""
         ...
 
+    @property
+    def platforms(self) -> Sequence[str]:
+        """Platform names implemented by this component (e.g. ``('http',)``)."""
+        ...
+
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         """Validate component config and register routes/subscriptions before startup."""
         ...
@@ -130,68 +135,6 @@ class ServerCore:
     """Core account, device binding, and token verification service."""
     file_service: FileService
     """Core Virtual File System and blob synchronization service."""
-    _outer_middlewares: list[Middleware] = field(default_factory=list, repr=False)
-    _inner_middlewares: list[Middleware] = field(default_factory=list, repr=False)
-    _public_prefixes: list[str] = field(default_factory=list, repr=False)
-    _public_resources: list[web.AbstractResource] = field(
-        default_factory=list, repr=False
-    )
-    _known_resource_paths: set[str] = field(default_factory=set, repr=False)
-
-    def register_middleware(
-        self,
-        middleware: Middleware,
-        *,
-        pre_auth: bool = False,
-    ) -> None:
-        """Register an aiohttp middleware to run outside (`pre_auth=True`) or inside auth."""
-        if pre_auth:
-            self._outer_middlewares.append(middleware)
-        else:
-            self._inner_middlewares.append(middleware)
-
-    def register_public_prefix(self, prefix: str) -> None:
-        """Register a URL path prefix exempted from `jwt_auth_middleware`."""
-        if not prefix.startswith("/"):
-            raise ValueError(f"Public path prefix must start with '/': {prefix!r}")
-        if prefix not in self._public_prefixes:
-            self._public_prefixes.append(prefix)
-
-    def register_public_resource(
-        self,
-        resource: web.AbstractResource,
-        *,
-        known_paths: Iterable[str] = (),
-    ) -> None:
-        """Register an aiohttp resource (e.g. ASGI mount) exempted from `jwt_auth_middleware`."""
-        if resource not in self._public_resources:
-            self._public_resources.append(resource)
-        self._known_resource_paths.update(known_paths)
-
-    @property
-    def outer_middlewares(self) -> tuple[Middleware, ...]:
-        """Middlewares registered to run before trace and auth middlewares."""
-        return tuple(self._outer_middlewares)
-
-    @property
-    def inner_middlewares(self) -> tuple[Middleware, ...]:
-        """Middlewares registered to run after auth and cache-control middlewares."""
-        return tuple(self._inner_middlewares)
-
-    @property
-    def public_prefixes(self) -> tuple[str, ...]:
-        """Registered URL path prefixes exempted from `jwt_auth_middleware`."""
-        return tuple(self._public_prefixes)
-
-    @property
-    def public_resources(self) -> tuple[web.AbstractResource, ...]:
-        """Registered aiohttp resources exempted from `jwt_auth_middleware`."""
-        return tuple(self._public_resources)
-
-    @property
-    def known_resource_paths(self) -> frozenset[str]:
-        """Bounded canonical paths exposed by registered resources for metrics labeling."""
-        return frozenset(self._known_resource_paths)
 
 
 class ComponentLoader:
@@ -287,6 +230,28 @@ class ComponentLoader:
         except BaseException:
             await self.async_stop_all(core)
             raise
+
+    def iter_platform_components(self, platform: str) -> tuple[Component, ...]:
+        """Return initialized components declaring ``platform``, in topological order."""
+        return tuple(comp for comp in self._initialized if platform in comp.platforms)
+
+    async def async_load_platform(
+        self,
+        platform: str,
+        core: ServerCore,
+        registrar: Any,
+    ) -> None:
+        """Import and invoke ``async_setup_<platform>(core, registrar)`` for declared components."""
+        setup_attr = f"async_setup_{platform}"
+        for comp in self.iter_platform_components(platform):
+            module_name = f"{comp.__class__.__module__}.{platform}"
+            module = importlib.import_module(module_name)
+            setup_fn = getattr(module, setup_attr, None)
+            if setup_fn is None:
+                raise ComponentError(
+                    f"Platform module {module_name!r} must define {setup_attr!r}"
+                )
+            await setup_fn(core, registrar)
 
     async def async_stop_all(self, core: ServerCore) -> None:
         """Idempotently stop all initialized components in reverse topological order."""

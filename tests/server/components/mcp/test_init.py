@@ -47,18 +47,12 @@ async def test_mcp_component_lifecycle(mcp_core: ServerCore) -> None:
     assert isinstance(component, Component)
     assert component.domain == "mcp"
     assert component.dependencies == ()
+    assert component.platforms == ("http",)
 
     loader = ComponentLoader()
     loader.register(component)
 
     await loader.async_setup_all(mcp_core, {})
-    assert len(mcp_core.public_resources) == 1
-    assert "/.well-known/oauth-authorization-server" in mcp_core.known_resource_paths
-    assert "/.well-known/" in mcp_core.public_prefixes
-    assert "/authorize" in mcp_core.public_prefixes
-    assert "/token" in mcp_core.public_prefixes
-    assert "/login-bridge" in mcp_core.public_prefixes
-
     await loader.async_start_all(mcp_core)
     await loader.async_stop_all(mcp_core)
     await loader.async_stop_all(mcp_core)

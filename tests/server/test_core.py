@@ -35,6 +35,7 @@ class RecordingComponent:
 
     domain: str
     dependencies: tuple[str, ...] = ()
+    platforms: tuple[str, ...] = ()
     events: list[tuple[str, str]] = field(default_factory=list)
     seen_cores: list[ServerCore] = field(default_factory=list)
     seen_configs: list[Mapping[str, Any]] = field(default_factory=list)
@@ -105,35 +106,55 @@ def test_server_core_is_immutable(server_core: ServerCore) -> None:
         core_as_any.config = None
 
 
-def test_server_core_registers_middlewares_and_public_prefixes(
+async def test_loader_iter_platform_components_preserves_topological_order(
+    loader: ComponentLoader,
     server_core: ServerCore,
 ) -> None:
-    @web.middleware
-    async def outer_mw(request: web.Request, handler: Any) -> web.StreamResponse:
-        return await handler(request)
+    comp_b = RecordingComponent(domain="b", dependencies=("a",), platforms=("http",))
+    comp_a = RecordingComponent(domain="a", platforms=("http",))
+    comp_c = RecordingComponent(domain="c", platforms=())
+    for comp in (comp_b, comp_c, comp_a):
+        loader.register(comp)
 
-    @web.middleware
-    async def inner_mw(request: web.Request, handler: Any) -> web.StreamResponse:
-        return await handler(request)
+    await loader.async_setup_all(server_core, {})
+    assert loader.iter_platform_components("http") == (comp_a, comp_b)
+    assert loader.iter_platform_components("metrics") == ()
 
-    server_core.register_middleware(outer_mw, pre_auth=True)
-    server_core.register_middleware(inner_mw)
-    server_core.register_public_prefix("/socket.io")
-    server_core.register_public_prefix("/socket.io")
 
-    assert server_core.outer_middlewares == (outer_mw,)
-    assert server_core.inner_middlewares == (inner_mw,)
-    assert server_core.public_prefixes == ("/socket.io",)
+async def test_loader_async_load_platform_invokes_setup_and_validates_entry(
+    loader: ComponentLoader,
+    server_core: ServerCore,
+) -> None:
+    from supernote.server.components.http import HttpRegistrar  # noqa: PLC0415
+    from supernote.server.components.socketio import (  # noqa: PLC0415
+        SocketIOComponent,
+    )
 
-    with pytest.raises(ValueError, match="must start with '/'"):
-        server_core.register_public_prefix("socket.io")
+    loader.register(SocketIOComponent())
+    await loader.async_setup_all(server_core, {})
 
-    resource = server_core.app.router.add_resource("/oauth")
-    server_core.register_public_resource(resource, known_paths=("/authorize", "/token"))
-    server_core.register_public_resource(resource, known_paths=("/token",))
+    registrar = HttpRegistrar()
+    await loader.async_load_platform("http", server_core, registrar)
+    assert registrar.public_prefixes == ("/socket.io",)
 
-    assert server_core.public_resources == (resource,)
-    assert server_core.known_resource_paths == frozenset({"/authorize", "/token"})
+
+async def test_loader_async_load_platform_missing_setup_fn_raises(
+    loader: ComponentLoader,
+    server_core: ServerCore,
+) -> None:
+    from supernote.server.components.socketio import (  # noqa: PLC0415
+        SocketIOComponent,
+    )
+
+    class BadPlatformComponent(SocketIOComponent):
+        __module__ = SocketIOComponent.__module__
+        platforms = ("manager",)
+
+    loader.register(BadPlatformComponent())
+    await loader.async_setup_all(server_core, {})
+
+    with pytest.raises(ComponentError, match="must define 'async_setup_manager'"):
+        await loader.async_load_platform("manager", server_core, object())
 
 
 def test_loader_register_and_accessors(loader: ComponentLoader) -> None:
