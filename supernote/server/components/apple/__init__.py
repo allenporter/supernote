@@ -3,6 +3,19 @@
 Provides zero-cost, on-device handwriting OCR on macOS via Apple's Vision
 framework (`VNRecognizeTextRequest`), registering provider type ``"apple"``
 onto the ``ocr`` platform hosted by `supernote.server.components.ai`.
+
+**Model quality guidance** (from ``supernote-ocr-suite-v1``, see
+``supernote.guides.ocr_benchmarks``):
+
+- **`vision-accurate`** (21.7% mean CER / 9.8% median CER, 73.7% word F1,
+  ~411 ms median latency): Solid as a fast, offline fallback for clean English
+  prose search (3.0% CER, 93.0% word F1), but trails multimodal VLMs like
+  ``gemini-3.5-flash-lite`` (2.3% mean CER, 99.0% word F1) on complex layouts
+  (30.2% CER), multilingual pages (24.6% CER), and Bullet Journal structure
+  (0% indentation/strikethrough fidelity).
+- **`vision-fast`** (72.8% mean CER, 17.8% word F1): Not recommended for
+  handwritten notes; Vision's fast path only reliably detects machine-printed
+  text.
 """
 
 from __future__ import annotations
