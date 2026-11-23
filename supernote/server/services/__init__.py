@@ -19,7 +19,7 @@ or asynchronously via `supernote.server.events.LocalEventBus`.
 | `supernote.server.services.integrity.IntegrityService` | `supernote.server.services.integrity` | Two-way consistency verification between SQLite VFS metadata and disk blobs. |
 | `supernote.server.services.coordination.SqliteCoordinationService` | `supernote.server.services.coordination` | TTL-backed key-value store and distributed locks (`KeyValueDO`). |
 | `supernote.server.services.user.UserService` | `supernote.server.services.user` | User accounts, Admin-First bootstrap, static API keys, device bindings, and JWT sessions. |
-| `supernote.server.services.event_log.EventLogService` | `supernote.server.services.event_log` | Append-only per-user domain event log (`UserEventDO`) and cursor pagination. |
+| `supernote.server.components.events.service.EventLogService` | `supernote.server.components.events.service` | Append-only per-user domain event log (`UserEventDO`), cursor pagination, and retention pruning. |
 | `supernote.server.components.metrics.storage.StorageMetricsCollector` | `supernote.server.components.metrics.storage` | Periodic background collector for blob storage and cache Prometheus gauges. |
 
 See `supernote.guides.architecture` for the end-to-end service interaction model.
@@ -29,7 +29,6 @@ __all__ = [
     "blob",
     "conversion",
     "coordination",
-    "event_log",
     "file",
     "integrity",
     "processor",

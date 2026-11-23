@@ -1,8 +1,10 @@
 """Unit tests for EventLogService append, cursor querying, and retention pruning."""
 
+import asyncio
 import hashlib
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -12,6 +14,11 @@ from supernote.models.schedule import ScheduleTaskLinkDTO
 from supernote.models.summary import AddSummaryDTO, AddSummaryGroupDTO, SummaryItem
 from supernote.models.user import UserRegisterDTO
 from supernote.server.ai.models.ocr import OcrModel
+from supernote.server.components.events.models import encode_sync_token
+from supernote.server.components.events.service import (
+    SUBSCRIBED_DOMAIN_EVENTS,
+    EventLogService,
+)
 from supernote.server.components.schedule.service import ScheduleService
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
@@ -29,11 +36,6 @@ from supernote.server.events import (
 from supernote.server.exceptions import CursorExpiredError, InvalidInputError
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.coordination import CoordinationService
-from supernote.server.services.event_log import (
-    _SUBSCRIBED_DOMAIN_EVENTS,
-    EventLogService,
-    encode_sync_token,
-)
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.ocr import OcrModule
 from supernote.server.services.processor_modules.summary import SummaryModule
@@ -181,7 +183,7 @@ async def test_list_events_validation_errors(
         "abc",
         "head",
         "!!!",
-        encode_sync_token(0),
+        "djE6MA",  # base64url("v1:0")
         f"{encode_sync_token(10)}=",
     ):
         with pytest.raises(InvalidInputError):
@@ -784,7 +786,7 @@ async def test_note_processing_domain_events_recorded(
 
 def test_all_domain_event_types_are_subscribed() -> None:
     """Verify every DomainEventType is backed by a subscribed DomainEvent class."""
-    subscribed_types = {cls.EVENT_TYPE for cls in _SUBSCRIBED_DOMAIN_EVENTS}
+    subscribed_types = {cls.EVENT_TYPE for cls in SUBSCRIBED_DOMAIN_EVENTS}
     assert subscribed_types == set(DomainEventType)
 
 
@@ -845,3 +847,107 @@ async def test_list_events_exclude_actors_filters_and_advances_cursor(
     )
     assert after.events == []
     assert after.next_sync_token == encode_sync_token(ev_agent_tail.seq)
+
+
+def test_event_log_service_rejects_non_positive_prune_interval(
+    session_manager: DatabaseSessionManager,
+    coordination_service: CoordinationService,
+) -> None:
+    """Verify non-positive prune_interval_seconds raises ValueError."""
+    with pytest.raises(ValueError, match="prune_interval_seconds"):
+        EventLogService(
+            session_manager=session_manager,
+            coordination_service=coordination_service,
+            prune_interval_seconds=0,
+        )
+
+
+async def test_event_log_service_zero_retention_skips_background_pruner(
+    session_manager: DatabaseSessionManager,
+    coordination_service: CoordinationService,
+) -> None:
+    """Verify retention_days=0 keeps old events untouched even when started."""
+    service = EventLogService(
+        session_manager=session_manager,
+        coordination_service=coordination_service,
+        retention_days=0,
+        prune_interval_seconds=0.01,
+    )
+    old_ts = int(time.time() * 1000) - (100 * 86_400_000)
+    await service.append(
+        user_id=76,
+        event_type="vfs.created",
+        entity_type="file",
+        entity_id="keep",
+        timestamp_ms=old_ts,
+    )
+    await service.start()
+    await asyncio.sleep(0.03)
+    await service.stop()
+
+    page = await service.list_events(user_id=76)
+    assert len(page.events) == 1
+
+
+async def test_event_log_service_background_pruner_deletes_expired_events(
+    session_manager: DatabaseSessionManager,
+    coordination_service: CoordinationService,
+) -> None:
+    """Verify start/stop periodically prunes expired events and is idempotent."""
+    service = EventLogService(
+        session_manager=session_manager,
+        coordination_service=coordination_service,
+        retention_days=1,
+        prune_interval_seconds=0.02,
+    )
+    old_ts = int(time.time() * 1000) - (2 * 86_400_000)
+    await service.append(
+        user_id=77,
+        event_type="vfs.created",
+        entity_type="file",
+        entity_id="old",
+        timestamp_ms=old_ts,
+    )
+    await service.start()
+    await service.start()  # idempotent second start
+
+    for _ in range(50):
+        if not (await service.list_events(user_id=77)).events:
+            break
+        await asyncio.sleep(0.01)
+
+    assert (await service.list_events(user_id=77)).events == []
+    await service.stop()
+    await service.stop()  # idempotent second stop
+
+
+async def test_event_log_service_background_pruner_recovers_from_transient_error(
+    session_manager: DatabaseSessionManager,
+    coordination_service: CoordinationService,
+) -> None:
+    """Verify a transient exception in prune_expired_events does not kill the loop."""
+    service = EventLogService(
+        session_manager=session_manager,
+        coordination_service=coordination_service,
+        retention_days=1,
+        prune_interval_seconds=0.01,
+    )
+    calls = 0
+    recovered = asyncio.Event()
+
+    async def flaky_prune() -> int:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("transient db error")
+        recovered.set()
+        return 0
+
+    with patch.object(service, "prune_expired_events", side_effect=flaky_prune):
+        await service.start()
+        try:
+            await asyncio.wait_for(recovered.wait(), timeout=1.0)
+        finally:
+            await service.stop()
+
+    assert calls >= 2

@@ -34,6 +34,7 @@ from supernote.models.summary import (
     UpdateSummaryGroupDTO,
 )
 from supernote.server.app import create_app
+from supernote.server.components.events import EVENT_LOG_SERVICE_KEY
 from supernote.server.components.schedule import (
     SCHEDULE_SERVICE_KEY,
     ScheduleService,
@@ -52,7 +53,6 @@ from supernote.server.keys import (
     BLOB_STORAGE_KEY,
     CONFIG_KEY,
     EVENT_BUS_KEY,
-    EVENT_LOG_SERVICE_KEY,
     FILE_SERVICE_KEY,
     SUMMARY_SERVICE_KEY,
     USER_SERVICE_KEY,

@@ -302,6 +302,7 @@ async def test_all_builtin_components_http_platform_end_to_end(
         "/static",
         "/metrics",
         "/socket.io/",
+        "/api/extended/events",
         "/api/schedule/feed.ics",
     ):
         assert expected_path in canonicals

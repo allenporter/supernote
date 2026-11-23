@@ -10,7 +10,7 @@
 | `supernote.server.db.models.note_processing` | `NotePageContentDO` (`f_note_page_content`), `SystemTaskDO` (`f_system_task`) | `supernote.server.services.processor.ProcessorService` |
 | `supernote.server.db.models.summary` | `SummaryDO` (`f_summary`), `SummaryTagDO` (`f_summary_tag`) | `supernote.server.services.summary.SummaryService` |
 | `supernote.server.db.models.schedule` | `ScheduleTaskGroupDO` (`t_schedule_task_group`), `ScheduleTaskDO` (`t_schedule_task`) | `supernote.server.components.schedule.service.ScheduleService` |
-| `supernote.server.db.models.event_log` | `UserEventDO` (`f_user_event`) | `supernote.server.services.event_log.EventLogService` |
+| `supernote.server.db.models.event_log` | `UserEventDO` (`f_user_event`) | `supernote.server.components.events.service.EventLogService` |
 | `supernote.server.db.models.kv` | `KeyValueDO` (`key_values`) | `supernote.server.services.coordination.SqliteCoordinationService` |
 
 See `supernote.guides.schema_migration_guide` for Alembic migration conventions.
