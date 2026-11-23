@@ -110,6 +110,20 @@ class SessionState(DataClassJSONMixin):
     last_active_at: float = field(default_factory=time.time)
     expires_at: int | None = None
     auth_method: AuthMethod = AuthMethod.SESSION
+    actor_id: str | None = None
+
+    @property
+    def actor(self) -> str:
+        """Canonical domain event actor identifier for this authenticated principal."""
+        actor_id = (self.actor_id or "").strip() or "unknown"
+        if self.auth_method == AuthMethod.API_KEY:
+            return f"api_key:{actor_id}"[:64]
+        if self.auth_method == AuthMethod.OAUTH:
+            return f"oauth:{actor_id}"[:64]
+        eq = (self.equipment_no or "").strip()
+        if eq and eq.upper() != "WEB":
+            return f"device:{eq}"[:64]
+        return "user:web"
 
     @property
     def is_api_key(self) -> bool:
@@ -739,6 +753,7 @@ class UserService:
 
             created_at = record.created_at
             expires_at = record.expires_at
+            key_id = record.id
             email = user.email
             user_id = user.id
             if (
@@ -758,6 +773,7 @@ class UserService:
             last_active_at=float(now),
             expires_at=expires_at,
             auth_method=AuthMethod.API_KEY,
+            actor_id=key_id,
         )
 
     async def parse_oauth_token_payload(self, data: str) -> dict[str, Any] | None:
@@ -807,6 +823,7 @@ class UserService:
         if not user or not user.is_active:
             return None
 
+        client_id = token_data.get("client_id")
         return SessionState(
             token=token,
             email=user.email,
@@ -816,6 +833,7 @@ class UserService:
             if isinstance(expires_at, (int, float))
             else None,
             auth_method=AuthMethod.OAUTH,
+            actor_id=str(client_id) if client_id else None,
         )
 
     async def verify_token(self, token: str) -> SessionState | None:

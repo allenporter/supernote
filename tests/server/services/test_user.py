@@ -1208,3 +1208,48 @@ async def test_verify_oauth_token_rejects_expired_inactive_and_malformed(
         db_user.is_active = False
         await db.commit()
     assert await user_service.verify_token("oauth_inactive") is None
+
+
+async def test_session_state_actor_across_auth_methods(
+    user_service: UserService,
+    coordination_service: CoordinationService,
+) -> None:
+    """Verify SessionState.actor resolves canonical identifiers for web, device, API key, and OAuth."""
+    pw_md5 = hashlib.md5(b"password123").hexdigest()
+    user = await user_service.register(
+        UserRegisterDTO(email="actor_test@example.com", password=pw_md5)
+    )
+
+    web_token = await user_service.create_session("actor_test@example.com")
+    web_session = await user_service.verify_token(web_token)
+    assert web_session is not None
+    assert web_session.actor == "user:web"
+
+    dev_token = await user_service.create_session(
+        "actor_test@example.com", equipment_no="SN12345"
+    )
+    dev_session = await user_service.verify_token(dev_token)
+    assert dev_session is not None
+    assert dev_session.actor == "device:SN12345"
+
+    raw_key, created_key = await user_service.create_api_key(user.id, "Magic Todo")
+    key_session = await user_service.verify_token(raw_key)
+    assert key_session is not None
+    assert key_session.actor == f"api_key:{created_key.id}"
+
+    long_client_id = "c" * 80
+    await coordination_service.set_value(
+        f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}oauth_actor_tok",
+        json.dumps(
+            {
+                "token": "oauth_actor_tok",
+                "user_id": user.id,
+                "client_id": long_client_id,
+            }
+        ),
+        ttl=3600,
+    )
+    oauth_session = await user_service.verify_token("oauth_actor_tok")
+    assert oauth_session is not None
+    assert oauth_session.actor == f"oauth:{long_client_id}"[:64]
+    assert len(oauth_session.actor) == 64

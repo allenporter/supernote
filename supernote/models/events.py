@@ -98,6 +98,11 @@ class EventFeedRequestDTO(DataClassJSONMixin):
     )
     """Optional VFS file ID filter."""
 
+    exclude_actors: str | None = field(
+        metadata=field_options(alias="excludeActors"), default=None
+    )
+    """Optional comma-separated actor identifiers to omit from results (e.g. `'self'` or `'api_key:<id>'`)."""
+
     limit: int = 200
     """Maximum number of events to return (`1..1000`, default `200`)."""
 
@@ -108,6 +113,15 @@ class EventFeedRequestDTO(DataClassJSONMixin):
             return None
         return [
             part.strip() for part in self.event_types.split(",") if part.strip()
+        ] or None
+
+    @property
+    def exclude_actor_list(self) -> list[str] | None:
+        """Return parsed excluded actor strings, or `None` when unset."""
+        if not self.exclude_actors:
+            return None
+        return [
+            part.strip() for part in self.exclude_actors.split(",") if part.strip()
         ] or None
 
     class Config(BaseConfig):
@@ -132,7 +146,7 @@ class DomainEventVO(DataClassJSONMixin):
     """Domain event type identifier (see `DomainEventType` in `supernote.models.events`)."""
 
     actor: str
-    """Originating mutation source (`'user:web'`, `'device:<equipment_no>'`, or `'system:processor'`)."""
+    """Originating mutation source (`'user:web'`, `'device:<equipment_no>'`, `'api_key:<id>'`, `'oauth:<client_id>'`, or `'system:processor'`)."""
 
     entity_type: str = field(metadata=field_options(alias="entityType"))
     """Target entity category (see `DomainEntityType` in `supernote.models.events`)."""

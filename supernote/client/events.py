@@ -57,14 +57,15 @@ class EventsClient:
         sync_token: str | None = None,
         event_types: list[str] | None = None,
         file_id: int | None = None,
+        exclude_actors: list[str] | None = None,
         limit: int = 200,
     ) -> EventFeedListVO:
         """Poll a user's incremental domain event feed (`GET /api/extended/events`).
 
         When called with `sync_token=None`, returns retained events starting
         from the oldest entry in the retention window in chronological order
-        (optionally narrowed by `event_types` or `file_id`). Callers can page
-        forward while `has_more` is `True` using each response's
+        (optionally narrowed by `event_types`, `file_id`, or `exclude_actors`).
+        Callers can page forward while `has_more` is `True` using each response's
         `next_sync_token` until caught up to the most recent events, then reuse
         that `next_sync_token` on subsequent polls to fetch only newly recorded
         events.
@@ -77,6 +78,10 @@ class EventsClient:
                 e.g. `DomainEventType.NOTE_PAGE_TRANSCRIBED`) or namespace prefix
                 globs (`'vfs.*'`, `'note.*'`, `'schedule.*'`, `'summary.*'`).
             file_id: Optional VFS file ID to scope events to a single file/notebook.
+            exclude_actors: Optional list of actor identifiers to exclude from
+                results. Pass `['self']` to suppress events authored by the
+                currently authenticated credential (API key, OAuth client, device,
+                or web session).
             limit: Maximum number of events per page (`1..1000`, default `200`).
 
         Returns:
@@ -88,6 +93,7 @@ class EventsClient:
             sync_token=sync_token,
             event_types=",".join(event_types) if event_types else None,
             file_id=file_id,
+            exclude_actors=",".join(exclude_actors) if exclude_actors else None,
             limit=limit,
         )
         params = {k: str(v) for k, v in dto.to_dict().items()}
