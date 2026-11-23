@@ -31,7 +31,6 @@ from supernote.server.metrics import (
     AIStage,
     NoteProcessingMode,
     init_ai_metrics,
-    init_mcp_metrics,
     init_note_processing_metrics,
     init_processor_module_metrics,
     record_ai_tokens,
@@ -1050,13 +1049,4 @@ def test_startup_zero_seeding_for_counters_and_histograms() -> None:
             {"provider": "seed-prov", "model": "seed-ocr", "stage": "ocr"},
         )
         == 0.0
-    )
-
-    init_mcp_metrics()
-    assert (
-        REGISTRY.get_sample_value(
-            "supernote_mcp_tool_duration_seconds_count",
-            {"tool": "list_notebooks"},
-        )
-        is not None
     )

@@ -14,9 +14,13 @@ import functools
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, ParamSpec, cast
 
+from supernote.server.components.mcp.metrics import (
+    MCPToolName,
+    init_mcp_metrics,
+    track_mcp_tool_call,
+)
 from supernote.server.core import ServerCore
 from supernote.server.keys import MCP_REGISTRAR_KEY, SEARCH_SERVICE_KEY
-from supernote.server.metrics import MCPToolName, init_mcp_metrics, track_mcp_tool_call
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
