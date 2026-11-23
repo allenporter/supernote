@@ -1,4 +1,11 @@
-"""HTTP platform setup and Starlette ASGI app for the OAuth 2.1 Authorization Server."""
+"""HTTP platform setup and Starlette ASGI app for the OAuth 2.1 Authorization Server.
+
+The OAuth 2.1 Authorization Server runs on the primary `aiohttp` server (`8080`),
+separate from the MCP Resource Server (`8081`, which only serves `/mcp` and
+`/.well-known/oauth-protected-resource/mcp`). Because `mcp.server.auth.routes.create_auth_routes`
+returns Starlette routes, this module wraps them (plus `/login-bridge`) in an in-process
+`Starlette` app and bridges it into `aiohttp` via `aiohttp_asgi.ASGIResource`.
+"""
 
 from __future__ import annotations
 
