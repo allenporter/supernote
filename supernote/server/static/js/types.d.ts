@@ -207,6 +207,56 @@ interface NoteSummary {
     dataSource: string | null;
 }
 
+interface DigestCategory {
+    id: string;
+    uniqueIdentifier: string;
+    name: string;
+    description: string | null;
+    creationTime: number;
+    lastModifiedTime: number;
+}
+
+interface DigestItem {
+    id: string;
+    uniqueIdentifier: string;
+    parentUniqueIdentifier: string | null;
+    fileId: string | null;
+    content: string;
+    commentStr: string | null;
+    author: string | null;
+    sourcePath: string | null;
+    dataSource: string | null;
+    tags: string[];
+    hasHandwriting: boolean;
+    handwriteInnerName: string | null;
+    commentHandwriteName: string | null;
+    creationTime: number;
+    lastModifiedTime: number;
+    metadata: Record<string, unknown> | null;
+}
+
+interface DigestInput {
+    parentUniqueIdentifier?: string | null;
+    content: string;
+    commentStr?: string | null;
+    author?: string | null;
+    sourcePath?: string | null;
+}
+
+interface DigestUpdateInput {
+    parentUniqueIdentifier?: string | null;
+    content?: string;
+    commentStr?: string | null;
+    author?: string | null;
+    sourcePath?: string | null;
+}
+
+interface DigestSourceOption {
+    path: string;
+    label: string;
+    count: number;
+}
+
 interface SystemTaskItem {
     id: string;
     fileId: string;

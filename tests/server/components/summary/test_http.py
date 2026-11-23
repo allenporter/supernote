@@ -692,3 +692,145 @@ async def test_extended_file_summary_list_error(
         pytest.raises(ApiException),
     ):
         await extended_client.list_summaries(file_id=101)
+
+
+async def test_summary_group_and_item_wire_ids_serialized_as_strings(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """64-bit Snowflake IDs serialize as strings (and None stays null) across summary CRUD."""
+    group_resp = await client.post(
+        "/api/file/add/summary/group",
+        headers=auth_headers,
+        json={
+            "uniqueIdentifier": "a" * 32,
+            "name": "Reading Highlights",
+            "md5Hash": "d41d8cd98f00b204e9800998ecf8427e",
+        },
+    )
+    assert group_resp.status == 200
+    group_data = await group_resp.json()
+    assert isinstance(group_data["id"], str)
+
+    file_id_str = "750000000000000123"
+    add_with_file = await client.post(
+        "/api/file/add/summary",
+        headers=auth_headers,
+        json={
+            "uniqueIdentifier": "b" * 32,
+            "parentUniqueIdentifier": "a" * 32,
+            "fileId": file_id_str,
+            "content": "Linked excerpt",
+            "sourcePath": "Note/Daily.note",
+        },
+    )
+    assert add_with_file.status == 200
+    linked_id = (await add_with_file.json())["id"]
+    assert isinstance(linked_id, str)
+
+    add_standalone = await client.post(
+        "/api/file/add/summary",
+        headers=auth_headers,
+        json={
+            "uniqueIdentifier": "c" * 32,
+            "content": "Standalone digest",
+        },
+    )
+    assert add_standalone.status == 200
+
+    groups_payload = await (
+        await client.post(
+            "/api/file/query/summary/group",
+            headers=auth_headers,
+            json={"page": 1, "size": 0},
+        )
+    ).json()
+    assert groups_payload["summaryDOList"][0]["id"] == group_data["id"]
+    assert isinstance(groups_payload["summaryDOList"][0]["id"], str)
+
+    items_payload = await (
+        await client.post(
+            "/api/file/query/summary",
+            headers=auth_headers,
+            json={"page": 1, "size": 0},
+        )
+    ).json()
+    by_uuid = {row["uniqueIdentifier"]: row for row in items_payload["summaryDOList"]}
+    assert by_uuid["b" * 32]["id"] == linked_id
+    assert by_uuid["b" * 32]["fileId"] == file_id_str
+    assert by_uuid["c" * 32]["fileId"] is None
+
+    update_resp = await client.put(
+        "/api/file/update/summary",
+        headers=auth_headers,
+        json={
+            "id": linked_id,
+            "content": "Updated excerpt",
+            "parentUniqueIdentifier": "",
+        },
+    )
+    assert update_resp.status == 200
+
+    delete_resp = await client.delete(
+        "/api/file/delete/summary",
+        headers=auth_headers,
+        json={"id": linked_id},
+    )
+    assert delete_resp.status == 200
+
+
+async def test_summary_hash_and_by_id_wire_ids_serialized_as_strings(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Summary manifest (/hash) and batch lookup (/id) serialize 64-bit IDs as strings."""
+    add_data = await (
+        await client.post(
+            "/api/file/add/summary",
+            headers=auth_headers,
+            json={"uniqueIdentifier": "d" * 32, "content": "Hash check"},
+        )
+    ).json()
+    summary_id = add_data["id"]
+    assert isinstance(summary_id, str)
+
+    hash_payload = await (
+        await client.post(
+            "/api/file/query/summary/hash",
+            headers=auth_headers,
+            json={"page": 1, "size": 0},
+        )
+    ).json()
+    assert hash_payload["summaryInfoVOList"][0]["id"] == summary_id
+    assert isinstance(hash_payload["summaryInfoVOList"][0]["id"], str)
+
+    by_id_payload = await (
+        await client.post(
+            "/api/file/query/summary/id",
+            headers=auth_headers,
+            json={"ids": [summary_id]},
+        )
+    ).json()
+    assert by_id_payload["summaryDOList"][0]["id"] == summary_id
+    assert isinstance(by_id_payload["summaryDOList"][0]["id"], str)
+
+
+async def test_summary_tag_wire_ids_serialized_as_strings(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Summary tag add/query endpoints serialize 64-bit Snowflake IDs as strings."""
+    add_tag = await (
+        await client.post(
+            "/api/file/add/summary/tag",
+            headers=auth_headers,
+            json={"name": "Important"},
+        )
+    ).json()
+    assert isinstance(add_tag["id"], str)
+
+    query_tags = await (
+        await client.get("/api/file/query/summary/tag", headers=auth_headers)
+    ).json()
+    assert query_tags["summaryTagDOList"][0]["id"] == add_tag["id"]
+    assert isinstance(query_tags["summaryTagDOList"][0]["id"], str)
