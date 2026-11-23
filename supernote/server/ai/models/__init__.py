@@ -20,7 +20,6 @@ To add a new provider (e.g., `<provider>`):
 __all__ = [
     "apple",
     "embedding",
-    "fake",
     "gemini",
     "ocr",
     "openai",

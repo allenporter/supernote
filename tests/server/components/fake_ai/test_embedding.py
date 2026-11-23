@@ -1,4 +1,4 @@
-"""Tests for `supernote.server.ai.models.fake.embedding`."""
+"""Tests for `supernote.server.components.fake_ai.embedding`."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import pytest
 
 from supernote.server.ai.base import AIError
 from supernote.server.ai.models.embedding import EmbeddingTaskType
-from supernote.server.ai.models.fake.embedding import (
+from supernote.server.components.fake_ai.embedding import (
     FakeEmbeddingModel,
     create_embedding_model,
 )

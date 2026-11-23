@@ -13,10 +13,10 @@ from sqlalchemy import select
 
 from supernote.models.base import ProcessingStatus, TaskType
 from supernote.notebook import fileformat
-from supernote.server.ai.models.fake.embedding import FakeEmbeddingModel
-from supernote.server.ai.models.fake.ocr import FakeOcrModel
-from supernote.server.ai.models.fake.summary import FakeSummaryModel
 from supernote.server.ai.models.ocr import ConcurrencyLimitedOcrModel, OcrModel
+from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
+from supernote.server.components.fake_ai.ocr import FakeOcrModel
+from supernote.server.components.fake_ai.summary import FakeSummaryModel
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (

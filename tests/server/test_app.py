@@ -24,8 +24,9 @@ from supernote.server.app import (
     create_app,
     run,
 )
+from supernote.server.components.fake_ai import FakeAiComponent
 from supernote.server.components.webhooks import WebhooksComponent
-from supernote.server.config import ServerConfig
+from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
 from supernote.server.core import ComponentLoader, ServerCore
 from supernote.server.db.models.user import UserDO
 from supernote.server.keys import (
@@ -466,3 +467,22 @@ async def test_create_app_registers_and_runs_webhooks_component_when_enabled(
     test_client = await aiohttp_client(app)
     resp = await test_client.get("/api/health")
     assert resp.status == 200
+
+
+def test_create_app_loads_fake_ai_only_when_configured(
+    server_config: ServerConfig,
+) -> None:
+    """Verify `create_app` registers `fake_ai` only when `config.ai` uses provider type `fake`."""
+    default_app = create_app(dataclasses.replace(server_config, web_enabled=False))
+    assert default_app[COMPONENT_LOADER_KEY].get("fake_ai") is None
+
+    fake_config = dataclasses.replace(
+        server_config,
+        web_enabled=False,
+        ai=AiConfig(
+            providers={"local_fake": ProviderConfig(type="fake")},
+            ocr=ModelConfig(provider="local_fake", model="fake-ocr"),
+        ),
+    )
+    fake_app = create_app(fake_config)
+    assert isinstance(fake_app[COMPONENT_LOADER_KEY].get("fake_ai"), FakeAiComponent)

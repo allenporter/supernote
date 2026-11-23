@@ -7,10 +7,13 @@ from typing import TYPE_CHECKING
 from supernote.server.ai.models.ocr import OcrModel
 
 if TYPE_CHECKING:
+    from supernote.server.components.ai import AiRegistrar
     from supernote.server.config import ServerConfig
+    from supernote.server.core import ServerCore
 
 __all__ = [
     "FakeOcrModel",
+    "async_setup_ocr",
     "create_ocr_model",
 ]
 
@@ -52,3 +55,8 @@ def create_ocr_model(config: ServerConfig) -> OcrModel | None:
         model_id=config.ai.ocr.model,
         provider=config.ai.ocr.provider,
     )
+
+
+async def async_setup_ocr(core: ServerCore, registrar: AiRegistrar) -> None:
+    """Register the ``fake`` OCR provider with `AiRegistrar`."""
+    registrar.register_ocr("fake", create_ocr_model)

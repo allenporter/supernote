@@ -1,9 +1,9 @@
-"""Tests for `supernote.server.ai.models.fake.summary`."""
+"""Tests for `supernote.server.components.fake_ai.summary`."""
 
 from __future__ import annotations
 
-from supernote.server.ai.models.fake.summary import FakeSummaryModel
 from supernote.server.ai.prompts import SummarySegment
+from supernote.server.components.fake_ai.summary import FakeSummaryModel
 
 
 async def test_fake_summary_model() -> None:

@@ -13,9 +13,9 @@ from unittest.mock import patch
 import pytest
 
 import supernote.server.db.models  # noqa: F401
-from supernote.server.ai.models.fake.embedding import FakeEmbeddingModel
-from supernote.server.ai.models.fake.ocr import FakeOcrModel
-from supernote.server.ai.models.fake.summary import FakeSummaryModel
+from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
+from supernote.server.components.fake_ai.ocr import FakeOcrModel
+from supernote.server.components.fake_ai.summary import FakeSummaryModel
 from supernote.server.config import ServerConfig
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus

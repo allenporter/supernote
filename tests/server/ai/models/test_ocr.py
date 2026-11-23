@@ -11,12 +11,12 @@ import pytest
 from prometheus_client import REGISTRY
 
 from supernote.server.ai.base import AIError
-from supernote.server.ai.models.fake.ocr import FakeOcrModel
 from supernote.server.ai.models.ocr import (
     ConcurrencyLimitedOcrModel,
     InstrumentedOcrModel,
     create_ocr_model,
 )
+from supernote.server.components.fake_ai.ocr import FakeOcrModel
 from supernote.server.config import (
     AiConfig,
     AuthConfig,
