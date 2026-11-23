@@ -141,9 +141,11 @@ def format_ocr_prompt(
         keywords=page_metadata.keywords,
         include_section_divider=True,
     )
-    if not vocabulary:
+    on_page = {keyword.casefold() for keyword in page_metadata.keywords}
+    terms = [term for term in vocabulary if term.casefold() not in on_page]
+    if not terms:
         return f"{metadata_block}\n\n{prompt}"
-    clause = _VOCABULARY_CLAUSE.format(terms=", ".join(vocabulary))
+    clause = _VOCABULARY_CLAUSE.format(terms=", ".join(terms))
     return f"{metadata_block}\n\n{prompt}\n\n{clause}"
 
 

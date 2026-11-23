@@ -7,7 +7,11 @@ import pytest
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageMetadataDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.services.vocabulary import MAX_PROMPT_TERMS, VocabularyService
+from supernote.server.services.vocabulary import (
+    MAX_PROMPT_TERMS,
+    _is_common,
+    notebook_terms,
+)
 
 ROOT_SCOPE_ID = 0
 USER_ID = 100
@@ -20,16 +24,19 @@ NOTEBOOK_ID = 20
 SIBLING_ID = 21
 ELSEWHERE_ID = 22
 LOOSE_NOTEBOOK_ID = 23
+OTHER_LOOSE_NOTEBOOK_ID = 24
 
 
-@pytest.fixture
-def vocabulary_service(session_manager: DatabaseSessionManager) -> VocabularyService:
-    return VocabularyService(session_manager)
+async def _terms(
+    session_manager: DatabaseSessionManager, file_id: int, user_id: int = USER_ID
+) -> list[str]:
+    async with session_manager.session() as session:
+        return await notebook_terms(session, user_id, file_id)
 
 
 @pytest.fixture(autouse=True)
 async def tree(session_manager: DatabaseSessionManager) -> None:
-    """NOTE/Note/{Work/Projects/{Plan, Notes}, Loose}.note, plus Journal.note at the root."""
+    """NOTE/Note/{Work/Projects/{Plan, Notes}, Loose, Stray}.note, plus Journal.note at the root."""
     async with session_manager.session() as session:
         session.add_all(
             [
@@ -80,6 +87,12 @@ async def tree(session_manager: DatabaseSessionManager) -> None:
                     file_name="Loose.note",
                 ),
                 UserFileDO(
+                    id=OTHER_LOOSE_NOTEBOOK_ID,
+                    user_id=USER_ID,
+                    directory_id=NOTE_FOLDER_ID,
+                    file_name="Stray.note",
+                ),
+                UserFileDO(
                     id=ELSEWHERE_ID,
                     user_id=USER_ID,
                     directory_id=ROOT_SCOPE_ID,
@@ -114,43 +127,41 @@ async def _keywords(
 
 
 async def test_own_keywords_first_then_the_folders(
-    vocabulary_service: VocabularyService, session_manager: DatabaseSessionManager
+    session_manager: DatabaseSessionManager,
 ) -> None:
     await _keywords(session_manager, NOTEBOOK_ID, ["Kestrel"], ["Heron"])
     await _keywords(session_manager, SIBLING_ID, ["Osprey", "kestrel"])
     await _keywords(session_manager, ELSEWHERE_ID, ["Lovelace"])
     await _keywords(session_manager, LOOSE_NOTEBOOK_ID, ["Babbage"])
+    await _keywords(session_manager, OTHER_LOOSE_NOTEBOOK_ID, ["Hopper"])
 
-    # Plan and Notes share Work/; the journal and the loose notebook do not.
-    assert await vocabulary_service.terms_for_notebook(USER_ID, NOTEBOOK_ID) == [
+    # Plan and Notes share Work/; the journal and the loose notebooks do not,
+    # not even with each other.
+    assert await _terms(session_manager, NOTEBOOK_ID) == [
         "Kestrel",
         "Heron",
         "Osprey",
     ]
-    assert await vocabulary_service.terms_for_notebook(USER_ID, ELSEWHERE_ID) == [
-        "Lovelace"
-    ]
-    assert await vocabulary_service.terms_for_notebook(USER_ID, LOOSE_NOTEBOOK_ID) == [
-        "Babbage"
-    ]
+    assert await _terms(session_manager, ELSEWHERE_ID) == ["Lovelace"]
+    assert await _terms(session_manager, LOOSE_NOTEBOOK_ID) == ["Babbage"]
 
 
 async def test_keywords_that_would_not_help_are_left_out(
-    vocabulary_service: VocabularyService, session_manager: DatabaseSessionManager
+    session_manager: DatabaseSessionManager,
 ) -> None:
     await _keywords(
         session_manager,
         NOTEBOOK_ID,
         ["  Kestrel!  ", "2026", "the", "a whole sentence of notes here", "U.N."],
     )
-    assert await vocabulary_service.terms_for_notebook(USER_ID, NOTEBOOK_ID) == [
+    assert await _terms(session_manager, NOTEBOOK_ID) == [
         "Kestrel",
         "U.N.",
     ]
 
 
 async def test_a_deleted_notebook_or_another_user_contributes_nothing(
-    vocabulary_service: VocabularyService, session_manager: DatabaseSessionManager
+    session_manager: DatabaseSessionManager,
 ) -> None:
     await _keywords(session_manager, SIBLING_ID, ["Osprey"])
     await _keywords(session_manager, NOTEBOOK_ID, ["Owl"], user_id=OTHER_USER_ID)
@@ -159,17 +170,17 @@ async def test_a_deleted_notebook_or_another_user_contributes_nothing(
         assert sibling is not None
         sibling.is_active = "N"
         await session.commit()
-    assert await vocabulary_service.terms_for_notebook(USER_ID, NOTEBOOK_ID) == []
-    assert await vocabulary_service.terms_for_notebook(OTHER_USER_ID, NOTEBOOK_ID) == []
+    assert await _terms(session_manager, NOTEBOOK_ID) == []
+    assert await _terms(session_manager, NOTEBOOK_ID, user_id=OTHER_USER_ID) == []
 
 
 async def test_capped(
-    vocabulary_service: VocabularyService, session_manager: DatabaseSessionManager
+    session_manager: DatabaseSessionManager,
 ) -> None:
     await _keywords(
         session_manager, NOTEBOOK_ID, [f"Term{i}" for i in range(MAX_PROMPT_TERMS + 5)]
     )
-    terms = await vocabulary_service.terms_for_notebook(USER_ID, NOTEBOOK_ID)
+    terms = await _terms(session_manager, NOTEBOOK_ID)
     assert terms == [f"Term{i}" for i in range(MAX_PROMPT_TERMS)]
 
 
@@ -177,7 +188,6 @@ async def test_capped(
     "keywords_json", ["not json", '{"KEYWORD": "Kestrel"}', "[1, null]"]
 )
 async def test_malformed_keyword_metadata_is_ignored(
-    vocabulary_service: VocabularyService,
     session_manager: DatabaseSessionManager,
     keywords_json: str,
 ) -> None:
@@ -192,10 +202,30 @@ async def test_malformed_keyword_metadata_is_ignored(
             )
         )
         await session.commit()
-    assert await vocabulary_service.terms_for_notebook(USER_ID, NOTEBOOK_ID) == []
+    assert await _terms(session_manager, NOTEBOOK_ID) == []
 
 
 async def test_an_unknown_notebook_has_no_terms(
-    vocabulary_service: VocabularyService,
+    session_manager: DatabaseSessionManager,
 ) -> None:
-    assert await vocabulary_service.terms_for_notebook(USER_ID, 999) == []
+    assert await _terms(session_manager, 999) == []
+
+
+@pytest.mark.parametrize(
+    ("term", "expected"),
+    [
+        ("the", True),
+        ("API", True),
+        ("events", True),
+        ("Boxes", False),
+        ("milestones", True),
+        ("  Logic ", True),
+        ("Lovelace", False),
+        ("ks-tilt", False),
+        ("action item", False),
+        ("", False),
+        ("   ", False),
+    ],
+)
+def test_is_common(term: str, expected: bool) -> None:
+    assert _is_common(term) is expected

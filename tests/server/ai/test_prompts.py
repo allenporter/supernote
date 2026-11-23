@@ -132,3 +132,29 @@ def test_format_ocr_prompt_prefers_filename_prompt_over_page_style(
 
     assert "Daily prompt from filename." in prompt
     assert "Weekly prompt from page_style." not in prompt
+
+
+def test_format_ocr_prompt_vocabulary_skips_the_pages_own_keywords(
+    tmp_path: Path,
+) -> None:
+    ocr_dir = tmp_path / "ocr" / "common"
+    ocr_dir.mkdir(parents=True)
+    (ocr_dir / "prompt.md").write_text("Transcribe this page.", encoding="utf-8")
+    loader = PromptLoader(tmp_path)
+    page_metadata = PageMetadata(
+        file_name="Plan.note",
+        page_index=0,
+        page_id="P1",
+        notebook_create_time=None,
+        keywords=["Lovelace"],
+    )
+
+    prompt = format_ocr_prompt(
+        page_metadata, vocabulary=["lovelace", "Babbage"], prompt_loader=loader
+    )
+    assert "may appear in the text: Babbage." in prompt
+
+    only_own = format_ocr_prompt(
+        page_metadata, vocabulary=["Lovelace"], prompt_loader=loader
+    )
+    assert "may appear in the text" not in only_own

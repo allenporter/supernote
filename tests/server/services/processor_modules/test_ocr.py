@@ -13,7 +13,6 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.ocr import OcrModule
-from supernote.server.services.vocabulary import VocabularyService
 from supernote.server.utils.paths import get_page_png_path
 
 
@@ -383,16 +382,22 @@ async def test_ocr_prompt_gets_keywords_from_the_notebooks_folder(
     blob_storage: BlobStorage,
 ) -> None:
     """A keyword marked in another notebook nearby is offered as a spelling."""
-    ocr_module = OcrModule(
-        file_service=file_service,
-        ocr_model=fake_ocr_model,
-        vocabulary_service=VocabularyService(session_manager),
-    )
+    ocr_module = OcrModule(file_service=file_service, ocr_model=fake_ocr_model)
     user_id = 100
     file_id = 1001
     sibling_id = 1002
+    folder_id = 1000
     await blob_storage.put(CACHE_BUCKET, get_page_png_path(file_id, "p0"), b"png")
     async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=folder_id,
+                user_id=user_id,
+                file_name="Work",
+                is_folder="Y",
+                directory_id=0,
+            )
+        )
         for note_id, name in ((file_id, "Plan.note"), (sibling_id, "Notes.note")):
             session.add(
                 UserFileDO(
@@ -400,7 +405,7 @@ async def test_ocr_prompt_gets_keywords_from_the_notebooks_folder(
                     user_id=user_id,
                     storage_key=f"k{note_id}",
                     file_name=name,
-                    directory_id=0,
+                    directory_id=folder_id,
                 )
             )
         session.add(
