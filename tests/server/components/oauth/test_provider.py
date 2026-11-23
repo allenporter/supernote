@@ -146,6 +146,7 @@ async def test_oauth_provider_migrates_legacy_email_tokens(
     loaded_at = await provider.load_access_token("at_legacy")
     assert loaded_at is not None
     assert loaded_at.user_id == user.id
+    assert loaded_at.actor == "oauth:client_1"
 
     await coordination_service.set_value(
         "mcp:refresh_token:rt_unknown",

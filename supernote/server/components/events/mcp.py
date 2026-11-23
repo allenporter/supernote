@@ -59,7 +59,9 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
             limit: Maximum number of events to return (`1..1000`, default `200`).
         """
         _ = ctx
-        if (user_id := get_authenticated_user_id()) is None:
+        if (user_id := get_authenticated_user_id()) is None or (
+            caller_actor := get_authenticated_actor()
+        ) is None:
             return create_error_response(
                 _AUTH_ERROR_MSG, ErrorCode.UNAUTHORIZED
             ).to_dict()
@@ -74,7 +76,6 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
                     ErrorCode.BAD_REQUEST,
                 ).to_dict()
 
-        caller_actor = get_authenticated_actor() or "user:web"
         resolved_exclude_actors = (
             [
                 caller_actor if actor.lower() == "self" else actor
