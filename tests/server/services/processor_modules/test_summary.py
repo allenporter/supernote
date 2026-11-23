@@ -13,8 +13,8 @@ from supernote.models.summary import (
     UpdateSummaryGroupDTO,
 )
 from supernote.server.ai.base import AIError
-from supernote.server.ai.models.fake.summary import FakeSummaryModel
 from supernote.server.ai.prompts import SummarySegment
+from supernote.server.components.fake_ai.summary import FakeSummaryModel
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NotePageContentDO,

@@ -15,12 +15,12 @@ from supernote.server.ai.models.embedding import (
     EmbeddingTaskType,
     create_embedding_model,
 )
-from supernote.server.ai.models.fake.summary import FakeSummaryModel
 from supernote.server.ai.models.summary import (
     ConcurrencyLimitedSummaryModel,
     InstrumentedSummaryModel,
     create_summary_model,
 )
+from supernote.server.components.fake_ai.summary import FakeSummaryModel
 from supernote.server.config import (
     AiConfig,
     AuthConfig,
