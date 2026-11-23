@@ -14,20 +14,14 @@ import time
 from aiohttp import web
 from mashumaro.exceptions import InvalidFieldValue, MissingField
 
-from supernote.models.base import BaseResponse, ProcessingStatus
+from supernote.models.base import BaseResponse
 from supernote.models.extended import (
     ApiKeyListResponseVO,
     CreateApiKeyDTO,
     CreateApiKeyResponseVO,
-    FileProcessingStatusDTO,
-    FileProcessingStatusVO,
     OAuthGrantListResponseVO,
-    SystemTaskListVO,
-    SystemTaskVO,
     WebNoteCoverRequestDTO,
     WebNoteCoverVO,
-    WebNoteMetadataRequestDTO,
-    WebNoteMetadataVO,
     WebSummaryListRequestDTO,
     WebSummaryListVO,
 )
@@ -36,14 +30,12 @@ from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
     CONFIG_KEY,
     CONVERSION_SERVICE_KEY,
-    PROCESSOR_SERVICE_KEY,
     REQUEST_USER_KEY,
     SUMMARY_SERVICE_KEY,
     URL_SIGNER_KEY,
     USER_SERVICE_KEY,
 )
 from supernote.server.services.conversion import ConversionService
-from supernote.server.services.processor import ProcessorService
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
@@ -88,80 +80,6 @@ async def handle_extended_file_summary_list(request: web.Request) -> web.Respons
         return SupernoteError.uncaught(err).to_response()
 
 
-@routes.get("/api/extended/system/tasks")
-async def handle_list_system_tasks(request: web.Request) -> web.Response:
-    # Endpoint: GET /api/extended/system/tasks
-    # Purpose: Extended API to list system tasks for the control panel.
-    user_email = request[REQUEST_USER_KEY]
-    user_service: UserService = request.app[USER_SERVICE_KEY]
-    processor_service: ProcessorService = request.app[PROCESSOR_SERVICE_KEY]
-
-    user_id = await user_service.get_user_id(user_email)
-    if not user_id:
-        return web.json_response({"error": "User not found"}, status=404)
-
-    try:
-        tasks = await processor_service.list_system_tasks(user_id=user_id)
-    except Exception as err:
-        logger.exception("Error listing system tasks")
-        return SupernoteError.uncaught(err).to_response()
-
-    task_vos = [
-        SystemTaskVO(
-            id=t.id,
-            file_id=t.file_id,
-            task_type=t.task_type,
-            key=t.key,
-            status=ProcessingStatus(t.status),
-            retry_count=t.retry_count,
-            last_error=t.last_error,
-            update_time=t.update_time,
-        )
-        for t in tasks
-    ]
-
-    return web.json_response(SystemTaskListVO(tasks=task_vos).to_dict())
-
-
-@routes.post("/api/extended/file/processing/status")
-async def handle_file_processing_status(request: web.Request) -> web.Response:
-    # Endpoint: POST /api/extended/file/processing/status
-    # Purpose: Get aggregated processing status for a list of files.
-    user_email = request[REQUEST_USER_KEY]
-    try:
-        data = await request.json()
-        req_dto = FileProcessingStatusDTO.from_dict(data)
-    except (
-        json.JSONDecodeError,
-        ValueError,
-        TypeError,
-        KeyError,
-        MissingField,
-        InvalidFieldValue,
-    ) as e:
-        return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
-
-    user_service: UserService = request.app[USER_SERVICE_KEY]
-    processor_service: ProcessorService = request.app[PROCESSOR_SERVICE_KEY]
-
-    user_id = await user_service.get_user_id(user_email)
-    if not user_id:
-        return web.json_response({"error": "User not found"}, status=404)
-
-    try:
-        statuses = await processor_service.get_file_processing_statuses(
-            user_id=user_id,
-            file_ids=req_dto.file_ids,
-        )
-        status_map = {str(fid): status for fid, status in statuses.items()}
-        return web.json_response(
-            FileProcessingStatusVO(status_map=status_map).to_dict()
-        )
-    except Exception as err:
-        logger.exception("Error fetching processing status")
-        return SupernoteError.uncaught(err).to_response()
-
-
 @routes.post("/api/extended/file/note/cover")
 async def handle_extended_note_cover(request: web.Request) -> web.Response:
     # Endpoint: POST /api/extended/file/note/cover
@@ -198,49 +116,6 @@ async def handle_extended_note_cover(request: web.Request) -> web.Response:
         return err.to_response()
     except Exception as err:
         logger.exception("Error fetching note cover preview")
-        return SupernoteError.uncaught(err).to_response()
-
-
-@routes.post("/api/extended/file/note/metadata")
-async def handle_extended_note_metadata(request: web.Request) -> web.Response:
-    # Endpoint: POST /api/extended/file/note/metadata
-    # Purpose: Return structured notebook and per-page metadata.
-    user_email = request[REQUEST_USER_KEY]
-    try:
-        data = await request.json()
-        req_dto = WebNoteMetadataRequestDTO.from_dict(data)
-    except (
-        json.JSONDecodeError,
-        ValueError,
-        TypeError,
-        KeyError,
-        MissingField,
-        InvalidFieldValue,
-    ) as err:
-        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
-
-    user_service: UserService = request.app[USER_SERVICE_KEY]
-    processor_service: ProcessorService = request.app[PROCESSOR_SERVICE_KEY]
-
-    user_id = await user_service.get_user_id(user_email)
-    if not user_id:
-        return web.json_response({"error": "User not found"}, status=404)
-
-    try:
-        metadata_vo: (
-            WebNoteMetadataVO | None
-        ) = await processor_service.get_note_metadata(
-            user_id=user_id,
-            file_id=req_dto.file_id,
-        )
-        if metadata_vo is None:
-            return web.json_response(
-                {"error": f"No metadata found for notebook {req_dto.file_id}"},
-                status=404,
-            )
-        return web.json_response(metadata_vo.to_dict())
-    except Exception as err:
-        logger.exception("Error fetching notebook metadata")
         return SupernoteError.uncaught(err).to_response()
 
 

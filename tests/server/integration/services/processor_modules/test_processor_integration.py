@@ -8,6 +8,7 @@ from supernote.client.summary import SummaryClient
 from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
 from supernote.server.components.fake_ai.ocr import FakeOcrModel
 from supernote.server.components.fake_ai.summary import FakeSummaryModel
+from supernote.server.components.processor import ProcessorService
 from supernote.server.components.search.processor import EmbeddingModule
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
@@ -17,7 +18,6 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus, NoteProcessingCompletedEvent
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
-from supernote.server.services.processor import ProcessorService
 from supernote.server.services.processor_modules.ocr import OcrModule
 from supernote.server.services.processor_modules.page_hashing import PageHashingModule
 from supernote.server.services.processor_modules.png_conversion import (

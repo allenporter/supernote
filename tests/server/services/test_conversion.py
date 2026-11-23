@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from supernote.server.components.processor import ProcessorService
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
@@ -12,7 +13,6 @@ from supernote.server.exceptions import FileError, FileNotFound
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.conversion import ConversionService, ConvertedBlob
 from supernote.server.services.file import FileService
-from supernote.server.services.processor import ProcessorService
 from supernote.server.services.processor_modules.page_hashing import PageHashingModule
 from supernote.server.services.processor_modules.png_conversion import (
     PngConversionModule,

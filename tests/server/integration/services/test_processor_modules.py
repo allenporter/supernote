@@ -4,12 +4,12 @@ from pathlib import Path
 import pytest
 
 from supernote.models.base import TaskType
+from supernote.server.components.processor import ProcessorService
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
-from supernote.server.services.processor import ProcessorService
 from supernote.server.services.processor_modules import ProcessorModule, TaskScope
 from supernote.server.services.user import UserService
 

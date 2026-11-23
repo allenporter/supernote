@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from .ai.models.ocr import OcrModel
     from .ai.models.summary import SummaryModel
     from .components.http import HttpRegistrar
+    from .components.processor.service import ProcessorService
     from .config import ServerConfig
     from .core import ComponentLoader, ServerCore
     from .db.session import DatabaseSessionManager
@@ -26,7 +27,6 @@ if TYPE_CHECKING:
     from .services.coordination import CoordinationService
     from .services.file import FileService
     from .services.integrity import IntegrityService
-    from .services.processor import ProcessorService
     from .services.summary import SummaryService
     from .services.user import UserService
     from .utils.rate_limit import RateLimiter
