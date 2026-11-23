@@ -145,76 +145,78 @@ export default {
         };
     },
     template: `
-    <div class="max-w-3xl mx-auto space-y-6 animate-fade-in">
-        <h2 class="text-xl font-bold text-slate-900">Settings</h2>
+    <div class="max-w-3xl mx-auto animate-fade-in">
+        <div class="space-y-6">
+            <h2 class="text-xl font-bold text-slate-900">Settings</h2>
 
-        <section aria-labelledby="connected-clients-heading" class="bg-white border border-stone-200 rounded-2xl p-5 space-y-3">
-            <div>
-                <h3 id="connected-clients-heading" class="text-base font-bold text-slate-900">Connected clients</h3>
-                <p class="text-xs text-stone-600">MCP clients you approved to read your notebooks. Disconnecting one ends its access immediately.</p>
-            </div>
-            <p v-if="isLoading" class="text-xs text-stone-500">Loading...</p>
-            <p v-else-if="!grants.length" class="text-xs text-stone-500">No clients connected.</p>
-            <ul v-else class="divide-y divide-stone-100">
-                <li v-for="grant in grants" :key="grant.id" class="flex items-center justify-between gap-3 py-3">
-                    <div class="min-w-0">
-                        <p class="text-sm font-semibold text-slate-900 truncate" :title="grant.clientId">{{ clientHost(grant.clientId) }}</p>
-                        <p class="text-xs text-stone-600">
-                            <span v-for="scope in grant.scopes" :key="scope" :title="describeScope(scope)"
-                                class="inline-block rounded-full bg-stone-100 px-2 py-0.5 mr-1 font-mono text-[11px]">{{ scope }}</span>
-                            Connected {{ formatWhen(grant.createdAt) }} · Last used {{ formatWhen(grant.lastUsedAt) }} · Expires {{ formatWhen(grant.expiresAt) }}
-                        </p>
-                    </div>
-                    <button @click="pendingRevoke = { kind: 'grant', id: grant.id, label: clientHost(grant.clientId) }" type="button"
-                        class="shrink-0 px-3 py-1.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold">Disconnect</button>
-                </li>
-            </ul>
-        </section>
-
-        <section aria-labelledby="api-keys-heading" class="bg-white border border-stone-200 rounded-2xl p-5 space-y-3">
-            <div>
-                <h3 id="api-keys-heading" class="text-base font-bold text-slate-900">API keys</h3>
-                <p class="text-xs text-stone-600">Static <code>sn_</code> Bearer keys for scripts, the CLI, and MCP clients without a browser sign-in. A key cannot manage keys or change your account.</p>
-            </div>
-            <form @submit.prevent="handleCreateKey" class="flex flex-col sm:flex-row gap-2">
-                <input v-model="newKeyName" type="text" maxlength="100" aria-label="API key name" placeholder="Key name (e.g. Laptop CLI)"
-                    :disabled="isCreatingKey"
-                    class="flex-1 min-w-0 px-3.5 py-2 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 text-sm disabled:opacity-60">
-                <select v-model="newKeyExpiryDays" aria-label="API key expiry" :disabled="isCreatingKey"
-                    class="px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm">
-                    <option v-for="opt in EXPIRY_OPTIONS" :key="opt.label" :value="opt.days">{{ opt.label }}</option>
-                </select>
-                <button type="submit" :disabled="isCreatingKey || !newKeyName.trim()"
-                    class="px-5 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white rounded-xl text-xs font-semibold">
-                    {{ isCreatingKey ? 'Creating...' : 'Create key' }}
-                </button>
-            </form>
-            <div v-if="createdKey" role="status" class="rounded-xl border border-emerald-200 bg-emerald-50 p-3 space-y-2">
-                <p class="text-xs text-emerald-800">Copy the key for <strong>{{ createdKey.name }}</strong> now. It will not be shown again.</p>
-                <div class="flex items-center gap-2">
-                    <code class="flex-1 min-w-0 break-all rounded-lg bg-white border border-emerald-100 px-3 py-2 text-xs select-all">{{ createdKey.key }}</code>
-                    <button @click="copyCreatedKey" type="button" class="shrink-0 px-3 py-2 rounded-xl border border-stone-200 bg-white text-xs font-semibold text-slate-900">Copy</button>
-                    <button @click="createdKey = null" type="button" class="shrink-0 px-3 py-2 text-xs font-semibold text-stone-600 hover:text-slate-900">Done</button>
+            <section aria-labelledby="connected-clients-heading" class="bg-white border border-stone-200 rounded-2xl p-5 space-y-3">
+                <div>
+                    <h3 id="connected-clients-heading" class="text-base font-bold text-slate-900">Connected clients</h3>
+                    <p class="text-xs text-stone-600">MCP clients you approved to read your notebooks. Disconnecting one ends its access immediately.</p>
                 </div>
-            </div>
-            <p v-if="!isLoading && !apiKeys.length" class="text-xs text-stone-500">No API keys.</p>
-            <ul v-else-if="apiKeys.length" class="divide-y divide-stone-100">
-                <li v-for="apiKey in apiKeys" :key="apiKey.id" class="flex items-center justify-between gap-3 py-3">
-                    <div class="min-w-0">
-                        <p class="text-sm font-semibold text-slate-900 truncate">{{ apiKey.name }}</p>
-                        <p class="text-xs text-stone-600">
-                            <span class="font-mono">{{ apiKey.keyPrefix }}</span>
-                            · Created {{ formatWhen(apiKey.createdAt) }} · Last used {{ formatWhen(apiKey.lastUsedAt) }} · {{ apiKey.expiresAt ? 'Expires ' + formatWhen(apiKey.expiresAt) : 'No expiry' }}
-                        </p>
+                <p v-if="isLoading" class="text-xs text-stone-500">Loading...</p>
+                <p v-else-if="!grants.length" class="text-xs text-stone-500">No clients connected.</p>
+                <ul v-else class="divide-y divide-stone-100">
+                    <li v-for="grant in grants" :key="grant.id" class="flex items-center justify-between gap-3 py-3">
+                        <div class="min-w-0">
+                            <p class="text-sm font-semibold text-slate-900 truncate" :title="grant.clientId">{{ clientHost(grant.clientId) }}</p>
+                            <p class="text-xs text-stone-600">
+                                <span v-for="scope in grant.scopes" :key="scope" :title="describeScope(scope)"
+                                    class="inline-block rounded-full bg-stone-100 px-2 py-0.5 mr-1 font-mono text-[11px]">{{ scope }}</span>
+                                Connected {{ formatWhen(grant.createdAt) }} · Last used {{ formatWhen(grant.lastUsedAt) }} · Expires {{ formatWhen(grant.expiresAt) }}
+                            </p>
+                        </div>
+                        <button @click="pendingRevoke = { kind: 'grant', id: grant.id, label: clientHost(grant.clientId) }" type="button"
+                            class="shrink-0 px-3 py-1.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold">Disconnect</button>
+                    </li>
+                </ul>
+            </section>
+
+            <section aria-labelledby="api-keys-heading" class="bg-white border border-stone-200 rounded-2xl p-5 space-y-3">
+                <div>
+                    <h3 id="api-keys-heading" class="text-base font-bold text-slate-900">API keys</h3>
+                    <p class="text-xs text-stone-600">Static <code>sn_</code> Bearer keys for scripts, the CLI, and MCP clients without a browser sign-in. A key cannot manage keys or change your account.</p>
+                </div>
+                <form @submit.prevent="handleCreateKey" class="flex flex-col sm:flex-row gap-2">
+                    <input v-model="newKeyName" type="text" maxlength="100" aria-label="API key name" placeholder="Key name (e.g. Laptop CLI)"
+                        :disabled="isCreatingKey"
+                        class="flex-1 min-w-0 px-3.5 py-2 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 text-sm disabled:opacity-60">
+                    <select v-model="newKeyExpiryDays" aria-label="API key expiry" :disabled="isCreatingKey"
+                        class="px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm">
+                        <option v-for="opt in EXPIRY_OPTIONS" :key="opt.label" :value="opt.days">{{ opt.label }}</option>
+                    </select>
+                    <button type="submit" :disabled="isCreatingKey || !newKeyName.trim()"
+                        class="px-5 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white rounded-xl text-xs font-semibold">
+                        {{ isCreatingKey ? 'Creating...' : 'Create key' }}
+                    </button>
+                </form>
+                <div v-if="createdKey" role="status" class="rounded-xl border border-emerald-200 bg-emerald-50 p-3 space-y-2">
+                    <p class="text-xs text-emerald-800">Copy the key for <strong>{{ createdKey.name }}</strong> now. It will not be shown again.</p>
+                    <div class="flex items-center gap-2">
+                        <code class="flex-1 min-w-0 break-all rounded-lg bg-white border border-emerald-100 px-3 py-2 text-xs select-all">{{ createdKey.key }}</code>
+                        <button @click="copyCreatedKey" type="button" class="shrink-0 px-3 py-2 rounded-xl border border-stone-200 bg-white text-xs font-semibold text-slate-900">Copy</button>
+                        <button @click="createdKey = null" type="button" class="shrink-0 px-3 py-2 text-xs font-semibold text-stone-600 hover:text-slate-900">Done</button>
                     </div>
-                    <button @click="pendingRevoke = { kind: 'key', id: apiKey.id, label: apiKey.name }" type="button"
-                        class="shrink-0 px-3 py-1.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold">Revoke</button>
-                </li>
-            </ul>
-        </section>
+                </div>
+                <p v-if="!isLoading && !apiKeys.length" class="text-xs text-stone-500">No API keys.</p>
+                <ul v-else-if="apiKeys.length" class="divide-y divide-stone-100">
+                    <li v-for="apiKey in apiKeys" :key="apiKey.id" class="flex items-center justify-between gap-3 py-3">
+                        <div class="min-w-0">
+                            <p class="text-sm font-semibold text-slate-900 truncate">{{ apiKey.name }}</p>
+                            <p class="text-xs text-stone-600">
+                                <span class="font-mono">{{ apiKey.keyPrefix }}</span>
+                                · Created {{ formatWhen(apiKey.createdAt) }} · Last used {{ formatWhen(apiKey.lastUsedAt) }} · {{ apiKey.expiresAt ? 'Expires ' + formatWhen(apiKey.expiresAt) : 'No expiry' }}
+                            </p>
+                        </div>
+                        <button @click="pendingRevoke = { kind: 'key', id: apiKey.id, label: apiKey.name }" type="button"
+                            class="shrink-0 px-3 py-1.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold">Revoke</button>
+                    </li>
+                </ul>
+            </section>
+        </div>
 
         <div v-if="pendingRevoke" role="dialog" aria-modal="true" aria-label="Confirm Revoke"
-            class="fixed inset-0 !mt-0 z-[110] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px]" @click.self="!isRevoking && (pendingRevoke = null)">
+            class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px]" @click.self="!isRevoking && (pendingRevoke = null)">
             <div class="bg-white rounded-2xl border border-stone-200 shadow-2xl w-full max-w-sm p-6 animate-fade-in">
                 <h3 class="text-base font-bold text-slate-900 mb-1">
                     {{ pendingRevoke.kind === 'grant' ? 'Disconnect' : 'Revoke' }} "{{ pendingRevoke.label }}"?
