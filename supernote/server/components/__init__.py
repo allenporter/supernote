@@ -60,6 +60,11 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         default_enabled=True,
     ),
     BuiltinComponentSpec(
+        domain="web_ui",
+        import_path="supernote.server.components.web_ui:WebUiComponent",
+        default_enabled=True,
+    ),
+    BuiltinComponentSpec(
         domain="webhooks",
         import_path="supernote.server.components.webhooks:WebhooksComponent",
         default_enabled=False,

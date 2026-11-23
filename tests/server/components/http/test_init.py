@@ -12,7 +12,6 @@ from supernote.server.components.http import (
     HttpComponent,
     HttpRegistrar,
     jwt_auth_middleware,
-    static_cache_control_middleware,
 )
 from supernote.server.core import Component, ComponentLoader, ServerCore
 from supernote.server.trace import trace_middleware
@@ -56,7 +55,6 @@ def test_http_registrar_collects_middlewares_prefixes_and_resources() -> None:
         outer_mw,
         trace_middleware,
         jwt_auth_middleware,
-        static_cache_control_middleware,
         inner_mw,
     ]
 
