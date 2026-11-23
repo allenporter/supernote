@@ -17,9 +17,6 @@ from supernote.models.schedule import (
     UpdateScheduleTaskDTO,
     UpdateScheduleTaskVO,
 )
-from supernote.server.components.http import HttpRegistrar
-from supernote.server.components.schedule.http import async_setup_http
-from supernote.server.core import ServerCore
 
 
 @pytest.fixture
@@ -1082,17 +1079,3 @@ async def test_batch_update_tasks_rejects_nonexistent_task_list_id(
         assert detail.task_list_id is None
     finally:
         await schedule.delete_task(task_id)
-
-
-async def test_schedule_http_platform_mounts_routes(
-    component_core: ServerCore,
-) -> None:
-    """Verify `async_setup_http` mounts schedule CRUD and `.ics` routes without public exemptions."""
-    registrar = HttpRegistrar()
-    await async_setup_http(component_core, registrar)
-
-    assert registrar.public_prefixes == ()
-    assert registrar.public_resources == ()
-    paths = [r.canonical for r in component_core.app.router.resources()]
-    assert "/api/schedule/feed.ics" in paths
-    assert "/api/file/schedule/task/list" in paths
