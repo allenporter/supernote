@@ -213,7 +213,11 @@ class NotePageContentDO(Base):
     previous_text: Mapped[str | None] = mapped_column(
         Text, nullable=True, deferred=True
     )
-    """Prior extracted OCR text retained across hash invalidation until re-OCR completes."""
+    """Prior extracted OCR text retained across hash invalidation until re-OCR completes.
+
+    Deferred so transcript/search reads never fetch it unnecessarily and queries against
+    pre-migration SQLite databases do not select the column before Alembic upgrades run.
+    """
 
     embedding: Mapped[str | None] = mapped_column(Text, nullable=True)
     """JSON string representation of the vector embedding."""

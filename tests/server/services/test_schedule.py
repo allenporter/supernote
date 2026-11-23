@@ -539,3 +539,38 @@ async def test_batch_update_tasks_tracks_sequential_changes_for_same_task(
             "changed_fields": {"status": ["needsAction", "completed"]},
         },
     ]
+
+
+async def test_update_task_normalizes_wire_empty_sentinels_in_changed_fields(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Verify 0 vs None timestamps and '' vs None details do not emit false-positive diffs."""
+    event_bus = LocalEventBus()
+    updated_events: list[ScheduleTaskUpdatedEvent] = []
+
+    async def on_task_updated(event: ScheduleTaskUpdatedEvent) -> None:
+        updated_events.append(event)
+
+    event_bus.subscribe(ScheduleTaskUpdatedEvent, on_task_updated, inline=True)
+    service = ScheduleService(session_manager, event_bus=event_bus)
+
+    task = await service.create_task(709, None, "Buy milk")
+
+    # Wire empty sentinels (due_time=0, completed_time=0, detail=None) match initial empty state.
+    await service.update_task(
+        709,
+        task.task_id,
+        due_time=0,
+        completed_time=0,
+        detail=None,
+    )
+    assert updated_events == []
+
+    # Setting a real due_time then clearing via wire sentinel 0 records [old, None].
+    await service.update_task(709, task.task_id, due_time=1710000000000)
+    await service.update_task(709, task.task_id, due_time=0)
+
+    assert [ev.changed_fields for ev in updated_events] == [
+        {"due_time": [None, 1710000000000]},
+        {"due_time": [1710000000000, None]},
+    ]

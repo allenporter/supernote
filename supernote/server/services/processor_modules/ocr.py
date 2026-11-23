@@ -153,22 +153,21 @@ class OcrModule(ProcessorModule):
                     content.text_content
                     if content.text_content is not None
                     else content.previous_text
-                )
+                ) or None
                 content.text_content = ""
                 content.previous_text = None
                 await session.commit()
                 logger.info(
                     f"Skipping OCR LLM call for blank page {page_id} of file {file_id}"
                 )
-                if previous_text:
-                    await self._publish_page_transcribed(
-                        user_id=user_id,
-                        file_id=file_id,
-                        page_id=page_id,
-                        page_index=saved_page_index,
-                        text_content="",
-                        previous_text=previous_text,
-                    )
+                await self._publish_page_transcribed(
+                    user_id=user_id,
+                    file_id=file_id,
+                    page_id=page_id,
+                    page_index=saved_page_index,
+                    text_content="",
+                    previous_text=previous_text,
+                )
                 return
 
             page_metadata = PageMetadata(
@@ -203,7 +202,7 @@ class OcrModule(ProcessorModule):
                 content.text_content
                 if content.text_content is not None
                 else content.previous_text
-            )
+            ) or None
             content.text_content = text_content
             content.previous_text = None
             saved_page_index = int(content.page_index)
@@ -230,7 +229,7 @@ class OcrModule(ProcessorModule):
         text_content: str,
         previous_text: str | None,
     ) -> None:
-        if not self.file_service.event_bus:
+        if not self.file_service.event_bus or text_content == (previous_text or ""):
             return
         file_path = await self.file_service.get_full_path_by_node(user_id, file_id)
         await self.file_service.event_bus.publish(

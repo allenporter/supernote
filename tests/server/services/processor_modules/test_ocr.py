@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import undefer
 
 from supernote.server.ai.models.fake.ocr import FakeOcrModel
+from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
@@ -11,7 +12,7 @@ from supernote.server.db.models.note_processing import (
     SystemTaskDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.events import LocalEventBus, NotePageTranscribedEvent
+from supernote.server.events import NotePageTranscribedEvent
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.ocr import OcrModule
@@ -384,14 +385,15 @@ async def test_ocr_emits_previous_text_diff_on_retranscription(
     blob_storage: BlobStorage,
 ) -> None:
     """Verify OcrModule emits previous_text=None initially and prior text on re-transcription."""
-    event_bus = LocalEventBus()
-    file_service.event_bus = event_bus
+    assert file_service.event_bus is not None
     transcribed_events: list[NotePageTranscribedEvent] = []
 
     async def on_transcribed(event: NotePageTranscribedEvent) -> None:
         transcribed_events.append(event)
 
-    event_bus.subscribe(NotePageTranscribedEvent, on_transcribed, inline=True)
+    file_service.event_bus.subscribe(
+        NotePageTranscribedEvent, on_transcribed, inline=True
+    )
 
     file_id = 1015
     await blob_storage.put(CACHE_BUCKET, get_page_png_path(file_id, "p0"), b"v1-png")
@@ -477,14 +479,15 @@ async def test_ocr_blank_page_emits_event_only_when_clearing_prior_text(
     session_manager: DatabaseSessionManager,
 ) -> None:
     """Verify blank pages emit NotePageTranscribedEvent when clearing prior text, not on fresh blank pages."""
-    event_bus = LocalEventBus()
-    file_service.event_bus = event_bus
+    assert file_service.event_bus is not None
     transcribed_events: list[NotePageTranscribedEvent] = []
 
     async def on_transcribed(event: NotePageTranscribedEvent) -> None:
         transcribed_events.append(event)
 
-    event_bus.subscribe(NotePageTranscribedEvent, on_transcribed, inline=True)
+    file_service.event_bus.subscribe(
+        NotePageTranscribedEvent, on_transcribed, inline=True
+    )
 
     file_id = 1016
     async with session_manager.session() as session:
@@ -548,3 +551,79 @@ async def test_ocr_blank_page_emits_event_only_when_clearing_prior_text(
             "previous_text": "• Buy milk",
         }
     ]
+
+
+async def test_ocr_suppresses_event_when_transcript_unchanged_or_empty_doodle(
+    file_service: FileService,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    """Verify OcrModule suppresses no-op events on unchanged re-OCR and empty doodle pages."""
+
+    class _ConstantOcrModel(OcrModel):
+        def __init__(self, text: str) -> None:
+            self._text = text
+
+        @property
+        def provider(self) -> str:
+            return "stub"
+
+        @property
+        def model_id(self) -> str:
+            return "stub-constant"
+
+        async def extract_text(self, png_data: bytes, prompt: str) -> str:
+            return self._text
+
+    assert file_service.event_bus is not None
+    transcribed_events: list[NotePageTranscribedEvent] = []
+
+    async def on_transcribed(event: NotePageTranscribedEvent) -> None:
+        transcribed_events.append(event)
+
+    file_service.event_bus.subscribe(
+        NotePageTranscribedEvent, on_transcribed, inline=True
+    )
+
+    file_id = 1017
+    await blob_storage.put(CACHE_BUCKET, get_page_png_path(file_id, "p_same"), b"png1")
+    await blob_storage.put(
+        CACHE_BUCKET, get_page_png_path(file_id, "p_doodle"), b"png2"
+    )
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=file_id,
+                    user_id=7,
+                    storage_key="noop_key",
+                    file_name="Daily.note",
+                    directory_id=0,
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="p_same",
+                    content_hash="h_same",
+                    text_content="• Buy milk",
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=1,
+                    page_id="p_doodle",
+                    content_hash="h_doodle",
+                    text_content=None,
+                ),
+            ]
+        )
+        await session.commit()
+
+    same_ocr = OcrModule(
+        file_service=file_service, ocr_model=_ConstantOcrModel("• Buy milk")
+    )
+    await same_ocr.process(file_id, session_manager, page_index=0, page_id="p_same")
+
+    doodle_ocr = OcrModule(file_service=file_service, ocr_model=_ConstantOcrModel(""))
+    await doodle_ocr.process(file_id, session_manager, page_index=1, page_id="p_doodle")
+
+    assert transcribed_events == []

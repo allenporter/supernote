@@ -93,14 +93,27 @@ def _to_task_deleted_event(task: ScheduleTaskDO) -> ScheduleTaskDeletedEvent:
     )
 
 
+def _normalize_semantic_value(field_name: str, value: Any) -> Any:
+    """Canonicalize equivalent wire empty sentinels (`0` / `""`) to `None` for diffing."""
+    if field_name in ("due_time", "completed_time"):
+        return None if value == 0 else value
+    if field_name in TASK_NULLABLE_FIELDS:
+        return None if value == "" else value
+    return value
+
+
 def _semantic_field_changes(
     task: ScheduleTaskDO, updates: dict[str, Any]
 ) -> dict[str, list[Any]]:
-    return {
-        k: [getattr(task, k), v]
-        for k, v in updates.items()
-        if k in TASK_SEMANTIC_FIELDS and getattr(task, k) != v
-    }
+    changes: dict[str, list[Any]] = {}
+    for k, v in updates.items():
+        if k not in TASK_SEMANTIC_FIELDS:
+            continue
+        old_val = _normalize_semantic_value(k, getattr(task, k))
+        new_val = _normalize_semantic_value(k, v)
+        if old_val != new_val:
+            changes[k] = [old_val, new_val]
+    return changes
 
 
 class ScheduleService:

@@ -17,7 +17,7 @@ from supernote.server.db.models.note_processing import (
     SystemTaskDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.events import LocalEventBus, NotePagesDeltaEvent
+from supernote.server.events import NotePagesDeltaEvent
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.page_hashing import PageHashingModule
@@ -229,14 +229,15 @@ async def test_process_with_real_file(
     # The process should remove it.
 
     extra_page_index = len(pages) + 5  # Safely out of bounds
-    event_bus = LocalEventBus()
-    page_hashing_module.file_service.event_bus = event_bus
+    assert page_hashing_module.file_service.event_bus is not None
     delta_events: list[NotePagesDeltaEvent] = []
 
     async def on_delta(ev: NotePagesDeltaEvent) -> None:
         delta_events.append(ev)
 
-    event_bus.subscribe(NotePagesDeltaEvent, on_delta, inline=True)
+    page_hashing_module.file_service.event_bus.subscribe(
+        NotePagesDeltaEvent, on_delta, inline=True
+    )
 
     async with session_manager.session() as session:
         session.add_all(
@@ -915,3 +916,131 @@ async def test_page_hashing_emits_mutually_exclusive_page_diff_metrics(
         unchanged=1.0,
         deleted=1.0,
     )
+
+
+async def test_page_hashing_preserves_previous_text_across_double_edit_and_blank_edit(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    """Verify repeated hash invalidation before OCR preserves previous_text, while blank '' becomes None."""
+    note_path = TEST_DATA_DIR / "nelinory" / "A5X_TestNote_With_Pdf_Template.note"
+    await _seed_user_note_file(
+        session_manager, blob_storage, user_id=7, file_id=1050, note_path=note_path
+    )
+    assert await page_hashing_module.run(1050, session_manager) is True
+
+    async with session_manager.session() as session:
+        rows = list(
+            (
+                await session.execute(
+                    select(NotePageContentDO)
+                    .options(undefer(NotePageContentDO.previous_text))
+                    .where(NotePageContentDO.file_id == 1050)
+                    .order_by(NotePageContentDO.page_index)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        rows[0].text_content = "• First version"
+        rows[0].content_hash = "stale_v1"
+        rows[1].text_content = ""
+        rows[1].content_hash = "stale_blank"
+        await session.commit()
+
+    # First invalidation: page 0 moves text_content -> previous_text; blank page 1 sets previous_text=None.
+    await page_hashing_module.process(1050, session_manager)
+
+    # Simulate a second edit arriving before OCR runs for page 0.
+    async with session_manager.session() as session:
+        p0 = (
+            await session.execute(
+                select(NotePageContentDO)
+                .options(undefer(NotePageContentDO.previous_text))
+                .where(NotePageContentDO.file_id == 1050)
+                .where(NotePageContentDO.page_index == 0)
+            )
+        ).scalar_one()
+        assert p0.text_content is None
+        assert p0.previous_text == "• First version"
+        p0.content_hash = "stale_v2"
+        await session.commit()
+
+    await page_hashing_module.process(1050, session_manager)
+
+    async with session_manager.session() as session:
+        rows = list(
+            (
+                await session.execute(
+                    select(NotePageContentDO)
+                    .options(undefer(NotePageContentDO.previous_text))
+                    .where(NotePageContentDO.file_id == 1050)
+                    .order_by(NotePageContentDO.page_index)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert rows[0].text_content is None
+        assert rows[0].previous_text == "• First version"
+        assert rows[1].text_content is None
+        assert rows[1].previous_text is None
+
+
+async def test_page_hashing_deleted_page_texts_falls_back_to_previous_text_and_skips_blank(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    """Verify deleted_page_texts falls back to previous_text when OCR is pending and omits blank pages."""
+    note_path = TEST_DATA_DIR / "nelinory" / "A5X_TestNote_With_Pdf_Template.note"
+    await _seed_user_note_file(
+        session_manager, blob_storage, user_id=7, file_id=1051, note_path=note_path
+    )
+    assert await page_hashing_module.run(1051, session_manager) is True
+
+    assert page_hashing_module.file_service.event_bus is not None
+    delta_events: list[NotePagesDeltaEvent] = []
+
+    async def on_delta(ev: NotePagesDeltaEvent) -> None:
+        delta_events.append(ev)
+
+    page_hashing_module.file_service.event_bus.subscribe(
+        NotePagesDeltaEvent, on_delta, inline=True
+    )
+
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                NotePageContentDO(
+                    file_id=1051,
+                    page_index=10,
+                    page_id="edited_then_deleted",
+                    content_hash="h_ed",
+                    text_content=None,
+                    previous_text="• Pending OCR task",
+                ),
+                NotePageContentDO(
+                    file_id=1051,
+                    page_index=11,
+                    page_id="blank_deleted",
+                    content_hash="h_bl",
+                    text_content="",
+                ),
+            ]
+        )
+        await session.commit()
+
+    await page_hashing_module.process(1051, session_manager)
+
+    assert len(delta_events) == 1
+    assert delta_events[0].to_payload() == {
+        "file_id": "1051",
+        "file_path": "A5X_TestNote_With_Pdf_Template.note",
+        "added_pages": [],
+        "modified_pages": [],
+        "moved_pages": [],
+        "deleted_pages": ["edited_then_deleted", "blank_deleted"],
+        "deleted_page_texts": {"edited_then_deleted": "• Pending OCR task"},
+    }

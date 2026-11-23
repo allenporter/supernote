@@ -107,6 +107,7 @@ Stores per-page change hashes, extracted OCR text, and vector embeddings:
 | `page_id` | `String` | Stable `PAGEID` from the `.note` binary metadata (`uq_note_page_content` with `user_id, file_id`). |
 | `content_hash` | `String` (nullable) | MD5 hash of the page's metadata dictionary (layer offsets and protocol info). |
 | `text_content` | `Text` (nullable) | Extracted OCR markdown/text for this page (`""` when skipped as a blank page). Property `is_blank` returns `True` when `text_content` is empty or whitespace-only. |
+| `previous_text` | `Text` (nullable, deferred) | Prior non-empty OCR transcript preserved across `content_hash` invalidation until re-OCR emits `NotePageTranscribedEvent` and clears it to `NULL`. |
 | `embedding` | `Text` (nullable) | JSON array of floats representing the page's vector embedding. |
 | `embedding_model` | `String` (nullable) | Model ID that generated `embedding` (e.g. `gemini-embedding-001`). |
 

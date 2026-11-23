@@ -430,7 +430,7 @@ class PageHashingModule(ProcessorModule):
                     logger.info(f"Page {page_id} (idx {i}) changed. Resetting content.")
                     row.content_hash = current_hash
                     if row.text_content is not None:
-                        row.previous_text = row.text_content
+                        row.previous_text = row.text_content or None
                     row.text_content = None
                     row.embedding = None
                     row.embedding_model = None
@@ -481,7 +481,7 @@ class PageHashingModule(ProcessorModule):
                     if row.text_content is not None
                     else row.previous_text
                 )
-                if last_text is not None:
+                if last_text:
                     deleted_page_texts.append((pid, last_text))
                 await session.delete(row)
 
