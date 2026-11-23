@@ -7,11 +7,12 @@ from collections.abc import Mapping
 from types import ModuleType
 from typing import Any
 
+import pytest
+
 from supernote.models.base import TaskType
 from supernote.server.components import KNOWN_PLATFORMS
 from supernote.server.components.ai import AiComponent
 from supernote.server.components.processor import (
-    PROCESSOR_PLATFORMS,
     ProcessorComponent,
     ProcessorRegistrar,
 )
@@ -54,8 +55,8 @@ async def test_processor_component_protocol_and_idempotent_lifecycle(
     component_core: ServerCore,
 ) -> None:
     """ProcessorComponent satisfies Component + PlatformHost and tears down idempotently."""
-    assert set(PROCESSOR_PLATFORMS) <= KNOWN_PLATFORMS
     comp = ProcessorComponent()
+    assert set(comp.hosted_platforms) <= KNOWN_PLATFORMS
     assert isinstance(comp, Component)
     assert isinstance(comp, PlatformHost)
 
@@ -67,6 +68,8 @@ async def test_processor_component_protocol_and_idempotent_lifecycle(
     assert isinstance(component_core.app[PROCESSOR_SERVICE_KEY], ProcessorService)
 
     await loader.async_load_all_platforms(component_core)
+    with pytest.raises(RuntimeError, match="after platforms are finalized"):
+        comp.get_platform_registrar().register_module(_CustomStage())
     service = component_core.app[PROCESSOR_SERVICE_KEY]
     assert [m.task_type for m in service.task_graph.modules] == [
         TaskType.PAGE_HASHING,

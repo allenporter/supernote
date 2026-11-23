@@ -17,12 +17,9 @@ from supernote.server.services.processor import ProcessorService
 from supernote.server.services.processor_modules import ProcessorModule
 
 __all__ = [
-    "PROCESSOR_PLATFORMS",
     "ProcessorComponent",
     "ProcessorRegistrar",
 ]
-
-PROCESSOR_PLATFORMS: tuple[str, ...] = ("processor",)
 
 
 class ProcessorRegistrar:
@@ -30,10 +27,19 @@ class ProcessorRegistrar:
 
     def __init__(self) -> None:
         self._modules: list[ProcessorModule] = []
+        self._finalized = False
 
     def register_module(self, module: ProcessorModule) -> None:
         """Register a `ProcessorModule` stage to be compiled into the pipeline `TaskGraph`."""
+        if self._finalized:
+            raise RuntimeError(
+                "Cannot register processor module after platforms are finalized"
+            )
         self._modules.append(module)
+
+    def mark_finalized(self) -> None:
+        """Lock the registrar against further module registrations."""
+        self._finalized = True
 
     @property
     def modules(self) -> tuple[ProcessorModule, ...]:
@@ -46,8 +52,8 @@ class ProcessorComponent:
 
     domain = "processor"
     dependencies: tuple[str, ...] = ("ai",)
-    platforms: tuple[str, ...] = PROCESSOR_PLATFORMS
-    hosted_platforms: tuple[str, ...] = PROCESSOR_PLATFORMS
+    platforms: tuple[str, ...] = ("processor",)
+    hosted_platforms: tuple[str, ...] = ("processor",)
 
     def __init__(self) -> None:
         self._service: ProcessorService | None = None
@@ -73,7 +79,9 @@ class ProcessorComponent:
     async def async_finalize_platforms(self, core: ServerCore) -> None:
         """Compile all registered processor modules into the service's `TaskGraph`."""
         assert self._service is not None
-        self._service.set_modules(self.get_platform_registrar().modules)
+        registrar = self.get_platform_registrar()
+        registrar.mark_finalized()
+        self._service.set_modules(registrar.modules)
 
     async def async_start(self, core: ServerCore) -> None:
         """Start `ProcessorService` workers, event subscriptions, and recovery polling."""
