@@ -37,6 +37,11 @@ class BuiltinComponentSpec:
 
 BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
     BuiltinComponentSpec(
+        domain="socketio",
+        import_path="supernote.server.components.socketio:SocketIOComponent",
+        default_enabled=True,
+    ),
+    BuiltinComponentSpec(
         domain="webhooks",
         import_path="supernote.server.components.webhooks:WebhooksComponent",
         default_enabled=False,

@@ -34,6 +34,10 @@ from supernote.models.summary import (
     UpdateSummaryGroupDTO,
 )
 from supernote.server.app import create_app
+from supernote.server.components.socketio import (
+    SOCKETIO_MANAGER_KEY,
+    SocketIOServerManager,
+)
 from supernote.server.config import ServerConfig
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.events import (
@@ -47,7 +51,6 @@ from supernote.server.keys import (
     EVENT_LOG_SERVICE_KEY,
     FILE_SERVICE_KEY,
     SCHEDULE_SERVICE_KEY,
-    SOCKETIO_MANAGER_KEY,
     SUMMARY_SERVICE_KEY,
     USER_SERVICE_KEY,
 )
@@ -56,7 +59,6 @@ from supernote.server.services.file import FileService
 from supernote.server.services.schedule import ScheduleService
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import JWT_ALGORITHM, UserService
-from supernote.server.socket import SocketIOServerManager
 from supernote.server.socket_auth import compute_handshake_signature
 
 

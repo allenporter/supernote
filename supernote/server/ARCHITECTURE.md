@@ -13,7 +13,7 @@ Open Private Cloud is an asynchronous Python server built to run as a lightweigh
 - **Virtual Filesystem, Quotas & Storage**: `VirtualFileSystem` (`supernote.server.services.vfs`) and `FileService` (`supernote.server.services.file`) track the logical folder tree in `UserFileDO` (`f_user_file`), soft-deleted items in `RecycleFileDO` (`f_recycle_file`), and enforce two-tier storage quotas (`UserDO.total_capacity` -> `default_user_quota` -> volume free space), while `LocalBlobStorage` (`supernote.server.services.blob`) stores binary file content on disk by bucket (`supernote-user-data`, `supernote-cache`).
 - **Authentication**: Challenge-response login issuing `HS256` JWTs (`x-access-token` header) backed by session state in `CoordinationService`, plus revocable static Bearer API keys (`sn_...` in `ApiKeyDO` / `f_api_key`) for CLI automation and MCP agents.
 - **Notebook Rendering & AI Processing**: `ConversionService` (`supernote.server.services.conversion`) and `ProcessorService` (`supernote.server.services.processor`) use the local `supernote.notebook` library to parse `.note` metadata (`NoteMetadataDO`, `NotePageMetadataDO`), render pages to PNG/PDF, and optionally run OCR, summarization, and vector embeddings (automatically skipping blank pages where `has_drawables == False`).
-- **Domain Event Log & Real-Time Messaging**: `EventLogService` (`supernote.server.services.event_log`) persists per-user domain events (`UserEventDO` in `f_user_event`) for cursor-based incremental sync, while `SocketIOServerManager` (`supernote.server.socket`, powered by `python-socketio` with Engine.IO v3 compatibility middleware) subscribes to `LocalEventBus` and pushes sync notifications to connected Supernote devices.
+- **Domain Event Log & Real-Time Messaging**: `EventLogService` (`supernote.server.services.event_log`) persists per-user domain events (`UserEventDO` in `f_user_event`) for cursor-based incremental sync, while `SocketIOServerManager` (`supernote.server.components.socketio`, powered by `python-socketio` with Engine.IO v3 compatibility middleware) subscribes to `LocalEventBus` and pushes sync notifications to connected Supernote devices.
 
 ---
 
@@ -230,7 +230,7 @@ Releases `sync:lock:{user_id}` if held by `equipmentNo`. When `flag != "N"`, mar
 
 Physical Supernote tablets maintain a persistent Socket.IO connection to receive instant push notifications when files, tasks, or digests change on the cloud.
 
-- **Engine.IO v3/v4 Compatibility**: Older Supernote firmware connects with Engine.IO v3 (`?EIO=3`), while modern clients use Engine.IO v4 (`?EIO=4`). `socketio_compat_middleware` and `_CompatAsyncServer` in `supernote.server.socket` transparently bridge Engine.IO v3 handshakes and ping/pong frames onto `python-socketio`.
+- **Engine.IO v3/v4 Compatibility**: Older Supernote firmware connects with Engine.IO v3 (`?EIO=3`), while modern clients use Engine.IO v4 (`?EIO=4`). `socketio_compat_middleware` and `_CompatAsyncServer` in `supernote.server.components.socketio` transparently bridge Engine.IO v3 handshakes and ping/pong frames onto `python-socketio`.
 - **Handshake Signature Verification**: Clients connect with `?token=<JWT>&type=<conn_type>&random=<ms>&sign=<hmac>`. `supernote.server.socket_auth.verify_handshake_signature` verifies `HMAC-SHA256(SOCKET_IO_KEY, f"{token}_{type}_{random}")` (alphanumeric base64) and validates the active session token in `UserService`.
 - **Heartbeats & Push Channels**:
   - `ratta_ping` -> replies `"received"`.

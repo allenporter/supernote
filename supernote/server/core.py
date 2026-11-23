@@ -13,12 +13,13 @@ import heapq
 import logging
 import re
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from aiohttp import web
+    from aiohttp.typedefs import Middleware
 
     from .config import ServerConfig
     from .db.session import DatabaseSessionManager
@@ -129,6 +130,43 @@ class ServerCore:
     """Core account, device binding, and token verification service."""
     file_service: FileService
     """Core Virtual File System and blob synchronization service."""
+    _outer_middlewares: list[Middleware] = field(default_factory=list, repr=False)
+    _inner_middlewares: list[Middleware] = field(default_factory=list, repr=False)
+    _public_prefixes: list[str] = field(default_factory=list, repr=False)
+
+    def register_middleware(
+        self,
+        middleware: Middleware,
+        *,
+        pre_auth: bool = False,
+    ) -> None:
+        """Register an aiohttp middleware to run outside (`pre_auth=True`) or inside auth."""
+        if pre_auth:
+            self._outer_middlewares.append(middleware)
+        else:
+            self._inner_middlewares.append(middleware)
+
+    def register_public_prefix(self, prefix: str) -> None:
+        """Register a URL path prefix exempted from `jwt_auth_middleware`."""
+        if not prefix.startswith("/"):
+            raise ValueError(f"Public path prefix must start with '/': {prefix!r}")
+        if prefix not in self._public_prefixes:
+            self._public_prefixes.append(prefix)
+
+    @property
+    def outer_middlewares(self) -> tuple[Middleware, ...]:
+        """Middlewares registered to run before trace and auth middlewares."""
+        return tuple(self._outer_middlewares)
+
+    @property
+    def inner_middlewares(self) -> tuple[Middleware, ...]:
+        """Middlewares registered to run after auth and cache-control middlewares."""
+        return tuple(self._inner_middlewares)
+
+    @property
+    def public_prefixes(self) -> tuple[str, ...]:
+        """Registered URL path prefixes exempted from `jwt_auth_middleware`."""
+        return tuple(self._public_prefixes)
 
 
 class ComponentLoader:

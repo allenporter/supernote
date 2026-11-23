@@ -51,11 +51,14 @@ from supernote.server.events import (
     VfsItemDeletedEvent,
     VfsItemMovedEvent,
 )
-from supernote.server.keys import SOCKETIO_MANAGER_KEY
 from supernote.server.services.user import UserService
 from supernote.server.socket_auth import verify_handshake_signature
 
 logger = logging.getLogger(__name__)
+
+SOCKETIO_MANAGER_KEY: web.AppKey["SocketIOServerManager"] = web.AppKey(
+    "socketio_manager"
+)
 
 _MSG_TYPE_TO_EVENT: dict[str, SocketIoEvent] = {
     SocketIoMessageType.FILE_SYN.value: SocketIoEvent.SERVER_MESSAGE,
@@ -735,25 +738,3 @@ class SocketIOServerManager:
             payload_str,
             room=user_room,
         )
-
-
-def setup_socketio(
-    app: web.Application,
-    config: ServerConfig,
-    user_service: UserService,
-    event_bus: LocalEventBus | None = None,
-) -> SocketIOServerManager:
-    """Initialize and attach Socket.IO server manager to an aiohttp Application.
-
-    Args:
-        app: The aiohttp web Application.
-        config: The server configuration instance.
-        user_service: The user authentication and session service.
-        event_bus: Optional LocalEventBus instance for domain event subscriptions.
-
-    Returns:
-        The configured SocketIOServerManager instance.
-    """
-    manager = SocketIOServerManager(config, user_service, event_bus)
-    manager.attach_to_app(app)
-    return manager
