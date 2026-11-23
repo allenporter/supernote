@@ -86,7 +86,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "f3b4c5d6e7f8"
+        assert version == "a4b5c6d7e8f9"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -182,7 +182,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "f3b4c5d6e7f8"
+        assert version == "a4b5c6d7e8f9"
 
         # Verify task columns and types
         tasks = conn.execute(
@@ -918,7 +918,7 @@ def test_api_keys_table_migration(tmp_path: Path, alembic_config: Config) -> Non
 def test_migrate_generated_summaries_preserves_annotations_and_categories(
     tmp_path: Path, alembic_config: Config
 ) -> None:
-    """Verify migration f3b4c5d6e7f8 preserves annotations, custom/Uncategorized placements, and detaches deleted files."""
+    """Verify summary migrations preserve annotations/custom categories, reparent uncategorized AI summaries, and keep PDF digests uncategorized."""
     db_path = tmp_path / "legacy_summary_edges.db"
     shutil.copy(
         Path("tests/fixtures/db_legacy_generated_summaries.sqlite").absolute(), db_path
@@ -933,7 +933,8 @@ def test_migrate_generated_summaries_preserves_annotations_and_categories(
                 "INSERT INTO f_user_file (id, user_id, directory_id, file_name, is_folder, size, is_active, create_time, update_time) VALUES "
                 "(8002, 1, 0, 'Custom.note', 'N', 100, 'Y', 100, 100), "
                 "(8003, 1, 0, 'Uncat.note', 'N', 100, 'Y', 100, 100), "
-                "(8004, 1, 0, 'Recycled.note', 'N', 100, 'N', 100, 100)"
+                "(8004, 1, 0, 'Recycled.note', 'N', 100, 'N', 100, 100), "
+                "(9001, 2, 0, 'SoloUncat.note', 'N', 100, 'Y', 100, 100)"
             )
         )
         # Annotate first-sync summary so it survives alongside second-sync winner
@@ -950,42 +951,97 @@ def test_migrate_generated_summaries_preserves_annotations_and_categories(
                 "(901, 1, 8002, 'cust-summary', '2799b74528407f6aeeeff095f7685e9e', 'c', 'GEMINI', NULL, 0, 0, 100, 100), "
                 "(902, 1, 8003, 'uncat-summary', '', 'u', 'GEMINI', NULL, 0, 0, 100, 100), "
                 "(903, 1, 8004, 'rec-stale-summary', NULL, 'r1', 'GEMINI', NULL, 0, 0, 100, 100), "
-                "(904, 1, 8004, 'rec-kept-summary', NULL, 'r2', 'GEMINI', 'Saved note', 0, 0, 100, 100)"
+                "(904, 1, 8004, 'rec-kept-summary', NULL, 'r2', 'GEMINI', 'Saved note', 0, 0, 100, 100), "
+                "(905, 1, NULL, '15027213-9df5-4ede-a4c5-e1c881c1ef0c', '', 'pdf highlight', NULL, NULL, 0, 0, 100, 100), "
+                "(906, 1, 8003, 'file-user-uuid', '', 'user note', 'USER', NULL, 0, 0, 100, 100), "
+                "(907, 1, 8003, 'uncat-v0-summary', NULL, 'u0', 'GEMINI', 'Old v0 note', 0, 0, 50, 50), "
+                "(908, 2, 9001, 'solo-uncat-summary', '', 'u2', 'GEMINI', NULL, 0, 0, 100, 100)"
             )
         )
+
+    ai_group_u1 = get_ai_summaries_group_id(1)
+    ai_group_u2 = get_ai_summaries_group_id(2)
 
     command.upgrade(alembic_config, "f3b4c5d6e7f8")
     command.downgrade(alembic_config, "e8f9a0b1c2d3")
     command.upgrade(alembic_config, "f3b4c5d6e7f8")
 
+    # Simulate user 1 renaming AI Summaries, user 2 having a soft-deleted AI Summaries group,
+    # and an older last_modified_time on the uncategorized canonical summary prior to a4b5c6d7e8f9.
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE f_summary SET name = 'My AI Notes' WHERE user_id = 1 AND unique_identifier = :g"
+            ),
+            {"g": ai_group_u1},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO f_summary (id, user_id, name, unique_identifier, is_summary_group, is_deleted, create_time, update_time) "
+                "VALUES (909, 2, 'Deleted AI', :g, 1, 1, 100, 100)"
+            ),
+            {"g": ai_group_u2},
+        )
+        conn.execute(
+            text(
+                "UPDATE f_summary SET last_modified_time = 500 WHERE user_id = 1 AND unique_identifier = :u"
+            ),
+            {"u": get_summary_id(1, 8003)},
+        )
+
+    command.upgrade(alembic_config, "a4b5c6d7e8f9")
+    command.downgrade(alembic_config, "f3b4c5d6e7f8")
+    command.upgrade(alembic_config, "a4b5c6d7e8f9")
+
     with engine.connect() as conn:
         leaves = {
-            r.unique_identifier: (r.file_id, r.parent_unique_identifier, r.comment_str)
+            r.unique_identifier: (
+                r.file_id,
+                r.parent_unique_identifier,
+                r.comment_str,
+                r.last_modified_time,
+            )
             for r in conn.execute(
                 text(
-                    "SELECT unique_identifier, file_id, parent_unique_identifier, comment_str "
-                    "FROM f_summary WHERE user_id = 1 AND is_deleted = 0 AND is_summary_group = 0"
+                    "SELECT unique_identifier, file_id, parent_unique_identifier, comment_str, last_modified_time "
+                    "FROM f_summary WHERE is_deleted = 0 AND is_summary_group = 0"
+                )
+            )
+        }
+        groups = {
+            (r.user_id, r.unique_identifier): r.name
+            for r in conn.execute(
+                text(
+                    "SELECT user_id, unique_identifier, name "
+                    "FROM f_summary WHERE is_deleted = 0 AND is_summary_group = 1"
                 )
             )
         }
     engine.dispose()
 
-    ai_group = get_ai_summaries_group_id(1)
-    assert leaves[get_summary_id(1, 750000000000000001)] == (
+    assert groups[(1, ai_group_u1)] == "My AI Notes"
+    assert groups[(2, ai_group_u2)] == "AI Summaries"
+    assert leaves[get_summary_id(1, 750000000000000001)][:3] == (
         750000000000000001,
-        ai_group,
+        ai_group_u1,
         None,
     )
-    assert leaves["11111111-aaaa-4bbb-8ccc-000000000001-095.note-summary"] == (
+    assert leaves["11111111-aaaa-4bbb-8ccc-000000000001-095.note-summary"][:3] == (
         750000000000000001,
         "11111111-aaaa-4bbb-8ccc-000000000001-095.note-group",
         "Keep v1 note",
     )
-    assert leaves[get_summary_id(1, 8002)] == (
+    assert leaves[get_summary_id(1, 8002)][:3] == (
         8002,
         "2799b74528407f6aeeeff095f7685e9e",
         None,
     )
-    assert leaves[get_summary_id(1, 8003)] == (8003, "", None)
-    assert leaves["rec-kept-summary"] == (None, None, "Saved note")
+    uncat_migrated = leaves[get_summary_id(1, 8003)]
+    assert uncat_migrated[:3] == (8003, ai_group_u1, None)
+    assert (uncat_migrated[3] or 0) > 500
+    assert leaves["uncat-v0-summary"][:3] == (8003, ai_group_u1, "Old v0 note")
+    assert leaves[get_summary_id(2, 9001)][:3] == (9001, ai_group_u2, None)
+    assert leaves["15027213-9df5-4ede-a4c5-e1c881c1ef0c"][:3] == (None, "", None)
+    assert leaves["file-user-uuid"][:3] == (8003, "", None)
+    assert leaves["rec-kept-summary"][:3] == (None, None, "Saved note")
     assert "rec-stale-summary" not in leaves
