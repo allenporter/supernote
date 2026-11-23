@@ -5,16 +5,21 @@ import {
     clearRecycleBin,
     computeSocketSignature,
     connectSocket,
+    createApiKey,
     deleteRecycleItems,
     disconnectSocket,
     fetchAiStatus,
+    fetchApiKeys,
     fetchFiles,
+    fetchOAuthGrants,
     fetchProcessingStatus,
     fetchRecycleBin,
     fetchSummaries,
     fetchSystemTasks,
     login,
     revertRecycleItems,
+    revokeApiKey,
+    revokeOAuthGrant,
     searchFiles,
     searchSemantic,
     submitOAuthBridgeDecision,
@@ -536,6 +541,99 @@ test('client.js: recycle bin endpoints paginate, normalize, and pass string IDs'
             { url: '/api/file/recycle/delete', body: { idList: ['900719925474099301'] } },
             { url: '/api/file/recycle/clear', body: {} },
         ]);
+    } finally {
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
+    }
+});
+
+test('client.js: OAuth grant and API key helpers unwrap envelopes and send DELETE by id', async () => {
+    const origFetch = globalThis.fetch;
+    /** @type {Array<[string, string, unknown]>} */
+    const calls = [];
+    const grant = {
+        id: 'g1',
+        clientId: 'https://client.example.com/',
+        scopes: ['supernote:all'],
+        createdAt: 1700000000,
+        expiresAt: 1702592000,
+        lastUsedAt: null,
+    };
+    const apiKey = {
+        id: 'k1',
+        name: 'Laptop CLI',
+        keyPrefix: 'sn_01234567...',
+        createdAt: 1700000000,
+        lastUsedAt: null,
+        expiresAt: null,
+    };
+    try {
+        setToken('settings-tok');
+        globalThis.fetch = async (url, init) => {
+            const method = init?.method || 'GET';
+            calls.push([String(url), method, init?.body ? JSON.parse(String(init.body)) : null]);
+            if (url === '/api/extended/oauth/grants') {
+                return new Response(JSON.stringify({ success: true, grants: [grant] }));
+            }
+            if (url === '/api/extended/keys' && method === 'GET') {
+                return new Response(JSON.stringify({ success: true, keys: [apiKey] }));
+            }
+            if (url === '/api/extended/keys' && method === 'POST') {
+                return new Response(
+                    JSON.stringify({
+                        success: true,
+                        errorCode: null,
+                        id: 'k2',
+                        name: 'Laptop CLI',
+                        key: 'sn_0123456789abcdef0123456789abcdef',
+                        createdAt: 1700000100,
+                        expiresAt: 1702592100,
+                    }),
+                );
+            }
+            return new Response(JSON.stringify({ success: true }));
+        };
+
+        assert.deepEqual(await fetchOAuthGrants(), [grant]);
+        assert.deepEqual(await fetchApiKeys(), [apiKey]);
+        assert.deepEqual(await createApiKey('Laptop CLI', 30), {
+            id: 'k2',
+            name: 'Laptop CLI',
+            key: 'sn_0123456789abcdef0123456789abcdef',
+            createdAt: 1700000100,
+            expiresAt: 1702592100,
+        });
+        await revokeOAuthGrant('g1');
+        await revokeApiKey('k/2');
+
+        assert.deepEqual(calls, [
+            ['/api/extended/oauth/grants', 'GET', null],
+            ['/api/extended/keys', 'GET', null],
+            ['/api/extended/keys', 'POST', { name: 'Laptop CLI', expiresInDays: 30 }],
+            ['/api/extended/oauth/grants/g1', 'DELETE', null],
+            ['/api/extended/keys/k%2F2', 'DELETE', null],
+        ]);
+    } finally {
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
+    }
+});
+
+test('client.js: revokeOAuthGrant surfaces the server error for an unknown grant', async () => {
+    const origFetch = globalThis.fetch;
+    try {
+        setToken('settings-tok');
+        globalThis.fetch = async () =>
+            new Response(JSON.stringify({ error: 'OAuth grant not found or already revoked' }), {
+                status: 404,
+            });
+        await assert.rejects(
+            revokeOAuthGrant('missing'),
+            (err) =>
+                err instanceof ApiError &&
+                err.status === 404 &&
+                err.message === 'OAuth grant not found or already revoked',
+        );
     } finally {
         await logout({ reload: false });
         globalThis.fetch = origFetch;
