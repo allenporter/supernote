@@ -201,10 +201,13 @@ def create_app(config: ServerConfig) -> web.Application:
         if m is not None
     }
     component_configs = {
+        "apple": {"enabled": "apple" in configured_ai_providers},
         "fake_ai": {"enabled": "fake" in configured_ai_providers},
+        "gemini": {"enabled": "gemini" in configured_ai_providers},
         "mcp": {"enabled": config.mcp_enabled},
         "metrics": {"enabled": config.metrics_enabled},
         "oauth": {"enabled": config.mcp_enabled},
+        "openai": {"enabled": "openai" in configured_ai_providers},
         "web_ui": {"enabled": config.web_enabled},
         "webhooks": config.webhooks,
     }

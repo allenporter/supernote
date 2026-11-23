@@ -108,13 +108,13 @@ def create_summary_model(config: ServerConfig) -> SummaryModel | None:
     model: SummaryModel | None
     provider_type = config.ai.provider_type(model_cfg.provider)
     if provider_type == "gemini":
-        from supernote.server.ai.models.gemini.summary import (  # noqa: PLC0415
+        from supernote.server.components.gemini.summary import (  # noqa: PLC0415
             create_summary_model as create_gemini_summary_model,
         )
 
         model = create_gemini_summary_model(config)
     elif provider_type == "openai":
-        from supernote.server.ai.models.openai.summary import (  # noqa: PLC0415
+        from supernote.server.components.openai.summary import (  # noqa: PLC0415
             create_summary_model as create_openai_summary_model,
         )
 

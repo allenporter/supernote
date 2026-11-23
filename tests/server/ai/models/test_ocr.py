@@ -24,7 +24,7 @@ from supernote.server.config import (
     ProviderConfig,
     ServerConfig,
 )
-from tests.server.ai.models.apple.conftest import FakeObjCModule, FakeVisionModule
+from tests.server.components.apple.conftest import FakeObjCModule, FakeVisionModule
 
 
 def test_create_ocr_model_unconfigured(tmp_path: Path) -> None:

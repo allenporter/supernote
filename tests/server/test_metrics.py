@@ -12,18 +12,18 @@ from supernote.server.ai.models.embedding import (
     EmbeddingTaskType,
     InstrumentedEmbeddingModel,
 )
-from supernote.server.ai.models.gemini.backend import GeminiBackend
-from supernote.server.ai.models.gemini.embedding import GeminiEmbeddingModel
-from supernote.server.ai.models.gemini.ocr import GeminiOcrModel
-from supernote.server.ai.models.gemini.summary import GeminiSummaryModel
 from supernote.server.ai.models.ocr import InstrumentedOcrModel
-from supernote.server.ai.models.openai.backend import OpenAIBackend
-from supernote.server.ai.models.openai.embedding import OpenAIEmbeddingModel
-from supernote.server.ai.models.openai.ocr import OpenAIOcrModel
-from supernote.server.ai.models.openai.summary import OpenAISummaryModel
 from supernote.server.ai.models.summary import InstrumentedSummaryModel
 from supernote.server.app import create_app
+from supernote.server.components.gemini.backend import GeminiBackend
+from supernote.server.components.gemini.embedding import GeminiEmbeddingModel
+from supernote.server.components.gemini.ocr import GeminiOcrModel
+from supernote.server.components.gemini.summary import GeminiSummaryModel
 from supernote.server.components.metrics.http import metrics_middleware
+from supernote.server.components.openai.backend import OpenAIBackend
+from supernote.server.components.openai.embedding import OpenAIEmbeddingModel
+from supernote.server.components.openai.ocr import OpenAIOcrModel
+from supernote.server.components.openai.summary import OpenAISummaryModel
 from supernote.server.config import ServerConfig
 from supernote.server.metrics import (
     PIPELINE_DURATION_BUCKETS,

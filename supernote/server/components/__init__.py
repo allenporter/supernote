@@ -47,8 +47,18 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         default_enabled=True,
     ),
     BuiltinComponentSpec(
+        domain="apple",
+        import_path="supernote.server.components.apple:AppleComponent",
+        default_enabled=False,
+    ),
+    BuiltinComponentSpec(
         domain="fake_ai",
         import_path="supernote.server.components.fake_ai:FakeAiComponent",
+        default_enabled=False,
+    ),
+    BuiltinComponentSpec(
+        domain="gemini",
+        import_path="supernote.server.components.gemini:GeminiComponent",
         default_enabled=False,
     ),
     BuiltinComponentSpec(
@@ -70,6 +80,11 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         domain="oauth",
         import_path="supernote.server.components.oauth:OAuthComponent",
         default_enabled=True,
+    ),
+    BuiltinComponentSpec(
+        domain="openai",
+        import_path="supernote.server.components.openai:OpenAIComponent",
+        default_enabled=False,
     ),
     BuiltinComponentSpec(
         domain="schedule",
