@@ -3,7 +3,7 @@
 Defines `CoordinationService` and `SqliteCoordinationService`, which persist
 expiring key-value pairs in `supernote.server.db.models.kv.KeyValueDO`. Used across
 the server for stateful JWT session tokens (`supernote.server.services.user.UserService`),
-OAuth 2.1 authorization codes and MCP tokens (`supernote.server.components.mcp.auth`), single-use
+OAuth 2.1 authorization codes and tokens (`supernote.server.components.oauth.provider`), single-use
 signed URL nonces (`supernote.server.utils.url_signer.UrlSigner`), rate limiting
 (`supernote.server.utils.rate_limit.RateLimiter`), and queue pause state.
 """

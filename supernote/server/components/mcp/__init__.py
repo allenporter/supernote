@@ -1,8 +1,8 @@
-"""Model Context Protocol (MCP) and OAuth 2.1 Authorization Server component.
+"""Model Context Protocol (MCP) Resource Server component.
 
-Provides an OAuth 2.1 Authorization Server (`supernote.server.components.mcp.http`)
-mounted via the `http` platform and a Streamable HTTP MCP Resource Server
-(`supernote.server.components.mcp.server`) listening on `mcp_port` (`8081`).
+Provides the Streamable HTTP MCP Resource Server (`supernote.server.components.mcp.server`)
+listening on `mcp_port` (`8081`), depending on `oauth` (`supernote.server.components.oauth`)
+for OAuth 2.1 authorization endpoints.
 """
 
 from __future__ import annotations
@@ -18,11 +18,11 @@ __all__ = ["McpComponent"]
 
 
 class McpComponent:
-    """Vertical component managing the FastMCP resource server and its `http` OAuth platform."""
+    """Vertical component managing the FastMCP resource server."""
 
     domain = "mcp"
-    dependencies: tuple[str, ...] = ()
-    platforms: tuple[str, ...] = ("http",)
+    dependencies: tuple[str, ...] = ("oauth",)
+    platforms: tuple[str, ...] = ()
 
     def __init__(self) -> None:
         self._mcp_server: Any | None = None

@@ -175,6 +175,24 @@ def test_builtin_component_platforms_match_modules_1to1(
     )
 
 
+def _register_with_dependencies(
+    loader: ComponentLoader,
+    spec: BuiltinComponentSpec,
+) -> None:
+    """Register ``spec`` along with any transitive built-in dependencies."""
+    specs_by_domain = {s.domain: s for s in BUILTIN_COMPONENTS}
+    pending = [spec]
+    while pending:
+        current = pending.pop()
+        if loader.get(current.domain) is not None:
+            continue
+        component = load_component_from_spec(current)
+        loader.register(component)
+        for dep in component.dependencies:
+            if loader.get(dep) is None:
+                pending.append(specs_by_domain[dep])
+
+
 @pytest.mark.parametrize(
     "spec",
     BUILTIN_COMPONENTS,
@@ -186,7 +204,7 @@ async def test_component_full_lifecycle_and_idempotent_stop(
 ) -> None:
     """Every component must support setup -> start -> stop -> stop cleanly."""
     loader = ComponentLoader()
-    loader.register(load_component_from_spec(spec))
+    _register_with_dependencies(loader, spec)
 
     await loader.async_setup_all(component_core, {})
     await loader.async_start_all(component_core)
@@ -205,7 +223,7 @@ async def test_component_stop_after_setup_only(
 ) -> None:
     """Every component must tear down cleanly if stopped after setup without starting."""
     loader = ComponentLoader()
-    loader.register(load_component_from_spec(spec))
+    _register_with_dependencies(loader, spec)
 
     await loader.async_setup_all(component_core, {})
     await loader.async_stop_all(component_core)

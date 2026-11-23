@@ -200,7 +200,7 @@ This grounds both the vision OCR model (improving domain terminology recognition
 
 ## Model Context Protocol (MCP) Server & Authentication
 
-When `mcp_enabled: true` (default), Open Private Cloud runs a Streamable HTTP **MCP Resource Server** on `http://<your-server-ip>:8081/mcp` alongside an **OAuth 2.1 / IndieAuth Authorization Server** on port `8080` (`supernote.server.components.mcp.server` and `supernote.server.components.mcp.auth`).
+When `mcp_enabled: true` (default), Open Private Cloud runs a Streamable HTTP **MCP Resource Server** on `http://<your-server-ip>:8081/mcp` alongside an **OAuth 2.1 / IndieAuth Authorization Server** on port `8080` (`supernote.server.components.mcp.server` and `supernote.server.components.oauth.provider`).
 
 ### Dual-Port OAuth 2.1 + Streamable HTTP Topology
 
@@ -211,7 +211,7 @@ When `mcp_enabled: true` (default), Open Private Cloud runs a Streamable HTTP **
 
 ### Two Authentication Modes for MCP Clients
 
-`supernote.server.components.mcp.auth.SupernoteOAuthProvider` accepts two types of Bearer credentials on `http://<host>:8081/mcp`:
+`supernote.server.components.oauth.provider.SupernoteOAuthProvider` accepts two types of Bearer credentials on `http://<host>:8081/mcp`:
 
 #### Mode 1: Interactive OAuth 2.1 with Dynamic IndieAuth Client IDs
 

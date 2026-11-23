@@ -200,6 +200,7 @@ def create_app(config: ServerConfig) -> web.Application:
     component_configs = {
         "mcp": {"enabled": config.mcp_enabled},
         "metrics": {"enabled": config.metrics_enabled},
+        "oauth": {"enabled": config.mcp_enabled},
         "web_ui": {"enabled": config.web_enabled},
         "webhooks": config.webhooks,
     }
