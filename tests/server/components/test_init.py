@@ -118,6 +118,40 @@ def test_component_imports_respect_declared_dependencies_and_platforms(
 
 @pytest.mark.parametrize(
     "spec",
+    [s for s in BUILTIN_COMPONENTS if s.domain != "http"],
+    ids=[s.domain for s in BUILTIN_COMPONENTS if s.domain != "http"],
+)
+def test_non_http_component_modules_do_not_import_http_transport(
+    spec: BuiltinComponentSpec,
+) -> None:
+    """Non-`http.py` modules in a component must remain isolated from main-port HTTP transport."""
+    forbidden = (
+        "aiohttp_asgi",
+        "supernote.server.components.http",
+        "supernote.server.routes.decorators",
+    )
+    check = (
+        f"import importlib, pkgutil, sys; "
+        f"pkg = importlib.import_module('supernote.server.components.{spec.domain}'); "
+        "[importlib.import_module(m.name) for m in pkgutil.walk_packages(pkg.__path__, pkg.__name__ + '.') if not m.name.endswith('.http')]; "
+        f"hits = [f for f in {forbidden!r} if f in sys.modules or any(k.startswith(f + '.') for k in sys.modules)]; "
+        "print(','.join(hits))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", check],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == "", (
+        f"Non-http modules in component {spec.domain!r} imported HTTP transport "
+        f"module(s): {result.stdout.strip()}. Move HTTP routes/middlewares/ASGI mounts "
+        f"into supernote/server/components/{spec.domain}/http.py."
+    )
+
+
+@pytest.mark.parametrize(
+    "spec",
     BUILTIN_COMPONENTS,
     ids=[spec.domain for spec in BUILTIN_COMPONENTS],
 )
