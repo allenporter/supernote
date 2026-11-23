@@ -66,9 +66,12 @@ def create_auth_app(
 ) -> Starlette:
     """Create the Starlette ASGI app for the OAuth 2.1 Authorization Server."""
     provider = SupernoteOAuthProvider(user_service, coordination_service, issuer_url)
+    metadata_issuer = AnyHttpUrl(issuer_url)
+    # RFC 9207: authorization responses carry the metadata issuer, verbatim.
+    issuer = str(metadata_issuer)
     routes = create_auth_routes(
         provider=provider,
-        issuer_url=AnyHttpUrl(issuer_url),
+        issuer_url=metadata_issuer,
         client_registration_options=ClientRegistrationOptions(
             enabled=False,
             valid_scopes=list(MCPScope),
@@ -169,6 +172,7 @@ def create_auth_app(
                 str(validated_redirect_uri),
                 error="access_denied",
                 state=state or None,
+                iss=issuer,
             )
             return _json_model_response(LoginBridgeResponseVO(redirect_url=denied_url))
 
@@ -212,6 +216,7 @@ def create_auth_app(
             str(validated_redirect_uri),
             code=code_str,
             state=state or None,
+            iss=issuer,
         )
         return _json_model_response(LoginBridgeResponseVO(redirect_url=final_url))
 
