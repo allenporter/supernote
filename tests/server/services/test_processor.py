@@ -2084,3 +2084,35 @@ async def test_on_demand_partial_run_pulls_ancestors_and_skips_post_file_and_eve
     assert [c[2] for c in png.calls] == ["p0"]
     assert summary.calls == []
     assert completed_events == []
+
+
+async def test_empty_note_does_not_mark_failed_upstream_page_branch_succeeded(
+    processor_service: ProcessorService,
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """On a 0-page note, a PAGE branch whose upstream FILE task failed must still block its FILE post-task."""
+    file_id = 9606
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=1,
+                file_name="empty.note",
+                storage_key="k9606",
+                md5="m",
+                is_active="Y",
+            )
+        )
+        await session.commit()
+
+    file_a = _DagStubModule("FILE_A", scope=TaskScope.FILE)
+    file_b = _DagStubModule("FILE_B", scope=TaskScope.FILE, fail_file=True)
+    page_a = _DagStubModule("PAGE_A", scope=TaskScope.PAGE, depends_on=("FILE_A",))
+    page_b = _DagStubModule("PAGE_B", scope=TaskScope.PAGE, depends_on=("FILE_B",))
+    post_a = _DagStubModule("POST_A", scope=TaskScope.FILE, depends_on=("PAGE_A",))
+    post_b = _DagStubModule("POST_B", scope=TaskScope.FILE, depends_on=("PAGE_B",))
+    processor_service.set_modules([file_a, file_b, page_a, page_b, post_a, post_b])
+
+    assert await processor_service.process_file(file_id) is False
+    assert len(post_a.calls) == 1
+    assert post_b.calls == []

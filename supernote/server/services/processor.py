@@ -120,16 +120,6 @@ class ProcessorService:
         self.task_graph: TaskGraph = TaskGraph.empty()
 
     @property
-    def global_pre_modules(self) -> list[ProcessorModule]:
-        """File-scoped modules with no page-scoped upstream dependencies."""
-        return [
-            m
-            for m in self.task_graph.modules
-            if m.scope == TaskScope.FILE
-            and not self.task_graph.has_page_ancestor(m.task_type)
-        ]
-
-    @property
     def page_modules(self) -> list[ProcessorModule]:
         """Page-scoped modules in deterministic topological order."""
         return [m for m in self.task_graph.modules if m.scope == TaskScope.PAGE]
@@ -527,34 +517,21 @@ class ProcessorService:
     def _collect_page_frontier(
         self,
         run_graph: TaskGraph,
-        initial_ready_pages: Sequence[str],
         completed: set[str],
     ) -> list[ProcessorModule]:
-        """Expand ready `PAGE` tasks to the maximal `PAGE` sub-DAG before the next `FILE` barrier."""
-        frontier: set[str] = set(initial_ready_pages)
-        remaining_pages = [
-            m.task_type
-            for m in run_graph.modules
-            if m.scope == TaskScope.PAGE
-            and m.task_type not in completed
-            and m.task_type not in frontier
-        ]
-        changed = True
-        while changed:
-            changed = False
-            next_remaining: list[str] = []
-            for task_type in remaining_pages:
-                if all(
-                    dep in completed or dep in frontier
-                    for dep in run_graph.depends_on(task_type)
-                ):
-                    frontier.add(task_type)
-                    changed = True
-                else:
-                    next_remaining.append(task_type)
-            remaining_pages = next_remaining
-
-        return [m for m in run_graph.modules if m.task_type in frontier]
+        """Collect the maximal `PAGE` sub-DAG reachable before the next `FILE` barrier."""
+        frontier: set[str] = set()
+        result: list[ProcessorModule] = []
+        for mod in run_graph.modules:
+            if mod.scope != TaskScope.PAGE or mod.task_type in completed:
+                continue
+            if all(
+                dep in completed or dep in frontier
+                for dep in run_graph.depends_on(mod.task_type)
+            ):
+                frontier.add(mod.task_type)
+                result.append(mod)
+        return result
 
     async def _load_pages(
         self, file_id: int, page_indices: set[int] | None
@@ -591,7 +568,6 @@ class ProcessorService:
             )
             run_graph = self.task_graph.subset(
                 requested,
-                include_ancestors=True,
                 exclude_page_dependent_file_tasks=page_indices is not None,
             )
         else:
@@ -637,9 +613,7 @@ class ProcessorService:
                 continue
 
             ready_page = [m.task_type for m in ready if m.scope == TaskScope.PAGE]
-            page_frontier = self._collect_page_frontier(
-                run_graph, ready_page, completed
-            )
+            page_frontier = self._collect_page_frontier(run_graph, completed)
             frontier_types = {m.task_type for m in page_frontier}
             has_runnable_root = any(
                 all(
@@ -659,7 +633,10 @@ class ProcessorService:
             if not pages:
                 logger.info(f"No pages found for file {file_id}. Skipping page tasks.")
                 for mod in page_frontier:
-                    task_succeeded[mod.task_type] = True
+                    task_succeeded[mod.task_type] = all(
+                        task_succeeded.get(dep, False)
+                        for dep in run_graph.depends_on(mod.task_type)
+                    )
                     completed.add(mod.task_type)
                 continue
 

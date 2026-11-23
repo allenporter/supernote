@@ -103,18 +103,16 @@ class TaskGraph:
         by_type: dict[str, ProcessorModule],
         deps: dict[str, tuple[str, ...]],
         ancestors: dict[str, frozenset[str]],
-        descendants: dict[str, frozenset[str]],
     ) -> None:
         self._ordered = ordered
         self._by_type = by_type
         self._deps = deps
         self._ancestors = ancestors
-        self._descendants = descendants
 
     @classmethod
     def empty(cls) -> TaskGraph:
         """Return an empty task graph."""
-        return cls((), {}, {}, {}, {})
+        return cls((), {}, {}, {})
 
     @classmethod
     def build(cls, modules: Sequence[ProcessorModule]) -> TaskGraph:
@@ -161,18 +159,11 @@ class TaskGraph:
                 upstream.update(ancestors[dep])
             ancestors[t] = frozenset(upstream)
 
-        desc_sets: dict[str, set[str]] = {t: set() for t in by_type}
-        for t, ancestor_set in ancestors.items():
-            for a in ancestor_set:
-                desc_sets[a].add(t)
-        descendants = {t: frozenset(ds) for t, ds in desc_sets.items()}
-
         return cls(
             ordered=tuple(ordered),
             by_type=by_type,
             deps=deps,
             ancestors=ancestors,
-            descendants=descendants,
         )
 
     def __bool__(self) -> bool:
@@ -186,10 +177,6 @@ class TaskGraph:
         """All registered modules in deterministic topological order."""
         return self._ordered
 
-    def get(self, task_type: str) -> ProcessorModule | None:
-        """Return the registered module for ``task_type``, if any."""
-        return self._by_type.get(_task_key(task_type))
-
     def depends_on(self, task_type: str) -> tuple[str, ...]:
         """Return direct upstream `task_type` dependencies for ``task_type``."""
         return self._deps.get(_task_key(task_type), ())
@@ -197,10 +184,6 @@ class TaskGraph:
     def ancestors(self, task_type: str) -> frozenset[str]:
         """Return transitive upstream dependencies for ``task_type``."""
         return self._ancestors.get(_task_key(task_type), frozenset())
-
-    def descendants(self, task_type: str) -> frozenset[str]:
-        """Return transitive downstream dependents for ``task_type``."""
-        return self._descendants.get(_task_key(task_type), frozenset())
 
     def has_page_ancestor(self, task_type: str) -> bool:
         """Return True if any transitive upstream dependency has `TaskScope.PAGE`."""
@@ -221,28 +204,31 @@ class TaskGraph:
         self,
         task_types: Iterable[str],
         *,
-        include_ancestors: bool = True,
         exclude_page_dependent_file_tasks: bool = False,
     ) -> TaskGraph:
-        """Return a sub-graph containing the requested ``task_types`` (and optionally ancestors)."""
+        """Return a closed sub-graph containing ``task_types`` and their upstream ancestors."""
         selected: set[str] = set()
         for raw in task_types:
             t = _task_key(raw)
             if t not in self._by_type:
                 continue
             selected.add(t)
-            if include_ancestors:
-                selected.update(self._ancestors[t])
+            selected.update(self._ancestors[t])
 
         if exclude_page_dependent_file_tasks:
-            selected = {
+            blocked_file_tasks = {
                 t
                 for t in selected
-                if not (
-                    self._by_type[t].scope == TaskScope.FILE
-                    and self.has_page_ancestor(t)
-                )
+                if self._by_type[t].scope == TaskScope.FILE
+                and self.has_page_ancestor(t)
             }
+            if blocked_file_tasks:
+                selected = {
+                    t
+                    for t in selected
+                    if t not in blocked_file_tasks
+                    and self._ancestors[t].isdisjoint(blocked_file_tasks)
+                }
 
         ordered = [m for m in self._ordered if _task_key(m.task_type) in selected]
         return TaskGraph.build(ordered)

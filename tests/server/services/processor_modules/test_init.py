@@ -269,9 +269,6 @@ def test_task_graph_build_order_ancestors_descendants_and_subset() -> None:
     assert graph.ancestors(TaskType.SUMMARY_GENERATION) == frozenset(
         {"HASHING", "PNG_CONVERSION", "OCR_EXTRACTION"}
     )
-    assert graph.descendants(TaskType.OCR_EXTRACTION) == frozenset(
-        {"EMBEDDING_GENERATION", "SUMMARY_GENERATION"}
-    )
     assert graph.has_page_ancestor(TaskType.SUMMARY_GENERATION) is True
     assert graph.has_page_ancestor(TaskType.PAGE_HASHING) is False
 
@@ -282,13 +279,17 @@ def test_task_graph_build_order_ancestors_descendants_and_subset() -> None:
         TaskType.PNG_CONVERSION,
     ]
 
-    # Excluding page-dependent FILE tasks drops SUMMARY but keeps HASHING and PAGE tasks.
-    page_only = graph.subset(
-        [m.task_type for m in graph.modules],
+    # Excluding page-dependent FILE tasks drops SUMMARY and any downstream PAGE wave cleanly.
+    w1 = _GraphModule("W1", scope=TaskScope.FILE)
+    w2 = _GraphModule("W2", scope=TaskScope.PAGE, depends_on=("W1",))
+    w3 = _GraphModule("W3", scope=TaskScope.FILE, depends_on=("W2",))
+    w4 = _GraphModule("W4", scope=TaskScope.PAGE, depends_on=("W3",))
+    multi = TaskGraph.build([w1, w2, w3, w4])
+    page_only = multi.subset(
+        [m.task_type for m in multi.modules],
         exclude_page_dependent_file_tasks=True,
     )
-    assert TaskType.SUMMARY_GENERATION not in {m.task_type for m in page_only.modules}
-    assert TaskType.PAGE_HASHING in {m.task_type for m in page_only.modules}
+    assert [m.task_type for m in page_only.modules] == ["W1", "W2"]
 
 
 def test_task_graph_validation_and_effective_enabled() -> None:
