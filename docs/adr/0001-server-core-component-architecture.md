@@ -22,7 +22,7 @@ This architecture introduces a Home Assistant-inspired **core host + vertical co
 
 ### 2.1 Core Service Ownership
 
-`ServerCore` ([`supernote/server/core.py`](../../supernote/server/core.py)) is the strongly-typed host passed to every component during setup, startup, and shutdown. It owns direct, typed references to the mandatory server infrastructure:
+`ServerCore` ([`supernote/server/core.py`](../../supernote/server/core.py)) is an **immutable** (`@dataclass(frozen=True)`), strongly-typed host passed to every component during setup, startup, and shutdown. It exposes direct, typed references to mandatory core infrastructure while keeping [`ComponentLoader`](../../supernote/server/core.py) owned separately by `create_app` so components cannot mutate core host references or invoke server-wide lifecycle transitions:
 
 | Attribute | Verified Type & Module (`origin/main`) | Responsibility |
 | :--- | :--- | :--- |
@@ -34,7 +34,6 @@ This architecture introduces a Home Assistant-inspired **core host + vertical co
 | `blob_storage` | [`BlobStorage`](../../supernote/server/services/blob.py) (`LocalBlobStorage`) | Content-addressable blob storage (`USER_DATA_BUCKET`, `CACHE_BUCKET`) |
 | `user_service` | [`UserService`](../../supernote/server/services/user.py) | Accounts, password/challenge auth, device bindings, stateful JWT & `sn_...` API key verification |
 | `file_service` | [`FileService`](../../supernote/server/services/file.py) | VFS tree orchestration (with per-session [`VirtualFileSystem`](../../supernote/server/services/vfs.py)), quotas, upload/download commit, blob GC |
-| `loader` | [`ComponentLoader`](../../supernote/server/core.py) | Component registry, topological sorter, and lifecycle orchestrator |
 
 Core device synchronization and authentication modules remain **part of the concrete core** rather than optional plugins:
 
@@ -53,7 +52,9 @@ Keeping these hardware-sync primitives concrete and statically typed on `ServerC
 
 - **Request keys stay**: `REQUEST_USER_KEY` and `REQUEST_EQUIPMENT_NO_KEY` remain the canonical per-request authentication context populated by `jwt_auth_middleware`.
 - **Bridge key (`CORE_KEY`) `[Planned]`**: When `ServerCore` is wired into `create_app` (Phase 2), `app[CORE_KEY] = core` exposes `ServerCore` alongside existing `AppKey` entries so unmigrated `RouteTableDef` handlers continue reading `app[FILE_SERVICE_KEY]`, `app[USER_SERVICE_KEY]`, etc. without a flag day.
-- **Per-PR key retirement**: Each migrated component closes over `core` in its route/service factories and retires its own feature `AppKey` constants when no legacy handler reads them (e.g., `WEBHOOK_SERVICE_KEY`, `STORAGE_METRICS_COLLECTOR_KEY`, `SOCKETIO_MANAGER_KEY`, `MCP_ASGI_RESOURCE_KEY`, `MCP_TASK_KEY`).
+- **Typed inter-component APIs & per-PR key retirement**:
+  - Private/internal keys with no cross-component consumers are retired when their component migrates (e.g., `WEBHOOK_SERVICE_KEY`, `STORAGE_METRICS_COLLECTOR_KEY`, `SOCKETIO_MANAGER_KEY`, `MCP_TASK_KEY`).
+  - When a component exposes a typed service consumed by other components or external plugins (e.g., `mcp` or a plugin declaring `dependencies = ("search",)`), the providing component defines and exports its own typed `web.AppKey[T]` (e.g., `SEARCH_SERVICE_KEY`) and populates `core.app[KEY]` during `async_setup`. Dependent components read `core.app[KEY]` with full `ty check` type safety.
 
 ---
 
@@ -83,37 +84,37 @@ class Component(Protocol):
 
 ### 3.2 Discovery: Built-In Components and External `importlib.metadata` Plugins
 
-Both built-in components and third-party plugins register into the same `ServerCore.loader` (`ComponentLoader`), allowing external plugins to depend on built-in component domains (for example, `dependencies = ("search",)`):
+Both built-in components and third-party plugins register into the same [`ComponentLoader`](../../supernote/server/core.py) owned by `create_app`, allowing external plugins to depend on built-in component domains (for example, `dependencies = ("search",)`):
 
 1. **Built-In Vertical Components (`supernote/server/components/<domain>/` `[Planned]`)**:
    - Self-contained packages under `supernote/server/components/<domain>/` (with 1:1 mirrored tests under `tests/server/components/<domain>/`).
-   - Instantiated explicitly during `create_app` based on `ServerConfig` enablement flags (e.g., `config.webhooks.enabled`, `config.metrics_enabled`, `config.mcp_enabled`) and registered via `core.register_component(...)`.
+   - Instantiated explicitly during `create_app` based on `ServerConfig` enablement flags (e.g., `config.webhooks.enabled`, `config.metrics_enabled`, `config.mcp_enabled`) and registered via `loader.register(...)`.
    - Core routes and instrumentation libraries that other core modules import directly (such as [`supernote/server/metrics.py`](../../supernote/server/metrics.py) counters/histograms) remain shared core modules rather than being hidden inside optional component internals.
 
 2. **External Third-Party Plugins (`importlib.metadata` `[Planned]`)**:
    - Discovered via `importlib.metadata.entry_points(group="supernote.server_components")` (sorted deterministically by entry-point `name`).
    - Each entry point resolves either a `Component` instance or a zero-argument callable returning a `Component` (`create_component() -> Component`).
-   - Validated against `isinstance(component, Component)` before `core.register_component(component)` so duplicate domains, invalid domains, missing dependencies, and cycles are caught identically to built-in components.
+   - Validated against `isinstance(component, Component)` before `loader.register(component)` so duplicate domains, invalid domains, missing dependencies, and cycles are caught identically to built-in components.
    - Plugin HTTP routes must mount under `/api/ext/<domain>/*` (protected by `jwt_auth_middleware` unless decorated with `@public_route` or explicitly exempted).
 
 ### 3.3 Topological Ordering and Failure / Shutdown Semantics
 
-[`ComponentLoader`](../../supernote/server/core.py) enforces deterministic graph resolution and transactional rollback:
+[`ComponentLoader`](../../supernote/server/core.py) enforces explicit lifecycle states (`IDLE -> SETUP -> STARTED -> STOPPED`), deterministic graph resolution, and transactional rollback:
 
 1. **Dependency Validation (`resolve_order`)**:
+   - Rejects `register()` calls once setup has started (`_LifecycleState.IDLE` required) and rejects duplicate `async_setup_all()` / `async_start_all()` calls.
    - Verifies every declared dependency exists in the registry; missing dependencies raise `MissingDependencyError(domain, dependency)` naming both requester and missing domain.
-   - Detects self-dependencies (`dep == domain`) immediately as `DependencyCycleError((domain, domain))`.
-   - Runs **Kahn's algorithm with a min-heap keyed by registration index**, guaranteeing deterministic topological order that preserves registration order for all tie-breaks.
-   - If unresolved nodes remain, runs a deterministic 3-color DFS over the unresolved subgraph to extract a simple cycle `(x, ..., x)` excluding non-cycle dependents and raise `DependencyCycleError(cycle)`.
+   - Uses Python stdlib `graphlib.TopologicalSorter` (`prepare()` converts `graphlib.CycleError` into `DependencyCycleError(cycle)` for both self-cycles and multi-node cycles) paired with a min-heap keyed by registration index over `get_ready()` / `done()`, guaranteeing deterministic topological order that preserves registration order for all tie-breaks.
 
 2. **Mapping to `aiohttp` Lifecycle (`on_startup` / `on_shutdown` / `on_cleanup`)**:
-   In `aiohttp`, `app.router` and `app.middlewares` remain mutable during `on_startup` (prior to `app.freeze()`), and an exception raised in `on_startup` invokes `on_cleanup` rather than `on_shutdown`. Therefore, server startup executes in this exact sequence:
-   1. Configure `aiohttp_remotes` proxy handling and register core middlewares (`trace_middleware`, `jwt_auth_middleware`, `static_cache_control_middleware`).
+   In `aiohttp`, `app.router` and `app.middlewares` remain mutable during `on_startup` (prior to `app.freeze()`), and an exception raised in `on_startup` invokes `on_cleanup` rather than `on_shutdown`. Furthermore, middleware order is security- and observability-critical (`socketio_compat_middleware` and `metrics_middleware` must wrap *outside* `trace_middleware` and `jwt_auth_middleware` so `EIO=3` query rewriting runs first and `401`/`403` responses are counted in Prometheus). Therefore, server startup executes in this exact sequence:
+   1. Configure `aiohttp_remotes` proxy handling.
    2. Run database migrations: `await asyncio.to_thread(run_migrations, config.db_url, config=config)`.
    3. Initialize `UrlSigner` from `await user_service.get_secret_key()` and perform ephemeral user bootstrap if `config.ephemeral`.
-   4. `await core.async_setup()` — resolves topological order up front and runs `await comp.async_setup(core)` in dependency order to register component routes, event subscriptions, middlewares, and Web UI slots. Components must **not** spawn persistent background tasks in `async_setup`. If any component raises during `async_setup`, `ComponentLoader` calls `async_stop(core)` in reverse order on all already-setup components (catching and logging secondary errors) and re-raises.
-   5. `await core.async_start()` — runs `await comp.async_start(core)` in dependency order to launch background workers, outbound HTTP sessions, or auxiliary servers (e.g., MCP port `8081`). If any component fails in `async_start`, `ComponentLoader` calls `async_stop(core)` on the failing component first, then on all already-started components in reverse topological order (isolating per-component exceptions), clears `_started`, and re-raises.
-   6. On `on_shutdown` and `on_cleanup` (so startup failures also tear down cleanly): `await core.async_stop()` runs idempotently to stop all started components in reverse topological order (`async_stop_all` snapshots and clears `_started` before iterating, ensuring **idempotency** and **error isolation** so one failing `async_stop` logs and never prevents earlier components from stopping). Because [`DatabaseSessionManager.close()`](../../supernote/server/db/session.py) is **not** idempotent (it raises `DatabaseError` if called twice), it runs **once** in `on_cleanup` after `await core.async_stop()` (or is guarded).
+   4. `await loader.async_setup_all(core)` — resolves topological order up front and runs `await comp.async_setup(core)` in dependency order to register component routes, event subscriptions, Web UI slots, pre-auth/post-auth middlewares, and public-prefix/ASGI auth exemptions (via Phase 2a registration hooks on `ServerCore` rather than raw `app.middlewares.append`). Components must **not** spawn persistent background tasks in `async_setup`. Note: because component routes register during `on_startup`, tests inspecting component routes must start the `aiohttp` app (e.g., via `TestServer` or invoking `loader.async_setup_all(core)`).
+   5. Assemble the ordered middleware stack (`[...outer/pre-auth component middlewares, trace_middleware, jwt_auth_middleware, static_cache_control_middleware, ...inner/post-auth component middlewares]`), guaranteeing `socketio` and `metrics` always wrap outside `trace_middleware` and `jwt_auth_middleware`.
+   6. `await loader.async_start_all(core)` — runs `await comp.async_start(core)` in dependency order to launch background workers, outbound HTTP sessions, or auxiliary servers (e.g., MCP port `8081`).
+   7. **Unified Rollback & Shutdown**: Any `BaseException` (including `Exception` and `asyncio.CancelledError`) during `async_setup_all` or `async_start_all` triggers `await loader.async_stop_all(core)` before re-raising, stopping all initialized components in reverse topological order (with per-component `Exception` isolation so one failing `async_stop` never blocks earlier components from tearing down). On `on_shutdown` and `on_cleanup`, `await loader.async_stop_all(core)` runs idempotently (even if startup stopped after `async_setup_all` without reaching `async_start_all`). Because [`DatabaseSessionManager.close()`](../../supernote/server/db/session.py) is **not** idempotent (it raises `DatabaseError` if called twice), it runs **once** in `on_cleanup` after `await loader.async_stop_all(core)` (or is guarded).
 
 ---
 
@@ -184,14 +185,14 @@ Each phase ships in small, independently tested PRs (~150–300 LoC of productio
 - Zero changes to `app.py`, `supernote/models/`, `supernote/alembic/`, or conformance allowlists.
 
 ### Phase 2: Core Lifecycle Wiring + Self-Contained Vertical Components
-1. **PR 2a — `ServerCore` Wiring in `app.py`**: Construct `ServerCore` in `create_app`, store `app[CORE_KEY] = core` `[Planned]`, and invoke `await core.async_setup()` / `await core.async_start()` / `await core.async_stop()` inside `on_startup_handler` and `on_shutdown_handler` / `on_cleanup` (behavior-preserving no-op with 0 components initially).
+1. **PR 2a — `ServerCore` Wiring in `app.py`**: Construct `ServerCore` and `ComponentLoader` in `create_app`, store `app[CORE_KEY] = core` `[Planned]`, add outer/inner middleware and public-prefix/ASGI exemption registration hooks so components integrate cleanly with `jwt_auth_middleware`, and invoke `await loader.async_setup_all(core)` / `await loader.async_start_all(core)` / `await loader.async_stop_all(core)` inside `on_startup_handler` and `on_shutdown_handler` / `on_cleanup` (behavior-preserving no-op with 0 components initially).
 2. **PR 2b — `webhooks` (`supernote/server/components/webhooks/` `[Planned]`)**: Wrap [`WebhookService`](../../supernote/server/services/webhook.py) (`config.webhooks`, `core.event_bus`, `core.user_service`); retire `WEBHOOK_SERVICE_KEY` and direct `webhook_service` wiring from `app.py`.
-3. **PR 2c — `metrics` (`supernote/server/components/metrics/` `[Planned]`)**: Extract HTTP `GET {config.metrics_path}`, `create_metrics_middleware`, and [`StorageMetricsCollector`](../../supernote/server/services/storage_metrics.py) into `components/metrics/`. Keep metric definitions/helpers in [`supernote/server/metrics.py`](../../supernote/server/metrics.py) as a shared core instrumentation library (imported by `db/session.py`, `services/file.py`, `routes/oss.py`, `services/processor.py`, `ai/models/*`, and `mcp/server.py`), and replace the mutable `mcp_auth_paths` set in `create_metrics_middleware` with route/resource metadata inspection.
-4. **PR 2d — `socketio` (`supernote/server/components/socketio/` `[Planned]`)**: Wrap [`setup_socketio` / `SocketIOServerManager`](../../supernote/server/socket.py), [`socket_auth`](../../supernote/server/socket_auth.py), `socketio_compat_middleware`, and `/socket.io` public prefix registration (retiring hardcoded `/socket.io` bypass in `jwt_auth_middleware` and `SOCKETIO_MANAGER_KEY`).
-5. **PR 2e — `mcp` (`supernote/server/components/mcp/` `[Planned]`)**: Wrap [`supernote/server/mcp/auth.py`](../../supernote/server/mcp/auth.py), [`supernote/server/mcp/server.py`](../../supernote/server/mcp/server.py), and [`supernote/server/mcp/models.py`](../../supernote/server/mcp/models.py) into a `Component` managing the `ASGIResource` mount and background port-`8081` task, retiring `MCP_ASGI_RESOURCE_KEY` and `MCP_TASK_KEY` from `app.py`.
+3. **PR 2c — `metrics` (`supernote/server/components/metrics/` `[Planned]`)**: Extract HTTP `GET {config.metrics_path}`, `create_metrics_middleware` (registered as an outer/pre-auth middleware), and [`StorageMetricsCollector`](../../supernote/server/services/storage_metrics.py) into `components/metrics/`. Keep metric definitions/helpers in [`supernote/server/metrics.py`](../../supernote/server/metrics.py) as a shared core instrumentation library (imported by `db/session.py`, `services/file.py`, `routes/oss.py`, `services/processor.py`, `ai/models/*`, and `mcp/server.py`), and replace the mutable `mcp_auth_paths` set in `create_metrics_middleware` with route/resource metadata inspection.
+4. **PR 2d — `socketio` (`supernote/server/components/socketio/` `[Planned]`)**: Wrap [`setup_socketio` / `SocketIOServerManager`](../../supernote/server/socket.py), [`socket_auth`](../../supernote/server/socket_auth.py), `socketio_compat_middleware` (outer/pre-auth middleware), and `/socket.io` public prefix registration (retiring hardcoded `/socket.io` bypass in `jwt_auth_middleware` and `SOCKETIO_MANAGER_KEY`).
+5. **PR 2e — `mcp` (`supernote/server/components/mcp/` `[Planned]`)**: Wrap [`supernote/server/mcp/auth.py`](../../supernote/server/mcp/auth.py), [`supernote/server/mcp/server.py`](../../supernote/server/mcp/server.py), and [`supernote/server/mcp/models.py`](../../supernote/server/mcp/models.py) into a `Component` managing the `ASGIResource` mount (registered via the core public-resource exemption hook) and background port-`8081` task, retiring `MCP_ASGI_RESOURCE_KEY` and `MCP_TASK_KEY` from `app.py`.
 
 ### Phase 3: External Plugins & Web UI Extension Slots
-1. **PR 3a — Entry-Point Plugin Discovery**: Load `importlib.metadata.entry_points(group="supernote.server_components")` into `ServerCore.loader` with `/api/ext/<domain>/*` prefix isolation and `<storage_dir>/plugins/<domain>/` path helper.
+1. **PR 3a — Entry-Point Plugin Discovery**: Load `importlib.metadata.entry_points(group="supernote.server_components")` into `ComponentLoader` with `/api/ext/<domain>/*` prefix isolation and `<storage_dir>/plugins/<domain>/` path helper.
 2. **PR 3b — Web UI Slot Registry & Manifest**: Add `UiSlotContribution`, `/components/<domain>/static/` mount + `Cache-Control: no-cache` + public static exemption, `GET /api/extended/ui/manifest`, and `main.js` / `useRouter.js` (`#/ext/<domain>/<id>`) dynamic ESM slot rendering.
 
 ### Phase 4: Explicit Pause-and-Reassess Gate (Horizontal Domains)
