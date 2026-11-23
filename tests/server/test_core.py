@@ -105,6 +105,30 @@ def test_server_core_is_immutable(server_core: ServerCore) -> None:
         core_as_any.config = None
 
 
+def test_server_core_registers_middlewares_and_public_prefixes(
+    server_core: ServerCore,
+) -> None:
+    @web.middleware
+    async def outer_mw(request: web.Request, handler: Any) -> web.StreamResponse:
+        return await handler(request)
+
+    @web.middleware
+    async def inner_mw(request: web.Request, handler: Any) -> web.StreamResponse:
+        return await handler(request)
+
+    server_core.register_middleware(outer_mw, pre_auth=True)
+    server_core.register_middleware(inner_mw)
+    server_core.register_public_prefix("/socket.io")
+    server_core.register_public_prefix("/socket.io")
+
+    assert server_core.outer_middlewares == (outer_mw,)
+    assert server_core.inner_middlewares == (inner_mw,)
+    assert server_core.public_prefixes == ("/socket.io",)
+
+    with pytest.raises(ValueError, match="must start with '/'"):
+        server_core.register_public_prefix("socket.io")
+
+
 def test_loader_register_and_accessors(loader: ComponentLoader) -> None:
     comp = RecordingComponent(domain="webhooks")
     assert isinstance(comp, Component)

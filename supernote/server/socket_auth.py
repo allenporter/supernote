@@ -3,7 +3,7 @@
 Provides `compute_handshake_signature` and `verify_handshake_signature`, which validate
 `supernote.models.socket.SocketHandshakeParams` (`token`, `type`, `random`, `sign`)
 sent by Supernote hardware tablets and `supernote.client.socket.SupernoteSocketClient`
-when connecting to `supernote.server.socket`.
+when connecting to `supernote.server.components.socketio`.
 """
 
 import base64

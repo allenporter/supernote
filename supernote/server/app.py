@@ -1,7 +1,7 @@
 """Main `aiohttp` application factory, middleware stack, and lifecycle hooks.
 
 `create_app` wires together all domain services (`supernote.server.services`), HTTP route
-tables (`supernote.server.routes`), Socket.IO real-time server (`supernote.server.socket`),
+tables (`supernote.server.routes`), Socket.IO real-time server (`supernote.server.components.socketio`),
 and the optional OAuth 2.1 + Streamable HTTP Model Context Protocol server
 (`supernote.server.mcp`) from a resolved `supernote.server.config.ServerConfig`.
 
@@ -104,7 +104,6 @@ from .services.search import SearchService
 from .services.storage_metrics import StorageMetricsCollector
 from .services.summary import SummaryService
 from .services.user import UserService
-from .socket import setup_socketio
 from .trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger, trace_middleware
 from .utils.hashing import get_md5_hash
 from .utils.prompt_loader import PROMPT_LOADER
@@ -112,19 +111,6 @@ from .utils.rate_limit import RateLimiter
 from .utils.url_signer import UrlSigner
 
 logger = logging.getLogger(__name__)
-
-
-@web.middleware
-async def socketio_compat_middleware(
-    request: web.Request,
-    handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
-) -> web.StreamResponse:
-    """Rewrite Socket.IO requests query parameters from EIO=3 (Engine.IO v3) to EIO=4 for protocol compatibility."""
-    if request.path.startswith("/socket.io/") and request.query.get("EIO") == "3":
-        new_query = dict(request.query)
-        new_query["EIO"] = "4"
-        request = request.clone(rel_url=request.rel_url.with_query(new_query))
-    return await handler(request)
 
 
 _KNOWN_HTTP_METHODS: frozenset[str] = frozenset(
@@ -221,8 +207,8 @@ async def jwt_auth_middleware(
     if handler_func and getattr(handler_func, "is_public", False):
         return await handler(request)
 
-    # Also allow public access to MCP OAuth which is registered without a
-    # decorator.
+    # Also allow public access to MCP OAuth and component-registered public prefixes.
+    core = request.app.get(CORE_KEY)
     if (
         request.path.startswith("/static/")
         or request.path == "/favicon.ico"
@@ -231,7 +217,10 @@ async def jwt_auth_middleware(
         or request.path.startswith("/authorize")
         or request.path.startswith("/token")
         or request.path.startswith("/.well-known/")
-        or request.path.startswith("/socket.io")
+        or (
+            core is not None
+            and any(request.path.startswith(p) for p in core.public_prefixes)
+        )
     ):
         return await handler(request)
 
@@ -409,9 +398,6 @@ def create_app(config: ServerConfig) -> web.Application:
     app.add_routes(extended.routes)
     app.add_routes(events.routes)
 
-    # Attach Socket.IO real-time server manager
-    setup_socketio(app, config, user_service, event_bus)
-
     # Serve static frontend files
     if config.web_enabled:
         static_path = Path(
@@ -457,19 +443,6 @@ def create_app(config: ServerConfig) -> web.Application:
 
         mcp_auth_paths: set[str] = set()
 
-        # Register trace and auth middlewares after proxy setup to avoid clone errors
-        app.middlewares.append(socketio_compat_middleware)
-        if config.metrics_enabled:
-            app.middlewares.append(
-                create_metrics_middleware(
-                    metrics_path=config.metrics_path,
-                    mcp_auth_paths=mcp_auth_paths,
-                )
-            )
-        app.middlewares.append(trace_middleware)
-        app.middlewares.append(jwt_auth_middleware)
-        app.middlewares.append(static_cache_control_middleware)
-
         logger.info("Running database migrations...")
         await asyncio.to_thread(run_migrations, config.db_url, config=config)
 
@@ -480,6 +453,21 @@ def create_app(config: ServerConfig) -> web.Application:
             await bootstrap_ephemeral_user(app)
 
         await component_loader.async_setup_all(core, component_configs)
+
+        # Register outer component, metrics, trace, auth, cache, and inner middlewares
+        # after proxy setup and component setup to preserve exact ordering.
+        app.middlewares.extend(core.outer_middlewares)
+        if config.metrics_enabled:
+            app.middlewares.append(
+                create_metrics_middleware(
+                    metrics_path=config.metrics_path,
+                    mcp_auth_paths=mcp_auth_paths,
+                )
+            )
+        app.middlewares.append(trace_middleware)
+        app.middlewares.append(jwt_auth_middleware)
+        app.middlewares.append(static_cache_control_middleware)
+        app.middlewares.extend(core.inner_middlewares)
 
         if config.mcp_enabled:
             from aiohttp_asgi import ASGIResource  # noqa: PLC0415

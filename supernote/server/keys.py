@@ -35,7 +35,6 @@ if TYPE_CHECKING:
     from .services.storage_metrics import StorageMetricsCollector
     from .services.summary import SummaryService
     from .services.user import UserService
-    from .socket import SocketIOServerManager
     from .utils.rate_limit import RateLimiter
     from .utils.url_signer import UrlSigner
 
@@ -62,7 +61,6 @@ RATE_LIMITER_KEY: web.AppKey[RateLimiter] = web.AppKey("rate_limiter")
 PROCESSOR_SERVICE_KEY: web.AppKey[ProcessorService] = web.AppKey("processor_service")
 CONVERSION_SERVICE_KEY: web.AppKey[ConversionService] = web.AppKey("conversion_service")
 URL_SIGNER_KEY: web.AppKey[UrlSigner] = web.AppKey("url_signer")
-SOCKETIO_MANAGER_KEY: web.AppKey[SocketIOServerManager] = web.AppKey("socketio_manager")
 MCP_ASGI_RESOURCE_KEY: web.AppKey[ASGIResource] = web.AppKey("mcp_asgi_resource")
 MCP_TASK_KEY: web.AppKey[asyncio.Task[None]] = web.AppKey("mcp_task")
 STORAGE_METRICS_COLLECTOR_KEY: web.AppKey[StorageMetricsCollector] = web.AppKey(
