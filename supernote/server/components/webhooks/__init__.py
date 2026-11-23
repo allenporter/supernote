@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 from supernote.server.core import ServerCore
 
 from .config import WebhookConfig
@@ -19,9 +22,9 @@ class WebhooksComponent:
     def __init__(self) -> None:
         self._service: WebhookService | None = None
 
-    async def async_setup(self, core: ServerCore) -> None:
+    async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         """Validate webhook configuration and instantiate `WebhookService`."""
-        webhook_config = WebhookConfig.from_dict(core.config.webhooks)
+        webhook_config = WebhookConfig.from_dict(config)
         self._service = WebhookService(
             webhook_config,
             core.event_bus,

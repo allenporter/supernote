@@ -480,7 +480,7 @@ def create_app(config: ServerConfig) -> web.Application:
         if config.ephemeral:
             await bootstrap_ephemeral_user(app)
 
-        await component_loader.async_setup_all(core)
+        await component_loader.async_setup_all(core, {"webhooks": config.webhooks})
 
         if config.mcp_enabled:
             from aiohttp_asgi import ASGIResource  # noqa: PLC0415

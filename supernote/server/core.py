@@ -12,10 +12,10 @@ import graphlib
 import heapq
 import logging
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from aiohttp import web
@@ -96,8 +96,8 @@ class Component(Protocol):
         """Domain identifiers that must set up and start before this component."""
         ...
 
-    async def async_setup(self, core: ServerCore) -> None:
-        """Register routes, event subscriptions, and UI extensions before startup."""
+    async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
+        """Validate component config and register routes/subscriptions before startup."""
         ...
 
     async def async_start(self, core: ServerCore) -> None:
@@ -191,16 +191,21 @@ class ComponentLoader:
 
         return tuple(ordered)
 
-    async def async_setup_all(self, core: ServerCore) -> None:
-        """Set up all registered components in topological order."""
+    async def async_setup_all(
+        self,
+        core: ServerCore,
+        configs: Mapping[str, Mapping[str, Any]] | None = None,
+    ) -> None:
+        """Set up all registered components in topological order with per-domain config."""
         if self._state is not _LifecycleState.IDLE:
             raise ComponentError(
                 f"Cannot run async_setup_all in state {self._state.value!r}"
             )
         ordered = self.resolve_order()
+        component_configs = configs or {}
         try:
             for comp in ordered:
-                await comp.async_setup(core)
+                await comp.async_setup(core, component_configs.get(comp.domain, {}))
                 self._initialized.append(comp)
             self._state = _LifecycleState.SETUP
         except BaseException:

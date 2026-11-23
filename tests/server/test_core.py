@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import FrozenInstanceError, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -36,12 +37,14 @@ class RecordingComponent:
     dependencies: tuple[str, ...] = ()
     events: list[tuple[str, str]] = field(default_factory=list)
     seen_cores: list[ServerCore] = field(default_factory=list)
+    seen_configs: list[Mapping[str, Any]] = field(default_factory=list)
     fail_on: str | None = None
     cancel_on: str | None = None
     fail_stop: bool = False
 
-    async def async_setup(self, core: ServerCore) -> None:
+    async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         self.seen_cores.append(core)
+        self.seen_configs.append(config)
         if self.cancel_on == "setup":
             raise asyncio.CancelledError
         if self.fail_on == "setup":
@@ -253,7 +256,7 @@ async def test_lifecycle_setup_start_stop_order(
     for comp in (comp_c, comp_b, comp_a):
         loader.register(comp)
 
-    await loader.async_setup_all(server_core)
+    await loader.async_setup_all(server_core, {"a": {"enabled": True}})
     await loader.async_start_all(server_core)
     await loader.async_stop_all(server_core)
 
@@ -269,6 +272,9 @@ async def test_lifecycle_setup_start_stop_order(
         ("stop", "a"),
     ]
     assert all(core is server_core for core in comp_a.seen_cores)
+    assert comp_a.seen_configs == [{"enabled": True}]
+    assert comp_b.seen_configs == [{}]
+    assert comp_c.seen_configs == [{}]
 
 
 async def test_async_stop_is_idempotent(

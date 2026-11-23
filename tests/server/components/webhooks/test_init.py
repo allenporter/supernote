@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
-
 import pytest
 from aiohttp import web
 
@@ -17,6 +15,17 @@ from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.file import FileService
 from supernote.server.services.user import UserService
 
+VALID_WEBHOOKS_CONFIG = {
+    "enabled": True,
+    "endpoints": [
+        {
+            "url": "http://127.0.0.1:9999/hook",
+            "user": "user@example.com",
+            "secret": "test-secret",
+        }
+    ],
+}
+
 
 @pytest.fixture
 def webhooks_core(
@@ -27,22 +36,9 @@ def webhooks_core(
     user_service: UserService,
     file_service: FileService,
 ) -> ServerCore:
-    """Create a `ServerCore` with webhooks enabled backed by shared test fixtures."""
-    config = dataclasses.replace(
-        server_config,
-        webhooks={
-            "enabled": True,
-            "endpoints": [
-                {
-                    "url": "http://127.0.0.1:9999/hook",
-                    "user": "user@example.com",
-                    "secret": "test-secret",
-                }
-            ],
-        },
-    )
+    """Create a `ServerCore` backed by shared test fixtures."""
     return ServerCore(
-        config=config,
+        config=server_config,
         app=web.Application(),
         event_bus=LocalEventBus(),
         session_manager=session_manager,
@@ -62,7 +58,7 @@ async def test_webhooks_component_lifecycle(webhooks_core: ServerCore) -> None:
     loader = ComponentLoader()
     loader.register(component)
 
-    await loader.async_setup_all(webhooks_core)
+    await loader.async_setup_all(webhooks_core, {"webhooks": VALID_WEBHOOKS_CONFIG})
     assert NoteUpdatedEvent not in webhooks_core.event_bus._subscribers
 
     await loader.async_start_all(webhooks_core)
@@ -78,25 +74,23 @@ async def test_webhooks_component_stop_after_setup_only(
     loader = ComponentLoader()
     loader.register(WebhooksComponent())
 
-    await loader.async_setup_all(webhooks_core)
+    await loader.async_setup_all(webhooks_core, {"webhooks": VALID_WEBHOOKS_CONFIG})
     await loader.async_stop_all(webhooks_core)
 
 
 async def test_webhooks_component_validates_config_on_setup(
     webhooks_core: ServerCore,
 ) -> None:
-    invalid_core = dataclasses.replace(
-        webhooks_core,
-        config=dataclasses.replace(
-            webhooks_core.config,
-            webhooks={
-                "enabled": True,
-                "endpoints": [{"url": "ftp://invalid", "user": "user@example.com"}],
-            },
-        ),
-    )
     loader = ComponentLoader()
     loader.register(WebhooksComponent())
 
     with pytest.raises(ValueError, match="endpoints"):
-        await loader.async_setup_all(invalid_core)
+        await loader.async_setup_all(
+            webhooks_core,
+            {
+                "webhooks": {
+                    "enabled": True,
+                    "endpoints": [{"url": "ftp://invalid", "user": "user@example.com"}],
+                }
+            },
+        )
