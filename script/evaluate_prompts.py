@@ -15,12 +15,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from supernote.notebook import Notebook, PngConverter, load_notebook
-from supernote.server.ai.models.ocr import OcrModel, create_ocr_model
-from supernote.server.ai.models.summary import SummaryModel, create_summary_model
+from supernote.server.ai.models.ocr import OcrModel
+from supernote.server.ai.models.summary import SummaryModel
 from supernote.server.ai.prompts import (
     PageMetadata,
     format_ocr_prompt,
     format_summary_prompt,
+)
+from supernote.server.components.ai import AiRegistrar
+from supernote.server.components.gemini.ocr import (
+    create_ocr_model as create_gemini_ocr_model,
+)
+from supernote.server.components.gemini.summary import (
+    create_summary_model as create_gemini_summary_model,
 )
 from supernote.server.config import ServerConfig
 from supernote.server.utils.note_content import format_page_metadata
@@ -287,8 +294,11 @@ async def main_async() -> None:
     summary_config = dataclasses.replace(
         config, gemini_api_key=api_key, gemini_ocr_model=summary_model_name
     )
-    ocr_model = create_ocr_model(ocr_config)
-    summary_model = create_summary_model(summary_config)
+    ai_registrar = AiRegistrar()
+    ai_registrar.register_ocr("gemini", create_gemini_ocr_model)
+    ai_registrar.register_summary("gemini", create_gemini_summary_model)
+    ocr_model = ai_registrar.create_ocr_model(ocr_config)
+    summary_model = ai_registrar.create_summary_model(summary_config)
     if ocr_model is None or summary_model is None:
         print("Error: Failed to initialize OCR or Summary model.", file=sys.stderr)
         sys.exit(1)

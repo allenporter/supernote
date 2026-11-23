@@ -33,8 +33,11 @@ from supernote.server.keys import (
     COMPONENT_LOADER_KEY,
     COORDINATION_SERVICE_KEY,
     CORE_KEY,
+    EMBEDDING_MODEL_KEY,
     INTEGRITY_SERVICE_KEY,
+    OCR_MODEL_KEY,
     PROCESSOR_SERVICE_KEY,
+    SEARCH_SERVICE_KEY,
     SESSION_MANAGER_KEY,
     USER_SERVICE_KEY,
 )
@@ -252,7 +255,8 @@ async def test_static_frontend_disabled_when_web_enabled_false(
         (False, True, None, False),
     ],
 )
-def test_png_module_registration_matrix(
+async def test_png_module_registration_matrix(
+    aiohttp_client: AiohttpClient,
     server_config: ServerConfig,
     web_enabled: bool,
     web_notebook_preview: bool,
@@ -267,6 +271,7 @@ def test_png_module_registration_matrix(
         gemini_api_key=gemini_api_key,
     )
     app = create_app(cfg)
+    await aiohttp_client(app)
     page_modules = app[PROCESSOR_SERVICE_KEY].page_modules
     has_png = any(isinstance(m, PngConversionModule) for m in page_modules)
     assert has_png is expected_png
@@ -469,10 +474,11 @@ async def test_create_app_registers_and_runs_webhooks_component_when_enabled(
     assert resp.status == 200
 
 
-def test_create_app_loads_fake_ai_only_when_configured(
+async def test_create_app_loads_fake_ai_only_when_configured(
+    aiohttp_client: AiohttpClient,
     server_config: ServerConfig,
 ) -> None:
-    """Verify `create_app` registers `fake_ai` only when `config.ai` uses provider type `fake`."""
+    """Verify `create_app` registers `fake_ai` only when configured and resolves models via `AiRegistrar` on startup."""
     default_app = create_app(dataclasses.replace(server_config, web_enabled=False))
     assert default_app[COMPONENT_LOADER_KEY].get("fake_ai") is None
 
@@ -480,9 +486,17 @@ def test_create_app_loads_fake_ai_only_when_configured(
         server_config,
         web_enabled=False,
         ai=AiConfig(
-            providers={"local_fake": ProviderConfig(type="fake")},
+            providers={"local_fake": ProviderConfig(type="Fake")},
             ocr=ModelConfig(provider="local_fake", model="fake-ocr"),
+            embedding=ModelConfig(provider="local_fake", model="fake-embed"),
         ),
     )
     fake_app = create_app(fake_config)
     assert isinstance(fake_app[COMPONENT_LOADER_KEY].get("fake_ai"), FakeAiComponent)
+
+    await aiohttp_client(fake_app)
+    ocr_model = fake_app[OCR_MODEL_KEY]
+    assert ocr_model is not None
+    assert ocr_model.model_id == "fake-ocr"
+    assert fake_app[EMBEDDING_MODEL_KEY] is not None
+    assert fake_app[SEARCH_SERVICE_KEY].embedding_model is fake_app[EMBEDDING_MODEL_KEY]
