@@ -18,6 +18,7 @@ class WebhooksComponent:
 
     domain = "webhooks"
     dependencies: tuple[str, ...] = ()
+    platforms: tuple[str, ...] = ()
 
     def __init__(self) -> None:
         self._service: WebhookService | None = None

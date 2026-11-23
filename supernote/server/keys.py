@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from .ai.models.embedding import EmbeddingModel
     from .ai.models.ocr import OcrModel
     from .ai.models.summary import SummaryModel
+    from .components.http import HttpRegistrar
     from .config import ServerConfig
     from .core import ComponentLoader, ServerCore
     from .db.session import DatabaseSessionManager
@@ -38,6 +39,7 @@ if TYPE_CHECKING:
 CONFIG_KEY: web.AppKey[ServerConfig] = web.AppKey("config")
 CORE_KEY: web.AppKey[ServerCore] = web.AppKey("core")
 COMPONENT_LOADER_KEY: web.AppKey[ComponentLoader] = web.AppKey("component_loader")
+HTTP_REGISTRAR_KEY: web.AppKey[HttpRegistrar] = web.AppKey("http_registrar")
 SESSION_MANAGER_KEY: web.AppKey[DatabaseSessionManager] = web.AppKey("session_manager")
 COORDINATION_SERVICE_KEY: web.AppKey[CoordinationService] = web.AppKey(
     "coordination_service"

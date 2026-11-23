@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib
+import inspect
 import pkgutil
 import subprocess
 import sys
@@ -124,6 +126,37 @@ def test_all_builtin_components_resolve_without_missing_deps_or_cycles() -> None
 
     ordered = loader.resolve_order()
     assert len(ordered) == len(BUILTIN_COMPONENTS)
+
+
+@pytest.mark.parametrize(
+    "spec",
+    BUILTIN_COMPONENTS,
+    ids=[spec.domain for spec in BUILTIN_COMPONENTS],
+)
+def test_builtin_component_platforms_match_modules_1to1(
+    spec: BuiltinComponentSpec,
+) -> None:
+    """Declared platforms must resolve to async setup functions, and platform files on disk must be declared."""
+    known_platforms = {"http"}
+    component = load_component_from_spec(spec)
+    pkg = importlib.import_module(f"supernote.server.components.{spec.domain}")
+
+    for platform in component.platforms:
+        platform_mod = importlib.import_module(f"{pkg.__name__}.{platform}")
+        setup_fn = getattr(platform_mod, f"async_setup_{platform}", None)
+        assert setup_fn is not None and inspect.iscoroutinefunction(setup_fn), (
+            f"{platform_mod.__name__} must define async def async_setup_{platform}"
+        )
+
+    on_disk_platforms = {
+        mod.name
+        for mod in pkgutil.iter_modules(pkg.__path__)
+        if mod.name in known_platforms
+    }
+    assert on_disk_platforms == (set(component.platforms) & known_platforms), (
+        f"Component {spec.domain!r} platform files {on_disk_platforms} do not match "
+        f"declared platforms {set(component.platforms)}"
+    )
 
 
 @pytest.mark.parametrize(
