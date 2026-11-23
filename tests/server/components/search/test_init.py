@@ -20,7 +20,7 @@ async def test_search_component_lifecycle_binds_embedding_model_on_start(
     assert isinstance(component, Component)
     assert component.domain == "search"
     assert component.dependencies == ()
-    assert component.platforms == ("http", "mcp")
+    assert component.platforms == ("http", "mcp", "processor")
 
     loader = ComponentLoader()
     loader.register(component)

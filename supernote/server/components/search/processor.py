@@ -12,7 +12,10 @@ import logging
 
 from supernote.models.base import TaskType
 from supernote.server.ai.models.embedding import EmbeddingModel, EmbeddingTaskType
+from supernote.server.components.processor import ProcessorRegistrar
+from supernote.server.core import ServerCore
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.keys import EMBEDDING_MODEL_KEY
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import (
     ProcessorModule,
@@ -129,3 +132,16 @@ class EmbeddingModule(ProcessorModule):
             await session.commit()
 
         logger.info(f"Completed Embedding for file {file_id} page {page_index}")
+
+
+async def async_setup_processor(
+    core: ServerCore,
+    registrar: ProcessorRegistrar,
+) -> None:
+    """Register `EmbeddingModule` with the `"processor"` platform."""
+    registrar.register_module(
+        EmbeddingModule(
+            file_service=core.file_service,
+            embedding_model=core.app.get(EMBEDDING_MODEL_KEY),
+        )
+    )

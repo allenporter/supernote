@@ -50,7 +50,7 @@ class SearchComponent:
 
     domain = "search"
     dependencies: tuple[str, ...] = ()
-    platforms: tuple[str, ...] = ("http", "mcp")
+    platforms: tuple[str, ...] = ("http", "mcp", "processor")
 
     def __init__(self) -> None:
         self._service: SearchService | None = None

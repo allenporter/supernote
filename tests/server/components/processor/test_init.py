@@ -75,7 +75,6 @@ async def test_processor_component_protocol_and_idempotent_lifecycle(
         TaskType.PAGE_HASHING,
         TaskType.PNG_CONVERSION,
         TaskType.OCR_EXTRACTION,
-        TaskType.EMBEDDING_GENERATION,
     ]
 
     await loader.async_start_all(component_core)
