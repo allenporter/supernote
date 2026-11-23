@@ -166,15 +166,145 @@ test('client.js: searchFiles and searchSemantic normalize wire DTOs', async () =
 
         assert.deepEqual(await searchSemantic('Architecture'), [
             {
-                key: 'p-2',
+                key: '20-2-0',
                 fileId: '20',
                 fileName: 'Spec.note',
                 extension: 'note',
                 pageIndex: 2,
                 pageNumber: 3,
                 score: 0.91,
+                matchPercent: 91,
                 textPreview: 'Architecture notes',
                 date: '2026-06-18',
+            },
+        ]);
+    } finally {
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
+    }
+});
+
+test('client.js: searchSemantic scopes keys by fileId/pageIndex/idx and clamps hybrid scores', async () => {
+    const origFetch = globalThis.fetch;
+    try {
+        setToken('hybrid-tok');
+        globalThis.fetch = async () =>
+            /** @type {any} */ ({
+                ok: true,
+                status: 200,
+                json: async () => ({
+                    results: [
+                        {
+                            page_id: '',
+                            file_id: '9007199254740993',
+                            file_name: 'Legacy.note',
+                            page_index: 0,
+                            score: 1.04,
+                            text_preview: 'Keywords: #optics',
+                            date: null,
+                        },
+                        {
+                            page_id: '',
+                            file_id: '9007199254740993',
+                            file_name: 'Legacy.note',
+                            page_index: 1,
+                            score: -0.35,
+                            text_preview: '',
+                            date: null,
+                        },
+                        {
+                            page_id: 'shared-page-id',
+                            file_id: 42,
+                            file_name: 'CopyA.note',
+                            page_index: Number.NaN,
+                            score: Number.NaN,
+                            text_preview: 'Copied page A',
+                            date: '2026-04-01',
+                        },
+                        {
+                            page_id: 'shared-page-id',
+                            file_id: 43,
+                            file_name: 'CopyB.note',
+                            pageIndex: Number.POSITIVE_INFINITY,
+                            score: Number.NEGATIVE_INFINITY,
+                            text_preview: 'Copied page B',
+                            date: '2026-04-01',
+                        },
+                        {
+                            page_id: 'chunk-2',
+                            file_id: 42,
+                            file_name: 'CopyA.note',
+                            page_index: 0,
+                            score: 0.5,
+                            text_preview: 'Second chunk on same page',
+                            date: '2026-04-01',
+                        },
+                    ],
+                }),
+            });
+
+        const matches = await searchSemantic('#optics');
+        assert.equal(new Set(matches.map((m) => m.key)).size, matches.length);
+        assert.deepEqual(matches, [
+            {
+                key: '9007199254740993-0-0',
+                fileId: '9007199254740993',
+                fileName: 'Legacy.note',
+                extension: 'note',
+                pageIndex: 0,
+                pageNumber: 1,
+                score: 1.04,
+                matchPercent: 100,
+                textPreview: 'Keywords: #optics',
+                date: null,
+            },
+            {
+                key: '9007199254740993-1-1',
+                fileId: '9007199254740993',
+                fileName: 'Legacy.note',
+                extension: 'note',
+                pageIndex: 1,
+                pageNumber: 2,
+                score: -0.35,
+                matchPercent: 0,
+                textPreview: '',
+                date: null,
+            },
+            {
+                key: '42-0-2',
+                fileId: '42',
+                fileName: 'CopyA.note',
+                extension: 'note',
+                pageIndex: 0,
+                pageNumber: 1,
+                score: 0,
+                matchPercent: 0,
+                textPreview: 'Copied page A',
+                date: '2026-04-01',
+            },
+            {
+                key: '43-0-3',
+                fileId: '43',
+                fileName: 'CopyB.note',
+                extension: 'note',
+                pageIndex: 0,
+                pageNumber: 1,
+                score: 0,
+                matchPercent: 0,
+                textPreview: 'Copied page B',
+                date: '2026-04-01',
+            },
+            {
+                key: '42-0-4',
+                fileId: '42',
+                fileName: 'CopyA.note',
+                extension: 'note',
+                pageIndex: 0,
+                pageNumber: 1,
+                score: 0.5,
+                matchPercent: 50,
+                textPreview: 'Second chunk on same page',
+                date: '2026-04-01',
             },
         ]);
     } finally {

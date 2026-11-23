@@ -176,6 +176,7 @@ interface SemanticSearchMatch {
     pageIndex: number;
     pageNumber: number;
     score: number;
+    matchPercent: number;
     textPreview: string;
     date: string | null;
 }

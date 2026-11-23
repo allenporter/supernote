@@ -419,7 +419,7 @@ export async function searchFiles(keyword) {
 }
 
 /**
- * Perform semantic vector search across notebook embeddings.
+ * Perform hybrid keyword and semantic vector search across notebook pages.
  * @param {string} query
  * @param {number} [topN=5]
  * @returns {Promise<SemanticSearchMatch[]>}
@@ -435,20 +435,22 @@ export async function searchSemantic(query, topN = 5) {
         const fileId = String(r.fileId ?? r.file_id ?? '');
         const fileName = String(r.fileName ?? r.file_name ?? `Notebook ${fileId}`);
         const pageIndex =
-            typeof r.pageIndex === 'number'
+            typeof r.pageIndex === 'number' && Number.isFinite(r.pageIndex)
                 ? r.pageIndex
-                : typeof r.page_index === 'number'
+                : typeof r.page_index === 'number' && Number.isFinite(r.page_index)
                   ? r.page_index
                   : 0;
+        const score = typeof r.score === 'number' && Number.isFinite(r.score) ? r.score : 0;
         const extension = getFileExtension(fileName) || 'note';
         return {
-            key: String(r.pageId ?? r.page_id ?? `${fileId}-${pageIndex}-${idx}`),
+            key: `${fileId}-${pageIndex}-${idx}`,
             fileId,
             fileName,
             extension,
             pageIndex,
             pageNumber: pageIndex + 1,
-            score: typeof r.score === 'number' ? r.score : 0,
+            score,
+            matchPercent: Math.max(0, Math.min(100, Math.round(score * 100))),
             textPreview: String(r.textPreview ?? r.text_preview ?? ''),
             date: r.date || null,
         };
