@@ -240,6 +240,7 @@ sequenceDiagram
 
 - **Zero Client Pre-Registration**: Any valid `http://` or `https://` URL passed as `client_id` is accepted dynamically, and any `redirect_uri` sharing the same scheme, host, and path prefix is permitted.
 - **Token Lifetimes**: OAuth access tokens expire after **1 hour** (`3600` seconds) and refresh tokens remain valid for **30 days**.
+- **Connected Clients**: Each approved authorization is recorded as a grant. `GET /api/extended/oauth/grants` lists them with their scopes and last use, and `DELETE /api/extended/oauth/grants/{grantId}` disconnects a client, ending its access and refresh tokens at once.
 
 #### Mode 2: Static Bearer API Keys (`sn_...`)
 

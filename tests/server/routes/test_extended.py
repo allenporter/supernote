@@ -843,6 +843,38 @@ async def test_api_keys_denied_on_key_management_endpoints(
     ).status == 403
 
 
+async def test_extended_oauth_grants_unauthorized(client: TestClient) -> None:
+    """Test that OAuth grant endpoints return 401 without authentication."""
+    assert (await client.get("/api/extended/oauth/grants")).status == 401
+    assert (await client.delete("/api/extended/oauth/grants/g1")).status == 401
+
+
+async def test_api_keys_denied_on_oauth_grant_endpoints(
+    client: TestClient,
+    extended_client: ExtendedClient,
+) -> None:
+    """Verify static API keys cannot list or revoke OAuth client grants."""
+    created = await extended_client.create_api_key("Restricted Agent")
+    sn_api_key = Supernote.from_token(
+        created.key, host=str(client.make_url("")), session=client.session
+    )
+
+    with pytest.raises(ApiException):
+        await sn_api_key.extended.list_oauth_grants()
+
+    with pytest.raises(ApiException):
+        await sn_api_key.extended.revoke_oauth_grant("g1")
+
+
+async def test_extended_oauth_grants_empty_for_new_user(
+    extended_client: ExtendedClient,
+) -> None:
+    """Test that a user with no authorized clients gets an empty grant list."""
+    listed = await extended_client.list_oauth_grants()
+    assert listed.success is True
+    assert listed.grants == []
+
+
 async def test_extended_note_metadata_returns_notebook_and_pages(
     client: TestClient,
     auth_headers: dict[str, str],
@@ -1139,3 +1171,55 @@ async def test_extended_note_metadata_normalizes_titles_and_resolves_links(
     assert meta_vo.pages[1].style == "daily"
     assert meta_vo.pages[1].is_blank is False
     assert meta_vo.pages[1].has_five_star is False
+
+
+async def test_extended_oauth_grants_lists_authorized_clients(
+    extended_client: ExtendedClient,
+    user_service: UserService,
+) -> None:
+    user_id = await user_service.get_user_id("test@example.com")
+    await user_service.create_oauth_grant(
+        user_id, "https://client.example.com/", ["supernote:all"]
+    )
+    [expected] = await user_service.list_oauth_grants(user_id)
+
+    listed = await extended_client.list_oauth_grants()
+
+    assert listed.grants == [expected]
+
+
+async def test_extended_oauth_grants_disconnect(
+    extended_client: ExtendedClient,
+    user_service: UserService,
+) -> None:
+    user_id = await user_service.get_user_id("test@example.com")
+    access, _ = await user_service.create_oauth_grant(user_id, "c", ["supernote:all"])
+    [grant] = await user_service.list_oauth_grants(user_id)
+
+    assert (await extended_client.revoke_oauth_grant(grant.id)).success is True
+    assert await user_service.verify_token(access) is None
+
+
+async def test_extended_oauth_grants_disconnect_unknown_is_404(
+    extended_client: ExtendedClient,
+) -> None:
+    with pytest.raises(ApiException):
+        await extended_client.revoke_oauth_grant("missing")
+
+
+async def test_oauth_tokens_denied_on_oauth_grant_endpoints(
+    client: TestClient,
+    create_test_user: None,
+    user_service: UserService,
+) -> None:
+    """An OAuth client cannot list or disconnect the user's other clients."""
+    user_id = await user_service.get_user_id("test@example.com")
+    access, _ = await user_service.create_oauth_grant(user_id, "c", ["supernote:all"])
+    headers = {"Authorization": f"Bearer {access}"}
+
+    assert (
+        await client.get("/api/extended/oauth/grants", headers=headers)
+    ).status == 403
+    assert (
+        await client.delete("/api/extended/oauth/grants/g1", headers=headers)
+    ).status == 403

@@ -1,11 +1,11 @@
 """Tests for MCP OAuth authorization server and login-bridge boundaries."""
 
 import hashlib
-import json
+import time
 from urllib.parse import parse_qs, unquote, urlparse
 
 import pytest
-from mcp.server.auth.provider import AuthorizationParams
+from mcp.server.auth.provider import AuthorizationParams, TokenError
 from mcp.shared.auth import InvalidRedirectUriError, OAuthClientInformationFull
 from pydantic import AnyHttpUrl, AnyUrl
 from starlette.testclient import TestClient
@@ -17,6 +17,7 @@ from supernote.server.components.oauth.models import (
     LoginBridgeResponseVO,
     MCPScope,
     OAuthErrorResponseVO,
+    SupernoteAuthorizationCode,
 )
 from supernote.server.components.oauth.provider import (
     SupernoteOAuthClientInformationFull,
@@ -67,21 +68,12 @@ async def test_login_bridge_rejects_static_api_keys(
         assert header_resp.status_code == 403
 
         # OAuth 2.1 access tokens are also forbidden from authorizing new OAuth clients (403)
-        await coordination_service.set_value(
-            "mcp:access_token:existing_oauth_token",
-            json.dumps(
-                {
-                    "token": "existing_oauth_token",
-                    "user_id": user.id,
-                    "client_id": "client_1",
-                    "scopes": ["supernote:all"],
-                }
-            ),
-            ttl=3600,
+        existing_oauth_token, _ = await user_service.create_oauth_grant(
+            user.id, "client_1", ["supernote:all"]
         )
         oauth_resp = client.post(
             "/login-bridge",
-            headers={"Authorization": "Bearer existing_oauth_token"},
+            headers={"Authorization": f"Bearer {existing_oauth_token}"},
         )
         assert oauth_resp.status_code == 403
         assert oauth_resp.json() == {
@@ -98,69 +90,60 @@ async def test_login_bridge_rejects_static_api_keys(
         assert session_resp.json() == {"error": "invalid_request"}
 
 
-async def test_oauth_provider_migrates_legacy_email_tokens(
+async def test_oauth_provider_tokens_follow_their_grant(
     user_service: UserService,
     coordination_service: CoordinationService,
 ) -> None:
-    """Verify SupernoteOAuthProvider loads legacy email user_id tokens as integer user_id."""
+    """Exchanged tokens load, refresh, and stop working once the grant is revoked."""
     pw_md5 = hashlib.md5(b"password123").hexdigest()
     user = await user_service.register(
-        UserRegisterDTO(email="legacyoauth@example.com", password=pw_md5)
+        UserRegisterDTO(email="granted@example.com", password=pw_md5)
     )
     provider = SupernoteOAuthProvider(
         user_service=user_service,
         coordination_service=coordination_service,
         issuer_url="http://localhost:8080",
     )
-    dummy_client = OAuthClientInformationFull(
-        client_id="client_1",
-        redirect_uris=[AnyHttpUrl("http://localhost:3000/callback")],
+    client = OAuthClientInformationFull(
+        client_id="https://client.example.com/",
+        redirect_uris=[AnyHttpUrl("https://client.example.com/")],
     )
+    code = SupernoteAuthorizationCode(
+        code="code_1",
+        user_id=user.id,
+        client_id=client.client_id,
+        scopes=["supernote:all"],
+        expires_at=time.time() + 600,
+        code_challenge="challenge",
+        redirect_uri=AnyUrl("https://client.example.com/"),
+        redirect_uri_provided_explicitly=False,
+    )
+    await coordination_service.set_value("mcp:auth_code:code_1", code.model_dump_json())
 
-    await coordination_service.set_value(
-        "mcp:refresh_token:rt_legacy",
-        json.dumps(
-            {
-                "token": "rt_legacy",
-                "user_id": "legacyoauth@example.com",
-                "client_id": "client_1",
-                "scopes": ["supernote:all"],
-            }
-        ),
+    issued = await provider.exchange_authorization_code(client, code)
+    assert issued.refresh_token is not None
+    access = await provider.load_access_token(issued.access_token)
+    assert access is not None
+    assert (access.user_id, access.client_id, access.scopes, access.actor) == (
+        user.id,
+        client.client_id,
+        ["supernote:all"],
+        f"oauth:{client.client_id}",
     )
-    loaded_rt = await provider.load_refresh_token(dummy_client, "rt_legacy")
-    assert loaded_rt is not None
-    assert loaded_rt.user_id == user.id
+    refresh = await provider.load_refresh_token(client, issued.refresh_token)
+    assert refresh is not None
 
-    await coordination_service.set_value(
-        "mcp:access_token:at_legacy",
-        json.dumps(
-            {
-                "token": "at_legacy",
-                "user_id": "legacyoauth@example.com",
-                "client_id": "client_1",
-                "scopes": ["supernote:all"],
-            }
-        ),
-    )
-    loaded_at = await provider.load_access_token("at_legacy")
-    assert loaded_at is not None
-    assert loaded_at.user_id == user.id
-    assert loaded_at.actor == "oauth:client_1"
+    renewed = await provider.exchange_refresh_token(client, refresh, [])
+    assert renewed.refresh_token == issued.refresh_token
+    assert renewed.scope == "supernote:all"
+    assert await provider.load_access_token(issued.access_token) is None
+    assert await provider.load_access_token(renewed.access_token) is not None
 
-    await coordination_service.set_value(
-        "mcp:refresh_token:rt_unknown",
-        json.dumps(
-            {
-                "token": "rt_unknown",
-                "user_id": "missing@example.com",
-                "client_id": "client_1",
-                "scopes": ["supernote:all"],
-            }
-        ),
-    )
-    assert await provider.load_refresh_token(dummy_client, "rt_unknown") is None
-    assert await provider.load_access_token("at_missing") is None
+    await provider.revoke_token(refresh)
+    assert await provider.load_refresh_token(client, issued.refresh_token) is None
+    assert await provider.load_access_token(renewed.access_token) is None
+    with pytest.raises(TokenError):
+        await provider.exchange_refresh_token(client, refresh, [])
 
 
 async def test_authorize_and_login_bridge_consent_invariants(

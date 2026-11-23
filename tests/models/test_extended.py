@@ -11,6 +11,8 @@ from supernote.models.extended import (
     NoteLinkVO,
     NotePageMetadataVO,
     NoteTitleVO,
+    OAuthGrantListResponseVO,
+    OAuthGrantVO,
     PageTranscriptVO,
     SearchResultVO,
     SystemTaskListVO,
@@ -234,6 +236,34 @@ def test_api_key_models() -> None:
         ],
     }
     assert ApiKeyListResponseVO.from_dict(list_vo.to_dict()) == list_vo
+
+
+def test_oauth_grant_models() -> None:
+    grant_vo = OAuthGrantVO(
+        id="0a1b2c3d4e5f6a7b",
+        client_id="https://client.example.com/",
+        scopes=["supernote:all"],
+        created_at=1700000000,
+        expires_at=1702592000,
+        last_used_at=1700000500,
+    )
+    list_vo = OAuthGrantListResponseVO(grants=[grant_vo])
+    assert list_vo.to_dict() == {
+        "success": True,
+        "errorCode": None,
+        "errorMsg": None,
+        "grants": [
+            {
+                "id": "0a1b2c3d4e5f6a7b",
+                "clientId": "https://client.example.com/",
+                "scopes": ["supernote:all"],
+                "createdAt": 1700000000,
+                "expiresAt": 1702592000,
+                "lastUsedAt": 1700000500,
+            }
+        ],
+    }
+    assert OAuthGrantListResponseVO.from_dict(list_vo.to_dict()) == list_vo
 
 
 def test_web_note_cover_models() -> None:

@@ -16,10 +16,11 @@ The system is designed to provide a secure, self-hosted environment for syncing 
 
 ### Session Management & Static API Keys
 - **JWT Sessions**: Interactive sessions use JSON Web Tokens (HS256) tracked in `CoordinationService` so sessions can be revoked on logout or password change.
+- **OAuth Client Grants**: Every OAuth authorization is recorded in `oauth_grants`, which holds SHA-256 digests of its access and refresh tokens; no plaintext OAuth token is stored. Deleting the grant (`DELETE /api/extended/oauth/grants/{grantId}`, `/revoke` on its refresh token, or a password change or reset) ends both tokens at once. Each user keeps at most 50 grants; the oldest is evicted.
 - **Static Bearer API Keys (`sn_<32-hex>`)**: Users can mint named, revocable API keys via `/api/extended/keys` or `supernote cloud keys create` for headless CLI scripts, SDK automation, and MCP agents.
     - **Storage**: Raw API keys are returned only once at creation. The `api_keys` table stores only the SHA-256 digest (`key_hash`), a truncated display prefix (`sn_xxxxxxxx...`), creation/last-used timestamps, and an optional expiration timestamp (`expires_at`).
     - **Transport**: API keys and session tokens are accepted via `Authorization: Bearer <token>` (or `x-access-token`) across REST APIs (`/api/extended/*`, `/api/file/*`, `/api/oss/*`, `/api/user/query`), Socket.IO, and `/mcp`.
-    - **Privilege Boundaries (`@interactive_session_only`)**: Static API keys cannot be used to create/list/revoke API keys, change passwords or emails, unbind hardware devices, authorize OAuth clients (`/login-bridge`), or call `/api/admin/*` endpoints. Password rotation revokes interactive sessions without revoking independent API keys; deleting a user cascades and revokes all of their API keys.
+    - **Privilege Boundaries (`@interactive_session_only`)**: Static API keys cannot be used to create/list/revoke API keys, list/revoke OAuth client grants, change passwords or emails, unbind hardware devices, authorize OAuth clients (`/login-bridge`), or call `/api/admin/*` endpoints. Password rotation revokes interactive sessions and OAuth client grants without revoking independent API keys; deleting a user cascades and revokes all of their API keys.
 
 ## Authorization
 

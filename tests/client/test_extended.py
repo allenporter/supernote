@@ -288,3 +288,58 @@ async def test_extended_client_api_key_methods(aiohttp_client: AiohttpClient) ->
         ("GET", "/api/extended/keys", None),
         ("DELETE", "/api/extended/keys/k1", None),
     ]
+
+
+async def test_extended_client_oauth_grant_methods(
+    aiohttp_client: AiohttpClient,
+) -> None:
+    """Verify ExtendedClient OAuth grant list and revoke methods."""
+    recorded: list[tuple[str, str]] = []
+
+    async def handle_csrf(_request: web.Request) -> web.Response:
+        return web.Response(text="ok", headers={"X-XSRF-TOKEN": "csrf-token"})
+
+    async def handle_list_grants(request: web.Request) -> web.Response:
+        recorded.append((request.method, request.path))
+        return web.json_response(
+            {
+                "success": True,
+                "grants": [
+                    {
+                        "id": "g1",
+                        "clientId": "https://client.example.com/",
+                        "scopes": ["supernote:all"],
+                        "createdAt": 1700000000,
+                        "expiresAt": 1702592000,
+                        "lastUsedAt": None,
+                    }
+                ],
+            }
+        )
+
+    async def handle_revoke_grant(request: web.Request) -> web.Response:
+        recorded.append((request.method, request.path))
+        return web.json_response({"success": True})
+
+    app = web.Application()
+    app.router.add_get("/api/csrf", handle_csrf)
+    app.router.add_get("/api/extended/oauth/grants", handle_list_grants)
+    app.router.add_delete("/api/extended/oauth/grants/{grant_id}", handle_revoke_grant)
+
+    test_client = await aiohttp_client(app)
+    base_client = Client(
+        test_client.session,
+        host=str(test_client.make_url("")),
+        auth=ConstantAuth("token-123"),
+    )
+    ext = ExtendedClient(base_client)
+
+    listed = await ext.list_oauth_grants()
+    assert [g.client_id for g in listed.grants] == ["https://client.example.com/"]
+    revoked = await ext.revoke_oauth_grant("g1")
+    assert revoked.success is True
+
+    assert recorded == [
+        ("GET", "/api/extended/oauth/grants"),
+        ("DELETE", "/api/extended/oauth/grants/g1"),
+    ]
