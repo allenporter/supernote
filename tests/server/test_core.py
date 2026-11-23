@@ -141,7 +141,7 @@ async def test_register_after_setup_raises(
     loader: ComponentLoader, server_core: ServerCore
 ) -> None:
     loader.register(RecordingComponent(domain="a"))
-    await loader.async_setup_all(server_core)
+    await loader.async_setup_all(server_core, {})
 
     with pytest.raises(ComponentError, match="Cannot register component after setup"):
         loader.register(RecordingComponent(domain="b"))
@@ -283,7 +283,7 @@ async def test_async_stop_is_idempotent(
     events: list[tuple[str, str]] = []
     loader.register(RecordingComponent(domain="webhooks", events=events))
 
-    await loader.async_setup_all(server_core)
+    await loader.async_setup_all(server_core, {})
     await loader.async_start_all(server_core)
     await loader.async_stop_all(server_core)
     await loader.async_stop_all(server_core)
@@ -302,7 +302,7 @@ async def test_async_stop_after_setup_only_stops_initialized_components(
     loader.register(RecordingComponent(domain="a", events=events))
     loader.register(RecordingComponent(domain="b", dependencies=("a",), events=events))
 
-    await loader.async_setup_all(server_core)
+    await loader.async_setup_all(server_core, {})
     await loader.async_stop_all(server_core)
 
     assert events == [
@@ -326,17 +326,17 @@ async def test_double_setup_raises(
     loader: ComponentLoader, server_core: ServerCore
 ) -> None:
     loader.register(RecordingComponent(domain="webhooks"))
-    await loader.async_setup_all(server_core)
+    await loader.async_setup_all(server_core, {})
 
     with pytest.raises(ComponentError, match="Cannot run async_setup_all"):
-        await loader.async_setup_all(server_core)
+        await loader.async_setup_all(server_core, {})
 
 
 async def test_double_start_raises(
     loader: ComponentLoader, server_core: ServerCore
 ) -> None:
     loader.register(RecordingComponent(domain="webhooks"))
-    await loader.async_setup_all(server_core)
+    await loader.async_setup_all(server_core, {})
     await loader.async_start_all(server_core)
 
     with pytest.raises(ComponentError):
@@ -358,7 +358,7 @@ async def test_async_setup_failure_rolls_back_setup_components_in_reverse(
         loader.register(comp)
 
     with pytest.raises(RuntimeError, match="setup failure in c"):
-        await loader.async_setup_all(server_core)
+        await loader.async_setup_all(server_core, {})
 
     assert events == [
         ("setup", "a"),
@@ -380,7 +380,7 @@ async def test_async_setup_cancelled_rolls_back_and_reraises(
     )
 
     with pytest.raises(asyncio.CancelledError):
-        await loader.async_setup_all(server_core)
+        await loader.async_setup_all(server_core, {})
 
     assert events == [("setup", "a"), ("stop", "a")]
 
@@ -400,7 +400,7 @@ async def test_async_start_failure_rolls_back_all_initialized_in_reverse(
     for comp in (comp_a, comp_b, comp_c, comp_d):
         loader.register(comp)
 
-    await loader.async_setup_all(server_core)
+    await loader.async_setup_all(server_core, {})
     with pytest.raises(RuntimeError, match="start failure in c"):
         await loader.async_start_all(server_core)
 
@@ -432,7 +432,7 @@ async def test_async_start_cancelled_rolls_back_and_reraises(
         )
     )
 
-    await loader.async_setup_all(server_core)
+    await loader.async_setup_all(server_core, {})
     with pytest.raises(asyncio.CancelledError):
         await loader.async_start_all(server_core)
 
@@ -456,7 +456,7 @@ async def test_async_stop_error_isolation(
     for comp in (comp_a, comp_b):
         loader.register(comp)
 
-    await loader.async_setup_all(server_core)
+    await loader.async_setup_all(server_core, {})
     await loader.async_start_all(server_core)
     await loader.async_stop_all(server_core)
 
@@ -474,6 +474,6 @@ async def test_empty_loader_lifecycle_is_noop(
     loader: ComponentLoader, server_core: ServerCore
 ) -> None:
     assert loader.resolve_order() == ()
-    await loader.async_setup_all(server_core)
+    await loader.async_setup_all(server_core, {})
     await loader.async_start_all(server_core)
     await loader.async_stop_all(server_core)

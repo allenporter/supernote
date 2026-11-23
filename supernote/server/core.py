@@ -194,7 +194,7 @@ class ComponentLoader:
     async def async_setup_all(
         self,
         core: ServerCore,
-        configs: Mapping[str, Mapping[str, Any]] | None = None,
+        configs: Mapping[str, Mapping[str, Any]],
     ) -> None:
         """Set up all registered components in topological order with per-domain config."""
         if self._state is not _LifecycleState.IDLE:
@@ -202,10 +202,9 @@ class ComponentLoader:
                 f"Cannot run async_setup_all in state {self._state.value!r}"
             )
         ordered = self.resolve_order()
-        component_configs = configs or {}
         try:
             for comp in ordered:
-                await comp.async_setup(core, component_configs.get(comp.domain, {}))
+                await comp.async_setup(core, configs.get(comp.domain, {}))
                 self._initialized.append(comp)
             self._state = _LifecycleState.SETUP
         except BaseException:

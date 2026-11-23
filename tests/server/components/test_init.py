@@ -135,7 +135,7 @@ async def test_component_full_lifecycle_and_idempotent_stop(
     loader = ComponentLoader()
     loader.register(load_component_from_spec(spec))
 
-    await loader.async_setup_all(conformance_core)
+    await loader.async_setup_all(conformance_core, {})
     await loader.async_start_all(conformance_core)
     await loader.async_stop_all(conformance_core)
     await loader.async_stop_all(conformance_core)
@@ -154,7 +154,7 @@ async def test_component_stop_after_setup_only(
     loader = ComponentLoader()
     loader.register(load_component_from_spec(spec))
 
-    await loader.async_setup_all(conformance_core)
+    await loader.async_setup_all(conformance_core, {})
     await loader.async_stop_all(conformance_core)
 
 

@@ -78,12 +78,11 @@ def load_component_from_spec(spec: BuiltinComponentSpec) -> Component:
 
 def load_builtin_components(
     loader: ComponentLoader,
-    component_configs: Mapping[str, Mapping[str, Any]] | None = None,
+    component_configs: Mapping[str, Mapping[str, Any]],
     specs: Sequence[BuiltinComponentSpec] = BUILTIN_COMPONENTS,
 ) -> None:
     """Lazily import and register all enabled components from ``specs``."""
-    configs = component_configs or {}
     for spec in specs:
-        if not is_component_enabled(spec, configs.get(spec.domain, {})):
+        if not is_component_enabled(spec, component_configs.get(spec.domain, {})):
             continue
         loader.register(load_component_from_spec(spec))
