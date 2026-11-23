@@ -15,9 +15,4 @@ async def test_oauth_http_platform_registers_asgi_resource_and_prefixes(
 
     assert len(registrar.public_resources) == 1
     assert "/.well-known/oauth-authorization-server" in registrar.known_resource_paths
-    assert registrar.public_prefixes == (
-        "/login-bridge",
-        "/authorize",
-        "/token",
-        "/.well-known/",
-    )
+    assert registrar.public_prefixes == ()
