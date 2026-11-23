@@ -280,9 +280,9 @@ async def test_all_builtin_components_http_platform_end_to_end(
     ai_registrar = component_core.app[AI_REGISTRAR_KEY]
     for ai_platform in ai_registrar.platforms:
         await loader.async_load_platform(ai_platform, component_core, ai_registrar)
-    assert "fake" in ai_registrar.ocr_providers
-    assert "fake" in ai_registrar.summary_providers
-    assert "fake" in ai_registrar.embedding_providers
+    assert {"apple", "fake", "gemini", "openai"} <= set(ai_registrar.ocr_providers)
+    assert {"fake", "gemini", "openai"} <= set(ai_registrar.summary_providers)
+    assert {"fake", "gemini", "openai"} <= set(ai_registrar.embedding_providers)
     http_registrar = component_core.app[HTTP_REGISTRAR_KEY]
     await loader.async_load_platform("http", component_core, http_registrar)
     http_registrar.apply_to_app(component_core.app)

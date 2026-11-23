@@ -109,19 +109,19 @@ def create_ocr_model(config: ServerConfig) -> OcrModel | None:
     model: OcrModel | None
     provider_type = config.ai.provider_type(model_cfg.provider)
     if provider_type == "gemini":
-        from supernote.server.ai.models.gemini.ocr import (  # noqa: PLC0415
+        from supernote.server.components.gemini.ocr import (  # noqa: PLC0415
             create_ocr_model as create_gemini_ocr_model,
         )
 
         model = create_gemini_ocr_model(config)
     elif provider_type == "openai":
-        from supernote.server.ai.models.openai.ocr import (  # noqa: PLC0415
+        from supernote.server.components.openai.ocr import (  # noqa: PLC0415
             create_ocr_model as create_openai_ocr_model,
         )
 
         model = create_openai_ocr_model(config)
     elif provider_type == "apple":
-        from supernote.server.ai.models.apple.ocr import (  # noqa: PLC0415
+        from supernote.server.components.apple.ocr import (  # noqa: PLC0415
             create_ocr_model as create_apple_ocr_model,
         )
 

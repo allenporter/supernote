@@ -179,13 +179,13 @@ def create_embedding_model(config: ServerConfig) -> EmbeddingModel | None:
     model: EmbeddingModel | None
     provider_type = config.ai.provider_type(model_cfg.provider)
     if provider_type == "gemini":
-        from supernote.server.ai.models.gemini.embedding import (  # noqa: PLC0415
+        from supernote.server.components.gemini.embedding import (  # noqa: PLC0415
             create_embedding_model as create_gemini_embedding_model,
         )
 
         model = create_gemini_embedding_model(config)
     elif provider_type == "openai":
-        from supernote.server.ai.models.openai.embedding import (  # noqa: PLC0415
+        from supernote.server.components.openai.embedding import (  # noqa: PLC0415
             create_embedding_model as create_openai_embedding_model,
         )
 
