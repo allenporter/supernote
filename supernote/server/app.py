@@ -36,6 +36,7 @@ from supernote.server.utils.auth_utils import get_token_from_request
 from .ai.models.embedding import create_embedding_model
 from .ai.models.ocr import create_ocr_model
 from .ai.models.summary import create_summary_model
+from .components import load_builtin_components
 from .config import AuthConfig, ServerConfig
 from .constants import MAX_UPLOAD_SIZE
 from .core import ComponentLoader, ServerCore
@@ -375,10 +376,8 @@ def create_app(config: ServerConfig) -> web.Application:
     app[CORE_KEY] = core
     app[COMPONENT_LOADER_KEY] = component_loader
 
-    if config.webhooks.get("enabled"):
-        from .components.webhooks import WebhooksComponent  # noqa: PLC0415
-
-        component_loader.register(WebhooksComponent())
+    component_configs = {"webhooks": config.webhooks}
+    load_builtin_components(component_loader, component_configs)
 
     # Register modules
     png_enabled = (ocr_model is not None) or (
@@ -480,7 +479,7 @@ def create_app(config: ServerConfig) -> web.Application:
         if config.ephemeral:
             await bootstrap_ephemeral_user(app)
 
-        await component_loader.async_setup_all(core, {"webhooks": config.webhooks})
+        await component_loader.async_setup_all(core, component_configs)
 
         if config.mcp_enabled:
             from aiohttp_asgi import ASGIResource  # noqa: PLC0415

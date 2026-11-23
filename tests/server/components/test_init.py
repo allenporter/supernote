@@ -1,20 +1,24 @@
-"""Conformance tests for built-in vertical server components under `supernote/server/components/`."""
+"""Conformance and registry tests for built-in vertical server components."""
 
 from __future__ import annotations
 
-import importlib
-import inspect
 import pkgutil
 import subprocess
 import sys
-from collections.abc import Callable
 
 import pytest
 from aiohttp import web
 
 import supernote.server.components as components_pkg
+from supernote.server.components import (
+    BUILTIN_COMPONENTS,
+    BuiltinComponentSpec,
+    is_component_enabled,
+    load_builtin_components,
+    load_component_from_spec,
+)
 from supernote.server.config import ServerConfig
-from supernote.server.core import Component, ComponentLoader, ServerCore
+from supernote.server.core import Component, ComponentError, ComponentLoader, ServerCore
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus
 from supernote.server.services.blob import BlobStorage
@@ -23,31 +27,13 @@ from supernote.server.services.file import FileService
 from supernote.server.services.user import UserService
 
 
-def _discover_builtin_component_factories() -> list[
-    tuple[str, Callable[[], Component]]
-]:
-    """Discover all built-in component packages and their zero-arg `Component` classes."""
-    discovered: list[tuple[str, Callable[[], Component]]] = []
-    for mod_info in sorted(
-        pkgutil.iter_modules(components_pkg.__path__), key=lambda m: m.name
-    ):
-        if mod_info.name.startswith("_"):
-            continue
-        module = importlib.import_module(f"{components_pkg.__name__}.{mod_info.name}")
-        factories = [
-            obj
-            for _, obj in inspect.getmembers(module, inspect.isclass)
-            if obj.__module__ == module.__name__ and hasattr(obj, "async_setup")
-        ]
-        assert len(factories) == 1, (
-            f"Component package {module.__name__!r} must define exactly one Component "
-            f"class, found {len(factories)}"
-        )
-        discovered.append((mod_info.name, factories[0]))
-    return discovered
-
-
-BUILTIN_COMPONENT_FACTORIES = _discover_builtin_component_factories()
+def _discover_component_package_names() -> set[str]:
+    """Return all public subpackage/module names under `supernote.server.components`."""
+    return {
+        mod_info.name
+        for mod_info in pkgutil.iter_modules(components_pkg.__path__)
+        if not mod_info.name.startswith("_")
+    }
 
 
 @pytest.fixture
@@ -72,19 +58,27 @@ def conformance_core(
     )
 
 
-def test_builtin_components_discovered() -> None:
-    """Ensure at least one built-in vertical component is discovered."""
-    assert len(BUILTIN_COMPONENT_FACTORIES) >= 1
+def test_builtin_components_registry_matches_subpackages_1to1() -> None:
+    """Every subpackage under `supernote/server/components/` must be linked in `BUILTIN_COMPONENTS`."""
+    on_disk = _discover_component_package_names()
+    registered = [spec.domain for spec in BUILTIN_COMPONENTS]
+
+    assert len(registered) == len(set(registered)), (
+        "Duplicate domains in BUILTIN_COMPONENTS"
+    )
+    assert set(registered) == on_disk, (
+        f"BUILTIN_COMPONENTS domains {set(registered)} do not match "
+        f"component packages on disk {on_disk}"
+    )
 
 
-def test_importing_app_does_not_eagerly_import_components() -> None:
-    """Importing `supernote.server.app` must not eagerly load optional components."""
+def test_importing_app_does_not_eagerly_import_component_subpackages() -> None:
+    """Importing `supernote.server.app` must not eagerly load any component subpackage."""
     check = (
         "import sys; import supernote.server.app; "
         "loaded = sorted("
         "m for m in sys.modules "
-        "if m == 'supernote.server.components' "
-        "or m.startswith('supernote.server.components.')"
+        "if m.startswith('supernote.server.components.')"
         "); "
         "print(','.join(loaded))"
     )
@@ -95,52 +89,51 @@ def test_importing_app_does_not_eagerly_import_components() -> None:
         check=True,
     )
     assert result.stdout.strip() == "", (
-        f"Component modules unexpectedly loaded on app import: {result.stdout.strip()}"
+        f"Component subpackages unexpectedly loaded on app import: {result.stdout.strip()}"
     )
 
 
 @pytest.mark.parametrize(
-    ("pkg_name", "factory"),
-    BUILTIN_COMPONENT_FACTORIES,
-    ids=[name for name, _ in BUILTIN_COMPONENT_FACTORIES],
+    "spec",
+    BUILTIN_COMPONENTS,
+    ids=[spec.domain for spec in BUILTIN_COMPONENTS],
 )
-def test_component_implements_protocol_and_matches_package_domain(
-    pkg_name: str,
-    factory: Callable[[], Component],
+def test_builtin_component_spec_links_to_valid_component(
+    spec: BuiltinComponentSpec,
 ) -> None:
-    """Every component must satisfy the `Component` protocol and match its package name."""
-    component = factory()
+    """Every `BUILTIN_COMPONENTS` entry must resolve to a valid `Component` matching its domain."""
+    assert spec.import_path.startswith(f"supernote.server.components.{spec.domain}:")
+    component = load_component_from_spec(spec)
     assert isinstance(component, Component)
-    assert component.domain == pkg_name
+    assert component.domain == spec.domain
 
     loader = ComponentLoader()
     loader.register(component)
-    assert loader.get(pkg_name) is component
+    assert loader.get(spec.domain) is component
 
 
 def test_all_builtin_components_resolve_without_missing_deps_or_cycles() -> None:
-    """All built-in components registered together must form a valid acyclic DAG."""
+    """All built-in components loaded together must form a valid acyclic DAG."""
     loader = ComponentLoader()
-    for _, factory in BUILTIN_COMPONENT_FACTORIES:
-        loader.register(factory())
+    for spec in BUILTIN_COMPONENTS:
+        loader.register(load_component_from_spec(spec))
 
     ordered = loader.resolve_order()
-    assert len(ordered) == len(BUILTIN_COMPONENT_FACTORIES)
+    assert len(ordered) == len(BUILTIN_COMPONENTS)
 
 
 @pytest.mark.parametrize(
-    ("pkg_name", "factory"),
-    BUILTIN_COMPONENT_FACTORIES,
-    ids=[name for name, _ in BUILTIN_COMPONENT_FACTORIES],
+    "spec",
+    BUILTIN_COMPONENTS,
+    ids=[spec.domain for spec in BUILTIN_COMPONENTS],
 )
 async def test_component_full_lifecycle_and_idempotent_stop(
-    pkg_name: str,
-    factory: Callable[[], Component],
+    spec: BuiltinComponentSpec,
     conformance_core: ServerCore,
 ) -> None:
     """Every component must support setup -> start -> stop -> stop cleanly."""
     loader = ComponentLoader()
-    loader.register(factory())
+    loader.register(load_component_from_spec(spec))
 
     await loader.async_setup_all(conformance_core)
     await loader.async_start_all(conformance_core)
@@ -149,18 +142,78 @@ async def test_component_full_lifecycle_and_idempotent_stop(
 
 
 @pytest.mark.parametrize(
-    ("pkg_name", "factory"),
-    BUILTIN_COMPONENT_FACTORIES,
-    ids=[name for name, _ in BUILTIN_COMPONENT_FACTORIES],
+    "spec",
+    BUILTIN_COMPONENTS,
+    ids=[spec.domain for spec in BUILTIN_COMPONENTS],
 )
 async def test_component_stop_after_setup_only(
-    pkg_name: str,
-    factory: Callable[[], Component],
+    spec: BuiltinComponentSpec,
     conformance_core: ServerCore,
 ) -> None:
     """Every component must tear down cleanly if stopped after setup without starting."""
     loader = ComponentLoader()
-    loader.register(factory())
+    loader.register(load_component_from_spec(spec))
 
     await loader.async_setup_all(conformance_core)
     await loader.async_stop_all(conformance_core)
+
+
+def test_is_component_enabled_respects_default_and_config_override() -> None:
+    opt_in = BuiltinComponentSpec(
+        domain="webhooks",
+        import_path="supernote.server.components.webhooks:WebhooksComponent",
+        default_enabled=False,
+    )
+    opt_out = BuiltinComponentSpec(
+        domain="webhooks",
+        import_path="supernote.server.components.webhooks:WebhooksComponent",
+        default_enabled=True,
+    )
+
+    assert is_component_enabled(opt_in, {}) is False
+    assert is_component_enabled(opt_in, {"enabled": True}) is True
+    assert is_component_enabled(opt_out, {}) is True
+    assert is_component_enabled(opt_out, {"enabled": False}) is False
+
+
+def test_load_builtin_components_loads_only_enabled_specs() -> None:
+    default_on = BuiltinComponentSpec(
+        domain="webhooks",
+        import_path="supernote.server.components.webhooks:WebhooksComponent",
+        default_enabled=True,
+    )
+    loader = ComponentLoader()
+    load_builtin_components(
+        loader, {"webhooks": {"enabled": False}}, specs=(default_on,)
+    )
+    assert loader.components == ()
+
+    load_builtin_components(loader, {}, specs=(default_on,))
+    assert loader.get("webhooks") is not None
+
+
+@pytest.mark.parametrize(
+    "bad_import_path",
+    ["no_colon", ":MissingModule", "missing_attr:"],
+)
+def test_load_component_from_spec_rejects_malformed_import_path(
+    bad_import_path: str,
+) -> None:
+    spec = BuiltinComponentSpec(domain="bad", import_path=bad_import_path)
+    with pytest.raises(ComponentError, match="Invalid component import_path"):
+        load_component_from_spec(spec)
+
+
+def test_load_component_from_spec_rejects_non_component_object() -> None:
+    spec = BuiltinComponentSpec(domain="not_comp", import_path="builtins:dict")
+    with pytest.raises(ComponentError, match="did not return a Component instance"):
+        load_component_from_spec(spec)
+
+
+def test_load_component_from_spec_rejects_domain_mismatch() -> None:
+    spec = BuiltinComponentSpec(
+        domain="wrong_domain",
+        import_path="supernote.server.components.webhooks:WebhooksComponent",
+    )
+    with pytest.raises(ComponentError, match="expected 'wrong_domain'"):
+        load_component_from_spec(spec)
