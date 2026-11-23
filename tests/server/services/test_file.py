@@ -492,7 +492,6 @@ async def test_query_file_list_and_get_folders_by_ids_resolve_parent_path_once(
     blob_storage: BlobStorage,
     create_test_user: None,
     test_users: list[str],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify query_file_list and get_folders_by_ids resolve parent path once instead of per child item."""
     user = test_users[0]
@@ -519,32 +518,31 @@ async def test_query_file_list_and_get_folders_by_ids_resolve_parent_path_once(
         get_full_path_calls.append(node_id)
         return await orig_get_full_path(self, user_id, node_id)
 
-    monkeypatch.setattr(VirtualFileSystem, "get_full_path", tracking_get_full_path)
+    with patch.object(VirtualFileSystem, "get_full_path", tracking_get_full_path):
+        # query_file_list resolves parent_dir.id once for all 5 children (2 folders + 3 files)
+        items = await file_service.query_file_list(user, parent_dir.id)
+        assert len(items) == 5
+        assert get_full_path_calls == [parent_dir.id]
+        assert {item.full_path for item in items} == {
+            "NOTE/Note/Projects/Alpha",
+            "NOTE/Note/Projects/Beta",
+            "NOTE/Note/Projects/doc_0.note",
+            "NOTE/Note/Projects/doc_1.note",
+            "NOTE/Note/Projects/doc_2.note",
+        }
 
-    # query_file_list resolves parent_dir.id once for all 5 children (2 folders + 3 files)
-    items = await file_service.query_file_list(user, parent_dir.id)
-    assert len(items) == 5
-    assert get_full_path_calls == [parent_dir.id]
-    assert {item.full_path for item in items} == {
-        "NOTE/Note/Projects/Alpha",
-        "NOTE/Note/Projects/Beta",
-        "NOTE/Note/Projects/doc_0.note",
-        "NOTE/Note/Projects/doc_1.note",
-        "NOTE/Note/Projects/doc_2.note",
-    }
-
-    # get_folders_by_ids resolves parent_dir.id once for all non-excluded folders
-    get_full_path_calls.clear()
-    folder_details = await file_service.get_folders_by_ids(
-        user, parent_id=parent_dir.id, id_list=[]
-    )
-    assert len(folder_details) == 2
-    assert get_full_path_calls == [parent_dir.id]
-    by_id = {fd.entity.id: fd for fd in folder_details}
-    assert by_id[sub_a.id].entity.full_path == "NOTE/Note/Projects/Alpha"
-    assert by_id[sub_a.id].has_subfolders is True
-    assert by_id[sub_b.id].entity.full_path == "NOTE/Note/Projects/Beta"
-    assert by_id[sub_b.id].has_subfolders is False
+        # get_folders_by_ids resolves parent_dir.id once for all non-excluded folders
+        get_full_path_calls.clear()
+        folder_details = await file_service.get_folders_by_ids(
+            user, parent_id=parent_dir.id, id_list=[]
+        )
+        assert len(folder_details) == 2
+        assert get_full_path_calls == [parent_dir.id]
+        by_id = {fd.entity.id: fd for fd in folder_details}
+        assert by_id[sub_a.id].entity.full_path == "NOTE/Note/Projects/Alpha"
+        assert by_id[sub_a.id].has_subfolders is True
+        assert by_id[sub_b.id].entity.full_path == "NOTE/Note/Projects/Beta"
+        assert by_id[sub_b.id].has_subfolders is False
 
 
 async def test_search_files_caches_parent_paths(
@@ -552,7 +550,6 @@ async def test_search_files_caches_parent_paths(
     blob_storage: BlobStorage,
     create_test_user: None,
     test_users: list[str],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify search_files memoizes parent directory paths across multiple matching items."""
     user = test_users[0]
@@ -580,9 +577,8 @@ async def test_search_files_caches_parent_paths(
         get_full_path_calls.append(node_id)
         return await orig_get_full_path(self, user_id, node_id)
 
-    monkeypatch.setattr(VirtualFileSystem, "get_full_path", tracking_get_full_path)
-
-    results = await file_service.search_files(user, "match_")
+    with patch.object(VirtualFileSystem, "get_full_path", tracking_get_full_path):
+        results = await file_service.search_files(user, "match_")
     assert len(results) == 4
     # Root directory (0) is pre-seeded, and folder.id is resolved only once for all 3 matches in /Note/Archive
     assert get_full_path_calls == [folder.id]

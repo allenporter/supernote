@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from unittest.mock import patch
 
 import pytest
 from prometheus_client import REGISTRY
@@ -99,24 +100,24 @@ async def test_apple_ocr_rejects_non_canonical_names(
 
 
 async def test_apple_ocr_unconfigured_does_not_require_vision_runtime(
-    monkeypatch: pytest.MonkeyPatch,
     component_core: ServerCore,
     load_components: LoadComponents,
 ) -> None:
     assert SUPPORTED_APPLE_OCR_MODELS == ("vision-accurate", "vision-fast")
-    monkeypatch.setitem(sys.modules, "Vision", None)
-    await load_components("ai", "apple")
+    with patch.dict(sys.modules, {"Vision": None}):
+        await load_components("ai", "apple")
     assert component_core.app[OCR_MODEL_KEY] is None
 
 
 async def test_apple_ocr_missing_vision_runtime_fails_eagerly(
-    monkeypatch: pytest.MonkeyPatch,
     component_core: ServerCore,
     load_components: LoadComponents,
 ) -> None:
-    monkeypatch.setitem(sys.modules, "Vision", None)
     component_core.config.ai = AiConfig(
         ocr=ModelConfig(provider="apple", model="vision-accurate"),
     )
-    with pytest.raises(AIError, match="supernote\\[apple\\]"):
+    with (
+        patch.dict(sys.modules, {"Vision": None}),
+        pytest.raises(AIError, match="supernote\\[apple\\]"),
+    ):
         await load_components("ai", "apple")

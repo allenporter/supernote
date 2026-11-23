@@ -7,9 +7,11 @@ when deployed behind a reverse proxy, with different proxy modes.
 import argparse
 import dataclasses
 import logging
+import os
 import subprocess
 import sys
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from aiohttp.test_utils import TestClient
@@ -300,23 +302,23 @@ async def test_bootstrap_ephemeral_user(client: TestClient) -> None:
 
 
 def test_run_configures_default_info_level_and_sanitized_access_logger(
-    monkeypatch: pytest.MonkeyPatch,
     server_config: ServerConfig,
 ) -> None:
     """Verify run() defaults root logging to INFO and wires SanitizedAccessLogger into web.run_app."""
-    monkeypatch.delenv("SUPERNOTE_LOG_LEVEL", raising=False)
     cfg = dataclasses.replace(server_config, log_level="INFO")
-    monkeypatch.setattr(ServerConfig, "load", lambda _dir=None: cfg)
-
     captured_kwargs: dict[str, Any] = {}
 
     def fake_run_app(app: Any, **kwargs: Any) -> None:
         captured_kwargs["app"] = app
         captured_kwargs.update(kwargs)
 
-    monkeypatch.setattr("supernote.server.app.web.run_app", fake_run_app)
-
-    run(argparse.Namespace(config_dir=None))
+    with (
+        patch.dict(os.environ, {}, clear=False),
+        patch.object(ServerConfig, "load", return_value=cfg),
+        patch("supernote.server.app.web.run_app", fake_run_app),
+    ):
+        os.environ.pop("SUPERNOTE_LOG_LEVEL", None)
+        run(argparse.Namespace(config_dir=None))
 
     assert logging.getLogger().level == logging.INFO
     assert logging.getLogger("aiosqlite").level == logging.INFO
@@ -326,30 +328,31 @@ def test_run_configures_default_info_level_and_sanitized_access_logger(
 
 
 def test_run_respects_config_and_env_log_level(
-    monkeypatch: pytest.MonkeyPatch,
     server_config: ServerConfig,
 ) -> None:
     """Verify run() applies config.log_level while keeping noisy library loggers at INFO+."""
-    monkeypatch.setattr("supernote.server.app.web.run_app", lambda *_a, **_kw: None)
-
     try:
-        monkeypatch.delenv("SUPERNOTE_LOG_LEVEL", raising=False)
-        debug_cfg = dataclasses.replace(server_config, log_level="DEBUG")
-        monkeypatch.setattr(ServerConfig, "load", lambda _dir=None: debug_cfg)
+        with patch("supernote.server.app.web.run_app", lambda *_a, **_kw: None):
+            debug_cfg = dataclasses.replace(server_config, log_level="DEBUG")
+            with (
+                patch.dict(os.environ, {}, clear=False),
+                patch.object(ServerConfig, "load", return_value=debug_cfg),
+            ):
+                os.environ.pop("SUPERNOTE_LOG_LEVEL", None)
+                run(argparse.Namespace(config_dir=None))
+            assert logging.getLogger().level == logging.DEBUG
+            assert logging.getLogger("aiosqlite").level == logging.INFO
+            assert logging.getLogger("asyncio").level == logging.INFO
 
-        run(argparse.Namespace(config_dir=None))
-        assert logging.getLogger().level == logging.DEBUG
-        assert logging.getLogger("aiosqlite").level == logging.INFO
-        assert logging.getLogger("asyncio").level == logging.INFO
-
-        monkeypatch.setenv("SUPERNOTE_LOG_LEVEL", "WARNING")
-        warn_cfg = dataclasses.replace(server_config, log_level="WARNING")
-        monkeypatch.setattr(ServerConfig, "load", lambda _dir=None: warn_cfg)
-
-        run(argparse.Namespace(config_dir=None))
-        assert logging.getLogger().level == logging.WARNING
-        assert logging.getLogger("aiosqlite").level == logging.WARNING
-        assert logging.getLogger("asyncio").level == logging.WARNING
+            warn_cfg = dataclasses.replace(server_config, log_level="WARNING")
+            with (
+                patch.dict(os.environ, {"SUPERNOTE_LOG_LEVEL": "WARNING"}),
+                patch.object(ServerConfig, "load", return_value=warn_cfg),
+            ):
+                run(argparse.Namespace(config_dir=None))
+            assert logging.getLogger().level == logging.WARNING
+            assert logging.getLogger("aiosqlite").level == logging.WARNING
+            assert logging.getLogger("asyncio").level == logging.WARNING
     finally:
         logging.getLogger().setLevel(logging.INFO)
         logging.getLogger("aiosqlite").setLevel(logging.INFO)

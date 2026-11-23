@@ -7,6 +7,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+from unittest.mock import patch
 
 import pytest
 
@@ -210,15 +211,12 @@ def fake_vision() -> FakeVisionModule:
 
 @pytest.fixture
 def load_apple_ocr(
-    monkeypatch: pytest.MonkeyPatch,
     component_core: ServerCore,
     load_components: LoadComponents,
     fake_objc: FakeObjCModule,
     fake_vision: FakeVisionModule,
-) -> LoadAppleOcr:
+) -> Generator[LoadAppleOcr]:
     """Install fake PyObjC modules and return a loader that boots `ai` + `apple`."""
-    monkeypatch.setitem(sys.modules, "objc", fake_objc)  # type: ignore[arg-type]
-    monkeypatch.setitem(sys.modules, "Vision", fake_vision)  # type: ignore[arg-type]
 
     async def _load(
         model: str = "vision-accurate",
@@ -235,7 +233,8 @@ def load_apple_ocr(
         assert ocr_model is not None
         return ocr_model
 
-    return _load
+    with patch.dict(sys.modules, {"objc": fake_objc, "Vision": fake_vision}):  # type: ignore[dict-item]
+        yield _load
 
 
 @pytest.fixture
