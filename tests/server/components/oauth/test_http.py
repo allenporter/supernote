@@ -1,18 +1,24 @@
-"""Unit tests for `supernote.server.components.oauth.http`."""
+"""HTTP platform tests for `supernote.server.components.oauth.http`."""
 
 from __future__ import annotations
 
-from supernote.server.components.http import HttpRegistrar
-from supernote.server.components.oauth.http import async_setup_http
+from pytest_aiohttp import AiohttpClient
+
 from supernote.server.core import ServerCore
+from tests.server.components.conftest import LoadComponents
 
 
-async def test_oauth_http_platform_registers_asgi_resource_and_prefixes(
+async def test_oauth_http_platform_serves_public_discovery_metadata(
     component_core: ServerCore,
+    load_components: LoadComponents,
+    aiohttp_client: AiohttpClient,
 ) -> None:
-    registrar = HttpRegistrar()
-    await async_setup_http(component_core, registrar)
+    await load_components("http", "oauth")
+    client = await aiohttp_client(component_core.app)
 
-    assert len(registrar.public_resources) == 1
-    assert "/.well-known/oauth-authorization-server" in registrar.known_resource_paths
-    assert registrar.public_prefixes == ()
+    resp = await client.get("/.well-known/oauth-authorization-server")
+    assert resp.status == 200
+    metadata = await resp.json()
+    assert metadata["issuer"].rstrip("/") == component_core.config.base_url.rstrip("/")
+    assert "authorization_endpoint" in metadata
+    assert "token_endpoint" in metadata
