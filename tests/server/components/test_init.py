@@ -21,7 +21,7 @@ from supernote.server.components import (
 )
 from supernote.server.components.http import jwt_auth_middleware
 from supernote.server.core import Component, ComponentError, ComponentLoader, ServerCore
-from supernote.server.keys import HTTP_REGISTRAR_KEY
+from supernote.server.keys import HTTP_REGISTRAR_KEY, MCP_REGISTRAR_KEY
 from supernote.server.trace import trace_middleware
 
 
@@ -275,6 +275,8 @@ async def test_all_builtin_components_http_platform_end_to_end(
     http_registrar = component_core.app[HTTP_REGISTRAR_KEY]
     await loader.async_load_platform("http", component_core, http_registrar)
     http_registrar.apply_to_app(component_core.app)
+    mcp_registrar = component_core.app[MCP_REGISTRAR_KEY]
+    await loader.async_load_platform("mcp", component_core, mcp_registrar)
 
     middlewares = list(component_core.app.middlewares)
     trace_idx = middlewares.index(trace_middleware)

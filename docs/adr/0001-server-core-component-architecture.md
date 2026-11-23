@@ -80,7 +80,7 @@ class Component(Protocol):
 
 - **`domain`**: Unique lowercase identifier matching `^[a-z][a-z0-9_]*$` (e.g., `"http"`, `"mcp"`, `"metrics"`, `"oauth"`, `"schedule"`, `"socketio"`, `"web_ui"`, `"webhooks"`). Invalid or empty domains fail fast with `ComponentError`; duplicates raise `DuplicateComponentError`.
 - **`dependencies`**: Ordered sequence of `domain` strings that must complete `async_setup` and `async_start` before this component (and execute `async_stop` after it).
-- **`platforms`**: Ordered sequence of platform names implemented by this component (e.g., `("http",)`), loaded lazily via `ComponentLoader.async_load_platform(platform, core, registrar)` calling `<component_pkg>.<platform>:async_setup_<platform>(core, registrar)`.
+- **`platforms`**: Ordered sequence of platform names implemented by this component (e.g., `("http",)`, `("http", "mcp")`), loaded lazily via `ComponentLoader.async_load_platform(platform, core, registrar)` calling `<component_pkg>.<platform>:async_setup_<platform>(core, registrar)`.
 
 ### 3.2 Discovery: Built-In Components (`BUILTIN_COMPONENTS`) and External Plugins
 
