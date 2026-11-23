@@ -68,7 +68,6 @@ from ..events import (
     NoteUpdatedEvent,
     SyncCompletedEvent,
 )
-from ..services.event_log import EventLogService
 from ..services.file import FileService
 from ..services.processor_modules import ProcessorModule
 from ..services.summary import SummaryService
@@ -96,7 +95,6 @@ class ProcessorService:
         coordination_service: Any = None,
         concurrency: int = 2,
         page_concurrency: int = DEFAULT_PAGE_CONCURRENCY,
-        event_log_service: EventLogService | None = None,
     ) -> None:
         self.event_bus = event_bus
         self.session_manager = session_manager
@@ -105,7 +103,6 @@ class ProcessorService:
         self.coordination_service = coordination_service
         self.concurrency = concurrency
         self.page_concurrency = page_concurrency
-        self.event_log_service = event_log_service
 
         self.queue: asyncio.Queue[int] = asyncio.Queue()  # Queue of file_ids
         self.processing_files: set[int] = set()
@@ -358,8 +355,6 @@ class ProcessorService:
                     await self.recover_stalled_tasks()
                     await self.recover_missing_tasks()
                     await self.summary_service.purge_expired_summaries()
-                    if self.event_log_service is not None:
-                        await self.event_log_service.prune_expired_events()
             except asyncio.CancelledError:
                 break
             except Exception as e:

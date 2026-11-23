@@ -2,7 +2,7 @@
 
 This module defines `UserEventDO`, keyed by `(user_id, seq)` with a monotonic 64-bit Snowflake
 sequence cursor (`seq`) to power incremental change feeds via
-`supernote.server.services.event_log.EventLogService`. See `supernote.server.db.models`.
+`supernote.server.components.events.service.EventLogService`. See `supernote.server.db.models`.
 """
 
 import time

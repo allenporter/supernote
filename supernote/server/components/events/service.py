@@ -1,17 +1,41 @@
-"""Append-only domain event log storage and cursor query service (`EventLogService`).
+"""Append-only domain event log storage, cursor query, and retention service.
 
-This module implements `EventLogService` and `EventFeedPage`, subscribing to
-`supernote.server.events.LocalEventBus` domain events, persisting ordered `UserEventDO` records in
-`f_user_event`, pruning expired history, and serving cursor-paginated delta feeds.
-See `supernote.server.services` and `supernote.guides.architecture`.
+This module implements `EventLogService`, the transport-free domain service
+backing the `events` vertical component (`supernote.server.components.events`).
+
+### Event Persistence Pipeline
+
+1. Domain services publish `supernote.server.events.DomainEvent` subclasses
+   (enumerated in `SUBSCRIBED_DOMAIN_EVENTS`) onto the core `LocalEventBus`.
+2. `EventLogService` subscribes inline to those events, persists an ordered
+   `supernote.server.db.models.event_log.UserEventDO` row in `f_user_event`
+   with a monotonically increasing `seq`, and immediately publishes a
+   `DomainEventRecorded` notification onto `LocalEventBus` (consumed by
+   downstream listeners such as `SocketIOServerManager` to push lightweight
+   `event_log_cursor` notifications).
+3. Consumers query per-user history incrementally via `EventLogService.list_events`
+   using opaque `v1:<seq>` sync tokens (`EventFeedPage`), with optional
+   filtering by `event_types` (exact or `<namespace>.*` wildcards), `file_id`,
+   and `exclude_actors` (for echo suppression).
+4. When started via `EventLogService.start`, a background task periodically
+   calls `prune_expired_events` to delete rows older than `retention_days` and
+   records a durable `event_log:pruned_seq` watermark in `CoordinationService`
+   so stale client cursors receive `CursorExpiredError` (HTTP 410 Gone).
+
+### Internal Component Access
+
+Other server components or plugins declaring `dependencies = ("events",)` can
+retrieve the shared service instance via `core.app[EVENT_LOG_SERVICE_KEY]`.
 """
 
-import base64
+from __future__ import annotations
+
+import asyncio
 import logging
 import time
-from dataclasses import dataclass
 from typing import Any
 
+from aiohttp import web
 from sqlalchemy import delete, func, or_, select
 
 from supernote.server.db.models.event_log import UserEventDO
@@ -38,16 +62,29 @@ from supernote.server.events import (
 from supernote.server.exceptions import CursorExpiredError, InvalidInputError
 from supernote.server.services.coordination import CoordinationService
 
+from .models import (
+    DEFAULT_EVENT_LOG_RETENTION_DAYS,
+    DEFAULT_FEED_LIMIT,
+    MAX_FEED_LIMIT,
+    EventFeedPage,
+    decode_sync_token,
+    encode_sync_token,
+)
+
+__all__ = [
+    "EVENT_LOG_SERVICE_KEY",
+    "EventLogService",
+]
+
 logger = logging.getLogger(__name__)
 
-DEFAULT_EVENT_LOG_RETENTION_DAYS = 90
-DEFAULT_FEED_LIMIT = 200
-MAX_FEED_LIMIT = 1000
+DEFAULT_EVENT_LOG_PRUNE_INTERVAL_SECONDS = 300.0
+"""Default interval in seconds between background retention pruning sweeps."""
 
 _PRUNED_SEQ_KEY = "event_log:pruned_seq"
 _PRUNED_SEQ_TTL = 100 * 365 * 86400
 
-_SUBSCRIBED_DOMAIN_EVENTS: tuple[type[DomainEvent], ...] = (
+SUBSCRIBED_DOMAIN_EVENTS: tuple[type[DomainEvent], ...] = (
     VfsItemCreatedEvent,
     VfsContentUpdatedEvent,
     VfsItemMovedEvent,
@@ -63,30 +100,18 @@ _SUBSCRIBED_DOMAIN_EVENTS: tuple[type[DomainEvent], ...] = (
     NoteProcessingCompletedEvent,
     NoteProcessingFailedEvent,
 )
-
-
-@dataclass(slots=True)
-class EventFeedPage:
-    """Paginated response for per-user domain event queries.
-
-    Attributes:
-        events: Ordered list of matching domain events in ascending sequence order.
-        next_sync_token: Opaque checkpoint token to pass as `sync_token` on the
-            subsequent call, or `None` if the user has no recorded events yet.
-            When `events` is empty because of filters, `next_sync_token` still
-            advances to the user's latest sequence so callers do not re-scan
-            filtered history.
-        has_more: `True` if more matching events exist beyond `limit` and the
-            caller should immediately fetch the next page using `next_sync_token`.
-    """
-
-    events: list[DomainEventRecorded]
-    next_sync_token: str | None
-    has_more: bool
+"""Canonical tuple of `DomainEvent` subclasses persisted into `f_user_event`."""
 
 
 class EventLogService:
-    """Persists and queries per-user domain events (`f_user_event`)."""
+    """Persists, queries, and prunes per-user domain events (`f_user_event`).
+
+    All query operations are strictly scoped by `user_id`. When constructed
+    with a `LocalEventBus`, the service immediately subscribes inline to every
+    event type in `SUBSCRIBED_DOMAIN_EVENTS` so events emitted during startup
+    or tests are never missed. Call `start()` and `stop()` to manage the
+    periodic retention-pruning background task.
+    """
 
     def __init__(
         self,
@@ -94,14 +119,86 @@ class EventLogService:
         coordination_service: CoordinationService,
         event_bus: LocalEventBus | None = None,
         retention_days: int = DEFAULT_EVENT_LOG_RETENTION_DAYS,
+        prune_interval_seconds: float = DEFAULT_EVENT_LOG_PRUNE_INTERVAL_SECONDS,
     ) -> None:
+        """Initialize the event log service and subscribe to domain events.
+
+        Args:
+            session_manager: Async SQLAlchemy session manager for `f_user_event`.
+            coordination_service: TTL KV store used to persist the
+                `event_log:pruned_seq` retention watermark.
+            event_bus: Optional core `LocalEventBus` to subscribe to
+                `SUBSCRIBED_DOMAIN_EVENTS` and publish `DomainEventRecorded`.
+            retention_days: Number of days to retain event rows before pruning.
+                Set to `0` to retain history indefinitely (disables background
+                pruning).
+            prune_interval_seconds: Positive interval in seconds between
+                background retention sweeps when `start()` is active.
+
+        Raises:
+            ValueError: If `prune_interval_seconds <= 0`.
+        """
+        if prune_interval_seconds <= 0:
+            raise ValueError("prune_interval_seconds must be positive")
         self._session_manager = session_manager
         self._coordination_service = coordination_service
         self._event_bus = event_bus
         self._retention_days = retention_days
+        self._prune_interval_seconds = prune_interval_seconds
+        self._shutdown_event = asyncio.Event()
+        self._prune_task: asyncio.Task[None] | None = None
         if self._event_bus is not None:
-            for event_cls in _SUBSCRIBED_DOMAIN_EVENTS:
+            for event_cls in SUBSCRIBED_DOMAIN_EVENTS:
                 self._event_bus.subscribe(event_cls, self._on_domain_event, inline=True)
+
+    async def start(self) -> None:
+        """Start the periodic background retention-pruning loop.
+
+        Idempotent: calling `start()` when already running is a no-op. Also a
+        no-op when `retention_days <= 0` (infinite retention).
+        """
+        if self._retention_days <= 0:
+            return
+        if self._prune_task is not None and not self._prune_task.done():
+            return
+        self._shutdown_event.clear()
+        self._prune_task = asyncio.create_task(
+            self._prune_loop(),
+            name="event-log-pruner",
+        )
+
+    async def stop(self) -> None:
+        """Idempotently stop the background retention-pruning loop."""
+        self._shutdown_event.set()
+        task = self._prune_task
+        self._prune_task = None
+        if task is None:
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    async def _prune_loop(self) -> None:
+        try:
+            while not self._shutdown_event.is_set():
+                try:
+                    await asyncio.wait_for(
+                        self._shutdown_event.wait(),
+                        timeout=self._prune_interval_seconds,
+                    )
+                    break
+                except TimeoutError:
+                    pass
+                try:
+                    pruned = await self.prune_expired_events()
+                    if pruned > 0:
+                        logger.info("Pruned %d expired domain events", pruned)
+                except Exception:
+                    logger.exception("Error pruning expired domain events")
+        except asyncio.CancelledError:
+            pass
 
     async def append(
         self,
@@ -115,7 +212,27 @@ class EventLogService:
         related_file_id: int | None = None,
         timestamp_ms: int | None = None,
     ) -> DomainEventRecorded:
-        """Append a domain event row and publish `DomainEventRecorded` once committed."""
+        """Append a domain event row and publish `DomainEventRecorded` once committed.
+
+        Args:
+            user_id: Owner user ID for the event.
+            event_type: Dotted event type identifier (see
+                `supernote.models.events.DomainEventType`).
+            entity_type: Primary entity category (see
+                `supernote.models.events.DomainEntityType`).
+            entity_id: String identifier of the affected entity.
+            payload: Optional JSON-serializable event metadata dictionary.
+            actor: Caller actor attribution string (e.g., ``"user:web"``,
+                ``"device:<serial>"``, ``"api_key:<id>"``, ``"system:processor"``).
+            related_file_id: Optional VFS `UserFileDO.id` associated with the
+                event, enabling per-file feed filtering.
+            timestamp_ms: Optional Unix epoch timestamp in milliseconds;
+                defaults to the current wall-clock time.
+
+        Returns:
+            The committed `DomainEventRecorded` instance including its assigned
+            monotonic `seq`.
+        """
         ts_ms = timestamp_ms if timestamp_ms is not None else int(time.time() * 1000)
         payload_dict = dict(payload) if payload else {}
 
@@ -167,13 +284,15 @@ class EventLogService:
                 When `None` or empty, returns retained events from the beginning.
             event_types: Optional list of event type filters supporting exact
                 `DomainEventType` values (defined in `supernote.models.events`)
-                or namespace prefix wildcards ending with `'.*'` (`'note.*'`,
-                `'vfs.*'`, `'schedule.*'`, `'summary.*'`).
+                or namespace prefix wildcards ending with ``'.*'`` (``'note.*'``,
+                ``'vfs.*'``, ``'schedule.*'``, ``'summary.*'``).
             file_id: Optional VFS file ID filter (`related_file_id == file_id`).
             exclude_actors: Optional list of actor identifiers to omit from
-                results (e.g. `['api_key:<id>']`). Filtered events still advance
-                `next_sync_token` so callers do not re-scan their own mutations.
-            limit: Maximum number of events to return (`1..1000`, default `200`).
+                results (e.g., ``['api_key:<id>']``). Filtered events still
+                advance `next_sync_token` so callers do not re-scan their own
+                mutations.
+            limit: Maximum number of events to return (`1..MAX_FEED_LIMIT`,
+                default `DEFAULT_FEED_LIMIT`).
 
         Returns:
             An `EventFeedPage` containing the ordered events, `next_sync_token`
@@ -192,7 +311,7 @@ class EventLogService:
 
         after_seq = 0
         if sync_token:
-            after_seq = _decode_sync_token(sync_token)
+            after_seq = decode_sync_token(sync_token)
             pruned_seq = await self._get_pruned_seq()
             if after_seq < pruned_seq:
                 raise CursorExpiredError(
@@ -246,7 +365,21 @@ class EventLogService:
         )
 
     async def prune_expired_events(self, *, max_age_ms: int | None = None) -> int:
-        """Delete events older than the retention window and record the pruned watermark."""
+        """Delete events older than the retention window and advance the pruned watermark.
+
+        Records the highest deleted `seq` in `CoordinationService` under
+        `event_log:pruned_seq` *before* deleting rows so concurrent readers with
+        older cursors reliably observe `CursorExpiredError` rather than silently
+        missing pruned history.
+
+        Args:
+            max_age_ms: Optional explicit retention window in milliseconds,
+                overriding `retention_days` (useful for tests and administrative
+                sweeps). Values `<= 0` perform no deletion.
+
+        Returns:
+            Number of `UserEventDO` rows deleted.
+        """
         if max_age_ms is not None:
             age_ms = max_age_ms
         elif self._retention_days <= 0:
@@ -313,23 +446,5 @@ def _row_to_recorded(row: UserEventDO) -> DomainEventRecorded:
     )
 
 
-def encode_sync_token(seq: int) -> str:
-    """Encode an internal sequence number into an opaque URL-safe sync token."""
-    raw = f"v1:{seq}".encode("ascii")
-    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
-
-
-def _decode_sync_token(token: str) -> int:
-    """Decode an opaque sync token back into a positive sequence number."""
-    try:
-        padded = token + "=" * (-len(token) % 4)
-        decoded = base64.urlsafe_b64decode(padded.encode("ascii")).decode("ascii")
-    except (ValueError, UnicodeDecodeError) as err:
-        raise InvalidInputError(f"Invalid sync_token: {token!r}") from err
-    prefix, sep, raw_seq = decoded.partition(":")
-    if prefix != "v1" or sep != ":" or not (raw_seq.isascii() and raw_seq.isdigit()):
-        raise InvalidInputError(f"Invalid sync_token: {token!r}")
-    seq = int(raw_seq)
-    if seq <= 0 or encode_sync_token(seq) != token:
-        raise InvalidInputError(f"Invalid sync_token: {token!r}")
-    return seq
+EVENT_LOG_SERVICE_KEY: web.AppKey[EventLogService] = web.AppKey("event_log_service")
+"""Typed `aiohttp.web.AppKey` exposing `EventLogService` to sibling components and routes."""

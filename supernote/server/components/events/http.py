@@ -1,4 +1,30 @@
-"""Routes for the incremental per-user domain event feed."""
+"""HTTP platform routes for the incremental per-user domain event feed.
+
+Mounts `GET /api/extended/events` onto the main `aiohttp` application via
+`async_setup_http` when the `events` component is enabled.
+
+### Endpoint Contract
+
+`GET /api/extended/events` (authenticated via `jwt_auth_middleware`):
+
+- Query parameters parsed via `supernote.models.events.EventFeedRequestDTO`:
+  - `syncToken` (optional): Opaque cursor returned by a previous call.
+  - `eventTypes` (optional): Comma-separated list of exact event types or
+    namespace wildcards (`vfs.*`, `note.*`, `schedule.*`, `summary.*`).
+  - `fileId` (optional): Filter events to a specific VFS file ID.
+  - `excludeActors` (optional): Comma-separated caller actor strings to omit
+    from results. The special value ``self`` expands to the authenticated
+    request's `REQUEST_ACTOR_KEY` for echo suppression.
+  - `limit` (optional): Page size (`1..1000`, default `200`).
+- Responses:
+  - `200 OK`: `supernote.models.events.EventFeedListVO` JSON payload.
+  - `400 Bad Request`: Malformed query parameters, invalid `syncToken`, or
+    out-of-range `limit`.
+  - `404 Not Found`: Authenticated user record not found.
+  - `410 Gone`: `syncToken` predates retained event history (`CursorExpiredError`).
+"""
+
+from __future__ import annotations
 
 import logging
 
@@ -10,15 +36,22 @@ from supernote.models.events import (
     EventFeedListVO,
     EventFeedRequestDTO,
 )
+from supernote.server.components.http import HttpRegistrar
+from supernote.server.core import ServerCore
 from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
-    EVENT_LOG_SERVICE_KEY,
     REQUEST_ACTOR_KEY,
     REQUEST_USER_KEY,
     USER_SERVICE_KEY,
 )
-from supernote.server.services.event_log import EventLogService
 from supernote.server.services.user import UserService
+
+from .service import EVENT_LOG_SERVICE_KEY, EventLogService
+
+__all__ = [
+    "async_setup_http",
+    "routes",
+]
 
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
@@ -26,8 +59,7 @@ routes = web.RouteTableDef()
 
 @routes.get("/api/extended/events")
 async def handle_list_events(request: web.Request) -> web.Response:
-    # Endpoint: GET /api/extended/events
-    # Purpose: Incremental per-user domain event feed.
+    """Serve the incremental per-user domain event feed (`GET /api/extended/events`)."""
     user_email = request[REQUEST_USER_KEY]
     try:
         req_dto = EventFeedRequestDTO.from_dict(dict(request.query))
@@ -80,6 +112,12 @@ async def handle_list_events(request: web.Request) -> web.Response:
         return web.json_response(vo.to_dict())
     except SupernoteError as err:
         return err.to_response()
-    except Exception as err:
+    except Exception:
         logger.exception("Error listing domain events")
-        return web.json_response({"error": str(err)}, status=500)
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def async_setup_http(core: ServerCore, registrar: HttpRegistrar) -> None:
+    """Register the domain event feed HTTP routes on ``core.app``."""
+    _ = registrar
+    core.app.add_routes(routes)

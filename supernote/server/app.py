@@ -2,8 +2,9 @@
 
 `create_app` initializes core infrastructure (`ServerCore`, `ComponentLoader`,
 database/VFS/auth/processor services, and core route tables) and lazily registers
-enabled built-in vertical components (`http`, `mcp`, `metrics`, `oauth`, `schedule`,
-`socketio`, `web_ui`, `webhooks`) via `supernote.server.components.load_builtin_components`.
+enabled built-in vertical components (`ai`, `events`, `http`, `mcp`, `metrics`,
+`oauth`, `schedule`, `socketio`, `web_ui`, `webhooks`) via
+`supernote.server.components.load_builtin_components`.
 
 During `on_startup`, the server runs Alembic migrations, initializes `UrlSigner`,
 runs `component_loader.async_setup_all` and the `http` platform pass
@@ -39,7 +40,6 @@ from .keys import (
     CORE_KEY,
     EMBEDDING_MODEL_KEY,
     EVENT_BUS_KEY,
-    EVENT_LOG_SERVICE_KEY,
     FILE_SERVICE_KEY,
     HTTP_REGISTRAR_KEY,
     INTEGRITY_SERVICE_KEY,
@@ -57,7 +57,6 @@ from .keys import (
 from .routes import (
     admin,
     auth,
-    events,
     extended,
     file_device,
     file_web,
@@ -68,7 +67,6 @@ from .routes import (
 from .services.blob import LocalBlobStorage
 from .services.conversion import ConversionService
 from .services.coordination import CoordinationService, SqliteCoordinationService
-from .services.event_log import EventLogService
 from .services.file import FileService
 from .services.integrity import IntegrityService
 from .services.processor import ProcessorService
@@ -122,13 +120,6 @@ def create_app(config: ServerConfig) -> web.Application:
     app[BLOB_STORAGE_KEY] = blob_storage
     event_bus = LocalEventBus()
     app[EVENT_BUS_KEY] = event_bus
-    event_log_service = EventLogService(
-        session_manager=session_manager,
-        coordination_service=coordination_service,
-        event_bus=event_bus,
-        retention_days=config.event_log_retention_days,
-    )
-    app[EVENT_LOG_SERVICE_KEY] = event_log_service
 
     user_service = create_user_service(
         config.auth, coordination_service, session_manager
@@ -165,7 +156,6 @@ def create_app(config: ServerConfig) -> web.Application:
         file_service,
         summary_service,
         coordination_service,
-        event_log_service=event_log_service,
     )
     app[PROCESSOR_SERVICE_KEY] = processor_service
     app[CONVERSION_SERVICE_KEY] = ConversionService(
@@ -216,7 +206,6 @@ def create_app(config: ServerConfig) -> web.Application:
     app.add_routes(oss.routes)
     app.add_routes(summary.routes)
     app.add_routes(extended.routes)
-    app.add_routes(events.routes)
 
     async def on_startup_handler(app: web.Application) -> None:
         logger.info("Running database migrations...")
