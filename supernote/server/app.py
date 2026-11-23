@@ -36,7 +36,6 @@ from supernote.server.utils.auth_utils import get_token_from_request
 from .ai.models.embedding import create_embedding_model
 from .ai.models.ocr import create_ocr_model
 from .ai.models.summary import create_summary_model
-from .components.webhooks import WebhooksComponent
 from .config import AuthConfig, ServerConfig
 from .constants import MAX_UPLOAD_SIZE
 from .core import ComponentLoader, ServerCore
@@ -377,6 +376,8 @@ def create_app(config: ServerConfig) -> web.Application:
     app[COMPONENT_LOADER_KEY] = component_loader
 
     if config.webhooks.enabled:
+        from .components.webhooks import WebhooksComponent  # noqa: PLC0415
+
         component_loader.register(WebhooksComponent())
 
     # Register modules
