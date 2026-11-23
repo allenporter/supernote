@@ -107,6 +107,7 @@ Stores per-page change hashes, extracted OCR text, and vector embeddings:
 | `page_id` | `String` | Stable `PAGEID` from the `.note` binary metadata (`uq_note_page_content` with `user_id, file_id`). |
 | `content_hash` | `String` (nullable) | MD5 hash of the page's metadata dictionary (layer offsets and protocol info). |
 | `text_content` | `Text` (nullable) | Extracted OCR markdown/text for this page (`""` when skipped as a blank page). Property `is_blank` returns `True` when `text_content` is empty or whitespace-only. |
+| `previous_text` | `Text` (nullable, deferred) | Prior non-empty OCR transcript preserved across `content_hash` invalidation until re-OCR emits `NotePageTranscribedEvent` and clears it to `NULL`. |
 | `embedding` | `Text` (nullable) | JSON array of floats representing the page's vector embedding. |
 | `embedding_model` | `String` (nullable) | Model ID that generated `embedding` (e.g. `gemini-embedding-001`). |
 
@@ -131,18 +132,18 @@ Stores per-page change hashes, extracted OCR text, and vector embeddings:
    - Compares each page's `PAGEID` and `content_hash` against `NotePageContentDO`:
      - **New page**: Inserts a `NotePageContentDO` row.
      - **Moved page**: Updates `page_index` in place without re-running OCR/Embeddings if `content_hash` is unchanged.
-     - **Modified page**: Updates `content_hash`, clears `text_content` and `embedding`, and deletes the page's `SystemTaskDO` rows (`key="page_{page_id}"`) so downstream page modules re-run.
-     - **Deleted page**: Deletes the `NotePageContentDO` row, removes the cached PNG from `CACHE_BUCKET`, and deletes associated `SystemTaskDO` rows.
+     - **Modified page**: Updates `content_hash`, moves any existing `text_content` to `previous_text`, clears `text_content` and `embedding`, and deletes the page's `SystemTaskDO` rows (`key="page_{page_id}"`) so downstream page modules re-run.
+     - **Deleted page**: Captures any existing `text_content` (or `previous_text`) in `NotePagesDeltaEvent.deleted_page_texts`, deletes the `NotePageContentDO` row, removes the cached PNG from `CACHE_BUCKET`, and deletes associated `SystemTaskDO` rows.
    - If any page was added, moved, modified, or deleted, deletes the `SUMMARY_GENERATION` `SystemTaskDO` checkpoint so `SummaryModule` regenerates the notebook AI synthesis.
 2. **`PngConversionModule` (`TaskType.PNG_CONVERSION`, Page Module, `version="v2"`)**:
    - Uses single-page lazy loading (`load_notebook(path, policy="loose", page_number=page_index)`) and `ImageConverter` to render the page to PNG (`compress_level=1`) and stores it in `CACHE_BUCKET` at `get_page_png_path(file_id, page_id)`.
 3. **`OcrModule` (`TaskType.OCR_EXTRACTION`, Page Module)**:
-   - Checks `NotePageMetadataDO.has_drawables` first: if `has_drawables is False` (blank page), `run_if_needed()` does not require a cached PNG, and `process()` immediately sets `NotePageContentDO.text_content = ""` without invoking the OCR LLM.
+   - Checks `NotePageMetadataDO.has_drawables` first: if `has_drawables is False` (blank page), `run_if_needed()` does not require a cached PNG, and `process()` immediately sets `NotePageContentDO.text_content = ""` without invoking the OCR LLM (emitting `NotePageTranscribedEvent` with `previous_text` when clearing a previously transcribed page).
    - For non-blank pages, verifies that `ocr_model` is configured and the page PNG exists in `CACHE_BUCKET`.
    - Loads `NotePageMetadataDO` (`page_style` and `keyword_texts`) into `supernote.server.utils.note_content.PageMetadata` and formats the prompt via `supernote.server.ai.prompts.format_ocr_prompt`:
      - **Prompt Routing Precedence**: Resolves custom prompts in `prompts_dir` (`supernote.server.utils.prompt_loader.PromptLoader`) by checking `file_name_basis` (lowercase notebook stem, e.g. `Daily.note` -> `daily`) -> `page_style_basis` (`normalize_page_style_type`, e.g. `user_Daily` -> `daily`, `style_h_8mm_ruled_line_a5x2` -> `8mm_ruled_line`) -> `default`.
      - **Page Keywords Injection**: Injects `Page Keywords: <kw1>, <kw2>` into the page metadata header block when native `.note` keywords exist on the page.
-   - Calls `ocr_model.extract_text(png_data, prompt)` and stores the Markdown transcript in `NotePageContentDO.text_content`.
+   - Calls `ocr_model.extract_text(png_data, prompt)`, stores the Markdown transcript in `NotePageContentDO.text_content`, and emits `NotePageTranscribedEvent` with `previous_text`.
 4. **`EmbeddingModule` (`TaskType.EMBEDDING_GENERATION`, Page Module)**:
    - Skips blank pages (`content.is_blank`).
    - For non-blank pages, calls `embedding_model.embed(text_content, task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT)` and stores the vector JSON and `model_id` in `NotePageContentDO`.

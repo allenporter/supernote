@@ -12,6 +12,7 @@ from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import undefer
 
 from supernote.server.db.models.note_processing import (
     NotePageContentDO,
@@ -29,6 +30,7 @@ async def get_page_content_by_id(
         (
             await session.execute(
                 select(NotePageContentDO)
+                .options(undefer(NotePageContentDO.previous_text))
                 .where(NotePageContentDO.file_id == file_id)
                 .where(NotePageContentDO.page_id == page_id)
             )

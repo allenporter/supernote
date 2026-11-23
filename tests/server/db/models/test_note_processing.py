@@ -1,5 +1,6 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import undefer
 
 from supernote.models.base import ProcessingStatus
 from supernote.server.db.models.note_processing import (
@@ -67,11 +68,16 @@ async def test_note_page_content_crud(db_session: AsyncSession) -> None:
         page_index=0,
         page_id="page_123",
         text_content="Sample OCR text",
+        previous_text="Prior OCR text",
     )
     db_session.add(content)
     await db_session.commit()
 
-    stmt = select(NotePageContentDO).where(NotePageContentDO.id == content.id)
+    stmt = (
+        select(NotePageContentDO)
+        .options(undefer(NotePageContentDO.previous_text))
+        .where(NotePageContentDO.id == content.id)
+    )
     result = await db_session.execute(stmt)
     fetched = result.scalar_one()
 
@@ -79,6 +85,7 @@ async def test_note_page_content_crud(db_session: AsyncSession) -> None:
     assert fetched.page_index == 0
     assert fetched.page_id == "page_123"
     assert fetched.text_content == "Sample OCR text"
+    assert fetched.previous_text == "Prior OCR text"
 
 
 async def test_system_task_crud(db_session: AsyncSession) -> None:
