@@ -33,6 +33,7 @@ from .core import ComponentLoader, ServerCore
 from .db.session import DatabaseSessionManager
 from .events import LocalEventBus
 from .keys import (
+    AI_REGISTRAR_KEY,
     BLOB_STORAGE_KEY,
     COMPONENT_LOADER_KEY,
     CONFIG_KEY,
@@ -243,6 +244,11 @@ def create_app(config: ServerConfig) -> web.Application:
             await bootstrap_ephemeral_user(app)
 
         await component_loader.async_setup_all(core, component_configs)
+        if (ai_registrar := app.get(AI_REGISTRAR_KEY)) is not None:
+            for ai_platform in ("ocr", "summary", "embedding"):
+                await component_loader.async_load_platform(
+                    ai_platform, core, ai_registrar
+                )
         http_registrar = app[HTTP_REGISTRAR_KEY]
         await component_loader.async_load_platform("http", core, http_registrar)
         http_registrar.apply_to_app(app)
