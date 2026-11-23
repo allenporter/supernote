@@ -111,6 +111,8 @@ class SessionState(DataClassJSONMixin):
     expires_at: int | None = None
     auth_method: AuthMethod = AuthMethod.SESSION
     actor_id: str | None = None
+    scopes: list[str] = field(default_factory=list)
+    resource: str | None = None
 
     @property
     def actor(self) -> str:
@@ -815,8 +817,14 @@ class UserService:
         if token_data is None:
             return None
 
-        expires_at = token_data.get("expires_at")
-        if isinstance(expires_at, (int, float)) and expires_at <= time.time():
+        raw_expires_at = token_data.get("expires_at")
+        expires_at = (
+            int(raw_expires_at)
+            if isinstance(raw_expires_at, (int, float))
+            and not isinstance(raw_expires_at, bool)
+            else None
+        )
+        if expires_at is not None and expires_at <= time.time():
             return None
 
         user = await self._get_user_by_id(token_data["user_id"])
@@ -824,16 +832,20 @@ class UserService:
             return None
 
         client_id = token_data.get("client_id")
+        raw_scopes = token_data.get("scopes")
+        scopes = [str(s) for s in raw_scopes] if isinstance(raw_scopes, list) else []
+        raw_resource = token_data.get("resource")
+        resource = str(raw_resource) if isinstance(raw_resource, str) else None
         return SessionState(
             token=token,
             email=user.email,
             user_id=user.id,
             equipment_no=None,
-            expires_at=int(expires_at)
-            if isinstance(expires_at, (int, float))
-            else None,
+            expires_at=expires_at,
             auth_method=AuthMethod.OAUTH,
             actor_id=str(client_id) if client_id else None,
+            scopes=scopes,
+            resource=resource,
         )
 
     async def verify_token(self, token: str) -> SessionState | None:
