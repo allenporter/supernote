@@ -7,6 +7,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+from unittest.mock import patch
 
 import pytest
 
@@ -204,21 +205,30 @@ def fake_objc() -> FakeObjCModule:
 
 
 @pytest.fixture
-def fake_vision() -> FakeVisionModule:
+def fake_vision() -> FakeVisionModule | None:
     return FakeVisionModule()
+
+
+@pytest.fixture(autouse=True)
+def mock_apple_vision(
+    request: pytest.FixtureRequest,
+    fake_objc: FakeObjCModule,
+    fake_vision: FakeVisionModule | None,
+) -> Generator[None]:
+    """Patch PyObjC `objc` and `Vision` modules for Apple component tests."""
+    if "live_macos" in request.node.name:
+        yield
+        return
+    with patch.dict(sys.modules, {"objc": fake_objc, "Vision": fake_vision}):  # type: ignore[dict-item]
+        yield
 
 
 @pytest.fixture
 def load_apple_ocr(
-    monkeypatch: pytest.MonkeyPatch,
     component_core: ServerCore,
     load_components: LoadComponents,
-    fake_objc: FakeObjCModule,
-    fake_vision: FakeVisionModule,
 ) -> LoadAppleOcr:
-    """Install fake PyObjC modules and return a loader that boots `ai` + `apple`."""
-    monkeypatch.setitem(sys.modules, "objc", fake_objc)  # type: ignore[arg-type]
-    monkeypatch.setitem(sys.modules, "Vision", fake_vision)  # type: ignore[arg-type]
+    """Return a loader that boots `ai` + `apple` and returns the bound `OcrModel`."""
 
     async def _load(
         model: str = "vision-accurate",

@@ -4,6 +4,7 @@ import argparse
 import io
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -343,9 +344,7 @@ def test_subcommand_create_and_append(tmp_path: Path) -> None:
     assert out_png.exists()
 
 
-def test_subcommand_create_stdin_blank_and_hidden_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_subcommand_create_stdin_blank_and_hidden_file(tmp_path: Path) -> None:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command")
     add_parser(subparsers)
@@ -358,7 +357,6 @@ def test_subcommand_create_stdin_blank_and_hidden_file(
     hidden_md_file = tmp_path / "hidden.md"
     hidden_md_file.write_text("### Overlay\n- Answer key", encoding="utf-8")
     stdin_note = tmp_path / "stdin.note"
-    monkeypatch.setattr("sys.stdin", io.StringIO("# From Stdin\n\nHello"))
     stdin_args = parser.parse_args(
         [
             "create",
@@ -368,7 +366,8 @@ def test_subcommand_create_stdin_blank_and_hidden_file(
             str(hidden_md_file),
         ]
     )
-    stdin_args.func(stdin_args)
+    with patch("sys.stdin", io.StringIO("# From Stdin\n\nHello")):
+        stdin_args.func(stdin_args)
     assert load_notebook(str(stdin_note)).total_pages == 1
 
 

@@ -42,19 +42,11 @@ async def test_apple_named_provider_routes_correctly(
 
 
 async def test_apple_handles_objc_without_error_attr(
-    monkeypatch: pytest.MonkeyPatch,
-    component_core: ServerCore,
-    load_components: LoadComponents,
-    fake_vision: FakeVisionModule,
+    load_apple_ocr: LoadAppleOcr,
+    fake_objc: FakeObjCModule,
 ) -> None:
-    monkeypatch.setitem(sys.modules, "objc", FakeObjCModule(error=None))  # type: ignore[arg-type]
-    monkeypatch.setitem(sys.modules, "Vision", fake_vision)  # type: ignore[arg-type]
-    component_core.config.ai = AiConfig(
-        ocr=ModelConfig(provider="apple", model="vision-accurate"),
-    )
-    await load_components("ai", "apple")
-    model = component_core.app[OCR_MODEL_KEY]
-    assert model is not None
+    fake_objc.error = None
+    model = await load_apple_ocr("vision-accurate")
     assert await model.extract_text(b"png", "prompt") == (
         "Daily Log\n- Ship local Vision OCR"
     )

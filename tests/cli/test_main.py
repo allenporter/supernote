@@ -3,48 +3,47 @@
 import argparse
 import importlib
 import sys
+from unittest.mock import patch
 
 import pytest
 
 from supernote.cli.main import main
 
 
-def test_main_help(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(sys, "argv", ["supernote", "--help"])
-    with pytest.raises(SystemExit) as exc_info:
+def test_main_help(capsys: pytest.CaptureFixture[str]) -> None:
+    with (
+        patch.object(sys, "argv", ["supernote", "--help"]),
+        pytest.raises(SystemExit) as exc_info,
+    ):
         main()
     assert exc_info.value.code == 0
     captured = capsys.readouterr()
     assert "Supernote toolkit" in captured.out
 
 
-def test_main_no_command(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(sys, "argv", ["supernote"])
-    with pytest.raises(SystemExit) as exc_info:
+def test_main_no_command(capsys: pytest.CaptureFixture[str]) -> None:
+    with (
+        patch.object(sys, "argv", ["supernote"]),
+        pytest.raises(SystemExit) as exc_info,
+    ):
         main()
     assert exc_info.value.code == 1
     captured = capsys.readouterr()
     assert "Supernote toolkit" in captured.out
 
 
-def test_main_dispatch_success(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(sys, "argv", ["supernote", "analyze", "--help"])
-    with pytest.raises(SystemExit) as exc_info:
+def test_main_dispatch_success(capsys: pytest.CaptureFixture[str]) -> None:
+    with (
+        patch.object(sys, "argv", ["supernote", "analyze", "--help"]),
+        pytest.raises(SystemExit) as exc_info,
+    ):
         main()
     assert exc_info.value.code == 0
     captured = capsys.readouterr()
     assert "usage: supernote analyze" in captured.out
 
 
-def test_main_missing_dependency_error(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_main_missing_dependency_error(capsys: pytest.CaptureFixture[str]) -> None:
     original_import = importlib.import_module
 
     def fake_import(name: str, package: str | None = None) -> object:
@@ -52,9 +51,11 @@ def test_main_missing_dependency_error(
             raise ImportError("No module named 'fake_dep'")
         return original_import(name, package=package)
 
-    monkeypatch.setattr(importlib, "import_module", fake_import)
-    monkeypatch.setattr(sys, "argv", ["supernote", "admin"])
-    with pytest.raises(SystemExit) as exc_info:
+    with (
+        patch.object(importlib, "import_module", fake_import),
+        patch.object(sys, "argv", ["supernote", "admin"]),
+        pytest.raises(SystemExit) as exc_info,
+    ):
         main()
     assert exc_info.value.code == 1
 
@@ -64,7 +65,7 @@ def test_main_missing_dependency_error(
 
 
 def test_main_missing_dependency_error_non_admin(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     original_import = importlib.import_module
 
@@ -73,9 +74,11 @@ def test_main_missing_dependency_error_non_admin(
             raise ModuleNotFoundError("No module named 'sqlalchemy'")
         return original_import(name, package=package)
 
-    monkeypatch.setattr(importlib, "import_module", fake_import)
-    monkeypatch.setattr(sys, "argv", ["supernote", "server"])
-    with pytest.raises(SystemExit) as exc_info:
+    with (
+        patch.object(importlib, "import_module", fake_import),
+        patch.object(sys, "argv", ["supernote", "server"]),
+        pytest.raises(SystemExit) as exc_info,
+    ):
         main()
     assert exc_info.value.code == 1
 
@@ -84,15 +87,15 @@ def test_main_missing_dependency_error_non_admin(
     assert "pip install 'supernote[server]'" in captured.out
 
 
-def test_main_no_func_attr(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(
-        argparse.ArgumentParser,
-        "parse_args",
-        lambda self: argparse.Namespace(command="custom"),
-    )
-    monkeypatch.setattr(sys, "argv", ["supernote"])
-    with pytest.raises(SystemExit) as exc_info:
+def test_main_no_func_attr(capsys: pytest.CaptureFixture[str]) -> None:
+    with (
+        patch.object(
+            argparse.ArgumentParser,
+            "parse_args",
+            lambda self: argparse.Namespace(command="custom"),
+        ),
+        patch.object(sys, "argv", ["supernote"]),
+        pytest.raises(SystemExit) as exc_info,
+    ):
         main()
     assert exc_info.value.code == 1
