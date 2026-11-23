@@ -16,6 +16,7 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule
 from supernote.server.utils.note_content import get_page_content_by_id
+from supernote.server.utils.tasks import has_incomplete_page_ocr
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +64,11 @@ class EmbeddingModule(ProcessorModule):
             return False
 
         async with session_manager.session() as session:
-            # Check Prerequisites (OCR must have run so text_content is not None)
+            # Check Prerequisites (OCR must have completed for the current page hash)
             content = await get_page_content_by_id(session, file_id, page_id)
             if not content or content.text_content is None:
+                return False
+            if await has_incomplete_page_ocr(session, file_id, page_id):
                 return False
 
         return True

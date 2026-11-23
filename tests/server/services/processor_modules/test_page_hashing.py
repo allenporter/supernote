@@ -16,6 +16,7 @@ from supernote.server.db.models.note_processing import (
     SystemTaskDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.events import LocalEventBus, NotePagesDeltaEvent
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.page_hashing import PageHashingModule
@@ -172,8 +173,9 @@ async def test_process_with_real_file(
         assert page is not None
         # Hash should be back to original (real) hash
         assert page.content_hash == original_hash
-        # Text content, embedding, and embedding_model should be cleared because we simulated a "change" (Fake -> Real)
-        assert page.text_content is None
+        # Text content is preserved until OcrModule overwrites it (for previous_text diffs),
+        # while stale embeddings and downstream task checkpoints are invalidated.
+        assert page.text_content == "dummy_ocr"
         assert page.embedding is None
         assert page.embedding_model is None
 
@@ -225,18 +227,49 @@ async def test_process_with_real_file(
     # The process should remove it.
 
     extra_page_index = len(pages) + 5  # Safely out of bounds
+    event_bus = LocalEventBus()
+    page_hashing_module.file_service.event_bus = event_bus
+    delta_events: list[NotePagesDeltaEvent] = []
+
+    async def on_delta(ev: NotePagesDeltaEvent) -> None:
+        delta_events.append(ev)
+
+    event_bus.subscribe(NotePagesDeltaEvent, on_delta, inline=True)
+
     async with session_manager.session() as session:
-        extra_page = NotePageContentDO(
-            file_id=file_id,
-            page_index=extra_page_index,
-            page_id="trash_id",
-            content_hash="trash",
+        session.add_all(
+            [
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=extra_page_index,
+                    page_id="trash_id",
+                    content_hash="trash",
+                    text_content="- [ ] Deleted page task",
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=extra_page_index + 1,
+                    page_id="trash_untranscribed",
+                    content_hash="trash2",
+                    text_content=None,
+                ),
+            ]
         )
-        session.add(extra_page)
         await session.commit()
 
     # Run process again
     await page_hashing_module.process(file_id, session_manager)
+
+    assert len(delta_events) == 1
+    assert delta_events[0].to_payload() == {
+        "file_id": str(file_id),
+        "file_path": "real.note",
+        "added_pages": [],
+        "modified_pages": [],
+        "moved_pages": [],
+        "deleted_pages": ["trash_id", "trash_untranscribed"],
+        "deleted_page_texts": {"trash_id": "- [ ] Deleted page task"},
+    }
 
     async with session_manager.session() as session:
         # Verify extra page is gone

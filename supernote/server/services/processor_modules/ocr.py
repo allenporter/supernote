@@ -101,12 +101,13 @@ class OcrModule(ProcessorModule):
                 )
                 return False
             file_do = await session.get(UserFileDO, file_id)
-            if file_do is not None:
-                page_meta = await _get_verified_page_metadata(
-                    session, file_do.user_id, file_id, page_id, content.content_hash
-                )
-                if page_meta is not None and not page_meta.has_drawables:
-                    return True
+            if file_do is None:
+                return False
+            page_meta = await _get_verified_page_metadata(
+                session, file_do.user_id, file_id, page_id, content.content_hash
+            )
+            if page_meta is not None and not page_meta.has_drawables:
+                return True
 
         # Check if PNG exists (Prerequisite)
         png_path = get_page_png_path(file_id, page_id)
@@ -133,39 +134,42 @@ class OcrModule(ProcessorModule):
         if self.ocr_model is None:
             raise ValueError("OCR model not configured")
 
-        user_id: int | None = None
-        file_name: str | None = None
-        notebook_create_time: int | None = None
-        page_style: str | None = None
-        page_keywords: list[str] = []
         async with session_manager.session() as session:
             content = await get_page_content_by_id(session, file_id, page_id)
             file_do = await session.get(UserFileDO, file_id)
-            if file_do is not None:
-                user_id = file_do.user_id
-                file_name = file_do.file_name
-                notebook_create_time = file_do.create_time
-                page_meta = (
-                    await _get_verified_page_metadata(
-                        session, file_do.user_id, file_id, page_id, content.content_hash
-                    )
-                    if content is not None
-                    else None
+            if content is None or file_do is None:
+                logger.warning(
+                    f"Missing page or file row for OCR of {file_id} page {page_id}"
                 )
-                if (
-                    page_meta is not None
-                    and not page_meta.has_drawables
-                    and content is not None
-                ):
-                    content.text_content = ""
-                    await session.commit()
-                    logger.info(
-                        f"Skipping OCR LLM call for blank page {page_id} of file {file_id}"
+                return
+
+            user_id = file_do.user_id
+            file_name = file_do.file_name
+            notebook_create_time = file_do.create_time
+            saved_page_index = int(content.page_index)
+            page_meta = await _get_verified_page_metadata(
+                session, user_id, file_id, page_id, content.content_hash
+            )
+            if page_meta is not None and not page_meta.has_drawables:
+                previous_text = content.text_content
+                content.text_content = ""
+                await session.commit()
+                logger.info(
+                    f"Skipping OCR LLM call for blank page {page_id} of file {file_id}"
+                )
+                if previous_text:
+                    await self._publish_page_transcribed(
+                        user_id=user_id,
+                        file_id=file_id,
+                        page_id=page_id,
+                        page_index=saved_page_index,
+                        text_content="",
+                        previous_text=previous_text,
                     )
-                    return
-                if page_meta is not None:
-                    page_style = page_meta.page_style
-                    page_keywords = page_meta.keyword_texts
+                return
+
+            page_style = page_meta.page_style if page_meta is not None else None
+            page_keywords = page_meta.keyword_texts if page_meta is not None else []
 
         png_path = get_page_png_path(file_id, page_id)
         chunks = [
@@ -178,7 +182,7 @@ class OcrModule(ProcessorModule):
 
         page_metadata = PageMetadata(
             file_name=file_name,
-            page_index=page_index or 0,
+            page_index=page_index if page_index is not None else saved_page_index,
             page_id=page_id,
             notebook_create_time=notebook_create_time,
             page_style=page_style,
@@ -187,32 +191,50 @@ class OcrModule(ProcessorModule):
         prompt = format_ocr_prompt(page_metadata)
         text_content = await self.ocr_model.extract_text(png_data, prompt)
 
-        # Save Result
-        saved_page_index = page_index or 0
-        saved = False
         async with session_manager.session() as session:
             content = await get_page_content_by_id(session, file_id, page_id)
-            if content:
-                content.text_content = text_content
-                saved_page_index = int(content.page_index)
-                saved = True
-            else:
+            if content is None:
                 logger.warning(
                     f"NotePageContentDO missing for {file_id} page {page_id} during OCR"
                 )
+                return
+            previous_text = content.text_content
+            content.text_content = text_content
+            saved_page_index = int(content.page_index)
             await session.commit()
 
-        if saved and user_id is not None and self.file_service.event_bus:
-            file_path = await self.file_service.get_full_path_by_node(user_id, file_id)
-            await self.file_service.event_bus.publish(
-                NotePageTranscribedEvent(
-                    user_id=user_id,
-                    file_id=file_id,
-                    file_path=file_path,
-                    page_id=page_id,
-                    page_index=saved_page_index,
-                    text_content=text_content,
-                )
-            )
+        await self._publish_page_transcribed(
+            user_id=user_id,
+            file_id=file_id,
+            page_id=page_id,
+            page_index=saved_page_index,
+            text_content=text_content,
+            previous_text=previous_text,
+        )
 
         logger.info(f"Completed OCR for file {file_id} page {page_id}")
+
+    async def _publish_page_transcribed(
+        self,
+        *,
+        user_id: int,
+        file_id: int,
+        page_id: str,
+        page_index: int,
+        text_content: str,
+        previous_text: str | None,
+    ) -> None:
+        if not self.file_service.event_bus:
+            return
+        file_path = await self.file_service.get_full_path_by_node(user_id, file_id)
+        await self.file_service.event_bus.publish(
+            NotePageTranscribedEvent(
+                user_id=user_id,
+                file_id=file_id,
+                file_path=file_path,
+                page_id=page_id,
+                page_index=page_index,
+                text_content=text_content,
+                previous_text=previous_text,
+            )
+        )

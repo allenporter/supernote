@@ -1,8 +1,13 @@
 """Tests for system task persistence utilities."""
 
-from supernote.models.base import ProcessingStatus
+from supernote.models.base import ProcessingStatus, TaskType
+from supernote.server.db.models.note_processing import NoteMetadataDO, NotePageContentDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.utils.tasks import get_task, update_task_status
+from supernote.server.utils.tasks import (
+    get_task,
+    has_incomplete_page_ocr,
+    update_task_status,
+)
 
 
 async def test_get_and_update_task_status(
@@ -96,3 +101,94 @@ async def test_get_and_update_task_status(
     assert recovered is not None
     assert recovered.retry_count == 0
     assert recovered.last_error is None
+
+
+async def test_has_incomplete_page_ocr_allows_unhashed_standalone_rows(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Standalone NotePageContentDO rows without pipeline metadata are treated as ready."""
+    file_id = 505
+    async with session_manager.session() as session:
+        session.add(
+            NotePageContentDO(
+                file_id=file_id,
+                page_index=0,
+                page_id="p0",
+                content_hash="h0",
+                text_content="Seeded text",
+            )
+        )
+        await session.commit()
+
+    async with session_manager.session() as session:
+        assert await has_incomplete_page_ocr(session, file_id) is False
+        assert await has_incomplete_page_ocr(session, file_id, "p0") is False
+
+
+async def test_has_incomplete_page_ocr_blocks_missing_ocr_on_hashed_or_deferred_files(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Hashed files (including deferred syncs with NoteMetadataDO) require COMPLETED OCR per page."""
+    file_id = 506
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                NoteMetadataDO(user_id=1, file_id=file_id, total_pages=2),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="p0",
+                    content_hash="h0",
+                    text_content="Stale text",
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=1,
+                    page_id="p1",
+                    content_hash="h1",
+                    text_content="Fresh text",
+                ),
+            ]
+        )
+        await session.commit()
+
+    await update_task_status(
+        session_manager,
+        file_id=file_id,
+        task_type=TaskType.OCR_EXTRACTION,
+        key="page_p1",
+        status=ProcessingStatus.COMPLETED,
+    )
+
+    async with session_manager.session() as session:
+        assert await has_incomplete_page_ocr(session, file_id, "p1") is False
+        assert await has_incomplete_page_ocr(session, file_id, "p0") is True
+        assert await has_incomplete_page_ocr(session, file_id) is True
+
+    await update_task_status(
+        session_manager,
+        file_id=file_id,
+        task_type=TaskType.OCR_EXTRACTION,
+        key="page_p0",
+        status=ProcessingStatus.COMPLETED,
+    )
+    async with session_manager.session() as session:
+        assert await has_incomplete_page_ocr(session, file_id) is False
+
+
+async def test_has_incomplete_page_ocr_blocks_failed_prerequisite_tasks(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Failed PNG or OCR tasks mark target page and file OCR prerequisites incomplete."""
+    file_id = 507
+    await update_task_status(
+        session_manager,
+        file_id=file_id,
+        task_type=TaskType.PNG_CONVERSION,
+        key="page_p0",
+        status=ProcessingStatus.FAILED,
+        error="png boom",
+    )
+    async with session_manager.session() as session:
+        assert await has_incomplete_page_ocr(session, file_id, "p0") is True
+        assert await has_incomplete_page_ocr(session, file_id) is True

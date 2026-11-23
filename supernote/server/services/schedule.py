@@ -67,7 +67,7 @@ TASK_SEMANTIC_FIELDS: set[str] = (TASK_BASE_FIELDS - {"update_time"}) | {"links"
 
 
 def _to_task_event[E: ScheduleTaskCreatedEvent](
-    cls: type[E], task: ScheduleTaskDO
+    cls: type[E], task: ScheduleTaskDO, **extra: Any
 ) -> E:
     return cls(
         user_id=task.user_id,
@@ -78,6 +78,7 @@ def _to_task_event[E: ScheduleTaskCreatedEvent](
         status=task.status,
         due_time=task.due_time,
         links=task.links,
+        **extra,
     )
 
 
@@ -90,6 +91,16 @@ def _to_task_deleted_event(task: ScheduleTaskDO) -> ScheduleTaskDeletedEvent:
         status=task.status,
         links=task.links,
     )
+
+
+def _semantic_field_changes(
+    task: ScheduleTaskDO, updates: dict[str, Any]
+) -> dict[str, list[Any]]:
+    return {
+        k: [getattr(task, k), v]
+        for k, v in updates.items()
+        if k in TASK_SEMANTIC_FIELDS and getattr(task, k) != v
+    }
 
 
 class ScheduleService:
@@ -445,10 +456,7 @@ class ScheduleService:
             if not (task := await self.get_task(user_id, task_id)):
                 return None
 
-            semantic_changed = any(
-                k in TASK_SEMANTIC_FIELDS and getattr(task, k) != v
-                for k, v in updates.items()
-            )
+            changed_fields = _semantic_field_changes(task, updates)
 
             stmt = (
                 update(ScheduleTaskDO)
@@ -471,9 +479,13 @@ class ScheduleService:
             updated_task = result.scalar_one_or_none()
 
         if updated_task is not None:
-            if semantic_changed and self.event_bus is not None:
+            if changed_fields and self.event_bus is not None:
                 await self.event_bus.publish(
-                    _to_task_event(ScheduleTaskUpdatedEvent, updated_task)
+                    _to_task_event(
+                        ScheduleTaskUpdatedEvent,
+                        updated_task,
+                        changed_fields=changed_fields,
+                    )
                 )
             await self._publish_schedule_updated(
                 user_id=user_id,
@@ -513,7 +525,8 @@ class ScheduleService:
                             f"Task group {target_group_id} does not exist"
                         )
 
-                if not (task := await self.get_task(user_id, str(task_id))):
+                task = await session.get(ScheduleTaskDO, (str(task_id), user_id))
+                if not task:
                     raise ValueError(f"Task {task_id} not found")
 
                 if resolved_group_id is None and task.task_list_id is not None:
@@ -530,31 +543,17 @@ class ScheduleService:
                 if not updates.get("update_time"):
                     updates["update_time"] = now_ms
 
-                semantic_changed = any(
-                    k in TASK_SEMANTIC_FIELDS and getattr(task, k) != v
-                    for k, v in updates.items()
-                )
+                changed_fields = _semantic_field_changes(task, updates)
+                for k, v in updates.items():
+                    setattr(task, k, v)
+                await session.flush()
 
-                stmt = (
-                    update(ScheduleTaskDO)
-                    .where(
-                        ScheduleTaskDO.user_id == user_id,
-                        ScheduleTaskDO.task_id == task.task_id,
-                    )
-                    .values(**updates)
-                )
-                await session.execute(stmt)
-                if semantic_changed:
+                if changed_fields:
                     pending_update_events.append(
-                        ScheduleTaskUpdatedEvent(
-                            user_id=user_id,
-                            task_id=task.task_id,
-                            task_list_id=updates.get("task_list_id", task.task_list_id),
-                            title=updates.get("title", task.title),
-                            detail=updates.get("detail", task.detail),
-                            status=updates.get("status", task.status),
-                            due_time=updates.get("due_time", task.due_time),
-                            links=updates.get("links", task.links),
+                        _to_task_event(
+                            ScheduleTaskUpdatedEvent,
+                            task,
+                            changed_fields=changed_fields,
                         )
                     )
                 updated_any = True

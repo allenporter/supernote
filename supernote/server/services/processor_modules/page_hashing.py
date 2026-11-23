@@ -53,6 +53,7 @@ class _PageDiffCounts:
     modified_pages: tuple[str, ...] = ()
     moved_pages: tuple[str, ...] = ()
     deleted_pages: tuple[str, ...] = ()
+    deleted_page_texts: tuple[tuple[str, str], ...] = ()
 
 
 def _serialize_page_annotations(page_obj: Page) -> tuple[str, str, str]:
@@ -256,6 +257,7 @@ class PageHashingModule(ProcessorModule):
                     modified_pages=list(content_diff.modified_pages),
                     moved_pages=list(content_diff.moved_pages),
                     deleted_pages=list(content_diff.deleted_pages),
+                    deleted_page_texts=dict(content_diff.deleted_page_texts),
                 )
             )
 
@@ -400,6 +402,7 @@ class PageHashingModule(ProcessorModule):
         modified_pages: list[str] = []
         moved_pages: list[str] = []
         deleted_pages: list[str] = []
+        deleted_page_texts: list[tuple[str, str]] = []
 
         for i, (page_id, current_hash) in enumerate(page_identities):
             if not page_id:
@@ -421,9 +424,13 @@ class PageHashingModule(ProcessorModule):
                     any_page_changed = True
 
                 if hash_changed:
-                    logger.info(f"Page {page_id} (idx {i}) changed. Resetting content.")
+                    logger.info(
+                        f"Page {page_id} (idx {i}) changed. Invalidating downstream checkpoints."
+                    )
                     row.content_hash = current_hash
-                    row.text_content = None
+                    # Preserve `row.text_content` until `OcrModule` overwrites it so UI
+                    # transcripts are not blanked mid-processing and `OcrModule` can emit
+                    # exact `(previous_text, text_content)` deltas.
                     row.embedding = None
                     row.embedding_model = None
                     any_page_changed = True
@@ -468,6 +475,8 @@ class PageHashingModule(ProcessorModule):
                 any_page_changed = True
                 deleted += 1
                 deleted_pages.append(pid)
+                if row.text_content is not None:
+                    deleted_page_texts.append((pid, row.text_content))
                 await session.delete(row)
 
                 png_path = get_page_png_path(file_id, pid)
@@ -504,4 +513,5 @@ class PageHashingModule(ProcessorModule):
             modified_pages=tuple(modified_pages),
             moved_pages=tuple(moved_pages),
             deleted_pages=tuple(deleted_pages),
+            deleted_page_texts=tuple(deleted_page_texts),
         )

@@ -10,6 +10,7 @@ from supernote.server.db.models.note_processing import (
     SystemTaskDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.events import LocalEventBus, NotePageTranscribedEvent
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.ocr import OcrModule
@@ -373,3 +374,147 @@ async def test_ocr_passes_verified_keywords_and_page_style_prompt(
     _, prompt = fake_ocr_model.calls[0]
     assert "Page Keywords: Project Mercury" in prompt
     assert "Daily Log" in prompt
+
+
+async def test_ocr_emits_previous_text_diff_on_retranscription(
+    ocr_module: OcrModule,
+    file_service: FileService,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+) -> None:
+    """Verify OcrModule emits previous_text=None initially and prior text on re-transcription."""
+    event_bus = LocalEventBus()
+    file_service.event_bus = event_bus
+    transcribed_events: list[NotePageTranscribedEvent] = []
+
+    async def on_transcribed(event: NotePageTranscribedEvent) -> None:
+        transcribed_events.append(event)
+
+    event_bus.subscribe(NotePageTranscribedEvent, on_transcribed, inline=True)
+
+    file_id = 1015
+    await blob_storage.put(CACHE_BUCKET, get_page_png_path(file_id, "p0"), b"v1-png")
+
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=file_id,
+                    user_id=7,
+                    storage_key="delta_key",
+                    file_name="Daily.note",
+                    directory_id=0,
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=2,
+                    page_id="p0",
+                    content_hash="h_v1",
+                    text_content=None,
+                ),
+            ]
+        )
+        await session.commit()
+
+    await ocr_module.process(file_id, session_manager, page_id="p0")
+    await blob_storage.put(
+        CACHE_BUCKET, get_page_png_path(file_id, "p0"), b"v2-longer-png"
+    )
+    await ocr_module.process(file_id, session_manager, page_id="p0")
+
+    assert [ev.to_payload() for ev in transcribed_events] == [
+        {
+            "file_id": "1015",
+            "file_path": "Daily.note",
+            "page_id": "p0",
+            "page_index": 2,
+            "text_content": "Transcribed (6 bytes)",
+            "previous_text": None,
+        },
+        {
+            "file_id": "1015",
+            "file_path": "Daily.note",
+            "page_id": "p0",
+            "page_index": 2,
+            "text_content": "Transcribed (13 bytes)",
+            "previous_text": "Transcribed (6 bytes)",
+        },
+    ]
+
+
+async def test_ocr_blank_page_emits_event_only_when_clearing_prior_text(
+    ocr_module: OcrModule,
+    file_service: FileService,
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Verify blank pages emit NotePageTranscribedEvent when clearing prior text, not on fresh blank pages."""
+    event_bus = LocalEventBus()
+    file_service.event_bus = event_bus
+    transcribed_events: list[NotePageTranscribedEvent] = []
+
+    async def on_transcribed(event: NotePageTranscribedEvent) -> None:
+        transcribed_events.append(event)
+
+    event_bus.subscribe(NotePageTranscribedEvent, on_transcribed, inline=True)
+
+    file_id = 1016
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=file_id,
+                    user_id=7,
+                    storage_key="blank_delta_key",
+                    file_name="Daily.note",
+                    directory_id=0,
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="p_fresh",
+                    content_hash="h_blank",
+                    text_content=None,
+                ),
+                NotePageContentDO(
+                    file_id=file_id,
+                    page_index=1,
+                    page_id="p_erased",
+                    content_hash="h_erased",
+                    text_content="• Buy milk",
+                ),
+                NotePageMetadataDO(
+                    user_id=7,
+                    file_id=file_id,
+                    page_index=0,
+                    page_id="p_fresh",
+                    content_hash="h_blank",
+                    has_ink=False,
+                    has_drawables=False,
+                ),
+                NotePageMetadataDO(
+                    user_id=7,
+                    file_id=file_id,
+                    page_index=1,
+                    page_id="p_erased",
+                    content_hash="h_erased",
+                    has_ink=False,
+                    has_drawables=False,
+                ),
+            ]
+        )
+        await session.commit()
+
+    await ocr_module.process(file_id, session_manager, page_index=0, page_id="p_fresh")
+    assert transcribed_events == []
+
+    await ocr_module.process(file_id, session_manager, page_index=1, page_id="p_erased")
+    assert [ev.to_payload() for ev in transcribed_events] == [
+        {
+            "file_id": "1016",
+            "file_path": "Daily.note",
+            "page_id": "p_erased",
+            "page_index": 1,
+            "text_content": "",
+            "previous_text": "• Buy milk",
+        }
+    ]

@@ -124,6 +124,7 @@ class NotePagesDeltaEvent(NoteProcessingCompletedEvent):
     modified_pages: list[str] = field(default_factory=list)
     moved_pages: list[str] = field(default_factory=list)
     deleted_pages: list[str] = field(default_factory=list)
+    deleted_page_texts: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -136,6 +137,7 @@ class NotePageTranscribedEvent(NoteProcessingCompletedEvent):
     page_id: str = ""
     page_index: int = 0
     text_content: str = ""
+    previous_text: str | None = None
 
     @property
     def entity_id(self) -> str:
@@ -203,6 +205,18 @@ class ScheduleTaskUpdatedEvent(ScheduleTaskCreatedEvent):
     """Triggered when semantic fields on a schedule task are updated."""
 
     EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.SCHEDULE_TASK_UPDATED
+
+    changed_fields: dict[str, list[Any]] = field(default_factory=dict)
+
+    @property
+    def related_file_id(self) -> int | None:
+        if (linked_id := _link_file_id(self.links)) is not None:
+            return linked_id
+        if link_change := self.changed_fields.get("links"):
+            old_links = link_change[0]
+            if isinstance(old_links, str):
+                return _link_file_id(old_links)
+        return None
 
 
 @dataclass

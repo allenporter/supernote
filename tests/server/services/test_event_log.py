@@ -553,8 +553,28 @@ async def test_schedule_task_domain_events_recorded(
         task_list_id=group.task_list_id,
     )
 
-    # Semantic update emits schedule.task_updated
-    await schedule_service.update_task(uid, task.task_id, status="completed")
+    # Semantic update emits schedule.task_updated with changed_fields [old, new]
+    await schedule_service.update_task(
+        uid,
+        task.task_id,
+        status="completed",
+        completed_time=1710000005000,
+        update_time=1710000006000,
+    )
+
+    # Batch update clearing links still associates related_file_id via changed_fields["links"][0]
+    await schedule_service.batch_update_tasks(
+        uid,
+        [
+            {
+                "task_id": task.task_id,
+                "title": "Ship slice v2",
+                "links": None,
+                "update_time": 1710000008000,
+            }
+        ],
+        task_list_id=group.task_list_id,
+    )
 
     # Deleting the group cascades schedule.task_deleted for tasks in the group
     await schedule_service.delete_group(uid, group.task_list_id)
@@ -577,15 +597,60 @@ async def test_schedule_task_domain_events_recorded(
             901,
         ),
         (
-            DomainEventType.SCHEDULE_TASK_DELETED,
+            DomainEventType.SCHEDULE_TASK_UPDATED,
             DomainEntityType.SCHEDULE_TASK,
             task.task_id,
             901,
         ),
+        (
+            DomainEventType.SCHEDULE_TASK_DELETED,
+            DomainEntityType.SCHEDULE_TASK,
+            task.task_id,
+            None,
+        ),
     ]
-    assert page.events[0].payload["title"] == "Ship slice"
-    assert page.events[1].payload["status"] == "completed"
-    assert page.events[2].payload["status"] == "completed"
+    assert page.events[0].payload == {
+        "task_id": task.task_id,
+        "task_list_id": group.task_list_id,
+        "title": "Ship slice",
+        "detail": "Minimal PR",
+        "status": "needsAction",
+        "due_time": None,
+        "links": link_b64,
+    }
+    assert page.events[1].payload == {
+        "task_id": task.task_id,
+        "task_list_id": group.task_list_id,
+        "title": "Ship slice",
+        "detail": "Minimal PR",
+        "status": "completed",
+        "due_time": None,
+        "links": link_b64,
+        "changed_fields": {
+            "status": ["needsAction", "completed"],
+            "completed_time": [None, 1710000005000],
+        },
+    }
+    assert page.events[2].payload == {
+        "task_id": task.task_id,
+        "task_list_id": group.task_list_id,
+        "title": "Ship slice v2",
+        "detail": "Minimal PR",
+        "status": "completed",
+        "due_time": None,
+        "links": None,
+        "changed_fields": {
+            "title": ["Ship slice", "Ship slice v2"],
+            "links": [link_b64, None],
+        },
+    }
+    assert page.events[3].payload == {
+        "task_id": task.task_id,
+        "task_list_id": group.task_list_id,
+        "title": "Ship slice v2",
+        "status": "completed",
+        "links": None,
+    }
 
 
 async def test_note_processing_domain_events_recorded(
