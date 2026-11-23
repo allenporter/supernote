@@ -10,18 +10,13 @@ import logging
 import time
 
 from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from supernote.models.base import ProcessingStatus, TaskType
+from supernote.models.base import ProcessingStatus
 from supernote.server.constants import (
     DB_WRITE_MAX_RETRIES,
     DB_WRITE_RETRY_BACKOFF_SECONDS,
 )
-from supernote.server.db.models.note_processing import (
-    NoteMetadataDO,
-    NotePageContentDO,
-    SystemTaskDO,
-)
+from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import DatabaseError
 from supernote.server.utils.unique_id import next_id
@@ -112,83 +107,3 @@ async def update_task_status(
                 backoff *= 2
             else:
                 raise
-
-
-async def has_incomplete_page_ocr(
-    session: AsyncSession,
-    file_id: int,
-    page_id: str | None = None,
-) -> bool:
-    """Return True if target page(s) have failed/pending OCR prerequisites or un-checkpointed stale text.
-
-    Because `PageHashingModule` preserves `NotePageContentDO.text_content` across
-    `content_hash` invalidation (while deleting per-page `SystemTaskDO` rows),
-    downstream consumers (`EmbeddingModule` and `SummaryModule`) use this check so
-    skipped, disabled, or failed OCR stages never consume stale pre-edit transcripts.
-    """
-    key_filter = (
-        SystemTaskDO.key == f"page_{page_id}"
-        if page_id is not None
-        else SystemTaskDO.key.like("page_%")
-    )
-    non_completed_prereq = (
-        await session.execute(
-            select(SystemTaskDO.id)
-            .where(
-                SystemTaskDO.file_id == file_id,
-                key_filter,
-                SystemTaskDO.status != ProcessingStatus.COMPLETED,
-                SystemTaskDO.task_type.in_(
-                    (TaskType.PNG_CONVERSION.value, TaskType.OCR_EXTRACTION.value)
-                ),
-            )
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    if non_completed_prereq is not None:
-        return True
-
-    hashing_exists = (
-        await session.execute(
-            select(SystemTaskDO.id)
-            .where(
-                SystemTaskDO.file_id == file_id,
-                SystemTaskDO.task_type == TaskType.PAGE_HASHING.value,
-                SystemTaskDO.key == "global",
-            )
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    if hashing_exists is None:
-        note_meta_exists = (
-            await session.execute(
-                select(NoteMetadataDO.file_id)
-                .where(NoteMetadataDO.file_id == file_id)
-                .limit(1)
-            )
-        ).scalar_one_or_none()
-        if note_meta_exists is None:
-            return False
-
-    completed_ocr = (
-        select(SystemTaskDO.id)
-        .where(
-            SystemTaskDO.file_id == NotePageContentDO.file_id,
-            SystemTaskDO.task_type == TaskType.OCR_EXTRACTION.value,
-            SystemTaskDO.key == "page_" + NotePageContentDO.page_id,
-            SystemTaskDO.status == ProcessingStatus.COMPLETED,
-        )
-        .correlate(NotePageContentDO)
-    )
-    missing_ocr_stmt = (
-        select(NotePageContentDO.id)
-        .where(
-            NotePageContentDO.file_id == file_id,
-            NotePageContentDO.page_id != "",
-            ~completed_ocr.exists(),
-        )
-        .limit(1)
-    )
-    if page_id is not None:
-        missing_ocr_stmt = missing_ocr_stmt.where(NotePageContentDO.page_id == page_id)
-    return (await session.execute(missing_ocr_stmt)).scalar_one_or_none() is not None

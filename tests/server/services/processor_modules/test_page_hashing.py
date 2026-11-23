@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 from prometheus_client import REGISTRY
 from sqlalchemy import exists, func, select
+from sqlalchemy.orm import undefer
 
 from supernote.notebook import load
 from supernote.server.constants import USER_DATA_BUCKET
@@ -162,6 +163,7 @@ async def test_process_with_real_file(
             (
                 await session.execute(
                     select(NotePageContentDO)
+                    .options(undefer(NotePageContentDO.previous_text))
                     .where(NotePageContentDO.file_id == file_id)
                     .where(NotePageContentDO.page_index == 0)
                 )
@@ -173,9 +175,9 @@ async def test_process_with_real_file(
         assert page is not None
         # Hash should be back to original (real) hash
         assert page.content_hash == original_hash
-        # Text content is preserved until OcrModule overwrites it (for previous_text diffs),
-        # while stale embeddings and downstream task checkpoints are invalidated.
-        assert page.text_content == "dummy_ocr"
+        # Prior text_content moves to previous_text while text_content, embedding, and embedding_model reset to None.
+        assert page.text_content is None
+        assert page.previous_text == "dummy_ocr"
         assert page.embedding is None
         assert page.embedding_model is None
 

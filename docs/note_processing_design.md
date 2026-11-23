@@ -131,8 +131,8 @@ Stores per-page change hashes, extracted OCR text, and vector embeddings:
    - Compares each page's `PAGEID` and `content_hash` against `NotePageContentDO`:
      - **New page**: Inserts a `NotePageContentDO` row.
      - **Moved page**: Updates `page_index` in place without re-running OCR/Embeddings if `content_hash` is unchanged.
-     - **Modified page**: Updates `content_hash`, preserves `text_content` until `OcrModule` overwrites it, clears `embedding`/`embedding_model`, and deletes the page's `SystemTaskDO` rows (`key="page_{page_id}"`) so downstream page modules re-run.
-     - **Deleted page**: Captures any existing `text_content` in `NotePagesDeltaEvent.deleted_page_texts`, deletes the `NotePageContentDO` row, removes the cached PNG from `CACHE_BUCKET`, and deletes associated `SystemTaskDO` rows.
+     - **Modified page**: Updates `content_hash`, moves any existing `text_content` to `previous_text`, clears `text_content` and `embedding`, and deletes the page's `SystemTaskDO` rows (`key="page_{page_id}"`) so downstream page modules re-run.
+     - **Deleted page**: Captures any existing `text_content` (or `previous_text`) in `NotePagesDeltaEvent.deleted_page_texts`, deletes the `NotePageContentDO` row, removes the cached PNG from `CACHE_BUCKET`, and deletes associated `SystemTaskDO` rows.
    - If any page was added, moved, modified, or deleted, deletes the `SUMMARY_GENERATION` `SystemTaskDO` checkpoint so `SummaryModule` regenerates the notebook AI synthesis.
 2. **`PngConversionModule` (`TaskType.PNG_CONVERSION`, Page Module, `version="v2"`)**:
    - Uses single-page lazy loading (`load_notebook(path, policy="loose", page_number=page_index)`) and `ImageConverter` to render the page to PNG (`compress_level=1`) and stores it in `CACHE_BUCKET` at `get_page_png_path(file_id, page_id)`.

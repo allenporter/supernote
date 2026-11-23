@@ -1,5 +1,6 @@
 import pytest
 from sqlalchemy import select
+from sqlalchemy.orm import undefer
 
 from supernote.server.ai.models.fake.ocr import FakeOcrModel
 from supernote.server.constants import CACHE_BUCKET
@@ -417,10 +418,38 @@ async def test_ocr_emits_previous_text_diff_on_retranscription(
         await session.commit()
 
     await ocr_module.process(file_id, session_manager, page_id="p0")
+    async with session_manager.session() as session:
+        row = (
+            await session.execute(
+                select(NotePageContentDO).where(
+                    NotePageContentDO.file_id == file_id,
+                    NotePageContentDO.page_id == "p0",
+                )
+            )
+        ).scalar_one()
+        # Simulate PageHashingModule invalidation moving text_content -> previous_text
+        row.previous_text = row.text_content
+        row.text_content = None
+        await session.commit()
+
     await blob_storage.put(
         CACHE_BUCKET, get_page_png_path(file_id, "p0"), b"v2-longer-png"
     )
     await ocr_module.process(file_id, session_manager, page_id="p0")
+
+    async with session_manager.session() as session:
+        row = (
+            await session.execute(
+                select(NotePageContentDO)
+                .options(undefer(NotePageContentDO.previous_text))
+                .where(
+                    NotePageContentDO.file_id == file_id,
+                    NotePageContentDO.page_id == "p0",
+                )
+            )
+        ).scalar_one()
+        assert row.previous_text is None
+        assert row.text_content == "Transcribed (13 bytes)"
 
     assert [ev.to_payload() for ev in transcribed_events] == [
         {
@@ -480,7 +509,8 @@ async def test_ocr_blank_page_emits_event_only_when_clearing_prior_text(
                     page_index=1,
                     page_id="p_erased",
                     content_hash="h_erased",
-                    text_content="• Buy milk",
+                    text_content=None,
+                    previous_text="• Buy milk",
                 ),
                 NotePageMetadataDO(
                     user_id=7,

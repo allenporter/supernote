@@ -210,6 +210,11 @@ class NotePageContentDO(Base):
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     """The extracted OCR text for this page."""
 
+    previous_text: Mapped[str | None] = mapped_column(
+        Text, nullable=True, deferred=True
+    )
+    """Prior extracted OCR text retained across hash invalidation until re-OCR completes."""
+
     embedding: Mapped[str | None] = mapped_column(Text, nullable=True)
     """JSON string representation of the vector embedding."""
 

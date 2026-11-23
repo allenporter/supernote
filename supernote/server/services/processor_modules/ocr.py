@@ -149,8 +149,13 @@ class OcrModule(ProcessorModule):
                 session, user_id, file_id, page_id, content.content_hash
             )
             if page_meta is not None and not page_meta.has_drawables:
-                previous_text = content.text_content
+                previous_text = (
+                    content.text_content
+                    if content.text_content is not None
+                    else content.previous_text
+                )
                 content.text_content = ""
+                content.previous_text = None
                 await session.commit()
                 logger.info(
                     f"Skipping OCR LLM call for blank page {page_id} of file {file_id}"
@@ -194,8 +199,13 @@ class OcrModule(ProcessorModule):
                     f"NotePageContentDO missing for {file_id} page {page_id} during OCR"
                 )
                 return
-            previous_text = content.text_content
+            previous_text = (
+                content.text_content
+                if content.text_content is not None
+                else content.previous_text
+            )
             content.text_content = text_content
+            content.previous_text = None
             saved_page_index = int(content.page_index)
             await session.commit()
 

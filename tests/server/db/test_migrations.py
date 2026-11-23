@@ -86,7 +86,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "a4b5c6d7e8f9"
+        assert version == "b5c6d7e8f9a0"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -182,7 +182,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "a4b5c6d7e8f9"
+        assert version == "b5c6d7e8f9a0"
 
         # Verify task columns and types
         tasks = conn.execute(
@@ -1087,3 +1087,37 @@ def test_reparent_uncategorized_ai_summaries_migration(
         (2, canon_u2): (9001, ai_group_u2, None),
     }
     assert canon_u1_mtime == skewed_mtime + 1
+
+
+def test_add_previous_text_migration_upgrade_and_downgrade(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify migration b5c6d7e8f9a0 adds and drops f_note_page_content.previous_text cleanly."""
+    db_path = tmp_path / "previous_text_migration.db"
+    shutil.copy(Path("tests/fixtures/db_v1_populated.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+
+    command.upgrade(alembic_config, "a4b5c6d7e8f9")
+    command.upgrade(alembic_config, "b5c6d7e8f9a0")
+
+    engine = create_engine(url)
+    with engine.connect() as conn:
+        cols_up = {
+            row[1]
+            for row in conn.execute(
+                text("PRAGMA table_info(f_note_page_content)")
+            ).fetchall()
+        }
+        assert "previous_text" in cols_up
+
+    command.downgrade(alembic_config, "a4b5c6d7e8f9")
+    with engine.connect() as conn:
+        cols_down = {
+            row[1]
+            for row in conn.execute(
+                text("PRAGMA table_info(f_note_page_content)")
+            ).fetchall()
+        }
+        assert "previous_text" not in cols_down
+    engine.dispose()

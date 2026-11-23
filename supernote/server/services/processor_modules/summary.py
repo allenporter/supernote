@@ -46,7 +46,6 @@ from supernote.server.utils.paths import (
     get_ai_summaries_group_id,
     get_summary_id,
 )
-from supernote.server.utils.tasks import has_incomplete_page_ocr
 
 __all__ = [
     "SummaryModule",
@@ -142,13 +141,6 @@ class SummaryModule(ProcessorModule):
                 logger.warning(
                     f"OCR prerequisite not met for summary of file {file_id} "
                     f"({missing_count}/{len(pages)} pages missing text)"
-                )
-                return False
-
-            if await has_incomplete_page_ocr(session, file_id):
-                logger.warning(
-                    f"OCR prerequisite not met for summary of file {file_id} "
-                    "(pending or failed page transcription task)"
                 )
                 return False
 
