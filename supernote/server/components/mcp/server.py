@@ -6,7 +6,7 @@ tools exposed to authenticated AI agents:
 - `search_notebook_chunks`: Performs vector similarity search via `supernote.server.services.search.SearchService`.
 - `get_notebook_transcript`: Retrieves full or page-sliced OCR transcripts.
 
-Validates both OAuth 2.1 Bearer tokens issued by `supernote.server.mcp.auth.SupernoteOAuthProvider`
+Validates both OAuth 2.1 Bearer tokens issued by `supernote.server.components.mcp.auth.SupernoteOAuthProvider`
 and static Bearer API keys (`sn_...`) via `supernote.server.services.user.UserService`.
 See `supernote.guides.mcp`.
 """
@@ -24,7 +24,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import AnyHttpUrl
 
 from supernote.models.base import ErrorCode, create_error_response
-from supernote.server.mcp.models import (
+from supernote.server.components.mcp.models import (
     ListNotebooksRequestDTO,
     ListNotebooksResponseVO,
     MCPScope,

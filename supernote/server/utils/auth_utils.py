@@ -1,7 +1,7 @@
 """Authentication request token extraction helpers for `aiohttp` and `Starlette`.
 
 Provides `get_token_from_request`, which extracts the `x-access-token` header for session
-verification in `supernote.server.app.jwt_auth_middleware` and `supernote.server.mcp.auth`.
+verification in `supernote.server.app.jwt_auth_middleware` and `supernote.server.components.mcp.auth`.
 """
 
 from typing import Any, Protocol

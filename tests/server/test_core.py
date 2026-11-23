@@ -128,6 +128,13 @@ def test_server_core_registers_middlewares_and_public_prefixes(
     with pytest.raises(ValueError, match="must start with '/'"):
         server_core.register_public_prefix("socket.io")
 
+    resource = server_core.app.router.add_resource("/oauth")
+    server_core.register_public_resource(resource, known_paths=("/authorize", "/token"))
+    server_core.register_public_resource(resource, known_paths=("/token",))
+
+    assert server_core.public_resources == (resource,)
+    assert server_core.known_resource_paths == frozenset({"/authorize", "/token"})
+
 
 def test_loader_register_and_accessors(loader: ComponentLoader) -> None:
     comp = RecordingComponent(domain="webhooks")

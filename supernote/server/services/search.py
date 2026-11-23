@@ -5,7 +5,7 @@
 and computes cosine similarity against page embeddings stored in
 `supernote.server.db.models.note_processing.NotePageContentDO`, supporting filename
 substring filters and ISO 8601 date bounds (`infer_page_date`). Powers both the MCP
-tools in `supernote.server.mcp.server` and the Web UI search endpoints in
+tools in `supernote.server.components.mcp.server` and the Web UI search endpoints in
 `supernote.server.routes.extended`. See `supernote.guides.mcp`.
 """
 

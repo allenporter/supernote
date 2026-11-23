@@ -133,6 +133,10 @@ class ServerCore:
     _outer_middlewares: list[Middleware] = field(default_factory=list, repr=False)
     _inner_middlewares: list[Middleware] = field(default_factory=list, repr=False)
     _public_prefixes: list[str] = field(default_factory=list, repr=False)
+    _public_resources: list[web.AbstractResource] = field(
+        default_factory=list, repr=False
+    )
+    _known_resource_paths: set[str] = field(default_factory=set, repr=False)
 
     def register_middleware(
         self,
@@ -153,6 +157,17 @@ class ServerCore:
         if prefix not in self._public_prefixes:
             self._public_prefixes.append(prefix)
 
+    def register_public_resource(
+        self,
+        resource: web.AbstractResource,
+        *,
+        known_paths: Iterable[str] = (),
+    ) -> None:
+        """Register an aiohttp resource (e.g. ASGI mount) exempted from `jwt_auth_middleware`."""
+        if resource not in self._public_resources:
+            self._public_resources.append(resource)
+        self._known_resource_paths.update(known_paths)
+
     @property
     def outer_middlewares(self) -> tuple[Middleware, ...]:
         """Middlewares registered to run before trace and auth middlewares."""
@@ -167,6 +182,16 @@ class ServerCore:
     def public_prefixes(self) -> tuple[str, ...]:
         """Registered URL path prefixes exempted from `jwt_auth_middleware`."""
         return tuple(self._public_prefixes)
+
+    @property
+    def public_resources(self) -> tuple[web.AbstractResource, ...]:
+        """Registered aiohttp resources exempted from `jwt_auth_middleware`."""
+        return tuple(self._public_resources)
+
+    @property
+    def known_resource_paths(self) -> frozenset[str]:
+        """Bounded canonical paths exposed by registered resources for metrics labeling."""
+        return frozenset(self._known_resource_paths)
 
 
 class ComponentLoader:

@@ -46,6 +46,13 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         import_path="supernote.server.components.webhooks:WebhooksComponent",
         default_enabled=False,
     ),
+    # Keep `mcp` after components that add aiohttp routes because its root
+    # `ASGIResource` catch-all mount must register last on `app.router`.
+    BuiltinComponentSpec(
+        domain="mcp",
+        import_path="supernote.server.components.mcp:McpComponent",
+        default_enabled=True,
+    ),
 )
 
 

@@ -3,7 +3,7 @@
 `create_app` wires together all domain services (`supernote.server.services`), HTTP route
 tables (`supernote.server.routes`), Socket.IO real-time server (`supernote.server.components.socketio`),
 and the optional OAuth 2.1 + Streamable HTTP Model Context Protocol server
-(`supernote.server.mcp`) from a resolved `supernote.server.config.ServerConfig`.
+(`supernote.server.components.mcp`) from a resolved `supernote.server.config.ServerConfig`.
 
 During `on_startup`, the server configures proxy header handling (`aiohttp_remotes`),
 runs Alembic migrations (`supernote.server.db.migrations.run_migrations`), mounts the
@@ -54,8 +54,6 @@ from .keys import (
     EVENT_LOG_SERVICE_KEY,
     FILE_SERVICE_KEY,
     INTEGRITY_SERVICE_KEY,
-    MCP_ASGI_RESOURCE_KEY,
-    MCP_TASK_KEY,
     OCR_MODEL_KEY,
     PROCESSOR_SERVICE_KEY,
     RATE_LIMITER_KEY,
@@ -200,23 +198,22 @@ async def jwt_auth_middleware(
     if isinstance(route, SystemRoute):
         return await handler(request)
 
-    if route.resource and route.resource is request.app.get(MCP_ASGI_RESOURCE_KEY):
+    core = request.app.get(CORE_KEY)
+    if (
+        core is not None
+        and route.resource is not None
+        and route.resource in core.public_resources
+    ):
         return await handler(request)
 
     handler_func = getattr(route, "handler", None)
     if handler_func and getattr(handler_func, "is_public", False):
         return await handler(request)
 
-    # Also allow public access to MCP OAuth and component-registered public prefixes.
-    core = request.app.get(CORE_KEY)
+    # Allow public access to static assets and component-registered public prefixes.
     if (
         request.path.startswith("/static/")
         or request.path == "/favicon.ico"
-        # Allow public access to auth routes
-        or request.path.startswith("/login-bridge")
-        or request.path.startswith("/authorize")
-        or request.path.startswith("/token")
-        or request.path.startswith("/.well-known/")
         or (
             core is not None
             and any(request.path.startswith(p) for p in core.public_prefixes)
@@ -365,7 +362,10 @@ def create_app(config: ServerConfig) -> web.Application:
     app[CORE_KEY] = core
     app[COMPONENT_LOADER_KEY] = component_loader
 
-    component_configs = {"webhooks": config.webhooks}
+    component_configs = {
+        "mcp": {"enabled": config.mcp_enabled},
+        "webhooks": config.webhooks,
+    }
     load_builtin_components(component_loader, component_configs)
 
     # Register modules
@@ -441,8 +441,6 @@ def create_app(config: ServerConfig) -> web.Application:
             # XForwardedRelaxed trusts the immediate upstream proxy
             await aiohttp_remotes.setup(app, aiohttp_remotes.XForwardedRelaxed())
 
-        mcp_auth_paths: set[str] = set()
-
         logger.info("Running database migrations...")
         await asyncio.to_thread(run_migrations, config.db_url, config=config)
 
@@ -461,50 +459,13 @@ def create_app(config: ServerConfig) -> web.Application:
             app.middlewares.append(
                 create_metrics_middleware(
                     metrics_path=config.metrics_path,
-                    mcp_auth_paths=mcp_auth_paths,
+                    mcp_auth_paths=core.known_resource_paths,
                 )
             )
         app.middlewares.append(trace_middleware)
         app.middlewares.append(jwt_auth_middleware)
         app.middlewares.append(static_cache_control_middleware)
         app.middlewares.extend(core.inner_middlewares)
-
-        if config.mcp_enabled:
-            from aiohttp_asgi import ASGIResource  # noqa: PLC0415
-
-            from supernote.server.mcp.auth import create_auth_app  # noqa: PLC0415
-            from supernote.server.mcp.server import (  # noqa: PLC0415
-                create_mcp_server,
-                run_server,
-                set_services,
-            )
-
-            rs_url = f"{config.mcp_base_url}/mcp"
-
-            logger.info(f"Mounting MCP Authorization Server at {config.base_url}")
-            auth_app = create_auth_app(
-                app[USER_SERVICE_KEY], app[COORDINATION_SERVICE_KEY], config.base_url
-            )
-            asgi_resource = ASGIResource(auth_app)
-            app.router.register_resource(asgi_resource)
-            app[MCP_ASGI_RESOURCE_KEY] = asgi_resource
-            mcp_auth_paths.update(
-                path
-                for route in auth_app.routes
-                if isinstance(path := getattr(route, "path", None), str)
-            )
-
-            # Inject services and start MCP server on a separate port
-            set_services(
-                app[SEARCH_SERVICE_KEY],
-                app[USER_SERVICE_KEY],
-                app[COORDINATION_SERVICE_KEY],
-            )
-            mcp_port = config.mcp_port
-            mcp_server = create_mcp_server(config.base_url, rs_url)
-            app[MCP_TASK_KEY] = asyncio.create_task(
-                run_server(mcp_server, config.host, mcp_port, config.proxy_mode)
-            )
 
         logger.info("Starting background services...")
         await processor_service.start()
@@ -518,13 +479,6 @@ def create_app(config: ServerConfig) -> web.Application:
     app.on_startup.append(on_startup_handler)
 
     async def on_shutdown_handler(app: web.Application) -> None:
-        if mcp_task := app.get(MCP_TASK_KEY):
-            mcp_task.cancel()
-            try:
-                await mcp_task
-            except asyncio.CancelledError:
-                pass
-
         if storage_metrics_collector := app.get(STORAGE_METRICS_COLLECTOR_KEY):
             await storage_metrics_collector.stop()
         await component_loader.async_stop_all(core)
