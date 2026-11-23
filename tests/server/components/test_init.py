@@ -288,6 +288,12 @@ async def test_all_builtin_components_http_platform_end_to_end(
     http_registrar.apply_to_app(component_core.app)
     mcp_registrar = component_core.app[MCP_REGISTRAR_KEY]
     await loader.async_load_platform("mcp", component_core, mcp_registrar)
+    assert set(mcp_registrar.tool_names) >= {
+        "list_tasks",
+        "create_task",
+        "update_task",
+        "delete_task",
+    }
 
     middlewares = list(component_core.app.middlewares)
     trace_idx = middlewares.index(trace_middleware)

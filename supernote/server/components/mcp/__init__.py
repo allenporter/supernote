@@ -20,6 +20,7 @@ from supernote.server.components.mcp.metrics import (
     track_mcp_tool_call,
 )
 from supernote.server.core import ServerCore
+from supernote.server.events import bind_event_actor
 from supernote.server.keys import MCP_REGISTRAR_KEY, SEARCH_SERVICE_KEY
 
 if TYPE_CHECKING:
@@ -31,6 +32,7 @@ __all__ = [
     "MCP_REGISTRAR_KEY",
     "McpComponent",
     "McpRegistrar",
+    "get_authenticated_actor",
     "get_authenticated_user_id",
     "instrument_mcp_tool",
 ]
@@ -38,16 +40,27 @@ __all__ = [
 _P = ParamSpec("_P")
 
 
-def get_authenticated_user_id() -> int | None:
-    """Return the authenticated user ID from the active MCP bearer auth context."""
+def _get_authenticated_token() -> SupernoteAccessToken | None:
+    """Return the active `SupernoteAccessToken` from the MCP auth context, if any."""
     from mcp.server.auth.middleware.auth_context import (  # noqa: PLC0415
         auth_context_var,
     )
 
     if not (auth_context := auth_context_var.get()):
         return None
-    token = cast("SupernoteAccessToken", auth_context.access_token)
-    return token.user_id
+    return cast("SupernoteAccessToken", auth_context.access_token)
+
+
+def get_authenticated_user_id() -> int | None:
+    """Return the authenticated user ID from the active MCP bearer auth context."""
+    token = _get_authenticated_token()
+    return token.user_id if token is not None else None
+
+
+def get_authenticated_actor() -> str | None:
+    """Return the canonical actor identifier for the active MCP auth context."""
+    token = _get_authenticated_token()
+    return token.actor if token is not None else None
 
 
 def instrument_mcp_tool(
@@ -56,14 +69,17 @@ def instrument_mcp_tool(
     [Callable[_P, Awaitable[dict[str, Any]]]],
     Callable[_P, Awaitable[dict[str, Any]]],
 ]:
-    """Wrap an MCP tool handler to record Prometheus call and latency metrics."""
+    """Wrap an MCP tool handler to bind caller actor and record Prometheus metrics."""
 
     def decorator(
         fn: Callable[_P, Awaitable[dict[str, Any]]],
     ) -> Callable[_P, Awaitable[dict[str, Any]]]:
         @functools.wraps(fn)
         async def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> dict[str, Any]:
-            with track_mcp_tool_call(tool=tool) as call:
+            with (
+                bind_event_actor(get_authenticated_actor()),
+                track_mcp_tool_call(tool=tool) as call,
+            ):
                 result = await fn(*args, **kwargs)
                 call.set_succeeded(result.get("success") is True)
                 return result
@@ -134,7 +150,6 @@ class McpComponent:
         set_services(
             core.app[SEARCH_SERVICE_KEY],
             core.user_service,
-            core.coordination,
         )
         rs_url = f"{core.config.mcp_base_url}/mcp"
         self._mcp_server = create_mcp_server(core.config.base_url, rs_url)

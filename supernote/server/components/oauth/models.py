@@ -74,6 +74,7 @@ class SupernoteAccessToken(AccessToken):
     """OAuth 2.1 access token associated with a Supernote user account."""
 
     user_id: int
+    actor: str | None = None
 
 
 class SupernoteRefreshToken(RefreshToken):

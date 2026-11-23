@@ -398,3 +398,16 @@ Retrieves the full OCR transcript for a notebook or slices a specific 0-based pa
     "transcript": "--- Page 1 ---\nNotebook: Daily.note\nCreated: 2026-08-04\nPage ID: P20260804090000\nPage Keywords: Architecture\n\n• Ship MCP documentation\nX Fix webhook signature verification"
   }
   ```
+
+### Schedule Task CRUD Tools (`supernote.server.components.schedule.mcp`)
+
+The `schedule` component registers four To-Do management tools via the `mcp` platform (`McpRegistrar`), supporting notebook page deep-links (`ScheduleTaskLinkDTO`), real-time `TASK-SYN` Socket.IO device push, and Domain Event Log attribution:
+
+- **`list_tasks(group_id=None, include_completed=False, file_id=None)`**: Lists task groups and tasks (including decoded `link` metadata and timestamps), optionally filtered by group, completion status, or linked notebook `file_id`.
+- **`create_task(title, detail=None, status=None, importance=None, due_time=None, group_id=None, linked_file_id=None, linked_file_path=None, linked_page_id=None, linked_page_number=None, cause_seq=None, reason=None)`**: Creates a task and optionally encodes a notebook/page deep-link.
+- **`update_task(task_id, ..., clear_link=False, cause_seq=None, reason=None)`**: Partially updates task fields, manages `completed_time` on status transitions, merges or clears (`clear_link=True`) notebook deep-links, and normalizes `due_time=0` to `None`.
+- **`delete_task(task_id, cause_seq=None, reason=None)`**: Deletes a user-scoped task and emits a `schedule.task_deleted` tombstone event.
+
+#### Causal Event Provenance (`cause_seq` & `reason`)
+
+Mutating MCP tools accept optional `cause_seq` (the triggering domain event sequence ID, up to 64 chars) and `reason` (human-readable explanation, up to 500 chars) arguments. Internally, handlers wrap service calls with `supernote.server.events.bind_event_provenance(cause_seq=..., reason=...)`, which merges those fields into the `payload` of any `DomainEvent` recorded in `f_user_event` alongside the caller's canonical `actor` (`oauth:<client_id>`, `api_key:<id>`, or `user:web`). This lets automated clients and activity views trace *why* a mutation happened and which prior event triggered it.

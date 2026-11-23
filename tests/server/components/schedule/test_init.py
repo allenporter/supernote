@@ -15,7 +15,7 @@ async def test_schedule_component_lifecycle(component_core: ServerCore) -> None:
     assert isinstance(component, Component)
     assert component.domain == "schedule"
     assert component.dependencies == ()
-    assert component.platforms == ("http",)
+    assert component.platforms == ("http", "mcp")
 
     loader = ComponentLoader()
     loader.register(component)

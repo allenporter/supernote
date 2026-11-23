@@ -21,7 +21,7 @@ class ScheduleComponent:
 
     domain = "schedule"
     dependencies: tuple[str, ...] = ()
-    platforms: tuple[str, ...] = ("http",)
+    platforms: tuple[str, ...] = ("http", "mcp")
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         """Instantiate `ScheduleService` and expose it via `SCHEDULE_SERVICE_KEY`."""

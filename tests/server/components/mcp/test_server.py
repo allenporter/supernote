@@ -85,7 +85,7 @@ def mcp_env() -> Generator[MCPToolTestEnv]:
     user_service.get_user_id = AsyncMock(return_value=42)
 
     coordination_service = MagicMock(spec=CoordinationService)
-    set_services(search_service, user_service, coordination_service)
+    set_services(search_service, user_service)
 
     access_token = SupernoteAccessToken(
         token="test-mcp-token",
@@ -422,7 +422,7 @@ async def test_token_verifier_static_key_session_and_oauth(
     user = await user_service.register(
         UserRegisterDTO(email="mcpuser@example.com", password=pw_md5)
     )
-    verifier = SupernoteTokenVerifier(user_service, coordination_service)
+    verifier = SupernoteTokenVerifier(user_service)
 
     assert await verifier.verify_token("sn_invalid_token_1234567890abcdef") is None
     assert await verifier.verify_token("") is None
@@ -506,8 +506,7 @@ async def test_get_auth_user_id() -> None:
     previous_services = dict(mcp_server_module._services)
     mock_user_service = AsyncMock(spec=UserService)
     mock_search = AsyncMock(spec=SearchService)
-    mock_coord = AsyncMock(spec=CoordinationService)
-    set_services(mock_search, mock_user_service, mock_coord)
+    set_services(mock_search, mock_user_service)
     try:
         ctx = AsyncMock(spec=Context)
 
@@ -531,7 +530,6 @@ async def test_get_auth_user_id() -> None:
 
 async def test_mcp_http_requests_authenticate_and_succeed(
     user_service: UserService,
-    coordination_service: CoordinationService,
 ) -> None:
     """Test MCP Streamable HTTP transport authentication with static Bearer keys."""
     previous_services = dict(mcp_server_module._services)
@@ -541,7 +539,7 @@ async def test_mcp_http_requests_authenticate_and_succeed(
     )
     mock_search_service = AsyncMock(spec=SearchService)
     mock_search_service.list_notebooks.return_value = []
-    set_services(mock_search_service, user_service, coordination_service)
+    set_services(mock_search_service, user_service)
 
     try:
         raw_token, key_vo = await user_service.create_api_key(user.id, "MCP Key")
@@ -610,3 +608,34 @@ async def test_mcp_http_requests_authenticate_and_succeed(
     finally:
         mcp_server_module._services.clear()
         mcp_server_module._services.update(previous_services)
+
+
+async def test_token_verifier_sets_canonical_actor_for_oauth_and_api_keys(
+    user_service: UserService,
+    coordination_service: CoordinationService,
+) -> None:
+    """Verify SupernoteTokenVerifier sets canonical `oauth:` and `api_key:` actor IDs."""
+    user = await user_service.register(
+        UserRegisterDTO(
+            email="actor-test@example.com",
+            password=hashlib.md5(b"password").hexdigest(),
+            user_name="Actor Test",
+        )
+    )
+    verifier = SupernoteTokenVerifier(user_service)
+
+    await coordination_service.set_value(
+        "mcp:access_token:tok-oauth",
+        json.dumps(
+            {"user_id": user.id, "client_id": "   ", "scopes": ["supernote:all"]}
+        ),
+        ttl=60,
+    )
+    oauth_tok = await verifier.verify_token("tok-oauth")
+    assert oauth_tok is not None
+    assert oauth_tok.actor == "oauth:unknown"
+
+    raw_key, key_vo = await user_service.create_api_key(user.id, "agent")
+    api_tok = await verifier.verify_token(raw_key)
+    assert api_tok is not None
+    assert api_tok.actor == f"api_key:{key_vo.id}"

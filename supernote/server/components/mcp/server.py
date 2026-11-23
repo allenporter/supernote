@@ -43,11 +43,9 @@ from supernote.server.components.oauth.models import (
     MCPScope,
     SupernoteAccessToken,
 )
-from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.search import SearchService
 from supernote.server.services.user import (
-    API_KEY_PREFIX,
-    OAUTH_ACCESS_TOKEN_KEY_PREFIX,
+    AuthMethod,
     UserService,
 )
 
@@ -58,58 +56,45 @@ MAX_MCP_TOKEN_LENGTH = 4096
 _services: dict[str, Any] = {
     "search_service": None,
     "user_service": None,
-    "coordination_service": None,
 }
 
 
 def set_services(
     search_service: SearchService,
     user_service: UserService,
-    coordination_service: CoordinationService,
 ) -> None:
     """Inject services into the MCP module."""
     _services["search_service"] = search_service
     _services["user_service"] = user_service
-    _services["coordination_service"] = coordination_service
 
 
 class SupernoteTokenVerifier(TokenVerifier):
     """Verifier that maps tokens to users using UserService."""
 
-    def __init__(
-        self, user_service: UserService, coordination_service: CoordinationService
-    ):
+    def __init__(self, user_service: UserService):
         self.user_service = user_service
-        self.coordination_service = coordination_service
 
     async def verify_token(self, token: str) -> SupernoteAccessToken | None:
         if not token or len(token) > MAX_MCP_TOKEN_LENGTH:
             return None
-
-        if not token.startswith(API_KEY_PREFIX):
-            key = f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}{token}"
-            data = await self.coordination_service.get_value(key)
-            if data:
-                token_data = await self.user_service.parse_oauth_token_payload(data)
-                if token_data is None:
-                    return None
-                return SupernoteAccessToken(
-                    token=token,
-                    user_id=token_data["user_id"],
-                    client_id=token_data.get("client_id", "unknown"),
-                    scopes=token_data.get("scopes", []),
-                    resource=token_data.get("resource"),
-                )
-
-        session = await self.user_service.verify_token(token)
-        if not session:
+        if not (session := await self.user_service.verify_token(token)):
             return None
+
+        if session.auth_method == AuthMethod.OAUTH:
+            client_id = session.actor_id or "unknown"
+            scopes = list(session.scopes)
+        else:
+            client_id = "api_key" if session.is_api_key else "session"
+            scopes = [MCPScope.ALL]
+
         return SupernoteAccessToken(
             token=token,
             user_id=session.user_id,
-            client_id="api_key" if session.is_api_key else "session",
-            scopes=[MCPScope.ALL],
+            client_id=client_id,
+            scopes=scopes,
+            resource=session.resource,
             expires_at=session.expires_at,
+            actor=session.actor,
         )
 
 
@@ -293,9 +278,7 @@ async def get_notebook_transcript(
 def create_mcp_server(issuer_url: str, resource_server_url: str) -> MCPServer:
     """Create a new MCPServer instance and register tools."""
     init_mcp_metrics()
-    token_verifier = SupernoteTokenVerifier(
-        _services["user_service"], _services["coordination_service"]
-    )
+    token_verifier = SupernoteTokenVerifier(_services["user_service"])
     mcp = MCPServer(
         "Supernote Retrieval",
         auth=AuthSettings(

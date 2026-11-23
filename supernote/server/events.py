@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 _current_actor_var: ContextVar[str | None] = ContextVar(
     "supernote_current_event_actor", default=None
 )
+_current_provenance_var: ContextVar[dict[str, str] | None] = ContextVar(
+    "supernote_current_event_provenance", default=None
+)
 
 
 @contextmanager
@@ -40,6 +43,46 @@ def bind_event_actor(actor: str | None) -> Generator[None]:
         yield
     finally:
         _current_actor_var.reset(token)
+
+
+MAX_PROVENANCE_CAUSE_SEQ_LENGTH = 64
+MAX_PROVENANCE_REASON_LENGTH = 500
+
+
+@contextmanager
+def bind_event_provenance(
+    *,
+    cause_seq: str | None = None,
+    reason: str | None = None,
+) -> Generator[None]:
+    """Attach optional causal provenance to domain events emitted in this async context.
+
+    Automated clients and MCP tools often mutate server state in reaction to an
+    earlier domain event (for example, creating a task after a notebook page is
+    transcribed). Binding `cause_seq` and `reason` via this context manager
+    merges them into `DomainEvent.to_payload()` for every event recorded in
+    `f_user_event` inside the `with` block—keeping provenance out of domain
+    service method signatures (mirroring `bind_event_actor`).
+
+    Both fields are stripped of surrounding whitespace, omitted when empty, and
+    truncated to `MAX_PROVENANCE_CAUSE_SEQ_LENGTH` (64) and
+    `MAX_PROVENANCE_REASON_LENGTH` (500) characters respectively.
+
+    Example::
+
+        with bind_event_provenance(cause_seq="9001", reason="Extracted from page 2"):
+            await schedule_service.create_task(user_id=user_id, title="Follow up")
+    """
+    provenance: dict[str, str] = {}
+    if cause_seq is not None and (cleaned_seq := cause_seq.strip()):
+        provenance["cause_seq"] = cleaned_seq[:MAX_PROVENANCE_CAUSE_SEQ_LENGTH]
+    if reason is not None and (cleaned_reason := reason.strip()):
+        provenance["reason"] = cleaned_reason[:MAX_PROVENANCE_REASON_LENGTH]
+    token = _current_provenance_var.set(provenance or None)
+    try:
+        yield
+    finally:
+        _current_provenance_var.reset(token)
 
 
 @dataclass
@@ -83,6 +126,8 @@ class DomainEvent(Event, DataClassJSONMixin):
         data = self.to_dict()
         data.pop("user_id", None)
         data.pop("equipment_no", None)
+        if provenance := _current_provenance_var.get():
+            data.update(provenance)
         return data
 
 
