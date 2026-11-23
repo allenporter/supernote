@@ -1,74 +1,45 @@
-"""Unit tests for ICalExportService task conversion and iCalendar stream export."""
+"""HTTP iCalendar export tests for `GET /api/schedule/feed.ics`."""
+
+from __future__ import annotations
 
 import base64
 import json
 
-import pytest
 from ical.calendar_stream import IcsCalendarStream
 
+from supernote.client.schedule import ScheduleClient
 from supernote.models.schedule import ScheduleTaskLinkDTO
-from supernote.server.components.schedule.ical_export import ICalExportService
-from supernote.server.components.schedule.service import ScheduleService
-from supernote.server.db.session import DatabaseSessionManager
 
 
-@pytest.fixture
-async def schedule_service(session_manager: DatabaseSessionManager) -> ScheduleService:
-    """Fixture for ScheduleService."""
-    return ScheduleService(session_manager)
-
-
-@pytest.fixture
-async def ical_export_service(
-    session_manager: DatabaseSessionManager,
-    schedule_service: ScheduleService,
-) -> ICalExportService:
-    """Fixture for ICalExportService."""
-    return ICalExportService(session_manager, schedule_service)
-
-
-async def test_export_empty_calendar(
-    ical_export_service: ICalExportService,
-) -> None:
-    """Test exporting a calendar when the user has no schedule tasks."""
-    user_id = 999
-    ics_text = await ical_export_service.export_calendar(user_id)
+async def test_export_empty_calendar(schedule_client: ScheduleClient) -> None:
+    """Verify exporting a calendar when the user has no schedule tasks."""
+    ics_text = await schedule_client.get_ical_feed()
 
     assert "BEGIN:VCALENDAR" in ics_text
     assert "END:VCALENDAR" in ics_text
 
-    # Round-trip parsing with ical library
     calendar = IcsCalendarStream.calendar_from_ics(ics_text)
     assert calendar is not None
     assert len(calendar.todos) == 0
 
 
-async def test_export_ungrouped_inbox_task(
-    schedule_service: ScheduleService,
-    ical_export_service: ICalExportService,
-) -> None:
-    """Test exporting an ungrouped Inbox task without a matching group."""
-    user_id = 997
-    await schedule_service.create_task(user_id, None, "Inbox Task")
+async def test_export_ungrouped_inbox_task(schedule_client: ScheduleClient) -> None:
+    """Verify exporting an ungrouped Inbox task produces no categories."""
+    await schedule_client.create_task(None, "Inbox Task")
 
-    ics_text = await ical_export_service.export_calendar(user_id)
+    ics_text = await schedule_client.get_ical_feed()
     calendar = IcsCalendarStream.calendar_from_ics(ics_text)
     assert len(calendar.todos) == 1
     assert calendar.todos[0].categories == []
 
 
-async def test_export_calendar_tasks_roundtrip(
-    schedule_service: ScheduleService,
-    ical_export_service: ICalExportService,
-) -> None:
-    """Test creating tasks and verifying iCal export round-trip parsing."""
-    user_id = 888
-    group = await schedule_service.create_group(user_id, "Project Alpha")
+async def test_export_calendar_tasks_roundtrip(schedule_client: ScheduleClient) -> None:
+    """Verify creating tasks via HTTP and round-trip parsing the `.ics` feed."""
+    group = await schedule_client.create_group("Project Alpha")
+    assert group.task_list_id is not None
     group_id = group.task_list_id
 
-    # Create test tasks
-    task1 = await schedule_service.create_task(
-        user_id=user_id,
+    task1 = await schedule_client.create_task(
         group_id=group_id,
         title="Review PR #42",
         detail="Check iCal export implementation",
@@ -76,32 +47,27 @@ async def test_export_calendar_tasks_roundtrip(
         importance="high",
         due_time=1722643200000,
     )
-    task2 = await schedule_service.create_task(
-        user_id=user_id,
+    assert task1.task_id is not None
+
+    task2 = await schedule_client.create_task(
         group_id=group_id,
         title="Deploy to Staging",
         detail="Run schema migrations first",
         status="completed",
+        completed_time_ms=1722646800000,
     )
-    await schedule_service.update_task(
-        user_id, task2.task_id, completed_time=1722646800000
-    )
+    assert task2.task_id is not None
 
-    # Export calendar for user
-    ics_text = await ical_export_service.export_calendar(user_id)
-    assert isinstance(ics_text, str)
+    ics_text = await schedule_client.get_ical_feed()
     assert "BEGIN:VCALENDAR" in ics_text
     assert "BEGIN:VTODO" in ics_text
 
-    # Parse exported iCal stream back into Calendar object
     calendar = IcsCalendarStream.calendar_from_ics(ics_text)
     assert calendar is not None
     assert len(calendar.todos) == 2
 
-    # Verify task properties match created tasks
     summaries = {todo.summary for todo in calendar.todos}
-    assert "Review PR #42" in summaries
-    assert "Deploy to Staging" in summaries
+    assert summaries == {"Review PR #42", "Deploy to Staging"}
 
     todo1 = next(t for t in calendar.todos if t.summary == "Review PR #42")
     assert todo1.description == "Check iCal export implementation"
@@ -111,33 +77,29 @@ async def test_export_calendar_tasks_roundtrip(
 
 
 async def test_export_calendar_task_list_filtering(
-    schedule_service: ScheduleService,
-    ical_export_service: ICalExportService,
+    schedule_client: ScheduleClient,
 ) -> None:
-    """Test exporting calendar filtered by a specific task list/group."""
-    user_id = 777
-    group_a = await schedule_service.create_group(user_id, "Work")
-    group_b = await schedule_service.create_group(user_id, "Personal")
+    """Verify filtering `.ics` feed by a specific taskListId excludes other groups."""
+    group_a = await schedule_client.create_group("Work")
+    group_b = await schedule_client.create_group("Personal")
+    assert group_a.task_list_id is not None
+    assert group_b.task_list_id is not None
 
-    await schedule_service.create_task(user_id, group_a.task_list_id, "Work Task")
-    await schedule_service.create_task(user_id, group_b.task_list_id, "Personal Task")
+    await schedule_client.create_task(group_a.task_list_id, "Work Task")
+    await schedule_client.create_task(group_b.task_list_id, "Personal Task")
 
-    # Export only Group A
-    ics_text_a = await ical_export_service.export_calendar(
-        user_id, task_list_id=group_a.task_list_id
-    )
+    ics_text_a = await schedule_client.get_ical_feed(group_id=group_a.task_list_id)
     calendar_a = IcsCalendarStream.calendar_from_ics(ics_text_a)
     assert len(calendar_a.todos) == 1
     assert calendar_a.todos[0].summary == "Work Task"
 
 
 async def test_export_task_with_file_path_link(
-    schedule_service: ScheduleService,
-    ical_export_service: ICalExportService,
+    schedule_client: ScheduleClient,
 ) -> None:
-    """Test decoding and exporting a task link encoded with 'filePath' and 'taskTitle'."""
-    user_id = 666
-    group = await schedule_service.create_group(user_id, "Daily Notes")
+    """Verify decoding and exporting a task link encoded with `filePath` and `taskTitle`."""
+    group = await schedule_client.create_group("Daily Notes")
+    assert group.task_list_id is not None
     raw_link = {
         "appName": "Note",
         "filePath": "Note/2026_Daily.note",
@@ -152,14 +114,13 @@ async def test_export_task_with_file_path_link(
     assert decoded.path == "Note/2026_Daily.note"
     assert decoded.task_title == "Follow up on design"
 
-    await schedule_service.create_task(
-        user_id,
+    await schedule_client.create_task(
         group.task_list_id,
         "Follow up on design",
         links=links_b64,
     )
 
-    ics_text = await ical_export_service.export_calendar(user_id)
+    ics_text = await schedule_client.get_ical_feed()
     calendar = IcsCalendarStream.calendar_from_ics(ics_text)
     assert len(calendar.todos) == 1
     todo = calendar.todos[0]

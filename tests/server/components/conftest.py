@@ -11,10 +11,15 @@ from typing import Any, Protocol
 import httpx2
 import pytest
 from aiohttp import web
+from aiohttp.test_utils import TestClient
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from mcp.types import TextContent
 
+from supernote.client.auth import AbstractAuth
+from supernote.client.client import Client
+from supernote.client.extended import ExtendedClient
+from supernote.client.schedule import ScheduleClient
 from supernote.server.components import BUILTIN_COMPONENTS, load_component_from_spec
 from supernote.server.config import ServerConfig
 from supernote.server.core import ComponentLoader, ServerCore
@@ -99,6 +104,33 @@ async def load_components(
     finally:
         for loader in reversed(loaders):
             await loader.async_stop_all(component_core)
+
+
+@pytest.fixture
+async def authenticated_client(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> Client:
+    """Create an authenticated Supernote HTTP `Client` against the test server."""
+    token = auth_headers["x-access-token"]
+
+    class TokenAuth(AbstractAuth):
+        async def async_get_access_token(self) -> str:
+            return token
+
+    return Client(client.session, auth=TokenAuth(), host=str(client.make_url("")))
+
+
+@pytest.fixture
+def extended_client(authenticated_client: Client) -> ExtendedClient:
+    """Create an authenticated `ExtendedClient` against the test server."""
+    return ExtendedClient(authenticated_client)
+
+
+@pytest.fixture
+def schedule_client(authenticated_client: Client) -> ScheduleClient:
+    """Create an authenticated `ScheduleClient` against the test server."""
+    return ScheduleClient(authenticated_client)
 
 
 @pytest.fixture

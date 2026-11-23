@@ -9,11 +9,13 @@ from unittest.mock import patch
 import pytest
 from prometheus_client import REGISTRY
 
+from supernote.models.user import UserRegisterDTO
 from supernote.server.components.search import SEARCH_SERVICE_KEY
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.services.user import UserService
 from tests.server.components.conftest import call_mcp_tool, mcp_session
 
 
@@ -107,6 +109,88 @@ async def test_search_mcp_list_notebooks_over_protocol(
     assert data["notebooks"][0]["fileName"] == "roadmap_notes.note"
     assert _call_count("list_notebooks", "success") == before_ok + 1.0
     assert _duration_count("list_notebooks") == before_dur + 1.0
+
+
+async def test_search_mcp_list_notebooks_ordering_filtering_and_isolation(
+    mcp_url: str,
+    auth_headers: dict[str, str],
+    session_manager: DatabaseSessionManager,
+    user_service: UserService,
+    test_user_id: int,
+) -> None:
+    """Verify `list_notebooks` orders by update_time desc, skips inactive/non-note/other-user files, and honors filters."""
+    other_account = await user_service.register(
+        UserRegisterDTO(email="other_search@example.com", password="a" * 32)
+    )
+    async with session_manager.session() as db:
+        older = UserFileDO(
+            user_id=test_user_id,
+            file_name="Older.note",
+            directory_id=0,
+            is_folder="N",
+            is_active="Y",
+            create_time=1000,
+            update_time=1500,
+            storage_key="older_note_key",
+        )
+        newer = UserFileDO(
+            user_id=test_user_id,
+            file_name="Newer_Daily.note",
+            directory_id=0,
+            is_folder="N",
+            is_active="Y",
+            create_time=2000,
+            update_time=3000,
+            storage_key="newer_daily_key",
+        )
+        deleted = UserFileDO(
+            user_id=test_user_id,
+            file_name="Deleted.note",
+            directory_id=0,
+            is_folder="N",
+            is_active="N",
+            create_time=4000,
+            update_time=5000,
+            storage_key="deleted_note_key",
+        )
+        pdf = UserFileDO(
+            user_id=test_user_id,
+            file_name="Document.pdf",
+            directory_id=0,
+            is_folder="N",
+            is_active="Y",
+            create_time=4000,
+            update_time=5000,
+            storage_key="document_pdf_key",
+        )
+        other_user = UserFileDO(
+            user_id=other_account.id,
+            file_name="OtherUser.note",
+            directory_id=0,
+            is_folder="N",
+            is_active="Y",
+            create_time=4000,
+            update_time=5000,
+            storage_key="other_user_note_key",
+        )
+        db.add_all([older, newer, deleted, pdf, other_user])
+        await db.commit()
+        older_id, newer_id = str(older.id), str(newer.id)
+
+    async with mcp_session(mcp_url, auth_headers) as session:
+        all_resp = await call_mcp_tool(session, "list_notebooks", {})
+        filtered = await call_mcp_tool(
+            session, "list_notebooks", {"name_filter": "daily"}
+        )
+        limited = await call_mcp_tool(session, "list_notebooks", {"limit": 1})
+
+    assert [n["fileId"] for n in all_resp["notebooks"]] == [newer_id, older_id]
+    assert all_resp["notebooks"][0]["fileName"] == "Newer_Daily.note"
+    assert all_resp["notebooks"][0]["createTime"] == 2000
+    assert all_resp["notebooks"][0]["updateTime"] == 3000
+
+    assert [n["fileId"] for n in filtered["notebooks"]] == [newer_id]
+    assert [n["fileId"] for n in limited["notebooks"]] == [newer_id]
 
 
 async def test_search_mcp_search_notebook_chunks_over_protocol(
