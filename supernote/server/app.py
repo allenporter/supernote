@@ -4,7 +4,7 @@
 database/VFS/auth/processor services, and core route tables) and lazily registers
 enabled built-in vertical components (`ai`, `apple`, `events`, `fake_ai`,
 `gemini`, `http`, `mcp`, `metrics`, `oauth`, `openai`, `schedule`, `search`,
-`socketio`, `web_ui`, `webhooks`) via
+`socketio`, `transcript`, `web_ui`, `webhooks`) via
 `supernote.server.components.load_builtin_components`.
 
 During `on_startup`, the server runs Alembic migrations, initializes `UrlSigner`,

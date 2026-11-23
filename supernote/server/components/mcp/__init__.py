@@ -20,6 +20,7 @@ from supernote.server.components.mcp.metrics import (
     track_mcp_tool_call,
 )
 from supernote.server.components.search import SEARCH_SERVICE_KEY
+from supernote.server.components.transcript import TRANSCRIPT_SERVICE_KEY
 from supernote.server.core import ServerCore
 from supernote.server.events import bind_event_actor
 from supernote.server.keys import MCP_REGISTRAR_KEY
@@ -136,7 +137,7 @@ class McpComponent:
     """Platform host component managing the FastMCP resource server and tool registration."""
 
     domain = "mcp"
-    dependencies: tuple[str, ...] = ("oauth", "search")
+    dependencies: tuple[str, ...] = ("oauth", "search", "transcript")
     platforms: tuple[str, ...] = ()
 
     def __init__(self) -> None:
@@ -151,6 +152,7 @@ class McpComponent:
         set_services(
             core.app[SEARCH_SERVICE_KEY],
             core.user_service,
+            transcript_service=core.app[TRANSCRIPT_SERVICE_KEY],
         )
         rs_url = f"{core.config.mcp_base_url}/mcp"
         self._mcp_server = create_mcp_server(core.config.base_url, rs_url)

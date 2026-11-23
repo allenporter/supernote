@@ -37,6 +37,7 @@ from supernote.server.components.search import (
     SearchResult,
     SearchService,
 )
+from supernote.server.components.transcript import TranscriptService
 from supernote.server.metrics import REQUEST_DURATION_BUCKETS
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
@@ -48,6 +49,7 @@ class MCPToolTestEnv:
 
     ctx: Context
     search_service: MagicMock
+    transcript_service: MagicMock
     user_service: MagicMock
     coordination_service: MagicMock
 
@@ -83,13 +85,19 @@ def mcp_env() -> Generator[MCPToolTestEnv]:
     search_service = MagicMock(spec=SearchService)
     search_service.list_notebooks = AsyncMock(return_value=[])
     search_service.search_chunks = AsyncMock(return_value=[])
-    search_service.get_transcript = AsyncMock(return_value="Transcript body")
+
+    transcript_service = MagicMock(spec=TranscriptService)
+    transcript_service.get_transcript = AsyncMock(return_value="Transcript body")
 
     user_service = MagicMock(spec=UserService)
     user_service.get_user_id = AsyncMock(return_value=42)
 
     coordination_service = MagicMock(spec=CoordinationService)
-    set_services(search_service, user_service)
+    set_services(
+        search_service,
+        user_service,
+        transcript_service=transcript_service,
+    )
 
     access_token = SupernoteAccessToken(
         token="test-mcp-token",
@@ -102,6 +110,7 @@ def mcp_env() -> Generator[MCPToolTestEnv]:
         yield MCPToolTestEnv(
             ctx=MagicMock(spec=Context),
             search_service=search_service,
+            transcript_service=transcript_service,
             user_service=user_service,
             coordination_service=coordination_service,
         )
@@ -271,7 +280,7 @@ async def test_get_notebook_transcript_success_and_error_metrics(
 ) -> None:
     """Verify `get_notebook_transcript` tracks success, invalid ID, and not-found responses."""
     tool = MCPToolName.GET_NOTEBOOK_TRANSCRIPT
-    mcp_env.search_service.get_transcript.return_value = "Page 1 transcript"
+    mcp_env.transcript_service.get_transcript.return_value = "Page 1 transcript"
 
     before_ok = _call_count(tool, "success")
     before_fail = _call_count(tool, "failure")
@@ -300,7 +309,7 @@ async def test_get_notebook_transcript_success_and_error_metrics(
     assert _duration_count(tool) == before_dur + 2.0
 
     # Missing transcript returns {"success": False, ...} -> status="failure" + duration
-    mcp_env.search_service.get_transcript.return_value = None
+    mcp_env.transcript_service.get_transcript.return_value = None
     not_found_result = await get_notebook_transcript(mcp_env.ctx, file_id="999")
     assert not_found_result == {
         "success": False,
@@ -313,20 +322,23 @@ async def test_get_notebook_transcript_success_and_error_metrics(
 
 
 @pytest.mark.parametrize(
-    ("tool", "service_method", "invoke"),
+    ("tool", "service_attr", "service_method", "invoke"),
     [
         (
             MCPToolName.LIST_NOTEBOOKS,
+            "search_service",
             "list_notebooks",
             lambda ctx: list_notebooks(ctx),
         ),
         (
             MCPToolName.SEARCH_NOTEBOOK_CHUNKS,
+            "search_service",
             "search_chunks",
             lambda ctx: search_notebook_chunks(ctx, query="notes"),
         ),
         (
             MCPToolName.GET_NOTEBOOK_TRANSCRIPT,
+            "transcript_service",
             "get_transcript",
             lambda ctx: get_notebook_transcript(ctx, file_id="101"),
         ),
@@ -335,11 +347,12 @@ async def test_get_notebook_transcript_success_and_error_metrics(
 async def test_mcp_tools_unhandled_exception_records_failure_and_duration(
     mcp_env: MCPToolTestEnv,
     tool: MCPToolName,
+    service_attr: str,
     service_method: str,
     invoke: Callable[[Context], Awaitable[dict[str, Any]]],
 ) -> None:
     """Verify unhandled exceptions increment `status='failure'`, observe latency, and propagate."""
-    getattr(mcp_env.search_service, service_method).side_effect = RuntimeError(
+    getattr(getattr(mcp_env, service_attr), service_method).side_effect = RuntimeError(
         "unexpected backend failure"
     )
 
@@ -358,20 +371,23 @@ async def test_mcp_tools_unhandled_exception_records_failure_and_duration(
 
 
 @pytest.mark.parametrize(
-    ("tool", "service_method", "invoke"),
+    ("tool", "service_attr", "service_method", "invoke"),
     [
         (
             MCPToolName.LIST_NOTEBOOKS,
+            "search_service",
             "list_notebooks",
             lambda ctx: list_notebooks(ctx),
         ),
         (
             MCPToolName.SEARCH_NOTEBOOK_CHUNKS,
+            "search_service",
             "search_chunks",
             lambda ctx: search_notebook_chunks(ctx, query="notes"),
         ),
         (
             MCPToolName.GET_NOTEBOOK_TRANSCRIPT,
+            "transcript_service",
             "get_transcript",
             lambda ctx: get_notebook_transcript(ctx, file_id="101"),
         ),
@@ -380,11 +396,14 @@ async def test_mcp_tools_unhandled_exception_records_failure_and_duration(
 async def test_mcp_tools_cancellation_skips_duration_and_propagates(
     mcp_env: MCPToolTestEnv,
     tool: MCPToolName,
+    service_attr: str,
     service_method: str,
     invoke: Callable[[Context], Awaitable[dict[str, Any]]],
 ) -> None:
     """Verify `CancelledError` increments `status='cancelled'`, skips latency, and propagates."""
-    getattr(mcp_env.search_service, service_method).side_effect = asyncio.CancelledError
+    getattr(
+        getattr(mcp_env, service_attr), service_method
+    ).side_effect = asyncio.CancelledError
 
     before_ok = _call_count(tool, "success")
     before_fail = _call_count(tool, "failure")

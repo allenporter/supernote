@@ -44,6 +44,7 @@ from supernote.server.components.oauth.models import (
     SupernoteAccessToken,
 )
 from supernote.server.components.search import SearchService
+from supernote.server.components.transcript import TranscriptService
 from supernote.server.services.user import (
     AuthMethod,
     UserService,
@@ -55,6 +56,7 @@ MAX_MCP_TOKEN_LENGTH = 4096
 # Global services to be injected by the app
 _services: dict[str, Any] = {
     "search_service": None,
+    "transcript_service": None,
     "user_service": None,
 }
 
@@ -62,9 +64,11 @@ _services: dict[str, Any] = {
 def set_services(
     search_service: SearchService,
     user_service: UserService,
+    transcript_service: TranscriptService | None = None,
 ) -> None:
     """Inject services into the MCP module."""
     _services["search_service"] = search_service
+    _services["transcript_service"] = transcript_service
     _services["user_service"] = user_service
 
 
@@ -234,8 +238,8 @@ async def get_notebook_transcript(
         start_index: 0-based start page index (inclusive).
         end_index: 0-based end page index (inclusive).
     """
-    search_service: SearchService = _services["search_service"]
-    if not search_service:
+    transcript_service: TranscriptService | None = _services["transcript_service"]
+    if not transcript_service:
         return create_error_response(
             "Services not initialized.", ErrorCode.INTERNAL_ERROR
         ).to_dict()
@@ -260,7 +264,7 @@ async def get_notebook_transcript(
             ErrorCode.BAD_REQUEST,
         ).to_dict()
 
-    transcript = await search_service.get_transcript(
+    transcript = await transcript_service.get_transcript(
         user_id=user_id,
         file_id=parsed_file_id,
         start_index=dto.start_index,

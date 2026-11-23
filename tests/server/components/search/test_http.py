@@ -13,7 +13,6 @@ from supernote.client.exceptions import ApiException, NotFoundException
 from supernote.client.extended import ExtendedClient
 from supernote.server.components.search import (
     SEARCH_SERVICE_KEY,
-    PageTranscript,
     SearchResult,
 )
 from supernote.server.services.user import UserService
@@ -102,72 +101,3 @@ async def test_search_route_invalid_dto_and_errors(
         pytest.raises(ApiException),
     ):
         await extended_client.search(query="test")
-
-
-async def test_transcript_route_returns_pages_and_404_when_empty(
-    client: TestClient,
-    extended_client: ExtendedClient,
-) -> None:
-    """Verify POST /api/extended/transcript returns structured pages or 404 when empty."""
-    assert client.app is not None
-    mock_pages = [
-        PageTranscript(
-            page_index=0,
-            page_id="P20260102000000",
-            text="Meeting notes",
-            date="2026-01-02",
-        )
-    ]
-    with patch.object(
-        client.app[SEARCH_SERVICE_KEY],
-        "get_page_transcripts",
-        return_value=mock_pages,
-    ):
-        response = await extended_client.get_transcript(file_id=101)
-
-    assert len(response.pages) == 1
-    assert response.pages[0].page_index == 0
-    assert response.pages[0].text == "Meeting notes"
-
-    with (
-        patch.object(
-            client.app[SEARCH_SERVICE_KEY],
-            "get_page_transcripts",
-            return_value=[],
-        ),
-        pytest.raises(NotFoundException),
-    ):
-        await extended_client.get_transcript(file_id=101)
-
-
-async def test_transcript_route_invalid_dto_and_errors(
-    client: TestClient,
-    auth_headers: dict[str, str],
-    extended_client: ExtendedClient,
-    user_service: UserService,
-) -> None:
-    """Verify POST /api/extended/transcript handles 400, 404, and 500 error paths."""
-    assert client.app is not None
-
-    bad_resp = await client.post(
-        "/api/extended/transcript",
-        json={"invalid": "payload"},
-        headers=auth_headers,
-    )
-    assert bad_resp.status == 400
-
-    with (
-        patch.object(user_service, "get_user_id", return_value=None),
-        pytest.raises(NotFoundException),
-    ):
-        await extended_client.get_transcript(file_id=101)
-
-    with (
-        patch.object(
-            client.app[SEARCH_SERVICE_KEY],
-            "get_page_transcripts",
-            side_effect=RuntimeError("Transcript crash"),
-        ),
-        pytest.raises(ApiException),
-    ):
-        await extended_client.get_transcript(file_id=101)

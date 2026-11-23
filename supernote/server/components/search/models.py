@@ -5,8 +5,6 @@ Defines the transport-free, database-free dataclasses returned by
 
 - `SearchResult`: Ranked page match returned by `SearchService.search_chunks`.
 - `NotebookInfo`: Active `.note` summary returned by `SearchService.list_notebooks`.
-- `PageTranscript`: Structured per-page OCR transcript returned by
-  `SearchService.get_page_transcripts`.
 
 Because this module has zero SQLAlchemy, `aiohttp`, or AI-backend imports,
 transport platforms (`http.py`, future `mcp.py`) and sibling components can
@@ -19,7 +17,6 @@ from dataclasses import dataclass
 
 __all__ = [
     "NotebookInfo",
-    "PageTranscript",
     "SearchResult",
 ]
 
@@ -65,20 +62,3 @@ class NotebookInfo:
 
     update_time: int
     """Last modification timestamp in milliseconds since Unix epoch."""
-
-
-@dataclass(slots=True)
-class PageTranscript:
-    """Structured OCR transcript for a single notebook page."""
-
-    page_index: int
-    """Zero-based page index within the notebook."""
-
-    page_id: str
-    """Supernote page identifier (`PAGEID`)."""
-
-    text: str | None = None
-    """Transcribed page text, or `None` if no text was extracted."""
-
-    date: str | None = None
-    """Optional inferred page date formatted as `YYYY-MM-DD`, if determinable."""

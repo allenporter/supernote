@@ -1,13 +1,11 @@
-"""Semantic search and transcript retrieval vertical server component (`SearchComponent`).
+"""Semantic search vertical server component (`SearchComponent`).
 
-Owns `SearchService`, pure result models (`SearchResult`, `NotebookInfo`,
-`PageTranscript`), and the HTTP search/transcript endpoints
-(`POST /api/extended/search`, `POST /api/extended/transcript`).
+Owns `SearchService`, pure result models (`SearchResult`, `NotebookInfo`),
+and the HTTP search endpoint (`POST /api/extended/search`).
 
 ### Internal Python API for Sibling Components & Plugins
 
-Components that query notebook transcripts or semantic search (for example,
-MCP retrieval tools or RAG workflows) should declare
+Components that run semantic search across notebooks should declare
 ``dependencies = ("search",)`` and access the typed service key:
 
 ```python
@@ -35,13 +33,12 @@ from typing import Any
 from supernote.server.core import ServerCore
 from supernote.server.keys import EMBEDDING_MODEL_KEY
 
-from .models import NotebookInfo, PageTranscript, SearchResult
+from .models import NotebookInfo, SearchResult
 from .service import SEARCH_SERVICE_KEY, SearchService
 
 __all__ = [
     "SEARCH_SERVICE_KEY",
     "NotebookInfo",
-    "PageTranscript",
     "SearchComponent",
     "SearchResult",
     "SearchService",

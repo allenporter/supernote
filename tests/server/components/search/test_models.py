@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from supernote.server.components.search.models import (
     NotebookInfo,
-    PageTranscript,
     SearchResult,
 )
 
@@ -40,12 +39,3 @@ def test_notebook_info_fields() -> None:
     assert info.file_name == "Notes.note"
     assert info.create_time == 1000
     assert info.update_time == 2000
-
-
-def test_page_transcript_defaults() -> None:
-    """Verify PageTranscript defaults optional text and date to None."""
-    page = PageTranscript(page_index=0, page_id="P1")
-    assert page.page_index == 0
-    assert page.page_id == "P1"
-    assert page.text is None
-    assert page.date is None

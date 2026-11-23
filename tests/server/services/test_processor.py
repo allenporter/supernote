@@ -18,6 +18,7 @@ from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
 from supernote.server.components.fake_ai.ocr import FakeOcrModel
 from supernote.server.components.fake_ai.summary import FakeSummaryModel
 from supernote.server.components.search import SearchService
+from supernote.server.components.transcript import TranscriptService
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
@@ -1229,6 +1230,7 @@ async def test_synthetic_handwriting_notebook_full_pipeline_and_incremental_appe
         session_manager=session_manager,
         embedding_model=embedding_model,
     )
+    transcript_service = TranscriptService(session_manager=session_manager)
 
     synth = build_synthetic_notebook(
         pages=[
@@ -1277,7 +1279,7 @@ async def test_synthetic_handwriting_notebook_full_pipeline_and_incremental_appe
             CACHE_BUCKET, get_page_png_path(file_id, page.page_id)
         )
 
-    transcript = await search_service.get_transcript(
+    transcript = await transcript_service.get_transcript(
         user_id=test_user_id, file_id=file_id
     )
     assert transcript is not None
@@ -1330,7 +1332,7 @@ async def test_synthetic_handwriting_notebook_full_pipeline_and_incremental_appe
     assert ok2 is True
     assert updated_synth.pages[2].page_id in ocr_model.processed_page_ids
 
-    updated_transcript = await search_service.get_transcript(
+    updated_transcript = await transcript_service.get_transcript(
         user_id=test_user_id, file_id=file_id
     )
     assert updated_transcript is not None
