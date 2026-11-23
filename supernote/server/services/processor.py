@@ -59,7 +59,6 @@ from ..db.models.note_processing import (
 )
 from ..db.session import DatabaseSessionManager
 from ..events import (
-    BlobCleanupEvent,
     Event,
     LocalEventBus,
     NoteDeletedEvent,
@@ -70,7 +69,6 @@ from ..events import (
 )
 from ..services.file import FileService
 from ..services.processor_modules import ProcessorModule, TaskGraph, TaskScope
-from ..services.summary import SummaryService
 from ..utils.note_content import infer_page_date, normalize_page_style_type
 
 logger = logging.getLogger(__name__)
@@ -91,7 +89,6 @@ class ProcessorService:
         event_bus: LocalEventBus,
         session_manager: DatabaseSessionManager,
         file_service: FileService,
-        summary_service: SummaryService,
         coordination_service: Any = None,
         concurrency: int = 2,
         page_concurrency: int = DEFAULT_PAGE_CONCURRENCY,
@@ -99,7 +96,6 @@ class ProcessorService:
         self.event_bus = event_bus
         self.session_manager = session_manager
         self.file_service = file_service
-        self.summary_service = summary_service
         self.coordination_service = coordination_service
         self.concurrency = concurrency
         self.page_concurrency = page_concurrency
@@ -211,7 +207,6 @@ class ProcessorService:
         self.event_bus.subscribe(NoteUpdatedEvent, self.handle_note_updated)
         self.event_bus.subscribe(NoteDeletedEvent, self.handle_note_deleted)
         self.event_bus.subscribe(SyncCompletedEvent, self.handle_sync_completed)
-        self.event_bus.subscribe(BlobCleanupEvent, self.handle_blob_cleanup)
 
         # Start workers
         for i in range(self.concurrency):
@@ -326,12 +321,6 @@ class ProcessorService:
 
         logger.info(f"Cleanup complete for deleted note: {file_id}")
 
-    async def handle_blob_cleanup(self, event: Event) -> None:
-        """Clean up unreferenced user data blobs asynchronously."""
-        if not isinstance(event, BlobCleanupEvent):
-            return
-        await self.file_service.cleanup_unreferenced_blobs(event.storage_keys)
-
     async def recover_tasks(self) -> None:
         """Check DB for incomplete tasks on startup."""
         logger.info("Recovering pending processing tasks...")
@@ -363,7 +352,6 @@ class ProcessorService:
                 if self.is_processing_enabled():
                     await self.recover_stalled_tasks()
                     await self.recover_missing_tasks()
-                    await self.summary_service.purge_expired_summaries()
             except asyncio.CancelledError:
                 break
             except Exception as e:

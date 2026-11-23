@@ -42,6 +42,7 @@ from ..db.models.summary import SummaryDO
 from ..db.models.user import FALLBACK_QUOTA, UNLIMITED_QUOTA
 from ..db.session import DatabaseSessionManager
 from ..events import (
+    BlobCleanupEvent,
     LocalEventBus,
     NoteDeletedEvent,
     NoteUpdatedEvent,
@@ -197,7 +198,18 @@ class FileService:
         self._staging_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
+        self._blob_cleanup_subscribed = False
         init_oss_and_upload_metrics()
+
+    async def start(self) -> None:
+        """Subscribe to asynchronous blob cleanup events."""
+        if self.event_bus is not None and not self._blob_cleanup_subscribed:
+            self.event_bus.subscribe(BlobCleanupEvent, self.handle_blob_cleanup)
+            self._blob_cleanup_subscribed = True
+
+    async def handle_blob_cleanup(self, event: BlobCleanupEvent) -> None:
+        """Clean up unreferenced user data blobs asynchronously."""
+        await self.cleanup_unreferenced_blobs(event.storage_keys)
 
     async def list_folder(
         self, user: str, path_str: str, recursive: bool = False

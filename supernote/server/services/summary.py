@@ -9,7 +9,9 @@ and `BlobCleanupEvent` onto `supernote.server.events.LocalEventBus`. Used by
 See `supernote.guides.summary_api`.
 """
 
+import asyncio
 import hashlib
+import logging
 import time
 import uuid
 from typing import Any
@@ -44,6 +46,8 @@ from supernote.server.exceptions import SummaryNotFound
 from supernote.server.services.user import UserService
 
 DEFAULT_SUMMARY_PAGE_SIZE = 20
+SUMMARY_PURGE_INTERVAL_SECONDS = 300
+logger = logging.getLogger(__name__)
 
 
 def _to_tag_item(do: SummaryTagDO) -> SummaryTagItem:
@@ -108,11 +112,44 @@ class SummaryService:
         user_service: UserService,
         session_manager: DatabaseSessionManager,
         event_bus: LocalEventBus | None = None,
+        purge_interval_seconds: float = SUMMARY_PURGE_INTERVAL_SECONDS,
     ) -> None:
         """Initialize the summary service."""
         self.user_service = user_service
         self.session_manager = session_manager
         self.event_bus = event_bus
+        self._purge_interval_seconds = purge_interval_seconds
+        self._purge_task: asyncio.Task[None] | None = None
+        self._shutdown_event = asyncio.Event()
+
+    async def start(self) -> None:
+        """Start periodic hard-deletion of expired soft-deleted summaries."""
+        if self._purge_task is not None and not self._purge_task.done():
+            return
+        self._shutdown_event.clear()
+        self._purge_task = asyncio.create_task(self._purge_loop())
+
+    async def stop(self) -> None:
+        """Stop the periodic summary purge loop idempotently."""
+        self._shutdown_event.set()
+        if self._purge_task is not None:
+            self._purge_task.cancel()
+            try:
+                await self._purge_task
+            except asyncio.CancelledError:
+                pass
+            self._purge_task = None
+
+    async def _purge_loop(self) -> None:
+        """Periodically purge soft-deleted summaries past retention."""
+        while not self._shutdown_event.is_set():
+            try:
+                await asyncio.sleep(self._purge_interval_seconds)
+                await self.purge_expired_summaries()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error purging expired summaries: {e}", exc_info=True)
 
     async def add_tag(self, user_email: str, name: str) -> SummaryTagItem:
         """Add a new summary tag."""

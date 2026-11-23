@@ -11,7 +11,6 @@ from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.services.processor import ProcessorService
 from supernote.server.services.processor_modules import ProcessorModule, TaskScope
-from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 
 _DEFAULT_SCOPES = {
@@ -83,15 +82,10 @@ def processor_service(
         session_manager=session_manager,
         event_bus=event_bus,
     )
-    summary_service = SummaryService(
-        user_service=user_service,
-        session_manager=session_manager,
-    )
     return ProcessorService(
         event_bus=event_bus,
         session_manager=session_manager,
         file_service=file_service,
-        summary_service=summary_service,
     )
 
 

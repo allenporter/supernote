@@ -144,7 +144,6 @@ async def test_migrated_legacy_generated_summaries_api_query(tmp_path: Path) -> 
             event_bus=app[EVENT_BUS_KEY],
             session_manager=app[SESSION_MANAGER_KEY],
             file_service=app[FILE_SERVICE_KEY],
-            summary_service=app[SUMMARY_SERVICE_KEY],
         )
         processor.register_modules(
             hashing=PageHashingModule(app[FILE_SERVICE_KEY]),

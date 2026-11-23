@@ -15,11 +15,12 @@ from supernote.server.constants import (
     RECYCLE_RETENTION_MS,
     USER_DATA_BUCKET,
 )
-from supernote.server.db.models.file import RecycleFileDO
+from supernote.server.db.models.file import RecycleFileDO, UserFileDO
 from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.models.user import FALLBACK_QUOTA, UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
+    BlobCleanupEvent,
     Event,
     LocalEventBus,
     NoteDeletedEvent,
@@ -1343,3 +1344,82 @@ async def test_note_upload_metrics_by_source_and_extension(
         )
     assert _note_uploads(NoteUploadSource.DEVICE_SYNC) == before_device + 2.0
     assert _note_uploads(NoteUploadSource.WEB) == before_web + 1.0
+
+
+async def test_handle_blob_cleanup_event(
+    file_service: FileService,
+    event_bus: LocalEventBus,
+    session_manager: DatabaseSessionManager,
+    blob_storage: BlobStorage,
+    test_user_id: int,
+) -> None:
+    """Verify FileService.start() subscribes to BlobCleanupEvent and deletes only unreferenced blobs."""
+    await blob_storage.put(USER_DATA_BUCKET, "unreferenced_hw.bin", b"orphan")
+    await blob_storage.put(USER_DATA_BUCKET, "referenced_by_file.bin", b"file-data")
+    await blob_storage.put(
+        USER_DATA_BUCKET, "referenced_by_recycled_file.bin", b"recycled-file-data"
+    )
+    await blob_storage.put(USER_DATA_BUCKET, "referenced_by_summary.bin", b"sum-data")
+    await blob_storage.put(
+        USER_DATA_BUCKET, "referenced_by_deleted_summary.bin", b"deleted-sum-data"
+    )
+
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=777,
+                    user_id=test_user_id,
+                    storage_key="referenced_by_file.bin",
+                    file_name="keep.note",
+                    directory_id=0,
+                    is_active="Y",
+                ),
+                UserFileDO(
+                    id=778,
+                    user_id=test_user_id,
+                    storage_key="referenced_by_recycled_file.bin",
+                    file_name="recycled.note",
+                    directory_id=0,
+                    is_active="N",
+                ),
+                SummaryDO(
+                    user_id=test_user_id,
+                    unique_identifier="keep-summary-uuid",
+                    handwrite_inner_name="referenced_by_summary.bin",
+                    is_deleted=False,
+                ),
+                SummaryDO(
+                    user_id=test_user_id,
+                    unique_identifier="soft-deleted-summary-uuid",
+                    handwrite_inner_name="referenced_by_deleted_summary.bin",
+                    is_deleted=True,
+                ),
+            ]
+        )
+        await session.commit()
+
+    await file_service.start()
+    await file_service.start()  # idempotent
+    await event_bus.publish(
+        BlobCleanupEvent(
+            storage_keys={
+                "unreferenced_hw.bin",
+                "referenced_by_file.bin",
+                "referenced_by_recycled_file.bin",
+                "referenced_by_summary.bin",
+                "referenced_by_deleted_summary.bin",
+            }
+        )
+    )
+    await asyncio.sleep(0.05)
+
+    assert not await blob_storage.exists(USER_DATA_BUCKET, "unreferenced_hw.bin")
+    assert await blob_storage.exists(USER_DATA_BUCKET, "referenced_by_file.bin")
+    assert await blob_storage.exists(
+        USER_DATA_BUCKET, "referenced_by_recycled_file.bin"
+    )
+    assert await blob_storage.exists(USER_DATA_BUCKET, "referenced_by_summary.bin")
+    assert await blob_storage.exists(
+        USER_DATA_BUCKET, "referenced_by_deleted_summary.bin"
+    )

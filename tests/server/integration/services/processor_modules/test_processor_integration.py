@@ -46,18 +46,17 @@ def summary_service(
 def processor_service(
     session_manager: DatabaseSessionManager,
     file_service: FileService,
-    summary_service: SummaryService,
 ) -> ProcessorService:
     return ProcessorService(
         event_bus=LocalEventBus(),
         session_manager=session_manager,
         file_service=file_service,
-        summary_service=summary_service,
     )
 
 
 async def test_full_processing_pipeline_with_real_file(
     processor_service: ProcessorService,
+    summary_service: SummaryService,
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
     test_data_dir: Path,
@@ -100,7 +99,7 @@ async def test_full_processing_pipeline_with_real_file(
     embedding = EmbeddingModule(processor_service.file_service, fake_embedding_model)
     summary = SummaryModule(
         file_service=processor_service.file_service,
-        summary_service=processor_service.summary_service,
+        summary_service=summary_service,
         summary_model=fake_summary_model,
     )
 
@@ -218,6 +217,7 @@ async def test_full_processing_pipeline_with_real_file(
 
 async def test_pipeline_skips_blank_pages_in_real_multi_page_note(
     processor_service: ProcessorService,
+    summary_service: SummaryService,
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,
     test_data_dir: Path,
@@ -252,7 +252,7 @@ async def test_pipeline_skips_blank_pages_in_real_multi_page_note(
         embedding=EmbeddingModule(processor_service.file_service, fake_embedding_model),
         summary=SummaryModule(
             file_service=processor_service.file_service,
-            summary_service=processor_service.summary_service,
+            summary_service=summary_service,
             summary_model=fake_summary_model,
         ),
     )

@@ -17,7 +17,6 @@ from supernote.server.services.processor_modules.page_hashing import PageHashing
 from supernote.server.services.processor_modules.png_conversion import (
     PngConversionModule,
 )
-from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 from supernote.server.utils.paths import get_conversion_pdf_path
 
@@ -39,14 +38,10 @@ def conversion_service(
         user_service=user_service,
         session_manager=session_manager,
     )
-    summary_service = SummaryService(
-        user_service=user_service, session_manager=session_manager
-    )
     processor_service = ProcessorService(
         event_bus=LocalEventBus(),
         session_manager=session_manager,
         file_service=file_service,
-        summary_service=summary_service,
     )
     processor_service.register_modules(
         hashing=PageHashingModule(file_service=file_service),

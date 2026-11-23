@@ -30,7 +30,6 @@ from supernote.server.db.models.note_processing import (
 from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
-    BlobCleanupEvent,
     Event,
     LocalEventBus,
     NoteDeletedEvent,
@@ -96,13 +95,11 @@ def summary_service(
 def processor_service_fixture(
     session_manager: DatabaseSessionManager,
     file_service: FileService,
-    summary_service: SummaryService,
 ) -> ProcessorService:
     return ProcessorService(
         event_bus=LocalEventBus(),
         session_manager=session_manager,
         file_service=file_service,
-        summary_service=summary_service,
     )
 
 
@@ -376,89 +373,6 @@ async def test_handle_note_deleted_cleanup(
     assert not await blob_storage.exists(CACHE_BUCKET, get_page_png_path(file_id, "p1"))
     assert await blob_storage.exists(USER_DATA_BUCKET, "note_sum_hw.bin")
     assert await blob_storage.exists(USER_DATA_BUCKET, "shared_grp_hw.bin")
-
-
-async def test_handle_blob_cleanup_event(
-    processor_service: ProcessorService,
-    session_manager: DatabaseSessionManager,
-    blob_storage: BlobStorage,
-    test_user_id: int,
-) -> None:
-    """Verify BlobCleanupEvent deletes unreferenced blobs while preserving active and soft-deleted file/summary blobs."""
-    await blob_storage.put(USER_DATA_BUCKET, "unreferenced_hw.bin", b"orphan")
-    await blob_storage.put(USER_DATA_BUCKET, "referenced_by_file.bin", b"file-data")
-    await blob_storage.put(
-        USER_DATA_BUCKET, "referenced_by_recycled_file.bin", b"recycled-file-data"
-    )
-    await blob_storage.put(USER_DATA_BUCKET, "referenced_by_summary.bin", b"sum-data")
-    await blob_storage.put(
-        USER_DATA_BUCKET, "referenced_by_deleted_summary.bin", b"deleted-sum-data"
-    )
-
-    async with session_manager.session() as session:
-        session.add_all(
-            [
-                UserFileDO(
-                    id=777,
-                    user_id=test_user_id,
-                    storage_key="referenced_by_file.bin",
-                    file_name="keep.note",
-                    directory_id=0,
-                    is_active="Y",
-                ),
-                UserFileDO(
-                    id=778,
-                    user_id=test_user_id,
-                    storage_key="referenced_by_recycled_file.bin",
-                    file_name="recycled.note",
-                    directory_id=0,
-                    is_active="N",
-                ),
-                SummaryDO(
-                    user_id=test_user_id,
-                    unique_identifier="keep-summary-uuid",
-                    handwrite_inner_name="referenced_by_summary.bin",
-                    is_deleted=False,
-                ),
-                SummaryDO(
-                    user_id=test_user_id,
-                    unique_identifier="soft-deleted-summary-uuid",
-                    handwrite_inner_name="referenced_by_deleted_summary.bin",
-                    is_deleted=True,
-                ),
-            ]
-        )
-        await session.commit()
-
-    await processor_service.start()
-    try:
-        await processor_service.event_bus.publish(
-            BlobCleanupEvent(
-                storage_keys={
-                    "unreferenced_hw.bin",
-                    "referenced_by_file.bin",
-                    "referenced_by_recycled_file.bin",
-                    "referenced_by_summary.bin",
-                    "referenced_by_deleted_summary.bin",
-                }
-            )
-        )
-        await asyncio.sleep(0.05)
-        await processor_service.handle_blob_cleanup(
-            BlobCleanupEvent(storage_keys={"referenced_by_file.bin"})
-        )
-    finally:
-        await processor_service.stop()
-
-    assert not await blob_storage.exists(USER_DATA_BUCKET, "unreferenced_hw.bin")
-    assert await blob_storage.exists(USER_DATA_BUCKET, "referenced_by_file.bin")
-    assert await blob_storage.exists(
-        USER_DATA_BUCKET, "referenced_by_recycled_file.bin"
-    )
-    assert await blob_storage.exists(USER_DATA_BUCKET, "referenced_by_summary.bin")
-    assert await blob_storage.exists(
-        USER_DATA_BUCKET, "referenced_by_deleted_summary.bin"
-    )
 
 
 async def test_page_hashing_orphan_cleanup(
@@ -746,7 +660,6 @@ async def test_processor_pause_resume(
         event_bus=LocalEventBus(),
         session_manager=session_manager,
         file_service=file_service,
-        summary_service=summary_service,
         coordination_service=coordination_service,
         concurrency=1,
     )
@@ -1265,7 +1178,6 @@ async def test_synthetic_handwriting_notebook_full_pipeline_and_incremental_appe
         event_bus=event_bus,
         session_manager=session_manager,
         file_service=file_service,
-        summary_service=summary_service,
     )
     processor.register_modules(
         hashing=PageHashingModule(file_service),
@@ -1547,7 +1459,6 @@ async def test_process_file_and_queue_pause_metrics(
         event_bus=LocalEventBus(),
         session_manager=session_manager,
         file_service=file_service,
-        summary_service=summary_service,
         coordination_service=coordination,
         concurrency=0,
     )
@@ -1694,7 +1605,6 @@ async def test_processor_queue_size_and_module_metric_seeding(
         event_bus=LocalEventBus(),
         session_manager=session_manager,
         file_service=file_service,
-        summary_service=summary_service,
         concurrency=0,
     )
 
