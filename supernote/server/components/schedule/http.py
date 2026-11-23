@@ -2,9 +2,9 @@
 
 Serves both the official Supernote device/Partner App task synchronization protocol
 (`/api/file/schedule/group*`, `/api/file/schedule/task*`, `/api/file/schedule/sort*`)
-backed by `supernote.server.services.schedule.ScheduleService` and `supernote.models.schedule`,
+backed by `supernote.server.components.schedule.service.ScheduleService` and `supernote.models.schedule`,
 and the RFC 5545 `VTODO` calendar feed endpoint (`GET /api/schedule/feed.ics`) backed by
-`supernote.server.services.ical_export.ICalExportService`.
+`supernote.server.components.schedule.ical_export.ICalExportService`.
 See `supernote.guides.schedule_api` and `supernote.guides.webhooks_and_integrations`.
 """
 
@@ -34,15 +34,17 @@ from supernote.models.schedule import (
     UpdateScheduleTaskListDTO,
     UpdateScheduleTaskVO,
 )
+from supernote.server.components.http import HttpRegistrar
+from supernote.server.core import ServerCore
 from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
     REQUEST_USER_KEY,
-    SCHEDULE_SERVICE_KEY,
     SESSION_MANAGER_KEY,
     USER_SERVICE_KEY,
 )
-from supernote.server.services.ical_export import ICalExportService
-from supernote.server.services.schedule import ScheduleService
+
+from .ical_export import ICalExportService
+from .service import SCHEDULE_SERVICE_KEY, ScheduleService
 
 routes = web.RouteTableDef()
 
@@ -546,3 +548,9 @@ async def get_schedule_feed_ics(request: web.Request) -> web.Response:
             "Content-Disposition": 'inline; filename="feed.ics"',
         },
     )
+
+
+async def async_setup_http(core: ServerCore, registrar: HttpRegistrar) -> None:
+    """Register schedule task CRUD and `.ics` feed routes on ``core.app``."""
+    _ = registrar
+    core.app.add_routes(routes)

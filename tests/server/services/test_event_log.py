@@ -12,6 +12,7 @@ from supernote.models.schedule import ScheduleTaskLinkDTO
 from supernote.models.summary import AddSummaryDTO, AddSummaryGroupDTO, SummaryItem
 from supernote.models.user import UserRegisterDTO
 from supernote.server.ai.models.ocr import OcrModel
+from supernote.server.components.schedule.service import ScheduleService
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
@@ -36,7 +37,6 @@ from supernote.server.services.event_log import (
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.ocr import OcrModule
 from supernote.server.services.processor_modules.summary import SummaryModule
-from supernote.server.services.schedule import ScheduleService
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 from supernote.server.utils.paths import get_page_png_path

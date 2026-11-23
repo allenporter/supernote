@@ -60,6 +60,11 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         default_enabled=True,
     ),
     BuiltinComponentSpec(
+        domain="schedule",
+        import_path="supernote.server.components.schedule:ScheduleComponent",
+        default_enabled=True,
+    ),
+    BuiltinComponentSpec(
         domain="socketio",
         import_path="supernote.server.components.socketio:SocketIOComponent",
         default_enabled=True,

@@ -4,13 +4,14 @@
 enforcing client-supplied or server-generated IDs, atomic all-or-nothing batch updates,
 cascade soft-deletes, and `nextSyncToken` delta queries. Mutations publish
 `ScheduleUpdatedEvent` onto `supernote.server.events.LocalEventBus` for real-time Socket.IO
-push notifications. Used by `supernote.server.routes.schedule` and
-`supernote.server.services.ical_export.ICalExportService`. See `supernote.guides.schedule_api`.
+push notifications. Used by `supernote.server.components.schedule.http` and
+`supernote.server.components.schedule.ical_export.ICalExportService`. See `supernote.guides.schedule_api`.
 """
 
 import time
 from typing import Any, cast
 
+from aiohttp import web
 from sqlalchemy import delete, or_, select, update
 from sqlalchemy.engine import CursorResult
 
@@ -607,3 +608,6 @@ class ScheduleService:
                 task_id=target_task_id,
             )
         return deleted
+
+
+SCHEDULE_SERVICE_KEY: web.AppKey[ScheduleService] = web.AppKey("schedule_service")

@@ -7,9 +7,9 @@ import pytest
 from ical.calendar_stream import IcsCalendarStream
 
 from supernote.models.schedule import ScheduleTaskLinkDTO
+from supernote.server.components.schedule.ical_export import ICalExportService
+from supernote.server.components.schedule.service import ScheduleService
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.services.ical_export import ICalExportService
-from supernote.server.services.schedule import ScheduleService
 
 
 @pytest.fixture
