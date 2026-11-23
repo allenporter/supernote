@@ -13,6 +13,7 @@ import heapq
 import importlib
 import logging
 import re
+import sys
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
@@ -242,9 +243,20 @@ class ComponentLoader:
         registrar: Any,
     ) -> None:
         """Import and invoke ``async_setup_<platform>(core, registrar)`` for declared components."""
+        if self._state is not _LifecycleState.SETUP:
+            raise ComponentError(
+                f"Cannot load platform {platform!r} in state {self._state.value!r}; "
+                "components must complete async_setup_all first"
+            )
         setup_attr = f"async_setup_{platform}"
         for comp in self.iter_platform_components(platform):
-            module_name = f"{comp.__class__.__module__}.{platform}"
+            comp_module = sys.modules.get(comp.__class__.__module__)
+            pkg = (
+                comp_module.__package__
+                if comp_module is not None and comp_module.__package__
+                else comp.__class__.__module__
+            )
+            module_name = f"{pkg}.{platform}"
             module = importlib.import_module(module_name)
             setup_fn = getattr(module, setup_attr, None)
             if setup_fn is None:

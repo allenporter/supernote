@@ -1,25 +1,106 @@
 """HTTP transport platform component (`HttpComponent` and `HttpRegistrar`).
 
-Owns `aiohttp` middleware ordering, public-prefix / ASGI resource auth exemptions,
-and deferred catch-all resource mounting for components declaring ``platforms = ("http",)``.
+Owns `aiohttp` core middlewares (`jwt_auth_middleware`, `static_cache_control_middleware`),
+middleware ordering, public-prefix / ASGI resource auth exemptions, and deferred
+catch-all resource mounting for components declaring ``platforms = ("http",)``.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from typing import Any
 
 from aiohttp import web
 from aiohttp.typedefs import Middleware
+from aiohttp.web_urldispatcher import SystemRoute
 
+from supernote.models.base import create_error_response
 from supernote.server.core import ServerCore
-from supernote.server.keys import HTTP_REGISTRAR_KEY
+from supernote.server.keys import (
+    HTTP_REGISTRAR_KEY,
+    REQUEST_EQUIPMENT_NO_KEY,
+    REQUEST_USER_KEY,
+    USER_SERVICE_KEY,
+)
+from supernote.server.trace import trace_middleware
+from supernote.server.utils.auth_utils import get_token_from_request
 
 __all__ = [
     "HTTP_REGISTRAR_KEY",
     "HttpComponent",
     "HttpRegistrar",
+    "jwt_auth_middleware",
+    "static_cache_control_middleware",
 ]
+
+
+@web.middleware
+async def jwt_auth_middleware(
+    request: web.Request,
+    handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
+) -> web.StreamResponse:
+    """Authenticate requests via JWT, OAuth Bearer token, or static API key."""
+    route = request.match_info.route
+    if route is None or isinstance(route, SystemRoute):
+        return await handler(request)
+
+    http_registrar = request.app.get(HTTP_REGISTRAR_KEY)
+    if (
+        http_registrar is not None
+        and route.resource is not None
+        and route.resource in http_registrar.public_resources
+    ):
+        return await handler(request)
+
+    handler_func = getattr(route, "handler", None)
+    if handler_func and getattr(handler_func, "is_public", False):
+        return await handler(request)
+
+    if (
+        request.path.startswith("/static/")
+        or request.path == "/favicon.ico"
+        or (
+            http_registrar is not None
+            and any(request.path.startswith(p) for p in http_registrar.public_prefixes)
+        )
+    ):
+        return await handler(request)
+
+    if not (token := get_token_from_request(request)):
+        return web.json_response(
+            create_error_response("Unauthorized").to_dict(), status=401
+        )
+
+    user_service = request.app[USER_SERVICE_KEY]
+    session = await user_service.verify_token(token)
+    if not session:
+        return web.json_response(
+            create_error_response("Invalid token").to_dict(), status=401
+        )
+
+    if not session.is_interactive_session and getattr(
+        handler_func, "interactive_session_only", False
+    ):
+        return web.json_response(
+            create_error_response("Forbidden: Interactive session required").to_dict(),
+            status=403,
+        )
+
+    request[REQUEST_USER_KEY] = session.email
+    request[REQUEST_EQUIPMENT_NO_KEY] = session.equipment_no
+    return await handler(request)
+
+
+@web.middleware
+async def static_cache_control_middleware(
+    request: web.Request,
+    handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
+) -> web.StreamResponse:
+    """Ensure frontend HTML and static assets revalidate across server upgrades."""
+    response = await handler(request)
+    if request.path == "/" or request.path.startswith("/static/"):
+        response.headers.setdefault("Cache-Control", "no-cache")
+    return response
 
 
 class HttpRegistrar:
@@ -63,9 +144,27 @@ class HttpRegistrar:
         self._known_resource_paths.update(known_paths)
 
     def mount_resources(self, app: web.Application) -> None:
-        """Mount deferred public resources onto ``app.router`` after regular routes."""
+        """Idempotently mount deferred public resources onto ``app.router`` after regular routes."""
+        existing = set(app.router.resources())
         for resource in self._public_resources:
-            app.router.register_resource(resource)
+            if resource not in existing:
+                app.router.register_resource(resource)
+                existing.add(resource)
+
+    def apply_to_app(
+        self,
+        app: web.Application,
+        *,
+        extra_outer_middlewares: Iterable[Middleware] = (),
+    ) -> None:
+        """Mount deferred resources and assemble the ordered middleware pipeline."""
+        self.mount_resources(app)
+        app.middlewares.extend(self._outer_middlewares)
+        app.middlewares.extend(extra_outer_middlewares)
+        app.middlewares.append(trace_middleware)
+        app.middlewares.append(jwt_auth_middleware)
+        app.middlewares.append(static_cache_control_middleware)
+        app.middlewares.extend(self._inner_middlewares)
 
     @property
     def outer_middlewares(self) -> tuple[Middleware, ...]:

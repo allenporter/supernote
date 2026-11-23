@@ -25,13 +25,10 @@ from typing import Any
 import aiohttp_remotes
 from aiohttp import web
 from aiohttp.typedefs import Middleware
-from aiohttp.web_urldispatcher import SystemRoute
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from supernote.models.base import create_error_response
 from supernote.models.user import UserRegisterDTO
 from supernote.server.db.migrations import run_migrations
-from supernote.server.utils.auth_utils import get_token_from_request
 
 from .ai.models.embedding import create_embedding_model
 from .ai.models.ocr import create_ocr_model
@@ -58,8 +55,6 @@ from .keys import (
     OCR_MODEL_KEY,
     PROCESSOR_SERVICE_KEY,
     RATE_LIMITER_KEY,
-    REQUEST_EQUIPMENT_NO_KEY,
-    REQUEST_USER_KEY,
     SCHEDULE_SERVICE_KEY,
     SEARCH_SERVICE_KEY,
     SESSION_MANAGER_KEY,
@@ -103,7 +98,7 @@ from .services.search import SearchService
 from .services.storage_metrics import StorageMetricsCollector
 from .services.summary import SummaryService
 from .services.user import UserService
-from .trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger, trace_middleware
+from .trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger
 from .utils.hashing import get_md5_hash
 from .utils.prompt_loader import PROMPT_LOADER
 from .utils.rate_limit import RateLimiter
@@ -184,79 +179,6 @@ def create_metrics_middleware(
 
 
 metrics_middleware: Middleware = create_metrics_middleware()
-
-
-@web.middleware
-async def jwt_auth_middleware(
-    request: web.Request,
-    handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
-) -> web.StreamResponse:
-    # Check if the matched route handler is public
-    route = request.match_info.route
-    if route is None:
-        return await handler(request)
-
-    if isinstance(route, SystemRoute):
-        return await handler(request)
-
-    http_registrar = request.app.get(HTTP_REGISTRAR_KEY)
-    if (
-        http_registrar is not None
-        and route.resource is not None
-        and route.resource in http_registrar.public_resources
-    ):
-        return await handler(request)
-
-    handler_func = getattr(route, "handler", None)
-    if handler_func and getattr(handler_func, "is_public", False):
-        return await handler(request)
-
-    # Allow public access to static assets and HTTP platform public prefixes.
-    if (
-        request.path.startswith("/static/")
-        or request.path == "/favicon.ico"
-        or (
-            http_registrar is not None
-            and any(request.path.startswith(p) for p in http_registrar.public_prefixes)
-        )
-    ):
-        return await handler(request)
-
-    if not (token := get_token_from_request(request)):
-        return web.json_response(
-            create_error_response("Unauthorized").to_dict(), status=401
-        )
-
-    user_service = request.app[USER_SERVICE_KEY]
-    session = await user_service.verify_token(token)
-    if not session:
-        return web.json_response(
-            create_error_response("Invalid token").to_dict(), status=401
-        )
-
-    if not session.is_interactive_session and getattr(
-        handler_func, "interactive_session_only", False
-    ):
-        return web.json_response(
-            create_error_response("Forbidden: Interactive session required").to_dict(),
-            status=403,
-        )
-
-    request[REQUEST_USER_KEY] = session.email
-    request[REQUEST_EQUIPMENT_NO_KEY] = session.equipment_no
-    return await handler(request)
-
-
-@web.middleware
-async def static_cache_control_middleware(
-    request: web.Request,
-    handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
-) -> web.StreamResponse:
-    """Ensure frontend HTML and static assets revalidate across server upgrades."""
-    response = await handler(request)
-    if request.path == "/" or request.path.startswith("/static/"):
-        response.headers.setdefault("Cache-Control", "no-cache")
-    return response
 
 
 def create_db_session_manager(db_url: str) -> DatabaseSessionManager:
@@ -452,31 +374,20 @@ def create_app(config: ServerConfig) -> web.Application:
             await bootstrap_ephemeral_user(app)
 
         await component_loader.async_setup_all(core, component_configs)
-        http_registrar = app.get(HTTP_REGISTRAR_KEY)
-        if http_registrar is not None:
-            await component_loader.async_load_platform("http", core, http_registrar)
-            http_registrar.mount_resources(app)
+        http_registrar = app[HTTP_REGISTRAR_KEY]
+        await component_loader.async_load_platform("http", core, http_registrar)
 
-        # Register outer component, metrics, trace, auth, cache, and inner middlewares
-        # after proxy setup and HTTP platform setup to preserve exact ordering.
-        if http_registrar is not None:
-            app.middlewares.extend(http_registrar.outer_middlewares)
+        # TODO: Move metrics middleware into a `metrics` component/platform so
+        # `app.py` no longer wires middlewares directly.
+        extra_outer: list[Middleware] = []
         if config.metrics_enabled:
-            app.middlewares.append(
+            extra_outer.append(
                 create_metrics_middleware(
                     metrics_path=config.metrics_path,
-                    mcp_auth_paths=(
-                        http_registrar.known_resource_paths
-                        if http_registrar is not None
-                        else frozenset()
-                    ),
+                    mcp_auth_paths=http_registrar.known_resource_paths,
                 )
             )
-        app.middlewares.append(trace_middleware)
-        app.middlewares.append(jwt_auth_middleware)
-        app.middlewares.append(static_cache_control_middleware)
-        if http_registrar is not None:
-            app.middlewares.extend(http_registrar.inner_middlewares)
+        http_registrar.apply_to_app(app, extra_outer_middlewares=extra_outer)
 
         logger.info("Starting background services...")
         await processor_service.start()

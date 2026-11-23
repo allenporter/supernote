@@ -157,6 +157,16 @@ async def test_loader_async_load_platform_missing_setup_fn_raises(
         await loader.async_load_platform("manager", server_core, object())
 
 
+async def test_loader_async_load_platform_before_setup_raises(
+    loader: ComponentLoader,
+    server_core: ServerCore,
+) -> None:
+    loader.register(RecordingComponent(domain="a", platforms=("http",)))
+
+    with pytest.raises(ComponentError, match="Cannot load platform 'http'"):
+        await loader.async_load_platform("http", server_core, object())
+
+
 def test_loader_register_and_accessors(loader: ComponentLoader) -> None:
     comp = RecordingComponent(domain="webhooks")
     assert isinstance(comp, Component)

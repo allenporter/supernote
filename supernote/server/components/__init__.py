@@ -16,11 +16,14 @@ from supernote.server.core import Component, ComponentError, ComponentLoader
 
 __all__ = [
     "BUILTIN_COMPONENTS",
+    "KNOWN_PLATFORMS",
     "BuiltinComponentSpec",
     "is_component_enabled",
     "load_builtin_components",
     "load_component_from_spec",
 ]
+
+KNOWN_PLATFORMS: frozenset[str] = frozenset({"http"})
 
 
 @dataclass(frozen=True)
