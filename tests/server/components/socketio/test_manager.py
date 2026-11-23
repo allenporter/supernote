@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import logging
 from collections.abc import AsyncGenerator, Callable
 
 import aiohttp
@@ -1557,3 +1558,38 @@ async def test_socketio_domain_event_recorded_emits_cursor_hint(
             assert frame.startswith('42["event_log_cursor",')
             assert f'"seq":"{recorded.seq}"' in frame
             assert '"relatedFileId":"999"' in frame
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        pytest.param({}, id="no-upgrade-headers"),
+        # This is the exact case that returned 500 with AttributeError on main.
+        pytest.param(
+            {"Upgrade": "websocket", "Connection": "keep-alive"},
+            id="upgrade-without-connection",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_socketio_invalid_websocket_upgrade_returns_400(
+    socketio_server: TestServer,
+    caplog: pytest.LogCaptureFixture,
+    headers: dict[str, str],
+) -> None:
+    """An unusable WebSocket upgrade is rejected with 400 and a warning."""
+    caplog.set_level(logging.WARNING)
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            socketio_server.make_url("/socket.io/?EIO=4&transport=websocket"),
+            headers=headers,
+        ) as resp:
+            assert resp.status == 400
+            body = await resp.text()
+    assert "Upgrade" in body
+    assert any(
+        "WebSocket upgrade rejected" in record.message for record in caplog.records
+    )
+    # No orphaned session may be left behind.
+    manager = socketio_server.app[SOCKETIO_MANAGER_KEY]
+    assert not manager.sio.eio.sockets

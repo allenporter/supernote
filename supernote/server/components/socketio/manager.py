@@ -56,6 +56,8 @@ from supernote.server.socket_auth import verify_handshake_signature
 
 logger = logging.getLogger(__name__)
 
+SOCKETIO_PATH = "/socket.io/"
+
 SOCKETIO_MANAGER_KEY: web.AppKey["SocketIOServerManager"] = web.AppKey(
     "socketio_manager"
 )
@@ -160,9 +162,42 @@ class SocketIOServerManager:
         """Access the underlying AsyncServer instance."""
         return self._sio
 
+    async def _handle_socket_request(self, request: web.Request) -> web.StreamResponse:
+        """Serve a Socket.IO request, rejecting unusable WebSocket upgrades.
+
+        `engineio` fails an upgrade silently when a reverse proxy strips the
+        `Upgrade`/`Connection` headers, leaving an orphaned session behind. Check
+        first so the client gets a 400 and the server logs something actionable.
+        """
+        if (
+            request.method == "GET"
+            and request.query.get("transport") == "websocket"
+            and not web.WebSocketResponse().can_prepare(request).ok
+        ):
+            logger.warning(
+                "WebSocket upgrade rejected for %s: Upgrade=%r Connection=%r. "
+                "Check the reverse proxy forwards the Upgrade and "
+                "Connection: upgrade headers.",
+                request.path,
+                request.headers.get("Upgrade"),
+                request.headers.get("Connection"),
+            )
+            return web.Response(
+                status=400,
+                text=(
+                    "WebSocket upgrade rejected: missing or invalid Upgrade/"
+                    "Connection headers. Check reverse proxy forwarding."
+                ),
+            )
+        return await self._sio.handle_request(request)
+
     def attach_to_app(self, app: web.Application) -> None:
         """Attach the Socket.IO server instance to an aiohttp web Application."""
-        self._sio.attach(app)
+        # Register these instead of ``self._sio.attach(app)`` so unusable
+        # WebSocket upgrades are rejected before engineio creates a session.
+        app.router.add_get(SOCKETIO_PATH, self._handle_socket_request)
+        app.router.add_post(SOCKETIO_PATH, self._handle_socket_request)
+        app.router.add_route("OPTIONS", SOCKETIO_PATH, self._handle_socket_request)
         app[SOCKETIO_MANAGER_KEY] = self
 
     async def _send_error(self, sid: str, status: HTTPStatus, message: str) -> None:
