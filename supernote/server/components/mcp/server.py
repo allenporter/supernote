@@ -25,6 +25,10 @@ from supernote.server.components.mcp import (
     get_authenticated_user_id,
     instrument_mcp_tool,
 )
+from supernote.server.components.mcp.metrics import (
+    MCPToolName,
+    init_mcp_metrics,
+)
 from supernote.server.components.mcp.models import (
     ListNotebooksRequestDTO,
     ListNotebooksResponseVO,
@@ -38,10 +42,6 @@ from supernote.server.components.mcp.models import (
 from supernote.server.components.oauth.models import (
     MCPScope,
     SupernoteAccessToken,
-)
-from supernote.server.metrics import (
-    MCPToolName,
-    init_mcp_metrics,
 )
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.search import SearchService

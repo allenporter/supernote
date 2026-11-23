@@ -18,10 +18,10 @@ from supernote.server.components.mcp import (
     McpRegistrar,
     get_authenticated_user_id,
 )
+from supernote.server.components.mcp.metrics import MCPToolName
 from supernote.server.components.oauth import OAuthComponent
 from supernote.server.components.oauth.models import SupernoteAccessToken
 from supernote.server.core import Component, ComponentLoader, ServerCore
-from supernote.server.metrics import MCPToolName
 
 
 async def test_mcp_component_lifecycle(component_core: ServerCore) -> None:

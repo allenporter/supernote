@@ -1,7 +1,7 @@
-"""Prometheus metrics definitions for Open Private Cloud HTTP, MCP, AI, storage, and pipeline tasks.
+"""Prometheus metrics definitions for Open Private Cloud HTTP, AI, storage, and pipeline tasks.
 
 Defines `Counter`, `Gauge`, and `Histogram` collectors exposed at `ServerConfig.metrics_path`
-(`/metrics` by default) in `supernote.server.app.create_app`, tracking HTTP/MCP latency,
+(`/metrics` by default) in `supernote.server.app.create_app`, tracking HTTP latency,
 background queue depth, per-module task execution, `.note` page-diff ratios, AI request/token usage,
 OSS transfer bytes, and blob storage inventory. See `supernote.guides.monitoring` and `supernote.guides.configuration`.
 """
@@ -25,19 +25,20 @@ __all__ = [
     "DB_SESSION_ERRORS_TOTAL",
     "HTTP_REQUESTS_TOTAL",
     "HTTP_REQUEST_DURATION_SECONDS",
-    "MCPToolName",
     "NoteProcessingMode",
     "NoteUploadSource",
     "OSSTransferDirection",
     "OSSTransferKind",
+    "OutcomeHandle",
+    "OutcomeStatus",
     "PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL",
     "PROCESSOR_QUEUE_PAUSED",
     "PROCESSOR_QUEUE_SIZE",
     "PROCESSOR_STALLED_TASKS_RECOVERED_TOTAL",
     "PROCESSOR_TASKS_TOTAL",
     "PROCESSOR_TASK_DURATION_SECONDS",
+    "REQUEST_DURATION_BUCKETS",
     "init_ai_metrics",
-    "init_mcp_metrics",
     "init_note_processing_metrics",
     "init_oss_and_upload_metrics",
     "init_processor_module_metrics",
@@ -47,8 +48,8 @@ __all__ = [
     "record_oss_transfer_bytes",
     "set_blob_storage_metrics",
     "track_ai_request",
-    "track_mcp_tool_call",
     "track_note_processing_run",
+    "track_outcome",
 ]
 
 REQUEST_DURATION_BUCKETS: tuple[float, ...] = (
@@ -103,7 +104,7 @@ class NoteProcessingMode(StrEnum):
     ON_DEMAND = "on_demand"
 
 
-class _OutcomeStatus(StrEnum):
+class OutcomeStatus(StrEnum):
     """Terminal status labels for tracked operations."""
 
     SUCCESS = "success"
@@ -111,7 +112,7 @@ class _OutcomeStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
-class _OutcomeHandle:
+class OutcomeHandle:
     """Mutable outcome handle for tracked operations whose success is decided inline."""
 
     def __init__(self) -> None:
@@ -123,28 +124,28 @@ class _OutcomeHandle:
 
 
 @contextmanager
-def _track_outcome(
+def track_outcome(
     *,
     counter: Counter,
     histogram: Histogram,
     labels: Mapping[str, str],
     default_succeeded: bool = False,
-) -> Generator[_OutcomeHandle]:
+) -> Generator[OutcomeHandle]:
     """Shared outcome counter and non-cancelled duration observer."""
-    handle = _OutcomeHandle()
+    handle = OutcomeHandle()
     start_time = time.monotonic()
-    status = _OutcomeStatus.FAILURE
+    status = OutcomeStatus.FAILURE
     try:
         yield handle
         if default_succeeded or handle._succeeded:
-            status = _OutcomeStatus.SUCCESS
+            status = OutcomeStatus.SUCCESS
     except asyncio.CancelledError:
-        status = _OutcomeStatus.CANCELLED
+        status = OutcomeStatus.CANCELLED
         raise
     finally:
         duration = time.monotonic() - start_time
         counter.labels(**labels, status=status.value).inc()
-        if status != _OutcomeStatus.CANCELLED:
+        if status != OutcomeStatus.CANCELLED:
             histogram.labels(**labels).observe(duration)
 
 
@@ -223,10 +224,10 @@ PROCESSOR_QUEUE_PAUSED: Gauge = Gauge(
 )
 
 _MODULE_TASK_OUTCOMES: tuple[str, ...] = (
-    _OutcomeStatus.SUCCESS.value,
-    _OutcomeStatus.FAILURE.value,
+    OutcomeStatus.SUCCESS.value,
+    OutcomeStatus.FAILURE.value,
     "skipped",
-    _OutcomeStatus.CANCELLED.value,
+    OutcomeStatus.CANCELLED.value,
 )
 
 PROCESSOR_STALLED_TASKS_RECOVERED_TOTAL: Counter = Counter(
@@ -272,7 +273,7 @@ def init_note_processing_metrics() -> None:
     PROCESSOR_QUEUE_SIZE.set(0)
     for mode in NoteProcessingMode:
         _NOTE_PROCESSING_DURATION_SECONDS.labels(mode=mode.value)
-        for status in _OutcomeStatus:
+        for status in OutcomeStatus:
             _NOTE_PROCESSING_RUNS_TOTAL.labels(
                 mode=mode.value,
                 status=status.value,
@@ -306,9 +307,9 @@ def record_note_page_diff(
 def track_note_processing_run(
     *,
     mode: NoteProcessingMode,
-) -> Generator[_OutcomeHandle]:
+) -> Generator[OutcomeHandle]:
     """Record Prometheus run count and completed latency for a `.note` pipeline run."""
-    with _track_outcome(
+    with track_outcome(
         counter=_NOTE_PROCESSING_RUNS_TOTAL,
         histogram=_NOTE_PROCESSING_DURATION_SECONDS,
         labels={"mode": mode.value},
@@ -469,7 +470,7 @@ def init_ai_metrics(
         model=model,
         stage=stage.value,
     )
-    for status in (_OutcomeStatus.SUCCESS, _OutcomeStatus.FAILURE):
+    for status in (OutcomeStatus.SUCCESS, OutcomeStatus.FAILURE):
         _AI_REQUESTS_TOTAL.labels(
             provider=provider,
             model=model,
@@ -502,7 +503,7 @@ def track_ai_request(
         _ActiveAIRequest(provider=provider, model=model, stage=stage)
     )
     try:
-        with _track_outcome(
+        with track_outcome(
             counter=_AI_REQUESTS_TOTAL,
             histogram=_AI_REQUEST_DURATION_SECONDS,
             labels={
@@ -558,55 +559,6 @@ def record_ai_tokens(
                 stage=active.stage.value,
                 token_type=token_type.value,
             ).inc(count)
-
-
-# MCP server metrics
-class MCPToolName(StrEnum):
-    """Canonical tool name labels for MCP server metrics."""
-
-    LIST_NOTEBOOKS = "list_notebooks"
-    SEARCH_NOTEBOOK_CHUNKS = "search_notebook_chunks"
-    GET_NOTEBOOK_TRANSCRIPT = "get_notebook_transcript"
-
-
-_MCP_TOOL_CALLS_TOTAL: Counter = Counter(
-    "supernote_mcp_tool_calls_total",
-    "Total number of MCP tool invocations.",
-    ["tool", "status"],
-)
-
-_MCP_TOOL_DURATION_SECONDS: Histogram = Histogram(
-    "supernote_mcp_tool_duration_seconds",
-    "Latency of completed MCP tool invocations in seconds.",
-    ["tool"],
-    buckets=REQUEST_DURATION_BUCKETS,
-)
-
-
-def init_mcp_metrics(tool_names: Iterable[str] = MCPToolName) -> None:
-    """Pre-initialize MCP tool call counters and latency histograms at 0."""
-    for tool in tool_names:
-        tool_label = str(tool)
-        _MCP_TOOL_DURATION_SECONDS.labels(tool=tool_label)
-        for status in (_OutcomeStatus.SUCCESS, _OutcomeStatus.FAILURE):
-            _MCP_TOOL_CALLS_TOTAL.labels(
-                tool=tool_label,
-                status=status.value,
-            )
-
-
-@contextmanager
-def track_mcp_tool_call(
-    *,
-    tool: str,
-) -> Generator[_OutcomeHandle]:
-    """Record Prometheus call count and completed latency for an MCP tool invocation."""
-    with _track_outcome(
-        counter=_MCP_TOOL_CALLS_TOTAL,
-        histogram=_MCP_TOOL_DURATION_SECONDS,
-        labels={"tool": str(tool)},
-    ) as handle:
-        yield handle
 
 
 # Database metrics

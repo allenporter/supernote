@@ -54,6 +54,7 @@ def test_builtin_components_registry_matches_subpackages_1to1() -> None:
         "supernote.server.app",
         "supernote.server.core",
         "supernote.server.config",
+        "supernote.server.metrics",
     ],
 )
 def test_core_modules_do_not_eagerly_import_component_subpackages(
