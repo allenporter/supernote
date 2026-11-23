@@ -3,7 +3,7 @@
 Defines `create_mcp_server`, `run_server`, `SupernoteTokenVerifier`, and the three MCP
 tools exposed to authenticated AI agents:
 - `list_notebooks`: Lists active `.note` files ordered by update timestamp.
-- `search_notebook_chunks`: Performs vector similarity search via `supernote.server.services.search.SearchService`.
+- `search_notebook_chunks`: Performs vector similarity search via `supernote.server.components.search.service.SearchService`.
 - `get_notebook_transcript`: Retrieves full or page-sliced OCR transcripts.
 
 Validates both OAuth 2.1 Bearer tokens issued by `supernote.server.components.oauth.provider.SupernoteOAuthProvider`
@@ -43,7 +43,7 @@ from supernote.server.components.oauth.models import (
     MCPScope,
     SupernoteAccessToken,
 )
-from supernote.server.services.search import SearchService
+from supernote.server.components.search import SearchService
 from supernote.server.services.user import (
     AuthMethod,
     UserService,

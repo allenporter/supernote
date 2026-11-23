@@ -17,6 +17,7 @@ from supernote.server.ai.models.ocr import ConcurrencyLimitedOcrModel, OcrModel
 from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
 from supernote.server.components.fake_ai.ocr import FakeOcrModel
 from supernote.server.components.fake_ai.summary import FakeSummaryModel
+from supernote.server.components.search import SearchService
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
@@ -48,7 +49,6 @@ from supernote.server.services.processor_modules.png_conversion import (
     PngConversionModule,
 )
 from supernote.server.services.processor_modules.summary import SummaryModule
-from supernote.server.services.search import SearchService
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 from supernote.server.utils.paths import (

@@ -29,7 +29,6 @@ if TYPE_CHECKING:
     from .services.file import FileService
     from .services.integrity import IntegrityService
     from .services.processor import ProcessorService
-    from .services.search import SearchService
     from .services.summary import SummaryService
     from .services.user import UserService
     from .utils.rate_limit import RateLimiter
@@ -54,7 +53,6 @@ OCR_MODEL_KEY: web.AppKey[OcrModel | None] = web.AppKey("ocr_model")
 SUMMARY_MODEL_KEY: web.AppKey[SummaryModel | None] = web.AppKey("summary_model")
 EMBEDDING_MODEL_KEY: web.AppKey[EmbeddingModel | None] = web.AppKey("embedding_model")
 SUMMARY_SERVICE_KEY: web.AppKey[SummaryService] = web.AppKey("summary_service")
-SEARCH_SERVICE_KEY: web.AppKey[SearchService] = web.AppKey("search_service")
 RATE_LIMITER_KEY: web.AppKey[RateLimiter] = web.AppKey("rate_limiter")
 PROCESSOR_SERVICE_KEY: web.AppKey[ProcessorService] = web.AppKey("processor_service")
 CONVERSION_SERVICE_KEY: web.AppKey[ConversionService] = web.AppKey("conversion_service")

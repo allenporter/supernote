@@ -97,6 +97,11 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         default_enabled=True,
     ),
     BuiltinComponentSpec(
+        domain="search",
+        import_path="supernote.server.components.search:SearchComponent",
+        default_enabled=True,
+    ),
+    BuiltinComponentSpec(
         domain="socketio",
         import_path="supernote.server.components.socketio:SocketIOComponent",
         default_enabled=True,

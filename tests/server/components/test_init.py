@@ -310,6 +310,8 @@ async def test_all_builtin_components_http_platform_end_to_end(
         "/socket.io/",
         "/api/extended/ai/status",
         "/api/extended/events",
+        "/api/extended/search",
+        "/api/extended/transcript",
         "/api/schedule/feed.ics",
     ):
         assert expected_path in canonicals

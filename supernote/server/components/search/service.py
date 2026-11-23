@@ -1,20 +1,26 @@
 """Semantic vector search and notebook transcript retrieval service.
 
 `SearchService` embeds natural-language search queries via
-`supernote.server.ai.models.embedding.EmbeddingModel` (`EmbeddingTaskType.RETRIEVAL_QUERY`)
-and computes cosine similarity against page embeddings stored in
-`supernote.server.db.models.note_processing.NotePageContentDO`, supporting filename
-substring filters and ISO 8601 date bounds (`infer_page_date`). Powers both the MCP
-tools in `supernote.server.components.mcp.server` and the Web UI search endpoints in
-`supernote.server.routes.extended`. See `supernote.guides.mcp`.
+`supernote.server.ai.models.embedding.EmbeddingModel`
+(`EmbeddingTaskType.RETRIEVAL_QUERY`) and computes cosine similarity against
+page embeddings stored in `supernote.server.db.models.note_processing.NotePageContentDO`,
+supporting filename substring filters and ISO 8601 date bounds
+(`infer_page_date`).
+
+### Internal Component Access
+
+Other server components or plugins declaring ``dependencies = ("search",)``
+retrieve the shared service instance via `core.app[SEARCH_SERVICE_KEY]`.
 """
+
+from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
 from datetime import datetime
 
 import numpy as np
+from aiohttp import web
 from sqlalchemy import select
 
 from supernote.server.ai.base import AIError
@@ -28,44 +34,39 @@ from supernote.server.utils.note_content import (
     infer_page_date,
 )
 
+from .models import NotebookInfo, PageTranscript, SearchResult
+
+__all__ = [
+    "SEARCH_SERVICE_KEY",
+    "SearchService",
+]
+
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class SearchResult:
-    file_id: int
-    file_name: str
-    page_index: int
-    page_id: str
-    score: float
-    text_preview: str
-    date: str | None = None
-
-
-@dataclass
-class NotebookInfo:
-    file_id: int
-    file_name: str
-    create_time: int
-    update_time: int
-
-
-@dataclass
-class PageTranscript:
-    page_index: int
-    page_id: str
-    text: str | None = None
-    date: str | None = None
-
-
 class SearchService:
-    """Service for semantic search across notebook content."""
+    """Service for semantic search, notebook listing, and transcript retrieval.
+
+    All queries are strictly scoped by `user_id` and restricted to active
+    (`UserFileDO.is_active == "Y"`) files. When `embedding_model` is `None`,
+    `search_chunks` returns an empty list while `list_notebooks`,
+    `get_transcript`, and `get_page_transcripts` remain fully functional.
+    """
 
     def __init__(
         self,
         session_manager: DatabaseSessionManager,
         embedding_model: EmbeddingModel | None,
     ) -> None:
+        """Initialize the search service.
+
+        Args:
+            session_manager: Async SQLAlchemy session manager for querying
+                `UserFileDO` and `NotePageContentDO`.
+            embedding_model: Optional configured embedding backend used to
+                embed search queries. May be bound later during startup once
+                AI capability platforms finish loading.
+        """
         self.session_manager = session_manager
         self.embedding_model = embedding_model
 
@@ -75,7 +76,7 @@ class SearchService:
         name_filter: str | None = None,
         limit: int = 20,
     ) -> list[NotebookInfo]:
-        """List active .note notebooks for a user ordered by most recently updated."""
+        """List active `.note` notebooks for a user ordered by most recently updated."""
         async with self.session_manager.session() as session:
             stmt = (
                 select(UserFileDO)
@@ -109,22 +110,26 @@ class SearchService:
         date_after: str | None = None,
         date_before: str | None = None,
     ) -> list[SearchResult]:
-        """
-        Search for notebook chunks similar to the query.
+        """Search for notebook chunks semantically similar to `query`.
 
         Args:
-            user_id: The ID of the user performing the search.
-            query: The search query string.
-            top_n: Number of results to return.
-            name_filter: Optional substring to filter notebook filenames.
-            date_after: Optional ISO date string (YYYY-MM-DD). Filter results created after this date.
-            date_before: Optional ISO date string (YYYY-MM-DD). Filter results created before this date.
+            user_id: Owner user ID performing the search.
+            query: Natural-language search query string.
+            top_n: Maximum number of ranked results to return.
+            name_filter: Optional case-insensitive substring filter on notebook
+                filenames.
+            date_after: Optional ISO date string (`YYYY-MM-DD`). Keeps pages
+                whose inferred date is on or after this date.
+            date_before: Optional ISO date string (`YYYY-MM-DD`). Keeps pages
+                whose inferred date is on or before this date.
+
+        Returns:
+            List of `SearchResult` sorted by descending cosine similarity.
         """
         if self.embedding_model is None:
             logger.warning("Search requested but embedding model is not configured")
             return []
 
-        # Parse date filters
         after_dt: datetime | None = None
         before_dt: datetime | None = None
         try:
@@ -148,9 +153,6 @@ class SearchService:
         query_norm = np.linalg.norm(query_embedding)
 
         async with self.session_manager.session() as session:
-            # Metadata-based page filtering (Phase 2)
-            # We use notebook metadata (PAGEID) to infer page dates and filter them.
-
             stmt = (
                 select(NotePageContentDO, UserFileDO.file_name)
                 .join(UserFileDO, UserFileDO.id == NotePageContentDO.file_id)
@@ -187,16 +189,12 @@ class SearchService:
             try:
                 candidate_embedding = np.array(embedding_list)
 
-                # Cosine Similarity
                 score = np.dot(query_embedding, candidate_embedding) / (
                     query_norm * np.linalg.norm(candidate_embedding)
                 )
 
-                # Date Inference (Phase 2)
                 page_date = infer_page_date(content_do.page_id)
 
-                # Date Filtering (Inferred)
-                # TODO: In the future we can replace this with LLM based date filtering
                 if after_dt and (not page_date or page_date < after_dt):
                     continue
                 if before_dt and (not page_date or page_date > before_dt):
@@ -280,15 +278,19 @@ class SearchService:
         start_index: int | None = None,
         end_index: int | None = None,
     ) -> str | None:
-        """
-        Retrieve the transcript for a notebook or a specific page range.
+        """Retrieve a formatted transcript for a notebook or a specific page range.
 
         Args:
-            user_id: The ID of the user performing the retrieval.
-            file_id: The ID of the notebook.
-            page_index: Optional 0-based page index. If provided, returns raw text for this page.
+            user_id: Owner user ID performing the retrieval.
+            file_id: VFS file ID of the notebook.
+            page_index: Optional 0-based page index; when set, returns raw text
+                for that single page.
             start_index: Optional 0-based start page index (inclusive).
             end_index: Optional 0-based end page index (inclusive).
+
+        Returns:
+            Formatted transcript string, or `None` if the notebook is not
+            accessible or has no transcribed pages.
         """
         fetched = await self._fetch_notebook_pages(
             user_id=user_id,
@@ -302,14 +304,12 @@ class SearchService:
 
         file_do, pages = fetched
 
-        # Backward compatibility: raw text for single page index
         if page_index is not None:
             return pages[0].text_content
 
         async with self.session_manager.session() as session:
             keywords_map = await get_page_keywords_map(session, user_id, file_id)
 
-        # Aggregated transcript with metadata
         text_parts = []
         for p in pages:
             if not p.is_blank:
@@ -355,3 +355,7 @@ class SearchService:
                 )
             )
         return results
+
+
+SEARCH_SERVICE_KEY: web.AppKey[SearchService] = web.AppKey("search_service")
+"""Typed `aiohttp.web.AppKey` exposing `SearchService` to sibling components and routes."""

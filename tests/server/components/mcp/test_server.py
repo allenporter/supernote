@@ -32,9 +32,13 @@ from supernote.server.components.mcp.server import (
     set_services,
 )
 from supernote.server.components.oauth.models import SupernoteAccessToken
+from supernote.server.components.search import (
+    NotebookInfo,
+    SearchResult,
+    SearchService,
+)
 from supernote.server.metrics import REQUEST_DURATION_BUCKETS
 from supernote.server.services.coordination import CoordinationService
-from supernote.server.services.search import NotebookInfo, SearchResult, SearchService
 from supernote.server.services.user import UserService
 
 

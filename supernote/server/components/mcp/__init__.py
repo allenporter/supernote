@@ -19,9 +19,10 @@ from supernote.server.components.mcp.metrics import (
     init_mcp_metrics,
     track_mcp_tool_call,
 )
+from supernote.server.components.search import SEARCH_SERVICE_KEY
 from supernote.server.core import ServerCore
 from supernote.server.events import bind_event_actor
-from supernote.server.keys import MCP_REGISTRAR_KEY, SEARCH_SERVICE_KEY
+from supernote.server.keys import MCP_REGISTRAR_KEY
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -135,7 +136,7 @@ class McpComponent:
     """Platform host component managing the FastMCP resource server and tool registration."""
 
     domain = "mcp"
-    dependencies: tuple[str, ...] = ("oauth",)
+    dependencies: tuple[str, ...] = ("oauth", "search")
     platforms: tuple[str, ...] = ()
 
     def __init__(self) -> None:

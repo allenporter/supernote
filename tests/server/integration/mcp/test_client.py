@@ -14,12 +14,12 @@ from prometheus_client import REGISTRY
 from sqlalchemy import select
 
 from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
+from supernote.server.components.search import SEARCH_SERVICE_KEY
 from supernote.server.config import ServerConfig
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.keys import SEARCH_SERVICE_KEY
 
 _LOGGER = logging.getLogger(__name__)
 

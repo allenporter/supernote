@@ -4,13 +4,13 @@ import pytest
 
 from supernote.server.ai.models.embedding import EmbeddingTaskType
 from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
+from supernote.server.components.search import PageTranscript, SearchService
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NotePageContentDO,
     NotePageMetadataDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.services.search import PageTranscript, SearchService
 
 
 @pytest.fixture

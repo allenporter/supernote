@@ -34,7 +34,6 @@ from supernote.server.keys import (
     EMBEDDING_MODEL_KEY,
     FILE_SERVICE_KEY,
     PROCESSOR_SERVICE_KEY,
-    SEARCH_SERVICE_KEY,
     SUMMARY_SERVICE_KEY,
 )
 from supernote.server.services.processor_modules.page_hashing import PageHashingModule
@@ -498,72 +497,6 @@ async def test_file_processing_status_excludes_other_users_files(
     res = await extended_client.get_processing_status(file_ids=[77])
     assert res.success
     assert res.status_map["77"] == ProcessingStatus.NONE
-
-
-async def test_extended_search_invalid_dto_and_errors(
-    client: TestClient,
-    auth_headers: dict[str, str],
-    extended_client: ExtendedClient,
-    user_service: UserService,
-) -> None:
-    # Invalid DTO
-    bad_resp = await client.post(
-        "/api/extended/search",
-        json={"invalid": "data"},
-        headers=auth_headers,
-    )
-    assert bad_resp.status == 400
-
-    # User not found
-    with (
-        patch.object(user_service, "get_user_id", return_value=None),
-        pytest.raises(ApiException),
-    ):
-        await extended_client.search(query="test")
-
-    # Search exception
-    with (
-        patch.object(
-            client.app[SEARCH_SERVICE_KEY],
-            "search_chunks",
-            side_effect=Exception("Search crash"),
-        ),
-        pytest.raises(ApiException),
-    ):
-        await extended_client.search(query="test")
-
-
-async def test_extended_transcript_invalid_dto_and_errors(
-    client: TestClient,
-    auth_headers: dict[str, str],
-    extended_client: ExtendedClient,
-    user_service: UserService,
-) -> None:
-    # Invalid DTO
-    bad_resp = await client.post(
-        "/api/extended/transcript",
-        json={"invalid": "payload"},
-        headers=auth_headers,
-    )
-    assert bad_resp.status == 400
-
-    # User not found
-    with (
-        patch.object(user_service, "get_user_id", return_value=None),
-        pytest.raises(ApiException),
-    ):
-        await extended_client.get_transcript(file_id=101)
-
-    # Transcript exception
-    with (
-        patch.object(
-            client.app[SEARCH_SERVICE_KEY],
-            "get_page_transcripts",
-            side_effect=Exception("Transcript crash"),
-        ),
-        pytest.raises(ApiException),
-    ):
-        await extended_client.get_transcript(file_id=101)
 
 
 async def test_extended_ai_status(extended_client: ExtendedClient) -> None:

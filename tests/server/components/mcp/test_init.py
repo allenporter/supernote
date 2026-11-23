@@ -21,6 +21,7 @@ from supernote.server.components.mcp import (
 from supernote.server.components.mcp.metrics import MCPToolName
 from supernote.server.components.oauth import OAuthComponent
 from supernote.server.components.oauth.models import SupernoteAccessToken
+from supernote.server.components.search import SearchComponent
 from supernote.server.core import Component, ComponentLoader, ServerCore
 
 
@@ -28,11 +29,12 @@ async def test_mcp_component_lifecycle(component_core: ServerCore) -> None:
     component = McpComponent()
     assert isinstance(component, Component)
     assert component.domain == "mcp"
-    assert component.dependencies == ("oauth",)
+    assert component.dependencies == ("oauth", "search")
     assert component.platforms == ()
 
     loader = ComponentLoader()
     loader.register(OAuthComponent())
+    loader.register(SearchComponent())
     loader.register(component)
 
     await loader.async_setup_all(component_core, {})
@@ -58,6 +60,7 @@ async def test_mcp_component_stop_after_setup_only(
 ) -> None:
     loader = ComponentLoader()
     loader.register(OAuthComponent())
+    loader.register(SearchComponent())
     loader.register(McpComponent())
 
     await loader.async_setup_all(component_core, {})
