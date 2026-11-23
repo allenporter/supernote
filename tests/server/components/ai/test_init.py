@@ -6,21 +6,21 @@ import pytest
 
 from supernote.server.ai.base import AIError
 from supernote.server.ai.models.embedding import EmbeddingModel, EmbeddingTaskType
-from supernote.server.ai.models.fake.embedding import (
-    create_embedding_model as create_fake_embedding_model,
-)
-from supernote.server.ai.models.fake.ocr import (
-    create_ocr_model as create_fake_ocr_model,
-)
-from supernote.server.ai.models.fake.summary import (
-    create_summary_model as create_fake_summary_model,
-)
 from supernote.server.components import KNOWN_PLATFORMS
 from supernote.server.components.ai import (
     AI_PLATFORMS,
     AI_REGISTRAR_KEY,
     AiComponent,
     AiRegistrar,
+)
+from supernote.server.components.fake_ai.embedding import (
+    create_embedding_model as create_fake_embedding_model,
+)
+from supernote.server.components.fake_ai.ocr import (
+    create_ocr_model as create_fake_ocr_model,
+)
+from supernote.server.components.fake_ai.summary import (
+    create_summary_model as create_fake_summary_model,
 )
 from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
 from supernote.server.core import Component, ComponentLoader, ServerCore

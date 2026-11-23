@@ -1,8 +1,8 @@
-"""Tests for `supernote.server.ai.models.fake.ocr`."""
+"""Tests for `supernote.server.components.fake_ai.ocr`."""
 
 from __future__ import annotations
 
-from supernote.server.ai.models.fake.ocr import FakeOcrModel
+from supernote.server.components.fake_ai.ocr import FakeOcrModel
 
 
 async def test_fake_ocr_model() -> None:

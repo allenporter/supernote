@@ -2,8 +2,8 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import undefer
 
-from supernote.server.ai.models.fake.ocr import FakeOcrModel
 from supernote.server.ai.models.ocr import OcrModel
+from supernote.server.components.fake_ai.ocr import FakeOcrModel
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (

@@ -14,9 +14,11 @@ from supernote.server.ai.models.embedding import (
 )
 
 if TYPE_CHECKING:
+    from supernote.server.components.ai import AiRegistrar
     from supernote.server.config import ServerConfig
+    from supernote.server.core import ServerCore
 
-__all__ = ["FakeEmbeddingModel", "create_embedding_model"]
+__all__ = ["FakeEmbeddingModel", "async_setup_embedding", "create_embedding_model"]
 
 _TOKEN_RE = re.compile(r"[^\W_]+")
 _BLENDED_STOPWORDS = frozenset(
@@ -114,3 +116,8 @@ def create_embedding_model(config: ServerConfig) -> EmbeddingModel | None:
         model_id=config.ai.embedding.model,
         provider=config.ai.embedding.provider,
     )
+
+
+async def async_setup_embedding(core: ServerCore, registrar: AiRegistrar) -> None:
+    """Register the ``fake`` embedding provider with `AiRegistrar`."""
+    registrar.register_embedding("fake", create_embedding_model)

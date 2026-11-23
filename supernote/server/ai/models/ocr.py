@@ -127,7 +127,7 @@ def create_ocr_model(config: ServerConfig) -> OcrModel | None:
 
         model = create_apple_ocr_model(config)
     elif provider_type == "fake":
-        from supernote.server.ai.models.fake.ocr import (  # noqa: PLC0415
+        from supernote.server.components.fake_ai.ocr import (  # noqa: PLC0415
             create_ocr_model as create_fake_ocr_model,
         )
 

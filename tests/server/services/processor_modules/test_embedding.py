@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from supernote.server.ai.models.embedding import EmbeddingTaskType
-from supernote.server.ai.models.fake.embedding import FakeEmbeddingModel
+from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
