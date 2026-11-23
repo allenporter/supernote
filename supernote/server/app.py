@@ -375,7 +375,7 @@ def create_app(config: ServerConfig) -> web.Application:
     app[CORE_KEY] = core
     app[COMPONENT_LOADER_KEY] = component_loader
 
-    if config.webhooks.enabled:
+    if config.webhooks.get("enabled"):
         from .components.webhooks import WebhooksComponent  # noqa: PLC0415
 
         component_loader.register(WebhooksComponent())

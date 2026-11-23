@@ -1,8 +1,7 @@
 """Typed server configuration models and environment variable resolution.
 
 Defines `ServerConfig` along with nested configuration dataclasses (`AuthConfig`,
-`AiConfig`, `ProviderConfig`, `ModelConfig`, `WebhookConfig`, `WebhookEndpointConfig`)
-serialized via `mashumaro` YAML mixins.
+`AiConfig`, `ProviderConfig`, `ModelConfig`) serialized via `mashumaro` YAML mixins.
 
 `ServerConfig.load` resolves settings in priority order:
 1. `SUPERNOTE_*` environment variables (highest priority)
@@ -17,8 +16,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
-from urllib.parse import urlsplit
+from typing import Any, cast
 
 from mashumaro.config import TO_DICT_ADD_OMIT_NONE_FLAG, BaseConfig
 from mashumaro.mixins.yaml import DataClassYAMLMixin
@@ -80,63 +78,6 @@ class AuthConfig(DataClassYAMLMixin):
 
     Env Var: `SUPERNOTE_ENABLE_REMOTE_PASSWORD_RESET`
     """
-
-    class Config(BaseConfig):
-        omit_none = True
-        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
-
-
-@dataclass
-class WebhookEndpointConfig(DataClassYAMLMixin):
-    """A single outbound webhook subscriber."""
-
-    url: str = ""
-    """The HTTP(S) endpoint that receives the webhook POST request."""
-
-    user: str = ""
-    """Email address of the user account whose events this endpoint receives."""
-
-    secret: str = ""
-    """Shared secret used to HMAC-SHA256 sign the payload.
-
-    Never logged. Sent to receivers via the `X-Supernote-Signature` header so
-    they can verify the payload was not tampered with in transit.
-    """
-
-    events: list[str] = field(default_factory=list)
-    """Event names this endpoint wants to receive, e.g. `note.sync_completed`.
-
-    If empty (the default), the endpoint receives every event for `user`.
-    """
-
-    def __post_init__(self) -> None:
-        parsed = urlsplit(self.url)
-        if parsed.scheme not in ("http", "https") or not parsed.hostname:
-            raise ValueError(
-                f"Webhook endpoint URL must use http or https scheme with a valid host: {self.url!r}"
-            )
-        if not self.user or not self.user.strip():
-            raise ValueError(
-                "Webhook endpoint must specify a non-empty user email address."
-            )
-
-    class Config(BaseConfig):
-        omit_none = True
-        code_generation_options = [TO_DICT_ADD_OMIT_NONE_FLAG]  # type: ignore[list-item]
-
-
-@dataclass
-class WebhookConfig(DataClassYAMLMixin):
-    """Outbound webhook dispatch configuration."""
-
-    enabled: bool = False
-    """Whether outbound webhook dispatch is enabled.
-
-    Env Var: `SUPERNOTE_WEBHOOKS_ENABLED`
-    """
-
-    endpoints: list[WebhookEndpointConfig] = field(default_factory=list)
-    """Configured webhook subscribers."""
 
     class Config(BaseConfig):
         omit_none = True
@@ -359,8 +300,8 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_METRICS_PATH`
     """
 
-    webhooks: WebhookConfig = field(default_factory=WebhookConfig)
-    """Outbound webhook dispatch configuration."""
+    webhooks: dict[str, Any] = field(default_factory=dict)
+    """Raw configuration section for the outbound webhooks component."""
 
     web_enabled: bool = True
     """Whether to serve the web frontend dashboard and static assets.
@@ -678,10 +619,11 @@ class ServerConfig(DataClassYAMLMixin):
             logger.info(f"Using SUPERNOTE_METRICS_PATH: {config.metrics_path}")
 
         if os.getenv("SUPERNOTE_WEBHOOKS_ENABLED"):
-            config.webhooks.enabled = _get_bool_env(
-                "SUPERNOTE_WEBHOOKS_ENABLED", config.webhooks.enabled
+            config.webhooks["enabled"] = _get_bool_env(
+                "SUPERNOTE_WEBHOOKS_ENABLED",
+                bool(config.webhooks.get("enabled", False)),
             )
-            logger.info(f"Webhooks Enabled: {config.webhooks.enabled}")
+            logger.info(f"Webhooks Enabled: {config.webhooks['enabled']}")
 
         if os.getenv("SUPERNOTE_WEB_ENABLED"):
             config.web_enabled = _get_bool_env(

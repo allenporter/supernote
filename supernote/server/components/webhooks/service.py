@@ -27,7 +27,6 @@ from supernote.models.webhook import (
     WebhookFileVO,
     WebhookPayload,
 )
-from supernote.server.config import WebhookConfig, WebhookEndpointConfig
 from supernote.server.events import (
     Event,
     LocalEventBus,
@@ -35,6 +34,8 @@ from supernote.server.events import (
     NoteUpdatedEvent,
 )
 from supernote.server.services.user import UserService
+
+from .config import WebhookConfig, WebhookEndpointConfig
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@ import pytest
 from aiohttp import web
 
 from supernote.server.components.webhooks import WebhooksComponent
-from supernote.server.config import ServerConfig, WebhookConfig, WebhookEndpointConfig
+from supernote.server.config import ServerConfig
 from supernote.server.core import Component, ComponentLoader, ServerCore
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus, NoteUpdatedEvent
@@ -30,16 +30,16 @@ def webhooks_core(
     """Create a `ServerCore` with webhooks enabled backed by shared test fixtures."""
     config = dataclasses.replace(
         server_config,
-        webhooks=WebhookConfig(
-            enabled=True,
-            endpoints=[
-                WebhookEndpointConfig(
-                    url="http://127.0.0.1:9999/hook",
-                    user="user@example.com",
-                    secret="test-secret",
-                )
+        webhooks={
+            "enabled": True,
+            "endpoints": [
+                {
+                    "url": "http://127.0.0.1:9999/hook",
+                    "user": "user@example.com",
+                    "secret": "test-secret",
+                }
             ],
-        ),
+        },
     )
     return ServerCore(
         config=config,
@@ -80,3 +80,23 @@ async def test_webhooks_component_stop_after_setup_only(
 
     await loader.async_setup_all(webhooks_core)
     await loader.async_stop_all(webhooks_core)
+
+
+async def test_webhooks_component_validates_config_on_setup(
+    webhooks_core: ServerCore,
+) -> None:
+    invalid_core = dataclasses.replace(
+        webhooks_core,
+        config=dataclasses.replace(
+            webhooks_core.config,
+            webhooks={
+                "enabled": True,
+                "endpoints": [{"url": "ftp://invalid", "user": "user@example.com"}],
+            },
+        ),
+    )
+    loader = ComponentLoader()
+    loader.register(WebhooksComponent())
+
+    with pytest.raises(ValueError, match="endpoints"):
+        await loader.async_setup_all(invalid_core)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from supernote.server.core import ServerCore
 
+from .config import WebhookConfig
 from .service import WebhookService
 
 __all__ = ["WebhooksComponent"]
@@ -19,9 +20,10 @@ class WebhooksComponent:
         self._service: WebhookService | None = None
 
     async def async_setup(self, core: ServerCore) -> None:
-        """Instantiate `WebhookService` from core configuration and services."""
+        """Validate webhook configuration and instantiate `WebhookService`."""
+        webhook_config = WebhookConfig.from_dict(core.config.webhooks)
         self._service = WebhookService(
-            core.config.webhooks,
+            webhook_config,
             core.event_bus,
             core.user_service,
         )

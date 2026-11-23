@@ -28,7 +28,7 @@ from supernote.server.app import (
     run,
 )
 from supernote.server.components.webhooks import WebhooksComponent
-from supernote.server.config import ServerConfig, WebhookConfig, WebhookEndpointConfig
+from supernote.server.config import ServerConfig
 from supernote.server.core import ComponentLoader, ServerCore
 from supernote.server.db.models.user import UserDO
 from supernote.server.keys import (
@@ -553,16 +553,16 @@ async def test_create_app_registers_and_runs_webhooks_component_when_enabled(
     config = dataclasses.replace(
         server_config,
         web_enabled=False,
-        webhooks=WebhookConfig(
-            enabled=True,
-            endpoints=[
-                WebhookEndpointConfig(
-                    url="http://127.0.0.1:9999/hook",
-                    user="test@example.com",
-                    secret="secret",
-                )
+        webhooks={
+            "enabled": True,
+            "endpoints": [
+                {
+                    "url": "http://127.0.0.1:9999/hook",
+                    "user": "test@example.com",
+                    "secret": "secret",
+                }
             ],
-        ),
+        },
     )
     app = create_app(config)
 

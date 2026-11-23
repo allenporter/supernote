@@ -21,6 +21,10 @@ from supernote.models.webhook import (
     WebhookFileVO,
     WebhookPayload,
 )
+from supernote.server.components.webhooks.config import (
+    WebhookConfig,
+    WebhookEndpointConfig,
+)
 from supernote.server.components.webhooks.service import (
     EVENT_HEADER,
     MAX_ATTEMPTS,
@@ -29,7 +33,6 @@ from supernote.server.components.webhooks.service import (
     sign_payload,
     verify_signature,
 )
-from supernote.server.config import WebhookConfig, WebhookEndpointConfig
 from supernote.server.events import (
     LocalEventBus,
     NoteProcessingCompletedEvent,
