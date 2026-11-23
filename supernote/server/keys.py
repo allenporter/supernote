@@ -62,3 +62,4 @@ URL_SIGNER_KEY: web.AppKey[UrlSigner] = web.AppKey("url_signer")
 
 REQUEST_USER_KEY: web.RequestKey[str] = web.RequestKey("user")
 REQUEST_EQUIPMENT_NO_KEY: web.RequestKey[str | None] = web.RequestKey("equipment_no")
+REQUEST_ACTOR_KEY: web.RequestKey[str] = web.RequestKey("actor")

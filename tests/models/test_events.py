@@ -17,17 +17,21 @@ def test_event_feed_request_dto() -> None:
         sync_token="djE6MTAw",
         event_types="vfs.*, note.*",
         file_id=772252421643567298,
+        exclude_actors="self, api_key:abc",
         limit=50,
     )
     assert req.event_type_list == ["vfs.*", "note.*"]
+    assert req.exclude_actor_list == ["self", "api_key:abc"]
     assert req.to_dict() == {
         "syncToken": "djE6MTAw",
         "eventTypes": "vfs.*, note.*",
         "fileId": "772252421643567298",
+        "excludeActors": "self, api_key:abc",
         "limit": 50,
     }
     assert EventFeedRequestDTO.from_dict(req.to_dict()) == req
     assert EventFeedRequestDTO().event_type_list is None
+    assert EventFeedRequestDTO().exclude_actor_list is None
 
 
 def test_event_feed_list_vo() -> None:

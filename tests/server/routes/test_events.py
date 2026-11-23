@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 from aiohttp.test_utils import TestClient
 
+from supernote.client.auth import AbstractAuth
 from supernote.client.client import Client
 from supernote.client.events import EventsClient
 from supernote.client.exceptions import (
@@ -12,6 +13,7 @@ from supernote.client.exceptions import (
     BadRequestException,
     NotFoundException,
 )
+from supernote.client.schedule import ScheduleClient
 from supernote.server.keys import EVENT_LOG_SERVICE_KEY
 from supernote.server.services.user import UserService
 
@@ -107,3 +109,53 @@ async def test_list_events_error_responses(
         pytest.raises(ApiException),
     ):
         await events_client.list_events()
+
+
+async def test_list_events_api_key_actor_and_exclude_self(
+    client: TestClient,
+    authenticated_client: Client,
+    user_service: UserService,
+    test_user_id: int,
+) -> None:
+    """Verify API key mutations record api_key:<id> actor and excludeActors=self suppresses self-echo."""
+    raw_key, created_key = await user_service.create_api_key(
+        test_user_id, "Magic Todo Agent"
+    )
+
+    class _ApiKeyAuth(AbstractAuth):
+        async def async_get_access_token(self) -> str:
+            return raw_key
+
+    api_key_http_client = Client(
+        client.session, auth=_ApiKeyAuth(), host=str(client.make_url("/"))
+    )
+    web_schedule = ScheduleClient(authenticated_client)
+    agent_schedule = ScheduleClient(api_key_http_client)
+    agent_events = EventsClient(api_key_http_client)
+
+    web_task = await web_schedule.create_task(group_id=None, title="Human task")
+    agent_task = await agent_schedule.create_task(group_id=None, title="Agent task")
+
+    # Without exclude_actors, both tasks appear with distinct actors.
+    full_feed = await agent_events.list_events(event_types=["schedule.*"])
+    assert [(e.entity_id, e.actor) for e in full_feed.events] == [
+        (web_task.task_id, "user:web"),
+        (agent_task.task_id, f"api_key:{created_key.id}"),
+    ]
+
+    # With exclude_actors=["SELF"], case-insensitive self expansion skips the agent's own echo.
+    filtered = await agent_events.list_events(
+        event_types=["schedule.*"], exclude_actors=["SELF"]
+    )
+    assert [(e.entity_id, e.actor) for e in filtered.events] == [
+        (web_task.task_id, "user:web"),
+    ]
+
+    # Next poll advances past the excluded self-authored event.
+    after = await agent_events.list_events(
+        sync_token=filtered.next_sync_token,
+        event_types=["schedule.*"],
+        exclude_actors=["self"],
+    )
+    assert after.events == []
+    assert after.next_sync_token == full_feed.next_sync_token

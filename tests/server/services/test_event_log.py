@@ -786,3 +786,62 @@ def test_all_domain_event_types_are_subscribed() -> None:
     """Verify every DomainEventType is backed by a subscribed DomainEvent class."""
     subscribed_types = {cls.EVENT_TYPE for cls in _SUBSCRIBED_DOMAIN_EVENTS}
     assert subscribed_types == set(DomainEventType)
+
+
+async def test_list_events_exclude_actors_filters_and_advances_cursor(
+    event_log_service: EventLogService,
+) -> None:
+    """Verify exclude_actors omits matching actors while advancing next_sync_token past them."""
+    ev_web = await event_log_service.append(
+        user_id=55,
+        event_type=DomainEventType.SCHEDULE_TASK_CREATED,
+        entity_type=DomainEntityType.SCHEDULE_TASK,
+        entity_id="t1",
+        actor="user:web",
+    )
+    ev_agent = await event_log_service.append(
+        user_id=55,
+        event_type=DomainEventType.SCHEDULE_TASK_CREATED,
+        entity_type=DomainEntityType.SCHEDULE_TASK,
+        entity_id="t2",
+        actor="api_key:agent_1",
+    )
+    ev_device = await event_log_service.append(
+        user_id=55,
+        event_type=DomainEventType.SCHEDULE_TASK_CREATED,
+        entity_type=DomainEntityType.SCHEDULE_TASK,
+        entity_id="t3",
+        actor="device:SN001",
+    )
+    ev_agent_tail = await event_log_service.append(
+        user_id=55,
+        event_type=DomainEventType.SCHEDULE_TASK_CREATED,
+        entity_type=DomainEntityType.SCHEDULE_TASK,
+        entity_id="t4",
+        actor="api_key:agent_1",
+    )
+
+    page1 = await event_log_service.list_events(
+        user_id=55, exclude_actors=["api_key:agent_1"], limit=1
+    )
+    assert [e.seq for e in page1.events] == [ev_web.seq]
+    assert page1.has_more is True
+
+    page2 = await event_log_service.list_events(
+        user_id=55,
+        sync_token=page1.next_sync_token,
+        exclude_actors=["api_key:agent_1"],
+        limit=1,
+    )
+    assert [e.seq for e in page2.events] == [ev_device.seq]
+    assert page2.has_more is False
+    assert ev_agent.seq < ev_device.seq
+
+    # Next poll sees no new non-excluded events and advances next_sync_token past ev_agent_tail.
+    after = await event_log_service.list_events(
+        user_id=55,
+        sync_token=page2.next_sync_token,
+        exclude_actors=["api_key:agent_1"],
+    )
+    assert after.events == []
+    assert after.next_sync_token == encode_sync_token(ev_agent_tail.seq)

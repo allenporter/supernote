@@ -12,7 +12,9 @@ See `supernote.guides.architecture`.
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Generator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
@@ -24,6 +26,20 @@ from supernote.models.schedule import ScheduleTaskLinkDTO
 from supernote.models.summary import SummaryItem, SummaryTagItem
 
 logger = logging.getLogger(__name__)
+
+_current_actor_var: ContextVar[str | None] = ContextVar(
+    "supernote_current_event_actor", default=None
+)
+
+
+@contextmanager
+def bind_event_actor(actor: str | None) -> Generator[None]:
+    """Bind the authenticated caller actor for domain events emitted in this async context."""
+    token = _current_actor_var.set(actor)
+    try:
+        yield
+    finally:
+        _current_actor_var.reset(token)
 
 
 @dataclass
@@ -53,9 +69,14 @@ class DomainEvent(Event, DataClassJSONMixin):
 
     @property
     def actor(self) -> str:
-        """Originating actor identifier (e.g. 'user:web', 'device:<id>', 'system:processor')."""
+        """Originating actor identifier (e.g. 'user:web', 'device:<id>', 'api_key:<id>', 'oauth:<client_id>', 'system:processor')."""
+        if self.DEFAULT_ACTOR != "user:web":
+            return self.DEFAULT_ACTOR
         equipment_no = getattr(self, "equipment_no", None)
-        return f"device:{equipment_no}" if equipment_no else self.DEFAULT_ACTOR
+        eq = str(equipment_no).strip() if equipment_no is not None else ""
+        if eq and eq.upper() != "WEB":
+            return f"device:{eq}"[:64]
+        return (_current_actor_var.get() or self.DEFAULT_ACTOR)[:64]
 
     def to_payload(self) -> dict[str, Any]:
         """Serialize event fields into the wire `payload` dict, omitting envelope metadata."""

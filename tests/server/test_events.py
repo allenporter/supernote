@@ -16,6 +16,7 @@ from supernote.server.events import (
     NotePageTranscribedEvent,
     NoteProcessingCompletedEvent,
     NoteUpdatedEvent,
+    ScheduleTaskCreatedEvent,
     ScheduleTaskUpdatedEvent,
     ScheduleUpdatedEvent,
     SummaryDeletedEvent,
@@ -27,6 +28,7 @@ from supernote.server.events import (
     VfsItemCreatedEvent,
     VfsItemDeletedEvent,
     VfsItemMovedEvent,
+    bind_event_actor,
 )
 
 
@@ -331,3 +333,21 @@ def test_schedule_task_updated_event_unlinked_file_id_fallback() -> None:
         "links": None,
         "changed_fields": {"links": [old_link, None]},
     }
+
+
+def test_bind_event_actor_applies_to_user_events_only() -> None:
+    """Verify bind_event_actor overrides default user:web actor without clobbering device or processor actors."""
+    task_ev = ScheduleTaskCreatedEvent(user_id=1, task_id="t1", title="Buy milk")
+    device_ev = ScheduleTaskCreatedEvent(
+        user_id=1, task_id="t2", title="From tablet", equipment_no="SN999"
+    )
+    proc_ev = NotePageTranscribedEvent(
+        user_id=1, file_id=42, file_path="Daily.note", page_id="P1", text_content="hi"
+    )
+
+    assert task_ev.actor == "user:web"
+    with bind_event_actor("api_key:key_123"):
+        assert task_ev.actor == "api_key:key_123"
+        assert device_ev.actor == "device:SN999"
+        assert proc_ev.actor == "system:processor"
+    assert task_ev.actor == "user:web"

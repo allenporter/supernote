@@ -13,6 +13,7 @@ from supernote.models.events import (
 from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
     EVENT_LOG_SERVICE_KEY,
+    REQUEST_ACTOR_KEY,
     REQUEST_USER_KEY,
     USER_SERVICE_KEY,
 )
@@ -40,12 +41,23 @@ async def handle_list_events(request: web.Request) -> web.Response:
     if not user_id:
         return web.json_response({"error": "User not found"}, status=404)
 
+    caller_actor = request[REQUEST_ACTOR_KEY]
+    exclude_actors = (
+        [
+            caller_actor if actor.lower() == "self" else actor
+            for actor in req_dto.exclude_actor_list
+        ]
+        if req_dto.exclude_actor_list
+        else None
+    )
+
     try:
         page = await event_log_service.list_events(
             user_id=user_id,
             sync_token=req_dto.sync_token,
             event_types=req_dto.event_type_list,
             file_id=req_dto.file_id,
+            exclude_actors=exclude_actors,
             limit=req_dto.limit,
         )
         vo = EventFeedListVO(

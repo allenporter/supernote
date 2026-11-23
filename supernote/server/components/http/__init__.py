@@ -17,8 +17,10 @@ from aiohttp.web_urldispatcher import SystemRoute
 
 from supernote.models.base import create_error_response
 from supernote.server.core import ServerCore
+from supernote.server.events import bind_event_actor
 from supernote.server.keys import (
     HTTP_REGISTRAR_KEY,
+    REQUEST_ACTOR_KEY,
     REQUEST_EQUIPMENT_NO_KEY,
     REQUEST_USER_KEY,
     USER_SERVICE_KEY,
@@ -83,7 +85,9 @@ async def jwt_auth_middleware(
 
     request[REQUEST_USER_KEY] = session.email
     request[REQUEST_EQUIPMENT_NO_KEY] = session.equipment_no
-    return await handler(request)
+    request[REQUEST_ACTOR_KEY] = session.actor
+    with bind_event_actor(session.actor):
+        return await handler(request)
 
 
 class HttpRegistrar:
