@@ -66,6 +66,29 @@ async def test_login_bridge_rejects_static_api_keys(
         )
         assert header_resp.status_code == 403
 
+        # OAuth 2.1 access tokens are also forbidden from authorizing new OAuth clients (403)
+        await coordination_service.set_value(
+            "mcp:access_token:existing_oauth_token",
+            json.dumps(
+                {
+                    "token": "existing_oauth_token",
+                    "user_id": user.id,
+                    "client_id": "client_1",
+                    "scopes": ["supernote:all"],
+                }
+            ),
+            ttl=3600,
+        )
+        oauth_resp = client.post(
+            "/login-bridge",
+            headers={"Authorization": "Bearer existing_oauth_token"},
+        )
+        assert oauth_resp.status_code == 403
+        assert oauth_resp.json() == {
+            "error": "forbidden",
+            "error_description": "OAuth tokens cannot authorize OAuth clients",
+        }
+
         # Interactive session JWT passes auth check and reaches OAuth query validation (400)
         session_resp = client.post(
             "/login-bridge",
