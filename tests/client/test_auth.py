@@ -20,6 +20,7 @@ async def test_constant_auth() -> None:
     auth = ConstantAuth("my-secret-token")
     assert await auth.async_get_access_token() == "my-secret-token"
     assert auth.token == "my-secret-token"
+    assert await auth.async_refresh_access_token("my-secret-token") is False
 
 
 async def test_file_cache_auth_nonexistent_file(tmp_path: Path) -> None:
@@ -122,6 +123,7 @@ async def test_token_refresh_flow(tmp_path: Path) -> None:
     auth.save_credentials("refreshed-token-xyz", "https://api.supernote.com")
     assert await auth.async_get_access_token() == "refreshed-token-xyz"
     assert auth.get_host() == "https://api.supernote.com"
+    assert await auth.async_refresh_access_token("refreshed-token-xyz") is False
 
 
 def test_file_cache_auth_enforces_0600_permissions(tmp_path: Path) -> None:
