@@ -14,8 +14,8 @@ from supernote.client.client import Client
 from supernote.client.extended import ExtendedClient
 from supernote.client.summary import SummaryClient
 from supernote.models.summary import QuerySummaryDTO
-from supernote.server.ai.models.fake.summary import FakeSummaryModel
 from supernote.server.app import create_app
+from supernote.server.components.fake_ai.summary import FakeSummaryModel
 from supernote.server.config import AuthConfig, ServerConfig
 from supernote.server.db.migrations import run_migrations
 from supernote.server.keys import (

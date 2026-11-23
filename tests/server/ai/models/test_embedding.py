@@ -17,7 +17,7 @@ from supernote.server.ai.models.embedding import (
     ValidatingEmbeddingModel,
     create_embedding_model,
 )
-from supernote.server.ai.models.fake.embedding import FakeEmbeddingModel
+from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
 from supernote.server.config import (
     AiConfig,
     AuthConfig,

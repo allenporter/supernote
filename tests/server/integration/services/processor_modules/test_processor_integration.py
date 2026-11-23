@@ -5,9 +5,9 @@ from sqlalchemy import select
 
 from supernote.client.client import Client
 from supernote.client.summary import SummaryClient
-from supernote.server.ai.models.fake.embedding import FakeEmbeddingModel
-from supernote.server.ai.models.fake.ocr import FakeOcrModel
-from supernote.server.ai.models.fake.summary import FakeSummaryModel
+from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
+from supernote.server.components.fake_ai.ocr import FakeOcrModel
+from supernote.server.components.fake_ai.summary import FakeSummaryModel
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO

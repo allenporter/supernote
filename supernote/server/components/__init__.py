@@ -47,6 +47,11 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         default_enabled=True,
     ),
     BuiltinComponentSpec(
+        domain="fake_ai",
+        import_path="supernote.server.components.fake_ai:FakeAiComponent",
+        default_enabled=False,
+    ),
+    BuiltinComponentSpec(
         domain="http",
         import_path="supernote.server.components.http:HttpComponent",
         default_enabled=True,

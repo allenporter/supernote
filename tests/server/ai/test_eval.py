@@ -26,8 +26,8 @@ from supernote.server.ai.eval import (
     rescore_suite_report,
     score_ocr_output,
 )
-from supernote.server.ai.models.fake.ocr import FakeOcrModel
 from supernote.server.ai.models.ocr import OcrModel
+from supernote.server.components.fake_ai.ocr import FakeOcrModel
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 

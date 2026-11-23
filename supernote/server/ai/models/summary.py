@@ -120,7 +120,7 @@ def create_summary_model(config: ServerConfig) -> SummaryModel | None:
 
         model = create_openai_summary_model(config)
     elif provider_type == "fake":
-        from supernote.server.ai.models.fake.summary import (  # noqa: PLC0415
+        from supernote.server.components.fake_ai.summary import (  # noqa: PLC0415
             create_summary_model as create_fake_summary_model,
         )
 

@@ -195,7 +195,13 @@ def create_app(config: ServerConfig) -> web.Application:
     app[CORE_KEY] = core
     app[COMPONENT_LOADER_KEY] = component_loader
 
+    configured_ai_providers = {
+        config.ai.provider_type(m.provider).strip().lower()
+        for m in (config.ai.ocr, config.ai.summary, config.ai.embedding)
+        if m is not None
+    }
     component_configs = {
+        "fake_ai": {"enabled": "fake" in configured_ai_providers},
         "mcp": {"enabled": config.mcp_enabled},
         "metrics": {"enabled": config.metrics_enabled},
         "oauth": {"enabled": config.mcp_enabled},

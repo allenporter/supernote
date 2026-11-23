@@ -13,7 +13,7 @@ from mcp.types import TextContent
 from prometheus_client import REGISTRY
 from sqlalchemy import select
 
-from supernote.server.ai.models.fake.embedding import FakeEmbeddingModel
+from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
 from supernote.server.config import ServerConfig
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
