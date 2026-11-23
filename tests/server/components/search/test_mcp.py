@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Generator
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 from prometheus_client import REGISTRY
 
-from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
 from supernote.server.components.search import SEARCH_SERVICE_KEY
+from supernote.server.config import AiConfig, ModelConfig, ServerConfig
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.session import DatabaseSessionManager
@@ -22,6 +21,15 @@ from tests.server.components.conftest import call_mcp_tool, mcp_session
 def mcp_enabled() -> bool:
     """Enable the embedded MCP Streamable HTTP server for protocol tests."""
     return True
+
+
+@pytest.fixture
+def server_config(server_config: ServerConfig) -> ServerConfig:
+    """Configure the fake embedding provider through the `ai` + `fake_ai` components."""
+    server_config.ai = AiConfig(
+        embedding=ModelConfig(provider="fake", model="fake-embedding-v1"),
+    )
+    return server_config
 
 
 @pytest.fixture
@@ -45,24 +53,12 @@ async def seeded_notebook_id(
                 page_index=0,
                 page_id="P20260115090000a",
                 text_content="Quarterly architecture milestones.",
-                embedding=json.dumps([0.1] * 768),
+                embedding=json.dumps([0.1] * 3),
                 embedding_model="fake-embedding-v1",
             )
         )
         await db.commit()
         return int(file_do.id)
-
-
-@pytest.fixture
-def configured_embedding_model(client: Any) -> Generator[None]:
-    """Attach a deterministic `FakeEmbeddingModel` to the running app's SearchService."""
-    search_service = client.app[SEARCH_SERVICE_KEY]
-    original = search_service.embedding_model
-    search_service.embedding_model = FakeEmbeddingModel(dimensions=768)
-    try:
-        yield
-    finally:
-        search_service.embedding_model = original
 
 
 def _call_count(tool: str, status: str) -> float:
@@ -117,10 +113,8 @@ async def test_search_mcp_search_notebook_chunks_over_protocol(
     mcp_url: str,
     auth_headers: dict[str, str],
     seeded_notebook_id: int,
-    configured_embedding_model: None,
 ) -> None:
     """Verify `search_notebook_chunks` returns ranked hits over MCP Streamable HTTP."""
-    _ = configured_embedding_model
     before_ok = _call_count("search_notebook_chunks", "success")
 
     async with mcp_session(mcp_url, auth_headers) as session:
