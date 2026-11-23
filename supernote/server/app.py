@@ -23,9 +23,6 @@ from aiohttp import web
 from supernote.models.user import UserRegisterDTO
 from supernote.server.db.migrations import run_migrations
 
-from .ai.models.embedding import create_embedding_model
-from .ai.models.ocr import create_ocr_model
-from .ai.models.summary import create_summary_model
 from .components import load_builtin_components
 from .config import AuthConfig, ServerConfig
 from .constants import MAX_UPLOAD_SIZE
@@ -147,12 +144,9 @@ def create_app(config: ServerConfig) -> web.Application:
     app[USER_SERVICE_KEY] = user_service
     app[FILE_SERVICE_KEY] = file_service
     app[INTEGRITY_SERVICE_KEY] = IntegrityService(session_manager, blob_storage)
-    ocr_model = create_ocr_model(config)
-    summary_model = create_summary_model(config)
-    embedding_model = create_embedding_model(config)
-    app[OCR_MODEL_KEY] = ocr_model
-    app[SUMMARY_MODEL_KEY] = summary_model
-    app[EMBEDDING_MODEL_KEY] = embedding_model
+    app[OCR_MODEL_KEY] = None
+    app[SUMMARY_MODEL_KEY] = None
+    app[EMBEDDING_MODEL_KEY] = None
 
     if config.prompts_dir:
         PROMPT_LOADER.configure(Path(config.prompts_dir))
@@ -160,7 +154,7 @@ def create_app(config: ServerConfig) -> web.Application:
     summary_service = SummaryService(user_service, session_manager, event_bus)
     app[SUMMARY_SERVICE_KEY] = summary_service
 
-    search_service = SearchService(session_manager, embedding_model)
+    search_service = SearchService(session_manager, None)
     app[SEARCH_SERVICE_KEY] = search_service
 
     app[RATE_LIMITER_KEY] = RateLimiter(coordination_service)
@@ -213,24 +207,6 @@ def create_app(config: ServerConfig) -> web.Application:
     }
     load_builtin_components(component_loader, component_configs)
 
-    # Register modules
-    png_enabled = (ocr_model is not None) or (
-        config.web_enabled and config.web_notebook_preview
-    )
-    processor_service.register_modules(
-        hashing=PageHashingModule(file_service=file_service),
-        png=PngConversionModule(file_service=file_service) if png_enabled else None,
-        ocr=OcrModule(file_service=file_service, ocr_model=ocr_model),
-        embedding=EmbeddingModule(
-            file_service=file_service, embedding_model=embedding_model
-        ),
-        summary=SummaryModule(
-            file_service=file_service,
-            summary_service=summary_service,
-            summary_model=summary_model,
-        ),
-    )
-
     # Register routes
     app.add_routes(system.routes)
     app.add_routes(admin.routes)
@@ -258,6 +234,35 @@ def create_app(config: ServerConfig) -> web.Application:
                 await component_loader.async_load_platform(
                     ai_platform, core, ai_registrar
                 )
+            ocr_model = ai_registrar.create_ocr_model(config)
+            summary_model = ai_registrar.create_summary_model(config)
+            embedding_model = ai_registrar.create_embedding_model(config)
+        else:
+            ocr_model = None
+            summary_model = None
+            embedding_model = None
+        app[OCR_MODEL_KEY] = ocr_model
+        app[SUMMARY_MODEL_KEY] = summary_model
+        app[EMBEDDING_MODEL_KEY] = embedding_model
+        search_service.embedding_model = embedding_model
+
+        png_enabled = (ocr_model is not None) or (
+            config.web_enabled and config.web_notebook_preview
+        )
+        processor_service.register_modules(
+            hashing=PageHashingModule(file_service=file_service),
+            png=PngConversionModule(file_service=file_service) if png_enabled else None,
+            ocr=OcrModule(file_service=file_service, ocr_model=ocr_model),
+            embedding=EmbeddingModule(
+                file_service=file_service, embedding_model=embedding_model
+            ),
+            summary=SummaryModule(
+                file_service=file_service,
+                summary_service=summary_service,
+                summary_model=summary_model,
+            ),
+        )
+
         http_registrar = app[HTTP_REGISTRAR_KEY]
         await component_loader.async_load_platform("http", core, http_registrar)
         http_registrar.apply_to_app(app)

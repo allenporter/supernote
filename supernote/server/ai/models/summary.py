@@ -10,19 +10,14 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
 
 from supernote.server.ai.prompts import SummaryResponse
 from supernote.server.metrics import AIStage, init_ai_metrics, track_ai_request
-
-if TYPE_CHECKING:
-    from supernote.server.config import ServerConfig
 
 __all__ = [
     "ConcurrencyLimitedSummaryModel",
     "InstrumentedSummaryModel",
     "SummaryModel",
-    "create_summary_model",
 ]
 
 
@@ -93,44 +88,3 @@ class ConcurrencyLimitedSummaryModel(SummaryModel):
     async def summarize(self, prompt: str) -> SummaryResponse:
         async with self._semaphore:
             return await self._model.summarize(prompt)
-
-
-def create_summary_model(config: ServerConfig) -> SummaryModel | None:
-    """Create the configured `SummaryModel` wrapped with telemetry and concurrency limiting.
-
-    Wrapper order matters: `ConcurrencyLimitedSummaryModel` is outermost so
-    semaphore queue wait is excluded from `InstrumentedSummaryModel` latency.
-    """
-    model_cfg = config.ai.summary
-    if model_cfg is None:
-        return None
-
-    model: SummaryModel | None
-    provider_type = config.ai.provider_type(model_cfg.provider)
-    if provider_type == "gemini":
-        from supernote.server.components.gemini.summary import (  # noqa: PLC0415
-            create_summary_model as create_gemini_summary_model,
-        )
-
-        model = create_gemini_summary_model(config)
-    elif provider_type == "openai":
-        from supernote.server.components.openai.summary import (  # noqa: PLC0415
-            create_summary_model as create_openai_summary_model,
-        )
-
-        model = create_openai_summary_model(config)
-    elif provider_type == "fake":
-        from supernote.server.components.fake_ai.summary import (  # noqa: PLC0415
-            create_summary_model as create_fake_summary_model,
-        )
-
-        model = create_fake_summary_model(config)
-    else:
-        raise ValueError(f"Unsupported summary model provider type: {provider_type!r}")
-
-    if model is None:
-        return None
-    return ConcurrencyLimitedSummaryModel(
-        InstrumentedSummaryModel(model),
-        max_concurrency=model_cfg.max_concurrency,
-    )

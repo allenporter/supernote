@@ -26,7 +26,19 @@ from supernote.server.ai.eval import (  # noqa: E402
     render_pareto_svg,
     rescore_suite_report,
 )
-from supernote.server.ai.models.ocr import create_ocr_model  # noqa: E402
+from supernote.server.components.ai import AiRegistrar  # noqa: E402
+from supernote.server.components.apple.ocr import (  # noqa: E402
+    create_ocr_model as create_apple_ocr_model,
+)
+from supernote.server.components.fake_ai.ocr import (  # noqa: E402
+    create_ocr_model as create_fake_ocr_model,
+)
+from supernote.server.components.gemini.ocr import (  # noqa: E402
+    create_ocr_model as create_gemini_ocr_model,
+)
+from supernote.server.components.openai.ocr import (  # noqa: E402
+    create_ocr_model as create_openai_ocr_model,
+)
 from supernote.server.config import (  # noqa: E402
     AiConfig,
     ModelConfig,
@@ -221,7 +233,12 @@ def _resolve_targets(
                 ),
             ),
         )
-        ocr_model = create_ocr_model(target_cfg)
+        ai_registrar = AiRegistrar()
+        ai_registrar.register_ocr("apple", create_apple_ocr_model)
+        ai_registrar.register_ocr("fake", create_fake_ocr_model)
+        ai_registrar.register_ocr("gemini", create_gemini_ocr_model)
+        ai_registrar.register_ocr("openai", create_openai_ocr_model)
+        ocr_model = ai_registrar.create_ocr_model(target_cfg)
         if ocr_model is None:
             raise ValueError(
                 f"Target {spec!r} could not be initialized (missing provider credentials "
