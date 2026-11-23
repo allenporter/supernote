@@ -36,15 +36,19 @@ from supernote.server.utils.auth_utils import get_token_from_request
 from .ai.models.embedding import create_embedding_model
 from .ai.models.ocr import create_ocr_model
 from .ai.models.summary import create_summary_model
+from .components.webhooks import WebhooksComponent
 from .config import AuthConfig, ServerConfig
 from .constants import MAX_UPLOAD_SIZE
+from .core import ComponentLoader, ServerCore
 from .db.session import DatabaseSessionManager
 from .events import LocalEventBus
 from .keys import (
     BLOB_STORAGE_KEY,
+    COMPONENT_LOADER_KEY,
     CONFIG_KEY,
     CONVERSION_SERVICE_KEY,
     COORDINATION_SERVICE_KEY,
+    CORE_KEY,
     EMBEDDING_MODEL_KEY,
     EVENT_BUS_KEY,
     EVENT_LOG_SERVICE_KEY,
@@ -65,7 +69,6 @@ from .keys import (
     SUMMARY_SERVICE_KEY,
     URL_SIGNER_KEY,
     USER_SERVICE_KEY,
-    WEBHOOK_SERVICE_KEY,
 )
 from .metrics import (
     HTTP_REQUEST_DURATION_SECONDS,
@@ -101,7 +104,6 @@ from .services.search import SearchService
 from .services.storage_metrics import StorageMetricsCollector
 from .services.summary import SummaryService
 from .services.user import UserService
-from .services.webhook import WebhookService
 from .socket import setup_socketio
 from .trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger, trace_middleware
 from .utils.hashing import get_md5_hash
@@ -360,8 +362,22 @@ def create_app(config: ServerConfig) -> web.Application:
         processor_service=processor_service,
     )
 
-    webhook_service = WebhookService(config.webhooks, event_bus, user_service)
-    app[WEBHOOK_SERVICE_KEY] = webhook_service
+    core = ServerCore(
+        config=config,
+        app=app,
+        event_bus=event_bus,
+        session_manager=session_manager,
+        coordination=coordination_service,
+        blob_storage=blob_storage,
+        user_service=user_service,
+        file_service=file_service,
+    )
+    component_loader = ComponentLoader()
+    app[CORE_KEY] = core
+    app[COMPONENT_LOADER_KEY] = component_loader
+
+    if config.webhooks.enabled:
+        component_loader.register(WebhooksComponent())
 
     # Register modules
     png_enabled = (ocr_model is not None) or (
@@ -463,6 +479,8 @@ def create_app(config: ServerConfig) -> web.Application:
         if config.ephemeral:
             await bootstrap_ephemeral_user(app)
 
+        await component_loader.async_setup_all(core)
+
         if config.mcp_enabled:
             from aiohttp_asgi import ASGIResource  # noqa: PLC0415
 
@@ -502,7 +520,7 @@ def create_app(config: ServerConfig) -> web.Application:
 
         logger.info("Starting background services...")
         await processor_service.start()
-        await webhook_service.start()
+        await component_loader.async_start_all(core)
         if config.metrics_enabled:
             storage_metrics_collector = StorageMetricsCollector(blob_storage)
             app[STORAGE_METRICS_COLLECTOR_KEY] = storage_metrics_collector
@@ -521,11 +539,16 @@ def create_app(config: ServerConfig) -> web.Application:
 
         if storage_metrics_collector := app.get(STORAGE_METRICS_COLLECTOR_KEY):
             await storage_metrics_collector.stop()
-        await webhook_service.stop()
+        await component_loader.async_stop_all(core)
         await processor_service.stop()
         await session_manager.close()
 
     app.on_shutdown.append(on_shutdown_handler)
+
+    async def on_cleanup_handler(app: web.Application) -> None:
+        await component_loader.async_stop_all(core)
+
+    app.on_cleanup.append(on_cleanup_handler)
 
     return app
 
