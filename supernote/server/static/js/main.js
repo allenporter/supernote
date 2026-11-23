@@ -14,12 +14,14 @@ import FileBrowserPanel from './components/FileBrowserPanel.js';
 import FileViewer from './components/FileViewer.js';
 import LoginCard from './components/LoginCard.js';
 import OAuthConsentCard from './components/OAuthConsentCard.js';
+import RecycleBinPanel from './components/RecycleBinPanel.js';
 import SearchModal from './components/SearchModal.js';
 import SystemPanel from './components/SystemPanel.js';
 import TaskPanel from './components/TaskPanel.js';
 import { useFileSystem } from './composables/useFileSystem.js';
 import { resetEscapeStack } from './composables/useModalEscape.js';
 import { useProcessingStatus } from './composables/useProcessingStatus.js';
+import { useRecycleBin } from './composables/useRecycleBin.js';
 import { useRouter } from './composables/useRouter.js';
 import { useToast } from './composables/useToast.js';
 import { getErrorMessage } from './utils/format.js';
@@ -27,6 +29,7 @@ import { getErrorMessage } from './utils/format.js';
 createApp({
     components: {
         'file-browser-panel': FileBrowserPanel,
+        'recycle-bin-panel': RecycleBinPanel,
         SearchModal,
         TaskPanel,
         LoginCard,
@@ -73,6 +76,20 @@ createApp({
             resetFileSystem,
         } = useFileSystem();
 
+        // Recycle Bin State
+        const {
+            items: recycleItems,
+            selectedIds: recycleSelectedIds,
+            isLoading: isLoadingRecycle,
+            isMutating: isMutatingRecycle,
+            error: recycleError,
+            loadRecycleBin,
+            restoreItems: restoreRecycleItems,
+            deleteItemsPermanently: deleteRecycleItemsPermanently,
+            emptyRecycleBin,
+            resetRecycleBin,
+        } = useRecycleBin();
+
         // Host Navigation & URL Routing
         const {
             activeTab,
@@ -87,6 +104,8 @@ createApp({
             updateUrl,
             clearOAuthRoute,
             switchTab,
+            openRecycleBin,
+            closeRecycleBin,
             openSystemPanel,
             closeSystemPanel,
             closeViewer,
@@ -122,6 +141,10 @@ createApp({
             if (crumb) {
                 crumb.name = newName;
             }
+        }
+
+        function handleRecycleRestored() {
+            loadedDirectoryId.value = null;
         }
 
         /**
@@ -252,6 +275,7 @@ createApp({
             selectedIds.value = [];
             resetEscapeStack();
             resetFileSystem();
+            resetRecycleBin();
             resetSessionRoutes();
             resetProcessingStatuses();
             clearToasts();
@@ -287,7 +311,11 @@ createApp({
 
         const handleFileSyncEvent = () => {
             if (!isLoggedIn.value || pendingOAuthRequest.value) return;
-            loadDirectory(currentDirectoryId.value || '0');
+            if (view.value === 'recycle') {
+                loadRecycleBin();
+            } else {
+                loadDirectory(currentDirectoryId.value || '0');
+            }
         };
 
         onMounted(async () => {
@@ -338,6 +366,18 @@ createApp({
             uploadFiles,
             handleRenameItem,
             switchTab,
+            openRecycleBin,
+            closeRecycleBin,
+            recycleItems,
+            recycleSelectedIds,
+            isLoadingRecycle,
+            isMutatingRecycle,
+            recycleError,
+            loadRecycleBin,
+            restoreRecycleItems,
+            deleteRecycleItemsPermanently,
+            emptyRecycleBin,
+            handleRecycleRestored,
             openSystemPanel,
             closeSystemPanel,
             closeViewer,

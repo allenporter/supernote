@@ -121,7 +121,7 @@ export default {
             required: true,
         },
     },
-    emits: ['open-item', 'navigate-to', 'update-selected-ids'],
+    emits: ['open-item', 'navigate-to', 'update-selected-ids', 'open-recycle-bin'],
     /**
      * @param {{
      *   files: FileItem[],
@@ -584,6 +584,17 @@ export default {
                     </button>
                 </div>
 
+                <!-- Recycle Bin Button -->
+                <button @click="$emit('open-recycle-bin')" type="button"
+                    aria-label="Recycle Bin"
+                    title="Recycle Bin"
+                    class="flex items-center gap-1.5 bg-white hover:bg-stone-50 text-stone-600 hover:text-slate-900 border border-stone-200/90 px-2.5 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-all">
+                    <svg class="w-3.5 h-3.5 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                    </svg>
+                    <span class="hidden lg:inline">Recycle Bin</span>
+                </button>
+
                 <!-- New Folder Button -->
                 <button @click="showNewFolderModal = true" type="button"
                     class="flex items-center gap-1.5 bg-white hover:bg-stone-50 text-slate-700 border border-stone-200/90 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-all">
@@ -784,7 +795,7 @@ export default {
                     Delete {{ selectedIds.length }} {{ selectedIds.length === 1 ? 'item' : 'items' }}?
                 </h3>
                 <p class="text-xs text-stone-500 mb-5 leading-relaxed">
-                    This action will permanently remove the selected {{ selectedIds.length === 1 ? 'item' : 'items' }} from your Supernote Cloud.
+                    The selected {{ selectedIds.length === 1 ? 'item' : 'items' }} will be moved to the Recycle Bin and can be restored for up to 30 days.
                 </p>
                 <div class="flex justify-end gap-2.5">
                     <button ref="deleteCancelBtn" @click="showDeleteModal = false" :disabled="isDeletingItems" type="button"

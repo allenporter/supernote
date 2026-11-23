@@ -276,3 +276,45 @@ test('useRouter.js: handles OAuth /login-bridge routes and preserves pendingOAut
         globalThis.fetch = origFetch;
     }
 });
+
+test('useRouter.js: handles #/recycle deep links, openRecycleBin, and closeRecycleBin', async () => {
+    const origWindow = globalThis.window;
+    const origFetch = globalThis.fetch;
+
+    try {
+        assert.deepEqual(parseUrlHash('#/recycle'), {
+            tab: 'files',
+            view: 'recycle',
+            dirId: '0',
+            showSystem: false,
+        });
+        assert.equal(buildUrlHash('files', '10', 'recycle', null), '#/recycle');
+
+        setToken('router-recycle-tok');
+        const { router, currentDirectoryId, selectedIds } = createRouterHarness();
+
+        await router.openItem({ id: '10', name: 'INBOX', isDirectory: true });
+        assert.equal(currentDirectoryId.value, '10');
+
+        selectedIds.value = ['55'];
+        router.openRecycleBin();
+        assert.equal(router.activeTab.value, 'files');
+        assert.equal(router.view.value, 'recycle');
+        assert.deepEqual(selectedIds.value, []);
+        assert.equal(globalThis.window.location.hash, '#/recycle');
+
+        await router.closeRecycleBin();
+        assert.equal(router.view.value, 'grid');
+        assert.equal(currentDirectoryId.value, '10');
+        assert.equal(globalThis.window.location.hash, '#/files/10');
+
+        globalThis.window.history.pushState(null, '', '#/recycle');
+        await router.syncFromUrl();
+        assert.equal(router.activeTab.value, 'files');
+        assert.equal(router.view.value, 'recycle');
+    } finally {
+        await logout({ reload: false });
+        globalThis.window = origWindow;
+        globalThis.fetch = origFetch;
+    }
+});

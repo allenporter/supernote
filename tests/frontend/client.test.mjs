@@ -2,15 +2,19 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+    clearRecycleBin,
     computeSocketSignature,
     connectSocket,
+    deleteRecycleItems,
     disconnectSocket,
     fetchAiStatus,
     fetchFiles,
     fetchProcessingStatus,
+    fetchRecycleBin,
     fetchSummaries,
     fetchSystemTasks,
     login,
+    revertRecycleItems,
     searchFiles,
     searchSemantic,
     submitOAuthBridgeDecision,
@@ -452,5 +456,88 @@ test('client.js: connectSocket guards logout/concurrent races and dispatches par
         disconnectSocket();
         await logout({ reload: false });
         globalThis.window = origWindow;
+    }
+});
+
+test('client.js: recycle bin endpoints paginate, normalize, and pass string IDs', async () => {
+    const origFetch = globalThis.fetch;
+    /** @type {Array<{ url: string, body: any }>} */
+    const calls = [];
+    try {
+        setToken('recycle-tok');
+        globalThis.fetch = async (url, init) => {
+            const body = JSON.parse(String(init?.body || '{}'));
+            calls.push({ url: String(url), body });
+            if (url === '/api/file/recycle/list/query') {
+                if (body.pageNo === 1) {
+                    return new Response(
+                        JSON.stringify({
+                            success: true,
+                            total: 2,
+                            recycleFileVOList: [
+                                {
+                                    fileId: '900719925474099301',
+                                    isFolder: 'Y',
+                                    fileName: 'OldFolder',
+                                    size: 0,
+                                    updateTime: '1700000000000',
+                                },
+                            ],
+                        }),
+                        { status: 200 },
+                    );
+                }
+                return new Response(
+                    JSON.stringify({
+                        success: true,
+                        total: 2,
+                        recycleFileVOList: [
+                            {
+                                fileId: '900719925474099302',
+                                isFolder: 'N',
+                                fileName: 'Draft.note',
+                                size: 4096,
+                                updateTime: '1700000100000',
+                            },
+                        ],
+                    }),
+                    { status: 200 },
+                );
+            }
+            return new Response(JSON.stringify({ success: true }), { status: 200 });
+        };
+
+        const items = await fetchRecycleBin(1);
+        assert.deepEqual(items, [
+            {
+                id: '900719925474099301',
+                name: 'OldFolder',
+                isDirectory: true,
+                size: 0,
+                deletedAt: 1700000000000,
+                extension: null,
+            },
+            {
+                id: '900719925474099302',
+                name: 'Draft.note',
+                isDirectory: false,
+                size: 4096,
+                deletedAt: 1700000100000,
+                extension: 'note',
+            },
+        ]);
+
+        await revertRecycleItems(['900719925474099302']);
+        await deleteRecycleItems(['900719925474099301']);
+        await clearRecycleBin();
+
+        assert.deepEqual(calls.slice(2), [
+            { url: '/api/file/recycle/revert', body: { idList: ['900719925474099302'] } },
+            { url: '/api/file/recycle/delete', body: { idList: ['900719925474099301'] } },
+            { url: '/api/file/recycle/clear', body: {} },
+        ]);
+    } finally {
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
     }
 });

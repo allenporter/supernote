@@ -4,6 +4,7 @@
  * Canonical routes:
  * - `#/files` and `#/files/<dirId>`
  * - `#/file/<fileId>` and `#/file/<fileId>?page=<1-based>`
+ * - `#/recycle`
  * - `#/tasks`
  * - `#/system`
  * - `#/login?return_to=...` (OAuth 2.1 `/login-bridge` consent handoff)
@@ -90,6 +91,9 @@ export function parseUrlHash(hashString) {
     if (parts[0] === 'tasks') {
         return { tab: 'tasks', view: 'grid', dirId: '0', showSystem: false };
     }
+    if (parts[0] === 'recycle') {
+        return { tab: 'files', view: 'recycle', dirId: '0', showSystem: false };
+    }
     if (parts[0] === 'file' && parts[1]) {
         return {
             tab: 'files',
@@ -120,6 +124,9 @@ export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false,
     }
     if (tab === 'tasks') {
         return '#/tasks';
+    }
+    if (viewState === 'recycle') {
+        return '#/recycle';
     }
     if (viewState === 'viewer' && fileObj?.id) {
         if (typeof pageIndex === 'number' && pageIndex > 0) {
@@ -171,6 +178,7 @@ export function useRouter({
     let lastSyncedHash = '';
     let inAppHistoryDepth = 0;
     let viewerOpenedFromHistory = false;
+    let recycleOpenedFromHistory = false;
     let systemOpenedFromHistory = false;
 
     function resetViewerSelection() {
@@ -184,6 +192,7 @@ export function useRouter({
         lastSyncedHash = '';
         inAppHistoryDepth = 0;
         viewerOpenedFromHistory = false;
+        recycleOpenedFromHistory = false;
         systemOpenedFromHistory = false;
         activeTab.value = 'files';
         resetViewerSelection();
@@ -428,6 +437,14 @@ export function useRouter({
         }
 
         activeTab.value = 'files';
+        if (parsed.view === 'recycle') {
+            selectedFile.value = null;
+            selectedPageIndex.value = null;
+            view.value = 'recycle';
+            viewerOpenedFromHistory = false;
+            selectedIds.value = [];
+            return;
+        }
         if (parsed.view === 'viewer' && parsed.fileId) {
             selectedPageIndex.value =
                 typeof parsed.pageIndex === 'number' ? parsed.pageIndex : null;
@@ -470,6 +487,36 @@ export function useRouter({
         } else {
             updateUrl();
         }
+    }
+
+    function openRecycleBin() {
+        showSystemPanel.value = false;
+        systemOpenedFromHistory = false;
+        activeTab.value = 'files';
+        selectedFile.value = null;
+        selectedPageIndex.value = null;
+        viewerOpenedFromHistory = false;
+        recycleOpenedFromHistory = true;
+        selectedIds.value = [];
+        view.value = 'recycle';
+        updateUrl();
+    }
+
+    async function closeRecycleBin() {
+        if (recycleOpenedFromHistory && inAppHistoryDepth > 0) {
+            recycleOpenedFromHistory = false;
+            window.history.back();
+            return;
+        }
+        recycleOpenedFromHistory = false;
+        resetViewerSelection();
+        viewerOpenedFromHistory = false;
+        updateUrl(true);
+        await restoreDirectoryState(
+            String(currentDirectoryId.value || '0'),
+            false,
+            ++activeSyncSeq,
+        );
     }
 
     function openSystemPanel() {
@@ -660,6 +707,8 @@ export function useRouter({
         updateUrl,
         clearOAuthRoute,
         switchTab,
+        openRecycleBin,
+        closeRecycleBin,
         openSystemPanel,
         closeSystemPanel,
         closeViewer,
