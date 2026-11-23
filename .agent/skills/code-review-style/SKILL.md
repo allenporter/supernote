@@ -33,11 +33,11 @@ Execute this prescriptive task list when reviewing code changes, auditing PRs, o
 - [ ] Confirm event streams use standard Python async iterators (`async for msg in client.messages():`).
 
 ### Step 5: Audit Linear Control Flow & Guard Clauses
-- [ ] Check for early returns and guard clauses to keep main happy paths unindented.
+- [ ] Check for early returns and guard clauses to keep main happy paths unindented (avoid pre-declaring dummy locals like `x = y or 0` or `None`/`[]` placeholders that an up-front guard clause eliminates).
 - [ ] Verify repetitive error emission or formatting blocks are extracted into flat helper methods.
 - [ ] Check code hygiene: top-level imports only, no numbered comments (`# 1.`, `# 2.`), and minimal `__all__` exports exposing only true public API symbols (do not re-export internal helpers).
 - [ ] Verify `pdoc`-compatible inline attribute docstrings (`"""..."""` placed directly beneath dataclass/schema fields rather than `Attributes:` class-docstring blocks) and rationale comments explaining *why* non-obvious DB columns, indexes, constraints, or helper methods exist.
-- [ ] Audit minimalism & PR size: verify built-in library primitives are used instead of custom wrapper classes/validators, and flag diffs exceeding ~300–400 production LoC for splitting.
+- [ ] Audit minimalism & PR size: run `git diff --stat origin/main`, verify built-in library primitives are used instead of custom wrapper classes/validators, reuse existing domain helpers in Alembic data migrations (extending existing migration DB test fixtures with a minimal delta), and flag diffs exceeding ~300–400 production LoC for splitting.
 
 ### Step 6: Audit Test Quality & Fixture Delegation
 - [ ] Verify one behavior/scenario per `test_*` method (split multi-scenario mega-tests into separate test methods or `@pytest.mark.parametrize`).
@@ -56,16 +56,16 @@ Execute this prescriptive task list when reviewing code changes, auditing PRs, o
 Whenever asked for a hostile/adversarial review on Python/backend changes, run both passes (when changes touch Web UI assets, also run the 7-point rubric in [`../server-ui/references/ui-review-and-testing.md`](../server-ui/references/ui-review-and-testing.md)):
 
 1. **Pass 1 — Invariants & Boundaries**: Audit multi-tenant `user_id` PK and query scoping, DB transaction and per-file lock races, wire-protocol and DTO compatibility, and narrow exception types.
-2. **Pass 2 — Subtractive / Anti-Fluff**: Remove single-caller wrapper classes, replace magic string sentinels (`"0"`, `""`) with `None`, and strip speculative guards for impossible internal states.
+2. **Pass 2 — Subtractive / Anti-Fluff (Required After Every Review Round)**: Run `git diff --stat origin/main` and actively look for code to delete—remove single-caller wrapper classes/factories and optional parameters, replace magic string sentinels (`"0"`, `""`) with `None`, strip speculative runtime `isinstance`/reentrancy guards for impossible internal states, and revert scope creep into unrelated modules.
 
 ---
 
 ## Execution Protocol
 
-1. **Map Diffs**: Identify changed implementation and test modules via `git diff --name-only`.
+1. **Map Diffs**: Identify changed implementation and test modules via `git diff --name-only` and check diff budget via `git diff --stat origin/main`.
 2. **Run Linter & Tests**: Execute `uv run --no-sync ruff check .` and `uv run --no-sync pytest --cov=supernote --cov-report=term-missing`.
 3. **Audit Diffs**: Inspect Python changes against Steps 1–6 checklist items and the two-pass backend adversarial rubric. Whenever diffs touch Web UI assets (`supernote/server/static/` or supporting UI routes), also activate [`../server-ui/SKILL.md`](../server-ui/SKILL.md) and audit against the 7-point rubric and Playwright E2E/mobile checks in [`../server-ui/references/ui-review-and-testing.md`](../server-ui/references/ui-review-and-testing.md).
-4. **Format Output**: Synthesize review results using the audit report template below.
+4. **Format Output**: Synthesize review results using the audit report template below. When drafting comments for external PRs, explain the underlying problem first, state one clear recommendation (avoid hedging with unwanted options like per-model heuristics), and anchor architectural feedback to the contributor's concrete use case.
 
 ---
 
