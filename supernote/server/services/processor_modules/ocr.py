@@ -144,8 +144,6 @@ class OcrModule(ProcessorModule):
                 return
 
             user_id = file_do.user_id
-            file_name = file_do.file_name
-            notebook_create_time = file_do.create_time
             saved_page_index = int(content.page_index)
             page_meta = await _get_verified_page_metadata(
                 session, user_id, file_id, page_id, content.content_hash
@@ -168,8 +166,16 @@ class OcrModule(ProcessorModule):
                     )
                 return
 
-            page_style = page_meta.page_style if page_meta is not None else None
-            page_keywords = page_meta.keyword_texts if page_meta is not None else []
+            page_metadata = PageMetadata(
+                file_name=file_do.file_name,
+                page_index=page_index if page_index is not None else saved_page_index,
+                page_id=page_id,
+                notebook_create_time=file_do.create_time,
+            )
+            if page_meta is not None:
+                page_metadata.page_style = page_meta.page_style
+                page_metadata.keywords = page_meta.keyword_texts
+            prompt = format_ocr_prompt(page_metadata)
 
         png_path = get_page_png_path(file_id, page_id)
         chunks = [
@@ -179,16 +185,6 @@ class OcrModule(ProcessorModule):
             )
         ]
         png_data = b"".join(chunks)
-
-        page_metadata = PageMetadata(
-            file_name=file_name,
-            page_index=page_index if page_index is not None else saved_page_index,
-            page_id=page_id,
-            notebook_create_time=notebook_create_time,
-            page_style=page_style,
-            keywords=page_keywords,
-        )
-        prompt = format_ocr_prompt(page_metadata)
         text_content = await self.ocr_model.extract_text(png_data, prompt)
 
         async with session_manager.session() as session:
