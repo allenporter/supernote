@@ -1,8 +1,6 @@
-"""Open Private Cloud extension routes (`/api/extended/*`) for search, transcripts, API keys, and AI status.
+"""Open Private Cloud extension routes (`/api/extended/*`) for summaries, tasks, API keys, and AI status.
 
 Exposes non-device HTTP endpoints consumed by the Web UI and `supernote.client.extended.ExtendedClient`:
-- `POST /api/extended/search`: Semantic vector search across notebook pages via `supernote.server.services.search.SearchService`.
-- `POST /api/extended/transcript`: Full or page-range OCR transcript retrieval.
 - `POST /api/extended/summary/list`: Notebook summaries and transcripts for a given `file_id`.
 - `POST /api/extended/file/status` and `GET /api/extended/system/tasks`: Per-file and global pipeline task statuses (`SystemTaskDO`) and active AI capability flags.
 
@@ -23,20 +21,14 @@ from supernote.models.extended import (
     CreateApiKeyResponseVO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
-    PageTranscriptVO,
-    SearchResultVO,
     SystemTaskListVO,
     SystemTaskVO,
     WebNoteCoverRequestDTO,
     WebNoteCoverVO,
     WebNoteMetadataRequestDTO,
     WebNoteMetadataVO,
-    WebSearchRequestDTO,
-    WebSearchResponseVO,
     WebSummaryListRequestDTO,
     WebSummaryListVO,
-    WebTranscriptRequestDTO,
-    WebTranscriptResponseVO,
 )
 from supernote.server.config import ServerConfig
 from supernote.server.exceptions import SupernoteError
@@ -45,14 +37,12 @@ from supernote.server.keys import (
     CONVERSION_SERVICE_KEY,
     PROCESSOR_SERVICE_KEY,
     REQUEST_USER_KEY,
-    SEARCH_SERVICE_KEY,
     SUMMARY_SERVICE_KEY,
     URL_SIGNER_KEY,
     USER_SERVICE_KEY,
 )
 from supernote.server.services.conversion import ConversionService
 from supernote.server.services.processor import ProcessorService
-from supernote.server.services.search import SearchService
 from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
@@ -168,108 +158,6 @@ async def handle_file_processing_status(request: web.Request) -> web.Response:
         )
     except Exception as err:
         logger.exception("Error fetching processing status")
-        return SupernoteError.uncaught(err).to_response()
-
-
-@routes.post("/api/extended/search")
-async def handle_extended_search(request: web.Request) -> web.Response:
-    # Endpoint: POST /api/extended/search
-    # Purpose: Semantic search across notebook content.
-    user_email = request[REQUEST_USER_KEY]
-    try:
-        data = await request.json()
-        req_dto = WebSearchRequestDTO.from_dict(data)
-    except Exception as e:
-        return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
-
-    user_service: UserService = request.app[USER_SERVICE_KEY]
-    search_service: SearchService = request.app[SEARCH_SERVICE_KEY]
-
-    user_id = await user_service.get_user_id(user_email)
-    if not user_id:
-        return web.json_response({"error": "User not found"}, status=404)
-
-    try:
-        results = await search_service.search_chunks(
-            user_id=user_id,
-            query=req_dto.query,
-            top_n=req_dto.top_n,
-            name_filter=req_dto.name_filter,
-            date_after=req_dto.date_after,
-            date_before=req_dto.date_before,
-        )
-
-        vo_results = [
-            SearchResultVO(
-                file_id=r.file_id,
-                file_name=r.file_name,
-                page_index=r.page_index,
-                page_id=r.page_id,
-                score=float(r.score),
-                text_preview=r.text_preview,
-                date=r.date,
-            )
-            for r in results
-        ]
-
-        return web.json_response(WebSearchResponseVO(results=vo_results).to_dict())
-    except Exception as err:
-        logger.exception("Error performing semantic search")
-        return SupernoteError.uncaught(err).to_response()
-
-
-@routes.post("/api/extended/transcript")
-async def handle_extended_transcript(request: web.Request) -> web.Response:
-    # Endpoint: POST /api/extended/transcript
-    # Purpose: Retrieve structured per-page notebook transcript.
-    user_email = request[REQUEST_USER_KEY]
-    try:
-        data = await request.json()
-        req_dto = WebTranscriptRequestDTO.from_dict(data)
-    except (
-        json.JSONDecodeError,
-        ValueError,
-        TypeError,
-        KeyError,
-        MissingField,
-        InvalidFieldValue,
-    ) as e:
-        return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
-
-    user_service: UserService = request.app[USER_SERVICE_KEY]
-    search_service: SearchService = request.app[SEARCH_SERVICE_KEY]
-
-    user_id = await user_service.get_user_id(user_email)
-    if not user_id:
-        return web.json_response({"error": "User not found"}, status=404)
-
-    try:
-        page_transcripts = await search_service.get_page_transcripts(
-            user_id=user_id,
-            file_id=req_dto.file_id,
-            start_index=req_dto.start_index,
-            end_index=req_dto.end_index,
-        )
-
-        if not page_transcripts:
-            return web.json_response(
-                {"error": f"No transcript found for notebook {req_dto.file_id}"},
-                status=404,
-            )
-
-        vo_pages = [
-            PageTranscriptVO(
-                page_index=p.page_index,
-                page_id=p.page_id,
-                text=p.text,
-                date=p.date,
-            )
-            for p in page_transcripts
-        ]
-
-        return web.json_response(WebTranscriptResponseVO(pages=vo_pages).to_dict())
-    except Exception as err:
-        logger.exception("Error fetching notebook transcript")
         return SupernoteError.uncaught(err).to_response()
 
 

@@ -2,8 +2,9 @@
 
 `create_app` initializes core infrastructure (`ServerCore`, `ComponentLoader`,
 database/VFS/auth/processor services, and core route tables) and lazily registers
-enabled built-in vertical components (`ai`, `events`, `http`, `mcp`, `metrics`,
-`oauth`, `schedule`, `socketio`, `web_ui`, `webhooks`) via
+enabled built-in vertical components (`ai`, `apple`, `events`, `fake_ai`,
+`gemini`, `http`, `mcp`, `metrics`, `oauth`, `openai`, `schedule`, `search`,
+`socketio`, `transcript`, `web_ui`, `webhooks`) via
 `supernote.server.components.load_builtin_components`.
 
 During `on_startup`, the server runs Alembic migrations, initializes `UrlSigner`,
@@ -37,7 +38,6 @@ from supernote.server.keys import (
     MCP_REGISTRAR_KEY,
     PROCESSOR_SERVICE_KEY,
     RATE_LIMITER_KEY,
-    SEARCH_SERVICE_KEY,
     SESSION_MANAGER_KEY,
     SUMMARY_SERVICE_KEY,
     URL_SIGNER_KEY,
@@ -71,7 +71,6 @@ from .services.processor_modules.ocr import OcrModule
 from .services.processor_modules.page_hashing import PageHashingModule
 from .services.processor_modules.png_conversion import PngConversionModule
 from .services.processor_modules.summary import SummaryModule
-from .services.search import SearchService
 from .services.summary import SummaryService
 from .services.user import UserService
 from .trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger
@@ -133,9 +132,6 @@ def create_app(config: ServerConfig) -> web.Application:
 
     summary_service = SummaryService(user_service, session_manager, event_bus)
     app[SUMMARY_SERVICE_KEY] = summary_service
-
-    search_service = SearchService(session_manager, None)
-    app[SEARCH_SERVICE_KEY] = search_service
 
     app[RATE_LIMITER_KEY] = RateLimiter(coordination_service)
 
@@ -219,7 +215,6 @@ def create_app(config: ServerConfig) -> web.Application:
             ocr_model = None
             summary_model = None
             embedding_model = None
-        search_service.embedding_model = embedding_model
 
         png_enabled = (ocr_model is not None) or (
             config.web_enabled and config.web_notebook_preview

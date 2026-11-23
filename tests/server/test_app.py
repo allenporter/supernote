@@ -25,6 +25,7 @@ from supernote.server.app import (
     run,
 )
 from supernote.server.components.fake_ai import FakeAiComponent
+from supernote.server.components.search import SEARCH_SERVICE_KEY
 from supernote.server.components.webhooks import WebhooksComponent
 from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
 from supernote.server.core import ComponentLoader, ServerCore
@@ -37,7 +38,6 @@ from supernote.server.keys import (
     INTEGRITY_SERVICE_KEY,
     OCR_MODEL_KEY,
     PROCESSOR_SERVICE_KEY,
-    SEARCH_SERVICE_KEY,
     SESSION_MANAGER_KEY,
     USER_SERVICE_KEY,
 )
