@@ -9,26 +9,17 @@ import subprocess
 import sys
 
 import pytest
-from aiohttp import web
 
 import supernote.server.components as components_pkg
 from supernote.server.components import (
     BUILTIN_COMPONENTS,
+    KNOWN_PLATFORMS,
     BuiltinComponentSpec,
     is_component_enabled,
     load_builtin_components,
     load_component_from_spec,
 )
-from supernote.server.config import ServerConfig
 from supernote.server.core import Component, ComponentError, ComponentLoader, ServerCore
-from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.events import LocalEventBus
-from supernote.server.keys import SEARCH_SERVICE_KEY
-from supernote.server.services.blob import BlobStorage
-from supernote.server.services.coordination import CoordinationService
-from supernote.server.services.file import FileService
-from supernote.server.services.search import SearchService
-from supernote.server.services.user import UserService
 
 
 def _discover_component_package_names() -> set[str]:
@@ -38,30 +29,6 @@ def _discover_component_package_names() -> set[str]:
         for mod_info in pkgutil.iter_modules(components_pkg.__path__)
         if not mod_info.name.startswith("_")
     }
-
-
-@pytest.fixture
-def conformance_core(
-    server_config: ServerConfig,
-    session_manager: DatabaseSessionManager,
-    coordination_service: CoordinationService,
-    blob_storage: BlobStorage,
-    user_service: UserService,
-    file_service: FileService,
-) -> ServerCore:
-    """Create a `ServerCore` backed by shared test fixtures for component conformance."""
-    app = web.Application()
-    app[SEARCH_SERVICE_KEY] = SearchService(session_manager, None)
-    return ServerCore(
-        config=server_config,
-        app=app,
-        event_bus=LocalEventBus(),
-        session_manager=session_manager,
-        coordination=coordination_service,
-        blob_storage=blob_storage,
-        user_service=user_service,
-        file_service=file_service,
-    )
 
 
 def test_builtin_components_registry_matches_subpackages_1to1() -> None:
@@ -137,7 +104,6 @@ def test_builtin_component_platforms_match_modules_1to1(
     spec: BuiltinComponentSpec,
 ) -> None:
     """Declared platforms must resolve to async setup functions, and platform files on disk must be declared."""
-    known_platforms = {"http"}
     component = load_component_from_spec(spec)
     pkg = importlib.import_module(f"supernote.server.components.{spec.domain}")
 
@@ -151,9 +117,9 @@ def test_builtin_component_platforms_match_modules_1to1(
     on_disk_platforms = {
         mod.name
         for mod in pkgutil.iter_modules(pkg.__path__)
-        if mod.name in known_platforms
+        if mod.name in KNOWN_PLATFORMS
     }
-    assert on_disk_platforms == (set(component.platforms) & known_platforms), (
+    assert on_disk_platforms == (set(component.platforms) & KNOWN_PLATFORMS), (
         f"Component {spec.domain!r} platform files {on_disk_platforms} do not match "
         f"declared platforms {set(component.platforms)}"
     )
@@ -166,16 +132,16 @@ def test_builtin_component_platforms_match_modules_1to1(
 )
 async def test_component_full_lifecycle_and_idempotent_stop(
     spec: BuiltinComponentSpec,
-    conformance_core: ServerCore,
+    component_core: ServerCore,
 ) -> None:
     """Every component must support setup -> start -> stop -> stop cleanly."""
     loader = ComponentLoader()
     loader.register(load_component_from_spec(spec))
 
-    await loader.async_setup_all(conformance_core, {})
-    await loader.async_start_all(conformance_core)
-    await loader.async_stop_all(conformance_core)
-    await loader.async_stop_all(conformance_core)
+    await loader.async_setup_all(component_core, {})
+    await loader.async_start_all(component_core)
+    await loader.async_stop_all(component_core)
+    await loader.async_stop_all(component_core)
 
 
 @pytest.mark.parametrize(
@@ -185,14 +151,14 @@ async def test_component_full_lifecycle_and_idempotent_stop(
 )
 async def test_component_stop_after_setup_only(
     spec: BuiltinComponentSpec,
-    conformance_core: ServerCore,
+    component_core: ServerCore,
 ) -> None:
     """Every component must tear down cleanly if stopped after setup without starting."""
     loader = ComponentLoader()
     loader.register(load_component_from_spec(spec))
 
-    await loader.async_setup_all(conformance_core, {})
-    await loader.async_stop_all(conformance_core)
+    await loader.async_setup_all(component_core, {})
+    await loader.async_stop_all(component_core)
 
 
 def test_is_component_enabled_respects_default_and_config_override() -> None:

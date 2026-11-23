@@ -11,42 +11,20 @@ from supernote.server.components.http import (
     HTTP_REGISTRAR_KEY,
     HttpComponent,
     HttpRegistrar,
+    jwt_auth_middleware,
+    static_cache_control_middleware,
 )
-from supernote.server.config import ServerConfig
 from supernote.server.core import Component, ComponentLoader, ServerCore
-from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.events import LocalEventBus
-from supernote.server.services.blob import BlobStorage
-from supernote.server.services.coordination import CoordinationService
-from supernote.server.services.file import FileService
-from supernote.server.services.user import UserService
-
-
-@pytest.fixture
-def http_core(
-    server_config: ServerConfig,
-    session_manager: DatabaseSessionManager,
-    coordination_service: CoordinationService,
-    blob_storage: BlobStorage,
-    user_service: UserService,
-    file_service: FileService,
-) -> ServerCore:
-    """Create a `ServerCore` backed by shared test fixtures."""
-    return ServerCore(
-        config=server_config,
-        app=web.Application(),
-        event_bus=LocalEventBus(),
-        session_manager=session_manager,
-        coordination=coordination_service,
-        blob_storage=blob_storage,
-        user_service=user_service,
-        file_service=file_service,
-    )
+from supernote.server.trace import trace_middleware
 
 
 def test_http_registrar_collects_middlewares_prefixes_and_resources() -> None:
     @web.middleware
     async def outer_mw(request: web.Request, handler: Any) -> web.StreamResponse:
+        return await handler(request)
+
+    @web.middleware
+    async def extra_outer_mw(request: web.Request, handler: Any) -> web.StreamResponse:
         return await handler(request)
 
     @web.middleware
@@ -74,11 +52,21 @@ def test_http_registrar_collects_middlewares_prefixes_and_resources() -> None:
     assert registrar.known_resource_paths == frozenset({"/authorize", "/token"})
 
     app = web.Application()
+    registrar.apply_to_app(app, extra_outer_middlewares=(extra_outer_mw,))
+    # mount_resources is idempotent on repeat calls
     registrar.mount_resources(app)
-    assert resource in list(app.router.resources())
+    assert list(app.router.resources()).count(resource) == 1
+    assert list(app.middlewares) == [
+        outer_mw,
+        extra_outer_mw,
+        trace_middleware,
+        jwt_auth_middleware,
+        static_cache_control_middleware,
+        inner_mw,
+    ]
 
 
-async def test_http_component_lifecycle(http_core: ServerCore) -> None:
+async def test_http_component_lifecycle(component_core: ServerCore) -> None:
     component = HttpComponent()
     assert isinstance(component, Component)
     assert component.domain == "http"
@@ -88,8 +76,8 @@ async def test_http_component_lifecycle(http_core: ServerCore) -> None:
     loader = ComponentLoader()
     loader.register(component)
 
-    await loader.async_setup_all(http_core, {})
-    assert isinstance(http_core.app[HTTP_REGISTRAR_KEY], HttpRegistrar)
+    await loader.async_setup_all(component_core, {})
+    assert isinstance(component_core.app[HTTP_REGISTRAR_KEY], HttpRegistrar)
 
-    await loader.async_start_all(http_core)
-    await loader.async_stop_all(http_core)
+    await loader.async_start_all(component_core)
+    await loader.async_stop_all(component_core)
