@@ -16,9 +16,9 @@ from prometheus_client import REGISTRY
 from starlette.testclient import TestClient
 
 from supernote.models.user import UserRegisterDTO
-from supernote.server.mcp import server as mcp_server_module
-from supernote.server.mcp.models import SupernoteAccessToken
-from supernote.server.mcp.server import (
+from supernote.server.components.mcp import server as mcp_server_module
+from supernote.server.components.mcp.models import SupernoteAccessToken
+from supernote.server.components.mcp.server import (
     SupernoteTokenVerifier,
     _get_auth_user_id,
     create_mcp_server,

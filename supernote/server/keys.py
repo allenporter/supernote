@@ -8,14 +8,11 @@ populated during `supernote.server.app.create_app` startup and consumed by route
 
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING
 
 from aiohttp import web
 
 if TYPE_CHECKING:
-    from aiohttp_asgi import ASGIResource
-
     from .ai.models.embedding import EmbeddingModel
     from .ai.models.ocr import OcrModel
     from .ai.models.summary import SummaryModel
@@ -61,8 +58,6 @@ RATE_LIMITER_KEY: web.AppKey[RateLimiter] = web.AppKey("rate_limiter")
 PROCESSOR_SERVICE_KEY: web.AppKey[ProcessorService] = web.AppKey("processor_service")
 CONVERSION_SERVICE_KEY: web.AppKey[ConversionService] = web.AppKey("conversion_service")
 URL_SIGNER_KEY: web.AppKey[UrlSigner] = web.AppKey("url_signer")
-MCP_ASGI_RESOURCE_KEY: web.AppKey[ASGIResource] = web.AppKey("mcp_asgi_resource")
-MCP_TASK_KEY: web.AppKey[asyncio.Task[None]] = web.AppKey("mcp_task")
 STORAGE_METRICS_COLLECTOR_KEY: web.AppKey[StorageMetricsCollector] = web.AppKey(
     "storage_metrics_collector"
 )

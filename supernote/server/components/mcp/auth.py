@@ -5,7 +5,7 @@ on the main server port `8080` in `supernote.server.app.create_app`). Supports d
 IndieAuth-style URL client IDs, PKCE authorization code exchange (`/authorize`, `/token`),
 token revocation (`/revoke`), and `/login-bridge` integration with the Web UI login flow.
 Tokens are persisted with TTLs in `supernote.server.services.coordination.CoordinationService`
-and verified by `supernote.server.mcp.server.SupernoteTokenVerifier`. See `supernote.guides.mcp`.
+and verified by `supernote.server.components.mcp.server.SupernoteTokenVerifier`. See `supernote.guides.mcp`.
 """
 
 import secrets
