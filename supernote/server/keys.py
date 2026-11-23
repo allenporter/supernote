@@ -30,7 +30,6 @@ if TYPE_CHECKING:
     from .services.processor import ProcessorService
     from .services.schedule import ScheduleService
     from .services.search import SearchService
-    from .services.storage_metrics import StorageMetricsCollector
     from .services.summary import SummaryService
     from .services.user import UserService
     from .utils.rate_limit import RateLimiter
@@ -60,9 +59,6 @@ RATE_LIMITER_KEY: web.AppKey[RateLimiter] = web.AppKey("rate_limiter")
 PROCESSOR_SERVICE_KEY: web.AppKey[ProcessorService] = web.AppKey("processor_service")
 CONVERSION_SERVICE_KEY: web.AppKey[ConversionService] = web.AppKey("conversion_service")
 URL_SIGNER_KEY: web.AppKey[UrlSigner] = web.AppKey("url_signer")
-STORAGE_METRICS_COLLECTOR_KEY: web.AppKey[StorageMetricsCollector] = web.AppKey(
-    "storage_metrics_collector"
-)
 
 REQUEST_USER_KEY: web.RequestKey[str] = web.RequestKey("user")
 REQUEST_EQUIPMENT_NO_KEY: web.RequestKey[str | None] = web.RequestKey("equipment_no")

@@ -10,12 +10,15 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from aiohttp import web
+
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.metrics import BlobStorageKind, set_blob_storage_metrics
 from supernote.server.services.blob import BlobStorage
 
 __all__ = [
     "DEFAULT_STORAGE_METRICS_INTERVAL_SECONDS",
+    "STORAGE_METRICS_COLLECTOR_KEY",
     "StorageMetricsCollector",
 ]
 
@@ -106,3 +109,8 @@ class StorageMetricsCollector:
                     await self._shutdown_event.wait()
             except TimeoutError:
                 continue
+
+
+STORAGE_METRICS_COLLECTOR_KEY: web.AppKey[StorageMetricsCollector] = web.AppKey(
+    "storage_metrics_collector"
+)
