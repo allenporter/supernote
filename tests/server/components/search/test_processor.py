@@ -3,13 +3,19 @@ import json
 import pytest
 from sqlalchemy import select
 
+from supernote.models.base import TaskType
 from supernote.server.ai.models.embedding import EmbeddingTaskType
+from supernote.server.components.ai import AiComponent
 from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
+from supernote.server.components.processor import ProcessorComponent
+from supernote.server.components.search import SearchComponent
+from supernote.server.components.search.processor import EmbeddingModule
+from supernote.server.core import ComponentLoader, ServerCore
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.keys import EMBEDDING_MODEL_KEY, PROCESSOR_SERVICE_KEY
 from supernote.server.services.file import FileService
-from supernote.server.services.processor_modules.embedding import EmbeddingModule
 
 
 @pytest.fixture
@@ -267,3 +273,30 @@ async def test_embedding_skips_whitespace_only_text_content(
         ).scalar_one()
         assert content.embedding is None
         assert content.embedding_model is None
+
+
+async def test_search_component_registers_embedding_stage_via_processor_platform(
+    component_core: ServerCore,
+) -> None:
+    """SearchComponent contributes EmbeddingModule into ProcessorService via the processor platform."""
+    loader = ComponentLoader()
+    loader.register(AiComponent())
+    loader.register(ProcessorComponent())
+    loader.register(SearchComponent())
+
+    await loader.async_setup_all(component_core, {})
+    component_core.app[EMBEDDING_MODEL_KEY] = FakeEmbeddingModel(model_id="test-emb")
+    await loader.async_load_all_platforms(component_core)
+    try:
+        service = component_core.app[PROCESSOR_SERVICE_KEY]
+        assert [m.task_type for m in service.task_graph.modules] == [
+            TaskType.PAGE_HASHING,
+            TaskType.PNG_CONVERSION,
+            TaskType.OCR_EXTRACTION,
+            TaskType.EMBEDDING_GENERATION,
+        ]
+        assert service.task_graph.depends_on(TaskType.EMBEDDING_GENERATION) == (
+            "OCR_EXTRACTION",
+        )
+    finally:
+        await loader.async_stop_all(component_core)

@@ -56,7 +56,6 @@ async def test_async_setup_processor_registers_builtin_stages_and_png_flag(
         TaskType.PAGE_HASHING,
         TaskType.PNG_CONVERSION,
         TaskType.OCR_EXTRACTION,
-        TaskType.EMBEDDING_GENERATION,
         TaskType.SUMMARY_GENERATION,
     ]
     png_mod = next(m for m in registrar.modules if isinstance(m, PngConversionModule))
