@@ -24,7 +24,7 @@ __all__ = [
 ]
 
 KNOWN_PLATFORMS: frozenset[str] = frozenset(
-    {"embedding", "http", "mcp", "ocr", "summary"}
+    {"embedding", "http", "mcp", "ocr", "processor", "summary"}
 )
 
 
@@ -90,6 +90,11 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         domain="openai",
         import_path="supernote.server.components.openai:OpenAIComponent",
         default_enabled=False,
+    ),
+    BuiltinComponentSpec(
+        domain="processor",
+        import_path="supernote.server.components.processor:ProcessorComponent",
+        default_enabled=True,
     ),
     BuiltinComponentSpec(
         domain="schedule",
