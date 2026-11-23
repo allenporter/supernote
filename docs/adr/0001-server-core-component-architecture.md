@@ -1,6 +1,6 @@
 # ADR 0001: ServerCore and Vertical Component Architecture
 
-- **Status**: Accepted (Phase 1 implemented; Phases 2–4 incremental strangler rollout)
+- **Status**: Accepted (Phases 1–2 implemented; Phases 3–4 incremental rollout)
 - **Date**: 2026-11-23
 - **Scope**: `supernote.server` core host, component lifecycle, plugin discovery, Web UI extension slots, and persistence boundaries
 
@@ -71,21 +71,26 @@ class Component(Protocol):
     def domain(self) -> str: ...
     @property
     def dependencies(self) -> Sequence[str]: ...
+    @property
+    def platforms(self) -> Sequence[str]: ...
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None: ...
     async def async_start(self, core: ServerCore) -> None: ...
     async def async_stop(self, core: ServerCore) -> None: ...
 ```
 
-- **`domain`**: Unique lowercase identifier matching `^[a-z][a-z0-9_]*$` (e.g., `"webhooks"`, `"metrics"`, `"socketio"`, `"mcp"`). Invalid or empty domains fail fast with `ComponentError`; duplicates raise `DuplicateComponentError`.
+- **`domain`**: Unique lowercase identifier matching `^[a-z][a-z0-9_]*$` (e.g., `"http"`, `"mcp"`, `"metrics"`, `"socketio"`, `"web_ui"`, `"webhooks"`). Invalid or empty domains fail fast with `ComponentError`; duplicates raise `DuplicateComponentError`.
 - **`dependencies`**: Ordered sequence of `domain` strings that must complete `async_setup` and `async_start` before this component (and execute `async_stop` after it).
+- **`platforms`**: Ordered sequence of platform names implemented by this component (e.g., `("http",)`), loaded lazily via `ComponentLoader.async_load_platform(platform, core, registrar)` calling `<component_pkg>.<platform>:async_setup_<platform>(core, registrar)`.
 
-### 3.2 Discovery: Built-In Components and External `importlib.metadata` Plugins
+### 3.2 Discovery: Built-In Components (`BUILTIN_COMPONENTS`) and External Plugins
 
 Both built-in components and third-party plugins register into the same [`ComponentLoader`](../../supernote/server/core.py) owned by `create_app`, allowing external plugins to depend on built-in component domains (for example, `dependencies = ("search",)`):
 
-1. **Built-In Vertical Components (`supernote/server/components/<domain>/` `[Planned]`)**:
-   - Self-contained packages under `supernote/server/components/<domain>/` (with 1:1 mirrored tests under `tests/server/components/<domain>/`).
-   - Instantiated explicitly during `create_app` based on `ServerConfig` enablement flags (e.g., `config.webhooks.enabled`, `config.metrics_enabled`, `config.mcp_enabled`) and registered via `loader.register(...)`.
+1. **Built-In Vertical Components ([`supernote/server/components/`](../../supernote/server/components/__init__.py))**:
+   - Self-contained packages under `supernote/server/components/<domain>/` (`http`, `mcp`, `metrics`, `socketio`, `web_ui`, `webhooks`) with 1:1 mirrored tests under `tests/server/components/<domain>/`.
+   - Declared centrally in `BUILTIN_COMPONENTS` (`BuiltinComponentSpec(domain, import_path, default_enabled)`) and loaded lazily by `load_builtin_components(loader, component_configs)` so disabled components are never imported.
+   - **Config convention**: Legacy flat `ServerConfig` keys (`mcp_enabled`, `metrics_enabled`, `web_enabled`, etc.) remain on `ServerConfig` for backwards-compatible `config.yaml` files, while new/isolated components (e.g., [`webhooks/config.py`](../../supernote/server/components/webhooks/config.py)) own their own `mashumaro` config schema parsed from the per-domain `config: Mapping[str, Any]` dict in `async_setup`.
+   - **Platform conformance**: `KNOWN_PLATFORMS` and [`tests/server/components/test_init.py`](../../tests/server/components/test_init.py) enforce 1:1 parity between `BUILTIN_COMPONENTS`, disk packages, declared `platforms` $\leftrightarrow$ `<platform>.py` modules, lazy imports, and cross-component import isolation.
    - Core routes and instrumentation libraries that other core modules import directly (such as [`supernote/server/metrics.py`](../../supernote/server/metrics.py) counters/histograms) remain shared core modules rather than being hidden inside optional component internals.
 
 2. **External Third-Party Plugins (`importlib.metadata` `[Planned]`)**:

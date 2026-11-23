@@ -45,10 +45,20 @@ def test_builtin_components_registry_matches_subpackages_1to1() -> None:
     )
 
 
-def test_importing_app_does_not_eagerly_import_component_subpackages() -> None:
-    """Importing `supernote.server.app` must not eagerly load any component subpackage."""
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "supernote.server.app",
+        "supernote.server.core",
+        "supernote.server.config",
+    ],
+)
+def test_core_modules_do_not_eagerly_import_component_subpackages(
+    module_name: str,
+) -> None:
+    """Importing core server modules must not eagerly load any component subpackage."""
     check = (
-        "import sys; import supernote.server.app; "
+        f"import sys, importlib; importlib.import_module({module_name!r}); "
         "loaded = sorted("
         "m for m in sys.modules "
         "if m.startswith('supernote.server.components.')"
@@ -62,7 +72,43 @@ def test_importing_app_does_not_eagerly_import_component_subpackages() -> None:
         check=True,
     )
     assert result.stdout.strip() == "", (
-        f"Component subpackages unexpectedly loaded on app import: {result.stdout.strip()}"
+        f"Component subpackages unexpectedly loaded when importing {module_name}: "
+        f"{result.stdout.strip()}"
+    )
+
+
+@pytest.mark.parametrize(
+    "spec",
+    BUILTIN_COMPONENTS,
+    ids=[spec.domain for spec in BUILTIN_COMPONENTS],
+)
+def test_component_imports_respect_declared_dependencies_and_platforms(
+    spec: BuiltinComponentSpec,
+) -> None:
+    """Importing a component package must not pull in undeclared sibling components."""
+    component = load_component_from_spec(spec)
+    allowed = {spec.domain, *component.dependencies, *component.platforms}
+    check = (
+        f"import sys, importlib; "
+        f"importlib.import_module('supernote.server.components.{spec.domain}'); "
+        "prefix = 'supernote.server.components.'; "
+        "domains = sorted({"
+        "m[len(prefix):].split('.', 1)[0] "
+        "for m in sys.modules if m.startswith(prefix)"
+        "}); "
+        "print(','.join(domains))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", check],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    loaded_domains = {d for d in result.stdout.strip().split(",") if d}
+    unexpected = loaded_domains - allowed
+    assert not unexpected, (
+        f"Component {spec.domain!r} imported undeclared sibling component(s): "
+        f"{sorted(unexpected)} (allowed: {sorted(allowed)})"
     )
 
 
@@ -158,6 +204,24 @@ async def test_component_stop_after_setup_only(
     loader.register(load_component_from_spec(spec))
 
     await loader.async_setup_all(component_core, {})
+    await loader.async_stop_all(component_core)
+
+
+async def test_all_builtin_components_http_platform_end_to_end(
+    component_core: ServerCore,
+) -> None:
+    """All built-in components must set up, load the `http` platform, apply middlewares/routes, start, and stop cleanly together."""
+    from supernote.server.keys import HTTP_REGISTRAR_KEY  # noqa: PLC0415
+
+    loader = ComponentLoader()
+    for spec in BUILTIN_COMPONENTS:
+        loader.register(load_component_from_spec(spec))
+
+    await loader.async_setup_all(component_core, {})
+    http_registrar = component_core.app[HTTP_REGISTRAR_KEY]
+    await loader.async_load_platform("http", component_core, http_registrar)
+    http_registrar.apply_to_app(component_core.app)
+    await loader.async_start_all(component_core)
     await loader.async_stop_all(component_core)
 
 

@@ -1,25 +1,23 @@
-"""Main `aiohttp` application factory, middleware stack, and lifecycle hooks.
+"""Main `aiohttp` application factory, core service wiring, and lifecycle hooks.
 
-`create_app` wires together all domain services (`supernote.server.services`), HTTP route
-tables (`supernote.server.routes`), Socket.IO real-time server (`supernote.server.components.socketio`),
-and the optional OAuth 2.1 + Streamable HTTP Model Context Protocol server
-(`supernote.server.components.mcp`) from a resolved `supernote.server.config.ServerConfig`.
+`create_app` initializes core infrastructure (`ServerCore`, `ComponentLoader`,
+database/VFS/auth/processor services, and core route tables) and lazily registers
+enabled built-in vertical components (`http`, `mcp`, `metrics`, `socketio`,
+`web_ui`, `webhooks`) via `supernote.server.components.load_builtin_components`.
 
-During `on_startup`, the server configures proxy header handling (`aiohttp_remotes`),
-runs Alembic migrations (`supernote.server.db.migrations.run_migrations`), mounts the
-MCP Authorization Server on the main HTTP port (`8080`) and the MCP Resource Server on
-`mcp_port` (`8081`), and starts background workers (`ProcessorService`, `WebhookService`).
+During `on_startup`, the server runs Alembic migrations, initializes `UrlSigner`,
+runs `component_loader.async_setup_all` and the `http` platform pass
+(`async_load_platform("http", ...)` + `http_registrar.apply_to_app`), and starts
+background workers (`ProcessorService` and all enabled components).
 See `supernote.guides.bootstrap_guide` and `supernote.guides.architecture`.
 """
 
 import asyncio
-import importlib.resources
 import logging
 import os
 from pathlib import Path
 from typing import Any
 
-import aiohttp_remotes
 from aiohttp import web
 
 from supernote.models.user import UserRegisterDTO
@@ -70,7 +68,6 @@ from .routes import (
     summary,
     system,
 )
-from .routes.decorators import public_route
 from .services.blob import LocalBlobStorage
 from .services.conversion import ConversionService
 from .services.coordination import CoordinationService, SqliteCoordinationService
@@ -203,6 +200,7 @@ def create_app(config: ServerConfig) -> web.Application:
     component_configs = {
         "mcp": {"enabled": config.mcp_enabled},
         "metrics": {"enabled": config.metrics_enabled},
+        "web_ui": {"enabled": config.web_enabled},
         "webhooks": config.webhooks,
     }
     load_builtin_components(component_loader, component_configs)
@@ -237,37 +235,7 @@ def create_app(config: ServerConfig) -> web.Application:
     app.add_routes(extended.routes)
     app.add_routes(events.routes)
 
-    # Serve static frontend files
-    if config.web_enabled:
-        static_path = Path(
-            str(importlib.resources.files("supernote.server") / "static")
-        )
-
-        @public_route
-        async def handle_index(request: web.Request) -> web.FileResponse:
-            return web.FileResponse(
-                static_path / "index.html",
-                headers={"Cache-Control": "no-cache"},
-            )
-
-        app.router.add_get("/", handle_index)
-        app.router.add_static("/static/", path=static_path, name="static")
-
-    # Register Middlewares
     async def on_startup_handler(app: web.Application) -> None:
-        # Configure proxy middleware based on config
-        if config.proxy_mode == "strict":
-            # XForwardedStrict requires explicit trusted proxy IPs
-            # Convert list of strings to list of lists for aiohttp-remotes
-            trusted = [[ip] for ip in config.trusted_proxies]
-            await aiohttp_remotes.setup(
-                app,
-                aiohttp_remotes.XForwardedStrict(trusted),
-            )
-        elif config.proxy_mode == "relaxed":
-            # XForwardedRelaxed trusts the immediate upstream proxy
-            await aiohttp_remotes.setup(app, aiohttp_remotes.XForwardedRelaxed())
-
         logger.info("Running database migrations...")
         await asyncio.to_thread(run_migrations, config.db_url, config=config)
 

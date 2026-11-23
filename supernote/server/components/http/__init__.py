@@ -1,6 +1,6 @@
 """HTTP transport platform component (`HttpComponent` and `HttpRegistrar`).
 
-Owns `aiohttp` core middlewares (`jwt_auth_middleware`, `static_cache_control_middleware`),
+Owns reverse-proxy header setup (`aiohttp_remotes`), `jwt_auth_middleware`,
 middleware ordering, public-prefix / ASGI resource auth exemptions, and deferred
 catch-all resource mounting for components declaring ``platforms = ("http",)``.
 """
@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from typing import Any
 
+import aiohttp_remotes
 from aiohttp import web
 from aiohttp.typedefs import Middleware
 from aiohttp.web_urldispatcher import SystemRoute
@@ -30,7 +31,6 @@ __all__ = [
     "HttpComponent",
     "HttpRegistrar",
     "jwt_auth_middleware",
-    "static_cache_control_middleware",
 ]
 
 
@@ -56,13 +56,8 @@ async def jwt_auth_middleware(
     if handler_func and getattr(handler_func, "is_public", False):
         return await handler(request)
 
-    if (
-        request.path.startswith("/static/")
-        or request.path == "/favicon.ico"
-        or (
-            http_registrar is not None
-            and any(request.path.startswith(p) for p in http_registrar.public_prefixes)
-        )
+    if http_registrar is not None and any(
+        request.path.startswith(p) for p in http_registrar.public_prefixes
     ):
         return await handler(request)
 
@@ -89,18 +84,6 @@ async def jwt_auth_middleware(
     request[REQUEST_USER_KEY] = session.email
     request[REQUEST_EQUIPMENT_NO_KEY] = session.equipment_no
     return await handler(request)
-
-
-@web.middleware
-async def static_cache_control_middleware(
-    request: web.Request,
-    handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
-) -> web.StreamResponse:
-    """Ensure frontend HTML and static assets revalidate across server upgrades."""
-    response = await handler(request)
-    if request.path == "/" or request.path.startswith("/static/"):
-        response.headers.setdefault("Cache-Control", "no-cache")
-    return response
 
 
 class HttpRegistrar:
@@ -157,7 +140,6 @@ class HttpRegistrar:
         app.middlewares.extend(self._outer_middlewares)
         app.middlewares.append(trace_middleware)
         app.middlewares.append(jwt_auth_middleware)
-        app.middlewares.append(static_cache_control_middleware)
         app.middlewares.extend(self._inner_middlewares)
 
     @property
@@ -167,7 +149,7 @@ class HttpRegistrar:
 
     @property
     def inner_middlewares(self) -> tuple[Middleware, ...]:
-        """Middlewares registered to run after auth and cache-control middlewares."""
+        """Middlewares registered to run after auth middleware."""
         return tuple(self._inner_middlewares)
 
     @property
@@ -187,14 +169,23 @@ class HttpRegistrar:
 
 
 class HttpComponent:
-    """Platform host component for HTTP routes, middlewares, and auth exemptions."""
+    """Platform host component for HTTP proxy handling, middlewares, and auth exemptions."""
 
     domain = "http"
     dependencies: tuple[str, ...] = ()
     platforms: tuple[str, ...] = ()
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
-        """Initialize the shared `HttpRegistrar` on ``core.app``."""
+        """Configure reverse-proxy handling and initialize `HttpRegistrar` on ``core.app``."""
+        if core.config.proxy_mode == "strict":
+            trusted = [[ip] for ip in core.config.trusted_proxies]
+            await aiohttp_remotes.setup(
+                core.app,
+                aiohttp_remotes.XForwardedStrict(trusted),
+            )
+        elif core.config.proxy_mode == "relaxed":
+            await aiohttp_remotes.setup(core.app, aiohttp_remotes.XForwardedRelaxed())
+
         core.app[HTTP_REGISTRAR_KEY] = HttpRegistrar()
 
     async def async_start(self, core: ServerCore) -> None:
