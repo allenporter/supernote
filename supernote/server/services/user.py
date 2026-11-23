@@ -12,6 +12,7 @@ See `supernote.guides.bootstrap_guide`.
 import datetime
 import hashlib
 import hmac
+import json
 import logging
 import re
 import secrets
@@ -20,6 +21,7 @@ import urllib.parse
 import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
 
 import jwt
 from mashumaro import DataClassDictMixin
@@ -60,6 +62,11 @@ JWT_SECRET_KEY = "system:jwt_secret_key"
 UNIQUE_MACHINE_ID_TTL = 100 * 365 * 24 * 3600
 SOLD_OUT_KEY_PREFIX = "user:sold_out_count:"
 API_KEY_PREFIX = "sn_"
+# OAuth 2.1 access tokens were originally introduced for the MCP server (hence the
+# legacy "mcp:access_token:" CoordinationService prefix), but they authenticate any
+# non-interactive REST API request. Keep the prefix for compatibility with active tokens.
+OAUTH_ACCESS_TOKEN_KEY_PREFIX = "mcp:access_token:"
+MAX_OAUTH_TOKEN_LENGTH = 4096
 MAX_API_KEY_NAME_LENGTH = 100
 MAX_API_KEYS_PER_USER = 50
 API_KEY_LAST_USED_TOUCH_INTERVAL_SECONDS = 60
@@ -80,6 +87,7 @@ class AuthMethod(StrEnum):
 
     SESSION = "session"
     API_KEY = "api_key"
+    OAUTH = "oauth"
 
 
 @dataclass
@@ -107,6 +115,17 @@ class SessionState(DataClassJSONMixin):
     def is_api_key(self) -> bool:
         """Return True when authenticated via a static Bearer API key rather than an interactive session."""
         return self.auth_method == AuthMethod.API_KEY
+
+    @property
+    def is_interactive_session(self) -> bool:
+        """Return True when authenticated via an interactive login session JWT.
+
+        Sensitive account, admin, API-key management (`@interactive_session_only`),
+        and OAuth consent (`/login-bridge`) endpoints require an interactive login
+        session so neither static `sn_...` API keys nor delegated OAuth 2.1 access
+        tokens can mint new credentials or mutate account security settings.
+        """
+        return self.auth_method == AuthMethod.SESSION
 
 
 logger = logging.getLogger(__name__)
@@ -741,12 +760,72 @@ class UserService:
             auth_method=AuthMethod.API_KEY,
         )
 
+    async def parse_oauth_token_payload(self, data: str) -> dict[str, Any] | None:
+        """Parse a persisted OAuth token JSON payload and resolve `user_id` to an int."""
+        try:
+            payload = json.loads(data)
+        except (json.JSONDecodeError, ValueError, TypeError):
+            logger.warning("Invalid persisted OAuth token payload")
+            return None
+        if not isinstance(payload, dict):
+            return None
+
+        raw_user_id = payload.get("user_id")
+        if raw_user_id is None:
+            return None
+        if isinstance(raw_user_id, str) and not raw_user_id.isdigit():
+            # TODO(#442): Remove legacy email user_id migration once 30-day OAuth refresh tokens expire.
+            try:
+                payload["user_id"] = await self.get_user_id(raw_user_id)
+            except ValueError:
+                return None
+        else:
+            try:
+                payload["user_id"] = int(raw_user_id)
+            except (ValueError, TypeError):
+                return None
+        return payload
+
+    async def verify_oauth_token(self, token: str) -> SessionState | None:
+        """Verify an OAuth 2.1 Bearer access token against CoordinationService and active user state."""
+        if not token or len(token) > MAX_OAUTH_TOKEN_LENGTH:
+            return None
+        data = await self._coordination_service.get_value(
+            f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}{token}"
+        )
+        if not data:
+            return None
+        token_data = await self.parse_oauth_token_payload(data)
+        if token_data is None:
+            return None
+
+        expires_at = token_data.get("expires_at")
+        if isinstance(expires_at, (int, float)) and expires_at <= time.time():
+            return None
+
+        user = await self._get_user_by_id(token_data["user_id"])
+        if not user or not user.is_active:
+            return None
+
+        return SessionState(
+            token=token,
+            email=user.email,
+            user_id=user.id,
+            equipment_no=None,
+            expires_at=int(expires_at)
+            if isinstance(expires_at, (int, float))
+            else None,
+            auth_method=AuthMethod.OAUTH,
+        )
+
     async def verify_token(self, token: str) -> SessionState | None:
-        """Verify a session JWT or static Bearer API key against persisted state and active user record."""
+        """Verify a session JWT, static Bearer API key, or OAuth 2.1 access token."""
         if not token:
             return None
         if token.startswith(API_KEY_PREFIX):
             return await self.verify_api_key(token)
+        if token.count(".") != 2:
+            return await self.verify_oauth_token(token)
         secret_key = await self.get_secret_key()
         try:
             payload = jwt.decode(token, secret_key, algorithms=[JWT_ALGORITHM])

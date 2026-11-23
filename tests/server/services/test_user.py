@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 import time
 from unittest.mock import patch
@@ -26,6 +27,7 @@ from supernote.server.services.user import (
     JWT_SECRET_KEY,
     MAX_API_KEY_NAME_LENGTH,
     MAX_API_KEYS_PER_USER,
+    OAUTH_ACCESS_TOKEN_KEY_PREFIX,
     AuthMethod,
     UserService,
 )
@@ -1103,3 +1105,106 @@ async def test_api_key_adversarial_bounds_expiry_debouncing_and_recovery(
         await db.execute(delete(UserDO).where(UserDO.id == user.id))
         await db.commit()
     assert await user_service.list_api_keys(user.id) == []
+
+
+async def test_verify_oauth_token_valid_and_legacy_email(
+    user_service: UserService,
+    coordination_service: CoordinationService,
+) -> None:
+    """Verify UserService.verify_token authenticates valid OAuth 2.1 access tokens."""
+    pw_md5 = hashlib.md5(b"password123").hexdigest()
+    user = await user_service.register(
+        UserRegisterDTO(email="oauthuser@example.com", password=pw_md5)
+    )
+    expires_at = int(time.time()) + 3600
+    await coordination_service.set_value(
+        f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}oauth_valid_tok",
+        json.dumps(
+            {
+                "token": "oauth_valid_tok",
+                "user_id": user.id,
+                "client_id": "client_1",
+                "scopes": ["supernote:all"],
+                "expires_at": expires_at,
+            }
+        ),
+        ttl=3600,
+    )
+
+    state = await user_service.verify_token("oauth_valid_tok")
+    assert state is not None
+    assert state.email == "oauthuser@example.com"
+    assert state.user_id == user.id
+    assert state.equipment_no is None
+    assert state.expires_at == expires_at
+    assert state.auth_method == AuthMethod.OAUTH
+    assert state.is_api_key is False
+    assert state.is_interactive_session is False
+
+    # Legacy email user_id payload resolves to active user
+    await coordination_service.set_value(
+        f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}oauth_legacy_tok",
+        json.dumps(
+            {
+                "token": "oauth_legacy_tok",
+                "user_id": "oauthuser@example.com",
+                "client_id": "client_1",
+                "scopes": ["supernote:all"],
+            }
+        ),
+        ttl=3600,
+    )
+    legacy_state = await user_service.verify_token("oauth_legacy_tok")
+    assert legacy_state is not None
+    assert legacy_state.user_id == user.id
+    assert legacy_state.auth_method == AuthMethod.OAUTH
+
+
+async def test_verify_oauth_token_rejects_expired_inactive_and_malformed(
+    user_service: UserService,
+    coordination_service: CoordinationService,
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Verify OAuth token verification rejects expired, inactive-user, and malformed tokens."""
+    pw_md5 = hashlib.md5(b"password123").hexdigest()
+    user = await user_service.register(
+        UserRegisterDTO(email="oauthedge@example.com", password=pw_md5)
+    )
+
+    # Expired token
+    await coordination_service.set_value(
+        f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}oauth_expired",
+        json.dumps(
+            {
+                "token": "oauth_expired",
+                "user_id": user.id,
+                "expires_at": int(time.time()) - 10,
+            }
+        ),
+        ttl=3600,
+    )
+    assert await user_service.verify_token("oauth_expired") is None
+
+    # Malformed JSON / non-dict payload
+    await coordination_service.set_value(
+        f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}oauth_bad_json", "{not-json", ttl=3600
+    )
+    await coordination_service.set_value(
+        f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}oauth_list_json", "[]", ttl=3600
+    )
+    assert await user_service.verify_token("oauth_bad_json") is None
+    assert await user_service.verify_token("oauth_list_json") is None
+
+    # Deactivated user
+    await coordination_service.set_value(
+        f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}oauth_inactive",
+        json.dumps({"token": "oauth_inactive", "user_id": user.id}),
+        ttl=3600,
+    )
+    async with session_manager.session() as db:
+        db_user = (
+            await db.execute(select(UserDO).where(UserDO.id == user.id))
+        ).scalar_one()
+        db_user.is_active = False
+        await db.commit()
+    assert await user_service.verify_token("oauth_inactive") is None

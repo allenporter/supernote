@@ -245,7 +245,9 @@ async def jwt_auth_middleware(
             create_error_response("Invalid token").to_dict(), status=401
         )
 
-    if session.is_api_key and getattr(handler_func, "interactive_session_only", False):
+    if not session.is_interactive_session and getattr(
+        handler_func, "interactive_session_only", False
+    ):
         return web.json_response(
             create_error_response("Forbidden: Interactive session required").to_dict(),
             status=403,

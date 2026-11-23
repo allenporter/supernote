@@ -22,6 +22,6 @@ def public_route(
 def interactive_session_only(
     handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
 ) -> Callable[[web.Request], Awaitable[web.StreamResponse]]:
-    """Decorator to mark a route handler as requiring an interactive login session (denying static API keys)."""
+    """Decorator to mark a route handler as requiring an interactive login session (denying static API keys and OAuth tokens)."""
     setattr(handler, "interactive_session_only", True)
     return handler

@@ -8,10 +8,9 @@ Tokens are persisted with TTLs in `supernote.server.services.coordination.Coordi
 and verified by `supernote.server.mcp.server.SupernoteTokenVerifier`. See `supernote.guides.mcp`.
 """
 
-import json
 import secrets
 import time
-from typing import Any, override
+from typing import override
 from urllib.parse import quote
 
 import yarl
@@ -39,7 +38,7 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 
 from supernote.server.services.coordination import CoordinationService
-from supernote.server.services.user import UserService
+from supernote.server.services.user import OAUTH_ACCESS_TOKEN_KEY_PREFIX, UserService
 from supernote.server.utils.auth_utils import get_token_from_request
 
 from .models import (
@@ -217,7 +216,7 @@ class SupernoteOAuthProvider(
 
         # Store tokens
         await self._coordination.set_value(
-            f"mcp:access_token:{access_token.token}",
+            f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}{access_token.token}",
             access_token.model_dump_json(),
             ttl=3600,
         )
@@ -235,18 +234,6 @@ class SupernoteOAuthProvider(
             scope=" ".join(authorization_code.scopes),
         )
 
-    async def _parse_stored_token_data(self, data: str) -> dict[str, Any] | None:
-        """Parse stored token JSON, migrating legacy email user_id values to integer IDs."""
-        payload: dict[str, Any] = json.loads(data)
-        raw_user_id = payload.get("user_id")
-        # TODO(#442): Remove legacy email user_id migration once 30-day OAuth refresh tokens expire.
-        if isinstance(raw_user_id, str) and not raw_user_id.isdigit():
-            try:
-                payload["user_id"] = await self.user_service.get_user_id(raw_user_id)
-            except ValueError:
-                return None
-        return payload
-
     async def load_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: str
     ) -> SupernoteRefreshToken | None:
@@ -255,7 +242,7 @@ class SupernoteOAuthProvider(
         data = await self._coordination.get_value(key)
         if not data:
             return None
-        payload = await self._parse_stored_token_data(data)
+        payload = await self.user_service.parse_oauth_token_payload(data)
         if payload is None:
             return None
         return SupernoteRefreshToken.model_validate(payload)
@@ -275,7 +262,7 @@ class SupernoteOAuthProvider(
             expires_at=int(time.time() + 3600),
         )
         await self._coordination.set_value(
-            f"mcp:access_token:{new_access_token.token}",
+            f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}{new_access_token.token}",
             new_access_token.model_dump_json(),
             ttl=3600,
         )
@@ -290,11 +277,11 @@ class SupernoteOAuthProvider(
     async def load_access_token(self, token: str) -> SupernoteAccessToken | None:
         """Loads an access token by its token."""
         # 1. Try to load as an MCP access token from coordination service
-        key = f"mcp:access_token:{token}"
+        key = f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}{token}"
         data = await self._coordination.get_value(key)
         if not data:
             return None
-        payload = await self._parse_stored_token_data(data)
+        payload = await self.user_service.parse_oauth_token_payload(data)
         if payload is None:
             return None
         return SupernoteAccessToken.model_validate(payload)
@@ -304,7 +291,9 @@ class SupernoteOAuthProvider(
         if isinstance(token, RefreshToken):
             await self._coordination.delete_value(f"mcp:refresh_token:{token.token}")
         else:
-            await self._coordination.delete_value(f"mcp:access_token:{token.token}")
+            await self._coordination.delete_value(
+                f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}{token.token}"
+            )
 
 
 def create_auth_app(
@@ -338,11 +327,16 @@ def create_auth_app(
         """
         token = get_token_from_request(request)
         session = await user_service.verify_token(token) if token else None
-        if session and session.is_api_key:
+        if session and not session.is_interactive_session:
+            error_description = (
+                "API keys cannot authorize OAuth clients"
+                if session.is_api_key
+                else "OAuth tokens cannot authorize OAuth clients"
+            )
             return _json_model_response(
                 OAuthErrorResponseVO(
                     error="forbidden",
-                    error_description="API keys cannot authorize OAuth clients",
+                    error_description=error_description,
                 ),
                 status_code=403,
             )

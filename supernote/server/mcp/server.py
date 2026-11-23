@@ -12,7 +12,6 @@ See `supernote.guides.mcp`.
 """
 
 import functools
-import json
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, ParamSpec, cast
@@ -44,7 +43,11 @@ from supernote.server.metrics import (
 )
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.search import SearchService
-from supernote.server.services.user import API_KEY_PREFIX, UserService
+from supernote.server.services.user import (
+    API_KEY_PREFIX,
+    OAUTH_ACCESS_TOKEN_KEY_PREFIX,
+    UserService,
+)
 
 logger = logging.getLogger(__name__)
 MAX_MCP_TOKEN_LENGTH = 4096
@@ -84,22 +87,15 @@ class SupernoteTokenVerifier(TokenVerifier):
             return None
 
         if not token.startswith(API_KEY_PREFIX):
-            key = f"mcp:access_token:{token}"
+            key = f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}{token}"
             data = await self.coordination_service.get_value(key)
             if data:
-                token_data = json.loads(data)
-                raw_user_id = token_data.get("user_id")
-                # TODO(#442): Remove legacy email user_id migration once 30-day OAuth refresh tokens expire.
-                if isinstance(raw_user_id, str) and not raw_user_id.isdigit():
-                    try:
-                        raw_user_id = await self.user_service.get_user_id(raw_user_id)
-                    except ValueError:
-                        return None
-                if raw_user_id is None:
+                token_data = await self.user_service.parse_oauth_token_payload(data)
+                if token_data is None:
                     return None
                 return SupernoteAccessToken(
                     token=token,
-                    user_id=int(raw_user_id),
+                    user_id=token_data["user_id"],
                     client_id=token_data.get("client_id", "unknown"),
                     scopes=token_data.get("scopes", []),
                     resource=token_data.get("resource"),
