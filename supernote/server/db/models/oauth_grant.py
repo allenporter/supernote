@@ -32,7 +32,7 @@ class OAuthGrantDO(Base):
     """Granted scopes, space-separated as in OAuth."""
 
     access_token_hash: Mapped[str | None] = mapped_column(
-        String(64), unique=True, index=True, nullable=True, default=None
+        String(64), index=True, nullable=True, default=None
     )
     """SHA-256 of the current access token; NULL once revoked or never issued.
 
@@ -42,7 +42,7 @@ class OAuthGrantDO(Base):
         Integer, nullable=True, default=None
     )
     refresh_token_hash: Mapped[str] = mapped_column(
-        String(64), unique=True, index=True, nullable=False
+        String(64), index=True, nullable=False
     )
     created_at: Mapped[int] = mapped_column(Integer, nullable=False)
     last_used_at: Mapped[int | None] = mapped_column(

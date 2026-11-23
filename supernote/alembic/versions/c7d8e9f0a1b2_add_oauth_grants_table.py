@@ -55,26 +55,21 @@ def upgrade() -> None:
         op.f("ix_oauth_grants_access_token_hash"),
         "oauth_grants",
         ["access_token_hash"],
-        unique=True,
+        unique=False,
     )
     op.create_index(
         op.f("ix_oauth_grants_refresh_token_hash"),
         "oauth_grants",
         ["refresh_token_hash"],
-        unique=True,
+        unique=False,
     )
 
     conn = op.get_bind()
     now = int(time.time())
-    user_ids = {
-        str(row.id): row.id for row in conn.execute(sa.text("SELECT id FROM users"))
-    }
-    user_ids.update(
-        {
-            row.email: row.id
-            for row in conn.execute(sa.text("SELECT id, email FROM users"))
-        }
-    )
+    user_ids: dict[str, int] = {}
+    for user_row in conn.execute(sa.text("SELECT id, email FROM users")):
+        user_ids[str(user_row.id)] = user_row.id
+        user_ids[user_row.email] = user_row.id
     rows = conn.execute(
         sa.text(
             "SELECT key, value, expiry FROM key_values WHERE substr(key, 1, :n) = :p"
@@ -103,6 +98,8 @@ def upgrade() -> None:
         ):
             continue
         token = row.key.removeprefix(_REFRESH_PREFIX)
+        if not token:
+            continue
         conn.execute(
             sa.text(
                 "INSERT INTO oauth_grants (user_id, id, client_id, scopes, "

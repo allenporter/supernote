@@ -20,12 +20,13 @@ import urllib.parse
 import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any, cast
 
 import jwt
 from mashumaro import DataClassDictMixin
 from mashumaro.exceptions import MissingField
 from mashumaro.mixins.json import DataClassJSONMixin
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import CursorResult, delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
@@ -870,20 +871,23 @@ class UserService:
             grant, _ = found
             # A single conditional UPDATE, so a revoke landing between the read
             # and the write yields None rather than a stale-row error.
-            result = await session.execute(
-                update(OAuthGrantDO)
-                .where(
-                    OAuthGrantDO.user_id == grant.user_id,
-                    OAuthGrantDO.id == grant.id,
-                    OAuthGrantDO.refresh_token_hash == grant.refresh_token_hash,
-                )
-                .values(
-                    access_token_hash=_sha256(access_token),
-                    access_expires_at=now + OAUTH_ACCESS_TOKEN_TTL_SECONDS,
-                )
+            result = cast(
+                CursorResult[Any],
+                await session.execute(
+                    update(OAuthGrantDO)
+                    .where(
+                        OAuthGrantDO.user_id == grant.user_id,
+                        OAuthGrantDO.id == grant.id,
+                        OAuthGrantDO.refresh_token_hash == grant.refresh_token_hash,
+                    )
+                    .values(
+                        access_token_hash=_sha256(access_token),
+                        access_expires_at=now + OAUTH_ACCESS_TOKEN_TTL_SECONDS,
+                    )
+                ),
             )
             await session.commit()
-        return access_token if getattr(result, "rowcount", 0) else None
+        return access_token if result.rowcount else None
 
     async def load_oauth_refresh_token(self, token: str) -> OAuthTokenGrant | None:
         """Resolve an OAuth refresh token to its live grant."""
@@ -928,16 +932,24 @@ class UserService:
 
     async def revoke_oauth_token(self, token: str) -> None:
         """RFC 7009 revocation: a refresh token ends its grant, an access token only itself."""
+        if not token or len(token) > MAX_OAUTH_TOKEN_LENGTH:
+            return
         digest = _sha256(token)
         async with self._session_manager.session() as session:
-            await session.execute(
-                delete(OAuthGrantDO).where(OAuthGrantDO.refresh_token_hash == digest)
+            result = cast(
+                CursorResult[Any],
+                await session.execute(
+                    delete(OAuthGrantDO).where(
+                        OAuthGrantDO.refresh_token_hash == digest
+                    )
+                ),
             )
-            await session.execute(
-                update(OAuthGrantDO)
-                .where(OAuthGrantDO.access_token_hash == digest)
-                .values(access_token_hash=None, access_expires_at=None)
-            )
+            if not result.rowcount:
+                await session.execute(
+                    update(OAuthGrantDO)
+                    .where(OAuthGrantDO.access_token_hash == digest)
+                    .values(access_token_hash=None, access_expires_at=None)
+                )
             await session.commit()
 
     async def list_oauth_grants(self, user_id: int) -> list[OAuthGrantVO]:
@@ -966,13 +978,16 @@ class UserService:
     async def revoke_oauth_grant(self, user_id: int, grant_id: str) -> bool:
         """Disconnect an OAuth client grant belonging to `user_id`, ending its tokens."""
         async with self._session_manager.session() as session:
-            result = await session.execute(
-                delete(OAuthGrantDO).where(
-                    OAuthGrantDO.user_id == user_id, OAuthGrantDO.id == grant_id
-                )
+            result = cast(
+                CursorResult[Any],
+                await session.execute(
+                    delete(OAuthGrantDO).where(
+                        OAuthGrantDO.user_id == user_id, OAuthGrantDO.id == grant_id
+                    )
+                ),
             )
             await session.commit()
-            return bool(getattr(result, "rowcount", 0))
+            return bool(result.rowcount)
 
     async def _revoke_user_oauth_grants(self, user_id: int) -> None:
         async with self._session_manager.session() as session:
