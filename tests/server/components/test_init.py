@@ -19,7 +19,10 @@ from supernote.server.components import (
     load_builtin_components,
     load_component_from_spec,
 )
+from supernote.server.components.http import jwt_auth_middleware
 from supernote.server.core import Component, ComponentError, ComponentLoader, ServerCore
+from supernote.server.keys import HTTP_REGISTRAR_KEY
+from supernote.server.trace import trace_middleware
 
 
 def _discover_component_package_names() -> set[str]:
@@ -85,12 +88,13 @@ def test_core_modules_do_not_eagerly_import_component_subpackages(
 def test_component_imports_respect_declared_dependencies_and_platforms(
     spec: BuiltinComponentSpec,
 ) -> None:
-    """Importing a component package must not pull in undeclared sibling components."""
+    """Importing a component package and all its submodules must not pull in undeclared sibling components."""
     component = load_component_from_spec(spec)
     allowed = {spec.domain, *component.dependencies, *component.platforms}
     check = (
-        f"import sys, importlib; "
-        f"importlib.import_module('supernote.server.components.{spec.domain}'); "
+        f"import sys, importlib, pkgutil; "
+        f"pkg = importlib.import_module('supernote.server.components.{spec.domain}'); "
+        "[importlib.import_module(m.name) for m in pkgutil.walk_packages(pkg.__path__, pkg.__name__ + '.')]; "
         "prefix = 'supernote.server.components.'; "
         "domains = sorted({"
         "m[len(prefix):].split('.', 1)[0] "
@@ -211,8 +215,6 @@ async def test_all_builtin_components_http_platform_end_to_end(
     component_core: ServerCore,
 ) -> None:
     """All built-in components must set up, load the `http` platform, apply middlewares/routes, start, and stop cleanly together."""
-    from supernote.server.keys import HTTP_REGISTRAR_KEY  # noqa: PLC0415
-
     loader = ComponentLoader()
     for spec in BUILTIN_COMPONENTS:
         loader.register(load_component_from_spec(spec))
@@ -221,6 +223,22 @@ async def test_all_builtin_components_http_platform_end_to_end(
     http_registrar = component_core.app[HTTP_REGISTRAR_KEY]
     await loader.async_load_platform("http", component_core, http_registrar)
     http_registrar.apply_to_app(component_core.app)
+
+    middlewares = list(component_core.app.middlewares)
+    trace_idx = middlewares.index(trace_middleware)
+    assert trace_idx == len(http_registrar.outer_middlewares)
+    assert middlewares[trace_idx + 1] is jwt_auth_middleware
+    assert middlewares[trace_idx + 2 :] == list(http_registrar.inner_middlewares)
+
+    resources = list(component_core.app.router.resources())
+    canonicals = [r.canonical for r in resources]
+    for expected_path in ("/", "/static", "/metrics", "/socket.io/"):
+        assert expected_path in canonicals
+    # Deferred public catch-all resources (e.g. MCP ASGIResource) must be mounted last.
+    assert resources[-len(http_registrar.public_resources) :] == list(
+        http_registrar.public_resources
+    )
+
     await loader.async_start_all(component_core)
     await loader.async_stop_all(component_core)
 

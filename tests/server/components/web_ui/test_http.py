@@ -19,7 +19,7 @@ async def test_web_ui_http_platform_mounts_index_static_and_cache_middleware(
     registrar = HttpRegistrar()
     await async_setup_http(component_core, registrar)
 
-    assert registrar.public_prefixes == ("/static/", "/favicon.ico")
+    assert registrar.public_prefixes == ("/static/",)
     assert registrar.inner_middlewares == (static_cache_control_middleware,)
     paths = [r.canonical for r in component_core.app.router.resources()]
     assert "/" in paths
