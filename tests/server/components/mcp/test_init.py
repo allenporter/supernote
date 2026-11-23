@@ -63,8 +63,8 @@ async def test_mcp_component_stop_after_setup_only(
     await loader.async_stop_all(component_core)
 
 
-def test_mcp_registrar_rejects_invalid_duplicate_and_reserved_names() -> None:
-    registrar = McpRegistrar(reserved_names=("reserved_tool",))
+def test_mcp_registrar_rejects_invalid_and_duplicate_names() -> None:
+    registrar = McpRegistrar()
 
     async def ping_tool() -> dict[str, Any]:
         return {"success": True}
@@ -74,9 +74,6 @@ def test_mcp_registrar_rejects_invalid_duplicate_and_reserved_names() -> None:
 
     with pytest.raises(ValueError, match="already registered"):
         registrar.add_tool(ping_tool, name="custom_ping")
-
-    with pytest.raises(ValueError, match="already registered"):
-        registrar.add_tool(ping_tool, name="reserved_tool")
 
     with pytest.raises(ValueError, match="non-empty"):
         registrar.add_tool(ping_tool, name="   ")

@@ -6,12 +6,10 @@ backed by `TranscriptService`.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
-from mashumaro import field_options
 from mashumaro.config import BaseConfig
-from mashumaro.mixins.json import DataClassJSONMixin
 from mcp.server.mcpserver import Context
 
 from supernote.models.base import BaseResponse, ErrorCode, create_error_response
@@ -23,27 +21,6 @@ from .service import TRANSCRIPT_SERVICE_KEY
 __all__ = ["async_setup_mcp"]
 
 _AUTH_ERROR_MSG = "Authentication failed. Please set a valid token in meta."
-
-
-@dataclass
-class TranscriptRequestDTO(DataClassJSONMixin):
-    """Request DTO for `get_notebook_transcript`."""
-
-    file_id: str = field(metadata=field_options(alias="fileId"))
-    """Stringified VFS file identifier of the notebook."""
-
-    start_index: int | None = field(
-        metadata=field_options(alias="startIndex"), default=None
-    )
-    """Optional 0-based start page index (inclusive)."""
-
-    end_index: int | None = field(
-        metadata=field_options(alias="endIndex"), default=None
-    )
-    """Optional 0-based end page index (inclusive)."""
-
-    class Config(BaseConfig):
-        serialize_by_alias = True
 
 
 @dataclass
@@ -75,34 +52,28 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
             end_index: 0-based end page index (inclusive).
         """
         _ = ctx
-        user_id = get_authenticated_user_id()
-        if user_id is None:
+        if (user_id := get_authenticated_user_id()) is None:
             return create_error_response(
                 _AUTH_ERROR_MSG, ErrorCode.UNAUTHORIZED
             ).to_dict()
 
-        dto = TranscriptRequestDTO(
-            file_id=file_id,
-            start_index=start_index,
-            end_index=end_index,
-        )
         try:
-            parsed_file_id = int(dto.file_id)
+            parsed_file_id = int(file_id)
         except ValueError:
             return create_error_response(
-                f"Invalid file_id '{dto.file_id}': must be a numeric ID string.",
+                f"Invalid file_id '{file_id}': must be a numeric ID string.",
                 ErrorCode.BAD_REQUEST,
             ).to_dict()
 
         transcript = await transcript_service.get_transcript(
             user_id=user_id,
             file_id=parsed_file_id,
-            start_index=dto.start_index,
-            end_index=dto.end_index,
+            start_index=start_index,
+            end_index=end_index,
         )
         if transcript is None:
             return create_error_response(
-                f"No transcript found for notebook {dto.file_id}.",
+                f"No transcript found for notebook {file_id}.",
                 ErrorCode.NOT_FOUND,
             ).to_dict()
 

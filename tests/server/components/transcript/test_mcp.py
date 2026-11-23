@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Generator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
-from mcp.server.mcpserver import Context
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import CallToolResult, TextContent
 from prometheus_client import REGISTRY
 
 from supernote.server.components.mcp import McpRegistrar
@@ -42,6 +46,16 @@ def _duration_count(tool: str) -> float:
     )
 
 
+async def _call_tool(mcp: MCPServer, name: str, args: dict[str, Any]) -> dict[str, Any]:
+    result = await mcp.call_tool(name, args)
+    assert isinstance(result, CallToolResult)
+    if result.structured_content is not None:
+        return dict(result.structured_content)
+    block = result.content[0]
+    assert isinstance(block, TextContent)
+    return dict(json.loads(block.text))
+
+
 @pytest.fixture
 def mcp_auth_user() -> Generator[None]:
     """Bind an authenticated MCP bearer user context for tool handler tests."""
@@ -58,15 +72,17 @@ def mcp_auth_user() -> Generator[None]:
         auth_context_var.reset(ctx_token)
 
 
-async def _register_transcript_tool(
+async def _setup_transcript_mcp(
     component_core: ServerCore,
-) -> tuple[McpRegistrar, MagicMock]:
+) -> tuple[MCPServer, McpRegistrar, MagicMock]:
     mock_transcript = MagicMock(spec=TranscriptService)
     mock_transcript.get_transcript = AsyncMock(return_value="Page 1 transcript")
     component_core.app[TRANSCRIPT_SERVICE_KEY] = mock_transcript
     registrar = McpRegistrar()
     await async_setup_mcp(component_core, registrar)
-    return registrar, mock_transcript
+    mcp = MCPServer("Test Transcript MCP")
+    registrar.apply_to_server(mcp)
+    return mcp, registrar, mock_transcript
 
 
 async def test_transcript_mcp_success_and_error_responses(
@@ -75,15 +91,14 @@ async def test_transcript_mcp_success_and_error_responses(
 ) -> None:
     """Verify `get_notebook_transcript` handles success, 400, 404, and 401 paths."""
     _ = mcp_auth_user
-    registrar, mock_transcript = await _register_transcript_tool(component_core)
+    mcp, registrar, mock_transcript = await _setup_transcript_mcp(component_core)
     assert registrar.tool_names == ("get_notebook_transcript",)
-    get_transcript = registrar._tools["get_notebook_transcript"]
 
     before_ok = _call_count("get_notebook_transcript", "success")
     before_fail = _call_count("get_notebook_transcript", "failure")
     before_dur = _duration_count("get_notebook_transcript")
 
-    ok_result = await get_transcript(MagicMock(spec=Context), file_id="101")
+    ok_result = await _call_tool(mcp, "get_notebook_transcript", {"file_id": "101"})
     assert ok_result == {
         "success": True,
         "errorCode": None,
@@ -93,7 +108,7 @@ async def test_transcript_mcp_success_and_error_responses(
     assert _call_count("get_notebook_transcript", "success") == before_ok + 1.0
     assert _duration_count("get_notebook_transcript") == before_dur + 1.0
 
-    bad_id = await get_transcript(MagicMock(spec=Context), file_id="abc")
+    bad_id = await _call_tool(mcp, "get_notebook_transcript", {"file_id": "abc"})
     assert bad_id == {
         "success": False,
         "errorCode": "400",
@@ -101,7 +116,7 @@ async def test_transcript_mcp_success_and_error_responses(
     }
 
     mock_transcript.get_transcript.return_value = None
-    not_found = await get_transcript(MagicMock(spec=Context), file_id="999")
+    not_found = await _call_tool(mcp, "get_notebook_transcript", {"file_id": "999"})
     assert not_found == {
         "success": False,
         "errorCode": "404",
@@ -109,7 +124,7 @@ async def test_transcript_mcp_success_and_error_responses(
     }
 
     auth_context_var.set(None)
-    unauth = await get_transcript(MagicMock(spec=Context), file_id="101")
+    unauth = await _call_tool(mcp, "get_notebook_transcript", {"file_id": "101"})
     assert unauth == {
         "success": False,
         "errorCode": "401",
@@ -124,19 +139,18 @@ async def test_transcript_mcp_exception_and_cancellation_metrics(
 ) -> None:
     """Verify unhandled errors and cancellations update metrics appropriately."""
     _ = mcp_auth_user
-    registrar, mock_transcript = await _register_transcript_tool(component_core)
-    get_transcript = registrar._tools["get_notebook_transcript"]
+    mcp, _, mock_transcript = await _setup_transcript_mcp(component_core)
 
     mock_transcript.get_transcript.side_effect = RuntimeError("db error")
     before_fail = _call_count("get_notebook_transcript", "failure")
-    with pytest.raises(RuntimeError, match="db error"):
-        await get_transcript(MagicMock(spec=Context), file_id="101")
+    with pytest.raises(ToolError):
+        await _call_tool(mcp, "get_notebook_transcript", {"file_id": "101"})
     assert _call_count("get_notebook_transcript", "failure") == before_fail + 1.0
 
     mock_transcript.get_transcript.side_effect = asyncio.CancelledError
     before_cancel = _call_count("get_notebook_transcript", "cancelled")
     before_dur = _duration_count("get_notebook_transcript")
     with pytest.raises(asyncio.CancelledError):
-        await get_transcript(MagicMock(spec=Context), file_id="101")
+        await _call_tool(mcp, "get_notebook_transcript", {"file_id": "101"})
     assert _call_count("get_notebook_transcript", "cancelled") == before_cancel + 1.0
     assert _duration_count("get_notebook_transcript") == before_dur

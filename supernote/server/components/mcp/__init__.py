@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
-from collections.abc import Awaitable, Callable, Iterable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any, ParamSpec, cast
 
 from supernote.server.components.mcp.metrics import (
@@ -91,8 +91,7 @@ def instrument_mcp_tool(
 class McpRegistrar:
     """Registrar passed into ``<component>.mcp:async_setup_mcp(core, registrar)``."""
 
-    def __init__(self, *, reserved_names: Iterable[str] = ()) -> None:
-        self._reserved: frozenset[str] = frozenset(str(n) for n in reserved_names)
+    def __init__(self) -> None:
         self._tools: dict[str, Callable[..., Awaitable[dict[str, Any]]]] = {}
         self._applied: set[str] = set()
 
@@ -106,7 +105,7 @@ class McpRegistrar:
         tool_name = (name or getattr(fn, "__name__", "")).strip()
         if not tool_name:
             raise ValueError("MCP tool name must be non-empty")
-        if tool_name in self._tools or tool_name in self._reserved:
+        if tool_name in self._tools:
             raise ValueError(f"MCP tool {tool_name!r} is already registered")
         self._tools[tool_name] = instrument_mcp_tool(tool_name)(fn)
 

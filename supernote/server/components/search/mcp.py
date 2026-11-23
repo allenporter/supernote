@@ -26,22 +26,6 @@ _AUTH_ERROR_MSG = "Authentication failed. Please set a valid token in meta."
 
 
 @dataclass
-class ListNotebooksRequestDTO(DataClassJSONMixin):
-    """Request DTO for `list_notebooks`."""
-
-    limit: int = 20
-    """Maximum number of notebooks to return."""
-
-    name_filter: str | None = field(
-        metadata=field_options(alias="nameFilter"), default=None
-    )
-    """Optional substring filter for notebook filenames."""
-
-    class Config(BaseConfig):
-        serialize_by_alias = True
-
-
-@dataclass
 class NotebookVO(DataClassJSONMixin):
     """Serialized notebook metadata item returned by `list_notebooks`."""
 
@@ -67,35 +51,6 @@ class ListNotebooksResponseVO(BaseResponse):
 
     notebooks: list[NotebookVO] = field(default_factory=list)
     """Ordered list of active notebook metadata entries."""
-
-    class Config(BaseConfig):
-        serialize_by_alias = True
-
-
-@dataclass
-class SearchRequestDTO(DataClassJSONMixin):
-    """Request DTO for `search_notebook_chunks`."""
-
-    query: str
-    """Semantic search query string."""
-
-    top_n: int = 5
-    """Maximum number of results to return."""
-
-    name_filter: str | None = field(
-        metadata=field_options(alias="nameFilter"), default=None
-    )
-    """Optional substring filter for notebook filenames."""
-
-    date_after: str | None = field(
-        metadata=field_options(alias="dateAfter"), default=None
-    )
-    """Optional ISO 8601 date lower bound (`YYYY-MM-DD`)."""
-
-    date_before: str | None = field(
-        metadata=field_options(alias="dateBefore"), default=None
-    )
-    """Optional ISO 8601 date upper bound (`YYYY-MM-DD`)."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -157,17 +112,15 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
             name_filter: Optional substring filter for notebook filenames.
         """
         _ = ctx
-        user_id = get_authenticated_user_id()
-        if user_id is None:
+        if (user_id := get_authenticated_user_id()) is None:
             return create_error_response(
                 _AUTH_ERROR_MSG, ErrorCode.UNAUTHORIZED
             ).to_dict()
 
-        dto = ListNotebooksRequestDTO(limit=limit, name_filter=name_filter)
         notebooks = await search_service.list_notebooks(
             user_id=user_id,
-            name_filter=dto.name_filter,
-            limit=dto.limit,
+            name_filter=name_filter,
+            limit=limit,
         )
         vo_list = [
             NotebookVO(
@@ -198,26 +151,18 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
             date_before: Filter for notes created before this date (ISO 8601).
         """
         _ = ctx
-        user_id = get_authenticated_user_id()
-        if user_id is None:
+        if (user_id := get_authenticated_user_id()) is None:
             return create_error_response(
                 _AUTH_ERROR_MSG, ErrorCode.UNAUTHORIZED
             ).to_dict()
 
-        dto = SearchRequestDTO(
+        results = await search_service.search_chunks(
+            user_id=user_id,
             query=query,
             top_n=top_n,
             name_filter=name_filter,
             date_after=date_after,
             date_before=date_before,
-        )
-        results = await search_service.search_chunks(
-            user_id=user_id,
-            query=dto.query,
-            top_n=dto.top_n,
-            name_filter=dto.name_filter,
-            date_after=dto.date_after,
-            date_before=dto.date_before,
         )
         vo_list = [
             SearchResultVO(
