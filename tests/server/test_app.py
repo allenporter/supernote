@@ -6,11 +6,9 @@ when deployed behind a reverse proxy, with different proxy modes.
 
 import argparse
 import dataclasses
-import json
 import logging
 import subprocess
 import sys
-import time
 from typing import Any
 
 import pytest
@@ -32,7 +30,6 @@ from supernote.server.core import ComponentLoader, ServerCore
 from supernote.server.db.models.user import UserDO
 from supernote.server.keys import (
     COMPONENT_LOADER_KEY,
-    COORDINATION_SERVICE_KEY,
     CORE_KEY,
     EMBEDDING_MODEL_KEY,
     INTEGRITY_SERVICE_KEY,
@@ -44,7 +41,6 @@ from supernote.server.keys import (
 from supernote.server.services.processor_modules.png_conversion import (
     PngConversionModule,
 )
-from supernote.server.services.user import OAUTH_ACCESS_TOKEN_KEY_PREFIX
 from supernote.server.trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger
 
 
@@ -390,22 +386,10 @@ async def test_jwt_auth_middleware_accepts_oauth_token_on_file_apis_and_blocks_i
 ) -> None:
     """Verify OAuth 2.1 Bearer tokens authenticate file/extended APIs and are blocked on @interactive_session_only routes."""
     user_service = client.app[USER_SERVICE_KEY]
-    coordination_service = client.app[COORDINATION_SERVICE_KEY]
     user_id = await user_service.get_user_id("test@example.com")
 
-    oauth_token = "oauth_rest_api_test_token"
-    await coordination_service.set_value(
-        f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}{oauth_token}",
-        json.dumps(
-            {
-                "token": oauth_token,
-                "user_id": user_id,
-                "client_id": "composer_app",
-                "scopes": ["supernote:all"],
-                "expires_at": int(time.time()) + 3600,
-            }
-        ),
-        ttl=3600,
+    oauth_token, _ = await user_service.create_oauth_grant(
+        user_id, "composer_app", ["supernote:all"]
     )
     oauth_headers = {"Authorization": f"Bearer {oauth_token}"}
 

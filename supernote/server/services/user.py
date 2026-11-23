@@ -12,7 +12,6 @@ See `supernote.guides.bootstrap_guide`.
 import datetime
 import hashlib
 import hmac
-import json
 import logging
 import re
 import secrets
@@ -21,20 +20,22 @@ import urllib.parse
 import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import Any, cast
 
 import jwt
 from mashumaro import DataClassDictMixin
 from mashumaro.exceptions import MissingField
 from mashumaro.mixins.json import DataClassJSONMixin
-from sqlalchemy import delete, func, select
+from sqlalchemy import CursorResult, delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy.sql.elements import ColumnElement
 
 from supernote.models.auth import Equipment, LoginVO, UserVO
 from supernote.models.base import ErrorCode
 from supernote.models.equipment import UserEquipmentVO
-from supernote.models.extended import ApiKeyVO
+from supernote.models.extended import ApiKeyVO, OAuthGrantVO
 from supernote.models.user import (
     LoginRecordVO,
     UpdateEmailDTO,
@@ -49,6 +50,7 @@ from ..config import AuthConfig
 from ..db.models.api_key import ApiKeyDO
 from ..db.models.device import DeviceDO
 from ..db.models.login_record import LoginRecordDO
+from ..db.models.oauth_grant import OAuthGrantDO
 from ..db.models.user import UserDO
 from ..db.session import DatabaseSessionManager
 from .coordination import CoordinationService
@@ -62,11 +64,10 @@ JWT_SECRET_KEY = "system:jwt_secret_key"
 UNIQUE_MACHINE_ID_TTL = 100 * 365 * 24 * 3600
 SOLD_OUT_KEY_PREFIX = "user:sold_out_count:"
 API_KEY_PREFIX = "sn_"
-# OAuth 2.1 access tokens were originally introduced for the MCP server (hence the
-# legacy "mcp:access_token:" CoordinationService prefix), but they authenticate any
-# non-interactive REST API request. Keep the prefix for compatibility with active tokens.
-OAUTH_ACCESS_TOKEN_KEY_PREFIX = "mcp:access_token:"
 MAX_OAUTH_TOKEN_LENGTH = 4096
+OAUTH_ACCESS_TOKEN_TTL_SECONDS = 3600
+OAUTH_REFRESH_TOKEN_TTL_SECONDS = 86400 * 30
+MAX_OAUTH_GRANTS_PER_USER = 50
 MAX_API_KEY_NAME_LENGTH = 100
 MAX_API_KEYS_PER_USER = 50
 API_KEY_LAST_USED_TOUCH_INTERVAL_SECONDS = 60
@@ -98,6 +99,32 @@ class TokenClaims(DataClassDictMixin):
     iat: int | None = None
     exp: int | None = None
     jti: str | None = None
+
+
+@dataclass(frozen=True)
+class OAuthTokenGrant:
+    """A verified OAuth token: the grant it was issued under and what it allows."""
+
+    user_id: int
+    email: str
+    client_id: str
+    scopes: list[str]
+    expires_at: int
+    """When this token expires."""
+
+
+def _sha256(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _token_grant(grant: OAuthGrantDO, email: str, expires_at: int) -> OAuthTokenGrant:
+    return OAuthTokenGrant(
+        user_id=grant.user_id,
+        email=email,
+        client_id=grant.client_id,
+        scopes=grant.scopes.split(),
+        expires_at=expires_at,
+    )
 
 
 @dataclass
@@ -402,6 +429,9 @@ class UserService:
 
         async with self._session_manager.session() as session:
             await session.execute(delete(ApiKeyDO).where(ApiKeyDO.user_id == user_id))
+            await session.execute(
+                delete(OAuthGrantDO).where(OAuthGrantDO.user_id == user_id)
+            )
             await session.execute(delete(DeviceDO).where(DeviceDO.user_id == user_id))
             await session.execute(
                 delete(LoginRecordDO).where(LoginRecordDO.user_id == user_id)
@@ -778,74 +808,208 @@ class UserService:
             actor_id=key_id,
         )
 
-    async def parse_oauth_token_payload(self, data: str) -> dict[str, Any] | None:
-        """Parse a persisted OAuth token JSON payload and resolve `user_id` to an int."""
-        try:
-            payload = json.loads(data)
-        except (json.JSONDecodeError, ValueError, TypeError):
-            logger.warning("Invalid persisted OAuth token payload")
-            return None
-        if not isinstance(payload, dict):
-            return None
+    async def create_oauth_grant(
+        self, user_id: int, client_id: str, scopes: list[str]
+    ) -> tuple[str, str]:
+        """Record an approved OAuth authorization; return `(access_token, refresh_token)`.
 
-        raw_user_id = payload.get("user_id")
-        if raw_user_id is None:
-            return None
-        if isinstance(raw_user_id, str) and not raw_user_id.isdigit():
-            # TODO(#442): Remove legacy email user_id migration once 30-day OAuth refresh tokens expire.
-            try:
-                payload["user_id"] = await self.get_user_id(raw_user_id)
-            except ValueError:
+        The user's expired grants are pruned here, and past `MAX_OAUTH_GRANTS_PER_USER`
+        the oldest are evicted, so a client repeating the handshake cannot grow the
+        table. It is a soft bound: two exchanges racing can each leave one extra.
+        """
+        access_token = secrets.token_urlsafe(32)
+        refresh_token = secrets.token_urlsafe(32)
+        now = int(time.time())
+        async with self._session_manager.session() as session:
+            await session.execute(
+                delete(OAuthGrantDO).where(
+                    OAuthGrantDO.user_id == user_id, OAuthGrantDO.expires_at <= now
+                )
+            )
+            newest_first = (
+                await session.scalars(
+                    select(OAuthGrantDO.id)
+                    .where(OAuthGrantDO.user_id == user_id)
+                    .order_by(OAuthGrantDO.created_at.desc(), OAuthGrantDO.id)
+                )
+            ).all()
+            if evict := newest_first[MAX_OAUTH_GRANTS_PER_USER - 1 :]:
+                await session.execute(
+                    delete(OAuthGrantDO).where(
+                        OAuthGrantDO.user_id == user_id, OAuthGrantDO.id.in_(evict)
+                    )
+                )
+            session.add(
+                OAuthGrantDO(
+                    user_id=user_id,
+                    id=secrets.token_hex(8),
+                    client_id=client_id,
+                    scopes=" ".join(scopes),
+                    access_token_hash=_sha256(access_token),
+                    access_expires_at=now + OAUTH_ACCESS_TOKEN_TTL_SECONDS,
+                    refresh_token_hash=_sha256(refresh_token),
+                    created_at=now,
+                    expires_at=now + OAUTH_REFRESH_TOKEN_TTL_SECONDS,
+                )
+            )
+            await session.commit()
+        return access_token, refresh_token
+
+    async def refresh_oauth_grant(self, refresh_token: str) -> str | None:
+        """Issue a new access token for the grant `refresh_token` belongs to.
+
+        The previous access token stops working. Returns None if the grant is gone.
+        """
+        access_token = secrets.token_urlsafe(32)
+        now = int(time.time())
+        async with self._session_manager.session() as session:
+            found = await _live_oauth_grant(
+                session, OAuthGrantDO.refresh_token_hash, refresh_token, now
+            )
+            if found is None:
                 return None
-        else:
-            try:
-                payload["user_id"] = int(raw_user_id)
-            except (ValueError, TypeError):
+            grant, _ = found
+            # A single conditional UPDATE, so a revoke landing between the read
+            # and the write yields None rather than a stale-row error.
+            result = cast(
+                CursorResult[Any],
+                await session.execute(
+                    update(OAuthGrantDO)
+                    .where(
+                        OAuthGrantDO.user_id == grant.user_id,
+                        OAuthGrantDO.id == grant.id,
+                        OAuthGrantDO.refresh_token_hash == grant.refresh_token_hash,
+                    )
+                    .values(
+                        access_token_hash=_sha256(access_token),
+                        access_expires_at=now + OAUTH_ACCESS_TOKEN_TTL_SECONDS,
+                    )
+                ),
+            )
+            await session.commit()
+        return access_token if result.rowcount else None
+
+    async def load_oauth_refresh_token(self, token: str) -> OAuthTokenGrant | None:
+        """Resolve an OAuth refresh token to its live grant."""
+        async with self._session_manager.session() as session:
+            found = await _live_oauth_grant(
+                session, OAuthGrantDO.refresh_token_hash, token, int(time.time())
+            )
+            if found is None:
                 return None
-        return payload
+            grant, email = found
+            return _token_grant(grant, email, grant.expires_at)
+
+    async def load_oauth_access_token(self, token: str) -> OAuthTokenGrant | None:
+        """Resolve an OAuth access token to its live grant, recording the use."""
+        now = int(time.time())
+        async with self._session_manager.session() as session:
+            found = await _live_oauth_grant(
+                session,
+                OAuthGrantDO.access_token_hash,
+                token,
+                now,
+                OAuthGrantDO.access_expires_at > now,
+            )
+            if found is None:
+                return None
+            grant, email = found
+            result = _token_grant(grant, email, grant.access_expires_at or now)
+            if (
+                grant.last_used_at is None
+                or now - grant.last_used_at >= API_KEY_LAST_USED_TOUCH_INTERVAL_SECONDS
+            ):
+                await session.execute(
+                    update(OAuthGrantDO)
+                    .where(
+                        OAuthGrantDO.user_id == grant.user_id,
+                        OAuthGrantDO.id == grant.id,
+                    )
+                    .values(last_used_at=now)
+                )
+                await session.commit()
+        return result
+
+    async def revoke_oauth_token(self, token: str) -> None:
+        """RFC 7009 revocation: a refresh token ends its grant, an access token only itself."""
+        if not token or len(token) > MAX_OAUTH_TOKEN_LENGTH:
+            return
+        digest = _sha256(token)
+        async with self._session_manager.session() as session:
+            result = cast(
+                CursorResult[Any],
+                await session.execute(
+                    delete(OAuthGrantDO).where(
+                        OAuthGrantDO.refresh_token_hash == digest
+                    )
+                ),
+            )
+            if not result.rowcount:
+                await session.execute(
+                    update(OAuthGrantDO)
+                    .where(OAuthGrantDO.access_token_hash == digest)
+                    .values(access_token_hash=None, access_expires_at=None)
+                )
+            await session.commit()
+
+    async def list_oauth_grants(self, user_id: int) -> list[OAuthGrantVO]:
+        """List unexpired OAuth client grants for a user."""
+        async with self._session_manager.session() as session:
+            rows = await session.scalars(
+                select(OAuthGrantDO)
+                .where(
+                    OAuthGrantDO.user_id == user_id,
+                    OAuthGrantDO.expires_at > int(time.time()),
+                )
+                .order_by(OAuthGrantDO.created_at, OAuthGrantDO.id)
+            )
+            return [
+                OAuthGrantVO(
+                    id=row.id,
+                    client_id=row.client_id,
+                    scopes=row.scopes.split(),
+                    created_at=row.created_at,
+                    expires_at=row.expires_at,
+                    last_used_at=row.last_used_at,
+                )
+                for row in rows
+            ]
+
+    async def revoke_oauth_grant(self, user_id: int, grant_id: str) -> bool:
+        """Disconnect an OAuth client grant belonging to `user_id`, ending its tokens."""
+        async with self._session_manager.session() as session:
+            result = cast(
+                CursorResult[Any],
+                await session.execute(
+                    delete(OAuthGrantDO).where(
+                        OAuthGrantDO.user_id == user_id, OAuthGrantDO.id == grant_id
+                    )
+                ),
+            )
+            await session.commit()
+            return bool(result.rowcount)
+
+    async def _revoke_user_oauth_grants(self, user_id: int) -> None:
+        async with self._session_manager.session() as session:
+            await session.execute(
+                delete(OAuthGrantDO).where(OAuthGrantDO.user_id == user_id)
+            )
+            await session.commit()
 
     async def verify_oauth_token(self, token: str) -> SessionState | None:
-        """Verify an OAuth 2.1 Bearer access token against CoordinationService and active user state."""
-        if not token or len(token) > MAX_OAUTH_TOKEN_LENGTH:
+        """Verify an OAuth 2.1 Bearer access token against its live grant."""
+        grant = await self.load_oauth_access_token(token)
+        if grant is None:
             return None
-        data = await self._coordination_service.get_value(
-            f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}{token}"
-        )
-        if not data:
-            return None
-        token_data = await self.parse_oauth_token_payload(data)
-        if token_data is None:
-            return None
-
-        raw_expires_at = token_data.get("expires_at")
-        expires_at = (
-            int(raw_expires_at)
-            if isinstance(raw_expires_at, (int, float))
-            and not isinstance(raw_expires_at, bool)
-            else None
-        )
-        if expires_at is not None and expires_at <= time.time():
-            return None
-
-        user = await self._get_user_by_id(token_data["user_id"])
-        if not user or not user.is_active:
-            return None
-
-        client_id = token_data.get("client_id")
-        raw_scopes = token_data.get("scopes")
-        scopes = [str(s) for s in raw_scopes] if isinstance(raw_scopes, list) else []
-        raw_resource = token_data.get("resource")
-        resource = str(raw_resource) if isinstance(raw_resource, str) else None
         return SessionState(
             token=token,
-            email=user.email,
-            user_id=user.id,
+            email=grant.email,
+            user_id=grant.user_id,
             equipment_no=None,
-            expires_at=expires_at,
+            expires_at=grant.expires_at,
             auth_method=AuthMethod.OAUTH,
-            actor_id=str(client_id) if client_id else None,
-            scopes=scopes,
-            resource=resource,
+            actor_id=grant.client_id,
+            scopes=list(grant.scopes),
         )
 
     async def verify_token(self, token: str) -> SessionState | None:
@@ -1021,6 +1185,7 @@ class UserService:
             await session.commit()
 
         await self.revoke_user_sessions(user_id)
+        await self._revoke_user_oauth_grants(user_id)
 
     async def update_email(self, account: str, dto: UpdateEmailDTO) -> None:
         """Update user email and revoke active sessions bound to the old email."""
@@ -1067,6 +1232,7 @@ class UserService:
             await session.commit()
 
         await self.revoke_user_sessions(user_id)
+        await self._revoke_user_oauth_grants(user_id)
 
     async def admin_set_user_quota(self, email: str, total_capacity: int) -> None:
         """Set a user's storage quota in bytes (0 = unlimited / volume-backed)."""
@@ -1106,6 +1272,7 @@ class UserService:
             await session.commit()
 
         await self.revoke_user_sessions(user_id)
+        await self._revoke_user_oauth_grants(user_id)
         return True
 
     async def query_login_records(
@@ -1146,3 +1313,28 @@ class UserService:
             ]
 
             return vos, total
+
+
+async def _live_oauth_grant(
+    session: AsyncSession,
+    column: InstrumentedAttribute[str | None] | InstrumentedAttribute[str],
+    token: str,
+    now: int,
+    *conditions: ColumnElement[bool],
+) -> tuple[OAuthGrantDO, str] | None:
+    """The unexpired grant whose `column` digest matches `token`, and its active user's email."""
+    if not token or len(token) > MAX_OAUTH_TOKEN_LENGTH:
+        return None
+    row = (
+        await session.execute(
+            select(OAuthGrantDO, UserDO.email)
+            .join(UserDO, OAuthGrantDO.user_id == UserDO.id)
+            .where(
+                column == _sha256(token),
+                OAuthGrantDO.expires_at > now,
+                UserDO.is_active.is_(True),
+                *conditions,
+            )
+        )
+    ).one_or_none()
+    return (row[0], row[1]) if row else None

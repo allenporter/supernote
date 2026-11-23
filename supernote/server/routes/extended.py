@@ -21,6 +21,7 @@ from supernote.models.extended import (
     CreateApiKeyResponseVO,
     FileProcessingStatusDTO,
     FileProcessingStatusVO,
+    OAuthGrantListResponseVO,
     SystemTaskListVO,
     SystemTaskVO,
     WebNoteCoverRequestDTO,
@@ -315,6 +316,37 @@ async def handle_delete_api_key(request: web.Request) -> web.Response:
     if not revoked:
         return web.json_response(
             {"error": "API key not found or already revoked"}, status=404
+        )
+
+    return web.json_response(BaseResponse(success=True).to_dict())
+
+
+@routes.get("/api/extended/oauth/grants")
+@interactive_session_only
+async def handle_list_oauth_grants(request: web.Request) -> web.Response:
+    # Endpoint: GET /api/extended/oauth/grants
+    # Purpose: List MCP OAuth clients the authenticated user has authorized.
+    user_email = request[REQUEST_USER_KEY]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(user_email)
+    grants = await user_service.list_oauth_grants(user_id)
+    return web.json_response(OAuthGrantListResponseVO(grants=grants).to_dict())
+
+
+@routes.delete("/api/extended/oauth/grants/{grant_id}")
+@interactive_session_only
+async def handle_revoke_oauth_grant(request: web.Request) -> web.Response:
+    # Endpoint: DELETE /api/extended/oauth/grants/{grant_id}
+    # Purpose: Disconnect an MCP OAuth client, ending its access and refresh tokens.
+    user_email = request[REQUEST_USER_KEY]
+    grant_id = request.match_info["grant_id"]
+    user_service: UserService = request.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(user_email)
+
+    revoked = await user_service.revoke_oauth_grant(user_id, grant_id)
+    if not revoked:
+        return web.json_response(
+            {"error": "OAuth grant not found or already revoked"}, status=404
         )
 
     return web.json_response(BaseResponse(success=True).to_dict())

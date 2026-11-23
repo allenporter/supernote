@@ -86,7 +86,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "b5c6d7e8f9a0"
+        assert version == "c7d8e9f0a1b2"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -182,7 +182,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "b5c6d7e8f9a0"
+        assert version == "c7d8e9f0a1b2"
 
         # Verify task columns and types
         tasks = conn.execute(
@@ -1120,4 +1120,82 @@ def test_add_previous_text_migration_upgrade_and_downgrade(
             ).fetchall()
         }
         assert "previous_text" not in cols_down
+    engine.dispose()
+
+
+def test_oauth_grants_migration_moves_refresh_tokens_out_of_key_values(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify c7d8e9f0a1b2 turns live refresh tokens into grants and drops plaintext tokens."""
+    db_path = tmp_path / "oauth_grants_migration.db"
+    shutil.copy(Path("tests/fixtures/db_v1.sqlite").absolute(), db_path)
+    url = f"sqlite:///{db_path}"
+    alembic_config.set_main_option("sqlalchemy.url", url)
+    command.upgrade(alembic_config, "b5c6d7e8f9a0")
+
+    future = 4102444800  # 2100-01-01
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO users (id, email, password_md5, is_active, total_capacity, is_admin) "
+                "VALUES (202, 'grantowner@example.com', '098f6bcd4621d373cade4e832627b4f6', 1, '0', 0)"
+            )
+        )
+        tokens = {
+            "mcp:refresh_token:rt_by_id": '{"user_id": 202, "client_id": "https://a.example.com/", "scopes": ["supernote:all"], "expires_at": %d}'
+            % future,
+            "mcp:refresh_token:rt_by_email": '{"user_id": "grantowner@example.com", "client_id": "https://b.example.com/", "scopes": ["supernote:all"], "expires_at": %d}'
+            % future,
+            "mcp:refresh_token:rt_expired": '{"user_id": 202, "client_id": "https://c.example.com/", "scopes": [], "expires_at": 1}',
+            "mcp:refresh_token:rt_unknown_user": '{"user_id": 999, "client_id": "https://d.example.com/", "scopes": [], "expires_at": %d}'
+            % future,
+            "mcp:refresh_token:rt_bad": "{not-json",
+            "mcp:refresh_token:rt_list": "[]",
+            "mcp:refresh_token:rt_bad_expiry": '{"user_id": 202, "client_id": "https://e.example.com/", "expires_at": "soon"}',
+            "mcp:refresh_token:rt_bad_scopes": '{"user_id": 202, "client_id": "https://f.example.com/", "scopes": "supernote:all", "expires_at": %d}'
+            % future,
+            "mcp:access_token:at_live": '{"user_id": 202, "client_id": "https://a.example.com/"}',
+            "mcp:auth_code:code_kept": "{}",
+        }
+        for key, value in tokens.items():
+            conn.execute(
+                text("INSERT INTO key_values (key, value, expiry) VALUES (:k, :v, :e)"),
+                {"k": key, "v": value, "e": future},
+            )
+
+    command.upgrade(alembic_config, "c7d8e9f0a1b2")
+
+    with engine.connect() as conn:
+        grants = conn.execute(
+            text(
+                "SELECT user_id, client_id, scopes, refresh_token_hash, access_token_hash, expires_at "
+                "FROM oauth_grants ORDER BY client_id"
+            )
+        ).fetchall()
+        keys = [r[0] for r in conn.execute(text("SELECT key FROM key_values"))]
+    assert [tuple(g) for g in grants] == [
+        (
+            202,
+            "https://a.example.com/",
+            "supernote:all",
+            hashlib.sha256(b"rt_by_id").hexdigest(),
+            None,
+            future,
+        ),
+        (
+            202,
+            "https://b.example.com/",
+            "supernote:all",
+            hashlib.sha256(b"rt_by_email").hexdigest(),
+            None,
+            future,
+        ),
+    ]
+    assert keys == ["mcp:auth_code:code_kept"]
+
+    command.downgrade(alembic_config, "b5c6d7e8f9a0")
+    reflected = MetaData()
+    reflected.reflect(bind=engine)
+    assert "oauth_grants" not in reflected.tables
     engine.dispose()

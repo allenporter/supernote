@@ -296,6 +296,41 @@ class ApiKeyListResponseVO(BaseResponse):
 
 
 @dataclass
+class OAuthGrantVO(DataClassJSONMixin):
+    """VO representing an OAuth client the user has authorized.
+
+    Used by: GET /api/extended/oauth/grants
+    """
+
+    id: str
+    client_id: str = field(metadata=field_options(alias="clientId"))
+    """IndieAuth client URL that requested access."""
+
+    scopes: list[str]
+    created_at: int = field(metadata=field_options(alias="createdAt"))
+    expires_at: int = field(metadata=field_options(alias="expiresAt"))
+    last_used_at: int | None = field(
+        metadata=field_options(alias="lastUsedAt"), default=None
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class OAuthGrantListResponseVO(BaseResponse):
+    """Response VO listing authorized OAuth clients.
+
+    Used by: GET /api/extended/oauth/grants
+    """
+
+    grants: list[OAuthGrantVO] = field(default_factory=list)
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
 class WebNoteCoverRequestDTO(DataClassJSONMixin):
     """Request DTO for retrieving a single-page cover preview URL for a notebook."""
 

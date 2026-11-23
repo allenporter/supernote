@@ -7,7 +7,7 @@ from aiohttp.test_utils import TestClient
 
 from supernote.client.client import Client
 from supernote.client.login_client import LoginClient
-from supernote.server.keys import COORDINATION_SERVICE_KEY
+from supernote.server.keys import USER_SERVICE_KEY
 from tests.fixtures.server import TEST_PASSWORD, TEST_USERNAME
 
 
@@ -342,7 +342,7 @@ async def test_oauth_token_revocation(
     login_client: LoginClient,
     create_test_user: None,
 ) -> None:
-    """Verify /revoke invalidates both access and refresh tokens in CoordinationService."""
+    """Verify /revoke ends an access token alone, and a refresh token with its grant."""
     token = await login_client.login(TEST_USERNAME, TEST_PASSWORD)
     verifier = "v" * 50
     client_id = "http://localhost:3000"
@@ -374,18 +374,17 @@ async def test_oauth_token_revocation(
     access_token = tokens["access_token"]
     refresh_token = tokens["refresh_token"]
 
-    coordination = client.app[COORDINATION_SERVICE_KEY]
-    assert await coordination.get_value(f"mcp:access_token:{access_token}") is not None
-    assert (
-        await coordination.get_value(f"mcp:refresh_token:{refresh_token}") is not None
-    )
+    user_service = client.app[USER_SERVICE_KEY]
+    assert await user_service.load_oauth_access_token(access_token) is not None
+    assert await user_service.load_oauth_refresh_token(refresh_token) is not None
 
     revoke_access_resp = await client.post(
         "/revoke",
         data={"token": access_token, "client_id": client_id, "client_secret": ""},
     )
     assert revoke_access_resp.status == 200
-    assert await coordination.get_value(f"mcp:access_token:{access_token}") is None
+    assert await user_service.load_oauth_access_token(access_token) is None
+    assert await user_service.load_oauth_refresh_token(refresh_token) is not None
 
     revoke_refresh_resp = await client.post(
         "/revoke",
@@ -397,7 +396,7 @@ async def test_oauth_token_revocation(
         },
     )
     assert revoke_refresh_resp.status == 200
-    assert await coordination.get_value(f"mcp:refresh_token:{refresh_token}") is None
+    assert await user_service.load_oauth_refresh_token(refresh_token) is None
 
     refresh_attempt = await client.post(
         "/token",

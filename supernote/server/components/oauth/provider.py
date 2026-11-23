@@ -1,12 +1,11 @@
 """OAuth 2.1 and IndieAuth provider for the Supernote server.
 
-Implements `SupernoteOAuthProvider` supporting dynamic IndieAuth-style URL client IDs,
-PKCE authorization code exchange, and token persistence/revocation in
-`supernote.server.services.coordination.CoordinationService`.
+Implements `SupernoteOAuthProvider` supporting dynamic IndieAuth-style URL client IDs
+and PKCE authorization code exchange. Short-lived authorization codes live in
+`supernote.server.services.coordination.CoordinationService`; access and refresh
+tokens belong to a grant row managed by `supernote.server.services.user.UserService`.
 """
 
-import secrets
-import time
 from typing import override
 
 import yarl
@@ -26,7 +25,7 @@ from mcp.shared.auth import (
 from pydantic import AnyHttpUrl, AnyUrl, ValidationError
 
 from supernote.server.services.coordination import CoordinationService
-from supernote.server.services.user import OAUTH_ACCESS_TOKEN_KEY_PREFIX, UserService
+from supernote.server.services.user import OAUTH_ACCESS_TOKEN_TTL_SECONDS, UserService
 
 from .models import (
     MCPScope,
@@ -170,38 +169,16 @@ class SupernoteOAuthProvider(
                 error_description="authorization code has already been used",
             )
 
-        access_token = SupernoteAccessToken(
-            token=secrets.token_urlsafe(32),
-            user_id=authorization_code.user_id,
-            client_id=authorization_code.client_id,
-            scopes=authorization_code.scopes,
-            expires_at=int(time.time() + 3600),
+        access_token, refresh_token = await self.user_service.create_oauth_grant(
+            authorization_code.user_id,
+            authorization_code.client_id,
+            authorization_code.scopes,
         )
-        refresh_token = SupernoteRefreshToken(
-            token=secrets.token_urlsafe(32),
-            user_id=authorization_code.user_id,
-            client_id=authorization_code.client_id,
-            scopes=authorization_code.scopes,
-            expires_at=int(time.time() + 86400 * 30),
-        )
-
-        # Store tokens
-        await self._coordination.set_value(
-            f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}{access_token.token}",
-            access_token.model_dump_json(),
-            ttl=3600,
-        )
-        await self._coordination.set_value(
-            f"mcp:refresh_token:{refresh_token.token}",
-            refresh_token.model_dump_json(),
-            ttl=86400 * 30,
-        )
-
         return OAuthToken(
-            access_token=access_token.token,
-            refresh_token=refresh_token.token,
+            access_token=access_token,
+            refresh_token=refresh_token,
             token_type="Bearer",
-            expires_in=3600,
+            expires_in=OAUTH_ACCESS_TOKEN_TTL_SECONDS,
             scope=" ".join(authorization_code.scopes),
         )
 
@@ -209,14 +186,16 @@ class SupernoteOAuthProvider(
         self, client: OAuthClientInformationFull, refresh_token: str
     ) -> SupernoteRefreshToken | None:
         """Loads a RefreshToken by its token string."""
-        key = f"mcp:refresh_token:{refresh_token}"
-        data = await self._coordination.get_value(key)
-        if not data:
+        grant = await self.user_service.load_oauth_refresh_token(refresh_token)
+        if grant is None:
             return None
-        payload = await self.user_service.parse_oauth_token_payload(data)
-        if payload is None:
-            return None
-        return SupernoteRefreshToken.model_validate(payload)
+        return SupernoteRefreshToken(
+            token=refresh_token,
+            user_id=grant.user_id,
+            client_id=grant.client_id,
+            scopes=grant.scopes,
+            expires_at=grant.expires_at,
+        )
 
     async def exchange_refresh_token(
         self,
@@ -224,44 +203,34 @@ class SupernoteOAuthProvider(
         refresh_token: SupernoteRefreshToken,
         scopes: list[str],
     ) -> OAuthToken:
-        """Exchanges a refresh token for an access token and refresh token."""
-        new_access_token = SupernoteAccessToken(
-            token=secrets.token_urlsafe(32),
-            user_id=refresh_token.user_id,
-            client_id=refresh_token.client_id,
-            scopes=scopes or refresh_token.scopes,
-            expires_at=int(time.time() + 3600),
-        )
-        await self._coordination.set_value(
-            f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}{new_access_token.token}",
-            new_access_token.model_dump_json(),
-            ttl=3600,
-        )
+        """Exchanges a refresh token for a new access token on the same grant."""
+        access_token = await self.user_service.refresh_oauth_grant(refresh_token.token)
+        if access_token is None:
+            raise TokenError(
+                error="invalid_grant",
+                error_description="refresh token has been revoked",
+            )
         return OAuthToken(
-            access_token=new_access_token.token,
+            access_token=access_token,
             refresh_token=refresh_token.token,
             token_type="Bearer",
-            expires_in=3600,
-            scope=" ".join(new_access_token.scopes),
+            expires_in=OAUTH_ACCESS_TOKEN_TTL_SECONDS,
+            scope=" ".join(refresh_token.scopes),
         )
 
     async def load_access_token(self, token: str) -> SupernoteAccessToken | None:
         """Loads an access token by its token."""
-        # 1. Try to load as an MCP access token from coordination service
-        key = f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}{token}"
-        data = await self._coordination.get_value(key)
-        if not data:
+        grant = await self.user_service.load_oauth_access_token(token)
+        if grant is None:
             return None
-        payload = await self.user_service.parse_oauth_token_payload(data)
-        if payload is None:
-            return None
-        return SupernoteAccessToken.model_validate(payload)
+        return SupernoteAccessToken(
+            token=token,
+            user_id=grant.user_id,
+            client_id=grant.client_id,
+            scopes=grant.scopes,
+            expires_at=grant.expires_at,
+        )
 
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
-        """Revokes an access or refresh token."""
-        if isinstance(token, RefreshToken):
-            await self._coordination.delete_value(f"mcp:refresh_token:{token.token}")
-        else:
-            await self._coordination.delete_value(
-                f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}{token.token}"
-            )
+        """Revokes an access or refresh token (a refresh token ends its grant)."""
+        await self.user_service.revoke_oauth_token(token.token)

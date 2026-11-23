@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from typing import Any
 
 from starlette.testclient import TestClient
@@ -14,13 +13,11 @@ from supernote.server.components.mcp.server import (
     SupernoteTokenVerifier,
     create_mcp_server,
 )
-from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
 
 
 async def test_token_verifier_static_key_session_and_oauth(
     user_service: UserService,
-    coordination_service: CoordinationService,
 ) -> None:
     """Test SupernoteTokenVerifier handles OAuth tokens, static API keys, and session JWTs."""
     pw_md5 = hashlib.md5(b"password123").hexdigest()
@@ -56,52 +53,18 @@ async def test_token_verifier_static_key_session_and_oauth(
     assert session_result.client_id == "session"
     assert session_result.scopes == ["supernote:all"]
 
-    # OAuth access token
-    oauth_token = "oauth_token_xyz"
-    oauth_data = {
-        "user_id": user.id,
-        "client_id": "oauth_client_1",
-        "scopes": ["supernote:all"],
-    }
-    await coordination_service.set_value(
-        f"mcp:access_token:{oauth_token}", json.dumps(oauth_data)
+    # OAuth access token, and its grant revoked
+    oauth_token, _ = await user_service.create_oauth_grant(
+        user.id, "oauth_client_1", ["supernote:all"]
     )
-
     oauth_result = await verifier.verify_token(oauth_token)
     assert oauth_result is not None
     assert oauth_result.user_id == user.id
     assert oauth_result.client_id == "oauth_client_1"
     assert oauth_result.scopes == ["supernote:all"]
-
-    # Legacy OAuth access token stored with email user_id migrates to int user_id
-    legacy_token = "oauth_token_legacy_email"
-    await coordination_service.set_value(
-        f"mcp:access_token:{legacy_token}",
-        json.dumps(
-            {
-                "user_id": "mcpuser@example.com",
-                "client_id": "oauth_client_1",
-                "scopes": ["supernote:all"],
-            }
-        ),
-    )
-    legacy_result = await verifier.verify_token(legacy_token)
-    assert legacy_result is not None
-    assert legacy_result.user_id == user.id
-
-    # Legacy OAuth token for deleted/unknown user returns None
-    unknown_legacy_token = "oauth_token_unknown_email"
-    await coordination_service.set_value(
-        f"mcp:access_token:{unknown_legacy_token}",
-        json.dumps(
-            {
-                "user_id": "deleted@example.com",
-                "client_id": "oauth_client_1",
-                "scopes": ["supernote:all"],
-            }
-        ),
-    )
-    assert await verifier.verify_token(unknown_legacy_token) is None
+    [grant] = await user_service.list_oauth_grants(user.id)
+    await user_service.revoke_oauth_grant(user.id, grant.id)
+    assert await verifier.verify_token(oauth_token) is None
 
     assert await verifier.verify_token("oauth_token_unknown") is None
 
@@ -190,7 +153,6 @@ async def test_mcp_http_requests_authenticate_and_succeed(
 
 async def test_token_verifier_sets_canonical_actor_for_oauth_and_api_keys(
     user_service: UserService,
-    coordination_service: CoordinationService,
 ) -> None:
     """Verify SupernoteTokenVerifier sets canonical `oauth:` and `api_key:` actor IDs."""
     user = await user_service.register(
@@ -202,14 +164,10 @@ async def test_token_verifier_sets_canonical_actor_for_oauth_and_api_keys(
     )
     verifier = SupernoteTokenVerifier(user_service)
 
-    await coordination_service.set_value(
-        "mcp:access_token:tok-oauth",
-        json.dumps(
-            {"user_id": user.id, "client_id": "   ", "scopes": ["supernote:all"]}
-        ),
-        ttl=60,
+    oauth_token, _ = await user_service.create_oauth_grant(
+        user.id, "   ", ["supernote:all"]
     )
-    oauth_tok = await verifier.verify_token("tok-oauth")
+    oauth_tok = await verifier.verify_token(oauth_token)
     assert oauth_tok is not None
     assert oauth_tok.actor == "oauth:unknown"
 
