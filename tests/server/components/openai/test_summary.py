@@ -7,17 +7,12 @@ import json
 import pytest
 
 from supernote.server.ai.base import AIError
+from supernote.server.ai.models.summary import SummaryModel
 from supernote.server.ai.prompts import (
     SummaryResponse,
     SummarySegment,
     get_summary_json_schema,
 )
-from supernote.server.components.openai.backend import OpenAIBackend
-from supernote.server.components.openai.summary import (
-    OpenAISummaryModel,
-    create_summary_model,
-)
-from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
 
 from .conftest import FakeOpenAIServer
 
@@ -43,18 +38,14 @@ EXPECTED = SummaryResponse(
 )
 
 
-@pytest.fixture
-def summary_model(openai_backend: OpenAIBackend) -> OpenAISummaryModel:
-    return OpenAISummaryModel(openai_backend, "gemma")
-
-
 async def test_openai_summary_model(
-    summary_model: OpenAISummaryModel, fake_openai: FakeOpenAIServer
+    openai_summary_model: SummaryModel, fake_openai: FakeOpenAIServer
 ) -> None:
     fake_openai.chat_content = json.dumps(SEGMENTS)
 
-    assert await summary_model.summarize("Summarize this.") == EXPECTED
-    assert summary_model.model_id == "gemma"
+    assert await openai_summary_model.summarize("Summarize this.") == EXPECTED
+    assert openai_summary_model.provider == "openai"
+    assert openai_summary_model.model_id == "gemma"
     (_, _, payload) = fake_openai.requests[0]
     assert payload == {
         "model": "gemma",
@@ -72,17 +63,17 @@ async def test_openai_summary_model(
 
 
 async def test_openai_summary_model_strips_code_fence(
-    summary_model: OpenAISummaryModel, fake_openai: FakeOpenAIServer
+    openai_summary_model: SummaryModel, fake_openai: FakeOpenAIServer
 ) -> None:
     fake_openai.chat_content = f"```json\n{json.dumps(SEGMENTS)}\n```"
-    assert await summary_model.summarize("Summarize this.") == EXPECTED
+    assert await openai_summary_model.summarize("Summarize this.") == EXPECTED
 
 
 async def test_openai_summary_model_empty_response(
-    summary_model: OpenAISummaryModel, fake_openai: FakeOpenAIServer
+    openai_summary_model: SummaryModel, fake_openai: FakeOpenAIServer
 ) -> None:
     fake_openai.chat_content = ""
-    assert await summary_model.summarize("Summarize this.") == SummaryResponse(
+    assert await openai_summary_model.summarize("Summarize this.") == SummaryResponse(
         segments=[]
     )
 
@@ -97,24 +88,10 @@ async def test_openai_summary_model_empty_response(
     ],
 )
 async def test_openai_summary_model_invalid_json(
-    summary_model: OpenAISummaryModel,
+    openai_summary_model: SummaryModel,
     fake_openai: FakeOpenAIServer,
     invalid_payload: str,
 ) -> None:
     fake_openai.chat_content = invalid_payload
     with pytest.raises(AIError, match="Failed to parse"):
-        await summary_model.summarize("Summarize this.")
-
-
-def test_create_summary_model() -> None:
-    assert create_summary_model(ServerConfig()) is None
-
-    config = ServerConfig(
-        ai=AiConfig(
-            providers={"openai": ProviderConfig(base_url="http://localhost/v1")},
-            summary=ModelConfig(provider="openai", model="gemma"),
-        )
-    )
-    model = create_summary_model(config)
-    assert isinstance(model, OpenAISummaryModel)
-    assert model.model_id == "gemma"
+        await openai_summary_model.summarize("Summarize this.")

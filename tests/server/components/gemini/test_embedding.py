@@ -5,24 +5,17 @@ from __future__ import annotations
 import pytest
 
 from supernote.server.ai.base import AIError
-from supernote.server.ai.models.embedding import EmbeddingTaskType
-from supernote.server.components.gemini.backend import GeminiBackend
-from supernote.server.components.gemini.embedding import (
-    GeminiEmbeddingModel,
-    create_embedding_model,
-)
-from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
+from supernote.server.ai.models.embedding import EmbeddingModel, EmbeddingTaskType
+from supernote.server.config import ModelConfig, ProviderConfig
 
-from .conftest import FakeGeminiServer
+from .conftest import FakeGeminiServer, LoadGeminiModels
 
 
 async def test_gemini_embedding_model(
-    gemini_backend: GeminiBackend,
+    gemini_embedding_model: EmbeddingModel,
     fake_gemini: FakeGeminiServer,
 ) -> None:
-    embedding_model = GeminiEmbeddingModel(gemini_backend, "text-embedding-004")
-
-    vec = await embedding_model.embed(
+    vec = await gemini_embedding_model.embed(
         "This is the text to embed.",
         task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT,
     )
@@ -46,21 +39,31 @@ async def test_gemini_embedding_model(
 
     fake_gemini.embedding = None
     with pytest.raises(AIError, match="No embeddings returned from Gemini API"):
-        await embedding_model.embed(
+        await gemini_embedding_model.embed(
             "This is the text to embed.",
             task_type=EmbeddingTaskType.RETRIEVAL_QUERY,
         )
 
 
-def test_create_embedding_model() -> None:
-    assert create_embedding_model(ServerConfig()) is None
-
-    config = ServerConfig(
-        ai=AiConfig(
-            providers={"work": ProviderConfig(type="gemini", api_key="work-key")},
-            embedding=ModelConfig(provider="work", model="gemini-custom"),
-        )
+async def test_gemini_embedding_named_provider(
+    load_gemini_models: LoadGeminiModels,
+    fake_gemini: FakeGeminiServer,
+    gemini_base_url: str,
+) -> None:
+    _, _, embedding = await load_gemini_models(
+        providers={
+            "work": ProviderConfig(
+                type="gemini", api_key="work-key", base_url=gemini_base_url
+            )
+        },
+        embedding=ModelConfig(provider="work", model="gemini-custom"),
     )
-    model = create_embedding_model(config)
-    assert isinstance(model, GeminiEmbeddingModel)
-    assert model.model_id == "gemini-custom"
+    assert embedding is not None
+    assert embedding.provider == "work"
+    assert embedding.model_id == "gemini-custom"
+    assert await embedding.embed("hello", EmbeddingTaskType.RETRIEVAL_QUERY) == [
+        0.1,
+        0.2,
+        0.3,
+    ]
+    assert fake_gemini.requests[0][1] == "work-key"

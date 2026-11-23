@@ -2,82 +2,87 @@
 
 from __future__ import annotations
 
-from typing import Any
+import json
 
 import pytest
 from aiohttp import web
 from prometheus_client import REGISTRY
+from pytest_aiohttp import AiohttpServer
 
 from supernote.server.ai.base import AIError
-from supernote.server.ai.models.ocr import InstrumentedOcrModel
-from supernote.server.components.gemini.backend import (
-    GeminiBackend,
-    _positive_int,
-    create_gemini_backend,
+from supernote.server.ai.models.embedding import EmbeddingTaskType
+from supernote.server.components.gemini.backend import GeminiBackend, _positive_int
+from supernote.server.config import ModelConfig, ProviderConfig
+
+from .conftest import FakeGeminiServer, LoadGeminiModels
+
+
+@pytest.mark.parametrize(
+    "providers",
+    [
+        {},
+        {"gemini": ProviderConfig(api_key="  ")},
+        {"work": ProviderConfig(type="gemini", api_key="work-key")},
+    ],
 )
-from supernote.server.components.gemini.ocr import GeminiOcrModel
-from supernote.server.config import ProviderConfig
-from supernote.server.metrics import AIStage, track_ai_request
-
-from .conftest import FakeGeminiServer
-
-
-def test_create_gemini_backend() -> None:
-    assert create_gemini_backend({}, "gemini") is None
-    assert (
-        create_gemini_backend({"gemini": ProviderConfig(api_key="  ")}, "gemini")
-        is None
+async def test_gemini_missing_blank_or_mismatched_provider_disables_all_models(
+    load_gemini_models: LoadGeminiModels,
+    providers: dict[str, ProviderConfig],
+) -> None:
+    ocr, summary, embedding = await load_gemini_models(
+        providers=providers,
+        ocr=ModelConfig(provider="gemini", model="gemini-2.0-flash"),
+        summary=ModelConfig(provider="gemini", model="gemini-2.0-flash"),
+        embedding=ModelConfig(provider="gemini", model="text-embedding-004"),
     )
-
-    backend = create_gemini_backend(
-        {
-            "gemini": ProviderConfig(
-                api_key="valid-key", base_url="http://localhost:8080"
-            )
-        },
-        "gemini",
-    )
-    assert isinstance(backend, GeminiBackend)
-    assert backend._api_key == "valid-key"
-    assert backend._base_url == "http://localhost:8080"
-    assert backend.provider == "gemini"
+    assert (ocr, summary, embedding) == (None, None, None)
 
 
 async def test_gemini_backend_api_error_raises_ai_error(
-    gemini_backend: GeminiBackend,
+    load_gemini_models: LoadGeminiModels,
     fake_gemini: FakeGeminiServer,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    ocr_model, _, embedding_model = await load_gemini_models(
+        ocr=ModelConfig(provider="gemini", model="gemini-2.0-flash"),
+        embedding=ModelConfig(provider="gemini", model="text-embedding-004"),
+    )
+    assert ocr_model is not None and embedding_model is not None
+
     fake_gemini.status = 404
     with caplog.at_level("ERROR"):
         with pytest.raises(AIError, match="404"):
-            await gemini_backend.generate_content(
-                model="gemini-2.0-flash", contents="hello"
-            )
+            await ocr_model.extract_text(b"png", "hello")
     assert "Gemini API error during generate_content" in caplog.text
 
     with pytest.raises(AIError, match="404"):
-        await gemini_backend.embed_content(model="text-embedding-004", contents="hello")
+        await embedding_model.embed("hello", EmbeddingTaskType.RETRIEVAL_QUERY)
 
 
 async def test_gemini_backend_malformed_response_raises_ai_error(
-    gemini_backend: GeminiBackend,
+    load_gemini_models: LoadGeminiModels,
     fake_gemini: FakeGeminiServer,
 ) -> None:
+    ocr_model, _, embedding_model = await load_gemini_models(
+        ocr=ModelConfig(provider="gemini", model="gemini-2.0-flash"),
+        embedding=ModelConfig(provider="gemini", model="text-embedding-004"),
+    )
+    assert ocr_model is not None and embedding_model is not None
+
     fake_gemini.malformed = True
     with pytest.raises(
         AIError, match=r"Unexpected error calling Gemini API \(generate_content\)"
     ):
-        await gemini_backend.generate_content(
-            model="gemini-2.0-flash", contents="hello"
-        )
+        await ocr_model.extract_text(b"png", "hello")
     with pytest.raises(
         AIError, match=r"Unexpected error calling Gemini API \(embed_content\)"
     ):
-        await gemini_backend.embed_content(model="text-embedding-004", contents="hello")
+        await embedding_model.embed("hello", EmbeddingTaskType.RETRIEVAL_QUERY)
 
 
-async def test_gemini_connection_error_raises_ai_error_and_records_metric() -> None:
+async def test_gemini_connection_error_raises_ai_error_and_records_metric(
+    load_gemini_models: LoadGeminiModels,
+) -> None:
     labels = {
         "provider": "gemini",
         "model": "gemini-2.0-flash",
@@ -86,12 +91,13 @@ async def test_gemini_connection_error_raises_ai_error_and_records_metric() -> N
     }
     before = REGISTRY.get_sample_value("supernote_ai_requests_total", labels)
 
-    backend = GeminiBackend(
-        api_key="fake-key",
-        base_url="http://127.0.0.1:1",
-        provider="gemini",
+    ocr_model, _, _ = await load_gemini_models(
+        providers={
+            "gemini": ProviderConfig(api_key="fake-key", base_url="http://127.0.0.1:1")
+        },
+        ocr=ModelConfig(provider="gemini", model="gemini-2.0-flash"),
     )
-    ocr_model = InstrumentedOcrModel(GeminiOcrModel(backend, "gemini-2.0-flash"))
+    assert ocr_model is not None
     with pytest.raises(
         AIError, match=r"Unexpected error calling Gemini API \(generate_content\)"
     ):
@@ -102,7 +108,8 @@ async def test_gemini_connection_error_raises_ai_error_and_records_metric() -> N
 
 
 async def test_gemini_embed_content_ignores_non_finite_token_statistics(
-    aiohttp_server: Any,
+    aiohttp_server: AiohttpServer,
+    load_gemini_models: LoadGeminiModels,
 ) -> None:
     """A non-finite `statistics.tokenCount` never fails an otherwise valid call."""
 
@@ -118,11 +125,14 @@ async def test_gemini_embed_content_ignores_non_finite_token_statistics(
     app = web.Application()
     app.router.add_post("/v1beta/models/{model}:batchEmbedContents", handle_batch_embed)
     server = await aiohttp_server(app)
-    backend = GeminiBackend(
-        api_key="key",
-        base_url=str(server.make_url("/")),
-        provider="gemini",
+
+    _, _, embedding_model = await load_gemini_models(
+        providers={
+            "gemini": ProviderConfig(api_key="key", base_url=str(server.make_url("/")))
+        },
+        embedding=ModelConfig(provider="gemini", model="nan-embed"),
     )
+    assert embedding_model is not None
 
     labels = {
         "provider": "gemini",
@@ -131,48 +141,43 @@ async def test_gemini_embed_content_ignores_non_finite_token_statistics(
         "token_type": "input",
     }
     before = REGISTRY.get_sample_value("supernote_ai_tokens_total", labels)
-    with track_ai_request(
-        provider="gemini", model="nan-embed", stage=AIStage.EMBEDDING_DOCUMENT
-    ):
-        response = await backend.embed_content(model="nan-embed", contents="hello")
-    assert response.embeddings
+    vec = await embedding_model.embed("hello", EmbeddingTaskType.RETRIEVAL_DOCUMENT)
+    assert vec == [0.1, 0.2]
     assert REGISTRY.get_sample_value("supernote_ai_tokens_total", labels) == before
 
 
-def test_gemini_backend_handle_api_errors_preserves_ai_error_and_unexpected_bugs(
-    gemini_backend: GeminiBackend,
-) -> None:
+def test_gemini_backend_handle_api_errors_preserves_ai_error_and_unexpected_bugs() -> (
+    None
+):
+    backend = GeminiBackend(api_key="test-key", provider="gemini")
     with pytest.raises(AIError, match=r"^already wrapped$"):
-        with gemini_backend._handle_api_errors("generate_content"):
+        with backend._handle_api_errors("generate_content"):
             raise AIError("already wrapped")
 
     with pytest.raises(AttributeError, match="unexpected bug"):
-        with gemini_backend._handle_api_errors("generate_content"):
+        with backend._handle_api_errors("generate_content"):
             raise AttributeError("unexpected bug")
 
 
-def test_create_gemini_backend_named_entry() -> None:
-    providers = {"work": ProviderConfig(type="gemini", api_key="work-key")}
-    backend = create_gemini_backend(providers, "work")
-    assert isinstance(backend, GeminiBackend)
-    assert backend._api_key == "work-key"
-    assert backend.provider == "work"
-    assert create_gemini_backend(providers, "gemini") is None
-
-
-async def test_gemini_generate_content_sums_only_positive_prompt_tokens(
-    aiohttp_server: Any,
-) -> None:
-    """Prompt + tool-use prompt tokens sum only positive `int` values (ignoring negatives/bools)."""
+def test_positive_int_filters_invalid_values() -> None:
     assert _positive_int(True) == 0
     assert _positive_int(-5) == 0
     assert _positive_int("12") == 0
     assert _positive_int(18) == 18
 
+
+async def test_gemini_generate_content_sums_only_positive_prompt_tokens(
+    aiohttp_server: AiohttpServer,
+    load_gemini_models: LoadGeminiModels,
+) -> None:
+    """Prompt + tool-use prompt tokens sum only positive `int` values."""
+
     async def handle_generate(request: web.Request) -> web.Response:
         return web.json_response(
             {
-                "candidates": [{"content": {"parts": [{"text": "ok"}]}}],
+                "candidates": [
+                    {"content": {"parts": [{"text": json.dumps({"segments": []})}]}}
+                ],
                 "usageMetadata": {
                     "promptTokenCount": -5,
                     "toolUsePromptTokenCount": 18,
@@ -185,11 +190,14 @@ async def test_gemini_generate_content_sums_only_positive_prompt_tokens(
     app = web.Application()
     app.router.add_post("/v1beta/models/{model}:generateContent", handle_generate)
     server = await aiohttp_server(app)
-    backend = GeminiBackend(
-        api_key="key",
-        base_url=str(server.make_url("/")),
-        provider="gemini",
+
+    _, summary_model, _ = await load_gemini_models(
+        providers={
+            "gemini": ProviderConfig(api_key="key", base_url=str(server.make_url("/")))
+        },
+        summary=ModelConfig(provider="gemini", model="sum-guard-model"),
     )
+    assert summary_model is not None
 
     in_labels = {
         "provider": "gemini",
@@ -200,11 +208,24 @@ async def test_gemini_generate_content_sums_only_positive_prompt_tokens(
     out_labels = {**in_labels, "token_type": "output"}
     think_labels = {**in_labels, "token_type": "thinking"}
 
-    with track_ai_request(
-        provider="gemini", model="sum-guard-model", stage=AIStage.SUMMARY
-    ):
-        await backend.generate_content(model="sum-guard-model", contents="hi")
+    before_in = REGISTRY.get_sample_value("supernote_ai_tokens_total", in_labels) or 0.0
+    before_out = (
+        REGISTRY.get_sample_value("supernote_ai_tokens_total", out_labels) or 0.0
+    )
+    before_think = (
+        REGISTRY.get_sample_value("supernote_ai_tokens_total", think_labels) or 0.0
+    )
 
-    assert REGISTRY.get_sample_value("supernote_ai_tokens_total", in_labels) == 18.0
-    assert REGISTRY.get_sample_value("supernote_ai_tokens_total", out_labels) is None
-    assert REGISTRY.get_sample_value("supernote_ai_tokens_total", think_labels) == 7.0
+    await summary_model.summarize("hi")
+
+    assert (
+        REGISTRY.get_sample_value("supernote_ai_tokens_total", in_labels)
+        == before_in + 18.0
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_ai_tokens_total", out_labels) == before_out
+    )
+    assert (
+        REGISTRY.get_sample_value("supernote_ai_tokens_total", think_labels)
+        == before_think + 7.0
+    )

@@ -4,20 +4,17 @@ from __future__ import annotations
 
 import base64
 
+from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.ai.prompts import PageMetadata, format_ocr_prompt
-from supernote.server.components.gemini.backend import GeminiBackend
-from supernote.server.components.gemini.ocr import GeminiOcrModel, create_ocr_model
-from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
+from supernote.server.config import ModelConfig, ProviderConfig
 
-from .conftest import FakeGeminiServer
+from .conftest import FakeGeminiServer, LoadGeminiModels
 
 
 async def test_gemini_ocr_model(
-    gemini_backend: GeminiBackend,
+    gemini_ocr_model: OcrModel,
     fake_gemini: FakeGeminiServer,
 ) -> None:
-    ocr_model = GeminiOcrModel(gemini_backend, "gemini-2.0-flash-exp")
-
     page_meta = PageMetadata(
         file_name="real.note",
         page_index=0,
@@ -25,9 +22,9 @@ async def test_gemini_ocr_model(
         notebook_create_time=None,
     )
     ocr_prompt = format_ocr_prompt(page_meta)
-    ocr_result = await ocr_model.extract_text(b"fake-png-data", ocr_prompt)
+    ocr_result = await gemini_ocr_model.extract_text(b"fake-png-data", ocr_prompt)
     assert ocr_result == "Handwritten text content"
-    assert ocr_model.model_id == "gemini-2.0-flash-exp"
+    assert gemini_ocr_model.model_id == "gemini-2.0-flash-exp"
 
     assert len(fake_gemini.requests) == 1
     path, api_key, payload = fake_gemini.requests[0]
@@ -47,15 +44,21 @@ async def test_gemini_ocr_model(
     assert payload["generationConfig"] == {"mediaResolution": "MEDIA_RESOLUTION_HIGH"}
 
 
-def test_create_ocr_model() -> None:
-    assert create_ocr_model(ServerConfig()) is None
-
-    config = ServerConfig(
-        ai=AiConfig(
-            providers={"work": ProviderConfig(type="gemini", api_key="work-key")},
-            ocr=ModelConfig(provider="work", model="gemini-custom"),
-        )
+async def test_gemini_ocr_named_provider(
+    load_gemini_models: LoadGeminiModels,
+    fake_gemini: FakeGeminiServer,
+    gemini_base_url: str,
+) -> None:
+    ocr, _, _ = await load_gemini_models(
+        providers={
+            "work": ProviderConfig(
+                type="gemini", api_key="work-key", base_url=gemini_base_url
+            )
+        },
+        ocr=ModelConfig(provider="work", model="gemini-custom"),
     )
-    model = create_ocr_model(config)
-    assert isinstance(model, GeminiOcrModel)
-    assert model.model_id == "gemini-custom"
+    assert ocr is not None
+    assert ocr.provider == "work"
+    assert ocr.model_id == "gemini-custom"
+    assert await ocr.extract_text(b"png", "prompt") == "Handwritten text content"
+    assert fake_gemini.requests[0][1] == "work-key"

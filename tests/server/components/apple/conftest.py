@@ -1,15 +1,20 @@
-"""Reusable PyObjC Vision fakes for `supernote.server.components.apple` tests."""
+"""Reusable PyObjC Vision fakes and component fixtures for `supernote.server.components.apple` tests."""
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 import pytest
 
-from supernote.server.components.apple.backend import AppleVisionBackend
+from supernote.server.ai.models.ocr import OcrModel
+from supernote.server.config import AiConfig, ModelConfig, ProviderConfig
+from supernote.server.core import ServerCore
+from supernote.server.keys import OCR_MODEL_KEY
+from tests.server.components.conftest import LoadComponents
 
 
 class FakeObjCError(Exception):
@@ -181,6 +186,18 @@ class FakeVisionModule:
         return _RequestAllocator
 
 
+class LoadAppleOcr(Protocol):
+    """Callable fixture protocol for booting `ai` + `apple` and returning the bound `OcrModel`."""
+
+    async def __call__(
+        self,
+        model: str = "vision-accurate",
+        *,
+        provider: str = "apple",
+        providers: dict[str, ProviderConfig] | None = None,
+    ) -> OcrModel: ...
+
+
 @pytest.fixture
 def fake_objc() -> FakeObjCModule:
     return FakeObjCModule()
@@ -192,11 +209,36 @@ def fake_vision() -> FakeVisionModule:
 
 
 @pytest.fixture
-def apple_backend(
+def load_apple_ocr(
+    monkeypatch: pytest.MonkeyPatch,
+    component_core: ServerCore,
+    load_components: LoadComponents,
     fake_objc: FakeObjCModule,
     fake_vision: FakeVisionModule,
-) -> AppleVisionBackend:
-    return AppleVisionBackend(
-        provider="apple",
-        vision_loader=lambda: (fake_objc, fake_vision),
-    )
+) -> LoadAppleOcr:
+    """Install fake PyObjC modules and return a loader that boots `ai` + `apple`."""
+    monkeypatch.setitem(sys.modules, "objc", fake_objc)  # type: ignore[arg-type]
+    monkeypatch.setitem(sys.modules, "Vision", fake_vision)  # type: ignore[arg-type]
+
+    async def _load(
+        model: str = "vision-accurate",
+        *,
+        provider: str = "apple",
+        providers: dict[str, ProviderConfig] | None = None,
+    ) -> OcrModel:
+        component_core.config.ai = AiConfig(
+            providers=providers or {},
+            ocr=ModelConfig(provider=provider, model=model),
+        )
+        await load_components("ai", "apple")
+        ocr_model = component_core.app[OCR_MODEL_KEY]
+        assert ocr_model is not None
+        return ocr_model
+
+    return _load
+
+
+@pytest.fixture
+async def apple_ocr_model(load_apple_ocr: LoadAppleOcr) -> OcrModel:
+    """Return a component-wired Apple Vision `vision-accurate` OCR model."""
+    return await load_apple_ocr("vision-accurate")
