@@ -17,7 +17,7 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Collection, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -69,7 +69,7 @@ from ..events import (
     SyncCompletedEvent,
 )
 from ..services.file import FileService
-from ..services.processor_modules import ProcessorModule
+from ..services.processor_modules import ProcessorModule, TaskGraph, TaskScope
 from ..services.summary import SummaryService
 from ..utils.note_content import infer_page_date, normalize_page_style_type
 
@@ -116,10 +116,23 @@ class ProcessorService:
         self._set_processing_enabled(True)
         self._update_queue_metrics()
 
-        # Module registry
-        self.global_pre_modules: list[ProcessorModule] = []
-        self.page_modules: list[ProcessorModule] = []
-        self.global_post_modules: list[ProcessorModule] = []
+        # Task DAG registry
+        self.task_graph: TaskGraph = TaskGraph.empty()
+
+    @property
+    def page_modules(self) -> list[ProcessorModule]:
+        """Page-scoped modules in deterministic topological order."""
+        return [m for m in self.task_graph.modules if m.scope == TaskScope.PAGE]
+
+    @property
+    def global_post_modules(self) -> list[ProcessorModule]:
+        """File-scoped modules that depend transitively on at least one page module."""
+        return [
+            m
+            for m in self.task_graph.modules
+            if m.scope == TaskScope.FILE
+            and self.task_graph.has_page_ancestor(m.task_type)
+        ]
 
     def _set_processing_enabled(self, enabled: bool) -> None:
         if enabled:
@@ -150,6 +163,16 @@ class ProcessorService:
             else:
                 self._file_lock_refcounts[file_id] = remaining
 
+    def set_modules(self, modules: Sequence[ProcessorModule]) -> None:
+        """Validate and install the processor task dependency graph."""
+        self.task_graph = TaskGraph.build(modules)
+        init_processor_module_metrics(
+            m.name
+            for m in self.task_graph.modules
+            if self.task_graph.is_effectively_enabled(m.task_type)
+        )
+        logger.info("Registered %d processor modules.", len(self.task_graph))
+
     def register_modules(
         self,
         hashing: ProcessorModule,
@@ -158,20 +181,10 @@ class ProcessorService:
         embedding: ProcessorModule | None = None,
         summary: ProcessorModule | None = None,
     ) -> None:
-        """Register processing modules in logical order."""
-        self.global_pre_modules = [hashing]
-        self.page_modules = [m for m in (png, ocr, embedding) if m is not None]
-        self.global_post_modules = [m for m in (summary,) if m is not None]
-        init_processor_module_metrics(
-            m.name
-            for m in (
-                *self.global_pre_modules,
-                *self.page_modules,
-                *self.global_post_modules,
-            )
-            if m.enabled
+        """Register the built-in processing modules into the task dependency graph."""
+        self.set_modules(
+            [m for m in (hashing, png, ocr, embedding, summary) if m is not None]
         )
-        logger.info("Registered all processor modules.")
 
     async def start(self) -> None:
         """Start the processor service workers and subscriptions."""
@@ -297,11 +310,7 @@ class ProcessorService:
         logger.info(f"Received delete for note: {file_id}")
 
         async with self._file_lock(file_id):
-            for module in (
-                *self.global_pre_modules,
-                *self.page_modules,
-                *self.global_post_modules,
-            ):
+            for module in reversed(self.task_graph.modules):
                 await module.cleanup_file(file_id, event.user_id, self.session_manager)
 
             async with self.session_manager.session() as session:
@@ -393,37 +402,35 @@ class ProcessorService:
         logger.info("Checking for files with missing tasks...")
         conditions = [UserFileDO.id.not_in(select(SystemTaskDO.file_id))]
 
-        for module in (*self.global_pre_modules, *self.global_post_modules):
-            if not module.enabled:
+        for module in self.task_graph.modules:
+            if not self.task_graph.is_effectively_enabled(module.task_type):
                 continue
-            task_stmt = (
-                select(SystemTaskDO.file_id)
-                .where(SystemTaskDO.task_type == module.task_type)
-                .where(SystemTaskDO.key == "global")
-            )
-            if module.version is not None:
-                task_stmt = task_stmt.where(SystemTaskDO.data == module.version)
-            conditions.append(UserFileDO.id.not_in(task_stmt))
-
-        for module in self.page_modules:
-            if not module.enabled:
-                continue
-            page_task_exists = (
-                select(SystemTaskDO.id)
-                .where(SystemTaskDO.file_id == NotePageContentDO.file_id)
-                .where(SystemTaskDO.task_type == module.task_type)
-                .where(SystemTaskDO.key == "page_" + NotePageContentDO.page_id)
-            )
-            if module.version is not None:
-                page_task_exists = page_task_exists.where(
-                    SystemTaskDO.data == module.version
+            if module.scope == TaskScope.FILE:
+                task_stmt = (
+                    select(SystemTaskDO.file_id)
+                    .where(SystemTaskDO.task_type == module.task_type)
+                    .where(SystemTaskDO.key == "global")
                 )
-            page_missing_stmt = (
-                select(NotePageContentDO.file_id)
-                .where(NotePageContentDO.page_id != "")
-                .where(~page_task_exists.correlate(NotePageContentDO).exists())
-            )
-            conditions.append(UserFileDO.id.in_(page_missing_stmt))
+                if module.version is not None:
+                    task_stmt = task_stmt.where(SystemTaskDO.data == module.version)
+                conditions.append(UserFileDO.id.not_in(task_stmt))
+            else:
+                page_task_exists = (
+                    select(SystemTaskDO.id)
+                    .where(SystemTaskDO.file_id == NotePageContentDO.file_id)
+                    .where(SystemTaskDO.task_type == module.task_type)
+                    .where(SystemTaskDO.key == "page_" + NotePageContentDO.page_id)
+                )
+                if module.version is not None:
+                    page_task_exists = page_task_exists.where(
+                        SystemTaskDO.data == module.version
+                    )
+                page_missing_stmt = (
+                    select(NotePageContentDO.file_id)
+                    .where(NotePageContentDO.page_id != "")
+                    .where(~page_task_exists.correlate(NotePageContentDO).exists())
+                )
+                conditions.append(UserFileDO.id.in_(page_missing_stmt))
 
         async with self.session_manager.session() as session:
             stmt = (
@@ -488,7 +495,7 @@ class ProcessorService:
     async def process_file(
         self,
         file_id: int,
-        task_types: set[TaskType] | None = None,
+        task_types: Collection[str] | None = None,
         page_indices: set[int] | None = None,
     ) -> bool:
         """Orchestrate the processing pipeline (or a subset of task_types/page_indices) for a single file."""
@@ -507,88 +514,178 @@ class ProcessorService:
                 run.set_succeeded(ok)
                 return ok
 
+    def _collect_page_frontier(
+        self,
+        run_graph: TaskGraph,
+        completed: set[str],
+    ) -> list[ProcessorModule]:
+        """Collect the maximal `PAGE` sub-DAG reachable before the next `FILE` barrier."""
+        frontier: set[str] = set()
+        result: list[ProcessorModule] = []
+        for mod in run_graph.modules:
+            if mod.scope != TaskScope.PAGE or mod.task_type in completed:
+                continue
+            if all(
+                dep in completed or dep in frontier
+                for dep in run_graph.depends_on(mod.task_type)
+            ):
+                frontier.add(mod.task_type)
+                result.append(mod)
+        return result
+
+    async def _load_pages(
+        self, file_id: int, page_indices: set[int] | None
+    ) -> list[tuple[int, str]]:
+        """Query ordered `(page_index, page_id)` pairs for ``file_id``."""
+        async with self.session_manager.session() as session:
+            stmt = (
+                select(NotePageContentDO.page_index, NotePageContentDO.page_id)
+                .where(NotePageContentDO.file_id == file_id)
+                .order_by(NotePageContentDO.page_index)
+            )
+            if page_indices is not None:
+                stmt = stmt.where(NotePageContentDO.page_index.in_(page_indices))
+            result = await session.execute(stmt)
+            return [(int(idx), str(pid)) for idx, pid in result.all() if pid]
+
     async def _process_file_locked(
         self,
         file_id: int,
-        task_types: set[TaskType] | None = None,
+        task_types: Collection[str] | None = None,
         page_indices: set[int] | None = None,
     ) -> bool:
         logger.info(f"Processing file {file_id}...")
 
-        if not self.global_pre_modules:
-            logger.error("Modules not fully registered. Skipping processing.")
+        if not self.task_graph:
+            logger.error("Modules not registered. Skipping processing.")
             return False
 
-        pre_modules = [
-            m
-            for m in self.global_pre_modules
-            if task_types is None or m.task_type in task_types
-        ]
-        page_modules = [
-            m
-            for m in self.page_modules
-            if task_types is None or m.task_type in task_types
-        ]
-        post_modules = [
-            m
-            for m in self.global_post_modules
-            if (task_types is None or m.task_type in task_types)
-            and page_indices is None
-        ]
+        if task_types is not None or page_indices is not None:
+            requested = (
+                task_types
+                if task_types is not None
+                else [m.task_type for m in self.task_graph.modules]
+            )
+            run_graph = self.task_graph.subset(
+                requested,
+                exclude_page_dependent_file_tasks=page_indices is not None,
+            )
+        else:
+            run_graph = self.task_graph
 
-        # Pipeline Stage: Global Pre-processing (Hashing)
-        for module in pre_modules:
-            if not await module.run(file_id, self.session_manager):
-                logger.error(f"Pre-module {module.name} failed. Aborting pipeline.")
-                await self._publish_processing_failed(file_id, module.name)
-                return False
+        if not run_graph:
+            return True
 
-        all_pages_ok = True
-        if page_modules:
-            # Identify Pages
-            async with self.session_manager.session() as session:
-                # We want both index and ID. Index is needed for order, ID for tasks/storage.
-                stmt = (
-                    select(NotePageContentDO.page_index, NotePageContentDO.page_id)
-                    .where(NotePageContentDO.file_id == file_id)
-                    .order_by(NotePageContentDO.page_index)
+        completed: set[str] = set()
+        task_succeeded: dict[str, bool] = {}
+        overall_ok = True
+
+        while len(completed) < len(run_graph):
+            ready = [
+                m
+                for m in run_graph.modules
+                if m.task_type not in completed
+                and all(dep in completed for dep in run_graph.depends_on(m.task_type))
+            ]
+            ready_file = [m for m in ready if m.scope == TaskScope.FILE]
+
+            if ready_file:
+                for mod in ready_file:
+                    task_type = mod.task_type
+                    if any(
+                        not task_succeeded.get(dep, False)
+                        for dep in run_graph.depends_on(task_type)
+                    ):
+                        task_succeeded[task_type] = False
+                        completed.add(task_type)
+                        continue
+
+                    if await mod.run(file_id, self.session_manager):
+                        task_succeeded[task_type] = True
+                    else:
+                        logger.error(
+                            f"File module {mod.name} failed for file {file_id}."
+                        )
+                        await self._publish_processing_failed(file_id, mod.name)
+                        task_succeeded[task_type] = False
+                        overall_ok = False
+                    completed.add(task_type)
+                continue
+
+            ready_page = [m.task_type for m in ready if m.scope == TaskScope.PAGE]
+            page_frontier = self._collect_page_frontier(run_graph, completed)
+            frontier_types = {m.task_type for m in page_frontier}
+            has_runnable_root = any(
+                all(
+                    task_succeeded.get(dep, False)
+                    for dep in run_graph.depends_on(t)
+                    if dep not in frontier_types
                 )
-                if page_indices is not None:
-                    stmt = stmt.where(NotePageContentDO.page_index.in_(page_indices))
-                result = await session.execute(stmt)
-                pages = result.all()  # List of (index, id) tuples
+                for t in ready_page
+            )
+            if not has_runnable_root:
+                for mod in page_frontier:
+                    task_succeeded[mod.task_type] = False
+                    completed.add(mod.task_type)
+                continue
 
+            pages = await self._load_pages(file_id, page_indices)
             if not pages:
                 logger.info(f"No pages found for file {file_id}. Skipping page tasks.")
-            else:
-                # Pipeline Stage: Per-Page Processing (Parallel across pages with limit)
-                sem = asyncio.Semaphore(self.page_concurrency)
+                for mod in page_frontier:
+                    task_succeeded[mod.task_type] = all(
+                        task_succeeded.get(dep, False)
+                        for dep in run_graph.depends_on(mod.task_type)
+                    )
+                    completed.add(mod.task_type)
+                continue
 
-                async def throttled_process_page(page_index: int, page_id: str) -> bool:
-                    async with sem:
-                        return await self._process_page(
-                            file_id, page_index, page_id, modules=page_modules
-                        )
+            sem = asyncio.Semaphore(self.page_concurrency)
 
-                tasks = [
+            async def throttled_process_page(
+                page_index: int, page_id: str
+            ) -> dict[str, bool]:
+                async with sem:
+                    return await self._process_page_dag(
+                        file_id,
+                        page_index,
+                        page_id,
+                        run_graph=run_graph,
+                        page_frontier=page_frontier,
+                        external_succeeded=task_succeeded,
+                    )
+
+            page_results = await asyncio.gather(
+                *(
                     throttled_process_page(page_index, page_id)
                     for page_index, page_id in pages
-                    if page_id  # Strict Check: Everything must have a page_id
-                ]
-                page_results = await asyncio.gather(*tasks)
-                all_pages_ok = all(page_results)
+                )
+            )
 
-        # Pipeline Stage: Global Post-processing (Summary)
-        post_ok = True
-        for module in post_modules:
-            if not await module.run(file_id, self.session_manager):
-                await self._publish_processing_failed(file_id, module.name)
-                post_ok = False
+            for mod in page_frontier:
+                t = mod.task_type
+                all_pages_for_task_ok = all(r.get(t, False) for r in page_results)
+                task_succeeded[t] = all_pages_for_task_ok
+                if not all_pages_for_task_ok:
+                    overall_ok = False
+                completed.add(t)
 
-        if task_types is None and page_indices is None:
+        if (
+            task_types is None
+            and page_indices is None
+            and (
+                overall_ok
+                or any(
+                    task_succeeded.get(m.task_type, False)
+                    for m in run_graph.modules
+                    if m.scope == TaskScope.FILE
+                    and not run_graph.has_page_ancestor(m.task_type)
+                )
+            )
+        ):
             await self._publish_processing_completed(file_id)
 
-        return all_pages_ok and post_ok
+        return overall_ok
 
     async def _publish_processing_completed(self, file_id: int) -> None:
         """Publish NoteProcessingCompletedEvent after pipeline stages complete."""
@@ -646,39 +743,56 @@ class ProcessorService:
             )
         )
 
-    async def _process_page(
+    async def _process_page_dag(
         self,
         file_id: int,
         page_index: int,
         page_id: str,
-        modules: list[ProcessorModule] | None = None,
-    ) -> bool:
-        """Process modules for a single page sequentially."""
-        active_modules = modules if modules is not None else self.page_modules
+        *,
+        run_graph: TaskGraph,
+        page_frontier: Sequence[ProcessorModule],
+        external_succeeded: dict[str, bool],
+    ) -> dict[str, bool]:
+        """Execute a `PAGE` sub-DAG for a single page, isolating failures to dependent branches."""
+        frontier_types = {m.task_type for m in page_frontier}
+        page_task_ok: dict[str, bool] = {}
         try:
-            for module in active_modules:
-                # We enforce page_id as the task key
-                success = await module.run(
+            for module in page_frontier:
+                task_type = module.task_type
+                deps = run_graph.depends_on(task_type)
+                if any(
+                    not (
+                        page_task_ok.get(dep, False)
+                        if dep in frontier_types
+                        else external_succeeded.get(dep, False)
+                    )
+                    for dep in deps
+                ):
+                    page_task_ok[task_type] = False
+                    continue
+
+                if await module.run(
                     file_id,
                     self.session_manager,
                     page_index=page_index,
-                    page_id=page_id,  # Pass page_id to modules
-                )
-                if not success:
+                    page_id=page_id,
+                ):
+                    page_task_ok[task_type] = True
+                else:
                     logger.warning(
-                        f"Page {page_id} (idx {page_index}) processing stalled at {module.name} for file {file_id}"
+                        f"Page {page_id} (idx {page_index}) processing failed at {module.name} for file {file_id}"
                     )
                     await self._publish_processing_failed(
                         file_id, module.name, page_id=page_id
                     )
-                    return False
-            return True
+                    page_task_ok[task_type] = False
+            return page_task_ok
         except Exception as e:
             logger.error(
                 f"Unhandled error processing page {page_id} (idx {page_index}) for file {file_id}: {e}",
                 exc_info=True,
             )
-            return False
+            return page_task_ok
 
     async def list_system_tasks(
         self,

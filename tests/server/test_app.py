@@ -259,7 +259,7 @@ async def test_png_module_registration_matrix(
     gemini_api_key: str | None,
     expected_png: bool,
 ) -> None:
-    """Verify PngConversionModule is only registered when OCR or web notebook preview is active."""
+    """Verify PngConversionModule is only enabled when OCR or web notebook preview is active."""
     cfg = dataclasses.replace(
         server_config,
         web_enabled=web_enabled,
@@ -269,7 +269,9 @@ async def test_png_module_registration_matrix(
     app = create_app(cfg)
     await aiohttp_client(app)
     page_modules = app[PROCESSOR_SERVICE_KEY].page_modules
-    has_png = any(isinstance(m, PngConversionModule) for m in page_modules)
+    has_png = any(
+        isinstance(m, PngConversionModule) and m.enabled for m in page_modules
+    )
     assert has_png is expected_png
 
 

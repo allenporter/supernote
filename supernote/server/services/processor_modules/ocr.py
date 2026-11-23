@@ -21,7 +21,7 @@ from supernote.server.db.models.note_processing import NotePageMetadataDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import NotePageTranscribedEvent
 from supernote.server.services.file import FileService
-from supernote.server.services.processor_modules import ProcessorModule
+from supernote.server.services.processor_modules import ProcessorModule, TaskScope
 from supernote.server.utils.note_content import get_page_content_by_id
 from supernote.server.utils.paths import get_page_png_path
 
@@ -70,6 +70,14 @@ class OcrModule(ProcessorModule):
     @property
     def task_type(self) -> TaskType:
         return TaskType.OCR_EXTRACTION
+
+    @property
+    def scope(self) -> TaskScope:
+        return TaskScope.PAGE
+
+    @property
+    def depends_on(self) -> tuple[TaskType, ...]:
+        return (TaskType.PNG_CONVERSION,)
 
     @property
     def enabled(self) -> bool:

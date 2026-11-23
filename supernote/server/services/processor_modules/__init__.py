@@ -14,12 +14,18 @@ idempotent stage of the background `.note` processing pipeline orchestrated by
 See `supernote.guides.note_processing_design` and `supernote.guides.mcp`.
 """
 
+from __future__ import annotations
+
 import abc
 import asyncio
+import graphlib
+import heapq
 import logging
 import time
+from collections.abc import Iterable, Sequence
+from enum import Enum
 
-from supernote.models.base import ProcessingStatus, TaskType
+from supernote.models.base import ProcessingStatus
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.metrics import (
     PROCESSOR_TASK_DURATION_SECONDS,
@@ -27,7 +33,205 @@ from supernote.server.metrics import (
 )
 from supernote.server.utils.tasks import get_task, update_task_status
 
+__all__ = [
+    "DuplicateTaskError",
+    "MissingTaskDependencyError",
+    "ProcessorModule",
+    "TaskDependencyCycleError",
+    "TaskGraph",
+    "TaskGraphError",
+    "TaskScope",
+]
+
 logger = logging.getLogger(__name__)
+
+
+def _task_key(task_type: str | Enum) -> str:
+    """Return the wire/DB string value for a `TaskType` enum or raw task type string."""
+    return str(task_type.value) if isinstance(task_type, Enum) else str(task_type)
+
+
+class TaskScope(str, Enum):
+    """Execution granularity for a `ProcessorModule`."""
+
+    FILE = "file"
+    """Runs once per file using checkpoint key ``'global'``."""
+
+    PAGE = "page"
+    """Fans out once per page using checkpoint key ``'page_{page_id}'``."""
+
+
+class TaskGraphError(Exception):
+    """Base exception for invalid processor task dependency graphs."""
+
+
+class DuplicateTaskError(TaskGraphError):
+    """Raised when two registered modules share the same `task_type`."""
+
+    def __init__(self, task_type: str) -> None:
+        self.task_type = task_type
+        super().__init__(f"Processor task type {task_type!r} is already registered")
+
+
+class MissingTaskDependencyError(TaskGraphError):
+    """Raised when a module declares an unregistered `depends_on` task type."""
+
+    def __init__(self, task_type: str, dependency: str) -> None:
+        self.task_type = task_type
+        self.dependency = dependency
+        super().__init__(
+            f"Processor task {task_type!r} depends on missing task {dependency!r}"
+        )
+
+
+class TaskDependencyCycleError(TaskGraphError):
+    """Raised when processor task dependencies contain a cycle."""
+
+    def __init__(self, cycle: Sequence[str]) -> None:
+        self.cycle = tuple(cycle)
+        super().__init__(
+            f"Processor task dependency cycle detected: {' -> '.join(self.cycle)}"
+        )
+
+
+class TaskGraph:
+    """Validated, deterministically ordered DAG of `ProcessorModule` instances."""
+
+    def __init__(
+        self,
+        ordered: tuple[ProcessorModule, ...],
+        by_type: dict[str, ProcessorModule],
+        deps: dict[str, tuple[str, ...]],
+        ancestors: dict[str, frozenset[str]],
+    ) -> None:
+        self._ordered = ordered
+        self._by_type = by_type
+        self._deps = deps
+        self._ancestors = ancestors
+
+    @classmethod
+    def empty(cls) -> TaskGraph:
+        """Return an empty task graph."""
+        return cls((), {}, {}, {})
+
+    @classmethod
+    def build(cls, modules: Sequence[ProcessorModule]) -> TaskGraph:
+        """Validate and topologically sort ``modules`` preserving registration tie-breaks."""
+        by_type: dict[str, ProcessorModule] = {}
+        reg_index: dict[str, int] = {}
+        for idx, mod in enumerate(modules):
+            task_type = _task_key(mod.task_type)
+            if task_type in by_type:
+                raise DuplicateTaskError(task_type)
+            by_type[task_type] = mod
+            reg_index[task_type] = idx
+
+        deps: dict[str, tuple[str, ...]] = {}
+        sorter: graphlib.TopologicalSorter[str] = graphlib.TopologicalSorter()
+        for task_type, mod in by_type.items():
+            unique_deps = tuple(dict.fromkeys(_task_key(d) for d in mod.depends_on))
+            for dep in unique_deps:
+                if dep not in by_type:
+                    raise MissingTaskDependencyError(task_type, dep)
+            deps[task_type] = unique_deps
+            sorter.add(task_type, *unique_deps)
+
+        try:
+            sorter.prepare()
+        except graphlib.CycleError as exc:
+            raise TaskDependencyCycleError(exc.args[1]) from exc
+
+        ready: list[tuple[int, str]] = []
+        ordered: list[ProcessorModule] = []
+        while sorter.is_active():
+            for task_type in sorter.get_ready():
+                heapq.heappush(ready, (reg_index[task_type], task_type))
+            _, current = heapq.heappop(ready)
+            ordered.append(by_type[current])
+            sorter.done(current)
+
+        ancestors: dict[str, frozenset[str]] = {}
+        for mod in ordered:
+            t = _task_key(mod.task_type)
+            upstream: set[str] = set()
+            for dep in deps[t]:
+                upstream.add(dep)
+                upstream.update(ancestors[dep])
+            ancestors[t] = frozenset(upstream)
+
+        return cls(
+            ordered=tuple(ordered),
+            by_type=by_type,
+            deps=deps,
+            ancestors=ancestors,
+        )
+
+    def __bool__(self) -> bool:
+        return bool(self._ordered)
+
+    def __len__(self) -> int:
+        return len(self._ordered)
+
+    @property
+    def modules(self) -> tuple[ProcessorModule, ...]:
+        """All registered modules in deterministic topological order."""
+        return self._ordered
+
+    def depends_on(self, task_type: str) -> tuple[str, ...]:
+        """Return direct upstream `task_type` dependencies for ``task_type``."""
+        return self._deps.get(_task_key(task_type), ())
+
+    def ancestors(self, task_type: str) -> frozenset[str]:
+        """Return transitive upstream dependencies for ``task_type``."""
+        return self._ancestors.get(_task_key(task_type), frozenset())
+
+    def has_page_ancestor(self, task_type: str) -> bool:
+        """Return True if any transitive upstream dependency has `TaskScope.PAGE`."""
+        return any(
+            self._by_type[ancestor].scope == TaskScope.PAGE
+            for ancestor in self.ancestors(task_type)
+        )
+
+    def is_effectively_enabled(self, task_type: str) -> bool:
+        """Return True iff ``task_type`` and all its upstream ancestors are enabled."""
+        t = _task_key(task_type)
+        mod = self._by_type.get(t)
+        if mod is None or not mod.enabled:
+            return False
+        return all(self._by_type[ancestor].enabled for ancestor in self._ancestors[t])
+
+    def subset(
+        self,
+        task_types: Iterable[str],
+        *,
+        exclude_page_dependent_file_tasks: bool = False,
+    ) -> TaskGraph:
+        """Return a closed sub-graph containing ``task_types`` and their upstream ancestors."""
+        selected: set[str] = set()
+        for raw in task_types:
+            t = _task_key(raw)
+            if t not in self._by_type:
+                continue
+            selected.add(t)
+            selected.update(self._ancestors[t])
+
+        if exclude_page_dependent_file_tasks:
+            blocked_file_tasks = {
+                t
+                for t in selected
+                if self._by_type[t].scope == TaskScope.FILE
+                and self.has_page_ancestor(t)
+            }
+            if blocked_file_tasks:
+                selected = {
+                    t
+                    for t in selected
+                    if t not in blocked_file_tasks
+                    and self._ancestors[t].isdisjoint(blocked_file_tasks)
+                }
+
+        ordered = [m for m in self._ordered if _task_key(m.task_type) in selected]
+        return TaskGraph.build(ordered)
 
 
 class ProcessorModule(abc.ABC):
@@ -47,10 +251,20 @@ class ProcessorModule(abc.ABC):
 
     @property
     @abc.abstractmethod
-    def task_type(self) -> TaskType:
+    def task_type(self) -> str:
         """The Task Type this module handles.
         Matches the `task_type` column in `f_system_task`.
         """
+
+    @property
+    def scope(self) -> TaskScope:
+        """Execution granularity (`TaskScope.FILE` or `TaskScope.PAGE`)."""
+        return TaskScope.FILE
+
+    @property
+    def depends_on(self) -> Sequence[str]:
+        """Upstream `task_type` IDs that must succeed before this module runs."""
+        return ()
 
     @property
     def enabled(self) -> bool:
@@ -146,7 +360,7 @@ class ProcessorModule(abc.ABC):
 
         Returns:
             bool: True if the process is completed or skipped. False if it failed.
-                  A False return value usually stalls the pipeline for this page/file.
+                  A False return value stalls dependent tasks for this page/file.
         """
         if not self.enabled:
             return True
