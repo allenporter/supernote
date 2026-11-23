@@ -1,13 +1,18 @@
 """iCalendar export service for converting Supernote schedule tasks into RFC 5545 `VTODO` feeds.
 
 `ICalExportService` queries task groups and tasks via
-`supernote.server.services.schedule.ScheduleService` and maps each task (`ScheduleTaskDO`)
+`supernote.server.components.schedule.service.ScheduleService` and maps each task (`ScheduleTaskDO`)
 into an `ical.todo.Todo` component (`task_to_vtodo`), preserving status, priority,
 recurrence rules (`RRULE`), task group categories, and decoded `.note` page deep-links
 (`supernote.models.schedule.ScheduleTaskLinkDTO`).
 
-Exposed at `GET /api/schedule/feed.ics` by `supernote.server.routes.schedule`.
+Exposed at `GET /api/schedule/feed.ics` by `supernote.server.components.schedule.http`.
 See `supernote.guides.webhooks_and_integrations` and `supernote.guides.schedule_api`.
+
+Note: This module lives inside the `schedule` component while schedule tasks are its sole
+producer. Extract it into a standalone `ical`/`caldav` component if a second domain
+contributes calendar items (e.g., dated BuJo `VJOURNAL` entries in #643) or when a
+dedicated two-way CalDAV protocol surface is added (#508).
 """
 
 import binascii
@@ -23,7 +28,8 @@ from ical.types import Recur
 from supernote.models.schedule import ScheduleTaskInfo, ScheduleTaskLinkDTO
 from supernote.server.db.models.schedule import ScheduleTaskDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.services.schedule import ScheduleService
+
+from .service import ScheduleService
 
 logger = logging.getLogger(__name__)
 

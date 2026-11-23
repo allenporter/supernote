@@ -28,7 +28,6 @@ if TYPE_CHECKING:
     from .services.file import FileService
     from .services.integrity import IntegrityService
     from .services.processor import ProcessorService
-    from .services.schedule import ScheduleService
     from .services.search import SearchService
     from .services.summary import SummaryService
     from .services.user import UserService
@@ -49,7 +48,6 @@ EVENT_LOG_SERVICE_KEY: web.AppKey[EventLogService] = web.AppKey("event_log_servi
 USER_SERVICE_KEY: web.AppKey[UserService] = web.AppKey("user_service")
 FILE_SERVICE_KEY: web.AppKey[FileService] = web.AppKey("file_service")
 INTEGRITY_SERVICE_KEY: web.AppKey[IntegrityService] = web.AppKey("integrity_service")
-SCHEDULE_SERVICE_KEY: web.AppKey[ScheduleService] = web.AppKey("schedule_service")
 OCR_MODEL_KEY: web.AppKey[OcrModel | None] = web.AppKey("ocr_model")
 SUMMARY_MODEL_KEY: web.AppKey[SummaryModel | None] = web.AppKey("summary_model")
 EMBEDDING_MODEL_KEY: web.AppKey[EmbeddingModel | None] = web.AppKey("embedding_model")

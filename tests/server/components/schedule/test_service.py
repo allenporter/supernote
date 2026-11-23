@@ -2,13 +2,13 @@ import asyncio
 
 import pytest
 
+from supernote.server.components.schedule.service import ScheduleService
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
     LocalEventBus,
     ScheduleTaskUpdatedEvent,
     ScheduleUpdatedEvent,
 )
-from supernote.server.services.schedule import ScheduleService
 
 
 @pytest.fixture

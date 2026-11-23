@@ -284,7 +284,13 @@ async def test_all_builtin_components_http_platform_end_to_end(
 
     resources = list(component_core.app.router.resources())
     canonicals = [r.canonical for r in resources]
-    for expected_path in ("/", "/static", "/metrics", "/socket.io/"):
+    for expected_path in (
+        "/",
+        "/static",
+        "/metrics",
+        "/socket.io/",
+        "/api/schedule/feed.ics",
+    ):
         assert expected_path in canonicals
     # Deferred public catch-all resources (e.g. MCP ASGIResource) must be mounted last.
     assert resources[-len(http_registrar.public_resources) :] == list(

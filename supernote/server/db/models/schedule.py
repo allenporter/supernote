@@ -3,8 +3,8 @@
 Persists user task lists (`t_schedule_task_group`) and individual schedule tasks
 (`t_schedule_task`) including status, importance, due/completed timestamps, RFC 5545
 recurrence rules, base64-encoded `.note` page links, and sort indexes. Managed by
-`supernote.server.services.schedule.ScheduleService` and exported by
-`supernote.server.services.ical_export.ICalExportService`. See `supernote.guides.schedule_api`.
+`supernote.server.components.schedule.service.ScheduleService` and exported by
+`supernote.server.components.schedule.ical_export.ICalExportService`. See `supernote.guides.schedule_api`.
 """
 
 import time

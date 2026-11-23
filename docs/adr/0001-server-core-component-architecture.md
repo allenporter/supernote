@@ -78,7 +78,7 @@ class Component(Protocol):
     async def async_stop(self, core: ServerCore) -> None: ...
 ```
 
-- **`domain`**: Unique lowercase identifier matching `^[a-z][a-z0-9_]*$` (e.g., `"http"`, `"mcp"`, `"metrics"`, `"socketio"`, `"web_ui"`, `"webhooks"`). Invalid or empty domains fail fast with `ComponentError`; duplicates raise `DuplicateComponentError`.
+- **`domain`**: Unique lowercase identifier matching `^[a-z][a-z0-9_]*$` (e.g., `"http"`, `"mcp"`, `"metrics"`, `"oauth"`, `"schedule"`, `"socketio"`, `"web_ui"`, `"webhooks"`). Invalid or empty domains fail fast with `ComponentError`; duplicates raise `DuplicateComponentError`.
 - **`dependencies`**: Ordered sequence of `domain` strings that must complete `async_setup` and `async_start` before this component (and execute `async_stop` after it).
 - **`platforms`**: Ordered sequence of platform names implemented by this component (e.g., `("http",)`), loaded lazily via `ComponentLoader.async_load_platform(platform, core, registrar)` calling `<component_pkg>.<platform>:async_setup_<platform>(core, registrar)`.
 
@@ -87,7 +87,7 @@ class Component(Protocol):
 Both built-in components and third-party plugins register into the same [`ComponentLoader`](../../supernote/server/core.py) owned by `create_app`, allowing external plugins to depend on built-in component domains (for example, `dependencies = ("search",)`):
 
 1. **Built-In Vertical Components ([`supernote/server/components/`](../../supernote/server/components/__init__.py))**:
-   - Self-contained packages under `supernote/server/components/<domain>/` (`http`, `mcp`, `metrics`, `socketio`, `web_ui`, `webhooks`) with 1:1 mirrored tests under `tests/server/components/<domain>/`.
+   - Self-contained packages under `supernote/server/components/<domain>/` (`http`, `mcp`, `metrics`, `oauth`, `schedule`, `socketio`, `web_ui`, `webhooks`) with 1:1 mirrored tests under `tests/server/components/<domain>/`.
    - Declared centrally in `BUILTIN_COMPONENTS` (`BuiltinComponentSpec(domain, import_path, default_enabled)`) and loaded lazily by `load_builtin_components(loader, component_configs)` so disabled components are never imported.
    - **Config convention**: Legacy flat `ServerConfig` keys (`mcp_enabled`, `metrics_enabled`, `web_enabled`, etc.) remain on `ServerConfig` for backwards-compatible `config.yaml` files, while new/isolated components (e.g., [`webhooks/config.py`](../../supernote/server/components/webhooks/config.py)) own their own `mashumaro` config schema parsed from the per-domain `config: Mapping[str, Any]` dict in `async_setup`.
    - **Platform conformance**: `KNOWN_PLATFORMS` and [`tests/server/components/test_init.py`](../../tests/server/components/test_init.py) enforce 1:1 parity between `BUILTIN_COMPONENTS`, disk packages, declared `platforms` $\leftrightarrow$ `<platform>.py` modules, lazy imports, and cross-component import isolation.
@@ -199,7 +199,7 @@ Each phase ships in small, independently tested PRs (~150–300 LoC of productio
 
 ### Phase 4: Explicit Pause-and-Reassess Gate (Horizontal Domains)
 
-Before extracting any of the five older horizontal domains—`schedule`, `summary`, `search`, `processor`, or `web_ui`—implementation **must pause and reassess** against verified cross-domain coupling on `origin/main`:
+Before extracting any of the remaining horizontal domains—`summary`, `search`, or `processor`—implementation **must pause and reassess** against verified cross-domain coupling on `origin/main`:
 
 - **`summary` ↔ Core VFS GC**: [`FileService._filter_unreferenced_summary_keys`](../../supernote/server/services/file.py) directly queries [`SummaryDO`](../../supernote/server/db/models/summary.py) (`SummaryDO.handwrite_inner_name`) during `cleanup_unreferenced_blobs`. Extracting `summary` requires a core blob-reference provider protocol on `ServerCore` (`register_blob_reference_provider`).
 - **Cross-Table Audits**: [`IntegrityService`](../../supernote/server/services/integrity.py) joins 5 tables across 3 domains (`UserFileDO`, `RecycleFileDO`, `NotePageContentDO`, `SystemTaskDO`, `SummaryDO`), requiring an extensible integrity-check provider hook.

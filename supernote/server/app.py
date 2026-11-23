@@ -2,8 +2,8 @@
 
 `create_app` initializes core infrastructure (`ServerCore`, `ComponentLoader`,
 database/VFS/auth/processor services, and core route tables) and lazily registers
-enabled built-in vertical components (`http`, `mcp`, `metrics`, `socketio`,
-`web_ui`, `webhooks`) via `supernote.server.components.load_builtin_components`.
+enabled built-in vertical components (`http`, `mcp`, `metrics`, `oauth`, `schedule`,
+`socketio`, `web_ui`, `webhooks`) via `supernote.server.components.load_builtin_components`.
 
 During `on_startup`, the server runs Alembic migrations, initializes `UrlSigner`,
 runs `component_loader.async_setup_all` and the `http` platform pass
@@ -48,7 +48,6 @@ from .keys import (
     OCR_MODEL_KEY,
     PROCESSOR_SERVICE_KEY,
     RATE_LIMITER_KEY,
-    SCHEDULE_SERVICE_KEY,
     SEARCH_SERVICE_KEY,
     SESSION_MANAGER_KEY,
     SUMMARY_MODEL_KEY,
@@ -64,7 +63,6 @@ from .routes import (
     file_device,
     file_web,
     oss,
-    schedule,
     summary,
     system,
 )
@@ -80,7 +78,6 @@ from .services.processor_modules.ocr import OcrModule
 from .services.processor_modules.page_hashing import PageHashingModule
 from .services.processor_modules.png_conversion import PngConversionModule
 from .services.processor_modules.summary import SummaryModule
-from .services.schedule import ScheduleService
 from .services.search import SearchService
 from .services.summary import SummaryService
 from .services.user import UserService
@@ -148,7 +145,6 @@ def create_app(config: ServerConfig) -> web.Application:
     app[USER_SERVICE_KEY] = user_service
     app[FILE_SERVICE_KEY] = file_service
     app[INTEGRITY_SERVICE_KEY] = IntegrityService(session_manager, blob_storage)
-    app[SCHEDULE_SERVICE_KEY] = ScheduleService(session_manager, event_bus)
     ocr_model = create_ocr_model(config)
     summary_model = create_summary_model(config)
     embedding_model = create_embedding_model(config)
@@ -231,7 +227,6 @@ def create_app(config: ServerConfig) -> web.Application:
     app.add_routes(file_web.routes)
     app.add_routes(file_device.routes)
     app.add_routes(oss.routes)
-    app.add_routes(schedule.routes)
     app.add_routes(summary.routes)
     app.add_routes(extended.routes)
     app.add_routes(events.routes)
