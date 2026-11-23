@@ -16,21 +16,13 @@ See `supernote.guides.bootstrap_guide` and `supernote.guides.architecture`.
 import asyncio
 import logging
 import os
-from pathlib import Path
 from typing import Any
 
 from aiohttp import web
 
 from supernote.models.user import UserRegisterDTO
 from supernote.server.db.migrations import run_migrations
-
-from .components import load_builtin_components
-from .config import AuthConfig, ServerConfig
-from .constants import MAX_UPLOAD_SIZE
-from .core import ComponentLoader, ServerCore
-from .db.session import DatabaseSessionManager
-from .events import LocalEventBus
-from .keys import (
+from supernote.server.keys import (
     AI_REGISTRAR_KEY,
     BLOB_STORAGE_KEY,
     COMPONENT_LOADER_KEY,
@@ -38,22 +30,26 @@ from .keys import (
     CONVERSION_SERVICE_KEY,
     COORDINATION_SERVICE_KEY,
     CORE_KEY,
-    EMBEDDING_MODEL_KEY,
     EVENT_BUS_KEY,
     FILE_SERVICE_KEY,
     HTTP_REGISTRAR_KEY,
     INTEGRITY_SERVICE_KEY,
     MCP_REGISTRAR_KEY,
-    OCR_MODEL_KEY,
     PROCESSOR_SERVICE_KEY,
     RATE_LIMITER_KEY,
     SEARCH_SERVICE_KEY,
     SESSION_MANAGER_KEY,
-    SUMMARY_MODEL_KEY,
     SUMMARY_SERVICE_KEY,
     URL_SIGNER_KEY,
     USER_SERVICE_KEY,
 )
+
+from .components import load_builtin_components
+from .config import AuthConfig, ServerConfig
+from .constants import MAX_UPLOAD_SIZE
+from .core import ComponentLoader, ServerCore
+from .db.session import DatabaseSessionManager
+from .events import LocalEventBus
 from .routes import (
     admin,
     auth,
@@ -80,7 +76,6 @@ from .services.summary import SummaryService
 from .services.user import UserService
 from .trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger
 from .utils.hashing import get_md5_hash
-from .utils.prompt_loader import PROMPT_LOADER
 from .utils.rate_limit import RateLimiter
 from .utils.url_signer import UrlSigner
 
@@ -135,12 +130,6 @@ def create_app(config: ServerConfig) -> web.Application:
     app[USER_SERVICE_KEY] = user_service
     app[FILE_SERVICE_KEY] = file_service
     app[INTEGRITY_SERVICE_KEY] = IntegrityService(session_manager, blob_storage)
-    app[OCR_MODEL_KEY] = None
-    app[SUMMARY_MODEL_KEY] = None
-    app[EMBEDDING_MODEL_KEY] = None
-
-    if config.prompts_dir:
-        PROMPT_LOADER.configure(Path(config.prompts_dir))
 
     summary_service = SummaryService(user_service, session_manager, event_bus)
     app[SUMMARY_SERVICE_KEY] = summary_service
@@ -223,16 +212,13 @@ def create_app(config: ServerConfig) -> web.Application:
                 await component_loader.async_load_platform(
                     ai_platform, core, ai_registrar
                 )
-            ocr_model = ai_registrar.create_ocr_model(config)
-            summary_model = ai_registrar.create_summary_model(config)
-            embedding_model = ai_registrar.create_embedding_model(config)
+            ocr_model, summary_model, embedding_model = ai_registrar.apply_to_app(
+                app, config
+            )
         else:
             ocr_model = None
             summary_model = None
             embedding_model = None
-        app[OCR_MODEL_KEY] = ocr_model
-        app[SUMMARY_MODEL_KEY] = summary_model
-        app[EMBEDDING_MODEL_KEY] = embedding_model
         search_service.embedding_model = embedding_model
 
         png_enabled = (ocr_model is not None) or (

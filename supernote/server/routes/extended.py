@@ -27,7 +27,6 @@ from supernote.models.extended import (
     SearchResultVO,
     SystemTaskListVO,
     SystemTaskVO,
-    WebAiStatusVO,
     WebNoteCoverRequestDTO,
     WebNoteCoverVO,
     WebNoteMetadataRequestDTO,
@@ -39,20 +38,14 @@ from supernote.models.extended import (
     WebTranscriptRequestDTO,
     WebTranscriptResponseVO,
 )
-from supernote.server.ai.models.embedding import EmbeddingModel
-from supernote.server.ai.models.ocr import OcrModel
-from supernote.server.ai.models.summary import SummaryModel
 from supernote.server.config import ServerConfig
 from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
     CONFIG_KEY,
     CONVERSION_SERVICE_KEY,
-    EMBEDDING_MODEL_KEY,
-    OCR_MODEL_KEY,
     PROCESSOR_SERVICE_KEY,
     REQUEST_USER_KEY,
     SEARCH_SERVICE_KEY,
-    SUMMARY_MODEL_KEY,
     SUMMARY_SERVICE_KEY,
     URL_SIGNER_KEY,
     USER_SERVICE_KEY,
@@ -278,42 +271,6 @@ async def handle_extended_transcript(request: web.Request) -> web.Response:
     except Exception as err:
         logger.exception("Error fetching notebook transcript")
         return SupernoteError.uncaught(err).to_response()
-
-
-@routes.get("/api/extended/ai/status")
-async def handle_extended_ai_status(request: web.Request) -> web.Response:
-    # Endpoint: GET /api/extended/ai/status
-    # Purpose: Returns server AI processing configuration and capability health status.
-    ocr_model: OcrModel | None = request.app.get(OCR_MODEL_KEY)
-    summary_model: SummaryModel | None = request.app.get(SUMMARY_MODEL_KEY)
-    embedding_model: EmbeddingModel | None = request.app.get(EMBEDDING_MODEL_KEY)
-
-    ocr_enabled = ocr_model is not None
-    ocr_model_id = ocr_model.model_id if ocr_model is not None else None
-
-    summary_enabled = summary_model is not None
-    summary_model_id = summary_model.model_id if summary_model is not None else None
-
-    vector_search_enabled = embedding_model is not None
-    embedding_model_id = (
-        embedding_model.model_id if embedding_model is not None else None
-    )
-
-    is_configured = any((ocr_enabled, summary_enabled, vector_search_enabled))
-    primary_model = ocr_model_id or summary_model_id or embedding_model_id
-
-    return web.json_response(
-        WebAiStatusVO(
-            has_api_key=is_configured,
-            ocr_enabled=ocr_enabled,
-            ocr_model=ocr_model_id,
-            summary_enabled=summary_enabled,
-            summary_model=summary_model_id,
-            vector_search_enabled=vector_search_enabled,
-            embedding_model=embedding_model_id,
-            model=primary_model,
-        ).to_dict()
-    )
 
 
 @routes.post("/api/extended/file/note/cover")
