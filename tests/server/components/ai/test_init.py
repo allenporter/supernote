@@ -6,8 +6,15 @@ import pytest
 
 from supernote.server.ai.base import AIError
 from supernote.server.ai.models.embedding import EmbeddingModel, EmbeddingTaskType
-from supernote.server.ai.models.ocr import OcrModel
-from supernote.server.ai.models.summary import SummaryModel, SummaryResponse
+from supernote.server.ai.models.fake.embedding import (
+    create_embedding_model as create_fake_embedding_model,
+)
+from supernote.server.ai.models.fake.ocr import (
+    create_ocr_model as create_fake_ocr_model,
+)
+from supernote.server.ai.models.fake.summary import (
+    create_summary_model as create_fake_summary_model,
+)
 from supernote.server.components import KNOWN_PLATFORMS
 from supernote.server.components.ai import (
     AI_PLATFORMS,
@@ -19,46 +26,17 @@ from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, Serve
 from supernote.server.core import Component, ComponentLoader, ServerCore
 
 
-class _StubOcrModel(OcrModel):
+class _ZeroVectorEmbeddingModel(EmbeddingModel):
     @property
     def provider(self) -> str:
-        return "stub"
+        return "bad"
 
     @property
     def model_id(self) -> str:
-        return "stub-ocr"
-
-    async def extract_text(self, png_data: bytes, prompt: str) -> str:
-        return "stub-text"
-
-
-class _StubSummaryModel(SummaryModel):
-    @property
-    def provider(self) -> str:
-        return "stub"
-
-    @property
-    def model_id(self) -> str:
-        return "stub-summary"
-
-    async def summarize(self, prompt: str) -> SummaryResponse:
-        return SummaryResponse(segments=[])
-
-
-class _StubEmbeddingModel(EmbeddingModel):
-    def __init__(self, vector: list[float] | None = None) -> None:
-        self._vector = vector if vector is not None else [1.0, 0.0]
-
-    @property
-    def provider(self) -> str:
-        return "stub"
-
-    @property
-    def model_id(self) -> str:
-        return "stub-embed"
+        return "bad-embed"
 
     async def embed(self, text: str, task_type: EmbeddingTaskType) -> list[float]:
-        return list(self._vector)
+        return [0.0, 0.0]
 
 
 def test_ai_registrar_returns_none_when_capabilities_unconfigured() -> None:
@@ -71,48 +49,50 @@ def test_ai_registrar_returns_none_when_capabilities_unconfigured() -> None:
 
 async def test_ai_registrar_creates_and_invokes_registered_models() -> None:
     registrar = AiRegistrar()
-    registrar.register_ocr("Stub", lambda _cfg: _StubOcrModel())
-    registrar.register_summary("stub", lambda _cfg: _StubSummaryModel())
-    registrar.register_embedding("stub", lambda _cfg: _StubEmbeddingModel())
+    registrar.register_ocr("Fake", create_fake_ocr_model)
+    registrar.register_summary("fake", create_fake_summary_model)
+    registrar.register_embedding("fake", create_fake_embedding_model)
 
-    assert registrar.ocr_providers == ("stub",)
-    assert registrar.summary_providers == ("stub",)
-    assert registrar.embedding_providers == ("stub",)
+    assert registrar.ocr_providers == ("fake",)
+    assert registrar.summary_providers == ("fake",)
+    assert registrar.embedding_providers == ("fake",)
 
     configured = ServerConfig(
         ai=AiConfig(
-            providers={"my_stub": ProviderConfig(type="Stub")},
-            ocr=ModelConfig(provider="my_stub", model="m1", max_concurrency=3),
-            summary=ModelConfig(provider="my_stub", model="m2", max_concurrency=2),
-            embedding=ModelConfig(provider="my_stub", model="m3", max_concurrency=4),
+            providers={"local_fake": ProviderConfig(type="Fake")},
+            ocr=ModelConfig(provider="local_fake", model="fake-ocr", max_concurrency=3),
+            summary=ModelConfig(
+                provider="local_fake", model="fake-summary", max_concurrency=2
+            ),
+            embedding=ModelConfig(
+                provider="local_fake", model="fake-embed", max_concurrency=4
+            ),
         )
     )
 
     ocr = registrar.create_ocr_model(configured)
     assert ocr is not None
-    assert ocr.provider == "stub"
-    assert ocr.model_id == "stub-ocr"
-    assert await ocr.extract_text(b"png", "prompt") == "stub-text"
+    assert ocr.provider == "local_fake"
+    assert ocr.model_id == "fake-ocr"
+    assert await ocr.extract_text(b"png", "prompt")
 
     summary = registrar.create_summary_model(configured)
     assert summary is not None
-    assert summary.provider == "stub"
-    assert summary.model_id == "stub-summary"
-    assert await summary.summarize("prompt") == SummaryResponse(segments=[])
+    assert summary.provider == "local_fake"
+    assert summary.model_id == "fake-summary"
+    assert (await summary.summarize("prompt")).segments
 
     embedding = registrar.create_embedding_model(configured)
     assert embedding is not None
-    assert embedding.provider == "stub"
-    assert embedding.model_id == "stub-embed"
-    assert await embedding.embed("hello", EmbeddingTaskType.RETRIEVAL_QUERY) == [
-        1.0,
-        0.0,
-    ]
+    assert embedding.provider == "local_fake"
+    assert embedding.model_id == "fake-embed"
+    vector = await embedding.embed("hello", EmbeddingTaskType.RETRIEVAL_QUERY)
+    assert len(vector) > 0
 
 
 async def test_ai_registrar_validates_embedding_vectors() -> None:
     registrar = AiRegistrar()
-    registrar.register_embedding("bad", lambda _cfg: _StubEmbeddingModel([0.0, 0.0]))
+    registrar.register_embedding("bad", lambda _cfg: _ZeroVectorEmbeddingModel())
     config = ServerConfig(
         ai=AiConfig(
             providers={"bad": ProviderConfig()},
@@ -179,7 +159,7 @@ def test_ai_registrar_rejects_unknown_provider_types() -> None:
         registrar.create_embedding_model(missing_cfg)
 
 
-async def test_ai_component_lifecycle_registers_builtin_fake_provider(
+async def test_ai_component_lifecycle_exposes_empty_registrar(
     component_core: ServerCore,
 ) -> None:
     assert AI_PLATFORMS == ("ocr", "summary", "embedding")
@@ -198,21 +178,9 @@ async def test_ai_component_lifecycle_registers_builtin_fake_provider(
     registrar = component_core.app[AI_REGISTRAR_KEY]
     assert isinstance(registrar, AiRegistrar)
     assert registrar.platforms == AI_PLATFORMS
-    assert registrar.ocr_providers == ("fake",)
-    assert registrar.summary_providers == ("fake",)
-    assert registrar.embedding_providers == ("fake",)
-
-    fake_cfg = ServerConfig(
-        ai=AiConfig(
-            providers={"fake": ProviderConfig()},
-            ocr=ModelConfig(provider="fake", model="fake-ocr"),
-            summary=ModelConfig(provider="fake", model="fake-summary"),
-            embedding=ModelConfig(provider="fake", model="fake-embed"),
-        )
-    )
-    assert registrar.create_ocr_model(fake_cfg) is not None
-    assert registrar.create_summary_model(fake_cfg) is not None
-    assert registrar.create_embedding_model(fake_cfg) is not None
+    assert registrar.ocr_providers == ()
+    assert registrar.summary_providers == ()
+    assert registrar.embedding_providers == ()
 
     await loader.async_start_all(component_core)
     await loader.async_stop_all(component_core)

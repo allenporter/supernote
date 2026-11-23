@@ -8,8 +8,7 @@ Prometheus metrics, concurrency limiting, and embedding vector validation.
 
 Provides `AiComponent`, `AI_PLATFORMS` (``("ocr", "summary", "embedding")``),
 and `AiRegistrar` (passed into
-``<component>.<platform>:async_setup_<platform>(core, registrar)``), and
-registers the zero-dependency built-in ``fake`` provider directly.
+``<component>.<platform>:async_setup_<platform>(core, registrar)``).
 """
 
 from __future__ import annotations
@@ -188,22 +187,8 @@ class AiComponent:
     platforms: tuple[str, ...] = ()
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
-        """Initialize `AiRegistrar` with the built-in ``fake`` provider on ``core.app``."""
-        from supernote.server.ai.models.fake.embedding import (  # noqa: PLC0415
-            create_embedding_model as create_fake_embedding_model,
-        )
-        from supernote.server.ai.models.fake.ocr import (  # noqa: PLC0415
-            create_ocr_model as create_fake_ocr_model,
-        )
-        from supernote.server.ai.models.fake.summary import (  # noqa: PLC0415
-            create_summary_model as create_fake_summary_model,
-        )
-
-        registrar = AiRegistrar()
-        registrar.register_ocr("fake", create_fake_ocr_model)
-        registrar.register_summary("fake", create_fake_summary_model)
-        registrar.register_embedding("fake", create_fake_embedding_model)
-        core.app[AI_REGISTRAR_KEY] = registrar
+        """Initialize `AiRegistrar` on ``core.app``."""
+        core.app[AI_REGISTRAR_KEY] = AiRegistrar()
 
     async def async_start(self, core: ServerCore) -> None:
         """No-op; AI model clients are invoked on demand by workers and services."""
