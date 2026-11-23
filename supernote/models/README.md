@@ -279,7 +279,7 @@ Models in `supernote.models.events` define the wire contract for `GET /api/exten
 
 ## Outbound Webhooks (`supernote.models.webhook`)
 
-Models in `supernote.models.webhook` define the JSON payloads dispatched by `supernote.server.services.webhook.WebhookService` when a `.note` file completes synchronization or background AI processing:
+Models in `supernote.models.webhook` define the JSON payloads dispatched by `supernote.server.components.webhooks.service.WebhookService` when a `.note` file completes synchronization or background AI processing:
 
 * **Event Constants**: `EVENT_NOTE_SYNC_COMPLETED` (`"note.sync_completed"`) and `EVENT_NOTE_PROCESSING_COMPLETED` (`"note.processing_completed"`)
 * **Payloads**: `WebhookPayload` (`event`, `timestamp`, `user_id`, and `file: WebhookFileVO` containing `id`, `name`, and `path`)

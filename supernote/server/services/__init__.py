@@ -15,7 +15,7 @@ or asynchronously via `supernote.server.events.LocalEventBus`.
 | `supernote.server.services.summary.SummaryService` | `supernote.server.services.summary` | CRUD and tag management for AI and handwritten summaries (`SummaryDO`). |
 | `supernote.server.services.schedule.ScheduleService` | `supernote.server.services.schedule` | Task groups, tasks, recurrence rules, and delta synchronization. |
 | `supernote.server.services.ical_export.ICalExportService` | `supernote.server.services.ical_export` | RFC 5545 `VTODO` iCalendar (`.ics`) feed generation from schedule tasks. |
-| `supernote.server.services.webhook.WebhookService` | `supernote.server.services.webhook` | Non-blocking, HMAC-SHA256 signed outbound HTTP webhook dispatcher. |
+| `supernote.server.components.webhooks.service.WebhookService` | `supernote.server.components.webhooks.service` | Non-blocking, HMAC-SHA256 signed outbound HTTP webhook dispatcher. |
 | `supernote.server.services.integrity.IntegrityService` | `supernote.server.services.integrity` | Two-way consistency verification between SQLite VFS metadata and disk blobs. |
 | `supernote.server.services.coordination.SqliteCoordinationService` | `supernote.server.services.coordination` | TTL-backed key-value store and distributed locks (`KeyValueDO`). |
 | `supernote.server.services.user.UserService` | `supernote.server.services.user` | User accounts, Admin-First bootstrap, static API keys, device bindings, and JWT sessions. |

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from .ai.models.ocr import OcrModel
     from .ai.models.summary import SummaryModel
     from .config import ServerConfig
+    from .core import ComponentLoader, ServerCore
     from .db.session import DatabaseSessionManager
     from .events import LocalEventBus
     from .services.blob import BlobStorage
@@ -34,12 +35,13 @@ if TYPE_CHECKING:
     from .services.storage_metrics import StorageMetricsCollector
     from .services.summary import SummaryService
     from .services.user import UserService
-    from .services.webhook import WebhookService
     from .socket import SocketIOServerManager
     from .utils.rate_limit import RateLimiter
     from .utils.url_signer import UrlSigner
 
 CONFIG_KEY: web.AppKey[ServerConfig] = web.AppKey("config")
+CORE_KEY: web.AppKey[ServerCore] = web.AppKey("core")
+COMPONENT_LOADER_KEY: web.AppKey[ComponentLoader] = web.AppKey("component_loader")
 SESSION_MANAGER_KEY: web.AppKey[DatabaseSessionManager] = web.AppKey("session_manager")
 COORDINATION_SERVICE_KEY: web.AppKey[CoordinationService] = web.AppKey(
     "coordination_service"
@@ -59,7 +61,6 @@ SEARCH_SERVICE_KEY: web.AppKey[SearchService] = web.AppKey("search_service")
 RATE_LIMITER_KEY: web.AppKey[RateLimiter] = web.AppKey("rate_limiter")
 PROCESSOR_SERVICE_KEY: web.AppKey[ProcessorService] = web.AppKey("processor_service")
 CONVERSION_SERVICE_KEY: web.AppKey[ConversionService] = web.AppKey("conversion_service")
-WEBHOOK_SERVICE_KEY: web.AppKey[WebhookService] = web.AppKey("webhook_service")
 URL_SIGNER_KEY: web.AppKey[UrlSigner] = web.AppKey("url_signer")
 SOCKETIO_MANAGER_KEY: web.AppKey[SocketIOServerManager] = web.AppKey("socketio_manager")
 MCP_ASGI_RESOURCE_KEY: web.AppKey[ASGIResource] = web.AppKey("mcp_asgi_resource")

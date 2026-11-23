@@ -4,7 +4,7 @@ Decouples mutating domain services (`supernote.server.services.file.FileService`
 `supernote.server.services.summary.SummaryService`, `supernote.server.services.schedule.ScheduleService`,
 `supernote.server.services.processor.ProcessorService`) from downstream subscribers:
 - `supernote.server.services.processor.ProcessorService` listens for `NoteUpdatedEvent`, `NoteDeletedEvent`, `SyncCompletedEvent`, and `BlobCleanupEvent`.
-- `supernote.server.services.webhook.WebhookService` listens for `NoteUpdatedEvent` and `NoteProcessingCompletedEvent`.
+- `supernote.server.components.webhooks.service.WebhookService` listens for `NoteUpdatedEvent` and `NoteProcessingCompletedEvent`.
 - `supernote.server.socket` listens for VFS, summary, and schedule events to broadcast real-time Socket.IO messages to connected tablets and Web UI clients.
 
 See `supernote.guides.architecture`.

@@ -27,10 +27,14 @@ from supernote.server.app import (
     create_app,
     run,
 )
+from supernote.server.components.webhooks import WebhooksComponent
 from supernote.server.config import ServerConfig
+from supernote.server.core import ComponentLoader, ServerCore
 from supernote.server.db.models.user import UserDO
 from supernote.server.keys import (
+    COMPONENT_LOADER_KEY,
     COORDINATION_SERVICE_KEY,
+    CORE_KEY,
     INTEGRITY_SERVICE_KEY,
     PROCESSOR_SERVICE_KEY,
     SESSION_MANAGER_KEY,
@@ -521,3 +525,50 @@ async def test_jwt_auth_middleware_accepts_oauth_token_on_file_apis_and_blocks_i
     forbidden_resp = await client.get("/api/extended/keys", headers=oauth_headers)
     assert forbidden_resp.status == 403
     assert "Interactive session required" in (await forbidden_resp.json())["errorMsg"]
+
+
+async def test_create_app_wires_server_core_and_skips_disabled_webhooks(
+    aiohttp_client: AiohttpClient,
+    server_config: ServerConfig,
+) -> None:
+    """Verify `create_app` exposes `ServerCore` + `ComponentLoader` and omits disabled webhooks."""
+    config = dataclasses.replace(server_config, web_enabled=False)
+    app = create_app(config)
+
+    assert isinstance(app[CORE_KEY], ServerCore)
+    assert isinstance(app[COMPONENT_LOADER_KEY], ComponentLoader)
+    assert app[COMPONENT_LOADER_KEY].get("webhooks") is None
+
+    test_client = await aiohttp_client(app)
+    resp = await test_client.get("/api/health")
+    assert resp.status == 200
+
+
+async def test_create_app_registers_and_runs_webhooks_component_when_enabled(
+    aiohttp_client: AiohttpClient,
+    server_config: ServerConfig,
+    session_manager: Any,
+) -> None:
+    """Verify enabled webhooks are registered and started via `ComponentLoader`."""
+    config = dataclasses.replace(
+        server_config,
+        web_enabled=False,
+        webhooks={
+            "enabled": True,
+            "endpoints": [
+                {
+                    "url": "http://127.0.0.1:9999/hook",
+                    "user": "test@example.com",
+                    "secret": "secret",
+                }
+            ],
+        },
+    )
+    app = create_app(config)
+
+    comp = app[COMPONENT_LOADER_KEY].get("webhooks")
+    assert isinstance(comp, WebhooksComponent)
+
+    test_client = await aiohttp_client(app)
+    resp = await test_client.get("/api/health")
+    assert resp.status == 200
