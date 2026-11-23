@@ -44,7 +44,7 @@ class NoteSyncCompletedPayload(WebhookPayload):
     """Payload sent for the `note.sync_completed` outbound webhook event.
 
     Corresponds to `EVENT_NOTE_SYNC_COMPLETED` in
-    `supernote.server.services.webhook`.
+    `supernote.server.components.webhooks.service`.
 
     Intentionally excludes the internal `user_id` (a private, per-user
     database identifier) -- see that module for discussion.
@@ -59,7 +59,7 @@ class NoteProcessingCompletedPayload(WebhookPayload):
     """Payload sent for the `note.processing_completed` outbound webhook event.
 
     Corresponds to `EVENT_NOTE_PROCESSING_COMPLETED` in
-    `supernote.server.services.webhook`.
+    `supernote.server.components.webhooks.service`.
     """
 
     file: WebhookFileVO

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from supernote.server.core import ServerCore
-from supernote.server.services.webhook import WebhookService
+
+from .service import WebhookService
 
 __all__ = ["WebhooksComponent"]
 

@@ -254,7 +254,7 @@ For single-variable Docker deployments, `supernote.server.config.ServerConfig` a
 
 ## Outbound Webhook Settings (`supernote.server.config.WebhookConfig`)
 
-Configured under the `webhooks:` block in `config.yaml`, consumed by `supernote.server.services.webhook.WebhookService` (see `supernote.guides.webhooks_and_integrations`).
+Configured under the `webhooks:` block in `config.yaml`, consumed by `supernote.server.components.webhooks.service.WebhookService` (see `supernote.guides.webhooks_and_integrations`).
 
 | YAML Key | Environment Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |

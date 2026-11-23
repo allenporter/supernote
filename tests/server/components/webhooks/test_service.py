@@ -21,14 +21,7 @@ from supernote.models.webhook import (
     WebhookFileVO,
     WebhookPayload,
 )
-from supernote.server.config import WebhookConfig, WebhookEndpointConfig
-from supernote.server.events import (
-    LocalEventBus,
-    NoteProcessingCompletedEvent,
-    NoteUpdatedEvent,
-)
-from supernote.server.services.user import UserService
-from supernote.server.services.webhook import (
+from supernote.server.components.webhooks.service import (
     EVENT_HEADER,
     MAX_ATTEMPTS,
     SIGNATURE_HEADER,
@@ -36,6 +29,13 @@ from supernote.server.services.webhook import (
     sign_payload,
     verify_signature,
 )
+from supernote.server.config import WebhookConfig, WebhookEndpointConfig
+from supernote.server.events import (
+    LocalEventBus,
+    NoteProcessingCompletedEvent,
+    NoteUpdatedEvent,
+)
+from supernote.server.services.user import UserService
 from tests.fixtures.server import TEST_USERNAME
 
 
@@ -107,7 +107,9 @@ def no_retry_backoff() -> Generator[None]:
     """Use a real (but zeroed-out) asyncio.sleep for retry backoff so the
     suite stays fast without mocking asyncio.sleep globally.
     """
-    with patch("supernote.server.services.webhook.RETRY_BACKOFF_SECONDS", 0.0):
+    with patch(
+        "supernote.server.components.webhooks.service.RETRY_BACKOFF_SECONDS", 0.0
+    ):
         yield
 
 
@@ -376,7 +378,9 @@ async def test_send_does_not_raise_on_timeout(
     config = WebhookConfig(enabled=True, endpoints=[endpoint])
 
     async with running_service(config) as service:
-        with patch("supernote.server.services.webhook.REQUEST_TIMEOUT_SECONDS", 0.05):
+        with patch(
+            "supernote.server.components.webhooks.service.REQUEST_TIMEOUT_SECONDS", 0.05
+        ):
             await service.dispatch(_sample_payload(), user_id=test_user_id)
 
     assert len(webhook_receiver.calls) == MAX_ATTEMPTS
@@ -467,7 +471,7 @@ async def test_dispatch_never_raises_on_unexpected_error(
     )
     async with running_service(config) as service:
         with patch(
-            "supernote.server.services.webhook.sign_payload",
+            "supernote.server.components.webhooks.service.sign_payload",
             side_effect=RuntimeError("unexpected signing failure"),
         ):
             await service.dispatch(_sample_payload(), user_id=test_user_id)
@@ -587,7 +591,7 @@ async def test_dispatch_redacts_url_secrets_on_unexpected_exception(
     )
     async with running_service(config) as service:
         with patch(
-            "supernote.server.services.webhook.sign_payload",
+            "supernote.server.components.webhooks.service.sign_payload",
             side_effect=RuntimeError("unexpected signing failure"),
         ):
             await service.dispatch(_sample_payload(), user_id=test_user_id)

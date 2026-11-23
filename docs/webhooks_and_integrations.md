@@ -2,7 +2,7 @@
 
 Open Private Cloud for Supernote provides two primary integration mechanisms for external automation platforms, task managers, and smart-home systems:
 1. **RFC 5545 iCalendar (`.ics`) Task Feeds** (`supernote.server.services.ical_export.ICalExportService`)
-2. **Signed Outbound Webhooks** (`supernote.server.services.webhook.WebhookService`)
+2. **Signed Outbound Webhooks** (`supernote.server.components.webhooks.service.WebhookService`)
 
 ---
 
@@ -99,7 +99,7 @@ END:VCALENDAR
 
 ## Outbound Webhooks
 
-`supernote.server.services.webhook.WebhookService` listens on the internal `LocalEventBus` and dispatches signed, non-blocking HTTP `POST` notifications whenever notes finish syncing or finish background AI processing.
+`supernote.server.components.webhooks.service.WebhookService` listens on the internal `LocalEventBus` and dispatches signed, non-blocking HTTP `POST` notifications whenever notes finish syncing or finish background AI processing.
 
 ```mermaid
 sequenceDiagram
@@ -150,7 +150,7 @@ Both events serialize a `supernote.models.webhook.WebhookPayload` with a nested 
 
 ### Delivery & Retry Semantics
 
-Defined in `supernote.server.services.webhook`:
+Defined in `supernote.server.components.webhooks.service`:
 
 | Parameter | Constant | Value | Behavior |
 | :--- | :--- | :---: | :--- |
@@ -184,11 +184,11 @@ webhooks:
 
 ## Verifying `X-Supernote-Signature` (HMAC-SHA256)
 
-When `secret` is set on an endpoint, `supernote.server.services.webhook.sign_payload` signs the raw UTF-8 JSON request body using HMAC-SHA256 and sends `X-Supernote-Signature: sha256=<hex>`. Always verify this header using a constant-time digest comparison before trusting the payload.
+When `secret` is set on an endpoint, `supernote.server.components.webhooks.service.sign_payload` signs the raw UTF-8 JSON request body using HMAC-SHA256 and sends `X-Supernote-Signature: sha256=<hex>`. Always verify this header using a constant-time digest comparison before trusting the payload.
 
 ### Python Verification Snippet
 
-You can use `supernote.server.services.webhook.verify_signature` directly, or verify with Python's standard library `hmac`:
+You can use `supernote.server.components.webhooks.service.verify_signature` directly, or verify with Python's standard library `hmac`:
 
 ```python
 import hashlib
