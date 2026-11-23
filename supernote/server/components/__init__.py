@@ -23,7 +23,7 @@ __all__ = [
     "load_component_from_spec",
 ]
 
-KNOWN_PLATFORMS: frozenset[str] = frozenset({"http"})
+KNOWN_PLATFORMS: frozenset[str] = frozenset({"http", "mcp"})
 
 
 @dataclass(frozen=True)

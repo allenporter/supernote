@@ -11,12 +11,9 @@ and static Bearer API keys (`sn_...`) via `supernote.server.services.user.UserSe
 See `supernote.guides.mcp`.
 """
 
-import functools
 import logging
-from collections.abc import Awaitable, Callable
-from typing import Any, ParamSpec, cast
+from typing import Any
 
-from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.provider import TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver import Context, MCPServer
@@ -24,6 +21,10 @@ from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import AnyHttpUrl
 
 from supernote.models.base import ErrorCode, create_error_response
+from supernote.server.components.mcp import (
+    get_authenticated_user_id,
+    instrument_mcp_tool,
+)
 from supernote.server.components.mcp.models import (
     ListNotebooksRequestDTO,
     ListNotebooksResponseVO,
@@ -41,7 +42,6 @@ from supernote.server.components.oauth.models import (
 from supernote.server.metrics import (
     MCPToolName,
     init_mcp_metrics,
-    track_mcp_tool_call,
 )
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.search import SearchService
@@ -53,8 +53,6 @@ from supernote.server.services.user import (
 
 logger = logging.getLogger(__name__)
 MAX_MCP_TOKEN_LENGTH = 4096
-
-_P = ParamSpec("_P")
 
 # Global services to be injected by the app
 _services: dict[str, Any] = {
@@ -117,40 +115,13 @@ class SupernoteTokenVerifier(TokenVerifier):
 
 async def _get_auth_user_id(ctx: Context) -> int | None:
     """Verify token and return user_id."""
+    _ = ctx
     if not _services["user_service"]:
         raise ValueError("User service not initialized.")
-
-    # Try to get user from MCP Auth Context (e.g. Bearer token)
-    if not (auth_context := auth_context_var.get()):
-        return None
-    token = cast(SupernoteAccessToken, auth_context.access_token)
-    return token.user_id
+    return get_authenticated_user_id()
 
 
-def _instrument_mcp_tool(
-    tool: MCPToolName,
-) -> Callable[
-    [Callable[_P, Awaitable[dict[str, Any]]]],
-    Callable[_P, Awaitable[dict[str, Any]]],
-]:
-    """Wrap an MCP tool handler to record Prometheus call and latency metrics."""
-
-    def decorator(
-        fn: Callable[_P, Awaitable[dict[str, Any]]],
-    ) -> Callable[_P, Awaitable[dict[str, Any]]]:
-        @functools.wraps(fn)
-        async def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> dict[str, Any]:
-            with track_mcp_tool_call(tool=tool) as call:
-                result = await fn(*args, **kwargs)
-                call.set_succeeded(result.get("success") is True)
-                return result
-
-        return wrapper
-
-    return decorator
-
-
-@_instrument_mcp_tool(MCPToolName.LIST_NOTEBOOKS)
+@instrument_mcp_tool(MCPToolName.LIST_NOTEBOOKS)
 async def list_notebooks(
     ctx: Context,
     limit: int = 20,
@@ -194,7 +165,7 @@ async def list_notebooks(
     return ListNotebooksResponseVO(notebooks=vo_list).to_dict()
 
 
-@_instrument_mcp_tool(MCPToolName.SEARCH_NOTEBOOK_CHUNKS)
+@instrument_mcp_tool(MCPToolName.SEARCH_NOTEBOOK_CHUNKS)
 async def search_notebook_chunks(
     ctx: Context,
     query: str,
@@ -263,7 +234,7 @@ async def search_notebook_chunks(
     return SearchResponseVO(results=vo_list).to_dict()
 
 
-@_instrument_mcp_tool(MCPToolName.GET_NOTEBOOK_TRANSCRIPT)
+@instrument_mcp_tool(MCPToolName.GET_NOTEBOOK_TRANSCRIPT)
 async def get_notebook_transcript(
     ctx: Context,
     file_id: str,

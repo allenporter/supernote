@@ -45,6 +45,7 @@ from .keys import (
     FILE_SERVICE_KEY,
     HTTP_REGISTRAR_KEY,
     INTEGRITY_SERVICE_KEY,
+    MCP_REGISTRAR_KEY,
     OCR_MODEL_KEY,
     PROCESSOR_SERVICE_KEY,
     RATE_LIMITER_KEY,
@@ -245,6 +246,8 @@ def create_app(config: ServerConfig) -> web.Application:
         http_registrar = app[HTTP_REGISTRAR_KEY]
         await component_loader.async_load_platform("http", core, http_registrar)
         http_registrar.apply_to_app(app)
+        if (mcp_registrar := app.get(MCP_REGISTRAR_KEY)) is not None:
+            await component_loader.async_load_platform("mcp", core, mcp_registrar)
 
         logger.info("Starting background services...")
         await processor_service.start()
