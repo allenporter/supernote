@@ -19,8 +19,6 @@ from supernote.server.components.mcp.metrics import (
     init_mcp_metrics,
     track_mcp_tool_call,
 )
-from supernote.server.components.search import SEARCH_SERVICE_KEY
-from supernote.server.components.transcript import TRANSCRIPT_SERVICE_KEY
 from supernote.server.core import ServerCore
 from supernote.server.events import bind_event_actor
 from supernote.server.keys import MCP_REGISTRAR_KEY
@@ -147,6 +145,13 @@ class McpComponent:
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         """Bind services, expose `McpRegistrar`, and prepare the FastMCP server."""
+        from supernote.server.components.search import (  # noqa: PLC0415
+            SEARCH_SERVICE_KEY,
+        )
+        from supernote.server.components.transcript import (  # noqa: PLC0415
+            TRANSCRIPT_SERVICE_KEY,
+        )
+
         from .server import create_mcp_server, set_services  # noqa: PLC0415
 
         set_services(
