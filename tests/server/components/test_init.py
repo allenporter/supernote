@@ -118,6 +118,40 @@ def test_component_imports_respect_declared_dependencies_and_platforms(
 
 @pytest.mark.parametrize(
     "spec",
+    [s for s in BUILTIN_COMPONENTS if s.domain != "http"],
+    ids=[s.domain for s in BUILTIN_COMPONENTS if s.domain != "http"],
+)
+def test_non_http_component_modules_do_not_import_http_transport(
+    spec: BuiltinComponentSpec,
+) -> None:
+    """Non-`http.py` modules in a component must remain isolated from main-port HTTP transport."""
+    forbidden = (
+        "aiohttp_asgi",
+        "supernote.server.components.http",
+        "supernote.server.routes.decorators",
+    )
+    check = (
+        f"import importlib, pkgutil, sys; "
+        f"pkg = importlib.import_module('supernote.server.components.{spec.domain}'); "
+        "[importlib.import_module(m.name) for m in pkgutil.walk_packages(pkg.__path__, pkg.__name__ + '.') if not m.name.endswith('.http')]; "
+        f"hits = [f for f in {forbidden!r} if f in sys.modules or any(k.startswith(f + '.') for k in sys.modules)]; "
+        "print(','.join(hits))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", check],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == "", (
+        f"Non-http modules in component {spec.domain!r} imported HTTP transport "
+        f"module(s): {result.stdout.strip()}. Move HTTP routes/middlewares/ASGI mounts "
+        f"into supernote/server/components/{spec.domain}/http.py."
+    )
+
+
+@pytest.mark.parametrize(
+    "spec",
     BUILTIN_COMPONENTS,
     ids=[spec.domain for spec in BUILTIN_COMPONENTS],
 )
@@ -175,6 +209,24 @@ def test_builtin_component_platforms_match_modules_1to1(
     )
 
 
+def _register_with_dependencies(
+    loader: ComponentLoader,
+    spec: BuiltinComponentSpec,
+) -> None:
+    """Register ``spec`` along with any transitive built-in dependencies."""
+    specs_by_domain = {s.domain: s for s in BUILTIN_COMPONENTS}
+    pending = [spec]
+    while pending:
+        current = pending.pop()
+        if loader.get(current.domain) is not None:
+            continue
+        component = load_component_from_spec(current)
+        loader.register(component)
+        for dep in component.dependencies:
+            if loader.get(dep) is None:
+                pending.append(specs_by_domain[dep])
+
+
 @pytest.mark.parametrize(
     "spec",
     BUILTIN_COMPONENTS,
@@ -186,7 +238,7 @@ async def test_component_full_lifecycle_and_idempotent_stop(
 ) -> None:
     """Every component must support setup -> start -> stop -> stop cleanly."""
     loader = ComponentLoader()
-    loader.register(load_component_from_spec(spec))
+    _register_with_dependencies(loader, spec)
 
     await loader.async_setup_all(component_core, {})
     await loader.async_start_all(component_core)
@@ -205,7 +257,7 @@ async def test_component_stop_after_setup_only(
 ) -> None:
     """Every component must tear down cleanly if stopped after setup without starting."""
     loader = ComponentLoader()
-    loader.register(load_component_from_spec(spec))
+    _register_with_dependencies(loader, spec)
 
     await loader.async_setup_all(component_core, {})
     await loader.async_stop_all(component_core)

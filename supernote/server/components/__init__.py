@@ -55,6 +55,11 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         default_enabled=True,
     ),
     BuiltinComponentSpec(
+        domain="oauth",
+        import_path="supernote.server.components.oauth:OAuthComponent",
+        default_enabled=True,
+    ),
+    BuiltinComponentSpec(
         domain="socketio",
         import_path="supernote.server.components.socketio:SocketIOComponent",
         default_enabled=True,

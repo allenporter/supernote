@@ -5,7 +5,7 @@ user to administrator and closing public signup unless `AuthConfig.enable_regist
 is enabled), challenge-response authentication, stateful JWT token issuance/verification
 via `supernote.server.services.coordination.CoordinationService`, equipment bindings
 (`DeviceDO`), and storage quota tracking (`UserDO`). Used by `supernote.server.routes.auth`,
-`supernote.server.routes.admin`, and `supernote.server.app.jwt_auth_middleware`.
+`supernote.server.routes.admin`, and `supernote.server.components.http.jwt_auth_middleware`.
 See `supernote.guides.bootstrap_guide`.
 """
 

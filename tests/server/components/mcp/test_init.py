@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from supernote.server.components.mcp import McpComponent
+from supernote.server.components.oauth import OAuthComponent
 from supernote.server.core import Component, ComponentLoader, ServerCore
 
 
@@ -10,10 +11,11 @@ async def test_mcp_component_lifecycle(component_core: ServerCore) -> None:
     component = McpComponent()
     assert isinstance(component, Component)
     assert component.domain == "mcp"
-    assert component.dependencies == ()
-    assert component.platforms == ("http",)
+    assert component.dependencies == ("oauth",)
+    assert component.platforms == ()
 
     loader = ComponentLoader()
+    loader.register(OAuthComponent())
     loader.register(component)
 
     await loader.async_setup_all(component_core, {})
@@ -26,6 +28,7 @@ async def test_mcp_component_stop_after_setup_only(
     component_core: ServerCore,
 ) -> None:
     loader = ComponentLoader()
+    loader.register(OAuthComponent())
     loader.register(McpComponent())
 
     await loader.async_setup_all(component_core, {})

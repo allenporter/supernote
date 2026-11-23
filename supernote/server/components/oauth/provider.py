@@ -1,21 +1,15 @@
-"""OAuth 2.1 and IndieAuth Authorization Server for the Supernote MCP server.
+"""OAuth 2.1 and IndieAuth provider for the Supernote server.
 
-Implements `SupernoteOAuthProvider` and `create_auth_app` (mounted as an ASGI resource
-on the main server port `8080` in `supernote.server.app.create_app`). Supports dynamic
-IndieAuth-style URL client IDs, PKCE authorization code exchange (`/authorize`, `/token`),
-token revocation (`/revoke`), and `/login-bridge` integration with the Web UI login flow.
-Tokens are persisted with TTLs in `supernote.server.services.coordination.CoordinationService`
-and verified by `supernote.server.components.mcp.server.SupernoteTokenVerifier`. See `supernote.guides.mcp`.
+Implements `SupernoteOAuthProvider` supporting dynamic IndieAuth-style URL client IDs,
+PKCE authorization code exchange, and token persistence/revocation in
+`supernote.server.services.coordination.CoordinationService`.
 """
 
 import secrets
 import time
 from typing import override
-from urllib.parse import quote
 
 import yarl
-from mashumaro.exceptions import InvalidFieldValue, MissingField
-from mashumaro.mixins.json import DataClassJSONMixin
 from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationParams,
@@ -24,45 +18,22 @@ from mcp.server.auth.provider import (
     TokenError,
     construct_redirect_uri,
 )
-from mcp.server.auth.routes import create_auth_routes
-from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 from mcp.shared.auth import (
     InvalidRedirectUriError,
-    InvalidScopeError,
     OAuthClientInformationFull,
     OAuthToken,
 )
 from pydantic import AnyHttpUrl, AnyUrl, ValidationError
-from starlette.applications import Starlette
-from starlette.requests import Request
-from starlette.responses import RedirectResponse, Response
 
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import OAUTH_ACCESS_TOKEN_KEY_PREFIX, UserService
-from supernote.server.utils.auth_utils import get_token_from_request
 
 from .models import (
-    LoginBridgeDecision,
-    LoginBridgeRequestDTO,
-    LoginBridgeResponseVO,
     MCPScope,
-    OAuthErrorResponseVO,
     SupernoteAccessToken,
     SupernoteAuthorizationCode,
     SupernoteRefreshToken,
 )
-
-
-def _json_model_response(
-    payload: DataClassJSONMixin, status_code: int = 200
-) -> Response:
-    """Serialize a Mashumaro DTO/VO as a non-cacheable JSON Starlette response."""
-    return Response(
-        content=payload.to_json(),
-        status_code=status_code,
-        media_type="application/json",
-        headers={"Cache-Control": "no-store"},
-    )
 
 
 def _parse_oauth_url(raw: str) -> yarl.URL | None:
@@ -294,173 +265,3 @@ class SupernoteOAuthProvider(
             await self._coordination.delete_value(
                 f"{OAUTH_ACCESS_TOKEN_KEY_PREFIX}{token.token}"
             )
-
-
-def create_auth_app(
-    user_service: UserService,
-    coordination_service: CoordinationService,
-    issuer_url: str,
-) -> Starlette:
-    """Create a Starlette app for the MCP Authorization Server."""
-    provider = SupernoteOAuthProvider(user_service, coordination_service, issuer_url)
-    routes = create_auth_routes(
-        provider=provider,
-        issuer_url=AnyHttpUrl(issuer_url),
-        client_registration_options=ClientRegistrationOptions(
-            enabled=False,
-            valid_scopes=list(MCPScope),
-            default_scopes=[MCPScope.ALL],
-        ),
-        revocation_options=RevocationOptions(enabled=True),
-    )
-    app = Starlette(routes=routes, debug=True)
-
-    # Add login-bridge route
-    async def login_bridge(request: Request) -> Response:
-        """Handle the OAuth 2.1 login & consent bridge between the Web UI and MCP server.
-
-        Browser GET requests redirect to ``/#login?return_to=<bridge_url>`` so the Web UI
-        authenticates the user (if needed) and renders an explicit OAuth Consent Card.
-        Once the user approves or denies, the SPA issues an authenticated ``POST /login-bridge``
-        request with ``x-access-token`` to validate the redirect target and mint a single-use
-        authorization code (on approve) or return an ``access_denied`` redirect (on deny).
-        """
-        token = get_token_from_request(request)
-        session = await user_service.verify_token(token) if token else None
-        if session and not session.is_interactive_session:
-            error_description = (
-                "API keys cannot authorize OAuth clients"
-                if session.is_api_key
-                else "OAuth tokens cannot authorize OAuth clients"
-            )
-            return _json_model_response(
-                OAuthErrorResponseVO(
-                    error="forbidden",
-                    error_description=error_description,
-                ),
-                status_code=403,
-            )
-        if request.method != "POST":
-            return_target = (
-                f"{request.url.path}?{request.url.query}"
-                if request.url.query
-                else request.url.path
-            )
-            login_url = f"/#login?return_to={quote(return_target, safe='')}"
-            return RedirectResponse(
-                url=login_url,
-                status_code=302,
-                headers={"Cache-Control": "no-store"},
-            )
-        if not session:
-            return _json_model_response(
-                OAuthErrorResponseVO(error="unauthorized"),
-                status_code=401,
-            )
-
-        raw_body = await request.body()
-        if raw_body.strip():
-            try:
-                bridge_req = LoginBridgeRequestDTO.from_json(raw_body)
-            except (MissingField, InvalidFieldValue, ValueError, TypeError):
-                return _json_model_response(
-                    OAuthErrorResponseVO(error="invalid_request"),
-                    status_code=400,
-                )
-        else:
-            bridge_req = LoginBridgeRequestDTO()
-
-        # Extract OAuth params from query
-        client_id = request.query_params.get("client_id")
-        raw_redirect_uri = request.query_params.get("redirect_uri")
-        code_challenge = request.query_params.get("code_challenge")
-        state = request.query_params.get("state")
-        raw_scope = request.query_params.get("scope")
-        resource = request.query_params.get("resource")
-
-        if not client_id or not code_challenge:
-            return _json_model_response(
-                OAuthErrorResponseVO(error="invalid_request"),
-                status_code=400,
-            )
-
-        client_info = await provider.get_client(client_id)
-        if not client_info:
-            return _json_model_response(
-                OAuthErrorResponseVO(
-                    error="invalid_client",
-                    error_description="Unrecognized or invalid client_id URL.",
-                ),
-                status_code=400,
-            )
-
-        try:
-            parsed_redirect_arg = AnyUrl(raw_redirect_uri) if raw_redirect_uri else None
-            validated_redirect_uri = client_info.validate_redirect_uri(
-                parsed_redirect_arg
-            )
-        except (ValidationError, InvalidRedirectUriError):
-            return _json_model_response(
-                OAuthErrorResponseVO(
-                    error="invalid_redirect_uri",
-                    error_description=(
-                        "Redirect URI does not match the requesting client origin and path."
-                    ),
-                ),
-                status_code=400,
-            )
-
-        if bridge_req.decision == LoginBridgeDecision.DENY:
-            denied_url = construct_redirect_uri(
-                str(validated_redirect_uri),
-                error="access_denied",
-                state=state or None,
-            )
-            return _json_model_response(LoginBridgeResponseVO(redirect_url=denied_url))
-
-        normalized_scope = (
-            " ".join(raw_scope.split()) if raw_scope and raw_scope.strip() else None
-        )
-        try:
-            validated_scopes = client_info.validate_scope(normalized_scope)
-        except InvalidScopeError:
-            return _json_model_response(
-                OAuthErrorResponseVO(
-                    error="invalid_scope",
-                    error_description="Requested scope is not supported.",
-                ),
-                status_code=400,
-            )
-        scopes = validated_scopes or (
-            client_info.scope.split() if client_info.scope else [MCPScope.ALL]
-        )
-
-        # Create the authorization code
-        code_str = secrets.token_urlsafe(16)
-        auth_code = SupernoteAuthorizationCode(
-            code=code_str,
-            user_id=session.user_id,
-            client_id=client_id,
-            redirect_uri=validated_redirect_uri,
-            scopes=scopes,
-            code_challenge=code_challenge,
-            expires_at=int(time.time() + 600),
-            redirect_uri_provided_explicitly=raw_redirect_uri is not None,
-            resource=resource or None,
-        )
-
-        await coordination_service.set_value(
-            f"mcp:auth_code:{code_str}",
-            auth_code.model_dump_json(),
-            ttl=600,
-        )
-
-        final_url = construct_redirect_uri(
-            str(validated_redirect_uri),
-            code=code_str,
-            state=state or None,
-        )
-        return _json_model_response(LoginBridgeResponseVO(redirect_url=final_url))
-
-    app.add_route("/login-bridge", login_bridge, methods=["GET", "POST"])
-    return app

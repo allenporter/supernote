@@ -17,7 +17,6 @@ from starlette.testclient import TestClient
 
 from supernote.models.user import UserRegisterDTO
 from supernote.server.components.mcp import server as mcp_server_module
-from supernote.server.components.mcp.models import SupernoteAccessToken
 from supernote.server.components.mcp.server import (
     SupernoteTokenVerifier,
     _get_auth_user_id,
@@ -27,6 +26,7 @@ from supernote.server.components.mcp.server import (
     search_notebook_chunks,
     set_services,
 )
+from supernote.server.components.oauth.models import SupernoteAccessToken
 from supernote.server.metrics import (
     REQUEST_DURATION_BUCKETS,
     MCPToolName,
