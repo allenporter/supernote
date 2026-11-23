@@ -362,6 +362,16 @@ async def test_web_ui_settings_manages_clients_and_api_keys(
             await page.get_by_text("No API keys.").wait_for(state="visible")
             assert await user_service.list_api_keys(test_user_id) == []
 
+            await page.get_by_label("API key name").fill("Tablet")
+            await page.get_by_role("button", name="Create key").click()
+            await created.wait_for(state="visible")
+            await page.get_by_role("button", name="Revoke").click()
+            box = await dialog.bounding_box()
+            assert box is not None and box["y"] == 0
+            await dialog.get_by_role("button", name="Revoke").click()
+            await created.wait_for(state="hidden")
+            await page.get_by_text("No API keys.").wait_for(state="visible")
+
             await page.get_by_role("button", name="Disconnect").click()
             dialog = page.get_by_role("dialog", name="Confirm Revoke")
             await page.keyboard.press("Escape")

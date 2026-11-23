@@ -96,6 +96,7 @@ export default {
                 } else {
                     await revokeApiKey(target.id);
                     apiKeys.value = apiKeys.value.filter((k) => k.id !== target.id);
+                    if (createdKey.value?.id === target.id) createdKey.value = null;
                     showToast('API key revoked', 'success');
                 }
                 pendingRevoke.value = null;
@@ -213,7 +214,7 @@ export default {
         </section>
 
         <div v-if="pendingRevoke" role="dialog" aria-modal="true" aria-label="Confirm Revoke"
-            class="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px]" @click.self="!isRevoking && (pendingRevoke = null)">
+            class="fixed inset-0 !mt-0 z-[110] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-[2px]" @click.self="!isRevoking && (pendingRevoke = null)">
             <div class="bg-white rounded-2xl border border-stone-200 shadow-2xl w-full max-w-sm p-6 animate-fade-in">
                 <h3 class="text-base font-bold text-slate-900 mb-1">
                     {{ pendingRevoke.kind === 'grant' ? 'Disconnect' : 'Revoke' }} "{{ pendingRevoke.label }}"?
