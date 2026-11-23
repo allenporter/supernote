@@ -169,7 +169,7 @@ async def test_ai_component_lifecycle_exposes_empty_registrar(
     assert isinstance(component, Component)
     assert component.domain == "ai"
     assert component.dependencies == ()
-    assert component.platforms == ()
+    assert component.platforms == ("http",)
 
     loader = ComponentLoader()
     loader.register(component)

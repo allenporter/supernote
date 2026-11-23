@@ -14,6 +14,7 @@ and `AiRegistrar` (passed into
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from supernote.server.ai.models.embedding import (
@@ -33,9 +34,17 @@ from supernote.server.ai.models.summary import (
     SummaryModel,
 )
 from supernote.server.core import ServerCore
-from supernote.server.keys import AI_REGISTRAR_KEY
+from supernote.server.keys import (
+    AI_REGISTRAR_KEY,
+    EMBEDDING_MODEL_KEY,
+    OCR_MODEL_KEY,
+    SUMMARY_MODEL_KEY,
+)
+from supernote.server.utils.prompt_loader import PROMPT_LOADER
 
 if TYPE_CHECKING:
+    from aiohttp import web
+
     from supernote.server.config import ModelConfig, ServerConfig
 
 __all__ = [
@@ -178,16 +187,35 @@ class AiRegistrar:
             max_concurrency=model_cfg.max_concurrency,
         )
 
+    def apply_to_app(
+        self,
+        app: web.Application,
+        config: ServerConfig,
+    ) -> tuple[OcrModel | None, SummaryModel | None, EmbeddingModel | None]:
+        """Instantiate configured AI models and bind them onto ``app``."""
+        ocr_model = self.create_ocr_model(config)
+        summary_model = self.create_summary_model(config)
+        embedding_model = self.create_embedding_model(config)
+        app[OCR_MODEL_KEY] = ocr_model
+        app[SUMMARY_MODEL_KEY] = summary_model
+        app[EMBEDDING_MODEL_KEY] = embedding_model
+        return ocr_model, summary_model, embedding_model
+
 
 class AiComponent:
     """Platform host component for AI model providers (OCR, summary, embedding)."""
 
     domain = "ai"
     dependencies: tuple[str, ...] = ()
-    platforms: tuple[str, ...] = ()
+    platforms: tuple[str, ...] = ("http",)
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
-        """Initialize `AiRegistrar` on ``core.app``."""
+        """Configure prompt overrides and initialize `AiRegistrar` on ``core.app``."""
+        if core.config.prompts_dir:
+            PROMPT_LOADER.configure(Path(core.config.prompts_dir))
+        core.app[OCR_MODEL_KEY] = None
+        core.app[SUMMARY_MODEL_KEY] = None
+        core.app[EMBEDDING_MODEL_KEY] = None
         core.app[AI_REGISTRAR_KEY] = AiRegistrar()
 
     async def async_start(self, core: ServerCore) -> None:
