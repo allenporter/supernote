@@ -569,6 +569,11 @@ class LocalEventBus:
                     self._background_tasks.add(task)
                     task.add_done_callback(self._background_tasks.discard)
 
+    async def wait_idle(self) -> None:
+        """Wait for all scheduled background event handlers to complete."""
+        while self._background_tasks:
+            await asyncio.gather(*tuple(self._background_tasks), return_exceptions=True)
+
     async def _safe_execute(self, handler: EventHandler, event: Event) -> None:
         """Execute handler and log exceptions."""
         try:
