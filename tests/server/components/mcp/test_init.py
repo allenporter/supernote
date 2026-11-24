@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import subprocess
 import sys
 from typing import Any
@@ -23,7 +22,7 @@ from supernote.server.components.oauth.models import SupernoteAccessToken
 from supernote.server.core import Component, ComponentLoader, PlatformHost, ServerCore
 from supernote.server.services.user import UserService
 from tests.fixtures.server import pick_port
-from tests.server.components.conftest import mcp_session
+from tests.server.components.conftest import mcp_session, wait_for_mcp_server
 
 
 async def test_mcp_component_lifecycle(
@@ -57,23 +56,10 @@ async def test_mcp_component_lifecycle(
 
     await loader.async_start_all(component_core)
     try:
-        async with asyncio.timeout(5.0):
-            while True:
-                try:
-                    _, writer = await asyncio.open_connection(
-                        component_core.config.host,
-                        component_core.config.mcp_port,
-                    )
-                    writer.close()
-                    await writer.wait_closed()
-                    break
-                except OSError:
-                    await asyncio.sleep(0.02)
-
-        raw_key, _ = await user_service.create_api_key(test_user_id, "Lifecycle Test")
-        url = (
-            f"http://{component_core.config.host}:{component_core.config.mcp_port}/mcp"
+        url = await wait_for_mcp_server(
+            component_core.config.host, component_core.config.mcp_port
         )
+        raw_key, _ = await user_service.create_api_key(test_user_id, "Lifecycle Test")
         async with mcp_session(url, {"x-access-token": raw_key}) as session:
             tools = await session.list_tools()
             assert "sample_tool" in {t.name for t in tools.tools}

@@ -133,25 +133,26 @@ def schedule_client(authenticated_client: Client) -> ScheduleClient:
     return ScheduleClient(authenticated_client)
 
 
+async def wait_for_mcp_server(host: str, port: int, timeout: float = 5.0) -> str:
+    """Wait until the embedded MCP server is listening and return its `/mcp` URL."""
+    async with asyncio.timeout(timeout):
+        while True:
+            try:
+                _, writer = await asyncio.open_connection(host, port)
+                writer.close()
+                await writer.wait_closed()
+                break
+            except OSError:
+                await asyncio.sleep(0.02)
+    return f"http://{host}:{port}/mcp"
+
+
 @pytest.fixture
 async def mcp_url(server_config: ServerConfig, client: Any) -> str:
     """Return the Streamable HTTP URL for the running MCP server once listening."""
     _ = client
     server_config.host = "127.0.0.1"
-    deadline = asyncio.get_running_loop().time() + 5.0
-    while True:
-        try:
-            _, writer = await asyncio.open_connection(
-                server_config.host, server_config.mcp_port
-            )
-            writer.close()
-            await writer.wait_closed()
-            break
-        except OSError:
-            if asyncio.get_running_loop().time() >= deadline:
-                raise
-            await asyncio.sleep(0.02)
-    return f"http://{server_config.host}:{server_config.mcp_port}/mcp"
+    return await wait_for_mcp_server(server_config.host, server_config.mcp_port)
 
 
 @asynccontextmanager
