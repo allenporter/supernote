@@ -5,6 +5,7 @@ import pytest
 from aiohttp.test_utils import TestClient
 
 from supernote.client.exceptions import ApiException
+from supernote.client.extended import ExtendedClient
 from supernote.client.summary import SummaryClient
 from supernote.models.summary import (
     AddSummaryDTO,
@@ -625,3 +626,69 @@ async def test_summary_group_pagination_scenarios(
             current_page=out_of_range_page,
             page_size=effective_size,
         )
+
+
+async def test_extended_file_summary_list_invalid_json(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    resp = await client.post(
+        "/api/extended/file/summary/list",
+        data="invalid json",
+        headers=auth_headers,
+    )
+    assert resp.status == 400
+
+
+async def test_extended_file_summary_list_invalid_dto(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    resp = await client.post(
+        "/api/extended/file/summary/list",
+        json={},
+        headers=auth_headers,
+    )
+    assert resp.status == 400
+
+
+async def test_extended_file_summary_list_success(
+    extended_client: ExtendedClient, summary_client: SummaryClient
+) -> None:
+    add_dto = AddSummaryDTO(
+        parent_unique_identifier="group-1",
+        unique_identifier="summary-101",
+        content="Extended test content",
+        file_id=101,
+    )
+    add_response = await summary_client.add_summary(add_dto)
+    assert add_response.success
+
+    res = await extended_client.list_summaries(file_id=101)
+    assert len(res.summary_do_list) == 1
+    assert res.summary_do_list[0].content == "Extended test content"
+    assert res.total_records == 1
+
+
+async def test_extended_file_summary_list_error(
+    client: TestClient, extended_client: ExtendedClient
+) -> None:
+    with (
+        patch.object(
+            client.app[SUMMARY_SERVICE_KEY],
+            "list_summaries_for_file_internal",
+            side_effect=SupernoteError("Custom summary error", status_code=400),
+        ),
+        pytest.raises(ApiException),
+    ):
+        await extended_client.list_summaries(file_id=101)
+
+    with (
+        patch.object(
+            client.app[SUMMARY_SERVICE_KEY],
+            "list_summaries_for_file_internal",
+            side_effect=ValueError("Uncaught error"),
+        ),
+        pytest.raises(ApiException),
+    ):
+        await extended_client.list_summaries(file_id=101)

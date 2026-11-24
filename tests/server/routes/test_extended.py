@@ -14,9 +14,7 @@ from supernote.client.schedule import ScheduleClient
 from supernote.client.summary import SummaryClient
 from supernote.models.base import ProcessingStatus
 from supernote.models.extended import PageTranscriptVO
-from supernote.models.summary import AddSummaryDTO
 from supernote.server.ai.models.embedding import EmbeddingTaskType
-from supernote.server.components.summary import SUMMARY_SERVICE_KEY
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
@@ -27,7 +25,6 @@ from supernote.server.db.models.note_processing import (
     SystemTaskDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
     BLOB_STORAGE_KEY,
     CONFIG_KEY,
@@ -235,72 +232,6 @@ async def test_extended_transcript_not_found(
     # Request transcript for non-existent file
     with pytest.raises(Exception, match="404"):  # The client raises for 404
         await extended_client.get_transcript(file_id=999)
-
-
-async def test_extended_file_summary_list_invalid_json(
-    client: TestClient,
-    auth_headers: dict[str, str],
-) -> None:
-    resp = await client.post(
-        "/api/extended/file/summary/list",
-        data="invalid json",
-        headers=auth_headers,
-    )
-    assert resp.status == 400
-
-
-async def test_extended_file_summary_list_invalid_dto(
-    client: TestClient,
-    auth_headers: dict[str, str],
-) -> None:
-    resp = await client.post(
-        "/api/extended/file/summary/list",
-        json={},
-        headers=auth_headers,
-    )
-    assert resp.status == 400
-
-
-async def test_extended_file_summary_list_success(
-    extended_client: ExtendedClient, summary_client: SummaryClient
-) -> None:
-    add_dto = AddSummaryDTO(
-        parent_unique_identifier="group-1",
-        unique_identifier="summary-101",
-        content="Extended test content",
-        file_id=101,
-    )
-    add_response = await summary_client.add_summary(add_dto)
-    assert add_response.success
-
-    res = await extended_client.list_summaries(file_id=101)
-    assert len(res.summary_do_list) == 1
-    assert res.summary_do_list[0].content == "Extended test content"
-    assert res.total_records == 1
-
-
-async def test_extended_file_summary_list_error(
-    client: TestClient, extended_client: ExtendedClient
-) -> None:
-    with (
-        patch.object(
-            client.app[SUMMARY_SERVICE_KEY],
-            "list_summaries_for_file_internal",
-            side_effect=SupernoteError("Custom summary error", status_code=400),
-        ),
-        pytest.raises(ApiException),
-    ):
-        await extended_client.list_summaries(file_id=101)
-
-    with (
-        patch.object(
-            client.app[SUMMARY_SERVICE_KEY],
-            "list_summaries_for_file_internal",
-            side_effect=ValueError("Uncaught error"),
-        ),
-        pytest.raises(ApiException),
-    ):
-        await extended_client.list_summaries(file_id=101)
 
 
 async def test_handle_list_system_tasks(
