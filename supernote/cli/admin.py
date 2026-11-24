@@ -18,7 +18,7 @@ from typing import Any
 
 from supernote.client.admin import AdminClient
 from supernote.client.exceptions import ApiException
-from supernote.models.base import ProcessingStatus, TaskType
+from supernote.models.base import ProcessingStatus
 
 from .client import create_session, server_url_override
 
@@ -211,13 +211,18 @@ def queue_start(args: argparse.Namespace) -> None:
     _run(args, queue_start_async())
 
 
-async def reprocess_async(task_type: str, file_id: int | None = None) -> None:
+async def reprocess_async(
+    task_type: str,
+    file_id: int | None = None,
+    *,
+    cascade: bool = False,
+) -> None:
     """Async implementation of note reprocessing."""
     async with create_session() as session:
         print("Connecting to server to trigger reprocessing...")
         admin_client = AdminClient(session.client)
         try:
-            await admin_client.admin_reprocess(task_type, file_id)
+            await admin_client.admin_reprocess(task_type, file_id, cascade=cascade)
             target = f"file ID {file_id}" if file_id is not None else "all files"
             print(f"Success! Triggered reprocessing of '{task_type}' for {target}.")
         except Exception as e:
@@ -226,7 +231,7 @@ async def reprocess_async(task_type: str, file_id: int | None = None) -> None:
 
 
 def reprocess(args: argparse.Namespace) -> None:
-    _run(args, reprocess_async(args.type, args.file_id))
+    _run(args, reprocess_async(args.type, args.file_id, cascade=args.cascade))
 
 
 async def integrity_async(
@@ -469,19 +474,26 @@ def add_parser(subparsers: Any) -> None:
         help="Force reprocessing of notes by clearing task states on the server",
         parents=[url_subparser],
     )
-    reprocess_choices = ["all", *TaskType.friendly_names()]
-
     parser_reprocess.add_argument(
         "--type",
-        choices=reprocess_choices,
+        type=str,
         default="summary",
-        help="Type of tasks to clear and reprocess (default: summary)",
+        help=(
+            "Type of tasks to clear and reprocess "
+            "(e.g. all, hashing, png, ocr, embedding, summary, or a custom stage; default: summary)"
+        ),
     )
     parser_reprocess.add_argument(
         "--file-id",
         type=int,
         default=None,
         help="Specific file ID to reprocess (default: all files)",
+    )
+    parser_reprocess.add_argument(
+        "--cascade",
+        action="store_true",
+        default=False,
+        help="Also clear downstream stages that depend on --type in the processing graph",
     )
     parser_reprocess.set_defaults(func=reprocess)
 
@@ -540,9 +552,9 @@ def add_parser(subparsers: Any) -> None:
     )
     parser_tasks.add_argument(
         "--type",
-        choices=TaskType.friendly_names(),
+        type=str,
         default=None,
-        help="Filter tasks by task type (e.g. ocr, png, embedding, summary)",
+        help="Filter tasks by task type (e.g. hashing, png, ocr, embedding, summary, or a custom stage)",
     )
     parser_tasks.add_argument(
         "--limit",

@@ -126,7 +126,16 @@ def test_add_parser() -> None:
     )
     assert parsed.type == "ocr"
     assert parsed.file_id == 123
+    assert parsed.cascade is False
     assert parsed.func == reprocess
+
+    parsed_custom = parser.parse_args(
+        ["admin", "reprocess", "--type", "CUSTOM_STAGE", "--cascade", "--file-id", "7"]
+    )
+    assert parsed_custom.type == "CUSTOM_STAGE"
+    assert parsed_custom.cascade is True
+    assert parsed_custom.file_id == 7
+    assert parsed_custom.func == reprocess
 
     parsed = parser.parse_args(
         [

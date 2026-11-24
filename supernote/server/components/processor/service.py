@@ -785,6 +785,67 @@ class ProcessorService:
             )
             return page_task_ok
 
+    def resolve_task_type(self, name: str) -> str:
+        """Resolve a built-in friendly/raw `TaskType` or registered `TaskGraph` stage name."""
+        stripped = name.strip()
+        if not stripped:
+            raise ValueError(f"Invalid task_type: {name}")
+        try:
+            return TaskType.from_friendly(stripped).value
+        except ValueError:
+            pass
+
+        resolved = self.task_graph.resolve_task_type(stripped)
+        if resolved is not None:
+            return resolved
+        raise ValueError(f"Invalid task_type: {name}")
+
+    async def reprocess_tasks(
+        self,
+        task_type: str,
+        file_id: int | None = None,
+        *,
+        cascade: bool = False,
+    ) -> list[int]:
+        """Clear matching `SystemTaskDO` checkpoints and re-enqueue active target files."""
+        stmt = delete(SystemTaskDO)
+
+        if task_type.strip().upper() != "ALL":
+            canonical_type = self.resolve_task_type(task_type)
+            if cascade:
+                types_to_clear = [
+                    canonical_type,
+                    *sorted(self.task_graph.descendants(canonical_type)),
+                ]
+            else:
+                types_to_clear = [canonical_type]
+            stmt = stmt.where(SystemTaskDO.task_type.in_(types_to_clear))
+
+        async with self.session_manager.session() as session:
+            if file_id is not None:
+                file_stmt = select(UserFileDO.user_id).where(
+                    UserFileDO.id == file_id,
+                    UserFileDO.is_active == "Y",
+                )
+                uid = (await session.execute(file_stmt)).scalar_one_or_none()
+                targets = [(file_id, uid)] if uid is not None else []
+                stmt = stmt.where(SystemTaskDO.file_id == file_id)
+            else:
+                file_stmt = select(UserFileDO.id, UserFileDO.user_id).where(
+                    UserFileDO.file_name.like("%.note"),
+                    UserFileDO.is_active == "Y",
+                )
+                targets = list((await session.execute(file_stmt)).all())
+
+            await session.execute(stmt)
+            await session.commit()
+
+        for fid, uid in targets:
+            await self.event_bus.publish(
+                NoteUpdatedEvent(file_id=fid, user_id=uid, file_path="")
+            )
+        return [fid for fid, _ in targets]
+
     async def list_system_tasks(
         self,
         user_id: int | None = None,

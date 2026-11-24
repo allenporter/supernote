@@ -184,6 +184,26 @@ class TaskGraph:
         """Return transitive upstream dependencies for ``task_type``."""
         return self._ancestors.get(_task_key(task_type), frozenset())
 
+    def descendants(self, task_type: str) -> frozenset[str]:
+        """Return transitive downstream dependents for ``task_type``."""
+        t = _task_key(task_type)
+        return frozenset(
+            candidate
+            for candidate, upstream in self._ancestors.items()
+            if t in upstream
+        )
+
+    def resolve_task_type(self, name: str) -> str | None:
+        """Return canonical task type matching a registered stage's `task_type` or `name`."""
+        lowered = name.strip().lower()
+        if not lowered:
+            return None
+        for mod in self._ordered:
+            key = _task_key(mod.task_type)
+            if key.lower() == lowered or mod.name.lower() == lowered:
+                return key
+        return None
+
     def has_page_ancestor(self, task_type: str) -> bool:
         """Return True if any transitive upstream dependency has `TaskScope.PAGE`."""
         return any(
