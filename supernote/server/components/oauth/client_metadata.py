@@ -65,6 +65,13 @@ _READ_FIELDS = (
     "client_name",
 )
 
+# getaddrinfo answers for a name that does not exist, as opposed to EAI_AGAIN.
+_NO_SUCH_HOST = frozenset(
+    code
+    for name in ("EAI_NONAME", "EAI_NODATA")
+    if (code := getattr(socket, name, None)) is not None
+)
+
 DocumentFetcher = Callable[[str], Awaitable[tuple[str, str | None]]]
 """Fetches a document URL, returning its text and its Cache-Control header."""
 
@@ -217,7 +224,10 @@ async def _read_document(
             f"client metadata host is not trusted: {err}"
         ) from err
     except aiohttp.ClientConnectorError as err:
-        if isinstance(err.os_error, _PrivateAddressError):
+        if isinstance(err.os_error, _PrivateAddressError) or (
+            isinstance(err, aiohttp.ClientConnectorDNSError)
+            and err.os_error.errno in _NO_SUCH_HOST
+        ):
             raise NotClientMetadataDocumentError(str(err.os_error)) from err
         raise ClientMetadataUnavailableError(
             f"client metadata could not be fetched: {err}"
@@ -235,7 +245,8 @@ async def _read_document(
 async def fetch_client_metadata_document(url: str) -> tuple[str, str | None]:
     """Fetch a Client ID Metadata Document from a public HTTPS address.
 
-    Raises `NotClientMetadataDocumentError` for a private host, a non-200 answer
+    Raises `NotClientMetadataDocumentError` for a private host, a host this server
+    cannot resolve (a LAN or container name), a non-200 answer
     other than 429/5xx, or a response that is not JSON.
     """
     host = (yarl.URL(url, encoded=True).host or "").strip("[]")

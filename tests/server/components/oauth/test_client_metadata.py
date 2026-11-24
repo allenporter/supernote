@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import socket
 import ssl
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractContextManager
@@ -285,6 +286,27 @@ async def test_hostname_resolving_to_private_addresses_is_not_fetched() -> None:
         _resolving_to("10.0.0.5"),
         pytest.raises(NotClientMetadataDocumentError, match="public address"),
     ):
+        await fetch_client_metadata_document(TEST_CLIENT_ID)
+
+
+def _failing_dns(code: int) -> AbstractContextManager[Any]:
+    async def resolve(self: object, host: str, port: int, family: int) -> list[Any]:
+        raise socket.gaierror(code, "name resolution failed")
+
+    return patch.object(DefaultResolver, "resolve", resolve)
+
+
+async def test_a_host_this_server_cannot_resolve_is_not_a_cimd_client() -> None:
+    """A LAN or container name the browser reaches but this server cannot look up."""
+    with (
+        _failing_dns(socket.EAI_NONAME),
+        pytest.raises(NotClientMetadataDocumentError),
+    ):
+        await fetch_client_metadata_document("https://homeassistant.local/auth")
+
+
+async def test_a_temporary_dns_failure_is_unavailable() -> None:
+    with _failing_dns(socket.EAI_AGAIN), pytest.raises(ClientMetadataUnavailableError):
         await fetch_client_metadata_document(TEST_CLIENT_ID)
 
 
