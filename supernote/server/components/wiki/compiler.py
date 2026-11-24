@@ -1,4 +1,13 @@
-"""Event-driven incremental LLM Wiki compiler, backfill, and semantic lint worker."""
+"""Event-driven incremental LLM Wiki compiler, backfill, and semantic lint worker.
+
+Subscribes to `DomainEventRecorded` (per-user debounced wake-up) and
+`VfsItemPurgedEvent`, draining `EventLogService.list_events()` via the durable
+`f_wiki_checkpoint.last_sync_token` cursor. Runs LLM calls strictly outside open
+SQLite sessions, enforces `max_pages_per_batch` and `edit_policy`, runs zero-LLM
+structural lint (`broken_link`, `orphan_page`, `stale_source`) after every compile,
+and records LLM semantic findings (`contradiction`, `alias_merge_proposal`) into
+`f_wiki_lint_issue` for explicit human/agent triage.
+"""
 
 from __future__ import annotations
 

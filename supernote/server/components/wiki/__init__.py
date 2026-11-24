@@ -30,6 +30,30 @@ and Schedule tasks (`ScheduleTask*Event`), decoupled from `SummaryModule` and
   streams Obsidian-compatible Markdown / `.zip` vaults on demand via
   `WikiExportService`.
 
+### Two-Tier Lint Issues (`f_wiki_lint_issue`)
+
+Wiki hygiene is split into two tiers whose findings are stored idempotently per
+`(user_id, dedup_key)` in `f_wiki_lint_issue` (`status`: `open`, `resolved`, or
+`dismissed`):
+
+1. **Tier A — Zero-LLM Structural Lint (`WikiService.run_structural_lint`, runs
+   free after every compile):**
+   - `broken_link` (`warn`): Active page contains a `[[wikilink]]` whose target
+     slug has no active page (`target_page_id is None`).
+   - `orphan_page` (`info`): Active non-`index`/`log` page has no inbound links
+     from other active pages (self-links do not count).
+   - `stale_source` (`warn`): Active page cites a deleted note page, file, or
+     schedule task (`f_wiki_source_ref.is_source_deleted = True`).
+   - Open Tier A issues automatically transition to `resolved` once the underlying
+     condition is fixed, while `dismissed` issues remain suppressed.
+2. **Tier B — Bounded LLM Semantic Lint (`WikiCompilerWorker.run_semantic_lint`
+   and compile-time `lint_proposals`):**
+   - `contradiction` (`warn`): Conflicting active claims across wiki pages or
+     against current `ScheduleTaskDO` states.
+   - `alias_merge_proposal` (`warn`): Suspected handwriting-OCR duplicate entities
+     (e.g. `Al1ce` vs `Alice`) quarantined with a suggested `proposal_json` target
+     for explicit human or agent confirmation—never silently auto-merged.
+
 Registered opt-in (`default_enabled=False`) in `BUILTIN_COMPONENTS`.
 """
 
