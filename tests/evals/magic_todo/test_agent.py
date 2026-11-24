@@ -1,4 +1,4 @@
-"""Unit and live-server integration tests for `supernote.client.magic_todo`."""
+"""Unit and live-server integration tests for `evals.magic_todo.agent`."""
 
 from __future__ import annotations
 
@@ -11,11 +11,7 @@ import pytest
 import pytest_asyncio
 from aiohttp.test_utils import TestClient
 
-from supernote.client.auth import AbstractAuth
-from supernote.client.client import Client
-from supernote.client.events import EventsClient
-from supernote.client.exceptions import GoneException
-from supernote.client.magic_todo import (
+from evals.magic_todo.agent import (
     CreateTaskAction,
     DeleteTaskAction,
     FileCursorStore,
@@ -25,6 +21,10 @@ from supernote.client.magic_todo import (
     TaskAction,
     UpdateTaskAction,
 )
+from supernote.client.auth import AbstractAuth
+from supernote.client.client import Client
+from supernote.client.events import EventsClient
+from supernote.client.exceptions import GoneException
 from supernote.client.schedule import ScheduleClient
 from supernote.models.events import (
     DomainEntityType,

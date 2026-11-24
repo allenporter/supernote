@@ -18,12 +18,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from supernote.client.events import EventsClient
+from supernote.client.exceptions import GoneException
+from supernote.client.schedule import ScheduleClient
 from supernote.models.events import DomainEventType, DomainEventVO
 from supernote.models.schedule import ScheduleTaskInfo, ScheduleTaskLinkDTO
-
-from .events import EventsClient
-from .exceptions import GoneException
-from .schedule import ScheduleClient
 
 __all__ = [
     "CreateTaskAction",
