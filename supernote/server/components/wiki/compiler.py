@@ -33,15 +33,13 @@ in `f_wiki_lint_issue` for explicit human/agent triage.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import re
 import time
 from dataclasses import dataclass
 from typing import Any
 
 from aiohttp import web
-from sqlalchemy import select, update
+from sqlalchemy import select
 
 from supernote.models.events import DomainEventType
 from supernote.server.ai.base import AIError
@@ -50,11 +48,7 @@ from supernote.server.components.events.service import EventLogService
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.models.schedule import ScheduleTaskDO
-from supernote.server.db.models.wiki import (
-    WikiCheckpointDO,
-    WikiLintIssueDO,
-    WikiSourceRefDO,
-)
+from supernote.server.db.models.wiki import WikiCheckpointDO, WikiLintIssueDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
     DomainEventRecorded,
@@ -63,7 +57,6 @@ from supernote.server.events import (
 )
 from supernote.server.exceptions import CursorExpiredError
 from supernote.server.metrics import AIStage
-from supernote.server.utils.prompt_loader import PROMPT_LOADER, PromptId
 
 from .config import WikiConfig
 from .models import (
@@ -73,12 +66,21 @@ from .models import (
     WikiSourceRefDTO,
     WikiUpsertInput,
 )
+from .prompts import (
+    WIKI_COMPILE_SCHEMA,
+    WIKI_LINT_SCHEMA,
+    build_compile_prompt,
+    build_lint_prompt,
+)
 from .service import WikiService, _make_dedup_key
+from .sources import (
+    load_linked_context,
+    mark_deleted_sources_from_events,
+    mark_file_sources_deleted,
+)
 
 __all__ = [
     "WIKI_COMPILER_KEY",
-    "WIKI_COMPILE_SCHEMA",
-    "WIKI_LINT_SCHEMA",
     "WIKI_RELEVANT_EVENT_TYPES",
     "WikiCompileResult",
     "WikiCompilerWorker",
@@ -96,97 +98,9 @@ WIKI_RELEVANT_EVENT_TYPES: tuple[str, ...] = (
     DomainEventType.FILE_DELETED.value,
 )
 
-WIKI_COMPILE_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "page_ops": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "slug": {"type": "string"},
-                    "title": {"type": "string"},
-                    "page_kind": {"type": "string"},
-                    "summary": {"type": "string"},
-                    "body_md": {"type": "string"},
-                    "aliases": {"type": "array", "items": {"type": "string"}},
-                    "claims": {"type": "array", "items": {"type": "object"}},
-                    "source_refs": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "source_type": {"type": "string"},
-                                "source_key": {"type": "string"},
-                                "file_id": {"type": ["integer", "null"]},
-                            },
-                            "required": ["source_type", "source_key"],
-                        },
-                    },
-                    "change_summary": {"type": "string"},
-                },
-                "required": ["slug", "title", "body_md"],
-            },
-        },
-        "lint_proposals": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "issue_type": {"type": "string"},
-                    "description": {"type": "string"},
-                    "proposal": {"type": "object"},
-                },
-                "required": ["issue_type", "description"],
-            },
-        },
-        "log_entry": {"type": "string"},
-    },
-    "required": ["page_ops"],
-}
-
-WIKI_LINT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "issues": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "issue_type": {"type": "string"},
-                    "severity": {"type": "string"},
-                    "description": {"type": "string"},
-                    "proposal": {"type": "object"},
-                },
-                "required": ["issue_type", "description"],
-            },
-        }
-    },
-    "required": ["issues"],
-}
-
-_BOUNDARY_TAG_RE = re.compile(
-    r"<\s*(/?)\s*(source_diff|linked_context|user_index|candidate_pages|pages_batch|task_snapshots)\b",
-    re.IGNORECASE,
-)
-_PLACEHOLDER_RE = re.compile(r"\{\{([a-z0-9_]+)\}\}")
-
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
-
-
-def _sanitize_xml_payload(text: str) -> str:
-    """Neutralize prompt boundary tags (any case/whitespace) inside untrusted payloads."""
-    return _BOUNDARY_TAG_RE.sub(lambda m: f"&lt;{m.group(1)}{m.group(2)}", text)
-
-
-def _render_prompt_template(template: str, values: dict[str, str]) -> str:
-    """Single-pass placeholder substitution preventing chained injection across fields."""
-    return _PLACEHOLDER_RE.sub(
-        lambda m: values[m.group(1)] if m.group(1) in values else m.group(0),
-        template,
-    )
 
 
 @dataclass
@@ -259,20 +173,12 @@ class WikiCompilerWorker:
         self._schedule_user_compile(event.user_id)
 
     async def _on_vfs_purged(self, event: VfsItemPurgedEvent) -> None:
-        """Mark all wiki source refs citing a permanently purged VFS file as deleted."""
+        """Mark wiki source refs citing a permanently purged VFS file as deleted."""
         if not self._started:
             return
-        now = _now_ms()
-        async with self._session_manager.session() as session:
-            await session.execute(
-                update(WikiSourceRefDO)
-                .where(
-                    WikiSourceRefDO.user_id == event.user_id,
-                    WikiSourceRefDO.file_id == event.item_id,
-                )
-                .values(is_source_deleted=True, update_time=now)
-            )
-            await session.commit()
+        await mark_file_sources_deleted(
+            self._session_manager, event.user_id, event.item_id
+        )
 
     def _schedule_user_compile(self, user_id: int) -> None:
         if existing := self._debounce_tasks.get(user_id):
@@ -347,7 +253,9 @@ class WikiCompilerWorker:
                     status="idle",
                 )
 
-            await self._mark_deleted_sources_from_events(user_id, page.events)
+            await mark_deleted_sources_from_events(
+                self._session_manager, user_id, page.events
+            )
             max_seq = page.events[-1].seq
 
             if self._text_model is None:
@@ -365,7 +273,9 @@ class WikiCompilerWorker:
                     status="paused",
                 )
 
-            linked_context = await self._load_linked_context(user_id, page.events)
+            linked_context = await load_linked_context(
+                self._session_manager, user_id, page.events
+            )
             diff_payload = [
                 {
                     "seq": ev.seq,
@@ -377,9 +287,8 @@ class WikiCompilerWorker:
                 }
                 for ev in page.events
             ]
-            prompt = await self._build_compile_prompt(
-                user_id, diff_payload, linked_context
-            )
+            all_pages = await self._wiki_service.list_pages(user_id, limit=100)
+            prompt = build_compile_prompt(all_pages, diff_payload, linked_context)
 
             # Execute LLM HTTP call strictly outside any open SQLite session.
             try:
@@ -509,8 +418,9 @@ class WikiCompilerWorker:
             pages_updated = 0
             skipped_policy = 0
             if synthetic_diffs:
-                prompt = await self._build_compile_prompt(
-                    user_id, synthetic_diffs, linked_context={}
+                all_pages = await self._wiki_service.list_pages(user_id, limit=100)
+                prompt = build_compile_prompt(
+                    all_pages, synthetic_diffs, linked_context={}
                 )
                 try:
                     plan = await self._text_model.generate_json(
@@ -567,41 +477,7 @@ class WikiCompilerWorker:
                     .all()
                 )
 
-            pages_json = _sanitize_xml_payload(
-                json.dumps(
-                    [
-                        {
-                            "slug": p.slug,
-                            "title": p.title,
-                            "summary": p.summary,
-                            "aliases": p.aliases,
-                            "claims": p.claims,
-                        }
-                        for p in pages
-                    ]
-                )
-            )
-            tasks_json = _sanitize_xml_payload(
-                json.dumps(
-                    [
-                        {
-                            "task_id": t.task_id,
-                            "title": t.title,
-                            "status": t.status,
-                            "due_time": t.due_time,
-                        }
-                        for t in tasks
-                    ]
-                )
-            )
-            template = PROMPT_LOADER.get_prompt(PromptId.WIKI_LINT)
-            prompt = _render_prompt_template(
-                template,
-                {
-                    "pages_batch_json": pages_json,
-                    "task_snapshots_json": tasks_json,
-                },
-            )
+            prompt = build_lint_prompt(pages, tasks)
             try:
                 report = await self._text_model.generate_json(
                     prompt,
@@ -622,44 +498,6 @@ class WikiCompilerWorker:
                 last_error=None,
             )
             return await self._wiki_service.list_lint_issues(user_id, status="open")
-
-    async def _build_compile_prompt(
-        self,
-        user_id: int,
-        diff_payload: list[dict[str, Any]],
-        linked_context: dict[str, Any],
-    ) -> str:
-        all_pages = await self._wiki_service.list_pages(user_id, limit=100)
-        compact_index = "\n".join(
-            f"- [[{p.slug}]] ({p.page_kind}): {p.title} — {p.summary}"
-            for p in all_pages
-        )
-        candidate_pages = [
-            {
-                "slug": p.slug,
-                "title": p.title,
-                "page_kind": p.page_kind,
-                "edit_policy": p.edit_policy,
-                "version": p.version,
-                "aliases": p.aliases,
-                "body_md": p.body_md[:2000],
-            }
-            for p in all_pages[:10]
-        ]
-        template = PROMPT_LOADER.get_prompt(PromptId.WIKI_COMPILE)
-        return _render_prompt_template(
-            template,
-            {
-                "compact_index_md": _sanitize_xml_payload(compact_index),
-                "candidate_pages_json": _sanitize_xml_payload(
-                    json.dumps(candidate_pages)
-                ),
-                "diff_events_json": _sanitize_xml_payload(json.dumps(diff_payload)),
-                "linked_note_and_task_context_json": _sanitize_xml_payload(
-                    json.dumps(linked_context)
-                ),
-            },
-        )
 
     async def _apply_compile_plan(
         self,
@@ -779,137 +617,6 @@ class WikiCompilerWorker:
                         )
                     )
             await session.commit()
-
-    async def _mark_deleted_sources_from_events(
-        self, user_id: int, events: list[DomainEventRecorded]
-    ) -> None:
-        now = _now_ms()
-        deleted_file_ids: set[int] = set()
-        deleted_page_keys: set[str] = set()
-        deleted_task_ids: set[str] = set()
-        for ev in events:
-            if (
-                ev.event_type == DomainEventType.FILE_DELETED.value
-                and ev.related_file_id
-            ):
-                deleted_file_ids.add(ev.related_file_id)
-            elif (
-                ev.event_type == DomainEventType.NOTE_PAGES_DELTA.value
-                and ev.related_file_id
-            ):
-                for pid in ev.payload.get("deleted_pages") or []:
-                    deleted_page_keys.add(f"{ev.related_file_id}:{pid}")
-            elif ev.event_type == DomainEventType.SCHEDULE_TASK_DELETED.value:
-                deleted_task_ids.add(ev.entity_id)
-
-        if not (deleted_file_ids or deleted_page_keys or deleted_task_ids):
-            return
-        async with self._session_manager.session() as session:
-            if deleted_file_ids:
-                await session.execute(
-                    update(WikiSourceRefDO)
-                    .where(
-                        WikiSourceRefDO.user_id == user_id,
-                        WikiSourceRefDO.file_id.in_(deleted_file_ids),
-                    )
-                    .values(is_source_deleted=True, update_time=now)
-                )
-            if deleted_page_keys:
-                await session.execute(
-                    update(WikiSourceRefDO)
-                    .where(
-                        WikiSourceRefDO.user_id == user_id,
-                        WikiSourceRefDO.source_type == "note_page",
-                        WikiSourceRefDO.source_key.in_(deleted_page_keys),
-                    )
-                    .values(is_source_deleted=True, update_time=now)
-                )
-            if deleted_task_ids:
-                await session.execute(
-                    update(WikiSourceRefDO)
-                    .where(
-                        WikiSourceRefDO.user_id == user_id,
-                        WikiSourceRefDO.source_type == "schedule_task",
-                        WikiSourceRefDO.source_key.in_(deleted_task_ids),
-                    )
-                    .values(is_source_deleted=True, update_time=now)
-                )
-            await session.commit()
-
-    async def _load_linked_context(
-        self, user_id: int, events: list[DomainEventRecorded]
-    ) -> dict[str, Any]:
-        task_ids = {ev.entity_id for ev in events if ev.entity_type == "schedule_task"}
-        file_ids = {
-            ev.related_file_id
-            for ev in events
-            if ev.related_file_id is not None and ev.entity_type == "schedule_task"
-        }
-        if not task_ids and not file_ids:
-            return {}
-
-        async with self._session_manager.session() as session:
-            tasks_ctx: list[dict[str, Any]] = []
-            if task_ids:
-                rows = (
-                    (
-                        await session.execute(
-                            select(ScheduleTaskDO).where(
-                                ScheduleTaskDO.user_id == user_id,
-                                ScheduleTaskDO.task_id.in_(task_ids),
-                            )
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                tasks_ctx = [
-                    {
-                        "task_id": t.task_id,
-                        "title": t.title,
-                        "detail": t.detail,
-                        "status": t.status,
-                        "importance": t.importance,
-                        "recurrence": t.recurrence,
-                        "due_time": t.due_time,
-                        "completed_time": t.completed_time,
-                    }
-                    for t in rows
-                ]
-
-            pages_ctx: list[dict[str, Any]] = []
-            if file_ids:
-                # Strict tenant join: NotePageContentDO has no user_id column.
-                page_rows = (
-                    (
-                        await session.execute(
-                            select(NotePageContentDO)
-                            .join(
-                                UserFileDO, UserFileDO.id == NotePageContentDO.file_id
-                            )
-                            .where(
-                                UserFileDO.user_id == user_id,
-                                UserFileDO.is_active == "Y",
-                                NotePageContentDO.file_id.in_(file_ids),
-                                NotePageContentDO.text_content.is_not(None),
-                            )
-                            .limit(10)
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                pages_ctx = [
-                    {
-                        "file_id": p.file_id,
-                        "page_id": p.page_id,
-                        "page_index": p.page_index,
-                        "text_content": (p.text_content or "")[:1500],
-                    }
-                    for p in page_rows
-                    if not p.is_blank
-                ]
-            return {"tasks": tasks_ctx, "linked_note_pages": pages_ctx}
 
     async def _get_or_create_checkpoint(self, user_id: int) -> WikiCheckpointDO:
         async with self._session_manager.session() as session:
