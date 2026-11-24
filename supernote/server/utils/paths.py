@@ -108,6 +108,15 @@ def get_conversion_pdf_path(
     return f"{prefix}_pages_{digest}.pdf"
 
 
+def get_summary_handwriting_prefix(
+    user_id: int, summary_id: int, handwrite_md5: str
+) -> str:
+    """Return the key prefix shared by every render of one summary handwriting version."""
+    if not handwrite_md5:
+        raise ValueError("handwrite_md5 must not be empty")
+    return f"conversions/{user_id}/summary_{summary_id}/handwrite_{handwrite_md5}"
+
+
 def get_full_conversion_pdf_path(key: str) -> str | None:
     """Return the full-export path a page-selection PDF path belongs to."""
     if match := PDF_SELECTION_PATTERN.match(key):

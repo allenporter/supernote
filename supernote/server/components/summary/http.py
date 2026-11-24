@@ -5,8 +5,10 @@ for both AI-generated syntheses and device-authored handwritten summaries, inclu
 tag CRUD (`/api/file/*/summary/tag`), summary group CRUD (`/api/file/*/summary/group`),
 summary item CRUD (`/api/file/add/summary`, `/api/file/update/summary`,
 `/api/file/delete/summary`, `/api/file/query/summary*`), signed binary upload/download
-URL generation for handwriting blobs, and the extended Web UI listing endpoint
-(`POST /api/extended/file/summary/list`). Delegates persistence and event emission to
+URL generation for handwriting blobs, the extended Web UI listing endpoint
+(`POST /api/extended/file/summary/list`), and extended handwriting renders
+(`POST /api/extended/file/summary/to/pdf|png`, served from `GET /api/oss/summary/*`).
+Delegates persistence and event emission to
 `supernote.server.components.summary.service.SummaryService`.
 See `supernote.guides.summary_api`.
 """
@@ -17,14 +19,16 @@ import logging
 import urllib.parse
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from http import HTTPStatus
 
 from aiohttp import web
 
-from supernote.models.base import BaseResponse
+from supernote.models.base import BaseResponse, create_error_response
 from supernote.models.extended import (
     WebSummaryListRequestDTO,
     WebSummaryListVO,
 )
+from supernote.models.file_device import PdfVO, PngPageVO, PngVO
 from supernote.models.summary import (
     AddSummaryDTO,
     AddSummaryGroupDTO,
@@ -51,12 +55,20 @@ from supernote.models.summary import (
     UploadSummaryApplyVO,
 )
 from supernote.server.components.http import HttpRegistrar
+from supernote.server.constants import CACHE_BUCKET
 from supernote.server.core import ServerCore
 from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
+    BLOB_STORAGE_KEY,
+    CONVERSION_SERVICE_KEY,
     REQUEST_USER_KEY,
     URL_SIGNER_KEY,
 )
+from supernote.server.metrics import OSSTransferKind
+from supernote.server.routes.decorators import public_route
+from supernote.server.routes.oss import stream_blob_response
+from supernote.server.services.blob import BlobStorage
+from supernote.server.services.conversion import ConversionService
 from supernote.server.utils.paths import generate_inner_name
 from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
@@ -552,6 +564,138 @@ async def handle_extended_file_summary_list(request: web.Request) -> web.Respons
     except Exception as err:
         logger.exception("Error fetching summaries")
         return SupernoteError.uncaught(err).to_response()
+
+
+@routes.post("/api/extended/file/summary/to/pdf")
+async def handle_summary_to_pdf(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/file/summary/to/pdf
+    # Purpose: Render a summary's handwriting to PDF and return a signed download URL.
+    # Response: PdfVO
+    req_data = DownloadSummaryDTO.from_dict(await request.json())
+    user_email = request[REQUEST_USER_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
+    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
+    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
+
+    try:
+        summary = await summary_service.get_summary(user_email, req_data.id)
+        await conversion_service.convert_summary_to_pdf(user_email, summary)
+        signed_path = await url_signer.sign(
+            f"/api/oss/summary/pdf/{req_data.id}", user=user_email, single_use=False
+        )
+        download_url = f"{get_request_base_url(request)}{signed_path}"
+        return web.json_response(PdfVO(url=download_url).to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
+
+
+@routes.post("/api/extended/file/summary/to/png")
+async def handle_summary_to_png(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/file/summary/to/png
+    # Purpose: Render a summary's handwriting to per-page PNGs and return signed download URLs.
+    # Response: PngVO
+    req_data = DownloadSummaryDTO.from_dict(await request.json())
+    user_email = request[REQUEST_USER_KEY]
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
+    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
+    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
+
+    try:
+        summary = await summary_service.get_summary(user_email, req_data.id)
+        page_numbers = await conversion_service.convert_summary_to_png(
+            user_email, summary
+        )
+        base_url = get_request_base_url(request)
+        png_pages = []
+        for page_no in page_numbers:
+            signed_path = await url_signer.sign(
+                f"/api/oss/summary/png/{req_data.id}/{page_no}",
+                user=user_email,
+                single_use=False,
+            )
+            png_pages.append(PngPageVO(page_no=page_no, url=f"{base_url}{signed_path}"))
+        return web.json_response(PngVO(png_page_vo_list=png_pages).to_dict())
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        return SupernoteError.uncaught(err).to_response()
+
+
+async def _stream_summary_render(
+    request: web.Request, page_no: int | None
+) -> web.StreamResponse:
+    """Verify a signed summary render URL and stream its cached PDF (or page PNG)."""
+    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
+    try:
+        payload = await url_signer.verify(request.path_qs, consume=False)
+    except SupernoteError as err:
+        return err.to_response()
+
+    user_email = payload.get("user")
+    if not user_email:
+        return web.json_response(
+            create_error_response("Missing user identity in signature").to_dict(),
+            status=HTTPStatus.FORBIDDEN,
+        )
+
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
+    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
+    blob_storage: BlobStorage = request.app[BLOB_STORAGE_KEY]
+    try:
+        summary_id = int(request.match_info["summary_id"])
+        summary = await summary_service.get_summary(user_email, summary_id)
+        if page_no is None:
+            kind = OSSTransferKind.PDF_EXPORT
+            blob = await conversion_service.get_summary_pdf(user_email, summary)
+        else:
+            kind = OSSTransferKind.PNG_PREVIEW
+            blob = await conversion_service.get_summary_png_page(
+                user_email, summary, page_no
+            )
+        if not blob:
+            raise FileNotFoundError(f"Summary {summary_id} render not cached")
+        metadata = await blob_storage.get_metadata(CACHE_BUCKET, blob.storage_key)
+    except SupernoteError as err:
+        return err.to_response()
+    except FileNotFoundError:
+        return web.json_response(
+            create_error_response("Summary render not found").to_dict(),
+            status=HTTPStatus.NOT_FOUND,
+        )
+
+    return await stream_blob_response(
+        request=request,
+        blob_storage=blob_storage,
+        bucket=CACHE_BUCKET,
+        storage_key=blob.storage_key,
+        file_name=blob.file_name,
+        file_size=metadata.size,
+        kind=kind,
+    )
+
+
+@routes.get("/api/oss/summary/pdf/{summary_id:\\d+}")
+@public_route
+async def handle_oss_summary_pdf_download(request: web.Request) -> web.StreamResponse:
+    """Handle rendered summary handwriting PDF download from CACHE_BUCKET.
+
+    Endpoint: GET /api/oss/summary/pdf/{summary_id}
+    """
+    return await _stream_summary_render(request, page_no=None)
+
+
+@routes.get("/api/oss/summary/png/{summary_id:\\d+}/{page_no:\\d+}")
+@public_route
+async def handle_oss_summary_png_download(request: web.Request) -> web.StreamResponse:
+    """Handle rendered summary handwriting page PNG download from CACHE_BUCKET.
+
+    Endpoint: GET /api/oss/summary/png/{summary_id}/{page_no}
+    """
+    return await _stream_summary_render(
+        request, page_no=int(request.match_info["page_no"])
+    )
 
 
 async def async_setup_http(core: ServerCore, registrar: HttpRegistrar) -> None:

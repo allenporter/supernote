@@ -1,8 +1,10 @@
 """On-demand `.note` to PNG and PDF conversion service with blob cache lookup.
 
 `ConversionService` serves page PNG previews and multi-page vector PDF exports
-requested by hardware devices (`supernote.server.routes.file_device`), the Web UI
-(`supernote.server.routes.file_web`), and signed OSS URLs (`supernote.server.routes.oss`).
+of notes and of summary handwriting `.mark` blobs, requested by hardware devices
+(`supernote.server.routes.file_device`), the Web UI (`supernote.server.routes.file_web`),
+the summary component (`supernote.server.components.summary.http`), and signed OSS URLs
+(`supernote.server.routes.oss`).
 It checks `CACHE_BUCKET` via `supernote.server.services.blob.BlobStorage` first and
 delegates missing page PNGs to `supernote.server.services.processor.ProcessorService`
 or renders PDFs in a worker thread via `supernote.notebook.converter.PdfConverter`.
@@ -19,7 +21,8 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 from supernote.models.base import TaskType
-from supernote.notebook import PdfConverter
+from supernote.models.summary import SummaryItem
+from supernote.notebook import PdfConverter, PngConverter
 from supernote.notebook import load as load_notebook
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
@@ -29,7 +32,11 @@ from supernote.server.exceptions import FileError, FileNotFound
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.user import UserService
 from supernote.server.services.vfs import VirtualFileSystem
-from supernote.server.utils.paths import get_conversion_pdf_path, get_page_png_path
+from supernote.server.utils.paths import (
+    get_conversion_pdf_path,
+    get_page_png_path,
+    get_summary_handwriting_prefix,
+)
 
 if TYPE_CHECKING:
     from supernote.server.components.processor import ProcessorService
@@ -48,6 +55,18 @@ def _convert_note_to_pdf_sync(blob_content: bytes, page_no_list: list[int]) -> b
     note = load_notebook(BytesIO(blob_content), policy="loose")
     converter = PdfConverter(note)
     return converter.convert(page_no_list if page_no_list else -1)
+
+
+def _convert_note_to_png_pages_sync(blob_content: bytes) -> list[bytes]:
+    """Helper to parse a note file and render every page to PNG in a synchronous context."""
+    note = load_notebook(BytesIO(blob_content), policy="loose")
+    converter = PngConverter(note)  # type: ignore[no-untyped-call]
+    pages = []
+    for page_no in range(note.total_pages):
+        buf = BytesIO()
+        converter.convert(page_no).save(buf, format="PNG")  # type: ignore[no-untyped-call]
+        pages.append(buf.getvalue())
+    return pages
 
 
 class ConversionService:
@@ -201,4 +220,77 @@ class ConversionService:
         return ConvertedBlob(
             storage_key=pdf_storage_key,
             file_name=f"{stem}.pdf",
+        )
+
+    async def _get_summary_handwriting_prefix(
+        self, user: str, summary: SummaryItem
+    ) -> str:
+        """Resolve the CACHE_BUCKET key prefix for a summary's current handwriting version."""
+        if summary.id is None or not summary.handwrite_inner_name:
+            raise FileNotFound("Handwriting data not found")
+        if not summary.handwrite_md5:
+            raise FileError(f"Summary {summary.id} is missing handwriting MD5 hash")
+        user_id = await self.user_service.get_user_id(user)
+        return get_summary_handwriting_prefix(
+            user_id, summary.id, summary.handwrite_md5
+        )
+
+    async def _read_summary_handwriting(self, summary: SummaryItem) -> bytes:
+        """Read a summary's raw handwriting `.mark` blob from USER_DATA_BUCKET."""
+        assert summary.handwrite_inner_name is not None
+        try:
+            return b"".join(
+                [
+                    chunk
+                    async for chunk in self.blob_storage.get(
+                        USER_DATA_BUCKET, summary.handwrite_inner_name
+                    )
+                ]
+            )
+        except FileNotFoundError as err:
+            raise FileNotFound("Handwriting data not found") from err
+
+    async def convert_summary_to_pdf(self, user: str, summary: SummaryItem) -> None:
+        """Render a summary's handwriting to PDF and store it in CACHE_BUCKET."""
+        prefix = await self._get_summary_handwriting_prefix(user, summary)
+        blob_content = await self._read_summary_handwriting(summary)
+        pdf_bytes = await asyncio.to_thread(_convert_note_to_pdf_sync, blob_content, [])
+        await self.blob_storage.put(CACHE_BUCKET, f"{prefix}.pdf", pdf_bytes)
+
+    async def get_summary_pdf(
+        self, user: str, summary: SummaryItem
+    ) -> ConvertedBlob | None:
+        """Resolve the CACHE_BUCKET blob for a summary's current handwriting PDF."""
+        prefix = await self._get_summary_handwriting_prefix(user, summary)
+        storage_key = f"{prefix}.pdf"
+        if not await self.blob_storage.exists(CACHE_BUCKET, storage_key):
+            return None
+        return ConvertedBlob(
+            storage_key=storage_key, file_name=f"summary_{summary.id}.pdf"
+        )
+
+    async def convert_summary_to_png(
+        self, user: str, summary: SummaryItem
+    ) -> list[int]:
+        """Render every page of a summary's handwriting to PNG in CACHE_BUCKET and return page numbers."""
+        prefix = await self._get_summary_handwriting_prefix(user, summary)
+        blob_content = await self._read_summary_handwriting(summary)
+        pages = await asyncio.to_thread(_convert_note_to_png_pages_sync, blob_content)
+        for page_no, png_bytes in enumerate(pages):
+            await self.blob_storage.put(
+                CACHE_BUCKET, f"{prefix}_page_{page_no}.png", png_bytes
+            )
+        return list(range(len(pages)))
+
+    async def get_summary_png_page(
+        self, user: str, summary: SummaryItem, page_no: int
+    ) -> ConvertedBlob | None:
+        """Resolve the CACHE_BUCKET blob for one page PNG of a summary's current handwriting."""
+        prefix = await self._get_summary_handwriting_prefix(user, summary)
+        storage_key = f"{prefix}_page_{page_no}.png"
+        if not await self.blob_storage.exists(CACHE_BUCKET, storage_key):
+            return None
+        return ConvertedBlob(
+            storage_key=storage_key,
+            file_name=f"summary_{summary.id}_page_{page_no}.png",
         )

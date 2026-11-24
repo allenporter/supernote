@@ -14,7 +14,8 @@ shared `"AI Summaries"` Digest category).
   emits summary domain and blob-cleanup events.
 - `http.py` (`"http"` platform): Serves the Supernote summary synchronization
   protocol (`/api/file/*/summary*`), signed handwriting blob upload/download URLs,
-  and the extended Web UI listing endpoint (`POST /api/extended/file/summary/list`).
+  the extended Web UI listing endpoint (`POST /api/extended/file/summary/list`), and
+  handwriting PDF/PNG renders (`POST /api/extended/file/summary/to/pdf|png`).
 - `processor.py` (`"processor"` platform): Contributes `SummaryModule`, the
   post-OCR pipeline stage that aggregates notebook transcripts and upserts AI
   summaries via `SummaryModel`.
