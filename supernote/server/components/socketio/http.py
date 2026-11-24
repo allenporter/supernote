@@ -31,4 +31,4 @@ async def async_setup_http(core: ServerCore, registrar: HttpRegistrar) -> None:
     """Register Socket.IO EIO compat middleware, `/socket.io` exemption, and routes."""
     registrar.add_middleware(socketio_compat_middleware, pre_auth=True)
     registrar.add_public_prefix("/socket.io")
-    core.app[SOCKETIO_MANAGER_KEY].attach_to_app(core.app)
+    core.app[SOCKETIO_MANAGER_KEY].attach_to_router(registrar.router)

@@ -57,5 +57,5 @@ async def handle_extended_ai_status(request: web.Request) -> web.Response:
 
 
 async def async_setup_http(core: ServerCore, registrar: HttpRegistrar) -> None:
-    """Register AI status HTTP routes onto ``core.app``."""
-    core.app.add_routes(routes)
+    """Register AI status HTTP routes on ``registrar.router``."""
+    registrar.router.add_routes(routes)

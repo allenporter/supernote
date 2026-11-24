@@ -191,14 +191,13 @@ class SocketIOServerManager:
             )
         return await self._sio.handle_request(request)
 
-    def attach_to_app(self, app: web.Application) -> None:
-        """Attach the Socket.IO server instance to an aiohttp web Application."""
+    def attach_to_router(self, router: web.UrlDispatcher) -> None:
+        """Register Socket.IO HTTP/WebSocket handlers on an aiohttp router."""
         # Register these instead of ``self._sio.attach(app)`` so unusable
         # WebSocket upgrades are rejected before engineio creates a session.
-        app.router.add_get(SOCKETIO_PATH, self._handle_socket_request)
-        app.router.add_post(SOCKETIO_PATH, self._handle_socket_request)
-        app.router.add_route("OPTIONS", SOCKETIO_PATH, self._handle_socket_request)
-        app[SOCKETIO_MANAGER_KEY] = self
+        router.add_get(SOCKETIO_PATH, self._handle_socket_request)
+        router.add_post(SOCKETIO_PATH, self._handle_socket_request)
+        router.add_route("OPTIONS", SOCKETIO_PATH, self._handle_socket_request)
 
     async def _send_error(self, sid: str, status: HTTPStatus, message: str) -> None:
         """Send a SocketMessageData error response to a specific session ID."""

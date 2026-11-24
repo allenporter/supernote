@@ -551,6 +551,5 @@ async def get_schedule_feed_ics(request: web.Request) -> web.Response:
 
 
 async def async_setup_http(core: ServerCore, registrar: HttpRegistrar) -> None:
-    """Register schedule task CRUD and `.ics` feed routes on ``core.app``."""
-    _ = registrar
-    core.app.add_routes(routes)
+    """Register schedule task CRUD and `.ics` feed routes on ``registrar.router``."""
+    registrar.router.add_routes(routes)
