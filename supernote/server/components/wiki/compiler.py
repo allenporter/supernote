@@ -1,12 +1,33 @@
 """Event-driven incremental LLM Wiki compiler, backfill, and semantic lint worker.
 
-Subscribes to `DomainEventRecorded` (per-user debounced wake-up) and
-`VfsItemPurgedEvent`, draining `EventLogService.list_events()` via the durable
-`f_wiki_checkpoint.last_sync_token` cursor. Runs LLM calls strictly outside open
-SQLite sessions, enforces `max_pages_per_batch` and `edit_policy`, runs zero-LLM
-structural lint (`broken_link`, `orphan_page`, `stale_source`) after every compile,
-and records LLM semantic findings (`contradiction`, `alias_merge_proposal`) into
-`f_wiki_lint_issue` for explicit human/agent triage.
+Keeps each user's compiled wiki fresh and invalidates stale provenance as source
+notebooks and schedule tasks change, without re-scanning the entire vault:
+
+- **Freshness & incremental updates (`DomainEventRecorded` + `EventLogService`)**:
+  `DomainEventRecorded` is used only as a lightweight, per-user debounced wake-up
+  signal (coalescing multi-page sync bursts). On wake-up, the worker drains the
+  durable `f_user_event` log from `f_wiki_checkpoint.last_sync_token` so nothing
+  is missed across restarts:
+  - Content/metadata events (`note.page_transcribed`, `note.pages_delta`,
+    `schedule.task_created`, `schedule.task_updated`, `file.moved`) drive
+    incremental LLM synthesis to keep affected wiki pages current.
+  - Soft-delete / invalidation events (`file.deleted` when a file moves to the
+    recycle bin, deleted pages in `note.pages_delta`, `schedule.task_deleted`)
+    mark matching `f_wiki_source_ref.is_source_deleted = True` so structural
+    lint flags `stale_source` instead of leaving silent dead citations.
+- **Hard-purge invalidation backstop (`VfsItemPurgedEvent`)**:
+  In normal `auto_compile=True` operation, `file.deleted` (recycle bin) already
+  marks `is_source_deleted = True`. Subscribing to `VfsItemPurgedEvent` is an
+  idempotent backstop for cases where `file.deleted` was not processed by this
+  worker (for example, `auto_compile=False` external-agent mode, or a file
+  purged after an expired cursor / pre-wiki deletion) once the underlying
+  `UserFileDO` and `NotePageContentDO` rows are permanently removed.
+
+Execution invariants: LLM calls run strictly outside open SQLite sessions,
+writes enforce `max_pages_per_batch` and `edit_policy`, zero-LLM structural
+lint (`broken_link`, `orphan_page`, `stale_source`) runs after every compile,
+and LLM semantic findings (`contradiction`, `alias_merge_proposal`) are recorded
+in `f_wiki_lint_issue` for explicit human/agent triage.
 """
 
 from __future__ import annotations
