@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from supernote.server.components import BUILTIN_COMPONENTS
+from supernote.server.components.ai import AiComponent
+from supernote.server.components.events import EventsComponent
 from supernote.server.components.wiki import (
+    WIKI_COMPILER_KEY,
     WIKI_EXPORT_SERVICE_KEY,
     WIKI_SERVICE_KEY,
+    WikiCompilerWorker,
     WikiComponent,
     WikiExportService,
     WikiService,
@@ -14,14 +18,16 @@ from supernote.server.core import Component, ComponentLoader, ServerCore
 
 
 async def test_wiki_component_lifecycle(component_core: ServerCore) -> None:
-    """WikiComponent sets up cleanly, exposes app keys, and stops idempotently."""
+    """WikiComponent sets up cleanly with ai/events deps, exposes keys, and stops idempotently."""
     component = WikiComponent()
     assert isinstance(component, Component)
     assert component.domain == "wiki"
-    assert component.dependencies == ()
+    assert component.dependencies == ("ai", "events")
     assert component.platforms == ()
 
     loader = ComponentLoader()
+    loader.register(AiComponent())
+    loader.register(EventsComponent())
     loader.register(component)
 
     await loader.async_setup_all(
@@ -29,6 +35,7 @@ async def test_wiki_component_lifecycle(component_core: ServerCore) -> None:
     )
     assert isinstance(component_core.app[WIKI_SERVICE_KEY], WikiService)
     assert isinstance(component_core.app[WIKI_EXPORT_SERVICE_KEY], WikiExportService)
+    assert isinstance(component_core.app[WIKI_COMPILER_KEY], WikiCompilerWorker)
     assert component.config is not None
     assert component.config.max_pages_per_batch == 3
 
