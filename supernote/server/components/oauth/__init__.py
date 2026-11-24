@@ -1,4 +1,4 @@
-"""OAuth 2.1 / IndieAuth Authorization Server component (`OAuthComponent`).
+"""OAuth 2.1 Authorization Server component (`OAuthComponent`).
 
 Encapsulates the OAuth 2.1 provider, token models, and ASGI HTTP endpoints
 (`/authorize`, `/token`, `/revoke`, `/login-bridge`, `/.well-known/oauth-authorization-server`)

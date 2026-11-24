@@ -1,4 +1,4 @@
-"""OAuth 2.1 / IndieAuth DTOs, VOs, and user-scoped token models."""
+"""OAuth 2.1 DTOs, VOs, and user-scoped token models."""
 
 from __future__ import annotations
 

@@ -365,7 +365,7 @@ class OAuthGrantVO(DataClassJSONMixin):
 
     id: str
     client_id: str = field(metadata=field_options(alias="clientId"))
-    """IndieAuth client URL that requested access."""
+    """Client ID Metadata Document URL of the client that requested access."""
 
     scopes: list[str]
     created_at: int = field(metadata=field_options(alias="createdAt"))

@@ -8,7 +8,15 @@ from aiohttp.test_utils import TestClient
 from supernote.client.client import Client
 from supernote.client.login_client import LoginClient
 from supernote.server.keys import USER_SERVICE_KEY
+from tests.fixtures.oauth import (
+    OTHER_CLIENT_ID,
+    OTHER_REDIRECT_URI,
+    TEST_CLIENT_ID,
+    TEST_REDIRECT_URI,
+)
 from tests.fixtures.server import TEST_PASSWORD, TEST_USERNAME
+
+pytestmark = pytest.mark.usefixtures("client_metadata_documents")
 
 
 @pytest.fixture(name="login_client")
@@ -37,8 +45,8 @@ async def test_scenario_oauth_cold_login(
     """
     # 1. Authorize -> Bridge -> Login Page
     verifier = "v" * 50
-    client_id = "http://localhost:3000"
-    redirect_uri = "http://localhost:3000/callback"
+    client_id = TEST_CLIENT_ID
+    redirect_uri = TEST_REDIRECT_URI
 
     resp1 = await client.get(
         "/authorize",
@@ -106,8 +114,8 @@ async def test_scenario_oauth_warm_session(
 
     # 2. Authorize
     verifier = "v" * 50
-    client_id = "http://localhost:3000"
-    redirect_uri = "http://localhost:3000/callback"
+    client_id = TEST_CLIENT_ID
+    redirect_uri = TEST_REDIRECT_URI
 
     resp1 = await client.get(
         "/authorize",
@@ -155,12 +163,12 @@ async def test_scenario_security_edge_cases(
     """
     Scenario 3: Security & Error Handling
     1. Invalid Token handling on Bridge (POST vs GET).
-    2. IndieAuth validation (Valid vs Mismatch).
+    2. Client metadata validation (registered vs unregistered redirect).
     """
     # Setup
     params = {
-        "client_id": "http://localhost:3000",
-        "redirect_uri": "http://localhost:3000/callback",
+        "client_id": TEST_CLIENT_ID,
+        "redirect_uri": TEST_REDIRECT_URI,
     }
 
     # 1a. POST with Invalid Token -> 401 Unauthorized (API Mode)
@@ -181,14 +189,14 @@ async def test_scenario_security_edge_cases(
     assert resp_redirect.status in (302, 307)
     assert "/#login" in resp_redirect.headers["Location"]
 
-    # 2a. IndieAuth Valid (client_id matches redirect_uri host)
+    # 2a. A second client's registered redirect URI
     token = await login_client.login(TEST_USERNAME, TEST_PASSWORD)
     resp_indie = await client.get(
         "/authorize",
         params={
             "response_type": "code",
-            "client_id": "http://localhost:5000",
-            "redirect_uri": "http://localhost:5000/callback",
+            "client_id": OTHER_CLIENT_ID,
+            "redirect_uri": OTHER_REDIRECT_URI,
             "code_challenge": "mock",
             "code_challenge_method": "S256",
         },
@@ -201,14 +209,14 @@ async def test_scenario_security_edge_cases(
         headers={"x-access-token": token},
     )
     assert resp_indie_bridge.status == 200
-    assert "localhost:5000/callback" in (await resp_indie_bridge.json())["redirect_url"]
+    assert OTHER_REDIRECT_URI in (await resp_indie_bridge.json())["redirect_url"]
 
-    # 2b. IndieAuth Mismatch
+    # 2b. A redirect URI the client never registered
     resp_mismatch = await client.get(
         "/authorize",
         params={
             "response_type": "code",
-            "client_id": "http://localhost:3000",
+            "client_id": TEST_CLIENT_ID,
             "redirect_uri": "http://evil.com/callback",
             "code_challenge": "mock",
             "code_challenge_method": "S256",
@@ -229,7 +237,7 @@ async def test_login_bridge_rejects_mismatched_redirect_uri(
     resp = await client.post(
         "/login-bridge",
         params={
-            "client_id": "http://localhost:3000",
+            "client_id": TEST_CLIENT_ID,
             "redirect_uri": "http://evil.com/callback",
             "code_challenge": "challenge123",
         },
@@ -245,18 +253,22 @@ async def test_login_bridge_rejects_prefix_spoofing_and_traversal(
     login_client: LoginClient,
     create_test_user: None,
 ) -> None:
-    """Verify validate_redirect_uri blocks authority prefix spoofing, path sibling prefix spoofing, and '..' traversal."""
+    """Verify a redirect URI must equal a registered one: no prefixes, siblings, or traversal."""
     token = await login_client.login(TEST_USERNAME, TEST_PASSWORD)
 
     for bad_redirect in (
-        "http://localhost:3000.evil.com/app/cb",
-        "http://localhost:3000/app-evil/cb",
-        "http://localhost:3000/app/../evil",
+        "https://client.example.evil.com/callback",
+        "https://client.example/callback-evil",
+        "https://client.example/callback/extra",
+        "https://client.example/callback/../evil",
+        "https://client.example/callback?next=evil",
+        "https://client.example:8443/callback",
+        "http://client.example/callback",
     ):
         resp = await client.post(
             "/login-bridge",
             params={
-                "client_id": "http://localhost:3000/app",
+                "client_id": TEST_CLIENT_ID,
                 "redirect_uri": bad_redirect,
                 "code_challenge": "challenge123",
             },
@@ -276,8 +288,8 @@ async def test_login_bridge_requires_code_challenge(
     resp = await client.post(
         "/login-bridge",
         params={
-            "client_id": "http://localhost:3000",
-            "redirect_uri": "http://localhost:3000/callback",
+            "client_id": TEST_CLIENT_ID,
+            "redirect_uri": TEST_REDIRECT_URI,
         },
         headers={"x-access-token": token},
     )
@@ -294,8 +306,8 @@ async def test_authorization_code_single_use_prevents_replay(
     """Verify an authorization code can only be exchanged once."""
     token = await login_client.login(TEST_USERNAME, TEST_PASSWORD)
     verifier = "v" * 50
-    client_id = "http://localhost:3000"
-    redirect_uri = "http://localhost:3000/callback"
+    client_id = TEST_CLIENT_ID
+    redirect_uri = TEST_REDIRECT_URI
 
     bridge_resp = await client.post(
         "/login-bridge",
@@ -345,8 +357,8 @@ async def test_oauth_token_revocation(
     """Verify /revoke ends an access token alone, and a refresh token with its grant."""
     token = await login_client.login(TEST_USERNAME, TEST_PASSWORD)
     verifier = "v" * 50
-    client_id = "http://localhost:3000"
-    redirect_uri = "http://localhost:3000/callback"
+    client_id = TEST_CLIENT_ID
+    redirect_uri = TEST_REDIRECT_URI
 
     bridge_resp = await client.post(
         "/login-bridge",
