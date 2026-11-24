@@ -418,6 +418,53 @@ async def test_page_hashing_marks_task_failed_on_missing_or_corrupt_file(
             assert task.last_error is not None
 
 
+async def test_page_hashing_skips_missing_or_inactive_file_without_task_row(
+    page_hashing_module: PageHashingModule,
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Missing, soft-deleted, or storage-keyless files skip hashing with no SystemTaskDO row."""
+    missing_file_id = 1091
+    inactive_file_id = 1092
+    empty_key_file_id = 1093
+
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=inactive_file_id,
+                    user_id=1,
+                    storage_key="inactive_key",
+                    file_name="inactive.note",
+                    directory_id=0,
+                    is_active="N",
+                ),
+                UserFileDO(
+                    id=empty_key_file_id,
+                    user_id=1,
+                    storage_key="",
+                    file_name="empty.note",
+                    directory_id=0,
+                    is_active="Y",
+                ),
+            ]
+        )
+        await session.commit()
+
+    for fid in (missing_file_id, inactive_file_id, empty_key_file_id):
+        assert await page_hashing_module.run(fid, session_manager) is True
+        async with session_manager.session() as session:
+            tasks = (
+                (
+                    await session.execute(
+                        select(SystemTaskDO).where(SystemTaskDO.file_id == fid)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert tasks == []
+
+
 async def _seed_user_note_file(
     session_manager: DatabaseSessionManager,
     blob_storage: BlobStorage,

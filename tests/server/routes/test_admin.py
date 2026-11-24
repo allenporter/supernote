@@ -227,12 +227,16 @@ async def test_admin_reprocess(
     user_headers: dict[str, str],
 ) -> None:
     """Test admin reprocess endpoint (permission and functionality)."""
-    # Pause background processing so NoteUpdatedEvent for dummy file IDs does not
-    # race with DB assertions by inserting new HASHING task rows.
-    resp = await client.post("/api/admin/queue/stop", headers=admin_headers)
-    assert resp.status == 200
+    published_ids: list[int] = []
 
-    # Insert a dummy SystemTaskDO
+    async def capture_updated(event: Event) -> None:
+        if isinstance(event, NoteUpdatedEvent):
+            published_ids.append(event.file_id)
+
+    assert client.app is not None
+    client.app[EVENT_BUS_KEY].subscribe(NoteUpdatedEvent, capture_updated)
+
+    # Insert an orphaned SystemTaskDO (no matching UserFileDO row)
     async with session_manager.session() as session:
         task = SystemTaskDO(
             file_id=999,
@@ -252,21 +256,20 @@ async def test_admin_reprocess(
     )
     assert resp.status == 403
 
-    # Admin should succeed (200)
+    # Admin should succeed (200), delete orphaned task, and NOT publish NoteUpdatedEvent
     resp = await client.post(
         "/api/admin/reprocess",
         json={"task_type": "summary", "file_id": 999},
         headers=admin_headers,
     )
     assert resp.status == 200
+    await asyncio.sleep(0)
+    assert 999 not in published_ids
 
-    # Verify task is deleted in DB
+    # Verify task is deleted in DB and no stray HASHING task was created
     async with session_manager.session() as session:
         result = await session.execute(
-            select(SystemTaskDO).where(
-                SystemTaskDO.file_id == 999,
-                SystemTaskDO.task_type == TaskType.SUMMARY_GENERATION.value,
-            )
+            select(SystemTaskDO).where(SystemTaskDO.file_id == 999)
         )
         tasks = result.scalars().all()
         assert len(tasks) == 0
@@ -278,6 +281,10 @@ async def test_admin_reprocess(
         headers=admin_headers,
     )
     assert resp.status == 400
+
+    # Pause background processing before triggering events for dummy active UserFileDO rows
+    resp = await client.post("/api/admin/queue/stop", headers=admin_headers)
+    assert resp.status == 200
 
     # Global reprocess should only trigger active .note files, skipping soft-deleted notes
     async with session_manager.session() as session:
@@ -303,14 +310,15 @@ async def test_admin_reprocess(
         )
         await session.commit()
 
-    published_ids: list[int] = []
-
-    async def capture_updated(event: Event) -> None:
-        if isinstance(event, NoteUpdatedEvent):
-            published_ids.append(event.file_id)
-
-    assert client.app is not None
-    client.app[EVENT_BUS_KEY].subscribe(NoteUpdatedEvent, capture_updated)
+    # Targeted reprocess on a soft-deleted file should not publish NoteUpdatedEvent
+    resp = await client.post(
+        "/api/admin/reprocess",
+        json={"task_type": "summary", "file_id": 8002},
+        headers=admin_headers,
+    )
+    assert resp.status == 200
+    await asyncio.sleep(0)
+    assert 8002 not in published_ids
 
     resp = await client.post(
         "/api/admin/reprocess",
