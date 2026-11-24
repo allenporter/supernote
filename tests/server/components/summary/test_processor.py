@@ -91,7 +91,7 @@ async def test_summary_success(
         session.add(p2)
         await session.commit()
 
-    await summary_module.run(file_id, session_manager)
+    await summary_module.run(file_id, session_manager, user_id=user_id)
 
     assert len(fake_summary_model.calls) == 1
     prompt_arg = fake_summary_model.calls[0]
@@ -209,7 +209,7 @@ async def test_summary_idempotency_update(
         summary_model=custom_summary_model,
     )
 
-    await summary_module.run(file_id, session_manager)
+    await summary_module.run(file_id, session_manager, user_id=user_id)
 
     updated_group = await summary_service.get_summary_by_uuid(user_email, group_uuid)
     assert updated_group is not None
@@ -283,7 +283,7 @@ async def test_summary_transcript_with_dates(
         summary_model=empty_summary_model,
     )
 
-    await summary_module.run(file_id, session_manager)
+    await summary_module.run(file_id, session_manager, user_id=user_id)
 
     assert len(empty_summary_model.calls) == 1
     prompt_arg = empty_summary_model.calls[0]
@@ -341,12 +341,17 @@ async def test_summary_waits_until_all_pages_have_ocr_text(
 
     # While page 2 still has text_content=None, SummaryModule must wait and log why
     with caplog.at_level("WARNING"):
-        assert await summary_module.run_if_needed(file_id, session_manager) is False
+        assert (
+            await summary_module.run_if_needed(
+                file_id, session_manager, user_id=user_id
+            )
+            is False
+        )
     assert (
         f"OCR prerequisite not met for summary of file {file_id} (1/2 pages missing text)"
         in caplog.text
     )
-    await summary_module.run(file_id, session_manager)
+    await summary_module.run(file_id, session_manager, user_id=user_id)
     assert fake_summary_model.calls == []
 
     # Once page 2 OCR finishes, SummaryModule runs and marks SUMMARY_GENERATION COMPLETED
@@ -361,8 +366,11 @@ async def test_summary_waits_until_all_pages_have_ocr_text(
         p1.text_content = "Page 2 text"
         await session.commit()
 
-    assert await summary_module.run_if_needed(file_id, session_manager) is True
-    await summary_module.run(file_id, session_manager)
+    assert (
+        await summary_module.run_if_needed(file_id, session_manager, user_id=user_id)
+        is True
+    )
+    await summary_module.run(file_id, session_manager, user_id=user_id)
     assert len(fake_summary_model.calls) == 1
     assert "Page 1 text" in fake_summary_model.calls[0]
     assert "Page 2 text" in fake_summary_model.calls[0]
@@ -403,7 +411,7 @@ async def test_summary_failure_marks_task_failed(
 
     fake_summary_model.error = AIError("Gemini API unavailable")
 
-    result = await summary_module.run(file_id, session_manager)
+    result = await summary_module.run(file_id, session_manager, user_id=user_id)
     assert result is False
 
     assert (
@@ -478,7 +486,7 @@ async def test_summary_skips_llm_and_group_creation_when_all_pages_blank(
         )
         await session.commit()
 
-    assert await summary_module.run(file_id, session_manager) is True
+    assert await summary_module.run(file_id, session_manager, user_id=user_id) is True
     assert fake_summary_model.calls == []
     assert (
         await summary_service.get_summary_by_uuid(
@@ -522,7 +530,7 @@ async def test_summary_deletes_existing_summary_when_all_pages_erased(
         )
         await session.commit()
 
-    assert await summary_module.run(file_id, session_manager) is True
+    assert await summary_module.run(file_id, session_manager, user_id=user_id) is True
     assert len(fake_summary_model.calls) == 1
     fake_summary_model.calls.clear()
 
@@ -586,7 +594,7 @@ async def test_summary_skips_whitespace_only_pages(
         )
         await session.commit()
 
-    assert await summary_module.run(file_id, session_manager) is True
+    assert await summary_module.run(file_id, session_manager, user_id=user_id) is True
     assert fake_summary_model.calls == []
     assert (
         await summary_service.get_summary_by_uuid(
@@ -631,7 +639,7 @@ async def test_summary_preserves_manual_digests_when_notebook_erased(
         )
         await session.commit()
 
-    assert await summary_module.run(file_id, session_manager) is True
+    assert await summary_module.run(file_id, session_manager, user_id=user_id) is True
     fake_summary_model.calls.clear()
 
     # User adds a manual digest on their Supernote device under the same category
@@ -716,7 +724,7 @@ async def test_summary_includes_page_keywords_in_prompt(
         )
         await session.commit()
 
-    assert await summary_module.run(file_id, session_manager) is True
+    assert await summary_module.run(file_id, session_manager, user_id=user_id) is True
     assert len(fake_summary_model.calls) == 1
     assert "Page Keywords: OKR" in fake_summary_model.calls[0]
 
@@ -783,7 +791,7 @@ async def test_summary_storage_key_rotation_updates_in_place_and_resolves_vfs_so
         )
         await session.commit()
 
-    assert await summary_module.run(file_id, session_manager) is True
+    assert await summary_module.run(file_id, session_manager, user_id=user_id) is True
     first_items = await summary_service.list_summaries_for_file_internal(
         user_email, file_id
     )
@@ -890,7 +898,7 @@ async def test_summary_leaves_legacy_storage_key_rows_untouched_at_runtime(
         ),
     )
 
-    assert await summary_module.run(file_id, session_manager) is True
+    assert await summary_module.run(file_id, session_manager, user_id=user_id) is True
 
     assert (
         await summary_service.get_summary_by_uuid(user_email, "legacy-1.note-summary")
@@ -940,7 +948,7 @@ async def test_summary_erase_preserves_annotated_generated_rows(
         )
         await session.commit()
 
-    assert await summary_module.run(file_id, session_manager) is True
+    assert await summary_module.run(file_id, session_manager, user_id=user_id) is True
     summary_item = await summary_service.get_summary_by_uuid(
         user_email, get_summary_id(user_id, file_id)
     )
@@ -1006,7 +1014,7 @@ async def test_summary_preserves_partner_app_category_reassignment(
         )
         await session.commit()
 
-    assert await summary_module.run(file_id, session_manager) is True
+    assert await summary_module.run(file_id, session_manager, user_id=user_id) is True
     created = await summary_service.get_summary_by_uuid(
         user_email, get_summary_id(user_id, file_id)
     )
@@ -1095,7 +1103,7 @@ async def test_summary_reparents_existing_summary_off_legacy_group_without_delet
         ),
     )
 
-    assert await summary_module.run(file_id, session_manager) is True
+    assert await summary_module.run(file_id, session_manager, user_id=user_id) is True
 
     migrated = await summary_service.get_summary_by_uuid(
         user_email, get_summary_id(user_id, file_id)
@@ -1143,7 +1151,7 @@ async def test_summary_cleanup_file_preserves_user_data_and_scopes_by_user(
         )
         await session.commit()
 
-    assert await summary_module.run(file_id, session_manager) is True
+    assert await summary_module.run(file_id, session_manager, user_id=user_id) is True
 
     # Custom Partner App category + manual user digest + annotated legacy summary + annotated legacy group
     custom_cat = await summary_service.add_group(
@@ -1359,7 +1367,7 @@ async def test_summary_clears_stale_metadata_when_updated_segments_empty(
         )
         await session.commit()
 
-    assert await summary_module.run(file_id, session_manager) is True
+    assert await summary_module.run(file_id, session_manager, user_id=user_id) is True
     first = await summary_service.get_summary_by_uuid(
         user_email, get_summary_id(user_id, file_id)
     )

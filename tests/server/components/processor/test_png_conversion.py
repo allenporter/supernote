@@ -67,7 +67,7 @@ async def test_process_png_conversion_success(
 
     # Run full module lifecycle
     await png_conversion_module.run(
-        file_id, session_manager, page_index=page_index, page_id="p0"
+        file_id, session_manager, page_index=page_index, page_id="p0", user_id=user_id
     )
 
     # Assertions

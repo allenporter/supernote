@@ -70,7 +70,9 @@ async def test_process_ocr_success(
         session.add(content)
         await session.commit()
 
-    await ocr_module.run(file_id, session_manager, page_index=page_index, page_id="p0")
+    await ocr_module.run(
+        file_id, session_manager, page_index=page_index, page_id="p0", user_id=user_id
+    )
 
     assert len(fake_ocr_model.calls) == 1
     called_png, called_prompt = fake_ocr_model.calls[0]
@@ -120,12 +122,17 @@ async def test_ocr_run_if_needed_disabled(
     module = OcrModule(file_service=file_service, ocr_model=None)
 
     assert (
-        await module.run_if_needed(1, session_manager, page_index=0, page_id="p0")
+        await module.run_if_needed(
+            1, session_manager, page_index=0, page_id="p0", user_id=1
+        )
         is False
     )
 
     # run() should still return True (skipped success)
-    assert await module.run(1, session_manager, page_index=0, page_id="p0") is True
+    assert (
+        await module.run(1, session_manager, page_index=0, page_id="p0", user_id=1)
+        is True
+    )
 
 
 async def test_ocr_skips_llm_call_for_blank_page(
@@ -168,7 +175,9 @@ async def test_ocr_skips_llm_call_for_blank_page(
         await session.commit()
 
     assert (
-        await ocr_module.run(file_id, session_manager, page_index=0, page_id="p_blank")
+        await ocr_module.run(
+            file_id, session_manager, page_index=0, page_id="p_blank", user_id=7
+        )
         is True
     )
     assert fake_ocr_model.calls == []
@@ -237,7 +246,7 @@ async def test_ocr_runs_when_blank_metadata_has_different_page_id(
 
     assert (
         await ocr_module.run(
-            file_id, session_manager, page_index=0, page_id="p_new_inked"
+            file_id, session_manager, page_index=0, page_id="p_new_inked", user_id=7
         )
         is True
     )
@@ -286,7 +295,9 @@ async def test_ocr_runs_when_blank_metadata_hash_is_stale(
         await session.commit()
 
     assert (
-        await ocr_module.run(file_id, session_manager, page_index=0, page_id="p0")
+        await ocr_module.run(
+            file_id, session_manager, page_index=0, page_id="p0", user_id=7
+        )
         is True
     )
     assert len(fake_ocr_model.calls) == 1
@@ -323,7 +334,7 @@ async def test_ocr_run_if_needed_requires_page_content_row(
 
     assert (
         await ocr_module.run_if_needed(
-            file_id, session_manager, page_index=0, page_id="p_blank"
+            file_id, session_manager, page_index=0, page_id="p_blank", user_id=7
         )
         is False
     )
@@ -373,7 +384,9 @@ async def test_ocr_passes_verified_keywords_and_page_style_prompt(
         await session.commit()
 
     assert (
-        await ocr_module.run(file_id, session_manager, page_index=0, page_id="p0")
+        await ocr_module.run(
+            file_id, session_manager, page_index=0, page_id="p0", user_id=7
+        )
         is True
     )
     assert len(fake_ocr_model.calls) == 1

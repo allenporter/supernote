@@ -103,10 +103,12 @@ class ProcessorService:
         self.concurrency = concurrency
         self.page_concurrency = page_concurrency
 
-        self.queue: asyncio.Queue[int] = asyncio.Queue()  # Queue of file_ids
-        self.processing_files: set[int] = set()
-        self._file_locks: dict[int, asyncio.Lock] = {}
-        self._file_lock_refcounts: dict[int, int] = {}
+        self.queue: asyncio.Queue[tuple[int, int]] = (
+            asyncio.Queue()
+        )  # Queue of (user_id, file_id)
+        self.processing_files: set[tuple[int, int]] = set()
+        self._file_locks: dict[tuple[int, int], asyncio.Lock] = {}
+        self._file_lock_refcounts: dict[tuple[int, int], int] = {}
         self.workers: list[asyncio.Task] = []
         self.polling_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
@@ -145,22 +147,23 @@ class ProcessorService:
         PROCESSOR_QUEUE_SIZE.set(self.queue.qsize())
 
     @asynccontextmanager
-    async def _file_lock(self, file_id: int) -> AsyncGenerator[None]:
-        """Serialize processing and deletion per file_id without leaking idle locks."""
-        lock = self._file_locks.setdefault(file_id, asyncio.Lock())
-        self._file_lock_refcounts[file_id] = (
-            self._file_lock_refcounts.get(file_id, 0) + 1
+    async def _file_lock(self, user_id: int, file_id: int) -> AsyncGenerator[None]:
+        """Serialize processing and deletion per (user_id, file_id) without leaking idle locks."""
+        lock_key = (user_id, file_id)
+        lock = self._file_locks.setdefault(lock_key, asyncio.Lock())
+        self._file_lock_refcounts[lock_key] = (
+            self._file_lock_refcounts.get(lock_key, 0) + 1
         )
         try:
             async with lock:
                 yield
         finally:
-            remaining = self._file_lock_refcounts[file_id] - 1
+            remaining = self._file_lock_refcounts[lock_key] - 1
             if remaining <= 0:
-                self._file_lock_refcounts.pop(file_id, None)
-                self._file_locks.pop(file_id, None)
+                self._file_lock_refcounts.pop(lock_key, None)
+                self._file_locks.pop(lock_key, None)
             else:
-                self._file_lock_refcounts[file_id] = remaining
+                self._file_lock_refcounts[lock_key] = remaining
 
     def set_modules(self, modules: Sequence[ProcessorModule]) -> None:
         """Validate and install the processor task dependency graph."""
@@ -282,6 +285,7 @@ class ProcessorService:
             async with self.session_manager.session() as session:
                 await session.execute(
                     delete(SystemTaskDO).where(
+                        SystemTaskDO.user_id == event.user_id,
                         SystemTaskDO.file_id == event.file_id,
                         SystemTaskDO.task_type == TaskType.PAGE_HASHING,
                     )
@@ -289,9 +293,10 @@ class ProcessorService:
                 await session.commit()
             return
         logger.info(f"Received update for note: {event.file_id} ({event.file_path})")
-        if event.file_id not in self.processing_files:
-            self.processing_files.add(event.file_id)
-            await self.queue.put(event.file_id)
+        item = (event.user_id, event.file_id)
+        if item not in self.processing_files:
+            self.processing_files.add(item)
+            await self.queue.put(item)
             self._update_queue_metrics()
 
     async def handle_sync_completed(self, event: Event) -> None:
@@ -309,7 +314,7 @@ class ProcessorService:
         file_id = event.item_id
         logger.info(f"Received delete for note: {file_id}")
 
-        async with self._file_lock(file_id):
+        async with self._file_lock(event.user_id, file_id):
             for module in reversed(self.task_graph.modules):
                 await module.cleanup_file(file_id, event.user_id, self.session_manager)
 
@@ -320,7 +325,10 @@ class ProcessorService:
                     )
                 )
                 await session.execute(
-                    delete(SystemTaskDO).where(SystemTaskDO.file_id == file_id)
+                    delete(SystemTaskDO).where(
+                        SystemTaskDO.user_id == event.user_id,
+                        SystemTaskDO.file_id == file_id,
+                    )
                 )
                 await session.commit()
 
@@ -330,20 +338,21 @@ class ProcessorService:
         """Check DB for incomplete tasks on startup."""
         logger.info("Recovering pending processing tasks...")
         async with self.session_manager.session() as session:
-            # Find all file_ids that have any task NOT in COMPLETED status
+            # Find all (user_id, file_id) pairs that have any task NOT in COMPLETED status
             stmt = (
-                select(SystemTaskDO.file_id)
+                select(SystemTaskDO.user_id, SystemTaskDO.file_id)
                 .where(SystemTaskDO.status != ProcessingStatus.COMPLETED)
                 .distinct()
             )
             result = await session.execute(stmt)
-            file_ids = result.scalars().all()
+            targets = result.all()
 
-        for file_id in file_ids:
-            logger.info(f"Recovering incomplete pipeline for file {file_id}")
-            if file_id not in self.processing_files:
-                self.processing_files.add(file_id)
-                await self.queue.put(file_id)
+        for uid, file_id in targets:
+            logger.info(f"Recovering incomplete pipeline for user {uid} file {file_id}")
+            item = (uid, file_id)
+            if item not in self.processing_files:
+                self.processing_files.add(item)
+                await self.queue.put(item)
         self._update_queue_metrics()
 
     async def poll_loop(self) -> None:
@@ -370,60 +379,78 @@ class ProcessorService:
 
         async with self.session_manager.session() as session:
             stmt = (
-                select(SystemTaskDO.file_id)
+                select(SystemTaskDO.user_id, SystemTaskDO.file_id)
                 .where(SystemTaskDO.status != ProcessingStatus.COMPLETED)
                 .where(SystemTaskDO.update_time < stale_threshold_ms)
                 .distinct()
             )
             result = await session.execute(stmt)
-            file_ids = result.scalars().all()
+            targets = result.all()
 
-        if not file_ids:
+        if not targets:
             return
 
-        logger.info(f"Found {len(file_ids)} stalled files. Enqueuing...")
-        PROCESSOR_STALLED_TASKS_RECOVERED_TOTAL.inc(len(file_ids))
-        for file_id in file_ids:
-            if file_id not in self.processing_files:
-                logger.info(f"Enqueuing stalled file {file_id} for retry.")
-                self.processing_files.add(file_id)
-                await self.queue.put(file_id)
+        logger.info(f"Found {len(targets)} stalled files. Enqueuing...")
+        PROCESSOR_STALLED_TASKS_RECOVERED_TOTAL.inc(len(targets))
+        for uid, file_id in targets:
+            item = (uid, file_id)
+            if item not in self.processing_files:
+                logger.info(f"Enqueuing stalled user {uid} file {file_id} for retry.")
+                self.processing_files.add(item)
+                await self.queue.put(item)
         self._update_queue_metrics()
 
     async def recover_missing_tasks(self, user_id: int | None = None) -> None:
         """Find .note files that have missing or outdated tasks and enqueue them."""
         logger.info("Checking for files with missing tasks...")
-        conditions = [UserFileDO.id.not_in(select(SystemTaskDO.file_id))]
+        any_task_exists = (
+            select(SystemTaskDO.id)
+            .where(
+                SystemTaskDO.user_id == UserFileDO.user_id,
+                SystemTaskDO.file_id == UserFileDO.id,
+            )
+            .correlate(UserFileDO)
+            .exists()
+        )
+        conditions = [~any_task_exists]
 
         for module in self.task_graph.modules:
             if not self.task_graph.is_effectively_enabled(module.task_type):
                 continue
             if module.scope == TaskScope.FILE:
-                task_stmt = (
-                    select(SystemTaskDO.file_id)
-                    .where(SystemTaskDO.task_type == module.task_type)
-                    .where(SystemTaskDO.key == "global")
+                task_exists = select(SystemTaskDO.id).where(
+                    SystemTaskDO.user_id == UserFileDO.user_id,
+                    SystemTaskDO.file_id == UserFileDO.id,
+                    SystemTaskDO.task_type == module.task_type,
+                    SystemTaskDO.key == "global",
                 )
                 if module.version is not None:
-                    task_stmt = task_stmt.where(SystemTaskDO.data == module.version)
-                conditions.append(UserFileDO.id.not_in(task_stmt))
+                    task_exists = task_exists.where(SystemTaskDO.data == module.version)
+                conditions.append(~task_exists.correlate(UserFileDO).exists())
             else:
-                page_task_exists = (
-                    select(SystemTaskDO.id)
-                    .where(SystemTaskDO.file_id == NotePageContentDO.file_id)
-                    .where(SystemTaskDO.task_type == module.task_type)
-                    .where(SystemTaskDO.key == "page_" + NotePageContentDO.page_id)
+                page_task_exists = select(SystemTaskDO.id).where(
+                    SystemTaskDO.user_id == UserFileDO.user_id,
+                    SystemTaskDO.file_id == NotePageContentDO.file_id,
+                    SystemTaskDO.task_type == module.task_type,
+                    SystemTaskDO.key == "page_" + NotePageContentDO.page_id,
                 )
                 if module.version is not None:
                     page_task_exists = page_task_exists.where(
                         SystemTaskDO.data == module.version
                     )
-                page_missing_stmt = (
-                    select(NotePageContentDO.file_id)
-                    .where(NotePageContentDO.page_id != "")
-                    .where(~page_task_exists.correlate(NotePageContentDO).exists())
+                page_missing_exists = (
+                    select(NotePageContentDO.id)
+                    .where(
+                        NotePageContentDO.file_id == UserFileDO.id,
+                        NotePageContentDO.page_id != "",
+                        ~page_task_exists.correlate(
+                            UserFileDO, NotePageContentDO
+                        ).exists(),
+                    )
+                    .correlate(UserFileDO)
+                    .exists()
                 )
-                conditions.append(UserFileDO.id.in_(page_missing_stmt))
+                conditions.append(page_missing_exists)
 
         async with self.session_manager.session() as session:
             stmt = (
@@ -444,14 +471,14 @@ class ProcessorService:
 
         logger.info(f"Found {len(missing)} files with missing tasks. Enqueuing...")
         PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL.inc(len(missing))
-        for file_id, user_id in missing:
-            if file_id not in self.processing_files:
-                # We need the path for the event, but we can also just put it in the queue directly
-                # if we change process_file to handle it. Actually process_file only needs file_id.
-                # But handle_note_updated adds to self.processing_files.
-                logger.info(f"Enqueuing file {file_id} for initial processing.")
-                self.processing_files.add(file_id)
-                await self.queue.put(file_id)
+        for file_id, uid in missing:
+            item = (uid, file_id)
+            if item not in self.processing_files:
+                logger.info(
+                    f"Enqueuing user {uid} file {file_id} for initial processing."
+                )
+                self.processing_files.add(item)
+                await self.queue.put(item)
         self._update_queue_metrics()
 
     async def worker_loop(self, worker_id: int) -> None:
@@ -462,22 +489,26 @@ class ProcessorService:
                 # Wait until processing is enabled
                 await self._processing_enabled.wait()
 
-                file_id = await self.queue.get()
+                item = await self.queue.get()
+                user_id, file_id = item
                 self._update_queue_metrics()
 
                 # Re-check processing enabled status in case it was paused while we were waiting on get()
                 if not self.is_processing_enabled():
-                    await self.queue.put(file_id)
+                    await self.queue.put(item)
                     self.queue.task_done()
                     self._update_queue_metrics()
                     await asyncio.sleep(0.5)
                     continue
                 try:
-                    await self.process_file(file_id)
+                    await self.process_file(file_id, user_id=user_id)
                 except Exception as e:
-                    logger.error(f"Error processing file {file_id}: {e}", exc_info=True)
+                    logger.error(
+                        f"Error processing user {user_id} file {file_id}: {e}",
+                        exc_info=True,
+                    )
                 finally:
-                    self.processing_files.discard(file_id)
+                    self.processing_files.discard(item)
                     self.queue.task_done()
                     self._update_queue_metrics()
             except asyncio.CancelledError:
@@ -488,6 +519,8 @@ class ProcessorService:
     async def process_file(
         self,
         file_id: int,
+        *,
+        user_id: int,
         task_types: Collection[str] | None = None,
         page_indices: set[int] | None = None,
     ) -> bool:
@@ -497,10 +530,11 @@ class ProcessorService:
             if task_types is None and page_indices is None
             else NoteProcessingMode.ON_DEMAND
         )
-        async with self._file_lock(file_id):
+        async with self._file_lock(user_id, file_id):
             with track_note_processing_run(mode=mode) as run:
                 ok = await self._process_file_locked(
                     file_id,
+                    user_id=user_id,
                     task_types=task_types,
                     page_indices=page_indices,
                 )
@@ -544,10 +578,12 @@ class ProcessorService:
     async def _process_file_locked(
         self,
         file_id: int,
+        *,
+        user_id: int,
         task_types: Collection[str] | None = None,
         page_indices: set[int] | None = None,
     ) -> bool:
-        logger.info(f"Processing file {file_id}...")
+        logger.info(f"Processing user {user_id} file {file_id}...")
 
         if not self.task_graph:
             logger.error("Modules not registered. Skipping processing.")
@@ -593,13 +629,15 @@ class ProcessorService:
                         completed.add(task_type)
                         continue
 
-                    if await mod.run(file_id, self.session_manager):
+                    if await mod.run(file_id, self.session_manager, user_id=user_id):
                         task_succeeded[task_type] = True
                     else:
                         logger.error(
                             f"File module {mod.name} failed for file {file_id}."
                         )
-                        await self._publish_processing_failed(file_id, mod.name)
+                        await self._publish_processing_failed(
+                            file_id, mod.name, user_id=user_id
+                        )
                         task_succeeded[task_type] = False
                         overall_ok = False
                     completed.add(task_type)
@@ -643,6 +681,7 @@ class ProcessorService:
                         file_id,
                         page_index,
                         page_id,
+                        user_id=user_id,
                         run_graph=run_graph,
                         page_frontier=page_frontier,
                         external_succeeded=task_succeeded,
@@ -676,38 +715,49 @@ class ProcessorService:
                 )
             )
         ):
-            await self._publish_processing_completed(file_id)
+            await self._publish_processing_completed(file_id, user_id=user_id)
 
         return overall_ok
 
-    async def _publish_processing_completed(self, file_id: int) -> None:
+    async def _publish_processing_completed(
+        self, file_id: int, *, user_id: int
+    ) -> None:
         """Publish NoteProcessingCompletedEvent after pipeline stages complete."""
         async with self.session_manager.session() as session:
             result = await session.execute(
-                select(UserFileDO).where(UserFileDO.id == file_id)
+                select(UserFileDO).where(
+                    UserFileDO.id == file_id,
+                    UserFileDO.user_id == user_id,
+                )
             )
             user_file = result.scalar_one_or_none()
             if not isinstance(user_file, UserFileDO):
                 return
 
-        file_path = await self.file_service.get_full_path_by_node(
-            user_file.user_id, file_id
-        )
+        file_path = await self.file_service.get_full_path_by_node(user_id, file_id)
         await self.event_bus.publish(
             NoteProcessingCompletedEvent(
                 file_id=file_id,
-                user_id=user_file.user_id,
+                user_id=user_id,
                 file_path=file_path,
             )
         )
 
     async def _publish_processing_failed(
-        self, file_id: int, module_name: str, page_id: str | None = None
+        self,
+        file_id: int,
+        module_name: str,
+        *,
+        user_id: int,
+        page_id: str | None = None,
     ) -> None:
         """Publish NoteProcessingFailedEvent when a module fails."""
         async with self.session_manager.session() as session:
             result = await session.execute(
-                select(UserFileDO).where(UserFileDO.id == file_id)
+                select(UserFileDO).where(
+                    UserFileDO.id == file_id,
+                    UserFileDO.user_id == user_id,
+                )
             )
             user_file = result.scalar_one_or_none()
             if not isinstance(user_file, UserFileDO):
@@ -716,19 +766,18 @@ class ProcessorService:
             task_err = await session.scalar(
                 select(SystemTaskDO.last_error)
                 .where(
+                    SystemTaskDO.user_id == user_id,
                     SystemTaskDO.file_id == file_id,
                     SystemTaskDO.key == key,
                 )
                 .order_by(SystemTaskDO.update_time.desc())
             )
 
-        file_path = await self.file_service.get_full_path_by_node(
-            user_file.user_id, file_id
-        )
+        file_path = await self.file_service.get_full_path_by_node(user_id, file_id)
         await self.event_bus.publish(
             NoteProcessingFailedEvent(
                 file_id=file_id,
-                user_id=user_file.user_id,
+                user_id=user_id,
                 file_path=file_path,
                 module_name=module_name,
                 error=task_err or f"{module_name} failed",
@@ -742,6 +791,7 @@ class ProcessorService:
         page_index: int,
         page_id: str,
         *,
+        user_id: int,
         run_graph: TaskGraph,
         page_frontier: Sequence[ProcessorModule],
         external_succeeded: dict[str, bool],
@@ -769,6 +819,7 @@ class ProcessorService:
                     self.session_manager,
                     page_index=page_index,
                     page_id=page_id,
+                    user_id=user_id,
                 ):
                     page_task_ok[task_type] = True
                 else:
@@ -776,7 +827,7 @@ class ProcessorService:
                         f"Page {page_id} (idx {page_index}) processing failed at {module.name} for file {file_id}"
                     )
                     await self._publish_processing_failed(
-                        file_id, module.name, page_id=page_id
+                        file_id, module.name, user_id=user_id, page_id=page_id
                     )
                     page_task_ok[task_type] = False
             return page_task_ok
@@ -832,6 +883,8 @@ class ProcessorService:
                 uid = (await session.execute(file_stmt)).scalar_one_or_none()
                 targets = [(file_id, uid)] if uid is not None else []
                 stmt = stmt.where(SystemTaskDO.file_id == file_id)
+                if uid is not None:
+                    stmt = stmt.where(SystemTaskDO.user_id == uid)
             else:
                 file_stmt = select(UserFileDO.id, UserFileDO.user_id).where(
                     UserFileDO.file_name.like("%.note"),
@@ -860,9 +913,7 @@ class ProcessorService:
         async with self.session_manager.session() as session:
             stmt = select(SystemTaskDO)
             if user_id is not None:
-                stmt = stmt.join(
-                    UserFileDO, SystemTaskDO.file_id == UserFileDO.id
-                ).where(UserFileDO.user_id == user_id)
+                stmt = stmt.where(SystemTaskDO.user_id == user_id)
             if status:
                 stmt = stmt.where(SystemTaskDO.status == status.upper())
             if file_id is not None:
@@ -874,10 +925,10 @@ class ProcessorService:
             return list(result.scalars().all())
 
     def _resolve_file_status(
-        self, file_id: int, tasks: list[SystemTaskDO]
+        self, user_id: int, file_id: int, tasks: list[SystemTaskDO]
     ) -> ProcessingStatus:
         """Aggregate task rows and active queue membership into a single file status."""
-        if file_id in self.processing_files:
+        if (user_id, file_id) in self.processing_files:
             if any(t.status == ProcessingStatus.PROCESSING for t in tasks):
                 return ProcessingStatus.PROCESSING
             return ProcessingStatus.PENDING
@@ -914,14 +965,17 @@ class ProcessorService:
             }
             if owned_file_ids:
                 task_rows = await session.execute(
-                    select(SystemTaskDO).where(SystemTaskDO.file_id.in_(owned_file_ids))
+                    select(SystemTaskDO).where(
+                        SystemTaskDO.user_id == user_id,
+                        SystemTaskDO.file_id.in_(owned_file_ids),
+                    )
                 )
                 for task in task_rows.scalars().all():
                     tasks_by_file[task.file_id].append(task)
 
         return {
             file_id: (
-                self._resolve_file_status(file_id, tasks_by_file[file_id])
+                self._resolve_file_status(user_id, file_id, tasks_by_file[file_id])
                 if file_id in owned_file_ids
                 else ProcessingStatus.NONE
             )

@@ -86,7 +86,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "d8e9f0a1b2c3"
+        assert version == "e9f0a1b2c3d4"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -182,7 +182,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "d8e9f0a1b2c3"
+        assert version == "e9f0a1b2c3d4"
 
         # Verify task columns and types
         tasks = conn.execute(
@@ -1235,4 +1235,79 @@ def test_add_wiki_tables_migration_upgrade_and_downgrade(tmp_path: Path) -> None
     downgraded = MetaData()
     downgraded.reflect(bind=engine)
     assert wiki_tables.isdisjoint(downgraded.tables)
+    engine.dispose()
+
+
+def test_add_user_id_to_system_task_migration(
+    tmp_path: Path, alembic_config: Config
+) -> None:
+    """Verify e9f0a1b2c3d4 backfills user_id from f_user_file, drops orphans, and downgrades."""
+    db_file = tmp_path / "system_task_user_id.db"
+    db_url = f"sqlite:///{db_file}"
+    alembic_config.set_main_option("sqlalchemy.url", db_url)
+    command.upgrade(alembic_config, "d8e9f0a1b2c3")
+
+    engine = create_engine(db_url)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO users (id, email, password_md5, is_active, total_capacity, is_admin) "
+                "VALUES (10, 'u10@example.com', 'hash', 1, '0', 0), "
+                "(20, 'u20@example.com', 'hash', 1, '0', 0)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO f_user_file (id, user_id, directory_id, file_name, is_folder, size, is_active, create_time, update_time) "
+                "VALUES (1001, 10, 0, 'a.note', 'N', 10, 'Y', 1000, 1000), "
+                "(2002, 20, 0, 'b.note', 'N', 10, 'Y', 1000, 1000)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO f_system_task (id, file_id, task_type, key, status, retry_count, create_time, update_time) "
+                "VALUES (1, 1001, 'HASHING', 'global', 'COMPLETED', 0, 1000, 1000), "
+                "(2, 2002, 'OCR', 'page_p1', 'FAILED', 1, 1000, 1000), "
+                "(3, 9999, 'HASHING', 'global', 'PENDING', 0, 1000, 1000)"
+            )
+        )
+
+    command.upgrade(alembic_config, "e9f0a1b2c3d4")
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT id, user_id, file_id, task_type, key, status "
+                "FROM f_system_task ORDER BY id"
+            )
+        ).fetchall()
+    assert [tuple(r) for r in rows] == [
+        (1, 10, 1001, "HASHING", "global", "COMPLETED"),
+        (2, 20, 2002, "OCR", "page_p1", "FAILED"),
+    ]
+
+    reflected = MetaData()
+    reflected.reflect(bind=engine)
+    table = reflected.tables["f_system_task"]
+    assert {col.name for col in table.primary_key.columns} == {"user_id", "id"}
+    assert not table.c["user_id"].nullable
+    uq_cols = {
+        tuple(c.name for c in con.columns)
+        for con in table.constraints
+        if con.name == "uq_system_task"
+    }
+    assert uq_cols == {("user_id", "file_id", "task_type", "key")}
+
+    command.downgrade(alembic_config, "d8e9f0a1b2c3")
+    reflected_down = MetaData()
+    reflected_down.reflect(bind=engine)
+    table_down = reflected_down.tables["f_system_task"]
+    assert "user_id" not in table_down.c
+    assert {col.name for col in table_down.primary_key.columns} == {"id"}
+    uq_cols_down = {
+        tuple(c.name for c in con.columns)
+        for con in table_down.constraints
+        if con.name == "uq_system_task"
+    }
+    assert uq_cols_down == {("file_id", "task_type", "key")}
     engine.dispose()

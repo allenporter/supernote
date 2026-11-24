@@ -58,6 +58,7 @@ async def test_list_system_tasks(
         )
         # Create a pending task
         t1 = SystemTaskDO(
+            user_id=test_user_id,
             file_id=101,
             task_type="OCR",
             key="page_1",
@@ -69,6 +70,7 @@ async def test_list_system_tasks(
 
         # Create a failed task
         t2 = SystemTaskDO(
+            user_id=test_user_id,
             file_id=102,
             task_type="SUMMARY",
             key="global",

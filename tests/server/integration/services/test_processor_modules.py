@@ -124,7 +124,7 @@ async def test_explicit_orchestration_flow(
         )
         await session.commit()
 
-    await processor_service.process_file(file_id)
+    await processor_service.process_file(file_id, user_id=1)
 
     assert hashing.calls == [(file_id, None, None)]
     assert set(png.calls) == {(file_id, 0, "p0"), (file_id, 1, "p1")}
@@ -161,7 +161,7 @@ async def test_dependant_skipping(
         )
         await session.commit()
 
-    await processor_service.process_file(file_id)
+    await processor_service.process_file(file_id, user_id=1)
 
     assert png.calls == [(file_id, 0, "p0")]
     assert ocr.calls == []
@@ -174,7 +174,7 @@ async def test_dependant_skipping(
     assert tasks[0].retry_count == 0
 
     # Retrying the failed file increments retry_count
-    await processor_service.process_file(file_id)
+    await processor_service.process_file(file_id, user_id=1)
     tasks = await processor_service.list_system_tasks(file_id=file_id, status="failed")
     assert len(tasks) == 1
     assert tasks[0].retry_count == 1

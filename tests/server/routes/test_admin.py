@@ -240,6 +240,7 @@ async def test_admin_reprocess(
     # Insert an orphaned SystemTaskDO (no matching UserFileDO row)
     async with session_manager.session() as session:
         task = SystemTaskDO(
+            user_id=1,
             file_id=999,
             task_type=TaskType.SUMMARY_GENERATION.value,
             key="global",
@@ -407,6 +408,7 @@ async def test_admin_list_tasks(
         session.add_all(
             [
                 SystemTaskDO(
+                    user_id=1,
                     file_id=101,
                     task_type="OCR_EXTRACTION",
                     key="page_1",
@@ -416,6 +418,7 @@ async def test_admin_list_tasks(
                     update_time=2000,
                 ),
                 SystemTaskDO(
+                    user_id=1,
                     file_id=102,
                     task_type="SUMMARY_GENERATION",
                     key="global",
@@ -567,6 +570,8 @@ async def test_admin_reprocess_cascade_and_custom_stage(
             session_manager: DatabaseSessionManager,
             page_index: int | None = None,
             page_id: str | None = None,
+            *,
+            user_id: int,
         ) -> bool:
             return False
 
@@ -591,6 +596,7 @@ async def test_admin_reprocess_cascade_and_custom_stage(
         session.add_all(
             [
                 SystemTaskDO(
+                    user_id=1,
                     file_id=7771,
                     task_type=t,
                     key="global",
@@ -661,6 +667,7 @@ async def test_admin_reprocess_cascade_and_custom_stage(
     async with session_manager.session() as session:
         session.add(
             SystemTaskDO(
+                user_id=1,
                 file_id=7771,
                 task_type="CUSTOM_TAGGING",
                 key="global",

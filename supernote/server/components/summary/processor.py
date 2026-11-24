@@ -128,13 +128,17 @@ class SummaryModule(ProcessorModule):
         session_manager: DatabaseSessionManager,
         page_index: int | None = None,
         page_id: str | None = None,
+        *,
+        user_id: int,
     ) -> bool:
         """Determines if summary generation is needed."""
         # Summary is a file-level task (global), not page-level.
         if page_index is not None:
             return False
 
-        if not await super().run_if_needed(file_id, session_manager, page_index):
+        if not await super().run_if_needed(
+            file_id, session_manager, page_index, user_id=user_id
+        ):
             return False
 
         async with session_manager.session() as session:

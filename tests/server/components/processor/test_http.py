@@ -37,6 +37,7 @@ async def test_processor_http_routes_tasks_status_and_metadata(
         )
         session.add(
             SystemTaskDO(
+                user_id=test_user_id,
                 file_id=file_id,
                 task_type="HASHING",
                 key="global",

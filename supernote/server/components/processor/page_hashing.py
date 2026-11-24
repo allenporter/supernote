@@ -155,12 +155,15 @@ class PageHashingModule(ProcessorModule):
         session_manager: DatabaseSessionManager,
         page_index: int | None = None,
         page_id: str | None = None,
+        *,
+        user_id: int,
     ) -> bool:
         """Hashing acts as the change detector, so it runs whenever the file is active in DB."""
         async with session_manager.session() as session:
             result = await session.execute(
                 select(UserFileDO.storage_key).where(
                     UserFileDO.id == file_id,
+                    UserFileDO.user_id == user_id,
                     UserFileDO.is_active == "Y",
                 )
             )
@@ -253,7 +256,10 @@ class PageHashingModule(ProcessorModule):
                 page_has_ink=page_has_ink,
             )
             content_diff = await self._sync_page_content_hashes(
-                session, file_id=file_id, page_identities=page_identities
+                session,
+                user_id=user_id,
+                file_id=file_id,
+                page_identities=page_identities,
             )
             await session.commit()
 
@@ -406,6 +412,7 @@ class PageHashingModule(ProcessorModule):
         self,
         session: AsyncSession,
         *,
+        user_id: int,
         file_id: int,
         page_identities: Sequence[tuple[str, str]],
     ) -> _PageDiffCounts:
@@ -468,6 +475,7 @@ class PageHashingModule(ProcessorModule):
                     page_task_key = f"page_{page_id}"
                     await session.execute(
                         delete(SystemTaskDO)
+                        .where(SystemTaskDO.user_id == user_id)
                         .where(SystemTaskDO.file_id == file_id)
                         .where(SystemTaskDO.key == page_task_key)
                     )
@@ -516,6 +524,7 @@ class PageHashingModule(ProcessorModule):
 
                 await session.execute(
                     delete(SystemTaskDO)
+                    .where(SystemTaskDO.user_id == user_id)
                     .where(SystemTaskDO.file_id == file_id)
                     .where(SystemTaskDO.key == f"page_{pid}")
                 )
@@ -527,6 +536,7 @@ class PageHashingModule(ProcessorModule):
             # knowing which downstream modules exist.
             await session.execute(
                 delete(SystemTaskDO)
+                .where(SystemTaskDO.user_id == user_id)
                 .where(SystemTaskDO.file_id == file_id)
                 .where(SystemTaskDO.key == "global")
                 .where(SystemTaskDO.task_type != TaskType.PAGE_HASHING.value)

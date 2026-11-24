@@ -568,7 +568,13 @@ class IntegrityService:
                 SystemTaskDO.status,
                 SystemTaskDO.last_error,
             )
-            .join(UserFileDO, UserFileDO.id == SystemTaskDO.file_id)
+            .join(
+                UserFileDO,
+                and_(
+                    UserFileDO.id == SystemTaskDO.file_id,
+                    UserFileDO.user_id == SystemTaskDO.user_id,
+                ),
+            )
             .outerjoin(
                 NotePageContentDO,
                 # SystemTaskDO.key uses 'page_{page_id}' whereas NotePageContentDO stores raw 'page_id'
@@ -579,6 +585,7 @@ class IntegrityService:
             )
             .where(
                 *note_filters,
+                SystemTaskDO.user_id == user_id,
                 or_(
                     # 1. Any processing task that ended in FAILED status
                     SystemTaskDO.status == ProcessingStatus.FAILED,
@@ -649,9 +656,16 @@ class IntegrityService:
 
         stmt = (
             select(SystemTaskDO.file_id, SystemTaskDO.key)
-            .join(UserFileDO, UserFileDO.id == SystemTaskDO.file_id)
+            .join(
+                UserFileDO,
+                and_(
+                    UserFileDO.id == SystemTaskDO.file_id,
+                    UserFileDO.user_id == SystemTaskDO.user_id,
+                ),
+            )
             .where(
                 *note_filters,
+                SystemTaskDO.user_id == user_id,
                 # Completed PNG_CONVERSION tasks whose rendered PNG should exist in CACHE_BUCKET
                 SystemTaskDO.status == ProcessingStatus.COMPLETED,
                 SystemTaskDO.task_type == TaskType.PNG_CONVERSION.value,
@@ -918,6 +932,7 @@ class IntegrityService:
                 UserFileDO,
                 and_(
                     UserFileDO.id == SystemTaskDO.file_id,
+                    UserFileDO.user_id == SystemTaskDO.user_id,
                     UserFileDO.is_active == "Y",
                     UserFileDO.is_folder == "N",
                 ),
@@ -965,6 +980,7 @@ class IntegrityService:
                 UserFileDO,
                 and_(
                     UserFileDO.id == SystemTaskDO.file_id,
+                    UserFileDO.user_id == SystemTaskDO.user_id,
                     UserFileDO.is_active == "Y",
                     UserFileDO.is_folder == "N",
                 ),

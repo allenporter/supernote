@@ -95,12 +95,14 @@ class OcrModule(ProcessorModule):
         session_manager: DatabaseSessionManager,
         page_index: int | None = None,
         page_id: str | None = None,
+        *,
+        user_id: int,
     ) -> bool:
         if page_index is None:
             return False
 
         if not await super().run_if_needed(
-            file_id, session_manager, page_index, page_id
+            file_id, session_manager, page_index, page_id, user_id=user_id
         ):
             return False
 
@@ -115,10 +117,10 @@ class OcrModule(ProcessorModule):
                 )
                 return False
             file_do = await session.get(UserFileDO, file_id)
-            if file_do is None:
+            if file_do is None or file_do.user_id != user_id:
                 return False
             page_meta = await _get_verified_page_metadata(
-                session, file_do.user_id, file_id, page_id, content.content_hash
+                session, user_id, file_id, page_id, content.content_hash
             )
             if page_meta is not None and not page_meta.has_drawables:
                 return True

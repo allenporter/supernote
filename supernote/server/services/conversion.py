@@ -103,10 +103,11 @@ class ConversionService:
         page_indices: set[int] | None = None,
     ) -> list[int]:
         """Ensure requested (or all) pages of a note are converted to PNG in CACHE_BUCKET and return page numbers."""
-        await self._get_required_note_node(user, file_id)
+        user_id, _ = await self._get_required_note_node(user, file_id)
 
         if not await self.processor_service.process_file(
             file_id,
+            user_id=user_id,
             task_types={TaskType.PAGE_HASHING, TaskType.PNG_CONVERSION},
             page_indices=page_indices,
         ):
