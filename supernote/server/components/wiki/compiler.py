@@ -38,7 +38,6 @@ import logging
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
 
 from aiohttp import web
 from sqlalchemy import select
@@ -47,9 +46,6 @@ from supernote.models.events import DomainEventType
 from supernote.server.ai.base import AIError
 from supernote.server.ai.models.text import TextGenerationModel
 from supernote.server.components.events.service import EventLogService
-from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO
-from supernote.server.db.models.schedule import ScheduleTaskDO
 from supernote.server.db.models.wiki import WikiCheckpointDO, WikiLintIssueDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
@@ -80,6 +76,7 @@ from .prompts import (
     parse_lint_report,
 )
 from .service import WikiService, _make_dedup_key
+from .source_service import WikiSourceService
 
 __all__ = [
     "WIKI_COMPILER_KEY",
@@ -132,6 +129,7 @@ class WikiCompilerWorker:
         self._config = config
         self._session_manager = session_manager
         self._wiki_service = wiki_service
+        self._source_service = WikiSourceService(session_manager)
         self._event_log_service = event_log_service
         self._event_bus = event_bus
         self._text_model = text_model
@@ -273,7 +271,9 @@ class WikiCompilerWorker:
                     status="paused",
                 )
 
-            linked_context = await self._load_linked_context(user_id, page.events)
+            linked_context = await self._source_service.load_linked_context(
+                user_id, page.events
+            )
             diff_payload = [
                 {
                     "seq": ev.seq,
@@ -340,79 +340,25 @@ class WikiCompilerWorker:
                 )
 
             cp = await self._get_or_create_checkpoint(user_id)
-            async with self._session_manager.session() as session:
-                stmt = select(UserFileDO).where(
-                    UserFileDO.user_id == user_id,
-                    UserFileDO.is_active == "Y",
-                    UserFileDO.is_folder == "N",
-                    UserFileDO.file_name.like("%.note"),
+            (
+                synthetic_diffs,
+                next_cursor,
+            ) = await self._source_service.list_backfill_batch(
+                user_id,
+                before_file_id=cp.backfill_file_cursor,
+                max_files=max_files,
+            )
+            if next_cursor is None:
+                issues = await self._wiki_service.list_lint_issues(
+                    user_id, status="open"
                 )
-                if cp.backfill_file_cursor is not None:
-                    stmt = stmt.where(UserFileDO.id < cp.backfill_file_cursor)
-                files = (
-                    (
-                        await session.execute(
-                            stmt.order_by(UserFileDO.id.desc()).limit(
-                                max(1, min(max_files, 20))
-                            )
-                        )
-                    )
-                    .scalars()
-                    .all()
+                return WikiCompileResult(
+                    events_processed=0,
+                    pages_updated=0,
+                    skipped_policy_pages=0,
+                    lint_issues_open=len(issues),
+                    status="idle",
                 )
-                if not files:
-                    issues = await self._wiki_service.list_lint_issues(
-                        user_id, status="open"
-                    )
-                    return WikiCompileResult(
-                        events_processed=0,
-                        pages_updated=0,
-                        skipped_policy_pages=0,
-                        lint_issues_open=len(issues),
-                        status="idle",
-                    )
-
-                file_ids = [f.id for f in files]
-                page_rows = (
-                    (
-                        await session.execute(
-                            select(NotePageContentDO)
-                            .join(
-                                UserFileDO, UserFileDO.id == NotePageContentDO.file_id
-                            )
-                            .where(
-                                UserFileDO.user_id == user_id,
-                                UserFileDO.is_active == "Y",
-                                NotePageContentDO.file_id.in_(file_ids),
-                                NotePageContentDO.text_content.is_not(None),
-                            )
-                            .order_by(
-                                NotePageContentDO.file_id.desc(),
-                                NotePageContentDO.page_index.asc(),
-                            )
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-
-            file_name_map = {f.id: f.file_name for f in files}
-            synthetic_diffs = [
-                {
-                    "event_type": "backfill.note_page",
-                    "entity_id": f"{p.file_id}:{p.page_id}",
-                    "related_file_id": p.file_id,
-                    "payload": {
-                        "file_id": str(p.file_id),
-                        "file_path": file_name_map.get(p.file_id, ""),
-                        "page_id": p.page_id,
-                        "page_index": p.page_index,
-                        "text_content": p.text_content or "",
-                    },
-                }
-                for p in page_rows
-                if not p.is_blank
-            ]
 
             pages_updated = 0
             skipped_policy = 0
@@ -441,7 +387,7 @@ class WikiCompilerWorker:
             issues = await self._wiki_service.run_structural_lint(user_id)
             await self._update_checkpoint(
                 user_id,
-                backfill_file_cursor=files[-1].id,
+                backfill_file_cursor=next_cursor,
                 status="idle",
                 last_error=None,
             )
@@ -464,19 +410,7 @@ class WikiCompilerWorker:
             if not pages:
                 return await self._wiki_service.list_lint_issues(user_id, status="open")
 
-            async with self._session_manager.session() as session:
-                tasks = (
-                    (
-                        await session.execute(
-                            select(ScheduleTaskDO)
-                            .where(ScheduleTaskDO.user_id == user_id)
-                            .limit(50)
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-
+            tasks = await self._source_service.list_task_snapshots(user_id, limit=50)
             prompt = build_lint_prompt(pages, tasks)
             try:
                 raw_report = await self._text_model.generate_json(
@@ -620,81 +554,6 @@ class WikiCompilerWorker:
             note_page_keys=deleted_page_keys,
             task_ids=deleted_task_ids,
         )
-
-    async def _load_linked_context(
-        self, user_id: int, events: list[DomainEventRecorded]
-    ) -> dict[str, Any]:
-        task_ids = {ev.entity_id for ev in events if ev.entity_type == "schedule_task"}
-        file_ids = {
-            ev.related_file_id
-            for ev in events
-            if ev.related_file_id is not None and ev.entity_type == "schedule_task"
-        }
-        if not task_ids and not file_ids:
-            return {}
-
-        async with self._session_manager.session() as session:
-            tasks_ctx: list[dict[str, Any]] = []
-            if task_ids:
-                rows = (
-                    (
-                        await session.execute(
-                            select(ScheduleTaskDO).where(
-                                ScheduleTaskDO.user_id == user_id,
-                                ScheduleTaskDO.task_id.in_(task_ids),
-                            )
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                tasks_ctx = [
-                    {
-                        "task_id": t.task_id,
-                        "title": t.title,
-                        "detail": t.detail,
-                        "status": t.status,
-                        "importance": t.importance,
-                        "recurrence": t.recurrence,
-                        "due_time": t.due_time,
-                        "completed_time": t.completed_time,
-                    }
-                    for t in rows
-                ]
-
-            pages_ctx: list[dict[str, Any]] = []
-            if file_ids:
-                # Strict tenant join: NotePageContentDO has no user_id column.
-                page_rows = (
-                    (
-                        await session.execute(
-                            select(NotePageContentDO)
-                            .join(
-                                UserFileDO, UserFileDO.id == NotePageContentDO.file_id
-                            )
-                            .where(
-                                UserFileDO.user_id == user_id,
-                                UserFileDO.is_active == "Y",
-                                NotePageContentDO.file_id.in_(file_ids),
-                                NotePageContentDO.text_content.is_not(None),
-                            )
-                            .limit(10)
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                pages_ctx = [
-                    {
-                        "file_id": p.file_id,
-                        "page_id": p.page_id,
-                        "page_index": p.page_index,
-                        "text_content": (p.text_content or "")[:1500],
-                    }
-                    for p in page_rows
-                    if not p.is_blank
-                ]
-            return {"tasks": tasks_ctx, "linked_note_pages": pages_ctx}
 
     async def _get_or_create_checkpoint(self, user_id: int) -> WikiCheckpointDO:
         async with self._session_manager.session() as session:
