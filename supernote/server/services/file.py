@@ -4,7 +4,7 @@
 with physical blob lifecycle management in `supernote.server.services.blob.BlobStorage`
 and quota checks in `supernote.server.services.user.UserService`. When `.note` files or
 VFS entries are created, updated, moved, or deleted, `FileService` publishes domain
-events (`NoteUpdatedEvent`, `NoteDeletedEvent`, `VfsItemCreatedEvent`, `BlobCleanupEvent`)
+events (`NoteUpdatedEvent`, `VfsItemPurgedEvent`, `VfsItemCreatedEvent`, `BlobCleanupEvent`)
 onto `supernote.server.events.LocalEventBus` so background processing and Socket.IO
 clients stay synchronized. See `supernote.guides.architecture`.
 """
@@ -44,13 +44,13 @@ from ..db.session import DatabaseSessionManager
 from ..events import (
     BlobCleanupEvent,
     LocalEventBus,
-    NoteDeletedEvent,
     NoteUpdatedEvent,
     VfsContentUpdatedEvent,
     VfsItemCopiedEvent,
     VfsItemCreatedEvent,
     VfsItemDeletedEvent,
     VfsItemMovedEvent,
+    VfsItemPurgedEvent,
 )
 from ..metrics import (
     NoteUploadSource,
@@ -1386,10 +1386,14 @@ class FileService:
 
         if self.event_bus:
             for node in purged_nodes:
-                if node.is_folder == "N" and node.file_name.endswith(".note"):
-                    await self.event_bus.publish(
-                        NoteDeletedEvent(file_id=node.id, user_id=node.user_id)
+                await self.event_bus.publish(
+                    VfsItemPurgedEvent(
+                        item_id=node.id,
+                        user_id=node.user_id,
+                        name=node.file_name,
+                        is_folder=node.is_folder == "Y",
                     )
+                )
 
     async def delete_from_recycle(self, user: str, id_list: list[int]) -> None:
         """Permanently delete items from recycle bin for a specific user using VFS."""

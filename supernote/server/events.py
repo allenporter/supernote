@@ -3,7 +3,7 @@
 Decouples mutating domain services (`supernote.server.services.file.FileService`,
 `supernote.server.components.summary.service.SummaryService`, `supernote.server.components.schedule.service.ScheduleService`,
 `supernote.server.services.processor.ProcessorService`) from downstream subscribers:
-- `supernote.server.services.processor.ProcessorService` listens for `NoteUpdatedEvent`, `NoteDeletedEvent`, and `SyncCompletedEvent`.
+- `supernote.server.components.processor.service.ProcessorService` listens for `NoteUpdatedEvent`, `VfsItemPurgedEvent`, and `SyncCompletedEvent`.
 - `supernote.server.services.file.FileService` listens for `BlobCleanupEvent`.
 - `supernote.server.components.webhooks.service.WebhookService` listens for `DomainEventRecorded`.
 - `supernote.server.components.socketio` listens for VFS, summary, and schedule events to broadcast real-time Socket.IO messages to connected tablets and Web UI clients.
@@ -143,11 +143,13 @@ class NoteUpdatedEvent(Event):
 
 
 @dataclass
-class NoteDeletedEvent(Event):
-    """Triggered when a .note file is deleted."""
+class VfsItemPurgedEvent(Event):
+    """Triggered when a VFS file or directory is permanently purged from the recycle bin."""
 
-    file_id: int
+    item_id: int
     user_id: int
+    name: str
+    is_folder: bool = False
 
 
 @dataclass

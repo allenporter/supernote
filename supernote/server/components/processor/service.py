@@ -1,7 +1,7 @@
 """Asynchronous 5-stage `.note` processing pipeline orchestrator and recovery loop.
 
 `ProcessorService` subscribes to `NoteUpdatedEvent`, `SyncCompletedEvent`, and
-`NoteDeletedEvent` on `supernote.server.events.LocalEventBus` and runs registered
+`VfsItemPurgedEvent` on `supernote.server.events.LocalEventBus` and runs registered
 `supernote.server.components.processor.ProcessorModule` stages in order:
 1. Global Pre-Stage: `PageHashingModule`
 2. Per-Page Stage (parallel): `PngConversionModule` -> `OcrModule` -> `EmbeddingModule`
@@ -50,11 +50,11 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
     Event,
     LocalEventBus,
-    NoteDeletedEvent,
     NoteProcessingCompletedEvent,
     NoteProcessingFailedEvent,
     NoteUpdatedEvent,
     SyncCompletedEvent,
+    VfsItemPurgedEvent,
 )
 from supernote.server.metrics import (
     PROCESSOR_MISSING_TASKS_RECOVERED_TOTAL,
@@ -208,7 +208,7 @@ class ProcessorService:
 
         # subscribe to events
         self.event_bus.subscribe(NoteUpdatedEvent, self.handle_note_updated)
-        self.event_bus.subscribe(NoteDeletedEvent, self.handle_note_deleted)
+        self.event_bus.subscribe(VfsItemPurgedEvent, self.handle_vfs_item_purged)
         self.event_bus.subscribe(SyncCompletedEvent, self.handle_sync_completed)
 
         # Start workers
@@ -300,11 +300,13 @@ class ProcessorService:
             return
         await self.recover_missing_tasks(user_id=event.user_id)
 
-    async def handle_note_deleted(self, event: Event) -> None:
-        """Clean up artifacts for deleted note."""
-        if not isinstance(event, NoteDeletedEvent):
+    async def handle_vfs_item_purged(self, event: Event) -> None:
+        """Clean up artifacts when a `.note` file is permanently purged."""
+        if not isinstance(event, VfsItemPurgedEvent):
             return
-        file_id = event.file_id
+        if event.is_folder or not event.name.endswith(".note"):
+            return
+        file_id = event.item_id
         logger.info(f"Received delete for note: {file_id}")
 
         async with self._file_lock(file_id):
