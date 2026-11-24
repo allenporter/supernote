@@ -147,8 +147,8 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
             query: The semantic search query.
             top_n: Number of results to return (default: 5).
             name_filter: Optional substring filter for notebook filenames.
-            date_after: Filter for notes created after this date (ISO 8601).
-            date_before: Filter for notes created before this date (ISO 8601).
+            date_after: Filter for notes created on or after this date (YYYY-MM-DD).
+            date_before: Filter for notes created on or before this date (YYYY-MM-DD).
         """
         _ = ctx
         if (user_id := get_authenticated_user_id()) is None:
