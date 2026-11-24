@@ -20,6 +20,7 @@ from supernote.server.components.oauth.client_metadata import (
     ClientMetadata,
     ClientMetadataError,
     ClientMetadataUnavailableError,
+    NotClientMetadataDocumentError,
     _cache_seconds,
     _is_public_address,
     _PublicAddressResolver,
@@ -213,6 +214,9 @@ def test_invalid_documents_are_rejected(document: Any) -> None:
         ("https://client.example/app/%2E/client.json", False),
         ("https://client.example/app\\client.json", False),
         (f"https://client.example/{'a' * 2048}", False),
+        ("https://client.example/client json", False),
+        ("https://client.example/client.json\n", False),
+        ("https://client.example/client\x00.json", False),
     ],
 )
 def test_client_id_url_rules(client_id: str, valid: bool) -> None:
@@ -250,6 +254,9 @@ def test_cache_seconds_are_bounded(
         ("::1", False),
         ("fe80::1%en0", False),
         ("::ffff:127.0.0.1", False),
+        ("224.0.0.1", False),
+        ("ff0e::1", False),
+        ("64:ff9b::808:808", False),
         ("not-an-ip", False),
     ],
 )
@@ -272,12 +279,13 @@ async def test_resolver_keeps_only_public_addresses() -> None:
     assert [r["host"] for r in results] == ["93.184.216.34"]
 
 
-async def test_hostname_resolving_to_private_addresses_is_refused() -> None:
-    """The real fetcher connects only through the public-address resolver."""
-    with _resolving_to("10.0.0.5"), pytest.raises(ClientMetadataError) as err:
+async def test_hostname_resolving_to_private_addresses_is_not_fetched() -> None:
+    """A LAN host is never connected to; it is an IndieAuth-style client instead."""
+    with (
+        _resolving_to("10.0.0.5"),
+        pytest.raises(NotClientMetadataDocumentError, match="public address"),
+    ):
         await fetch_client_metadata_document(TEST_CLIENT_ID)
-    assert not isinstance(err.value, ClientMetadataUnavailableError)
-    assert "public address" in str(err.value)
 
 
 @pytest.mark.parametrize(
@@ -289,9 +297,8 @@ async def test_hostname_resolving_to_private_addresses_is_refused() -> None:
     ],
 )
 async def test_private_address_literals_are_never_fetched(url: str) -> None:
-    with pytest.raises(ClientMetadataError) as err:
+    with pytest.raises(NotClientMetadataDocumentError):
         await fetch_client_metadata_document(url)
-    assert not isinstance(err.value, ClientMetadataUnavailableError)
 
 
 async def _respond(body: bytes) -> web.Response:
@@ -313,6 +320,7 @@ async def read_path(aiohttp_server: AiohttpServer) -> AsyncIterator[ReadPath]:
 
     async def chunked(request: web.Request) -> web.StreamResponse:
         response = web.StreamResponse()
+        response.content_type = "application/json"
         response.enable_chunked_encoding()
         await response.prepare(request)
         for i in range(0, len(text), 7):
@@ -322,6 +330,7 @@ async def read_path(aiohttp_server: AiohttpServer) -> AsyncIterator[ReadPath]:
 
     async def large(request: web.Request) -> web.StreamResponse:
         response = web.StreamResponse()
+        response.content_type = "application/json"
         await response.prepare(request)
         for _ in range(3):
             await response.write(b"x" * MAX_DOCUMENT_BYTES)
@@ -330,6 +339,12 @@ async def read_path(aiohttp_server: AiohttpServer) -> AsyncIterator[ReadPath]:
 
     async def redirect(request: web.Request) -> web.Response:
         raise web.HTTPFound("/ok")
+
+    async def html(request: web.Request) -> web.Response:
+        return web.Response(text="<html></html>", content_type="text/html")
+
+    async def vendor_json(request: web.Request) -> web.Response:
+        return web.Response(text=text, content_type="application/client+json")
 
     async def bom(request: web.Request) -> web.Response:
         return await _respond(b"\xef\xbb\xbf" + text.encode())
@@ -349,6 +364,8 @@ async def read_path(aiohttp_server: AiohttpServer) -> AsyncIterator[ReadPath]:
         "/chunked": chunked,
         "/large": large,
         "/redirect": redirect,
+        "/html": html,
+        "/vendor-json": vendor_json,
         "/bom": bom,
         "/utf16": utf16,
         "/429": too_many,
@@ -378,11 +395,23 @@ async def test_read_document_reads_a_chunked_body_to_the_end(
     assert json.loads(text) == VALID
 
 
+async def test_read_document_accepts_a_json_subtype(read_path: ReadPath) -> None:
+    text, _ = await read_path("/vendor-json")
+    assert json.loads(text) == VALID
+
+
 @pytest.mark.parametrize(
     "path",
-    ["/redirect", "/missing", "/large", "/utf16"],
-    ids=["redirect-not-followed", "not-found", "too-large", "not-utf8"],
+    ["/redirect", "/missing", "/html"],
+    ids=["redirect-not-followed", "not-found", "not-json"],
 )
+async def test_read_document_finds_no_document(read_path: ReadPath, path: str) -> None:
+    """These are IndieAuth-style client IDs, not broken CIMD clients."""
+    with pytest.raises(NotClientMetadataDocumentError):
+        await read_path(path)
+
+
+@pytest.mark.parametrize("path", ["/large", "/utf16"], ids=["too-large", "not-utf8"])
 async def test_read_document_refuses(read_path: ReadPath, path: str) -> None:
     with pytest.raises(ClientMetadataError) as err:
         await read_path(path)
@@ -497,13 +526,35 @@ async def test_invalid_document_is_never_cached(
 
 @pytest.mark.parametrize(
     "client_id",
-    ["http://client.example/client.json", f"{ISSUER}/client.json"],
-    ids=["not-a-client-id-url", "issuer-origin"],
+    [
+        "http://homeassistant.local:8123/",
+        "https://client.example/",
+        f"{ISSUER}/client.json",
+    ],
+    ids=["http", "root-path", "issuer-origin"],
 )
-async def test_refused_client_ids_are_never_fetched(
+async def test_ineligible_client_ids_are_not_cimd_clients(
     coordination_service: CoordinationService, client_id: str
 ) -> None:
+    """Section 3 ineligible IDs are never fetched; the provider falls back to IndieAuth."""
     fetcher = FakeDocumentFetcher()
-    with pytest.raises(ClientMetadataError):
+    assert (
         await resolve_client_metadata(coordination_service, fetcher, client_id, ISSUER)
+        is None
+    )
     assert fetcher.fetched == []
+
+
+async def test_a_client_id_without_a_document_is_not_a_cimd_client(
+    coordination_service: CoordinationService,
+) -> None:
+    fetcher = FakeDocumentFetcher()
+    client_id = "https://client.example/app"
+    for _ in range(2):
+        assert (
+            await resolve_client_metadata(
+                coordination_service, fetcher, client_id, ISSUER
+            )
+            is None
+        )
+    assert fetcher.fetched == [client_id, client_id]

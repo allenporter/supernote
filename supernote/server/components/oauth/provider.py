@@ -25,7 +25,7 @@ from mcp.shared.auth import (
     OAuthClientInformationFull,
     OAuthToken,
 )
-from pydantic import AnyUrl
+from pydantic import AnyHttpUrl, AnyUrl, ValidationError
 
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import OAUTH_ACCESS_TOKEN_TTL_SECONDS, UserService
@@ -59,8 +59,28 @@ def _without_loopback_port(uri: str) -> str:
     return uri
 
 
+def _parse_oauth_url(raw: str) -> yarl.URL | None:
+    """Parse an RFC 6749 / IndieAuth endpoint URL (canonical path, no userinfo or fragment)."""
+    try:
+        normalized = yarl.URL(raw)
+        unnormalized = yarl.URL(raw, encoded=True)
+        if (
+            not normalized.scheme
+            or not normalized.host
+            or normalized.user is not None
+            or normalized.password is not None
+            or normalized.fragment
+            or "\\" in unnormalized.path
+            or unnormalized.path != normalized.path
+        ):
+            return None
+    except ValueError:
+        return None
+    return normalized
+
+
 class SupernoteOAuthClientInformationFull(OAuthClientInformationFull):
-    """OAuth 2.1 Client Information for Supernote MCP."""
+    """OAuth 2.1 Client Information for a client with a metadata document."""
 
     @override
     def validate_redirect_uri(self, redirect_uri: AnyUrl | None) -> AnyUrl:
@@ -78,6 +98,54 @@ class SupernoteOAuthClientInformationFull(OAuthClientInformationFull):
         raise InvalidRedirectUriError(
             f"Redirect URI '{redirect_uri}' not in allowed list"
         )
+
+
+class IndieAuthClientInformation(SupernoteOAuthClientInformationFull):
+    """A client identified by a URL that serves no metadata document."""
+
+    @override
+    def validate_redirect_uri(self, redirect_uri: AnyUrl | None) -> AnyUrl:
+        """Allows redirect URI prefixes matching the registered origin and path boundary."""
+        if redirect_uri is None:
+            if self.redirect_uris and len(self.redirect_uris) == 1:
+                return self.redirect_uris[0]
+            raise InvalidRedirectUriError("Redirect URI must be specified")
+        candidate = _parse_oauth_url(str(redirect_uri))
+        if candidate is None:
+            raise InvalidRedirectUriError(f"Redirect URI '{redirect_uri}' is invalid")
+        for registered_redirect_uri in self.redirect_uris or ():
+            registered = _parse_oauth_url(str(registered_redirect_uri))
+            if registered is None or candidate.origin() != registered.origin():
+                continue
+            reg_path = registered.path.rstrip("/")
+            if (
+                not reg_path
+                or candidate.path == reg_path
+                or candidate.path.startswith(f"{reg_path}/")
+            ):
+                return redirect_uri
+        raise InvalidRedirectUriError(
+            f"Redirect URI '{redirect_uri}' not in allowed list"
+        )
+
+
+def _indieauth_client(client_id: str) -> IndieAuthClientInformation | None:
+    """An IndieAuth-style client whose redirects share the client ID's origin and path."""
+    parsed = _parse_oauth_url(client_id)
+    if parsed is None or parsed.scheme not in ("http", "https"):
+        return None
+    try:
+        validated_client_url = AnyHttpUrl(client_id)
+    except ValidationError:
+        return None
+    return IndieAuthClientInformation(
+        client_id=client_id,
+        redirect_uris=[validated_client_url],
+        grant_types=["authorization_code", "refresh_token"],
+        response_types=["code"],
+        scope=MCPScope.ALL,
+        token_endpoint_auth_method="none",
+    )
 
 
 class SupernoteOAuthProvider(
@@ -103,6 +171,7 @@ class SupernoteOAuthProvider(
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
         """Retrieve a client from its Client ID Metadata Document.
 
+        A client ID that serves no document falls back to IndieAuth-style matching.
         Raises `ClientMetadataUnavailableError` when the document cannot be fetched
         right now, so a network failure is never reported as an invalid client. The
         failure is remembered briefly, because the SDK's `/authorize` error path asks
@@ -124,6 +193,8 @@ class SupernoteOAuthProvider(
         except ClientMetadataError as err:
             logger.info("Rejected OAuth client %s: %s", client_id, err)
             return None
+        if metadata is None:
+            return _indieauth_client(client_id)
         return SupernoteOAuthClientInformationFull(
             client_id=client_id,
             client_name=metadata.client_name,

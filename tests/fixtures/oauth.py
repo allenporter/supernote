@@ -7,7 +7,10 @@ from unittest.mock import patch
 
 import pytest
 
-from supernote.server.components.oauth.client_metadata import ClientMetadataError
+from supernote.server.components.oauth.client_metadata import (
+    ClientMetadataError,
+    NotClientMetadataDocumentError,
+)
 
 TEST_CLIENT_ID = "https://client.example/client.json"
 TEST_REDIRECT_URI = "https://client.example/callback"
@@ -25,7 +28,7 @@ def client_document(client_id: str, *redirect_uris: str) -> dict[str, Any]:
 
 
 class FakeDocumentFetcher:
-    """Serves documents by URL; a missing URL answers HTTP 404."""
+    """Serves documents by URL; a missing URL serves no document (HTTP 404)."""
 
     def __init__(self) -> None:
         self.documents: dict[str, Any] = {
@@ -41,7 +44,7 @@ class FakeDocumentFetcher:
         if url in self.errors:
             raise self.errors[url]
         if url not in self.documents:
-            raise ClientMetadataError("client metadata returned HTTP 404")
+            raise NotClientMetadataDocumentError("HTTP 404 text/html")
         document = self.documents[url]
         text = document if isinstance(document, str) else json.dumps(document)
         return text, self.cache_control

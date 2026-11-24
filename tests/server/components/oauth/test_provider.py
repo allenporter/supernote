@@ -21,6 +21,7 @@ from supernote.server.components.oauth.models import (
 )
 from supernote.server.components.oauth.provider import (
     UNAVAILABLE_MEMO_SIZE,
+    IndieAuthClientInformation,
     SupernoteOAuthClientInformationFull,
     SupernoteOAuthProvider,
 )
@@ -399,10 +400,11 @@ async def test_authorize_and_login_bridge_consent_invariants(
     "bad_client_id",
     [
         "not-a-url",
-        "http://client.example/client.json",
-        "https://client.example",
-        "https://client.example/",
+        "ftp://client.example/client.json",
+        "obsidian://supernote-sync/app",
         "https://client.example:99999/client.json",
+        "http://exa mple.example/",
+        "http://xn--/",
         "https://user:pass@client.example/client.json",
         "https://client.example/client.json#frag",
         "https://client.example/app/../client.json",
@@ -423,6 +425,78 @@ async def test_get_client_rejects_malformed_or_unsafe_client_ids(
         issuer_url="http://localhost:8080",
     )
     assert await provider.get_client(bad_client_id) is None
+
+
+@pytest.mark.parametrize(
+    "client_id",
+    [
+        "http://homeassistant.local:8123/",
+        "http://192.168.1.10:8123/",
+        "https://home-assistant.example/",
+        "https://client.example/missing.json",
+    ],
+    ids=["http-lan-name", "http-lan-address", "root-path", "no-document"],
+)
+async def test_get_client_falls_back_to_indieauth(
+    user_service: UserService,
+    coordination_service: CoordinationService,
+    client_id: str,
+) -> None:
+    """A client ID that serves no metadata document is an IndieAuth-style client."""
+    provider = SupernoteOAuthProvider(
+        user_service,
+        coordination_service,
+        "https://notes.example",
+        FakeDocumentFetcher(),
+    )
+    client = await provider.get_client(client_id)
+    assert isinstance(client, IndieAuthClientInformation)
+    assert [str(uri) for uri in client.redirect_uris or ()] == [client_id]
+
+
+@pytest.mark.parametrize(
+    ("redirect_uri", "allowed"),
+    [
+        ("https://home-assistant.example/auth/external/callback", True),
+        ("https://home-assistant.example/", True),
+        ("https://home-assistant.example.evil.example/cb", False),
+        ("https://other.example/cb", False),
+        ("javascript:alert(1)//", False),
+    ],
+)
+def test_indieauth_redirects_share_the_client_origin(
+    redirect_uri: str, allowed: bool
+) -> None:
+    client = IndieAuthClientInformation(
+        client_id="https://home-assistant.example/",
+        redirect_uris=[AnyUrl("https://home-assistant.example/")],
+    )
+    if allowed:
+        assert client.validate_redirect_uri(AnyUrl(redirect_uri)) == AnyUrl(
+            redirect_uri
+        )
+    else:
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl(redirect_uri))
+
+
+def test_indieauth_custom_scheme_blocks_traversal() -> None:
+    """An omitted redirect resolves to the single URI; dot segments never pass."""
+    single_client = IndieAuthClientInformation(
+        client_id="obsidian://supernote-sync/app",
+        redirect_uris=[AnyUrl("obsidian://supernote-sync/app")],
+    )
+    assert single_client.validate_redirect_uri(None) == AnyUrl(
+        "obsidian://supernote-sync/app"
+    )
+    for invalid_uri in (
+        "obsidian://supernote-sync/app/%2e%2e/evil",
+        "obsidian://supernote-sync/app%5c..%5cevil",
+        "obsidian://supernote-sync/app#frag",
+        "obsidian://user:pass@supernote-sync/app",
+    ):
+        with pytest.raises(InvalidRedirectUriError):
+            single_client.validate_redirect_uri(AnyUrl(invalid_uri))
 
 
 def test_validate_redirect_uri_default_and_custom_scheme_traversal() -> None:

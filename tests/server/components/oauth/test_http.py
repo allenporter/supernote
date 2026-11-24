@@ -64,7 +64,6 @@ async def test_metadata_advertises_client_id_metadata_documents(
 
 
 FAILING_CLIENTS = {
-    "missing": ("https://client.example/missing.json", 400),
     "invalid": ("https://client.example/invalid.json", 400),
     "unavailable": ("https://client.example/down.json", 503),
 }
@@ -153,3 +152,29 @@ async def test_token_refuses_a_failed_client(
     assert (await resp.json())["error"] == (
         "temporarily_unavailable" if status == 503 else "invalid_client"
     )
+
+
+@pytest.mark.parametrize(
+    ("client_id", "redirect_uri"),
+    [
+        ("http://192.168.1.10:8123/", "http://192.168.1.10:8123/auth/callback"),
+        (
+            "https://client.example/missing.json",
+            "https://client.example/missing.json/callback",
+        ),
+    ],
+    ids=["lan-http", "no-document"],
+)
+async def test_authorize_accepts_an_indieauth_client(
+    failing_clients: TestClient,
+    client_metadata_documents: FakeDocumentFetcher,
+    client_id: str,
+    redirect_uri: str,
+) -> None:
+    """Self-hosted and LAN clients without a metadata document still sign in."""
+    params = _authorize_params(client_id) | {"redirect_uri": redirect_uri}
+    resp = await failing_clients.get("/authorize", params=params, allow_redirects=False)
+    assert resp.status == 302
+    assert "/login-bridge?" in resp.headers["location"]
+    if client_id.startswith("http://"):
+        assert client_id not in client_metadata_documents.fetched

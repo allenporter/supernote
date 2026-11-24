@@ -4,6 +4,10 @@ An OAuth client identifies itself with an HTTPS URL that serves a JSON document
 describing it. The authorization server fetches that document, validates it, and
 uses its `redirect_uris` for exact redirect matching. The validated fields are cached
 in the coordination store; failures never are.
+
+A client ID that is not eligible (not https, a root path, a private host) or that
+does not serve a JSON document is not a CIMD client; the provider then falls back
+to IndieAuth-style matching. A JSON document that breaks the rules is rejected.
 """
 
 import hashlib
@@ -73,6 +77,10 @@ class ClientMetadataError(Exception):
     """The client's metadata document is missing, invalid, or refused."""
 
 
+class NotClientMetadataDocumentError(Exception):
+    """The client ID does not serve a Client ID Metadata Document."""
+
+
 class ClientMetadataUnavailableError(ClientMetadataError):
     """The client's metadata document could not be fetched right now."""
 
@@ -97,7 +105,12 @@ class ClientMetadata(DataClassJSONMixin):
 
 def is_client_id_url(raw: str) -> bool:
     """Whether a client ID follows the Client Identifier URL rules of section 3."""
-    if len(raw) > MAX_CLIENT_ID_LENGTH or "#" in raw or "\\" in raw:
+    if (
+        len(raw) > MAX_CLIENT_ID_LENGTH
+        or "#" in raw
+        or "\\" in raw
+        or any(char.isspace() or not char.isprintable() for char in raw)
+    ):
         return False
     try:
         url = yarl.URL(raw, encoded=True)
@@ -138,7 +151,7 @@ def _is_public_address(address: str) -> bool:
         return False
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
         ip = ip.ipv4_mapped
-    return ip.is_global
+    return ip.is_global and not ip.is_multicast and not ip.is_reserved
 
 
 class _PublicAddressResolver(AbstractResolver):
@@ -182,11 +195,17 @@ async def _read_document(
             allow_redirects=False,
             headers={"Accept": "application/json"},
         ) as response:
-            if response.status != 200:
-                message = f"client metadata returned HTTP {response.status}"
-                if response.status >= 500 or response.status == 429:
-                    raise ClientMetadataUnavailableError(message)
-                raise ClientMetadataError(message)
+            if response.status >= 500 or response.status == 429:
+                raise ClientMetadataUnavailableError(
+                    f"client metadata returned HTTP {response.status}"
+                )
+            content_type = response.content_type
+            if response.status != 200 or not (
+                content_type == "application/json" or content_type.endswith("+json")
+            ):
+                raise NotClientMetadataDocumentError(
+                    f"HTTP {response.status} {content_type}"
+                )
             body = bytearray()
             async for chunk in response.content.iter_chunked(MAX_DOCUMENT_BYTES):
                 body += chunk
@@ -199,7 +218,7 @@ async def _read_document(
         ) from err
     except aiohttp.ClientConnectorError as err:
         if isinstance(err.os_error, _PrivateAddressError):
-            raise ClientMetadataError(str(err.os_error)) from err
+            raise NotClientMetadataDocumentError(str(err.os_error)) from err
         raise ClientMetadataUnavailableError(
             f"client metadata could not be fetched: {err}"
         ) from err
@@ -214,7 +233,11 @@ async def _read_document(
 
 
 async def fetch_client_metadata_document(url: str) -> tuple[str, str | None]:
-    """Fetch a Client ID Metadata Document from a public HTTPS address."""
+    """Fetch a Client ID Metadata Document from a public HTTPS address.
+
+    Raises `NotClientMetadataDocumentError` for a private host, a non-200 answer
+    other than 429/5xx, or a response that is not JSON.
+    """
     host = (yarl.URL(url, encoded=True).host or "").strip("[]")
     try:
         ipaddress.ip_address(host.split("%", 1)[0])
@@ -222,7 +245,7 @@ async def fetch_client_metadata_document(url: str) -> tuple[str, str | None]:
         pass
     else:
         if not _is_public_address(host):
-            raise ClientMetadataError("client_id must not point at a private address")
+            raise NotClientMetadataDocumentError(f"{host} is not a public address")
     connector = aiohttp.TCPConnector(resolver=_PublicAddressResolver())
     async with aiohttp.ClientSession(
         connector=connector, timeout=FETCH_TIMEOUT, cookie_jar=aiohttp.DummyCookieJar()
@@ -283,18 +306,26 @@ async def resolve_client_metadata(
     fetch_document: DocumentFetcher,
     client_id: str,
     issuer_url: str,
-) -> ClientMetadata:
-    """Return a client's validated metadata from the cache, fetching it on a miss."""
-    if not is_client_id_url(client_id):
-        raise ClientMetadataError("client_id is not a valid Client Identifier URL")
-    if yarl.URL(client_id).origin() == yarl.URL(issuer_url).origin():
-        raise ClientMetadataError("client_id must not be on this server's origin")
+) -> ClientMetadata | None:
+    """Return a client's validated metadata, or None if it is not a CIMD client.
+
+    Valid metadata comes from the cache, fetching it on a miss.
+    """
+    if (
+        not is_client_id_url(client_id)
+        or yarl.URL(client_id).origin() == yarl.URL(issuer_url).origin()
+    ):
+        return None
     digest = hashlib.sha256(client_id.encode()).hexdigest()
     cache_key = f"oauth:client_metadata:v1:{digest}"
     if cached := await coordination.get_value(cache_key):
         return ClientMetadata.from_json(cached)
 
-    text, cache_control = await fetch_document(client_id)
+    try:
+        text, cache_control = await fetch_document(client_id)
+    except NotClientMetadataDocumentError as err:
+        logger.debug("OAuth client %s has no metadata document: %s", client_id, err)
+        return None
     metadata = validate_client_metadata(client_id, text)
     if (ttl := _cache_seconds(cache_control)) is not None:
         await coordination.set_value(cache_key, json.dumps(metadata.to_dict()), ttl=ttl)
