@@ -205,7 +205,7 @@ def create_auth_app(
                 OAuthErrorResponseVO(
                     error="invalid_redirect_uri",
                     error_description=(
-                        "Redirect URI is not registered in the client's metadata document."
+                        "Redirect URI is not registered for this client."
                     ),
                 ),
                 status_code=400,

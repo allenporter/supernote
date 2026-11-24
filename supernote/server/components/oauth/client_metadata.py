@@ -335,7 +335,11 @@ async def resolve_client_metadata(
     try:
         text, cache_control = await fetch_document(client_id)
     except NotClientMetadataDocumentError as err:
-        logger.debug("OAuth client %s has no metadata document: %s", client_id, err)
+        logger.info(
+            "OAuth client %s has no metadata document (%s); using IndieAuth matching",
+            client_id,
+            err,
+        )
         return None
     metadata = validate_client_metadata(client_id, text)
     if (ttl := _cache_seconds(cache_control)) is not None:
