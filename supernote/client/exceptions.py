@@ -4,7 +4,7 @@ This module defines `SupernoteException` and its specialized subclasses raised b
 `supernote.client.client.Client`, `supernote.client.login_client.LoginClient`, and
 `supernote.client.socket.SupernoteSocketClient`, including HTTP/API error mappings
 (`ApiException`, `UnauthorizedException`, `ForbiddenException`, `NotFoundException`,
-`BadRequestException`), `SmsVerificationRequired`, and `SupernoteSocketError`.
+`GoneException`, `BadRequestException`), `SmsVerificationRequired`, and `SupernoteSocketError`.
 See `supernote.client` for error-handling examples.
 """
 
@@ -39,6 +39,10 @@ class UnauthorizedException(ApiException):
 
 class NotFoundException(ApiException):
     """Resource not found (404)."""
+
+
+class GoneException(ApiException):
+    """Resource or cursor expired (410)."""
 
 
 class BadRequestException(ApiException):
