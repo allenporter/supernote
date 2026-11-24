@@ -17,13 +17,11 @@ INTERNAL_TABLES_ALLOWLIST = frozenset(
 # - users: root user account table (primary key is id)
 # - key_values: global server key-value coordination store
 # - f_note_page_content: page OCR/embedding cache keyed by server-generated file_id
-# - f_system_task: background processing queue keyed by server-generated file_id
 TABLES_WITHOUT_USER_ID_ALLOWLIST = frozenset(
     {
         "users",
         "key_values",
         "f_note_page_content",
-        "f_system_task",
     }
 )
 

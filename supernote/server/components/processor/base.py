@@ -313,6 +313,8 @@ class ProcessorModule(abc.ABC):
         session_manager: DatabaseSessionManager,
         page_index: int | None = None,
         page_id: str | None = None,
+        *,
+        user_id: int,
     ) -> bool:
         """Pre-flight check to determine if the module should execute.
 
@@ -328,7 +330,7 @@ class ProcessorModule(abc.ABC):
         if not self.enabled:
             return False
         key = self.get_task_key(page_index, page_id)
-        task = await get_task(session_manager, file_id, self.task_type, key)
+        task = await get_task(session_manager, user_id, file_id, self.task_type, key)
         if (
             task
             and task.status == ProcessingStatus.COMPLETED
@@ -367,6 +369,8 @@ class ProcessorModule(abc.ABC):
         session_manager: DatabaseSessionManager,
         page_index: int | None = None,
         page_id: str | None = None,
+        *,
+        user_id: int,
         **kwargs: object,
     ) -> bool:
         """The entry point for executing a module.
@@ -384,7 +388,9 @@ class ProcessorModule(abc.ABC):
         if not self.enabled:
             return True
 
-        if not await self.run_if_needed(file_id, session_manager, page_index, page_id):
+        if not await self.run_if_needed(
+            file_id, session_manager, page_index, page_id, user_id=user_id
+        ):
             PROCESSOR_TASKS_TOTAL.labels(module=self.name, status="skipped").inc()
             return True
 
@@ -399,6 +405,7 @@ class ProcessorModule(abc.ABC):
             )
             await update_task_status(
                 session_manager,
+                user_id,
                 file_id,
                 self.task_type,
                 key,
@@ -416,6 +423,7 @@ class ProcessorModule(abc.ABC):
             error_detail = f"{type(e).__name__}: {msg}" if msg else type(e).__name__
             await update_task_status(
                 session_manager,
+                user_id,
                 file_id,
                 self.task_type,
                 key,

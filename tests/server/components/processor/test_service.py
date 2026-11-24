@@ -192,13 +192,13 @@ async def test_processor_deduplication(processor_service: ProcessorService) -> N
     event = NoteUpdatedEvent(file_id=123, user_id=1, file_path="test.note")
 
     await processor_service.handle_note_updated(event)
-    assert 123 in processor_service.processing_files
+    assert (1, 123) in processor_service.processing_files
     assert processor_service.queue.qsize() == 1
 
-    # Second event for same file should be ignored
+    # Second event for same (user_id, file_id) should be ignored
     await processor_service.handle_note_updated(event)
     assert processor_service.queue.qsize() == 1
-    assert await processor_service.queue.get() == 123
+    assert await processor_service.queue.get() == (1, 123)
 
 
 async def test_handle_note_deleted_cleanup(
@@ -244,12 +244,20 @@ async def test_handle_note_deleted_cleanup(
 
         session.add(
             SystemTaskDO(
-                file_id=file_id, task_type="PNG", key="page_0", status="COMPLETED"
+                user_id=test_user_id,
+                file_id=file_id,
+                task_type="PNG",
+                key="page_0",
+                status="COMPLETED",
             )
         )
         session.add(
             SystemTaskDO(
-                file_id=file_id, task_type="OCR", key="page_0", status="COMPLETED"
+                user_id=test_user_id,
+                file_id=file_id,
+                task_type="OCR",
+                key="page_0",
+                status="COMPLETED",
             )
         )
         await session.commit()
@@ -259,7 +267,9 @@ async def test_handle_note_deleted_cleanup(
         summary_service=summary_service,
         summary_model=FakeSummaryModel(),
     )
-    assert await summary_module.run(file_id, session_manager) is True
+    assert (
+        await summary_module.run(file_id, session_manager, user_id=test_user_id) is True
+    )
 
     # Seed annotated and legacy records alongside the unannotated AI summary
     await blob_storage.put(USER_DATA_BUCKET, "note_sum_hw.bin", b"sum-hw")
@@ -439,6 +449,7 @@ async def test_page_hashing_orphan_cleanup(
         for pid in all_page_ids:
             session.add(
                 SystemTaskDO(
+                    user_id=1,
                     file_id=file_id,
                     task_type="PNG_CONVERSION",
                     key=f"page_{pid}",
@@ -448,7 +459,7 @@ async def test_page_hashing_orphan_cleanup(
         await session.commit()
 
     processor_service.register_modules(hashing=hashing_module)
-    await processor_service.process_file(file_id)
+    await processor_service.process_file(file_id, user_id=1)
 
     async with session_manager.session() as session:
         contents = (
@@ -484,29 +495,37 @@ async def test_recover_tasks_enqueues_incomplete(
 ) -> None:
     async with session_manager.session() as session:
         session.add(
-            SystemTaskDO(file_id=1, task_type="PNG", key="page_0", status="FAILED")
-        )
-        session.add(
-            SystemTaskDO(file_id=2, task_type="OCR", key="page_1", status="PENDING")
+            SystemTaskDO(
+                user_id=1, file_id=1, task_type="PNG", key="page_0", status="FAILED"
+            )
         )
         session.add(
             SystemTaskDO(
-                file_id=3, task_type="EMBEDDING", key="page_0", status="COMPLETED"
+                user_id=2, file_id=2, task_type="OCR", key="page_1", status="PENDING"
+            )
+        )
+        session.add(
+            SystemTaskDO(
+                user_id=3,
+                file_id=3,
+                task_type="EMBEDDING",
+                key="page_0",
+                status="COMPLETED",
             )
         )
         await session.commit()
 
     await processor_service.recover_tasks()
 
-    assert 1 in processor_service.processing_files
-    assert 2 in processor_service.processing_files
-    assert 3 not in processor_service.processing_files
+    assert (1, 1) in processor_service.processing_files
+    assert (2, 2) in processor_service.processing_files
+    assert (3, 3) not in processor_service.processing_files
     assert processor_service.queue.qsize() == 2
 
     ids = []
     ids.append(await processor_service.queue.get())
     ids.append(await processor_service.queue.get())
-    assert set(ids) == {1, 2}
+    assert set(ids) == {(1, 1), (2, 2)}
 
 
 async def test_start_calls_poll_loop(
@@ -518,7 +537,9 @@ async def test_start_calls_poll_loop(
 
     async with session_manager.session() as session:
         session.add(
-            SystemTaskDO(file_id=1, task_type="PNG", key="page_0", status="FAILED")
+            SystemTaskDO(
+                user_id=1, file_id=1, task_type="PNG", key="page_0", status="FAILED"
+            )
         )
         await session.commit()
 
@@ -549,6 +570,7 @@ async def test_recover_stalled_tasks_time_threshold(
         # Stalled task (old update time)
         session.add(
             SystemTaskDO(
+                user_id=1,
                 file_id=10,
                 task_type="PNG",
                 key="p0",
@@ -559,6 +581,7 @@ async def test_recover_stalled_tasks_time_threshold(
         # Fresh task (recent update time)
         session.add(
             SystemTaskDO(
+                user_id=1,
                 file_id=11,
                 task_type="OCR",
                 key="p0",
@@ -570,10 +593,10 @@ async def test_recover_stalled_tasks_time_threshold(
 
     await processor_service.recover_stalled_tasks()
 
-    assert 10 in processor_service.processing_files
-    assert 11 not in processor_service.processing_files
+    assert (1, 10) in processor_service.processing_files
+    assert (1, 11) not in processor_service.processing_files
     assert processor_service.queue.qsize() == 1
-    assert await processor_service.queue.get() == 10
+    assert await processor_service.queue.get() == (1, 10)
 
 
 async def test_page_parallelism(
@@ -618,7 +641,7 @@ async def test_page_parallelism(
             )
         await session.commit()
 
-    await processor_service.process_file(file_id)
+    await processor_service.process_file(file_id, user_id=1)
 
     assert png.max_active_seen == 2, (
         f"Expected 2 pages in parallel, saw {png.max_active_seen}"
@@ -684,8 +707,8 @@ async def test_processor_pause_resume(
         worker = asyncio.create_task(processor_service.worker_loop(i))
         processor_service.workers.append(worker)
 
-    # Enqueue file ID
-    await processor_service.queue.put(101)
+    # Enqueue (user_id, file_id)
+    await processor_service.queue.put((1, 101))
     await asyncio.sleep(0.1)
 
     # Module should NOT have been called while paused
@@ -716,7 +739,7 @@ async def test_process_file_without_page_modules(
     assert processor_service.page_modules == []
     assert processor_service.global_post_modules == []
 
-    await processor_service.process_file(123)
+    await processor_service.process_file(123, user_id=1)
     assert hashing.calls == [(123, None, None)]
 
 
@@ -758,7 +781,7 @@ async def test_process_file_publishes_processing_completed_event(
 
     processor_service.event_bus.subscribe(NoteProcessingCompletedEvent, capture_event)
 
-    await processor_service.process_file(file_id)
+    await processor_service.process_file(file_id, user_id=7)
     for _ in range(10):
         await asyncio.sleep(0)
 
@@ -803,11 +826,11 @@ async def test_recover_missing_tasks_skips_inactive_files(
 
     await processor_service.recover_missing_tasks()
 
-    assert 9001 in processor_service.processing_files
-    assert 9002 not in processor_service.processing_files
+    assert (1, 9001) in processor_service.processing_files
+    assert (1, 9002) not in processor_service.processing_files
     assert processor_service.queue.qsize() == 1
     enqueued = await processor_service.queue.get()
-    assert enqueued == 9001
+    assert enqueued == (1, 9001)
 
 
 async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
@@ -858,6 +881,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
             )
             session.add(
                 SystemTaskDO(
+                    user_id=1,
                     file_id=fid,
                     task_type="HASHING",
                     key="global",
@@ -867,6 +891,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
             )
             session.add(
                 SystemTaskDO(
+                    user_id=1,
                     file_id=fid,
                     task_type="PNG_CONVERSION",
                     key="page_p0",
@@ -879,12 +904,14 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
             [
                 # 9101: Complete for OCR, EMBEDDING ("new-model"), and SUMMARY
                 SystemTaskDO(
+                    user_id=1,
                     file_id=9101,
                     task_type="OCR_EXTRACTION",
                     key="page_p0",
                     status="COMPLETED",
                 ),
                 SystemTaskDO(
+                    user_id=1,
                     file_id=9101,
                     task_type="EMBEDDING_GENERATION",
                     key="page_p0",
@@ -892,6 +919,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                     data="new-model",
                 ),
                 SystemTaskDO(
+                    user_id=1,
                     file_id=9101,
                     task_type="SUMMARY_GENERATION",
                     key="global",
@@ -899,6 +927,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                 ),
                 # 9102: Missing OCR_EXTRACTION (and EMBEDDING_GENERATION)
                 SystemTaskDO(
+                    user_id=1,
                     file_id=9102,
                     task_type="SUMMARY_GENERATION",
                     key="global",
@@ -906,12 +935,14 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                 ),
                 # 9103: EMBEDDING_GENERATION completed with old-model
                 SystemTaskDO(
+                    user_id=1,
                     file_id=9103,
                     task_type="OCR_EXTRACTION",
                     key="page_p0",
                     status="COMPLETED",
                 ),
                 SystemTaskDO(
+                    user_id=1,
                     file_id=9103,
                     task_type="EMBEDDING_GENERATION",
                     key="page_p0",
@@ -919,6 +950,7 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                     data="old-model",
                 ),
                 SystemTaskDO(
+                    user_id=1,
                     file_id=9103,
                     task_type="SUMMARY_GENERATION",
                     key="global",
@@ -926,12 +958,14 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
                 ),
                 # 9104: Missing SUMMARY_GENERATION
                 SystemTaskDO(
+                    user_id=1,
                     file_id=9104,
                     task_type="OCR_EXTRACTION",
                     key="page_p0",
                     status="COMPLETED",
                 ),
                 SystemTaskDO(
+                    user_id=1,
                     file_id=9104,
                     task_type="EMBEDDING_GENERATION",
                     key="page_p0",
@@ -944,8 +978,10 @@ async def test_recover_missing_tasks_backfills_embedding_model_and_ai_modules(
 
     await processor_service.recover_missing_tasks()
 
-    assert 9101 not in processor_service.processing_files
-    assert {9102, 9103, 9104}.issubset(processor_service.processing_files)
+    assert (1, 9101) not in processor_service.processing_files
+    assert {(1, 9102), (1, 9103), (1, 9104)}.issubset(
+        processor_service.processing_files
+    )
 
 
 async def test_sync_completed_event_enqueues_new_and_updated_notes(
@@ -974,6 +1010,7 @@ async def test_sync_completed_event_enqueues_new_and_updated_notes(
         session.add_all(
             [
                 SystemTaskDO(
+                    user_id=test_user_id,
                     file_id=entity.id,
                     task_type=TaskType.PAGE_HASHING,
                     key="global",
@@ -990,6 +1027,7 @@ async def test_sync_completed_event_enqueues_new_and_updated_notes(
                     is_active="Y",
                 ),
                 SystemTaskDO(
+                    user_id=test_user_id,
                     file_id=9201,
                     task_type=TaskType.PAGE_HASHING,
                     key="global",
@@ -1029,15 +1067,17 @@ async def test_sync_completed_event_enqueues_new_and_updated_notes(
         "test@example.com", "updated.note", "/Note", new_md5, inner_name="k_new"
     )
     await asyncio.sleep(0.05)
-    assert entity.id not in processor_service.processing_files
+    assert (test_user_id, entity.id) not in processor_service.processing_files
 
     await processor_service.handle_sync_completed(
         SyncCompletedEvent(user_id=test_user_id)
     )
 
-    assert 9201 not in processor_service.processing_files
-    assert 9204 not in processor_service.processing_files
-    assert {entity.id, 9203}.issubset(processor_service.processing_files)
+    assert (test_user_id, 9201) not in processor_service.processing_files
+    assert (test_user_id + 999, 9204) not in processor_service.processing_files
+    assert {(test_user_id, entity.id), (test_user_id, 9203)}.issubset(
+        processor_service.processing_files
+    )
 
 
 async def test_get_file_processing_statuses(
@@ -1069,14 +1109,48 @@ async def test_get_file_processing_statuses(
         )
         session.add_all(
             [
-                SystemTaskDO(file_id=10, task_type="PNG", key="p0", status="FAILED"),
-                SystemTaskDO(file_id=10, task_type="OCR", key="p0", status="COMPLETED"),
                 SystemTaskDO(
-                    file_id=20, task_type="PNG", key="p0", status="PROCESSING"
+                    user_id=test_user_id,
+                    file_id=10,
+                    task_type="PNG",
+                    key="p0",
+                    status="FAILED",
                 ),
-                SystemTaskDO(file_id=30, task_type="PNG", key="p0", status="COMPLETED"),
-                SystemTaskDO(file_id=40, task_type="PNG", key="p0", status="PENDING"),
-                SystemTaskDO(file_id=77, task_type="PNG", key="p0", status="FAILED"),
+                SystemTaskDO(
+                    user_id=test_user_id,
+                    file_id=10,
+                    task_type="OCR",
+                    key="p0",
+                    status="COMPLETED",
+                ),
+                SystemTaskDO(
+                    user_id=test_user_id,
+                    file_id=20,
+                    task_type="PNG",
+                    key="p0",
+                    status="PROCESSING",
+                ),
+                SystemTaskDO(
+                    user_id=test_user_id,
+                    file_id=30,
+                    task_type="PNG",
+                    key="p0",
+                    status="COMPLETED",
+                ),
+                SystemTaskDO(
+                    user_id=test_user_id,
+                    file_id=40,
+                    task_type="PNG",
+                    key="p0",
+                    status="PENDING",
+                ),
+                SystemTaskDO(
+                    user_id=other_user_id,
+                    file_id=77,
+                    task_type="PNG",
+                    key="p0",
+                    status="FAILED",
+                ),
             ]
         )
         await session.commit()
@@ -1230,7 +1304,7 @@ async def test_synthetic_handwriting_notebook_full_pipeline_and_incremental_appe
         )
         await session.commit()
 
-    ok = await processor.process_file(file_id)
+    ok = await processor.process_file(file_id, user_id=test_user_id)
     assert ok is True
     assert set(ocr_model.processed_page_ids) == {
         synth.pages[0].page_id,
@@ -1291,7 +1365,7 @@ async def test_synthetic_handwriting_notebook_full_pipeline_and_incremental_appe
         file_row.size = len(updated_synth.data)
         await session.commit()
 
-    ok2 = await processor.process_file(file_id)
+    ok2 = await processor.process_file(file_id, user_id=test_user_id)
     assert ok2 is True
     assert updated_synth.pages[2].page_id in ocr_model.processed_page_ids
 
@@ -1337,7 +1411,7 @@ async def test_file_lock_serializes_process_and_delete_and_evicts_lock(
 
     processor_service.register_modules(hashing=LockingTestModule())
 
-    proc_task = asyncio.create_task(processor_service.process_file(777))
+    proc_task = asyncio.create_task(processor_service.process_file(777, user_id=42))
     await in_process.wait()
 
     del_task = asyncio.create_task(
@@ -1348,7 +1422,7 @@ async def test_file_lock_serializes_process_and_delete_and_evicts_lock(
     await asyncio.sleep(0.02)
     # Delete must wait until in-flight process_file releases the per-file lock
     assert events_log == ["process_start:777"]
-    assert 777 in processor_service._file_locks
+    assert (42, 777) in processor_service._file_locks
 
     allow_finish.set()
     await asyncio.gather(proc_task, del_task)
@@ -1431,6 +1505,7 @@ async def test_recover_missing_tasks_enqueues_legacy_hashing_version(
                     is_active="Y",
                 ),
                 SystemTaskDO(
+                    user_id=test_user_id,
                     file_id=9301,
                     task_type=TaskType.PAGE_HASHING,
                     key="global",
@@ -1445,6 +1520,7 @@ async def test_recover_missing_tasks_enqueues_legacy_hashing_version(
                     is_active="Y",
                 ),
                 SystemTaskDO(
+                    user_id=test_user_id,
                     file_id=9302,
                     task_type=TaskType.PAGE_HASHING,
                     key="global",
@@ -1457,8 +1533,8 @@ async def test_recover_missing_tasks_enqueues_legacy_hashing_version(
 
     await processor_service.recover_missing_tasks()
 
-    assert 9301 in processor_service.processing_files
-    assert 9302 not in processor_service.processing_files
+    assert (test_user_id, 9301) in processor_service.processing_files
+    assert (test_user_id, 9302) not in processor_service.processing_files
 
 
 async def test_process_file_and_queue_pause_metrics(
@@ -1520,7 +1596,7 @@ async def test_process_file_and_queue_pause_metrics(
     )
 
     # Unregistered modules -> returns False -> recorded as `status="failure"`
-    assert await processor.process_file(9401) is False
+    assert await processor.process_file(9401, user_id=1) is False
     assert (
         REGISTRY.get_sample_value("supernote_note_processing_runs_total", full_fail)
         == before_full_fail + 1.0
@@ -1550,13 +1626,14 @@ async def test_process_file_and_queue_pause_metrics(
 
     processor.register_modules(hashing=ControllableHashing())
 
-    # Hold `_file_lock(9402)` via a full run for ~120ms while an on-demand run waits on the lock;
+    # Hold `_file_lock(1, 9402)` via a full run for ~120ms while an on-demand run waits on the lock;
     # the on-demand run's observed duration must exclude that lock contention wait!
-    full_task = asyncio.create_task(processor.process_file(9402))
+    full_task = asyncio.create_task(processor.process_file(9402, user_id=1))
     await in_hashing.wait()
     on_demand_task = asyncio.create_task(
         processor.process_file(
             9402,
+            user_id=1,
             task_types={TaskType.PAGE_HASHING},
             page_indices={0},
         )
@@ -1576,14 +1653,14 @@ async def test_process_file_and_queue_pause_metrics(
 
     # Module failure -> returns False -> `status="failure"`
     should_fail = True
-    assert await processor.process_file(9403) is False
+    assert await processor.process_file(9403, user_id=1) is False
 
     # Cancellation mid-run -> `status="cancelled"`
     should_fail = False
     block_event.clear()
     in_hashing.clear()
     cancel_task = asyncio.create_task(
-        processor.process_file(9404, task_types={TaskType.PAGE_HASHING})
+        processor.process_file(9404, user_id=1, task_types={TaskType.PAGE_HASHING})
     )
     await in_hashing.wait()
     cancel_task.cancel()
@@ -1773,7 +1850,7 @@ async def test_dag_multi_wave_file_page_file_page_and_reverse_cleanup(
         ]
     )
 
-    assert await processor_service.process_file(file_id) is True
+    assert await processor_service.process_file(file_id, user_id=1) is True
 
     # W1_FILE precedes all W2_PAGE; all W2_PAGE precede W3_FILE; W3_FILE precedes all W4_PAGE.
     w1_idx = log.index("W1_FILE:global")
@@ -1857,7 +1934,7 @@ async def test_dag_branch_isolated_page_failure_and_failure_events(
         [hashing, ocr, embedding, emb_child, sibling, summary]
     )
 
-    assert await processor_service.process_file(file_id) is False
+    assert await processor_service.process_file(file_id, user_id=1) is False
     # Sibling page branch ran on BOTH pages despite EMBEDDING failing on p1.
     assert {c[2] for c in sibling.calls} == {"p0", "p1"}
     # EMB_CHILD only ran on p0, skipped on p1.
@@ -1897,12 +1974,14 @@ async def test_recover_missing_tasks_skips_tasks_with_disabled_upstream(
         session.add_all(
             [
                 SystemTaskDO(
+                    user_id=1,
                     file_id=file_id,
                     task_type="HASHING",
                     key="global",
                     status="COMPLETED",
                 ),
                 SystemTaskDO(
+                    user_id=1,
                     file_id=file_id,
                     task_type="PNG_CONVERSION",
                     key="page_p0",
@@ -2001,7 +2080,7 @@ async def test_on_demand_partial_run_pulls_ancestors_and_skips_post_file_and_eve
 
     assert (
         await processor_service.process_file(
-            file_id, task_types={TaskType.PNG_CONVERSION}, page_indices={0}
+            file_id, user_id=1, task_types={TaskType.PNG_CONVERSION}, page_indices={0}
         )
         is True
     )
@@ -2038,6 +2117,89 @@ async def test_empty_note_does_not_mark_failed_upstream_page_branch_succeeded(
     post_b = _DagStubModule("POST_B", scope=TaskScope.FILE, depends_on=("PAGE_B",))
     processor_service.set_modules([file_a, file_b, page_a, page_b, post_a, post_b])
 
-    assert await processor_service.process_file(file_id) is False
+    assert await processor_service.process_file(file_id, user_id=1) is False
     assert len(post_a.calls) == 1
     assert post_b.calls == []
+
+
+async def test_multi_user_queue_and_system_task_isolation(
+    processor_service: ProcessorService,
+    session_manager: DatabaseSessionManager,
+) -> None:
+    """Verify queue items, page-scoped recovery, purge, and task listing stay isolated per user."""
+    user_a, user_b = 101, 202
+    file_a, file_b = 9701, 9702
+
+    processor_service.set_modules(
+        [
+            _DagStubModule("HASHING", scope=TaskScope.FILE),
+            _DagStubModule("OCR", scope=TaskScope.PAGE, depends_on=("HASHING",)),
+        ]
+    )
+
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=file_a,
+                    user_id=user_a,
+                    file_name="a.note",
+                    storage_key="ka",
+                    md5="ma",
+                    is_active="Y",
+                ),
+                UserFileDO(
+                    id=file_b,
+                    user_id=user_b,
+                    file_name="b.note",
+                    storage_key="kb",
+                    md5="mb",
+                    is_active="Y",
+                ),
+                NotePageContentDO(
+                    file_id=file_a, page_index=0, page_id="pa", content_hash="ha"
+                ),
+                NotePageContentDO(
+                    file_id=file_b, page_index=0, page_id="pb", content_hash="hb"
+                ),
+                # User A has completed HASHING and OCR; User B is missing page-scoped OCR.
+                SystemTaskDO(
+                    user_id=user_a,
+                    file_id=file_a,
+                    task_type="HASHING",
+                    key="global",
+                    status="COMPLETED",
+                ),
+                SystemTaskDO(
+                    user_id=user_a,
+                    file_id=file_a,
+                    task_type="OCR",
+                    key="page_pa",
+                    status="COMPLETED",
+                ),
+                SystemTaskDO(
+                    user_id=user_b,
+                    file_id=file_b,
+                    task_type="HASHING",
+                    key="global",
+                    status="COMPLETED",
+                ),
+            ]
+        )
+        await session.commit()
+
+    await processor_service.recover_missing_tasks()
+    assert (user_a, file_a) not in processor_service.processing_files
+    assert (user_b, file_b) in processor_service.processing_files
+
+    tasks_a = await processor_service.list_system_tasks(user_id=user_a)
+    tasks_b = await processor_service.list_system_tasks(user_id=user_b)
+    assert {t.file_id for t in tasks_a} == {file_a}
+    assert {t.file_id for t in tasks_b} == {file_b}
+
+    # Purging user_b's file deletes only user_b's SystemTaskDO rows.
+    await processor_service.handle_vfs_item_purged(
+        VfsItemPurgedEvent(item_id=file_b, user_id=user_b, name="b.note")
+    )
+    assert len(await processor_service.list_system_tasks(user_id=user_a)) == 2
+    assert await processor_service.list_system_tasks(user_id=user_b) == []

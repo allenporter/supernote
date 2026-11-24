@@ -250,7 +250,13 @@ async def test_handle_list_system_tasks(
             )
         )
         session.add(
-            SystemTaskDO(file_id=1, task_type="PNG", key="page_0", status="COMPLETED")
+            SystemTaskDO(
+                user_id=test_user_id,
+                file_id=1,
+                task_type="PNG",
+                key="page_0",
+                status="COMPLETED",
+            )
         )
         await session.commit()
 
@@ -294,10 +300,17 @@ async def test_handle_list_system_tasks_excludes_other_users_tasks(
             )
         )
         session.add(
-            SystemTaskDO(file_id=1, task_type="PNG", key="page_0", status="COMPLETED")
+            SystemTaskDO(
+                user_id=test_user_id,
+                file_id=1,
+                task_type="PNG",
+                key="page_0",
+                status="COMPLETED",
+            )
         )
         session.add(
             SystemTaskDO(
+                user_id=other_user_id,
                 file_id=2,
                 task_type="OCR",
                 key="page_0",
@@ -341,27 +354,61 @@ async def test_file_processing_status(
             )
         # File 10: FAILED task
         session.add(
-            SystemTaskDO(file_id=10, task_type="PNG", key="p0", status="FAILED")
+            SystemTaskDO(
+                user_id=test_user_id,
+                file_id=10,
+                task_type="PNG",
+                key="p0",
+                status="FAILED",
+            )
         )
         session.add(
-            SystemTaskDO(file_id=10, task_type="OCR", key="p0", status="COMPLETED")
+            SystemTaskDO(
+                user_id=test_user_id,
+                file_id=10,
+                task_type="OCR",
+                key="p0",
+                status="COMPLETED",
+            )
         )
         # File 20: PROCESSING task
         session.add(
-            SystemTaskDO(file_id=20, task_type="PNG", key="p0", status="PROCESSING")
+            SystemTaskDO(
+                user_id=test_user_id,
+                file_id=20,
+                task_type="PNG",
+                key="p0",
+                status="PROCESSING",
+            )
         )
         # File 30: All COMPLETED
         session.add(
-            SystemTaskDO(file_id=30, task_type="PNG", key="p0", status="COMPLETED")
+            SystemTaskDO(
+                user_id=test_user_id,
+                file_id=30,
+                task_type="PNG",
+                key="p0",
+                status="COMPLETED",
+            )
         )
         # File 40: PENDING task
         session.add(
-            SystemTaskDO(file_id=40, task_type="PNG", key="p0", status="PENDING")
+            SystemTaskDO(
+                user_id=test_user_id,
+                file_id=40,
+                task_type="PNG",
+                key="p0",
+                status="PENDING",
+            )
         )
         # 64-bit Snowflake ID (> Number.MAX_SAFE_INTEGER in JS, sent as string)
         session.add(
             SystemTaskDO(
-                file_id=snowflake_id, task_type="OCR", key="p0", status="PROCESSING"
+                user_id=test_user_id,
+                file_id=snowflake_id,
+                task_type="OCR",
+                key="p0",
+                status="PROCESSING",
             )
         )
         await session.commit()
@@ -421,7 +468,13 @@ async def test_file_processing_status_excludes_other_users_files(
             )
         )
         session.add(
-            SystemTaskDO(file_id=77, task_type="PNG", key="p0", status="FAILED")
+            SystemTaskDO(
+                user_id=other_user_id,
+                file_id=77,
+                task_type="PNG",
+                key="p0",
+                status="FAILED",
+            )
         )
         await session.commit()
 
@@ -581,6 +634,7 @@ async def test_extended_routes_64bit_string_ids(
         )
         session.add(
             SystemTaskDO(
+                user_id=test_user_id,
                 id=snowflake_task_id,
                 file_id=snowflake_file_id,
                 task_type="OCR_EXTRACTION",
@@ -837,7 +891,7 @@ async def test_extended_note_metadata_returns_notebook_and_pages(
         await session.commit()
 
     hashing = PageHashingModule(file_service=file_service)
-    assert await hashing.run(file_id, session_manager) is True
+    assert await hashing.run(file_id, session_manager, user_id=test_user_id) is True
 
     meta_vo = await extended_client.get_note_metadata(file_id=file_id)
     assert meta_vo.success is True

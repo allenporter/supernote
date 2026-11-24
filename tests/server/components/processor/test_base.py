@@ -95,7 +95,7 @@ async def test_processor_module_success_and_skipped_metrics(
     before_dur = _duration_count(module_name)
 
     # First run executes process(), marks COMPLETED, and observes duration.
-    assert await module.run(101, session_manager, page_id="p1") is True
+    assert await module.run(101, session_manager, page_id="p1", user_id=1) is True
     assert module.process_calls == 1
     assert _task_count(module_name, "success") == before_ok + 1.0
     assert _task_count(module_name, "skipped") == before_skip
@@ -108,13 +108,13 @@ async def test_processor_module_success_and_skipped_metrics(
         )
         assert bucket_val is not None
 
-    task = await get_task(session_manager, 101, TaskType.PAGE_HASHING, "page_p1")
+    task = await get_task(session_manager, 1, 101, TaskType.PAGE_HASHING, "page_p1")
     assert task is not None
     assert task.status == ProcessingStatus.COMPLETED
     assert task.data == "v1"
 
     # Second run sees COMPLETED checkpoint at matching version -> status="skipped", no 0s duration.
-    assert await module.run(101, session_manager, page_id="p1") is True
+    assert await module.run(101, session_manager, page_id="p1", user_id=1) is True
     assert module.process_calls == 1
     assert _task_count(module_name, "success") == before_ok + 1.0
     assert _task_count(module_name, "skipped") == before_skip + 1.0
@@ -129,7 +129,9 @@ async def test_processor_module_disabled_emits_no_metrics(
     stub_name = "TestDisabledModule"
     disabled_stub = _StubModule(module_name=stub_name, enabled=False)
 
-    assert await disabled_stub.run(202, session_manager, page_id="p1") is True
+    assert (
+        await disabled_stub.run(202, session_manager, page_id="p1", user_id=1) is True
+    )
     assert disabled_stub.process_calls == 0
     for status in ("success", "failure", "skipped", "cancelled"):
         assert (
@@ -147,7 +149,10 @@ async def test_processor_module_disabled_emits_no_metrics(
     before_ocr_dur = _duration_count(disabled_ocr.name)
 
     assert (
-        await disabled_ocr.run(202, session_manager, page_index=0, page_id="p1") is True
+        await disabled_ocr.run(
+            202, session_manager, page_index=0, page_id="p1", user_id=1
+        )
+        is True
     )
     assert _task_count(disabled_ocr.name, "skipped") == before_ocr_skip
     assert _duration_count(disabled_ocr.name) == before_ocr_dur
@@ -163,11 +168,13 @@ async def test_processor_module_failure_and_cancellation_metrics(
         error=RuntimeError("boom"),
     )
 
-    assert await fail_module.run(303, session_manager) is False
+    assert await fail_module.run(303, session_manager, user_id=1) is False
     assert _task_count(fail_name, "failure") == 1.0
     assert _duration_count(fail_name) == 1.0
 
-    failed_task = await get_task(session_manager, 303, TaskType.PAGE_HASHING, "global")
+    failed_task = await get_task(
+        session_manager, 1, 303, TaskType.PAGE_HASHING, "global"
+    )
     assert failed_task is not None
     assert failed_task.status == ProcessingStatus.FAILED
     assert failed_task.last_error == "RuntimeError: boom"
@@ -179,7 +186,7 @@ async def test_processor_module_failure_and_cancellation_metrics(
     )
 
     with pytest.raises(asyncio.CancelledError):
-        await cancel_module.run(304, session_manager)
+        await cancel_module.run(304, session_manager, user_id=1)
 
     assert _task_count(cancel_name, "cancelled") == 1.0
     assert _task_count(cancel_name, "failure") == 0.0

@@ -177,7 +177,7 @@ async def handle_queue_status(request: web.Request) -> web.Response:
     status = QueueStatusVO(
         paused=not processor_service.is_processing_enabled(),
         queue_size=processor_service.queue.qsize(),
-        processing_files=list(processor_service.processing_files),
+        processing_files=list({fid for _, fid in processor_service.processing_files}),
     )
     return web.json_response(status.to_dict())
 

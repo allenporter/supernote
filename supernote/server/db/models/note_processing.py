@@ -252,6 +252,9 @@ class SystemTaskDO(Base):
 
     __tablename__ = "f_system_task"
 
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, nullable=False)
+    """Owner user ID."""
+
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, default=next_id)
     """Internal database ID."""
 
@@ -291,5 +294,7 @@ class SystemTaskDO(Base):
     """System update timestamp."""
 
     __table_args__ = (
-        UniqueConstraint("file_id", "task_type", "key", name="uq_system_task"),
+        UniqueConstraint(
+            "user_id", "file_id", "task_type", "key", name="uq_system_task"
+        ),
     )

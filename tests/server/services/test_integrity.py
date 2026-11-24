@@ -216,6 +216,7 @@ async def test_integrity_pipeline_issues(
     db_session.add_all(
         [
             SystemTaskDO(
+                user_id=test_user_id,
                 file_id=note_do.id,
                 task_type=TaskType.SUMMARY_GENERATION.value,
                 key="global",
@@ -223,18 +224,21 @@ async def test_integrity_pipeline_issues(
                 last_error="Gemini quota exceeded",
             ),
             SystemTaskDO(
+                user_id=test_user_id,
                 file_id=note_do.id,
                 task_type=TaskType.PNG_CONVERSION.value,
                 key="page_P1",
                 status=ProcessingStatus.COMPLETED,
             ),
             SystemTaskDO(
+                user_id=test_user_id,
                 file_id=note_do.id,
                 task_type=TaskType.OCR_EXTRACTION.value,
                 key="page_P1",
                 status=ProcessingStatus.COMPLETED,
             ),
             SystemTaskDO(
+                user_id=test_user_id,
                 file_id=note_do.id,
                 task_type=TaskType.EMBEDDING_GENERATION.value,
                 key="page_P1",
@@ -564,6 +568,7 @@ async def test_verify_full_disk_two_way_checks(
         text_content="page text",
     )
     valid_png_task = SystemTaskDO(
+        user_id=test_user_id,
         file_id=active_note.id,
         task_type=TaskType.PNG_CONVERSION.value,
         key="page_P2",
@@ -643,6 +648,7 @@ async def test_verify_full_disk_two_way_checks(
                 text_content="orphan page",
             ),
             SystemTaskDO(
+                user_id=test_user_id,
                 file_id=888888,
                 task_type=TaskType.OCR_EXTRACTION.value,
                 key="page_P_ORPHAN",

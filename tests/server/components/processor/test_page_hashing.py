@@ -62,7 +62,7 @@ async def test_process_with_real_file(
         await session.commit()
 
     # Run module lifecycle (Real Parser, Real File)
-    await page_hashing_module.run(file_id, session_manager)
+    await page_hashing_module.run(file_id, session_manager, user_id=user_id)
 
     # Assertions
     async with session_manager.session() as session:
@@ -135,18 +135,21 @@ async def test_process_with_real_file(
 
         # Add mock downstream tasks that should be invalidated (deleted)
         ocr_task = SystemTaskDO(
+            user_id=user_id,
             file_id=file_id,
             task_type="OCR_EXTRACTION",
             key=f"page_{page.page_id}",
             status="COMPLETED",
         )
         summary_task = SystemTaskDO(
+            user_id=user_id,
             file_id=file_id,
             task_type="SUMMARY_GENERATION",
             key="global",
             status="COMPLETED",
         )
         downstream_global_task = SystemTaskDO(
+            user_id=user_id,
             file_id=file_id,
             task_type="DOWNSTREAM_GLOBAL_TASK",
             key="global",
@@ -357,7 +360,7 @@ async def test_page_hashing_preserves_pinned_wire_md5(
         )
         await session.commit()
 
-    assert await page_hashing_module.run(file_id, session_manager) is True
+    assert await page_hashing_module.run(file_id, session_manager, user_id=1) is True
 
     async with session_manager.session() as session:
         rows = (
@@ -405,7 +408,7 @@ async def test_page_hashing_marks_task_failed_on_missing_or_corrupt_file(
         await session.commit()
 
     for fid in (missing_file_id, corrupt_file_id):
-        assert await page_hashing_module.run(fid, session_manager) is False
+        assert await page_hashing_module.run(fid, session_manager, user_id=1) is False
         async with session_manager.session() as session:
             task = (
                 await session.execute(
@@ -451,7 +454,7 @@ async def test_page_hashing_skips_missing_or_inactive_file_without_task_row(
         await session.commit()
 
     for fid in (missing_file_id, inactive_file_id, empty_key_file_id):
-        assert await page_hashing_module.run(fid, session_manager) is True
+        assert await page_hashing_module.run(fid, session_manager, user_id=1) is True
         async with session_manager.session() as session:
             tasks = (
                 (
@@ -499,7 +502,7 @@ async def test_page_hashing_persists_note_and_page_metadata(
         session_manager, blob_storage, user_id=7, file_id=1010, note_path=note_path
     )
 
-    assert await page_hashing_module.run(1010, session_manager) is True
+    assert await page_hashing_module.run(1010, session_manager, user_id=7) is True
 
     async with session_manager.session() as session:
         meta = await session.get(NoteMetadataDO, (7, 1010))
@@ -557,7 +560,7 @@ async def test_page_hashing_persists_page_metadata_for_legacy_note_without_page_
         session_manager, blob_storage, user_id=7, file_id=1011, note_path=legacy_path
     )
 
-    assert await page_hashing_module.run(1011, session_manager) is True
+    assert await page_hashing_module.run(1011, session_manager, user_id=7) is True
 
     async with session_manager.session() as session:
         legacy_pages = list(
@@ -591,7 +594,7 @@ async def test_page_hashing_skips_unchanged_pages_on_rehash(
     await _seed_user_note_file(
         session_manager, blob_storage, user_id=7, file_id=1012, note_path=note_path
     )
-    assert await page_hashing_module.run(1012, session_manager) is True
+    assert await page_hashing_module.run(1012, session_manager, user_id=7) is True
 
     async with session_manager.session() as session:
         meta_0 = await session.get(NotePageMetadataDO, (7, 1012, 0))
@@ -620,11 +623,11 @@ async def test_page_hashing_skips_unchanged_pages_on_rehash(
         "supernote.server.components.processor.page_hashing.load",
         wraps=load,
     ) as mock_load:
-        assert await page_hashing_module.run(1012, session_manager) is True
+        assert await page_hashing_module.run(1012, session_manager, user_id=7) is True
         assert [call.kwargs["page_number"] for call in mock_load.call_args_list] == [1]
 
         mock_load.reset_mock()
-        assert await page_hashing_module.run(1012, session_manager) is True
+        assert await page_hashing_module.run(1012, session_manager, user_id=7) is True
         mock_load.assert_not_called()
 
     async with session_manager.session() as session:
@@ -661,7 +664,7 @@ async def test_page_hashing_updates_annotations_without_loading_bitmaps_when_has
     await _seed_user_note_file(
         session_manager, blob_storage, user_id=7, file_id=1014, note_path=legacy_path
     )
-    assert await page_hashing_module.run(1014, session_manager) is True
+    assert await page_hashing_module.run(1014, session_manager, user_id=7) is True
 
     async with session_manager.session() as session:
         pm_0 = await session.get(NotePageMetadataDO, (7, 1014, 0))
@@ -675,7 +678,7 @@ async def test_page_hashing_updates_annotations_without_loading_bitmaps_when_has
         "supernote.server.components.processor.page_hashing.load",
         wraps=load,
     ) as mock_load:
-        assert await page_hashing_module.run(1014, session_manager) is True
+        assert await page_hashing_module.run(1014, session_manager, user_id=7) is True
         mock_load.assert_not_called()
 
     async with session_manager.session() as session:
@@ -694,7 +697,7 @@ async def test_page_hashing_prunes_stale_page_metadata_when_page_count_shrinks(
     await _seed_user_note_file(
         session_manager, blob_storage, user_id=7, file_id=1013, note_path=test_note_path
     )
-    assert await page_hashing_module.run(1013, session_manager) is True
+    assert await page_hashing_module.run(1013, session_manager, user_id=7) is True
 
     async with session_manager.session() as session:
         meta = await session.get(NoteMetadataDO, (7, 1013))
@@ -710,7 +713,7 @@ async def test_page_hashing_prunes_stale_page_metadata_when_page_count_shrinks(
         )
         await session.commit()
 
-    assert await page_hashing_module.run(1013, session_manager) is True
+    assert await page_hashing_module.run(1013, session_manager, user_id=7) is True
 
     async with session_manager.session() as session:
         assert await session.get(NotePageMetadataDO, (7, 1013, stale_index)) is None
@@ -762,7 +765,7 @@ async def test_page_hashing_metadata_supports_sql_json_extract_queries(
         await _seed_user_note_file(
             session_manager, blob_storage, user_id=7, file_id=fid, note_path=path
         )
-        assert await page_hashing_module.run(fid, session_manager) is True
+        assert await page_hashing_module.run(fid, session_manager, user_id=7) is True
 
     async with session_manager.session() as session:
         manta_meta = await session.get(NoteMetadataDO, (7, 1031))
@@ -879,7 +882,7 @@ async def test_page_hashing_emits_mutually_exclusive_page_diff_metrics(
 
     # 1. Initial 3-page standard `<PAGEID>` parse -> 3 added.
     snap = _page_diff_snapshot()
-    assert await page_hashing_module.run(1040, session_manager) is True
+    assert await page_hashing_module.run(1040, session_manager, user_id=7) is True
     snap_after_init = _page_diff_snapshot()
     _assert_page_diff_delta(
         snap,
@@ -914,7 +917,7 @@ async def test_page_hashing_emits_mutually_exclusive_page_diff_metrics(
         )
         await session.commit()
 
-    assert await page_hashing_module.run(1040, session_manager) is True
+    assert await page_hashing_module.run(1040, session_manager, user_id=7) is True
     snap_after_reconcile = _page_diff_snapshot()
     _assert_page_diff_delta(
         snap_after_init,
@@ -931,7 +934,7 @@ async def test_page_hashing_emits_mutually_exclusive_page_diff_metrics(
         session_manager, blob_storage, user_id=7, file_id=1041, note_path=legacy_path
     )
 
-    assert await page_hashing_module.run(1041, session_manager) is True
+    assert await page_hashing_module.run(1041, session_manager, user_id=7) is True
     snap_legacy_init = _page_diff_snapshot()
     _assert_page_diff_delta(
         snap_after_reconcile,
@@ -954,7 +957,7 @@ async def test_page_hashing_emits_mutually_exclusive_page_diff_metrics(
         )
         await session.commit()
 
-    assert await page_hashing_module.run(1041, session_manager) is True
+    assert await page_hashing_module.run(1041, session_manager, user_id=7) is True
     snap_legacy_rehash = _page_diff_snapshot()
     _assert_page_diff_delta(
         snap_legacy_init,
@@ -975,7 +978,7 @@ async def test_page_hashing_preserves_previous_text_across_double_edit_and_blank
     await _seed_user_note_file(
         session_manager, blob_storage, user_id=7, file_id=1050, note_path=note_path
     )
-    assert await page_hashing_module.run(1050, session_manager) is True
+    assert await page_hashing_module.run(1050, session_manager, user_id=7) is True
 
     async with session_manager.session() as session:
         rows = list(
@@ -1045,7 +1048,7 @@ async def test_page_hashing_deleted_page_texts_falls_back_to_previous_text_and_s
     await _seed_user_note_file(
         session_manager, blob_storage, user_id=7, file_id=1051, note_path=note_path
     )
-    assert await page_hashing_module.run(1051, session_manager) is True
+    assert await page_hashing_module.run(1051, session_manager, user_id=7) is True
 
     assert page_hashing_module.file_service.event_bus is not None
     delta_events: list[NotePagesDeltaEvent] = []

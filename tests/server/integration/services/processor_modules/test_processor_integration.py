@@ -120,7 +120,7 @@ async def test_full_processing_pipeline_with_real_file(
     processor_service.event_bus.subscribe(NoteProcessingCompletedEvent, on_completed)
 
     # Execute Pipeline
-    await processor_service.process_file(file_id)
+    await processor_service.process_file(file_id, user_id=user_id)
 
     # Verifications
     async with session_manager.session() as session:
@@ -257,7 +257,7 @@ async def test_pipeline_skips_blank_pages_in_real_multi_page_note(
         ),
     )
 
-    await processor_service.process_file(file_id)
+    await processor_service.process_file(file_id, user_id=user_id)
 
     # Pages 0 and 2 have ink; page 1 is an un-inked PDF template page.
     assert len(fake_ocr_model.calls) == 2

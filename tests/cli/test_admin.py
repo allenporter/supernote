@@ -340,6 +340,7 @@ async def test_reprocess_success(
     async with cli_env.session_manager.session() as session:
         session.add(
             SystemTaskDO(
+                user_id=1,
                 file_id=42,
                 task_type="SUMMARY_GENERATION",
                 key="global",
@@ -464,6 +465,7 @@ async def test_list_tasks_cli(
     async with cli_env.session_manager.session() as session:
         session.add(
             SystemTaskDO(
+                user_id=1,
                 file_id=42,
                 task_type="OCR_EXTRACTION",
                 key="page_1",

@@ -9,15 +9,17 @@ async def test_get_and_update_task_status(
     session_manager: DatabaseSessionManager,
 ) -> None:
     """Verify update_task_status inserts and updates status, data, and last_error."""
+    user_id = 42
     file_id = 500
     task_type = "EMBEDDING_GENERATION"
     key = "page_p0"
 
-    assert await get_task(session_manager, file_id, task_type, key) is None
+    assert await get_task(session_manager, user_id, file_id, task_type, key) is None
 
     # Insert initial COMPLETED task with model version in data
     await update_task_status(
         session_manager,
+        user_id=user_id,
         file_id=file_id,
         task_type=task_type,
         key=key,
@@ -25,18 +27,21 @@ async def test_get_and_update_task_status(
         data="model-v1",
     )
 
-    task = await get_task(session_manager, file_id, task_type, key)
+    task = await get_task(session_manager, user_id, file_id, task_type, key)
     assert task is not None
+    assert task.user_id == user_id
     assert task.file_id == file_id
     assert task.task_type == task_type
     assert task.key == key
     assert task.status == ProcessingStatus.COMPLETED
     assert task.data == "model-v1"
     assert task.last_error is None
+    assert await get_task(session_manager, user_id + 1, file_id, task_type, key) is None
 
     # Upsert on conflict to update data to a new model version
     await update_task_status(
         session_manager,
+        user_id=user_id,
         file_id=file_id,
         task_type=task_type,
         key=key,
@@ -44,7 +49,7 @@ async def test_get_and_update_task_status(
         data="model-v2",
     )
 
-    updated = await get_task(session_manager, file_id, task_type, key)
+    updated = await get_task(session_manager, user_id, file_id, task_type, key)
     assert updated is not None
     assert updated.id == task.id
     assert updated.status == ProcessingStatus.COMPLETED
@@ -54,6 +59,7 @@ async def test_get_and_update_task_status(
     # Upsert on failure sets last_error and clears data
     await update_task_status(
         session_manager,
+        user_id=user_id,
         file_id=file_id,
         task_type=task_type,
         key=key,
@@ -61,7 +67,7 @@ async def test_get_and_update_task_status(
         error="boom",
     )
 
-    failed = await get_task(session_manager, file_id, task_type, key)
+    failed = await get_task(session_manager, user_id, file_id, task_type, key)
     assert failed is not None
     assert failed.id == task.id
     assert failed.status == ProcessingStatus.FAILED
@@ -72,13 +78,14 @@ async def test_get_and_update_task_status(
     # Subsequent failure increments retry_count
     await update_task_status(
         session_manager,
+        user_id=user_id,
         file_id=file_id,
         task_type=task_type,
         key=key,
         status=ProcessingStatus.FAILED,
         error="boom again",
     )
-    retried = await get_task(session_manager, file_id, task_type, key)
+    retried = await get_task(session_manager, user_id, file_id, task_type, key)
     assert retried is not None
     assert retried.retry_count == 1
     assert retried.last_error == "boom again"
@@ -86,13 +93,14 @@ async def test_get_and_update_task_status(
     # Recovery to COMPLETED resets retry_count to 0
     await update_task_status(
         session_manager,
+        user_id=user_id,
         file_id=file_id,
         task_type=task_type,
         key=key,
         status=ProcessingStatus.COMPLETED,
         data="model-v2",
     )
-    recovered = await get_task(session_manager, file_id, task_type, key)
+    recovered = await get_task(session_manager, user_id, file_id, task_type, key)
     assert recovered is not None
     assert recovered.retry_count == 0
     assert recovered.last_error is None

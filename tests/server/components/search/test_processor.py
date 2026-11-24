@@ -58,7 +58,7 @@ async def test_process_embedding_success(
         await session.commit()
 
     await embedding_module.run(
-        file_id, session_manager, page_index=page_index, page_id="p0"
+        file_id, session_manager, page_index=page_index, page_id="p0", user_id=1
     )
 
     assert fake_embedding_model.calls == [
@@ -138,10 +138,10 @@ async def test_embedding_reembeds_when_model_changes(
         await session.commit()
 
     # Initial run with model-v1
-    await module_v1.run(file_id, session_manager, page_index=0, page_id="p0")
+    await module_v1.run(file_id, session_manager, page_index=0, page_id="p0", user_id=1)
     assert (
         await module_v1.run_if_needed(
-            file_id, session_manager, page_index=0, page_id="p0"
+            file_id, session_manager, page_index=0, page_id="p0", user_id=1
         )
         is False
     )
@@ -149,11 +149,11 @@ async def test_embedding_reembeds_when_model_changes(
     # Switching to model-v2 should require re-running despite COMPLETED SystemTaskDO
     assert (
         await module_v2.run_if_needed(
-            file_id, session_manager, page_index=0, page_id="p0"
+            file_id, session_manager, page_index=0, page_id="p0", user_id=1
         )
         is True
     )
-    await module_v2.run(file_id, session_manager, page_index=0, page_id="p0")
+    await module_v2.run(file_id, session_manager, page_index=0, page_id="p0", user_id=1)
 
     async with session_manager.session() as session:
         content = (
@@ -173,12 +173,17 @@ async def test_embedding_run_if_needed_disabled(
     module = EmbeddingModule(file_service=file_service, embedding_model=None)
 
     assert (
-        await module.run_if_needed(1, session_manager, page_index=0, page_id="p0")
+        await module.run_if_needed(
+            1, session_manager, page_index=0, page_id="p0", user_id=1
+        )
         is False
     )
 
     # run() should still return True (skipped success)
-    assert await module.run(1, session_manager, page_index=0, page_id="p0") is True
+    assert (
+        await module.run(1, session_manager, page_index=0, page_id="p0", user_id=1)
+        is True
+    )
 
 
 async def test_embedding_clears_stale_vector_when_page_becomes_blank(
@@ -212,7 +217,9 @@ async def test_embedding_clears_stale_vector_when_page_becomes_blank(
         await session.commit()
 
     assert (
-        await embedding_module.run(file_id, session_manager, page_index=0, page_id="p0")
+        await embedding_module.run(
+            file_id, session_manager, page_index=0, page_id="p0", user_id=1
+        )
         is True
     )
     assert fake_embedding_model.calls == []
@@ -258,7 +265,9 @@ async def test_embedding_skips_whitespace_only_text_content(
         await session.commit()
 
     assert (
-        await embedding_module.run(file_id, session_manager, page_index=0, page_id="p0")
+        await embedding_module.run(
+            file_id, session_manager, page_index=0, page_id="p0", user_id=1
+        )
         is True
     )
     assert fake_embedding_model.calls == []
