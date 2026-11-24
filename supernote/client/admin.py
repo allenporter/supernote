@@ -126,11 +126,19 @@ class AdminClient:
         """Get the background queue processing status."""
         return await self.client.get_json("/api/admin/queue/status", QueueStatusVO)
 
-    async def admin_reprocess(self, task_type: str, file_id: int | None = None) -> None:
+    async def admin_reprocess(
+        self,
+        task_type: str,
+        file_id: int | None = None,
+        *,
+        cascade: bool = False,
+    ) -> None:
         """Force reprocessing of notes by clearing task states on the server."""
         payload: dict = {"task_type": task_type}
         if file_id is not None:
             payload["file_id"] = file_id
+        if cascade:
+            payload["cascade"] = True
 
         await self.client.post_json(
             "/api/admin/reprocess",

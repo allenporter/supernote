@@ -15,28 +15,20 @@ from functools import wraps
 
 from aiohttp import web
 from mashumaro.exceptions import InvalidFieldValue, MissingField
-from sqlalchemy import delete, select
 
 from supernote.models.base import (
     BaseResponse,
     ProcessingStatus,
-    TaskType,
     create_error_response,
 )
 from supernote.models.extended import SystemTaskListVO, SystemTaskVO
 from supernote.models.system import QueueStatusVO
 from supernote.models.user import UpdateUserQuotaDTO, UserRegisterDTO
-from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import SystemTaskDO
-from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.events import LocalEventBus, NoteUpdatedEvent
 from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
-    EVENT_BUS_KEY,
     INTEGRITY_SERVICE_KEY,
     PROCESSOR_SERVICE_KEY,
     REQUEST_USER_KEY,
-    SESSION_MANAGER_KEY,
     USER_SERVICE_KEY,
 )
 from supernote.server.services.integrity import IntegrityService
@@ -197,48 +189,30 @@ async def handle_reprocess(request: web.Request) -> web.Response:
     req_data = await request.json()
     task_type = req_data.get("task_type", "summary")
     file_id = req_data.get("file_id")
+    cascade = req_data.get("cascade", False)
 
-    session_manager: DatabaseSessionManager = request.app[SESSION_MANAGER_KEY]
-    event_bus: LocalEventBus = request.app[EVENT_BUS_KEY]
+    if not isinstance(task_type, str):
+        return web.json_response(
+            create_error_response("Invalid task_type").to_dict(),
+            status=400,
+        )
+    if not isinstance(cascade, bool):
+        return web.json_response(
+            create_error_response("Invalid cascade: must be boolean").to_dict(),
+            status=400,
+        )
 
-    async with session_manager.session() as session:
-        stmt = delete(SystemTaskDO)
-
-        if task_type.upper() != "ALL":
-            try:
-                mapped_type = TaskType.from_friendly(task_type)
-            except ValueError:
-                return web.json_response(
-                    create_error_response(f"Invalid task_type: {task_type}").to_dict(),
-                    status=400,
-                )
-            stmt = stmt.where(SystemTaskDO.task_type == mapped_type.value)
-
-        # Get target file IDs to trigger events
-        if file_id is not None:
-            file_stmt = select(UserFileDO.user_id).where(
-                UserFileDO.id == file_id,
-                UserFileDO.is_active == "Y",
-            )
-            file_result = await session.execute(file_stmt)
-            uid = file_result.scalar_one_or_none()
-            targets = [(file_id, uid)] if uid is not None else []
-            stmt = stmt.where(SystemTaskDO.file_id == file_id)
-        else:
-            file_stmt = select(UserFileDO.id, UserFileDO.user_id).where(
-                UserFileDO.file_name.like("%.note"),
-                UserFileDO.is_active == "Y",
-            )
-            file_result = await session.execute(file_stmt)
-            targets = list(file_result.all())
-
-        await session.execute(stmt)
-        await session.commit()
-
-    # Publish NoteUpdatedEvent to trigger immediate reprocessing
-    for fid, uid in targets:
-        await event_bus.publish(
-            NoteUpdatedEvent(file_id=fid, user_id=uid, file_path="")
+    processor_service = request.app[PROCESSOR_SERVICE_KEY]
+    try:
+        await processor_service.reprocess_tasks(
+            task_type,
+            file_id=file_id,
+            cascade=cascade,
+        )
+    except ValueError as e:
+        return web.json_response(
+            create_error_response(str(e)).to_dict(),
+            status=400,
         )
 
     return web.json_response(BaseResponse().to_dict())
@@ -328,10 +302,11 @@ async def handle_admin_list_tasks(request: web.Request) -> web.Response:
                 status=400,
             )
 
+    processor_service = request.app[PROCESSOR_SERVICE_KEY]
     task_type_filter: str | None = None
     if task_type_param:
         try:
-            task_type_filter = TaskType.from_friendly(task_type_param).value
+            task_type_filter = processor_service.resolve_task_type(task_type_param)
         except ValueError:
             return web.json_response(
                 create_error_response(
@@ -340,7 +315,6 @@ async def handle_admin_list_tasks(request: web.Request) -> web.Response:
                 status=400,
             )
 
-    processor_service = request.app[PROCESSOR_SERVICE_KEY]
     tasks = await processor_service.list_system_tasks(
         limit=limit,
         status=status_filter,

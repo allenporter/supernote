@@ -16,13 +16,14 @@ from supernote.client.exceptions import (
 )
 from supernote.models.base import ProcessingStatus, TaskType
 from supernote.models.user import UserRegisterDTO
+from supernote.server.components.processor import ProcessorModule, TaskScope
 from supernote.server.config import ServerConfig
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import SystemTaskDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import Event, NoteUpdatedEvent
-from supernote.server.keys import EVENT_BUS_KEY
+from supernote.server.keys import EVENT_BUS_KEY, PROCESSOR_SERVICE_KEY
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
 
@@ -534,3 +535,158 @@ async def test_admin_api_key_denied_on_admin_endpoints(
         headers=headers,
     )
     assert quota_resp.status == 403
+
+
+async def test_admin_reprocess_cascade_and_custom_stage(
+    client: TestClient,
+    session_manager: DatabaseSessionManager,
+    admin_headers: dict[str, str],
+) -> None:
+    """Reprocess supports TaskGraph cascade invalidation and custom registered stages."""
+
+    class _CustomStage(ProcessorModule):
+        @property
+        def name(self) -> str:
+            return "CustomTagModule"
+
+        @property
+        def task_type(self) -> str:
+            return "CUSTOM_TAGGING"
+
+        @property
+        def scope(self) -> TaskScope:
+            return TaskScope.PAGE
+
+        @property
+        def depends_on(self) -> tuple[str, ...]:
+            return (TaskType.OCR_EXTRACTION.value,)
+
+        async def run_if_needed(
+            self,
+            file_id: int,
+            session_manager: DatabaseSessionManager,
+            page_index: int | None = None,
+            page_id: str | None = None,
+        ) -> bool:
+            return False
+
+        async def process(
+            self,
+            file_id: int,
+            session_manager: DatabaseSessionManager,
+            page_index: int | None = None,
+            page_id: str | None = None,
+            **kwargs: object,
+        ) -> None:
+            return None
+
+    assert client.app is not None
+    processor_service = client.app[PROCESSOR_SERVICE_KEY]
+    processor_service.set_modules(
+        [*processor_service.task_graph.modules, _CustomStage()]
+    )
+
+    # Seed tasks across the full DAG including the custom stage
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                SystemTaskDO(
+                    file_id=7771,
+                    task_type=t,
+                    key="global",
+                    status=ProcessingStatus.COMPLETED,
+                    update_time=100,
+                )
+                for t in (
+                    TaskType.PAGE_HASHING.value,
+                    TaskType.PNG_CONVERSION.value,
+                    TaskType.OCR_EXTRACTION.value,
+                    TaskType.EMBEDDING_GENERATION.value,
+                    TaskType.SUMMARY_GENERATION.value,
+                    "CUSTOM_TAGGING",
+                )
+            ]
+        )
+        await session.commit()
+
+    # GET /api/admin/tasks resolves custom stage by task_type and module name
+    resp = await client.get(
+        "/api/admin/tasks",
+        params={"task_type": "custom_tagging"},
+        headers=admin_headers,
+    )
+    assert resp.status == 200
+    body = await resp.json()
+    assert len(body["tasks"]) == 1
+    assert body["tasks"][0]["taskType"] == "CUSTOM_TAGGING"
+
+    resp_by_name = await client.get(
+        "/api/admin/tasks",
+        params={"task_type": "CustomTagModule"},
+        headers=admin_headers,
+    )
+    assert resp_by_name.status == 200
+    assert len((await resp_by_name.json())["tasks"]) == 1
+
+    # Invalid cascade type returns 400
+    bad_cascade = await client.post(
+        "/api/admin/reprocess",
+        json={"task_type": "ocr", "file_id": 7771, "cascade": "yes"},
+        headers=admin_headers,
+    )
+    assert bad_cascade.status == 400
+
+    # Cascade from OCR clears OCR + downstream (embedding, summary, custom) but keeps hashing & png
+    resp = await client.post(
+        "/api/admin/reprocess",
+        json={"task_type": "ocr", "file_id": 7771, "cascade": True},
+        headers=admin_headers,
+    )
+    assert resp.status == 200
+
+    async with session_manager.session() as session:
+        remaining = {
+            row.task_type
+            for row in (
+                await session.execute(
+                    select(SystemTaskDO).where(SystemTaskDO.file_id == 7771)
+                )
+            )
+            .scalars()
+            .all()
+        }
+    assert remaining == {TaskType.PAGE_HASHING.value, TaskType.PNG_CONVERSION.value}
+
+    # Reprocessing a custom stage directly succeeds
+    async with session_manager.session() as session:
+        session.add(
+            SystemTaskDO(
+                file_id=7771,
+                task_type="CUSTOM_TAGGING",
+                key="global",
+                status=ProcessingStatus.COMPLETED,
+                update_time=200,
+            )
+        )
+        await session.commit()
+
+    resp = await client.post(
+        "/api/admin/reprocess",
+        json={"task_type": "custom_tagging", "file_id": 7771},
+        headers=admin_headers,
+    )
+    assert resp.status == 200
+    async with session_manager.session() as session:
+        custom_rows = (
+            (
+                await session.execute(
+                    select(SystemTaskDO).where(
+                        SystemTaskDO.file_id == 7771,
+                        SystemTaskDO.task_type == "CUSTOM_TAGGING",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert custom_rows == []

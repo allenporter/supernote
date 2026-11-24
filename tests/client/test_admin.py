@@ -187,6 +187,12 @@ async def test_admin_client_endpoints(aiohttp_client: AiohttpClient) -> None:
     assert req == "reprocess"
     assert data == {"task_type": "transcribe", "file_id": 42}
 
+    # 13. admin_reprocess with cascade
+    await admin.admin_reprocess("ocr", file_id=42, cascade=True)
+    req, data = recorded_requests[-1]
+    assert req == "reprocess"
+    assert data == {"task_type": "ocr", "file_id": 42, "cascade": True}
+
     await admin.admin_set_quota("target@example.com", 21474836480)
     req, data = recorded_requests[-1]
     assert req == "admin_set_quota"
