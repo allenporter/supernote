@@ -153,7 +153,16 @@ class WikiClient:
         mode: str = "incremental",
         max_files: int | None = None,
     ) -> WikiCompileResponseVO:
-        """Trigger incremental compile, backfill, or lint (`POST /api/extended/wiki/compile`)."""
+        """Trigger wiki compilation or semantic lint (`POST /api/extended/wiki/compile`).
+
+        Modes:
+            - ``"incremental"``: Drain uncompiled domain events since the user's
+              durable sync cursor, synthesize page updates, and run structural lint.
+            - ``"backfill"``: Compile existing `.note` OCR transcripts newest-first
+              in bounded chunks (up to ``max_files`` notebooks, `1..20`, default `5`).
+            - ``"lint"``: Run deterministic structural lint plus an LLM semantic
+              audit (`contradiction`, `alias_merge_proposal`) without mutating pages.
+        """
         payload: dict[str, Any] = {"mode": mode}
         if max_files is not None:
             payload["max_files"] = max_files

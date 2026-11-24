@@ -61,6 +61,9 @@ _VALID_LINT_STATUS_FILTERS: frozenset[str] = frozenset(
 )
 
 
+# Mashumaro's default deserializers call `str(v)` / `int(v)`, which silently
+# coerce `null` -> `"None"` and `1.9`/`True` -> `1`. These pre-deserialization
+# guards reject wrong JSON types at the HTTP boundary with 400.
 def _check_str_fields(d: dict[Any, Any], keys: tuple[str, ...]) -> None:
     for key in keys:
         if (val := d.get(key)) is not None and not isinstance(val, str):

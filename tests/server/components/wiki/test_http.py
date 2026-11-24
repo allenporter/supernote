@@ -14,6 +14,7 @@ from supernote.client.client import Client
 from supernote.client.exceptions import (
     ApiException,
     BadRequestException,
+    ForbiddenException,
     NotFoundException,
 )
 from supernote.client.wiki import WikiClient
@@ -66,15 +67,22 @@ async def other_wiki_client(client: TestClient) -> WikiClient:
 
 
 @pytest.fixture
-async def api_key_headers(
+async def api_key_wiki_client(
     client: TestClient,
     test_user_id: int,
-) -> dict[str, str]:
-    """Create a static Bearer API key header for the primary test user."""
+) -> WikiClient:
+    """Create a `WikiClient` authenticated with a static Bearer API key."""
     assert client.app is not None
     user_service: UserService = client.app[USER_SERVICE_KEY]
     raw_key, _ = await user_service.create_api_key(test_user_id, "external-agent")
-    return {"Authorization": f"Bearer {raw_key}"}
+
+    class _ApiKeyAuth(AbstractAuth):
+        async def async_get_access_token(self) -> str:
+            return raw_key
+
+    return WikiClient(
+        Client(client.session, auth=_ApiKeyAuth(), host=str(client.make_url("")))
+    )
 
 
 @pytest.mark.parametrize("wiki_enabled", [False])
@@ -174,29 +182,27 @@ async def test_wiki_http_lint_compile_and_export(wiki_client: WikiClient) -> Non
 
 
 async def test_wiki_http_non_interactive_api_key_trust_boundaries(
-    client: TestClient,
     wiki_client: WikiClient,
-    api_key_headers: dict[str, str],
+    api_key_wiki_client: WikiClient,
 ) -> None:
     """API keys write as agent, cannot set edit_policy, cannot overwrite user pages, and cannot delete or trigger compile."""
     # API key cannot set edit_policy even on a brand-new page.
-    lock_attempt = await client.put(
-        "/api/extended/wiki/pages/projects/agent-locked",
-        headers=api_key_headers,
-        json={"title": "Locked", "body_md": "Body", "edit_policy": "locked"},
-    )
-    assert lock_attempt.status == 403
+    with pytest.raises(ForbiddenException):
+        await api_key_wiki_client.upsert_page(
+            "projects/agent-locked",
+            title="Locked",
+            body_md="Body",
+            edit_policy="locked",
+        )
 
     # API key creates a normal page with author_kind="agent" and edit_policy="auto".
-    created = await client.put(
-        "/api/extended/wiki/pages/projects/agent-note",
-        headers=api_key_headers,
-        json={"title": "Agent Note", "body_md": "Compiled by agent"},
+    created_page = await api_key_wiki_client.upsert_page(
+        "projects/agent-note",
+        title="Agent Note",
+        body_md="Compiled by agent",
     )
-    assert created.status == 200
-    created_page = (await created.json())["page"]
-    assert created_page["last_author_kind"] == "agent"
-    assert created_page["edit_policy"] == "auto"
+    assert created_page.last_author_kind == "agent"
+    assert created_page.edit_policy == "auto"
 
     # Interactive user edits the page -> escalates to protected_prose.
     user_page = await wiki_client.upsert_page(
@@ -205,26 +211,16 @@ async def test_wiki_http_non_interactive_api_key_trust_boundaries(
     assert user_page.edit_policy == "protected_prose"
 
     # API key is now blocked from overwriting the human-protected page.
-    blocked_put = await client.put(
-        "/api/extended/wiki/pages/projects/agent-note",
-        headers=api_key_headers,
-        json={"title": "Agent Note", "body_md": "Overwrite"},
-    )
-    assert blocked_put.status == 403
+    with pytest.raises(ForbiddenException):
+        await api_key_wiki_client.upsert_page(
+            "projects/agent-note", title="Agent Note", body_md="Overwrite"
+        )
 
     # API key is denied DELETE and POST /compile via @interactive_session_only.
-    assert (
-        await client.delete(
-            "/api/extended/wiki/pages/projects/agent-note", headers=api_key_headers
-        )
-    ).status == 403
-    assert (
-        await client.post(
-            "/api/extended/wiki/compile",
-            headers=api_key_headers,
-            json={"mode": "lint"},
-        )
-    ).status == 403
+    with pytest.raises(ForbiddenException):
+        await api_key_wiki_client.delete_page("projects/agent-note")
+    with pytest.raises(ForbiddenException):
+        await api_key_wiki_client.compile(mode="lint")
 
 
 async def test_wiki_http_input_validation_and_upstream_errors(
