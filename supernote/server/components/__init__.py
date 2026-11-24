@@ -131,6 +131,11 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         import_path="supernote.server.components.webhooks:WebhooksComponent",
         default_enabled=False,
     ),
+    BuiltinComponentSpec(
+        domain="wiki",
+        import_path="supernote.server.components.wiki:WikiComponent",
+        default_enabled=False,
+    ),
 )
 
 
