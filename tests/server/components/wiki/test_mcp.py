@@ -60,9 +60,21 @@ async def test_wiki_mcp_registers_all_eight_tools_and_requires_auth(
         "resolve_wiki_lint_issue",
         "get_wiki_status",
     }
-    unauth = await tools["get_wiki_index"](MagicMock())
-    assert unauth["success"] is False
-    assert unauth["errorCode"] == ErrorCode.UNAUTHORIZED.value
+    ctx = MagicMock()
+    unauth_calls = [
+        tools["get_wiki_index"](ctx),
+        tools["list_wiki_pages"](ctx),
+        tools["read_wiki_page"](ctx, slug="projects/x"),
+        tools["search_wiki"](ctx, query="x"),
+        tools["upsert_wiki_page"](ctx, slug="projects/x", title="X", body_md="B"),
+        tools["list_wiki_lint_issues"](ctx),
+        tools["resolve_wiki_lint_issue"](ctx, issue_id=1),
+        tools["get_wiki_status"](ctx),
+    ]
+    for call in unauth_calls:
+        res = await call
+        assert res["success"] is False
+        assert res["errorCode"] == ErrorCode.UNAUTHORIZED.value
 
 
 async def test_wiki_mcp_crud_index_list_search_and_lint_resolution(
@@ -184,3 +196,16 @@ async def test_wiki_mcp_error_paths_and_policy_enforcement(
 
         bad_status = await tools["list_wiki_lint_issues"](ctx, status="bogus")
         assert bad_status["errorCode"] == ErrorCode.BAD_REQUEST.value
+
+        bad_slug = await tools["read_wiki_page"](ctx, slug="../escape")
+        assert bad_slug["errorCode"] == ErrorCode.BAD_REQUEST.value
+
+        bad_resolve_status = await tools["resolve_wiki_lint_issue"](
+            ctx, issue_id=1, status="bogus"
+        )
+        assert bad_resolve_status["errorCode"] == ErrorCode.BAD_REQUEST.value
+
+        missing_issue = await tools["resolve_wiki_lint_issue"](
+            ctx, issue_id=999999, status="resolved"
+        )
+        assert missing_issue["errorCode"] == ErrorCode.NOT_FOUND.value

@@ -183,6 +183,17 @@ def test_server_config_webhooks_enabled_env_var_override(tmp_path: Path) -> None
         assert config.webhooks["enabled"] is True
 
 
+def test_server_config_wiki_enabled_env_var_override(tmp_path: Path) -> None:
+    """SUPERNOTE_WIKI_ENABLED overrides the config file value."""
+    config_dir = tmp_path / "config"
+    with patch.dict(os.environ, {"SUPERNOTE_WIKI_ENABLED": "true"}):
+        config = ServerConfig.load(config_dir)
+        assert config.wiki["enabled"] is True
+    with patch.dict(os.environ, {"SUPERNOTE_WIKI_ENABLED": "false"}):
+        config = ServerConfig.load(config_dir)
+        assert config.wiki["enabled"] is False
+
+
 def test_server_config_proxy_env_vars(tmp_path: Path) -> None:
     """Test that proxy configuration can be set via environment variables."""
     config_dir = tmp_path / "config"

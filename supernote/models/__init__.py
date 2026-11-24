@@ -16,4 +16,5 @@ __all__ = [
     "summary",
     "system",
     "user",
+    "wiki",
 ]

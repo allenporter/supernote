@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 from supernote.models.wiki import (
     WikiCompileResponseVO,
@@ -23,8 +24,21 @@ from supernote.models.wiki import (
 )
 
 from .client import Client
+from .exceptions import ApiException
 
 __all__ = ["WikiClient"]
+
+
+def _encode_slug(slug: str) -> str:
+    """Validate and percent-encode a wiki slug for safe URL path interpolation."""
+    cleaned = slug.strip().strip("/")
+    if not cleaned:
+        raise ValueError("Wiki slug must be non-empty")
+    segments = cleaned.split("/")
+    for seg in segments:
+        if seg in ("", ".", ".."):
+            raise ValueError(f"Invalid wiki slug segment {seg!r} in {slug!r}")
+    return "/".join(quote(seg, safe="") for seg in segments)
 
 
 class WikiClient:
@@ -52,9 +66,10 @@ class WikiClient:
     async def get_page(self, slug: str) -> WikiPageDTO:
         """Fetch a single wiki page by slug (`GET /api/extended/wiki/pages/{slug}`)."""
         vo = await self._client.get_json(
-            f"/api/extended/wiki/pages/{slug}", WikiPageResponseVO
+            f"/api/extended/wiki/pages/{_encode_slug(slug)}", WikiPageResponseVO
         )
-        assert vo.page is not None
+        if vo.page is None:
+            raise ApiException("Server returned empty wiki page payload")
         return vo.page
 
     async def upsert_page(
@@ -91,22 +106,26 @@ class WikiClient:
         if edit_policy is not None:
             payload["edit_policy"] = edit_policy
         vo = await self._client.put_json(
-            f"/api/extended/wiki/pages/{slug}", WikiPageResponseVO, json=payload
+            f"/api/extended/wiki/pages/{_encode_slug(slug)}",
+            WikiPageResponseVO,
+            json=payload,
         )
-        assert vo.page is not None
+        if vo.page is None:
+            raise ApiException("Server returned empty wiki page payload")
         return vo.page
 
     async def delete_page(self, slug: str) -> bool:
         """Soft-delete a wiki page (`DELETE /api/extended/wiki/pages/{slug}`)."""
         vo = await self._client.delete_json(
-            f"/api/extended/wiki/pages/{slug}", WikiDeleteResponseVO
+            f"/api/extended/wiki/pages/{_encode_slug(slug)}", WikiDeleteResponseVO
         )
         return vo.deleted
 
     async def list_revisions(self, slug: str) -> list[WikiRevisionDTO]:
         """List immutable revisions (`GET /api/extended/wiki/revisions/{slug}`)."""
         vo = await self._client.get_json(
-            f"/api/extended/wiki/revisions/{slug}", WikiRevisionsResponseVO
+            f"/api/extended/wiki/revisions/{_encode_slug(slug)}",
+            WikiRevisionsResponseVO,
         )
         return vo.revisions
 
@@ -124,7 +143,8 @@ class WikiClient:
         vo = await self._client.get_json(
             "/api/extended/wiki/status", WikiStatusResponseVO
         )
-        assert vo.status is not None
+        if vo.status is None:
+            raise ApiException("Server returned empty wiki status payload")
         return vo.status
 
     async def compile(
@@ -159,12 +179,15 @@ class WikiClient:
             WikiLintIssueResponseVO,
             json={"status": status},
         )
-        assert vo.issue is not None
+        if vo.issue is None:
+            raise ApiException("Server returned empty wiki lint issue payload")
         return vo.issue
 
     async def export_markdown(self, slug: str) -> str:
         """Export one wiki page as Obsidian Markdown (`GET /api/extended/wiki/export/{slug}.md`)."""
-        raw = await self._client.get_content(f"/api/extended/wiki/export/{slug}.md")
+        raw = await self._client.get_content(
+            f"/api/extended/wiki/export/{_encode_slug(slug)}.md"
+        )
         return raw.decode("utf-8")
 
     async def export_zip(self) -> bytes:

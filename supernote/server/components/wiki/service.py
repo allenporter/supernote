@@ -145,13 +145,6 @@ class WikiService:
                         raise WikiPolicyError(
                             f"Wiki page {slug!r} has protected_prose policy"
                         )
-                    if (
-                        data.edit_policy is not None
-                        and data.edit_policy != existing.edit_policy
-                    ):
-                        raise WikiPolicyError(
-                            f"Non-user author {data.author_kind!r} cannot change edit_policy"
-                        )
                 page = existing
                 page.title = data.title.strip()[:255]
                 page.page_kind = data.page_kind

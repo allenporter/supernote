@@ -45,6 +45,25 @@ class WikiSourceRefDTO(DataClassJSONMixin):
     is_source_deleted: bool = False
     """True when the backing note page, file, or task was deleted."""
 
+    @classmethod
+    def __pre_deserialize__(cls, d: dict[Any, Any]) -> dict[Any, Any]:
+        if not isinstance(d, dict):
+            raise ValueError("source_ref must be an object")
+        for key in ("source_type", "source_key"):
+            val = d.get(key)
+            if not isinstance(val, str) or not val.strip():
+                raise ValueError(f"{key} must be a non-empty string")
+        for key in ("file_id", "last_event_seq"):
+            if (val := d.get(key)) is not None and (
+                isinstance(val, bool) or not isinstance(val, int)
+            ):
+                raise ValueError(f"{key} must be an integer")
+        if (deleted := d.get("is_source_deleted")) is not None and not isinstance(
+            deleted, bool
+        ):
+            raise ValueError("is_source_deleted must be a boolean")
+        return {k: v for k, v in d.items() if v is not None}
+
 
 @dataclass
 class WikiPageDTO(DataClassJSONMixin):

@@ -18,6 +18,7 @@ from supernote.client.exceptions import (
 )
 from supernote.client.wiki import WikiClient
 from supernote.models.user import UserRegisterDTO
+from supernote.models.wiki import WikiSourceRefDTO
 from supernote.server.ai.base import AIError
 from supernote.server.components.wiki.compiler import WIKI_COMPILER_KEY
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
@@ -96,10 +97,19 @@ async def test_wiki_http_crud_conflict_search_and_isolation(
         summary="Moonshot",
         body_md="See [[entities/missing]].",
         aliases=["Project Apollo"],
+        claims=[{"text": "Launch in Q3"}],
+        source_refs=[
+            WikiSourceRefDTO(source_type="note_page", source_key="1:p1", file_id=1)
+        ],
+        edit_policy="protected_prose",
     )
     assert page.slug == "projects/apollo"
     assert page.version == 1
     assert page.edit_policy == "protected_prose"
+
+    fetched = await wiki_client.get_page("projects/apollo")
+    assert fetched.title == "Apollo"
+    assert len(fetched.source_refs) == 1
 
     listed = await wiki_client.list_pages(page_kind="project")
     assert [p.slug for p in listed] == ["projects/apollo"]
@@ -256,6 +266,21 @@ async def test_wiki_http_input_validation_and_upstream_errors(
         await wiki_client.list_pages(page_kind="bogus")
     with pytest.raises(BadRequestException):
         await wiki_client.list_lint_issues(status="bogus")
+
+    # Resolve-lint error paths (non-int issue_id 400, missing issue 404, invalid status 400).
+    assert (
+        await client.post(
+            "/api/extended/wiki/lint/not-an-int/resolve", headers=auth_headers
+        )
+    ).status == 400
+    with pytest.raises(NotFoundException):
+        await wiki_client.resolve_lint_issue(999999)
+    with pytest.raises(NotFoundException):
+        await wiki_client.delete_page("projects/does-not-exist")
+    with pytest.raises(NotFoundException):
+        await wiki_client.list_revisions("projects/does-not-exist")
+    with pytest.raises(NotFoundException):
+        await wiki_client.export_markdown("projects/does-not-exist")
 
     # Non-object JSON body and out-of-range max_files return 400 on /compile.
     assert (

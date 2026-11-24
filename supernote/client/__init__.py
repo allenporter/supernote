@@ -315,6 +315,7 @@ from . import (
     socket,
     summary,
     web,
+    wiki,
 )
 from .api import Supernote
 from .client import Client
@@ -333,4 +334,5 @@ __all__ = [
     "socket",
     "summary",
     "web",
+    "wiki",
 ]
