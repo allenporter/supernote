@@ -174,11 +174,10 @@ async def test_wiki_http_lint_compile_and_export(wiki_client: WikiClient) -> Non
         assert zf.namelist() == ["projects/apollo.md"]
 
 
-async def test_wiki_http_non_interactive_api_key_trust_boundaries(
-    wiki_client: WikiClient,
+async def test_wiki_http_api_key_cannot_set_edit_policy(
     api_key_wiki_client: WikiClient,
 ) -> None:
-    """API keys write as agent, cannot set edit_policy, cannot overwrite user pages, and cannot delete or trigger compile."""
+    """Non-interactive API keys cannot set edit_policy even on new pages."""
     with pytest.raises(ForbiddenException):
         await api_key_wiki_client.upsert_page(
             "projects/agent-locked",
@@ -187,6 +186,12 @@ async def test_wiki_http_non_interactive_api_key_trust_boundaries(
             edit_policy="locked",
         )
 
+
+async def test_wiki_http_api_key_cannot_overwrite_user_protected_page(
+    wiki_client: WikiClient,
+    api_key_wiki_client: WikiClient,
+) -> None:
+    """API keys write as agent/auto and cannot overwrite once a user edits the page."""
     created_page = await api_key_wiki_client.upsert_page(
         "projects/agent-note",
         title="Agent Note",
@@ -204,8 +209,16 @@ async def test_wiki_http_non_interactive_api_key_trust_boundaries(
         await api_key_wiki_client.upsert_page(
             "projects/agent-note", title="Agent Note", body_md="Overwrite"
         )
+
+
+async def test_wiki_http_api_key_denied_delete_and_compile(
+    wiki_client: WikiClient,
+    api_key_wiki_client: WikiClient,
+) -> None:
+    """DELETE and POST /compile require an interactive session."""
+    await wiki_client.upsert_page("projects/note", title="Note", body_md="Body")
     with pytest.raises(ForbiddenException):
-        await api_key_wiki_client.delete_page("projects/agent-note")
+        await api_key_wiki_client.delete_page("projects/note")
     with pytest.raises(ForbiddenException):
         await api_key_wiki_client.compile(mode="lint")
 
