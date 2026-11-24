@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_EVENT_TYPES: tuple[str, ...] = (
     DomainEventType.NOTE_PAGE_TRANSCRIBED,
     DomainEventType.NOTE_PAGES_DELTA,
-    DomainEventType.VFS_DELETED,
+    DomainEventType.FILE_DELETED,
     "schedule.*",
 )
 

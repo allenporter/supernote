@@ -267,7 +267,7 @@ async def test_magic_todo_agent_recovers_from_http_410_expired_cursor(
     env = live_agent_env
     old_ev = await env.event_log_service.append(
         user_id=env.user_id,
-        event_type=DomainEventType.VFS_DELETED,
+        event_type=DomainEventType.FILE_DELETED,
         entity_type=DomainEntityType.FILE,
         entity_id="9999",
         actor="user:web",
