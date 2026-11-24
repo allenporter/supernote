@@ -77,7 +77,7 @@
                             </svg>
                             <span>Tasks<span class="hidden sm:inline"> &amp; Schedule</span></span>
                         </button>
-                        <button @click="switchTab('wiki')" type="button"
+                        <button v-if="wikiEnabled" @click="switchTab('wiki')" type="button"
                             :class="activeTab === 'wiki' ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-stone-600 hover:text-slate-900 font-medium'"
                             class="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all">
                             <svg class="hidden sm:block w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -217,7 +217,7 @@
 
                 <!-- LLM Wiki Panel -->
                 <template v-else-if="activeTab === 'wiki'">
-                    <wiki-panel></wiki-panel>
+                    <wiki-panel :initial-slug="selectedWikiSlug" @select-slug="navigateToWikiSlug"></wiki-panel>
                 </template>
             </template>
 

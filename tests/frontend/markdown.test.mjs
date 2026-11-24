@@ -100,9 +100,14 @@ test('markdown.js: adds target/_blank + noopener noreferrer on href anchors and 
     }
 });
 
-test('renderWikiMarkdown converts safe [[wikilinks]] and rejects path traversal', () => {
-    const html = renderWikiMarkdown('See [[entities/Alice|Alice]] and [[../bad]].');
+test('renderWikiMarkdown converts safe [[wikilinks]], skips code, and rejects XSS/traversal', () => {
+    const html = renderWikiMarkdown(
+        'See [[entities/Alice|Alice]] and [[../bad]] and `[[projects/in-code]]` and [[entities/bob|<script>alert(1)</script>]].',
+    );
     assert.ok(html.includes('href="#/wiki/entities/alice"'));
     assert.ok(html.includes('data-wiki-link="entities/alice"'));
     assert.ok(!html.includes('../bad"'));
+    assert.ok(html.includes('[[projects/in-code]]'));
+    assert.ok(!html.includes('data-wiki-link="projects/in-code"'));
+    assert.ok(!html.includes('<script>'));
 });

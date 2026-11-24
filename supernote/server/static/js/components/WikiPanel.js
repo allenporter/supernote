@@ -3,6 +3,7 @@
  */
 
 import { computed, onMounted, ref, watch } from 'vue';
+import { ApiError } from '../api/http.js';
 import {
     deleteWikiPage,
     downloadWikiVaultZip,
@@ -35,10 +36,12 @@ export default {
             default: '',
         },
     },
+    emits: ['select-slug'],
     /**
      * @param {{ initialSlug: string }} props
+     * @param {{ emit: (event: 'select-slug', slug: string, replace?: boolean) => void }} ctx
      */
-    setup(props) {
+    setup(props, { emit }) {
         const { showToast } = useToast();
 
         const isLoading = ref(true);
@@ -48,6 +51,8 @@ export default {
 
         /** @type {import('vue').Ref<import('../api/wiki.js').WikiPage[]>} */
         const pages = ref([]);
+        /** @type {import('vue').Ref<import('../api/wiki.js').WikiSearchHit[] | null>} */
+        const searchHits = ref(null);
         /** @type {import('vue').Ref<import('../api/wiki.js').WikiPage | null>} */
         const activePage = ref(null);
         /** @type {import('vue').Ref<import('../api/wiki.js').WikiStatus | null>} */
@@ -68,9 +73,13 @@ export default {
         const editSummary = ref('');
         const editBody = ref('');
 
+        let loadSeq = 0;
+        let selectSeq = 0;
+
         const filteredPages = computed(() => {
-            if (!selectedKind.value) return pages.value;
-            return pages.value.filter((p) => p.page_kind === selectedKind.value);
+            const source = searchHits.value !== null ? searchHits.value : pages.value;
+            if (!selectedKind.value) return source;
+            return source.filter((p) => p.page_kind === selectedKind.value);
         });
 
         const renderedBodyHtml = computed(() =>
@@ -78,10 +87,12 @@ export default {
         );
 
         async function loadAll(preferredSlug = '') {
+            const seq = ++loadSeq;
             isLoading.value = true;
             error.value = '';
             try {
                 const list = await fetchWikiPages();
+                if (seq !== loadSeq) return;
                 if (list === null) {
                     isDisabled.value = true;
                     pages.value = [];
@@ -94,6 +105,7 @@ export default {
                     fetchWikiStatus(),
                     fetchWikiLintIssues('open'),
                 ]);
+                if (seq !== loadSeq) return;
                 status.value = st;
                 lintIssues.value = issues;
 
@@ -104,43 +116,63 @@ export default {
                     list[0]?.slug ||
                     '';
                 if (targetSlug) {
-                    await selectSlug(targetSlug);
+                    await selectSlug(targetSlug, { replaceHistory: true });
                 } else {
                     activePage.value = null;
                 }
             } catch (err) {
-                error.value = getErrorMessage(err);
+                if (seq === loadSeq) {
+                    error.value = getErrorMessage(err);
+                }
             } finally {
-                isLoading.value = false;
+                if (seq === loadSeq) {
+                    isLoading.value = false;
+                }
             }
         }
 
         /**
          * @param {string} slug
+         * @param {{ replaceHistory?: boolean, syncUrl?: boolean }} [options]
          */
-        async function selectSlug(slug) {
+        async function selectSlug(slug, { replaceHistory = false, syncUrl = true } = {}) {
+            const seq = ++selectSeq;
             isEditing.value = false;
             isCreating.value = false;
             confirmDeleteSlug.value = '';
-            const loaded = await fetchWikiPage(slug);
-            activePage.value = loaded;
-            if (loaded && typeof window !== 'undefined') {
-                const hash = `#/wiki/${loaded.slug}`;
-                if (window.location.hash !== hash) {
-                    window.history.replaceState(null, '', hash);
+            try {
+                const loaded = await fetchWikiPage(slug);
+                if (seq !== selectSeq) return;
+                if (!loaded) {
+                    showToast(`Page "${slug}" does not exist yet`, 'info');
+                    return;
+                }
+                activePage.value = loaded;
+                if (syncUrl) {
+                    emit('select-slug', loaded.slug, replaceHistory);
+                }
+            } catch (err) {
+                if (seq === selectSeq) {
+                    showToast(getErrorMessage(err), 'error');
                 }
             }
+        }
+
+        function clearSearch() {
+            searchQuery.value = '';
+            searchHits.value = null;
         }
 
         async function handleSearch() {
             const q = searchQuery.value.trim();
             if (!q) {
-                await loadAll();
+                searchHits.value = null;
                 return;
             }
             isBusy.value = true;
             try {
                 const hits = await searchWikiPages(q);
+                searchHits.value = hits;
                 if (hits.length > 0) {
                     await selectSlug(hits[0].slug);
                 } else {
@@ -191,6 +223,7 @@ export default {
                     page_kind: editKind.value,
                     summary: editSummary.value.trim(),
                     body_md: editBody.value,
+                    claims: isCreating.value ? [] : activePage.value?.claims || [],
                     expected_version: isCreating.value ? 0 : activePage.value?.version,
                     change_summary: isCreating.value ? 'Created in Web UI' : 'Edited in Web UI',
                 });
@@ -199,7 +232,19 @@ export default {
                 showToast(`Saved ${saved.title}`, 'success');
                 await loadAll(saved.slug);
             } catch (err) {
-                showToast(getErrorMessage(err), 'error');
+                const conflictData =
+                    err instanceof ApiError && err.status === 409
+                        ? /** @type {{ actual?: number } | null} */ (err.data)
+                        : null;
+                if (activePage.value && typeof conflictData?.actual === 'number') {
+                    activePage.value = { ...activePage.value, version: conflictData.actual };
+                    showToast(
+                        `Page updated elsewhere (now v${conflictData.actual}). Click Save Page again to overwrite.`,
+                        'error',
+                    );
+                } else {
+                    showToast(getErrorMessage(err), 'error');
+                }
             } finally {
                 isBusy.value = false;
             }
@@ -282,7 +327,7 @@ export default {
             () => props.initialSlug,
             (nextSlug) => {
                 if (nextSlug && nextSlug !== activePage.value?.slug) {
-                    selectSlug(nextSlug);
+                    selectSlug(nextSlug, { syncUrl: false });
                 }
             },
         );
@@ -298,12 +343,14 @@ export default {
             isBusy,
             error,
             pages,
+            searchHits,
             filteredPages,
             activePage,
             status,
             lintIssues,
             selectedKind,
             searchQuery,
+            clearSearch,
             showLintPanel,
             isEditing,
             isCreating,
@@ -381,6 +428,11 @@ export default {
                         <button type="submit" :disabled="isBusy"
                             class="px-2.5 py-1.5 text-xs font-medium bg-stone-100 hover:bg-stone-200 text-slate-700 rounded-lg transition-colors">
                             Go
+                        </button>
+                        <button v-if="searchHits !== null" type="button" @click="clearSearch"
+                            class="px-2 py-1.5 text-xs text-stone-500 hover:text-slate-800 rounded-lg transition-colors"
+                            title="Clear search">
+                            &times;
                         </button>
                     </form>
 
@@ -541,6 +593,15 @@ export default {
                                         :class="ref.is_source_deleted ? 'bg-red-50 text-red-700 line-through' : 'bg-stone-100 text-stone-700'"
                                         class="px-2 py-0.5 rounded font-mono text-[11px]">
                                         {{ ref.source_type }}:{{ ref.source_key }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div v-if="activePage.aliases.length" class="sm:col-span-2">
+                                <div class="text-[11px] font-semibold text-stone-500 uppercase tracking-wide mb-1">Aliases</div>
+                                <div class="flex flex-wrap gap-1.5">
+                                    <span v-for="alias in activePage.aliases" :key="alias"
+                                        class="px-2 py-0.5 rounded bg-stone-100 text-stone-600 text-[11px]">
+                                        {{ alias }}
                                     </span>
                                 </div>
                             </div>

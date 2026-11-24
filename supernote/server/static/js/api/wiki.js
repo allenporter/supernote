@@ -72,6 +72,28 @@ import { ApiError, apiRequest, getToken } from './http.js';
  */
 
 /**
+ * Validate and percent-encode each segment of a wiki slug for URL interpolation.
+ *
+ * @param {string} slug
+ * @returns {string}
+ */
+export function encodeSlugPath(slug) {
+    const cleaned = String(slug || '')
+        .trim()
+        .replace(/^\/+|\/+$/g, '');
+    if (!cleaned) {
+        throw new Error('Wiki slug must be non-empty');
+    }
+    const segments = cleaned.split('/');
+    for (const seg of segments) {
+        if (!seg || seg === '.' || seg === '..') {
+            throw new Error(`Invalid wiki slug: ${slug}`);
+        }
+    }
+    return segments.map((seg) => encodeURIComponent(seg)).join('/');
+}
+
+/**
  * Fetch active wiki pages. Returns `null` when the wiki component is disabled (404).
  *
  * @param {{ pageKind?: string | null, limit?: number }} [options]
@@ -100,7 +122,7 @@ export async function fetchWikiPages({ pageKind = null, limit = 200 } = {}) {
  */
 export async function fetchWikiPage(slug) {
     try {
-        const data = await apiRequest(`/api/extended/wiki/pages/${encodeURI(slug)}`, {
+        const data = await apiRequest(`/api/extended/wiki/pages/${encodeSlugPath(slug)}`, {
             method: 'GET',
             errorPrefix: 'Failed to load wiki page',
         });
@@ -119,7 +141,7 @@ export async function fetchWikiPage(slug) {
  * @returns {Promise<WikiPage>}
  */
 export async function saveWikiPage(slug, payload) {
-    const data = await apiRequest(`/api/extended/wiki/pages/${encodeURI(slug)}`, {
+    const data = await apiRequest(`/api/extended/wiki/pages/${encodeSlugPath(slug)}`, {
         method: 'PUT',
         body: payload,
         errorPrefix: 'Failed to save wiki page',
@@ -132,7 +154,7 @@ export async function saveWikiPage(slug, payload) {
  * @returns {Promise<void>}
  */
 export async function deleteWikiPage(slug) {
-    await apiRequest(`/api/extended/wiki/pages/${encodeURI(slug)}`, {
+    await apiRequest(`/api/extended/wiki/pages/${encodeSlugPath(slug)}`, {
         method: 'DELETE',
         errorPrefix: 'Failed to delete wiki page',
     });

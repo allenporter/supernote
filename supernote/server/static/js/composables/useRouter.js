@@ -133,9 +133,18 @@ export function parseUrlHash(hashString) {
  * @param {{ id?: string | number } | null} fileObj
  * @param {boolean | 'settings' | 'system'} [showSystem=false]
  * @param {number | null} [pageIndex=null]
+ * @param {string} [wikiSlug='']
  * @returns {string}
  */
-export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false, pageIndex = null) {
+export function buildUrlHash(
+    tab,
+    dirId,
+    viewState,
+    fileObj,
+    showSystem = false,
+    pageIndex = null,
+    wikiSlug = '',
+) {
     if (showSystem === 'settings' || tab === 'settings') {
         return '#/settings';
     }
@@ -149,7 +158,7 @@ export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false,
         return '#/tasks';
     }
     if (tab === 'wiki') {
-        return '#/wiki';
+        return wikiSlug ? `#/wiki/${wikiSlug}` : '#/wiki';
     }
     if (viewState === 'recycle') {
         return '#/recycle';
@@ -187,7 +196,8 @@ export function useRouter({
     onOAuthRouteEnter = null,
     onOAuthRouteClear = null,
 }) {
-    const activeTab = ref('files'); // 'files' | 'digests' | 'tasks'
+    const activeTab = ref('files'); // 'files' | 'digests' | 'tasks' | 'wiki'
+    const selectedWikiSlug = ref('');
     const view = ref('grid'); // 'grid' | 'viewer' | 'recycle'
     /** @type {import('vue').Ref<FileItem | null>} */
     const selectedFile = ref(null);
@@ -223,6 +233,7 @@ export function useRouter({
         recycleOpenedFromHistory = false;
         systemOpenedFromHistory = false;
         activeTab.value = 'files';
+        selectedWikiSlug.value = '';
         resetViewerSelection();
         breadcrumbs.value = [{ id: '0', name: 'Cloud' }];
         showSystemPanel.value = false;
@@ -271,6 +282,7 @@ export function useRouter({
             selectedFile.value,
             modalRoute,
             selectedPageIndex.value,
+            selectedWikiSlug.value,
         );
         lastSyncedHash = targetHash;
         if (window.location.hash !== targetHash) {
@@ -471,6 +483,9 @@ export function useRouter({
 
         if (parsed.tab === 'digests' || parsed.tab === 'tasks' || parsed.tab === 'wiki') {
             activeTab.value = parsed.tab;
+            if (parsed.tab === 'wiki') {
+                selectedWikiSlug.value = parsed.wikiSlug || '';
+            }
             resetViewerSelection();
             viewerOpenedFromHistory = false;
             return;
@@ -509,7 +524,7 @@ export function useRouter({
     }
 
     /**
-     * @param {'files' | 'digests' | 'tasks'} tab
+     * @param {'files' | 'digests' | 'tasks' | 'wiki'} tab
      */
     async function switchTab(tab) {
         showSystemPanel.value = false;
@@ -526,6 +541,17 @@ export function useRouter({
             );
         } else {
             updateUrl();
+        }
+    }
+
+    /**
+     * @param {string} slug
+     * @param {boolean} [replace=false]
+     */
+    function navigateToWikiSlug(slug, replace = false) {
+        selectedWikiSlug.value = slug || '';
+        if (activeTab.value === 'wiki' && !showSystemPanel.value) {
+            updateUrl(replace);
         }
     }
 
@@ -647,6 +673,7 @@ export function useRouter({
         showSystemPanel.value = false;
         systemOpenedFromHistory = false;
         activeTab.value = 'files';
+        selectedWikiSlug.value = '';
         resetViewerSelection();
         viewerOpenedFromHistory = false;
         currentDirectoryId.value = String(target.id);
@@ -757,6 +784,7 @@ export function useRouter({
 
     return {
         activeTab,
+        selectedWikiSlug,
         view,
         selectedFile,
         selectedPageIndex,
@@ -769,6 +797,7 @@ export function useRouter({
         updateUrl,
         clearOAuthRoute,
         switchTab,
+        navigateToWikiSlug,
         openRecycleBin,
         closeRecycleBin,
         openSettingsPanel,

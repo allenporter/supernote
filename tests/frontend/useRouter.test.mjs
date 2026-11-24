@@ -365,3 +365,41 @@ test('useRouter.js: handles #/digests deep links and switchTab("digests")', asyn
         globalThis.fetch = origFetch;
     }
 });
+
+test('useRouter.js: handles #/wiki/<slug> deep links and navigateToWikiSlug', async () => {
+    const origWindow = globalThis.window;
+    const origFetch = globalThis.fetch;
+
+    try {
+        assert.deepEqual(parseUrlHash('#/wiki/projects/alpha'), {
+            tab: 'wiki',
+            view: 'grid',
+            dirId: '0',
+            wikiSlug: 'projects/alpha',
+            showSystem: false,
+        });
+        assert.equal(
+            buildUrlHash('wiki', '0', 'grid', null, false, null, 'projects/alpha'),
+            '#/wiki/projects/alpha',
+        );
+
+        setToken('router-wiki-tok');
+        const { router } = createRouterHarness();
+
+        globalThis.window.history.pushState(null, '', '#/wiki/projects/alpha');
+        await router.syncFromUrl(true);
+        assert.equal(router.activeTab.value, 'wiki');
+        assert.equal(router.selectedWikiSlug.value, 'projects/alpha');
+
+        router.updateUrl(true);
+        assert.equal(globalThis.window.location.hash, '#/wiki/projects/alpha');
+
+        router.navigateToWikiSlug('entities/alice');
+        assert.equal(router.selectedWikiSlug.value, 'entities/alice');
+        assert.equal(globalThis.window.location.hash, '#/wiki/entities/alice');
+    } finally {
+        await logout({ reload: false });
+        globalThis.window = origWindow;
+        globalThis.fetch = origFetch;
+    }
+});

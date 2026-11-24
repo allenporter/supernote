@@ -77,6 +77,14 @@ export function renderMarkdown(raw, { enableWikilinks = false } = {}) {
     if (!normalized) return '';
 
     if (enableWikilinks) {
+        // Mask fenced code blocks and inline code spans before rewriting [[wikilinks]].
+        /** @type {string[]} */
+        const codePlaceholders = [];
+        normalized = normalized.replace(/(```[\s\S]*?```|`[^`\n]+`)/g, (code) => {
+            const idx = codePlaceholders.length;
+            codePlaceholders.push(code);
+            return `@@WIKI_CODE_${idx}@@`;
+        });
         normalized = normalized.replace(WIKILINK_RE, (_match, rawTarget, rawLabel) => {
             const slug = normalizeSafeWikiSlug(String(rawTarget || ''));
             if (!slug) {
@@ -84,6 +92,9 @@ export function renderMarkdown(raw, { enableWikilinks = false } = {}) {
             }
             const label = escapeHtml(String(rawLabel || slug).trim());
             return `<a href="#/wiki/${slug}" data-wiki-link="${slug}">${label}</a>`;
+        });
+        normalized = normalized.replace(/@@WIKI_CODE_(\d+)@@/g, (_m, idx) => {
+            return codePlaceholders[Number(idx)] ?? '';
         });
     }
 
@@ -94,6 +105,15 @@ export function renderMarkdown(raw, { enableWikilinks = false } = {}) {
         const tpl = document.createElement('template');
         tpl.innerHTML = sanitized;
         for (const anchor of tpl.content.querySelectorAll('a')) {
+            if (anchor.hasAttribute?.('data-wiki-link')) {
+                const rawSlug = anchor.getAttribute?.('data-wiki-link') || '';
+                const safeSlug = normalizeSafeWikiSlug(rawSlug);
+                if (!safeSlug) {
+                    anchor.removeAttribute?.('data-wiki-link');
+                } else {
+                    anchor.setAttribute('data-wiki-link', safeSlug);
+                }
+            }
             if (!anchor.hasAttribute('href')) {
                 anchor.replaceWith(...anchor.childNodes);
                 continue;
