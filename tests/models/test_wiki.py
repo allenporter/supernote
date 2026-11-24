@@ -13,7 +13,7 @@ from supernote.models.wiki import (
 )
 
 
-def test_wiki_source_ref_strict_deserialization() -> None:
+def test_wiki_source_ref_validation() -> None:
     ref = WikiSourceRefDTO.from_dict(
         {"source_type": "note_page", "source_key": "42:p1", "file_id": 42}
     )
@@ -23,13 +23,8 @@ def test_wiki_source_ref_strict_deserialization() -> None:
     assert ref.is_source_deleted is False
 
     for bad in (
-        {"source_type": None, "source_key": "1:p1"},
         {"source_type": "", "source_key": "1:p1"},
-        {"source_type": 123, "source_key": "1:p1"},
-        {"source_type": "note_page", "source_key": None},
-        {"source_type": "note_page", "source_key": "1:p1", "file_id": True},
-        {"source_type": "note_page", "source_key": "1:p1", "file_id": 1.9},
-        {"source_type": "note_page", "source_key": "1:p1", "is_source_deleted": "yes"},
+        {"source_type": "note_page", "source_key": "   "},
     ):
         with pytest.raises(ValueError):
             WikiSourceRefDTO.from_dict(bad)

@@ -61,23 +61,6 @@ _VALID_LINT_STATUS_FILTERS: frozenset[str] = frozenset(
 )
 
 
-# Mashumaro's default deserializers call `str(v)` / `int(v)`, which silently
-# coerce `null` -> `"None"` and `1.9`/`True` -> `1`. These pre-deserialization
-# guards reject wrong JSON types at the HTTP boundary with 400.
-def _check_str_fields(d: dict[Any, Any], keys: tuple[str, ...]) -> None:
-    for key in keys:
-        if (val := d.get(key)) is not None and not isinstance(val, str):
-            raise ValueError(f"{key} must be a string")
-
-
-def _check_int_fields(d: dict[Any, Any], keys: tuple[str, ...]) -> None:
-    for key in keys:
-        if (val := d.get(key)) is not None and (
-            isinstance(val, bool) or not isinstance(val, int)
-        ):
-            raise ValueError(f"{key} must be an integer")
-
-
 @dataclass
 class WikiUpsertRequestDTO(DataClassJSONMixin):
     """Request body for `PUT /api/extended/wiki/pages/{slug}`."""
@@ -93,29 +76,10 @@ class WikiUpsertRequestDTO(DataClassJSONMixin):
     expected_version: int | None = None
     edit_policy: str | None = None
 
-    @classmethod
-    def __pre_deserialize__(cls, d: dict[Any, Any]) -> dict[Any, Any]:
-        if not isinstance(d, dict):
-            raise ValueError("Request body must be a JSON object")
-        if not isinstance(d.get("title"), str) or not d["title"].strip():
-            raise ValueError("title is required")
-        _check_str_fields(
-            d, ("body_md", "page_kind", "summary", "change_summary", "edit_policy")
-        )
-        _check_int_fields(d, ("expected_version",))
-        for list_key in ("source_refs", "claims", "aliases"):
-            if (val := d.get(list_key)) is not None and not isinstance(val, list):
-                raise ValueError(f"{list_key} must be a list")
-        if any(not isinstance(r, dict) for r in (d.get("source_refs") or [])):
-            raise ValueError("Each source_refs entry must be a JSON object")
-        if any(not isinstance(c, dict) for c in (d.get("claims") or [])):
-            raise ValueError("Each claims entry must be a JSON object")
-        if any(not isinstance(a, str) for a in (d.get("aliases") or [])):
-            raise ValueError("Each aliases entry must be a string")
-        return {k: v for k, v in d.items() if v is not None}
-
     def __post_init__(self) -> None:
         self.title = self.title.strip()
+        if not self.title:
+            raise ValueError("title is required")
         if self.expected_version is not None and self.expected_version < 0:
             raise ValueError("expected_version must be >= 0")
 
@@ -126,14 +90,6 @@ class WikiCompileRequestDTO(DataClassJSONMixin):
 
     mode: str = "incremental"
     max_files: int = 5
-
-    @classmethod
-    def __pre_deserialize__(cls, d: dict[Any, Any]) -> dict[Any, Any]:
-        if not isinstance(d, dict):
-            raise ValueError("Request body must be a JSON object")
-        _check_str_fields(d, ("mode",))
-        _check_int_fields(d, ("max_files",))
-        return {k: v for k, v in d.items() if v is not None}
 
     def __post_init__(self) -> None:
         if self.mode not in ("incremental", "backfill", "lint"):
@@ -147,13 +103,6 @@ class WikiResolveLintRequestDTO(DataClassJSONMixin):
     """Optional request body for `POST /api/extended/wiki/lint/{issue_id}/resolve`."""
 
     status: str = "resolved"
-
-    @classmethod
-    def __pre_deserialize__(cls, d: dict[Any, Any]) -> dict[Any, Any]:
-        if not isinstance(d, dict):
-            raise ValueError("Request body must be a JSON object")
-        _check_str_fields(d, ("status",))
-        return {k: v for k, v in d.items() if v is not None}
 
 
 async def _resolve_user_id(request: web.Request) -> int | None:
