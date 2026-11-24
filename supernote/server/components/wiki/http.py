@@ -83,8 +83,7 @@ def _parse_optional_int(
     min_val: int | None = None,
     max_val: int | None = None,
 ) -> int | None:
-    val = body.get(key)
-    if val is None:
+    if (val := body.get(key)) is None:
         return default
     if isinstance(val, bool) or not isinstance(val, int):
         raise ValueError(f"{key} must be an integer")
@@ -96,8 +95,7 @@ def _parse_optional_int(
 
 
 def _parse_optional_str(body: dict[str, Any], key: str, default: str) -> str:
-    val = body.get(key)
-    if val is None:
+    if (val := body.get(key)) is None:
         return default
     if not isinstance(val, str):
         raise ValueError(f"{key} must be a string")
@@ -120,8 +118,7 @@ def _compile_result_response(mode: str, res: WikiCompileResult) -> web.Response:
 @routes.get("/api/extended/wiki/pages")
 async def handle_list_wiki_pages(request: web.Request) -> web.Response:
     """List active wiki pages for the authenticated user."""
-    user_id = await _resolve_user_id(request)
-    if user_id is None:
+    if (user_id := await _resolve_user_id(request)) is None:
         return web.json_response({"error": "User not found"}, status=404)
 
     try:
@@ -150,8 +147,7 @@ async def handle_list_wiki_pages(request: web.Request) -> web.Response:
 @routes.get("/api/extended/wiki/pages/{slug:.+}")
 async def handle_get_wiki_page(request: web.Request) -> web.Response:
     """Fetch a single active wiki page by slug."""
-    user_id = await _resolve_user_id(request)
-    if user_id is None:
+    if (user_id := await _resolve_user_id(request)) is None:
         return web.json_response({"error": "User not found"}, status=404)
 
     service: WikiService = request.app[WIKI_SERVICE_KEY]
@@ -167,8 +163,7 @@ async def handle_get_wiki_page(request: web.Request) -> web.Response:
 @routes.put("/api/extended/wiki/pages/{slug:.+}")
 async def handle_put_wiki_page(request: web.Request) -> web.Response:
     """Create or update a wiki page with optimistic concurrency."""
-    user_id = await _resolve_user_id(request)
-    if user_id is None:
+    if (user_id := await _resolve_user_id(request)) is None:
         return web.json_response({"error": "User not found"}, status=404)
 
     try:
@@ -198,8 +193,7 @@ async def handle_put_wiki_page(request: web.Request) -> web.Response:
         return web.json_response({"error": str(err)}, status=400)
 
     for field_name in ("source_refs", "claims", "aliases"):
-        val = body.get(field_name)
-        if val is not None and not isinstance(val, list):
+        if (val := body.get(field_name)) is not None and not isinstance(val, list):
             return web.json_response(
                 {"error": f"{field_name} must be a list"}, status=400
             )
@@ -268,8 +262,7 @@ async def handle_put_wiki_page(request: web.Request) -> web.Response:
 @interactive_session_only
 async def handle_delete_wiki_page(request: web.Request) -> web.Response:
     """Soft-delete a wiki page tombstone."""
-    user_id = await _resolve_user_id(request)
-    if user_id is None:
+    if (user_id := await _resolve_user_id(request)) is None:
         return web.json_response({"error": "User not found"}, status=404)
 
     service: WikiService = request.app[WIKI_SERVICE_KEY]
@@ -285,8 +278,7 @@ async def handle_delete_wiki_page(request: web.Request) -> web.Response:
 @routes.get("/api/extended/wiki/revisions/{slug:.+}")
 async def handle_list_wiki_revisions(request: web.Request) -> web.Response:
     """List immutable revision snapshots for a wiki slug."""
-    user_id = await _resolve_user_id(request)
-    if user_id is None:
+    if (user_id := await _resolve_user_id(request)) is None:
         return web.json_response({"error": "User not found"}, status=404)
 
     service: WikiService = request.app[WIKI_SERVICE_KEY]
@@ -302,8 +294,7 @@ async def handle_list_wiki_revisions(request: web.Request) -> web.Response:
 @routes.get("/api/extended/wiki/search")
 async def handle_search_wiki(request: web.Request) -> web.Response:
     """Search active wiki pages with 1-hop neighbor links and source refs."""
-    user_id = await _resolve_user_id(request)
-    if user_id is None:
+    if (user_id := await _resolve_user_id(request)) is None:
         return web.json_response({"error": "User not found"}, status=404)
 
     query = request.query.get("q", "").strip()
@@ -320,8 +311,7 @@ async def handle_search_wiki(request: web.Request) -> web.Response:
 @routes.get("/api/extended/wiki/status")
 async def handle_wiki_status(request: web.Request) -> web.Response:
     """Return wiki inventory counts, cursor status, and open lint count."""
-    user_id = await _resolve_user_id(request)
-    if user_id is None:
+    if (user_id := await _resolve_user_id(request)) is None:
         return web.json_response({"error": "User not found"}, status=404)
 
     service: WikiService = request.app[WIKI_SERVICE_KEY]
@@ -333,8 +323,7 @@ async def handle_wiki_status(request: web.Request) -> web.Response:
 @interactive_session_only
 async def handle_wiki_compile(request: web.Request) -> web.Response:
     """Trigger incremental compile, historical backfill, or semantic lint."""
-    user_id = await _resolve_user_id(request)
-    if user_id is None:
+    if (user_id := await _resolve_user_id(request)) is None:
         return web.json_response({"error": "User not found"}, status=404)
 
     try:
@@ -373,8 +362,7 @@ async def handle_wiki_compile(request: web.Request) -> web.Response:
 @routes.get("/api/extended/wiki/lint")
 async def handle_list_wiki_lint(request: web.Request) -> web.Response:
     """List wiki lint issues for the authenticated user."""
-    user_id = await _resolve_user_id(request)
-    if user_id is None:
+    if (user_id := await _resolve_user_id(request)) is None:
         return web.json_response({"error": "User not found"}, status=404)
 
     status_filter = request.query.get("status", "open")
@@ -393,8 +381,7 @@ async def handle_list_wiki_lint(request: web.Request) -> web.Response:
 @routes.post("/api/extended/wiki/lint/{issue_id}/resolve")
 async def handle_resolve_wiki_lint(request: web.Request) -> web.Response:
     """Resolve or dismiss a wiki lint issue."""
-    user_id = await _resolve_user_id(request)
-    if user_id is None:
+    if (user_id := await _resolve_user_id(request)) is None:
         return web.json_response({"error": "User not found"}, status=404)
 
     try:
@@ -421,8 +408,7 @@ async def handle_resolve_wiki_lint(request: web.Request) -> web.Response:
 @routes.get("/api/extended/wiki/export.zip")
 async def handle_export_wiki_zip(request: web.Request) -> web.Response:
     """Stream an Obsidian-compatible `.zip` vault of all active wiki pages."""
-    user_id = await _resolve_user_id(request)
-    if user_id is None:
+    if (user_id := await _resolve_user_id(request)) is None:
         return web.json_response({"error": "User not found"}, status=404)
 
     exporter: WikiExportService = request.app[WIKI_EXPORT_SERVICE_KEY]
@@ -437,8 +423,7 @@ async def handle_export_wiki_zip(request: web.Request) -> web.Response:
 @routes.get("/api/extended/wiki/export/{slug:.+}.md")
 async def handle_export_wiki_markdown(request: web.Request) -> web.Response:
     """Export one active wiki page as Obsidian-compatible Markdown."""
-    user_id = await _resolve_user_id(request)
-    if user_id is None:
+    if (user_id := await _resolve_user_id(request)) is None:
         return web.json_response({"error": "User not found"}, status=404)
 
     exporter: WikiExportService = request.app[WIKI_EXPORT_SERVICE_KEY]
