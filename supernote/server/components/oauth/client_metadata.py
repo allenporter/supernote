@@ -297,5 +297,5 @@ async def resolve_client_metadata(
     text, cache_control = await fetch_document(client_id)
     metadata = validate_client_metadata(client_id, text)
     if (ttl := _cache_seconds(cache_control)) is not None:
-        await coordination.set_value(cache_key, metadata.to_json(), ttl=ttl)
+        await coordination.set_value(cache_key, json.dumps(metadata.to_dict()), ttl=ttl)
     return metadata
