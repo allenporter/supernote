@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { renderMarkdown } from '../../supernote/server/static/js/utils/markdown.js';
+import {
+    renderMarkdown,
+    renderWikiMarkdown,
+} from '../../supernote/server/static/js/utils/markdown.js';
 
 test('markdown.js: renders GFM task checkboxes and bullet lists while stripping forbidden tags', () => {
     assert.equal(renderMarkdown(''), '');
@@ -95,4 +98,11 @@ test('markdown.js: adds target/_blank + noopener noreferrer on href anchors and 
             delete globalThis.document;
         }
     }
+});
+
+test('renderWikiMarkdown converts safe [[wikilinks]] and rejects path traversal', () => {
+    const html = renderWikiMarkdown('See [[entities/Alice|Alice]] and [[../bad]].');
+    assert.ok(html.includes('href="#/wiki/entities/alice"'));
+    assert.ok(html.includes('data-wiki-link="entities/alice"'));
+    assert.ok(!html.includes('../bad"'));
 });

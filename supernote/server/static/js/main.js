@@ -19,6 +19,7 @@ import RecycleBinPanel from './components/RecycleBinPanel.js';
 import SearchModal from './components/SearchModal.js';
 import SettingsPanel from './components/SettingsPanel.js';
 import TaskPanel from './components/TaskPanel.js';
+import WikiPanel from './components/WikiPanel.js';
 import { useFileSystem } from './composables/useFileSystem.js';
 import { resetEscapeStack } from './composables/useModalEscape.js';
 import { useProcessingStatus } from './composables/useProcessingStatus.js';
@@ -34,6 +35,7 @@ createApp({
         DigestPanel,
         SearchModal,
         TaskPanel,
+        WikiPanel,
         SettingsPanel,
         LoginCard,
         'oauth-consent-card': OAuthConsentCard,

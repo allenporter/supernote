@@ -96,6 +96,15 @@ export function parseUrlHash(hashString) {
     if (parts[0] === 'tasks') {
         return { tab: 'tasks', view: 'grid', dirId: '0', showSystem: false };
     }
+    if (parts[0] === 'wiki') {
+        return {
+            tab: 'wiki',
+            view: 'grid',
+            dirId: '0',
+            wikiSlug: parts.slice(1).join('/'),
+            showSystem: false,
+        };
+    }
     if (parts[0] === 'recycle') {
         return { tab: 'files', view: 'recycle', dirId: '0', showSystem: false };
     }
@@ -138,6 +147,9 @@ export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false,
     }
     if (tab === 'tasks') {
         return '#/tasks';
+    }
+    if (tab === 'wiki') {
+        return '#/wiki';
     }
     if (viewState === 'recycle') {
         return '#/recycle';
@@ -457,7 +469,7 @@ export function useRouter({
         showSystemPanel.value = false;
         systemOpenedFromHistory = false;
 
-        if (parsed.tab === 'digests' || parsed.tab === 'tasks') {
+        if (parsed.tab === 'digests' || parsed.tab === 'tasks' || parsed.tab === 'wiki') {
             activeTab.value = parsed.tab;
             resetViewerSelection();
             viewerOpenedFromHistory = false;
