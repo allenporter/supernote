@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import ssl
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractContextManager
 from typing import Any
@@ -10,6 +11,7 @@ from unittest.mock import patch
 import aiohttp
 import pytest
 from aiohttp import web
+from aiohttp.client_reqrep import ConnectionKey
 from aiohttp.resolver import DefaultResolver
 from pytest_aiohttp import AiohttpServer
 
@@ -404,6 +406,23 @@ async def test_read_document_reports_a_refused_connection_as_unavailable(
     async with aiohttp.ClientSession() as session:
         with pytest.raises(ClientMetadataUnavailableError):
             await _read_document(session, url)
+
+
+async def test_read_document_refuses_an_untrusted_certificate() -> None:
+    """A certificate failure is the host's fault, so retrying will not help."""
+    key = ConnectionKey(
+        "client.example", 443, True, True, None, None, None, "client.example"
+    )
+    error = aiohttp.ClientConnectorCertificateError(
+        key, ssl.SSLCertVerificationError("self-signed certificate")
+    )
+    async with aiohttp.ClientSession() as session:
+        with (
+            patch.object(session, "get", side_effect=error),
+            pytest.raises(ClientMetadataError, match="not trusted") as err,
+        ):
+            await _read_document(session, TEST_CLIENT_ID)
+    assert not isinstance(err.value, ClientMetadataUnavailableError)
 
 
 async def test_read_document_reports_a_timeout_as_unavailable(
