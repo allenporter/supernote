@@ -33,6 +33,8 @@ Example:
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import errno
 import os
 import shutil
 import socket
@@ -51,13 +53,33 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_HEALTH_CHECK_TIMEOUT = 15.0
 DEFAULT_HEALTH_CHECK_INTERVAL = 0.1
 DEFAULT_PROCESS_STOP_TIMEOUT = 5.0
+DEFAULT_PORT_BIND_RETRIES = 5
+
+
+def find_free_ports(count: int, host: str = DEFAULT_HOST) -> list[int]:
+    """Find `count` distinct available TCP ports on the host interface."""
+    if count <= 0:
+        return []
+    with contextlib.ExitStack() as stack:
+        ports: list[int] = []
+        for _ in range(count):
+            sock = stack.enter_context(
+                socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            )
+            sock.bind((host, 0))
+            ports.append(int(sock.getsockname()[1]))
+        return ports
 
 
 def find_free_port(host: str = DEFAULT_HOST) -> int:
     """Find an available TCP port on the host interface."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((host, 0))
-        return int(s.getsockname()[1])
+    return find_free_ports(1, host)[0]
+
+
+def _is_address_in_use_error(stderr: str) -> bool:
+    """Return True if subprocess stderr indicates a TCP port bind collision."""
+    lowered = stderr.lower()
+    return "address already in use" in lowered or f"errno {errno.EADDRINUSE}" in lowered
 
 
 @dataclass
@@ -208,11 +230,30 @@ class ServerRunner:
         self.storage_dir = storage_dir.resolve()
         self.initial_db = initial_db.resolve() if initial_db else None
         self.host = host
-        self.port = port if port is not None else find_free_port(self.host)
-        self.mcp_port = mcp_port if mcp_port is not None else find_free_port(self.host)
+        self._requested_port = port
+        self._requested_mcp_port = mcp_port
+        self.port, self.mcp_port = self._allocate_ports()
         self.health_check_timeout = health_check_timeout
         self.custom_env = env or {}
         self.handle: ServerHandle | None = None
+
+    def _allocate_ports(self) -> tuple[int, int]:
+        """Allocate distinct HTTP and MCP ports for any unspecified endpoints."""
+        if self._requested_port is None and self._requested_mcp_port is None:
+            http_port, mcp_port = find_free_ports(2, self.host)
+            return http_port, mcp_port
+        if self._requested_port is None:
+            assert self._requested_mcp_port is not None
+            http_port = find_free_port(self.host)
+            while http_port == self._requested_mcp_port:
+                http_port = find_free_port(self.host)
+            return http_port, self._requested_mcp_port
+        if self._requested_mcp_port is None:
+            mcp_port = find_free_port(self.host)
+            while mcp_port == self._requested_port:
+                mcp_port = find_free_port(self.host)
+            return self._requested_port, mcp_port
+        return self._requested_port, self._requested_mcp_port
 
     async def start(self) -> ServerHandle:
         """Start the server process asynchronously and wait until healthcheck passes."""
@@ -220,80 +261,98 @@ class ServerRunner:
         system_dir.mkdir(parents=True, exist_ok=True)
         db_path = system_dir / "supernote.db"
 
-        if self.initial_db:
-            if not self.initial_db.exists():
-                raise FileNotFoundError(f"Initial DB not found: {self.initial_db}")
-            shutil.copy(self.initial_db, db_path)
+        if self.initial_db and not self.initial_db.exists():
+            raise FileNotFoundError(f"Initial DB not found: {self.initial_db}")
 
-        base_url = f"http://{self.host}:{self.port}"
-        process_env = {
-            **os.environ,
-            "SUPERNOTE_HOST": self.host,
-            "SUPERNOTE_PORT": str(self.port),
-            "SUPERNOTE_MCP_PORT": str(self.mcp_port),
-            "SUPERNOTE_STORAGE_DIR": str(self.storage_dir),
-            "HOME": str(self.storage_dir),
-            "XDG_CACHE_HOME": str(self.storage_dir / ".cache"),
-            "XDG_CONFIG_HOME": str(self.storage_dir / ".config"),
-            "PYTHONUNBUFFERED": "1",
-            **self.custom_env,
-        }
+        auto_ports = self._requested_port is None or self._requested_mcp_port is None
+        max_attempts = DEFAULT_PORT_BIND_RETRIES if auto_ports else 1
 
-        cmd = [sys.executable, "-m", "supernote.cli.server", "serve"]
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            env=process_env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        for attempt in range(1, max_attempts + 1):
+            if attempt > 1:
+                self.port, self.mcp_port = self._allocate_ports()
 
-        handle = ServerHandle(
-            host=self.host,
-            port=self.port,
-            mcp_port=self.mcp_port,
-            base_url=base_url,
-            proc=proc,
-            storage_dir=self.storage_dir,
-            db_path=db_path,
-            env=process_env,
-        )
+            if self.initial_db:
+                shutil.copy(self.initial_db, db_path)
 
-        # Poll health check endpoint until server is ready
-        start_time = asyncio.get_running_loop().time()
-        while (
-            asyncio.get_running_loop().time() - start_time < self.health_check_timeout
-        ):
-            if proc.returncode is not None:
-                stdout_bytes, stderr_bytes = await proc.communicate()
-                stdout = stdout_bytes.decode("utf-8", errors="replace")
-                stderr = stderr_bytes.decode("utf-8", errors="replace")
-                raise RuntimeError(
-                    f"Server process terminated unexpectedly with code {proc.returncode}.\n"
-                    f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}"
-                )
+            base_url = f"http://{self.host}:{self.port}"
+            process_env = {
+                **os.environ,
+                "SUPERNOTE_HOST": self.host,
+                "SUPERNOTE_PORT": str(self.port),
+                "SUPERNOTE_MCP_PORT": str(self.mcp_port),
+                "SUPERNOTE_STORAGE_DIR": str(self.storage_dir),
+                "HOME": str(self.storage_dir),
+                "XDG_CACHE_HOME": str(self.storage_dir / ".cache"),
+                "XDG_CONFIG_HOME": str(self.storage_dir / ".config"),
+                "PYTHONUNBUFFERED": "1",
+                **self.custom_env,
+            }
 
-            if await handle.is_healthy():
-                self.handle = handle
-                return handle
-
-            await asyncio.sleep(DEFAULT_HEALTH_CHECK_INTERVAL)
-
-        # Timeout reached
-        proc.terminate()
-        try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(), timeout=2.0
+            cmd = [sys.executable, "-m", "supernote.cli.server", "serve"]
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                env=process_env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-        except asyncio.TimeoutError:
-            proc.kill()
-            stdout_bytes, stderr_bytes = await proc.communicate()
 
-        stdout = stdout_bytes.decode("utf-8", errors="replace")
-        stderr = stderr_bytes.decode("utf-8", errors="replace")
-        raise TimeoutError(
-            f"Server failed to become healthy within {self.health_check_timeout}s.\n"
-            f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}"
-        )
+            handle = ServerHandle(
+                host=self.host,
+                port=self.port,
+                mcp_port=self.mcp_port,
+                base_url=base_url,
+                proc=proc,
+                storage_dir=self.storage_dir,
+                db_path=db_path,
+                env=process_env,
+            )
+
+            # Poll health check endpoint until server is ready
+            start_time = asyncio.get_running_loop().time()
+            retry_bind = False
+            while (
+                asyncio.get_running_loop().time() - start_time
+                < self.health_check_timeout
+            ):
+                if proc.returncode is not None:
+                    stdout_bytes, stderr_bytes = await proc.communicate()
+                    stdout = stdout_bytes.decode("utf-8", errors="replace")
+                    stderr = stderr_bytes.decode("utf-8", errors="replace")
+                    if attempt < max_attempts and _is_address_in_use_error(stderr):
+                        retry_bind = True
+                        break
+                    raise RuntimeError(
+                        f"Server process terminated unexpectedly with code {proc.returncode}.\n"
+                        f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+                    )
+
+                if await handle.is_healthy():
+                    self.handle = handle
+                    return handle
+
+                await asyncio.sleep(DEFAULT_HEALTH_CHECK_INTERVAL)
+
+            if retry_bind:
+                continue
+
+            # Timeout reached
+            proc.terminate()
+            try:
+                stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                    proc.communicate(), timeout=2.0
+                )
+            except asyncio.TimeoutError:
+                proc.kill()
+                stdout_bytes, stderr_bytes = await proc.communicate()
+
+            stdout = stdout_bytes.decode("utf-8", errors="replace")
+            stderr = stderr_bytes.decode("utf-8", errors="replace")
+            raise TimeoutError(
+                f"Server failed to become healthy within {self.health_check_timeout}s.\n"
+                f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+            )
+
+        raise RuntimeError("Server failed to start after port allocation retries.")
 
     async def stop(self) -> None:
         """Stop the running server process if active."""
