@@ -88,7 +88,7 @@ class WikiComponent:
 
     domain = "wiki"
     dependencies: tuple[str, ...] = ("ai", "events")
-    platforms: tuple[str, ...] = ()
+    platforms: tuple[str, ...] = ("http", "mcp")
 
     def __init__(self) -> None:
         self._config: WikiConfig | None = None

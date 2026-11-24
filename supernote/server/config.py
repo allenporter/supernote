@@ -315,6 +315,9 @@ class ServerConfig(DataClassYAMLMixin):
     webhooks: dict[str, Any] = field(default_factory=dict)
     """Raw configuration section for the outbound webhooks component."""
 
+    wiki: dict[str, Any] = field(default_factory=dict)
+    """Raw configuration section for the opt-in LLM wiki component."""
+
     web_enabled: bool = True
     """Whether to serve the web frontend dashboard and static assets.
 
