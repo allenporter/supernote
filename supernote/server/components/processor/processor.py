@@ -5,10 +5,9 @@ from __future__ import annotations
 from supernote.server.components.processor import ProcessorRegistrar
 from supernote.server.core import ServerCore
 from supernote.server.keys import OCR_MODEL_KEY
-from supernote.server.services.processor_modules.page_hashing import PageHashingModule
-from supernote.server.services.processor_modules.png_conversion import (
-    PngConversionModule,
-)
+
+from .page_hashing import PageHashingModule
+from .png_conversion import PngConversionModule
 
 
 async def async_setup_processor(

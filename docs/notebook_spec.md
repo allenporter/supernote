@@ -207,13 +207,13 @@ When `FILE_RECOGN_TYPE == 1` and `RECOGNSTATUS == 1`, `RECOGNTEXT` points to a l
 
 ## Processing System Guidelines
 
-When building indexing, search, or sync pipelines (such as the server modules in [`page_hashing.py`](../supernote/server/services/processor_modules/page_hashing.py)):
+When building indexing, search, or sync pipelines (such as the server modules in [`page_hashing.py`](../supernote/server/components/processor/page_hashing.py)):
 
 1. **Stable Identity**:
    - **Notebook Level**: Key by `HeaderMetadata.file_id` (`Notebook.file_id`) rather than file path so renames and moves preserve history.
    - **Page Level**: Key by `PageMetadata.page_id` (`Page.page_id`) rather than 0-based page index so page insertions, deletions, and reordering do not orphan cached artifacts.
 2. **Deterministic Page Change Detection**:
-   - [`PageHashingModule`](../supernote/server/services/processor_modules/page_hashing.py) hashes the wire-serialized `PageMetadata` (`page.to_wire_dict()`, stripping volatile recognition keys) together with each referenced binary block (`LAYERBITMAP`, `DATA`, `TOTALPATH`).
+   - [`PageHashingModule`](../supernote/server/components/processor/page_hashing.py) hashes the wire-serialized `PageMetadata` (`page.to_wire_dict()`, stripping volatile recognition keys) together with each referenced binary block (`LAYERBITMAP`, `DATA`, `TOTALPATH`).
    - Do **not** alter `PageMetadata.to_wire_dict()` key ordering or value formatting without migrating stored `NotePageContentDO.content_hash` digests, or existing deployments will unnecessarily re-render and re-OCR unchanged pages.
 3. **Text Extraction Strategy**:
 

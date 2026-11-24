@@ -5,15 +5,15 @@ import pytest
 from PIL import Image
 from sqlalchemy import select
 
+from supernote.server.components.processor.png_conversion import (
+    PngConversionModule,
+)
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
-from supernote.server.services.processor_modules.png_conversion import (
-    PngConversionModule,
-)
 from supernote.server.utils.paths import get_page_png_path
 
 

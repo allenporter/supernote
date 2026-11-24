@@ -9,6 +9,10 @@ from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
 from supernote.server.components.fake_ai.ocr import FakeOcrModel
 from supernote.server.components.fake_ai.summary import FakeSummaryModel
 from supernote.server.components.processor import ProcessorService
+from supernote.server.components.processor.page_hashing import PageHashingModule
+from supernote.server.components.processor.png_conversion import (
+    PngConversionModule,
+)
 from supernote.server.components.search.processor import EmbeddingModule
 from supernote.server.components.summary import SummaryService
 from supernote.server.components.summary.processor import SummaryModule
@@ -21,10 +25,6 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus, NoteProcessingCompletedEvent
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
-from supernote.server.services.processor_modules.page_hashing import PageHashingModule
-from supernote.server.services.processor_modules.png_conversion import (
-    PngConversionModule,
-)
 from supernote.server.services.user import UserService
 from supernote.server.utils.paths import (
     AI_SUMMARIES_GROUP_NAME,

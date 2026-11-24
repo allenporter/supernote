@@ -12,15 +12,15 @@ import logging
 
 from supernote.models.base import TaskType
 from supernote.server.ai.models.embedding import EmbeddingModel, EmbeddingTaskType
-from supernote.server.components.processor import ProcessorRegistrar
+from supernote.server.components.processor import (
+    ProcessorModule,
+    ProcessorRegistrar,
+    TaskScope,
+)
 from supernote.server.core import ServerCore
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.keys import EMBEDDING_MODEL_KEY
 from supernote.server.services.file import FileService
-from supernote.server.services.processor_modules import (
-    ProcessorModule,
-    TaskScope,
-)
 from supernote.server.utils.note_content import get_page_content_by_id
 
 logger = logging.getLogger(__name__)

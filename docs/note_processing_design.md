@@ -123,7 +123,7 @@ Stores per-page change hashes, extracted OCR text, and vector embeddings:
 
 ---
 
-## Pipeline Stages (`supernote.server.services.processor_modules`)
+## Pipeline Stages (`supernote.server.components.processor`)
 
 1. **`PageHashingModule` (`TaskType.PAGE_HASHING`, Global Pre-Module, `version="v2"`)**:
    - Parses `.note` metadata once via `supernote.notebook.parse_metadata` and inspects existing `NotePageMetadataDO` rows.
@@ -203,7 +203,7 @@ Indented lines under a top-level bullet are attached as nested `children` (`Rapi
 
 ## ProcessorModule API Contract
 
-Each stage inherits from `supernote.server.services.processor_modules.ProcessorModule`:
+Each stage inherits from `supernote.server.components.processor.ProcessorModule`:
 
 | Method | Role | Return / Side Effect |
 | :--- | :--- | :--- |

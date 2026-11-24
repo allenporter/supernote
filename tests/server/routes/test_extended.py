@@ -15,6 +15,7 @@ from supernote.client.summary import SummaryClient
 from supernote.models.base import ProcessingStatus
 from supernote.models.extended import PageTranscriptVO
 from supernote.server.ai.models.embedding import EmbeddingTaskType
+from supernote.server.components.processor.page_hashing import PageHashingModule
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
@@ -33,7 +34,6 @@ from supernote.server.keys import (
     FILE_SERVICE_KEY,
     PROCESSOR_SERVICE_KEY,
 )
-from supernote.server.services.processor_modules.page_hashing import PageHashingModule
 from supernote.server.services.user import UserService
 
 

@@ -13,14 +13,29 @@ from typing import Any
 
 from supernote.server.core import ServerCore
 from supernote.server.keys import PROCESSOR_SERVICE_KEY
-from supernote.server.services.processor_modules import ProcessorModule
 
+from .base import (
+    DuplicateTaskError,
+    MissingTaskDependencyError,
+    ProcessorModule,
+    TaskDependencyCycleError,
+    TaskGraph,
+    TaskGraphError,
+    TaskScope,
+)
 from .service import ProcessorService
 
 __all__ = [
+    "DuplicateTaskError",
+    "MissingTaskDependencyError",
     "ProcessorComponent",
+    "ProcessorModule",
     "ProcessorRegistrar",
     "ProcessorService",
+    "TaskDependencyCycleError",
+    "TaskGraph",
+    "TaskGraphError",
+    "TaskScope",
 ]
 
 

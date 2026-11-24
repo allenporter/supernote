@@ -2,7 +2,7 @@
 
 `ProcessorService` subscribes to `NoteUpdatedEvent`, `SyncCompletedEvent`, and
 `NoteDeletedEvent` on `supernote.server.events.LocalEventBus` and runs registered
-`supernote.server.services.processor_modules.ProcessorModule` stages in order:
+`supernote.server.components.processor.ProcessorModule` stages in order:
 1. Global Pre-Stage: `PageHashingModule`
 2. Per-Page Stage (parallel): `PngConversionModule` -> `OcrModule` -> `EmbeddingModule`
 3. Global Post-Stage: `SummaryModule`
@@ -67,15 +67,12 @@ from supernote.server.metrics import (
     track_note_processing_run,
 )
 from supernote.server.services.file import FileService
-from supernote.server.services.processor_modules import (
-    ProcessorModule,
-    TaskGraph,
-    TaskScope,
-)
 from supernote.server.utils.note_content import (
     infer_page_date,
     normalize_page_style_type,
 )
+
+from .base import ProcessorModule, TaskGraph, TaskScope
 
 logger = logging.getLogger(__name__)
 
