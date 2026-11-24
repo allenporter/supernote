@@ -16,6 +16,7 @@ from supernote.server.components.mcp import (
 from supernote.server.core import ServerCore
 
 from .models import (
+    VALID_PAGE_KINDS,
     WikiConflictError,
     WikiNotFoundError,
     WikiPolicyError,
@@ -27,6 +28,9 @@ from .service import WIKI_SERVICE_KEY, WikiService
 __all__ = ["async_setup_mcp"]
 
 _AUTH_ERROR_MSG = "Authentication failed. Please set a valid token in meta."
+_VALID_LINT_STATUS_FILTERS: frozenset[str] = frozenset(
+    {"open", "resolved", "dismissed", "all"}
+)
 
 
 async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
@@ -85,6 +89,10 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
         if (user_id := get_authenticated_user_id()) is None:
             return create_error_response(
                 _AUTH_ERROR_MSG, ErrorCode.UNAUTHORIZED
+            ).to_dict()
+        if page_kind is not None and page_kind not in VALID_PAGE_KINDS:
+            return create_error_response(
+                f"Unsupported page_kind: {page_kind!r}", ErrorCode.BAD_REQUEST
             ).to_dict()
         pages = await wiki_service.list_pages(
             user_id, page_kind=page_kind, limit=limit, offset=offset
@@ -182,12 +190,20 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
             return create_error_response(
                 _AUTH_ERROR_MSG, ErrorCode.UNAUTHORIZED
             ).to_dict()
+        raw_refs = source_refs or []
+        if any(not isinstance(r, dict) for r in raw_refs):
+            return create_error_response(
+                "Invalid source_refs: each entry must be an object",
+                ErrorCode.BAD_REQUEST,
+            ).to_dict()
+        raw_aliases = aliases or []
+        if any(not isinstance(a, str) for a in raw_aliases):
+            return create_error_response(
+                "Invalid aliases: each entry must be a string",
+                ErrorCode.BAD_REQUEST,
+            ).to_dict()
         try:
-            refs = [
-                WikiSourceRefDTO.from_dict(r)
-                for r in (source_refs or [])
-                if isinstance(r, dict)
-            ]
+            refs = [WikiSourceRefDTO.from_dict(r) for r in raw_refs]
         except (MissingField, InvalidFieldValue, ValueError, TypeError) as err:
             return create_error_response(
                 f"Invalid source_refs: {err}", ErrorCode.BAD_REQUEST
@@ -235,6 +251,10 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
         if (user_id := get_authenticated_user_id()) is None:
             return create_error_response(
                 _AUTH_ERROR_MSG, ErrorCode.UNAUTHORIZED
+            ).to_dict()
+        if status not in _VALID_LINT_STATUS_FILTERS:
+            return create_error_response(
+                f"Unsupported lint status filter: {status!r}", ErrorCode.BAD_REQUEST
             ).to_dict()
         issues = await wiki_service.list_lint_issues(
             user_id, status=None if status == "all" else status

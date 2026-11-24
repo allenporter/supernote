@@ -640,6 +640,13 @@ class ServerConfig(DataClassYAMLMixin):
             )
             logger.info(f"Webhooks Enabled: {config.webhooks['enabled']}")
 
+        if os.getenv("SUPERNOTE_WIKI_ENABLED"):
+            config.wiki["enabled"] = _get_bool_env(
+                "SUPERNOTE_WIKI_ENABLED",
+                bool(config.wiki.get("enabled", False)),
+            )
+            logger.info(f"Wiki Enabled: {config.wiki['enabled']}")
+
         if os.getenv("SUPERNOTE_WEB_ENABLED"):
             config.web_enabled = _get_bool_env(
                 "SUPERNOTE_WEB_ENABLED", config.web_enabled

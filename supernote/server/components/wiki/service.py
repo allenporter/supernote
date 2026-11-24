@@ -70,12 +70,18 @@ class WikiService:
     async def upsert_page(self, user_id: int, data: WikiUpsertInput) -> WikiPageDTO:
         """Create, update, or revive a wiki page atomically with revision and graph updates."""
         slug = normalize_slug(data.slug)
+        if not data.title.strip():
+            raise ValueError("Wiki page title must be non-empty")
         if data.author_kind not in VALID_AUTHOR_KINDS:
             raise ValueError(f"Unsupported author_kind: {data.author_kind!r}")
         if data.page_kind not in VALID_PAGE_KINDS:
             raise ValueError(f"Unsupported page_kind: {data.page_kind!r}")
         if data.edit_policy is not None and data.edit_policy not in VALID_EDIT_POLICIES:
             raise ValueError(f"Unsupported edit_policy: {data.edit_policy!r}")
+        if data.author_kind != "user" and data.edit_policy is not None:
+            raise WikiPolicyError(
+                f"Non-user author {data.author_kind!r} cannot set edit_policy"
+            )
 
         now = _now_ms()
         default_policy = "protected_prose" if data.author_kind == "user" else "auto"
