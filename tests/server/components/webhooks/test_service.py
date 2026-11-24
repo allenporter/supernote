@@ -15,11 +15,8 @@ import pytest
 from aiohttp import web
 from pytest_aiohttp import AiohttpClient
 
+from supernote.models.events import DomainEntityType, DomainEventType
 from supernote.models.user import UserRegisterDTO
-from supernote.models.webhook import (
-    EVENT_NOTE_PROCESSING_COMPLETED,
-    EVENT_NOTE_SYNC_COMPLETED,
-)
 from supernote.server.components.webhooks.service import (
     EVENT_HEADER,
     MAX_ATTEMPTS,
@@ -30,8 +27,10 @@ from supernote.server.components.webhooks.service import (
 )
 from supernote.server.core import ServerCore
 from supernote.server.events import (
+    NotePageTranscribedEvent,
     NoteProcessingCompletedEvent,
-    NoteUpdatedEvent,
+    ScheduleTaskCreatedEvent,
+    VfsItemCreatedEvent,
 )
 from supernote.server.services.user import UserService
 from tests.fixtures.server import TEST_USERNAME
@@ -111,10 +110,26 @@ def _endpoint_dict(url: str, **overrides: Any) -> dict[str, Any]:
         "url": url,
         "user": TEST_USERNAME,
         "secret": "top-secret",
-        "events": [EVENT_NOTE_SYNC_COMPLETED],
+        "events": [DomainEventType.VFS_CREATED],
     }
     defaults.update(overrides)
     return defaults
+
+
+def _vfs_created(
+    user_id: int,
+    item_id: int = 42,
+    full_path: str = "Note/a.note",
+    name: str | None = None,
+) -> VfsItemCreatedEvent:
+    return VfsItemCreatedEvent(
+        user_id=user_id,
+        item_id=item_id,
+        parent_id=0,
+        name=name or full_path.rsplit("/", 1)[-1],
+        full_path=full_path,
+        is_folder=False,
+    )
 
 
 def _webhooks_cfg(
@@ -124,7 +139,7 @@ def _webhooks_cfg(
 
 
 def test_sign_payload_is_deterministic_hmac_sha256() -> None:
-    body = b'{"event": "note.sync_completed"}'
+    body = b'{"eventType": "vfs.created"}'
     signature = sign_payload("my-secret", body)
 
     expected = hmac.new(b"my-secret", body, hashlib.sha256).hexdigest()
@@ -132,28 +147,30 @@ def test_sign_payload_is_deterministic_hmac_sha256() -> None:
 
 
 def test_verify_signature_accepts_valid_signature() -> None:
-    body = b'{"event": "note.sync_completed"}'
+    body = b'{"eventType": "vfs.created"}'
     signature = sign_payload("my-secret", body)
 
     assert verify_signature("my-secret", body, signature) is True
 
 
 def test_verify_signature_rejects_tampered_body() -> None:
-    body = b'{"event": "note.sync_completed"}'
+    body = b'{"eventType": "vfs.created"}'
     signature = sign_payload("my-secret", body)
 
-    assert verify_signature("my-secret", b'{"event": "tampered"}', signature) is False
+    assert (
+        verify_signature("my-secret", b'{"eventType": "tampered"}', signature) is False
+    )
 
 
 def test_verify_signature_rejects_wrong_secret() -> None:
-    body = b'{"event": "note.sync_completed"}'
+    body = b'{"eventType": "vfs.created"}'
     signature = sign_payload("my-secret", body)
 
     assert verify_signature("wrong-secret", body, signature) is False
 
 
 def test_verify_signature_rejects_malformed_or_empty_inputs() -> None:
-    body = b'{"event": "note.sync_completed"}'
+    body = b'{"eventType": "vfs.created"}'
     signature = sign_payload("my-secret", body)
 
     assert verify_signature("", body, signature) is False
@@ -163,7 +180,7 @@ def test_verify_signature_rejects_malformed_or_empty_inputs() -> None:
     )
 
 
-async def test_note_updated_event_sends_signed_post_to_subscribed_endpoint(
+async def test_domain_event_sends_signed_post_to_subscribed_endpoint(
     component_core: ServerCore,
     load_components: LoadComponents,
     webhook_receiver: WebhookReceiver,
@@ -174,28 +191,36 @@ async def test_note_updated_event_sends_signed_post_to_subscribed_endpoint(
         configs=_webhooks_cfg(_endpoint_dict(webhook_receiver.url)),
     )
     await component_core.event_bus.publish(
-        NoteUpdatedEvent(
-            file_id=42, user_id=test_user_id, file_path="Note/Daily/2026-08-04.note"
-        )
+        _vfs_created(test_user_id, item_id=42, full_path="Note/Daily/2026-08-04.note")
     )
     await component_core.event_bus.wait_idle()
 
     assert len(webhook_receiver.calls) == 1
     call = webhook_receiver.calls[0]
     assert call["url"] == webhook_receiver.url
-    assert call["headers"][EVENT_HEADER] == EVENT_NOTE_SYNC_COMPLETED
+    assert call["headers"][EVENT_HEADER] == DomainEventType.VFS_CREATED
     assert call["headers"][SIGNATURE_HEADER] == sign_payload("top-secret", call["data"])
     body = json.loads(call["data"])
     assert body == {
-        "event": EVENT_NOTE_SYNC_COMPLETED,
+        "seq": ANY,
         "timestamp": ANY,
-        "file": {
-            "id": 42,
+        "eventType": DomainEventType.VFS_CREATED,
+        "actor": "user:web",
+        "entityType": DomainEntityType.FILE,
+        "entityId": "42",
+        "relatedFileId": "42",
+        "payload": {
+            "item_id": "42",
+            "parent_id": "0",
             "name": "2026-08-04.note",
-            "path": "Note/Daily/2026-08-04.note",
+            "full_path": "Note/Daily/2026-08-04.note",
+            "is_folder": False,
+            "size": 0,
+            "md5": None,
         },
     }
     assert isinstance(body["timestamp"], int)
+    assert body["seq"].isdigit()
 
 
 async def test_note_processing_completed_event_triggers_webhook(
@@ -208,7 +233,8 @@ async def test_note_processing_completed_event_triggers_webhook(
         "webhooks",
         configs=_webhooks_cfg(
             _endpoint_dict(
-                webhook_receiver.url, events=[EVENT_NOTE_PROCESSING_COMPLETED]
+                webhook_receiver.url,
+                events=[DomainEventType.NOTE_PROCESSING_COMPLETED],
             )
         ),
     )
@@ -220,17 +246,84 @@ async def test_note_processing_completed_event_triggers_webhook(
     await component_core.event_bus.wait_idle()
 
     assert len(webhook_receiver.calls) == 1
+    assert (
+        webhook_receiver.calls[0]["headers"][EVENT_HEADER]
+        == DomainEventType.NOTE_PROCESSING_COMPLETED
+    )
     body = json.loads(webhook_receiver.calls[0]["data"])
     assert body == {
-        "event": EVENT_NOTE_PROCESSING_COMPLETED,
+        "seq": ANY,
         "timestamp": ANY,
-        "file": {
-            "id": 42,
-            "name": "2026-08-04.note",
-            "path": "Note/Daily/2026-08-04.note",
+        "eventType": DomainEventType.NOTE_PROCESSING_COMPLETED,
+        "actor": "system:processor",
+        "entityType": DomainEntityType.FILE,
+        "entityId": "42",
+        "relatedFileId": "42",
+        "payload": {
+            "file_id": "42",
+            "file_path": "Note/Daily/2026-08-04.note",
         },
     }
     assert isinstance(body["timestamp"], int)
+
+
+async def test_namespace_prefix_wildcard_filters_events(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+    webhook_receiver: WebhookReceiver,
+    test_user_id: int,
+) -> None:
+    await load_components(
+        "webhooks",
+        configs=_webhooks_cfg(_endpoint_dict(webhook_receiver.url, events=["note.*"])),
+    )
+    await component_core.event_bus.publish(_vfs_created(test_user_id, item_id=1))
+    await component_core.event_bus.publish(
+        NoteProcessingCompletedEvent(
+            file_id=42, user_id=test_user_id, file_path="Note/a.note"
+        )
+    )
+    await component_core.event_bus.publish(
+        NotePageTranscribedEvent(
+            file_id=42,
+            user_id=test_user_id,
+            file_path="Note/a.note",
+            page_id="p1",
+            page_index=0,
+            text_content="hello",
+        )
+    )
+    await component_core.event_bus.publish(
+        ScheduleTaskCreatedEvent(user_id=test_user_id, task_id="t1", title="Buy milk")
+    )
+    await component_core.event_bus.wait_idle()
+
+    assert {c["headers"][EVENT_HEADER] for c in webhook_receiver.calls} == {
+        DomainEventType.NOTE_PROCESSING_COMPLETED,
+        DomainEventType.NOTE_PAGE_TRANSCRIBED,
+    }
+
+
+async def test_star_wildcard_receives_all_domain_events(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+    webhook_receiver: WebhookReceiver,
+    test_user_id: int,
+) -> None:
+    await load_components(
+        "webhooks",
+        configs=_webhooks_cfg(_endpoint_dict(webhook_receiver.url, events=["*"])),
+    )
+    await component_core.event_bus.publish(_vfs_created(test_user_id, item_id=1))
+    await component_core.event_bus.publish(
+        ScheduleTaskCreatedEvent(user_id=test_user_id, task_id="t1", title="Buy milk")
+    )
+    await component_core.event_bus.wait_idle()
+
+    assert {c["headers"][EVENT_HEADER] for c in webhook_receiver.calls} == {
+        DomainEventType.VFS_CREATED,
+        DomainEventType.SCHEDULE_TASK_CREATED,
+    }
 
 
 async def test_skips_endpoints_not_subscribed_to_event(
@@ -243,13 +336,12 @@ async def test_skips_endpoints_not_subscribed_to_event(
         "webhooks",
         configs=_webhooks_cfg(
             _endpoint_dict(
-                webhook_receiver.url, events=[EVENT_NOTE_PROCESSING_COMPLETED]
+                webhook_receiver.url,
+                events=[DomainEventType.NOTE_PROCESSING_COMPLETED],
             )
         ),
     )
-    await component_core.event_bus.publish(
-        NoteUpdatedEvent(file_id=42, user_id=test_user_id, file_path="Note/a.note")
-    )
+    await component_core.event_bus.publish(_vfs_created(test_user_id))
     await component_core.event_bus.wait_idle()
     assert webhook_receiver.calls == []
 
@@ -265,9 +357,7 @@ async def test_endpoint_with_no_events_receives_all_events(
         "webhooks",
         configs=_webhooks_cfg(_endpoint_dict(webhook_receiver.url, events=[])),
     )
-    await component_core.event_bus.publish(
-        NoteUpdatedEvent(file_id=42, user_id=test_user_id, file_path="Note/a.note")
-    )
+    await component_core.event_bus.publish(_vfs_created(test_user_id))
     await component_core.event_bus.publish(
         NoteProcessingCompletedEvent(
             file_id=42, user_id=test_user_id, file_path="Note/a.note"
@@ -276,8 +366,8 @@ async def test_endpoint_with_no_events_receives_all_events(
     await component_core.event_bus.wait_idle()
     assert len(webhook_receiver.calls) == 2
     assert {c["headers"][EVENT_HEADER] for c in webhook_receiver.calls} == {
-        EVENT_NOTE_SYNC_COMPLETED,
-        EVENT_NOTE_PROCESSING_COMPLETED,
+        DomainEventType.VFS_CREATED,
+        DomainEventType.NOTE_PROCESSING_COMPLETED,
     }
 
 
@@ -291,9 +381,7 @@ async def test_omits_signature_header_when_no_secret(
         "webhooks",
         configs=_webhooks_cfg(_endpoint_dict(webhook_receiver.url, secret="")),
     )
-    await component_core.event_bus.publish(
-        NoteUpdatedEvent(file_id=42, user_id=test_user_id, file_path="Note/a.note")
-    )
+    await component_core.event_bus.publish(_vfs_created(test_user_id))
     await component_core.event_bus.wait_idle()
     assert len(webhook_receiver.calls) == 1
     assert SIGNATURE_HEADER not in webhook_receiver.calls[0]["headers"]
@@ -309,9 +397,7 @@ async def test_does_not_subscribe_when_disabled(
         "webhooks",
         configs=_webhooks_cfg(_endpoint_dict(webhook_receiver.url), enabled=False),
     )
-    await component_core.event_bus.publish(
-        NoteUpdatedEvent(file_id=1, user_id=test_user_id, file_path="Note/a.note")
-    )
+    await component_core.event_bus.publish(_vfs_created(test_user_id, item_id=1))
     await component_core.event_bus.wait_idle()
     assert webhook_receiver.calls == []
 
@@ -327,9 +413,7 @@ async def test_retries_repeated_server_errors_without_raising(
         "webhooks",
         configs=_webhooks_cfg(_endpoint_dict(webhook_receiver.url)),
     )
-    await component_core.event_bus.publish(
-        NoteUpdatedEvent(file_id=42, user_id=test_user_id, file_path="Note/a.note")
-    )
+    await component_core.event_bus.publish(_vfs_created(test_user_id))
     await component_core.event_bus.wait_idle()
     assert len(webhook_receiver.calls) == MAX_ATTEMPTS
 
@@ -348,9 +432,7 @@ async def test_retries_timeouts_without_raising(
     with patch(
         "supernote.server.components.webhooks.service.REQUEST_TIMEOUT_SECONDS", 0.05
     ):
-        await component_core.event_bus.publish(
-            NoteUpdatedEvent(file_id=42, user_id=test_user_id, file_path="Note/a.note")
-        )
+        await component_core.event_bus.publish(_vfs_created(test_user_id))
         await component_core.event_bus.wait_idle()
 
     assert len(webhook_receiver.calls) == MAX_ATTEMPTS
@@ -367,9 +449,7 @@ async def test_does_not_retry_client_errors(
         "webhooks",
         configs=_webhooks_cfg(_endpoint_dict(webhook_receiver.url)),
     )
-    await component_core.event_bus.publish(
-        NoteUpdatedEvent(file_id=42, user_id=test_user_id, file_path="Note/a.note")
-    )
+    await component_core.event_bus.publish(_vfs_created(test_user_id))
     await component_core.event_bus.wait_idle()
     assert len(webhook_receiver.calls) == 1
 
@@ -387,9 +467,7 @@ async def test_does_not_follow_redirects_or_retry_3xx(
         configs=_webhooks_cfg(_endpoint_dict(webhook_receiver.url)),
     )
     with caplog.at_level("WARNING"):
-        await component_core.event_bus.publish(
-            NoteUpdatedEvent(file_id=42, user_id=test_user_id, file_path="Note/a.note")
-        )
+        await component_core.event_bus.publish(_vfs_created(test_user_id))
         await component_core.event_bus.wait_idle()
 
     assert len(webhook_receiver.calls) == 1
@@ -408,9 +486,7 @@ async def test_recovers_after_transient_failure(
         "webhooks",
         configs=_webhooks_cfg(_endpoint_dict(webhook_receiver.url)),
     )
-    await component_core.event_bus.publish(
-        NoteUpdatedEvent(file_id=42, user_id=test_user_id, file_path="Note/a.note")
-    )
+    await component_core.event_bus.publish(_vfs_created(test_user_id))
     await component_core.event_bus.wait_idle()
     assert len(webhook_receiver.calls) == 2
 
@@ -430,9 +506,7 @@ async def test_does_not_leak_secret_or_full_signature_in_logs(
         ),
     )
     with caplog.at_level("WARNING"):
-        await component_core.event_bus.publish(
-            NoteUpdatedEvent(file_id=42, user_id=test_user_id, file_path="Note/a.note")
-        )
+        await component_core.event_bus.publish(_vfs_created(test_user_id))
         await component_core.event_bus.wait_idle()
 
     assert caplog.text
@@ -463,9 +537,7 @@ async def test_unexpected_error_is_isolated_per_endpoint(
             side_effect=RuntimeError("unexpected signing failure"),
         ),
     ):
-        await component_core.event_bus.publish(
-            NoteUpdatedEvent(file_id=42, user_id=test_user_id, file_path="Note/a.note")
-        )
+        await component_core.event_bus.publish(_vfs_created(test_user_id))
         await component_core.event_bus.wait_idle()
 
     assert "raised RuntimeError" in caplog.text
@@ -494,11 +566,9 @@ async def test_reuses_client_session_across_events_and_closes_on_stop(
             "webhooks",
             configs=_webhooks_cfg(_endpoint_dict(webhook_receiver.url)),
         )
+        await component_core.event_bus.publish(_vfs_created(test_user_id, item_id=1))
         await component_core.event_bus.publish(
-            NoteUpdatedEvent(file_id=1, user_id=test_user_id, file_path="Note/a.note")
-        )
-        await component_core.event_bus.publish(
-            NoteUpdatedEvent(file_id=2, user_id=test_user_id, file_path="Note/b.note")
+            _vfs_created(test_user_id, item_id=2, full_path="Note/b.note")
         )
         await component_core.event_bus.wait_idle()
 
@@ -542,9 +612,7 @@ async def test_bounds_concurrent_requests_via_semaphore(
     await load_components("webhooks", configs=_webhooks_cfg(*endpoints))
 
     try:
-        await component_core.event_bus.publish(
-            NoteUpdatedEvent(file_id=42, user_id=test_user_id, file_path="Note/a.note")
-        )
+        await component_core.event_bus.publish(_vfs_created(test_user_id))
         async with asyncio.timeout(2.0):
             await reached_limit.wait()
         assert max_active == MAX_CONCURRENT_REQUESTS
@@ -574,9 +642,7 @@ async def test_redacts_url_credentials_and_query_params_in_logs(
         ),
     )
     with caplog.at_level("WARNING"):
-        await component_core.event_bus.publish(
-            NoteUpdatedEvent(file_id=42, user_id=test_user_id, file_path="Note/a.note")
-        )
+        await component_core.event_bus.publish(_vfs_created(test_user_id))
         await component_core.event_bus.wait_idle()
 
     assert "hook-user" not in caplog.text
@@ -607,9 +673,7 @@ async def test_redacts_url_secrets_on_unexpected_exception(
             side_effect=RuntimeError("unexpected signing failure"),
         ),
     ):
-        await component_core.event_bus.publish(
-            NoteUpdatedEvent(file_id=42, user_id=test_user_id, file_path="Note/a.note")
-        )
+        await component_core.event_bus.publish(_vfs_created(test_user_id))
         await component_core.event_bus.wait_idle()
 
     assert "api-user" not in caplog.text
@@ -618,7 +682,7 @@ async def test_redacts_url_secrets_on_unexpected_exception(
     assert "https://example.invalid/hook" in caplog.text
 
 
-async def test_note_updated_event_respects_endpoint_user_filter(
+async def test_domain_event_respects_endpoint_user_filter(
     component_core: ServerCore,
     load_components: LoadComponents,
     webhook_receiver: WebhookReceiver,
@@ -643,29 +707,34 @@ async def test_note_updated_event_respects_endpoint_user_filter(
 
     # Another user (not Alice) should not trigger Alice's endpoint.
     await component_core.event_bus.publish(
-        NoteUpdatedEvent(
-            file_id=99, user_id=test_user_id, file_path="Note/Bob/Private.note"
-        )
+        _vfs_created(test_user_id, item_id=99, full_path="Note/Bob/Private.note")
     )
     await component_core.event_bus.wait_idle()
     assert webhook_receiver.calls == []
 
     # Alice triggers Alice's endpoint.
     await component_core.event_bus.publish(
-        NoteUpdatedEvent(
-            file_id=42, user_id=alice.id, file_path="Note/Alice/Daily.note"
-        )
+        _vfs_created(alice.id, item_id=42, full_path="Note/Alice/Daily.note")
     )
     await component_core.event_bus.wait_idle()
     assert len(webhook_receiver.calls) == 1
     body = json.loads(webhook_receiver.calls[0]["data"])
     assert body == {
-        "event": EVENT_NOTE_SYNC_COMPLETED,
+        "seq": ANY,
         "timestamp": ANY,
-        "file": {
-            "id": 42,
+        "eventType": DomainEventType.VFS_CREATED,
+        "actor": "user:web",
+        "entityType": DomainEntityType.FILE,
+        "entityId": "42",
+        "relatedFileId": "42",
+        "payload": {
+            "item_id": "42",
+            "parent_id": "0",
             "name": "Daily.note",
-            "path": "Note/Alice/Daily.note",
+            "full_path": "Note/Alice/Daily.note",
+            "is_folder": False,
+            "size": 0,
+            "md5": None,
         },
     }
 
@@ -684,9 +753,7 @@ async def test_start_skips_endpoint_when_user_not_found(
                 _endpoint_dict(webhook_receiver.url, user="missing@example.com")
             ),
         )
-        await component_core.event_bus.publish(
-            NoteUpdatedEvent(file_id=42, user_id=test_user_id, file_path="Note/a.note")
-        )
+        await component_core.event_bus.publish(_vfs_created(test_user_id))
         await component_core.event_bus.wait_idle()
 
     assert webhook_receiver.calls == []

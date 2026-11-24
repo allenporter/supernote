@@ -5,7 +5,7 @@ Decouples mutating domain services (`supernote.server.services.file.FileService`
 `supernote.server.services.processor.ProcessorService`) from downstream subscribers:
 - `supernote.server.services.processor.ProcessorService` listens for `NoteUpdatedEvent`, `NoteDeletedEvent`, and `SyncCompletedEvent`.
 - `supernote.server.services.file.FileService` listens for `BlobCleanupEvent`.
-- `supernote.server.components.webhooks.service.WebhookService` listens for `NoteUpdatedEvent` and `NoteProcessingCompletedEvent`.
+- `supernote.server.components.webhooks.service.WebhookService` listens for `DomainEventRecorded`.
 - `supernote.server.components.socketio` listens for VFS, summary, and schedule events to broadcast real-time Socket.IO messages to connected tablets and Web UI clients.
 
 See `supernote.guides.architecture`.
@@ -22,7 +22,7 @@ from typing import Any, ClassVar
 from mashumaro import field_options
 from mashumaro.mixins.json import DataClassJSONMixin
 
-from supernote.models.events import DomainEntityType, DomainEventType
+from supernote.models.events import DomainEntityType, DomainEventType, DomainEventVO
 from supernote.models.schedule import ScheduleTaskLinkDTO
 from supernote.models.summary import SummaryItem, SummaryTagItem
 
@@ -526,6 +526,19 @@ class DomainEventRecorded(Event):
     entity_id: str
     related_file_id: int | None = None
     payload: dict[str, Any] = field(default_factory=dict)
+
+    def to_vo(self) -> DomainEventVO:
+        """Convert this recorded event into its wire `DomainEventVO` representation."""
+        return DomainEventVO(
+            seq=str(self.seq),
+            timestamp=self.timestamp_ms,
+            event_type=self.event_type,
+            actor=self.actor,
+            entity_type=self.entity_type,
+            entity_id=self.entity_id,
+            related_file_id=self.related_file_id,
+            payload=self.payload,
+        )
 
 
 EventHandler = Callable[[Any], Awaitable[Any]]

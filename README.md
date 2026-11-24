@@ -65,7 +65,7 @@ You don't need to run a server to use `supernote`. Use the CLI (`supernote analy
 - **`supernote.server`**: [Open Private Cloud Server, Services & Routes](supernote/server/README.md) (`supernote.server.config.ServerConfig`, `supernote.server.app.create_app`)
 - **`supernote.client`**: [Async Cloud Client SDK](supernote/client/__init__.py) (`supernote.client.Supernote`, `supernote.client.device.DeviceClient`, `supernote.client.schedule.ScheduleClient`, `supernote.client.extended.ExtendedClient`)
 - **`supernote.notebook`**: [Notebook Parser, Converter & Authoring Library](supernote/notebook/README.md) (`supernote.notebook.load_notebook`, `supernote.notebook.PdfConverter`, `supernote.notebook.author.NotebookAuthor`, `supernote.notebook.renderer.MarkdownRenderer`)
-- **`supernote.models`**: [Protocol DTOs & VOs](supernote/models/README.md) (`supernote.models.file_device`, `supernote.models.schedule`, `supernote.models.summary`, `supernote.models.extended`, `supernote.models.webhook`)
+- **`supernote.models`**: [Protocol DTOs & VOs](supernote/models/README.md) (`supernote.models.file_device`, `supernote.models.schedule`, `supernote.models.summary`, `supernote.models.extended`, `supernote.models.events`)
 
 ---
 

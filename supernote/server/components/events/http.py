@@ -32,7 +32,6 @@ from aiohttp import web
 from mashumaro.exceptions import InvalidFieldValue
 
 from supernote.models.events import (
-    DomainEventVO,
     EventFeedListVO,
     EventFeedRequestDTO,
 )
@@ -93,19 +92,7 @@ async def handle_list_events(request: web.Request) -> web.Response:
             limit=req_dto.limit,
         )
         vo = EventFeedListVO(
-            events=[
-                DomainEventVO(
-                    seq=str(ev.seq),
-                    timestamp=ev.timestamp_ms,
-                    event_type=ev.event_type,
-                    actor=ev.actor,
-                    entity_type=ev.entity_type,
-                    entity_id=ev.entity_id,
-                    related_file_id=ev.related_file_id,
-                    payload=ev.payload,
-                )
-                for ev in page.events
-            ],
+            events=[ev.to_vo() for ev in page.events],
             next_sync_token=page.next_sync_token,
             has_more=page.has_more,
         )

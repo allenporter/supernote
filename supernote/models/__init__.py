@@ -16,5 +16,4 @@ __all__ = [
     "summary",
     "system",
     "user",
-    "webhook",
 ]

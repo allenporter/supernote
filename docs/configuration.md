@@ -168,8 +168,8 @@ webhooks:
       user: "you@example.com"
       secret: "replace-with-32-byte-random-hex-secret"
       events:
-        - "note.sync_completed"
-        - "note.processing_completed"
+        - "vfs.created"
+        - "note.*"
 ```
 
 ---
@@ -279,4 +279,4 @@ Configured under the `webhooks:` block in `config.yaml`, consumed by `supernote.
 | `webhooks.endpoints[].url` | — | `str` | *(required)* | Target `http://` or `https://` URL to receive `POST` requests. Validated at startup. |
 | `webhooks.endpoints[].user` | — | `str` | *(required)* | Email address of the Supernote user whose events trigger this endpoint. |
 | `webhooks.endpoints[].secret` | — | `str` | `""` | Shared secret used to compute the `X-Supernote-Signature: sha256=<hex>` HMAC-SHA256 header. Never logged. |
-| `webhooks.endpoints[].events` | — | `list[str]` | `[]` *(all events)* | Event filter list (`"note.sync_completed"`, `"note.processing_completed"`). When empty, the endpoint receives all events for `user`. |
+| `webhooks.endpoints[].events` | — | `list[str]` | `[]` *(all events)* | Event filter list accepting exact `DomainEventType` names (e.g. `"vfs.created"`, `"note.processing_completed"`), namespace prefix wildcards (`"note.*"`, `"vfs.*"`, `"schedule.*"`, `"summary.*"`), or `"*"`. When empty, the endpoint receives all domain events for `user`. |

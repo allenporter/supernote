@@ -159,8 +159,8 @@ webhooks:
       user: "you@example.com"
       secret: "replace-with-random-secret"
       events:
-        - "note.sync_completed"
-        - "note.processing_completed"
+        - "vfs.created"
+        - "note.*"
 ```
 
 ### Running with Docker
