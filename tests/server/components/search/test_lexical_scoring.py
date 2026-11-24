@@ -220,7 +220,7 @@ def test_sql_prefilter_terms_separates_ascii_and_cjk_stems() -> None:
     assert sql_prefilter_terms(parsed) == (("python",), ("日本語",))
 
 
-@pytest.mark.parametrize("raw_query", ["Straße", "300K", "ﬁnance"])
+@pytest.mark.parametrize("raw_query", ["Straße", "300K", "ﬁnance", "ﾊﾝｶｸﾒﾓ"])
 def test_sql_prefilter_terms_omits_non_ascii_folded_query_stems(
     raw_query: str,
 ) -> None:

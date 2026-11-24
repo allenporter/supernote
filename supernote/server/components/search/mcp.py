@@ -1,4 +1,4 @@
-"""MCP platform setup exposing notebook listing and semantic search tools.
+"""MCP platform setup exposing notebook listing and hybrid search tools.
 
 Registers `list_notebooks` and `search_notebook_chunks` onto `McpRegistrar`
 via `async_setup_mcp`, backed by `SearchService`.
@@ -73,10 +73,10 @@ class SearchResultVO(DataClassJSONMixin):
     """Supernote page identifier (`PAGEID`)."""
 
     score: float
-    """Cosine similarity score."""
+    """Calibrated hybrid relevance score in `[0.25, 1.0]`."""
 
     text_preview: str = field(metadata=field_options(alias="textPreview"))
-    """Preview snippet of the page OCR text."""
+    """Match-centered OCR snippet or formatted `#keyword` tags."""
 
     date: str | None = None
     """Optional inferred page date (`YYYY-MM-DD`)."""
@@ -90,7 +90,7 @@ class SearchResponseVO(BaseResponse):
     """Response VO for `search_notebook_chunks`."""
 
     results: list[SearchResultVO] = field(default_factory=list)
-    """Ranked semantic search hits."""
+    """Ranked hybrid search hits."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -141,10 +141,10 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
         date_after: str | None = None,
         date_before: str | None = None,
     ) -> dict[str, Any]:
-        """Search for notebook content chunks based on semantic similarity.
+        """Search notebook pages by native `#keyword` tags, OCR text, and semantic similarity.
 
         Args:
-            query: The semantic search query.
+            query: Keyword (`#tag`), phrase, or semantic search query.
             top_n: Number of results to return (default: 5).
             name_filter: Optional substring filter for notebook filenames.
             date_after: Filter for notes created on or after this date (YYYY-MM-DD).
