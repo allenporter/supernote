@@ -21,11 +21,17 @@ RESOURCES_DIR = importlib.resources.files("supernote.server") / "resources" / "p
 class PromptId(str, enum.Enum):
     OCR_TRANSCRIPTION = "ocr_transcription"
     SUMMARY_GENERATION = "summary_generation"
+    WIKI_COMPILE = "wiki_compile"
+    WIKI_CONFLICT = "wiki_conflict"
+    WIKI_LINT = "wiki_lint"
 
 
 CATEGORY_MAP = {
     "ocr": PromptId.OCR_TRANSCRIPTION.value,
     "summary": PromptId.SUMMARY_GENERATION.value,
+    "wiki_compile": PromptId.WIKI_COMPILE.value,
+    "wiki_conflict": PromptId.WIKI_CONFLICT.value,
+    "wiki_lint": PromptId.WIKI_LINT.value,
 }
 COMMON = "common"
 DEFAULT = "default"

@@ -20,4 +20,5 @@ __all__ = [
     "embedding",
     "ocr",
     "summary",
+    "text",
 ]

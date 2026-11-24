@@ -187,7 +187,7 @@ def test_ai_registrar_rejects_unknown_provider_types() -> None:
 async def test_ai_component_lifecycle_exposes_empty_registrar(
     component_core: ServerCore,
 ) -> None:
-    assert AI_PLATFORMS == ("ocr", "summary", "embedding")
+    assert AI_PLATFORMS == ("ocr", "summary", "embedding", "text")
     assert set(AI_PLATFORMS) <= KNOWN_PLATFORMS
 
     component = AiComponent()
@@ -208,6 +208,7 @@ async def test_ai_component_lifecycle_exposes_empty_registrar(
     assert registrar.ocr_providers == ()
     assert registrar.summary_providers == ()
     assert registrar.embedding_providers == ()
+    assert registrar.text_providers == ()
 
     await loader.async_start_all(component_core)
     await loader.async_stop_all(component_core)

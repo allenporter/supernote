@@ -17,6 +17,8 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar
 
+from aiohttp import web
+
 from supernote.server.ai.models.embedding import (
     ConcurrencyLimitedEmbeddingModel,
     EmbeddingModel,
@@ -34,6 +36,11 @@ from supernote.server.ai.models.summary import (
     InstrumentedSummaryModel,
     SummaryModel,
 )
+from supernote.server.ai.models.text import (
+    ConcurrencyLimitedTextGenerationModel,
+    InstrumentedTextGenerationModel,
+    TextGenerationModel,
+)
 from supernote.server.core import ServerCore
 from supernote.server.keys import (
     EMBEDDING_MODEL_KEY,
@@ -43,22 +50,23 @@ from supernote.server.keys import (
 from supernote.server.utils.prompt_loader import PROMPT_LOADER
 
 if TYPE_CHECKING:
-    from aiohttp import web
-
     from supernote.server.config import ModelConfig, ServerConfig
 
 __all__ = [
     "AI_PLATFORMS",
+    "TEXT_MODEL_KEY",
     "AiComponent",
     "AiRegistrar",
 ]
 
-AI_PLATFORMS: tuple[str, ...] = ("ocr", "summary", "embedding")
+AI_PLATFORMS: tuple[str, ...] = ("ocr", "summary", "embedding", "text")
+TEXT_MODEL_KEY: web.AppKey[TextGenerationModel | None] = web.AppKey("text_model")
 
 _ModelT = TypeVar("_ModelT")
 OcrModelFactory = Callable[["ServerConfig"], OcrModel | None]
 SummaryModelFactory = Callable[["ServerConfig"], SummaryModel | None]
 EmbeddingModelFactory = Callable[["ServerConfig"], EmbeddingModel | None]
+TextModelFactory = Callable[["ServerConfig"], TextGenerationModel | None]
 
 
 def _normalize_provider_type(provider_type: str) -> str:
@@ -108,6 +116,7 @@ class AiRegistrar:
         self._ocr_factories: dict[str, OcrModelFactory] = {}
         self._summary_factories: dict[str, SummaryModelFactory] = {}
         self._embedding_factories: dict[str, EmbeddingModelFactory] = {}
+        self._text_factories: dict[str, TextModelFactory] = {}
 
     @property
     def platforms(self) -> tuple[str, ...]:
@@ -132,6 +141,10 @@ class AiRegistrar:
             self._embedding_factories, "Embedding", provider_type, factory
         )
 
+    def register_text(self, provider_type: str, factory: TextModelFactory) -> None:
+        """Register a text generation model factory for ``provider_type``."""
+        _register_factory(self._text_factories, "Text", provider_type, factory)
+
     @property
     def ocr_providers(self) -> tuple[str, ...]:
         """Registered OCR provider types in registration order."""
@@ -146,6 +159,11 @@ class AiRegistrar:
     def embedding_providers(self) -> tuple[str, ...]:
         """Registered embedding provider types in registration order."""
         return tuple(self._embedding_factories)
+
+    @property
+    def text_providers(self) -> tuple[str, ...]:
+        """Registered text generation provider types in registration order."""
+        return tuple(self._text_factories)
 
     def create_ocr_model(self, config: ServerConfig) -> OcrModel | None:
         """Instantiate the configured OCR model wrapped with telemetry and concurrency limiting."""
@@ -188,6 +206,19 @@ class AiRegistrar:
             max_concurrency=model_cfg.max_concurrency,
         )
 
+    def create_text_model(self, config: ServerConfig) -> TextGenerationModel | None:
+        """Instantiate the configured text generation model wrapped with telemetry and concurrency limiting."""
+        resolved = _instantiate_raw_model(
+            self._text_factories, "text", config, config.ai.text
+        )
+        if resolved is None:
+            return None
+        model, model_cfg = resolved
+        return ConcurrencyLimitedTextGenerationModel(
+            InstrumentedTextGenerationModel(model),
+            max_concurrency=model_cfg.max_concurrency,
+        )
+
     def apply_to_app(
         self,
         app: web.Application,
@@ -197,14 +228,16 @@ class AiRegistrar:
         ocr_model = self.create_ocr_model(config)
         summary_model = self.create_summary_model(config)
         embedding_model = self.create_embedding_model(config)
+        text_model = self.create_text_model(config)
         app[OCR_MODEL_KEY] = ocr_model
         app[SUMMARY_MODEL_KEY] = summary_model
         app[EMBEDDING_MODEL_KEY] = embedding_model
+        app[TEXT_MODEL_KEY] = text_model
         return ocr_model, summary_model, embedding_model
 
 
 class AiComponent:
-    """Platform host component for AI model providers (OCR, summary, embedding)."""
+    """Platform host component for AI model providers (OCR, summary, embedding, text)."""
 
     domain = "ai"
     dependencies: tuple[str, ...] = ()
@@ -226,6 +259,7 @@ class AiComponent:
         core.app[OCR_MODEL_KEY] = None
         core.app[SUMMARY_MODEL_KEY] = None
         core.app[EMBEDDING_MODEL_KEY] = None
+        core.app[TEXT_MODEL_KEY] = None
         self._registrar = AiRegistrar()
 
     async def async_finalize_platforms(self, core: ServerCore) -> None:

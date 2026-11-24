@@ -95,6 +95,9 @@ class AIStage(StrEnum):
     SUMMARY = "summary"
     EMBEDDING_DOCUMENT = "embedding_doc"
     EMBEDDING_QUERY = "embedding_query"
+    TEXT = "text"
+    WIKI_COMPILE = "wiki_compile"
+    WIKI_LINT = "wiki_lint"
 
 
 class NoteProcessingMode(StrEnum):

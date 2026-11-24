@@ -16,7 +16,7 @@ async def test_fake_ai_component_registers_all_ai_platforms(
     assert isinstance(component, Component)
     assert component.domain == "fake_ai"
     assert component.dependencies == ("ai",)
-    assert component.platforms == ("ocr", "summary", "embedding")
+    assert component.platforms == ("ocr", "summary", "embedding", "text")
 
     ai_component = AiComponent()
     loader = ComponentLoader()
@@ -30,6 +30,7 @@ async def test_fake_ai_component_registers_all_ai_platforms(
     assert ai_registrar.ocr_providers == ("fake",)
     assert ai_registrar.summary_providers == ("fake",)
     assert ai_registrar.embedding_providers == ("fake",)
+    assert ai_registrar.text_providers == ("fake",)
 
     config = ServerConfig(
         ai=AiConfig(

@@ -136,7 +136,12 @@ def create_app(config: ServerConfig) -> web.Application:
 
     configured_ai_providers = {
         config.ai.provider_type(m.provider).strip().lower()
-        for m in (config.ai.ocr, config.ai.summary, config.ai.embedding)
+        for m in (
+            config.ai.ocr,
+            config.ai.summary,
+            config.ai.embedding,
+            config.ai.text,
+        )
         if m is not None
     }
     component_configs = {
