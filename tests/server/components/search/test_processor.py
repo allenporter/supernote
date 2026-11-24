@@ -10,6 +10,7 @@ from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
 from supernote.server.components.processor import ProcessorComponent
 from supernote.server.components.search import SearchComponent
 from supernote.server.components.search.processor import EmbeddingModule
+from supernote.server.components.transcript import TranscriptComponent
 from supernote.server.core import ComponentLoader, ServerCore
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
@@ -282,6 +283,7 @@ async def test_search_component_registers_embedding_stage_via_processor_platform
     loader = ComponentLoader()
     loader.register(AiComponent())
     loader.register(ProcessorComponent())
+    loader.register(TranscriptComponent())
     loader.register(SearchComponent())
 
     await loader.async_setup_all(component_core, {})

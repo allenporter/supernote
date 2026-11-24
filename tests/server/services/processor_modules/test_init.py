@@ -4,6 +4,7 @@ import pytest
 from prometheus_client import REGISTRY
 
 from supernote.models.base import ProcessingStatus, TaskType
+from supernote.server.components.transcript.processor import OcrModule
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.metrics import PIPELINE_DURATION_BUCKETS
 from supernote.server.services.file import FileService
@@ -15,7 +16,6 @@ from supernote.server.services.processor_modules import (
     TaskGraph,
     TaskScope,
 )
-from supernote.server.services.processor_modules.ocr import OcrModule
 from supernote.server.utils.tasks import get_task
 
 

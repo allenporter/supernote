@@ -23,6 +23,7 @@ from supernote.server.components.search.processor import EmbeddingModule
 from supernote.server.components.summary import SummaryService
 from supernote.server.components.summary.processor import SummaryModule
 from supernote.server.components.transcript import TranscriptService
+from supernote.server.components.transcript.processor import OcrModule
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
@@ -46,7 +47,6 @@ from supernote.server.services.blob import BlobStorage
 from supernote.server.services.coordination import SqliteCoordinationService
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule, TaskScope
-from supernote.server.services.processor_modules.ocr import OcrModule
 from supernote.server.services.processor_modules.page_hashing import PageHashingModule
 from supernote.server.services.processor_modules.png_conversion import (
     PngConversionModule,

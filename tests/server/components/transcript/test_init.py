@@ -16,7 +16,7 @@ async def test_transcript_component_lifecycle(component_core: ServerCore) -> Non
     assert isinstance(component, Component)
     assert component.domain == "transcript"
     assert component.dependencies == ()
-    assert component.platforms == ("http", "mcp")
+    assert component.platforms == ("http", "mcp", "processor")
 
     loader = ComponentLoader()
     loader.register(component)

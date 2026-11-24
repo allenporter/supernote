@@ -17,6 +17,7 @@ from supernote.server.components.processor import (
     ProcessorRegistrar,
     ProcessorService,
 )
+from supernote.server.components.transcript import TranscriptComponent
 from supernote.server.core import Component, ComponentLoader, PlatformHost, ServerCore
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.keys import PROCESSOR_SERVICE_KEY
@@ -74,7 +75,6 @@ async def test_processor_component_protocol_and_idempotent_lifecycle(
     assert [m.task_type for m in service.task_graph.modules] == [
         TaskType.PAGE_HASHING,
         TaskType.PNG_CONVERSION,
-        TaskType.OCR_EXTRACTION,
     ]
 
     await loader.async_start_all(component_core)
@@ -143,6 +143,7 @@ async def test_processor_platform_accepts_external_component_stages(
         loader = ComponentLoader()
         loader.register(AiComponent())
         loader.register(ProcessorComponent())
+        loader.register(TranscriptComponent())
         loader.register(_ExtComponent())
 
         await loader.async_setup_all(component_core, {})

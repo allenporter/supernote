@@ -19,6 +19,7 @@ from supernote.server.components.fake_ai.summary import FakeSummaryModel
 from supernote.server.components.processor import ProcessorService
 from supernote.server.components.summary import SUMMARY_SERVICE_KEY
 from supernote.server.components.summary.processor import SummaryModule
+from supernote.server.components.transcript.processor import OcrModule
 from supernote.server.config import AuthConfig, ServerConfig
 from supernote.server.db.migrations import run_migrations
 from supernote.server.keys import (
@@ -27,7 +28,6 @@ from supernote.server.keys import (
     SESSION_MANAGER_KEY,
     USER_SERVICE_KEY,
 )
-from supernote.server.services.processor_modules.ocr import OcrModule
 from supernote.server.services.processor_modules.page_hashing import PageHashingModule
 from supernote.server.services.processor_modules.png_conversion import (
     PngConversionModule,

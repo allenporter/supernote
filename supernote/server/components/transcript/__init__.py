@@ -41,7 +41,7 @@ class TranscriptComponent:
 
     domain = "transcript"
     dependencies: tuple[str, ...] = ()
-    platforms: tuple[str, ...] = ("http", "mcp")
+    platforms: tuple[str, ...] = ("http", "mcp", "processor")
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         """Instantiate `TranscriptService` and expose it via `TRANSCRIPT_SERVICE_KEY`."""
