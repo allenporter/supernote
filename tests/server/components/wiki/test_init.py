@@ -4,35 +4,42 @@ from __future__ import annotations
 
 from supernote.server.components import BUILTIN_COMPONENTS
 from supernote.server.components.wiki import (
+    WIKI_COMPILER_KEY,
     WIKI_EXPORT_SERVICE_KEY,
     WIKI_SERVICE_KEY,
+    WikiCompilerWorker,
     WikiComponent,
     WikiExportService,
     WikiService,
 )
-from supernote.server.core import Component, ComponentLoader, ServerCore
+from supernote.server.core import Component, ServerCore
+from tests.server.components.conftest import LoadComponents
 
 
-async def test_wiki_component_lifecycle(component_core: ServerCore) -> None:
-    """WikiComponent sets up cleanly, exposes app keys, and stops idempotently."""
-    component = WikiComponent()
+async def test_wiki_component_lifecycle(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+) -> None:
+    """WikiComponent loads via BUILTIN_COMPONENTS with ai/events deps, exposes keys, and stops idempotently."""
+    loader = await load_components(
+        "wiki",
+        configs={"wiki": {"enabled": True, "max_pages_per_batch": 3}},
+    )
+    component = loader.get("wiki")
+    assert isinstance(component, WikiComponent)
     assert isinstance(component, Component)
     assert component.domain == "wiki"
-    assert component.dependencies == ()
+    assert component.dependencies == ("ai", "events")
     assert component.platforms == ()
+    assert loader.get("ai") is not None
+    assert loader.get("events") is not None
 
-    loader = ComponentLoader()
-    loader.register(component)
-
-    await loader.async_setup_all(
-        component_core, {"wiki": {"enabled": True, "max_pages_per_batch": 3}}
-    )
     assert isinstance(component_core.app[WIKI_SERVICE_KEY], WikiService)
     assert isinstance(component_core.app[WIKI_EXPORT_SERVICE_KEY], WikiExportService)
+    assert isinstance(component_core.app[WIKI_COMPILER_KEY], WikiCompilerWorker)
     assert component.config is not None
     assert component.config.max_pages_per_batch == 3
 
-    await loader.async_start_all(component_core)
     await loader.async_stop_all(component_core)
     await component.async_stop(component_core)
     assert component.config is None

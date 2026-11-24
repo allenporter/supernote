@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import time
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 
 from aiohttp import web
 from sqlalchemy import delete, func, select, update
@@ -590,6 +590,50 @@ class WikiService:
             await session.commit()
             return _to_lint_dto(issue)
 
+    async def mark_sources_deleted(
+        self,
+        user_id: int,
+        *,
+        file_ids: Collection[int] = (),
+        note_page_keys: Collection[str] = (),
+        task_ids: Collection[str] = (),
+    ) -> None:
+        """Flag `f_wiki_source_ref` rows citing deleted files, note pages, or tasks."""
+        if not (file_ids or note_page_keys or task_ids):
+            return
+        now = _now_ms()
+        async with self._session_manager.session() as session:
+            if file_ids:
+                await session.execute(
+                    update(WikiSourceRefDO)
+                    .where(
+                        WikiSourceRefDO.user_id == user_id,
+                        WikiSourceRefDO.file_id.in_(file_ids),
+                    )
+                    .values(is_source_deleted=True, update_time=now)
+                )
+            if note_page_keys:
+                await session.execute(
+                    update(WikiSourceRefDO)
+                    .where(
+                        WikiSourceRefDO.user_id == user_id,
+                        WikiSourceRefDO.source_type == "note_page",
+                        WikiSourceRefDO.source_key.in_(note_page_keys),
+                    )
+                    .values(is_source_deleted=True, update_time=now)
+                )
+            if task_ids:
+                await session.execute(
+                    update(WikiSourceRefDO)
+                    .where(
+                        WikiSourceRefDO.user_id == user_id,
+                        WikiSourceRefDO.source_type == "schedule_task",
+                        WikiSourceRefDO.source_key.in_(task_ids),
+                    )
+                    .values(is_source_deleted=True, update_time=now)
+                )
+            await session.commit()
+
     async def get_status(self, user_id: int) -> WikiStatusDTO:
         """Return inventory counts and durable checkpoint state for a user."""
         async with self._session_manager.session() as session:
@@ -775,7 +819,9 @@ class WikiService:
             else:
                 existing.file_id = ref.file_id
                 existing.last_event_seq = ref.last_event_seq
-                existing.is_source_deleted = ref.is_source_deleted
+                existing.is_source_deleted = (
+                    existing.is_source_deleted or ref.is_source_deleted
+                )
                 existing.update_time = now
 
     async def _hydrate_pages(
