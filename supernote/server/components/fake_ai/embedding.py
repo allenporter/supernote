@@ -12,6 +12,7 @@ from supernote.server.ai.models.embedding import (
     EmbeddingTaskType,
     validate_embedding_vector,
 )
+from supernote.server.utils.stopwords import STOPWORDS
 
 if TYPE_CHECKING:
     from supernote.server.components.ai import AiRegistrar
@@ -21,9 +22,6 @@ if TYPE_CHECKING:
 __all__ = ["FakeEmbeddingModel", "async_setup_embedding", "create_embedding_model"]
 
 _TOKEN_RE = re.compile(r"[^\W_]+")
-_BLENDED_STOPWORDS = frozenset(
-    "a an and are at by for from in is of on or the to under with".split()
-)
 
 
 def _raw_digest_vector(text: str, dimensions: int) -> list[float]:
@@ -56,7 +54,7 @@ def _blended_token_vector(text: str, dimensions: int) -> list[float]:
     all_tokens = _TOKEN_RE.findall(text.casefold())
     if not all_tokens:
         return _raw_digest_vector(text, dimensions)
-    tokens = [t for t in all_tokens if t not in _BLENDED_STOPWORDS] or all_tokens
+    tokens = [t for t in all_tokens if t not in STOPWORDS] or all_tokens
 
     summed = [0.0] * dimensions
     for token in tokens:

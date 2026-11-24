@@ -56,6 +56,10 @@ async def test_fake_embedding_model_blended_token_similarity() -> None:
     query_vec = await model.embed(
         "telescope alignment", task_type=EmbeddingTaskType.RETRIEVAL_QUERY
     )
+    conversational_vec = await model.embed(
+        "how did we check telescope alignment",
+        task_type=EmbeddingTaskType.RETRIEVAL_QUERY,
+    )
     exact_vec = await model.embed(
         "Telescope alignment", task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT
     )
@@ -67,9 +71,17 @@ async def test_fake_embedding_model_blended_token_similarity() -> None:
         "Quarterly budget spreadsheet and grocery checklist",
         task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT,
     )
+    stopword_only_vec = await model.embed(
+        "to be or not to be", task_type=EmbeddingTaskType.RETRIEVAL_QUERY
+    )
+    stopword_subset_vec = await model.embed(
+        "to be", task_type=EmbeddingTaskType.RETRIEVAL_QUERY
+    )
 
     assert len(query_vec) == 128
+    assert _cosine(stopword_only_vec, stopword_subset_vec) > 0.70
     assert math.isclose(_cosine(query_vec, exact_vec), 1.0, rel_tol=1e-9)
+    assert _cosine(query_vec, conversational_vec) > 0.75
     assert 0.40 < _cosine(query_vec, partial_vec) < 0.85
     assert _cosine(query_vec, partial_vec) > _cosine(query_vec, disjoint_vec) + 0.25
 
