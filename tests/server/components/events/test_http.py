@@ -14,6 +14,7 @@ from supernote.client.exceptions import (
     NotFoundException,
 )
 from supernote.client.schedule import ScheduleClient
+from supernote.models.user import UserRegisterDTO
 from supernote.server.components.events import EVENT_LOG_SERVICE_KEY
 from supernote.server.services.user import UserService
 
@@ -47,6 +48,11 @@ async def test_list_events_pagination_and_filtering(
     """Verify GET /api/extended/events sync_token pagination and event filtering."""
     assert client.app is not None
     event_log_service = client.app[EVENT_LOG_SERVICE_KEY]
+
+    empty_feed = await events_client.list_events()
+    assert empty_feed.events == []
+    assert empty_feed.next_sync_token is None
+    assert empty_feed.has_more is False
 
     ev1 = await event_log_service.append(
         user_id=test_user_id,
@@ -86,6 +92,65 @@ async def test_list_events_pagination_and_filtering(
     )
     assert [e.seq for e in filtered.events] == [str(ev2.seq)]
 
+    # Prefix wildcard combined with exact event type matching
+    mixed_types = await events_client.list_events(
+        event_types=["note.*", "vfs.created"],
+    )
+    assert [e.seq for e in mixed_types.events] == [str(ev1.seq), str(ev2.seq)]
+
+    # When a filtered query has 0 matches, next_sync_token advances to user's latest seq
+    no_match = await events_client.list_events(event_types=["summary.*"])
+    assert no_match.events == []
+    assert no_match.has_more is False
+    assert no_match.next_sync_token == feed2.next_sync_token
+
+
+async def test_list_events_user_isolation(
+    client: TestClient,
+    events_client: EventsClient,
+    user_service: UserService,
+    test_user_id: int,
+) -> None:
+    """Verify a second registered user cannot see another user's events."""
+    assert client.app is not None
+    event_log_service = client.app[EVENT_LOG_SERVICE_KEY]
+
+    other_user = await user_service.register(
+        UserRegisterDTO(email="other_events@example.com", password="a" * 32)
+    )
+    other_key, _ = await user_service.create_api_key(other_user.id, "Other Events")
+
+    class _OtherAuth(AbstractAuth):
+        async def async_get_access_token(self) -> str:
+            return other_key
+
+    other_events_client = EventsClient(
+        Client(client.session, auth=_OtherAuth(), host=str(client.make_url("")))
+    )
+
+    ev1 = await event_log_service.append(
+        user_id=test_user_id,
+        event_type="vfs.created",
+        entity_type="file",
+        entity_id="10",
+        related_file_id=10,
+        actor="device:SN1",
+    )
+    ev2 = await event_log_service.append(
+        user_id=other_user.id,
+        event_type="vfs.created",
+        entity_type="file",
+        entity_id="20",
+        related_file_id=20,
+        actor="user:web",
+    )
+
+    user1_feed = await events_client.list_events()
+    assert [e.seq for e in user1_feed.events] == [str(ev1.seq)]
+
+    user2_feed = await other_events_client.list_events()
+    assert [e.seq for e in user2_feed.events] == [str(ev2.seq)]
+
 
 async def test_list_events_invalid_query_params(
     events_client: EventsClient,
@@ -94,6 +159,9 @@ async def test_list_events_invalid_query_params(
     """Verify invalid limit, syncToken, or query field types raise BadRequestException."""
     with pytest.raises(BadRequestException):
         await events_client.list_events(limit=0)
+
+    with pytest.raises(BadRequestException):
+        await events_client.list_events(limit=1001)
 
     with pytest.raises(BadRequestException):
         await events_client.list_events(sync_token="bad")
@@ -174,3 +242,12 @@ async def test_list_events_api_key_actor_and_exclude_self(
     )
     assert after.events == []
     assert after.next_sync_token == full_feed.next_sync_token
+
+    # Excluding every actor returns an empty page while still advancing next_sync_token.
+    all_excluded = await agent_events.list_events(
+        event_types=["schedule.*"],
+        exclude_actors=["user:web", "SELF"],
+    )
+    assert all_excluded.events == []
+    assert all_excluded.has_more is False
+    assert all_excluded.next_sync_token == full_feed.next_sync_token

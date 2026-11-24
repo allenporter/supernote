@@ -35,7 +35,7 @@ from supernote.server.events import (
     SummaryDeletedEvent,
     SummaryUpsertedEvent,
 )
-from supernote.server.exceptions import CursorExpiredError, InvalidInputError
+from supernote.server.exceptions import CursorExpiredError
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.file import FileService
@@ -98,100 +98,6 @@ async def test_append_persists_and_publishes_domain_event(
 
     assert e2.seq > e1.seq
     assert published == [e1, e2]
-
-
-async def test_list_events_sync_tokens_filters_and_user_isolation(
-    event_log_service: EventLogService,
-) -> None:
-    """Verify sync_token=None/empty, pagination, type globbing, file_id, and exclude_actor."""
-    empty_page = await event_log_service.list_events(user_id=1)
-    assert empty_page.events == []
-    assert empty_page.next_sync_token is None
-    assert empty_page.has_more is False
-
-    ev1 = await event_log_service.append(
-        user_id=1,
-        event_type="vfs.created",
-        entity_type="file",
-        entity_id="10",
-        related_file_id=10,
-        actor="device:SN1",
-    )
-    ev2 = await event_log_service.append(
-        user_id=2,
-        event_type="vfs.created",
-        entity_type="file",
-        entity_id="20",
-        related_file_id=20,
-        actor="user:web",
-    )
-    ev3 = await event_log_service.append(
-        user_id=1,
-        event_type="note.page_transcribed",
-        entity_type="note_page",
-        entity_id="10:0",
-        related_file_id=10,
-        actor="system:processor",
-    )
-    ev4 = await event_log_service.append(
-        user_id=1,
-        event_type="schedule.task_created",
-        entity_type="schedule_task",
-        entity_id="t-1",
-        actor="user:web",
-    )
-    assert ev1.seq < ev2.seq < ev3.seq < ev4.seq
-
-    # User 1 sees only user 1 events; paginate 2 at a time
-    page1 = await event_log_service.list_events(user_id=1, limit=2)
-    assert [e.seq for e in page1.events] == [ev1.seq, ev3.seq]
-    assert page1.has_more is True
-    assert page1.next_sync_token == encode_sync_token(ev3.seq)
-    assert page1.next_sync_token != str(ev3.seq)
-
-    page2 = await event_log_service.list_events(
-        user_id=1, sync_token=page1.next_sync_token, limit=2
-    )
-    assert [e.seq for e in page2.events] == [ev4.seq]
-    assert page2.has_more is False
-    assert page2.next_sync_token == encode_sync_token(ev4.seq)
-
-    # Prefix type globbing + exact type matching
-    filtered_types = await event_log_service.list_events(
-        user_id=1, event_types=["note.*", "schedule.task_created"]
-    )
-    assert [e.seq for e in filtered_types.events] == [ev3.seq, ev4.seq]
-
-    # When a filtered query has 0 matches, next_sync_token advances to user's latest seq
-    no_match = await event_log_service.list_events(user_id=1, event_types=["summary.*"])
-    assert no_match.events == []
-    assert no_match.next_sync_token == encode_sync_token(ev4.seq)
-
-    # file_id filter
-    by_file = await event_log_service.list_events(user_id=1, file_id=10)
-    assert [e.seq for e in by_file.events] == [ev1.seq, ev3.seq]
-
-
-async def test_list_events_validation_errors(
-    event_log_service: EventLogService,
-) -> None:
-    """Verify invalid sync tokens (including raw integers) and out-of-range limits raise InvalidInputError."""
-    for bad_token in (
-        "0",
-        "100",
-        "-1",
-        "abc",
-        "head",
-        "!!!",
-        "djE6MA",  # base64url("v1:0")
-        f"{encode_sync_token(10)}=",
-    ):
-        with pytest.raises(InvalidInputError):
-            await event_log_service.list_events(user_id=1, sync_token=bad_token)
-
-    for bad_limit in (0, -5, 1001):
-        with pytest.raises(InvalidInputError):
-            await event_log_service.list_events(user_id=1, limit=bad_limit)
 
 
 async def test_prune_expired_events_and_cursor_expiration(
@@ -788,65 +694,6 @@ def test_all_domain_event_types_are_subscribed() -> None:
     """Verify every DomainEventType is backed by a subscribed DomainEvent class."""
     subscribed_types = {cls.EVENT_TYPE for cls in SUBSCRIBED_DOMAIN_EVENTS}
     assert subscribed_types == set(DomainEventType)
-
-
-async def test_list_events_exclude_actors_filters_and_advances_cursor(
-    event_log_service: EventLogService,
-) -> None:
-    """Verify exclude_actors omits matching actors while advancing next_sync_token past them."""
-    ev_web = await event_log_service.append(
-        user_id=55,
-        event_type=DomainEventType.SCHEDULE_TASK_CREATED,
-        entity_type=DomainEntityType.SCHEDULE_TASK,
-        entity_id="t1",
-        actor="user:web",
-    )
-    ev_agent = await event_log_service.append(
-        user_id=55,
-        event_type=DomainEventType.SCHEDULE_TASK_CREATED,
-        entity_type=DomainEntityType.SCHEDULE_TASK,
-        entity_id="t2",
-        actor="api_key:agent_1",
-    )
-    ev_device = await event_log_service.append(
-        user_id=55,
-        event_type=DomainEventType.SCHEDULE_TASK_CREATED,
-        entity_type=DomainEntityType.SCHEDULE_TASK,
-        entity_id="t3",
-        actor="device:SN001",
-    )
-    ev_agent_tail = await event_log_service.append(
-        user_id=55,
-        event_type=DomainEventType.SCHEDULE_TASK_CREATED,
-        entity_type=DomainEntityType.SCHEDULE_TASK,
-        entity_id="t4",
-        actor="api_key:agent_1",
-    )
-
-    page1 = await event_log_service.list_events(
-        user_id=55, exclude_actors=["api_key:agent_1"], limit=1
-    )
-    assert [e.seq for e in page1.events] == [ev_web.seq]
-    assert page1.has_more is True
-
-    page2 = await event_log_service.list_events(
-        user_id=55,
-        sync_token=page1.next_sync_token,
-        exclude_actors=["api_key:agent_1"],
-        limit=1,
-    )
-    assert [e.seq for e in page2.events] == [ev_device.seq]
-    assert page2.has_more is False
-    assert ev_agent.seq < ev_device.seq
-
-    # Next poll sees no new non-excluded events and advances next_sync_token past ev_agent_tail.
-    after = await event_log_service.list_events(
-        user_id=55,
-        sync_token=page2.next_sync_token,
-        exclude_actors=["api_key:agent_1"],
-    )
-    assert after.events == []
-    assert after.next_sync_token == encode_sync_token(ev_agent_tail.seq)
 
 
 def test_event_log_service_rejects_non_positive_prune_interval(
