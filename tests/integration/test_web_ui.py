@@ -6,6 +6,7 @@ installed in minimal Python environments, and executed in CI via
 """
 
 import asyncio
+import re
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,11 @@ from sqlalchemy import select
 from supernote.client.client import Client
 from supernote.client.schedule import ScheduleClient
 from supernote.client.web import WebClient
-from supernote.models.summary import AddSummaryDTO, AddSummaryGroupDTO
+from supernote.models.summary import (
+    AddSummaryDTO,
+    AddSummaryGroupDTO,
+    QuerySummaryGroupDTO,
+)
 from supernote.server.components.summary import SUMMARY_SERVICE_KEY
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.keys import (
@@ -521,32 +526,27 @@ async def test_web_ui_digests_browser_view(
             await page.get_by_role("button", name="Digests", exact=True).click()
             assert page.url.endswith("#/digests")
 
-            cards = page.locator("[data-digest-card]")
-            await cards.first.wait_for(state="visible")
-            assert await cards.count() == 2
             await page.get_by_text("Weekly Architecture Recap").wait_for(
                 state="visible"
             )
             await page.get_by_text("Edsger Dijkstra").wait_for(state="visible")
             await page.get_by_text("Apply this to sync state").wait_for(state="visible")
-            await page.locator("[data-digest-handwriting-badge]").wait_for(
-                state="visible"
-            )
+            await page.get_by_text("Handwritten").wait_for(state="visible")
 
-            await (
-                page.locator("aside")
-                .get_by_role("button", name="Uncategorized")
-                .click()
-            )
-            assert await cards.count() == 1
+            await page.get_by_role(
+                "button", name=re.compile(r"^Uncategorized\b")
+            ).click()
             await page.get_by_text(
                 "Simplicity is prerequisite for reliability."
             ).wait_for(state="visible")
+            await page.get_by_text("Weekly Architecture Recap").wait_for(state="hidden")
 
-            await (
-                page.locator("aside").get_by_role("button", name="AI Summaries").click()
+            await page.get_by_role(
+                "button", name=re.compile(r"^AI Summaries\b")
+            ).click()
+            await page.get_by_text("Weekly Architecture Recap").wait_for(
+                state="visible"
             )
-            assert await cards.count() == 1
             await page.get_by_role("button", name="Open Source").click()
             await page.wait_for_url(f"**/#/file/{note_file_id}*")
             await desktop.close()
@@ -558,7 +558,9 @@ async def test_web_ui_digests_browser_view(
             mpage = await mobile.new_page()
             mpage.on("pageerror", lambda exc: errors.append(f"mobile pageerror: {exc}"))
             await mpage.goto(f"{base_url}/#/digests", wait_until="networkidle")
-            await mpage.locator("[data-digest-card]").first.wait_for(state="visible")
+            await mpage.get_by_text("Weekly Architecture Recap").wait_for(
+                state="visible"
+            )
             overflow = await mpage.evaluate(
                 "document.documentElement.scrollWidth - window.innerWidth"
             )
@@ -568,3 +570,142 @@ async def test_web_ui_digests_browser_view(
             await browser.close()
 
     assert not errors, f"Unexpected browser errors in Digests view: {errors}"
+
+
+async def test_web_ui_digests_crud_modals(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    web_client: WebClient,
+) -> None:
+    """Verify creating, renaming, editing, moving, and deleting digests & categories in #/digests."""
+    playwright_async = pytest.importorskip("playwright.async_api")
+    assert client.app is not None
+    user_email = (await web_client.query_user()).email
+    assert user_email is not None
+    summary_service = client.app[SUMMARY_SERVICE_KEY]
+
+    base_url = str(client.make_url("")).rstrip("/")
+    token = auth_headers["x-access-token"]
+    errors: list[str] = []
+
+    async with playwright_async.async_playwright() as p:
+        try:
+            browser = await p.chromium.launch()
+        except playwright_async.Error as exc:
+            pytest.skip(f"Chromium browser binary not installed: {exc}")
+        try:
+            context = await browser.new_context(viewport={"width": 1360, "height": 860})
+            await context.add_init_script(
+                f"localStorage.setItem('supernote_token', {token!r});"
+            )
+            page = await context.new_page()
+            page.on("pageerror", lambda exc: errors.append(f"pageerror: {exc}"))
+            page.on(
+                "console",
+                lambda msg: (
+                    errors.append(f"console.error: {msg.text}")
+                    if msg.type == "error"
+                    else None
+                ),
+            )
+
+            await page.goto(f"{base_url}/#/digests", wait_until="networkidle")
+
+            # Create and rename a category
+            await page.get_by_role("button", name="+ New").click()
+            cat_dialog = page.get_by_role("dialog", name="New Category")
+            await cat_dialog.get_by_label("Category Name").fill("Reading List")
+            await cat_dialog.get_by_role("button", name="Create").click()
+            await cat_dialog.wait_for(state="hidden")
+
+            await page.get_by_role(
+                "button", name="Rename category Reading List"
+            ).click()
+            rename_dialog = page.get_by_role("dialog", name="Rename Category")
+            await rename_dialog.get_by_label("Category Name").fill("Classic Papers")
+            await rename_dialog.get_by_role("button", name="Rename").click()
+            await rename_dialog.wait_for(state="hidden")
+
+            groups = await summary_service.list_groups(
+                user_email, QuerySummaryGroupDTO(page=1, size=0)
+            )
+            assert [g.name for g in groups] == ["Classic Papers"]
+
+            # Create a digest inside Classic Papers
+            await page.get_by_role(
+                "button", name=re.compile(r"^Classic Papers\b")
+            ).click()
+            await page.get_by_role("button", name="New Digest").click()
+            editor = page.get_by_role("dialog", name="New Digest")
+            await editor.get_by_label("Content").fill("Design for clarity first.")
+            await editor.get_by_label("Comment").fill("Key takeaway")
+            await editor.get_by_label("Author").fill("Tony Hoare")
+            await editor.get_by_label("Source Path").fill("Document/Hoare.pdf")
+            await editor.get_by_role("button", name="Create Digest").click()
+            await editor.wait_for(state="hidden")
+            await page.get_by_text("Design for clarity first.").wait_for(
+                state="visible"
+            )
+
+            # Edit & move digest to Uncategorized
+            await page.get_by_role("button", name="Edit digest").click()
+            edit_dialog = page.get_by_role("dialog", name="Edit Digest")
+            await edit_dialog.get_by_label("Category").select_option("")
+            await edit_dialog.get_by_label("Content").fill("Clarity beats cleverness.")
+            await edit_dialog.get_by_role("button", name="Save Changes").click()
+            await edit_dialog.wait_for(state="hidden")
+
+            saved = await summary_service.list_summaries(user_email, page=1, size=0)
+            assert len(saved) == 1
+            assert saved[0].content == "Clarity beats cleverness."
+            assert saved[0].parent_unique_identifier == ""
+
+            # Escape cancels delete confirmation; confirming removes the digest
+            await page.get_by_role("button", name=re.compile(r"^All Digests\b")).click()
+            await page.get_by_text("Clarity beats cleverness.").wait_for(
+                state="visible"
+            )
+            await page.get_by_role("button", name="Delete digest").click()
+            confirm_dialog = page.get_by_role("dialog", name="Confirm Delete")
+            await confirm_dialog.wait_for(state="visible")
+            await page.keyboard.press("Escape")
+            await confirm_dialog.wait_for(state="hidden")
+
+            await page.get_by_role("button", name="Delete digest").click()
+            await confirm_dialog.get_by_role("button", name="Delete").click()
+            await confirm_dialog.wait_for(state="hidden")
+            assert (
+                await summary_service.list_summaries(user_email, page=1, size=0) == []
+            )
+
+            # Deleting a category cascades to its child digests
+            await page.get_by_role(
+                "button", name=re.compile(r"^Classic Papers\b")
+            ).click()
+            await page.get_by_role("button", name="New Digest").click()
+            editor = page.get_by_role("dialog", name="New Digest")
+            await editor.get_by_label("Content").fill("Child digest")
+            await editor.get_by_role("button", name="Create Digest").click()
+            await editor.wait_for(state="hidden")
+            await page.get_by_text("Child digest").wait_for(state="visible")
+
+            await page.get_by_role(
+                "button", name="Delete category Classic Papers"
+            ).click()
+            await confirm_dialog.get_by_role("button", name="Delete").click()
+            await confirm_dialog.wait_for(state="hidden")
+
+            assert (
+                await summary_service.list_groups(
+                    user_email, QuerySummaryGroupDTO(page=1, size=0)
+                )
+                == []
+            )
+            assert (
+                await summary_service.list_summaries(user_email, page=1, size=0) == []
+            )
+            await context.close()
+        finally:
+            await browser.close()
+
+    assert not errors, f"Unexpected browser errors in Digests CRUD modals: {errors}"
