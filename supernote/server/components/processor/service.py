@@ -21,13 +21,14 @@ from collections.abc import AsyncGenerator, Collection, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import and_, case, delete, or_, select
 
 from supernote.models.base import ProcessingStatus, TaskType
 from supernote.models.extended import (
     NoteLinkVO,
     NotePageMetadataVO,
     NoteTitleVO,
+    SystemTaskVO,
     WebNoteMetadataVO,
 )
 from supernote.notebook import exceptions as notebook_exceptions
@@ -909,7 +910,13 @@ class ProcessorService:
         file_id: int | None = None,
         task_type: str | None = None,
     ) -> list[SystemTaskDO]:
-        """List recent system tasks with optional filtering."""
+        """List recent system tasks with optional filtering, prioritizing failed and active tasks."""
+        status_priority = case(
+            (SystemTaskDO.status == ProcessingStatus.FAILED, 0),
+            (SystemTaskDO.status == ProcessingStatus.PROCESSING, 1),
+            (SystemTaskDO.status == ProcessingStatus.PENDING, 2),
+            else_=3,
+        )
         async with self.session_manager.session() as session:
             stmt = select(SystemTaskDO)
             if user_id is not None:
@@ -920,9 +927,137 @@ class ProcessorService:
                 stmt = stmt.where(SystemTaskDO.file_id == file_id)
             if task_type:
                 stmt = stmt.where(SystemTaskDO.task_type == task_type)
-            stmt = stmt.order_by(SystemTaskDO.update_time.desc()).limit(limit)
+            stmt = stmt.order_by(
+                status_priority.asc(), SystemTaskDO.update_time.desc()
+            ).limit(limit)
             result = await session.execute(stmt)
             return list(result.scalars().all())
+
+    async def list_user_system_task_vos(
+        self,
+        user_id: int,
+        limit: int = 100,
+    ) -> tuple[list[SystemTaskVO], list[int]]:
+        """Return enriched SystemTaskVOs (with file_name and page_index) and in-flight file IDs for user_id."""
+        status_priority = case(
+            (SystemTaskDO.status == ProcessingStatus.FAILED, 0),
+            (SystemTaskDO.status == ProcessingStatus.PROCESSING, 1),
+            (SystemTaskDO.status == ProcessingStatus.PENDING, 2),
+            else_=3,
+        )
+        in_flight_candidates = [
+            fid for uid, fid in self.processing_files if uid == user_id
+        ]
+        async with self.session_manager.session() as session:
+            stmt = (
+                select(
+                    SystemTaskDO,
+                    UserFileDO.file_name,
+                    NotePageContentDO.page_index,
+                )
+                .join(
+                    UserFileDO,
+                    and_(
+                        SystemTaskDO.file_id == UserFileDO.id,
+                        SystemTaskDO.user_id == UserFileDO.user_id,
+                    ),
+                )
+                .outerjoin(
+                    NotePageContentDO,
+                    and_(
+                        NotePageContentDO.file_id == SystemTaskDO.file_id,
+                        "page_" + NotePageContentDO.page_id == SystemTaskDO.key,
+                    ),
+                )
+                .where(
+                    SystemTaskDO.user_id == user_id,
+                    UserFileDO.is_active == "Y",
+                )
+                .order_by(status_priority.asc(), SystemTaskDO.update_time.desc())
+                .limit(limit)
+            )
+            rows = (await session.execute(stmt)).all()
+
+            user_in_flight: list[int] = []
+            if in_flight_candidates:
+                owned_in_flight = await session.execute(
+                    select(UserFileDO.id).where(
+                        UserFileDO.user_id == user_id,
+                        UserFileDO.is_active == "Y",
+                        UserFileDO.id.in_(in_flight_candidates),
+                    )
+                )
+                user_in_flight = sorted(owned_in_flight.scalars().all())
+
+        vos = [
+            SystemTaskVO(
+                id=task.id,
+                file_id=task.file_id,
+                task_type=task.task_type,
+                key=task.key,
+                status=ProcessingStatus(task.status),
+                retry_count=task.retry_count,
+                last_error=task.last_error,
+                update_time=task.update_time,
+                file_name=file_name,
+                page_index=page_index,
+            )
+            for task, file_name, page_index in rows
+        ]
+        return vos, user_in_flight
+
+    async def retry_failed_tasks(
+        self,
+        user_id: int,
+        file_id: int | None = None,
+    ) -> list[int]:
+        """Clear FAILED SystemTaskDO checkpoints for user_id (or a specific file_id) and re-enqueue."""
+        async with self.session_manager.session() as session:
+            failed_files_stmt = (
+                select(UserFileDO.id)
+                .join(
+                    SystemTaskDO,
+                    and_(
+                        SystemTaskDO.file_id == UserFileDO.id,
+                        SystemTaskDO.user_id == UserFileDO.user_id,
+                    ),
+                )
+                .where(
+                    SystemTaskDO.user_id == user_id,
+                    UserFileDO.is_active == "Y",
+                    SystemTaskDO.status == ProcessingStatus.FAILED,
+                )
+                .distinct()
+            )
+            if file_id is not None:
+                failed_files_stmt = failed_files_stmt.where(UserFileDO.id == file_id)
+
+            target_file_ids = sorted(
+                (await session.execute(failed_files_stmt)).scalars().all()
+            )
+            if not target_file_ids:
+                return []
+
+            await session.execute(
+                delete(SystemTaskDO).where(
+                    SystemTaskDO.user_id == user_id,
+                    SystemTaskDO.file_id.in_(target_file_ids),
+                    or_(
+                        SystemTaskDO.status == ProcessingStatus.FAILED,
+                        and_(
+                            SystemTaskDO.key == "global",
+                            SystemTaskDO.task_type != TaskType.PAGE_HASHING.value,
+                        ),
+                    ),
+                )
+            )
+            await session.commit()
+
+        for fid in target_file_ids:
+            await self.event_bus.publish(
+                NoteUpdatedEvent(file_id=fid, user_id=user_id, file_path="")
+            )
+        return target_file_ids
 
     def _resolve_file_status(
         self, user_id: int, file_id: int, tasks: list[SystemTaskDO]

@@ -266,6 +266,15 @@ interface SystemTaskItem {
     retryCount: number;
     updateTime: number;
     lastError: string | null;
+    fileName?: string | null;
+    pageIndex?: number | null;
+}
+
+interface SystemQueueOverview {
+    tasks: SystemTaskItem[];
+    paused: boolean;
+    queueSize: number;
+    processingFileIds: string[];
 }
 
 type TaskImportance = 'high' | 'medium' | 'low';

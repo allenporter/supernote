@@ -302,6 +302,14 @@ async def test_web_ui_desktop_and_mobile_smoke(
             assert page.url.endswith("#/settings")
             await page.get_by_role("button", name="System & Queue").click()
             assert page.url.endswith("#/system")
+            await page.get_by_role("heading", name="Recent Notebook Activity").wait_for(
+                state="visible"
+            )
+            await page.get_by_role("link", name="Numbered_1to10.note").first.wait_for(
+                state="visible"
+            )
+            await page.get_by_role("button", name="Stage Log").click()
+            await page.get_by_text("Page Hash").first.wait_for(state="visible")
             await page.keyboard.press("Escape")
 
             await page.get_by_role("button", name="Global Search").click()

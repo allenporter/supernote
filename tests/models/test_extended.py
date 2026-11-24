@@ -14,6 +14,8 @@ from supernote.models.extended import (
     OAuthGrantListResponseVO,
     OAuthGrantVO,
     PageTranscriptVO,
+    RetrySystemTasksDTO,
+    RetrySystemTasksVO,
     SearchResultVO,
     SystemTaskListVO,
     SystemTaskVO,
@@ -61,8 +63,15 @@ def test_system_task_models() -> None:
         retry_count=0,
         update_time=123456,
         last_error=None,
+        file_name="Weekly Review.note",
+        page_index=2,
     )
-    list_vo = SystemTaskListVO(tasks=[task])
+    list_vo = SystemTaskListVO(
+        tasks=[task],
+        paused=False,
+        queue_size=1,
+        processing_file_ids=[772252421643567298],
+    )
     data = list_vo.to_dict()
     assert data == {
         "success": True,
@@ -78,10 +87,28 @@ def test_system_task_models() -> None:
                 "retryCount": 0,
                 "updateTime": 123456,
                 "lastError": None,
+                "fileName": "Weekly Review.note",
+                "pageIndex": 2,
             }
         ],
+        "paused": False,
+        "queueSize": 1,
+        "processingFileIds": ["772252421643567298"],
     }
     assert SystemTaskListVO.from_dict(data) == list_vo
+
+    retry_dto = RetrySystemTasksDTO(file_id=772252421643567298)
+    assert retry_dto.to_dict() == {"fileId": "772252421643567298"}
+    assert RetrySystemTasksDTO.from_dict(retry_dto.to_dict()) == retry_dto
+
+    retry_vo = RetrySystemTasksVO(retried_file_ids=[772252421643567298])
+    assert retry_vo.to_dict() == {
+        "success": True,
+        "errorCode": None,
+        "errorMsg": None,
+        "retriedFileIds": ["772252421643567298"],
+    }
+    assert RetrySystemTasksVO.from_dict(retry_vo.to_dict()) == retry_vo
 
 
 def test_file_processing_status_models() -> None:
