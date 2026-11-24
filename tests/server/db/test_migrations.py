@@ -86,7 +86,7 @@ def test_migration_upgrades_successfully(migrated_db: str) -> None:
         # Check if the 'alembic_version' table exists and has the head revision
         result = conn.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar()
-        assert version == "c7d8e9f0a1b2"
+        assert version == "d8e9f0a1b2c3"
 
         # Check if a known table exists (e.g. users)
         result = conn.execute(text("SELECT count(*) FROM users"))
@@ -182,7 +182,7 @@ def test_orphaned_v0_20_0_migration_self_healing(tmp_path: Path) -> None:
     engine = create_engine(migration_db_url)
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        assert version == "c7d8e9f0a1b2"
+        assert version == "d8e9f0a1b2c3"
 
         # Verify task columns and types
         tasks = conn.execute(
@@ -1198,4 +1198,41 @@ def test_oauth_grants_migration_moves_refresh_tokens_out_of_key_values(
     reflected = MetaData()
     reflected.reflect(bind=engine)
     assert "oauth_grants" not in reflected.tables
+    engine.dispose()
+
+
+def test_add_wiki_tables_migration_upgrade_and_downgrade(tmp_path: Path) -> None:
+    """Verify d8e9f0a1b2c3 creates all seven `f_wiki_*` tables and cleanly drops them on downgrade."""
+    db_path = tmp_path / "test_wiki_migration.db"
+    db_url = f"sqlite:///{db_path}"
+
+    alembic_config = Config()
+    alembic_config.set_main_option("script_location", "supernote/alembic")
+    alembic_config.set_main_option("sqlalchemy.url", db_url)
+
+    wiki_tables = {
+        "f_wiki_page",
+        "f_wiki_revision",
+        "f_wiki_alias",
+        "f_wiki_link",
+        "f_wiki_source_ref",
+        "f_wiki_checkpoint",
+        "f_wiki_lint_issue",
+    }
+
+    command.upgrade(alembic_config, "c7d8e9f0a1b2")
+    engine = create_engine(db_url)
+    before = MetaData()
+    before.reflect(bind=engine)
+    assert wiki_tables.isdisjoint(before.tables)
+
+    command.upgrade(alembic_config, "d8e9f0a1b2c3")
+    upgraded = MetaData()
+    upgraded.reflect(bind=engine)
+    assert wiki_tables.issubset(upgraded.tables)
+
+    command.downgrade(alembic_config, "c7d8e9f0a1b2")
+    downgraded = MetaData()
+    downgraded.reflect(bind=engine)
+    assert wiki_tables.isdisjoint(downgraded.tables)
     engine.dispose()
