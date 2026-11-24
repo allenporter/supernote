@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from aiohttp.test_utils import TestClient
 from prometheus_client import REGISTRY
 from pytest_aiohttp import AiohttpClient
 
@@ -17,7 +16,8 @@ from supernote.server.components.metrics.storage import (
 )
 from supernote.server.config import ServerConfig
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
-from supernote.server.services.blob import LocalBlobStorage
+from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.services.blob import BlobStorage, LocalBlobStorage
 from supernote.server.utils.paths import (
     get_conversion_pdf_path,
     get_page_png_path,
@@ -147,20 +147,19 @@ async def test_periodic_loop_executes_ticks_survives_oserror_and_stops_cleanly(
 
     with patch.object(storage, "list_blob_sizes", side_effect=flaky_list_blob_sizes):
         await collector.start()
-        # Calling start() again while running is a no-op
-        first_task = collector._task
+        # Calling start() again while running is a safe no-op
         await collector.start()
-        assert collector._task is first_task
 
         async with asyncio.timeout(2.0):
             await third_attempt_done.wait()
 
         await collector.stop()
-        assert collector._task is None
-        assert first_task is not None and first_task.done()
-
         # Calling stop() again is a safe no-op
         await collector.stop()
+
+        attempts_after_stop = sweep_attempts
+        await asyncio.sleep(0.06)
+        assert sweep_attempts == attempts_after_stop
 
     assert sweep_attempts >= 3
     assert _object_sample(USER_DATA_BUCKET, "user_blob") == 1.0
@@ -168,31 +167,59 @@ async def test_periodic_loop_executes_ticks_survives_oserror_and_stops_cleanly(
 
 
 async def test_app_wires_storage_metrics_collector_when_metrics_enabled(
-    client: TestClient,
+    aiohttp_client: AiohttpClient,
+    server_config: ServerConfig,
+    blob_storage: BlobStorage,
+    session_manager: DatabaseSessionManager,
 ) -> None:
     """Verify create_app starts StorageMetricsCollector and exposes gauges when metrics_enabled is True."""
-    assert client.app is not None
-    collector = client.app.get(STORAGE_METRICS_COLLECTOR_KEY)
-    assert isinstance(collector, StorageMetricsCollector)
-    assert collector._task is not None and not collector._task.done()
+    _ = session_manager
+    probe_payload = b"probe-1234567"
+    await blob_storage.put(USER_DATA_BUCKET, "startup_probe.note", probe_payload)
 
-    await collector.collect_once()
-    resp = await client.get("/metrics")
-    assert resp.status == 200
-    body = await resp.text()
-    assert "supernote_blob_storage_objects" in body
-    assert "supernote_blob_storage_bytes" in body
-    assert "supernote_blob_storage_available_bytes" in body
+    enabled_cfg = dataclasses.replace(
+        server_config, metrics_enabled=True, mcp_enabled=False
+    )
+    enabled_client = await aiohttp_client(create_app(enabled_cfg))
+    assert enabled_client.app is not None
+    assert isinstance(
+        enabled_client.app.get(STORAGE_METRICS_COLLECTOR_KEY),
+        StorageMetricsCollector,
+    )
+
+    expected_bytes_line = (
+        f'supernote_blob_storage_bytes{{bucket="{USER_DATA_BUCKET}",'
+        f'kind="user_blob"}} {float(len(probe_payload))}'
+    )
+    expected_objects_line = (
+        f'supernote_blob_storage_objects{{bucket="{USER_DATA_BUCKET}",'
+        'kind="user_blob"} 1.0'
+    )
+    body = ""
+    async with asyncio.timeout(2.0):
+        while expected_bytes_line not in body:
+            resp = await enabled_client.get("/metrics")
+            assert resp.status == 200
+            body = await resp.text()
+            if expected_bytes_line not in body:
+                await asyncio.sleep(0.01)
+
+    assert expected_objects_line in body
+    assert "\nsupernote_blob_storage_available_bytes " in body
 
 
 async def test_app_skips_storage_metrics_collector_when_metrics_disabled(
     aiohttp_client: AiohttpClient,
     server_config: ServerConfig,
+    session_manager: DatabaseSessionManager,
 ) -> None:
     """Verify create_app does not start StorageMetricsCollector when metrics_enabled is False."""
+    _ = session_manager
     disabled_cfg = dataclasses.replace(
         server_config, metrics_enabled=False, mcp_enabled=False
     )
     disabled_client = await aiohttp_client(create_app(disabled_cfg))
     assert disabled_client.app is not None
     assert disabled_client.app.get(STORAGE_METRICS_COLLECTOR_KEY) is None
+    resp = await disabled_client.get("/metrics")
+    assert resp.status == 404
