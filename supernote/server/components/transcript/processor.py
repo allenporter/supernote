@@ -15,11 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from supernote.models.base import TaskType
 from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.ai.prompts import PageMetadata, format_ocr_prompt
+from supernote.server.components.processor import ProcessorRegistrar
 from supernote.server.constants import CACHE_BUCKET
+from supernote.server.core import ServerCore
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageMetadataDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import NotePageTranscribedEvent
+from supernote.server.keys import OCR_MODEL_KEY
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import ProcessorModule, TaskScope
 from supernote.server.utils.note_content import get_page_content_by_id
@@ -251,3 +254,16 @@ class OcrModule(ProcessorModule):
                 previous_text=previous_text,
             )
         )
+
+
+async def async_setup_processor(
+    core: ServerCore,
+    registrar: ProcessorRegistrar,
+) -> None:
+    """Register `OcrModule` with the `"processor"` platform."""
+    registrar.register_module(
+        OcrModule(
+            file_service=core.file_service,
+            ocr_model=core.app.get(OCR_MODEL_KEY),
+        )
+    )

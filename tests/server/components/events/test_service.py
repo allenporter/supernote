@@ -22,6 +22,7 @@ from supernote.server.components.events.service import (
 from supernote.server.components.schedule.service import ScheduleService
 from supernote.server.components.summary import SummaryService
 from supernote.server.components.summary.processor import SummaryModule
+from supernote.server.components.transcript.processor import OcrModule
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
@@ -39,7 +40,6 @@ from supernote.server.exceptions import CursorExpiredError, InvalidInputError
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.file import FileService
-from supernote.server.services.processor_modules.ocr import OcrModule
 from supernote.server.services.user import UserService
 from supernote.server.utils.paths import get_page_png_path
 

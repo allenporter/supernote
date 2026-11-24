@@ -38,7 +38,7 @@ class _CustomStage(ProcessorModule):
 
     @property
     def depends_on(self) -> tuple[str, ...]:
-        return (TaskType.OCR_EXTRACTION,)
+        return (TaskType.PNG_CONVERSION,)
 
     async def process(
         self,
@@ -74,7 +74,6 @@ async def test_processor_component_protocol_and_idempotent_lifecycle(
     assert [m.task_type for m in service.task_graph.modules] == [
         TaskType.PAGE_HASHING,
         TaskType.PNG_CONVERSION,
-        TaskType.OCR_EXTRACTION,
     ]
 
     await loader.async_start_all(component_core)
@@ -151,7 +150,7 @@ async def test_processor_platform_accepts_external_component_stages(
         service = component_core.app[PROCESSOR_SERVICE_KEY]
         assert "CUSTOM_POST_OCR" in {m.task_type for m in service.task_graph.modules}
         assert service.task_graph.ancestors("CUSTOM_POST_OCR") == frozenset(
-            {"HASHING", "PNG_CONVERSION", "OCR_EXTRACTION"}
+            {"HASHING", "PNG_CONVERSION"}
         )
     finally:
         await loader.async_stop_all(component_core)

@@ -2,9 +2,12 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import undefer
 
+from supernote.models.base import TaskType
 from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.components.fake_ai.ocr import FakeOcrModel
+from supernote.server.components.transcript.processor import OcrModule
 from supernote.server.constants import CACHE_BUCKET
+from supernote.server.core import ServerCore
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NotePageContentDO,
@@ -13,10 +16,11 @@ from supernote.server.db.models.note_processing import (
 )
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import NotePageTranscribedEvent
+from supernote.server.keys import PROCESSOR_SERVICE_KEY
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
-from supernote.server.services.processor_modules.ocr import OcrModule
 from supernote.server.utils.paths import get_page_png_path
+from tests.server.components.conftest import LoadComponents
 
 
 @pytest.fixture
@@ -627,3 +631,18 @@ async def test_ocr_suppresses_event_when_transcript_unchanged_or_empty_doodle(
     await doodle_ocr.process(file_id, session_manager, page_index=1, page_id="p_doodle")
 
     assert transcribed_events == []
+
+
+async def test_transcript_component_registers_ocr_stage_via_processor_platform(
+    component_core: ServerCore,
+    load_components: LoadComponents,
+) -> None:
+    """TranscriptComponent contributes OcrModule into ProcessorService via the processor platform."""
+    await load_components("processor", "transcript")
+    service = component_core.app[PROCESSOR_SERVICE_KEY]
+    assert [m.task_type for m in service.task_graph.modules] == [
+        TaskType.PAGE_HASHING,
+        TaskType.PNG_CONVERSION,
+        TaskType.OCR_EXTRACTION,
+    ]
+    assert service.task_graph.depends_on(TaskType.OCR_EXTRACTION) == ("PNG_CONVERSION",)

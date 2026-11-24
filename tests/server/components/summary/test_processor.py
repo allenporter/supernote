@@ -14,12 +14,10 @@ from supernote.models.summary import (
 )
 from supernote.server.ai.base import AIError
 from supernote.server.ai.prompts import SummarySegment
-from supernote.server.components.ai import AiComponent
 from supernote.server.components.fake_ai.summary import FakeSummaryModel
-from supernote.server.components.processor import ProcessorComponent
-from supernote.server.components.summary import SummaryComponent, SummaryService
+from supernote.server.components.summary import SummaryService
 from supernote.server.components.summary.processor import SummaryModule
-from supernote.server.core import ComponentLoader, ServerCore
+from supernote.server.core import ServerCore
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NotePageContentDO,
@@ -28,13 +26,14 @@ from supernote.server.db.models.note_processing import (
 )
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.keys import PROCESSOR_SERVICE_KEY, SUMMARY_MODEL_KEY
+from supernote.server.keys import PROCESSOR_SERVICE_KEY
 from supernote.server.services.file import FileService
 from supernote.server.utils.paths import (
     AI_SUMMARIES_GROUP_NAME,
     get_ai_summaries_group_id,
     get_summary_id,
 )
+from tests.server.components.conftest import LoadComponents
 
 
 @pytest.fixture
@@ -1378,26 +1377,17 @@ async def test_summary_clears_stale_metadata_when_updated_segments_empty(
 
 async def test_summary_component_registers_summary_stage_via_processor_platform(
     component_core: ServerCore,
+    load_components: LoadComponents,
 ) -> None:
     """SummaryComponent contributes SummaryModule into ProcessorService via the processor platform."""
-    loader = ComponentLoader()
-    loader.register(AiComponent())
-    loader.register(ProcessorComponent())
-    loader.register(SummaryComponent())
-
-    await loader.async_setup_all(component_core, {})
-    component_core.app[SUMMARY_MODEL_KEY] = FakeSummaryModel(model_id="test-sum")
-    await loader.async_load_all_platforms(component_core)
-    try:
-        service = component_core.app[PROCESSOR_SERVICE_KEY]
-        assert [m.task_type for m in service.task_graph.modules] == [
-            TaskType.PAGE_HASHING,
-            TaskType.PNG_CONVERSION,
-            TaskType.OCR_EXTRACTION,
-            TaskType.SUMMARY_GENERATION,
-        ]
-        assert service.task_graph.depends_on(TaskType.SUMMARY_GENERATION) == (
-            "OCR_EXTRACTION",
-        )
-    finally:
-        await loader.async_stop_all(component_core)
+    await load_components("processor", "transcript", "summary")
+    service = component_core.app[PROCESSOR_SERVICE_KEY]
+    assert [m.task_type for m in service.task_graph.modules] == [
+        TaskType.PAGE_HASHING,
+        TaskType.PNG_CONVERSION,
+        TaskType.OCR_EXTRACTION,
+        TaskType.SUMMARY_GENERATION,
+    ]
+    assert service.task_graph.depends_on(TaskType.SUMMARY_GENERATION) == (
+        "OCR_EXTRACTION",
+    )
