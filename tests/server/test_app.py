@@ -25,6 +25,9 @@ from supernote.server.app import (
     run,
 )
 from supernote.server.components.fake_ai import FakeAiComponent
+from supernote.server.components.processor.png_conversion import (
+    PngConversionModule,
+)
 from supernote.server.components.search import SEARCH_SERVICE_KEY
 from supernote.server.components.webhooks import WebhooksComponent
 from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig
@@ -39,9 +42,6 @@ from supernote.server.keys import (
     PROCESSOR_SERVICE_KEY,
     SESSION_MANAGER_KEY,
     USER_SERVICE_KEY,
-)
-from supernote.server.services.processor_modules.png_conversion import (
-    PngConversionModule,
 )
 from supernote.server.trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger
 

@@ -8,6 +8,7 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.orm import undefer
 
 from supernote.notebook import load
+from supernote.server.components.processor.page_hashing import PageHashingModule
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
@@ -20,7 +21,6 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import NotePagesDeltaEvent
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
-from supernote.server.services.processor_modules.page_hashing import PageHashingModule
 
 
 @pytest.fixture
@@ -570,7 +570,7 @@ async def test_page_hashing_skips_unchanged_pages_on_rehash(
         await session.commit()
 
     with patch(
-        "supernote.server.services.processor_modules.page_hashing.load",
+        "supernote.server.components.processor.page_hashing.load",
         wraps=load,
     ) as mock_load:
         assert await page_hashing_module.run(1012, session_manager) is True
@@ -625,7 +625,7 @@ async def test_page_hashing_updates_annotations_without_loading_bitmaps_when_has
         await session.commit()
 
     with patch(
-        "supernote.server.services.processor_modules.page_hashing.load",
+        "supernote.server.components.processor.page_hashing.load",
         wraps=load,
     ) as mock_load:
         assert await page_hashing_module.run(1014, session_manager) is True

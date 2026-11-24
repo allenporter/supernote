@@ -9,12 +9,12 @@ import pytest
 from supernote.models.base import TaskType
 from supernote.server.components.fake_ai.ocr import FakeOcrModel
 from supernote.server.components.processor import ProcessorRegistrar
+from supernote.server.components.processor.png_conversion import (
+    PngConversionModule,
+)
 from supernote.server.components.processor.processor import async_setup_processor
 from supernote.server.core import ServerCore
 from supernote.server.keys import OCR_MODEL_KEY
-from supernote.server.services.processor_modules.png_conversion import (
-    PngConversionModule,
-)
 
 
 @pytest.mark.parametrize(

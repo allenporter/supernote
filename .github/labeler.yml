@@ -9,9 +9,9 @@ ai:
       - any-glob-to-any-file:
           - 'supernote/server/ai/**'
           - 'supernote/server/resources/prompts/**'
-          - 'supernote/server/services/processor_modules/ocr.py'
-          - 'supernote/server/services/processor_modules/summary.py'
-          - 'supernote/server/services/processor_modules/embedding.py'
+          - 'supernote/server/components/transcript/processor.py'
+          - 'supernote/server/components/summary/processor.py'
+          - 'supernote/server/components/search/processor.py'
           - 'supernote/server/services/search.py'
           - 'tests/server/ai/**'
 

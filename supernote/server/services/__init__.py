@@ -9,7 +9,7 @@ or asynchronously via `supernote.server.events.LocalEventBus`.
 | `supernote.server.services.file.FileService` | `supernote.server.services.file` | High-level file, folder, upload/download, and recycle bin orchestration. |
 | `supernote.server.services.vfs.VirtualFileSystem` | `supernote.server.services.vfs` | Transactional SQLite-backed directory tree and path resolution (`UserFileDO`). |
 | `supernote.server.services.blob.LocalBlobStorage` | `supernote.server.services.blob` | Content-addressable blob storage (`USER_DATA_BUCKET` and `CACHE_BUCKET`). |
-| `supernote.server.services.processor.ProcessorService` | `supernote.server.services.processor` | Asynchronous 5-stage `.note` processing pipeline and task recovery loop. |
+| `supernote.server.components.processor.service.ProcessorService` | `supernote.server.components.processor.service` | Asynchronous 5-stage `.note` processing pipeline and task recovery loop. |
 | `supernote.server.services.conversion.ConversionService` | `supernote.server.services.conversion` | On-demand `.note` to PNG and vector PDF conversion with cache lookup. |
 | `supernote.server.components.search.service.SearchService` | `supernote.server.components.search.service` | Semantic vector similarity search and notebook transcript retrieval. |
 | `supernote.server.components.summary.service.SummaryService` | `supernote.server.components.summary.service` | CRUD and tag management for AI and handwritten summaries (`SummaryDO`). |
@@ -31,8 +31,6 @@ __all__ = [
     "coordination",
     "file",
     "integrity",
-    "processor",
-    "processor_modules",
     "user",
     "vfs",
     "webhook",
