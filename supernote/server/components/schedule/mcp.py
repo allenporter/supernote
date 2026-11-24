@@ -39,7 +39,7 @@ def _decode_task_link(links_b64: str | None) -> ScheduleTaskLinkDTO | None:
         return None
     try:
         return ScheduleTaskLinkDTO.from_b64(links_b64)
-    except (ValueError, TypeError, binascii.Error) as err:
+    except (ValueError, TypeError, LookupError, binascii.Error) as err:
         logger.warning("Failed to decode task link base64: %s", err)
         return None
 

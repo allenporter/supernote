@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from typing import Any
 
 import httpx2
@@ -337,3 +338,24 @@ async def test_schedule_mcp_bounds_provenance_and_uses_token_actor(
     assert page["events"][0]["actor"] == f"api_key:{key_vo.id}"
     assert len(page["events"][0]["payload"]["cause_seq"]) == 64
     assert len(page["events"][0]["payload"]["reason"]) == 500
+
+
+async def test_list_tasks_tolerates_link_json_missing_required_fields(
+    mcp_url: str,
+    auth_headers: dict[str, str],
+    authenticated_client: Any,
+) -> None:
+    """Verify valid Base64 JSON missing required ScheduleTaskLinkDTO fields does not crash list_tasks."""
+    malformed_links = base64.b64encode(b"{}").decode("ascii")
+    schedule_client = ScheduleClient(authenticated_client)
+    created = await schedule_client.create_task(
+        group_id=None, title="Malformed link task", links=malformed_links
+    )
+
+    async with mcp_session(mcp_url, auth_headers) as session:
+        listed = await call_mcp_tool(session, "list_tasks", {})
+
+    assert listed["success"] is True
+    assert [(t["task_id"], t["link"]) for t in listed["tasks"]] == [
+        (created.task_id, None)
+    ]
