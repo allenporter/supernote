@@ -9,9 +9,6 @@ from typing import Any
 from mashumaro.mixins.json import DataClassJSONMixin
 
 __all__ = [
-    "VALID_AUTHOR_KINDS",
-    "VALID_EDIT_POLICIES",
-    "VALID_PAGE_KINDS",
     "WikiConflictError",
     "WikiError",
     "WikiLintIssueDTO",
@@ -23,9 +20,6 @@ __all__ = [
     "WikiSourceRefDTO",
     "WikiStatusDTO",
     "WikiUpsertInput",
-    "extract_wikilinks",
-    "normalize_alias",
-    "normalize_slug",
 ]
 
 VALID_AUTHOR_KINDS: frozenset[str] = frozenset({"compiler", "agent", "user"})
