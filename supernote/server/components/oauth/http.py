@@ -12,8 +12,10 @@ from __future__ import annotations
 import logging
 import secrets
 import time
+from typing import cast
 from urllib.parse import quote
 
+import yarl
 from aiohttp_asgi import ASGIResource
 from mashumaro.exceptions import InvalidFieldValue, MissingField
 from mashumaro.mixins.json import DataClassJSONMixin
@@ -21,7 +23,11 @@ from mcp.server.auth.handlers.metadata import MetadataHandler
 from mcp.server.auth.provider import construct_redirect_uri
 from mcp.server.auth.routes import build_metadata, cors_middleware, create_auth_routes
 from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
-from mcp.shared.auth import InvalidRedirectUriError, InvalidScopeError
+from mcp.shared.auth import (
+    InvalidRedirectUriError,
+    InvalidScopeError,
+    OAuthClientInformationFull,
+)
 from pydantic import AnyHttpUrl, AnyUrl, ValidationError
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -31,11 +37,12 @@ from starlette.routing import Route
 from supernote.server.components.http import HttpRegistrar
 from supernote.server.core import ServerCore
 from supernote.server.services.coordination import CoordinationService
-from supernote.server.services.user import UserService
+from supernote.server.services.user import SessionState, UserService
 from supernote.server.utils.auth_utils import get_token_from_request
 
 from .client_metadata import ClientMetadataUnavailableError
 from .models import (
+    LoginBridgeClientVO,
     LoginBridgeDecision,
     LoginBridgeRequestDTO,
     LoginBridgeResponseVO,
@@ -60,6 +67,21 @@ def _json_model_response(
         media_type="application/json",
         headers={"Cache-Control": "no-store"},
     )
+
+
+class _BridgeError(Exception):
+    """An OAuth error response from the login bridge."""
+
+    def __init__(self, error: OAuthErrorResponseVO, status_code: int) -> None:
+        super().__init__(error.error)
+        self.error = error
+        self.status_code = status_code
+
+
+async def _bridge_error(request: Request, exc: Exception) -> Response:
+    """Render a `_BridgeError` as its OAuth JSON error response."""
+    error = cast(_BridgeError, exc)
+    return _json_model_response(error.error, status_code=error.status_code)
 
 
 async def _client_metadata_unavailable(request: Request, exc: Exception) -> Response:
@@ -121,27 +143,82 @@ def create_auth_app(
         routes=routes,
         debug=True,
         exception_handlers={
-            ClientMetadataUnavailableError: _client_metadata_unavailable
+            ClientMetadataUnavailableError: _client_metadata_unavailable,
+            _BridgeError: _bridge_error,
         },
     )
 
-    async def login_bridge(request: Request) -> Response:
-        """Handle the OAuth 2.1 login & consent bridge between the Web UI and OAuth clients."""
+    async def verify_session(request: Request) -> SessionState | None:
+        """The caller's interactive session, or None; API keys and OAuth tokens get a 403."""
         token = get_token_from_request(request)
         session = await user_service.verify_token(token) if token else None
         if session and not session.is_interactive_session:
-            error_description = (
-                "API keys cannot authorize OAuth clients"
-                if session.is_api_key
-                else "OAuth tokens cannot authorize OAuth clients"
-            )
-            return _json_model_response(
+            raise _BridgeError(
                 OAuthErrorResponseVO(
                     error="forbidden",
-                    error_description=error_description,
+                    error_description=(
+                        "API keys cannot authorize OAuth clients"
+                        if session.is_api_key
+                        else "OAuth tokens cannot authorize OAuth clients"
+                    ),
                 ),
                 status_code=403,
             )
+        return session
+
+    def require(session: SessionState | None) -> SessionState:
+        """The session, or a 401 when the caller is not signed in."""
+        if not session:
+            raise _BridgeError(OAuthErrorResponseVO(error="unauthorized"), 401)
+        return session
+
+    async def resolve_client(
+        request: Request, client_id: str
+    ) -> tuple[OAuthClientInformationFull, AnyUrl]:
+        """The requesting client and the redirect URI a decision will be sent to."""
+        client_info = await provider.get_client(client_id)
+        if not client_info:
+            raise _BridgeError(
+                OAuthErrorResponseVO(
+                    error="invalid_client",
+                    error_description="The client's metadata document is missing or invalid.",
+                ),
+                status_code=400,
+            )
+        raw_redirect_uri = request.query_params.get("redirect_uri")
+        try:
+            parsed_redirect_arg = AnyUrl(raw_redirect_uri) if raw_redirect_uri else None
+            return client_info, client_info.validate_redirect_uri(parsed_redirect_arg)
+        except (ValidationError, InvalidRedirectUriError) as err:
+            raise _BridgeError(
+                OAuthErrorResponseVO(
+                    error="invalid_redirect_uri",
+                    error_description=(
+                        "Redirect URI is not registered for this client."
+                    ),
+                ),
+                status_code=400,
+            ) from err
+
+    async def login_bridge_client(request: Request) -> Response:
+        """Describe the requesting client for the Web UI consent card."""
+        require(await verify_session(request))
+        client_id = request.query_params.get("client_id")
+        if not client_id:
+            raise _BridgeError(OAuthErrorResponseVO(error="invalid_request"), 400)
+        client_info, redirect_uri = await resolve_client(request, client_id)
+        client_host = yarl.URL(client_id).raw_host or client_id
+        return _json_model_response(
+            LoginBridgeClientVO(
+                client_name=client_info.client_name or client_host,
+                client_host=client_host,
+                redirect_uri=str(redirect_uri),
+            )
+        )
+
+    async def login_bridge(request: Request) -> Response:
+        """Handle the OAuth 2.1 login & consent bridge between the Web UI and OAuth clients."""
+        session = await verify_session(request)
         if request.method != "POST":
             return_target = (
                 f"{request.url.path}?{request.url.query}"
@@ -154,21 +231,16 @@ def create_auth_app(
                 status_code=302,
                 headers={"Cache-Control": "no-store"},
             )
-        if not session:
-            return _json_model_response(
-                OAuthErrorResponseVO(error="unauthorized"),
-                status_code=401,
-            )
+        session = require(session)
 
         raw_body = await request.body()
         if raw_body.strip():
             try:
                 bridge_req = LoginBridgeRequestDTO.from_json(raw_body)
-            except (MissingField, InvalidFieldValue, ValueError, TypeError):
-                return _json_model_response(
-                    OAuthErrorResponseVO(error="invalid_request"),
-                    status_code=400,
-                )
+            except (MissingField, InvalidFieldValue, ValueError, TypeError) as err:
+                raise _BridgeError(
+                    OAuthErrorResponseVO(error="invalid_request"), 400
+                ) from err
         else:
             bridge_req = LoginBridgeRequestDTO()
 
@@ -180,32 +252,17 @@ def create_auth_app(
         resource = request.query_params.get("resource")
 
         if not client_id or not code_challenge:
-            return _json_model_response(
-                OAuthErrorResponseVO(error="invalid_request"),
-                status_code=400,
-            )
+            raise _BridgeError(OAuthErrorResponseVO(error="invalid_request"), 400)
 
-        client_info = await provider.get_client(client_id)
-        if not client_info:
-            return _json_model_response(
-                OAuthErrorResponseVO(
-                    error="invalid_client",
-                    error_description="The client's metadata document is missing or invalid.",
-                ),
-                status_code=400,
-            )
-
-        try:
-            parsed_redirect_arg = AnyUrl(raw_redirect_uri) if raw_redirect_uri else None
-            validated_redirect_uri = client_info.validate_redirect_uri(
-                parsed_redirect_arg
-            )
-        except (ValidationError, InvalidRedirectUriError):
-            return _json_model_response(
+        client_info, validated_redirect_uri = await resolve_client(request, client_id)
+        if bridge_req.redirect_uri is not None and bridge_req.redirect_uri != str(
+            validated_redirect_uri
+        ):
+            raise _BridgeError(
                 OAuthErrorResponseVO(
                     error="invalid_redirect_uri",
                     error_description=(
-                        "Redirect URI is not registered for this client."
+                        "The client's redirect URI changed. Reload to review it."
                     ),
                 ),
                 status_code=400,
@@ -225,14 +282,14 @@ def create_auth_app(
         )
         try:
             validated_scopes = client_info.validate_scope(normalized_scope)
-        except InvalidScopeError:
-            return _json_model_response(
+        except InvalidScopeError as err:
+            raise _BridgeError(
                 OAuthErrorResponseVO(
                     error="invalid_scope",
                     error_description="Requested scope is not supported.",
                 ),
                 status_code=400,
-            )
+            ) from err
         scopes = validated_scopes or (
             client_info.scope.split() if client_info.scope else [MCPScope.ALL]
         )
@@ -265,6 +322,7 @@ def create_auth_app(
         return _json_model_response(LoginBridgeResponseVO(redirect_url=final_url))
 
     app.add_route("/login-bridge", login_bridge, methods=["GET", "POST"])
+    app.add_route("/login-bridge/client", login_bridge_client, methods=["GET"])
     return app
 
 

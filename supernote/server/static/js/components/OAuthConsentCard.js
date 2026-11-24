@@ -17,13 +17,15 @@ export default {
             default: null,
         },
     },
-    emits: ['approve', 'deny', 'dismiss'],
+    emits: ['approve', 'deny', 'dismiss', 'retry'],
     /**
      * @param {Record<string, any>} props
      */
     setup(props) {
         /** @type {import('vue').Ref<HTMLButtonElement | null>} */
         const primaryButtonRef = ref(null);
+        /** @type {import('vue').Ref<HTMLButtonElement | null>} */
+        const retryButtonRef = ref(null);
 
         onMounted(() => {
             nextTick(() => {
@@ -34,13 +36,17 @@ export default {
         watch(
             () => [props.completedOutcome, props.request?.isValid],
             () => {
-                primaryButtonRef.value?.focus({ preventScroll: true });
+                const target = props.request?.clientError
+                    ? retryButtonRef.value
+                    : primaryButtonRef.value;
+                target?.focus({ preventScroll: true });
             },
             { flush: 'post' },
         );
 
         return {
             primaryButtonRef,
+            retryButtonRef,
             describeScope,
         };
     },
@@ -82,7 +88,18 @@ export default {
             <div class="bg-stone-50/90 border border-stone-200/90 rounded-xl p-3.5 sm:p-4 space-y-2.5 sm:space-y-3.5 mb-4 sm:mb-5">
                 <div>
                     <div class="text-[11px] font-bold uppercase tracking-wider text-stone-500 mb-0.5 sm:mb-1">Requesting Client</div>
-                    <div class="font-mono text-xs sm:text-[13px] font-semibold text-slate-900 [overflow-wrap:anywhere]" data-testid="oauth-client-id">
+                    <template v-if="request.client">
+                        <div class="text-sm font-semibold text-slate-900 [overflow-wrap:anywhere]" data-testid="oauth-client-name">
+                            {{ request.client.clientName }}
+                        </div>
+                        <div class="font-mono text-xs text-slate-700 [overflow-wrap:anywhere]" data-testid="oauth-client-host">
+                            {{ request.client.clientHost }}
+                        </div>
+                    </template>
+                    <div v-else-if="request.isValid && !request.clientError" class="text-xs text-stone-500" data-testid="oauth-client-loading">
+                        Verifying client...
+                    </div>
+                    <div class="font-mono text-[11px] text-stone-500 [overflow-wrap:anywhere] mt-0.5" data-testid="oauth-client-id">
                         {{ request.clientId || 'Unspecified' }}
                     </div>
                 </div>
@@ -107,7 +124,7 @@ export default {
                         </span>
                     </div>
                     <div class="font-mono text-xs sm:text-[13px] font-semibold text-slate-900 [overflow-wrap:anywhere]" data-testid="oauth-redirect-host">
-                        {{ request.redirectTarget?.hostLabel || request.redirectUri || 'Unspecified' }}
+                        {{ request.redirectTarget?.hostLabel || request.redirectUri || (request.isValid ? 'Resolving...' : 'Unspecified') }}
                     </div>
                     <div v-if="request.redirectTarget?.fullUri && request.redirectTarget.fullUri !== request.redirectTarget.hostLabel"
                         class="font-mono text-[11px] text-stone-500 [overflow-wrap:anywhere] mt-0.5" data-testid="oauth-redirect-uri">
@@ -140,6 +157,17 @@ export default {
                 </ul>
             </div>
 
+            <!-- Client could not be verified yet (transient) -->
+            <div v-if="request.isValid && request.clientError"
+                class="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3.5 text-xs leading-relaxed mb-4 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between"
+                role="alert" data-testid="oauth-client-error">
+                <span>{{ request.clientError }}</span>
+                <button ref="retryButtonRef" @click="$emit('retry')" type="button"
+                    class="shrink-0 px-3 py-1.5 bg-white hover:bg-amber-100 border border-amber-300 font-semibold rounded-lg">
+                    Retry
+                </button>
+            </div>
+
             <!-- Validation Error State -->
             <template v-if="!request.isValid">
                 <div class="bg-rose-50 border border-rose-200 text-rose-800 rounded-xl p-3.5 text-xs leading-relaxed mb-5" role="alert">
@@ -170,14 +198,17 @@ export default {
             <!-- Active Consent Actions -->
             <template v-else>
                 <p class="text-[11px] text-stone-500 mb-3 sm:mb-4 leading-relaxed">
-                    Approving issues a single-use PKCE authorization code to <span class="font-mono text-slate-700">{{ request.redirectTarget.hostLabel }}</span>.
+                    <template v-if="request.client">
+                        Approving issues a single-use PKCE authorization code to <span class="font-mono text-slate-700">{{ request.redirectTarget.hostLabel }}</span>.
+                    </template>
+                    <template v-else>Checking the client's published metadata before you decide.</template>
                 </p>
                 <div class="flex flex-col-reverse sm:flex-row gap-2 sm:gap-2.5">
-                    <button @click="$emit('deny')" type="button" :disabled="isSubmitting"
+                    <button @click="$emit('deny')" type="button" :disabled="isSubmitting || !request.client"
                         class="w-full sm:w-1/2 px-4 py-2 sm:py-2.5 bg-white hover:bg-stone-50 text-slate-700 hover:text-slate-900 border border-stone-300 font-semibold text-sm rounded-xl shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                         Deny
                     </button>
-                    <button ref="primaryButtonRef" @click="$emit('approve')" type="button" :disabled="isSubmitting"
+                    <button ref="primaryButtonRef" @click="$emit('approve')" type="button" :disabled="isSubmitting || !request.client"
                         class="w-full sm:w-1/2 px-4 py-2 sm:py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm rounded-xl shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                         <span v-if="isSubmitting" class="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white"></span>
                         <span>{{ isSubmitting ? 'Authorizing...' : 'Approve' }}</span>

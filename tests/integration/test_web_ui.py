@@ -29,6 +29,7 @@ from supernote.server.keys import (
     SESSION_MANAGER_KEY,
     USER_SERVICE_KEY,
 )
+from tests.fixtures.oauth import TEST_CLIENT_ID, TEST_REDIRECT_URI, FakeDocumentFetcher
 
 SAMPLE_UI_NOTE = Path(__file__).resolve().parents[1] / "testdata/philips/1to10.note"
 
@@ -717,3 +718,161 @@ async def test_web_ui_digests_crud_modals(
             await browser.close()
 
     assert not errors, f"Unexpected browser errors in Digests CRUD modals: {errors}"
+
+
+def _held_until(release: asyncio.Event) -> Any:
+    """A Playwright route handler that lets requests through once `release` is set."""
+
+    async def hold(route: Any) -> None:
+        await release.wait()
+        await route.continue_()
+
+    return hold
+
+
+@pytest.mark.parametrize("mcp_enabled", [True])
+async def test_web_ui_consent_card_shows_the_resolved_client(
+    client_metadata_documents: FakeDocumentFetcher,
+    client: TestClient,
+    auth_headers: dict[str, str],
+    mcp_enabled: bool,
+) -> None:
+    """The consent card names the client from its metadata document and its real redirect."""
+    playwright_async = pytest.importorskip("playwright.async_api")
+    base_url = str(client.make_url("")).rstrip("/")
+    token = auth_headers["x-access-token"]
+    bridge = f"{base_url}/login-bridge?client_id={TEST_CLIENT_ID}&code_challenge=abc123"
+    errors: list[str] = []
+    expected_errors: set[tuple[int, str]] = set()
+
+    def attach_listeners(page: Any) -> None:
+        page.on("pageerror", lambda exc: errors.append(f"pageerror: {exc}"))
+        # Failed-resource console lines are left to the response listener below,
+        # which can tell an expected 400/503 from an unexpected one.
+        page.on(
+            "console",
+            lambda msg: (
+                errors.append(f"console.error: {msg.text}")
+                if msg.type == "error" and "status of" not in msg.text
+                else None
+            ),
+        )
+
+        def on_response(resp: Any) -> None:
+            if resp.status >= 400 and (
+                (resp.status, resp.url.split("?")[0]) not in expected_errors
+            ):
+                errors.append(f"HTTP {resp.status}: {resp.url}")
+
+        page.on("response", on_response)
+
+    async with playwright_async.async_playwright() as p:
+        try:
+            browser = await p.chromium.launch()
+        except playwright_async.Error as exc:
+            pytest.skip(f"Chromium browser binary not installed: {exc}")
+        try:
+            for width, height in ((1360, 860), (375, 812)):
+                context = await browser.new_context(
+                    viewport={"width": width, "height": height}
+                )
+                await context.add_init_script(
+                    f"localStorage.setItem('supernote_token', {token!r});"
+                )
+                await context.route(
+                    "https://client.example/**",
+                    lambda route: route.fulfill(status=200, body="signed in"),
+                )
+                release = asyncio.Event()
+                await context.route("**/login-bridge/client?*", _held_until(release))
+                page = await context.new_page()
+                attach_listeners(page)
+                await page.goto(f"{bridge}&state=st")
+
+                card = page.get_by_role("region", name="Authorize Application")
+                await card.get_by_test_id("oauth-client-loading").wait_for()
+                assert await card.get_by_test_id(
+                    "oauth-redirect-host"
+                ).inner_text() == ("Resolving...")
+                assert await card.get_by_role("button", name="Approve").is_disabled()
+                assert await card.get_by_role("button", name="Deny").is_disabled()
+
+                release.set()
+                await card.get_by_test_id("oauth-client-name").wait_for()
+                assert await card.get_by_test_id("oauth-client-name").inner_text() == (
+                    "Example Client"
+                )
+                assert await card.get_by_test_id("oauth-client-host").inner_text() == (
+                    "client.example"
+                )
+                assert await card.get_by_test_id("oauth-redirect-uri").inner_text() == (
+                    TEST_REDIRECT_URI
+                )
+                approve = card.get_by_role("button", name="Approve")
+                assert await approve.is_enabled()
+                assert await approve.evaluate("el => el === document.activeElement")
+                assert not await page.evaluate(
+                    "() => document.documentElement.scrollWidth > window.innerWidth"
+                )
+
+                await approve.click()
+                await page.wait_for_url(
+                    re.compile(r"^https://client\.example/callback\?")
+                )
+                assert "code=" in page.url and "state=st" in page.url
+                await context.close()
+
+            context = await browser.new_context(viewport={"width": 1360, "height": 860})
+            await context.add_init_script(
+                f"localStorage.setItem('supernote_token', {token!r});"
+            )
+            client_requests = 0
+
+            async def flaky(route: Any) -> None:
+                nonlocal client_requests
+                client_requests += 1
+                if client_requests == 1:
+                    await route.fulfill(
+                        status=503,
+                        json={
+                            "error": "temporarily_unavailable",
+                            "error_description": "The client's metadata document could not be fetched.",
+                        },
+                    )
+                else:
+                    await route.continue_()
+
+            await context.route("**/login-bridge/client?*", flaky)
+            expected_errors.add((503, f"{base_url}/login-bridge/client"))
+            expected_errors.add((400, f"{base_url}/login-bridge/client"))
+            page = await context.new_page()
+            attach_listeners(page)
+            await page.goto(bridge)
+            card = page.get_by_role("region", name="Authorize Application")
+            banner = card.get_by_test_id("oauth-client-error")
+            await banner.wait_for()
+            assert "could not be fetched. Try again in a few seconds." in (
+                await banner.inner_text()
+            )
+            retry = banner.get_by_role("button", name="Retry")
+            assert await retry.evaluate("el => el === document.activeElement")
+            assert await card.get_by_role("button", name="Approve").is_disabled()
+            await retry.click()
+            await card.get_by_test_id("oauth-client-name").wait_for()
+            assert await banner.count() == 0
+
+            client_metadata_documents.documents[
+                "https://client.example/invalid.json"
+            ] = {"client_id": "someone-else"}
+            await page.goto(
+                f"{base_url}/login-bridge?client_id=https://client.example/invalid.json"
+                "&code_challenge=abc123"
+            )
+            heading = page.get_by_role("heading", name="Invalid Authorization Request")
+            await heading.wait_for()
+            assert await page.get_by_role("button", name="Approve").count() == 0
+            await context.close()
+        finally:
+            await browser.close()
+
+    assert not errors, f"Unexpected browser errors: {errors}"
