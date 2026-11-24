@@ -14,7 +14,7 @@ from supernote.client.exceptions import (
     ForbiddenException,
     NotFoundException,
 )
-from supernote.models.base import ProcessingStatus
+from supernote.models.base import ProcessingStatus, TaskType
 from supernote.models.user import UserRegisterDTO
 from supernote.server.config import ServerConfig
 from supernote.server.db.models.file import UserFileDO
@@ -227,11 +227,16 @@ async def test_admin_reprocess(
     user_headers: dict[str, str],
 ) -> None:
     """Test admin reprocess endpoint (permission and functionality)."""
+    # Pause background processing so NoteUpdatedEvent for dummy file IDs does not
+    # race with DB assertions by inserting new HASHING task rows.
+    resp = await client.post("/api/admin/queue/stop", headers=admin_headers)
+    assert resp.status == 200
+
     # Insert a dummy SystemTaskDO
     async with session_manager.session() as session:
         task = SystemTaskDO(
             file_id=999,
-            task_type="SUMMARY_GENERATION",
+            task_type=TaskType.SUMMARY_GENERATION.value,
             key="global",
             status=ProcessingStatus.COMPLETED,
             update_time=12345,
@@ -258,7 +263,10 @@ async def test_admin_reprocess(
     # Verify task is deleted in DB
     async with session_manager.session() as session:
         result = await session.execute(
-            select(SystemTaskDO).where(SystemTaskDO.file_id == 999)
+            select(SystemTaskDO).where(
+                SystemTaskDO.file_id == 999,
+                SystemTaskDO.task_type == TaskType.SUMMARY_GENERATION.value,
+            )
         )
         tasks = result.scalars().all()
         assert len(tasks) == 0
