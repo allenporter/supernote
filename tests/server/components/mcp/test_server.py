@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any
 
-from starlette.testclient import TestClient
+import httpx2
+import pytest
 
 from supernote.models.user import UserRegisterDTO
-from supernote.server.components.mcp import McpRegistrar
-from supernote.server.components.mcp.server import (
-    SupernoteTokenVerifier,
-    create_mcp_server,
-)
+from supernote.server.components.mcp.server import SupernoteTokenVerifier
 from supernote.server.services.user import UserService
+from tests.server.components.conftest import call_mcp_tool, mcp_session
+
+
+@pytest.fixture
+def mcp_enabled() -> bool:
+    """Enable the embedded MCP Streamable HTTP server for protocol tests."""
+    return True
 
 
 async def test_token_verifier_static_key_session_and_oauth(
@@ -70,83 +73,50 @@ async def test_token_verifier_static_key_session_and_oauth(
 
 
 async def test_mcp_http_requests_authenticate_and_succeed(
+    mcp_url: str,
+    auth_headers: dict[str, str],
     user_service: UserService,
+    test_user_id: int,
 ) -> None:
-    """Test MCP Streamable HTTP transport authentication with static Bearer keys."""
-    pw_md5 = hashlib.md5(b"password123").hexdigest()
-    user = await user_service.register(
-        UserRegisterDTO(email="mcphttp@example.com", password=pw_md5)
-    )
-    raw_token, key_vo = await user_service.create_api_key(user.id, "MCP Key")
-
-    mcp = create_mcp_server(
-        issuer_url="http://localhost:8080",
-        resource_server_url="http://localhost:8080/mcp",
-        user_service=user_service,
-    )
-    registrar = McpRegistrar()
-
-    async def ping() -> dict[str, Any]:
-        return {"success": True, "pong": True}
-
-    registrar.add_tool(ping)
-    registrar.apply_to_server(mcp)
-
-    app = mcp.streamable_http_app()
-
-    with TestClient(app, base_url="http://localhost:8080") as client:
-        unauth_resp = client.post(
-            "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}
+    """Test MCP Streamable HTTP transport authentication with API keys and sessions."""
+    async with httpx2.AsyncClient() as http_client:
+        unauth_resp = await http_client.post(
+            mcp_url,
+            json={"jsonrpc": "2.0", "id": 1, "method": "initialize"},
+            headers={"Accept": "application/json, text/event-stream"},
         )
         assert unauth_resp.status_code == 401
 
-        invalid_resp = client.post(
-            "/mcp",
+        invalid_resp = await http_client.post(
+            mcp_url,
             json={"jsonrpc": "2.0", "id": 1, "method": "initialize"},
-            headers={"Authorization": "Bearer sn_invalidtoken1234567890abcdef0123"},
+            headers={
+                "Accept": "application/json, text/event-stream",
+                "Authorization": "Bearer sn_invalidtoken1234567890abcdef0123",
+            },
         )
         assert invalid_resp.status_code == 401
 
-        init_body = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "test-client", "version": "1.0"},
-            },
-        }
-        init_resp = client.post(
-            "/mcp",
-            json=init_body,
-            headers={"Authorization": f"Bearer {raw_token}"},
-        )
-        assert init_resp.status_code == 200
-        session_id = init_resp.headers.get("mcp-session-id")
+    async with mcp_session(mcp_url, auth_headers) as session:
+        tools = await session.list_tools()
+        assert "list_tasks" in {t.name for t in tools.tools}
+        session_result = await call_mcp_tool(session, "list_tasks")
+        assert session_result["success"] is True
 
-        headers = {"Authorization": f"Bearer {raw_token}"}
-        if session_id:
-            headers["mcp-session-id"] = session_id
+    raw_token, key_vo = await user_service.create_api_key(test_user_id, "MCP Key")
+    async with mcp_session(mcp_url, {"x-access-token": raw_token}) as session:
+        api_key_result = await call_mcp_tool(session, "list_tasks")
+        assert api_key_result["success"] is True
 
-        tool_resp = client.post(
-            "/mcp",
-            json={
-                "jsonrpc": "2.0",
-                "id": 2,
-                "method": "tools/call",
-                "params": {"name": "ping", "arguments": {}},
-            },
-            headers=headers,
-        )
-        assert tool_resp.status_code == 200
-        assert "pong" in tool_resp.text
-
-        await user_service.revoke_api_key(user.id, key_vo.id)
-        revoked_resp = client.post(
-            "/mcp",
+    await user_service.revoke_api_key(test_user_id, key_vo.id)
+    async with httpx2.AsyncClient() as http_client:
+        revoked_resp = await http_client.post(
+            mcp_url,
             json={"jsonrpc": "2.0", "id": 3, "method": "initialize"},
-            headers={"Authorization": f"Bearer {raw_token}"},
+            headers={
+                "Accept": "application/json, text/event-stream",
+                "Authorization": f"Bearer {raw_token}",
+            },
         )
         assert revoked_resp.status_code == 401
 
