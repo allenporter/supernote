@@ -11,11 +11,10 @@ from supernote.server.components.fake_ai.ocr import FakeOcrModel
 from supernote.server.components.processor import ProcessorRegistrar
 from supernote.server.components.processor.processor import async_setup_processor
 from supernote.server.core import ServerCore
-from supernote.server.keys import OCR_MODEL_KEY, SUMMARY_SERVICE_KEY
+from supernote.server.keys import OCR_MODEL_KEY
 from supernote.server.services.processor_modules.png_conversion import (
     PngConversionModule,
 )
-from supernote.server.services.summary import SummaryService
 
 
 @pytest.mark.parametrize(
@@ -34,7 +33,7 @@ async def test_async_setup_processor_registers_builtin_stages_and_png_flag(
     has_ocr: bool,
     expected_png_enabled: bool,
 ) -> None:
-    """async_setup_processor registers core stages, toggles PNG by OCR/preview config, and includes SummaryModule when SummaryService is bound."""
+    """async_setup_processor registers core stages and toggles PNG by OCR/preview config."""
     core = dataclasses.replace(
         component_core,
         config=dataclasses.replace(
@@ -44,9 +43,6 @@ async def test_async_setup_processor_registers_builtin_stages_and_png_flag(
         ),
     )
     core.app[OCR_MODEL_KEY] = FakeOcrModel() if has_ocr else None
-    core.app[SUMMARY_SERVICE_KEY] = SummaryService(
-        core.user_service, core.session_manager, core.event_bus
-    )
 
     registrar = ProcessorRegistrar()
     await async_setup_processor(core, registrar)
@@ -56,7 +52,6 @@ async def test_async_setup_processor_registers_builtin_stages_and_png_flag(
         TaskType.PAGE_HASHING,
         TaskType.PNG_CONVERSION,
         TaskType.OCR_EXTRACTION,
-        TaskType.SUMMARY_GENERATION,
     ]
     png_mod = next(m for m in registrar.modules if isinstance(m, PngConversionModule))
     assert png_mod.enabled is expected_png_enabled

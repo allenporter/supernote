@@ -44,6 +44,7 @@ from supernote.server.components.socketio import (
     SOCKETIO_MANAGER_KEY,
     SocketIOServerManager,
 )
+from supernote.server.components.summary import SUMMARY_SERVICE_KEY, SummaryService
 from supernote.server.config import ServerConfig
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.events import (
@@ -55,12 +56,10 @@ from supernote.server.keys import (
     CONFIG_KEY,
     EVENT_BUS_KEY,
     FILE_SERVICE_KEY,
-    SUMMARY_SERVICE_KEY,
     USER_SERVICE_KEY,
 )
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
-from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import JWT_ALGORITHM, UserService
 from supernote.server.socket_auth import compute_handshake_signature
 

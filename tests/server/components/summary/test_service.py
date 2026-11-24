@@ -19,6 +19,7 @@ from supernote.models.summary import (
     UpdateSummaryGroupDTO,
 )
 from supernote.models.user import UserRegisterDTO
+from supernote.server.components.summary.service import SummaryService
 from supernote.server.constants import RECYCLE_RETENTION_MS
 from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.session import DatabaseSessionManager
@@ -32,7 +33,6 @@ from supernote.server.events import (
     SummaryUpsertedEvent,
 )
 from supernote.server.exceptions import SummaryNotFound
-from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 
 USER_EMAIL = "test@example.com"

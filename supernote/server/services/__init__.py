@@ -12,7 +12,7 @@ or asynchronously via `supernote.server.events.LocalEventBus`.
 | `supernote.server.services.processor.ProcessorService` | `supernote.server.services.processor` | Asynchronous 5-stage `.note` processing pipeline and task recovery loop. |
 | `supernote.server.services.conversion.ConversionService` | `supernote.server.services.conversion` | On-demand `.note` to PNG and vector PDF conversion with cache lookup. |
 | `supernote.server.components.search.service.SearchService` | `supernote.server.components.search.service` | Semantic vector similarity search and notebook transcript retrieval. |
-| `supernote.server.services.summary.SummaryService` | `supernote.server.services.summary` | CRUD and tag management for AI and handwritten summaries (`SummaryDO`). |
+| `supernote.server.components.summary.service.SummaryService` | `supernote.server.components.summary.service` | CRUD and tag management for AI and handwritten summaries (`SummaryDO`). |
 | `supernote.server.components.schedule.service.ScheduleService` | `supernote.server.components.schedule.service` | Task groups, tasks, recurrence rules, and delta synchronization. |
 | `supernote.server.components.schedule.ical_export.ICalExportService` | `supernote.server.components.schedule.ical_export` | RFC 5545 `VTODO` iCalendar (`.ics`) feed generation from schedule tasks. |
 | `supernote.server.components.webhooks.service.WebhookService` | `supernote.server.components.webhooks.service` | Non-blocking, HMAC-SHA256 signed outbound HTTP webhook dispatcher. |
@@ -33,7 +33,6 @@ __all__ = [
     "integrity",
     "processor",
     "processor_modules",
-    "summary",
     "user",
     "vfs",
     "webhook",

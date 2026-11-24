@@ -17,13 +17,13 @@ from supernote.models.summary import (
     UpdateSummaryGroupDTO,
 )
 from supernote.models.user import UserRegisterDTO
+from supernote.server.components.summary import SUMMARY_SERVICE_KEY
+from supernote.server.components.summary.service import DEFAULT_SUMMARY_PAGE_SIZE
 from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
-    SUMMARY_SERVICE_KEY,
     URL_SIGNER_KEY,
     USER_SERVICE_KEY,
 )
-from supernote.server.services.summary import DEFAULT_SUMMARY_PAGE_SIZE
 
 
 async def test_summary_tags_crud(summary_client: SummaryClient) -> None:

@@ -4,7 +4,7 @@
 individual summary/transcript items linked to a `UserFileDO.id`, storing Markdown text,
 structured segment metadata (`metadata_str`), and optional handwriting blob references
 (`handwrite_inner_name`). `SummaryTagDO` (`f_summary_tag`) stores user-defined tags.
-Managed by `supernote.server.services.summary.SummaryService`. See `supernote.guides.summary_api`.
+Managed by `supernote.server.components.summary.service.SummaryService`. See `supernote.guides.summary_api`.
 """
 
 import time
