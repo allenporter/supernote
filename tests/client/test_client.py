@@ -14,6 +14,7 @@ from supernote.client.auth import AbstractAuth, ConstantAuth
 from supernote.client.exceptions import (
     ApiException,
     ForbiddenException,
+    GoneException,
     UnauthorizedException,
 )
 from supernote.models.base import BaseResponse, ErrorCode
@@ -56,6 +57,11 @@ async def handler_403(request: web.Request) -> web.Response:
     return web.Response(status=403, text="Forbidden")
 
 
+async def handler_410(request: web.Request) -> web.Response:
+    """Handle 410 request."""
+    return web.Response(status=410, text="Gone")
+
+
 async def handler_success_false(request: web.Request) -> web.Response:
     """Handle success=False request."""
     return web.json_response({"success": False, "errorMsg": "Something went wrong"})
@@ -82,6 +88,7 @@ async def client_fixture(aiohttp_client: AiohttpClient) -> Client:
     app.router.add_post("/post-url", handler_post_url)
     app.router.add_get("/error-401", handler_401)
     app.router.add_get("/error-403", handler_403)
+    app.router.add_get("/error-410", handler_410)
     app.router.add_get("/success-false", handler_success_false)
     app.router.add_get("/auth-check", handler_auth_check)
     app.router.add_post("/malformed-json", handler_malformed_json)
@@ -133,6 +140,12 @@ async def test_forbidden(client: Client) -> None:
     """Test 403 Forbidden."""
     with pytest.raises(ForbiddenException):
         await client.get_json("error-403", SimpleResponse)
+
+
+async def test_gone(client: Client) -> None:
+    """Test 410 Gone."""
+    with pytest.raises(GoneException):
+        await client.get_json("error-410", SimpleResponse)
 
 
 async def test_api_exception_success_false(client: Client) -> None:

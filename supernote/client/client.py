@@ -27,6 +27,7 @@ from .exceptions import (
     ApiException,
     BadRequestException,
     ForbiddenException,
+    GoneException,
     NotFoundException,
     UnauthorizedException,
 )
@@ -379,6 +380,10 @@ class Client:
             if err.status == 404:
                 raise NotFoundException(
                     f"Not found response from API ({err.status}): {error_detail}"
+                ) from err
+            if err.status == 410:
+                raise GoneException(
+                    f"Gone response from API ({err.status}): {error_detail}"
                 ) from err
             if err.status == 400:
                 raise BadRequestException(
