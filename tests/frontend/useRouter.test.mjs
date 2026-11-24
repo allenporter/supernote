@@ -326,3 +326,33 @@ test('useRouter.js: handles #/recycle deep links, openRecycleBin, and closeRecyc
         globalThis.fetch = origFetch;
     }
 });
+
+test('useRouter.js: handles #/digests deep links and switchTab("digests")', async () => {
+    const origWindow = globalThis.window;
+    const origFetch = globalThis.fetch;
+
+    try {
+        assert.deepEqual(parseUrlHash('#/digests'), {
+            tab: 'digests',
+            view: 'grid',
+            dirId: '0',
+            showSystem: false,
+        });
+        assert.equal(buildUrlHash('digests', '0', 'grid', null), '#/digests');
+
+        setToken('router-digests-tok');
+        const { router } = createRouterHarness();
+
+        await router.switchTab('digests');
+        assert.equal(router.activeTab.value, 'digests');
+        assert.equal(globalThis.window.location.hash, '#/digests');
+
+        globalThis.window.history.pushState(null, '', '#/digests');
+        await router.syncFromUrl();
+        assert.equal(router.activeTab.value, 'digests');
+    } finally {
+        await logout({ reload: false });
+        globalThis.window = origWindow;
+        globalThis.fetch = origFetch;
+    }
+});

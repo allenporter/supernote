@@ -44,7 +44,8 @@
                                 </svg>
                             </div>
                             <div class="flex items-baseline gap-1.5 min-w-0">
-                                <span class="text-sm sm:text-base font-bold tracking-tight text-slate-900 truncate"><span v-if="isLoggedIn && !pendingOAuthRequest" class="hidden sm:inline">Open </span><template v-else>Open </template>Private Cloud</span>
+                                <span :class="isLoggedIn && !pendingOAuthRequest ? 'hidden sm:inline' : ''"
+                                    class="text-sm sm:text-base font-bold tracking-tight text-slate-900 truncate">Open Private Cloud</span>
                                 <span class="hidden md:inline text-xs font-mono font-medium uppercase tracking-widest text-stone-500 shrink-0">for Supernote</span>
                             </div>
                         </button>
@@ -54,15 +55,23 @@
                     <div v-if="isLoggedIn && !pendingOAuthRequest" class="flex items-center gap-0.5 sm:gap-1 bg-stone-200/70 p-0.5 sm:p-1 rounded-xl border border-stone-300/40 shrink-0">
                         <button @click="switchTab('files')" type="button"
                             :class="activeTab === 'files' ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-stone-600 hover:text-slate-900 font-medium'"
-                            class="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all">
+                            class="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all">
                             <svg class="hidden sm:block w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
                             </svg>
                             <span>Files</span>
                         </button>
+                        <button @click="switchTab('digests')" type="button"
+                            :class="activeTab === 'digests' ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-stone-600 hover:text-slate-900 font-medium'"
+                            class="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all">
+                            <svg class="hidden sm:block w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                            </svg>
+                            <span>Digests</span>
+                        </button>
                         <button @click="switchTab('tasks')" type="button"
                             :class="activeTab === 'tasks' ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-stone-600 hover:text-slate-900 font-medium'"
-                            class="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all">
+                            class="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3.5 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all">
                             <svg class="hidden sm:block w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg>
@@ -193,6 +202,11 @@
                             @open-file="handleSearchSelectFile"
                             @search="openSearchWithQuery"></file-viewer>
                     </div>
+                </template>
+
+                <!-- Digests & Summaries Browser Panel -->
+                <template v-else-if="activeTab === 'digests'">
+                    <digest-panel @open-file="openItem"></digest-panel>
                 </template>
 
                 <!-- Tasks & Schedule Dashboard Panel -->

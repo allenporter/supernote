@@ -10,6 +10,7 @@
 import { computed, createApp, onMounted, onUnmounted, ref } from 'vue';
 import { connectSocket, login, submitOAuthBridgeDecision } from './api/client.js';
 import { ApiError, getToken, logout, onLogout } from './api/http.js';
+import DigestPanel from './components/DigestPanel.js';
 import FileBrowserPanel from './components/FileBrowserPanel.js';
 import FileViewer from './components/FileViewer.js';
 import LoginCard from './components/LoginCard.js';
@@ -31,6 +32,7 @@ createApp({
     components: {
         'file-browser-panel': FileBrowserPanel,
         'recycle-bin-panel': RecycleBinPanel,
+        DigestPanel,
         SearchModal,
         TaskPanel,
         SettingsPanel,

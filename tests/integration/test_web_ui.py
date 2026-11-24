@@ -423,3 +423,146 @@ async def test_web_ui_settings_manages_clients_and_api_keys(
             assert await user_service.list_oauth_grants(test_user_id) == []
         finally:
             await browser.close()
+
+
+async def test_web_ui_digests_browser_view(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    web_client: WebClient,
+) -> None:
+    """Verify #/digests browses categories, standalone device digests, sources, and deep-links."""
+    playwright_async = pytest.importorskip("playwright.async_api")
+    assert client.app is not None
+
+    root_list = await web_client.list_query(0)
+    note_dir_id = next(
+        int(item.id)
+        for item in root_list.user_file_vo_list
+        if item.is_folder == "Y" and item.file_name == "Note"
+    )
+    await web_client.upload_file(
+        note_dir_id, "Digest_Source.note", SAMPLE_UI_NOTE.read_bytes()
+    )
+    await asyncio.wait_for(client.app[PROCESSOR_SERVICE_KEY].queue.join(), timeout=15.0)
+    note_list = await web_client.list_query(note_dir_id)
+    note_file_id = int(
+        next(
+            f.id
+            for f in note_list.user_file_vo_list
+            if f.file_name == "Digest_Source.note"
+        )
+    )
+
+    user_email = (await web_client.query_user()).email
+    assert user_email is not None
+    summary_service = client.app[SUMMARY_SERVICE_KEY]
+    await summary_service.add_group(
+        user_email,
+        AddSummaryGroupDTO(
+            unique_identifier="a" * 32,
+            name="AI Summaries",
+            md5_hash="0123456789abcdef",
+        ),
+    )
+    await summary_service.add_summary(
+        user_email,
+        AddSummaryDTO(
+            file_id=note_file_id,
+            unique_identifier="b" * 32,
+            parent_unique_identifier="a" * 32,
+            content="## Weekly Architecture Recap\n- **Shipped** Digests browser view",
+            data_source="GEMINI",
+            source_path="Note/Digest_Source.note",
+        ),
+    )
+    await summary_service.add_summary(
+        user_email,
+        AddSummaryDTO(
+            file_id=None,
+            unique_identifier="c" * 32,
+            parent_unique_identifier="",
+            content="Simplicity is prerequisite for reliability.",
+            comment_str="Apply this to sync state",
+            metadata='{"author": "Edsger Dijkstra"}',
+            source_path="Document/Papers/Reliability.pdf",
+            handwrite_inner_name="hw-blob-001",
+            tags="classic, engineering",
+        ),
+    )
+
+    base_url = str(client.make_url("")).rstrip("/")
+    token = auth_headers["x-access-token"]
+    errors: list[str] = []
+
+    async with playwright_async.async_playwright() as p:
+        try:
+            browser = await p.chromium.launch()
+        except playwright_async.Error as exc:
+            pytest.skip(f"Chromium browser binary not installed: {exc}")
+        try:
+            desktop = await browser.new_context(viewport={"width": 1360, "height": 860})
+            await desktop.add_init_script(
+                f"localStorage.setItem('supernote_token', {token!r});"
+            )
+            page = await desktop.new_page()
+            page.on("pageerror", lambda exc: errors.append(f"pageerror: {exc}"))
+            page.on(
+                "console",
+                lambda msg: (
+                    errors.append(f"console.error: {msg.text}")
+                    if msg.type == "error"
+                    else None
+                ),
+            )
+
+            await page.goto(f"{base_url}/#/files", wait_until="networkidle")
+            await page.get_by_role("button", name="Digests", exact=True).click()
+            assert page.url.endswith("#/digests")
+
+            cards = page.locator("[data-digest-card]")
+            await cards.first.wait_for(state="visible")
+            assert await cards.count() == 2
+            await page.get_by_text("Weekly Architecture Recap").wait_for(
+                state="visible"
+            )
+            await page.get_by_text("Edsger Dijkstra").wait_for(state="visible")
+            await page.get_by_text("Apply this to sync state").wait_for(state="visible")
+            await page.locator("[data-digest-handwriting-badge]").wait_for(
+                state="visible"
+            )
+
+            await (
+                page.locator("aside")
+                .get_by_role("button", name="Uncategorized")
+                .click()
+            )
+            assert await cards.count() == 1
+            await page.get_by_text(
+                "Simplicity is prerequisite for reliability."
+            ).wait_for(state="visible")
+
+            await (
+                page.locator("aside").get_by_role("button", name="AI Summaries").click()
+            )
+            assert await cards.count() == 1
+            await page.get_by_role("button", name="Open Source").click()
+            await page.wait_for_url(f"**/#/file/{note_file_id}*")
+            await desktop.close()
+
+            mobile = await browser.new_context(viewport={"width": 375, "height": 812})
+            await mobile.add_init_script(
+                f"localStorage.setItem('supernote_token', {token!r});"
+            )
+            mpage = await mobile.new_page()
+            mpage.on("pageerror", lambda exc: errors.append(f"mobile pageerror: {exc}"))
+            await mpage.goto(f"{base_url}/#/digests", wait_until="networkidle")
+            await mpage.locator("[data-digest-card]").first.wait_for(state="visible")
+            overflow = await mpage.evaluate(
+                "document.documentElement.scrollWidth - window.innerWidth"
+            )
+            assert overflow <= 0, f"Mobile digests horizontal overflow: {overflow}px"
+            await mobile.close()
+        finally:
+            await browser.close()
+
+    assert not errors, f"Unexpected browser errors in Digests view: {errors}"
