@@ -51,8 +51,9 @@ from supernote.server.events import (
     ScheduleTaskCreatedEvent,
     ScheduleTaskDeletedEvent,
     ScheduleTaskUpdatedEvent,
+    SummaryCreatedEvent,
     SummaryDeletedEvent,
-    SummaryUpsertedEvent,
+    SummaryUpdatedEvent,
     VfsContentUpdatedEvent,
     VfsItemCopiedEvent,
     VfsItemCreatedEvent,
@@ -93,7 +94,8 @@ SUBSCRIBED_DOMAIN_EVENTS: tuple[type[DomainEvent], ...] = (
     ScheduleTaskCreatedEvent,
     ScheduleTaskUpdatedEvent,
     ScheduleTaskDeletedEvent,
-    SummaryUpsertedEvent,
+    SummaryCreatedEvent,
+    SummaryUpdatedEvent,
     SummaryDeletedEvent,
     NotePagesDeltaEvent,
     NotePageTranscribedEvent,
@@ -285,7 +287,7 @@ class EventLogService:
             event_types: Optional list of event type filters supporting exact
                 `DomainEventType` values (defined in `supernote.models.events`)
                 or namespace prefix wildcards ending with ``'.*'`` (``'note.*'``,
-                ``'vfs.*'``, ``'schedule.*'``, ``'summary.*'``).
+                ``'file.*'``, ``'schedule.*'``, ``'summary.*'``).
             file_id: Optional VFS file ID filter (`related_file_id == file_id`).
             exclude_actors: Optional list of actor identifiers to omit from
                 results (e.g., ``['api_key:<id>']``). Filtered events still

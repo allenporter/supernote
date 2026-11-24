@@ -41,10 +41,11 @@ from supernote.server.events import (
     DomainEventRecorded,
     LocalEventBus,
     ScheduleUpdatedEvent,
+    SummaryCreatedEvent,
     SummaryDeletedEvent,
     SummaryTagDeletedEvent,
     SummaryTagUpsertedEvent,
-    SummaryUpsertedEvent,
+    SummaryUpdatedEvent,
     SyncCompletedEvent,
     VfsItemCopiedEvent,
     VfsItemCreatedEvent,
@@ -346,7 +347,8 @@ class SocketIOServerManager:
         self.event_bus.subscribe(
             SummaryTagDeletedEvent, self._handle_summary_tag_deleted
         )
-        self.event_bus.subscribe(SummaryUpsertedEvent, self._handle_summary_upserted)
+        self.event_bus.subscribe(SummaryCreatedEvent, self._handle_summary_changed)
+        self.event_bus.subscribe(SummaryUpdatedEvent, self._handle_summary_changed)
         self.event_bus.subscribe(SummaryDeletedEvent, self._handle_summary_deleted)
         self.event_bus.subscribe(VfsItemCreatedEvent, self._handle_vfs_item_created)
         self.event_bus.subscribe(VfsItemMovedEvent, self._handle_vfs_item_moved)
@@ -473,11 +475,13 @@ class SocketIOServerManager:
             ),
         )
 
-    async def _handle_summary_upserted(self, event: SummaryUpsertedEvent) -> None:
-        """Emit an ADD_DIGEST or UPDATE_DIGEST DIGEST-SYN notification when a summary group or item is upserted."""
+    async def _handle_summary_changed(self, event: SummaryCreatedEvent) -> None:
+        """Emit an ADD_DIGEST or UPDATE_DIGEST DIGEST-SYN notification when a summary group or item is created or updated."""
         now_ms = int(time.time() * 1000)
         action = (
-            SocketIoAction.ADD_DIGEST if event.is_new else SocketIoAction.UPDATE_DIGEST
+            SocketIoAction.UPDATE_DIGEST
+            if isinstance(event, SummaryUpdatedEvent)
+            else SocketIoAction.ADD_DIGEST
         )
         summary = event.summary
         is_group = summary.is_summary_group == BooleanEnum.YES

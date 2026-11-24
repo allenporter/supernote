@@ -11,7 +11,12 @@ import pytest
 from supernote.models.base import BooleanEnum
 from supernote.models.events import DomainEntityType, DomainEventType
 from supernote.models.schedule import ScheduleTaskLinkDTO
-from supernote.models.summary import AddSummaryDTO, AddSummaryGroupDTO, SummaryItem
+from supernote.models.summary import (
+    AddSummaryDTO,
+    AddSummaryGroupDTO,
+    SummaryItem,
+    UpdateSummaryDTO,
+)
 from supernote.models.user import UserRegisterDTO
 from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.components.events.models import encode_sync_token
@@ -34,7 +39,7 @@ from supernote.server.events import (
     NoteProcessingCompletedEvent,
     NoteProcessingFailedEvent,
     SummaryDeletedEvent,
-    SummaryUpsertedEvent,
+    SummaryUpdatedEvent,
 )
 from supernote.server.exceptions import CursorExpiredError
 from supernote.server.services.blob import BlobStorage
@@ -77,7 +82,7 @@ async def test_append_persists_and_publishes_domain_event(
 
     e1 = await event_log_service.append(
         user_id=1,
-        event_type="vfs.created",
+        event_type="file.created",
         entity_type="file",
         entity_id="100",
         related_file_id=100,
@@ -107,21 +112,21 @@ async def test_prune_expired_events_and_cursor_expiration(
     now_ms = int(time.time() * 1000)
     old1 = await event_log_service.append(
         user_id=1,
-        event_type="vfs.created",
+        event_type="file.created",
         entity_type="file",
         entity_id="1",
         timestamp_ms=now_ms - 10_000,
     )
     old2 = await event_log_service.append(
         user_id=1,
-        event_type="vfs.moved",
+        event_type="file.moved",
         entity_type="file",
         entity_id="1",
         timestamp_ms=now_ms - 8_000,
     )
     recent = await event_log_service.append(
         user_id=1,
-        event_type="vfs.deleted",
+        event_type="file.deleted",
         entity_type="file",
         entity_id="1",
         timestamp_ms=now_ms - 1_000,
@@ -167,7 +172,7 @@ async def test_prune_disabled_when_retention_days_is_zero(
     )
     await svc.append(
         user_id=1,
-        event_type="vfs.created",
+        event_type="file.created",
         entity_type="file",
         entity_id="1",
         timestamp_ms=1_000,
@@ -231,6 +236,12 @@ async def test_summary_domain_events_recorded(
     )
     assert group.id is not None and leaf.id is not None
 
+    # Updating an existing summary emits summary.updated
+    await summary_service.update_summary(
+        test_user,
+        UpdateSummaryDTO(id=leaf.id, content="Updated summary text"),
+    )
+
     # Deleting a group cascades a summary.deleted tombstone for both the group and its child leaf
     await summary_service.delete_group(test_user, group.id)
 
@@ -242,12 +253,13 @@ async def test_summary_domain_events_recorded(
         for e in page.events
     ] == [
         (
-            DomainEventType.SUMMARY_UPSERTED,
+            DomainEventType.SUMMARY_CREATED,
             DomainEntityType.SUMMARY,
             str(group.id),
             None,
         ),
-        (DomainEventType.SUMMARY_UPSERTED, DomainEntityType.SUMMARY, str(leaf.id), 501),
+        (DomainEventType.SUMMARY_CREATED, DomainEntityType.SUMMARY, str(leaf.id), 501),
+        (DomainEventType.SUMMARY_UPDATED, DomainEntityType.SUMMARY, str(leaf.id), 501),
         (
             DomainEventType.SUMMARY_DELETED,
             DomainEntityType.SUMMARY,
@@ -257,8 +269,9 @@ async def test_summary_domain_events_recorded(
         (DomainEventType.SUMMARY_DELETED, DomainEntityType.SUMMARY, str(leaf.id), 501),
     ]
     assert page.events[0].payload["summary"]["isSummaryGroup"] == "Y"
-    assert page.events[1].payload["is_new"] is True
-    assert page.events[3].payload == {
+    assert page.events[1].payload["summary"]["content"] == "Summary text"
+    assert page.events[2].payload["summary"]["content"] == "Updated summary text"
+    assert page.events[4].payload == {
         "summary_id": str(leaf.id),
         "file_id": "501",
         "unique_identifier": "leaf-1",
@@ -299,14 +312,13 @@ async def test_summary_domain_events_recorded(
 
     # Device actor provenance via equipment_no
     await event_bus.publish(
-        SummaryUpsertedEvent(
+        SummaryUpdatedEvent(
             user_id=test_user_id,
             summary=SummaryItem(
                 id=999,
                 unique_identifier="dev-sum",
                 is_summary_group=BooleanEnum.NO,
             ),
-            is_new=False,
             equipment_no="SN777",
         )
     )
@@ -373,17 +385,17 @@ async def test_vfs_file_and_folder_domain_events_recorded(
     )
 
     p1 = await event_log_service.list_events(
-        user_id=test_user_id, event_types=["vfs.*"]
+        user_id=test_user_id, event_types=["file.*"]
     )
     assert [(e.event_type, e.entity_id, e.related_file_id) for e in p1.events] == [
-        (DomainEventType.VFS_CREATED, str(sub_dir.id), None),
-        (DomainEventType.VFS_CREATED, str(note_info.id), note_info.id),
-        (DomainEventType.VFS_CONTENT_UPDATED, str(note_info.id), note_info.id),
+        (DomainEventType.FILE_CREATED, str(sub_dir.id), None),
+        (DomainEventType.FILE_CREATED, str(note_info.id), note_info.id),
+        (DomainEventType.FILE_CONTENT_UPDATED, str(note_info.id), note_info.id),
     ]
     assert p1.events[2].payload["old_md5"] == md5_1
     assert p1.events[2].payload["new_md5"] == md5_2
 
-    # Rename folder -> emits vfs.moved for the folder
+    # Rename folder -> emits file.moved for the folder
     await file_service.rename_item(test_user, sub_dir.id, "Roadmap")
     p2 = await event_log_service.list_events(
         user_id=test_user_id, sync_token=p1.next_sync_token
@@ -398,7 +410,7 @@ async def test_vfs_file_and_folder_domain_events_recorded(
         for e in p2.events
     ] == [
         (
-            DomainEventType.VFS_MOVED,
+            DomainEventType.FILE_MOVED,
             str(sub_dir.id),
             "NOTE/Note/Projects",
             "NOTE/Note/Roadmap",
@@ -413,17 +425,17 @@ async def test_vfs_file_and_folder_domain_events_recorded(
         user_id=test_user_id, sync_token=p2.next_sync_token
     )
     assert len(p3.events) == 1
-    assert p3.events[0].event_type == DomainEventType.VFS_COPIED
+    assert p3.events[0].event_type == DomainEventType.FILE_COPIED
     assert p3.events[0].entity_id == str(copied_dir.id)
     assert p3.events[0].payload["source_id"] == str(sub_dir.id)
     assert p3.events[0].payload["original_full_path"] == "NOTE/Note/Roadmap"
 
-    # Delete folder -> emits vfs.deleted for the folder
+    # Delete folder -> emits file.deleted for the folder
     await file_service.delete_item(test_user, copied_dir.id)
     p4 = await event_log_service.list_events(
         user_id=test_user_id, sync_token=p3.next_sync_token
     )
-    assert [e.event_type for e in p4.events] == [DomainEventType.VFS_DELETED]
+    assert [e.event_type for e in p4.events] == [DomainEventType.FILE_DELETED]
     assert p4.events[0].entity_id == str(copied_dir.id)
 
 
@@ -723,7 +735,7 @@ async def test_event_log_service_zero_retention_skips_background_pruner(
     old_ts = int(time.time() * 1000) - (100 * 86_400_000)
     await service.append(
         user_id=76,
-        event_type="vfs.created",
+        event_type="file.created",
         entity_type="file",
         entity_id="keep",
         timestamp_ms=old_ts,
@@ -750,7 +762,7 @@ async def test_event_log_service_background_pruner_deletes_expired_events(
     old_ts = int(time.time() * 1000) - (2 * 86_400_000)
     await service.append(
         user_id=77,
-        event_type="vfs.created",
+        event_type="file.created",
         entity_type="file",
         entity_id="old",
         timestamp_ms=old_ts,

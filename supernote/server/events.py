@@ -335,14 +335,13 @@ class SummaryTagDeletedEvent(Event):
 
 
 @dataclass
-class SummaryUpsertedEvent(DomainEvent):
-    """Triggered when a summary group or leaf summary item is created or updated."""
+class SummaryCreatedEvent(DomainEvent):
+    """Triggered when a summary group or leaf summary item is created."""
 
-    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.SUMMARY_UPSERTED
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.SUMMARY_CREATED
     ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.SUMMARY
 
     summary: SummaryItem
-    is_new: bool
     equipment_no: str | None = None
 
     @property
@@ -352,6 +351,13 @@ class SummaryUpsertedEvent(DomainEvent):
     @property
     def related_file_id(self) -> int | None:
         return self.summary.file_id
+
+
+@dataclass
+class SummaryUpdatedEvent(SummaryCreatedEvent):
+    """Triggered when a summary group or leaf summary item is updated."""
+
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.SUMMARY_UPDATED
 
 
 @dataclass
@@ -380,7 +386,7 @@ class SummaryDeletedEvent(DomainEvent):
 class VfsItemCreatedEvent(DomainEvent):
     """Triggered when a VFS file or directory is created, uploaded, or restored from recycle."""
 
-    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.VFS_CREATED
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.FILE_CREATED
     ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.FILE
 
     item_id: int = field(metadata=field_options(serialize=str))
@@ -405,7 +411,7 @@ class VfsItemCreatedEvent(DomainEvent):
 class VfsContentUpdatedEvent(DomainEvent):
     """Triggered when an existing VFS file is overwritten with new content."""
 
-    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.VFS_CONTENT_UPDATED
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.FILE_CONTENT_UPDATED
     ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.FILE
 
     item_id: int = field(metadata=field_options(serialize=str))
@@ -430,7 +436,7 @@ class VfsContentUpdatedEvent(DomainEvent):
 class VfsItemMovedEvent(DomainEvent):
     """Triggered when a VFS file or directory is renamed in-place or moved to a new directory."""
 
-    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.VFS_MOVED
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.FILE_MOVED
     ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.FILE
 
     item_id: int = field(metadata=field_options(serialize=str))
@@ -458,7 +464,7 @@ class VfsItemMovedEvent(DomainEvent):
 class VfsItemCopiedEvent(DomainEvent):
     """Triggered when a VFS file or directory is copied."""
 
-    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.VFS_COPIED
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.FILE_COPIED
     ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.FILE
 
     source_id: int = field(metadata=field_options(serialize=str))
@@ -487,7 +493,7 @@ class VfsItemCopiedEvent(DomainEvent):
 class VfsItemDeletedEvent(DomainEvent):
     """Triggered when a VFS file or directory is soft-deleted into the recycle bin."""
 
-    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.VFS_DELETED
+    EVENT_TYPE: ClassVar[DomainEventType] = DomainEventType.FILE_DELETED
     ENTITY_TYPE: ClassVar[DomainEntityType] = DomainEntityType.FILE
 
     item_id: int = field(metadata=field_options(serialize=str))

@@ -115,7 +115,7 @@ sequenceDiagram
     Bus->>EL: Persist UserEventDO & publish DomainEventRecorded
     Server-->>Device: 200 OK (Sync never blocked by webhooks)
     Bus->>WH: _handle_domain_event_recorded
-    WH->>Endpoint: POST (X-Supernote-Event: vfs.created)
+    WH->>Endpoint: POST (X-Supernote-Event: file.created)
     Note over Server,Bus: Background Pipeline runs (Hashing -> PNG -> OCR -> Embedding -> Summary)
     Server->>Bus: Publish NoteProcessingCompletedEvent
     Bus->>EL: Persist UserEventDO & publish DomainEventRecorded
@@ -130,7 +130,7 @@ Every webhook `POST` request sends these headers:
 - `X-Supernote-Event: <event_type>` *(matching `supernote.models.events.DomainEventType`)*
 - `X-Supernote-Signature: sha256=<hex_digest>` *(included whenever `secret` is configured on the endpoint)*
 
-Endpoints can subscribe to any exact `DomainEventType` value (e.g. `vfs.created`, `vfs.content_updated`, `note.processing_completed`, `schedule.task_created`, `summary.upserted`), namespace prefix wildcards (`vfs.*`, `note.*`, `schedule.*`, `summary.*`), or `*` for all domain events — matching the filter semantics of `GET /api/extended/events`.
+Endpoints can subscribe to any exact `DomainEventType` value (e.g. `file.created`, `file.content_updated`, `note.processing_completed`, `schedule.task_created`, `summary.created`), namespace prefix wildcards (`file.*`, `note.*`, `schedule.*`, `summary.*`), or `*` for all domain events — matching the filter semantics of `GET /api/extended/events`.
 
 #### JSON Payload Structure
 
@@ -177,7 +177,7 @@ webhooks:
       user: "you@example.com"
       secret: "0f9e8d7c6b5a4938271605f4e3d2c1b0a9f8e7d6c5b4a39281706f5e4d3c2b1a"
       events:
-        - "vfs.created"
+        - "file.created"
         - "note.*"
 ```
 

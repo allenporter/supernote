@@ -159,7 +159,7 @@ webhooks:
       user: "you@example.com"
       secret: "replace-with-random-secret"
       events:
-        - "vfs.created"
+        - "file.created"
         - "note.*"
 ```
 

@@ -41,7 +41,7 @@ async def test_webhooks_component_lifecycle(
 
     async def handle_hook(request: web.Request) -> web.Response:
         payload = json.loads(await request.read())
-        assert payload["eventType"] == DomainEventType.VFS_CREATED
+        assert payload["eventType"] == DomainEventType.FILE_CREATED
         received_entity_ids.append(payload["entityId"])
         return web.Response(status=200)
 
