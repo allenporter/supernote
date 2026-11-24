@@ -13,8 +13,9 @@ notebooks and schedule tasks change, without re-scanning the entire vault:
     incremental LLM synthesis to keep affected wiki pages current.
   - Soft-delete / invalidation events (`file.deleted` when a file moves to the
     recycle bin, deleted pages in `note.pages_delta`, `schedule.task_deleted`)
-    mark matching `f_wiki_source_ref.is_source_deleted = True` so structural
-    lint flags `stale_source` instead of leaving silent dead citations.
+    flag matching `f_wiki_source_ref.is_source_deleted = True` via
+    `WikiService.mark_sources_deleted` so structural lint flags `stale_source`
+    instead of leaving silent dead citations.
 - **Hard-purge invalidation backstop (`VfsItemPurgedEvent`)**:
   In normal `auto_compile=True` operation, `file.deleted` (recycle bin) already
   marks `is_source_deleted = True`. Subscribing to `VfsItemPurgedEvent` is an
@@ -35,6 +36,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -67,17 +69,17 @@ from .models import (
     WikiUpsertInput,
 )
 from .prompts import (
-    WIKI_COMPILE_SCHEMA,
-    WIKI_LINT_SCHEMA,
+    WikiCompilePlan,
+    WikiLintIssueOp,
+    WikiLintProposalOp,
     build_compile_prompt,
     build_lint_prompt,
+    get_compile_json_schema,
+    get_lint_json_schema,
+    parse_compile_plan,
+    parse_lint_report,
 )
 from .service import WikiService, _make_dedup_key
-from .sources import (
-    load_linked_context,
-    mark_deleted_sources_from_events,
-    mark_file_sources_deleted,
-)
 
 __all__ = [
     "WIKI_COMPILER_KEY",
@@ -176,8 +178,8 @@ class WikiCompilerWorker:
         """Mark wiki source refs citing a permanently purged VFS file as deleted."""
         if not self._started:
             return
-        await mark_file_sources_deleted(
-            self._session_manager, event.user_id, event.item_id
+        await self._wiki_service.mark_sources_deleted(
+            event.user_id, file_ids={event.item_id}
         )
 
     def _schedule_user_compile(self, user_id: int) -> None:
@@ -253,9 +255,7 @@ class WikiCompilerWorker:
                     status="idle",
                 )
 
-            await mark_deleted_sources_from_events(
-                self._session_manager, user_id, page.events
-            )
+            await self._mark_deleted_sources_from_events(user_id, page.events)
             max_seq = page.events[-1].seq
 
             if self._text_model is None:
@@ -273,9 +273,7 @@ class WikiCompilerWorker:
                     status="paused",
                 )
 
-            linked_context = await load_linked_context(
-                self._session_manager, user_id, page.events
-            )
+            linked_context = await self._load_linked_context(user_id, page.events)
             diff_payload = [
                 {
                     "seq": ev.seq,
@@ -292,13 +290,14 @@ class WikiCompilerWorker:
 
             # Execute LLM HTTP call strictly outside any open SQLite session.
             try:
-                plan = await self._text_model.generate_json(
+                raw_plan = await self._text_model.generate_json(
                     prompt,
-                    response_schema=WIKI_COMPILE_SCHEMA,
+                    response_schema=get_compile_json_schema(),
                     schema_name="wiki_compile_plan",
                     stage=AIStage.WIKI_COMPILE,
                 )
-            except AIError as err:
+                plan = parse_compile_plan(raw_plan)
+            except (AIError, ValueError, TypeError, LookupError) as err:
                 await self._update_checkpoint(
                     user_id, status="error", last_error=str(err)
                 )
@@ -423,13 +422,14 @@ class WikiCompilerWorker:
                     all_pages, synthetic_diffs, linked_context={}
                 )
                 try:
-                    plan = await self._text_model.generate_json(
+                    raw_plan = await self._text_model.generate_json(
                         prompt,
-                        response_schema=WIKI_COMPILE_SCHEMA,
+                        response_schema=get_compile_json_schema(),
                         schema_name="wiki_compile_plan",
                         stage=AIStage.WIKI_COMPILE,
                     )
-                except AIError as err:
+                    plan = parse_compile_plan(raw_plan)
+                except (AIError, ValueError, TypeError, LookupError) as err:
                     await self._update_checkpoint(
                         user_id, status="error", last_error=str(err)
                     )
@@ -479,18 +479,19 @@ class WikiCompilerWorker:
 
             prompt = build_lint_prompt(pages, tasks)
             try:
-                report = await self._text_model.generate_json(
+                raw_report = await self._text_model.generate_json(
                     prompt,
-                    response_schema=WIKI_LINT_SCHEMA,
+                    response_schema=get_lint_json_schema(),
                     schema_name="wiki_lint_report",
                     stage=AIStage.WIKI_LINT,
                 )
-            except AIError as err:
+                report = parse_lint_report(raw_report)
+            except (AIError, ValueError, TypeError, LookupError) as err:
                 await self._update_checkpoint(
                     user_id, status="error", last_error=str(err)
                 )
                 raise
-            await self._record_lint_proposals(user_id, report.get("issues", []))
+            await self._record_lint_proposals(user_id, report.issues)
             await self._update_checkpoint(
                 user_id,
                 reset_lint=True,
@@ -502,47 +503,28 @@ class WikiCompilerWorker:
     async def _apply_compile_plan(
         self,
         user_id: int,
-        plan: dict[str, Any],
+        plan: WikiCompilePlan,
         *,
         source_event_seq: int | None,
     ) -> tuple[int, int]:
-        raw_ops = plan.get("page_ops", [])
-        if not isinstance(raw_ops, list):
-            return 0, 0
-
         pages_updated = 0
         skipped_policy = 0
-        for op in raw_ops[: self._config.max_pages_per_batch]:
-            if not isinstance(op, dict):
-                continue
-            slug = str(op.get("slug", "")).strip()
-            title = str(op.get("title", "")).strip()
-            body_md = str(op.get("body_md", ""))
+        for op in plan.page_ops[: self._config.max_pages_per_batch]:
+            slug = op.slug.strip()
+            title = op.title.strip()
             if not slug or not title:
                 continue
-            raw_kind = str(op.get("page_kind", "topic"))
-            page_kind = raw_kind if raw_kind in VALID_PAGE_KINDS else "topic"
-            raw_refs = op.get("source_refs") or []
-            source_refs: list[WikiSourceRefDTO] = []
-            for r in raw_refs:
-                if not (
-                    isinstance(r, dict) and r.get("source_type") and r.get("source_key")
-                ):
-                    continue
-                parsed_file_id: int | None = None
-                if r.get("file_id") is not None:
-                    try:
-                        parsed_file_id = int(r["file_id"])
-                    except (TypeError, ValueError):
-                        parsed_file_id = None
-                source_refs.append(
-                    WikiSourceRefDTO(
-                        source_type=str(r["source_type"]),
-                        source_key=str(r["source_key"]),
-                        file_id=parsed_file_id,
-                        last_event_seq=source_event_seq,
-                    )
+            page_kind = op.page_kind if op.page_kind in VALID_PAGE_KINDS else "topic"
+            source_refs = [
+                WikiSourceRefDTO(
+                    source_type=ref.source_type,
+                    source_key=ref.source_key,
+                    file_id=ref.file_id,
+                    last_event_seq=source_event_seq,
                 )
+                for ref in op.source_refs
+                if ref.source_type and ref.source_key
+            ]
             try:
                 await self._wiki_service.upsert_page(
                     user_id,
@@ -550,22 +532,14 @@ class WikiCompilerWorker:
                         slug=slug,
                         title=title,
                         page_kind=page_kind,
-                        summary=str(op.get("summary", "")),
-                        body_md=body_md,
-                        claims=[
-                            c for c in (op.get("claims") or []) if isinstance(c, dict)
-                        ],
-                        aliases=[
-                            str(a)
-                            for a in (op.get("aliases") or [])
-                            if isinstance(a, str) and a.strip()
-                        ],
+                        summary=op.summary,
+                        body_md=op.body_md,
+                        claims=list(op.claims),
+                        aliases=[a for a in op.aliases if a.strip()],
                         source_refs=source_refs,
                         author_kind="compiler",
                         author_ref="system:wiki",
-                        change_summary=str(
-                            op.get("change_summary", "Incremental compile")
-                        ),
+                        change_summary=op.change_summary or "Incremental compile",
                         source_event_seq=source_event_seq,
                     ),
                 )
@@ -574,21 +548,26 @@ class WikiCompilerWorker:
                 logger.info("Skipping compiler op for %r: %s", slug, err)
                 skipped_policy += 1
 
-        await self._record_lint_proposals(user_id, plan.get("lint_proposals", []))
+        await self._record_lint_proposals(user_id, plan.lint_proposals)
         return pages_updated, skipped_policy
 
-    async def _record_lint_proposals(self, user_id: int, raw_issues: Any) -> None:
-        if not isinstance(raw_issues, list) or not raw_issues:
+    async def _record_lint_proposals(
+        self,
+        user_id: int,
+        issues: Sequence[WikiLintProposalOp | WikiLintIssueOp],
+    ) -> None:
+        if not issues:
             return
         now = _now_ms()
         async with self._session_manager.session() as session:
-            for item in raw_issues:
-                if not isinstance(item, dict):
-                    continue
-                issue_type = str(item.get("issue_type", "contradiction"))[:48]
-                desc = str(item.get("description", "")).strip()
+            for item in issues:
+                issue_type = (item.issue_type or "contradiction")[:48]
+                desc = item.description.strip()
                 if not desc:
                     continue
+                severity = (
+                    item.severity if isinstance(item, WikiLintIssueOp) else "warn"
+                )[:16]
                 dedup_key = _make_dedup_key(f"llm:{issue_type}:{desc}")
                 existing = (
                     await session.execute(
@@ -604,19 +583,118 @@ class WikiCompilerWorker:
                             user_id=user_id,
                             dedup_key=dedup_key,
                             issue_type=issue_type,
-                            severity=str(item.get("severity", "warn"))[:16],
+                            severity=severity,
                             description=desc,
-                            proposal_json=(
-                                item.get("proposal")
-                                if isinstance(item.get("proposal"), dict)
-                                else None
-                            ),
+                            proposal_json=item.proposal,
                             status="open",
                             create_time=now,
                             update_time=now,
                         )
                     )
             await session.commit()
+
+    async def _mark_deleted_sources_from_events(
+        self, user_id: int, events: list[DomainEventRecorded]
+    ) -> None:
+        deleted_file_ids: set[int] = set()
+        deleted_page_keys: set[str] = set()
+        deleted_task_ids: set[str] = set()
+        for ev in events:
+            if (
+                ev.event_type == DomainEventType.FILE_DELETED.value
+                and ev.related_file_id
+            ):
+                deleted_file_ids.add(ev.related_file_id)
+            elif (
+                ev.event_type == DomainEventType.NOTE_PAGES_DELTA.value
+                and ev.related_file_id
+            ):
+                for pid in ev.payload.get("deleted_pages") or []:
+                    deleted_page_keys.add(f"{ev.related_file_id}:{pid}")
+            elif ev.event_type == DomainEventType.SCHEDULE_TASK_DELETED.value:
+                deleted_task_ids.add(ev.entity_id)
+
+        await self._wiki_service.mark_sources_deleted(
+            user_id,
+            file_ids=deleted_file_ids,
+            note_page_keys=deleted_page_keys,
+            task_ids=deleted_task_ids,
+        )
+
+    async def _load_linked_context(
+        self, user_id: int, events: list[DomainEventRecorded]
+    ) -> dict[str, Any]:
+        task_ids = {ev.entity_id for ev in events if ev.entity_type == "schedule_task"}
+        file_ids = {
+            ev.related_file_id
+            for ev in events
+            if ev.related_file_id is not None and ev.entity_type == "schedule_task"
+        }
+        if not task_ids and not file_ids:
+            return {}
+
+        async with self._session_manager.session() as session:
+            tasks_ctx: list[dict[str, Any]] = []
+            if task_ids:
+                rows = (
+                    (
+                        await session.execute(
+                            select(ScheduleTaskDO).where(
+                                ScheduleTaskDO.user_id == user_id,
+                                ScheduleTaskDO.task_id.in_(task_ids),
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                tasks_ctx = [
+                    {
+                        "task_id": t.task_id,
+                        "title": t.title,
+                        "detail": t.detail,
+                        "status": t.status,
+                        "importance": t.importance,
+                        "recurrence": t.recurrence,
+                        "due_time": t.due_time,
+                        "completed_time": t.completed_time,
+                    }
+                    for t in rows
+                ]
+
+            pages_ctx: list[dict[str, Any]] = []
+            if file_ids:
+                # Strict tenant join: NotePageContentDO has no user_id column.
+                page_rows = (
+                    (
+                        await session.execute(
+                            select(NotePageContentDO)
+                            .join(
+                                UserFileDO, UserFileDO.id == NotePageContentDO.file_id
+                            )
+                            .where(
+                                UserFileDO.user_id == user_id,
+                                UserFileDO.is_active == "Y",
+                                NotePageContentDO.file_id.in_(file_ids),
+                                NotePageContentDO.text_content.is_not(None),
+                            )
+                            .limit(10)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                pages_ctx = [
+                    {
+                        "file_id": p.file_id,
+                        "page_id": p.page_id,
+                        "page_index": p.page_index,
+                        "text_content": (p.text_content or "")[:1500],
+                    }
+                    for p in page_rows
+                    if not p.is_blank
+                ]
+            return {"tasks": tasks_ctx, "linked_note_pages": pages_ctx}
 
     async def _get_or_create_checkpoint(self, user_id: int) -> WikiCheckpointDO:
         async with self._session_manager.session() as session:
