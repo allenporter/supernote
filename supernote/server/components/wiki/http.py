@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass, field
 from typing import Any
 
 from aiohttp import web
 from mashumaro.exceptions import InvalidFieldValue, MissingField
+from mashumaro.mixins.json import DataClassJSONMixin
 
 from supernote.server.ai.base import AIError
 from supernote.server.components.http import HttpRegistrar
@@ -33,6 +35,9 @@ from .models import (
 from .service import WIKI_SERVICE_KEY, WikiService
 
 __all__ = [
+    "WikiCompileRequestDTO",
+    "WikiResolveLintRequestDTO",
+    "WikiUpsertRequestDTO",
     "async_setup_http",
     "routes",
 ]
@@ -43,6 +48,98 @@ routes = web.RouteTableDef()
 _VALID_LINT_STATUS_FILTERS: frozenset[str] = frozenset(
     {"open", "resolved", "dismissed", "all"}
 )
+
+
+def _check_str_fields(d: dict[Any, Any], keys: tuple[str, ...]) -> None:
+    for key in keys:
+        if (val := d.get(key)) is not None and not isinstance(val, str):
+            raise ValueError(f"{key} must be a string")
+
+
+def _check_int_fields(d: dict[Any, Any], keys: tuple[str, ...]) -> None:
+    for key in keys:
+        if (val := d.get(key)) is not None and (
+            isinstance(val, bool) or not isinstance(val, int)
+        ):
+            raise ValueError(f"{key} must be an integer")
+
+
+@dataclass
+class WikiUpsertRequestDTO(DataClassJSONMixin):
+    """Request body for `PUT /api/extended/wiki/pages/{slug}`."""
+
+    title: str
+    body_md: str = ""
+    page_kind: str = "topic"
+    summary: str = ""
+    aliases: list[str] = field(default_factory=list)
+    claims: list[dict[str, Any]] = field(default_factory=list)
+    source_refs: list[WikiSourceRefDTO] = field(default_factory=list)
+    change_summary: str = ""
+    expected_version: int | None = None
+    edit_policy: str | None = None
+
+    @classmethod
+    def __pre_deserialize__(cls, d: dict[Any, Any]) -> dict[Any, Any]:
+        if not isinstance(d, dict):
+            raise ValueError("Request body must be a JSON object")
+        if not isinstance(d.get("title"), str) or not d["title"].strip():
+            raise ValueError("title is required")
+        _check_str_fields(
+            d, ("body_md", "page_kind", "summary", "change_summary", "edit_policy")
+        )
+        _check_int_fields(d, ("expected_version",))
+        for list_key in ("source_refs", "claims", "aliases"):
+            if (val := d.get(list_key)) is not None and not isinstance(val, list):
+                raise ValueError(f"{list_key} must be a list")
+        if any(not isinstance(r, dict) for r in (d.get("source_refs") or [])):
+            raise ValueError("Each source_refs entry must be a JSON object")
+        if any(not isinstance(c, dict) for c in (d.get("claims") or [])):
+            raise ValueError("Each claims entry must be a JSON object")
+        if any(not isinstance(a, str) for a in (d.get("aliases") or [])):
+            raise ValueError("Each aliases entry must be a string")
+        return {k: v for k, v in d.items() if v is not None}
+
+    def __post_init__(self) -> None:
+        self.title = self.title.strip()
+        if self.expected_version is not None and self.expected_version < 0:
+            raise ValueError("expected_version must be >= 0")
+
+
+@dataclass
+class WikiCompileRequestDTO(DataClassJSONMixin):
+    """Optional request body for `POST /api/extended/wiki/compile`."""
+
+    mode: str = "incremental"
+    max_files: int = 5
+
+    @classmethod
+    def __pre_deserialize__(cls, d: dict[Any, Any]) -> dict[Any, Any]:
+        if not isinstance(d, dict):
+            raise ValueError("Request body must be a JSON object")
+        _check_str_fields(d, ("mode",))
+        _check_int_fields(d, ("max_files",))
+        return {k: v for k, v in d.items() if v is not None}
+
+    def __post_init__(self) -> None:
+        if self.mode not in ("incremental", "backfill", "lint"):
+            raise ValueError(f"Unsupported compile mode: {self.mode!r}")
+        if self.max_files < 1 or self.max_files > 20:
+            raise ValueError("max_files must be between 1 and 20")
+
+
+@dataclass
+class WikiResolveLintRequestDTO(DataClassJSONMixin):
+    """Optional request body for `POST /api/extended/wiki/lint/{issue_id}/resolve`."""
+
+    status: str = "resolved"
+
+    @classmethod
+    def __pre_deserialize__(cls, d: dict[Any, Any]) -> dict[Any, Any]:
+        if not isinstance(d, dict):
+            raise ValueError("Request body must be a JSON object")
+        _check_str_fields(d, ("status",))
+        return {k: v for k, v in d.items() if v is not None}
 
 
 async def _resolve_user_id(request: web.Request) -> int | None:
@@ -61,11 +158,14 @@ def _parse_int_param(
     return val
 
 
-async def _parse_optional_json_object(request: web.Request) -> dict[str, Any]:
-    """Parse an optional JSON object body; empty body returns `{}`, non-object raises `ValueError`."""
+async def _read_json_body(
+    request: web.Request, *, allow_empty: bool = False
+) -> dict[str, Any]:
     raw_bytes = await request.read()
     if not raw_bytes or not raw_bytes.strip():
-        return {}
+        if allow_empty:
+            return {}
+        raise ValueError("Invalid JSON body")
     try:
         parsed = json.loads(raw_bytes)
     except (json.JSONDecodeError, UnicodeDecodeError) as err:
@@ -73,33 +173,6 @@ async def _parse_optional_json_object(request: web.Request) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("Request body must be a JSON object")
     return parsed
-
-
-def _parse_optional_int(
-    body: dict[str, Any],
-    key: str,
-    *,
-    default: int | None = None,
-    min_val: int | None = None,
-    max_val: int | None = None,
-) -> int | None:
-    if (val := body.get(key)) is None:
-        return default
-    if isinstance(val, bool) or not isinstance(val, int):
-        raise ValueError(f"{key} must be an integer")
-    if min_val is not None and val < min_val:
-        raise ValueError(f"{key} must be >= {min_val}")
-    if max_val is not None and val > max_val:
-        raise ValueError(f"{key} must be <= {max_val}")
-    return val
-
-
-def _parse_optional_str(body: dict[str, Any], key: str, default: str) -> str:
-    if (val := body.get(key)) is None:
-        return default
-    if not isinstance(val, str):
-        raise ValueError(f"{key} must be a string")
-    return val
 
 
 def _compile_result_response(mode: str, res: WikiCompileResult) -> web.Response:
@@ -167,58 +240,10 @@ async def handle_put_wiki_page(request: web.Request) -> web.Response:
         return web.json_response({"error": "User not found"}, status=404)
 
     try:
-        body: dict[str, Any] = await request.json()
-    except (json.JSONDecodeError, ValueError):
-        return web.json_response({"error": "Invalid JSON body"}, status=400)
-    if not isinstance(body, dict):
-        return web.json_response(
-            {"error": "Request body must be a JSON object"}, status=400
-        )
-
-    raw_title = body.get("title")
-    if not isinstance(raw_title, str) or not raw_title.strip():
-        return web.json_response({"error": "title is required"}, status=400)
-    title = raw_title.strip()
-
-    try:
-        body_md = _parse_optional_str(body, "body_md", "")
-        page_kind = _parse_optional_str(body, "page_kind", "topic")
-        summary = _parse_optional_str(body, "summary", "")
-        change_summary = _parse_optional_str(body, "change_summary", "")
-        raw_policy = body.get("edit_policy")
-        if raw_policy is not None and not isinstance(raw_policy, str):
-            raise ValueError("edit_policy must be a string")
-        expected_version = _parse_optional_int(body, "expected_version", min_val=0)
-    except ValueError as err:
-        return web.json_response({"error": str(err)}, status=400)
-
-    for field_name in ("source_refs", "claims", "aliases"):
-        if (val := body.get(field_name)) is not None and not isinstance(val, list):
-            return web.json_response(
-                {"error": f"{field_name} must be a list"}, status=400
-            )
-
-    raw_refs = body.get("source_refs") or []
-    if any(not isinstance(r, dict) for r in raw_refs):
-        return web.json_response(
-            {"error": "Each source_refs entry must be a JSON object"}, status=400
-        )
-    try:
-        source_refs = [WikiSourceRefDTO.from_dict(r) for r in raw_refs]
+        raw = await _read_json_body(request)
+        req_dto = WikiUpsertRequestDTO.from_dict(raw)
     except (MissingField, InvalidFieldValue, ValueError, TypeError) as err:
-        return web.json_response({"error": f"Invalid source_refs: {err}"}, status=400)
-
-    raw_claims = body.get("claims") or []
-    if any(not isinstance(c, dict) for c in raw_claims):
-        return web.json_response(
-            {"error": "Each claims entry must be a JSON object"}, status=400
-        )
-
-    raw_aliases = body.get("aliases") or []
-    if any(not isinstance(a, str) for a in raw_aliases):
-        return web.json_response(
-            {"error": "Each aliases entry must be a string"}, status=400
-        )
+        return web.json_response({"error": str(err)}, status=400)
 
     actor = request[REQUEST_ACTOR_KEY]
     author_kind = (
@@ -231,18 +256,18 @@ async def handle_put_wiki_page(request: web.Request) -> web.Response:
             user_id,
             WikiUpsertInput(
                 slug=request.match_info["slug"],
-                title=title,
-                body_md=body_md,
-                page_kind=page_kind,
-                summary=summary,
-                claims=list(raw_claims),
-                aliases=list(raw_aliases),
-                source_refs=source_refs,
+                title=req_dto.title,
+                body_md=req_dto.body_md,
+                page_kind=req_dto.page_kind,
+                summary=req_dto.summary,
+                claims=list(req_dto.claims),
+                aliases=list(req_dto.aliases),
+                source_refs=list(req_dto.source_refs),
                 author_kind=author_kind,
                 author_ref=str(actor),
-                change_summary=change_summary,
-                expected_version=expected_version,
-                edit_policy=raw_policy,
+                change_summary=req_dto.change_summary,
+                expected_version=req_dto.expected_version,
+                edit_policy=req_dto.edit_policy,
             ),
         )
     except ValueError as err:
@@ -327,33 +352,22 @@ async def handle_wiki_compile(request: web.Request) -> web.Response:
         return web.json_response({"error": "User not found"}, status=404)
 
     try:
-        body = await _parse_optional_json_object(request)
-        mode = _parse_optional_str(body, "mode", "incremental")
-        max_files = (
-            _parse_optional_int(body, "max_files", default=5, min_val=1, max_val=20)
-            if mode == "backfill"
-            else 5
-        )
-    except ValueError as err:
+        raw = await _read_json_body(request, allow_empty=True)
+        req_dto = WikiCompileRequestDTO.from_dict(raw)
+    except (MissingField, InvalidFieldValue, ValueError, TypeError) as err:
         return web.json_response({"error": str(err)}, status=400)
-
-    if mode not in ("incremental", "backfill", "lint"):
-        return web.json_response(
-            {"error": f"Unsupported compile mode: {mode!r}"}, status=400
-        )
 
     compiler: WikiCompilerWorker = request.app[WIKI_COMPILER_KEY]
     try:
-        if mode == "incremental":
+        if req_dto.mode == "incremental":
             res = await compiler.compile_user_delta(user_id)
-            return _compile_result_response(mode, res)
-        if mode == "backfill":
-            assert max_files is not None
-            res = await compiler.run_backfill(user_id, max_files=max_files)
-            return _compile_result_response(mode, res)
+            return _compile_result_response(req_dto.mode, res)
+        if req_dto.mode == "backfill":
+            res = await compiler.run_backfill(user_id, max_files=req_dto.max_files)
+            return _compile_result_response(req_dto.mode, res)
         issues = await compiler.run_semantic_lint(user_id)
         return web.json_response(
-            {"mode": mode, "issues": [i.to_dict() for i in issues]}
+            {"mode": req_dto.mode, "issues": [i.to_dict() for i in issues]}
         )
     except (AIError, ValueError, TypeError, LookupError) as err:
         return web.json_response({"error": str(err)}, status=502)
@@ -390,14 +404,16 @@ async def handle_resolve_wiki_lint(request: web.Request) -> web.Response:
         return web.json_response({"error": "Invalid issue_id"}, status=400)
 
     try:
-        body = await _parse_optional_json_object(request)
-        status = _parse_optional_str(body, "status", "resolved")
-    except ValueError as err:
+        raw = await _read_json_body(request, allow_empty=True)
+        req_dto = WikiResolveLintRequestDTO.from_dict(raw)
+    except (MissingField, InvalidFieldValue, ValueError, TypeError) as err:
         return web.json_response({"error": str(err)}, status=400)
 
     service: WikiService = request.app[WIKI_SERVICE_KEY]
     try:
-        issue = await service.resolve_lint_issue(user_id, issue_id, status=status)
+        issue = await service.resolve_lint_issue(
+            user_id, issue_id, status=req_dto.status
+        )
     except ValueError as err:
         return web.json_response({"error": str(err)}, status=400)
     except WikiNotFoundError as err:
