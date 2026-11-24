@@ -98,6 +98,9 @@ WIKI_RELEVANT_EVENT_TYPES: tuple[str, ...] = (
 )
 
 
+_VALID_LINT_SEVERITIES: frozenset[str] = frozenset({"info", "warn", "error"})
+
+
 def _now_ms() -> int:
     return int(time.time() * 1000)
 
@@ -135,6 +138,7 @@ class WikiCompilerWorker:
         self._text_model = text_model
         self._user_locks: dict[int, asyncio.Lock] = {}
         self._debounce_tasks: dict[int, asyncio.Task[None]] = {}
+        self._active_tasks: set[asyncio.Task[None]] = set()
         self._started = False
         self._subscribed = False
 
@@ -158,14 +162,16 @@ class WikiCompilerWorker:
                 )
 
     async def stop(self) -> None:
-        """Cancel pending debounce timers idempotently."""
+        """Cancel pending debounce timers and active compile tasks idempotently."""
         self._started = False
-        tasks = list(self._debounce_tasks.values())
+        tasks = list(self._debounce_tasks.values()) + list(self._active_tasks)
         self._debounce_tasks.clear()
-        for task in tasks:
+        self._active_tasks.clear()
+        unique_tasks = list(dict.fromkeys(tasks))
+        for task in unique_tasks:
             task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        if unique_tasks:
+            await asyncio.gather(*unique_tasks, return_exceptions=True)
 
     async def _on_event_recorded(self, event: DomainEventRecorded) -> None:
         if not self._started or event.event_type not in WIKI_RELEVANT_EVENT_TYPES:
@@ -176,28 +182,40 @@ class WikiCompilerWorker:
         """Mark wiki source refs citing a permanently purged VFS file as deleted."""
         if not self._started:
             return
-        await self._wiki_service.mark_sources_deleted(
-            event.user_id, file_ids={event.item_id}
-        )
+        async with self._lock_for_user(event.user_id):
+            await self._wiki_service.mark_sources_deleted(
+                event.user_id, file_ids={event.item_id}
+            )
 
     def _schedule_user_compile(self, user_id: int) -> None:
         if existing := self._debounce_tasks.get(user_id):
             existing.cancel()
 
         async def _delayed() -> None:
+            current = asyncio.current_task()
             try:
                 if self._config.debounce_seconds > 0:
                     await asyncio.sleep(self._config.debounce_seconds)
+                # Detach from `_debounce_tasks` before compiling so newly arriving
+                # events schedule a follow-up instead of cancelling in-flight work.
+                if self._debounce_tasks.get(user_id) is current:
+                    self._debounce_tasks.pop(user_id, None)
+                if not self._started:
+                    return
                 await self.compile_user_delta(user_id)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.exception("Wiki incremental compile failed for user %s", user_id)
             finally:
-                if self._debounce_tasks.get(user_id) is asyncio.current_task():
+                if self._debounce_tasks.get(user_id) is current:
                     self._debounce_tasks.pop(user_id, None)
+                if current is not None:
+                    self._active_tasks.discard(current)
 
-        self._debounce_tasks[user_id] = asyncio.create_task(_delayed())
+        task = asyncio.create_task(_delayed())
+        self._debounce_tasks[user_id] = task
+        self._active_tasks.add(task)
 
     def _lock_for_user(self, user_id: int) -> asyncio.Lock:
         lock = self._user_locks.get(user_id)
@@ -314,6 +332,8 @@ class WikiCompilerWorker:
                 status="idle",
                 last_error=None,
             )
+            if page.has_more and self._started and self._config.auto_compile:
+                self._schedule_user_compile(user_id)
             return WikiCompileResult(
                 events_processed=len(page.events),
                 pages_updated=pages_updated,
@@ -328,6 +348,11 @@ class WikiCompilerWorker:
         """Compile existing `.note` OCR transcripts newest-first in bounded chunks."""
         async with self._lock_for_user(user_id):
             if self._text_model is None:
+                await self._update_checkpoint(
+                    user_id,
+                    status="paused",
+                    last_error="Text generation model not configured",
+                )
                 issues = await self._wiki_service.list_lint_issues(
                     user_id, status="open"
                 )
@@ -336,7 +361,7 @@ class WikiCompilerWorker:
                     pages_updated=0,
                     skipped_policy_pages=0,
                     lint_issues_open=len(issues),
-                    status="idle",
+                    status="paused",
                 )
 
             cp = await self._get_or_create_checkpoint(user_id)
@@ -468,7 +493,7 @@ class WikiCompilerWorker:
                         page_kind=page_kind,
                         summary=op.summary,
                         body_md=op.body_md,
-                        claims=list(op.claims),
+                        claims=[c.to_dict() for c in op.claims],
                         aliases=[a for a in op.aliases if a.strip()],
                         source_refs=source_refs,
                         author_kind="compiler",
@@ -499,9 +524,12 @@ class WikiCompilerWorker:
                 desc = item.description.strip()
                 if not desc:
                     continue
-                severity = (
+                raw_severity = (
                     item.severity if isinstance(item, WikiLintIssueOp) else "warn"
-                )[:16]
+                )
+                severity = (
+                    raw_severity if raw_severity in _VALID_LINT_SEVERITIES else "warn"
+                )
                 dedup_key = _make_dedup_key(f"llm:{issue_type}:{desc}")
                 existing = (
                     await session.execute(
@@ -519,7 +547,11 @@ class WikiCompilerWorker:
                             issue_type=issue_type,
                             severity=severity,
                             description=desc,
-                            proposal_json=item.proposal,
+                            proposal_json=(
+                                item.proposal.to_dict()
+                                if item.proposal is not None
+                                else None
+                            ),
                             status="open",
                             create_time=now,
                             update_time=now,

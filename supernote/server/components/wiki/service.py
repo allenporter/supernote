@@ -819,7 +819,9 @@ class WikiService:
             else:
                 existing.file_id = ref.file_id
                 existing.last_event_seq = ref.last_event_seq
-                existing.is_source_deleted = ref.is_source_deleted
+                existing.is_source_deleted = (
+                    existing.is_source_deleted or ref.is_source_deleted
+                )
                 existing.update_time = now
 
     async def _hydrate_pages(

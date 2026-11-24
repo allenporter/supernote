@@ -85,6 +85,10 @@ class WikiSourceService:
                                 NotePageContentDO.file_id.in_(file_ids),
                                 NotePageContentDO.text_content.is_not(None),
                             )
+                            .order_by(
+                                NotePageContentDO.file_id.desc(),
+                                NotePageContentDO.page_index.asc(),
+                            )
                             .limit(10)
                         )
                     )
@@ -189,6 +193,7 @@ class WikiSourceService:
                     await session.execute(
                         select(ScheduleTaskDO)
                         .where(ScheduleTaskDO.user_id == user_id)
+                        .order_by(ScheduleTaskDO.update_time.desc())
                         .limit(max(1, min(limit, 200)))
                     )
                 )

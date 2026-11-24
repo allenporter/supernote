@@ -1,0 +1,171 @@
+"""Tests for `supernote.server.components.wiki.source_service` (`WikiSourceService`)."""
+
+from __future__ import annotations
+
+from supernote.models.events import DomainEventType
+from supernote.server.components.wiki.source_service import WikiSourceService
+from supernote.server.db.models.file import UserFileDO
+from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.db.models.schedule import ScheduleTaskDO
+from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.events import DomainEventRecorded
+
+
+async def test_load_linked_context_enforces_tenant_and_active_file_isolation(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=101,
+                    user_id=1,
+                    file_name="Active.note",
+                    is_folder="N",
+                    is_active="Y",
+                ),
+                UserFileDO(
+                    id=102,
+                    user_id=1,
+                    file_name="Deleted.note",
+                    is_folder="N",
+                    is_active="N",
+                ),
+                UserFileDO(
+                    id=103,
+                    user_id=2,
+                    file_name="OtherUser.note",
+                    is_folder="N",
+                    is_active="Y",
+                ),
+                NotePageContentDO(
+                    file_id=101,
+                    page_index=0,
+                    page_id="P1",
+                    text_content="User 1 active note",
+                ),
+                NotePageContentDO(
+                    file_id=102,
+                    page_index=0,
+                    page_id="P2",
+                    text_content="User 1 deleted note",
+                ),
+                NotePageContentDO(
+                    file_id=103,
+                    page_index=0,
+                    page_id="P3",
+                    text_content="User 2 private note",
+                ),
+                ScheduleTaskDO(
+                    user_id=1,
+                    task_id="t1",
+                    title="Ship Q3",
+                    status="needsAction",
+                    update_time=1000,
+                ),
+            ]
+        )
+        await session.commit()
+
+    svc = WikiSourceService(session_manager)
+    events = [
+        DomainEventRecorded(
+            seq=1,
+            user_id=1,
+            event_type=DomainEventType.SCHEDULE_TASK_CREATED.value,
+            entity_type="schedule_task",
+            entity_id="t1",
+            related_file_id=101,
+            payload={},
+            actor="user:web",
+            timestamp_ms=1000,
+        ),
+        DomainEventRecorded(
+            seq=2,
+            user_id=1,
+            event_type=DomainEventType.SCHEDULE_TASK_UPDATED.value,
+            entity_type="schedule_task",
+            entity_id="t1",
+            related_file_id=102,
+            payload={},
+            actor="user:web",
+            timestamp_ms=1001,
+        ),
+        DomainEventRecorded(
+            seq=3,
+            user_id=1,
+            event_type=DomainEventType.SCHEDULE_TASK_UPDATED.value,
+            entity_type="schedule_task",
+            entity_id="t1",
+            related_file_id=103,
+            payload={},
+            actor="user:web",
+            timestamp_ms=1002,
+        ),
+    ]
+
+    ctx = await svc.load_linked_context(1, events)
+    assert len(ctx["tasks"]) == 1
+    assert ctx["tasks"][0]["task_id"] == "t1"
+    # Only user 1's active file (101) is returned; deleted (102) and user 2's (103) are excluded.
+    assert [p["file_id"] for p in ctx["linked_note_pages"]] == [101]
+
+
+async def test_list_backfill_batch_paginates_newest_first_until_exhausted(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    async with session_manager.session() as session:
+        for fid in (10, 20, 30):
+            session.add(
+                UserFileDO(
+                    id=fid,
+                    user_id=1,
+                    file_name=f"Note{fid}.note",
+                    is_folder="N",
+                    is_active="Y",
+                )
+            )
+            session.add(
+                NotePageContentDO(
+                    file_id=fid,
+                    page_index=0,
+                    page_id=f"P{fid}",
+                    text_content=f"Content {fid}",
+                )
+            )
+        await session.commit()
+
+    svc = WikiSourceService(session_manager)
+    batch1, cursor1 = await svc.list_backfill_batch(1, before_file_id=None, max_files=2)
+    assert [d["related_file_id"] for d in batch1] == [30, 20]
+    assert cursor1 == 20
+
+    batch2, cursor2 = await svc.list_backfill_batch(
+        1, before_file_id=cursor1, max_files=2
+    )
+    assert [d["related_file_id"] for d in batch2] == [10]
+    assert cursor2 == 10
+
+    batch3, cursor3 = await svc.list_backfill_batch(
+        1, before_file_id=cursor2, max_files=2
+    )
+    assert batch3 == []
+    assert cursor3 is None
+
+
+async def test_list_task_snapshots_orders_most_recently_updated_first(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                ScheduleTaskDO(user_id=1, task_id="old", title="Old", update_time=100),
+                ScheduleTaskDO(user_id=1, task_id="new", title="New", update_time=300),
+                ScheduleTaskDO(user_id=1, task_id="mid", title="Mid", update_time=200),
+            ]
+        )
+        await session.commit()
+
+    svc = WikiSourceService(session_manager)
+    tasks = await svc.list_task_snapshots(1, limit=2)
+    assert [t.task_id for t in tasks] == ["new", "mid"]

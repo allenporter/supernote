@@ -32,6 +32,7 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any
 
 from mashumaro.jsonschema import build_json_schema
@@ -43,9 +44,11 @@ from supernote.server.utils.prompt_loader import PROMPT_LOADER, PromptId
 from .models import WikiPageDTO
 
 __all__ = [
+    "WikiClaimOp",
     "WikiCompilePlan",
     "WikiLintIssueOp",
     "WikiLintProposalOp",
+    "WikiLintProposalPayload",
     "WikiLintReport",
     "WikiPageOp",
     "WikiSourceRefOp",
@@ -79,6 +82,57 @@ class WikiSourceRefOp(DataClassJSONMixin):
 
 
 @dataclass
+class WikiClaimOp(DataClassJSONMixin):
+    """A structured bi-temporal factual claim extracted from user sources."""
+
+    text: str = field(
+        metadata={"description": "Concise factual statement backed by source_refs."}
+    )
+    claim_id: str = field(
+        default="",
+        metadata={"description": "Optional stable claim identifier within the page."},
+    )
+    status: str = field(
+        default="active",
+        metadata={"description": "Claim status: 'active' or 'superseded'."},
+    )
+    valid_from: str = field(
+        default="",
+        metadata={"description": "Optional ISO-8601 date when the claim became true."},
+    )
+    invalid_at: str = field(
+        default="",
+        metadata={"description": "Optional ISO-8601 date when superseded."},
+    )
+    superseded_by_source: str = field(
+        default="",
+        metadata={"description": "Optional source_key that superseded this claim."},
+    )
+
+
+@dataclass
+class WikiLintProposalPayload(DataClassJSONMixin):
+    """Structured remediation metadata for a semantic lint proposal or issue."""
+
+    canonical_slug: str = field(
+        default="",
+        metadata={"description": "Recommended canonical slug for alias merges."},
+    )
+    duplicate_slugs: list[str] = field(
+        default_factory=list,
+        metadata={"description": "Suspected duplicate slugs to merge or alias."},
+    )
+    conflicting_slugs: list[str] = field(
+        default_factory=list,
+        metadata={"description": "Wiki slugs involved in a factual contradiction."},
+    )
+    rationale: str = field(
+        default="",
+        metadata={"description": "Brief rationale explaining the proposed action."},
+    )
+
+
+@dataclass
 class WikiPageOp(DataClassJSONMixin):
     """A single wiki page create/update operation emitted by `PromptId.WIKI_COMPILE`."""
 
@@ -107,7 +161,7 @@ class WikiPageOp(DataClassJSONMixin):
         default_factory=list,
         metadata={"description": "Alternate names or OCR spellings for this page."},
     )
-    claims: list[dict[str, Any]] = field(
+    claims: list[WikiClaimOp] = field(
         default_factory=list,
         metadata={"description": "Structured bi-temporal factual claims."},
     )
@@ -133,7 +187,7 @@ class WikiLintProposalOp(DataClassJSONMixin):
     description: str = field(
         metadata={"description": "Human-readable explanation of the finding."}
     )
-    proposal: dict[str, Any] | None = field(
+    proposal: WikiLintProposalPayload | None = field(
         default=None,
         metadata={"description": "Optional structured remediation metadata."},
     )
@@ -173,7 +227,7 @@ class WikiLintIssueOp(DataClassJSONMixin):
         default="warn",
         metadata={"description": "Severity level ('info', 'warn', or 'error')."},
     )
-    proposal: dict[str, Any] | None = field(
+    proposal: WikiLintProposalPayload | None = field(
         default=None,
         metadata={"description": "Optional structured merge or resolution proposal."},
     )
@@ -216,12 +270,42 @@ _BOUNDARY_TAG_RE = re.compile(
 # or evaluated as template code.
 _PLACEHOLDER_RE = re.compile(r"\{\{([a-z0-9_]+)\}\}")
 
+_REQUIRED_STR_FIELDS: dict[str, tuple[str, ...]] = {
+    "page_op": ("slug", "title", "body_md"),
+    "source_ref": ("source_type", "source_key"),
+    "claim": ("text",),
+    "lint_item": ("issue_type", "description"),
+}
 
+
+def _strip_null_optionals(
+    obj: Mapping[str, Any], *, required_strings: tuple[str, ...] = ()
+) -> dict[str, Any]:
+    """Drop `None` optional keys (so defaults apply) and reject `None` required strings.
+
+    Mashumaro coerces `None` to literal `"None"` for `str` fields and raises on
+    `None` for `list` fields; normalizing at the LLM boundary prevents both.
+    """
+    cleaned: dict[str, Any] = {}
+    for key, val in obj.items():
+        if val is None:
+            if key in required_strings:
+                raise ValueError(f"Required string field {key!r} cannot be null")
+            continue
+        cleaned[key] = val
+    for req in required_strings:
+        if req not in cleaned or not isinstance(cleaned[req], str):
+            raise ValueError(f"Required string field {req!r} must be a string")
+    return cleaned
+
+
+@lru_cache(maxsize=1)
 def get_compile_json_schema() -> dict[str, Any]:
     """Return the JSON Schema dictionary for `WikiCompilePlan`."""
     return build_json_schema(WikiCompilePlan).to_dict()
 
 
+@lru_cache(maxsize=1)
 def get_lint_json_schema() -> dict[str, Any]:
     """Return the JSON Schema dictionary for `WikiLintReport`."""
     return build_json_schema(WikiLintReport).to_dict()
@@ -229,12 +313,78 @@ def get_lint_json_schema() -> dict[str, Any]:
 
 def parse_compile_plan(raw: Mapping[str, Any]) -> WikiCompilePlan:
     """Deserialize a raw LLM JSON dict into a typed `WikiCompilePlan`."""
-    return WikiCompilePlan.from_dict(dict(raw))
+    cleaned = _strip_null_optionals(raw)
+    if "page_ops" in cleaned:
+        if not isinstance(cleaned["page_ops"], list):
+            raise ValueError("page_ops must be a list")
+        ops = []
+        for item in cleaned["page_ops"]:
+            if not isinstance(item, Mapping):
+                raise ValueError("page_ops entries must be objects")
+            op = _strip_null_optionals(
+                item, required_strings=_REQUIRED_STR_FIELDS["page_op"]
+            )
+            if "source_refs" in op:
+                if not isinstance(op["source_refs"], list):
+                    raise ValueError("source_refs must be a list")
+                op["source_refs"] = [
+                    _strip_null_optionals(
+                        ref, required_strings=_REQUIRED_STR_FIELDS["source_ref"]
+                    )
+                    for ref in op["source_refs"]
+                    if isinstance(ref, Mapping)
+                ]
+            if "claims" in op:
+                if not isinstance(op["claims"], list):
+                    raise ValueError("claims must be a list")
+                op["claims"] = [
+                    _strip_null_optionals(
+                        c, required_strings=_REQUIRED_STR_FIELDS["claim"]
+                    )
+                    for c in op["claims"]
+                    if isinstance(c, Mapping)
+                ]
+            if "aliases" in op and isinstance(op["aliases"], list):
+                op["aliases"] = [a for a in op["aliases"] if isinstance(a, str)]
+            ops.append(op)
+        cleaned["page_ops"] = ops
+
+    if "lint_proposals" in cleaned:
+        if not isinstance(cleaned["lint_proposals"], list):
+            raise ValueError("lint_proposals must be a list")
+        proposals = []
+        for item in cleaned["lint_proposals"]:
+            if not isinstance(item, Mapping):
+                raise ValueError("lint_proposals entries must be objects")
+            prop = _strip_null_optionals(
+                item, required_strings=_REQUIRED_STR_FIELDS["lint_item"]
+            )
+            if isinstance(prop.get("proposal"), Mapping):
+                prop["proposal"] = _strip_null_optionals(prop["proposal"])
+            proposals.append(prop)
+        cleaned["lint_proposals"] = proposals
+
+    return WikiCompilePlan.from_dict(cleaned)
 
 
 def parse_lint_report(raw: Mapping[str, Any]) -> WikiLintReport:
     """Deserialize a raw LLM JSON dict into a typed `WikiLintReport`."""
-    return WikiLintReport.from_dict(dict(raw))
+    cleaned = _strip_null_optionals(raw)
+    if "issues" in cleaned:
+        if not isinstance(cleaned["issues"], list):
+            raise ValueError("issues must be a list")
+        issues = []
+        for item in cleaned["issues"]:
+            if not isinstance(item, Mapping):
+                raise ValueError("issues entries must be objects")
+            issue = _strip_null_optionals(
+                item, required_strings=_REQUIRED_STR_FIELDS["lint_item"]
+            )
+            if isinstance(issue.get("proposal"), Mapping):
+                issue["proposal"] = _strip_null_optionals(issue["proposal"])
+            issues.append(issue)
+        cleaned["issues"] = issues
+    return WikiLintReport.from_dict(cleaned)
 
 
 def sanitize_xml_payload(text: str) -> str:
