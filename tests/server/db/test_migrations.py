@@ -860,8 +860,8 @@ def test_add_user_event_log_table_migration(
             text(
                 "INSERT INTO f_user_event "
                 "(user_id, seq, timestamp_ms, event_type, actor, entity_type, entity_id, payload) "
-                "VALUES (1, 100, 1000, 'vfs.created', 'user:web', 'file', '10', '{}'), "
-                "       (2, 100, 1000, 'vfs.created', 'user:web', 'file', '20', '{}')"
+                "VALUES (1, 100, 1000, 'file.created', 'user:web', 'file', '10', '{}'), "
+                "       (2, 100, 1000, 'file.created', 'user:web', 'file', '20', '{}')"
             )
         )
         count = conn.execute(text("SELECT count(*) FROM f_user_event")).scalar_one()

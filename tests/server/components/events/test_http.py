@@ -56,7 +56,7 @@ async def test_list_events_pagination_and_filtering(
 
     ev1 = await event_log_service.append(
         user_id=test_user_id,
-        event_type="vfs.created",
+        event_type="file.created",
         entity_type="file",
         entity_id="772252421643567298",
         related_file_id=772252421643567298,
@@ -94,7 +94,7 @@ async def test_list_events_pagination_and_filtering(
 
     # Prefix wildcard combined with exact event type matching
     mixed_types = await events_client.list_events(
-        event_types=["note.*", "vfs.created"],
+        event_types=["note.*", "file.created"],
     )
     assert [e.seq for e in mixed_types.events] == [str(ev1.seq), str(ev2.seq)]
 
@@ -130,7 +130,7 @@ async def test_list_events_user_isolation(
 
     ev1 = await event_log_service.append(
         user_id=test_user_id,
-        event_type="vfs.created",
+        event_type="file.created",
         entity_type="file",
         entity_id="10",
         related_file_id=10,
@@ -138,7 +138,7 @@ async def test_list_events_user_isolation(
     )
     ev2 = await event_log_service.append(
         user_id=other_user.id,
-        event_type="vfs.created",
+        event_type="file.created",
         entity_type="file",
         entity_id="20",
         related_file_id=20,

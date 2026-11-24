@@ -15,16 +15,16 @@ def test_event_feed_request_dto() -> None:
 
     req = EventFeedRequestDTO(
         sync_token="djE6MTAw",
-        event_types="vfs.*, note.*",
+        event_types="file.*, note.*",
         file_id=772252421643567298,
         exclude_actors="self, api_key:abc",
         limit=50,
     )
-    assert req.event_type_list == ["vfs.*", "note.*"]
+    assert req.event_type_list == ["file.*", "note.*"]
     assert req.exclude_actor_list == ["self", "api_key:abc"]
     assert req.to_dict() == {
         "syncToken": "djE6MTAw",
-        "eventTypes": "vfs.*, note.*",
+        "eventTypes": "file.*, note.*",
         "fileId": "772252421643567298",
         "excludeActors": "self, api_key:abc",
         "limit": 50,

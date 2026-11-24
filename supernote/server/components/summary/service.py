@@ -2,7 +2,7 @@
 
 `SummaryService` manages `SummaryDO` (both summary groups and individual AI/handwritten
 summaries) and `SummaryTagDO` records, enforces soft-delete retention windows
-(`purge_expired_summaries`), and emits `SummaryUpsertedEvent`, `SummaryDeletedEvent`,
+(`purge_expired_summaries`), and emits `SummaryCreatedEvent`, `SummaryUpdatedEvent`, `SummaryDeletedEvent`,
 and `BlobCleanupEvent` onto `supernote.server.events.LocalEventBus`. Used by
 `supernote.server.components.summary.http` and
 `supernote.server.components.summary.processor.SummaryModule`.
@@ -40,10 +40,11 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
     BlobCleanupEvent,
     LocalEventBus,
+    SummaryCreatedEvent,
     SummaryDeletedEvent,
     SummaryTagDeletedEvent,
     SummaryTagUpsertedEvent,
-    SummaryUpsertedEvent,
+    SummaryUpdatedEvent,
 )
 from supernote.server.exceptions import SummaryNotFound
 from supernote.server.services.user import UserService
@@ -270,10 +271,9 @@ class SummaryService:
             summary_item = _to_summary_item(summary_do)
         if self.event_bus is not None:
             await self.event_bus.publish(
-                SummaryUpsertedEvent(
+                SummaryCreatedEvent(
                     user_id=user_id,
                     summary=summary_item,
-                    is_new=True,
                 )
             )
             if old_inner_name and old_inner_name != dto.handwrite_inner_name:
@@ -335,10 +335,9 @@ class SummaryService:
 
         if self.event_bus is not None:
             await self.event_bus.publish(
-                SummaryUpsertedEvent(
+                SummaryUpdatedEvent(
                     user_id=user_id,
                     summary=summary_item,
-                    is_new=False,
                 )
             )
             # When handwrite_inner_name is overwritten in-place on an existing summary,
@@ -494,10 +493,9 @@ class SummaryService:
             summary_item = _to_summary_item(summary_do)
         if self.event_bus is not None:
             await self.event_bus.publish(
-                SummaryUpsertedEvent(
+                SummaryCreatedEvent(
                     user_id=user_id,
                     summary=summary_item,
-                    is_new=True,
                 )
             )
             if old_inner_name:
@@ -547,10 +545,9 @@ class SummaryService:
 
         if self.event_bus is not None:
             await self.event_bus.publish(
-                SummaryUpsertedEvent(
+                SummaryUpdatedEvent(
                     user_id=user_id,
                     summary=summary_item,
-                    is_new=False,
                 )
             )
             # Overwriting handwrite_inner_name in-place supersedes the previous key;

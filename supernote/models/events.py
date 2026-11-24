@@ -24,20 +24,20 @@ class DomainEventType(StrEnum):
     re-fetching unchanged resources.
     """
 
-    VFS_CREATED = "vfs.created"
-    """File or folder created in the VFS (`entity_type='file'`, serialized from `VfsItemCreatedEvent`)."""
+    FILE_CREATED = "file.created"
+    """File or folder created (`entity_type='file'`, serialized from `VfsItemCreatedEvent`)."""
 
-    VFS_CONTENT_UPDATED = "vfs.content_updated"
-    """Existing VFS file overwritten with new content (`entity_type='file'`, serialized from `VfsContentUpdatedEvent`)."""
+    FILE_CONTENT_UPDATED = "file.content_updated"
+    """Existing file overwritten with new content (`entity_type='file'`, serialized from `VfsContentUpdatedEvent`)."""
 
-    VFS_MOVED = "vfs.moved"
+    FILE_MOVED = "file.moved"
     """File or folder renamed or moved (`entity_type='file'`, serialized from `VfsItemMovedEvent`)."""
 
-    VFS_COPIED = "vfs.copied"
+    FILE_COPIED = "file.copied"
     """File or folder copied (`entity_type='file'`, serialized from `VfsItemCopiedEvent`)."""
 
-    VFS_DELETED = "vfs.deleted"
-    """File or folder deleted from the VFS (`entity_type='file'`, serialized from `VfsItemDeletedEvent`)."""
+    FILE_DELETED = "file.deleted"
+    """File or folder deleted (`entity_type='file'`, serialized from `VfsItemDeletedEvent`)."""
 
     NOTE_PAGES_DELTA = "note.pages_delta"
     """Structural page changes detected in a `.note` file (`entity_type='file'`, serialized from `NotePagesDeltaEvent`)."""
@@ -60,8 +60,11 @@ class DomainEventType(StrEnum):
     SCHEDULE_TASK_DELETED = "schedule.task_deleted"
     """Schedule to-do task deleted (`entity_type='schedule_task'`, serialized from `ScheduleTaskDeletedEvent`)."""
 
-    SUMMARY_UPSERTED = "summary.upserted"
-    """Summary or synthesis item created or updated (`entity_type='summary'`, serialized from `SummaryUpsertedEvent`)."""
+    SUMMARY_CREATED = "summary.created"
+    """Summary or synthesis item created (`entity_type='summary'`, serialized from `SummaryCreatedEvent`)."""
+
+    SUMMARY_UPDATED = "summary.updated"
+    """Summary or synthesis item updated (`entity_type='summary'`, serialized from `SummaryUpdatedEvent`)."""
 
     SUMMARY_DELETED = "summary.deleted"
     """Summary or synthesis item deleted (`entity_type='summary'`, serialized from `SummaryDeletedEvent`)."""
@@ -91,7 +94,7 @@ class EventFeedRequestDTO(DataClassJSONMixin):
     event_types: str | None = field(
         metadata=field_options(alias="eventTypes"), default=None
     )
-    """Optional comma-separated `DomainEventType` values or namespace globs (`'vfs.*'`, `'note.*'`, `'schedule.*'`, `'summary.*'`)."""
+    """Optional comma-separated `DomainEventType` values or namespace globs (`'file.*'`, `'note.*'`, `'schedule.*'`, `'summary.*'`)."""
 
     file_id: int | None = field(
         metadata=field_options(alias="fileId", serialize=str), default=None

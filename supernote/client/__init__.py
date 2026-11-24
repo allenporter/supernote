@@ -19,7 +19,7 @@ The `supernote.client.Supernote` session facade manages an underlying `aiohttp.C
 | `supernote.client.device.DeviceClient` | `sn.device` | Hardware V2/V3 file APIs: path-based listing, `upload_content`, `download_content`, sync locks, and server-side PNG/PDF conversion. |
 | `supernote.client.web.WebClient` | `sn.web` | Web UI APIs: paginated directory queries, recycle bin management, rename/move/copy, and user profile queries. |
 | `supernote.client.extended.ExtendedClient` | `sn.extended` or `ExtendedClient(sn.client)` | Self-hosted server extensions: semantic chunk search, page transcripts, AI summaries, structured notebook metadata (`get_note_metadata`), note covers, AI status, and static Bearer API keys. |
-| `supernote.client.events.EventsClient` | `EventsClient(sn.client)` | Incremental per-user domain event feed (`GET /api/extended/events`) with `sync_token` checkpointing across `vfs.*`, `note.*`, `schedule.*`, and `summary.*` transitions. |
+| `supernote.client.events.EventsClient` | `EventsClient(sn.client)` | Incremental per-user domain event feed (`GET /api/extended/events`) with `sync_token` checkpointing across `file.*`, `note.*`, `schedule.*`, and `summary.*` transitions. |
 | `supernote.client.schedule.ScheduleClient` | `ScheduleClient(sn.client)` | Task lists (`create_group`, `list_groups`), tasks (`create_task`, `list_tasks`, `update_task`, `batch_update_tasks`), and RFC 5545 `.ics` feeds. |
 | `supernote.client.summary.SummaryClient` | `SummaryClient(sn.client)` | Device-synced summaries, summary groups, and summary tags. |
 | `supernote.client.admin.AdminClient` | `AdminClient(sn.client)` | Account administration, per-user quotas (`admin_set_quota`), processor queue pause/resume, task inspection, note reprocessing, and storage integrity verification. |
@@ -252,7 +252,7 @@ async def poll_domain_events(sn: Supernote, saved_token: str | None = None) -> s
     while True:
         feed = await events_client.list_events(
             sync_token=sync_token,
-            event_types=["vfs.*", "note.*", "summary.*"],
+            event_types=["file.*", "note.*", "summary.*"],
             limit=200,
         )
         for ev in feed.events:

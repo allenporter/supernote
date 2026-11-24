@@ -271,7 +271,7 @@ Models in `supernote.models.extended` power the custom `/api/extended/*` endpoin
 Models in `supernote.models.events` define the wire contract for `GET /api/extended/events` and `supernote.client.events.EventsClient`:
 
 * **Enumerations**:
-  * `DomainEventType`: `vfs.created`, `vfs.content_updated`, `vfs.moved`, `vfs.copied`, `vfs.deleted`, `note.pages_delta`, `note.page_transcribed`, `note.processing_completed`, `note.processing_failed`, `schedule.task_created`, `schedule.task_updated`, `schedule.task_deleted`, `summary.upserted`, `summary.deleted`
+  * `DomainEventType`: `file.created`, `file.content_updated`, `file.moved`, `file.copied`, `file.deleted`, `note.pages_delta`, `note.page_transcribed`, `note.processing_completed`, `note.processing_failed`, `schedule.task_created`, `schedule.task_updated`, `schedule.task_deleted`, `summary.created`, `summary.updated`, `summary.deleted`
   * `DomainEntityType`: `file`, `note_page`, `schedule_task`, `summary`
 * **Request & Response Envelopes**:
   * `EventFeedRequestDTO` (`sync_token`, `event_types`, `file_id`, `limit`)

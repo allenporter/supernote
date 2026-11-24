@@ -27,10 +27,11 @@ from supernote.server.events import (
     BlobCleanupEvent,
     Event,
     LocalEventBus,
+    SummaryCreatedEvent,
     SummaryDeletedEvent,
     SummaryTagDeletedEvent,
     SummaryTagUpsertedEvent,
-    SummaryUpsertedEvent,
+    SummaryUpdatedEvent,
 )
 from supernote.server.exceptions import SummaryNotFound
 from supernote.server.services.user import UserService
@@ -441,7 +442,8 @@ async def test_summary_service_publishes_domain_events_on_mutations(
 
     event_bus.subscribe(SummaryTagUpsertedEvent, on_event)
     event_bus.subscribe(SummaryTagDeletedEvent, on_event)
-    event_bus.subscribe(SummaryUpsertedEvent, on_event)
+    event_bus.subscribe(SummaryCreatedEvent, on_event)
+    event_bus.subscribe(SummaryUpdatedEvent, on_event)
     event_bus.subscribe(SummaryDeletedEvent, on_event)
 
     service = SummaryService(
@@ -488,7 +490,7 @@ async def test_summary_service_publishes_domain_events_on_mutations(
     assert group.id is not None
     await asyncio.sleep(0)
     assert published == [
-        SummaryUpsertedEvent(user_id=user_id, summary=group, is_new=True),
+        SummaryCreatedEvent(user_id=user_id, summary=group),
     ]
     published.clear()
 
@@ -504,7 +506,7 @@ async def test_summary_service_publishes_domain_events_on_mutations(
     await asyncio.sleep(0)
     updated_group = await service.get_summary(USER_EMAIL, group.id)
     assert published == [
-        SummaryUpsertedEvent(user_id=user_id, summary=updated_group, is_new=False),
+        SummaryUpdatedEvent(user_id=user_id, summary=updated_group),
     ]
     published.clear()
 
@@ -519,7 +521,7 @@ async def test_summary_service_publishes_domain_events_on_mutations(
     assert summary.id is not None
     await asyncio.sleep(0)
     assert published == [
-        SummaryUpsertedEvent(user_id=user_id, summary=summary, is_new=True),
+        SummaryCreatedEvent(user_id=user_id, summary=summary),
     ]
     published.clear()
 
@@ -530,7 +532,7 @@ async def test_summary_service_publishes_domain_events_on_mutations(
     await asyncio.sleep(0)
     updated_summary = await service.get_summary(USER_EMAIL, summary.id)
     assert published == [
-        SummaryUpsertedEvent(user_id=user_id, summary=updated_summary, is_new=False),
+        SummaryUpdatedEvent(user_id=user_id, summary=updated_summary),
     ]
     published.clear()
 

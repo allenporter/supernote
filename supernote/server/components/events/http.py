@@ -10,7 +10,7 @@ Mounts `GET /api/extended/events` onto the main `aiohttp` application via
 - Query parameters parsed via `supernote.models.events.EventFeedRequestDTO`:
   - `syncToken` (optional): Opaque cursor returned by a previous call.
   - `eventTypes` (optional): Comma-separated list of exact event types or
-    namespace wildcards (`vfs.*`, `note.*`, `schedule.*`, `summary.*`).
+    namespace wildcards (`file.*`, `note.*`, `schedule.*`, `summary.*`).
   - `fileId` (optional): Filter events to a specific VFS file ID.
   - `excludeActors` (optional): Comma-separated caller actor strings to omit
     from results. The special value ``self`` expands to the authenticated

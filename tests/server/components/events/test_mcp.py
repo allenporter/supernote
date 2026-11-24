@@ -50,7 +50,7 @@ async def test_events_mcp_list_events_pagination_and_filtering(
     event_log = client.app[EVENT_LOG_SERVICE_KEY]
     ev1 = await event_log.append(
         user_id=test_user_id,
-        event_type="vfs.created",
+        event_type="file.created",
         entity_type="file",
         entity_id="7001",
         related_file_id=7001,
@@ -153,14 +153,14 @@ async def test_events_mcp_validation_and_expired_cursor_errors(
     old_ts = int(time.time() * 1000) - 60_000
     await event_log.append(
         user_id=test_user_id,
-        event_type="vfs.created",
+        event_type="file.created",
         entity_type="file",
         entity_id="1",
         timestamp_ms=old_ts,
     )
     await event_log.append(
         user_id=test_user_id,
-        event_type="vfs.created",
+        event_type="file.created",
         entity_type="file",
         entity_id="2",
         timestamp_ms=old_ts,

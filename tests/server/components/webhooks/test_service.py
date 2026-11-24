@@ -110,7 +110,7 @@ def _endpoint_dict(url: str, **overrides: Any) -> dict[str, Any]:
         "url": url,
         "user": TEST_USERNAME,
         "secret": "top-secret",
-        "events": [DomainEventType.VFS_CREATED],
+        "events": [DomainEventType.FILE_CREATED],
     }
     defaults.update(overrides)
     return defaults
@@ -139,7 +139,7 @@ def _webhooks_cfg(
 
 
 def test_sign_payload_is_deterministic_hmac_sha256() -> None:
-    body = b'{"eventType": "vfs.created"}'
+    body = b'{"eventType": "file.created"}'
     signature = sign_payload("my-secret", body)
 
     expected = hmac.new(b"my-secret", body, hashlib.sha256).hexdigest()
@@ -147,14 +147,14 @@ def test_sign_payload_is_deterministic_hmac_sha256() -> None:
 
 
 def test_verify_signature_accepts_valid_signature() -> None:
-    body = b'{"eventType": "vfs.created"}'
+    body = b'{"eventType": "file.created"}'
     signature = sign_payload("my-secret", body)
 
     assert verify_signature("my-secret", body, signature) is True
 
 
 def test_verify_signature_rejects_tampered_body() -> None:
-    body = b'{"eventType": "vfs.created"}'
+    body = b'{"eventType": "file.created"}'
     signature = sign_payload("my-secret", body)
 
     assert (
@@ -163,14 +163,14 @@ def test_verify_signature_rejects_tampered_body() -> None:
 
 
 def test_verify_signature_rejects_wrong_secret() -> None:
-    body = b'{"eventType": "vfs.created"}'
+    body = b'{"eventType": "file.created"}'
     signature = sign_payload("my-secret", body)
 
     assert verify_signature("wrong-secret", body, signature) is False
 
 
 def test_verify_signature_rejects_malformed_or_empty_inputs() -> None:
-    body = b'{"eventType": "vfs.created"}'
+    body = b'{"eventType": "file.created"}'
     signature = sign_payload("my-secret", body)
 
     assert verify_signature("", body, signature) is False
@@ -198,13 +198,13 @@ async def test_domain_event_sends_signed_post_to_subscribed_endpoint(
     assert len(webhook_receiver.calls) == 1
     call = webhook_receiver.calls[0]
     assert call["url"] == webhook_receiver.url
-    assert call["headers"][EVENT_HEADER] == DomainEventType.VFS_CREATED
+    assert call["headers"][EVENT_HEADER] == DomainEventType.FILE_CREATED
     assert call["headers"][SIGNATURE_HEADER] == sign_payload("top-secret", call["data"])
     body = json.loads(call["data"])
     assert body == {
         "seq": ANY,
         "timestamp": ANY,
-        "eventType": DomainEventType.VFS_CREATED,
+        "eventType": DomainEventType.FILE_CREATED,
         "actor": "user:web",
         "entityType": DomainEntityType.FILE,
         "entityId": "42",
@@ -321,7 +321,7 @@ async def test_star_wildcard_receives_all_domain_events(
     await component_core.event_bus.wait_idle()
 
     assert {c["headers"][EVENT_HEADER] for c in webhook_receiver.calls} == {
-        DomainEventType.VFS_CREATED,
+        DomainEventType.FILE_CREATED,
         DomainEventType.SCHEDULE_TASK_CREATED,
     }
 
@@ -366,7 +366,7 @@ async def test_endpoint_with_no_events_receives_all_events(
     await component_core.event_bus.wait_idle()
     assert len(webhook_receiver.calls) == 2
     assert {c["headers"][EVENT_HEADER] for c in webhook_receiver.calls} == {
-        DomainEventType.VFS_CREATED,
+        DomainEventType.FILE_CREATED,
         DomainEventType.NOTE_PROCESSING_COMPLETED,
     }
 
@@ -722,7 +722,7 @@ async def test_domain_event_respects_endpoint_user_filter(
     assert body == {
         "seq": ANY,
         "timestamp": ANY,
-        "eventType": DomainEventType.VFS_CREATED,
+        "eventType": DomainEventType.FILE_CREATED,
         "actor": "user:web",
         "entityType": DomainEntityType.FILE,
         "entityId": "42",

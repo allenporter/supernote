@@ -31,9 +31,9 @@ class WebhookEndpointConfig(DataClassYAMLMixin):
     events: list[str] = field(default_factory=list)
     """Event filters this endpoint wants to receive.
 
-    Accepts exact `DomainEventType` names (e.g. `vfs.created`,
+    Accepts exact `DomainEventType` names (e.g. `file.created`,
     `note.processing_completed`), namespace prefix wildcards (`note.*`,
-    `vfs.*`, `schedule.*`, `summary.*`), or `*` for all events.
+    `file.*`, `schedule.*`, `summary.*`), or `*` for all events.
     If empty (the default), the endpoint receives every domain event for `user`.
     """
 

@@ -188,7 +188,7 @@ Indented lines under a top-level bullet are attached as nested `children` (`Rapi
 - **Recent System Tasks**: `GET /api/extended/system/tasks` (`ExtendedClient.list_system_tasks`)
   - Returns recent `SystemTaskDO` entries for the authenticated user.
 - **Domain Event Feed**: `GET /api/extended/events` (`EventsClient.list_events`)
-  - Queries per-user domain events (`EventLogService.list_events`) with `sync_token` checkpointing and optional `event_types` (exact `DomainEventType` or globs like `vfs.*`, `note.*`, `schedule.*`, `summary.*`), `file_id`, and `limit` filters.
+  - Queries per-user domain events (`EventLogService.list_events`) with `sync_token` checkpointing and optional `event_types` (exact `DomainEventType` or globs like `file.*`, `note.*`, `schedule.*`, `summary.*`), `file_id`, and `limit` filters.
 - **Static API Keys**: `POST /api/extended/keys`, `GET /api/extended/keys`, `DELETE /api/extended/keys/{id}`
   - Creates, lists, and revokes `sn_...` Bearer API keys (`@interactive_session_only`).
 

@@ -2,7 +2,7 @@
 
 Listens for `DomainEventRecorded` on `supernote.server.events.LocalEventBus` and,
 for every configured endpoint matching a given `DomainEventType` (exact name,
-namespace prefix wildcard such as `note.*` / `vfs.*`, or `*`), sends an
+namespace prefix wildcard such as `note.*` / `file.*`, or `*`), sends an
 HMAC-SHA256 signed HTTP `POST` notification (`X-Supernote-Signature`,
 `X-Supernote-Event`) carrying a `supernote.models.events.DomainEventVO` JSON
 payload. Delivery is best-effort with bounded concurrency and retry backoff: a

@@ -2,7 +2,7 @@
 
 The domain event feed (`GET /api/extended/events`) exposes an append-only,
 strictly ordered per-user log of state transitions across VFS files and
-folders (`vfs.*`), notebook page structures and OCR transcripts (`note.*`),
+folders (`file.*`), notebook page structures and OCR transcripts (`note.*`),
 schedule tasks (`schedule.*`), and AI summaries (`summary.*`). The same
 unified event log and `sync_token` checkpointing also back MCP (Model Context
 Protocol) event tools and resource update notifications so MCP clients and
@@ -76,7 +76,7 @@ class EventsClient:
             event_types: Optional list of event type filters. Accepts exact
                 `DomainEventType` values (defined in `supernote.models.events`,
                 e.g. `DomainEventType.NOTE_PAGE_TRANSCRIBED`) or namespace prefix
-                globs (`'vfs.*'`, `'note.*'`, `'schedule.*'`, `'summary.*'`).
+                globs (`'file.*'`, `'note.*'`, `'schedule.*'`, `'summary.*'`).
             file_id: Optional VFS file ID to scope events to a single file/notebook.
             exclude_actors: Optional list of actor identifiers to exclude from
                 results. Pass `['self']` to suppress events authored by the
