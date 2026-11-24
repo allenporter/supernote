@@ -36,6 +36,10 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
     async def get_wiki_index(ctx: Context, limit: int = 100) -> dict[str, Any]:
         """Return a compact index of active wiki pages (slug, title, kind, summary).
 
+        Start here for a low-token overview of the compiled wiki (omits full
+        Markdown bodies) to orient or pick specific slugs to fetch with
+        `read_wiki_page`.
+
         Args:
             limit: Maximum number of index entries to return (`1..500`, default `100`).
         """
@@ -68,6 +72,9 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
     ) -> dict[str, Any]:
         """List active wiki pages for the authenticated user.
 
+        Use when paginating full page payloads or filtering by `page_kind`.
+        Prefer `get_wiki_index` for lightweight discovery.
+
         Args:
             page_kind: Optional category filter (`project`, `entity`, `topic`,
                 `source_digest`, `index`, or `log`).
@@ -86,6 +93,10 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
 
     async def read_wiki_page(ctx: Context, slug: str) -> dict[str, Any]:
         """Read a single wiki page by slug, including backlinks and source refs.
+
+        Use after `get_wiki_index` or `search_wiki` to inspect full Markdown
+        prose, provenance citations, and the current `version` (needed for
+        optimistic concurrency before calling `upsert_wiki_page`).
 
         Args:
             slug: Canonical plural-prefixed page slug (e.g. ``projects/q3-plan``,
@@ -108,6 +119,10 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
 
     async def search_wiki(ctx: Context, query: str, top_k: int = 10) -> dict[str, Any]:
         """Search wiki pages by keyword or alias, returning 1-hop links and source refs.
+
+        Use first when answering questions about a topic, person, or project
+        from compiled knowledge; fall back to notebook chunk search or
+        transcripts when finer source detail is needed.
 
         Args:
             query: Space-separated keywords or aliases to match against page
@@ -135,6 +150,11 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
         change_summary: str = "",
     ) -> dict[str, Any]:
         """Create or update a wiki page as an external MCP agent (respects edit_policy).
+
+        Use to persist synthesized knowledge compiled from notebooks or tasks.
+        Read an existing page first to pass its `version` as `expected_version`;
+        pages edited by the user (`protected_prose`) or `locked` reject agent
+        writes with `403`.
 
         Args:
             slug: Canonical plural-prefixed slug (e.g. ``projects/q3-plan``,
@@ -200,7 +220,12 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
     async def list_wiki_lint_issues(
         ctx: Context, status: str = "open"
     ) -> dict[str, Any]:
-        """List structural and semantic wiki lint issues.
+        """List wiki health (lint) issues needing review or cleanup.
+
+        Lint issues are wiki knowledge-graph problems—not code-style errors—such
+        as structural defects (`broken_link`, `orphan_page`, `stale_source`) or
+        semantic findings (`contradiction`, `duplicate_entity`). Use during a
+        maintenance pass or when `get_wiki_status` reports open issues.
 
         Args:
             status: Filter by issue status (`open`, `resolved`, `dismissed`, or
@@ -219,7 +244,11 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
     async def resolve_wiki_lint_issue(
         ctx: Context, issue_id: int, status: str = "resolved"
     ) -> dict[str, Any]:
-        """Resolve or dismiss a wiki lint issue.
+        """Mark a wiki health (lint) issue as resolved or dismissed.
+
+        Use after fixing the underlying wiki graph or content problem (e.g.
+        reconciling a contradiction or updating a broken link) with
+        `upsert_wiki_page`, or to dismiss a false positive.
 
         Args:
             issue_id: Numeric ID of the lint issue from `list_wiki_lint_issues`.
@@ -241,7 +270,12 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
         return {"success": True, "issue": issue.to_dict()}
 
     async def get_wiki_status(ctx: Context) -> dict[str, Any]:
-        """Return per-user wiki inventory, cursor, and open lint summary."""
+        """Return per-user wiki inventory, cursor, and open lint summary.
+
+        Use to check whether the wiki is populated, see how current it is with
+        the event stream, or check for open lint issues before querying or
+        running maintenance.
+        """
         _ = ctx
         if (user_id := get_authenticated_user_id()) is None:
             return create_error_response(
