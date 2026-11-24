@@ -216,10 +216,13 @@ async def handle_reprocess(request: web.Request) -> web.Response:
 
         # Get target file IDs to trigger events
         if file_id is not None:
-            file_stmt = select(UserFileDO.user_id).where(UserFileDO.id == file_id)
+            file_stmt = select(UserFileDO.user_id).where(
+                UserFileDO.id == file_id,
+                UserFileDO.is_active == "Y",
+            )
             file_result = await session.execute(file_stmt)
             uid = file_result.scalar_one_or_none()
-            targets = [(file_id, uid if uid is not None else 0)]
+            targets = [(file_id, uid)] if uid is not None else []
             stmt = stmt.where(SystemTaskDO.file_id == file_id)
         else:
             file_stmt = select(UserFileDO.id, UserFileDO.user_id).where(

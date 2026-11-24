@@ -156,7 +156,21 @@ class PageHashingModule(ProcessorModule):
         page_index: int | None = None,
         page_id: str | None = None,
     ) -> bool:
-        """Hashing acts as the change detector, so it MUST run every time the file is processed."""
+        """Hashing acts as the change detector, so it runs whenever the file is active in DB."""
+        async with session_manager.session() as session:
+            result = await session.execute(
+                select(UserFileDO.storage_key).where(
+                    UserFileDO.id == file_id,
+                    UserFileDO.is_active == "Y",
+                )
+            )
+            storage_key = result.scalar_one_or_none()
+        if not storage_key:
+            logger.warning(
+                f"Skipping PageHashingModule for file_id={file_id}: "
+                "active file with storage_key not found"
+            )
+            return False
         return True
 
     async def cleanup_file(
