@@ -6,6 +6,7 @@ installed in minimal Python environments, and executed in CI via
 """
 
 import asyncio
+import re
 from pathlib import Path
 from typing import Any
 
@@ -542,7 +543,9 @@ async def test_web_ui_digests_browser_view(
             ).wait_for(state="visible")
 
             await (
-                page.locator("aside").get_by_role("button", name="AI Summaries").click()
+                page.locator("aside")
+                .get_by_role("button", name=re.compile(r"^AI Summaries\b"))
+                .click()
             )
             assert await cards.count() == 1
             await page.get_by_role("button", name="Open Source").click()
@@ -566,3 +569,144 @@ async def test_web_ui_digests_browser_view(
             await browser.close()
 
     assert not errors, f"Unexpected browser errors in Digests view: {errors}"
+
+
+async def test_web_ui_digests_crud_modals(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Verify creating, renaming, editing, moving, and deleting digests & categories in #/digests."""
+    playwright_async = pytest.importorskip("playwright.async_api")
+    base_url = str(client.make_url("")).rstrip("/")
+    token = auth_headers["x-access-token"]
+    errors: list[str] = []
+
+    async with playwright_async.async_playwright() as p:
+        try:
+            browser = await p.chromium.launch()
+        except playwright_async.Error as exc:
+            pytest.skip(f"Chromium browser binary not installed: {exc}")
+        try:
+            context = await browser.new_context(viewport={"width": 1360, "height": 860})
+            await context.add_init_script(
+                f"localStorage.setItem('supernote_token', {token!r});"
+            )
+            page = await context.new_page()
+            page.on("pageerror", lambda exc: errors.append(f"pageerror: {exc}"))
+            page.on(
+                "console",
+                lambda msg: (
+                    errors.append(f"console.error: {msg.text}")
+                    if msg.type == "error"
+                    else None
+                ),
+            )
+
+            await page.goto(f"{base_url}/#/digests", wait_until="networkidle")
+            await page.get_by_text("No digests yet").wait_for(state="visible")
+
+            # 1. Create a category
+            await page.locator("aside").get_by_role("button", name="+ New").click()
+            cat_dialog = page.get_by_role("dialog", name="New Category")
+            await cat_dialog.get_by_label("Category Name").fill("Reading List")
+            await cat_dialog.get_by_role("button", name="Create").click()
+            await cat_dialog.wait_for(state="hidden")
+            await (
+                page.locator("aside")
+                .get_by_role("button", name=re.compile(r"^Reading List\b"))
+                .wait_for(state="visible")
+            )
+
+            # 2. Rename the category
+            await (
+                page.locator("aside")
+                .get_by_role("button", name="Rename category Reading List")
+                .click()
+            )
+            rename_dialog = page.get_by_role("dialog", name="Rename Category")
+            await rename_dialog.get_by_label("Category Name").fill("Classic Papers")
+            await rename_dialog.get_by_role("button", name="Rename").click()
+            await rename_dialog.wait_for(state="hidden")
+            await (
+                page.locator("aside")
+                .get_by_role("button", name=re.compile(r"^Classic Papers\b"))
+                .click()
+            )
+
+            # 3. Create a digest in Classic Papers (preselected)
+            await page.get_by_role("button", name="New Digest").click()
+            editor = page.get_by_role("dialog", name="New Digest")
+            await editor.get_by_label("Content").fill("Design for clarity first.")
+            await editor.get_by_label("Comment").fill("Key takeaway")
+            await editor.get_by_label("Author").fill("Tony Hoare")
+            await editor.get_by_label("Source Path").fill("Document/Hoare.pdf")
+            await editor.get_by_role("button", name="Create Digest").click()
+            await editor.wait_for(state="hidden")
+
+            cards = page.locator("[data-digest-card]")
+            await cards.first.wait_for(state="visible")
+            assert await cards.count() == 1
+            await page.get_by_text("Design for clarity first.").wait_for(
+                state="visible"
+            )
+            await page.get_by_text("Tony Hoare").wait_for(state="visible")
+
+            # 4. Edit & move digest to Uncategorized
+            await cards.first.get_by_role("button", name="Edit digest").click()
+            edit_dialog = page.get_by_role("dialog", name="Edit Digest")
+            await edit_dialog.get_by_label("Category").select_option("")
+            await edit_dialog.get_by_label("Content").fill("Clarity beats cleverness.")
+            await edit_dialog.get_by_role("button", name="Save Changes").click()
+            await edit_dialog.wait_for(state="hidden")
+
+            await (
+                page.locator("aside")
+                .get_by_role("button", name="Uncategorized")
+                .click()
+            )
+            await page.get_by_text("Clarity beats cleverness.").wait_for(
+                state="visible"
+            )
+
+            # 5. Delete digest (verify Escape dismisses modal first, then confirm)
+            await cards.first.get_by_role("button", name="Delete digest").click()
+            confirm_dialog = page.get_by_role("dialog", name="Confirm Delete")
+            await confirm_dialog.wait_for(state="visible")
+            await page.keyboard.press("Escape")
+            await confirm_dialog.wait_for(state="hidden")
+
+            await cards.first.get_by_role("button", name="Delete digest").click()
+            await confirm_dialog.get_by_role("button", name="Delete").click()
+            await confirm_dialog.wait_for(state="hidden")
+            await page.get_by_text("No matching digests").wait_for(state="visible")
+
+            # 6. Delete category with cascade warning
+            await (
+                page.locator("aside")
+                .get_by_role("button", name=re.compile(r"^Classic Papers\b"))
+                .click()
+            )
+            await page.get_by_role("button", name="New Digest").click()
+            editor = page.get_by_role("dialog", name="New Digest")
+            await editor.get_by_label("Content").fill("Child digest to cascade-delete")
+            await editor.get_by_role("button", name="Create Digest").click()
+            await editor.wait_for(state="hidden")
+            await cards.first.wait_for(state="visible")
+
+            await (
+                page.locator("aside")
+                .get_by_role("button", name="Delete category Classic Papers")
+                .click()
+            )
+            await confirm_dialog.get_by_text("1 digest inside it").wait_for(
+                state="visible"
+            )
+            await confirm_dialog.get_by_role("button", name="Delete").click()
+            await confirm_dialog.wait_for(state="hidden")
+            await page.get_by_text("No categories yet.").wait_for(state="visible")
+            await page.get_by_text("No digests yet").wait_for(state="visible")
+            await context.close()
+        finally:
+            await browser.close()
+
+    assert not errors, f"Unexpected browser errors in Digests CRUD modals: {errors}"
