@@ -10,6 +10,9 @@ from pydantic import AnyUrl
 from pytest_aiohttp import AiohttpClient
 
 from supernote.models.user import UserRegisterDTO
+from supernote.server.components.oauth.client_metadata import (
+    ClientMetadataUnavailableError,
+)
 from supernote.server.components.oauth.models import (
     LoginBridgeDecision,
     LoginBridgeResponseVO,
@@ -17,13 +20,22 @@ from supernote.server.components.oauth.models import (
     OAuthErrorResponseVO,
 )
 from supernote.server.components.oauth.provider import (
+    UNAVAILABLE_MEMO_SIZE,
     SupernoteOAuthClientInformationFull,
     SupernoteOAuthProvider,
 )
 from supernote.server.core import ServerCore
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
+from tests.fixtures.oauth import (
+    TEST_CLIENT_ID,
+    TEST_REDIRECT_URI,
+    FakeDocumentFetcher,
+    client_document,
+)
 from tests.server.components.conftest import LoadComponents
+
+pytestmark = pytest.mark.usefixtures("client_metadata_documents")
 
 
 def _pkce_s256(verifier: str) -> str:
@@ -109,7 +121,7 @@ async def test_oauth_provider_tokens_follow_their_grant(
     await load_components("http", "oauth")
     client = await aiohttp_client(component_core.app)
 
-    client_id = "https://client.example.com/"
+    client_id = TEST_CLIENT_ID
     verifier = "v" * 50
     code_challenge = _pkce_s256(verifier)
 
@@ -265,7 +277,7 @@ async def test_authorize_and_login_bridge_consent_invariants(
         "/authorize",
         params={
             "response_type": "code",
-            "client_id": "http://localhost:3000",
+            "client_id": TEST_CLIENT_ID,
             "code_challenge": code_challenge,
             "code_challenge_method": "S256",
             "scope": MCPScope.ALL,
@@ -277,7 +289,7 @@ async def test_authorize_and_login_bridge_consent_invariants(
     parsed_bridge = urlparse(bridge_url)
     bridge_qs = parse_qs(parsed_bridge.query)
     assert bridge_qs == {
-        "client_id": ["http://localhost:3000"],
+        "client_id": [TEST_CLIENT_ID],
         "code_challenge": [code_challenge],
         "scope": [MCPScope.ALL],
     }
@@ -342,8 +354,8 @@ async def test_authorize_and_login_bridge_consent_invariants(
     bad_scope_resp = await client.post(
         "/login-bridge",
         params={
-            "client_id": "http://localhost:3000",
-            "redirect_uri": "http://localhost:3000/callback",
+            "client_id": TEST_CLIENT_ID,
+            "redirect_uri": TEST_REDIRECT_URI,
             "code_challenge": code_challenge,
             "scope": "unsupported:admin",
         },
@@ -373,7 +385,7 @@ async def test_authorize_and_login_bridge_consent_invariants(
         coordination_service=coordination_service,
         issuer_url=component_core.config.base_url,
     )
-    client_info = await provider.get_client("http://localhost:3000")
+    client_info = await provider.get_client(TEST_CLIENT_ID)
     assert client_info is not None
     stored = await provider.load_authorization_code(client_info, code_str)
     assert stored is not None
@@ -387,11 +399,16 @@ async def test_authorize_and_login_bridge_consent_invariants(
     "bad_client_id",
     [
         "not-a-url",
-        "http://localhost:99999",
-        "http://user:pass@localhost:3000",
-        "http://localhost:3000/app#frag",
-        "http://localhost:3000/app/../evil",
-        "http://localhost:3000/app/%2e%2e/evil",
+        "http://client.example/client.json",
+        "https://client.example",
+        "https://client.example/",
+        "https://client.example:99999/client.json",
+        "https://user:pass@client.example/client.json",
+        "https://client.example/client.json#frag",
+        "https://client.example/app/../client.json",
+        "https://client.example/app/./client.json",
+        "https://client.example/app/%2e%2e/client.json",
+        "https://client.example/app/%2E/client.json",
     ],
 )
 async def test_get_client_rejects_malformed_or_unsafe_client_ids(
@@ -399,7 +416,7 @@ async def test_get_client_rejects_malformed_or_unsafe_client_ids(
     coordination_service: CoordinationService,
     bad_client_id: str,
 ) -> None:
-    """Verify get_client rejects malformed ports, userinfo, fragments, and dot-segments cleanly."""
+    """Verify get_client rejects client IDs that break the Client Identifier URL rules."""
     provider = SupernoteOAuthProvider(
         user_service=user_service,
         coordination_service=coordination_service,
@@ -433,3 +450,120 @@ def test_validate_redirect_uri_default_and_custom_scheme_traversal() -> None:
     ):
         with pytest.raises(InvalidRedirectUriError):
             single_client.validate_redirect_uri(AnyUrl(invalid_uri))
+
+
+async def test_get_client_builds_a_public_client(
+    user_service: UserService, coordination_service: CoordinationService
+) -> None:
+    provider = SupernoteOAuthProvider(
+        user_service,
+        coordination_service,
+        "https://notes.example",
+        FakeDocumentFetcher(),
+    )
+    client = await provider.get_client(TEST_CLIENT_ID)
+    assert client is not None
+    assert client.model_dump(
+        include={
+            "client_id",
+            "client_name",
+            "client_secret",
+            "redirect_uris",
+            "grant_types",
+            "token_endpoint_auth_method",
+        },
+        mode="json",
+    ) == {
+        "client_id": TEST_CLIENT_ID,
+        "client_name": "Example Client",
+        "client_secret": None,
+        "redirect_uris": [TEST_REDIRECT_URI],
+        "grant_types": ["authorization_code", "refresh_token"],
+        "token_endpoint_auth_method": "none",
+    }
+
+
+async def test_unavailable_memo_is_bounded(
+    user_service: UserService, coordination_service: CoordinationService
+) -> None:
+    fetcher = FakeDocumentFetcher()
+    provider = SupernoteOAuthProvider(
+        user_service, coordination_service, "https://notes.example", fetcher
+    )
+    for i in range(UNAVAILABLE_MEMO_SIZE + 1):
+        client_id = f"https://down.example/{i}.json"
+        fetcher.errors[client_id] = ClientMetadataUnavailableError("down")
+        with pytest.raises(ClientMetadataUnavailableError):
+            await provider.get_client(client_id)
+    assert len(provider._unavailable_until) <= UNAVAILABLE_MEMO_SIZE
+
+
+async def test_get_client_returns_none_for_an_invalid_document(
+    user_service: UserService, coordination_service: CoordinationService
+) -> None:
+    fetcher = FakeDocumentFetcher()
+    fetcher.documents[TEST_CLIENT_ID] = client_document(TEST_CLIENT_ID, "not a url")
+    provider = SupernoteOAuthProvider(
+        user_service, coordination_service, "https://notes.example", fetcher
+    )
+    assert await provider.get_client(TEST_CLIENT_ID) is None
+
+
+async def test_get_client_does_not_refetch_an_unavailable_document_at_once(
+    user_service: UserService, coordination_service: CoordinationService
+) -> None:
+    """The SDK's /authorize error path asks twice; the second ask must not fetch."""
+    fetcher = FakeDocumentFetcher()
+    fetcher.errors[TEST_CLIENT_ID] = ClientMetadataUnavailableError("timed out")
+    provider = SupernoteOAuthProvider(
+        user_service, coordination_service, "https://notes.example", fetcher
+    )
+    for _ in range(2):
+        with pytest.raises(ClientMetadataUnavailableError):
+            await provider.get_client(TEST_CLIENT_ID)
+    assert fetcher.fetched == [TEST_CLIENT_ID]
+
+
+LOOPBACK_CLIENT = SupernoteOAuthClientInformationFull(
+    client_id=TEST_CLIENT_ID,
+    redirect_uris=[
+        AnyUrl("http://localhost/callback"),
+        AnyUrl("http://127.0.0.1/callback"),
+        AnyUrl("http://[::1]:8000/callback"),
+        AnyUrl("https://client.example:8443/callback"),
+    ],
+)
+
+
+@pytest.mark.parametrize(
+    "redirect_uri",
+    [
+        "http://localhost:49152/callback",
+        "http://127.0.0.1/callback",
+        "http://127.0.0.1:49152/callback",
+        "http://[::1]:49152/callback",
+        "https://client.example:8443/callback",
+    ],
+)
+def test_loopback_redirect_port_may_vary(redirect_uri: str) -> None:
+    """RFC 8252 7.3: a native client's loopback port is chosen at run time."""
+    assert LOOPBACK_CLIENT.validate_redirect_uri(AnyUrl(redirect_uri)) == AnyUrl(
+        redirect_uri
+    )
+
+
+@pytest.mark.parametrize(
+    "redirect_uri",
+    [
+        "http://localhost.client.example:49152/callback",
+        "http://127.0.0.2:49152/callback",
+        "http://127.0.0.1:49152/callback/extra",
+        "http://127.0.0.1:49152/other",
+        "https://127.0.0.1:49152/callback",
+        "https://client.example:9443/callback",
+        "https://client.example/callback",
+    ],
+)
+def test_only_the_loopback_port_may_vary(redirect_uri: str) -> None:
+    with pytest.raises(InvalidRedirectUriError):
+        LOOPBACK_CLIENT.validate_redirect_uri(AnyUrl(redirect_uri))

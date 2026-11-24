@@ -17,14 +17,16 @@ from urllib.parse import quote
 from aiohttp_asgi import ASGIResource
 from mashumaro.exceptions import InvalidFieldValue, MissingField
 from mashumaro.mixins.json import DataClassJSONMixin
+from mcp.server.auth.handlers.metadata import MetadataHandler
 from mcp.server.auth.provider import construct_redirect_uri
-from mcp.server.auth.routes import create_auth_routes
+from mcp.server.auth.routes import build_metadata, cors_middleware, create_auth_routes
 from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 from mcp.shared.auth import InvalidRedirectUriError, InvalidScopeError
 from pydantic import AnyHttpUrl, AnyUrl, ValidationError
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
+from starlette.routing import Route
 
 from supernote.server.components.http import HttpRegistrar
 from supernote.server.core import ServerCore
@@ -32,6 +34,7 @@ from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.user import UserService
 from supernote.server.utils.auth_utils import get_token_from_request
 
+from .client_metadata import ClientMetadataUnavailableError
 from .models import (
     LoginBridgeDecision,
     LoginBridgeRequestDTO,
@@ -59,6 +62,17 @@ def _json_model_response(
     )
 
 
+async def _client_metadata_unavailable(request: Request, exc: Exception) -> Response:
+    """Section 6.1: a transient document failure is a 503, never a redirect."""
+    return _json_model_response(
+        OAuthErrorResponseVO(
+            error="temporarily_unavailable",
+            error_description="The client's metadata document could not be fetched.",
+        ),
+        status_code=503,
+    )
+
+
 def create_auth_app(
     user_service: UserService,
     coordination_service: CoordinationService,
@@ -69,17 +83,47 @@ def create_auth_app(
     metadata_issuer = AnyHttpUrl(issuer_url)
     # RFC 9207: authorization responses carry the metadata issuer, verbatim.
     issuer = str(metadata_issuer)
+    registration_options = ClientRegistrationOptions(
+        enabled=False,
+        valid_scopes=list(MCPScope),
+        default_scopes=[MCPScope.ALL],
+    )
+    revocation_options = RevocationOptions(enabled=True)
     routes = create_auth_routes(
         provider=provider,
         issuer_url=metadata_issuer,
-        client_registration_options=ClientRegistrationOptions(
-            enabled=False,
-            valid_scopes=list(MCPScope),
-            default_scopes=[MCPScope.ALL],
-        ),
-        revocation_options=RevocationOptions(enabled=True),
+        client_registration_options=registration_options,
+        revocation_options=revocation_options,
     )
-    app = Starlette(routes=routes, debug=True)
+    # Clients are public and identified by metadata documents, not shared secrets.
+    metadata = build_metadata(
+        metadata_issuer, None, registration_options, revocation_options
+    ).model_copy(
+        update={
+            "client_id_metadata_document_supported": True,
+            "token_endpoint_auth_methods_supported": ["none"],
+            "revocation_endpoint_auth_methods_supported": ["none"],
+        }
+    )
+    routes = [
+        Route(
+            route.path,
+            endpoint=cors_middleware(
+                MetadataHandler(metadata).handle, ["GET", "OPTIONS"]
+            ),
+            methods=["GET", "OPTIONS"],
+        )
+        if route.path == "/.well-known/oauth-authorization-server"
+        else route
+        for route in routes
+    ]
+    app = Starlette(
+        routes=routes,
+        debug=True,
+        exception_handlers={
+            ClientMetadataUnavailableError: _client_metadata_unavailable
+        },
+    )
 
     async def login_bridge(request: Request) -> Response:
         """Handle the OAuth 2.1 login & consent bridge between the Web UI and OAuth clients."""
@@ -146,7 +190,7 @@ def create_auth_app(
             return _json_model_response(
                 OAuthErrorResponseVO(
                     error="invalid_client",
-                    error_description="Unrecognized or invalid client_id URL.",
+                    error_description="The client's metadata document is missing or invalid.",
                 ),
                 status_code=400,
             )
@@ -161,7 +205,7 @@ def create_auth_app(
                 OAuthErrorResponseVO(
                     error="invalid_redirect_uri",
                     error_description=(
-                        "Redirect URI does not match the requesting client origin and path."
+                        "Redirect URI is not registered in the client's metadata document."
                     ),
                 ),
                 status_code=400,

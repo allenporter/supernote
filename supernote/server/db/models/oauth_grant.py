@@ -26,7 +26,7 @@ class OAuthGrantDO(Base):
     )
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     client_id: Mapped[str] = mapped_column(String(2048), nullable=False)
-    """IndieAuth client URL that requested access."""
+    """Client ID Metadata Document URL of the client that requested access."""
 
     scopes: Mapped[str] = mapped_column(String(1024), nullable=False)
     """Granted scopes, space-separated as in OAuth."""

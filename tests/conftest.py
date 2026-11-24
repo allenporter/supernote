@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-pytest_plugins = ["tests.fixtures.server"]
+pytest_plugins = ["tests.fixtures.server", "tests.fixtures.oauth"]
 
 
 @pytest.fixture(scope="session")

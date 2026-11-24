@@ -200,7 +200,7 @@ This grounds both the vision OCR model (improving domain terminology recognition
 
 ## Model Context Protocol (MCP) Server & Authentication
 
-When `mcp_enabled: true` (default), Open Private Cloud runs a Streamable HTTP **MCP Resource Server** on `http://<your-server-ip>:8081/mcp` alongside an **OAuth 2.1 / IndieAuth Authorization Server** on port `8080` (`supernote.server.components.mcp.server` and `supernote.server.components.oauth.provider`).
+When `mcp_enabled: true` (default), Open Private Cloud runs a Streamable HTTP **MCP Resource Server** on `http://<your-server-ip>:8081/mcp` alongside an **OAuth 2.1 Authorization Server** on port `8080` (`supernote.server.components.mcp.server` and `supernote.server.components.oauth.provider`).
 
 ### Dual-Port OAuth 2.1 + Streamable HTTP Topology
 
@@ -213,7 +213,7 @@ When `mcp_enabled: true` (default), Open Private Cloud runs a Streamable HTTP **
 
 `supernote.server.components.oauth.provider.SupernoteOAuthProvider` accepts two types of Bearer credentials on `http://<host>:8081/mcp`:
 
-#### Mode 1: Interactive OAuth 2.1 with Dynamic IndieAuth Client IDs
+#### Mode 1: Interactive OAuth 2.1 with Client ID Metadata Documents
 
 ```mermaid
 sequenceDiagram
@@ -227,8 +227,9 @@ sequenceDiagram
     Client->>RS: GET /.well-known/oauth-protected-resource
     RS-->>Client: Returns authorization_servers: ["http://localhost:8080"]
     Client->>AS: GET /.well-known/oauth-authorization-server
-    AS-->>Client: OAuth 2.1 metadata (/authorize, /token)
-    Client->>Browser: Open /authorize?client_id=http://...&code_challenge=...
+    AS-->>Client: OAuth 2.1 metadata (client_id_metadata_document_supported: true)
+    Client->>Browser: Open /authorize?client_id=https://client.example/client.json&code_challenge=...
+    AS->>Client: GET client_id URL (Client ID Metadata Document)
     Browser->>AS: Redirects through /login-bridge -> /#login?return_to=...
     Browser->>AS: User signs in & approves OAuth Consent Card; POST /login-bridge issues auth code
     AS-->>Client: Redirect to callback with ?code=...
@@ -238,7 +239,9 @@ sequenceDiagram
     RS-->>Client: Streamable HTTP MCP Tool Execution
 ```
 
-- **Zero Client Pre-Registration**: Any valid `http://` or `https://` URL passed as `client_id` is accepted dynamically, and any `redirect_uri` sharing the same scheme, host, and path prefix is permitted.
+- **Zero Client Pre-Registration**: Clients identify themselves with [Client ID Metadata Documents](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/), as the MCP authorization spec recommends. The `client_id` is an `https://` URL with a path, and the server fetches the JSON document it serves. The document must repeat that exact `client_id` and include `client_name` and `redirect_uris`. It must not carry a `client_secret`, because clients are public and authenticate with PKCE (`token_endpoint_auth_method: none`). There is no `/register` endpoint.
+- **Exact Redirect URIs**: A `redirect_uri` must equal one listed in the document. Listed URIs must be `https://`, `http://` on `localhost`, `127.0.0.1` or `[::1]`, or a native app's own scheme (`com.example.app:/callback`). The port of a loopback redirect may vary (RFC 8252). Script, data and file schemes are refused.
+- **Fetching**: Documents are fetched over HTTPS from public addresses only. Redirects are not followed, the server accepts only a 200 response of at most 5 KB, and a fetch times out after 5 seconds. Valid documents are cached for their `Cache-Control: max-age`, bounded to 5 minutes to 1 day (1 hour without one). `no-store` and `no-cache` documents are fetched on every use. Failures are never cached. If a document is missing or invalid, the server shows an error instead of redirecting to the client. If it is unreachable, the server answers 503.
 - **Token Lifetimes**: OAuth access tokens expire after **1 hour** (`3600` seconds) and refresh tokens remain valid for **30 days**.
 - **Connected Clients**: Each approved authorization is recorded as a grant. `GET /api/extended/oauth/grants` lists them with their scopes and last use, and `DELETE /api/extended/oauth/grants/{grantId}` disconnects a client, ending its access and refresh tokens at once.
 
@@ -299,15 +302,28 @@ For MCP clients that support static `headers` on Streamable HTTP connections:
 }
 ```
 
-### Custom OAuth 2.1 Agents (IndieAuth)
+### Custom OAuth 2.1 Agents
 
-When building a custom web agent, use your application's URL as the `client_id`:
+When building a custom agent, publish a Client ID Metadata Document at a stable HTTPS URL and use that URL as the `client_id`:
+
+```json
+{
+  "client_id": "https://my-agent-app.example/oauth/client.json",
+  "client_name": "My Agent",
+  "redirect_uris": ["https://my-agent-app.example/callback"],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none"
+}
+```
+
+Without `grant_types`, a client gets both `authorization_code` and `refresh_token`. Then start the flow:
 
 ```python
 params = {
     "response_type": "code",
-    "client_id": "https://my-agent-app.com",
-    "redirect_uri": "https://my-agent-app.com/callback",
+    "client_id": "https://my-agent-app.example/oauth/client.json",
+    "redirect_uri": "https://my-agent-app.example/callback",
     "scope": "supernote:all",
     "state": "xyz",
 }
