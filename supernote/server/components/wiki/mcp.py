@@ -34,7 +34,11 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
     wiki_service: WikiService = core.app[WIKI_SERVICE_KEY]
 
     async def get_wiki_index(ctx: Context, limit: int = 100) -> dict[str, Any]:
-        """Return a compact index of active wiki pages (slug, title, kind, summary)."""
+        """Return a compact index of active wiki pages (slug, title, kind, summary).
+
+        Args:
+            limit: Maximum number of index entries to return (`1..500`, default `100`).
+        """
         _ = ctx
         if (user_id := get_authenticated_user_id()) is None:
             return create_error_response(
@@ -62,7 +66,14 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
         limit: int = 50,
         offset: int = 0,
     ) -> dict[str, Any]:
-        """List active wiki pages for the authenticated user."""
+        """List active wiki pages for the authenticated user.
+
+        Args:
+            page_kind: Optional category filter (`project`, `entity`, `topic`,
+                `source_digest`, `index`, or `log`).
+            limit: Maximum number of pages to return (`1..500`, default `50`).
+            offset: Pagination offset (default `0`).
+        """
         _ = ctx
         if (user_id := get_authenticated_user_id()) is None:
             return create_error_response(
@@ -74,7 +85,12 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
         return {"success": True, "pages": [p.to_dict() for p in pages]}
 
     async def read_wiki_page(ctx: Context, slug: str) -> dict[str, Any]:
-        """Read a single wiki page by slug, including backlinks and source refs."""
+        """Read a single wiki page by slug, including backlinks and source refs.
+
+        Args:
+            slug: Canonical plural-prefixed page slug (e.g. ``projects/q3-plan``,
+                ``entities/alice``).
+        """
         _ = ctx
         if (user_id := get_authenticated_user_id()) is None:
             return create_error_response(
@@ -91,7 +107,13 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
         return {"success": True, "page": page.to_dict()}
 
     async def search_wiki(ctx: Context, query: str, top_k: int = 10) -> dict[str, Any]:
-        """Search wiki pages by keyword or alias, returning 1-hop links and source refs."""
+        """Search wiki pages by keyword or alias, returning 1-hop links and source refs.
+
+        Args:
+            query: Space-separated keywords or aliases to match against page
+                titles, aliases, summaries, and bodies.
+            top_k: Maximum number of ranked hits to return (`1..50`, default `10`).
+        """
         _ = ctx
         if (user_id := get_authenticated_user_id()) is None:
             return create_error_response(
@@ -112,7 +134,29 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
         expected_version: int | None = None,
         change_summary: str = "",
     ) -> dict[str, Any]:
-        """Create or update a wiki page as an external MCP agent (respects edit_policy)."""
+        """Create or update a wiki page as an external MCP agent (respects edit_policy).
+
+        Args:
+            slug: Canonical plural-prefixed slug (e.g. ``projects/q3-plan``,
+                ``entities/alice``); lowercase `[a-z0-9._-/]`, max 191 chars.
+            title: Human-readable page heading.
+            body_md: Markdown body; supports ``[[slug]]`` and ``[[slug|label]]``
+                wikilinks for cross-page graph links and backlinks.
+            page_kind: Page category (`project`, `entity`, `topic`,
+                `source_digest`, `index`, or `log`; default `topic`).
+            summary: Optional one-line summary for index and search snippets.
+            aliases: Optional alternate names or abbreviations for search and
+                entity resolution.
+            source_refs: Optional provenance citations, each a dict with
+                ``source_type`` (`note_page` or `schedule_task`), ``source_key``
+                (``{file_id}:{page_id}`` or ``{task_id}``), and optional
+                ``file_id`` (int or null).
+            expected_version: Optional optimistic-concurrency guard (`0` for a
+                new or revived page, or the current `version` for an update).
+                Returns `409` on version mismatch and `403` if the page has
+                `protected_prose` or `locked` edit policy.
+            change_summary: Optional short note recorded on the revision row.
+        """
         _ = ctx
         if (user_id := get_authenticated_user_id()) is None:
             return create_error_response(
@@ -156,7 +200,12 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
     async def list_wiki_lint_issues(
         ctx: Context, status: str = "open"
     ) -> dict[str, Any]:
-        """List structural and semantic wiki lint issues."""
+        """List structural and semantic wiki lint issues.
+
+        Args:
+            status: Filter by issue status (`open`, `resolved`, `dismissed`, or
+                `all`; default `open`).
+        """
         _ = ctx
         if (user_id := get_authenticated_user_id()) is None:
             return create_error_response(
@@ -170,7 +219,12 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
     async def resolve_wiki_lint_issue(
         ctx: Context, issue_id: int, status: str = "resolved"
     ) -> dict[str, Any]:
-        """Resolve or dismiss a wiki lint issue."""
+        """Resolve or dismiss a wiki lint issue.
+
+        Args:
+            issue_id: Numeric ID of the lint issue from `list_wiki_lint_issues`.
+            status: Target status (`resolved` or `dismissed`; default `resolved`).
+        """
         _ = ctx
         if (user_id := get_authenticated_user_id()) is None:
             return create_error_response(
