@@ -292,8 +292,10 @@ async def test_web_ui_desktop_and_mobile_smoke(
             await page.keyboard.press("Escape")
             await ics_dialog.wait_for(state="hidden")
 
-            # System status panel & global search modal
-            await page.get_by_role("button", name="System Status").click()
+            # Unified Settings & System modal (#/settings and #/system tabs) + global search modal
+            await page.get_by_role("button", name="Settings").click()
+            assert page.url.endswith("#/settings")
+            await page.get_by_role("button", name="System & Queue").click()
             assert page.url.endswith("#/system")
             await page.keyboard.press("Escape")
 

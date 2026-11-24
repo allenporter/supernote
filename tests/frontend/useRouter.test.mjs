@@ -160,7 +160,9 @@ test('useRouter.js: parseUrlHash, buildUrlHash, and breadcrumb builders', () => 
     assert.equal(buildUrlHash('tasks', '0', 'grid', null, false, null), '#/tasks');
     assert.equal(buildUrlHash('settings', '0', 'grid', null, false, null), '#/settings');
     assert.equal(buildUrlHash('settings', '0', 'recycle', null, false, null), '#/settings');
+    assert.equal(buildUrlHash('files', '0', 'grid', null, 'settings', null), '#/settings');
     assert.equal(buildUrlHash('files', '0', 'grid', null, true, null), '#/system');
+    assert.equal(buildUrlHash('files', '0', 'grid', null, 'system', null), '#/system');
 
     assert.equal(formatCrumbName('INBOX', 0), 'Inbox');
     assert.equal(formatCrumbName('Projects', 1), 'Projects');
@@ -210,10 +212,17 @@ test('useRouter.js: navigates folders/files, replaces history on page scroll & s
         assert.equal(router.view.value, 'grid');
         assert.equal(router.selectedFile.value, null);
 
-        router.openSystemPanel();
+        router.openSettingsPanel('access');
+        assert.equal(globalThis.window.location.hash, '#/settings');
+        assert.equal(router.showSystemPanel.value, true);
+        assert.equal(router.settingsModalTab.value, 'access');
+        const stackLenOnSystem = historyStack.length;
+
+        router.setSettingsModalTab('system');
         assert.equal(globalThis.window.location.hash, '#/system');
         assert.equal(router.showSystemPanel.value, true);
-        const stackLenOnSystem = historyStack.length;
+        assert.equal(router.settingsModalTab.value, 'system');
+        assert.equal(historyStack.length, stackLenOnSystem);
 
         await router.openItem({ id: '99', isDirectory: false });
         assert.equal(router.showSystemPanel.value, false);

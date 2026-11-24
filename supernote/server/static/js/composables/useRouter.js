@@ -122,11 +122,14 @@ export function parseUrlHash(hashString) {
  * @param {string | number | null} dirId
  * @param {string} viewState
  * @param {{ id?: string | number } | null} fileObj
- * @param {boolean} [showSystem=false]
+ * @param {boolean | 'settings' | 'system'} [showSystem=false]
  * @param {number | null} [pageIndex=null]
  * @returns {string}
  */
 export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false, pageIndex = null) {
+    if (showSystem === 'settings' || tab === 'settings') {
+        return '#/settings';
+    }
     if (showSystem || tab === 'system') {
         return '#/system';
     }
@@ -135,9 +138,6 @@ export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false,
     }
     if (tab === 'tasks') {
         return '#/tasks';
-    }
-    if (tab === 'settings') {
-        return '#/settings';
     }
     if (viewState === 'recycle') {
         return '#/recycle';
@@ -175,8 +175,8 @@ export function useRouter({
     onOAuthRouteEnter = null,
     onOAuthRouteClear = null,
 }) {
-    const activeTab = ref('files'); // 'files' | 'tasks' | 'settings'
-    const view = ref('grid'); // 'grid' | 'viewer'
+    const activeTab = ref('files'); // 'files' | 'digests' | 'tasks'
+    const view = ref('grid'); // 'grid' | 'viewer' | 'recycle'
     /** @type {import('vue').Ref<FileItem | null>} */
     const selectedFile = ref(null);
     /** @type {import('vue').Ref<number | null>} */
@@ -185,6 +185,8 @@ export function useRouter({
     /** @type {import('vue').Ref<BreadcrumbItem[]>} */
     const breadcrumbs = ref([{ id: '0', name: 'Cloud' }]);
     const showSystemPanel = ref(false);
+    /** @type {import('vue').Ref<'access' | 'system'>} */
+    const settingsModalTab = ref('access');
     /** @type {import('vue').Ref<OAuthBridgeRequest | null>} */
     const pendingOAuthRequest = ref(null);
 
@@ -212,6 +214,7 @@ export function useRouter({
         resetViewerSelection();
         breadcrumbs.value = [{ id: '0', name: 'Cloud' }];
         showSystemPanel.value = false;
+        settingsModalTab.value = 'access';
     }
 
     /**
@@ -244,12 +247,17 @@ export function useRouter({
 
     function updateUrl(replace = false) {
         if (!isLoggedIn.value || pendingOAuthRequest.value) return;
+        const modalRoute = showSystemPanel.value
+            ? settingsModalTab.value === 'access'
+                ? 'settings'
+                : 'system'
+            : false;
         const targetHash = buildUrlHash(
             activeTab.value,
             currentDirectoryId.value,
             view.value,
             selectedFile.value,
-            showSystemPanel.value,
+            modalRoute,
             selectedPageIndex.value,
         );
         lastSyncedHash = targetHash;
@@ -266,11 +274,13 @@ export function useRouter({
     /**
      * @param {boolean} isInitial
      * @param {number} seq
+     * @param {'access' | 'system'} [section='system']
      */
-    async function restoreSystemView(isInitial, seq) {
+    async function restoreSystemView(isInitial, seq, section = 'system') {
+        settingsModalTab.value = section;
         showSystemPanel.value = true;
         resetViewerSelection();
-        if (activeTab.value === 'system') {
+        if (activeTab.value === 'system' || activeTab.value === 'settings') {
             activeTab.value = 'files';
         }
         const targetDirId = String(currentDirectoryId.value || '0');
@@ -437,13 +447,17 @@ export function useRouter({
         const parsed = parseUrlHash(isStaleLoginHash ? '#/files' : rawHash);
 
         if (parsed.tab === 'system' || parsed.showSystem) {
-            await restoreSystemView(isInitial, seq);
+            await restoreSystemView(isInitial, seq, 'system');
+            return;
+        }
+        if (parsed.tab === 'settings') {
+            await restoreSystemView(isInitial, seq, 'access');
             return;
         }
         showSystemPanel.value = false;
         systemOpenedFromHistory = false;
 
-        if (parsed.tab === 'digests' || parsed.tab === 'tasks' || parsed.tab === 'settings') {
+        if (parsed.tab === 'digests' || parsed.tab === 'tasks') {
             activeTab.value = parsed.tab;
             resetViewerSelection();
             viewerOpenedFromHistory = false;
@@ -483,7 +497,7 @@ export function useRouter({
     }
 
     /**
-     * @param {'files' | 'digests' | 'tasks' | 'settings'} tab
+     * @param {'files' | 'digests' | 'tasks'} tab
      */
     async function switchTab(tab) {
         showSystemPanel.value = false;
@@ -533,10 +547,29 @@ export function useRouter({
         );
     }
 
-    function openSystemPanel() {
+    /**
+     * @param {'access' | 'system'} [section='access']
+     */
+    function openSettingsPanel(section = 'access') {
+        settingsModalTab.value = section === 'system' ? 'system' : 'access';
         systemOpenedFromHistory = true;
         showSystemPanel.value = true;
         updateUrl();
+    }
+
+    function openSystemPanel() {
+        openSettingsPanel('system');
+    }
+
+    /**
+     * @param {'access' | 'system'} section
+     */
+    function setSettingsModalTab(section) {
+        const nextSection = section === 'system' ? 'system' : 'access';
+        if (settingsModalTab.value === nextSection && showSystemPanel.value) return;
+        settingsModalTab.value = nextSection;
+        showSystemPanel.value = true;
+        updateUrl(true);
     }
 
     async function closeSystemPanel() {
@@ -619,7 +652,9 @@ export function useRouter({
     async function openItem(item) {
         if (!item) return;
         const replaceModalHistory = systemOpenedFromHistory && inAppHistoryDepth > 0;
-        const wasSystemUrl = window.location.hash.startsWith('#/system');
+        const wasSystemUrl =
+            window.location.hash.startsWith('#/system') ||
+            window.location.hash.startsWith('#/settings');
 
         if (item.isDirectory) {
             const targetId = String(item.id);
@@ -716,6 +751,7 @@ export function useRouter({
         selectedPageJumpSeq,
         breadcrumbs,
         showSystemPanel,
+        settingsModalTab,
         pendingOAuthRequest,
         syncFromUrl,
         updateUrl,
@@ -723,7 +759,9 @@ export function useRouter({
         switchTab,
         openRecycleBin,
         closeRecycleBin,
+        openSettingsPanel,
         openSystemPanel,
+        setSettingsModalTab,
         closeSystemPanel,
         closeViewer,
         handleViewerPageChange,
