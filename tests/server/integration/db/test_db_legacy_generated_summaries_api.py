@@ -17,13 +17,14 @@ from supernote.models.summary import QuerySummaryDTO
 from supernote.server.app import create_app
 from supernote.server.components.fake_ai.summary import FakeSummaryModel
 from supernote.server.components.processor import ProcessorService
+from supernote.server.components.summary import SUMMARY_SERVICE_KEY
+from supernote.server.components.summary.processor import SummaryModule
 from supernote.server.config import AuthConfig, ServerConfig
 from supernote.server.db.migrations import run_migrations
 from supernote.server.keys import (
     EVENT_BUS_KEY,
     FILE_SERVICE_KEY,
     SESSION_MANAGER_KEY,
-    SUMMARY_SERVICE_KEY,
     USER_SERVICE_KEY,
 )
 from supernote.server.services.processor_modules.ocr import OcrModule
@@ -31,7 +32,6 @@ from supernote.server.services.processor_modules.page_hashing import PageHashing
 from supernote.server.services.processor_modules.png_conversion import (
     PngConversionModule,
 )
-from supernote.server.services.processor_modules.summary import SummaryModule
 from supernote.server.utils.paths import get_ai_summaries_group_id, get_summary_id
 
 FIXTURES_DIR = Path(__file__).parent.parent.parent.parent / "fixtures"

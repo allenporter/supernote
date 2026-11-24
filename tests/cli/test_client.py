@@ -42,10 +42,9 @@ from supernote.cli.client import (
 )
 from supernote.client.auth import ConstantAuth, FileCacheAuth
 from supernote.models.summary import AddSummaryDTO
+from supernote.server.components.summary import SUMMARY_SERVICE_KEY, SummaryService
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
-from supernote.server.keys import SUMMARY_SERVICE_KEY
-from supernote.server.services.summary import SummaryService
 
 from .conftest import ADMIN_EMAIL, ADMIN_PASSWORD, CliServerEnv
 

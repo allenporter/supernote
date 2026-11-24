@@ -1,7 +1,7 @@
 """In-process asynchronous event bus (`LocalEventBus`) and domain event dataclasses.
 
 Decouples mutating domain services (`supernote.server.services.file.FileService`,
-`supernote.server.services.summary.SummaryService`, `supernote.server.components.schedule.service.ScheduleService`,
+`supernote.server.components.summary.service.SummaryService`, `supernote.server.components.schedule.service.ScheduleService`,
 `supernote.server.services.processor.ProcessorService`) from downstream subscribers:
 - `supernote.server.services.processor.ProcessorService` listens for `NoteUpdatedEvent`, `NoteDeletedEvent`, and `SyncCompletedEvent`.
 - `supernote.server.services.file.FileService` listens for `BlobCleanupEvent`.

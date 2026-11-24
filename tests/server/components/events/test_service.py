@@ -20,6 +20,8 @@ from supernote.server.components.events.service import (
     EventLogService,
 )
 from supernote.server.components.schedule.service import ScheduleService
+from supernote.server.components.summary import SummaryService
+from supernote.server.components.summary.processor import SummaryModule
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
@@ -38,8 +40,6 @@ from supernote.server.services.blob import BlobStorage
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules.ocr import OcrModule
-from supernote.server.services.processor_modules.summary import SummaryModule
-from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 from supernote.server.utils.paths import get_page_png_path
 

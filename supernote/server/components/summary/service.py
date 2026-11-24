@@ -4,10 +4,12 @@
 summaries) and `SummaryTagDO` records, enforces soft-delete retention windows
 (`purge_expired_summaries`), and emits `SummaryUpsertedEvent`, `SummaryDeletedEvent`,
 and `BlobCleanupEvent` onto `supernote.server.events.LocalEventBus`. Used by
-`supernote.server.routes.summary`, `supernote.server.routes.extended`, and
-`supernote.server.services.processor_modules.summary.SummaryModule`.
+`supernote.server.components.summary.http` and
+`supernote.server.components.summary.processor.SummaryModule`.
 See `supernote.guides.summary_api`.
 """
+
+from __future__ import annotations
 
 import asyncio
 import hashlib
@@ -16,6 +18,7 @@ import time
 import uuid
 from typing import Any
 
+from aiohttp import web
 from sqlalchemy import ColumnElement, Select, and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -753,3 +756,7 @@ class SummaryService:
             result = await session.execute(stmt)
             summaries = list(result.scalars().all())
             return [_to_summary_item(s) for s in summaries]
+
+
+SUMMARY_SERVICE_KEY: web.AppKey[SummaryService] = web.AppKey("summary_service")
+"""Typed `aiohttp.web.AppKey` exposing `SummaryService` to sibling components and routes."""

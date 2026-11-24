@@ -9,7 +9,7 @@ idempotent stage of the background `.note` processing pipeline orchestrated by
 - `supernote.server.services.processor_modules.png_conversion.PngConversionModule` (`TaskType.PNG_CONVERSION`)
 - `supernote.server.services.processor_modules.ocr.OcrModule` (`TaskType.OCR_EXTRACTION`)
 - `supernote.server.services.processor_modules.embedding.EmbeddingModule` (`TaskType.EMBEDDING_GENERATION`)
-- `supernote.server.services.processor_modules.summary.SummaryModule` (`TaskType.SUMMARY_GENERATION`)
+- `supernote.server.components.summary.processor.SummaryModule` (`TaskType.SUMMARY_GENERATION`)
 
 See `supernote.guides.note_processing_design` and `supernote.guides.mcp`.
 """

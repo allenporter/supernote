@@ -17,11 +17,11 @@ from supernote.client.client import Client
 from supernote.client.schedule import ScheduleClient
 from supernote.client.web import WebClient
 from supernote.models.summary import AddSummaryDTO, AddSummaryGroupDTO
+from supernote.server.components.summary import SUMMARY_SERVICE_KEY
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.keys import (
     PROCESSOR_SERVICE_KEY,
     SESSION_MANAGER_KEY,
-    SUMMARY_SERVICE_KEY,
     USER_SERVICE_KEY,
 )
 

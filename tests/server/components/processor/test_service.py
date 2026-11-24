@@ -20,6 +20,8 @@ from supernote.server.components.fake_ai.summary import FakeSummaryModel
 from supernote.server.components.processor import ProcessorService
 from supernote.server.components.search import SearchService
 from supernote.server.components.search.processor import EmbeddingModule
+from supernote.server.components.summary import SummaryService
+from supernote.server.components.summary.processor import SummaryModule
 from supernote.server.components.transcript import TranscriptService
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
@@ -49,8 +51,6 @@ from supernote.server.services.processor_modules.page_hashing import PageHashing
 from supernote.server.services.processor_modules.png_conversion import (
     PngConversionModule,
 )
-from supernote.server.services.processor_modules.summary import SummaryModule
-from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 from supernote.server.utils.paths import (
     get_ai_summaries_group_id,

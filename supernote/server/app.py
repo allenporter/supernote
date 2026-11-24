@@ -3,8 +3,8 @@
 `create_app` initializes core infrastructure (`ServerCore`, `ComponentLoader`,
 database/VFS/auth/processor services, and core route tables) and lazily registers
 enabled built-in vertical components (`ai`, `apple`, `events`, `fake_ai`,
-`gemini`, `http`, `mcp`, `metrics`, `oauth`, `openai`, `schedule`, `search`,
-`socketio`, `transcript`, `web_ui`, `webhooks`) via
+`gemini`, `http`, `mcp`, `metrics`, `oauth`, `openai`, `processor`, `schedule`,
+`search`, `socketio`, `summary`, `transcript`, `web_ui`, `webhooks`) via
 `supernote.server.components.load_builtin_components`.
 
 During `on_startup`, the server runs Alembic migrations, initializes `UrlSigner`,
@@ -36,7 +36,6 @@ from supernote.server.keys import (
     PROCESSOR_SERVICE_KEY,
     RATE_LIMITER_KEY,
     SESSION_MANAGER_KEY,
-    SUMMARY_SERVICE_KEY,
     URL_SIGNER_KEY,
     USER_SERVICE_KEY,
 )
@@ -54,7 +53,6 @@ from .routes import (
     file_device,
     file_web,
     oss,
-    summary,
     system,
 )
 from .services.blob import LocalBlobStorage
@@ -62,7 +60,6 @@ from .services.conversion import ConversionService
 from .services.coordination import CoordinationService, SqliteCoordinationService
 from .services.file import FileService
 from .services.integrity import IntegrityService
-from .services.summary import SummaryService
 from .services.user import UserService
 from .trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger
 from .utils.hashing import get_md5_hash
@@ -121,9 +118,6 @@ def create_app(config: ServerConfig) -> web.Application:
     app[FILE_SERVICE_KEY] = file_service
     app[INTEGRITY_SERVICE_KEY] = IntegrityService(session_manager, blob_storage)
 
-    summary_service = SummaryService(user_service, session_manager, event_bus)
-    app[SUMMARY_SERVICE_KEY] = summary_service
-
     app[RATE_LIMITER_KEY] = RateLimiter(coordination_service)
 
     core = ServerCore(
@@ -165,7 +159,6 @@ def create_app(config: ServerConfig) -> web.Application:
     app.add_routes(file_web.routes)
     app.add_routes(file_device.routes)
     app.add_routes(oss.routes)
-    app.add_routes(summary.routes)
     app.add_routes(extended.routes)
 
     async def on_startup_handler(app: web.Application) -> None:
@@ -189,7 +182,6 @@ def create_app(config: ServerConfig) -> web.Application:
 
         logger.info("Starting background services...")
         await file_service.start()
-        await summary_service.start()
         await component_loader.async_start_all(core)
         logger.info("Startup sequence complete.")
 
@@ -197,14 +189,12 @@ def create_app(config: ServerConfig) -> web.Application:
 
     async def on_shutdown_handler(app: web.Application) -> None:
         await component_loader.async_stop_all(core)
-        await summary_service.stop()
         await session_manager.close()
 
     app.on_shutdown.append(on_shutdown_handler)
 
     async def on_cleanup_handler(app: web.Application) -> None:
         await component_loader.async_stop_all(core)
-        await summary_service.stop()
 
     app.on_cleanup.append(on_cleanup_handler)
 

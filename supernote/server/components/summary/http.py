@@ -1,14 +1,19 @@
-"""Summary group, summary item, and summary tag HTTP routes (`/api/file/*/summary*`).
+"""Summary group, summary item, summary tag, and extended summary HTTP routes.
 
 Implements the Supernote summary synchronization protocol (`supernote.models.summary`)
 for both AI-generated syntheses and device-authored handwritten summaries, including
-tag CRUD (`/api/file/summary/tag*`), summary group CRUD (`/api/file/summary/group*`),
-summary item CRUD (`/api/file/add/summary`, `/api/file/modify/summary`, `/api/file/delete/summary`,
-`/api/file/query/summary*`), and signed binary upload/download URL generation for
-handwriting blobs. Delegates persistence and event emission to
-`supernote.server.services.summary.SummaryService`. See `supernote.guides.summary_api`.
+tag CRUD (`/api/file/*/summary/tag`), summary group CRUD (`/api/file/*/summary/group`),
+summary item CRUD (`/api/file/add/summary`, `/api/file/update/summary`,
+`/api/file/delete/summary`, `/api/file/query/summary*`), signed binary upload/download
+URL generation for handwriting blobs, and the extended Web UI listing endpoint
+(`POST /api/extended/file/summary/list`). Delegates persistence and event emission to
+`supernote.server.components.summary.service.SummaryService`.
+See `supernote.guides.summary_api`.
 """
 
+from __future__ import annotations
+
+import logging
 import urllib.parse
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -16,6 +21,10 @@ from dataclasses import dataclass
 from aiohttp import web
 
 from supernote.models.base import BaseResponse
+from supernote.models.extended import (
+    WebSummaryListRequestDTO,
+    WebSummaryListVO,
+)
 from supernote.models.summary import (
     AddSummaryDTO,
     AddSummaryGroupDTO,
@@ -41,19 +50,28 @@ from supernote.models.summary import (
     UploadSummaryApplyDTO,
     UploadSummaryApplyVO,
 )
+from supernote.server.components.http import HttpRegistrar
+from supernote.server.core import ServerCore
 from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
     REQUEST_USER_KEY,
-    SUMMARY_SERVICE_KEY,
     URL_SIGNER_KEY,
-)
-from supernote.server.services.summary import (
-    DEFAULT_SUMMARY_PAGE_SIZE,
-    SummaryService,
 )
 from supernote.server.utils.paths import generate_inner_name
 from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
+from .service import (
+    DEFAULT_SUMMARY_PAGE_SIZE,
+    SUMMARY_SERVICE_KEY,
+    SummaryService,
+)
+
+__all__ = [
+    "async_setup_http",
+    "routes",
+]
+
+logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
 
 
@@ -501,3 +519,42 @@ async def handle_query_summary_id(request: web.Request) -> web.Response:
         return err.to_response()
     except Exception as err:
         return SupernoteError.uncaught(err).to_response()
+
+
+@routes.post("/api/extended/file/summary/list")
+async def handle_extended_file_summary_list(request: web.Request) -> web.Response:
+    # Endpoint: POST /api/extended/file/summary/list
+    # Purpose: Extended API to list summaries for a file.
+    user_email = request[REQUEST_USER_KEY]
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+
+    try:
+        req_dto = WebSummaryListRequestDTO.from_dict(data)
+    except Exception as e:
+        return web.json_response({"error": f"Invalid Request: {e}"}, status=400)
+
+    summary_service: SummaryService = request.app[SUMMARY_SERVICE_KEY]
+
+    try:
+        summaries = await summary_service.list_summaries_for_file_internal(
+            user_email, req_dto.file_id
+        )
+        return web.json_response(
+            WebSummaryListVO(
+                summary_do_list=summaries, total_records=len(summaries)
+            ).to_dict()
+        )
+    except SupernoteError as err:
+        return err.to_response()
+    except Exception as err:
+        logger.exception("Error fetching summaries")
+        return SupernoteError.uncaught(err).to_response()
+
+
+async def async_setup_http(core: ServerCore, registrar: HttpRegistrar) -> None:
+    """Register summary synchronization and extended summary HTTP routes on ``core.app``."""
+    _ = registrar
+    core.app.add_routes(routes)

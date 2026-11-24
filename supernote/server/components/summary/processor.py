@@ -5,9 +5,11 @@ page-annotated transcript in memory from `NotePageContentDO`, formats a notebook
 via `supernote.server.ai.prompts.format_summary_prompt`, calls
 `supernote.server.ai.models.summary.SummaryModel.summarize`, and upserts the date-grouped
 Markdown summary under the shared `"AI Summaries"` Digest category (`SummaryGroup`) via
-`supernote.server.services.summary.SummaryService`.
+`supernote.server.components.summary.service.SummaryService`.
 See `supernote.guides.mcp` and `supernote.guides.summary_api`.
 """
+
+from __future__ import annotations
 
 import asyncio
 import hashlib
@@ -27,18 +29,20 @@ from supernote.models.summary import (
 )
 from supernote.server.ai.models.summary import SummaryModel
 from supernote.server.ai.prompts import format_summary_prompt
+from supernote.server.components.processor import ProcessorRegistrar
+from supernote.server.core import ServerCore
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
 from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.models.user import UserDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import SummaryDeletedEvent
+from supernote.server.keys import SUMMARY_MODEL_KEY
 from supernote.server.services.file import FileService
 from supernote.server.services.processor_modules import (
     ProcessorModule,
     TaskScope,
 )
-from supernote.server.services.summary import SummaryService
 from supernote.server.utils.note_content import (
     format_page_metadata,
     get_page_keywords_map,
@@ -50,8 +54,11 @@ from supernote.server.utils.paths import (
     get_summary_id,
 )
 
+from .service import SUMMARY_SERVICE_KEY, SummaryService
+
 __all__ = [
     "SummaryModule",
+    "async_setup_processor",
 ]
 
 logger = logging.getLogger(__name__)
@@ -501,3 +508,17 @@ class SummaryModule(ProcessorModule):
             and not _has_user_annotations(existing)
         ):
             await self.summary_service.delete_summary(user_email, existing.id)
+
+
+async def async_setup_processor(
+    core: ServerCore,
+    registrar: ProcessorRegistrar,
+) -> None:
+    """Register `SummaryModule` with the `"processor"` platform."""
+    registrar.register_module(
+        SummaryModule(
+            file_service=core.file_service,
+            summary_service=core.app[SUMMARY_SERVICE_KEY],
+            summary_model=core.app.get(SUMMARY_MODEL_KEY),
+        )
+    )

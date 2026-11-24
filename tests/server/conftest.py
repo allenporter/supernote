@@ -16,12 +16,12 @@ import supernote.server.db.models  # noqa: F401
 from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
 from supernote.server.components.fake_ai.ocr import FakeOcrModel
 from supernote.server.components.fake_ai.summary import FakeSummaryModel
+from supernote.server.components.summary import SummaryService
 from supernote.server.config import ServerConfig
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
-from supernote.server.services.summary import SummaryService
 from supernote.server.services.user import UserService
 
 
