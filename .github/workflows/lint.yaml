@@ -65,4 +65,4 @@ jobs:
 
       - name: Lint and format check frontend JS (biome)
         run: |
-          npx --yes --package=@biomejs/biome@2.6.8 -- biome check --error-on-warnings supernote/server/static/js tests/frontend
+          npx --yes --package=@biomejs/biome@2.6.9 -- biome check --error-on-warnings supernote/server/static/js tests/frontend

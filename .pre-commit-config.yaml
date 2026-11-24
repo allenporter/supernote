@@ -38,7 +38,7 @@ repos:
         entry: biome check --write --error-on-warnings supernote/server/static/js tests/frontend
         language: node
         additional_dependencies:
-          - "@biomejs/biome@2.6.8"
+          - "@biomejs/biome@2.6.9"
         files: '^(biome\.json|supernote/server/static/js/.*\.(js|d\.ts)|tests/frontend/.*\.mjs)$'
         pass_filenames: false
   - repo: https://github.com/codespell-project/codespell
