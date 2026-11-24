@@ -14,7 +14,7 @@ from typing import Any
 from mcp.server.mcpserver import Context
 
 from supernote.models.base import ErrorCode, create_error_response
-from supernote.models.events import DomainEventVO, EventFeedListVO
+from supernote.models.events import EventFeedListVO
 from supernote.server.components.mcp import (
     McpRegistrar,
     get_authenticated_actor,
@@ -100,19 +100,7 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
             return create_error_response(str(err), ErrorCode.GONE).to_dict()
 
         vo = EventFeedListVO(
-            events=[
-                DomainEventVO(
-                    seq=str(ev.seq),
-                    timestamp=ev.timestamp_ms,
-                    event_type=ev.event_type,
-                    actor=ev.actor,
-                    entity_type=ev.entity_type,
-                    entity_id=ev.entity_id,
-                    related_file_id=ev.related_file_id,
-                    payload=ev.payload,
-                )
-                for ev in page.events
-            ],
+            events=[ev.to_vo() for ev in page.events],
             next_sync_token=page.next_sync_token,
             has_more=page.has_more,
         )

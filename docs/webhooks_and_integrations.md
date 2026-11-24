@@ -106,44 +106,48 @@ sequenceDiagram
     participant Device as Supernote Tablet
     participant Server as Supernote Server
     participant Bus as LocalEventBus
+    participant EL as EventLogService
     participant WH as WebhookService
     participant Endpoint as Subscriber (Home Assistant / n8n)
 
     Device->>Server: Upload & commit .note file
-    Server->>Bus: Publish NoteUpdatedEvent
+    Server->>Bus: Publish VfsItemCreatedEvent
+    Bus->>EL: Persist UserEventDO & publish DomainEventRecorded
     Server-->>Device: 200 OK (Sync never blocked by webhooks)
-    Bus->>WH: _handle_note_updated
-    WH->>Endpoint: POST (X-Supernote-Event: note.sync_completed)
+    Bus->>WH: _handle_domain_event_recorded
+    WH->>Endpoint: POST (X-Supernote-Event: vfs.created)
     Note over Server,Bus: Background Pipeline runs (Hashing -> PNG -> OCR -> Embedding -> Summary)
     Server->>Bus: Publish NoteProcessingCompletedEvent
-    Bus->>WH: _handle_note_processing_completed
+    Bus->>EL: Persist UserEventDO & publish DomainEventRecorded
+    Bus->>WH: _handle_domain_event_recorded
     WH->>Endpoint: POST (X-Supernote-Event: note.processing_completed)
 ```
 
-### Supported Events & Payload Schema (`supernote.models.webhook`)
+### Supported Events & Payload Schema (`supernote.models.events`)
 
-Every webhook `POST` request sends two headers:
+Every webhook `POST` request sends these headers:
 - `Content-Type: application/json`
-- `X-Supernote-Event: <event_name>`
+- `X-Supernote-Event: <event_type>` *(matching `supernote.models.events.DomainEventType`)*
 - `X-Supernote-Signature: sha256=<hex_digest>` *(included whenever `secret` is configured on the endpoint)*
 
-| Event Name | Constant | Trigger Condition | Payload Model |
-| :--- | :--- | :--- | :--- |
-| `note.sync_completed` | `supernote.models.webhook.EVENT_NOTE_SYNC_COMPLETED` | Dispatched immediately when a `.note` file upload/sync commits to the VFS (`NoteUpdatedEvent`). | `supernote.models.webhook.NoteSyncCompletedPayload` |
-| `note.processing_completed` | `supernote.models.webhook.EVENT_NOTE_PROCESSING_COMPLETED` | Dispatched after all enabled background pipeline stages (Hashing, PNG, OCR, Embedding, Summary) finish for a `.note` file (`NoteProcessingCompletedEvent`). | `supernote.models.webhook.NoteProcessingCompletedPayload` |
+Endpoints can subscribe to any exact `DomainEventType` value (e.g. `vfs.created`, `vfs.content_updated`, `note.processing_completed`, `schedule.task_created`, `summary.upserted`), namespace prefix wildcards (`vfs.*`, `note.*`, `schedule.*`, `summary.*`), or `*` for all domain events — matching the filter semantics of `GET /api/extended/events`.
 
 #### JSON Payload Structure
 
-Both events serialize a `supernote.models.webhook.WebhookPayload` with a nested `supernote.models.webhook.WebhookFileVO` (`file`). Internal database `user_id` values are intentionally excluded from outbound payloads:
+Every webhook serializes a `supernote.models.events.DomainEventVO` (the same wire envelope returned by `GET /api/extended/events` and the MCP `list_events` tool). Internal database `user_id` values are intentionally excluded from outbound payloads:
 
 ```json
 {
-  "event": "note.processing_completed",
-  "timestamp": 1754321400,
-  "file": {
-    "id": 42,
-    "name": "2026-08-04.note",
-    "path": "/NOTE/Note/2026-08-04.note"
+  "seq": "42",
+  "timestamp": 1754321400000,
+  "eventType": "note.processing_completed",
+  "actor": "system:processor",
+  "entityType": "file",
+  "entityId": "42",
+  "relatedFileId": "42",
+  "payload": {
+    "file_id": "42",
+    "file_path": "/NOTE/Note/2026-08-04.note"
   }
 }
 ```
@@ -173,12 +177,12 @@ webhooks:
       user: "you@example.com"
       secret: "0f9e8d7c6b5a4938271605f4e3d2c1b0a9f8e7d6c5b4a39281706f5e4d3c2b1a"
       events:
-        - "note.sync_completed"
-        - "note.processing_completed"
+        - "vfs.created"
+        - "note.*"
 ```
 
 > [!NOTE]
-> If `events` is omitted or empty (`[]`), the endpoint receives **all** events for `user`. At startup, `WebhookService.start` resolves each endpoint's `user` email to their account; if a configured user email does not exist yet in the database, that endpoint is logged and skipped until the user is created and the server restarts.
+> If `events` is omitted, empty (`[]`), or `["*"]`, the endpoint receives **all** domain events for `user`. At startup, `WebhookService.start` resolves each endpoint's `user` email to their account; if a configured user email does not exist yet in the database, that endpoint is logged and skipped until the user is created and the server restarts.
 
 ---
 

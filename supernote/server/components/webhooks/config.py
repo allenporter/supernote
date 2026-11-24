@@ -29,9 +29,12 @@ class WebhookEndpointConfig(DataClassYAMLMixin):
     """
 
     events: list[str] = field(default_factory=list)
-    """Event names this endpoint wants to receive, e.g. `note.sync_completed`.
+    """Event filters this endpoint wants to receive.
 
-    If empty (the default), the endpoint receives every event for `user`.
+    Accepts exact `DomainEventType` names (e.g. `vfs.created`,
+    `note.processing_completed`), namespace prefix wildcards (`note.*`,
+    `vfs.*`, `schedule.*`, `summary.*`), or `*` for all events.
+    If empty (the default), the endpoint receives every domain event for `user`.
     """
 
     def __post_init__(self) -> None:

@@ -25,7 +25,7 @@ All request DTOs and response VOs are Python `@dataclass` models backed by `mash
 | `supernote.models.schedule` | To-Do task groups, tasks, and recurrence payloads | `ScheduleTaskGroupItem`, `ScheduleTaskInfo`, `AddScheduleTaskDTO`, `UpdateScheduleTaskListDTO` |
 | `supernote.models.summary` | Handwritten/AI summaries, summary groups, and tags | `SummaryItem`, `SummaryGroupItem`, `AddSummaryDTO`, `QuerySummaryVO`, `QuerySummaryMD5HashVO` |
 | `supernote.models.extended` | Self-hosted semantic search, transcripts, API keys, and AI status | `WebSearchRequestDTO`, `WebSearchResponseVO`, `WebTranscriptResponseVO`, `CreateApiKeyDTO`, `ApiKeyVO`, `WebAiStatusVO` |
-| `supernote.models.webhook` | Outbound HMAC-signed webhook event payloads | `WebhookPayload`, `WebhookFileVO`, `EVENT_NOTE_SYNC_COMPLETED`, `EVENT_NOTE_PROCESSING_COMPLETED` |
+| `supernote.models.events` | Domain event feed and outbound webhook payloads | `DomainEventType`, `DomainEntityType`, `DomainEventVO`, `EventFeedRequestDTO`, `EventFeedListVO` |
 | `supernote.models.socket` | Real-time Socket.IO events (`FILE-SYN`, `TASK-SYN`, `DIGEST-SYN`) | `SocketHandshakeParams`, `SocketIoClientMessage`, `SocketMessageData`, `SocketTaskMessageData` |
 | `supernote.models.equipment` | Hardware device activation and binding | `ActivateEquipmentDTO`, `BindEquipmentDTO`, `UnbindEquipmentDTO`, `UserEquipmentVO` |
 | `supernote.models.system` | OSS multipart chunks, queue status, and storage integrity | `FileChunkVO`, `UploadFileVO`, `QueueStatusVO`, `IntegrityReportVO`, `ReferenceSysParamDTO` |
@@ -275,19 +275,8 @@ Models in `supernote.models.events` define the wire contract for `GET /api/exten
   * `DomainEntityType`: `file`, `note_page`, `schedule_task`, `summary`
 * **Request & Response Envelopes**:
   * `EventFeedRequestDTO` (`sync_token`, `event_types`, `file_id`, `limit`)
-  * `DomainEventVO` (`seq`, `timestamp`, `event_type`, `actor`, `entity_type`, `entity_id`, `related_file_id`, `payload`)
+  * `DomainEventVO` (`seq`, `timestamp`, `event_type`, `actor`, `entity_type`, `entity_id`, `related_file_id`, `payload`) — also dispatched as the JSON body for outbound webhooks (`supernote.server.components.webhooks.service.WebhookService`; see `supernote.guides.webhooks_and_integrations`)
   * `EventFeedListVO` (`events: list[DomainEventVO]`, `next_sync_token`, `has_more`)
-
----
-
-## Outbound Webhooks (`supernote.models.webhook`)
-
-Models in `supernote.models.webhook` define the JSON payloads dispatched by `supernote.server.components.webhooks.service.WebhookService` when a `.note` file completes synchronization or background AI processing:
-
-* **Event Constants**: `EVENT_NOTE_SYNC_COMPLETED` (`"note.sync_completed"`) and `EVENT_NOTE_PROCESSING_COMPLETED` (`"note.processing_completed"`)
-* **Payloads**: `WebhookPayload` (`event`, `timestamp`, `user_id`, and `file: WebhookFileVO` containing `id`, `name`, and `path`)
-
-See `supernote.guides.webhooks_and_integrations` for HMAC-SHA256 signature verification (`X-Supernote-Signature`) and consumer examples.
 
 ---
 

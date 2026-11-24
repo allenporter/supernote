@@ -9,9 +9,11 @@ import pytest
 from aiohttp import web
 from pytest_aiohttp import AiohttpClient
 
+from supernote.models.events import DomainEventType
+from supernote.server.components.events import EventsComponent
 from supernote.server.components.webhooks import WebhooksComponent
 from supernote.server.core import Component, ComponentLoader, ServerCore
-from supernote.server.events import NoteUpdatedEvent
+from supernote.server.events import VfsItemCreatedEvent
 from tests.fixtures.server import TEST_USERNAME
 
 
@@ -35,11 +37,12 @@ async def test_webhooks_component_lifecycle(
     aiohttp_client: AiohttpClient,
     test_user_id: int,
 ) -> None:
-    received_file_ids: list[int] = []
+    received_entity_ids: list[str] = []
 
     async def handle_hook(request: web.Request) -> web.Response:
         payload = json.loads(await request.read())
-        received_file_ids.append(payload["file"]["id"])
+        assert payload["eventType"] == DomainEventType.VFS_CREATED
+        received_entity_ids.append(payload["entityId"])
         return web.Response(status=200)
 
     receiver_app = web.Application()
@@ -50,25 +53,40 @@ async def test_webhooks_component_lifecycle(
     component = WebhooksComponent()
     assert isinstance(component, Component)
     assert component.domain == "webhooks"
-    assert component.dependencies == ()
+    assert component.dependencies == ("events",)
     assert component.platforms == ()
 
     loader = ComponentLoader()
+    loader.register(EventsComponent())
     loader.register(component)
 
     await loader.async_setup_all(component_core, config)
     await component_core.event_bus.publish(
-        NoteUpdatedEvent(file_id=1, user_id=test_user_id, file_path="Note/before.note")
+        VfsItemCreatedEvent(
+            user_id=test_user_id,
+            item_id=1,
+            parent_id=0,
+            name="before.note",
+            full_path="Note/before.note",
+            is_folder=False,
+        )
     )
     await component_core.event_bus.wait_idle()
-    assert received_file_ids == []
+    assert received_entity_ids == []
 
     await loader.async_start_all(component_core)
     await component_core.event_bus.publish(
-        NoteUpdatedEvent(file_id=2, user_id=test_user_id, file_path="Note/after.note")
+        VfsItemCreatedEvent(
+            user_id=test_user_id,
+            item_id=2,
+            parent_id=0,
+            name="after.note",
+            full_path="Note/after.note",
+            is_folder=False,
+        )
     )
     await component_core.event_bus.wait_idle()
-    assert received_file_ids == [2]
+    assert received_entity_ids == ["2"]
 
     await loader.async_stop_all(component_core)
     await loader.async_stop_all(component_core)
@@ -78,6 +96,7 @@ async def test_webhooks_component_stop_after_setup_only(
     component_core: ServerCore,
 ) -> None:
     loader = ComponentLoader()
+    loader.register(EventsComponent())
     loader.register(WebhooksComponent())
 
     await loader.async_setup_all(component_core, _webhooks_config())
@@ -88,6 +107,7 @@ async def test_webhooks_component_validates_config_on_setup(
     component_core: ServerCore,
 ) -> None:
     loader = ComponentLoader()
+    loader.register(EventsComponent())
     loader.register(WebhooksComponent())
 
     with pytest.raises(ValueError, match="endpoints"):
