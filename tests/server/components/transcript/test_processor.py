@@ -4,13 +4,10 @@ from sqlalchemy.orm import undefer
 
 from supernote.models.base import TaskType
 from supernote.server.ai.models.ocr import OcrModel
-from supernote.server.components.ai import AiComponent
 from supernote.server.components.fake_ai.ocr import FakeOcrModel
-from supernote.server.components.processor import ProcessorComponent
-from supernote.server.components.transcript import TranscriptComponent
 from supernote.server.components.transcript.processor import OcrModule
 from supernote.server.constants import CACHE_BUCKET
-from supernote.server.core import ComponentLoader, ServerCore
+from supernote.server.core import ServerCore
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import (
     NotePageContentDO,
@@ -19,10 +16,11 @@ from supernote.server.db.models.note_processing import (
 )
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import NotePageTranscribedEvent
-from supernote.server.keys import OCR_MODEL_KEY, PROCESSOR_SERVICE_KEY
+from supernote.server.keys import PROCESSOR_SERVICE_KEY
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.utils.paths import get_page_png_path
+from tests.server.components.conftest import LoadComponents
 
 
 @pytest.fixture
@@ -637,25 +635,14 @@ async def test_ocr_suppresses_event_when_transcript_unchanged_or_empty_doodle(
 
 async def test_transcript_component_registers_ocr_stage_via_processor_platform(
     component_core: ServerCore,
+    load_components: LoadComponents,
 ) -> None:
     """TranscriptComponent contributes OcrModule into ProcessorService via the processor platform."""
-    loader = ComponentLoader()
-    loader.register(AiComponent())
-    loader.register(ProcessorComponent())
-    loader.register(TranscriptComponent())
-
-    await loader.async_setup_all(component_core, {})
-    component_core.app[OCR_MODEL_KEY] = FakeOcrModel()
-    await loader.async_load_all_platforms(component_core)
-    try:
-        service = component_core.app[PROCESSOR_SERVICE_KEY]
-        assert [m.task_type for m in service.task_graph.modules] == [
-            TaskType.PAGE_HASHING,
-            TaskType.PNG_CONVERSION,
-            TaskType.OCR_EXTRACTION,
-        ]
-        assert service.task_graph.depends_on(TaskType.OCR_EXTRACTION) == (
-            "PNG_CONVERSION",
-        )
-    finally:
-        await loader.async_stop_all(component_core)
+    await load_components("processor", "transcript")
+    service = component_core.app[PROCESSOR_SERVICE_KEY]
+    assert [m.task_type for m in service.task_graph.modules] == [
+        TaskType.PAGE_HASHING,
+        TaskType.PNG_CONVERSION,
+        TaskType.OCR_EXTRACTION,
+    ]
+    assert service.task_graph.depends_on(TaskType.OCR_EXTRACTION) == ("PNG_CONVERSION",)
