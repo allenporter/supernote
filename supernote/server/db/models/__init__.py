@@ -13,6 +13,7 @@
 | `supernote.server.db.models.schedule` | `ScheduleTaskGroupDO` (`t_schedule_task_group`), `ScheduleTaskDO` (`t_schedule_task`) | `supernote.server.components.schedule.service.ScheduleService` |
 | `supernote.server.db.models.event_log` | `UserEventDO` (`f_user_event`) | `supernote.server.components.events.service.EventLogService` |
 | `supernote.server.db.models.kv` | `KeyValueDO` (`key_values`) | `supernote.server.services.coordination.SqliteCoordinationService` |
+| `supernote.server.db.models.wiki` | `WikiPageDO` (`f_wiki_page`), `WikiRevisionDO` (`f_wiki_revision`), `WikiAliasDO` (`f_wiki_alias`), `WikiLinkDO` (`f_wiki_link`), `WikiSourceRefDO` (`f_wiki_source_ref`), `WikiCheckpointDO` (`f_wiki_checkpoint`), `WikiLintIssueDO` (`f_wiki_lint_issue`) | `supernote.server.components.wiki.service.WikiService` |
 
 See `supernote.guides.schema_migration_guide` for Alembic migration conventions.
 """
@@ -29,6 +30,7 @@ from . import (
     schedule,
     summary,
     user,
+    wiki,
 )
 
 __all__ = [
@@ -43,4 +45,5 @@ __all__ = [
     "schedule",
     "summary",
     "user",
+    "wiki",
 ]
