@@ -192,6 +192,8 @@ async def test_authorize_and_login_bridge_consent_invariants(
     bridge_path_qs = f"{parsed_bridge.path}?{parsed_bridge.query}"
 
     with TestClient(auth_app, base_url="http://localhost:8080") as client:
+        issuer = client.get("/.well-known/oauth-authorization-server").json()["issuer"]
+
         # GET /login-bridge even with a valid session JWT redirects to SPA consent card
         # using an origin-relative return_to path so TLS-terminating reverse proxies work.
         get_resp = client.get(
@@ -216,7 +218,11 @@ async def test_authorize_and_login_bridge_consent_invariants(
         assert deny_resp.headers["cache-control"] == "no-store"
         deny_vo = LoginBridgeResponseVO.from_json(deny_resp.text)
         deny_qs = parse_qs(urlparse(deny_vo.redirect_url).query)
-        assert deny_qs == {"error": ["access_denied"], "state": ["deny-st"]}
+        assert deny_qs == {
+            "error": ["access_denied"],
+            "state": ["deny-st"],
+            "iss": [issuer],
+        }
 
         # POST /login-bridge with unknown decision enum or malformed JSON returns 400 invalid_request
         for bad_body in (b'{"decision": "maybe"}', b"{not-json"):
@@ -261,6 +267,7 @@ async def test_authorize_and_login_bridge_consent_invariants(
         redirect_url = ok_resp.json()["redirect_url"]
         cb_qs = parse_qs(urlparse(redirect_url).query)
         assert "state" not in cb_qs
+        assert cb_qs["iss"] == [issuer]
         code_str = cb_qs["code"][0]
 
     stored = await provider.load_authorization_code(client_info, code_str)
