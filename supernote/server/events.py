@@ -570,7 +570,13 @@ class LocalEventBus:
                     task.add_done_callback(self._background_tasks.discard)
 
     async def wait_idle(self) -> None:
-        """Wait for all scheduled background event handlers to complete."""
+        """Wait for all scheduled background event handler tasks to complete.
+
+        Non-inline subscribers run as fire-and-forget tasks spawned by `publish()`.
+        Looping until `_background_tasks` is empty also drains any follow-up events
+        published by those handlers, allowing callers (e.g. graceful shutdown or
+        tests) to synchronize deterministically without sleeping.
+        """
         while self._background_tasks:
             await asyncio.gather(*tuple(self._background_tasks), return_exceptions=True)
 
