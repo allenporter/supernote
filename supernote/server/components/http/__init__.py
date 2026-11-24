@@ -93,12 +93,18 @@ async def jwt_auth_middleware(
 class HttpRegistrar:
     """Registrar passed into ``<component>.http:async_setup_http(core, registrar)``."""
 
-    def __init__(self) -> None:
+    def __init__(self, router: web.UrlDispatcher) -> None:
+        self._router = router
         self._outer_middlewares: list[Middleware] = []
         self._inner_middlewares: list[Middleware] = []
         self._public_prefixes: list[str] = []
         self._public_resources: list[web.AbstractResource] = []
         self._known_resource_paths: set[str] = set()
+
+    @property
+    def router(self) -> web.UrlDispatcher:
+        """Primary `aiohttp` router for registering component HTTP routes."""
+        return self._router
 
     def add_middleware(
         self,
@@ -199,7 +205,7 @@ class HttpComponent:
         elif core.config.proxy_mode == "relaxed":
             await aiohttp_remotes.setup(core.app, aiohttp_remotes.XForwardedRelaxed())
 
-        registrar = HttpRegistrar()
+        registrar = HttpRegistrar(core.app.router)
         self._registrar = registrar
         core.app[HTTP_REGISTRAR_KEY] = registrar
 

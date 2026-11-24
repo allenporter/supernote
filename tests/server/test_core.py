@@ -134,7 +134,7 @@ async def test_loader_async_load_platform_invokes_setup_and_validates_entry(
     loader.register(SocketIOComponent())
     await loader.async_setup_all(server_core, {})
 
-    registrar = HttpRegistrar()
+    registrar = HttpRegistrar(server_core.app.router)
     await loader.async_load_platform("http", server_core, registrar)
     assert registrar.public_prefixes == ("/socket.io",)
 

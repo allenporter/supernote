@@ -117,7 +117,7 @@ async def async_setup_http(core: ServerCore, registrar: HttpRegistrar) -> None:
         data = generate_latest()
         return web.Response(body=data, headers={"Content-Type": CONTENT_TYPE_LATEST})
 
-    core.app.router.add_get(core.config.metrics_path, handle_metrics)
+    registrar.router.add_get(core.config.metrics_path, handle_metrics)
     logger.info("Exposing Prometheus metrics at %s", core.config.metrics_path)
     registrar.add_middleware(
         create_metrics_middleware(metrics_path=core.config.metrics_path),

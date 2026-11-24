@@ -26,7 +26,9 @@ def test_http_registrar_collects_middlewares_prefixes_and_resources() -> None:
     async def inner_mw(request: web.Request, handler: Any) -> web.StreamResponse:
         return await handler(request)
 
-    registrar = HttpRegistrar()
+    app = web.Application()
+    registrar = HttpRegistrar(app.router)
+    assert registrar.router is app.router
     registrar.add_middleware(outer_mw, pre_auth=True)
     registrar.add_middleware(inner_mw)
     registrar.add_public_prefix("/socket.io")
@@ -46,7 +48,6 @@ def test_http_registrar_collects_middlewares_prefixes_and_resources() -> None:
     assert registrar.public_resources == (resource,)
     assert registrar.known_resource_paths == frozenset({"/authorize", "/token"})
 
-    app = web.Application()
     registrar.apply_to_app(app)
     # mount_resources is idempotent on repeat calls
     registrar.mount_resources(app)
@@ -70,7 +71,9 @@ async def test_http_component_lifecycle(component_core: ServerCore) -> None:
     loader.register(component)
 
     await loader.async_setup_all(component_core, {})
-    assert isinstance(component_core.app[HTTP_REGISTRAR_KEY], HttpRegistrar)
+    registrar = component_core.app[HTTP_REGISTRAR_KEY]
+    assert isinstance(registrar, HttpRegistrar)
+    assert registrar.router is component_core.app.router
 
     await loader.async_start_all(component_core)
     await loader.async_stop_all(component_core)

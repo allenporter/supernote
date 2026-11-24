@@ -118,6 +118,5 @@ async def handle_list_events(request: web.Request) -> web.Response:
 
 
 async def async_setup_http(core: ServerCore, registrar: HttpRegistrar) -> None:
-    """Register the domain event feed HTTP routes on ``core.app``."""
-    _ = registrar
-    core.app.add_routes(routes)
+    """Register the domain event feed HTTP routes on ``registrar.router``."""
+    registrar.router.add_routes(routes)

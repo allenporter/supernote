@@ -89,6 +89,5 @@ async def handle_extended_transcript(request: web.Request) -> web.Response:
 
 
 async def async_setup_http(core: ServerCore, registrar: HttpRegistrar) -> None:
-    """Register transcript HTTP routes on ``core.app``."""
-    _ = registrar
-    core.app.add_routes(routes)
+    """Register transcript HTTP routes on ``registrar.router``."""
+    registrar.router.add_routes(routes)
