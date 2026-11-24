@@ -176,7 +176,7 @@ export default {
                 <svg class="w-4 h-4 text-stone-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 <input ref="searchInput" v-model="query" @input="handleSearch" type="text"
                     aria-label="Global Search"
-                    placeholder="Global Search (notebooks, transcripts, files, or tasks)..."
+                    placeholder="Global Search (#keywords, notebooks, files, or tasks)..."
                     class="w-full bg-transparent text-slate-900 placeholder-stone-500 outline-none text-sm font-medium">
                 <button type="button" @click="$emit('close')" title="Close search (Escape)" aria-label="Close search"
                     class="px-1.5 py-0.5 bg-white hover:bg-stone-100 text-stone-500 hover:text-slate-900 text-[10px] font-mono rounded border border-stone-200 transition-colors">
@@ -188,7 +188,7 @@ export default {
             <div class="p-4 overflow-y-auto space-y-4 flex-1">
                 <!-- Initial Prompt State -->
                 <div v-if="!query.trim() && !isSearching" class="py-8 text-center text-stone-500 text-xs">
-                    Type to search across filenames, handwritten notebook transcripts, and tasks.
+                    Type to search across #keywords, handwritten notebook transcripts, filenames, and tasks.
                 </div>
 
                 <!-- Searching Indicator -->
@@ -212,10 +212,10 @@ export default {
                     </button>
                 </div>
 
-                <!-- Semantic Content Results -->
+                <!-- Notebook Content Results -->
                 <div v-if="!isSearching && semanticResults.length > 0" class="space-y-1.5">
                     <div class="text-[11px] font-bold text-stone-500 uppercase tracking-wider px-1">
-                        Semantic Notebook Content
+                        Notebook Content
                     </div>
                     <button type="button" v-for="res in semanticResults" :key="res.key"
                         @click="handleSelect({ id: res.fileId, name: res.fileName, isDirectory: false, extension: res.extension, pageIndex: res.pageIndex })"
@@ -228,9 +228,9 @@ export default {
                                 </span>
                                 <span v-if="res.date" class="text-[10px] text-stone-500 font-mono shrink-0 tabular-nums">{{ res.date }}</span>
                             </div>
-                            <span class="text-[10px] text-stone-500 font-mono shrink-0 tabular-nums">Match: {{ Math.round(res.score * 100) }}%</span>
+                            <span class="text-[10px] text-stone-500 font-mono shrink-0 tabular-nums"><span class="hidden sm:inline">Match: </span>{{ res.matchPercent }}%</span>
                         </div>
-                        <p class="text-[11px] text-stone-600 mt-1 line-clamp-2">{{ res.textPreview }}</p>
+                        <p v-if="res.textPreview" class="text-[11px] text-stone-600 mt-1 line-clamp-2">{{ res.textPreview }}</p>
                     </button>
                 </div>
 
