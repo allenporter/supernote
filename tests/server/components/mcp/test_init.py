@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import subprocess
 import sys
 from typing import Any
@@ -20,9 +21,16 @@ from supernote.server.components.mcp import (
 from supernote.server.components.oauth import OAuthComponent
 from supernote.server.components.oauth.models import SupernoteAccessToken
 from supernote.server.core import Component, ComponentLoader, PlatformHost, ServerCore
+from supernote.server.services.user import UserService
+from tests.fixtures.server import pick_port
+from tests.server.components.conftest import mcp_session
 
 
-async def test_mcp_component_lifecycle(component_core: ServerCore) -> None:
+async def test_mcp_component_lifecycle(
+    component_core: ServerCore,
+    user_service: UserService,
+    test_user_id: int,
+) -> None:
     component = McpComponent()
     assert isinstance(component, Component)
     assert isinstance(component, PlatformHost)
@@ -30,6 +38,9 @@ async def test_mcp_component_lifecycle(component_core: ServerCore) -> None:
     assert component.dependencies == ("oauth",)
     assert component.platforms == ()
     assert component.hosted_platforms == ("mcp",)
+
+    component_core.config.host = "127.0.0.1"
+    component_core.config.mcp_port = pick_port()
 
     loader = ComponentLoader()
     loader.register(OAuthComponent())
@@ -45,12 +56,30 @@ async def test_mcp_component_lifecycle(component_core: ServerCore) -> None:
     registrar.add_tool(sample_tool)
 
     await loader.async_start_all(component_core)
-    assert component._mcp_server is not None
-    registered_names = {t.name for t in await component._mcp_server.list_tools()}
-    assert "sample_tool" in registered_names
+    try:
+        async with asyncio.timeout(5.0):
+            while True:
+                try:
+                    _, writer = await asyncio.open_connection(
+                        component_core.config.host,
+                        component_core.config.mcp_port,
+                    )
+                    writer.close()
+                    await writer.wait_closed()
+                    break
+                except OSError:
+                    await asyncio.sleep(0.02)
 
-    await loader.async_stop_all(component_core)
-    await loader.async_stop_all(component_core)
+        raw_key, _ = await user_service.create_api_key(test_user_id, "Lifecycle Test")
+        url = (
+            f"http://{component_core.config.host}:{component_core.config.mcp_port}/mcp"
+        )
+        async with mcp_session(url, {"x-access-token": raw_key}) as session:
+            tools = await session.list_tools()
+            assert "sample_tool" in {t.name for t in tools.tools}
+    finally:
+        await loader.async_stop_all(component_core)
+        await loader.async_stop_all(component_core)
 
 
 async def test_mcp_component_stop_after_setup_only(
