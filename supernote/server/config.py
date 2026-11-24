@@ -157,6 +157,9 @@ class AiConfig(DataClassYAMLMixin):
     embedding: ModelConfig | None = None
     """Model configuration for page embedding generation."""
 
+    text: ModelConfig | None = None
+    """Opt-in model configuration for structured JSON text generation (e.g. LLM wiki)."""
+
     def provider_type(self, name: str) -> str:
         """Return the backend implementation for the `ai.providers` entry `name`."""
         provider_cfg = self.providers.get(name)

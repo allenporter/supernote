@@ -21,7 +21,7 @@ class OpenAIComponent:
 
     domain = "openai"
     dependencies: tuple[str, ...] = ("ai",)
-    platforms: tuple[str, ...] = ("ocr", "summary", "embedding")
+    platforms: tuple[str, ...] = ("ocr", "summary", "embedding", "text")
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         """No-op; OpenAI factories register via the `ocr`, `summary`, and `embedding` platforms."""

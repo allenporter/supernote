@@ -24,7 +24,7 @@ __all__ = [
 ]
 
 KNOWN_PLATFORMS: frozenset[str] = frozenset(
-    {"embedding", "http", "mcp", "ocr", "processor", "summary"}
+    {"embedding", "http", "mcp", "ocr", "processor", "summary", "text"}
 )
 
 
