@@ -8,6 +8,15 @@ from typing import Any
 
 from mashumaro.mixins.json import DataClassJSONMixin
 
+from supernote.models.wiki import (
+    WikiLintIssueDTO,
+    WikiPageDTO,
+    WikiRevisionDTO,
+    WikiSearchHitDTO,
+    WikiSourceRefDTO,
+    WikiStatusDTO,
+)
+
 __all__ = [
     "WikiConflictError",
     "WikiError",
@@ -94,105 +103,6 @@ def extract_wikilinks(body_md: str) -> list[tuple[str, str | None]]:
         if slug not in seen:
             seen[slug] = raw_label.strip() if raw_label else None
     return list(seen.items())
-
-
-@dataclass
-class WikiSourceRefDTO(DataClassJSONMixin):
-    """Provenance reference linking a wiki page to a note page or schedule task."""
-
-    source_type: str
-    """Source kind (`note_page` or `schedule_task`)."""
-    source_key: str
-    """Stable identifier (`{file_id}:{page_id}` or `{task_id}`)."""
-    file_id: int | None = None
-    """Associated VFS `file_id`, when applicable."""
-    last_event_seq: int | None = None
-    """Latest incorporated `f_user_event.seq`."""
-    is_source_deleted: bool = False
-    """True when the backing note page, file, or task was deleted."""
-
-
-@dataclass
-class WikiPageDTO(DataClassJSONMixin):
-    """Domain representation of a compiled or user-authored wiki page."""
-
-    page_id: int
-    slug: str
-    title: str
-    page_kind: str
-    summary: str
-    body_md: str
-    claims: list[dict[str, Any]]
-    edit_policy: str
-    last_author_kind: str
-    version: int
-    create_time: int
-    update_time: int
-    aliases: list[str] = field(default_factory=list)
-    outbound_links: list[str] = field(default_factory=list)
-    backlinks: list[str] = field(default_factory=list)
-    source_refs: list[WikiSourceRefDTO] = field(default_factory=list)
-
-
-@dataclass
-class WikiRevisionDTO(DataClassJSONMixin):
-    """Immutable snapshot of one wiki page revision."""
-
-    revision_id: int
-    page_id: int
-    revision_no: int
-    title: str
-    body_md: str
-    claims: list[dict[str, Any]]
-    author_kind: str
-    author_ref: str | None
-    change_summary: str
-    source_event_seq: int | None
-    create_time: int
-
-
-@dataclass
-class WikiLintIssueDTO(DataClassJSONMixin):
-    """Actionable structural or semantic wiki lint finding."""
-
-    issue_id: int
-    dedup_key: str
-    issue_type: str
-    severity: str
-    page_id: int | None
-    target_page_id: int | None
-    description: str
-    proposal: dict[str, Any] | None
-    status: str
-    create_time: int
-    update_time: int
-
-
-@dataclass
-class WikiSearchHitDTO(DataClassJSONMixin):
-    """Ranked wiki search hit with 1-hop neighbor slugs and source refs."""
-
-    slug: str
-    title: str
-    page_kind: str
-    summary: str
-    score: float
-    neighbor_slugs: list[str] = field(default_factory=list)
-    source_refs: list[WikiSourceRefDTO] = field(default_factory=list)
-
-
-@dataclass
-class WikiStatusDTO(DataClassJSONMixin):
-    """Per-user wiki inventory, cursor, budget, and lint summary."""
-
-    page_count: int
-    open_lint_count: int
-    last_sync_token: str | None
-    pending_events_since_lint: int
-    tokens_used_day: int
-    budget_day_utc: str | None
-    status: str
-    last_error: str | None
 
 
 @dataclass

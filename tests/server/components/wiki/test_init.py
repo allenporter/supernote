@@ -30,7 +30,7 @@ async def test_wiki_component_lifecycle(
     assert isinstance(component, Component)
     assert component.domain == "wiki"
     assert component.dependencies == ("ai", "events")
-    assert component.platforms == ()
+    assert component.platforms == ("http", "mcp")
     assert loader.get("ai") is not None
     assert loader.get("events") is not None
 

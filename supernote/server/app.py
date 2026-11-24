@@ -154,6 +154,7 @@ def create_app(config: ServerConfig) -> web.Application:
         "openai": {"enabled": "openai" in configured_ai_providers},
         "web_ui": {"enabled": config.web_enabled},
         "webhooks": config.webhooks,
+        "wiki": config.wiki,
     }
     load_builtin_components(component_loader, component_configs)
 
