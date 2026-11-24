@@ -53,7 +53,8 @@ supernote/server/static/
         ├── LoginCard.js              # Challenge-response sign-in form
         ├── OAuthConsentCard.js       # OAuth 2.1 PKCE authorization consent screen
         ├── SearchModal.js            # Filename, transcript & semantic search dialog (Cmd/Ctrl+K)
-        ├── SystemPanel.js            # Storage quota, AI status & processing queue drawer
+        ├── SettingsPanel.js          # Unified Settings & System modal (#/settings & #/system)
+        ├── SystemPanel.js            # Storage quota, AI status & processing queue tab content
         ├── MoveModal.js              # Folder tree destination picker
         └── RenameModal.js            # Item rename dialog
 ```

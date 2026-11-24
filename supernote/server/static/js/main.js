@@ -18,7 +18,6 @@ import OAuthConsentCard from './components/OAuthConsentCard.js';
 import RecycleBinPanel from './components/RecycleBinPanel.js';
 import SearchModal from './components/SearchModal.js';
 import SettingsPanel from './components/SettingsPanel.js';
-import SystemPanel from './components/SystemPanel.js';
 import TaskPanel from './components/TaskPanel.js';
 import { useFileSystem } from './composables/useFileSystem.js';
 import { resetEscapeStack } from './composables/useModalEscape.js';
@@ -39,7 +38,6 @@ createApp({
         LoginCard,
         'oauth-consent-card': OAuthConsentCard,
         FileViewer,
-        SystemPanel,
     },
     setup() {
         const { toasts, showToast, dismissToast, clearToasts } = useToast();
@@ -103,6 +101,7 @@ createApp({
             selectedPageJumpSeq,
             breadcrumbs,
             showSystemPanel,
+            settingsModalTab,
             pendingOAuthRequest,
             syncFromUrl,
             updateUrl,
@@ -110,7 +109,9 @@ createApp({
             switchTab,
             openRecycleBin,
             closeRecycleBin,
+            openSettingsPanel,
             openSystemPanel,
+            setSettingsModalTab,
             closeSystemPanel,
             closeViewer,
             handleViewerPageChange,
@@ -382,7 +383,9 @@ createApp({
             deleteRecycleItemsPermanently,
             emptyRecycleBin,
             handleRecycleRestored,
+            openSettingsPanel,
             openSystemPanel,
+            setSettingsModalTab,
             closeSystemPanel,
             closeViewer,
             handleViewerPageChange,
@@ -392,6 +395,7 @@ createApp({
             selectedPageIndex,
             selectedPageJumpSeq,
             showSystemPanel,
+            settingsModalTab,
             processingStatuses,
             toasts,
             showToast,
