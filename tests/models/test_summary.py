@@ -24,8 +24,8 @@ def test_summary_item() -> None:
         metadata='{"key": "value"}',
     )
     data = item.to_dict()
-    assert data["id"] == 1
-    assert data["fileId"] == 100
+    assert data["id"] == "1"
+    assert data["fileId"] == "100"
     assert data["name"] == "Test Summary"
     assert data["userId"] == 10
     assert data["uniqueIdentifier"] == "uniq123"
@@ -34,7 +34,7 @@ def test_summary_item() -> None:
 def test_summary_tag_item() -> None:
     item = SummaryTagItem(id=1, name="Tag1", user_id=5)
     data = item.to_dict()
-    assert data["id"] == 1
+    assert data["id"] == "1"
     assert data["name"] == "Tag1"
     assert data["userId"] == 5
 
