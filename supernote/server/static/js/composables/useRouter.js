@@ -5,6 +5,7 @@
  * - `#/files` and `#/files/<dirId>`
  * - `#/file/<fileId>` and `#/file/<fileId>?page=<1-based>`
  * - `#/recycle`
+ * - `#/digests`
  * - `#/tasks`
  * - `#/settings`
  * - `#/system`
@@ -89,6 +90,9 @@ export function parseUrlHash(hashString) {
     if (parts[0] === 'system') {
         return { tab: 'system', view: 'grid', dirId: '0', showSystem: true };
     }
+    if (parts[0] === 'digests') {
+        return { tab: 'digests', view: 'grid', dirId: '0', showSystem: false };
+    }
     if (parts[0] === 'tasks') {
         return { tab: 'tasks', view: 'grid', dirId: '0', showSystem: false };
     }
@@ -125,6 +129,9 @@ export function parseUrlHash(hashString) {
 export function buildUrlHash(tab, dirId, viewState, fileObj, showSystem = false, pageIndex = null) {
     if (showSystem || tab === 'system') {
         return '#/system';
+    }
+    if (tab === 'digests') {
+        return '#/digests';
     }
     if (tab === 'tasks') {
         return '#/tasks';
@@ -436,7 +443,7 @@ export function useRouter({
         showSystemPanel.value = false;
         systemOpenedFromHistory = false;
 
-        if (parsed.tab === 'tasks' || parsed.tab === 'settings') {
+        if (parsed.tab === 'digests' || parsed.tab === 'tasks' || parsed.tab === 'settings') {
             activeTab.value = parsed.tab;
             resetViewerSelection();
             viewerOpenedFromHistory = false;
@@ -476,7 +483,7 @@ export function useRouter({
     }
 
     /**
-     * @param {'files' | 'tasks' | 'settings'} tab
+     * @param {'files' | 'digests' | 'tasks' | 'settings'} tab
      */
     async function switchTab(tab) {
         showSystemPanel.value = false;
