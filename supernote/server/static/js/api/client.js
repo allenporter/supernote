@@ -503,6 +503,39 @@ export async function fetchSystemTasks() {
 }
 
 /**
+ * Fetch system tasks alongside live queue state (`paused`, `queueSize`, `processingFileIds`).
+ * @returns {Promise<SystemQueueOverview>}
+ */
+export async function fetchSystemQueueOverview() {
+    const data = await apiRequest('/api/extended/system/tasks', {
+        method: 'GET',
+        errorPrefix: 'Failed to fetch system tasks',
+    });
+    return {
+        tasks: Array.isArray(data?.tasks) ? data.tasks : [],
+        paused: Boolean(data?.paused),
+        queueSize: typeof data?.queueSize === 'number' ? data.queueSize : 0,
+        processingFileIds: Array.isArray(data?.processingFileIds)
+            ? data.processingFileIds.map(String)
+            : [],
+    };
+}
+
+/**
+ * Retry failed processing tasks for a specific notebook (`fileId`) or all failed notebooks (`null`).
+ * @param {string | number | null} [fileId=null]
+ * @returns {Promise<string[]>}
+ */
+export async function retryFailedSystemTasks(fileId = null) {
+    const body = fileId !== null && fileId !== undefined ? { fileId: String(fileId) } : {};
+    const data = await apiRequest('/api/extended/system/tasks/retry', {
+        body,
+        errorPrefix: 'Failed to retry tasks',
+    });
+    return Array.isArray(data?.retriedFileIds) ? data.retriedFileIds.map(String) : [];
+}
+
+/**
  * Fetch storage capacity/quota.
  * @returns {Promise<CapacityInfo>}
  */

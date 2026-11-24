@@ -85,6 +85,16 @@ class SystemTaskVO(DataClassJSONMixin):
     )
     """Error message from the last failure, if any."""
 
+    file_name: str | None = field(
+        metadata=field_options(alias="fileName"), default=None
+    )
+    """Human-readable notebook filename resolved from UserFileDO."""
+
+    page_index: int | None = field(
+        metadata=field_options(alias="pageIndex"), default=None
+    )
+    """0-based page index resolved from NotePageContentDO for page-scoped tasks."""
+
     class Config(BaseConfig):
         serialize_by_alias = True
 
@@ -97,7 +107,56 @@ class SystemTaskListVO(BaseResponse):
     """
 
     tasks: list[SystemTaskVO] = field(default_factory=list)
-    """List of recent system tasks."""
+    """List of recent system tasks (active and failed prioritized first)."""
+
+    paused: bool = False
+    """Whether the background processing queue is currently paused."""
+
+    queue_size: int = field(metadata=field_options(alias="queueSize"), default=0)
+    """Number of active/queued files currently in flight for this user."""
+
+    processing_file_ids: list[int] = field(
+        metadata=field_options(
+            alias="processingFileIds", serialize=_serialize_str_list
+        ),
+        default_factory=list,
+    )
+    """IDs of files belonging to this user that are currently queued or processing."""
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class RetrySystemTasksDTO(DataClassJSONMixin):
+    """Request DTO for retrying failed processing tasks for a single file or all user files.
+
+    Used by: POST /api/extended/system/tasks/retry
+    """
+
+    file_id: int | None = field(
+        metadata=field_options(
+            alias="fileId",
+            serialize=lambda v: str(v) if v is not None else None,
+        ),
+        default=None,
+    )
+
+    class Config(BaseConfig):
+        serialize_by_alias = True
+
+
+@dataclass
+class RetrySystemTasksVO(BaseResponse):
+    """Response VO for retrying failed processing tasks.
+
+    Used by: POST /api/extended/system/tasks/retry
+    """
+
+    retried_file_ids: list[int] = field(
+        metadata=field_options(alias="retriedFileIds", serialize=_serialize_str_list),
+        default_factory=list,
+    )
 
     class Config(BaseConfig):
         serialize_by_alias = True

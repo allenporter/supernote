@@ -250,29 +250,133 @@ async def test_handle_list_system_tasks(
             )
         )
         session.add(
+            NotePageContentDO(
+                file_id=1,
+                page_index=3,
+                page_id="P202611240001",
+                content_hash="abc",
+            )
+        )
+        session.add(
             SystemTaskDO(
                 user_id=test_user_id,
                 file_id=1,
-                task_type="PNG",
-                key="page_0",
+                task_type="OCR_EXTRACTION",
+                key="page_P202611240001",
                 status="COMPLETED",
+                update_time=2000,
+            )
+        )
+        session.add(
+            SystemTaskDO(
+                user_id=test_user_id,
+                file_id=1,
+                task_type="SUMMARY_GENERATION",
+                key="global",
+                status="FAILED",
+                last_error="Gemini rate limit exceeded",
+                update_time=1000,
             )
         )
         await session.commit()
 
     res = await extended_client.list_system_tasks()
     assert res.success
-    assert len(res.tasks) >= 1
+    assert len(res.tasks) == 2
+    # FAILED task should be prioritized ahead of COMPLETED task even with older update_time
+    assert res.tasks[0].status == "FAILED"
+    assert res.tasks[0].file_name == "Note1.note"
+    assert res.tasks[0].page_index is None
+    assert res.tasks[1].status == "COMPLETED"
+    assert res.tasks[1].file_name == "Note1.note"
+    assert res.tasks[1].page_index == 3
 
     with (
         patch.object(
             client.app[PROCESSOR_SERVICE_KEY],
-            "list_system_tasks",
+            "list_user_system_task_vos",
             side_effect=Exception("DB error"),
         ),
         pytest.raises(ApiException),
     ):
         await extended_client.list_system_tasks()
+
+
+async def test_handle_retry_system_tasks(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    other_user_id = test_user_id + 888
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=101,
+                user_id=test_user_id,
+                file_name="FailedOwn.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            UserFileDO(
+                id=102,
+                user_id=other_user_id,
+                file_name="FailedOther.note",
+                directory_id=0,
+            )
+        )
+        session.add(
+            SystemTaskDO(
+                user_id=test_user_id,
+                file_id=101,
+                task_type="OCR_EXTRACTION",
+                key="page_0",
+                status="FAILED",
+                last_error="timeout",
+            )
+        )
+        session.add(
+            SystemTaskDO(
+                user_id=test_user_id,
+                file_id=101,
+                task_type="PNG_CONVERSION",
+                key="page_0",
+                status="COMPLETED",
+            )
+        )
+        session.add(
+            SystemTaskDO(
+                user_id=other_user_id,
+                file_id=102,
+                task_type="OCR_EXTRACTION",
+                key="page_0",
+                status="FAILED",
+                last_error="other user failure",
+            )
+        )
+        await session.commit()
+
+    processor_service = client.app[PROCESSOR_SERVICE_KEY]
+    with patch.object(processor_service.event_bus, "publish") as mock_publish:
+        resp = await client.post(
+            "/api/extended/system/tasks/retry",
+            json={"fileId": "101"},
+            headers=auth_headers,
+        )
+        assert resp.status == 200
+        body = await resp.json()
+        assert body["success"] is True
+        assert body["retriedFileIds"] == ["101"]
+        mock_publish.assert_called_once()
+
+    # Own FAILED task cleared while COMPLETED task and other user's FAILED task remain untouched
+    own_tasks = await processor_service.list_system_tasks(user_id=test_user_id)
+    assert len(own_tasks) == 1
+    assert own_tasks[0].task_type == "PNG_CONVERSION"
+    other_tasks = await processor_service.list_system_tasks(user_id=other_user_id)
+    assert len(other_tasks) == 1
+    assert other_tasks[0].status == "FAILED"
 
 
 async def test_handle_list_system_tasks_excludes_other_users_tasks(

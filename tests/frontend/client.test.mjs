@@ -15,8 +15,10 @@ import {
     fetchProcessingStatus,
     fetchRecycleBin,
     fetchSummaries,
+    fetchSystemQueueOverview,
     fetchSystemTasks,
     login,
+    retryFailedSystemTasks,
     revertRecycleItems,
     revokeApiKey,
     revokeOAuthGrant,
@@ -221,11 +223,21 @@ test('client.js: fetchSummaries, fetchProcessingStatus, fetchSystemTasks, and fe
                                 retryCount: 0,
                                 updateTime: 1000,
                                 lastError: null,
+                                fileName: 'Weekly.note',
+                                pageIndex: 0,
                             },
                         ],
+                        paused: false,
+                        queueSize: 1,
+                        processingFileIds: [20],
                     }),
                     { status: 200 },
                 );
+            }
+            if (url === '/api/extended/system/tasks/retry') {
+                return new Response(JSON.stringify({ retriedFileIds: ['20'] }), {
+                    status: 200,
+                });
             }
             return new Response(JSON.stringify({ ocrEnabled: true, model: 'gemini' }), {
                 status: 200,
@@ -251,8 +263,29 @@ test('client.js: fetchSummaries, fetchProcessingStatus, fetchSystemTasks, and fe
                 retryCount: 0,
                 updateTime: 1000,
                 lastError: null,
+                fileName: 'Weekly.note',
+                pageIndex: 0,
             },
         ]);
+        assert.deepEqual(await fetchSystemQueueOverview(), {
+            tasks: [
+                {
+                    id: 't1',
+                    fileId: '20',
+                    taskType: 'OCR',
+                    key: 'page_0',
+                    status: 'COMPLETED',
+                    retryCount: 0,
+                    updateTime: 1000,
+                    lastError: null,
+                    fileName: 'Weekly.note',
+                    pageIndex: 0,
+                },
+            ],
+            paused: false,
+            queueSize: 1,
+            processingFileIds: ['20'],
+        });
         assert.deepEqual(await fetchAiStatus(), {
             hasApiKey: false,
             ocrEnabled: true,
@@ -263,6 +296,7 @@ test('client.js: fetchSummaries, fetchProcessingStatus, fetchSystemTasks, and fe
             embeddingModel: null,
             model: 'gemini',
         });
+        assert.deepEqual(await retryFailedSystemTasks('20'), ['20']);
     } finally {
         await logout({ reload: false });
         globalThis.fetch = origFetch;
