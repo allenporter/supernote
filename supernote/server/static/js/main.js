@@ -178,11 +178,20 @@ createApp({
         }
 
         /**
-         * @param {string | number | null} fileId
+         * @param {string | number | { id?: string | number | null, pageIndex?: number | null } | null} target
          */
-        async function handleSystemOpenFile(fileId) {
-            if (!fileId) return;
-            await openItem({ id: String(fileId), isDirectory: false });
+        async function handleSystemOpenFile(target) {
+            if (!target) return;
+            if (typeof target === 'object') {
+                if (!target.id) return;
+                await openItem({
+                    id: String(target.id),
+                    isDirectory: false,
+                    pageIndex: typeof target.pageIndex === 'number' ? target.pageIndex : null,
+                });
+                return;
+            }
+            await openItem({ id: String(target), isDirectory: false });
         }
 
         async function resumeSession() {

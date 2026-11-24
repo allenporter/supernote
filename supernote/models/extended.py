@@ -141,6 +141,7 @@ class RetrySystemTasksDTO(DataClassJSONMixin):
         ),
         default=None,
     )
+    """Optional notebook file ID to scope the retry to a single file."""
 
     class Config(BaseConfig):
         serialize_by_alias = True
@@ -157,6 +158,7 @@ class RetrySystemTasksVO(BaseResponse):
         metadata=field_options(alias="retriedFileIds", serialize=_serialize_str_list),
         default_factory=list,
     )
+    """IDs of active notebooks whose failed checkpoints were cleared and re-queued."""
 
     class Config(BaseConfig):
         serialize_by_alias = True

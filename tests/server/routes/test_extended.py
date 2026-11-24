@@ -250,6 +250,15 @@ async def test_handle_list_system_tasks(
             )
         )
         session.add(
+            UserFileDO(
+                id=2,
+                user_id=test_user_id,
+                file_name="RecycledNote.note",
+                directory_id=0,
+                is_active="N",
+            )
+        )
+        session.add(
             NotePageContentDO(
                 file_id=1,
                 page_index=3,
@@ -276,6 +285,17 @@ async def test_handle_list_system_tasks(
                 status="FAILED",
                 last_error="Gemini rate limit exceeded",
                 update_time=1000,
+            )
+        )
+        session.add(
+            SystemTaskDO(
+                user_id=test_user_id,
+                file_id=2,
+                task_type="OCR_EXTRACTION",
+                key="page_0",
+                status="FAILED",
+                last_error="Soft-deleted file failure should not leak into active queue",
+                update_time=3000,
             )
         )
         await session.commit()
@@ -347,6 +367,24 @@ async def test_handle_retry_system_tasks(
         )
         session.add(
             SystemTaskDO(
+                user_id=test_user_id,
+                file_id=101,
+                task_type="HASHING",
+                key="global",
+                status="COMPLETED",
+            )
+        )
+        session.add(
+            SystemTaskDO(
+                user_id=test_user_id,
+                file_id=101,
+                task_type="SUMMARY_GENERATION",
+                key="global",
+                status="COMPLETED",
+            )
+        )
+        session.add(
+            SystemTaskDO(
                 user_id=other_user_id,
                 file_id=102,
                 task_type="OCR_EXTRACTION",
@@ -370,10 +408,10 @@ async def test_handle_retry_system_tasks(
         assert body["retriedFileIds"] == ["101"]
         mock_publish.assert_called_once()
 
-    # Own FAILED task cleared while COMPLETED task and other user's FAILED task remain untouched
+    # Own FAILED task and downstream SUMMARY_GENERATION global checkpoint cleared
+    # while HASHING, PNG_CONVERSION, and other user's FAILED task remain untouched
     own_tasks = await processor_service.list_system_tasks(user_id=test_user_id)
-    assert len(own_tasks) == 1
-    assert own_tasks[0].task_type == "PNG_CONVERSION"
+    assert {t.task_type for t in own_tasks} == {"HASHING", "PNG_CONVERSION"}
     other_tasks = await processor_service.list_system_tasks(user_id=other_user_id)
     assert len(other_tasks) == 1
     assert other_tasks[0].status == "FAILED"

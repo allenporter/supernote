@@ -46,6 +46,7 @@ _PARSE_ERRORS = (
     ValueError,
     TypeError,
     KeyError,
+    AttributeError,
     MissingField,
     InvalidFieldValue,
 )
@@ -84,12 +85,7 @@ async def handle_retry_system_tasks(request: web.Request) -> web.Response:
     """Clear failed task checkpoints for the authenticated user (or a specific file) and re-enqueue."""
     user_email = request[REQUEST_USER_KEY]
     try:
-        raw_body = await request.read()
-        data = json.loads(raw_body) if raw_body.strip() else {}
-        if not isinstance(data, dict):
-            return web.json_response(
-                {"error": "Invalid Request: expected JSON object"}, status=400
-            )
+        data = await request.json() if request.can_read_body else {}
         req_dto = RetrySystemTasksDTO.from_dict(data)
     except _PARSE_ERRORS as err:
         return web.json_response({"error": f"Invalid Request: {err}"}, status=400)

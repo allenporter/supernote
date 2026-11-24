@@ -110,7 +110,7 @@ export default {
                             <div class="min-w-0">
                                 <div class="flex items-center gap-2 flex-wrap">
                                     <a v-if="task.fileId" :href="buildTaskHref(task)"
-                                        @click.prevent="$emit('open-file', task.fileId)"
+                                        @click.prevent="$emit('open-file', { id: task.fileId, pageIndex: task.pageIndex })"
                                         class="text-xs sm:text-sm font-bold text-slate-900 hover:underline truncate">
                                         {{ task.fileName || formatShortId(task.fileId) }}
                                     </a>
@@ -298,7 +298,7 @@ export default {
                                 <tr v-for="task in tasks" :key="task.id" class="hover:bg-stone-50/70 transition-colors">
                                     <td class="px-3.5 py-2.5 font-semibold text-slate-900 whitespace-nowrap">
                                         <a v-if="task.fileId" :href="buildTaskHref(task)"
-                                            @click.prevent="$emit('open-file', task.fileId)"
+                                            @click.prevent="$emit('open-file', { id: task.fileId, pageIndex: task.pageIndex })"
                                             class="text-slate-900 hover:underline">
                                             {{ task.fileName || formatShortId(task.fileId) }}
                                         </a>
@@ -591,7 +591,10 @@ export default {
             return 'bg-emerald-50 text-emerald-700 border-emerald-200';
         });
 
+        let loadSeq = 0;
+
         const loadData = async () => {
+            const seq = ++loadSeq;
             loading.value = true;
             error.value = null;
             try {
@@ -600,6 +603,7 @@ export default {
                     fetchCapacity(),
                     fetchAiStatus(),
                 ]);
+                if (seq !== loadSeq) return;
 
                 tasks.value = overviewResult.tasks;
                 queuePaused.value = overviewResult.paused;
@@ -608,9 +612,13 @@ export default {
                 capacity.value = capacityResult;
                 aiStatus.value = aiStatusResult;
             } catch (e) {
-                error.value = getErrorMessage(e);
+                if (seq === loadSeq) {
+                    error.value = getErrorMessage(e);
+                }
             } finally {
-                loading.value = false;
+                if (seq === loadSeq) {
+                    loading.value = false;
+                }
             }
         };
 

@@ -1042,7 +1042,13 @@ class ProcessorService:
                 delete(SystemTaskDO).where(
                     SystemTaskDO.user_id == user_id,
                     SystemTaskDO.file_id.in_(target_file_ids),
-                    SystemTaskDO.status == ProcessingStatus.FAILED,
+                    or_(
+                        SystemTaskDO.status == ProcessingStatus.FAILED,
+                        and_(
+                            SystemTaskDO.key == "global",
+                            SystemTaskDO.task_type != TaskType.PAGE_HASHING.value,
+                        ),
+                    ),
                 )
             )
             await session.commit()
