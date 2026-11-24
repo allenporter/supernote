@@ -16,7 +16,7 @@ This document describes the architecture of the asynchronous, multi-stage `.note
 - **Operation-Level Checkpoints**: Every stage (`HASHING`, `PNG_CONVERSION`, `OCR_EXTRACTION`, `EMBEDDING_GENERATION`, `SUMMARY_GENERATION`) is tracked independently in `SystemTaskDO` (`f_system_task`), including module/model version tags (`SystemTaskDO.data`).
 - **Personal-Scale Concurrency**: Uses a bounded `asyncio.Queue` of file IDs with configurable file worker concurrency (`concurrency=2`) and per-page semaphore concurrency (`DEFAULT_PAGE_CONCURRENCY`).
 - **Privacy & Multi-User Isolation**: All metadata, OCR transcripts, vector embeddings, tasks, and summaries are scoped strictly per user (`user_id` composite primary keys).
-- **Lifecycle & Garbage Collection**: When a `.note` file is deleted (`NoteDeletedEvent`), `ProcessorService` purges all associated `NoteMetadataDO`, `NotePageMetadataDO`, `NotePageContentDO`, `SystemTaskDO`, and `SummaryDO` rows, as well as cached page PNGs in `CACHE_BUCKET` and unreferenced handwriting blobs in `USER_DATA_BUCKET`.
+- **Lifecycle & Garbage Collection**: When a `.note` file is permanently purged from the recycle bin (`VfsItemPurgedEvent`), `ProcessorService` purges all associated `NoteMetadataDO`, `NotePageMetadataDO`, `NotePageContentDO`, `SystemTaskDO`, and `SummaryDO` rows, as well as cached page PNGs in `CACHE_BUCKET` and unreferenced handwriting blobs in `USER_DATA_BUCKET`.
 - **Resilience & Self-Healing Recovery**: On server startup and every 5 minutes in `poll_loop()`, `ProcessorService` runs `recover_tasks()`, `recover_stalled_tasks()`, and `recover_missing_tasks()` to re-enqueue unfinished, stalled, or newly discovered/version-upgraded tasks.
 
 ---

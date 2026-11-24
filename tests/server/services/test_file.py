@@ -23,11 +23,11 @@ from supernote.server.events import (
     BlobCleanupEvent,
     Event,
     LocalEventBus,
-    NoteDeletedEvent,
     VfsItemCopiedEvent,
     VfsItemCreatedEvent,
     VfsItemDeletedEvent,
     VfsItemMovedEvent,
+    VfsItemPurgedEvent,
 )
 from supernote.server.exceptions import HashMismatch, QuotaExceeded
 from supernote.server.metrics import NoteUploadSource
@@ -52,7 +52,7 @@ def published_events(event_bus: LocalEventBus) -> list[Event]:
     async def capture(event: Event) -> None:
         events.append(event)
 
-    event_bus.subscribe(NoteDeletedEvent, capture)
+    event_bus.subscribe(VfsItemPurgedEvent, capture)
     return events
 
 
@@ -81,7 +81,7 @@ async def test_recycle_bin_lifecycle(
     test_user_id: int,
     test_users: list[str],
 ) -> None:
-    """Verify moving files to recycle bin, restoring, permanent deletion, and NoteDeletedEvent."""
+    """Verify moving files to recycle bin, restoring, permanent deletion, and VfsItemPurgedEvent."""
     user = test_users[0]
     content = b"recycle bin test note"
     md5 = hashlib.md5(content).hexdigest()
@@ -117,9 +117,14 @@ async def test_recycle_bin_lifecycle(
     assert len(await file_service.list_recycle(user)) == 0
     assert await blob_storage.exists(USER_DATA_BUCKET, "rec_blob") is False
 
-    # Permanent purge of .note publishes NoteDeletedEvent
+    # Permanent purge publishes VfsItemPurgedEvent
     assert published_events == [
-        NoteDeletedEvent(file_id=file_entity.id, user_id=test_user_id)
+        VfsItemPurgedEvent(
+            item_id=file_entity.id,
+            user_id=test_user_id,
+            name="rec_item.note",
+            is_folder=False,
+        )
     ]
 
 
@@ -248,7 +253,12 @@ async def test_recycle_bin_opportunistic_retention_cleanup(
     assert await blob_storage.exists(USER_DATA_BUCKET, "recent_blob") is True
 
     assert published_events == [
-        NoteDeletedEvent(file_id=expired_file.id, user_id=test_user_id)
+        VfsItemPurgedEvent(
+            item_id=expired_file.id,
+            user_id=test_user_id,
+            name="expired.note",
+            is_folder=False,
+        )
     ]
 
 

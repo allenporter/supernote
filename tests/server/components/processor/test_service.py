@@ -45,11 +45,11 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import (
     Event,
     LocalEventBus,
-    NoteDeletedEvent,
     NoteProcessingCompletedEvent,
     NoteProcessingFailedEvent,
     NoteUpdatedEvent,
     SyncCompletedEvent,
+    VfsItemPurgedEvent,
 )
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.coordination import SqliteCoordinationService
@@ -325,8 +325,8 @@ async def test_handle_note_deleted_cleanup(
             summary_model=None,
         ),
     )
-    event = NoteDeletedEvent(file_id=file_id, user_id=test_user_id)
-    await processor_service.handle_note_deleted(event)
+    event = VfsItemPurgedEvent(item_id=file_id, user_id=test_user_id, name="test.note")
+    await processor_service.handle_vfs_item_purged(event)
 
     # Unannotated generated summaries and empty legacy -group are deleted;
     # AI Summaries category, shared groups, and user/annotated digests survive detached.
@@ -1341,7 +1341,9 @@ async def test_file_lock_serializes_process_and_delete_and_evicts_lock(
     await in_process.wait()
 
     del_task = asyncio.create_task(
-        processor_service.handle_note_deleted(NoteDeletedEvent(file_id=777, user_id=42))
+        processor_service.handle_vfs_item_purged(
+            VfsItemPurgedEvent(item_id=777, user_id=42, name="locked.note")
+        )
     )
     await asyncio.sleep(0.02)
     # Delete must wait until in-flight process_file releases the per-file lock
@@ -1366,7 +1368,7 @@ async def test_handle_note_deleted_removes_note_and_page_metadata(
     file_service: FileService,
     test_user_id: int,
 ) -> None:
-    """Verify NoteDeletedEvent purges NoteMetadataDO and NotePageMetadataDO via PageHashingModule.cleanup_file."""
+    """Verify VfsItemPurgedEvent purges NoteMetadataDO and NotePageMetadataDO via PageHashingModule.cleanup_file."""
     processor_service.register_modules(hashing=PageHashingModule(file_service))
 
     async with session_manager.session() as session:
@@ -1388,8 +1390,18 @@ async def test_handle_note_deleted_removes_note_and_page_metadata(
         )
         await session.commit()
 
-    await processor_service.handle_note_deleted(
-        NoteDeletedEvent(file_id=601, user_id=test_user_id)
+    # Non-.note files and folders are ignored.
+    await processor_service.handle_vfs_item_purged(
+        VfsItemPurgedEvent(item_id=602, user_id=test_user_id, name="doc.pdf")
+    )
+    await processor_service.handle_vfs_item_purged(
+        VfsItemPurgedEvent(
+            item_id=602, user_id=test_user_id, name="folder.note", is_folder=True
+        )
+    )
+
+    await processor_service.handle_vfs_item_purged(
+        VfsItemPurgedEvent(item_id=601, user_id=test_user_id, name="note.note")
     )
 
     async with session_manager.session() as session:
@@ -1774,8 +1786,8 @@ async def test_dag_multi_wave_file_page_file_page_and_reverse_cleanup(
 
     # Deletion runs cleanup_file in reverse topological order.
     log.clear()
-    await processor_service.handle_note_deleted(
-        NoteDeletedEvent(file_id=file_id, user_id=1)
+    await processor_service.handle_vfs_item_purged(
+        VfsItemPurgedEvent(item_id=file_id, user_id=1, name="dag.note")
     )
     assert log == [
         "cleanup:W4_PAGE",

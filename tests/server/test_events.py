@@ -11,7 +11,6 @@ from supernote.server.events import (
     DomainEventRecorded,
     Event,
     LocalEventBus,
-    NoteDeletedEvent,
     NotePagesDeltaEvent,
     NotePageTranscribedEvent,
     NoteProcessingCompletedEvent,
@@ -28,6 +27,7 @@ from supernote.server.events import (
     VfsItemCreatedEvent,
     VfsItemDeletedEvent,
     VfsItemMovedEvent,
+    VfsItemPurgedEvent,
     bind_event_actor,
 )
 
@@ -35,7 +35,7 @@ from supernote.server.events import (
 async def test_local_event_bus_publish_and_subscribe() -> None:
     bus = LocalEventBus()
     received_updated: list[NoteUpdatedEvent] = []
-    received_deleted: list[NoteDeletedEvent] = []
+    received_deleted: list[VfsItemPurgedEvent] = []
     received_completed: list[NoteProcessingCompletedEvent] = []
     received_sync: list[SyncCompletedEvent] = []
     received_schedule: list[ScheduleUpdatedEvent] = []
@@ -51,7 +51,7 @@ async def test_local_event_bus_publish_and_subscribe() -> None:
     async def on_updated(event: NoteUpdatedEvent) -> None:
         received_updated.append(event)
 
-    async def on_deleted(event: NoteDeletedEvent) -> None:
+    async def on_deleted(event: VfsItemPurgedEvent) -> None:
         received_deleted.append(event)
 
     async def on_processing_completed(event: NoteProcessingCompletedEvent) -> None:
@@ -88,7 +88,7 @@ async def test_local_event_bus_publish_and_subscribe() -> None:
         received_vfs_deleted.append(event)
 
     bus.subscribe(NoteUpdatedEvent, on_updated)
-    bus.subscribe(NoteDeletedEvent, on_deleted)
+    bus.subscribe(VfsItemPurgedEvent, on_deleted)
     bus.subscribe(NoteProcessingCompletedEvent, on_processing_completed)
     bus.subscribe(SyncCompletedEvent, on_sync_completed)
     bus.subscribe(ScheduleUpdatedEvent, on_schedule_updated)
@@ -104,7 +104,7 @@ async def test_local_event_bus_publish_and_subscribe() -> None:
     ev_updated = NoteUpdatedEvent(
         file_id=10, user_id=1, file_path="/Note/a.note", defer_processing=True
     )
-    ev_deleted = NoteDeletedEvent(file_id=10, user_id=1)
+    ev_deleted = VfsItemPurgedEvent(item_id=10, user_id=1, name="a.note")
     ev_completed = NoteProcessingCompletedEvent(
         file_id=10, user_id=1, file_path="/Note/a.note"
     )
