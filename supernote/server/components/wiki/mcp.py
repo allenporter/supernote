@@ -8,6 +8,16 @@ from mashumaro.exceptions import InvalidFieldValue, MissingField
 from mcp.server.mcpserver import Context
 
 from supernote.models.base import ErrorCode, create_error_response
+from supernote.models.wiki import (
+    WikiIndexEntryVO,
+    WikiIndexResponseVO,
+    WikiLintIssueResponseVO,
+    WikiLintListVO,
+    WikiPageListVO,
+    WikiPageResponseVO,
+    WikiSearchResponseVO,
+    WikiStatusResponseVO,
+)
 from supernote.server.components.mcp import (
     McpRegistrar,
     get_authenticated_actor,
@@ -53,20 +63,9 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
                 _AUTH_ERROR_MSG, ErrorCode.UNAUTHORIZED
             ).to_dict()
         pages = await wiki_service.list_pages(user_id, limit=limit)
-        return {
-            "success": True,
-            "entries": [
-                {
-                    "slug": p.slug,
-                    "title": p.title,
-                    "page_kind": p.page_kind,
-                    "summary": p.summary,
-                    "version": p.version,
-                    "update_time": p.update_time,
-                }
-                for p in pages
-            ],
-        }
+        return WikiIndexResponseVO(
+            entries=[WikiIndexEntryVO.from_page(p) for p in pages]
+        ).to_dict()
 
     async def list_wiki_pages(
         ctx: Context,
@@ -97,7 +96,7 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
         pages = await wiki_service.list_pages(
             user_id, page_kind=page_kind, limit=limit, offset=offset
         )
-        return {"success": True, "pages": [p.to_dict() for p in pages]}
+        return WikiPageListVO(pages=pages).to_dict()
 
     async def read_wiki_page(ctx: Context, slug: str) -> dict[str, Any]:
         """Read a single wiki page by slug, including backlinks and source refs.
@@ -123,7 +122,7 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
             return create_error_response(
                 f"Wiki page {slug!r} not found", ErrorCode.NOT_FOUND
             ).to_dict()
-        return {"success": True, "page": page.to_dict()}
+        return WikiPageResponseVO(page=page).to_dict()
 
     async def search_wiki(ctx: Context, query: str, top_k: int = 10) -> dict[str, Any]:
         """Search wiki pages by keyword or alias, returning 1-hop links and source refs.
@@ -143,7 +142,7 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
                 _AUTH_ERROR_MSG, ErrorCode.UNAUTHORIZED
             ).to_dict()
         hits = await wiki_service.search_pages(user_id, query, top_k=top_k)
-        return {"success": True, "hits": [h.to_dict() for h in hits]}
+        return WikiSearchResponseVO(hits=hits).to_dict()
 
     async def upsert_wiki_page(
         ctx: Context,
@@ -231,7 +230,7 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
             return create_error_response(str(err), ErrorCode.CONFLICT).to_dict()
         except WikiPolicyError as err:
             return create_error_response(str(err), ErrorCode.FORBIDDEN).to_dict()
-        return {"success": True, "page": page.to_dict()}
+        return WikiPageResponseVO(page=page).to_dict()
 
     async def list_wiki_lint_issues(
         ctx: Context, status: str = "open"
@@ -259,7 +258,7 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
         issues = await wiki_service.list_lint_issues(
             user_id, status=None if status == "all" else status
         )
-        return {"success": True, "issues": [i.to_dict() for i in issues]}
+        return WikiLintListVO(issues=issues).to_dict()
 
     async def resolve_wiki_lint_issue(
         ctx: Context, issue_id: int, status: str = "resolved"
@@ -287,7 +286,7 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
             return create_error_response(str(err), ErrorCode.BAD_REQUEST).to_dict()
         except WikiNotFoundError as err:
             return create_error_response(str(err), ErrorCode.NOT_FOUND).to_dict()
-        return {"success": True, "issue": issue.to_dict()}
+        return WikiLintIssueResponseVO(issue=issue).to_dict()
 
     async def get_wiki_status(ctx: Context) -> dict[str, Any]:
         """Return per-user wiki inventory, cursor, and open lint summary.
@@ -302,7 +301,7 @@ async def async_setup_mcp(core: ServerCore, registrar: McpRegistrar) -> None:
                 _AUTH_ERROR_MSG, ErrorCode.UNAUTHORIZED
             ).to_dict()
         status = await wiki_service.get_status(user_id)
-        return {"success": True, "status": status.to_dict()}
+        return WikiStatusResponseVO(status=status).to_dict()
 
     for tool_fn in (
         get_wiki_index,

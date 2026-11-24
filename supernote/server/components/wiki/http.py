@@ -11,6 +11,17 @@ from aiohttp import web
 from mashumaro.exceptions import InvalidFieldValue, MissingField
 from mashumaro.mixins.json import DataClassJSONMixin
 
+from supernote.models.wiki import (
+    WikiCompileResponseVO,
+    WikiDeleteResponseVO,
+    WikiLintIssueResponseVO,
+    WikiLintListVO,
+    WikiPageListVO,
+    WikiPageResponseVO,
+    WikiRevisionsResponseVO,
+    WikiSearchResponseVO,
+    WikiStatusResponseVO,
+)
 from supernote.server.ai.base import AIError
 from supernote.server.components.http import HttpRegistrar
 from supernote.server.core import ServerCore
@@ -177,14 +188,14 @@ async def _read_json_body(
 
 def _compile_result_response(mode: str, res: WikiCompileResult) -> web.Response:
     return web.json_response(
-        {
-            "mode": mode,
-            "events_processed": res.events_processed,
-            "pages_updated": res.pages_updated,
-            "skipped_policy_pages": res.skipped_policy_pages,
-            "lint_issues_open": res.lint_issues_open,
-            "status": res.status,
-        }
+        WikiCompileResponseVO(
+            mode=mode,
+            events_processed=res.events_processed,
+            pages_updated=res.pages_updated,
+            skipped_policy_pages=res.skipped_policy_pages,
+            lint_issues_open=res.lint_issues_open,
+            status=res.status,
+        ).to_dict()
     )
 
 
@@ -214,7 +225,7 @@ async def handle_list_wiki_pages(request: web.Request) -> web.Response:
     pages = await service.list_pages(
         user_id, page_kind=page_kind, limit=limit, offset=offset
     )
-    return web.json_response({"pages": [p.to_dict() for p in pages]})
+    return web.json_response(WikiPageListVO(pages=pages).to_dict())
 
 
 @routes.get("/api/extended/wiki/pages/{slug:.+}")
@@ -230,7 +241,7 @@ async def handle_get_wiki_page(request: web.Request) -> web.Response:
         return web.json_response({"error": str(err)}, status=400)
     if page is None:
         return web.json_response({"error": "Wiki page not found"}, status=404)
-    return web.json_response({"page": page.to_dict()})
+    return web.json_response(WikiPageResponseVO(page=page).to_dict())
 
 
 @routes.put("/api/extended/wiki/pages/{slug:.+}")
@@ -280,7 +291,7 @@ async def handle_put_wiki_page(request: web.Request) -> web.Response:
     except WikiPolicyError as err:
         return web.json_response({"error": str(err)}, status=403)
 
-    return web.json_response({"page": page.to_dict()})
+    return web.json_response(WikiPageResponseVO(page=page).to_dict())
 
 
 @routes.delete("/api/extended/wiki/pages/{slug:.+}")
@@ -297,7 +308,7 @@ async def handle_delete_wiki_page(request: web.Request) -> web.Response:
         return web.json_response({"error": str(err)}, status=400)
     except WikiNotFoundError as err:
         return web.json_response({"error": str(err)}, status=404)
-    return web.json_response({"deleted": True})
+    return web.json_response(WikiDeleteResponseVO(deleted=True).to_dict())
 
 
 @routes.get("/api/extended/wiki/revisions/{slug:.+}")
@@ -313,7 +324,7 @@ async def handle_list_wiki_revisions(request: web.Request) -> web.Response:
         return web.json_response({"error": str(err)}, status=400)
     except WikiNotFoundError as err:
         return web.json_response({"error": str(err)}, status=404)
-    return web.json_response({"revisions": [r.to_dict() for r in revisions]})
+    return web.json_response(WikiRevisionsResponseVO(revisions=revisions).to_dict())
 
 
 @routes.get("/api/extended/wiki/search")
@@ -330,7 +341,7 @@ async def handle_search_wiki(request: web.Request) -> web.Response:
 
     service: WikiService = request.app[WIKI_SERVICE_KEY]
     hits = await service.search_pages(user_id, query, top_k=top_k)
-    return web.json_response({"hits": [h.to_dict() for h in hits]})
+    return web.json_response(WikiSearchResponseVO(hits=hits).to_dict())
 
 
 @routes.get("/api/extended/wiki/status")
@@ -341,7 +352,7 @@ async def handle_wiki_status(request: web.Request) -> web.Response:
 
     service: WikiService = request.app[WIKI_SERVICE_KEY]
     status = await service.get_status(user_id)
-    return web.json_response({"status": status.to_dict()})
+    return web.json_response(WikiStatusResponseVO(status=status).to_dict())
 
 
 @routes.post("/api/extended/wiki/compile")
@@ -367,7 +378,7 @@ async def handle_wiki_compile(request: web.Request) -> web.Response:
             return _compile_result_response(req_dto.mode, res)
         issues = await compiler.run_semantic_lint(user_id)
         return web.json_response(
-            {"mode": req_dto.mode, "issues": [i.to_dict() for i in issues]}
+            WikiCompileResponseVO(mode=req_dto.mode, issues=issues).to_dict()
         )
     except (AIError, ValueError, TypeError, LookupError) as err:
         return web.json_response({"error": str(err)}, status=502)
@@ -389,7 +400,7 @@ async def handle_list_wiki_lint(request: web.Request) -> web.Response:
     issues = await service.list_lint_issues(
         user_id, status=None if status_filter == "all" else status_filter
     )
-    return web.json_response({"issues": [i.to_dict() for i in issues]})
+    return web.json_response(WikiLintListVO(issues=issues).to_dict())
 
 
 @routes.post("/api/extended/wiki/lint/{issue_id}/resolve")
@@ -418,7 +429,7 @@ async def handle_resolve_wiki_lint(request: web.Request) -> web.Response:
         return web.json_response({"error": str(err)}, status=400)
     except WikiNotFoundError as err:
         return web.json_response({"error": str(err)}, status=404)
-    return web.json_response({"issue": issue.to_dict()})
+    return web.json_response(WikiLintIssueResponseVO(issue=issue).to_dict())
 
 
 @routes.get("/api/extended/wiki/export.zip")
