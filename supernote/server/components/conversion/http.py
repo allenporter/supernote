@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable
 from http import HTTPStatus
 
 from aiohttp import web
@@ -25,7 +25,7 @@ from supernote.server.components.http import HttpRegistrar
 from supernote.server.config import ServerConfig
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.core import ServerCore
-from supernote.server.exceptions import SupernoteError
+from supernote.server.exceptions import AccessDenied, SupernoteError
 from supernote.server.keys import (
     BLOB_STORAGE_KEY,
     CONFIG_KEY,
@@ -169,35 +169,34 @@ async def handle_note_to_pdf(request: web.Request) -> web.Response:
         return SupernoteError.uncaught(err).to_response()
 
 
-async def _stream_cached_note_render(
+async def _verify_signed_user(
     request: web.Request,
     *,
     signed_query_keys: tuple[str, ...] = (),
-    resolve_blob: Callable[[ConversionService, str], Awaitable[ConvertedBlob | None]],
+) -> str:
+    """Verify a signed cache-download URL and return the signed user email."""
+    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
+    payload = await url_signer.verify(
+        request.path_qs, consume=False, signed_query_keys=signed_query_keys
+    )
+    user_email = payload.get("user")
+    if not user_email:
+        raise AccessDenied("Missing user identity in signature")
+    return str(user_email)
+
+
+async def _stream_cached_note_render(
+    request: web.Request,
+    *,
+    resolve_blob: Awaitable[ConvertedBlob | None],
     not_found_message: str,
     kind: OSSTransferKind,
 ) -> web.StreamResponse:
-    """Verify a signed cache-download URL and stream the resolved `CACHE_BUCKET` blob."""
-    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
-    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
+    """Resolve and stream a previously converted `CACHE_BUCKET` blob."""
     blob_storage: BlobStorage = request.app[BLOB_STORAGE_KEY]
 
     try:
-        payload = await url_signer.verify(
-            request.path_qs, consume=False, signed_query_keys=signed_query_keys
-        )
-    except SupernoteError as err:
-        return err.to_response()
-
-    user_email = payload.get("user")
-    if not user_email:
-        return web.json_response(
-            create_error_response("Missing user identity in signature").to_dict(),
-            status=HTTPStatus.FORBIDDEN,
-        )
-
-    try:
-        blob = await resolve_blob(conversion_service, user_email)
+        blob = await resolve_blob
         if not blob:
             raise FileNotFoundError(not_found_message)
         metadata = await blob_storage.get_metadata(CACHE_BUCKET, blob.storage_key)
@@ -225,6 +224,11 @@ async def _stream_cached_note_render(
 async def handle_oss_png_download(request: web.Request) -> web.StreamResponse:
     """Handle converted note page PNG download from CACHE_BUCKET."""
     try:
+        user_email = await _verify_signed_user(request)
+    except SupernoteError as err:
+        return err.to_response()
+
+    try:
         file_id = int(request.match_info["file_id"])
         page_no = int(request.match_info["page_no"])
     except (KeyError, ValueError):
@@ -233,9 +237,10 @@ async def handle_oss_png_download(request: web.Request) -> web.StreamResponse:
             status=HTTPStatus.BAD_REQUEST,
         )
 
+    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
     return await _stream_cached_note_render(
         request,
-        resolve_blob=lambda svc, email: svc.get_note_png_page(email, file_id, page_no),
+        resolve_blob=conversion_service.get_note_png_page(user_email, file_id, page_no),
         not_found_message="Page PNG not found",
         kind=OSSTransferKind.PNG_PREVIEW,
     )
@@ -245,6 +250,11 @@ async def handle_oss_png_download(request: web.Request) -> web.StreamResponse:
 @public_route
 async def handle_oss_pdf_download(request: web.Request) -> web.StreamResponse:
     """Handle converted note PDF download from CACHE_BUCKET."""
+    try:
+        user_email = await _verify_signed_user(request, signed_query_keys=("pages",))
+    except SupernoteError as err:
+        return err.to_response()
+
     try:
         file_id = int(request.match_info["file_id"])
         pages = request.query.get("pages")
@@ -257,10 +267,10 @@ async def handle_oss_pdf_download(request: web.Request) -> web.StreamResponse:
             status=HTTPStatus.BAD_REQUEST,
         )
 
+    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
     return await _stream_cached_note_render(
         request,
-        signed_query_keys=("pages",),
-        resolve_blob=lambda svc, email: svc.get_note_pdf(email, file_id, page_no_list),
+        resolve_blob=conversion_service.get_note_pdf(user_email, file_id, page_no_list),
         not_found_message="Note PDF not found",
         kind=OSSTransferKind.PDF_EXPORT,
     )

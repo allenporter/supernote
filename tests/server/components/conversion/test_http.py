@@ -193,8 +193,12 @@ async def test_oss_render_downloads_reject_invalid_path_or_query_params(
     client: TestClient,
     path: str,
 ) -> None:
-    """Verify malformed path or pages query params return 400."""
-    resp = await client.get(path)
+    """Verify signed requests with malformed path or pages query params return 400."""
+    assert client.app is not None
+    signed_path = await client.app[URL_SIGNER_KEY].sign(
+        path, user="test@example.com", single_use=False
+    )
+    resp = await client.get(signed_path)
     assert resp.status == 400
 
 
@@ -202,14 +206,16 @@ async def test_oss_render_downloads_reject_invalid_path_or_query_params(
     "path",
     [
         "/api/oss/png/9201/0",
+        "/api/oss/png/notanint/0",
         "/api/oss/pdf/9202",
+        "/api/oss/pdf/notanint",
     ],
 )
 async def test_oss_render_downloads_reject_unsigned_requests(
     client: TestClient,
     path: str,
 ) -> None:
-    """Verify unsigned requests to cache download endpoints are rejected."""
+    """Verify unsigned requests are rejected before parsing path/query parameters."""
     resp = await client.get(path)
     assert resp.status in (401, 403)
 
