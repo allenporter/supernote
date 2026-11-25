@@ -12,7 +12,9 @@ from __future__ import annotations
 import asyncio
 import functools
 from collections.abc import Awaitable, Callable, Mapping
-from typing import TYPE_CHECKING, Any, ParamSpec, cast
+from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
+
+from mcp.types import CallToolResult
 
 from supernote.server.components.mcp.metrics import (
     init_mcp_metrics,
@@ -35,6 +37,7 @@ __all__ = [
 ]
 
 _P = ParamSpec("_P")
+_R = TypeVar("_R", bound=dict[str, Any] | CallToolResult)
 
 
 def _get_authenticated_token() -> SupernoteAccessToken | None:
@@ -60,25 +63,32 @@ def get_authenticated_actor() -> str | None:
     return token.actor if token is not None else None
 
 
+def _is_tool_result_success(result: dict[str, Any] | CallToolResult) -> bool:
+    """Determine whether an MCP tool result represents a successful invocation."""
+    if isinstance(result, CallToolResult):
+        return not result.is_error
+    return result.get("success") is True
+
+
 def instrument_mcp_tool(
     tool: str,
 ) -> Callable[
-    [Callable[_P, Awaitable[dict[str, Any]]]],
-    Callable[_P, Awaitable[dict[str, Any]]],
+    [Callable[_P, Awaitable[_R]]],
+    Callable[_P, Awaitable[_R]],
 ]:
     """Wrap an MCP tool handler to bind caller actor and record Prometheus metrics."""
 
     def decorator(
-        fn: Callable[_P, Awaitable[dict[str, Any]]],
-    ) -> Callable[_P, Awaitable[dict[str, Any]]]:
+        fn: Callable[_P, Awaitable[_R]],
+    ) -> Callable[_P, Awaitable[_R]]:
         @functools.wraps(fn)
-        async def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> dict[str, Any]:
+        async def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
             with (
                 bind_event_actor(get_authenticated_actor()),
                 track_mcp_tool_call(tool=tool) as call,
             ):
                 result = await fn(*args, **kwargs)
-                call.set_succeeded(result.get("success") is True)
+                call.set_succeeded(_is_tool_result_success(result))
                 return result
 
         return wrapper
@@ -90,12 +100,15 @@ class McpRegistrar:
     """Registrar passed into ``<component>.mcp:async_setup_mcp(core, registrar)``."""
 
     def __init__(self) -> None:
-        self._tools: dict[str, Callable[..., Awaitable[dict[str, Any]]]] = {}
+        self._tools: dict[
+            str, Callable[..., Awaitable[dict[str, Any] | CallToolResult]]
+        ] = {}
         self._applied: set[str] = set()
 
     def add_tool(
         self,
-        fn: Callable[..., Awaitable[dict[str, Any]]],
+        fn: Callable[..., Awaitable[dict[str, Any]]]
+        | Callable[..., Awaitable[CallToolResult]],
         *,
         name: str | None = None,
     ) -> None:
