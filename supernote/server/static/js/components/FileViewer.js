@@ -331,9 +331,14 @@ export default {
                     if (seq !== activeLoadSeq) return;
                     pages.value = pngPages;
                 } else if (category === 'image') {
-                    const signedUrl = await fetchDownloadUrl(props.file.id);
+                    isLoadingTranscript.value = true;
+                    const [signedUrl, pagesData] = await Promise.all([
+                        fetchDownloadUrl(props.file.id),
+                        fetchTranscript(String(props.file.id)).catch(() => []),
+                    ]);
                     if (seq !== activeLoadSeq) return;
                     previewUrl.value = signedUrl;
+                    transcriptPages.value = pagesData;
                 } else if (category === 'pdf') {
                     const signedUrl = await fetchDownloadUrl(props.file.id);
                     if (seq !== activeLoadSeq) return;
@@ -408,6 +413,23 @@ export default {
 
         const refreshInsights = async () => {
             if (!props.file) return;
+            if (fileCategory.value === 'image') {
+                const seq = activeLoadSeq;
+                isLoadingTranscript.value = true;
+                try {
+                    const pagesData = await fetchTranscript(String(props.file.id));
+                    if (seq === activeLoadSeq) {
+                        transcriptPages.value = pagesData;
+                    }
+                } catch {
+                    // Preserve any already-rendered image analysis on transient refresh failure.
+                } finally {
+                    if (seq === activeLoadSeq) {
+                        isLoadingTranscript.value = false;
+                    }
+                }
+                return;
+            }
             if (fileCategory.value !== 'note') {
                 transcriptPages.value = [];
                 realSummaries.value = [];
@@ -629,6 +651,7 @@ export default {
                 v-if="showSidePanel"
                 ref="sidePanelRef"
                 :file-id="file?.id ?? null"
+                :file-category="fileCategory"
                 :is-open-mobile="isMobileSidePanelOpen"
                 :active-tab="activeRightTab"
                 :active-page-index="activePageIndex"
