@@ -20,8 +20,8 @@ async def test_search_component_lifecycle_binds_embedding_model_on_start(
 ) -> None:
     """Verify SearchComponent loads via load_components and binds the configured embedding model."""
     component_core.config.ai = AiConfig(
-        providers={"fake": ProviderConfig(type="fake")},
-        embedding=ModelConfig(provider="fake", model="fake-embed"),
+        providers={"fake_ai": ProviderConfig(type="fake_ai")},
+        embedding=ModelConfig(provider="fake_ai", model="fake-embed"),
     )
     loader = await load_components("search", "fake_ai")
     component = loader.get("search")
