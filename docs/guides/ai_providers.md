@@ -22,16 +22,18 @@ We maintain reproducible benchmarks on real Supernote `.note` pages rather than 
 
 ### Handwriting & Bullet Journal OCR
 
-Across 30 `.note` pages (Bullet Journal Rapid Logging, two-column diagrams and guitar tablature, French/Spanish/Turkish notes, overlapping strokes, and synthetic fixtures; full category breakdown in [evals/ocr/RESULTS.md](../../evals/ocr/RESULTS.md)):
+Across 30 `.note` pages (Bullet Journal Rapid Logging, two-column diagrams and guitar tablature, French/Spanish/Turkish notes, overlapping strokes, and synthetic fixtures):
 
-| Provider / Model | Pages | Word F1 | Mean CER | Content CER | Handwritten BuJo Symbols | All BuJo Symbols | Median Latency |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `Gemini 3.5 Flash-Lite` *(default)* | 30 | 99.0% | 2.3% | 1.4% | 85.5% | 95.8% | 1.18 s |
-| `Gemini 3.6 Flash` | 30 | 99.7% | 4.2% | 3.6% | 90.5% | 97.3% | 6.63 s |
-| `Gemini 3.8 Flash` | 30 | 96.5% | 5.6% | 5.4% | 90.5% | 97.3% | 9.93 s |
-| `Supernote On-Device` (`MyScript iink 4.1.0`) | 25 | 75.5% | 17.2% | 16.7% | 18.6% | 18.6% | 0.91 s |
-| `Apple Vision Accurate` | 30 | 73.7% | 21.7% | 20.7% | 4.5% | 49.7% | 0.41 s |
-| `Apple Vision Fast` | 30 | 17.8% | 72.8% | 70.7% | 0.0% | 8.7% | 0.13 s |
+| Model | Word Accuracy (F1) | Char Error (CER, lower is better) | Bullet Journal Symbols | Speed / page |
+| :--- | ---: | ---: | ---: | ---: |
+| `Gemini 3.5 Flash-Lite` *(default)* | 99.0% | 2.3% | 95.8% | 1.18 s |
+| `Gemini 3.6 Flash` | 99.7% | 4.2% | 97.3% | 6.63 s |
+| `Gemini 3.8 Flash` | 96.5% | 5.6% | 97.3% | 9.93 s |
+| `Supernote On-Device` (`MyScript iink 4.1.0`, 25 pages) | 75.5% | 17.2% | 18.6% | 0.91 s |
+| `Apple Vision Accurate` | 73.7% | 21.7% | 49.7% | 0.41 s |
+| `Apple Vision Fast` | 17.8% | 72.8% | 8.7% | 0.13 s |
+
+Word F1 measures how many whole words match the page (higher is better), while CER counts character-level typos and formatting mistakes (lower is better). See [evals/ocr/RESULTS.md](../../evals/ocr/RESULTS.md) for `Content CER` and per-category breakdowns.
 
 `gemini-3.5-flash-lite` is the easiest option that works well out of the box: it reads nearly every word accurately (99.0% Word F1, 0.0% median CER) in ~1.2 s per page for under `$0.001` per page while preserving Bullet Journal symbols, nested indentation, and strikethroughs.
 
@@ -39,35 +41,23 @@ If you want to stay fully local, you have two main paths with clear tradeoffs. O
 
 ### Hybrid search & embeddings
 
-Across 100 pages in 26 notebooks and 60 blind ground-truth queries (`#tag` lookups, exact IDs, typos, CJK, paraphrases, and unanswerable negatives; full breakdown in [evals/search/RESULTS.md](../../evals/search/RESULTS.md)):
+Across 100 pages in 26 notebooks and 60 blind ground-truth queries (`#tag` lookups, exact IDs, typos, Chinese/Japanese/Korean, paraphrases, and unanswerable negatives; full breakdown in [evals/search/RESULTS.md](../../evals/search/RESULTS.md)):
 
-| Mode | Embedding Model | nDCG@5 | MRR@5 | Recall@5 | nDCG@10 | Recall@10 | Median Latency |
-| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `hybrid` *(recommended cloud)* | `gemini:gemini-embedding-2` | **97.1%** | **100.0%** | **93.7%** | **97.6%** | **95.5%** | 68.8 ms |
-| `hybrid` | `gemini:gemini-embedding-001` | 95.5% | 98.0% | 93.2% | 96.0% | 95.5% | 69.4 ms |
-| `hybrid` | `openai:text-embedding-3-small` | 94.0% | 98.0% | 89.5% | 94.2% | 90.5% | 50.9 ms |
-| `hybrid` *(recommended local)* | `ollama:embeddinggemma` | **93.7%** | **97.0%** | **90.2%** | **94.3%** | **93.3%** | **23.5 ms** |
-| `hybrid` | `ollama:qwen3-embedding:4b` | 92.2% | 95.7% | 89.7% | 93.0% | 93.7% | 58.9 ms |
-| `hybrid` | `ollama:qwen3-embedding:0.6b` | 91.3% | 95.7% | 89.8% | 92.5% | 94.3% | 28.9 ms |
-| `keyword_only` | `none` | 54.8% | 59.0% | 49.3% | 54.8% | 49.3% | 4.0 ms |
+| Model | Top-5 Ranking Quality (nDCG@5) | Found in Top 5 (Recall@5) | Median Latency |
+| :--- | ---: | ---: | ---: |
+| `gemini:gemini-embedding-2` *(recommended cloud)* | **97.1%** | **93.7%** | 68.8 ms |
+| `gemini:gemini-embedding-001` | 95.5% | 93.2% | 69.4 ms |
+| `openai:text-embedding-3-small` | 94.0% | 89.5% | 50.9 ms |
+| `ollama:embeddinggemma` *(recommended local)* | **93.7%** | **90.2%** | **23.5 ms** |
+| `ollama:qwen3-embedding:4b` | 92.2% | 89.7% | 58.9 ms |
+| `ollama:qwen3-embedding:0.6b` | 91.3% | 89.8% | 28.9 ms |
+| Keyword only (`none`) | 54.8% | 49.3% | 4.0 ms |
 
-### Public multimodal benchmarks (Gemini vs. Claude)
+Higher is better: Recall@5 is how often the right page lands in the top 5 results; nDCG@5 also rewards putting it at #1.
 
-For broader context on why Gemini is the default multimodal backend (Anthropic Claude is not a built-in server provider), here are recent results (Jun–Nov 2026) from [Artificial Analysis](https://artificialanalysis.ai/) (`MMMU-Pro`), [Vals AI](https://www.vals.ai/benchmarks) (`MMMU-Pro` and `MortgageTax` scanned-form extraction), and [LMArena Vision](https://lmarena.ai/):
+### Why Gemini is the built-in cloud default
 
-| Model | Release | API Price (In / Out per 1M) | LMArena Vision (Elo) | MMMU-Pro (AA) | MMMU-Pro (Vals) | MortgageTax (Vals) |
-| :--- | :--- | :--- | ---: | ---: | ---: | ---: |
-| `Gemini 3.5 Flash-Lite` | Jul 2026 | `$0.30 / $2.50` | 1268 | 79.0% | 83.6% | 68.7% |
-| `Claude Haiku 5.5` | Oct 2026 | `$0.10 / $0.50` (≤100k) | — | — | — | — |
-| `Gemini 3.6 Flash` | Jul 2026 | `$0.75 / $3.75`\* | 1297 | 83.2% | 88.4% | 67.6% |
-| `Gemini 3.8 Flash` | Sep 2026 | `$0.75 / $3.75`\* | 1316 | 85.6% | 89.1% | 65.3% |
-| `Claude Sonnet 5` | Jun 2026 | `$2.00 / $10.00` | 1272 | 77.3% | 83.0% | 70.0% |
-| `Claude Sonnet 5.5` | Sep 2026 | `$2.00 / $10.00` | 1283 | — | — | — |
-| `Gemini 4 Carbon` | Oct 2026 | `$4.00 / $20.00` | — | 89.3% | — | — |
-| `Claude Opus 5` | Jul 2026 | `$5.00 / $25.00` | 1317 | 84.7% | 89.9% | 72.1% |
-| `Claude Opus 5.5` | Sep 2026 | `$4.00 / $20.00` | 1324 | 87.7% | — | — |
-
-*\*Promotional rate through Dec 31, 2026 (`$1.50 / $7.50` standard; 50% lower via Batch API).*
+`gemini-3.5-flash-lite` delivers near-frontier vision and document accuracy at a fraction of the cost and latency of larger cloud models, which makes it practical to index entire notebooks automatically. Because Open Private Cloud focuses on a small set of well-tested server backends, Anthropic Claude is not a built-in OCR or summary provider. If you already use Claude Desktop or Claude Code, you can still connect them directly to your notes and search index over [MCP](./mcp.md).
 
 ## API data use, training, and retention
 
@@ -75,7 +65,7 @@ Google Gemini offers both a **Free tier** that trains on API data and a **Paid t
 
 | Provider & Tier | Used to Train Models? | Default API Log Retention | Policy Citations |
 | :--- | :--- | :--- | :--- |
-| **Gemini API (Paid tier)** | **No** (Google acts as Data Processor) | Abuse monitoring; optional AI Studio project logs default to 55 days (configurable to 7 days or off; [ZDR](https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/zero-data-retention) on Enterprise/Vertex AI) | [Paid Services Terms](https://aistudio.google.com/docs/terms#data-use-paid), [Logs Policy](https://aistudio.google.com/docs/logs-policy), [Google DPA](https://business.safety.google/processorterms/) |
+| **Gemini API (Paid tier)** | **No** (Google acts as Data Processor) | Abuse monitoring; optional AI Studio project logs default to 55 days (configurable to 7 days or off; [Zero Data Retention (ZDR)](https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/zero-data-retention) on Enterprise/Vertex AI) | [Paid Services Terms](https://aistudio.google.com/docs/terms#data-use-paid), [Logs Policy](https://aistudio.google.com/docs/logs-policy), [Google DPA](https://business.safety.google/processorterms/) |
 | **Gemini API (Free tier)** | **Yes** (outside EEA, UK, and Switzerland; includes human review) | Retained for product improvement (avoid for private or sensitive notes) | [Unpaid Services Terms](https://aistudio.google.com/docs/terms#data-use-unpaid) |
 | **OpenAI API** (`api.openai.com`) | **No** (unless opted in) | Up to 30 days for abuse monitoring; ZDR available for eligible orgs | [OpenAI Data Controls](https://developers.openai.com/api/docs/guides/your-data) |
 | **Anthropic Claude API** (`api.anthropic.com`) | **No** under Commercial Terms | Not retained by default on standard endpoints, or up to 30 days on covered models; ZDR available | [Commercial Terms](https://www.anthropic.com/legal/commercial-terms), [Training Policy](https://privacy.claude.com/en/articles/7996868-is-my-data-used-for-model-training), [Data Retention](https://platform.claude.com/docs/en/manage-claude/api-and-data-retention) |
@@ -89,7 +79,13 @@ Set `SUPERNOTE_GEMINI_API_KEY` and start the server. That enables `gemini-3.5-fl
 
 ### 100% local with Ollama
 
-Run OCR, summaries, and hybrid search embeddings entirely on your own machine:
+Run OCR, summaries, and hybrid search embeddings entirely on your own machine. First pull both models in Ollama:
+
+```bash
+ollama pull gemma3:27b && ollama pull embeddinggemma
+```
+
+Then configure `config/config.yaml`:
 
 ```yaml
 ai:
@@ -196,3 +192,9 @@ ai:
 ```
 
 See the [Configuration Reference](../reference/configuration.md) for all `ai` settings and environment variables.
+
+## Next steps
+
+- Learn how handwriting transcription, diagrams, and Bullet Journal symbols work in [OCR & Multimodal](./ocr_and_multimodal.md).
+- Set up keyword and semantic retrieval across your notebooks in [Search](./search.md).
+- Turn your synced notes into a structured knowledge base with [LLM Wiki](./llm_wiki.md).
