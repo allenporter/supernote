@@ -47,7 +47,6 @@ from .events import LocalEventBus
 from .routes import (
     admin,
     auth,
-    extended,
     file_device,
     file_web,
     oss,
@@ -162,7 +161,6 @@ def create_app(config: ServerConfig) -> web.Application:
     app.add_routes(file_web.routes)
     app.add_routes(file_device.routes)
     app.add_routes(oss.routes)
-    app.add_routes(extended.routes)
 
     async def on_startup_handler(app: web.Application) -> None:
         logger.info("Running database migrations...")
