@@ -328,6 +328,16 @@ class ProcessorService:
 
         await asyncio.gather(*self.workers, return_exceptions=True)
 
+    def _processable_name_filter(self) -> Any:
+        """Return a SQLAlchemy predicate matching `.note` and (when enabled) standalone image filenames."""
+        filters = [UserFileDO.file_name.ilike("%.note")]
+        if self.enable_image_processing:
+            filters.extend(
+                UserFileDO.file_name.ilike(pattern)
+                for pattern in _IMAGE_NAME_SUFFIX_PATTERNS
+            )
+        return or_(*filters)
+
     def _should_process_file_path(self, file_path: str) -> bool:
         """Return True when `file_path` is a `.note` file or an allowed standalone image."""
         if file_path.lower().endswith(".note"):
@@ -348,9 +358,9 @@ class ProcessorService:
             file_path = await self.file_service.get_full_path_by_node(
                 event.user_id, event.file_id
             )
-        if file_path and not self._should_process_file_path(file_path):
+        if not file_path or not self._should_process_file_path(file_path):
             logger.debug(
-                f"Skipping excluded or disabled file {event.file_id} ({file_path})"
+                f"Skipping missing, excluded, or disabled file {event.file_id} ({file_path})"
             )
             return
         if event.defer_processing:
@@ -538,18 +548,11 @@ class ProcessorService:
                     )
                 conditions.append(page_missing_exists)
 
-        name_filters = [UserFileDO.file_name.ilike("%.note")]
-        if self.enable_image_processing:
-            name_filters.extend(
-                UserFileDO.file_name.ilike(pattern)
-                for pattern in _IMAGE_NAME_SUFFIX_PATTERNS
-            )
-
         async with self.session_manager.session() as session:
             stmt = (
                 select(UserFileDO.id, UserFileDO.user_id, UserFileDO.file_name)
                 .where(
-                    or_(*name_filters),
+                    self._processable_name_filter(),
                     UserFileDO.is_active == "Y",
                     UserFileDO.is_folder == "N",
                 )
@@ -978,30 +981,45 @@ class ProcessorService:
 
         async with self.session_manager.session() as session:
             if file_id is not None:
-                file_stmt = select(UserFileDO.user_id).where(
+                file_stmt = select(UserFileDO.user_id, UserFileDO.file_name).where(
                     UserFileDO.id == file_id,
                     UserFileDO.is_active == "Y",
                 )
-                uid = (await session.execute(file_stmt)).scalar_one_or_none()
-                targets = [(file_id, uid)] if uid is not None else []
-                stmt = stmt.where(SystemTaskDO.file_id == file_id)
-                if uid is not None:
-                    stmt = stmt.where(SystemTaskDO.user_id == uid)
+                row = (await session.execute(file_stmt)).one_or_none()
+                candidates = [(file_id, row[0], row[1])] if row is not None else []
             else:
-                file_stmt = select(UserFileDO.id, UserFileDO.user_id).where(
-                    UserFileDO.file_name.like("%.note"),
+                file_stmt = select(
+                    UserFileDO.id, UserFileDO.user_id, UserFileDO.file_name
+                ).where(
+                    self._processable_name_filter(),
                     UserFileDO.is_active == "Y",
+                    UserFileDO.is_folder == "N",
                 )
-                targets = list((await session.execute(file_stmt)).all())
+                candidates = list((await session.execute(file_stmt)).all())
 
+        targets: list[tuple[int, int, str]] = []
+        for fid, uid, fname in candidates:
+            if not fname.lower().endswith(".note"):
+                fpath = await self.file_service.get_full_path_by_node(uid, fid)
+                if not self._should_process_file_path(fpath):
+                    continue
+                targets.append((fid, uid, fpath))
+            else:
+                targets.append((fid, uid, fname))
+
+        async with self.session_manager.session() as session:
+            if file_id is not None:
+                stmt = stmt.where(SystemTaskDO.file_id == file_id)
+                if targets:
+                    stmt = stmt.where(SystemTaskDO.user_id == targets[0][1])
             await session.execute(stmt)
             await session.commit()
 
-        for fid, uid in targets:
+        for fid, uid, fpath in targets:
             await self.event_bus.publish(
-                NoteUpdatedEvent(file_id=fid, user_id=uid, file_path="")
+                NoteUpdatedEvent(file_id=fid, user_id=uid, file_path=fpath)
             )
-        return [fid for fid, _ in targets]
+        return [fid for fid, _, _ in targets]
 
     async def list_system_tasks(
         self,

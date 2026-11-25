@@ -36,9 +36,7 @@ STANDALONE_IMAGE_PAGE_ID: str = "img"
 """Virtual `NotePageContentDO.page_id` assigned to 1-page standalone image files."""
 
 DEFAULT_IMAGE_EXCLUDE_PATTERNS: tuple[str, ...] = (
-    "MyStyle/**",
     "**/MyStyle/**",
-    "EXPORT/**",
     "**/EXPORT/**",
 )
 """Default VFS path globs excluded from standalone image indexing (templates and tablet exports)."""
