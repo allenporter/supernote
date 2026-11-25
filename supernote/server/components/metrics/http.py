@@ -12,9 +12,8 @@ from aiohttp import web
 from aiohttp.typedefs import Middleware
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from supernote.server.components.http import HttpRegistrar
+from supernote.server.components.http import HTTP_REGISTRAR_KEY, HttpRegistrar
 from supernote.server.core import ServerCore
-from supernote.server.keys import HTTP_REGISTRAR_KEY
 from supernote.server.metrics import (
     HTTP_REQUEST_DURATION_SECONDS,
     HTTP_REQUESTS_TOTAL,

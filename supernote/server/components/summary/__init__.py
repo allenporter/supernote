@@ -43,7 +43,7 @@ items = await summaries.list_summaries_for_file_internal(user_email, file_id)
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from supernote.server.core import ServerCore
@@ -61,14 +61,15 @@ class SummaryComponent:
     """Vertical component managing summaries, groups, tags, HTTP routes, and AI summarization."""
 
     domain = "summary"
-    dependencies: tuple[str, ...] = ("conversion",)
+    dependencies: tuple[str, ...] = ("ai", "conversion")
     platforms: tuple[str, ...] = ("http", "processor")
 
     def __init__(self) -> None:
         self._service: SummaryService | None = None
+        self._unregister_blob_provider: Callable[[], None] | None = None
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
-        """Instantiate `SummaryService` and expose it via `SUMMARY_SERVICE_KEY`."""
+        """Instantiate `SummaryService`, bind `SUMMARY_SERVICE_KEY`, and register blob-reference hook."""
         service = SummaryService(
             core.user_service,
             core.session_manager,
@@ -76,6 +77,11 @@ class SummaryComponent:
         )
         core.app[SUMMARY_SERVICE_KEY] = service
         self._service = service
+        self._unregister_blob_provider = (
+            core.file_service.register_blob_reference_provider(
+                SummaryService.get_referenced_blob_keys
+            )
+        )
 
     async def async_start(self, core: ServerCore) -> None:
         """Start periodic hard-deletion of expired soft-deleted summaries."""
@@ -84,6 +90,9 @@ class SummaryComponent:
 
     async def async_stop(self, core: ServerCore) -> None:
         """Idempotently stop the summary purge loop and release references."""
+        if self._unregister_blob_provider is not None:
+            self._unregister_blob_provider()
+            self._unregister_blob_provider = None
         if self._service is not None:
             await self._service.stop()
             self._service = None

@@ -24,6 +24,7 @@ from supernote.server.app import (
     create_app,
     run,
 )
+from supernote.server.components.ai import EMBEDDING_MODEL_KEY, OCR_MODEL_KEY
 from supernote.server.components.config.service import async_save_component_config
 from supernote.server.components.fake_ai import FakeAiComponent
 from supernote.server.components.integrity import INTEGRITY_SERVICE_KEY
@@ -40,8 +41,6 @@ from supernote.server.keys import (
     COMPONENT_LOADER_KEY,
     COORDINATION_SERVICE_KEY,
     CORE_KEY,
-    EMBEDDING_MODEL_KEY,
-    OCR_MODEL_KEY,
     SESSION_MANAGER_KEY,
     USER_SERVICE_KEY,
 )

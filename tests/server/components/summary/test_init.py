@@ -20,7 +20,7 @@ async def test_summary_component_full_lifecycle(
     component = SummaryComponent()
     assert isinstance(component, Component)
     assert component.domain == "summary"
-    assert component.dependencies == ("conversion",)
+    assert component.dependencies == ("ai", "conversion")
     assert component.platforms == ("http", "processor")
 
     loader = ComponentLoader()

@@ -10,7 +10,8 @@ from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.ai.models.summary import SummaryModel
 from supernote.server.components.http import HttpRegistrar
 from supernote.server.core import ServerCore
-from supernote.server.keys import (
+
+from . import (
     EMBEDDING_MODEL_KEY,
     OCR_MODEL_KEY,
     SUMMARY_MODEL_KEY,

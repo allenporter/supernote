@@ -31,8 +31,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from supernote.server.components.ai import EMBEDDING_MODEL_KEY
 from supernote.server.core import ServerCore
-from supernote.server.keys import EMBEDDING_MODEL_KEY
 
 from .models import NotebookInfo, SearchResult
 from .service import SEARCH_SERVICE_KEY, SearchService
@@ -50,7 +50,7 @@ class SearchComponent:
     """Vertical component managing hybrid notebook search, listing, and embedding generation."""
 
     domain = "search"
-    dependencies: tuple[str, ...] = ()
+    dependencies: tuple[str, ...] = ("ai",)
     platforms: tuple[str, ...] = ("http", "mcp", "processor")
 
     def __init__(self) -> None:

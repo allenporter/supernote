@@ -10,6 +10,7 @@ import pytest
 from prometheus_client import REGISTRY
 from sqlalchemy import delete, select, update
 
+from supernote.server.components.summary import SummaryService
 from supernote.server.constants import (
     CACHE_BUCKET,
     RECYCLE_RETENTION_MS,
@@ -868,6 +869,9 @@ async def test_file_overwrite_and_purge_preserve_summary_referenced_blob(
     test_users: list[str],
 ) -> None:
     """Near-miss: overwriting or purging a file must not delete a blob still referenced by SummaryDO."""
+    file_service.register_blob_reference_provider(
+        SummaryService.get_referenced_blob_keys
+    )
     user = test_users[0]
     content_v1 = b"shared with summary v1"
     md5_v1 = hashlib.md5(content_v1).hexdigest()
@@ -1405,6 +1409,9 @@ async def test_handle_blob_cleanup_event(
         )
         await session.commit()
 
+    file_service.register_blob_reference_provider(
+        SummaryService.get_referenced_blob_keys
+    )
     await file_service.start()
     await file_service.start()  # idempotent
     await event_bus.publish(

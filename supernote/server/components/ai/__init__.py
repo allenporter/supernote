@@ -42,11 +42,6 @@ from supernote.server.ai.models.text import (
     TextGenerationModel,
 )
 from supernote.server.core import ServerCore
-from supernote.server.keys import (
-    EMBEDDING_MODEL_KEY,
-    OCR_MODEL_KEY,
-    SUMMARY_MODEL_KEY,
-)
 from supernote.server.utils.prompt_loader import PROMPT_LOADER
 
 if TYPE_CHECKING:
@@ -54,12 +49,18 @@ if TYPE_CHECKING:
 
 __all__ = [
     "AI_PLATFORMS",
+    "EMBEDDING_MODEL_KEY",
+    "OCR_MODEL_KEY",
+    "SUMMARY_MODEL_KEY",
     "TEXT_MODEL_KEY",
     "AiComponent",
     "AiRegistrar",
 ]
 
 AI_PLATFORMS: tuple[str, ...] = ("ocr", "summary", "embedding", "text")
+OCR_MODEL_KEY: web.AppKey[OcrModel | None] = web.AppKey("ocr_model")
+SUMMARY_MODEL_KEY: web.AppKey[SummaryModel | None] = web.AppKey("summary_model")
+EMBEDDING_MODEL_KEY: web.AppKey[EmbeddingModel | None] = web.AppKey("embedding_model")
 TEXT_MODEL_KEY: web.AppKey[TextGenerationModel | None] = web.AppKey("text_model")
 
 _ModelT = TypeVar("_ModelT")

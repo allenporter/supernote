@@ -20,7 +20,7 @@ from supernote.server.components import (
     load_component_from_spec,
 )
 from supernote.server.components.ai import AiComponent
-from supernote.server.components.http import jwt_auth_middleware
+from supernote.server.components.http import HTTP_REGISTRAR_KEY, jwt_auth_middleware
 from supernote.server.core import (
     Component,
     ComponentError,
@@ -28,7 +28,6 @@ from supernote.server.core import (
     PlatformHost,
     ServerCore,
 )
-from supernote.server.keys import HTTP_REGISTRAR_KEY
 from supernote.server.trace import trace_middleware
 
 

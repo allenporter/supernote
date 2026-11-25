@@ -6,10 +6,10 @@ import pytest
 from prometheus_client import REGISTRY
 
 from supernote.server.ai.base import AIError
+from supernote.server.components.ai import OCR_MODEL_KEY
 from supernote.server.components.apple.ocr import SUPPORTED_APPLE_OCR_MODELS
 from supernote.server.config import AiConfig, ModelConfig
 from supernote.server.core import ServerCore
-from supernote.server.keys import OCR_MODEL_KEY
 from tests.server.components.conftest import LoadComponents
 
 from .conftest import FakeNSError, FakeVisionModule, LoadAppleOcr

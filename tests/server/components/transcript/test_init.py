@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from supernote.server.components.ai import AiComponent
 from supernote.server.components.transcript import (
     TRANSCRIPT_SERVICE_KEY,
     TranscriptComponent,
@@ -15,10 +16,11 @@ async def test_transcript_component_lifecycle(component_core: ServerCore) -> Non
     component = TranscriptComponent()
     assert isinstance(component, Component)
     assert component.domain == "transcript"
-    assert component.dependencies == ()
+    assert component.dependencies == ("ai",)
     assert component.platforms == ("http", "mcp", "processor")
 
     loader = ComponentLoader()
+    loader.register(AiComponent())
     loader.register(component)
 
     await loader.async_setup_all(component_core, {})
@@ -34,6 +36,7 @@ async def test_transcript_component_stop_after_setup_only(
 ) -> None:
     """Verify stopping after async_setup (without async_start) is clean."""
     loader = ComponentLoader()
+    loader.register(AiComponent())
     loader.register(TranscriptComponent())
 
     await loader.async_setup_all(component_core, {})

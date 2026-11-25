@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from supernote.server.components.ai import OCR_MODEL_KEY
 from supernote.server.components.processor import ProcessorRegistrar
 from supernote.server.core import ServerCore
-from supernote.server.keys import OCR_MODEL_KEY
 
 from .page_hashing import PageHashingModule
 from .png_conversion import PngConversionModule
