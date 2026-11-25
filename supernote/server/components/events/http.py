@@ -29,15 +29,14 @@ from __future__ import annotations
 import logging
 
 from aiohttp import web
-from mashumaro.exceptions import InvalidFieldValue
 
 from supernote.models.events import (
     EventFeedListVO,
     EventFeedRequestDTO,
 )
-from supernote.server.components.http import HttpRegistrar
+from supernote.server.components.http import HttpRegistrar, parse_query_dto
 from supernote.server.core import ServerCore
-from supernote.server.exceptions import SupernoteError
+from supernote.server.exceptions import InvalidInputError, SupernoteError
 from supernote.server.keys import (
     REQUEST_ACTOR_KEY,
     REQUEST_USER_KEY,
@@ -61,9 +60,9 @@ async def handle_list_events(request: web.Request) -> web.Response:
     """Serve the incremental per-user domain event feed (`GET /api/extended/events`)."""
     user_email = request[REQUEST_USER_KEY]
     try:
-        req_dto = EventFeedRequestDTO.from_dict(dict(request.query))
-    except (ValueError, TypeError, InvalidFieldValue) as err:
-        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
+        req_dto = parse_query_dto(request, EventFeedRequestDTO)
+    except InvalidInputError as err:
+        return web.json_response({"error": err.message}, status=err.status_code)
 
     user_service: UserService = request.app[USER_SERVICE_KEY]
     event_log_service: EventLogService = request.app[EVENT_LOG_SERVICE_KEY]

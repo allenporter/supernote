@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 from aiohttp import web
-from mashumaro.exceptions import InvalidFieldValue, MissingField
 from mashumaro.mixins.json import DataClassJSONMixin
 
 from supernote.models.wiki import (
@@ -23,8 +21,9 @@ from supernote.models.wiki import (
     WikiStatusResponseVO,
 )
 from supernote.server.ai.base import AIError
-from supernote.server.components.http import HttpRegistrar
+from supernote.server.components.http import HttpRegistrar, parse_json_dto
 from supernote.server.core import ServerCore
+from supernote.server.exceptions import InvalidInputError
 from supernote.server.keys import (
     REQUEST_ACTOR_KEY,
     REQUEST_USER_KEY,
@@ -121,23 +120,6 @@ def _parse_int_param(
     return val
 
 
-async def _read_json_body(
-    request: web.Request, *, allow_empty: bool = False
-) -> dict[str, Any]:
-    raw_bytes = await request.read()
-    if not raw_bytes or not raw_bytes.strip():
-        if allow_empty:
-            return {}
-        raise ValueError("Invalid JSON body")
-    try:
-        parsed = json.loads(raw_bytes)
-    except (json.JSONDecodeError, UnicodeDecodeError) as err:
-        raise ValueError("Invalid JSON body") from err
-    if not isinstance(parsed, dict):
-        raise ValueError("Request body must be a JSON object")
-    return parsed
-
-
 def _compile_result_response(mode: str, res: WikiCompileResult) -> web.Response:
     return web.json_response(
         WikiCompileResponseVO(
@@ -203,10 +185,9 @@ async def handle_put_wiki_page(request: web.Request) -> web.Response:
         return web.json_response({"error": "User not found"}, status=404)
 
     try:
-        raw = await _read_json_body(request)
-        req_dto = WikiUpsertRequestDTO.from_dict(raw)
-    except (MissingField, InvalidFieldValue, ValueError, TypeError) as err:
-        return web.json_response({"error": str(err)}, status=400)
+        req_dto = await parse_json_dto(request, WikiUpsertRequestDTO)
+    except InvalidInputError as err:
+        return web.json_response({"error": err.message}, status=err.status_code)
 
     actor = request[REQUEST_ACTOR_KEY]
     author_kind = (
@@ -315,10 +296,9 @@ async def handle_wiki_compile(request: web.Request) -> web.Response:
         return web.json_response({"error": "User not found"}, status=404)
 
     try:
-        raw = await _read_json_body(request, allow_empty=True)
-        req_dto = WikiCompileRequestDTO.from_dict(raw)
-    except (MissingField, InvalidFieldValue, ValueError, TypeError) as err:
-        return web.json_response({"error": str(err)}, status=400)
+        req_dto = await parse_json_dto(request, WikiCompileRequestDTO, allow_empty=True)
+    except InvalidInputError as err:
+        return web.json_response({"error": err.message}, status=err.status_code)
 
     compiler: WikiCompilerWorker = request.app[WIKI_COMPILER_KEY]
     try:
@@ -367,10 +347,11 @@ async def handle_resolve_wiki_lint(request: web.Request) -> web.Response:
         return web.json_response({"error": "Invalid issue_id"}, status=400)
 
     try:
-        raw = await _read_json_body(request, allow_empty=True)
-        req_dto = WikiResolveLintRequestDTO.from_dict(raw)
-    except (MissingField, InvalidFieldValue, ValueError, TypeError) as err:
-        return web.json_response({"error": str(err)}, status=400)
+        req_dto = await parse_json_dto(
+            request, WikiResolveLintRequestDTO, allow_empty=True
+        )
+    except InvalidInputError as err:
+        return web.json_response({"error": err.message}, status=err.status_code)
 
     service: WikiService = request.app[WIKI_SERVICE_KEY]
     try:

@@ -10,22 +10,20 @@ Mounts:
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Awaitable
 from http import HTTPStatus
 
 from aiohttp import web
-from mashumaro.exceptions import InvalidFieldValue, MissingField
 
 from supernote.models.base import create_error_response
 from supernote.models.extended import WebNoteCoverRequestDTO, WebNoteCoverVO
 from supernote.models.file_device import PdfDTO, PdfVO, PngDTO, PngPageVO, PngVO
-from supernote.server.components.http import HttpRegistrar
+from supernote.server.components.http import HttpRegistrar, parse_json_dto
 from supernote.server.config import ServerConfig
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.core import ServerCore
-from supernote.server.exceptions import AccessDenied, SupernoteError
+from supernote.server.exceptions import AccessDenied, InvalidInputError, SupernoteError
 from supernote.server.keys import (
     BLOB_STORAGE_KEY,
     CONFIG_KEY,
@@ -47,23 +45,15 @@ __all__ = [
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
 
-_PARSE_ERRORS = (
-    json.JSONDecodeError,
-    MissingField,
-    InvalidFieldValue,
-    ValueError,
-    TypeError,
-)
-
 
 @routes.post("/api/extended/file/note/cover")
 async def handle_extended_note_cover(request: web.Request) -> web.Response:
     """Convert/fetch only the first page (page 0) PNG for lightweight explorer thumbnails."""
     user_email = request[REQUEST_USER_KEY]
     try:
-        req_dto = WebNoteCoverRequestDTO.from_dict(await request.json())
-    except _PARSE_ERRORS as err:
-        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
+        req_dto = await parse_json_dto(request, WebNoteCoverRequestDTO)
+    except InvalidInputError as err:
+        return web.json_response({"error": err.message}, status=err.status_code)
 
     config: ServerConfig = request.app[CONFIG_KEY]
     if not (config.web_enabled and config.web_notebook_preview):
@@ -97,11 +87,9 @@ async def handle_extended_note_cover(request: web.Request) -> web.Response:
 async def handle_note_to_png(request: web.Request) -> web.Response:
     """Convert a note to PNG pages and return signed `/api/oss/png/*` URLs."""
     try:
-        req_data = PngDTO.from_dict(await request.json())
-    except _PARSE_ERRORS as err:
-        return web.json_response(
-            create_error_response(f"Invalid Request: {err}").to_dict(), status=400
-        )
+        req_data = await parse_json_dto(request, PngDTO)
+    except InvalidInputError as err:
+        return err.to_response()
 
     user_email = request[REQUEST_USER_KEY]
     config: ServerConfig = request.app[CONFIG_KEY]
@@ -137,11 +125,9 @@ async def handle_note_to_png(request: web.Request) -> web.Response:
 async def handle_note_to_pdf(request: web.Request) -> web.Response:
     """Convert a note to PDF and return a signed `/api/oss/pdf/*` URL."""
     try:
-        req_data = PdfDTO.from_dict(await request.json())
-    except _PARSE_ERRORS as err:
-        return web.json_response(
-            create_error_response(f"Invalid Request: {err}").to_dict(), status=400
-        )
+        req_data = await parse_json_dto(request, PdfDTO)
+    except InvalidInputError as err:
+        return err.to_response()
 
     user_email = request[REQUEST_USER_KEY]
     conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
