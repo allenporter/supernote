@@ -3,7 +3,7 @@
 Implements a hybrid *"compile once, query cheaply"* personal knowledge base over
 handwritten Supernote notebooks (`NotePageTranscribedEvent`, `NotePagesDeltaEvent`)
 and Schedule tasks (`ScheduleTask*Event`), decoupled from `SummaryModule` and
-`VirtualFileSystem` (see `docs/adr/0002-llm-wiki-architecture.md`).
+`VirtualFileSystem` (see `docs/architecture/adr/0002-llm-wiki-architecture.md`).
 
 ### Design Principles & Research Grounding
 

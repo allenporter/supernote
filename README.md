@@ -13,7 +13,7 @@
 > **Unofficial Community Project:** We love [Ratta](https://supernote.com/)'s products and built this toolkit to support the Supernote community. It is an independent, open-source project and is not affiliated with, endorsed by, or sponsored by Shanghai Ratta Smart Technology Co., Ltd. *Supernote* and *Ratta* are trademarks of Shanghai Ratta Smart Technology Co., Ltd.
 
 `supernote` is an open-source Python toolkit for Supernote hardware (Nomad, A5 X2 Manta, A5 X, A6 X) built around three core components:
-1. **A Lightweight Private Cloud Server (`supernote.server`)**: A single-process `asyncio` + SQLite server that implements **100% of the community [Supernote OpenAPI Specification](api-spec/openapi.yaml)** in ~135 MB of RAM (bare sync mode) or ~160 MB idle / ~310 MB peak when rendering and processing notebooks with the Web UI, [Model Context Protocol (MCP)](docs/mcp.md) server, and optional AI synthesis engine.
+1. **A Lightweight Private Cloud Server (`supernote.server`)**: A single-process `asyncio` + SQLite server that implements **100% of the community [Supernote OpenAPI Specification](api-spec/openapi.yaml)** in ~135 MB of RAM (bare sync mode) or ~160 MB idle / ~310 MB peak when rendering and processing notebooks with the Web UI, [Model Context Protocol (MCP)](docs/guides/mcp.md) server, and optional AI synthesis engine.
 2. **A Standalone `.note` Parser, Converter & Authoring Library (`supernote.notebook`)**: Read binary `.note` and `.mark` files, export pages to PDF (with clickable links), PNG, vector SVG, or plain text, or author and append Bullet Journal spreads directly into `.note` files from Markdown.
 3. **An Async Python Client SDK & CLI (`supernote.client`, `supernote.cli`)**: Automate file sync, task lists, semantic search, static Bearer API keys (`sn_...`), and real-time Socket.IO sync notifications from Python or the terminal.
 
@@ -37,15 +37,15 @@ Enable the opt-in **LLM Wiki** (`wiki.enabled: true` / `SUPERNOTE_WIKI_ENABLED=t
 - **Portable Obsidian `.zip` Export**: Download your entire wiki at any time as an Obsidian-compatible ZIP archive with YAML frontmatter and `[[wikilinks]]`.
 
 ### Built-In MCP Server & Static Bearer API Keys (`sn_...`)
-Out of the box, the server hosts a spec-compliant **[Model Context Protocol (MCP)](docs/mcp.md)** server (`list_notebooks`, `search_notebook_chunks`, `get_notebook_transcript`, schedule task CRUD, and 8 LLM Wiki tools when enabled) supporting both **OAuth 2.1 with Client ID Metadata Documents** for interactive desktop agents (Claude Desktop, Cursor) and revocable **Static Bearer API Keys (`sn_...`)** for headless scripts and CLI automation.
+Out of the box, the server hosts a spec-compliant **[Model Context Protocol (MCP)](docs/guides/mcp.md)** server (`list_notebooks`, `search_notebook_chunks`, `get_notebook_transcript`, schedule task CRUD, and 8 LLM Wiki tools when enabled) supporting both **OAuth 2.1 with Client ID Metadata Documents** for interactive desktop agents (Claude Desktop, Cursor) and revocable **Static Bearer API Keys (`sn_...`)** for headless scripts and CLI automation.
 
 ### Filename & Page-Style Driven Custom AI Prompts
-Drop custom Markdown prompt templates into your `prompts_dir` (`ocr/daily/prompt.md`, `summary/meeting_notes/prompt.md`, or `ocr/style_cornell/prompt.md`), and the server automatically routes matching notebooks (by filename stem or page stationery style) through your custom instructions while injecting native device page keywords (`PAGE_KEYWORDS`). See **[AI Pipeline, Custom Prompts & MCP Server](docs/mcp.md)** for full prompt routing details.
+Drop custom Markdown prompt templates into your `prompts_dir` (`ocr/daily/prompt.md`, `summary/meeting_notes/prompt.md`, or `ocr/style_cornell/prompt.md`), and the server automatically routes matching notebooks (by filename stem or page stationery style) through your custom instructions while injecting native device page keywords (`PAGE_KEYWORDS`). See **[AI Pipeline, Custom Prompts & MCP Server](docs/guides/mcp.md)** for full prompt routing details.
 
 ### Live Calendar Feeds (`.ics`), Webhooks & Prometheus/Grafana Observability
 - **iCalendar (`VTODO`) Feeds**: Tasks created on your Supernote tablet are automatically exposed as an RFC 5545 `.ics` feed (`/api/schedule/feed.ics`) for Apple Reminders/Calendar, Google Calendar, Outlook, and **Home Assistant**.
 - **Signed Outbound Webhooks**: Receive HMAC-SHA256 signed HTTP callbacks (`note.sync_completed`) the instant a notebook finishes syncing.
-- **Production Monitoring**: Built-in `/metrics` endpoint with reference [Prometheus recording/alerting rules and a 13-panel Grafana dashboard](docs/monitoring.md).
+- **Production Monitoring**: Built-in `/metrics` endpoint with reference [Prometheus recording/alerting rules and a 13-panel Grafana dashboard](docs/reference/monitoring.md).
 
 ### Offline Binary `.note` Parser, Converter & Cooperative Markdown Authoring
 You don't need to run a server to use `supernote`. Use the CLI (`supernote analyze`, `supernote convert`, `supernote create`, `supernote merge`, `supernote reconstruct`) or `supernote.notebook` to export `.note` files to PDF/PNG/SVG, or programmatically generate and append stylized stationery templates, simulated handwriting, and hidden flashcard layers (`LAYER1`–`LAYER3`) onto `.note` files.
@@ -56,16 +56,16 @@ You don't need to run a server to use `supernote`. Use the CLI (`supernote analy
 
 | Guide / Reference | What You'll Learn |
 | :--- | :--- |
-| **[Self-Hosting & Quickstart Guide](docs/bootstrap_guide.md)** | Deploying via Python or Docker Compose, bootstrapping your Admin account, pairing your Supernote tablet, reverse proxies (Caddy/Nginx), and SQLite/blob backups. |
-| **[Configuration Reference](docs/configuration.md)** | Complete reference for `config.yaml` and `SUPERNOTE_*` environment variables, storage quotas, Gemini, named local OpenAI-compatible servers (Ollama/vLLM), and macOS Vision. |
-| **[AI Pipeline, Custom Prompts & MCP Server](docs/mcp.md)** | How the 5-stage OCR/Embedding/Summary pipeline works, routing custom prompts by filename or `page_style`, static API keys (`sn_...`), and connecting Claude or Cursor via MCP. |
+| **[Self-Hosting & Quickstart Guide](docs/guides/bootstrap_guide.md)** | Deploying via Python or Docker Compose, bootstrapping your Admin account, pairing your Supernote tablet, reverse proxies (Caddy/Nginx), and SQLite/blob backups. |
+| **[Configuration Reference](docs/reference/configuration.md)** | Complete reference for `config.yaml` and `SUPERNOTE_*` environment variables, storage quotas, Gemini, named local OpenAI-compatible servers (Ollama/vLLM), and macOS Vision. |
+| **[AI Pipeline, Custom Prompts & MCP Server](docs/guides/mcp.md)** | How the 5-stage OCR/Embedding/Summary pipeline works, routing custom prompts by filename or `page_style`, static API keys (`sn_...`), and connecting Claude or Cursor via MCP. |
 | **[OCR Provider Benchmarks](evals/ocr/RESULTS.md)** | 30-page Supernote handwriting & Bullet Journal benchmark comparing Gemini 3.5 Flash-Lite, Gemini 3.6/3.8 Flash, Supernote On-Device (`MyScript iink`), and Apple Vision. |
 | **[Search & Embedding Benchmarks](evals/search/RESULTS.md)** | 100-page, 60-query retrieval benchmark comparing keyword, dense vector, and hybrid search across `gemini-embedding-2`, `gemini-embedding-001`, `text-embedding-3-small`, and local Ollama (`embeddinggemma`, `qwen3-embedding`). |
-| **[Prometheus & Grafana Monitoring](docs/monitoring.md)** | Scraping `/metrics`, importing the reference Grafana dashboard, and configuring Prometheus recording and alerting rules. |
-| **[Webhooks, iCal (`.ics`) & Integrations](docs/webhooks_and_integrations.md)** | Subscribing to RFC 5545 `VTODO` task feeds in Apple/Google/Outlook calendars and Home Assistant, plus HMAC-signed outbound webhooks. |
-| **[CLI Reference (`supernote`)](docs/cli_reference.md)** | Every command and flag for local `.note` conversion and authoring (`create`), server hosting (`serve`), cloud operations, API keys (`cloud keys`), search, and admin management. |
-| **[Server & Sync Protocol Architecture](supernote/server/ARCHITECTURE.md)** | Deep dive into the Supernote Private Cloud wire protocol (challenge-response auth, 3-step CAS sync, Socket.IO) and our Python/SQLite implementation. |
-| **[Binary `.note` Format Specification](docs/notebook_spec.md)** | Byte-level layout of Supernote `.note` and `.mark` headers, footers, metadata blocks (`schema.py`), layers, and `RATTA_RLE` / `RATTA_RLE_X2` bitmap compression. |
+| **[Prometheus & Grafana Monitoring](docs/reference/monitoring.md)** | Scraping `/metrics`, importing the reference Grafana dashboard, and configuring Prometheus recording and alerting rules. |
+| **[Webhooks, iCal (`.ics`) & Integrations](docs/guides/webhooks_and_integrations.md)** | Subscribing to RFC 5545 `VTODO` task feeds in Apple/Google/Outlook calendars and Home Assistant, plus HMAC-signed outbound webhooks. |
+| **[CLI Reference (`supernote`)](docs/reference/cli_reference.md)** | Every command and flag for local `.note` conversion and authoring (`create`), server hosting (`serve`), cloud operations, API keys (`cloud keys`), search, and admin management. |
+| **[Server & Sync Protocol Architecture](docs/architecture/server_architecture.md)** | Deep dive into the Supernote Private Cloud wire protocol (challenge-response auth, 3-step CAS sync, Socket.IO) and our Python/SQLite implementation. |
+| **[Binary `.note` Format Specification](docs/architecture/notebook_spec.md)** | Byte-level layout of Supernote `.note` and `.mark` headers, footers, metadata blocks (`schema.py`), layers, and `RATTA_RLE` / `RATTA_RLE_X2` bitmap compression. |
 
 ### Python Package & API Reference
 
@@ -148,7 +148,7 @@ Every view adapts cleanly to phone viewports so you can read notebooks, check ta
 
 ## Quick Start
 
-For full deployment instructions (including `docker-compose.yml`, Caddy/Nginx reverse proxies, and backups), see the **[Self-Hosting & Quickstart Guide](docs/bootstrap_guide.md)**.
+For full deployment instructions (including `docker-compose.yml`, Caddy/Nginx reverse proxies, and backups), see the **[Self-Hosting & Quickstart Guide](docs/guides/bootstrap_guide.md)**.
 
 ### Launch the Server
 
@@ -200,7 +200,7 @@ Enables handwriting transcription, summarization, and semantic search using `gem
     ```
 
 #### Option C: AI & Knowledge Hub (With a Local Model)
-Runs the same features against a model server on your own hardware, such as [Ollama](https://ollama.com/), llama.cpp, vLLM, or LM Studio, so your notes never leave your network. You need a vision-capable chat model for OCR and summaries, and an embedding model for search. Configure the `openai` provider in `config/config.yaml` (`/data/config/config.yaml` in Docker) as described in the [Configuration Reference](docs/configuration.md). On macOS, Apple's native Vision framework (`provider: apple` with `vision-accurate`) is also supported as an offline fallback for basic prose search, though it is not recommended for structured notes, diagrams, or Bullet Journal Rapid Logging (see [Choosing an AI Provider](#choosing-an-ai-provider)).
+Runs the same features against a model server on your own hardware, such as [Ollama](https://ollama.com/), llama.cpp, vLLM, or LM Studio, so your notes never leave your network. You need a vision-capable chat model for OCR and summaries, and an embedding model for search. Configure the `openai` provider in `config/config.yaml` (`/data/config/config.yaml` in Docker) as described in the [Configuration Reference](docs/reference/configuration.md). On macOS, Apple's native Vision framework (`provider: apple` with `vision-accurate`) is also supported as an offline fallback for basic prose search, though it is not recommended for structured notes, diagrams, or Bullet Journal Rapid Logging (see [Choosing an AI Provider](#choosing-an-ai-provider)).
 
 When the server runs in Docker and Ollama runs on the host, use `http://host.docker.internal:11434/v1` as the `base_url` (on Linux, also pass `--add-host=host.docker.internal:host-gateway`).
 
@@ -340,7 +340,7 @@ pip install "supernote[all]"
 
 ## CLI Usage
 
-See the **[CLI Reference](docs/cli_reference.md)** for all commands and flags.
+See the **[CLI Reference](docs/reference/cli_reference.md)** for all commands and flags.
 
 ```bash
 # Server & Admin
@@ -417,7 +417,7 @@ The notebook parser originally started as a fork of [supernote-tool](https://git
 
 ## Contributing & Community
 
-We welcome issues, feature requests, and pull requests on **[GitHub (`allenporter/supernote`)](https://github.com/allenporter/supernote)**! Please see our **[Contributing Guide](docs/CONTRIBUTING.md)** and **[Database Migration Guide](docs/schema_migration_guide.md)** for details on local development (`./script/bootstrap`, `./script/test`, `./script/lint`, `./script/docs`), Ephemeral Mode (`supernote serve --ephemeral`), and AI Skills.
+We welcome issues, feature requests, and pull requests on **[GitHub (`allenporter/supernote`)](https://github.com/allenporter/supernote)**! Please see our **[Contributing Guide](docs/CONTRIBUTING.md)** and **[Database Migration Guide](docs/architecture/schema_migration_guide.md)** for details on local development (`./script/bootstrap`, `./script/test`, `./script/lint`, `./script/docs`), Ephemeral Mode (`supernote serve --ephemeral`), and AI Skills.
 
 ### Community Projects
 

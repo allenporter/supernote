@@ -5,7 +5,7 @@ organizes subcommands into lazy-loaded modules so offline notebook commands (`cr
 `analyze`, `convert`, `merge`, `reconstruct`) run without importing server or cloud client
 dependencies.
 
-> **Looking for terminal usage and flags?** See the **[CLI Reference Guide](../../docs/cli_reference.md)** for complete examples of every `supernote` command.
+> **Looking for terminal usage and flags?** See the **[CLI Reference Guide](../../docs/reference/cli_reference.md)** for complete examples of every `supernote` command.
 
 ## Module Structure
 

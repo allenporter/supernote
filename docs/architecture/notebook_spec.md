@@ -3,11 +3,11 @@
 This document specifies the binary framing, metadata block encoding, bitmap compression protocols, and server indexing conventions for Supernote `.note` and `.mark` files.
 
 For the authoritative catalog of all wire `<KEY:VALUE>` tags, enum values, sentinel rules, and Python domain models, see:
-- **Wire-format dataclasses & enums**: [`supernote/notebook/schema.py`](../supernote/notebook/schema.py)
-- **Loaded domain objects**: [`supernote/notebook/fileformat.py`](../supernote/notebook/fileformat.py)
-- **Stream parsers**: [`supernote/notebook/parser.py`](../supernote/notebook/parser.py)
-- **Bitmap & text decoders**: [`supernote/notebook/decoder.py`](../supernote/notebook/decoder.py)
-- **Notebook reconstruction & merging**: [`supernote/notebook/manipulator.py`](../supernote/notebook/manipulator.py)
+- **Wire-format dataclasses & enums**: [`supernote/notebook/schema.py`](../../supernote/notebook/schema.py)
+- **Loaded domain objects**: [`supernote/notebook/fileformat.py`](../../supernote/notebook/fileformat.py)
+- **Stream parsers**: [`supernote/notebook/parser.py`](../../supernote/notebook/parser.py)
+- **Bitmap & text decoders**: [`supernote/notebook/decoder.py`](../../supernote/notebook/decoder.py)
+- **Notebook reconstruction & merging**: [`supernote/notebook/manipulator.py`](../../supernote/notebook/manipulator.py)
 
 ---
 
@@ -60,18 +60,18 @@ X-Series / X2 Container Layout
 
 ## Metadata Block Wire Syntax
 
-All metadata blocks encode UTF-8 sequences of angle-bracketed `<KEY:VALUE>` tags parsed by `extract_parameters()` and serialized by `encode_parameters()` in [`schema.py`](../supernote/notebook/schema.py):
+All metadata blocks encode UTF-8 sequences of angle-bracketed `<KEY:VALUE>` tags parsed by `extract_parameters()` and serialized by `encode_parameters()` in [`schema.py`](../../supernote/notebook/schema.py):
 
 - **Block Framing**: Each block starts with a 4-byte little-endian `uint32` byte length, followed by `byte_length` UTF-8 bytes of `<KEY:VALUE>` pairs.
 - **Repeated Keys**: When the same key appears multiple times in one block (for example, multiple keywords sharing a row key in the Footer, or repeated `PAGE` entries in legacy A5 footers), values are preserved in order as a `list[str]`.
 - **Sentinels**: Optional string or digest fields commonly use `"none"` or `"0"` on the wire when unset; block pointer fields use `"0"` when no target block is written.
-- **Rectangle Coordinates**: Geometry tags (`KEYWORDRECT`, `TITLERECT`, `LINKRECT`, and their `*ORI` counterparts) store comma-separated `left,top,width,height` integers (`Rect` in [`schema.py`](../supernote/notebook/schema.py)).
+- **Rectangle Coordinates**: Geometry tags (`KEYWORDRECT`, `TITLERECT`, `LINKRECT`, and their `*ORI` counterparts) store comma-separated `left,top,width,height` integers (`Rect` in [`schema.py`](../../supernote/notebook/schema.py)).
 
 ---
 
 ## Core Metadata Blocks
 
-Every block below maps 1:1 to a typed dataclass in [`supernote/notebook/schema.py`](../supernote/notebook/schema.py), which preserves unknown future firmware tags in `.extra` and supports lossless wire round-tripping via `.to_params()` / `.to_wire_dict()`.
+Every block below maps 1:1 to a typed dataclass in [`supernote/notebook/schema.py`](../../supernote/notebook/schema.py), which preserves unknown future firmware tags in `.extra` and supports lossless wire round-tripping via `.to_params()` / `.to_wire_dict()`.
 
 ### Header Block (`HeaderMetadata`)
 
@@ -109,7 +109,7 @@ Each `PAGE<N>` footer pointer addresses a `PageMetadata` block describing page i
 ```
 
 #### `LAYERINFO` Encoding Variants
-`LAYERINFO` stores a JSON array of per-layer visibility descriptors (`LayerVisibility` in [`schema.py`](../supernote/notebook/schema.py)):
+`LAYERINFO` stores a JSON array of per-layer visibility descriptors (`LayerVisibility` in [`schema.py`](../../supernote/notebook/schema.py)):
 - **Hash-escaped JSON (older Chauvet)**: Replaces JSON `:` separators with `#` so colons do not collide with the `<KEY:VALUE>` parser.
 - **Base64 JSON (Chauvet 3.25.39+)**: Base64-encodes the UTF-8 JSON array so user-defined layer names containing `#` or `:` round-trip safely.
 - **`none` Sentinel**: Used in `.mark` annotation files, where visibility falls back to showing layers with `LAYERTYPE == "MARK"`.
@@ -152,7 +152,7 @@ Specialty index entries pointed to by the Footer store bounding-box geometry and
 
 ## Enumerated Wire Values
 
-See [`supernote/notebook/schema.py`](../supernote/notebook/schema.py) for complete enum definitions (`FileType`, `EquipmentType`, `LayerName`, `LayerProtocol`, `LayerType`, `PageOrientation`, `RecognitionStatus`, `LinkType`, `LinkDirection`).
+See [`supernote/notebook/schema.py`](../../supernote/notebook/schema.py) for complete enum definitions (`FileType`, `EquipmentType`, `LayerName`, `LayerProtocol`, `LayerType`, `PageOrientation`, `RecognitionStatus`, `LinkType`, `LinkDirection`).
 
 | Wire Tag | Enum Class | Values |
 | :--- | :--- | :--- |
@@ -171,7 +171,7 @@ See [`supernote/notebook/schema.py`](../supernote/notebook/schema.py) for comple
 
 ### `RATTA_RLE` & X2 High-Res Grayscale (`RattaRleDecoder` / `RattaRleX2Decoder`)
 
-Used for `MAINLAYER`, `LAYER1..3`, built-in `BGLAYER` styles on modern firmware, and title/link bitmaps. Encodes a stream of `[color_code, length_byte]` byte pairs in [`decoder.py`](../supernote/notebook/decoder.py):
+Used for `MAINLAYER`, `LAYER1..3`, built-in `BGLAYER` styles on modern firmware, and title/link bitmaps. Encodes a stream of `[color_code, length_byte]` byte pairs in [`decoder.py`](../../supernote/notebook/decoder.py):
 
 - **Color Codes (`RattaRleDecoder`)**:
   - `0x61`: Black
@@ -201,19 +201,19 @@ When a page uses a custom (`user_*`) or InkHub/plugin PNG template, `BGLAYER`'s 
 
 ### Embedded Recognition Text (`TextDecoder`)
 
-When `FILE_RECOGN_TYPE == 1` and `RECOGNSTATUS == 1`, `RECOGNTEXT` points to a length-prefixed block containing **base64-encoded UTF-8 JSON** (`{"elements": [{"type": "Text", "label": "...", "words": [{"bounding-box": {"y": ...}}]}]}`), decoded and spatially ordered by `TextDecoder` in [`decoder.py`](../supernote/notebook/decoder.py).
+When `FILE_RECOGN_TYPE == 1` and `RECOGNSTATUS == 1`, `RECOGNTEXT` points to a length-prefixed block containing **base64-encoded UTF-8 JSON** (`{"elements": [{"type": "Text", "label": "...", "words": [{"bounding-box": {"y": ...}}]}]}`), decoded and spatially ordered by `TextDecoder` in [`decoder.py`](../../supernote/notebook/decoder.py).
 
 ---
 
 ## Processing System Guidelines
 
-When building indexing, search, or sync pipelines (such as the server modules in [`page_hashing.py`](../supernote/server/components/processor/page_hashing.py)):
+When building indexing, search, or sync pipelines (such as the server modules in [`page_hashing.py`](../../supernote/server/components/processor/page_hashing.py)):
 
 1. **Stable Identity**:
    - **Notebook Level**: Key by `HeaderMetadata.file_id` (`Notebook.file_id`) rather than file path so renames and moves preserve history.
    - **Page Level**: Key by `PageMetadata.page_id` (`Page.page_id`) rather than 0-based page index so page insertions, deletions, and reordering do not orphan cached artifacts.
 2. **Deterministic Page Change Detection**:
-   - [`PageHashingModule`](../supernote/server/components/processor/page_hashing.py) hashes the wire-serialized `PageMetadata` (`page.to_wire_dict()`, stripping volatile recognition keys) together with each referenced binary block (`LAYERBITMAP`, `DATA`, `TOTALPATH`).
+   - [`PageHashingModule`](../../supernote/server/components/processor/page_hashing.py) hashes the wire-serialized `PageMetadata` (`page.to_wire_dict()`, stripping volatile recognition keys) together with each referenced binary block (`LAYERBITMAP`, `DATA`, `TOTALPATH`).
    - Do **not** alter `PageMetadata.to_wire_dict()` key ordering or value formatting without migrating stored `NotePageContentDO.content_hash` digests, or existing deployments will unnecessarily re-render and re-OCR unchanged pages.
 3. **Text Extraction Strategy**:
 
@@ -224,7 +224,7 @@ When building indexing, search, or sync pipelines (such as the server modules in
 
 ## Writing & Reconstruction Caveats
 
-[`reconstruct()` and `merge()`](../supernote/notebook/manipulator.py) rebuild valid latest-signature (`SN_FILE_VER_20260016`) `.note` streams and validate the result through `SupernoteXParser.parse_stream()`. Keep the following device constraints in mind when synthesizing notebooks programmatically:
+[`reconstruct()` and `merge()`](../../supernote/notebook/manipulator.py) rebuild valid latest-signature (`SN_FILE_VER_20260016`) `.note` streams and validate the result through `SupernoteXParser.parse_stream()`. Keep the following device constraints in mind when synthesizing notebooks programmatically:
 
 - **`TOTALPATH` Vector Strokes**: Supernote firmware uses `TOTALPATH` for stroke-level erasing, lasso selection, and on-device re-recognition. Raster-only generated pages (`TOTALPATH=0`) display as bitmaps on `MAINLAYER` / `BGLAYER` but strokes are not individually editable on the device.
 - **Opaque Header Parameters**: Hardware calibration tags such as `RATTA_ETMD`, `IS_OLD_APPLY_EQUIPMENT`, and `ANTIALIASING_CONVERT` carry device-specific values; prefer cloning `HeaderMetadata` from a template notebook matching the target `EquipmentType` rather than inventing values from scratch.

@@ -2,10 +2,10 @@
 
 Open Private Cloud for Supernote exposes operational metrics in Prometheus format at `/metrics` (when `metrics_enabled: true` in `config.yaml`, enabled by default).
 
-Reference monitoring assets are included in [`docs/monitoring/`](./monitoring/):
+Reference monitoring assets are included in [`docs/reference/monitoring/`](./monitoring/):
 
-- [`docs/monitoring/grafana_dashboard.json`](./monitoring/grafana_dashboard.json): Reference Grafana dashboard (**Open Private Cloud for Supernote**) querying raw `/metrics` series directly without requiring recording rules.
-- [`docs/monitoring/prometheus_rules.yaml`](./monitoring/prometheus_rules.yaml): Optional recording rules (`supernote_recording_rules`) and alerting rules (`supernote_alerting_rules`).
+- [`docs/reference/monitoring/grafana_dashboard.json`](./monitoring/grafana_dashboard.json): Reference Grafana dashboard (**Open Private Cloud for Supernote**) querying raw `/metrics` series directly without requiring recording rules.
+- [`docs/reference/monitoring/prometheus_rules.yaml`](./monitoring/prometheus_rules.yaml): Optional recording rules (`supernote_recording_rules`) and alerting rules (`supernote_alerting_rules`).
 
 ---
 
@@ -20,7 +20,7 @@ metrics_path: /metrics
 
 ### Prometheus Scrape & Rule Configuration (`prometheus.yml`)
 
-Copy [`docs/monitoring/prometheus_rules.yaml`](./monitoring/prometheus_rules.yaml) into your Prometheus rules directory and reference it under `rule_files`:
+Copy [`docs/reference/monitoring/prometheus_rules.yaml`](./monitoring/prometheus_rules.yaml) into your Prometheus rules directory and reference it under `rule_files`:
 
 ```yaml
 rule_files:
@@ -37,7 +37,7 @@ scrape_configs:
 ### Grafana Import
 
 1. In Grafana, navigate to **Dashboards $\rightarrow$ New $\rightarrow$ Import**.
-2. Upload [`docs/monitoring/grafana_dashboard.json`](./monitoring/grafana_dashboard.json).
+2. Upload [`docs/reference/monitoring/grafana_dashboard.json`](./monitoring/grafana_dashboard.json).
 3. Select your Prometheus data source for `DS_PROMETHEUS` and click **Import**.
 
 ---

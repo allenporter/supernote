@@ -14,7 +14,7 @@ This ADR defines a **Hybrid LLM Wiki** inspired by Andrej Karpathy's *"compile o
 
 1. **Hybrid runtime (built-in + external agents):** The server owns durable wiki storage, REST APIs, MCP tools, and Obsidian export. Compilation can run either via an opt-in in-process `WikiCompilerWorker` or via external agents polling `list_events` / `GET /api/extended/events` and writing back through the Wiki HTTP/MCP APIs with canonical actor attribution.
 2. **Decoupled from `SummaryModule` and `VirtualFileSystem`:** Wiki compilation operates across notebooks and schedule tasks per user—never inside `ProcessorService`'s per-file lock, never writing to `SummaryDO` (tablet Digest sync/blob GC), and never materializing live `.md` files into `UserFileDO` (tablet VFS sync and storage quotas).
-3. **Strict architectural conformance:** Every component file follows [`.agent/rules/component-architecture.md`](../../.agent/rules/component-architecture.md), every ORM table satisfies `tests/server/db/models/test_init.py` and `tests/server/db/test_migrations.py` with zero allowlist additions, and delivery proceeds in small (~150–280 LoC) independently shippable PRs.
+3. **Strict architectural conformance:** Every component file follows [`.agent/rules/component-architecture.md`](../../../.agent/rules/component-architecture.md), every ORM table satisfies `tests/server/db/models/test_init.py` and `tests/server/db/test_migrations.py` with zero allowlist additions, and delivery proceeds in small (~150–280 LoC) independently shippable PRs.
 
 ---
 
@@ -22,7 +22,7 @@ This ADR defines a **Hybrid LLM Wiki** inspired by Andrej Karpathy's *"compile o
 
 ### 2.1 Vertical Component Layout (`supernote/server/components/wiki/`)
 
-`WikiComponent` is registered alphabetically in `BUILTIN_COMPONENTS` ([`supernote/server/components/__init__.py`](../../supernote/server/components/__init__.py)) with `default_enabled=False` so disabled deployments incur zero import or runtime cost. Because `http`, `mcp`, and `ai` are `PlatformHost` components orchestrated by `ComponentLoader.async_load_all_platforms`, `WikiComponent` requires no manual ordering tricks and zero edits to `components/mcp/`:
+`WikiComponent` is registered alphabetically in `BUILTIN_COMPONENTS` ([`supernote/server/components/__init__.py`](../../../supernote/server/components/__init__.py)) with `default_enabled=False` so disabled deployments incur zero import or runtime cost. Because `http`, `mcp`, and `ai` are `PlatformHost` components orchestrated by `ComponentLoader.async_load_all_platforms`, `WikiComponent` requires no manual ordering tricks and zero edits to `components/mcp/`:
 
 ```python
 class WikiComponent:
@@ -46,7 +46,7 @@ File roles follow the five rules in `.agent/rules/component-architecture.md` (en
 
 ### 2.2 Provider-Neutral `"text"` AI Platform (`components/ai/`)
 
-Existing `SummaryModel` is bound exclusively to `SummaryResponse` (date-grouped notebook segments). Rather than coupling wiki synthesis to `SummaryModel`, `AiComponent` ([`supernote/server/components/ai/__init__.py`](../../supernote/server/components/ai/__init__.py)) adds a fourth capability platform:
+Existing `SummaryModel` is bound exclusively to `SummaryResponse` (date-grouped notebook segments). Rather than coupling wiki synthesis to `SummaryModel`, `AiComponent` ([`supernote/server/components/ai/__init__.py`](../../../supernote/server/components/ai/__init__.py)) adds a fourth capability platform:
 
 - **`AI_PLATFORMS = ("ocr", "summary", "embedding", "text")`** and **`KNOWN_PLATFORMS`** updated with `"text"`.
 - **`TextGenerationModel` (`supernote/server/ai/models/text.py`)**: Provider-neutral interface (`generate_json(prompt, response_schema, *, stage) -> TextGenerationResult`) returning parsed JSON plus token usage, wrapped by `ConcurrencyLimitedTextModel` and `InstrumentedTextModel` (`AIStage.WIKI_COMPILE`, `AIStage.WIKI_LINT`).
