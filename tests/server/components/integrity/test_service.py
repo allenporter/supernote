@@ -8,13 +8,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from supernote.client.device import DeviceClient
 from supernote.models.base import ProcessingStatus, TaskType
 from supernote.models.system import IntegrityIssueType
+from supernote.server.components.integrity.service import (
+    _REMEDIATION_HINTS,
+    IntegrityService,
+)
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.db.models.file import RecycleFileDO, UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
 from supernote.server.db.models.summary import SummaryDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage, LocalBlobStorage
-from supernote.server.services.integrity import _REMEDIATION_HINTS, IntegrityService
 from supernote.server.services.user import UserService
 from supernote.server.utils.paths import (
     get_conversion_pdf_path,

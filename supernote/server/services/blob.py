@@ -7,7 +7,7 @@ and atomically renamed on completion, while expired `.tmp` staging files and aba
 `.part.N` multipart upload chunks are periodically reclaimed.
 
 Used by `supernote.server.services.file.FileService`, `supernote.server.routes.oss`,
-and `supernote.server.services.integrity.IntegrityService`.
+and `supernote.server.components.integrity.service.IntegrityService`.
 """
 
 import asyncio

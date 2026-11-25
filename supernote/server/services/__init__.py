@@ -16,7 +16,7 @@ or asynchronously via `supernote.server.events.LocalEventBus`.
 | `supernote.server.components.schedule.service.ScheduleService` | `supernote.server.components.schedule.service` | Task groups, tasks, recurrence rules, and delta synchronization. |
 | `supernote.server.components.schedule.ical_export.ICalExportService` | `supernote.server.components.schedule.ical_export` | RFC 5545 `VTODO` iCalendar (`.ics`) feed generation from schedule tasks. |
 | `supernote.server.components.webhooks.service.WebhookService` | `supernote.server.components.webhooks.service` | Non-blocking, HMAC-SHA256 signed outbound HTTP webhook dispatcher. |
-| `supernote.server.services.integrity.IntegrityService` | `supernote.server.services.integrity` | Two-way consistency verification between SQLite VFS metadata and disk blobs. |
+| `supernote.server.components.integrity.service.IntegrityService` | `supernote.server.components.integrity.service` | Two-way consistency verification between SQLite VFS metadata and disk blobs. |
 | `supernote.server.services.coordination.SqliteCoordinationService` | `supernote.server.services.coordination` | TTL-backed key-value store and distributed locks (`KeyValueDO`). |
 | `supernote.server.services.user.UserService` | `supernote.server.services.user` | User accounts, Admin-First bootstrap, static API keys, device bindings, and JWT sessions. |
 | `supernote.server.components.events.service.EventLogService` | `supernote.server.components.events.service` | Append-only per-user domain event log (`UserEventDO`), cursor pagination, and retention pruning. |
@@ -29,7 +29,6 @@ __all__ = [
     "blob",
     "coordination",
     "file",
-    "integrity",
     "user",
     "vfs",
 ]

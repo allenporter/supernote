@@ -5,7 +5,7 @@ Routes are organized by functional domain using `aiohttp.web.RouteTableDef`:
 - `supernote.server.routes.file_device`: Official Private Cloud device sync endpoints (`/api/file/2/*`, `/api/file/3/*`).
 - `supernote.server.routes.file_web`: Web UI file management and recycle bin endpoints (`/api/file/*`).
 - `supernote.server.routes.oss`: Signed Content-Addressable Storage (CAS) upload and download endpoints (`/api/oss/*`).
-- `supernote.server.routes.admin`: User provisioning and storage integrity (`/api/admin/*`).
+- `supernote.server.routes.admin`: User provisioning, password resets, and quotas (`/api/admin/users*`).
 - `supernote.server.routes.system`: Server discovery and health endpoints.
 """
 
