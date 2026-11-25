@@ -245,6 +245,8 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_DEFAULT_USER_QUOTA`
     """
 
+    # TODO(#403): Revisit per-format image_* config fields alongside declarative
+    # path/extension processing and prompt routing so both share one config model.
     enable_image_processing: bool = True
     """Whether standalone raster images (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`) are indexed by the background OCR pipeline."""
 
