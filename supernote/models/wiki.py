@@ -133,6 +133,8 @@ class WikiStatusDTO(DataClassJSONMixin):
     budget_day_utc: str | None
     status: str
     last_error: str | None
+    backfill_remaining_files: int = 0
+    backfill_total_files: int = 0
 
 
 @dataclass

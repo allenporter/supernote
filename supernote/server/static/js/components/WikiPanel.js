@@ -89,6 +89,23 @@ export default {
             activePage.value ? renderWikiMarkdown(activePage.value.body_md) : '',
         );
 
+        const backfillTotal = computed(() => status.value?.backfill_total_files ?? 0);
+        const backfillRemaining = computed(() => status.value?.backfill_remaining_files ?? 0);
+        const backfillCompleted = computed(() =>
+            Math.max(0, backfillTotal.value - backfillRemaining.value),
+        );
+        const isBackfillDone = computed(
+            () => backfillTotal.value > 0 && backfillRemaining.value === 0,
+        );
+        const backfillButtonLabel = computed(() => {
+            if (runningAction.value === 'backfill') return 'Backfilling...';
+            if (isBackfillDone.value) return 'Backfill Complete';
+            if (backfillRemaining.value > 0) {
+                return `Backfill Notebooks (${backfillRemaining.value} left)`;
+            }
+            return 'Backfill Notebooks';
+        });
+
         async function loadAll(preferredSlug = '') {
             const seq = ++loadSeq;
             isLoading.value = true;
@@ -385,6 +402,11 @@ export default {
             editSummary,
             editBody,
             renderedBodyHtml,
+            backfillTotal,
+            backfillRemaining,
+            backfillCompleted,
+            isBackfillDone,
+            backfillButtonLabel,
             selectSlug,
             handleSearch,
             startCreate,
@@ -407,6 +429,9 @@ export default {
                     <p class="text-xs text-stone-500 mt-0.5">
                         <template v-if="status">
                             {{ status.page_count }} pages · {{ status.open_lint_count }} lint issues · status: {{ status.status }}
+                            <template v-if="backfillTotal > 0">
+                                · {{ backfillCompleted }}/{{ backfillTotal }} notebooks backfilled
+                            </template>
                         </template>
                         <template v-else>Compiled knowledge base from notebooks &amp; tasks</template>
                     </p>
@@ -416,9 +441,9 @@ export default {
                         class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 transition-colors">
                         New Page
                     </button>
-                    <button type="button" @click="handleRunAction('backfill')" :disabled="isDisabled || isBusy"
+                    <button type="button" @click="handleRunAction('backfill')" :disabled="isDisabled || isBusy || isBackfillDone"
                         class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
-                        {{ runningAction === 'backfill' ? 'Backfilling...' : 'Backfill Notebooks' }}
+                        {{ backfillButtonLabel }}
                     </button>
                     <button type="button" @click="handleRunAction('incremental')" :disabled="isDisabled || isBusy"
                         class="px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
@@ -656,9 +681,11 @@ export default {
                             Compile your existing OCR’d notebooks into linked wiki pages (newest-first, 5 notebooks per batch), or create a page manually.
                         </p>
                         <div class="flex flex-wrap items-center justify-center gap-2 pt-1">
-                            <button type="button" @click="handleRunAction('backfill')" :disabled="isBusy"
+                            <button type="button" @click="handleRunAction('backfill')" :disabled="isBusy || isBackfillDone"
                                 class="px-3.5 py-2 rounded-lg text-xs font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 transition-colors">
-                                {{ runningAction === 'backfill' ? 'Backfilling...' : 'Build Wiki from Existing Notebooks' }}
+                                <template v-if="runningAction === 'backfill'">Backfilling...</template>
+                                <template v-else-if="backfillRemaining > 0">Build Wiki from Existing Notebooks ({{ backfillRemaining }} ready)</template>
+                                <template v-else>Build Wiki from Existing Notebooks</template>
                             </button>
                             <button type="button" @click="startCreate" :disabled="isBusy"
                                 class="px-3.5 py-2 rounded-lg text-xs font-medium bg-white border border-stone-200 text-slate-700 hover:bg-stone-50 disabled:opacity-50 transition-colors">
