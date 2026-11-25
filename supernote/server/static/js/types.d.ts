@@ -132,6 +132,27 @@ declare module 'dompurify' {
     export default DOMPurify;
 }
 
+declare module 'mermaid' {
+    export interface MermaidConfig {
+        startOnLoad?: boolean;
+        securityLevel?: 'strict' | 'loose' | 'antiscript' | 'sandbox';
+        theme?: string;
+        suppressErrorRendering?: boolean;
+        htmlLabels?: boolean;
+        flowchart?: {
+            htmlLabels?: boolean;
+        };
+    }
+
+    export interface MermaidApi {
+        initialize(config: MermaidConfig): void;
+        render(id: string, definition: string): Promise<{ svg: string }>;
+    }
+
+    const mermaid: MermaidApi;
+    export default mermaid;
+}
+
 // ---------------------------------------------------------------------------
 // Core Frontend Domain & API DTO Models
 // ---------------------------------------------------------------------------
