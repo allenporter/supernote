@@ -7,7 +7,7 @@ Defines the transport-free, database-free dataclasses returned by
 - `NotebookInfo`: Active `.note` summary returned by `SearchService.list_notebooks`.
 
 Because this module has zero SQLAlchemy, `aiohttp`, or AI-backend imports,
-transport platforms (`http.py`, future `mcp.py`) and sibling components can
+transport platforms (`http.py`, `mcp.py`) and sibling components can
 import these types without introducing runtime coupling.
 """
 
@@ -23,7 +23,7 @@ __all__ = [
 
 @dataclass(slots=True)
 class SearchResult:
-    """Single ranked page hit returned by semantic search."""
+    """Single ranked page hit returned by hybrid keyword and semantic search."""
 
     file_id: int
     """VFS file identifier (`UserFileDO.id`) of the matching notebook."""
@@ -38,10 +38,10 @@ class SearchResult:
     """Supernote page identifier (`PAGEID`) from the notebook metadata."""
 
     score: float
-    """Cosine similarity score between query and page embeddings."""
+    """Calibrated hybrid relevance score in `[0.25, 1.0]`."""
 
     text_preview: str
-    """Up to 200-character preview of the page's OCR text content."""
+    """Up to 200-character match-centered OCR snippet or formatted `#keyword` tags."""
 
     date: str | None = None
     """Optional inferred page date formatted as `YYYY-MM-DD`, if determinable."""

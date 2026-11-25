@@ -13,7 +13,10 @@ from supernote.models.user import UserRegisterDTO
 from supernote.server.components.search import SEARCH_SERVICE_KEY
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.db.models.note_processing import (
+    NotePageContentDO,
+    NotePageMetadataDO,
+)
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.user import UserService
 from tests.server.components.conftest import call_mcp_tool, mcp_session
@@ -57,6 +60,15 @@ async def seeded_notebook_id(
                 text_content="Quarterly architecture milestones.",
                 embedding=json.dumps([0.1] * 3),
                 embedding_model="fake-embedding-v1",
+            )
+        )
+        db.add(
+            NotePageMetadataDO(
+                user_id=test_user_id,
+                file_id=file_do.id,
+                page_index=1,
+                page_id="P20260116090000b",
+                keywords_json=json.dumps([{"KEYWORDPAGE": "2", "KEYWORD": "ks-tilt"}]),
             )
         )
         await db.commit()
@@ -213,6 +225,11 @@ async def test_search_mcp_search_notebook_chunks_over_protocol(
                 "date_before": "2026-12-31",
             },
         )
+        tag_data = await call_mcp_tool(
+            session,
+            "search_notebook_chunks",
+            {"query": "#KS-Tilt", "top_n": 5, "date_after": "2026-01-16"},
+        )
 
     assert data["success"] is True
     assert len(data["results"]) == 1
@@ -220,7 +237,23 @@ async def test_search_mcp_search_notebook_chunks_over_protocol(
     assert data["results"][0]["fileName"] == "roadmap_notes.note"
     assert data["results"][0]["textPreview"] == "Quarterly architecture milestones."
     assert data["results"][0]["date"] == "2026-01-15"
-    assert _call_count("search_notebook_chunks", "success") == before_ok + 1.0
+    assert tag_data == {
+        "success": True,
+        "errorCode": None,
+        "errorMsg": None,
+        "results": [
+            {
+                "fileId": str(seeded_notebook_id),
+                "fileName": "roadmap_notes.note",
+                "pageIndex": 1,
+                "pageId": "P20260116090000b",
+                "score": 1.0,
+                "textPreview": "Keywords: #ks-tilt",
+                "date": "2026-01-16",
+            }
+        ],
+    }
+    assert _call_count("search_notebook_chunks", "success") == before_ok + 2.0
 
 
 async def test_search_mcp_backend_error_records_failure_metric(

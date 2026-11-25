@@ -144,7 +144,8 @@ def sql_prefilter_terms(
             continue
         seen.add(stem)
         if _has_cjk(stem):
-            candidates.append((True, stem))
+            if stem in parsed.raw:
+                candidates.append((True, stem))
         elif (
             stem.isascii()
             and re.search(re.escape(stem), parsed.raw, re.ASCII | re.IGNORECASE)

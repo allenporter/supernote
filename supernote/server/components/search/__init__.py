@@ -1,12 +1,13 @@
-"""Semantic search vertical server component (`SearchComponent`).
+"""Hybrid keyword and semantic search vertical server component (`SearchComponent`).
 
 Owns `SearchService`, pure result models (`SearchResult`, `NotebookInfo`),
-and the HTTP search endpoint (`POST /api/extended/search`).
+and the HTTP (`POST /api/extended/search`), MCP, and processor search platforms.
 
 ### Internal Python API for Sibling Components & Plugins
 
-Components that run semantic search across notebooks should declare
-``dependencies = ("search",)`` and access the typed service key:
+Components that run hybrid `#keyword`, transcript, and semantic search across
+notebooks should declare ``dependencies = ("search",)`` and access the typed
+service key:
 
 ```python
 from supernote.server.components.search import SEARCH_SERVICE_KEY
@@ -46,7 +47,7 @@ __all__ = [
 
 
 class SearchComponent:
-    """Vertical component managing semantic search, notebook listing, and transcripts."""
+    """Vertical component managing hybrid notebook search, listing, and embedding generation."""
 
     domain = "search"
     dependencies: tuple[str, ...] = ()

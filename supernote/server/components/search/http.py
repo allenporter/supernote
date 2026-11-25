@@ -1,4 +1,4 @@
-"""HTTP platform routes for semantic notebook search.
+"""HTTP platform routes for hybrid keyword and semantic notebook search.
 
 Mounts `POST /api/extended/search` onto the main `aiohttp` application via
 `async_setup_http` (`WebSearchRequestDTO` -> `WebSearchResponseVO`).
@@ -44,7 +44,7 @@ _PARSE_ERRORS = (
 
 @routes.post("/api/extended/search")
 async def handle_extended_search(request: web.Request) -> web.Response:
-    """Serve semantic search across notebook content (`POST /api/extended/search`)."""
+    """Serve hybrid `#keyword`, transcript, and semantic search (`POST /api/extended/search`)."""
     user_email = request[REQUEST_USER_KEY]
     try:
         data = await request.json()
@@ -74,7 +74,7 @@ async def handle_extended_search(request: web.Request) -> web.Response:
                 file_name=r.file_name,
                 page_index=r.page_index,
                 page_id=r.page_id,
-                score=float(r.score),
+                score=r.score,
                 text_preview=r.text_preview,
                 date=r.date,
             )
@@ -83,7 +83,7 @@ async def handle_extended_search(request: web.Request) -> web.Response:
 
         return web.json_response(WebSearchResponseVO(results=vo_results).to_dict())
     except Exception as err:
-        logger.exception("Error performing semantic search")
+        logger.exception("Error performing notebook search")
         return SupernoteError.uncaught(err).to_response()
 
 

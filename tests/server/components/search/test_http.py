@@ -10,22 +10,32 @@ from aiohttp.test_utils import TestClient
 
 from supernote.client.exceptions import ApiException, NotFoundException
 from supernote.client.extended import ExtendedClient
+from supernote.models.extended import SearchResultVO
 from supernote.server.ai.models.embedding import EmbeddingTaskType
 from supernote.server.components.search import SEARCH_SERVICE_KEY
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
 from supernote.server.db.models.file import UserFileDO
-from supernote.server.db.models.note_processing import NotePageContentDO
+from supernote.server.db.models.note_processing import (
+    NotePageContentDO,
+    NotePageMetadataDO,
+)
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.keys import EMBEDDING_MODEL_KEY
 from supernote.server.services.user import UserService
 
 
 @pytest.fixture
-def server_config(server_config: ServerConfig) -> ServerConfig:
-    """Configure the fake embedding provider through the `ai` + `fake_ai` components."""
-    server_config.ai = AiConfig(
+def ai_config() -> AiConfig:
+    """Default fake embedding config for search HTTP route tests."""
+    return AiConfig(
         embedding=ModelConfig(provider="fake", model="fake-embedding-v1"),
     )
+
+
+@pytest.fixture
+def server_config(server_config: ServerConfig, ai_config: AiConfig) -> ServerConfig:
+    """Configure the fake embedding provider through the `ai` + `fake_ai` components."""
+    server_config.ai = ai_config
     return server_config
 
 
@@ -35,14 +45,19 @@ async def test_search_route_ranks_matching_chunks(
     session_manager: DatabaseSessionManager,
     test_user_id: int,
 ) -> None:
-    """Verify POST /api/extended/search ranks chunks by cosine similarity."""
+    """Verify POST /api/extended/search ranks chunks by hybrid relevance."""
     assert client.app is not None
     embedding_model = client.app[EMBEDDING_MODEL_KEY]
     assert embedding_model is not None
-    cats_vec = await embedding_model.embed(
+    cats_raw = await embedding_model.embed(
         "cats", task_type=EmbeddingTaskType.RETRIEVAL_DOCUMENT
     )
-    orthogonal_vec = [cats_vec[1], -cats_vec[0], 0.0]
+    cats_norm = sum(v * v for v in cats_raw) ** 0.5
+    cats_vec = [v / cats_norm for v in cats_raw]
+    orth_raw = [cats_vec[1], -cats_vec[0], 0.0]
+    orth_norm = sum(v * v for v in orth_raw) ** 0.5
+    orth_unit = [v / orth_norm for v in orth_raw]
+    moderate_vec = [0.6 * c + 0.8 * o for c, o in zip(cats_vec, orth_unit, strict=True)]
 
     async with session_manager.session() as db:
         file1 = UserFileDO(
@@ -73,8 +88,8 @@ async def test_search_route_ranks_matching_chunks(
                     file_id=file2.id,
                     page_index=0,
                     page_id="p0",
-                    text_content="This is the second chunk about dogs.",
-                    embedding=json.dumps(orthogonal_vec),
+                    text_content="This is the second chunk about kittens.",
+                    embedding=json.dumps(moderate_vec),
                     embedding_model=embedding_model.model_id,
                 ),
             ]
@@ -91,15 +106,20 @@ async def test_search_route_ranks_matching_chunks(
     assert response.results[0].text_preview == "This is the first chunk about cats."
     assert response.results[0].date is None
     assert response.results[1].file_id == file_id_2
-    assert abs(response.results[1].score) < 0.01
+    assert response.results[1].score == pytest.approx(0.6, abs=1e-5)
 
 
 async def test_search_route_excludes_inactive_files(
+    client: TestClient,
     extended_client: ExtendedClient,
     session_manager: DatabaseSessionManager,
     test_user_id: int,
 ) -> None:
     """Verify soft-deleted files are excluded from search results."""
+    assert client.app is not None
+    query_vec = await client.app[EMBEDDING_MODEL_KEY].embed(
+        "cats", task_type=EmbeddingTaskType.RETRIEVAL_QUERY
+    )
     async with session_manager.session() as db:
         active = UserFileDO(
             user_id=test_user_id,
@@ -124,7 +144,7 @@ async def test_search_route_excludes_inactive_files(
                     page_index=0,
                     page_id="p0",
                     text_content="Cats are active pets.",
-                    embedding=json.dumps([1.0, 0.0, 0.0]),
+                    embedding=json.dumps(query_vec),
                     embedding_model="fake-embedding-v1",
                 ),
                 NotePageContentDO(
@@ -132,7 +152,7 @@ async def test_search_route_excludes_inactive_files(
                     page_index=0,
                     page_id="p0",
                     text_content="Cats were deleted pets.",
-                    embedding=json.dumps([1.0, 0.0, 0.0]),
+                    embedding=json.dumps(query_vec),
                     embedding_model="fake-embedding-v1",
                 ),
             ]
@@ -148,11 +168,16 @@ async def test_search_route_excludes_inactive_files(
 
 
 async def test_search_route_with_name_filter(
+    client: TestClient,
     extended_client: ExtendedClient,
     session_manager: DatabaseSessionManager,
     test_user_id: int,
 ) -> None:
     """Verify name_filter restricts search results to matching notebook filenames."""
+    assert client.app is not None
+    query_vec = await client.app[EMBEDDING_MODEL_KEY].embed(
+        "anything", task_type=EmbeddingTaskType.RETRIEVAL_QUERY
+    )
     async with session_manager.session() as db:
         journal = UserFileDO(
             user_id=test_user_id,
@@ -175,7 +200,7 @@ async def test_search_route_with_name_filter(
                     page_index=0,
                     page_id="p0",
                     text_content="Cats are great.",
-                    embedding=json.dumps([1.0, 0.0, 0.0]),
+                    embedding=json.dumps(query_vec),
                     embedding_model="fake-embedding-v1",
                 ),
                 NotePageContentDO(
@@ -183,7 +208,7 @@ async def test_search_route_with_name_filter(
                     page_index=0,
                     page_id="p0",
                     text_content="Dogs are great.",
-                    embedding=json.dumps([1.0, 0.0, 0.0]),
+                    embedding=json.dumps(query_vec),
                     embedding_model="fake-embedding-v1",
                 ),
             ]
@@ -196,11 +221,16 @@ async def test_search_route_with_name_filter(
 
 
 async def test_search_route_with_inferred_date_filters(
+    client: TestClient,
     extended_client: ExtendedClient,
     session_manager: DatabaseSessionManager,
     test_user_id: int,
 ) -> None:
     """Verify date_after and date_before filtering against inferred page_id dates."""
+    assert client.app is not None
+    query_vec = await client.app[EMBEDDING_MODEL_KEY].embed(
+        "test", task_type=EmbeddingTaskType.RETRIEVAL_QUERY
+    )
     async with session_manager.session() as db:
         journal = UserFileDO(
             user_id=test_user_id,
@@ -217,7 +247,7 @@ async def test_search_route_with_inferred_date_filters(
                     page_index=0,
                     page_id="P20231027120000abc",
                     text_content="Page 1 content.",
-                    embedding=json.dumps([1.0, 0.0, 0.0]),
+                    embedding=json.dumps(query_vec),
                     embedding_model="fake-embedding-v1",
                 ),
                 NotePageContentDO(
@@ -225,7 +255,7 @@ async def test_search_route_with_inferred_date_filters(
                     page_index=1,
                     page_id="P20231028120000def",
                     text_content="Page 2 content.",
-                    embedding=json.dumps([1.0, 0.0, 0.0]),
+                    embedding=json.dumps(query_vec),
                     embedding_model="fake-embedding-v1",
                 ),
             ]
@@ -250,11 +280,16 @@ async def test_search_route_with_inferred_date_filters(
 
 
 async def test_search_route_filters_by_embedding_model(
+    client: TestClient,
     extended_client: ExtendedClient,
     session_manager: DatabaseSessionManager,
     test_user_id: int,
 ) -> None:
-    """Verify search ignores pages embedded with a different model or None."""
+    """Verify vector search ignores pages embedded with a different model or None."""
+    assert client.app is not None
+    query_vec = await client.app[EMBEDDING_MODEL_KEY].embed(
+        "test", task_type=EmbeddingTaskType.RETRIEVAL_QUERY
+    )
     async with session_manager.session() as db:
         file_do = UserFileDO(
             user_id=test_user_id,
@@ -271,7 +306,7 @@ async def test_search_route_filters_by_embedding_model(
                     page_index=0,
                     page_id="p0",
                     text_content="Matching model page.",
-                    embedding=json.dumps([1.0, 0.0, 0.0]),
+                    embedding=json.dumps(query_vec),
                     embedding_model="fake-embedding-v1",
                 ),
                 NotePageContentDO(
@@ -287,7 +322,7 @@ async def test_search_route_filters_by_embedding_model(
                     page_index=2,
                     page_id="p2",
                     text_content="Unannotated model page.",
-                    embedding=json.dumps([1.0, 0.0, 0.0]),
+                    embedding=json.dumps(query_vec),
                     embedding_model=None,
                 ),
             ]
@@ -300,15 +335,136 @@ async def test_search_route_filters_by_embedding_model(
     assert response.results[0].text_preview == "Matching model page."
 
 
-async def test_search_route_invalid_dto_and_errors(
+@pytest.mark.parametrize("ai_config", [AiConfig()])
+async def test_search_route_matches_native_keywords_without_embedding_model(
+    extended_client: ExtendedClient,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    """POST /api/extended/search returns native keyword matches when AI embeddings are disabled."""
+    file_id = 9401
+    async with session_manager.session() as session:
+        session.add(
+            UserFileDO(
+                id=file_id,
+                user_id=test_user_id,
+                file_name="DiagramOnly.note",
+                directory_id=0,
+                is_active="Y",
+                is_folder="N",
+                storage_key="diagram_only_key",
+            )
+        )
+        session.add(
+            NotePageMetadataDO(
+                user_id=test_user_id,
+                file_id=file_id,
+                page_index=1,
+                page_id="P20260405110000abc",
+                keywords_json=json.dumps([{"KEYWORDPAGE": "1", "KEYWORD": "ks-tilt"}]),
+            )
+        )
+        await session.commit()
+
+    resp = await extended_client.search(query="#KS-Tilt", top_n=5)
+    assert resp.success is True
+    assert resp.results == [
+        SearchResultVO(
+            file_id=file_id,
+            file_name="DiagramOnly.note",
+            page_index=1,
+            page_id="P20260405110000abc",
+            score=1.0,
+            text_preview="Keywords: #ks-tilt",
+            date="2026-04-05",
+        )
+    ]
+
+
+async def test_search_route_hybrid_excludes_unrelated_vector_noise(
+    client: TestClient,
+    extended_client: ExtendedClient,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+) -> None:
+    """POST /api/extended/search deduplicates hybrid hits and drops negative/zero cosine noise."""
+    assert client.app is not None
+    embedding_model = client.app[EMBEDDING_MODEL_KEY]
+    assert embedding_model is not None
+    query_vec = await embedding_model.embed(
+        "#optics", EmbeddingTaskType.RETRIEVAL_QUERY
+    )
+    opposite_vec = [-v for v in query_vec]
+
+    async with session_manager.session() as session:
+        session.add_all(
+            [
+                UserFileDO(
+                    id=9501,
+                    user_id=test_user_id,
+                    file_name="HybridOptics.note",
+                    directory_id=0,
+                    is_active="Y",
+                    is_folder="N",
+                    storage_key="hybrid_optics_key",
+                ),
+                UserFileDO(
+                    id=9502,
+                    user_id=test_user_id,
+                    file_name="GroceryNoise.note",
+                    directory_id=0,
+                    is_active="Y",
+                    is_folder="N",
+                    storage_key="grocery_noise_key",
+                ),
+                NotePageMetadataDO(
+                    user_id=test_user_id,
+                    file_id=9501,
+                    page_index=0,
+                    page_id="P20260406090000abc",
+                    keywords_json=json.dumps(
+                        [{"KEYWORDPAGE": "1", "KEYWORD": "optics"}]
+                    ),
+                ),
+                NotePageContentDO(
+                    file_id=9501,
+                    page_index=0,
+                    page_id="P20260406090000abc",
+                    text_content="Collimating parabolic telescope mirror.",
+                    embedding=json.dumps(query_vec),
+                    embedding_model="fake-embedding-v1",
+                ),
+                NotePageContentDO(
+                    file_id=9502,
+                    page_index=0,
+                    page_id="P20260406100000def",
+                    text_content="Buy laundry detergent and bananas.",
+                    embedding=json.dumps(opposite_vec),
+                    embedding_model="fake-embedding-v1",
+                ),
+            ]
+        )
+        await session.commit()
+
+    resp = await extended_client.search(query="#optics", top_n=5)
+    assert resp.success is True
+    assert resp.results == [
+        SearchResultVO(
+            file_id=9501,
+            file_name="HybridOptics.note",
+            page_index=0,
+            page_id="P20260406090000abc",
+            score=1.0,
+            text_preview="[#optics] Collimating parabolic telescope mirror.",
+            date="2026-04-06",
+        )
+    ]
+
+
+async def test_search_route_rejects_invalid_payload_with_400(
     client: TestClient,
     auth_headers: dict[str, str],
-    extended_client: ExtendedClient,
-    user_service: UserService,
 ) -> None:
-    """Verify POST /api/extended/search handles 400, 404, and 500 error paths."""
-    assert client.app is not None
-
     bad_resp = await client.post(
         "/api/extended/search",
         json={"invalid": "data"},
@@ -316,12 +472,23 @@ async def test_search_route_invalid_dto_and_errors(
     )
     assert bad_resp.status == 400
 
+
+async def test_search_route_returns_404_when_authenticated_user_missing(
+    extended_client: ExtendedClient,
+    user_service: UserService,
+) -> None:
     with (
         patch.object(user_service, "get_user_id", return_value=None),
         pytest.raises(NotFoundException),
     ):
         await extended_client.search(query="test")
 
+
+async def test_search_route_returns_500_when_service_raises(
+    client: TestClient,
+    extended_client: ExtendedClient,
+) -> None:
+    assert client.app is not None
     with (
         patch.object(
             client.app[SEARCH_SERVICE_KEY],
