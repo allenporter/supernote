@@ -44,9 +44,13 @@ Most documentation confusion comes from **altitude mixing** (e.g., jumping from 
    - Verify every documented flag, config key, MCP tool, component name, and benchmark number against the current codebase before publishing.
    - Register every new user or architecture guide in `GUIDE_SPECS` in `script/build_docs.py`, use relative repository links (never `file://` URIs), and verify `./script/docs` builds cleanly.
 
-6. **Standalone, Scannable Prose**:
+6. **Friendly, Human Voice (Avoid AI Writing Tells)**:
+   - Write like a helpful maintainer explaining the project to another Supernote owner: use second person ("you"), present tense, active voice, and varied sentence lengths.
+   - **Avoid bold-prefix bullet lists** (`- **Catchy Label**: One sentence...`) for feature prose. Use short paragraphs, plain unbolded bullets, or `###` subheadings instead (reserve bold lead-ins for true key-value or parameter lists).
+   - **Avoid SaaS buzzwords and filler**: cut words and headings like *"What It Unlocks"*, *"Human-First"*, *"Living Knowledge Base"*, *"seamless"*, *"effortlessly"*, *"robust"*, *"complete with..."*, *"simply"*, and *"just"*.
+   - **Use em dashes (`—`) sparingly**: prefer periods, commas, or parentheses.
+   - **Keep internal names out of introductory prose**: explain behavior in plain English and only name internal enum values or config keys where the reader actually needs them.
    - Describe what the system does today on its own merits—never frame user docs comparatively against rejected drafts, past refactors, or PR history.
-   - Favor concrete "Jobs to Be Done" examples over abstract lists of internal classes or routes.
 
 ---
 

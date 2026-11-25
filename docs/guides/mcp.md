@@ -419,6 +419,17 @@ Retrieves the full OCR transcript for a notebook or slices a specific 0-based pa
   }
   ```
 
+### `get_page_image` (`supernote.server.components.processor.mcp`)
+
+Retrieves a normalized PNG image (`ImageContent`) alongside a metadata summary for a single `.note` page or standalone raster image file—allowing vision-capable assistants to inspect hand-drawn diagrams, sketches, or photos directly.
+
+- **Arguments**:
+  | Parameter | Type | Default | Description |
+  | :--- | :--- | :--- | :--- |
+  | `file_id` | `str` | *(required)* | Numeric ID string of the `.note` notebook or standalone image file. |
+  | `page_index` | `int` | `0` | 0-based page index (must be `0` for standalone images). |
+  | `max_dimension` | `int` | `1568` | Maximum longest-edge pixel dimension (`64`–`2048`). |
+
 ### Schedule Task CRUD Tools (`supernote.server.components.schedule.mcp`)
 
 The `schedule` component registers four To-Do management tools via the `mcp` platform (`McpRegistrar`), supporting notebook page deep-links (`ScheduleTaskLinkDTO`), real-time `TASK-SYN` Socket.IO device push, and Domain Event Log attribution:

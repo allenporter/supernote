@@ -72,6 +72,24 @@ GUIDE_SPECS: list[GuideSpec] = [
         path=ROOT_DIR / "docs" / "guides" / "mcp.md",
     ),
     GuideSpec(
+        slug="ocr_and_multimodal",
+        title="Handwriting OCR & Multimodal",
+        section="Self-Hosting & Guides",
+        path=ROOT_DIR / "docs" / "guides" / "ocr_and_multimodal.md",
+    ),
+    GuideSpec(
+        slug="search",
+        title="Hybrid Search & Retrieval",
+        section="Self-Hosting & Guides",
+        path=ROOT_DIR / "docs" / "guides" / "search.md",
+    ),
+    GuideSpec(
+        slug="llm_wiki",
+        title="LLM Wiki & Knowledge Graph",
+        section="Self-Hosting & Guides",
+        path=ROOT_DIR / "docs" / "guides" / "llm_wiki.md",
+    ),
+    GuideSpec(
         slug="ocr_benchmarks",
         title="OCR Provider Benchmarks",
         section="Self-Hosting & Guides",
