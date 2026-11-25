@@ -17,7 +17,7 @@
   - `cloud_client.py`: Higher level cloud client using `aiohttp`.
   - `auth.py`: Authentication strategies (`AbstractAuth`, `FileCacheAuth`).
 - **Server (`supernote/server/`)**:
-  - **Protocol**: Implements the Supernote Cloud protocol (see `supernote/server/ARCHITECTURE.md`).
+  - **Protocol**: Implements the Supernote Cloud protocol (see `docs/architecture/server_architecture.md`).
   - **Models**: `supernote/server/models/` contains `mashumaro` data models.
   - **Goal**: Provide a self-hosted alternative to the official cloud.
 - **CLI (`supernote/cli/`)**:
@@ -48,12 +48,12 @@
 - **Binary Parsing**: Use `parser.py` patterns for reading binary streams (seek/read).
 - **Logging**: Use `logging.getLogger(__name__)`.
 - **Server Implementation**:
-  - Follow the protocol definitions in `supernote/server/ARCHITECTURE.md`.
+  - Follow the protocol definitions in `docs/architecture/server_architecture.md`.
   - Use `mashumaro` for server-side data models (DTOs/VOs) to match the client.
 
 ## Key Files
 - `supernote/parser.py`: Entry point for parsing logic.
 - `supernote/client`: Core API client logic.
 - `supernote/models`: API data definitions.
-- `supernote/server/ARCHITECTURE.md`: Documentation of the server protocol and architecture.
+- `docs/architecture/server_architecture.md`: Documentation of the server protocol and architecture.
 - `pyproject.toml`: Project configuration and dependencies.

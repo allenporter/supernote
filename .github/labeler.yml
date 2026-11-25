@@ -19,20 +19,21 @@ web-ui:
   - changed-files:
       - any-glob-to-any-file:
           - 'supernote/server/static/**'
-          - 'docs/frontend_*'
+          - 'docs/architecture/frontend_*'
 
 mcp:
   - changed-files:
       - any-glob-to-any-file:
           - 'supernote/server/mcp/**'
-          - 'docs/mcp.md'
+          - 'supernote/server/components/mcp/**'
+          - 'docs/guides/mcp.md'
           - 'tests/server/mcp/**'
 
 notebook:
   - changed-files:
       - any-glob-to-any-file:
           - 'supernote/notebook/**'
-          - 'docs/notebook_spec.md'
+          - 'docs/architecture/notebook_spec.md'
           - 'tests/notebook/**'
 
 storage-sync:
@@ -53,7 +54,7 @@ schedule:
           - 'supernote/server/routes/schedule.py'
           - 'supernote/server/db/models/schedule.py'
           - 'supernote/models/schedule.py'
-          - 'docs/schedule_api.md'
+          - 'docs/architecture/schedule_api.md'
           - 'tests/server/services/test_schedule.py'
 
 cli-client:
@@ -71,7 +72,7 @@ security:
           - 'supernote/server/services/user.py'
           - 'supernote/server/utils/rate_limit.py'
           - 'supernote/server/utils/url_signer.py'
-          - 'docs/security.md'
+          - 'docs/reference/security.md'
 
 documentation:
   - changed-files:

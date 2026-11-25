@@ -3,7 +3,7 @@
 
 This script pushes pdoc beyond single-level Python module dumps by:
 1. Synthesizing virtual `pdoc.doc.Module` objects (`supernote.guides.*`) from
-   standalone Markdown guides in `docs/` and `supernote/server/ARCHITECTURE.md`
+   standalone Markdown guides under `docs/` (`guides/`, `reference/`, `architecture/`)
    without polluting the shipped Python package with dummy `.py` files.
 2. Injecting a multi-level navigation structure (`nav_guide_sections`,
    `nav_api_packages`, `nav_page_titles`) into `pdoc.render.env.globals`.
@@ -57,19 +57,19 @@ GUIDE_SPECS: list[GuideSpec] = [
         slug="bootstrap_guide",
         title="Self-Hosting & Quickstart",
         section="Self-Hosting & Guides",
-        path=ROOT_DIR / "docs" / "bootstrap_guide.md",
+        path=ROOT_DIR / "docs" / "guides" / "bootstrap_guide.md",
     ),
     GuideSpec(
         slug="configuration",
         title="Configuration Reference",
         section="Self-Hosting & Guides",
-        path=ROOT_DIR / "docs" / "configuration.md",
+        path=ROOT_DIR / "docs" / "reference" / "configuration.md",
     ),
     GuideSpec(
         slug="mcp",
         title="AI Pipeline, Prompts & MCP",
         section="Self-Hosting & Guides",
-        path=ROOT_DIR / "docs" / "mcp.md",
+        path=ROOT_DIR / "docs" / "guides" / "mcp.md",
     ),
     GuideSpec(
         slug="ocr_benchmarks",
@@ -87,56 +87,56 @@ GUIDE_SPECS: list[GuideSpec] = [
         slug="monitoring",
         title="Prometheus & Grafana Monitoring",
         section="Self-Hosting & Guides",
-        path=ROOT_DIR / "docs" / "monitoring.md",
+        path=ROOT_DIR / "docs" / "reference" / "monitoring.md",
     ),
     GuideSpec(
         slug="webhooks_and_integrations",
         title="Webhooks, iCal & Integrations",
         section="Self-Hosting & Guides",
-        path=ROOT_DIR / "docs" / "webhooks_and_integrations.md",
+        path=ROOT_DIR / "docs" / "guides" / "webhooks_and_integrations.md",
     ),
     GuideSpec(
         slug="cli_reference",
         title="CLI Reference",
         section="Self-Hosting & Guides",
-        path=ROOT_DIR / "docs" / "cli_reference.md",
+        path=ROOT_DIR / "docs" / "reference" / "cli_reference.md",
     ),
     # Architecture & Specifications
     GuideSpec(
         slug="architecture",
         title="Server & Sync Protocol",
         section="Architecture & Specs",
-        path=ROOT_DIR / "supernote" / "server" / "ARCHITECTURE.md",
+        path=ROOT_DIR / "docs" / "architecture" / "server_architecture.md",
     ),
     GuideSpec(
         slug="note_processing_design",
         title="Async Note Processing Pipeline",
         section="Architecture & Specs",
-        path=ROOT_DIR / "docs" / "note_processing_design.md",
+        path=ROOT_DIR / "docs" / "architecture" / "note_processing_design.md",
     ),
     GuideSpec(
         slug="security",
         title="Security & Threat Model",
         section="Architecture & Specs",
-        path=ROOT_DIR / "docs" / "security.md",
+        path=ROOT_DIR / "docs" / "reference" / "security.md",
     ),
     GuideSpec(
         slug="notebook_spec",
         title="Binary .note Format Spec",
         section="Architecture & Specs",
-        path=ROOT_DIR / "docs" / "notebook_spec.md",
+        path=ROOT_DIR / "docs" / "architecture" / "notebook_spec.md",
     ),
     GuideSpec(
         slug="schedule_api",
         title="Schedule & Tasks API Spec",
         section="Architecture & Specs",
-        path=ROOT_DIR / "docs" / "schedule_api.md",
+        path=ROOT_DIR / "docs" / "architecture" / "schedule_api.md",
     ),
     GuideSpec(
         slug="summary_api",
         title="Summary & OCR API Spec",
         section="Architecture & Specs",
-        path=ROOT_DIR / "docs" / "summary_api.md",
+        path=ROOT_DIR / "docs" / "architecture" / "summary_api.md",
     ),
     # Contributing & Maintenance
     GuideSpec(
@@ -155,7 +155,7 @@ GUIDE_SPECS: list[GuideSpec] = [
         slug="schema_migration_guide",
         title="Database Migrations (Alembic)",
         section="Development",
-        path=ROOT_DIR / "docs" / "schema_migration_guide.md",
+        path=ROOT_DIR / "docs" / "architecture" / "schema_migration_guide.md",
     ),
 ]
 
@@ -319,7 +319,7 @@ def _install_markdown_link_rewriter() -> None:
         "supernote/server/README.md": "supernote.server",
         "supernote/notebook/README.md": "supernote.notebook",
         "supernote/models/README.md": "supernote.models",
-        "supernote/server/ARCHITECTURE.md": "supernote.guides.architecture",
+        "docs/architecture/server_architecture.md": "supernote.guides.architecture",
         "docs/CONTRIBUTING.md": "supernote.guides.contributing",
         "evals/ocr/RESULTS.md": "supernote.guides.ocr_benchmarks",
         "evals/ocr/README.md": "supernote.guides.ocr_benchmarks",

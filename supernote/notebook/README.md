@@ -335,4 +335,4 @@ Path("Combined.note").write_bytes(merged_bytes)
 
 ## Binary Format Specification
 
-For a deep dive into the `.note` binary layout—including the footer-first offset architecture, `<KEY:VALUE>` parameter blocks, `RATTA_RLE` / `SN_ASA_COMPRESS` encoding algorithms, and guidelines for incremental page-level indexing—see `supernote.guides.notebook_spec` ([`docs/notebook_spec.md`](../../docs/notebook_spec.md)).
+For a deep dive into the `.note` binary layout—including the footer-first offset architecture, `<KEY:VALUE>` parameter blocks, `RATTA_RLE` / `SN_ASA_COMPRESS` encoding algorithms, and guidelines for incremental page-level indexing—see `supernote.guides.notebook_spec` ([`docs/architecture/notebook_spec.md`](../../docs/architecture/notebook_spec.md)).

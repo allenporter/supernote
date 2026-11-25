@@ -306,7 +306,7 @@ When a `.note` file is uploaded or updated (`NoteUpdatedEvent`) or when a device
    - Once all pages have completed OCR, assembles the non-blank page transcripts in memory and invokes `SummaryModel` to generate a chronological synthesis (`SummaryDO`) under the shared `"AI Summaries"` Digest category.
    - Emits `NoteProcessingCompletedEvent` upon completion.
 
-For full pipeline semantics, state machine rules, and failure recovery details, see `supernote.guides.note_processing_design` ([`docs/note_processing_design.md`](../../docs/note_processing_design.md)).
+For full pipeline semantics, state machine rules, and failure recovery details, see `supernote.guides.note_processing_design` ([`docs/architecture/note_processing_design.md`](./note_processing_design.md)).
 
 ---
 

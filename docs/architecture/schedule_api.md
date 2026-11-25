@@ -32,26 +32,26 @@ The Schedule ecosystem manages user tasks, task lists (groups), recurrence rules
 All schedule endpoints are unified under the `/api/file/schedule/` namespace:
 
 ### Task Group Management (`/api/file/schedule/group*`)
-* `POST /api/file/schedule/group` — Create Task Group ([AddScheduleTaskGroupDTO](../supernote/models/schedule.py#L180-L203) → [AddScheduleTaskGroupVO](../supernote/models/schedule.py#L479-L490))
-* `PUT /api/file/schedule/group` — Update Task Group ([UpdateScheduleTaskGroupDTO](../supernote/models/schedule.py#L205-L221))
+* `POST /api/file/schedule/group` — Create Task Group ([AddScheduleTaskGroupDTO](../../supernote/models/schedule.py#L180-L203) → [AddScheduleTaskGroupVO](../../supernote/models/schedule.py#L479-L490))
+* `PUT /api/file/schedule/group` — Update Task Group ([UpdateScheduleTaskGroupDTO](../../supernote/models/schedule.py#L205-L221))
 * `DELETE /api/file/schedule/group/{taskListId}` — Delete Task Group
 * `POST /api/file/schedule/group/clear` — Clear Task Group (soft-deletes all tasks in list)
 * `GET /api/file/schedule/group/{taskListId}` — Get Task Group
-* `POST /api/file/schedule/group/all` — List All Task Groups ([ScheduleTaskGroupDTO](../supernote/models/schedule.py#L238-L254) → [ScheduleTaskGroupVO](../supernote/models/schedule.py#L520-L532))
+* `POST /api/file/schedule/group/all` — List All Task Groups ([ScheduleTaskGroupDTO](../../supernote/models/schedule.py#L238-L254) → [ScheduleTaskGroupVO](../../supernote/models/schedule.py#L520-L532))
 
 ### Task Operations (`/api/file/schedule/task*`)
-* `POST /api/file/schedule/task` — Create/Upsert Single Task ([AddScheduleTaskDTO](../supernote/models/schedule.py#L258-L327) → [AddScheduleTaskVO](../supernote/models/schedule.py#L535-L545))
-* `PUT /api/file/schedule/task` — Update Single Task ([UpdateScheduleTaskDTO](../supernote/models/schedule.py#L330-L396))
-* `PUT /api/file/schedule/task/list` — **Batch Update Tasks** ([UpdateScheduleTaskListDTO](../supernote/models/schedule.py#L400-L416))
+* `POST /api/file/schedule/task` — Create/Upsert Single Task ([AddScheduleTaskDTO](../../supernote/models/schedule.py#L258-L327) → [AddScheduleTaskVO](../../supernote/models/schedule.py#L535-L545))
+* `PUT /api/file/schedule/task` — Update Single Task ([UpdateScheduleTaskDTO](../../supernote/models/schedule.py#L330-L396))
+* `PUT /api/file/schedule/task/list` — **Batch Update Tasks** ([UpdateScheduleTaskListDTO](../../supernote/models/schedule.py#L400-L416))
 * `DELETE /api/file/schedule/task/{taskId}` — Delete Task
-* `GET /api/file/schedule/task/{taskId}` — Get Task Details ([ScheduleTaskVO](../supernote/models/schedule.py#L558-L624))
-* `POST /api/file/schedule/task/all` — List All Tasks ([ScheduleTaskDTO](../supernote/models/schedule.py#L419-L438) → [ScheduleTaskAllVO](../supernote/models/schedule.py#L627-L642))
+* `GET /api/file/schedule/task/{taskId}` — Get Task Details ([ScheduleTaskVO](../../supernote/models/schedule.py#L558-L624))
+* `POST /api/file/schedule/task/all` — List All Tasks ([ScheduleTaskDTO](../../supernote/models/schedule.py#L419-L438) → [ScheduleTaskAllVO](../../supernote/models/schedule.py#L627-L642))
 
 ### Sort Configurations (`/api/file/schedule/sort*`)
-* `POST /api/file/schedule/sort` — Add Sort Config ([ScheduleSortDTO](../supernote/models/schedule.py#L441-L461))
+* `POST /api/file/schedule/sort` — Add Sort Config ([ScheduleSortDTO](../../supernote/models/schedule.py#L441-L461))
 * `PUT /api/file/schedule/sort` — Update Sort Config
 * `DELETE /api/file/schedule/sort/{taskListId}` — Delete Sort Config
-* `POST /api/file/query/schedule/sort` — Query Sort Config ([GetScheduleSortDTO](../supernote/models/schedule.py#L464-L477) → [GetScheduleSortVO](../supernote/models/schedule.py#L645-L663))
+* `POST /api/file/query/schedule/sort` — Query Sort Config ([GetScheduleSortDTO](../../supernote/models/schedule.py#L464-L477) → [GetScheduleSortVO](../../supernote/models/schedule.py#L645-L663))
 
 ### iCalendar Feed Subscriptions (`/api/schedule/feed.ics`)
 * `GET /api/schedule/feed.ics` — Export user tasks in RFC 5545 `VTODO` iCalendar format (`text/calendar`) for calendar app subscriptions (Apple Reminders, Google Calendar, Outlook, Todoist). Accepts authentication via `x-access-token` header or `?token=` query parameter, with optional task list filtering via `?taskListId=`.
@@ -92,7 +92,7 @@ Every mutating API call (`create`, `update`, `delete`, `clear` on groups, tasks,
 
 ## Client SDK Abstraction Strategy (`ScheduleClient`)
 
-The Python SDK ([supernote/client/schedule.py](../supernote/client/schedule.py)) provides a high-level, Pythonic interface.
+The Python SDK ([supernote/client/schedule.py](../../supernote/client/schedule.py)) provides a high-level, Pythonic interface.
 
 While non-spec `/api/schedule/*` server routes are removed, **the Python SDK method signatures remain clean abstractions**:
 

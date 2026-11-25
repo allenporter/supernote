@@ -254,19 +254,19 @@ By default, the server logs at `INFO` level and automatically redacts credential
 
 ## Documentation & Guides
 
-- **[Self-Hosting & Quickstart Guide](../../docs/bootstrap_guide.md)** (`supernote.guides.bootstrap_guide`): Deployment modes, Docker Compose, Admin-First bootstrap, static API keys, physical Supernote tablet setup, Nginx/Caddy reverse proxy configuration, and safe SQLite + blob backups.
-- **[Configuration Reference](../../docs/configuration.md)** (`supernote.guides.configuration`): Complete reference for `config/config.yaml`, `SUPERNOTE_*` environment variables, and priority resolution.
-- **[AI Pipeline, Custom Prompts & MCP Server](../../docs/mcp.md)** (`supernote.guides.mcp`): How the 5-stage processing pipeline works, mixing cloud/local/Apple Vision models, filename and `page_style` prompt routing (`prompts_dir`), and connecting MCP clients via OAuth 2.1 or static `sn_...` keys.
+- **[Self-Hosting & Quickstart Guide](../../docs/guides/bootstrap_guide.md)** (`supernote.guides.bootstrap_guide`): Deployment modes, Docker Compose, Admin-First bootstrap, static API keys, physical Supernote tablet setup, Nginx/Caddy reverse proxy configuration, and safe SQLite + blob backups.
+- **[Configuration Reference](../../docs/reference/configuration.md)** (`supernote.guides.configuration`): Complete reference for `config/config.yaml`, `SUPERNOTE_*` environment variables, and priority resolution.
+- **[AI Pipeline, Custom Prompts & MCP Server](../../docs/guides/mcp.md)** (`supernote.guides.mcp`): How the 5-stage processing pipeline works, mixing cloud/local/Apple Vision models, filename and `page_style` prompt routing (`prompts_dir`), and connecting MCP clients via OAuth 2.1 or static `sn_...` keys.
 - **[OCR Provider Benchmarks](../../evals/ocr/RESULTS.md)** (`supernote.guides.ocr_benchmarks`): Empirical CER/WER accuracy, structure preservation, latency, and cost benchmarks across cloud and local vision models.
 - **[Search & Embedding Benchmarks](../../evals/search/RESULTS.md)** (`supernote.guides.search_benchmarks`): Empirical nDCG, MRR, Recall, Precision, and latency benchmarks comparing keyword, dense vector, and hybrid search across Gemini, OpenAI, and local Ollama embedding models.
-- **[Webhooks, Calendar (`.ics`) & Home Assistant Integrations](../../docs/webhooks_and_integrations.md)** (`supernote.guides.webhooks_and_integrations`): Subscribing to `/api/schedule/feed.ics` `VTODO` feeds, configuring outbound webhooks, verifying `X-Supernote-Signature` HMAC-SHA256 headers, and Home Assistant automations.
+- **[Webhooks, Calendar (`.ics`) & Home Assistant Integrations](../../docs/guides/webhooks_and_integrations.md)** (`supernote.guides.webhooks_and_integrations`): Subscribing to `/api/schedule/feed.ics` `VTODO` feeds, configuring outbound webhooks, verifying `X-Supernote-Signature` HMAC-SHA256 headers, and Home Assistant automations.
 
 ---
 
 ## Development
 
 - **Entry Point**: `supernote/server/app.py` (`supernote.server.app`)
-- **Architecture & Wire Protocol**: [`ARCHITECTURE.md`](ARCHITECTURE.md) (`supernote.guides.architecture`)
+- **Architecture & Wire Protocol**: [`server_architecture.md`](../../docs/architecture/server_architecture.md) (`supernote.guides.architecture`)
 - **Tests**: `tests/server/`
 - **Ephemeral Mode**: Run `supernote serve --ephemeral` for a transient, pre-configured test instance.
 
