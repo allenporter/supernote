@@ -9,6 +9,7 @@ import {
     fetchWikiPage,
     fetchWikiPages,
     fetchWikiStatus,
+    formatWikiActionResult,
     resolveWikiLintIssue,
     saveWikiPage,
     searchWikiPages,
@@ -118,3 +119,64 @@ test('wiki API client saves, searches, compiles, resolves lint, and deletes', as
         globalThis.fetch = origFetch;
     }
 });
+
+for (const { name, mode, result, expected } of [
+    {
+        name: 'paused compiler status',
+        mode: 'backfill',
+        result: { mode: 'backfill', status: 'paused' },
+        expected: {
+            message: 'Wiki compiler is paused — check the status banner for details.',
+            type: 'error',
+        },
+    },
+    {
+        name: 'empty backfill batch',
+        mode: 'backfill',
+        result: { mode: 'backfill', events_processed: 0, pages_updated: 0, status: 'idle' },
+        expected: {
+            message: 'No remaining OCR’d notebooks to backfill.',
+            type: 'info',
+        },
+    },
+    {
+        name: 'updated backfill batch',
+        mode: 'backfill',
+        result: { mode: 'backfill', events_processed: 5, pages_updated: 3, status: 'idle' },
+        expected: {
+            message: 'Backfilled batch (3 pages updated). Run Backfill again for older notebooks.',
+            type: 'success',
+        },
+    },
+    {
+        name: 'up-to-date incremental compile',
+        mode: 'incremental',
+        result: { mode: 'incremental', events_processed: 0, pages_updated: 0, status: 'idle' },
+        expected: {
+            message: 'Wiki is up to date — no new notebook or task changes.',
+            type: 'info',
+        },
+    },
+    {
+        name: 'updated incremental compile',
+        mode: 'incremental',
+        result: { mode: 'incremental', events_processed: 1, pages_updated: 1, status: 'idle' },
+        expected: {
+            message: 'Updated 1 page from 1 recent change.',
+            type: 'success',
+        },
+    },
+    {
+        name: 'lint pass result',
+        mode: 'lint',
+        result: { mode: 'lint', issues: [{ issue_id: 1 }] },
+        expected: {
+            message: 'Wiki lint finished (1 open issue).',
+            type: 'success',
+        },
+    },
+]) {
+    test(`formatWikiActionResult formats ${name}`, () => {
+        assert.deepEqual(formatWikiActionResult(mode, result), expected);
+    });
+}
