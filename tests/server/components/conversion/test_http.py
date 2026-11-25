@@ -9,14 +9,11 @@ from aiohttp.test_utils import TestClient
 
 from supernote.client.device import DeviceClient
 from supernote.client.extended import ExtendedClient
-from supernote.server.components.conversion import (
-    CONVERSION_CONFIG_KEY,
-    CONVERSION_SERVICE_KEY,
-)
+from supernote.server.components.conversion import CONVERSION_SERVICE_KEY
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.keys import BLOB_STORAGE_KEY, URL_SIGNER_KEY
+from supernote.server.keys import BLOB_STORAGE_KEY, COMPONENT_LOADER_KEY, URL_SIGNER_KEY
 
 
 async def _seed_note_file(
@@ -80,10 +77,32 @@ async def test_note_to_png_returns_empty_when_preview_disabled(
         client, session_manager, test_user_id, 9204, "Disabled.note", test_note_path
     )
     assert client.app is not None
-    client.app[CONVERSION_CONFIG_KEY].notebook_preview = False
+    client.app[CONVERSION_SERVICE_KEY].notebook_preview = False
 
     disabled_vo = await device_client.note_to_png(9204)
     assert disabled_vo.png_page_vo_list == []
+
+
+async def test_note_to_png_and_cover_return_empty_when_web_ui_component_not_loaded(
+    client: TestClient,
+    device_client: DeviceClient,
+    extended_client: ExtendedClient,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+    test_note_path: Path,
+) -> None:
+    """Verify note_to_png and note/cover check whether web_ui is loaded in ComponentLoader rather than ServerConfig.web_enabled."""
+    await _seed_note_file(
+        client, session_manager, test_user_id, 9205, "Headless.note", test_note_path
+    )
+    assert client.app is not None
+    client.app[COMPONENT_LOADER_KEY]._components.pop("web_ui", None)
+
+    disabled_png = await device_client.note_to_png(9205)
+    assert disabled_png.png_page_vo_list == []
+
+    disabled_cover = await extended_client.get_note_cover(file_id=9205)
+    assert disabled_cover.url is None
 
 
 async def test_note_to_pdf_and_oss_pdf_download(
@@ -158,7 +177,7 @@ async def test_extended_note_cover_returns_none_when_preview_disabled(
         client, session_manager, test_user_id, 9102, "NoPreview.note", test_note_path
     )
     assert client.app is not None
-    client.app[CONVERSION_CONFIG_KEY].notebook_preview = False
+    client.app[CONVERSION_SERVICE_KEY].notebook_preview = False
 
     disabled_vo = await extended_client.get_note_cover(file_id=9102)
     assert disabled_vo.success is True

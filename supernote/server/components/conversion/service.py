@@ -83,11 +83,14 @@ class ConversionService:
         blob_storage: BlobStorage,
         user_service: UserService,
         processor_service: ProcessorService,
+        *,
+        notebook_preview: bool = True,
     ) -> None:
         self.session_manager = session_manager
         self.blob_storage = blob_storage
         self.user_service = user_service
         self.processor_service = processor_service
+        self.notebook_preview = notebook_preview
 
     async def _get_required_note_node(
         self, user: str, file_id: int

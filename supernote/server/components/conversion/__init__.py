@@ -18,8 +18,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from aiohttp import web
-
 from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
 from supernote.server.core import ServerCore
 
@@ -27,15 +25,11 @@ from .config import ConversionConfig
 from .service import CONVERSION_SERVICE_KEY, ConversionService, ConvertedBlob
 
 __all__ = [
-    "CONVERSION_CONFIG_KEY",
     "CONVERSION_SERVICE_KEY",
     "ConversionComponent",
-    "ConversionConfig",
     "ConversionService",
     "ConvertedBlob",
 ]
-
-CONVERSION_CONFIG_KEY: web.AppKey[ConversionConfig] = web.AppKey("conversion_config")
 
 
 class ConversionComponent:
@@ -47,12 +41,13 @@ class ConversionComponent:
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
         """Instantiate `ConversionService` and expose it via `CONVERSION_SERVICE_KEY`."""
-        core.app[CONVERSION_CONFIG_KEY] = ConversionConfig.from_dict(dict(config))
+        cfg = ConversionConfig.from_dict(dict(config))
         core.app[CONVERSION_SERVICE_KEY] = ConversionService(
             session_manager=core.session_manager,
             blob_storage=core.blob_storage,
             user_service=core.user_service,
             processor_service=core.app[PROCESSOR_SERVICE_KEY],
+            notebook_preview=cfg.notebook_preview,
         )
 
     async def async_start(self, core: ServerCore) -> None:

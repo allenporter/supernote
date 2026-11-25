@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from supernote.server.components.conversion import (
-    CONVERSION_CONFIG_KEY,
     CONVERSION_SERVICE_KEY,
-    ConversionConfig,
     ConversionService,
 )
 from supernote.server.core import Component, ServerCore
@@ -26,11 +24,9 @@ async def test_conversion_component_lifecycle(
     assert component.domain == "conversion"
     assert component.dependencies == ("ai", "processor")
     assert component.platforms == ("http", "processor")
-    assert isinstance(component_core.app[CONVERSION_SERVICE_KEY], ConversionService)
-    assert component_core.app[CONVERSION_CONFIG_KEY] == ConversionConfig(
-        enabled=True,
-        notebook_preview=False,
-    )
+    service = component_core.app[CONVERSION_SERVICE_KEY]
+    assert isinstance(service, ConversionService)
+    assert service.notebook_preview is False
 
     await loader.async_stop_all(component_core)
     await loader.async_stop_all(component_core)
