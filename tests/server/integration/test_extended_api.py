@@ -27,6 +27,7 @@ from supernote.server.db.models.note_processing import (
     SystemTaskDO,
 )
 from supernote.server.db.session import DatabaseSessionManager
+from supernote.server.events import Event, NoteUpdatedEvent
 from supernote.server.keys import (
     BLOB_STORAGE_KEY,
     FILE_SERVICE_KEY,
@@ -387,17 +388,27 @@ async def test_handle_retry_system_tasks(
         await session.commit()
 
     processor_service = client.app[PROCESSOR_SERVICE_KEY]
-    with patch.object(processor_service.event_bus, "publish") as mock_publish:
-        resp = await client.post(
-            "/api/extended/system/tasks/retry",
-            json={"fileId": "101"},
-            headers=auth_headers,
-        )
-        assert resp.status == 200
-        body = await resp.json()
-        assert body["success"] is True
-        assert body["retriedFileIds"] == ["101"]
-        mock_publish.assert_called_once()
+    await processor_service.pause()
+    published_ids: list[int] = []
+
+    async def capture_updated(event: Event) -> None:
+        if isinstance(event, NoteUpdatedEvent):
+            published_ids.append(event.file_id)
+
+    processor_service.event_bus.subscribe(
+        NoteUpdatedEvent, capture_updated, inline=True
+    )
+
+    resp = await client.post(
+        "/api/extended/system/tasks/retry",
+        json={"fileId": "101"},
+        headers=auth_headers,
+    )
+    assert resp.status == 200
+    body = await resp.json()
+    assert body["success"] is True
+    assert body["retriedFileIds"] == ["101"]
+    assert published_ids == [101]
 
     # Own FAILED task and downstream SUMMARY_GENERATION global checkpoint cleared
     # while HASHING, PNG_CONVERSION, and other user's FAILED task remain untouched
