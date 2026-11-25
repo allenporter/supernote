@@ -948,3 +948,46 @@ export async function revokeApiKey(keyId) {
         errorPrefix: 'Failed to revoke API key',
     });
 }
+
+/**
+ * @param {Record<string, any>} raw
+ * @returns {SystemComponentStatus}
+ */
+function mapSystemComponentStatus(raw) {
+    return {
+        domain: String(raw?.domain || ''),
+        enabled: Boolean(raw?.enabled),
+        running: Boolean(raw?.running),
+        source: raw?.source || 'default',
+        readOnly: Boolean(raw?.readOnly),
+        runtimeConfigurable: Boolean(raw?.runtimeConfigurable),
+        restartRequired: Boolean(raw?.restartRequired),
+        config: raw?.config && typeof raw.config === 'object' ? raw.config : {},
+        fields: Array.isArray(raw?.fields)
+            ? raw.fields.map((f) => ({
+                  name: String(f?.name || ''),
+                  type: f?.type || 'string',
+                  default: f?.default,
+              }))
+            : [],
+    };
+}
+
+/**
+ * Fetch built-in component configuration statuses (Admin only; returns `[]` for non-admins on 403).
+ * @returns {Promise<SystemComponentStatus[]>}
+ */
+export async function fetchSystemComponents() {
+    try {
+        const data = await apiRequest('/api/extended/system/components', {
+            method: 'GET',
+            errorPrefix: 'Failed to load server components',
+        });
+        return Array.isArray(data?.components) ? data.components.map(mapSystemComponentStatus) : [];
+    } catch (e) {
+        if (e instanceof ApiError && e.status === 403) {
+            return [];
+        }
+        throw e;
+    }
+}

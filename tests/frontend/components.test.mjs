@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-
+import { logout, setToken } from '../../supernote/server/static/js/api/http.js';
 import { compareItems } from '../../supernote/server/static/js/components/FileBrowserPanel.js';
+import SystemPanel from '../../supernote/server/static/js/components/SystemPanel.js';
 import {
     parseLocalDateInputToEpochMs,
     toLocalDateInputValue,
@@ -218,5 +219,91 @@ test('ViewerSidePanel.js: hides image HTML on whitespace-only text and keeps not
         assert.equal(notebook.result.isStandaloneImage.value, false);
     } finally {
         notebook.unmount();
+    }
+});
+
+test('SystemPanel.js: loads read-only system components, active counts, and config summaries', async () => {
+    const origFetch = globalThis.fetch;
+    const initialComponents = [
+        {
+            domain: 'webhooks',
+            enabled: true,
+            running: true,
+            source: 'database',
+            readOnly: false,
+            runtimeConfigurable: true,
+            restartRequired: false,
+            config: { enabled: true, endpoints: [{ url: 'http://127.0.0.1:9999/hook' }] },
+            fields: [
+                { name: 'enabled', type: 'boolean', default: false },
+                { name: 'endpoints', type: 'array', default: [] },
+            ],
+        },
+        {
+            domain: 'wiki',
+            enabled: false,
+            running: false,
+            source: 'env',
+            readOnly: true,
+            runtimeConfigurable: false,
+            restartRequired: false,
+            config: { enabled: false, debounce_seconds: 60 },
+            fields: [
+                { name: 'enabled', type: 'boolean', default: false },
+                { name: 'debounce_seconds', type: 'number', default: 60 },
+            ],
+        },
+    ];
+
+    try {
+        setToken('admin-tok');
+        globalThis.fetch = async (url) => {
+            if (url === '/api/extended/system/tasks') {
+                return new Response(
+                    JSON.stringify({
+                        tasks: [],
+                        paused: false,
+                        queueSize: 0,
+                        processingFileIds: [],
+                    }),
+                );
+            }
+            if (url === '/api/file/capacity/query') {
+                return new Response(JSON.stringify({ usedCapacity: 1024, totalCapacity: 1048576 }));
+            }
+            if (url === '/api/extended/ai/status') {
+                return new Response(JSON.stringify({ ocrEnabled: true, model: 'gemini' }));
+            }
+            if (url === '/api/extended/system/components') {
+                return new Response(
+                    JSON.stringify({ success: true, components: initialComponents }),
+                );
+            }
+            return new Response(JSON.stringify({ success: true }));
+        };
+
+        globalThis.window = /** @type {any} */ ({
+            addEventListener() {},
+            removeEventListener() {},
+        });
+        const scope = await mountComposable(() => SystemPanel.setup());
+        try {
+            await scope.result.loadData();
+            assert.equal(scope.result.systemComponents.value.length, 2);
+            assert.equal(scope.result.activeComponentCount.value, 1);
+            assert.equal(scope.result.formatComponentSource('env'), 'ENV');
+            assert.deepEqual(scope.result.componentConfigSummary(initialComponents[0]), [
+                'endpoints: 1',
+            ]);
+            assert.deepEqual(scope.result.componentConfigSummary(initialComponents[1]), [
+                'debounce_seconds: 60',
+            ]);
+        } finally {
+            scope.unmount();
+            delete (/** @type {any} */ (globalThis).window);
+        }
+    } finally {
+        await logout({ reload: false });
+        globalThis.fetch = origFetch;
     }
 });
