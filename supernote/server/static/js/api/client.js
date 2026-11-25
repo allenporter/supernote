@@ -991,3 +991,18 @@ export async function fetchSystemComponents() {
         throw e;
     }
 }
+
+/**
+ * Update and persist configuration for a built-in server component (Admin only).
+ * @param {string} domain
+ * @param {Record<string, unknown>} config
+ * @returns {Promise<SystemComponentStatus>}
+ */
+export async function updateSystemComponent(domain, config) {
+    const data = await apiRequest(`/api/extended/system/components/${encodeURIComponent(domain)}`, {
+        method: 'PUT',
+        body: { config },
+        errorPrefix: `Failed to update component '${domain}'`,
+    });
+    return mapSystemComponentStatus(data?.component || {});
+}

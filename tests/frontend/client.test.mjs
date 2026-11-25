@@ -27,6 +27,7 @@ import {
     searchFiles,
     searchSemantic,
     submitOAuthBridgeDecision,
+    updateSystemComponent,
 } from '../../supernote/server/static/js/api/client.js';
 import {
     ApiError,
@@ -869,9 +870,9 @@ test('client.js: revokeOAuthGrant surfaces the server error for an unknown grant
     }
 });
 
-test('client.js: fetchSystemComponents normalizes component payloads and returns [] on 403', async () => {
+test('client.js: fetchSystemComponents and updateSystemComponent normalize component payloads and return [] on 403', async () => {
     const origFetch = globalThis.fetch;
-    /** @type {Array<[string, string]>} */
+    /** @type {Array<[string, string, unknown]>} */
     const calls = [];
     const rawWebhookComp = {
         domain: 'webhooks',
@@ -891,12 +892,41 @@ test('client.js: fetchSystemComponents normalizes component payloads and returns
         setToken('admin-tok');
         globalThis.fetch = async (url, init) => {
             const method = init?.method || 'GET';
-            calls.push([String(url), method]);
-            return new Response(JSON.stringify({ success: true, components: [rawWebhookComp] }));
+            calls.push([String(url), method, init?.body ? JSON.parse(String(init.body)) : null]);
+            if (url === '/api/extended/system/components' && method === 'GET') {
+                return new Response(
+                    JSON.stringify({ success: true, components: [rawWebhookComp] }),
+                );
+            }
+            if (url === '/api/extended/system/components/webhooks' && method === 'PUT') {
+                return new Response(
+                    JSON.stringify({
+                        success: true,
+                        component: {
+                            ...rawWebhookComp,
+                            enabled: true,
+                            running: true,
+                            source: 'database',
+                            config: { enabled: true },
+                        },
+                    }),
+                );
+            }
+            return new Response(JSON.stringify({ success: true }));
         };
 
         assert.deepEqual(await fetchSystemComponents(), [rawWebhookComp]);
-        assert.deepEqual(calls, [['/api/extended/system/components', 'GET']]);
+        assert.deepEqual(await updateSystemComponent('webhooks', { enabled: true }), {
+            ...rawWebhookComp,
+            enabled: true,
+            running: true,
+            source: 'database',
+            config: { enabled: true },
+        });
+        assert.deepEqual(calls, [
+            ['/api/extended/system/components', 'GET', null],
+            ['/api/extended/system/components/webhooks', 'PUT', { config: { enabled: true } }],
+        ]);
 
         globalThis.fetch = async () =>
             new Response(JSON.stringify({ error: 'Forbidden: Admin access required' }), {

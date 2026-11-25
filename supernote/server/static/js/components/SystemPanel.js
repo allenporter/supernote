@@ -5,6 +5,7 @@ import {
     fetchSystemComponents,
     fetchSystemQueueOverview,
     retryFailedSystemTasks,
+    updateSystemComponent,
 } from '../api/client.js';
 import { showToast } from '../composables/useToast.js';
 import { formatSize, formatSystemTimestamp, getErrorMessage } from '../utils/format.js';
@@ -215,7 +216,7 @@ export default {
                 </div>
             </div>
 
-            <!-- 3b. Server Components (Admin Only, Read-Only Status & Provenance) -->
+            <!-- 3b. Server Components (Admin Only, Status, Provenance & Enable/Disable) -->
             <section v-if="systemComponents.length > 0" aria-labelledby="server-components-heading"
                 class="bg-stone-50/80 border border-stone-200/80 p-4 rounded-xl space-y-3">
                 <div class="flex items-center justify-between gap-2 flex-wrap">
@@ -239,7 +240,7 @@ export default {
                                 <span class="text-xs font-mono font-bold text-slate-900 truncate">{{ comp.domain }}</span>
                             </div>
                             <div class="flex items-center gap-1 shrink-0">
-                                <span :class="componentSourceClass(comp.source)"
+                                <span v-if="comp.source !== 'default'" :class="componentSourceClass(comp.source)"
                                     class="px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded border">
                                     {{ formatComponentSource(comp.source) }}
                                 </span>
@@ -248,6 +249,15 @@ export default {
                                     title="Persisted enabled state differs from running state">
                                     RESTART
                                 </span>
+                                <button v-if="!comp.readOnly"
+                                    @click="handleToggleComponent(comp)"
+                                    :disabled="savingComponentDomain !== null"
+                                    type="button"
+                                    :aria-label="(comp.enabled ? 'Disable ' : 'Enable ') + comp.domain"
+                                    :class="comp.enabled ? 'bg-slate-900 text-white border-slate-900 hover:bg-slate-800' : 'bg-white text-slate-700 border-stone-200 hover:bg-stone-50'"
+                                    class="px-2 py-0.5 rounded border text-[10px] font-semibold disabled:opacity-40 transition-colors">
+                                    {{ savingComponentDomain === comp.domain ? '…' : (comp.enabled ? 'On' : 'Off') }}
+                                </button>
                             </div>
                         </div>
                         <div v-if="componentConfigSummary(comp).length > 0" class="flex items-center gap-1.5 flex-wrap pt-0.5">
@@ -408,6 +418,8 @@ export default {
         const aiStatus = ref(null);
         /** @type {import('vue').Ref<SystemComponentStatus[]>} */
         const systemComponents = ref([]);
+        /** @type {import('vue').Ref<string | null>} */
+        const savingComponentDomain = ref(null);
         /** @type {import('vue').Ref<'notebooks' | 'stages'>} */
         const viewMode = ref('notebooks');
         /** @type {import('vue').Ref<string | null>} */
@@ -722,6 +734,34 @@ export default {
         };
 
         /**
+         * Toggle `enabled` for an editable component (`!comp.readOnly`) via `PUT /api/extended/system/components/{domain}`.
+         * @param {SystemComponentStatus} comp
+         */
+        const handleToggleComponent = async (comp) => {
+            if (comp.readOnly || savingComponentDomain.value !== null) return;
+            savingComponentDomain.value = comp.domain;
+            try {
+                const updated = await updateSystemComponent(comp.domain, {
+                    ...comp.config,
+                    enabled: !comp.enabled,
+                });
+                systemComponents.value = systemComponents.value.map((c) =>
+                    c.domain === updated.domain ? updated : c,
+                );
+                showToast(
+                    updated.restartRequired
+                        ? `Saved '${updated.domain}' config (restart required to apply)`
+                        : `${updated.enabled ? 'Enabled' : 'Disabled'} '${updated.domain}'`,
+                    'success',
+                );
+            } catch (e) {
+                showToast(getErrorMessage(e));
+            } finally {
+                savingComponentDomain.value = null;
+            }
+        };
+
+        /**
          * @param {string | number | null} fileId
          */
         const handleRetryFailed = async (fileId = null) => {
@@ -812,6 +852,7 @@ export default {
             capacity,
             aiStatus,
             systemComponents,
+            savingComponentDomain,
             activeComponentCount,
             usagePercent,
             formatSize,
@@ -821,6 +862,7 @@ export default {
             formatComponentSource,
             componentSourceClass,
             componentConfigSummary,
+            handleToggleComponent,
             formatTaskType,
             formatTaskTarget,
             buildTaskHref,
