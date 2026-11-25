@@ -39,6 +39,7 @@ from .models import (
     normalize_alias,
     normalize_slug,
 )
+from .source_service import WikiSourceService
 
 __all__ = [
     "WIKI_SERVICE_KEY",
@@ -64,8 +65,13 @@ def _make_dedup_key(raw_key: str) -> str:
 class WikiService:
     """Multi-user CRUD, graph indexing, lexical search, and structural lint for `f_wiki_*`."""
 
-    def __init__(self, session_manager: DatabaseSessionManager) -> None:
+    def __init__(
+        self,
+        session_manager: DatabaseSessionManager,
+        source_service: WikiSourceService | None = None,
+    ) -> None:
         self._session_manager = session_manager
+        self._source_service = source_service or WikiSourceService(session_manager)
 
     async def upsert_page(self, user_id: int, data: WikiUpsertInput) -> WikiPageDTO:
         """Create, update, or revive a wiki page atomically with revision and graph updates."""
@@ -661,16 +667,25 @@ class WikiService:
                     select(WikiCheckpointDO).where(WikiCheckpointDO.user_id == user_id)
                 )
             ).scalar_one_or_none()
-            return WikiStatusDTO(
-                page_count=int(page_count),
-                open_lint_count=int(open_lint_count),
-                last_sync_token=cp.last_sync_token if cp else None,
-                pending_events_since_lint=cp.pending_events_since_lint if cp else 0,
-                tokens_used_day=cp.tokens_used_day if cp else 0,
-                budget_day_utc=cp.budget_day_utc if cp else None,
-                status=cp.status if cp else "idle",
-                last_error=cp.last_error if cp else None,
-            )
+        (
+            remaining_files,
+            total_files,
+        ) = await self._source_service.count_backfill_progress(
+            user_id,
+            before_file_id=cp.backfill_file_cursor if cp else None,
+        )
+        return WikiStatusDTO(
+            page_count=int(page_count),
+            open_lint_count=int(open_lint_count),
+            last_sync_token=cp.last_sync_token if cp else None,
+            pending_events_since_lint=cp.pending_events_since_lint if cp else 0,
+            tokens_used_day=cp.tokens_used_day if cp else 0,
+            budget_day_utc=cp.budget_day_utc if cp else None,
+            status=cp.status if cp else "idle",
+            last_error=cp.last_error if cp else None,
+            backfill_remaining_files=remaining_files,
+            backfill_total_files=total_files,
+        )
 
     async def delete_user_wiki(self, user_id: int) -> None:
         """Delete all `f_wiki_*` rows belonging to `user_id` (account deletion hook)."""

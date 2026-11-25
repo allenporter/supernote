@@ -58,6 +58,8 @@ import { ApiError, apiRequest, getToken } from './http.js';
  * @property {string | null} budget_day_utc
  * @property {string} status
  * @property {string | null} last_error
+ * @property {number} [backfill_remaining_files]
+ * @property {number} [backfill_total_files]
  */
 
 /**

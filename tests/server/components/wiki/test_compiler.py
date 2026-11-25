@@ -261,9 +261,17 @@ async def test_backfill_and_semantic_lint(
         text_model=fake_llm,
     )
 
+    before_status = await wiki_service.get_status(1)
+    assert before_status.backfill_total_files == 1
+    assert before_status.backfill_remaining_files == 1
+
     bf = await worker.run_backfill(1, max_files=5)
     assert bf.events_processed == 1
     assert bf.pages_updated == 1
+
+    after_status = await wiki_service.get_status(1)
+    assert after_status.backfill_total_files == 1
+    assert after_status.backfill_remaining_files == 0
 
     lint_issues = await worker.run_semantic_lint(1)
     assert any(i.issue_type == "contradiction" for i in lint_issues)

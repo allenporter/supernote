@@ -169,3 +169,51 @@ async def test_list_task_snapshots_orders_most_recently_updated_first(
     svc = WikiSourceService(session_manager)
     tasks = await svc.list_task_snapshots(1, limit=2)
     assert [t.task_id for t in tasks] == ["new", "mid"]
+
+
+async def test_count_backfill_progress_tracks_remaining_and_total_per_user(
+    session_manager: DatabaseSessionManager,
+) -> None:
+    async with session_manager.session() as session:
+        for fid in (10, 20, 30):
+            session.add(
+                UserFileDO(
+                    id=fid,
+                    user_id=1,
+                    file_name=f"Note{fid}.note",
+                    is_folder="N",
+                    is_active="Y",
+                )
+            )
+            session.add(
+                NotePageContentDO(
+                    file_id=fid,
+                    page_index=0,
+                    page_id=f"P{fid}",
+                    text_content=f"Content {fid}",
+                )
+            )
+        # Unrelated user and inactive file must be excluded.
+        session.add(
+            UserFileDO(
+                id=40, user_id=2, file_name="Other.note", is_folder="N", is_active="Y"
+            )
+        )
+        session.add(
+            NotePageContentDO(file_id=40, page_index=0, page_id="P40", text_content="x")
+        )
+        session.add(
+            UserFileDO(
+                id=50, user_id=1, file_name="Deleted.note", is_folder="N", is_active="N"
+            )
+        )
+        session.add(
+            NotePageContentDO(file_id=50, page_index=0, page_id="P50", text_content="y")
+        )
+        await session.commit()
+
+    svc = WikiSourceService(session_manager)
+    assert await svc.count_backfill_progress(1, before_file_id=None) == (3, 3)
+    assert await svc.count_backfill_progress(1, before_file_id=20) == (1, 3)
+    assert await svc.count_backfill_progress(1, before_file_id=10) == (0, 3)
+    assert await svc.count_backfill_progress(2, before_file_id=None) == (1, 1)

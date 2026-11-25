@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import Select, func, select
 
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO
@@ -107,6 +107,49 @@ class WikiSourceService:
                 ]
             return {"tasks": tasks_ctx, "linked_note_pages": pages_ctx}
 
+    def _transcribed_files_stmt(self, user_id: int) -> Select[UserFileDO]:
+        """Return a tenant-scoped query for active files with at least one OCR'd page."""
+        has_transcribed_page = (
+            select(NotePageContentDO.id)
+            .where(
+                NotePageContentDO.file_id == UserFileDO.id,
+                NotePageContentDO.text_content.is_not(None),
+            )
+            .correlate(UserFileDO)
+            .exists()
+        )
+        return select(UserFileDO).where(
+            UserFileDO.user_id == user_id,
+            UserFileDO.is_active == "Y",
+            UserFileDO.is_folder == "N",
+            has_transcribed_page,
+        )
+
+    async def count_backfill_progress(
+        self,
+        user_id: int,
+        *,
+        before_file_id: int | None,
+    ) -> tuple[int, int]:
+        """Return `(remaining_files, total_files)` eligible for wiki backfill."""
+        base_stmt = self._transcribed_files_stmt(user_id)
+        async with self._session_manager.session() as session:
+            total = (
+                await session.execute(
+                    select(func.count()).select_from(base_stmt.subquery())
+                )
+            ).scalar_one()
+            if before_file_id is None:
+                return int(total), int(total)
+            remaining = (
+                await session.execute(
+                    select(func.count()).select_from(
+                        base_stmt.where(UserFileDO.id < before_file_id).subquery()
+                    )
+                )
+            ).scalar_one()
+            return int(remaining), int(total)
+
     async def list_backfill_batch(
         self,
         user_id: int,
@@ -120,21 +163,7 @@ class WikiSourceService:
         is `None` when no more active `.note` files remain.
         """
         async with self._session_manager.session() as session:
-            has_transcribed_page = (
-                select(NotePageContentDO.id)
-                .where(
-                    NotePageContentDO.file_id == UserFileDO.id,
-                    NotePageContentDO.text_content.is_not(None),
-                )
-                .correlate(UserFileDO)
-                .exists()
-            )
-            stmt = select(UserFileDO).where(
-                UserFileDO.user_id == user_id,
-                UserFileDO.is_active == "Y",
-                UserFileDO.is_folder == "N",
-                has_transcribed_page,
-            )
+            stmt = self._transcribed_files_stmt(user_id)
             if before_file_id is not None:
                 stmt = stmt.where(UserFileDO.id < before_file_id)
             files = (
