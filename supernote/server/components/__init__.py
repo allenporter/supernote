@@ -77,6 +77,11 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         default_enabled=True,
     ),
     BuiltinComponentSpec(
+        domain="integrity",
+        import_path="supernote.server.components.integrity:IntegrityComponent",
+        default_enabled=True,
+    ),
+    BuiltinComponentSpec(
         domain="mcp",
         import_path="supernote.server.components.mcp:McpComponent",
         default_enabled=True,

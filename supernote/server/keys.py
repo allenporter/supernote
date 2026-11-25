@@ -24,7 +24,6 @@ if TYPE_CHECKING:
     from .services.blob import BlobStorage
     from .services.coordination import CoordinationService
     from .services.file import FileService
-    from .services.integrity import IntegrityService
     from .services.user import UserService
     from .utils.rate_limit import RateLimiter
     from .utils.url_signer import UrlSigner
@@ -41,7 +40,6 @@ BLOB_STORAGE_KEY: web.AppKey[BlobStorage] = web.AppKey("blob_storage")
 EVENT_BUS_KEY: web.AppKey[LocalEventBus] = web.AppKey("event_bus")
 USER_SERVICE_KEY: web.AppKey[UserService] = web.AppKey("user_service")
 FILE_SERVICE_KEY: web.AppKey[FileService] = web.AppKey("file_service")
-INTEGRITY_SERVICE_KEY: web.AppKey[IntegrityService] = web.AppKey("integrity_service")
 OCR_MODEL_KEY: web.AppKey[OcrModel | None] = web.AppKey("ocr_model")
 SUMMARY_MODEL_KEY: web.AppKey[SummaryModel | None] = web.AppKey("summary_model")
 EMBEDDING_MODEL_KEY: web.AppKey[EmbeddingModel | None] = web.AppKey("embedding_model")

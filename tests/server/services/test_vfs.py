@@ -3,12 +3,12 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from supernote.models.base import ErrorCode
+from supernote.server.components.integrity import IntegrityService
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import RecycleFileDO, UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.exceptions import FileAlreadyExists, InvalidPath, ParentNotFound
 from supernote.server.services.blob import BlobStorage
-from supernote.server.services.integrity import IntegrityService
 from supernote.server.services.vfs import VirtualFileSystem
 
 

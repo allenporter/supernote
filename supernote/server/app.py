@@ -31,7 +31,6 @@ from supernote.server.keys import (
     CORE_KEY,
     EVENT_BUS_KEY,
     FILE_SERVICE_KEY,
-    INTEGRITY_SERVICE_KEY,
     RATE_LIMITER_KEY,
     SESSION_MANAGER_KEY,
     URL_SIGNER_KEY,
@@ -55,7 +54,6 @@ from .routes import (
 from .services.blob import LocalBlobStorage
 from .services.coordination import CoordinationService, SqliteCoordinationService
 from .services.file import FileService
-from .services.integrity import IntegrityService
 from .services.user import UserService
 from .trace import ACCESS_LOG_FORMAT, SanitizedAccessLogger
 from .utils.hashing import get_md5_hash
@@ -112,7 +110,6 @@ def create_app(config: ServerConfig) -> web.Application:
     )
     app[USER_SERVICE_KEY] = user_service
     app[FILE_SERVICE_KEY] = file_service
-    app[INTEGRITY_SERVICE_KEY] = IntegrityService(session_manager, blob_storage)
 
     app[RATE_LIMITER_KEY] = RateLimiter(coordination_service)
 
