@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from http import HTTPStatus
 
 from aiohttp import web
@@ -37,7 +38,7 @@ from supernote.server.routes.oss import stream_blob_response
 from supernote.server.services.blob import BlobStorage
 from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 
-from .service import CONVERSION_SERVICE_KEY, ConversionService
+from .service import CONVERSION_SERVICE_KEY, ConversionService, ConvertedBlob
 
 __all__ = [
     "async_setup_http",
@@ -46,15 +47,22 @@ __all__ = [
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
 
+_PARSE_ERRORS = (
+    json.JSONDecodeError,
+    MissingField,
+    InvalidFieldValue,
+    ValueError,
+    TypeError,
+)
+
 
 @routes.post("/api/extended/file/note/cover")
 async def handle_extended_note_cover(request: web.Request) -> web.Response:
     """Convert/fetch only the first page (page 0) PNG for lightweight explorer thumbnails."""
     user_email = request[REQUEST_USER_KEY]
     try:
-        data = await request.json()
-        req_dto = WebNoteCoverRequestDTO.from_dict(data)
-    except (json.JSONDecodeError, MissingField, InvalidFieldValue, ValueError) as err:
+        req_dto = WebNoteCoverRequestDTO.from_dict(await request.json())
+    except _PARSE_ERRORS as err:
         return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
 
     config: ServerConfig = request.app[CONFIG_KEY]
@@ -88,7 +96,13 @@ async def handle_extended_note_cover(request: web.Request) -> web.Response:
 @routes.post("/api/file/note/to/png")
 async def handle_note_to_png(request: web.Request) -> web.Response:
     """Convert a note to PNG pages and return signed `/api/oss/png/*` URLs."""
-    req_data = PngDTO.from_dict(await request.json())
+    try:
+        req_data = PngDTO.from_dict(await request.json())
+    except _PARSE_ERRORS as err:
+        return web.json_response(
+            create_error_response(f"Invalid Request: {err}").to_dict(), status=400
+        )
+
     user_email = request[REQUEST_USER_KEY]
     config: ServerConfig = request.app[CONFIG_KEY]
 
@@ -122,7 +136,13 @@ async def handle_note_to_png(request: web.Request) -> web.Response:
 @routes.post("/api/file/note/to/pdf")
 async def handle_note_to_pdf(request: web.Request) -> web.Response:
     """Convert a note to PDF and return a signed `/api/oss/pdf/*` URL."""
-    req_data = PdfDTO.from_dict(await request.json())
+    try:
+        req_data = PdfDTO.from_dict(await request.json())
+    except _PARSE_ERRORS as err:
+        return web.json_response(
+            create_error_response(f"Invalid Request: {err}").to_dict(), status=400
+        )
+
     user_email = request[REQUEST_USER_KEY]
     conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
     url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
@@ -149,15 +169,23 @@ async def handle_note_to_pdf(request: web.Request) -> web.Response:
         return SupernoteError.uncaught(err).to_response()
 
 
-@routes.get("/api/oss/png/{file_id}/{page_no}")
-@public_route
-async def handle_oss_png_download(request: web.Request) -> web.StreamResponse:
-    """Handle converted note page PNG download from CACHE_BUCKET."""
+async def _stream_cached_note_render(
+    request: web.Request,
+    *,
+    signed_query_keys: tuple[str, ...] = (),
+    resolve_blob: Callable[[ConversionService, str], Awaitable[ConvertedBlob | None]],
+    not_found_message: str,
+    kind: OSSTransferKind,
+) -> web.StreamResponse:
+    """Verify a signed cache-download URL and stream the resolved `CACHE_BUCKET` blob."""
     url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
     conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
     blob_storage: BlobStorage = request.app[BLOB_STORAGE_KEY]
+
     try:
-        payload = await url_signer.verify(request.path_qs, consume=False)
+        payload = await url_signer.verify(
+            request.path_qs, consume=False, signed_query_keys=signed_query_keys
+        )
     except SupernoteError as err:
         return err.to_response()
 
@@ -169,29 +197,15 @@ async def handle_oss_png_download(request: web.Request) -> web.StreamResponse:
         )
 
     try:
-        file_id = int(request.match_info["file_id"])
-        page_no = int(request.match_info["page_no"])
-    except (KeyError, ValueError):
-        return web.json_response(
-            create_error_response("Invalid file_id or page_no").to_dict(),
-            status=HTTPStatus.BAD_REQUEST,
-        )
-
-    try:
-        blob = await conversion_service.get_note_png_page(user_email, file_id, page_no)
+        blob = await resolve_blob(conversion_service, user_email)
+        if not blob:
+            raise FileNotFoundError(not_found_message)
+        metadata = await blob_storage.get_metadata(CACHE_BUCKET, blob.storage_key)
     except SupernoteError as err:
         return err.to_response()
-    if not blob:
-        return web.json_response(
-            create_error_response("Page PNG not found").to_dict(),
-            status=HTTPStatus.NOT_FOUND,
-        )
-
-    try:
-        metadata = await blob_storage.get_metadata(CACHE_BUCKET, blob.storage_key)
     except FileNotFoundError:
         return web.json_response(
-            create_error_response("Page PNG not found").to_dict(),
+            create_error_response(not_found_message).to_dict(),
             status=HTTPStatus.NOT_FOUND,
         )
 
@@ -202,6 +216,27 @@ async def handle_oss_png_download(request: web.Request) -> web.StreamResponse:
         storage_key=blob.storage_key,
         file_name=blob.file_name,
         file_size=metadata.size,
+        kind=kind,
+    )
+
+
+@routes.get("/api/oss/png/{file_id}/{page_no}")
+@public_route
+async def handle_oss_png_download(request: web.Request) -> web.StreamResponse:
+    """Handle converted note page PNG download from CACHE_BUCKET."""
+    try:
+        file_id = int(request.match_info["file_id"])
+        page_no = int(request.match_info["page_no"])
+    except (KeyError, ValueError):
+        return web.json_response(
+            create_error_response("Invalid file_id or page_no").to_dict(),
+            status=HTTPStatus.BAD_REQUEST,
+        )
+
+    return await _stream_cached_note_render(
+        request,
+        resolve_blob=lambda svc, email: svc.get_note_png_page(email, file_id, page_no),
+        not_found_message="Page PNG not found",
         kind=OSSTransferKind.PNG_PREVIEW,
     )
 
@@ -210,23 +245,6 @@ async def handle_oss_png_download(request: web.Request) -> web.StreamResponse:
 @public_route
 async def handle_oss_pdf_download(request: web.Request) -> web.StreamResponse:
     """Handle converted note PDF download from CACHE_BUCKET."""
-    url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
-    conversion_service: ConversionService = request.app[CONVERSION_SERVICE_KEY]
-    blob_storage: BlobStorage = request.app[BLOB_STORAGE_KEY]
-    try:
-        payload = await url_signer.verify(
-            request.path_qs, consume=False, signed_query_keys=("pages",)
-        )
-    except SupernoteError as err:
-        return err.to_response()
-
-    user_email = payload.get("user")
-    if not user_email:
-        return web.json_response(
-            create_error_response("Missing user identity in signature").to_dict(),
-            status=HTTPStatus.FORBIDDEN,
-        )
-
     try:
         file_id = int(request.match_info["file_id"])
         pages = request.query.get("pages")
@@ -239,31 +257,11 @@ async def handle_oss_pdf_download(request: web.Request) -> web.StreamResponse:
             status=HTTPStatus.BAD_REQUEST,
         )
 
-    try:
-        blob = await conversion_service.get_note_pdf(user_email, file_id, page_no_list)
-    except SupernoteError as err:
-        return err.to_response()
-    if not blob:
-        return web.json_response(
-            create_error_response("Note PDF not found").to_dict(),
-            status=HTTPStatus.NOT_FOUND,
-        )
-
-    try:
-        metadata = await blob_storage.get_metadata(CACHE_BUCKET, blob.storage_key)
-    except FileNotFoundError:
-        return web.json_response(
-            create_error_response("Note PDF not found").to_dict(),
-            status=HTTPStatus.NOT_FOUND,
-        )
-
-    return await stream_blob_response(
-        request=request,
-        blob_storage=blob_storage,
-        bucket=CACHE_BUCKET,
-        storage_key=blob.storage_key,
-        file_name=blob.file_name,
-        file_size=metadata.size,
+    return await _stream_cached_note_render(
+        request,
+        signed_query_keys=("pages",),
+        resolve_blob=lambda svc, email: svc.get_note_pdf(email, file_id, page_no_list),
+        not_found_message="Note PDF not found",
         kind=OSSTransferKind.PDF_EXPORT,
     )
 

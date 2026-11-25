@@ -56,13 +56,16 @@ from supernote.models.summary import (
     UploadSummaryApplyDTO,
     UploadSummaryApplyVO,
 )
+from supernote.server.components.conversion import (
+    CONVERSION_SERVICE_KEY,
+    ConversionService,
+)
 from supernote.server.components.http import HttpRegistrar
 from supernote.server.constants import CACHE_BUCKET
 from supernote.server.core import ServerCore
 from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
     BLOB_STORAGE_KEY,
-    CONVERSION_SERVICE_KEY,
     REQUEST_USER_KEY,
     URL_SIGNER_KEY,
 )
@@ -70,7 +73,6 @@ from supernote.server.metrics import OSSTransferKind
 from supernote.server.routes.decorators import public_route
 from supernote.server.routes.oss import stream_blob_response
 from supernote.server.services.blob import BlobStorage
-from supernote.server.services.conversion import ConversionService
 from supernote.server.utils.paths import generate_inner_name
 from supernote.server.utils.url_signer import UrlSigner, get_request_base_url
 

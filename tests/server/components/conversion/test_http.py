@@ -4,14 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from aiohttp.test_utils import TestClient
 
 from supernote.client.device import DeviceClient
 from supernote.client.extended import ExtendedClient
+from supernote.server.components.conversion import CONVERSION_SERVICE_KEY
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
-from supernote.server.keys import BLOB_STORAGE_KEY, CONFIG_KEY
+from supernote.server.keys import BLOB_STORAGE_KEY, CONFIG_KEY, URL_SIGNER_KEY
 
 
 async def _seed_note_file(
@@ -62,9 +64,22 @@ async def test_note_to_png_and_oss_png_download(
     assert len(pages) == len(png_vo.png_page_vo_list)
     assert pages[0].startswith(b"\x89PNG")
 
+
+async def test_note_to_png_returns_empty_when_preview_disabled(
+    client: TestClient,
+    device_client: DeviceClient,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+    test_note_path: Path,
+) -> None:
+    """Verify POST /api/file/note/to/png returns an empty list when web_notebook_preview is disabled."""
+    await _seed_note_file(
+        client, session_manager, test_user_id, 9204, "Disabled.note", test_note_path
+    )
     assert client.app is not None
     client.app[CONFIG_KEY].web_notebook_preview = False
-    disabled_vo = await device_client.note_to_png(9201)
+
+    disabled_vo = await device_client.note_to_png(9204)
     assert disabled_vo.png_page_vo_list == []
 
 
@@ -88,27 +103,132 @@ async def test_note_to_pdf_and_oss_pdf_download(
     assert pdf_bytes.startswith(b"%PDF")
 
 
-async def test_extended_note_cover_and_validation(
+async def test_extended_note_cover_converts_only_first_page(
     client: TestClient,
     auth_headers: dict[str, str],
     extended_client: ExtendedClient,
     session_manager: DatabaseSessionManager,
     test_user_id: int,
-    test_note_path: Path,
 ) -> None:
-    """Verify POST /api/extended/file/note/cover returns a signed cover URL and rejects malformed payloads."""
+    """Verify POST /api/extended/file/note/cover converts only page 0 and serves a valid PNG."""
+    assert client.app is not None
+    file_id = 9101
+    multipage_note = Path("tests/testdata/mmujynya/stroller.note")
     await _seed_note_file(
-        client, session_manager, test_user_id, 9203, "Cover.note", test_note_path
+        client, session_manager, test_user_id, file_id, "CoverOnly.note", multipage_note
     )
 
-    cover_vo = await extended_client.get_note_cover(file_id=9203)
+    cover_vo = await extended_client.get_note_cover(file_id=file_id)
     assert cover_vo.success is True
     assert cover_vo.url is not None
-    assert "/api/oss/png/9203/0?" in cover_vo.url
+    assert f"/api/oss/png/{file_id}/0?" in cover_vo.url
 
+    # Browser-style string fileId wire payload
     resp = await client.post(
         "/api/extended/file/note/cover",
-        json={},
+        json={"fileId": str(file_id)},
         headers=auth_headers,
     )
+    assert resp.status == 200
+
+    conversion_service = client.app[CONVERSION_SERVICE_KEY]
+    assert (
+        await conversion_service.get_note_png_page("test@example.com", file_id, 1)
+        is None
+    )
+
+    rel_url = "/" + cover_vo.url.split("/", 3)[3]
+    png_resp = await client.get(rel_url)
+    assert png_resp.status == 200
+    assert (await png_resp.read()).startswith(b"\x89PNG")
+
+
+async def test_extended_note_cover_returns_none_when_preview_disabled(
+    client: TestClient,
+    extended_client: ExtendedClient,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+    test_note_path: Path,
+) -> None:
+    """Verify POST /api/extended/file/note/cover returns url=None when preview is disabled."""
+    await _seed_note_file(
+        client, session_manager, test_user_id, 9102, "NoPreview.note", test_note_path
+    )
+    assert client.app is not None
+    client.app[CONFIG_KEY].web_notebook_preview = False
+
+    disabled_vo = await extended_client.get_note_cover(file_id=9102)
+    assert disabled_vo.success is True
+    assert disabled_vo.url is None
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "/api/extended/file/note/cover",
+        "/api/file/note/to/png",
+        "/api/file/note/to/pdf",
+    ],
+)
+async def test_conversion_endpoints_reject_malformed_payload(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    endpoint: str,
+) -> None:
+    """Verify conversion POST endpoints return 400 on missing required fields."""
+    resp = await client.post(endpoint, json={}, headers=auth_headers)
     assert resp.status == 400
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/oss/png/notanint/0",
+        "/api/oss/png/9201/notanint",
+        "/api/oss/pdf/notanint",
+        "/api/oss/pdf/9202?pages=bad",
+    ],
+)
+async def test_oss_render_downloads_reject_invalid_path_or_query_params(
+    client: TestClient,
+    path: str,
+) -> None:
+    """Verify malformed path or pages query params return 400."""
+    resp = await client.get(path)
+    assert resp.status == 400
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/oss/png/9201/0",
+        "/api/oss/pdf/9202",
+    ],
+)
+async def test_oss_render_downloads_reject_unsigned_requests(
+    client: TestClient,
+    path: str,
+) -> None:
+    """Verify unsigned requests to cache download endpoints are rejected."""
+    resp = await client.get(path)
+    assert resp.status in (401, 403)
+
+
+@pytest.mark.parametrize(
+    ("path", "signed_query_keys"),
+    [
+        ("/api/oss/png/99999/0", ()),
+        ("/api/oss/pdf/99999", ("pages",)),
+    ],
+)
+async def test_oss_render_downloads_return_404_when_not_cached(
+    client: TestClient,
+    path: str,
+    signed_query_keys: tuple[str, ...],
+) -> None:
+    """Verify signed requests for uncached renders return 404 without rendering on the fly."""
+    assert client.app is not None
+    url_signer = client.app[URL_SIGNER_KEY]
+    signed_path = await url_signer.sign(path, user="test@example.com", single_use=False)
+    resp = await client.get(signed_path)
+    assert resp.status == 404

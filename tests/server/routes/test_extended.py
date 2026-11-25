@@ -15,7 +15,6 @@ from supernote.client.summary import SummaryClient
 from supernote.models.base import ProcessingStatus
 from supernote.models.extended import PageTranscriptVO
 from supernote.server.ai.models.embedding import EmbeddingTaskType
-from supernote.server.components.conversion import CONVERSION_SERVICE_KEY
 from supernote.server.components.processor.page_hashing import PageHashingModule
 from supernote.server.config import AiConfig, ModelConfig, ServerConfig
 from supernote.server.constants import USER_DATA_BUCKET
@@ -29,7 +28,6 @@ from supernote.server.db.models.note_processing import (
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.keys import (
     BLOB_STORAGE_KEY,
-    CONFIG_KEY,
     EMBEDDING_MODEL_KEY,
     FILE_SERVICE_KEY,
     PROCESSOR_SERVICE_KEY,
@@ -675,68 +673,6 @@ async def test_extended_ai_status_mixed_keyless_provider(
     assert status.vector_search_enabled is False
     assert status.embedding_model is None
     assert status.model == "ollama-summary-v1"
-
-
-async def test_extended_note_cover_converts_only_first_page(
-    client: TestClient,
-    auth_headers: dict[str, str],
-    extended_client: ExtendedClient,
-    session_manager: DatabaseSessionManager,
-    test_user_id: int,
-) -> None:
-    assert client.app is not None
-    blob_storage = client.app[BLOB_STORAGE_KEY]
-    conversion_service = client.app[CONVERSION_SERVICE_KEY]
-    file_id = 9101
-    storage_key = "cover_test_9101.note"
-    multipage_note = Path("tests/testdata/mmujynya/stroller.note")
-
-    await blob_storage.put(USER_DATA_BUCKET, storage_key, multipage_note.read_bytes())
-    async with session_manager.session() as session:
-        session.add(
-            UserFileDO(
-                id=file_id,
-                user_id=test_user_id,
-                directory_id=0,
-                file_name="CoverOnly.note",
-                is_folder="N",
-                storage_key=storage_key,
-                md5="md5_cover_9101",
-            )
-        )
-        await session.commit()
-
-    cover_vo = await extended_client.get_note_cover(file_id=file_id)
-    assert cover_vo.success is True
-    assert cover_vo.url is not None
-    assert f"/api/oss/png/{file_id}/0?" in cover_vo.url
-
-    # Also verify browser-style string fileId wire payload
-    resp = await client.post(
-        "/api/extended/file/note/cover",
-        json={"fileId": str(file_id)},
-        headers=auth_headers,
-    )
-    assert resp.status == 200
-
-    # Page 1 was NOT eagerly converted
-    assert (
-        await conversion_service.get_note_png_page("test@example.com", file_id, 1)
-        is None
-    )
-
-    # Signed URL downloads valid PNG bytes
-    rel_url = "/" + cover_vo.url.split("/", 3)[3]
-    png_resp = await client.get(rel_url)
-    assert png_resp.status == 200
-    png_bytes = await png_resp.read()
-    assert png_bytes.startswith(b"\x89PNG")
-
-    # When web_notebook_preview is disabled, cover endpoint returns url=None
-    client.app[CONFIG_KEY].web_notebook_preview = False
-    disabled_vo = await extended_client.get_note_cover(file_id=file_id)
-    assert disabled_vo.success is True
-    assert disabled_vo.url is None
 
 
 async def test_extended_routes_64bit_string_ids(

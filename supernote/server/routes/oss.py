@@ -6,7 +6,6 @@ Web UI:
 - `POST /api/oss/upload`: Single-shot multipart file upload to `USER_DATA_BUCKET`.
 - `POST /api/oss/upload/part` and `POST /api/oss/upload/complete`: Chunked multipart upload assembly.
 - `GET /api/oss/download`: Byte-range streaming downloads from `USER_DATA_BUCKET` (`supernote.server.services.blob.BlobStorage`).
-- `GET /api/oss/cache`: Signed delivery of cached PNGs and converted PDFs from `CACHE_BUCKET`.
 - `POST /api/oss/summary/upload` and `GET /api/oss/summary/download`: Summary handwriting blob transfer.
 """
 

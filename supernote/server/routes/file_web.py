@@ -4,8 +4,7 @@ Serves the browser-facing file management APIs consumed by the Web UI dashboard 
 `supernote.client.web.WebClient`, including sorted directory queries (`list_query`),
 breadcrumb path resolution (`path_query`), keyword search, folder creation, rename,
 move, copy, upload/download URL signing (`supernote.server.utils.url_signer.UrlSigner`),
-recycle bin management (`/api/file/recycle/*`), and synchronous `.note` to PNG/PDF export
-(`supernote.server.services.conversion.ConversionService`). Delegates VFS operations to
+and recycle bin management (`/api/file/recycle/*`). Delegates VFS operations to
 `supernote.server.services.file.FileService`.
 """
 
