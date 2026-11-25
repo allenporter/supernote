@@ -127,28 +127,11 @@ def create_app(config: ServerConfig) -> web.Application:
     app[CORE_KEY] = core
     app[COMPONENT_LOADER_KEY] = component_loader
 
-    configured_ai_providers = {
-        config.ai.provider_type(m.provider).strip().lower()
-        for m in (
-            config.ai.ocr,
-            config.ai.summary,
-            config.ai.embedding,
-            config.ai.text,
-        )
-        if m is not None
-    }
-    component_configs = {
-        "apple": {"enabled": "apple" in configured_ai_providers},
-        "fake_ai": {"enabled": "fake" in configured_ai_providers},
-        "gemini": {"enabled": "gemini" in configured_ai_providers},
-        "mcp": {"enabled": config.mcp_enabled},
-        "metrics": {"enabled": config.metrics_enabled},
-        "oauth": {"enabled": config.mcp_enabled},
-        "openai": {"enabled": "openai" in configured_ai_providers},
-        "web_ui": {"enabled": config.web_enabled},
-        "webhooks": config.webhooks,
-        "wiki": config.wiki,
-    }
+    load_builtin_components(component_loader, {})
+    config_comp: Any = component_loader.get("config")
+    component_configs = (
+        config_comp.build_static_configs(config) if config_comp is not None else {}
+    )
     load_builtin_components(component_loader, component_configs)
 
     # Register routes
@@ -169,7 +152,14 @@ def create_app(config: ServerConfig) -> web.Application:
         if config.ephemeral:
             await bootstrap_ephemeral_user(app)
 
-        await component_loader.async_setup_all(core, component_configs)
+        config_comp: Any = component_loader.get("config")
+        if config_comp is not None:
+            resolved_configs = await config_comp.async_resolve_startup_configs(core)
+            load_builtin_components(component_loader, resolved_configs)
+        else:
+            resolved_configs = component_configs
+
+        await component_loader.async_setup_all(core, resolved_configs)
         await component_loader.async_load_all_platforms(core)
 
         logger.info("Starting background services...")

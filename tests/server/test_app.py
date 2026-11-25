@@ -24,6 +24,7 @@ from supernote.server.app import (
     create_app,
     run,
 )
+from supernote.server.components.config.service import async_save_component_config
 from supernote.server.components.fake_ai import FakeAiComponent
 from supernote.server.components.integrity import INTEGRITY_SERVICE_KEY
 from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
@@ -37,6 +38,7 @@ from supernote.server.core import ComponentLoader, ServerCore
 from supernote.server.db.models.user import UserDO
 from supernote.server.keys import (
     COMPONENT_LOADER_KEY,
+    COORDINATION_SERVICE_KEY,
     CORE_KEY,
     EMBEDDING_MODEL_KEY,
     OCR_MODEL_KEY,
@@ -231,6 +233,7 @@ async def test_static_frontend_cache_control_no_cache(
 async def test_static_frontend_disabled_when_web_enabled_false(
     aiohttp_client: AiohttpClient,
     server_config: ServerConfig,
+    session_manager: Any,
 ) -> None:
     """Verify that index and static routes are not registered when web_enabled is False."""
     disabled_config = dataclasses.replace(server_config, web_enabled=False)
@@ -256,6 +259,7 @@ async def test_static_frontend_disabled_when_web_enabled_false(
 async def test_png_module_registration_matrix(
     aiohttp_client: AiohttpClient,
     server_config: ServerConfig,
+    session_manager: Any,
     web_enabled: bool,
     web_notebook_preview: bool,
     gemini_api_key: str | None,
@@ -419,6 +423,7 @@ async def test_jwt_auth_middleware_accepts_oauth_token_on_file_apis_and_blocks_i
 async def test_create_app_wires_server_core_and_skips_disabled_webhooks(
     aiohttp_client: AiohttpClient,
     server_config: ServerConfig,
+    session_manager: Any,
 ) -> None:
     """Verify `create_app` exposes `ServerCore` + `ComponentLoader` and omits disabled webhooks."""
     config = dataclasses.replace(server_config, web_enabled=False)
@@ -466,6 +471,7 @@ async def test_create_app_registers_and_runs_webhooks_component_when_enabled(
 async def test_create_app_loads_fake_ai_only_when_configured(
     aiohttp_client: AiohttpClient,
     server_config: ServerConfig,
+    session_manager: Any,
 ) -> None:
     """Verify `create_app` registers `fake_ai` only when configured and resolves models via `AiRegistrar` on startup."""
     default_app = create_app(dataclasses.replace(server_config, web_enabled=False))
@@ -475,7 +481,7 @@ async def test_create_app_loads_fake_ai_only_when_configured(
         server_config,
         web_enabled=False,
         ai=AiConfig(
-            providers={"local_fake": ProviderConfig(type="Fake")},
+            providers={"local_fake": ProviderConfig(type="Fake_Ai")},
             ocr=ModelConfig(provider="local_fake", model="fake-ocr"),
             embedding=ModelConfig(provider="local_fake", model="fake-embed"),
         ),
@@ -489,3 +495,33 @@ async def test_create_app_loads_fake_ai_only_when_configured(
     assert ocr_model.model_id == "fake-ocr"
     assert fake_app[EMBEDDING_MODEL_KEY] is not None
     assert fake_app[SEARCH_SERVICE_KEY].embedding_model is fake_app[EMBEDDING_MODEL_KEY]
+
+
+async def test_startup_loads_db_persisted_component_when_not_overridden_by_yaml_or_env(
+    aiohttp_client: AiohttpClient,
+    server_config: ServerConfig,
+    session_manager: Any,
+) -> None:
+    """Verify `on_startup` resolves DB-persisted component config and enables opt-in components."""
+    config = dataclasses.replace(server_config, web_enabled=False)
+    app = create_app(config)
+    assert app[COMPONENT_LOADER_KEY].get("webhooks") is None
+
+    await async_save_component_config(
+        app[COORDINATION_SERVICE_KEY],
+        "webhooks",
+        {
+            "enabled": True,
+            "endpoints": [
+                {
+                    "url": "http://127.0.0.1:9999/db-startup-hook",
+                    "user": "test@example.com",
+                    "secret": "db-secret",
+                }
+            ],
+        },
+    )
+
+    await aiohttp_client(app)
+    comp = app[COMPONENT_LOADER_KEY].get("webhooks")
+    assert isinstance(comp, WebhooksComponent)

@@ -78,5 +78,5 @@ def create_text_model(config: ServerConfig) -> TextGenerationModel | None:
 
 
 async def async_setup_text(core: ServerCore, registrar: AiRegistrar) -> None:
-    """Register the ``fake`` text generation provider with `AiRegistrar`."""
-    registrar.register_text("fake", create_text_model)
+    """Register the ``fake_ai`` text generation provider with `AiRegistrar`."""
+    registrar.register_text("fake_ai", create_text_model)

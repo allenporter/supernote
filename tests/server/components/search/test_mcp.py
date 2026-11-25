@@ -32,7 +32,7 @@ def mcp_enabled() -> bool:
 def server_config(server_config: ServerConfig) -> ServerConfig:
     """Configure the fake embedding provider through the `ai` + `fake_ai` components."""
     server_config.ai = AiConfig(
-        embedding=ModelConfig(provider="fake", model="fake-embedding-v1"),
+        embedding=ModelConfig(provider="fake_ai", model="fake-embedding-v1"),
     )
     return server_config
 

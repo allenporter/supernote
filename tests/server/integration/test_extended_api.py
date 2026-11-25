@@ -45,9 +45,9 @@ def extended_client(authenticated_client: Client) -> ExtendedClient:
 def ai_config() -> AiConfig:
     """Default AI configuration for extended route tests."""
     return AiConfig(
-        ocr=ModelConfig(provider="fake", model="fake-ocr-v1"),
-        summary=ModelConfig(provider="fake", model="fake-summary-v1"),
-        embedding=ModelConfig(provider="fake", model="fake-embedding-v1"),
+        ocr=ModelConfig(provider="fake_ai", model="fake-ocr-v1"),
+        summary=ModelConfig(provider="fake_ai", model="fake-summary-v1"),
+        embedding=ModelConfig(provider="fake_ai", model="fake-embedding-v1"),
     )
 
 
@@ -655,7 +655,7 @@ async def test_extended_ai_status_disabled(extended_client: ExtendedClient) -> N
     [
         AiConfig(
             ocr=None,
-            summary=ModelConfig(provider="fake", model="ollama-summary-v1"),
+            summary=ModelConfig(provider="fake_ai", model="ollama-summary-v1"),
             embedding=None,
         )
     ],

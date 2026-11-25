@@ -267,7 +267,7 @@ async def test_http_cancelled_request_records_499_without_duration() -> None:
 
 
 async def test_metrics_disabled(
-    server_config: ServerConfig, aiohttp_client: Any
+    server_config: ServerConfig, aiohttp_client: Any, session_manager: Any
 ) -> None:
     """Verify that the metrics endpoint is not registered when metrics_enabled is False."""
     server_config.metrics_enabled = False

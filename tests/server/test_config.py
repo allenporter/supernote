@@ -32,6 +32,7 @@ def test_server_config_defaults(tmp_path: Path) -> None:
     assert config.port == 8080
     assert config.storage_dir == "storage"
     assert config.auth.secret_key == ""
+    assert not (config_dir / "config.yaml").exists()
 
 
 def test_server_config_load_from_file(tmp_path: Path) -> None:
@@ -584,3 +585,50 @@ def test_event_log_retention_days_config_and_env(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         ServerConfig(event_log_retention_days=-1)
+
+
+def test_server_config_default_component_sources(tmp_path: Path) -> None:
+    """Unconfigured `ServerConfig.load` records no static `component_sources` and no active AI provider types."""
+    default_cfg = ServerConfig.load(tmp_path / "missing")
+    assert default_cfg.component_sources == {}
+    assert default_cfg.root_component_configs == {}
+    assert default_cfg.ai.active_provider_types == set()
+
+
+def test_server_config_yaml_and_env_component_sources(tmp_path: Path) -> None:
+    """Root `<domain>:` YAML sections record `'yaml'` provenance and `SUPERNOTE_*` env vars override with `'env'`."""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    with open(config_dir / "config.yaml", "w") as f:
+        yaml.safe_dump(
+            {
+                "mcp": {"enabled": False},
+                "webhooks": {"enabled": True, "endpoints": []},
+                "wiki": {"enabled": True, "debounce_seconds": 30},
+            },
+            f,
+        )
+
+    yaml_cfg = ServerConfig.load(config_dir)
+    assert yaml_cfg.mcp_enabled is False
+    assert yaml_cfg.component_sources["mcp"] == "yaml"
+    assert yaml_cfg.component_sources["webhooks"] == "yaml"
+    assert yaml_cfg.component_sources["wiki"] == "yaml"
+    assert yaml_cfg.root_component_configs["mcp"] == {"enabled": False}
+
+    with patch.dict(
+        os.environ,
+        {
+            "SUPERNOTE_MCP_ENABLED": "true",
+            "SUPERNOTE_WEBHOOKS_ENABLED": "false",
+            "SUPERNOTE_WIKI_ENABLED": "false",
+        },
+    ):
+        env_cfg = ServerConfig.load(config_dir)
+
+    assert env_cfg.mcp_enabled is True
+    assert env_cfg.component_sources["mcp"] == "env"
+    assert env_cfg.component_sources["webhooks"] == "env"
+    assert env_cfg.component_sources["wiki"] == "env"
+    assert env_cfg.webhooks["enabled"] is False
+    assert env_cfg.wiki["enabled"] is False

@@ -27,13 +27,13 @@ async def test_fake_text_model_via_component_loader(
     load_components: LoadComponents,
 ) -> None:
     component_core.config.ai = AiConfig(
-        text=ModelConfig(provider="fake", model="fake-wiki-v1"),
+        text=ModelConfig(provider="fake_ai", model="fake-wiki-v1"),
     )
     await load_components("ai", "fake_ai")
 
     model = component_core.app[TEXT_MODEL_KEY]
     assert model is not None
-    assert model.provider == "fake"
+    assert model.provider == "fake_ai"
     assert model.model_id == "fake-wiki-v1"
     result = await model.generate_json("hello", response_schema={"type": "object"})
     assert result == {"page_ops": [], "log_entry": "Compiled (5 chars)"}

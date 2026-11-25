@@ -58,5 +58,5 @@ def create_ocr_model(config: ServerConfig) -> OcrModel | None:
 
 
 async def async_setup_ocr(core: ServerCore, registrar: AiRegistrar) -> None:
-    """Register the ``fake`` OCR provider with `AiRegistrar`."""
-    registrar.register_ocr("fake", create_ocr_model)
+    """Register the ``fake_ai`` OCR provider with `AiRegistrar`."""
+    registrar.register_ocr("fake_ai", create_ocr_model)

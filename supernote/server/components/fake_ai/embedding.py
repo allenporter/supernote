@@ -117,5 +117,5 @@ def create_embedding_model(config: ServerConfig) -> EmbeddingModel | None:
 
 
 async def async_setup_embedding(core: ServerCore, registrar: AiRegistrar) -> None:
-    """Register the ``fake`` embedding provider with `AiRegistrar`."""
-    registrar.register_embedding("fake", create_embedding_model)
+    """Register the ``fake_ai`` embedding provider with `AiRegistrar`."""
+    registrar.register_embedding("fake_ai", create_embedding_model)

@@ -37,7 +37,7 @@ def wiki_enabled() -> bool:
 @pytest.fixture
 def server_config(server_config: ServerConfig, wiki_enabled: bool) -> ServerConfig:
     """Configure the wiki component with the fake text generation provider."""
-    server_config.ai = AiConfig(text=ModelConfig(provider="fake", model="fake-wiki"))
+    server_config.ai = AiConfig(text=ModelConfig(provider="fake_ai", model="fake-wiki"))
     server_config.wiki = {"enabled": wiki_enabled}
     return server_config
 

@@ -285,9 +285,9 @@ async def test_all_builtin_components_http_platform_end_to_end(
     ai_comp = loader.get("ai")
     assert isinstance(ai_comp, AiComponent)
     ai_registrar = ai_comp.get_platform_registrar()
-    assert {"apple", "fake", "gemini", "openai"} <= set(ai_registrar.ocr_providers)
-    assert {"fake", "gemini", "openai"} <= set(ai_registrar.summary_providers)
-    assert {"fake", "gemini", "openai"} <= set(ai_registrar.embedding_providers)
+    assert {"apple", "fake_ai", "gemini", "openai"} <= set(ai_registrar.ocr_providers)
+    assert {"fake_ai", "gemini", "openai"} <= set(ai_registrar.summary_providers)
+    assert {"fake_ai", "gemini", "openai"} <= set(ai_registrar.embedding_providers)
 
     http_registrar = component_core.app[HTTP_REGISTRAR_KEY]
     mcp_comp = loader.get("mcp")
@@ -363,6 +363,12 @@ def test_load_builtin_components_loads_only_enabled_specs() -> None:
 
     load_builtin_components(loader, {}, specs=(default_on,))
     assert loader.get("webhooks") is not None
+
+    # Re-running with enabled=False while IDLE unregisters the component
+    load_builtin_components(
+        loader, {"webhooks": {"enabled": False}}, specs=(default_on,)
+    )
+    assert loader.get("webhooks") is None
 
 
 @pytest.mark.parametrize(

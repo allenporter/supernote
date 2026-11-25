@@ -25,7 +25,7 @@ from supernote.server.config import ServerConfig
 from supernote.server.core import ComponentLoader, ServerCore
 from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.events import LocalEventBus
-from supernote.server.keys import CONFIG_KEY, USER_SERVICE_KEY
+from supernote.server.keys import COMPONENT_LOADER_KEY, CONFIG_KEY, USER_SERVICE_KEY
 from supernote.server.services.blob import BlobStorage
 from supernote.server.services.coordination import CoordinationService
 from supernote.server.services.file import FileService
@@ -55,6 +55,7 @@ def component_core(
     app = web.Application()
     app[CONFIG_KEY] = server_config
     app[USER_SERVICE_KEY] = user_service
+    app[COMPONENT_LOADER_KEY] = ComponentLoader()
     return ServerCore(
         config=server_config,
         app=app,
@@ -80,6 +81,7 @@ async def load_components(
         configs: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> ComponentLoader:
         loader = ComponentLoader()
+        component_core.app[COMPONENT_LOADER_KEY] = loader
         pending = list(domains)
         while pending:
             domain = pending.pop(0)

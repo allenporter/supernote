@@ -61,9 +61,9 @@ def server_config(
             secret_key="test-secret-key-32-characters-long!!",
         ),
         ai=AiConfig(
-            ocr=ModelConfig(provider="fake", model="fake-ocr-v1"),
-            summary=ModelConfig(provider="fake", model="fake-summary-v1"),
-            embedding=ModelConfig(provider="fake", model="fake-embedding-v1"),
+            ocr=ModelConfig(provider="fake_ai", model="fake-ocr-v1"),
+            summary=ModelConfig(provider="fake_ai", model="fake-summary-v1"),
+            embedding=ModelConfig(provider="fake_ai", model="fake-embedding-v1"),
         ),
     )
 

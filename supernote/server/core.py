@@ -189,6 +189,14 @@ class ComponentLoader:
             raise DuplicateComponentError(domain)
         self._components[domain] = component
 
+    def unregister(self, domain: str) -> Component | None:
+        """Remove and return a registered component before setup if present."""
+        if self._state is not _LifecycleState.IDLE:
+            raise ComponentError(
+                f"Cannot unregister component after setup (state={self._state.value!r})"
+            )
+        return self._components.pop(domain, None)
+
     def resolve_order(self) -> tuple[Component, ...]:
         """Resolve a deterministic topological order preserving registration tie-breaks."""
         for domain, comp in self._components.items():

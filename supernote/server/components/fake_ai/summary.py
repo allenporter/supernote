@@ -75,5 +75,5 @@ def create_summary_model(config: ServerConfig) -> SummaryModel | None:
 
 
 async def async_setup_summary(core: ServerCore, registrar: AiRegistrar) -> None:
-    """Register the ``fake`` summary provider with `AiRegistrar`."""
-    registrar.register_summary("fake", create_summary_model)
+    """Register the ``fake_ai`` summary provider with `AiRegistrar`."""
+    registrar.register_summary("fake_ai", create_summary_model)
