@@ -97,6 +97,13 @@ body {
     margin-bottom: 0;
 }
 
+.mermaid-svg-container svg {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+}
+
 .markdown-prose h1 {
     font-size: 0.9375rem;
     font-weight: 700;

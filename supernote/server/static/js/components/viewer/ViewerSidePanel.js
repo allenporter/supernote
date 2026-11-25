@@ -3,10 +3,15 @@ import { useModalEscape } from '../../composables/useModalEscape.js';
 import { showToast } from '../../composables/useToast.js';
 import { copyTextToClipboard } from '../../utils/clipboard.js';
 import { renderMarkdown } from '../../utils/markdown.js';
+import { splitMermaidSegments } from '../../utils/mermaid.js';
+import MermaidBlock from './MermaidBlock.js';
 import { formatContent, formatLinkLabel, hasCopyablePageText } from './noteMeta.js';
 
 export default {
     name: 'ViewerSidePanel',
+    components: {
+        MermaidBlock,
+    },
     props: {
         fileId: { type: [String, Number], default: null },
         isOpenMobile: { type: Boolean, default: false },
@@ -159,6 +164,11 @@ export default {
             })),
         );
 
+        /**
+         * @param {string | null | undefined} text
+         */
+        const getTranscriptSegments = (text) => splitMermaidSegments(formatContent(text));
+
         expose({ scrollToPage });
 
         return {
@@ -168,6 +178,7 @@ export default {
             getPageLinks,
             renderLinkLabel,
             formatContent,
+            getTranscriptSegments,
             hasCopyablePageText,
             isPageCopied,
             copyPageTranscript,
@@ -307,8 +318,13 @@ export default {
                             </button>
                         </div>
 
-                        <div v-if="pageItem.hasTranscript" class="p-3.5 font-mono text-xs text-slate-800 whitespace-pre-wrap leading-relaxed select-text">
-                            <template v-if="pageItem.text">{{ formatContent(pageItem.text) }}</template>
+                        <div v-if="pageItem.hasTranscript" class="p-3.5 text-xs text-slate-800 leading-relaxed select-text space-y-2">
+                            <template v-if="pageItem.text">
+                                <template v-for="(seg, segIdx) in getTranscriptSegments(pageItem.text)" :key="'seg-' + pageItem.pageIndex + '-' + segIdx">
+                                    <mermaid-block v-if="seg.type === 'mermaid'" :code="seg.content"></mermaid-block>
+                                    <div v-else class="font-mono whitespace-pre-wrap">{{ seg.content }}</div>
+                                </template>
+                            </template>
                             <span v-else class="italic text-stone-500 font-sans">No text recognized on this page.</span>
                         </div>
                     </div>
