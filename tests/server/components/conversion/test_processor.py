@@ -8,6 +8,10 @@ from sqlalchemy import select
 
 from supernote.models.base import TaskType
 from supernote.server.components.ai import OCR_MODEL_KEY
+from supernote.server.components.conversion import (
+    CONVERSION_CONFIG_KEY,
+    ConversionConfig,
+)
 from supernote.server.components.conversion.processor import (
     PngConversionModule,
     async_setup_processor,
@@ -140,8 +144,10 @@ async def test_async_setup_processor_registers_png_conversion_stage(
         config=dataclasses.replace(
             component_core.config,
             web_enabled=web_enabled,
-            web_notebook_preview=web_notebook_preview,
         ),
+    )
+    core.app[CONVERSION_CONFIG_KEY] = ConversionConfig(
+        notebook_preview=web_notebook_preview
     )
     core.app[OCR_MODEL_KEY] = FakeOcrModel() if has_ocr else None
 
