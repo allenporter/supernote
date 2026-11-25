@@ -1,3 +1,4 @@
+import dataclasses
 import io
 from pathlib import Path
 
@@ -5,10 +6,16 @@ import pytest
 from PIL import Image
 from sqlalchemy import select
 
-from supernote.server.components.processor.png_conversion import (
+from supernote.models.base import TaskType
+from supernote.server.components.ai import OCR_MODEL_KEY
+from supernote.server.components.conversion.processor import (
     PngConversionModule,
+    async_setup_processor,
 )
+from supernote.server.components.fake_ai.ocr import FakeOcrModel
+from supernote.server.components.processor import ProcessorRegistrar
 from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
+from supernote.server.core import ServerCore
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.models.note_processing import NotePageContentDO, SystemTaskDO
 from supernote.server.db.session import DatabaseSessionManager
@@ -109,3 +116,39 @@ async def test_process_png_conversion_success(
         assert img.width > 0
         assert img.height > 0
         print(f"Generated PNG size: {img.size}")
+
+
+@pytest.mark.parametrize(
+    ("web_enabled", "web_notebook_preview", "has_ocr", "expected_png_enabled"),
+    [
+        (True, True, False, True),
+        (True, False, False, False),
+        (False, True, False, False),
+        (False, False, True, True),
+    ],
+)
+async def test_async_setup_processor_registers_png_conversion_stage(
+    component_core: ServerCore,
+    web_enabled: bool,
+    web_notebook_preview: bool,
+    has_ocr: bool,
+    expected_png_enabled: bool,
+) -> None:
+    """async_setup_processor registers PngConversionModule and toggles enabled by OCR/preview config."""
+    core = dataclasses.replace(
+        component_core,
+        config=dataclasses.replace(
+            component_core.config,
+            web_enabled=web_enabled,
+            web_notebook_preview=web_notebook_preview,
+        ),
+    )
+    core.app[OCR_MODEL_KEY] = FakeOcrModel() if has_ocr else None
+
+    registrar = ProcessorRegistrar()
+    await async_setup_processor(core, registrar)
+
+    assert [m.task_type for m in registrar.modules] == [TaskType.PNG_CONVERSION]
+    png_mod = registrar.modules[0]
+    assert isinstance(png_mod, PngConversionModule)
+    assert png_mod.enabled is expected_png_enabled

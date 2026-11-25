@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
 
 from mcp.types import CallToolResult
 
+from supernote.server.components.mcp.config import McpConfig
 from supernote.server.components.mcp.metrics import (
     init_mcp_metrics,
     track_mcp_tool_call,
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "McpComponent",
+    "McpConfig",
     "McpRegistrar",
     "get_authenticated_actor",
     "get_authenticated_user_id",
@@ -149,6 +151,7 @@ class McpComponent:
     hosted_platforms: tuple[str, ...] = ("mcp",)
 
     def __init__(self) -> None:
+        self._config: McpConfig = McpConfig()
         self._mcp_server: MCPServer | None = None
         self._registrar: McpRegistrar | None = None
         self._task: asyncio.Task[None] | None = None
@@ -159,10 +162,11 @@ class McpComponent:
         return self._registrar
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:
-        """Initialize `McpRegistrar` and prepare the FastMCP resource server."""
+        """Parse `McpConfig`, initialize `McpRegistrar`, and prepare the FastMCP resource server."""
         from .server import create_mcp_server  # noqa: PLC0415
 
-        rs_url = f"{core.config.mcp_base_url}/mcp"
+        self._config = McpConfig.from_dict(dict(config))
+        rs_url = f"{self._config.resolve_base_url(core.config.host)}/mcp"
         self._mcp_server = create_mcp_server(
             core.config.base_url, rs_url, core.user_service
         )
@@ -184,7 +188,7 @@ class McpComponent:
             run_server(
                 self._mcp_server,
                 core.config.host,
-                core.config.mcp_port,
+                self._config.port,
                 core.config.proxy_mode,
             ),
             name="mcp-resource-server",

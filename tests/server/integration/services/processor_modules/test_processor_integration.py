@@ -5,14 +5,14 @@ from sqlalchemy import select
 
 from supernote.client.client import Client
 from supernote.client.summary import SummaryClient
+from supernote.server.components.conversion.processor import (
+    PngConversionModule,
+)
 from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
 from supernote.server.components.fake_ai.ocr import FakeOcrModel
 from supernote.server.components.fake_ai.summary import FakeSummaryModel
 from supernote.server.components.processor import ProcessorService
 from supernote.server.components.processor.page_hashing import PageHashingModule
-from supernote.server.components.processor.png_conversion import (
-    PngConversionModule,
-)
 from supernote.server.components.search.processor import EmbeddingModule
 from supernote.server.components.summary import SummaryService
 from supernote.server.components.summary.processor import SummaryModule

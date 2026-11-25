@@ -14,6 +14,9 @@ from sqlalchemy import select
 from supernote.models.base import ProcessingStatus, TaskType
 from supernote.notebook import fileformat
 from supernote.server.ai.models.ocr import ConcurrencyLimitedOcrModel, OcrModel
+from supernote.server.components.conversion.processor import (
+    PngConversionModule,
+)
 from supernote.server.components.fake_ai.embedding import FakeEmbeddingModel
 from supernote.server.components.fake_ai.ocr import FakeOcrModel
 from supernote.server.components.fake_ai.summary import FakeSummaryModel
@@ -23,9 +26,6 @@ from supernote.server.components.processor import (
     TaskScope,
 )
 from supernote.server.components.processor.page_hashing import PageHashingModule
-from supernote.server.components.processor.png_conversion import (
-    PngConversionModule,
-)
 from supernote.server.components.search import SearchService
 from supernote.server.components.search.processor import EmbeddingModule
 from supernote.server.components.summary import SummaryService

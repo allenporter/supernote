@@ -40,7 +40,7 @@ class TranscriptComponent:
     """Vertical component managing formatted and per-page OCR transcript retrieval."""
 
     domain = "transcript"
-    dependencies: tuple[str, ...] = ("ai",)
+    dependencies: tuple[str, ...] = ("ai", "conversion")
     platforms: tuple[str, ...] = ("http", "mcp", "processor")
 
     async def async_setup(self, core: ServerCore, config: Mapping[str, Any]) -> None:

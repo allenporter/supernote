@@ -26,12 +26,12 @@ from supernote.server.app import (
 )
 from supernote.server.components.ai import EMBEDDING_MODEL_KEY, OCR_MODEL_KEY
 from supernote.server.components.config.service import async_save_component_config
+from supernote.server.components.conversion.processor import (
+    PngConversionModule,
+)
 from supernote.server.components.fake_ai import FakeAiComponent
 from supernote.server.components.integrity import INTEGRITY_SERVICE_KEY
 from supernote.server.components.processor import PROCESSOR_SERVICE_KEY
-from supernote.server.components.processor.png_conversion import (
-    PngConversionModule,
-)
 from supernote.server.components.search import SEARCH_SERVICE_KEY
 from supernote.server.components.webhooks import WebhooksComponent
 from supernote.server.config import AiConfig, ModelConfig, ProviderConfig, ServerConfig

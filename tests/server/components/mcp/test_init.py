@@ -78,6 +78,15 @@ async def test_mcp_component_stop_after_setup_only(
     await loader.async_stop_all(component_core)
 
 
+async def test_mcp_component_rejects_invalid_config(
+    load_components: LoadComponents,
+) -> None:
+    with pytest.raises(
+        ValueError, match="mcp.port must be an integer between 0 and 65535"
+    ):
+        await load_components("mcp", configs={"mcp": {"port": -1}}, start=False)
+
+
 def test_mcp_registrar_rejects_invalid_and_duplicate_names() -> None:
     registrar = McpRegistrar()
 

@@ -245,8 +245,13 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_MCP_ENABLED`
     """
 
-    mcp_port: int = 8081
+    mcp_port: int = field(
+        default=8081,
+        metadata={"component": ("mcp", "port")},
+    )
     """Port to bind the MCP server to.
+
+    Aliases `mcp.port`.
 
     Env Var: `SUPERNOTE_MCP_PORT`
     """
@@ -256,8 +261,13 @@ class ServerConfig(DataClassYAMLMixin):
     Used for generating links and for the MCP Authorization Server issuer.
     """
 
-    _mcp_base_url: str | None = field(default=None, metadata={"name": "mcp_base_url"})
+    _mcp_base_url: str | None = field(
+        default=None,
+        metadata={"name": "mcp_base_url", "component": ("mcp", "base_url")},
+    )
     """Base URL for the MCP server (port 8081).
+
+    Aliases `mcp.base_url`.
 
     Used for RFC 9728 discovery if the server is behind a proxy.
     """
@@ -641,6 +651,7 @@ class ServerConfig(DataClassYAMLMixin):
                 config.mcp_port = int(
                     os.getenv("SUPERNOTE_MCP_PORT", str(config.mcp_port))
                 )
+                config._component_sources["mcp"] = ComponentConfigSource.ENV
                 logger.info(f"Using SUPERNOTE_MCP_PORT: {config.mcp_port}")
             except ValueError:
                 pass
@@ -686,6 +697,7 @@ class ServerConfig(DataClassYAMLMixin):
 
         if os.getenv("SUPERNOTE_MCP_BASE_URL"):
             config._mcp_base_url = os.getenv("SUPERNOTE_MCP_BASE_URL")
+            config._component_sources["mcp"] = ComponentConfigSource.ENV
             logger.info(f"Using SUPERNOTE_MCP_BASE_URL: {config._mcp_base_url}")
 
         # Legacy support/compatibility if USER sets SUPERNOTE_AUTH_URL_BASE
