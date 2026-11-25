@@ -245,8 +245,13 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_MCP_ENABLED`
     """
 
-    mcp_port: int = 8081
+    mcp_port: int = field(
+        default=8081,
+        metadata={"component": ("mcp", "port")},
+    )
     """Port to bind the MCP server to.
+
+    Aliases `mcp.port`.
 
     Env Var: `SUPERNOTE_MCP_PORT`
     """
@@ -256,8 +261,13 @@ class ServerConfig(DataClassYAMLMixin):
     Used for generating links and for the MCP Authorization Server issuer.
     """
 
-    _mcp_base_url: str | None = field(default=None, metadata={"name": "mcp_base_url"})
+    _mcp_base_url: str | None = field(
+        default=None,
+        metadata={"name": "mcp_base_url", "component": ("mcp", "base_url")},
+    )
     """Base URL for the MCP server (port 8081).
+
+    Aliases `mcp.base_url`.
 
     Used for RFC 9728 discovery if the server is behind a proxy.
     """
@@ -416,8 +426,13 @@ class ServerConfig(DataClassYAMLMixin):
     Env Var: `SUPERNOTE_WEB_ENABLED`
     """
 
-    web_notebook_preview: bool = True
+    web_notebook_preview: bool = field(
+        default=True,
+        metadata={"component": ("web_ui", "notebook_preview")},
+    )
     """Whether to generate and display notebook page previews in the web UI.
+
+    Aliases `web_ui.notebook_preview`.
 
     When disabled, the web UI remains available for file, task, and metadata management,
     but skips CPU-heavy notebook rasterization.
@@ -641,6 +656,7 @@ class ServerConfig(DataClassYAMLMixin):
                 config.mcp_port = int(
                     os.getenv("SUPERNOTE_MCP_PORT", str(config.mcp_port))
                 )
+                config._component_sources["mcp"] = ComponentConfigSource.ENV
                 logger.info(f"Using SUPERNOTE_MCP_PORT: {config.mcp_port}")
             except ValueError:
                 pass
@@ -686,6 +702,7 @@ class ServerConfig(DataClassYAMLMixin):
 
         if os.getenv("SUPERNOTE_MCP_BASE_URL"):
             config._mcp_base_url = os.getenv("SUPERNOTE_MCP_BASE_URL")
+            config._component_sources["mcp"] = ComponentConfigSource.ENV
             logger.info(f"Using SUPERNOTE_MCP_BASE_URL: {config._mcp_base_url}")
 
         # Legacy support/compatibility if USER sets SUPERNOTE_AUTH_URL_BASE
@@ -829,6 +846,7 @@ class ServerConfig(DataClassYAMLMixin):
             config.web_notebook_preview = _get_bool_env(
                 "SUPERNOTE_WEB_NOTEBOOK_PREVIEW", config.web_notebook_preview
             )
+            config._component_sources["web_ui"] = ComponentConfigSource.ENV
             logger.info(f"Web Notebook Preview: {config.web_notebook_preview}")
 
         if raw_log_level := os.getenv("SUPERNOTE_LOG_LEVEL"):

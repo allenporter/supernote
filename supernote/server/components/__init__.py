@@ -101,6 +101,7 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         domain="mcp",
         import_path="supernote.server.components.mcp:McpComponent",
         default_enabled=True,
+        config_schema_path="supernote.server.components.mcp.config:McpConfig",
     ),
     BuiltinComponentSpec(
         domain="metrics",
@@ -152,6 +153,7 @@ BUILTIN_COMPONENTS: tuple[BuiltinComponentSpec, ...] = (
         domain="web_ui",
         import_path="supernote.server.components.web_ui:WebUiComponent",
         default_enabled=True,
+        config_schema_path="supernote.server.components.web_ui.config:WebUiConfig",
     ),
     BuiltinComponentSpec(
         domain="webhooks",

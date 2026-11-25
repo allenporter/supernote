@@ -16,6 +16,7 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp.types import TextContent
 
 from supernote.server.components import BUILTIN_COMPONENTS, load_component_from_spec
+from supernote.server.components.config import build_static_component_configs
 from supernote.server.config import ServerConfig
 from supernote.server.core import ComponentLoader, ServerCore
 from supernote.server.db.session import DatabaseSessionManager
@@ -93,7 +94,16 @@ async def load_components(
                 if loader.get(dep) is None:
                     pending.append(dep)
 
-        await loader.async_setup_all(component_core, configs or {})
+        merged_configs: dict[str, dict[str, Any]] = {
+            domain: dict(cfg)
+            for domain, cfg in build_static_component_configs(
+                component_core.config
+            ).items()
+        }
+        if configs:
+            for domain, cfg in configs.items():
+                merged_configs[domain] = {**merged_configs.get(domain, {}), **dict(cfg)}
+        await loader.async_setup_all(component_core, merged_configs)
         await loader.async_load_all_platforms(component_core)
         if start:
             await loader.async_start_all(component_core)
