@@ -38,7 +38,14 @@ async def async_setup_http(core: ServerCore, registrar: HttpRegistrar) -> None:
             headers={"Cache-Control": "no-cache"},
         )
 
+    async def handle_web_features(request: web.Request) -> web.Response:
+        _ = request
+        return web.json_response(
+            {"wiki_enabled": bool(core.config.wiki.get("enabled", False))}
+        )
+
     registrar.router.add_get("/", handle_index)
+    registrar.router.add_get("/api/extended/web/features", handle_web_features)
     registrar.router.add_static("/static/", path=static_path, name="static")
     registrar.add_public_prefix("/static/")
     registrar.add_middleware(static_cache_control_middleware)

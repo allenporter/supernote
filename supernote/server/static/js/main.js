@@ -9,8 +9,7 @@
 
 import { computed, createApp, onMounted, onUnmounted, ref } from 'vue';
 import { connectSocket, login, submitOAuthBridgeDecision } from './api/client.js';
-import { ApiError, getToken, logout, onLogout } from './api/http.js';
-import { fetchWikiStatus } from './api/wiki.js';
+import { ApiError, apiRequest, getToken, logout, onLogout } from './api/http.js';
 import DigestPanel from './components/DigestPanel.js';
 import FileBrowserPanel from './components/FileBrowserPanel.js';
 import FileViewer from './components/FileViewer.js';
@@ -205,9 +204,9 @@ createApp({
             if (!token) return false;
             isLoggedIn.value = true;
             connectSocket();
-            fetchWikiStatus()
-                .then((st) => {
-                    wikiEnabled.value = st !== null;
+            apiRequest('/api/extended/web/features', { method: 'GET' })
+                .then((data) => {
+                    wikiEnabled.value = Boolean(data?.wiki_enabled);
                 })
                 .catch(() => {});
             return true;
