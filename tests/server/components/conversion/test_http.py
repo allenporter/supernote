@@ -6,6 +6,8 @@ from pathlib import Path
 
 from aiohttp.test_utils import TestClient
 
+from supernote.client.device import DeviceClient
+from supernote.client.extended import ExtendedClient
 from supernote.server.constants import USER_DATA_BUCKET
 from supernote.server.db.models.file import UserFileDO
 from supernote.server.db.session import DatabaseSessionManager
@@ -42,7 +44,7 @@ async def _seed_note_file(
 
 async def test_note_to_png_and_oss_png_download(
     client: TestClient,
-    auth_headers: dict[str, str],
+    device_client: DeviceClient,
     session_manager: DatabaseSessionManager,
     test_user_id: int,
     test_note_path: Path,
@@ -52,36 +54,23 @@ async def test_note_to_png_and_oss_png_download(
         client, session_manager, test_user_id, 9201, "Sketch.note", test_note_path
     )
 
-    resp = await client.post(
-        "/api/file/note/to/png",
-        json={"id": "9201"},
-        headers=auth_headers,
-    )
-    assert resp.status == 200
-    payload = await resp.json()
-    pages = payload["pngPageVOList"]
-    assert len(pages) >= 1
-    assert pages[0]["pageNo"] == 0
+    png_vo = await device_client.note_to_png(9201)
+    assert len(png_vo.png_page_vo_list) >= 1
+    assert png_vo.png_page_vo_list[0].page_no == 0
 
-    rel_url = "/" + pages[0]["url"].split("/", 3)[3]
-    png_resp = await client.get(rel_url)
-    assert png_resp.status == 200
-    assert (await png_resp.read()).startswith(b"\x89PNG")
+    pages = await device_client.get_note_png_pages(9201)
+    assert len(pages) == len(png_vo.png_page_vo_list)
+    assert pages[0].startswith(b"\x89PNG")
 
     assert client.app is not None
     client.app[CONFIG_KEY].web_notebook_preview = False
-    disabled_resp = await client.post(
-        "/api/file/note/to/png",
-        json={"id": "9201"},
-        headers=auth_headers,
-    )
-    assert disabled_resp.status == 200
-    assert (await disabled_resp.json())["pngPageVOList"] == []
+    disabled_vo = await device_client.note_to_png(9201)
+    assert disabled_vo.png_page_vo_list == []
 
 
 async def test_note_to_pdf_and_oss_pdf_download(
     client: TestClient,
-    auth_headers: dict[str, str],
+    device_client: DeviceClient,
     session_manager: DatabaseSessionManager,
     test_user_id: int,
     test_note_path: Path,
@@ -91,26 +80,32 @@ async def test_note_to_pdf_and_oss_pdf_download(
         client, session_manager, test_user_id, 9202, "Export.note", test_note_path
     )
 
-    resp = await client.post(
-        "/api/file/note/to/pdf",
-        json={"id": "9202", "pageNoList": [0]},
-        headers=auth_headers,
-    )
-    assert resp.status == 200
-    payload = await resp.json()
-    assert "/api/oss/pdf/9202?pages=0" in payload["url"]
+    pdf_vo = await device_client.note_to_pdf(9202, page_no_list=[0])
+    assert pdf_vo.url is not None
+    assert "/api/oss/pdf/9202?pages=0" in pdf_vo.url
 
-    rel_url = "/" + payload["url"].split("/", 3)[3]
-    pdf_resp = await client.get(rel_url)
-    assert pdf_resp.status == 200
-    assert (await pdf_resp.read()).startswith(b"%PDF")
+    pdf_bytes = await device_client.get_note_pdf(9202, page_no_list=[0])
+    assert pdf_bytes.startswith(b"%PDF")
 
 
-async def test_extended_note_cover_validation(
+async def test_extended_note_cover_and_validation(
     client: TestClient,
     auth_headers: dict[str, str],
+    extended_client: ExtendedClient,
+    session_manager: DatabaseSessionManager,
+    test_user_id: int,
+    test_note_path: Path,
 ) -> None:
-    """Verify POST /api/extended/file/note/cover rejects malformed payloads with 400."""
+    """Verify POST /api/extended/file/note/cover returns a signed cover URL and rejects malformed payloads."""
+    await _seed_note_file(
+        client, session_manager, test_user_id, 9203, "Cover.note", test_note_path
+    )
+
+    cover_vo = await extended_client.get_note_cover(file_id=9203)
+    assert cover_vo.success is True
+    assert cover_vo.url is not None
+    assert "/api/oss/png/9203/0?" in cover_vo.url
+
     resp = await client.post(
         "/api/extended/file/note/cover",
         json={},
