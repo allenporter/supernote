@@ -426,6 +426,19 @@ The `schedule` component registers four To-Do management tools via the `mcp` pla
 - **`update_task(task_id, ..., clear_link=False, cause_seq=None, reason=None)`**: Partially updates task fields, manages `completed_time` on status transitions, merges or clears (`clear_link=True`) notebook deep-links, and normalizes `due_time=0` to `None`.
 - **`delete_task(task_id, cause_seq=None, reason=None)`**: Deletes a user-scoped task and emits a `schedule.task_deleted` tombstone event.
 
+### LLM Wiki Tools (`supernote.server.components.wiki.mcp`)
+
+When `wiki.enabled: true` (`SUPERNOTE_WIKI_ENABLED=true`), the `wiki` component registers eight tools for navigating, searching, authoring, and maintaining the compiled Markdown knowledge graph:
+
+- **`get_wiki_index(limit=100)`**: Returns a compact index of active wiki pages (`slug`, `title`, `page_kind`, `summary`) without full Markdown bodies for low-token orientation.
+- **`list_wiki_pages(page_kind=None, limit=50, offset=0)`**: Paginates active wiki pages, optionally filtered by `page_kind` (`project`, `entity`, `topic`, `source_digest`, `index`, or `log`).
+- **`read_wiki_page(slug)`**: Returns the full Markdown body, `version`, `edit_policy`, aliases, backlinks, and provenance `source_refs` for a single page.
+- **`search_wiki(query, top_k=10)`**: Searches wiki page titles, aliases, summaries, and bodies, returning ranked hits with 1-hop links and source citations.
+- **`upsert_wiki_page(slug, title, body_md, page_kind="topic", summary="", aliases=None, source_refs=None, expected_version=None, change_summary="")`**: Creates or updates a wiki page with optimistic concurrency (`expected_version`). Respects `edit_policy`: pages edited by a human (`protected_prose`) or `locked` reject agent writes with `403`.
+- **`list_wiki_lint_issues(status="open")`**: Lists wiki health issues (`broken_link`, `orphan_page`, `stale_source`, `contradiction`, `duplicate_entity`, `alias_merge_proposal`), filtered by `open`, `resolved`, `dismissed`, or `all`.
+- **`resolve_wiki_lint_issue(issue_id, status="resolved")`**: Marks a lint issue as `resolved` or `dismissed`.
+- **`get_wiki_status()`**: Returns per-user wiki page counts, event cursor position, and open lint issue summary.
+
 #### Causal Event Provenance (`cause_seq` & `reason`)
 
 Mutating MCP tools accept optional `cause_seq` (the triggering domain event sequence ID, up to 64 chars) and `reason` (human-readable explanation, up to 500 chars) arguments. Internally, handlers wrap service calls with `supernote.server.events.bind_event_provenance(cause_seq=..., reason=...)`, which merges those fields into the `payload` of any `DomainEvent` recorded in `f_user_event` alongside the caller's canonical `actor` (`oauth:<client_id>`, `api_key:<id>`, or `user:web`). This lets automated clients and activity views trace *why* a mutation happened and which prior event triggered it.

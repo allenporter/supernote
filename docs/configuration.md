@@ -217,7 +217,7 @@ Configured under the `auth:` block in `config.yaml`.
 
 ## AI Pipeline Settings (`supernote.server.config.AiConfig`)
 
-Configured under the `ai:` block in `config.yaml`. Each capability (`ocr`, `summary`, `embedding`) is optional; omitting a capability disables that stage of the pipeline.
+Configured under the `ai:` block in `config.yaml`. Each capability (`ocr`, `summary`, `embedding`, `text`) is optional; omitting a capability disables that stage of the pipeline (`ai.text` configures structured JSON text generation for the opt-in LLM Wiki).
 
 ### Provider Configuration (`supernote.server.config.ProviderConfig`)
 
@@ -280,3 +280,28 @@ Configured under the `webhooks:` block in `config.yaml`, consumed by `supernote.
 | `webhooks.endpoints[].user` | — | `str` | *(required)* | Email address of the Supernote user whose events trigger this endpoint. |
 | `webhooks.endpoints[].secret` | — | `str` | `""` | Shared secret used to compute the `X-Supernote-Signature: sha256=<hex>` HMAC-SHA256 header. Never logged. |
 | `webhooks.endpoints[].events` | — | `list[str]` | `[]` *(all events)* | Event filter list accepting exact `DomainEventType` names (e.g. `"file.created"`, `"note.processing_completed"`), namespace prefix wildcards (`"note.*"`, `"file.*"`, `"schedule.*"`, `"summary.*"`), or `"*"`. When empty, the endpoint receives all domain events for `user`. |
+
+---
+
+## LLM Wiki Settings (`supernote.server.components.wiki.config.WikiConfig`)
+
+Configured under the `wiki:` block in `config.yaml`. Requires an AI text generation model (`ai.text`, or falls back to `ai.summary` / `ai.ocr` when configured).
+
+```yaml
+wiki:
+  enabled: true
+  auto_compile: true
+  debounce_seconds: 15.0
+  max_pages_per_batch: 5
+  daily_token_budget: 200000
+```
+
+| YAML Key | Environment Variable | Type | Default | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `wiki.enabled` | `SUPERNOTE_WIKI_ENABLED` | `bool` | `false` | Enables the LLM Wiki HTTP API, MCP tools, Obsidian `.zip` export, and Web UI tab. |
+| `wiki.auto_compile` | — | `bool` | `false` | Automatically runs incremental wiki compilation in the background when notebook or task domain events arrive. |
+| `wiki.debounce_seconds` | — | `float` | `15.0` | Per-user debounce window (seconds) coalescing multi-page sync bursts (`>= 0`). |
+| `wiki.max_pages_per_batch` | — | `int` | `5` | Maximum wiki pages modified per single compilation turn (`>= 1`). |
+| `wiki.daily_token_budget` | — | `int` | `200000` | Per-user UTC daily LLM token cap across compile and lint passes (`>= 0`). |
+| `wiki.lint_event_threshold` | — | `int` | `10` | Minimum compiled events before triggering a thresholded LLM semantic lint pass (`>= 1`). |
+| `wiki.lint_interval_days` | — | `int` | `7` | Maximum days between thresholded LLM semantic lint passes when dirty (`>= 1`). |
