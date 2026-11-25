@@ -29,6 +29,7 @@ from supernote.notebook.parser import load_notebook
 from supernote.server.ai.base import AIError
 from supernote.server.ai.models.ocr import OcrModel
 from supernote.server.ai.prompts import PageMetadata, format_ocr_prompt
+from supernote.server.utils.image import is_image_filename, normalize_image_to_png
 
 __all__ = [
     "BUJO_PROMPT_TYPES",
@@ -69,6 +70,18 @@ _STRIP_PREFIX_RE = re.compile(r"^[ ]*(?:\*\s+)?(?:[•·∙*X×><o\-]|\[[ xX>]\]
 _STRIKETHROUGH_RE = re.compile(r"~~(.+?)~~")
 _INTERNAL_APOSTROPHE_RE = re.compile(r"(?<=\w)['\u2019](?=\w)")
 _WORD_RE = re.compile(r"\w+")
+_MERMAID_FENCE_RE = re.compile(
+    r"```mermaid[ \t]*\r?\n(.*?)\r?\n```", re.DOTALL | re.IGNORECASE
+)
+_MERMAID_HEADER_RE = re.compile(
+    r"^(?:flowchart|graph|sequenceDiagram|stateDiagram(?:-v2)?|classDiagram|"
+    r"erDiagram|mindmap|gantt|pie|journey|gitGraph|timeline|quadrantChart|"
+    r"xychart-beta)\b"
+)
+_MD_TABLE_SEP_RE = re.compile(
+    r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$", re.MULTILINE
+)
+_DIAGRAM_DESC_RE = re.compile(r"\[(?:diagram|sketch)\s*:\s*[^\]]+\]", re.IGNORECASE)
 
 
 @dataclass
@@ -83,6 +96,16 @@ class OcrEvalCase(DataClassYAMLMixin, DataClassJSONMixin):
     language: str | None = None
     ground_truth: str = ""
     description: str | None = None
+    expect_mermaid: bool = False
+    """Require at least one syntactically valid fenced `mermaid` block."""
+    expect_table: bool = False
+    """Require a GitHub-Flavored Markdown table."""
+    expect_diagram_description: bool = False
+    """Require a `[Diagram: ...]` or `[Sketch: ...]` visual description."""
+    forbid_mermaid: bool = False
+    """Fail structural check if a fenced `mermaid` block is emitted on a text-only page."""
+    required_entities: list[str] = field(default_factory=list)
+    """Case-insensitive labels or concepts expected to appear in the output."""
 
     def __post_init__(self) -> None:
         if not self.id or not self.id.strip():
@@ -143,6 +166,10 @@ class OcrPageMetrics(DataClassJSONMixin):
     bujo_symbol_recall: float | None = None
     bujo_strikethrough_recall: float | None = None
     bujo_indent_accuracy: float | None = None
+    multimodal_structure_pass: bool | None = None
+    """Whether all configured diagram/table/sketch structural assertions passed."""
+    entity_recall: float | None = None
+    """Fraction of `required_entities` present (case-insensitive) in the hypothesis."""
 
 
 @dataclass
@@ -175,6 +202,10 @@ class OcrCategorySummary(DataClassJSONMixin):
     median_latency_ms: float
     p95_latency_ms: float
     mean_word_f1: float = 0.0
+    multimodal_structure_pass_rate: float | None = None
+    """Share of evaluated cases in this slice passing all multimodal structure checks."""
+    mean_entity_recall: float | None = None
+    """Mean `entity_recall` across cases defining `required_entities`."""
 
 
 @dataclass
@@ -344,13 +375,102 @@ def _score_bujo_structure(
     return len(ref_items), symbol_recall, strike_recall, indent_acc
 
 
+def _is_valid_mermaid_block(block: str) -> bool:
+    """Return True when a fenced Mermaid block has a valid diagram header and body."""
+    lines = [
+        line.strip()
+        for line in block.splitlines()
+        if line.strip() and not line.strip().startswith("%%")
+    ]
+    if len(lines) < 2:
+        return False
+    if not _MERMAID_HEADER_RE.match(lines[0]):
+        return False
+    body = "\n".join(lines[1:])
+    if body.count('"') % 2 != 0:
+        return False
+    unquoted = re.sub(r'"[^"]*"', "", body)
+    return (
+        unquoted.count("[") == unquoted.count("]")
+        and unquoted.count("(") == unquoted.count(")")
+        and unquoted.count("{") == unquoted.count("}")
+    )
+
+
+def _has_valid_mermaid(text: str) -> bool:
+    """Return True when `text` contains at least one syntactically valid Mermaid block."""
+    return any(
+        _is_valid_mermaid_block(match.group(1))
+        for match in _MERMAID_FENCE_RE.finditer(text)
+    )
+
+
+def _has_markdown_table(text: str) -> bool:
+    """Return True when `text` contains a GitHub-Flavored Markdown table."""
+    lines = text.splitlines()
+    for idx, line in enumerate(lines):
+        if idx > 0 and _MD_TABLE_SEP_RE.match(line) and "|" in lines[idx - 1]:
+            return True
+    return False
+
+
+def _has_diagram_description(text: str) -> bool:
+    """Return True when `text` contains a `[Diagram: ...]` or `[Sketch: ...]` block."""
+    return bool(_DIAGRAM_DESC_RE.search(text))
+
+
+def _score_multimodal(
+    hypothesis: str,
+    *,
+    expect_mermaid: bool = False,
+    expect_table: bool = False,
+    expect_diagram_description: bool = False,
+    forbid_mermaid: bool = False,
+    required_entities: Sequence[str] = (),
+) -> tuple[bool | None, float | None]:
+    """Evaluate multimodal structural expectations and required entity recall."""
+    checks: list[bool] = []
+    if expect_mermaid:
+        checks.append(_has_valid_mermaid(hypothesis))
+    if expect_table:
+        checks.append(_has_markdown_table(hypothesis))
+    if expect_diagram_description:
+        checks.append(_has_diagram_description(hypothesis))
+    if forbid_mermaid:
+        checks.append(not _MERMAID_FENCE_RE.search(hypothesis))
+
+    structure_pass: bool | None = all(checks) if checks else None
+
+    cleaned_entities = [e.strip() for e in required_entities if e and e.strip()]
+    if not cleaned_entities:
+        return structure_pass, None
+
+    hyp_lower = hypothesis.lower()
+    matched = sum(1 for entity in cleaned_entities if entity.lower() in hyp_lower)
+    return structure_pass, round(matched / len(cleaned_entities), 4)
+
+
 def score_ocr_output(
     reference: str,
     hypothesis: str,
     *,
     evaluate_bujo: bool = True,
+    expect_mermaid: bool = False,
+    expect_table: bool = False,
+    expect_diagram_description: bool = False,
+    forbid_mermaid: bool = False,
+    required_entities: Sequence[str] = (),
 ) -> OcrPageMetrics:
-    """Compute character, word, and Bullet Journal Rapid Logging metrics."""
+    """Compute character, word, Rapid Logging, and multimodal structure metrics."""
+    multimodal_pass, entity_recall = _score_multimodal(
+        hypothesis,
+        expect_mermaid=expect_mermaid,
+        expect_table=expect_table,
+        expect_diagram_description=expect_diagram_description,
+        forbid_mermaid=forbid_mermaid,
+        required_entities=required_entities,
+    )
+
     ref_norm = _normalize_ws(reference)
     hyp_norm = _normalize_ws(hypothesis)
 
@@ -363,6 +483,8 @@ def score_ocr_output(
             word_recall=1.0 if empty_match else 0.0,
             word_f1=1.0 if empty_match else 0.0,
             bujo_expected_items=0,
+            multimodal_structure_pass=multimodal_pass,
+            entity_recall=entity_recall,
         )
 
     cer = _levenshtein(ref_norm, hyp_norm) / len(ref_norm)
@@ -409,6 +531,8 @@ def score_ocr_output(
         bujo_symbol_recall=bujo_sym,
         bujo_strikethrough_recall=bujo_strike,
         bujo_indent_accuracy=bujo_indent,
+        multimodal_structure_pass=multimodal_pass,
+        entity_recall=entity_recall,
     )
 
 
@@ -442,10 +566,13 @@ def load_eval_case_input(case: OcrEvalCase, base_dir: Path) -> LoadedEvalPage:
     elif suffix == ".png":
         png_data = asset_path.read_bytes()
         page_id = f"{asset_path.stem}_p{case.page_index}"
+    elif is_image_filename(asset_path.name):
+        png_data, _, _ = normalize_image_to_png(asset_path.read_bytes())
+        page_id = f"{asset_path.stem}_p{case.page_index}"
     else:
         raise ValueError(
             f"Unsupported asset extension {suffix!r} for case {case.id!r}; "
-            "expected '.note' or '.png'."
+            "expected '.note' or a supported raster image."
         )
 
     metadata = PageMetadata(
@@ -504,6 +631,14 @@ def _summarize_results(
         ),
         median_latency_ms=round(statistics.median(latencies), 1),
         p95_latency_ms=round(latencies[p95_idx], 1),
+        multimodal_structure_pass_rate=_mean_optional(
+            [
+                1.0 if r.metrics.multimodal_structure_pass else 0.0
+                for r in results
+                if r.metrics.multimodal_structure_pass is not None
+            ]
+        ),
+        mean_entity_recall=_mean_optional([r.metrics.entity_recall for r in results]),
     )
 
 
@@ -612,6 +747,11 @@ async def evaluate_ocr_dataset(
                     page.case.ground_truth,
                     hypothesis,
                     evaluate_bujo=page.case.is_bujo,
+                    expect_mermaid=page.case.expect_mermaid,
+                    expect_table=page.case.expect_table,
+                    expect_diagram_description=page.case.expect_diagram_description,
+                    forbid_mermaid=page.case.forbid_mermaid,
+                    required_entities=page.case.required_entities,
                 )
                 if error_msg is None
                 else _error_page_metrics()
@@ -660,6 +800,11 @@ async def evaluate_ocr_dataset(
                         p.case.ground_truth,
                         p.device_rtr_text or "",
                         evaluate_bujo=p.case.is_bujo,
+                        expect_mermaid=p.case.expect_mermaid,
+                        expect_table=p.case.expect_table,
+                        expect_diagram_description=p.case.expect_diagram_description,
+                        forbid_mermaid=p.case.forbid_mermaid,
+                        required_entities=p.case.required_entities,
                     ),
                 )
                 for p in rtr_pages
@@ -701,6 +846,11 @@ def rescore_suite_report(
                     case.ground_truth,
                     item.hypothesis,
                     evaluate_bujo=case.is_bujo,
+                    expect_mermaid=case.expect_mermaid,
+                    expect_table=case.expect_table,
+                    expect_diagram_description=case.expect_diagram_description,
+                    forbid_mermaid=case.forbid_mermaid,
+                    required_entities=case.required_entities,
                 )
                 if item.error is None
                 else _error_page_metrics()
@@ -805,6 +955,29 @@ def format_markdown_report(report: OcrEvalSuiteReport) -> str:
                 f"{_fmt_pct(cat.mean_bujo_indent_accuracy)} | "
                 f"{_fmt_pct(cat.mean_bujo_strikethrough_recall)} | "
                 f"{cat.median_latency_ms:.1f} ms |"
+            )
+
+    has_multimodal = any(
+        t.overall.multimodal_structure_pass_rate is not None
+        or t.overall.mean_entity_recall is not None
+        for t in report.targets
+    )
+    if has_multimodal:
+        lines.extend(
+            [
+                "",
+                "## Multimodal Structure & Entity Checks",
+                "",
+                "| Target | Model | Structure Pass Rate | Mean Entity Recall |",
+                "| :--- | :--- | ---: | ---: |",
+            ]
+        )
+        for target in report.targets:
+            ov = target.overall
+            lines.append(
+                f"| `{target.target_name}` | `{target.model_id}` | "
+                f"{_fmt_pct(ov.multimodal_structure_pass_rate)} | "
+                f"{_fmt_pct(ov.mean_entity_recall)} |"
             )
 
     return "\n".join(lines) + "\n"
