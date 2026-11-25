@@ -1,208 +1,23 @@
-# AI Pipeline, Custom Prompts & MCP Server
+# MCP Server & AI Assistants
 
-The **Open Private Cloud for Supernote** server transforms binary `.note` files into searchable transcripts, vector embeddings, and structured chronological summaries, and exposes them to AI assistants (such as Claude, ChatGPT, Cursor, or local LLMs) via a built-in [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server.
+Open Private Cloud includes an optional [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server (`mcp_enabled: true` by default) that lets AI assistants like Claude Desktop, Claude Code, Cursor, or custom scripts search your notebooks, read transcripts, inspect hand-drawn diagrams as PNG images, manage tasks, and update your LLM Wiki.
 
----
+Looking for OCR setup, custom prompts, or AI provider benchmarks instead? See [Handwriting OCR & Multimodal Workflows](./ocr_and_multimodal.md), [Hybrid Search & Retrieval](./search.md), [Choosing an AI Provider](./ai_providers.md), or the [Async Note Processing Pipeline](../architecture/note_processing_design.md).
 
-## Background Processing Pipeline
+## What an assistant can do
 
-When a `.note` file is uploaded or synchronized, `supernote.server.services.processor.ProcessorService` orchestrates an incremental, idempotent 5-stage pipeline tracked in SQLite (`SystemTaskDO`, `NoteMetadataDO`, `NotePageMetadataDO`, and `NotePageContentDO`):
+A typical multimodal workflow with Claude or Cursor looks like this:
 
-```mermaid
-flowchart TD
-    Sync[".note File Synced"] --> S1["1. PageHashingModule<br/>Parse metadata & page MD5s"]
-    S1 -->|Changed Pages| S2["2. PngConversionModule<br/>Rasterize page to PNG"]
-    S2 --> S3["3. OcrModule<br/>Vision LLM transcript (skips blank pages)"]
-    S3 --> S4["4. EmbeddingModule<br/>Vector embedding for search"]
-    S4 --> S5["5. SummaryModule<br/>Notebook AI summary"]
-```
-
-### Stage Breakdown
-
-| Stage | Module | Scope | Behavior & Invalidation Rules |
-| :---: | :--- | :---: | :--- |
-| **1** | `supernote.server.components.processor.page_hashing.PageHashingModule` (`PAGE_HASHING`) | File | Parses the binary `.note` header/footer (`NoteMetadataDO`) and per-page metadata (`NotePageMetadataDO`: `page_style`, `has_ink`, `has_drawables`, `keywords_json`, `titles_json`, `links_json`). Computes an MD5 `content_hash` per page (`PAGEID`). Only pages whose hash changed have their downstream checkpoints invalidated; unchanged pages reuse cached ink/drawable state without re-parsing layer streams. |
-| **2** | `supernote.server.components.processor.png_conversion.PngConversionModule` (`PNG_CONVERSION`) | Page | Rasterizes modified pages into PNG blobs in `supernote-cache/`. Enabled when `web_enabled` + `web_notebook_preview` is `true`, or whenever `ai.ocr` is configured. |
-| **3** | `supernote.server.components.transcript.processor.OcrModule` (`OCR_EXTRACTION`) | Page | If `NotePageMetadataDO.has_drawables` is `False` (blank page), immediately writes `text_content = ""` without requiring a PNG or calling the LLM. Otherwise sends the page PNG and formatted prompt (`supernote.server.ai.prompts.format_ocr_prompt`) to `supernote.server.ai.models.ocr.OcrModel` and stores the Markdown transcript in `NotePageContentDO.text_content`. |
-| **4** | `supernote.server.components.search.processor.EmbeddingModule` (`EMBEDDING_GENERATION`) | Page | Skips blank pages (`content.is_blank`). Embeds non-blank `text_content` via `supernote.server.ai.models.embedding.EmbeddingModel` (`RETRIEVAL_DOCUMENT`). Tracks `model_id` as the task version—switching `ai.embedding.model` automatically re-embeds existing pages in the background. |
-| **5** | `supernote.server.components.summary.processor.SummaryModule` (`SUMMARY_GENERATION`) | File | Concatenates non-blank page transcripts in memory with `--- Page N ---` headers (including `Page Keywords:` when present) and invokes `supernote.server.ai.models.summary.SummaryModel` to produce date-segmented Markdown summaries (`SummaryResponse`) filed under the shared `"AI Summaries"` Digest category. |
-
-> [!TIP]
-> **Blank Page Skipping**: Pages with no foreground ink, textboxes, or vector graphics (`NotePageMetadataDO.has_drawables == False`) automatically short-circuit OCR, vector embedding, and summary calls—saving API tokens and latency on pre-created template notebooks.
-
-### Managing Pipeline Tasks via CLI
-
-Administrators can inspect, pause, resume, or force-reprocess pipeline stages at any time:
-
-```bash
-# View queue status and currently processing file IDs
-supernote admin queue status
-
-# Pause or resume background processing
-supernote admin queue stop
-supernote admin queue start
-
-# Inspect recent tasks or filter by failed status
-supernote admin tasks --status failed
-supernote admin tasks --type ocr --file-id 42
-
-# Force reprocessing of summaries (or all/ocr/png/embedding) across one or all files
-supernote admin reprocess --type summary
-supernote admin reprocess --type all --file-id 42
-```
+1. Search across your notebooks with `search_notebook_chunks` (or browse recent files with `list_notebooks`).
+2. Read full page text with `get_notebook_transcript`.
+3. Call `get_page_image(file_id, page_index)` when you want the assistant to actually look at a hand-drawn diagram, floor plan, or whiteboard photo.
+4. Create or update Supernote To-Do items (`create_task`, `update_task`) or read and edit your compiled [LLM Wiki](./llm_wiki.md) (`search_wiki`, `read_wiki_page`, `upsert_wiki_page`).
 
 ---
 
-## Configuring Cloud, Local & On-Device AI Models
+## Server Topology & Authentication
 
-AI capabilities (`ocr`, `summary`, `embedding`) are configured independently in `config/config.yaml` via `supernote.server.config.AiConfig`. You can use cloud providers (`gemini`, hosted `openai`), local inference servers (`openai` provider pointed at Ollama, vLLM, llama.cpp, or LM Studio), macOS on-device Vision (`apple`), or mix them per capability.
-
-> [!TIP]
-> **Model Recommendation & Benchmarks**:
-> - **OCR & Summaries**: We recommend `gemini-3.5-flash-lite` (or `gemini-3.6-flash`) for handwriting accuracy and Bullet Journal structure fidelity; see `supernote.guides.ocr_benchmarks` ([OCR Provider Benchmarks](../../evals/ocr/RESULTS.md)).
-> - **Hybrid Search Embeddings**: We recommend `gemini-embedding-2` for cloud deployments (`97.1%` nDCG@5, `100.0%` MRR@5) and `embeddinggemma` via Ollama/llama.cpp for local self-hosted deployments (`93.7%` nDCG@5, `23.5 ms` latency, `768`-dim vectors); see `supernote.guides.search_benchmarks` ([Search & Embedding Benchmarks](../../evals/search/RESULTS.md)).
-
-### Mixing Cloud & Local Providers per Capability
-
-```yaml
-ai:
-  providers:
-    gemini:
-      api_key: "AIzaSyYourGeminiKey"
-    openai:
-      base_url: "http://localhost:11434/v1"
-
-  ocr:
-    provider: gemini
-    model: gemini-3.5-flash-lite  # or gemini-3.6-flash
-    max_concurrency: 5
-
-  summary:
-    provider: openai
-    model: gemma3:27b
-    max_concurrency: 1
-
-  embedding:
-    provider: openai
-    model: embeddinggemma
-    max_concurrency: 2
-```
-
-### Named Provider Entries (`type: openai`)
-
-By default, a provider entry's backend implementation matches its key name (`gemini`, `openai`, `apple`). To use multiple servers of the same kind (for example, `ollama` for chat/summarization and `llamacpp` for embeddings), give each entry a custom name and set `type: openai` (`supernote.server.config.ProviderConfig.type`):
-
-```yaml
-ai:
-  providers:
-    ollama:
-      type: openai
-      base_url: "http://localhost:11434/v1"
-    llamacpp:
-      type: openai
-      base_url: "http://localhost:8082/v1"
-  summary:
-    provider: ollama
-    model: gemma3:27b
-  embedding:
-    provider: llamacpp
-    model: embeddinggemma
-```
-
-### macOS On-Device Vision OCR (`apple` Provider)
-
-On macOS (`pip install "supernote[server,apple]"`), Apple's on-device `Vision` framework (`vision-accurate`) is supported as an offline fallback for basic prose search without an API key or model server. Avoid `vision-fast`, which only detects machine-printed text:
-
-```yaml
-ai:
-  ocr:
-    provider: apple
-    model: vision-accurate
-    max_concurrency: 2
-```
-
----
-
-## Customizing AI Prompts, Page-Style Routing & Page Keywords
-
-Prompts are managed by `supernote.server.utils.prompt_loader.PromptLoader` (`PROMPT_LOADER`). By default, the server loads built-in Bullet Journal / Rapid Logging prompts from `supernote/server/resources/prompts/`.
-
-To override prompts with your own instructions, point `prompts_dir` (`SUPERNOTE_PROMPTS_DIR`) to a custom directory:
-
-```yaml
-# config/config.yaml
-prompts_dir: /data/config/prompts
-```
-
-### Prompt Directory Layout
-
-`PromptLoader` reads two top-level categories: `ocr` (`PromptId.OCR_TRANSCRIPTION`) and `summary` (`PromptId.SUMMARY_GENERATION`). Within each category, all `.md` files inside a subdirectory are sorted alphabetically and concatenated with `\n\n`:
-
-```text
-prompts/
-├── ocr/
-│   ├── common/               # Always prepended to EVERY OCR prompt
-│   │   ├── context.md
-│   │   └── legend.md
-│   ├── default/              # Appended when no notebook-stem or page_style folder matches
-│   │   ├── system.md
-│   │   ├── rapid_logging.md
-│   │   ├── handwriting.md
-│   │   └── output_rules.md
-│   ├── daily/                # Matches "Daily.note" OR pages with PAGESTYLE "user_Daily"
-│   │   └── prompt.md
-│   ├── 8mm_ruled_line/       # Matches pages with PAGESTYLE "style_h_8mm_ruled_line_a5x2"
-│   │   └── prompt.md
-│   └── meeting_notes/        # Matches "Meeting_Notes.note" OR PAGESTYLE "user_meeting_notes"
-│       └── prompt.md
-└── summary/
-    ├── common/               # Always prepended to EVERY Summary prompt
-    │   └── instruction.md
-    ├── default/              # Appended when no notebook-specific folder matches
-    │   └── prompt.md
-    ├── daily/                # Appended when summarizing "Daily.note"
-    │   └── prompt.md
-    └── meeting_notes/        # Appended when summarizing "Meeting_Notes.note"
-        └── prompt.md
-```
-
-### Prompt Routing Precedence: Filename Stem -> `page_style` -> `default`
-
-When `OcrModule` formats a page prompt via `supernote.server.ai.prompts.format_ocr_prompt`, it resolves the custom prompt subdirectory using a 3-step fallback hierarchy based on `supernote.server.utils.note_content.PageMetadata`:
-
-1. **Notebook Filename Stem (`file_name_basis`)**: Lowercase stem of the `.note` filename (`Path(file_name).stem.lower()`, e.g., `Daily.note` -> `"daily"`). If `ocr/<file_name_basis>/` exists, it is used.
-2. **Stationery Template Style (`page_style_basis`)**: If no filename-specific prompt directory exists, `format_ocr_prompt` checks the page's normalized `.note` `PAGESTYLE` attribute (`supernote.server.utils.note_content.normalize_page_style_type`), which:
-   - Lowercases the raw `PAGESTYLE` string (from `NotePageMetadataDO.page_style`),
-   - Strips leading `user_`, `style_h_`, or `style_` prefixes, and
-   - Strips trailing device-size suffixes (`_a5x2`, `_a5x`, `_a6x2`, `_a6x`, `_n5`, `_n6`).
-   - Examples: `"user_Daily"` -> `"daily"`, `"style_h_8mm_ruled_line_a5x2"` -> `"8mm_ruled_line"`, `"style_cornell"` -> `"cornell"`.
-   - If `ocr/<page_style_basis>/` exists, it is used for that page—allowing mixed-template notebooks to route individual pages to specialized prompts.
-3. **Default Prompt (`default`)**: Falls back to `ocr/default/*.md`.
-
-$$\text{Final OCR Prompt} = \text{Page Header} + \text{ocr/common/*.md} + \begin{cases} \text{ocr/<file\_name\_basis>/*.md} & \text{if exists} \\ \text{ocr/<page\_style\_basis>/*.md} & \text{else if exists} \\ \text{ocr/default/*.md} & \text{otherwise} \end{cases}$$
-
-### Native `.note` Page Keywords Injection
-
-When you tag a page with native keywords on your Supernote tablet, `PageHashingModule` extracts them into `NotePageMetadataDO.keywords_json` (`keyword_texts`). During OCR and transcript assembly, `supernote.server.utils.note_content.format_page_metadata` automatically injects a `Page Keywords:` line into the page header block:
-
-```text
---- Page 1 ---
-Notebook: Daily.note
-Created: 2026-08-04 (Tuesday)
-Page ID: P20260804090000
-Page Keywords: Architecture, Q3-Planning
-```
-
-This grounds both the vision OCR model (improving domain terminology recognition) and the downstream `SummaryModule` synthesis.
-
-> [!IMPORTANT]
-> When customizing `summary/` prompts, keep instructions compatible with the structured JSON output schema (`supernote.server.ai.prompts.SummaryResponse`), which expects a `segments` array containing `date_range`, `summary` (Markdown string), `extracted_dates` (`YYYY-MM-DD` strings), and `page_refs` (1-indexed page numbers).
-
----
-
-## Model Context Protocol (MCP) Server & Authentication
-
-When `mcp_enabled: true` (default), Open Private Cloud runs a Streamable HTTP **MCP Resource Server** on `http://<your-server-ip>:8081/mcp` alongside an **OAuth 2.1 Authorization Server** on port `8080` (`supernote.server.components.mcp.server` and `supernote.server.components.oauth.provider`).
+When `mcp_enabled: true` (default), Open Private Cloud runs a Streamable HTTP **MCP Resource Server** on `http://<your-server-ip>:8081/mcp` alongside an **OAuth 2.1 Authorization Server** on port `8080`.
 
 ### Dual-Port OAuth 2.1 + Streamable HTTP Topology
 

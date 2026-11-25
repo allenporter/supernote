@@ -25,14 +25,13 @@ To use local embeddings with Ollama, add this to `config/config.yaml`:
 
 ```yaml
 ai:
-  openai_servers:
+  providers:
     ollama:
+      type: openai
       base_url: "http://localhost:11434/v1"
-      api_key: "ollama"
   embedding:
-    provider: "openai"
-    server: "ollama"
-    model: "embeddinggemma"
+    provider: ollama
+    model: embeddinggemma
 ```
 
 See the [Configuration Reference](../reference/configuration.md) for all provider options.
