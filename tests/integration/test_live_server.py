@@ -14,7 +14,6 @@ pytestmark = pytest.mark.integration
 TEST_NOTE_PATH = Path("tests/testdata/20251207_221454.note").absolute()
 
 
-@pytest.mark.asyncio
 async def test_fresh_live_server_e2e(live_server: ServerHandle, snapshot) -> None:
     """Verify fresh live server health, admin user registration, SDK login, and CLI commands."""
     assert await live_server.is_healthy()
@@ -71,7 +70,6 @@ async def test_fresh_live_server_e2e(live_server: ServerHandle, snapshot) -> Non
         assert folder_dict == snapshot(name="live_server_note_folder_list")
 
 
-@pytest.mark.asyncio
 async def test_migrated_live_server_e2e(
     populated_migrated_live_server: ServerHandle, snapshot
 ) -> None:

@@ -38,12 +38,6 @@ from supernote.server.utils.paths import get_conversion_pdf_path
 
 
 @pytest.fixture
-def event_bus() -> LocalEventBus:
-    """Real LocalEventBus for verifying published domain events."""
-    return LocalEventBus()
-
-
-@pytest.fixture
 def published_events(event_bus: LocalEventBus) -> list[Event]:
     """Capture domain events published on the LocalEventBus."""
     events: list[Event] = []
@@ -53,24 +47,6 @@ def published_events(event_bus: LocalEventBus) -> list[Event]:
 
     event_bus.subscribe(VfsItemPurgedEvent, capture)
     return events
-
-
-@pytest.fixture
-def file_service(
-    storage_root: Path,
-    blob_storage: BlobStorage,
-    user_service: UserService,
-    session_manager: DatabaseSessionManager,
-    event_bus: LocalEventBus,
-) -> FileService:
-    """Fixture providing FileService with explicit DI dependencies."""
-    return FileService(
-        storage_root=storage_root,
-        blob_storage=blob_storage,
-        user_service=user_service,
-        session_manager=session_manager,
-        event_bus=event_bus,
-    )
 
 
 async def test_recycle_bin_lifecycle(

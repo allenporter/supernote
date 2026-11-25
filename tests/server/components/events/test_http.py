@@ -19,27 +19,6 @@ from supernote.server.components.events import EVENT_LOG_SERVICE_KEY
 from supernote.server.services.user import UserService
 
 
-@pytest.fixture
-async def authenticated_client(
-    client: TestClient,
-    auth_headers: dict[str, str],
-) -> Client:
-    """Fixture for an authenticated Supernote HTTP Client."""
-    token = auth_headers["x-access-token"]
-
-    class TokenAuth(AbstractAuth):
-        async def async_get_access_token(self) -> str:
-            return token
-
-    return Client(client.session, auth=TokenAuth(), host=str(client.make_url("")))
-
-
-@pytest.fixture
-def events_client(authenticated_client: Client) -> EventsClient:
-    """Fixture for EventsClient."""
-    return EventsClient(authenticated_client)
-
-
 async def test_list_events_pagination_and_filtering(
     client: TestClient,
     events_client: EventsClient,

@@ -40,12 +40,6 @@ USER_EMAIL = "test@example.com"
 
 
 @pytest.fixture
-def event_bus() -> LocalEventBus:
-    """Real LocalEventBus for verifying published domain events."""
-    return LocalEventBus()
-
-
-@pytest.fixture
 def published_events(event_bus: LocalEventBus) -> list[Event]:
     """Capture BlobCleanupEvents published on the LocalEventBus."""
     events: list[Event] = []

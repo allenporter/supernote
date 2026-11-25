@@ -43,12 +43,6 @@ def server_config(server_config: ServerConfig, wiki_enabled: bool) -> ServerConf
 
 
 @pytest.fixture
-def wiki_client(authenticated_client: Client) -> WikiClient:
-    """Create an authenticated `WikiClient` against the test server."""
-    return WikiClient(authenticated_client)
-
-
-@pytest.fixture
 async def other_wiki_client(client: TestClient) -> WikiClient:
     """Create a `WikiClient` authenticated as a second isolated user."""
     assert client.app is not None
