@@ -14,7 +14,7 @@ Hardware sync and authentication stay concrete on `ServerCore` (`supernote/serve
 | :--- | :---: | :--- | :--- | :--- |
 | `ai` | Yes | — | `http` | AI provider registry (`ocr`, `summary`, `embedding`, `text`) and prompt/provider coordination. |
 | `apple` | No | `ai` | `ocr` | macOS Vision (`vision-accurate` / `vision-fast`) offline OCR provider. |
-| `config` | Yes | — | — | Server configuration normalization and component config resolution. |
+| `config` | Yes | — | `http` | Server configuration normalization, runtime component reconfiguration, and admin config HTTP routes. |
 | `conversion` | Yes | `processor` | `http` | `.note` and digest handwriting conversion to PDF, PNG, and SVG (`/api/file/*/to/*`). |
 | `events` | Yes | — | `http`, `mcp` | Durable domain event log (`f_user_event`), retention pruning, and event inspection. |
 | `fake_ai` | No | `ai` | `ocr`, `summary`, `embedding`, `text` | Deterministic in-memory AI provider for tests and ephemeral local runs. |

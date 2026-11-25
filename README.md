@@ -78,8 +78,7 @@ supernote serve
 ```
 
 ```bash
-docker build -t supernote .
-docker run -d -p 8080:8080 -v $(pwd)/storage:/data --name supernote-server supernote
+docker run -d -p 8080:8080 -v $(pwd)/storage:/data --name supernote-server ghcr.io/allenporter/supernote:latest
 ```
 
 To run in **Bare Sync Mode (~135 MB RAM)** without the Web UI or MCP server:
