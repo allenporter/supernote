@@ -57,6 +57,11 @@ _COMPONENT_CONFIG_KEY_PREFIX = "component_config:"
 _AI_PROVIDER_DOMAINS: frozenset[str] = frozenset(
     {"apple", "fake_ai", "gemini", "openai"}
 )
+# Components that host the HTTP server, Web UI, Config API itself, or test-only fakes
+# cannot be disabled dynamically via the database/API (only via code, env, or config.yaml).
+_PROTECTED_DYNAMIC_DOMAINS: frozenset[str] = frozenset(
+    {"config", "fake_ai", "http", "web_ui"}
+)
 
 
 class ConfigurationConflictError(SupernoteError):
@@ -321,7 +326,7 @@ async def async_resolve_component_configs(
             source=ComponentConfigSource.DEFAULT,
         )
 
-    # Legacy one-off: `oauth` inherits `mcp`'s resolved enabled state and source when not configured directly.
+        # Legacy one-off: `oauth` inherits `mcp`'s resolved enabled state when not configured directly.
     mcp_entry = resolved.get("mcp")
     oauth_entry = resolved.get("oauth")
     if (
@@ -335,7 +340,7 @@ async def async_resolve_component_configs(
             domain="oauth",
             config=oauth_cfg,
             enabled=mcp_entry.enabled,
-            source=mcp_entry.source,
+            source=ComponentConfigSource.DEFAULT,
         )
 
     return resolved
@@ -356,7 +361,19 @@ class ConfigService:
         self._loader = loader
         self._specs = tuple(specs)
         self._specs_by_domain = {spec.domain: spec for spec in self._specs}
+        self._dependencies_by_domain: dict[str, tuple[str, ...]] = {}
         self._update_lock = asyncio.Lock()
+
+    def _get_dependencies(self, domain: str) -> tuple[str, ...]:
+        """Lazily resolve and cache ``domain``'s declared component dependencies."""
+        deps = self._dependencies_by_domain.get(domain)
+        if deps is None:
+            spec = self._specs_by_domain[domain]
+            existing = self._loader.get(domain)
+            comp = existing if existing is not None else load_component_from_spec(spec)
+            deps = tuple(comp.dependencies)
+            self._dependencies_by_domain[domain] = deps
+        return deps
 
     async def resolve_all(self) -> dict[str, ResolvedComponentConfig]:
         """Resolve effective configuration and source tiers for all built-in components."""
@@ -372,7 +389,7 @@ class ConfigService:
         entry: ResolvedComponentConfig,
     ) -> ComponentStatusVO:
         running = self._loader.is_running(spec.domain)
-        read_only = entry.source.is_static
+        read_only = entry.source.is_static or spec.domain in _PROTECTED_DYNAMIC_DOMAINS
         return ComponentStatusVO(
             domain=spec.domain,
             enabled=entry.enabled,
@@ -392,6 +409,35 @@ class ConfigService:
             self._build_status_vo(spec, resolved[spec.domain]) for spec in self._specs
         ]
 
+    def _validate_dependency_graph(
+        self,
+        domain: str,
+        target_enabled: bool,
+        resolved: Mapping[str, ResolvedComponentConfig],
+    ) -> None:
+        """Reject enabling a component with disabled dependencies or disabling one required by an enabled dependent."""
+        if target_enabled:
+            for dep in self._get_dependencies(domain):
+                dep_entry = resolved.get(dep)
+                if dep_entry is not None and not dep_entry.enabled:
+                    raise ConfigurationConflictError(
+                        f"Cannot enable component '{domain}' while required dependency '{dep}' is disabled."
+                    )
+            return
+
+        for spec in self._specs:
+            if spec.domain == domain:
+                continue
+            other_entry = resolved.get(spec.domain)
+            if (
+                other_entry is not None
+                and other_entry.enabled
+                and domain in self._get_dependencies(spec.domain)
+            ):
+                raise ConfigurationConflictError(
+                    f"Cannot disable component '{domain}' while dependent component '{spec.domain}' is enabled."
+                )
+
     async def update_component_config(
         self,
         domain: str,
@@ -401,6 +447,10 @@ class ConfigService:
         spec = self._specs_by_domain.get(domain)
         if spec is None:
             raise InvalidInputError(f"Unknown component domain: {domain!r}")
+        if domain in _PROTECTED_DYNAMIC_DOMAINS:
+            raise ConfigurationConflictError(
+                f"Component '{domain}' cannot be modified dynamically via the API; configure it in config.yaml or environment variables."
+            )
 
         async with self._update_lock:
             resolved = await self.resolve_all()
@@ -452,6 +502,9 @@ class ConfigService:
                     ) from err
 
             merged_config["enabled"] = is_component_enabled(spec, merged_config)
+            self._validate_dependency_graph(
+                domain, bool(merged_config["enabled"]), resolved
+            )
 
             if spec.runtime_configurable:
                 was_running = self._loader.is_running(domain)
