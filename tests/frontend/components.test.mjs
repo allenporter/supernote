@@ -18,6 +18,8 @@ import {
     resolveFileCategory,
     resolveFileExt,
 } from '../../supernote/server/static/js/components/viewer/noteMeta.js';
+import ViewerSidePanel from '../../supernote/server/static/js/components/viewer/ViewerSidePanel.js';
+import { mountComposable } from './helpers/vue_test_scope.mjs';
 
 test('noteMeta.js: parseSafeHttpUrl, categories, page styles, link labels, and merged transcript pages', () => {
     assert.equal(
@@ -121,4 +123,45 @@ test('FileBrowserPanel.js: compareItems groups folders first across name, size, 
         [...items].sort((a, b) => compareItems(a, b, 'updatedAt', 'asc')).map((i) => i.name),
         ['Archive', 'Note 10.note', 'Note 2.note'],
     );
+});
+
+test('ViewerSidePanel.js: renders standalone image OCR & scene description as sanitized Markdown without notebook tabs', async () => {
+    const scope = await mountComposable(() =>
+        ViewerSidePanel.setup(
+            {
+                fileId: '42',
+                fileCategory: 'image',
+                isOpenMobile: false,
+                activeTab: 'transcription',
+                activePageIndex: 0,
+                hasCanvasPages: false,
+                isLoadingTranscript: false,
+                transcriptPages: [
+                    {
+                        pageIndex: 0,
+                        pageId: 'img',
+                        text: '## Whiteboard\\n\\n- **Scene**: Sunlit office whiteboard\\n- Action item',
+                    },
+                ],
+                displayTranscriptPages: [],
+                pageMetaByIndex: new Map(),
+                linksByPageIndex: new Map(),
+                summaries: [],
+                aiStatus: { ocrEnabled: true, model: 'gemini-3.5-flash-lite' },
+            },
+            {
+                expose() {},
+                emit() {},
+            },
+        ),
+    );
+
+    try {
+        assert.equal(scope.result.isStandaloneImage.value, true);
+        assert.equal(scope.result.primaryImagePage.value?.pageId, 'img');
+        assert.match(scope.result.primaryImageHtml.value, /<h2>Whiteboard<\/h2>/);
+        assert.match(scope.result.primaryImageHtml.value, /Sunlit office whiteboard/);
+    } finally {
+        scope.unmount();
+    }
 });

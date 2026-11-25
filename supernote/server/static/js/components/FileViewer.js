@@ -375,6 +375,12 @@ export default {
                         displayTranscriptPages.value.length === 0 && realSummaries.value.length > 0
                             ? 'insights'
                             : 'transcription';
+                } else if (category === 'image') {
+                    isLoadingTranscript.value = true;
+                    const pagesData = await fetchTranscript(String(props.file.id)).catch(() => []);
+                    if (seq !== activeLoadSeq) return;
+                    transcriptPages.value = pagesData;
+                    activeRightTab.value = 'transcription';
                 } else {
                     activeRightTab.value = 'transcription';
                 }
@@ -408,6 +414,21 @@ export default {
 
         const refreshInsights = async () => {
             if (!props.file) return;
+            if (fileCategory.value === 'image') {
+                const seq = activeLoadSeq;
+                isLoadingTranscript.value = true;
+                try {
+                    const pagesData = await fetchTranscript(String(props.file.id)).catch(() => []);
+                    if (seq === activeLoadSeq) {
+                        transcriptPages.value = pagesData;
+                    }
+                } finally {
+                    if (seq === activeLoadSeq) {
+                        isLoadingTranscript.value = false;
+                    }
+                }
+                return;
+            }
             if (fileCategory.value !== 'note') {
                 transcriptPages.value = [];
                 realSummaries.value = [];
@@ -629,6 +650,7 @@ export default {
                 v-if="showSidePanel"
                 ref="sidePanelRef"
                 :file-id="file?.id ?? null"
+                :file-category="fileCategory"
                 :is-open-mobile="isMobileSidePanelOpen"
                 :active-tab="activeRightTab"
                 :active-page-index="activePageIndex"

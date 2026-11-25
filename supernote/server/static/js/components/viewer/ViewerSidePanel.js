@@ -14,6 +14,7 @@ export default {
     },
     props: {
         fileId: { type: [String, Number], default: null },
+        fileCategory: { type: String, default: 'note' },
         isOpenMobile: { type: Boolean, default: false },
         activeTab: { type: String, default: 'transcription' },
         activePageIndex: { type: Number, default: 0 },
@@ -30,6 +31,7 @@ export default {
     /**
      * @param {{
      *   fileId: string | number | null,
+     *   fileCategory: string,
      *   isOpenMobile: boolean,
      *   activeTab: string,
      *   activePageIndex: number,
@@ -156,6 +158,18 @@ export default {
             }, 2000);
         }
 
+        const isStandaloneImage = computed(
+            () => props.fileCategory === 'image' && props.summaries.length === 0,
+        );
+
+        const primaryImagePage = computed(() => props.transcriptPages[0] || null);
+
+        const primaryImageHtml = computed(() => {
+            const page = primaryImagePage.value;
+            if (!page?.text) return '';
+            return renderMarkdown(formatContent(page.text));
+        });
+
         const renderedSummaries = computed(() =>
             props.summaries.map((s, idx) => ({
                 id: s.id || String(idx),
@@ -173,6 +187,9 @@ export default {
 
         return {
             transcriptScrollPane,
+            isStandaloneImage,
+            primaryImagePage,
+            primaryImageHtml,
             getPageMeta,
             getPageKeywords,
             getPageLinks,
@@ -193,8 +210,8 @@ export default {
         <div :class="isOpenMobile ? 'translate-y-0 visible pointer-events-auto' : 'translate-y-full invisible pointer-events-none md:translate-y-0 md:visible md:pointer-events-auto'"
             class="fixed md:static inset-x-0 bottom-0 z-[70] md:z-10 h-[65vh] md:h-full w-full max-w-[100vw] md:max-w-none md:w-80 lg:w-96 border-t md:border-t-0 md:border-l border-stone-200/80 bg-white flex flex-col shadow-2xl md:shadow-none transition-transform duration-200 ease-in-out flex-shrink-0 rounded-t-2xl md:rounded-none">
 
-            <!-- Segmented Tab Selector -->
-            <div class="p-2 border-b border-stone-200/80 grid grid-cols-2 gap-1 bg-stone-100/70">
+            <!-- Segmented Tab Selector (hidden for standalone images with no summaries) -->
+            <div v-if="!isStandaloneImage" class="p-2 border-b border-stone-200/80 grid grid-cols-2 gap-1 bg-stone-100/70">
                 <button @click="$emit('update:activeTab', 'transcription')" type="button"
                     :class="activeTab === 'transcription'
                         ? 'bg-white text-slate-900 shadow-sm font-semibold'
@@ -217,8 +234,56 @@ export default {
                 </button>
             </div>
 
+            <!-- Standalone Image: OCR & Visual Description -->
+            <div v-if="isStandaloneImage" class="p-4 flex-1 overflow-y-auto space-y-3" data-image-transcript-panel>
+                <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span class="text-[11px] font-bold text-stone-500 uppercase tracking-wider shrink-0">OCR &amp; Description</span>
+                        <span v-if="aiStatus?.ocrEnabled && aiStatus?.model"
+                            class="px-1.5 py-0.5 rounded bg-stone-100 text-[10px] font-mono text-stone-600 truncate"
+                            :title="aiStatus.model">
+                            {{ aiStatus.model }}
+                        </span>
+                    </div>
+                    <button @click="$emit('close-mobile')" type="button" class="md:hidden shrink-0 text-xs text-stone-500 hover:text-slate-700">Done</button>
+                </div>
+
+                <div v-if="isLoadingTranscript" class="py-12 text-center text-stone-500 text-xs">
+                    <div class="animate-spin rounded-full h-5 w-5 border-2 border-stone-300 border-t-slate-900 mx-auto mb-2"></div>
+                    Fetching image OCR &amp; description...
+                </div>
+
+                <div v-else-if="primaryImagePage" class="rounded-xl border border-stone-200/80 bg-white overflow-hidden">
+                    <div class="w-full px-3.5 py-2 border-b border-stone-100 flex items-center justify-between gap-2">
+                        <span class="text-[11px] font-semibold text-stone-600 truncate">Extracted Text &amp; Scene</span>
+                        <button v-if="primaryImageHtml"
+                            type="button"
+                            @click="copyPageTranscript(primaryImagePage)"
+                            data-copy-image-transcript
+                            :aria-label="isPageCopied(primaryImagePage.pageIndex) ? 'Copied image transcript' : 'Copy image transcript'"
+                            :title="isPageCopied(primaryImagePage.pageIndex) ? 'Copied!' : 'Copy image transcript'"
+                            :class="isPageCopied(primaryImagePage.pageIndex)
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-white hover:bg-stone-100 text-stone-600 hover:text-slate-900 border-stone-200/90'"
+                            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-semibold transition-colors shrink-0 cursor-pointer">
+                            <svg v-if="isPageCopied(primaryImagePage.pageIndex)" class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.25" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                            <svg v-else class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                            </svg>
+                            <span>{{ isPageCopied(primaryImagePage.pageIndex) ? 'Copied' : 'Copy' }}</span>
+                        </button>
+                    </div>
+                    <div class="p-3.5 text-xs text-slate-800 leading-relaxed select-text">
+                        <div v-if="primaryImageHtml" class="markdown-prose" data-image-analysis v-html="primaryImageHtml"></div>
+                        <span v-else class="italic text-stone-500 font-sans">No text or description available for this image.</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Tab 1: Real OCR Transcript -->
-            <div v-if="activeTab === 'transcription'" ref="transcriptScrollPane" class="p-4 flex-1 overflow-y-auto space-y-3">
+            <div v-else-if="activeTab === 'transcription'" ref="transcriptScrollPane" class="p-4 flex-1 overflow-y-auto space-y-3">
                 <div class="flex items-center justify-between gap-2">
                     <div class="flex items-center gap-2 min-w-0">
                         <span class="text-[11px] font-bold text-stone-500 uppercase tracking-wider shrink-0">OCR Transcript</span>
