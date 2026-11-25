@@ -66,8 +66,14 @@ GUIDE_SPECS: list[GuideSpec] = [
         path=ROOT_DIR / "docs" / "reference" / "configuration.md",
     ),
     GuideSpec(
+        slug="ai_providers",
+        title="Choosing an AI Provider",
+        section="Self-Hosting & Guides",
+        path=ROOT_DIR / "docs" / "guides" / "ai_providers.md",
+    ),
+    GuideSpec(
         slug="mcp",
-        title="AI Pipeline, Prompts & MCP",
+        title="MCP Server & AI Assistants",
         section="Self-Hosting & Guides",
         path=ROOT_DIR / "docs" / "guides" / "mcp.md",
     ),

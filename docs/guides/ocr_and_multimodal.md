@@ -49,20 +49,22 @@ You can customize OCR or summary instructions for specific notebooks by dropping
 ```text
 config/prompts/
 ├── ocr/
+│   ├── common/                    # Always prepended to every OCR prompt
+│   ├── default/                   # Fallback when no filename or page-style folder matches
 │   ├── daily/prompt.md            # Matches Daily.note, daily_log.note, etc.
-│   └── style_cornell/prompt.md    # Matches pages using Cornell Notes stationery
+│   └── cornell/prompt.md          # Matches pages using Cornell stationery (style_cornell)
 ├── summary/
+│   ├── common/                    # Always prepended to every summary prompt
 │   └── meeting_notes/prompt.md    # Custom summary format for meeting notebooks
 └── image/
     └── default/prompt.md          # Custom prompt for standalone images
 ```
 
-Native Supernote page keywords (`PAGE_KEYWORDS`) are injected automatically so your custom prompts can use your device tags and headings.
+For each page, OCR prompts resolve in order: notebook filename stem (`Daily.note` -> `daily`), then normalized page stationery style (stripping `user_`/`style_` prefixes and device suffixes like `_a5x2`), and finally `default/`. Native Supernote page keywords (`PAGE_KEYWORDS`) are injected automatically so your custom prompts can use your device tags and headings.
+
+> [!NOTE]
+> When customizing `summary/` prompts, keep your instructions compatible with the structured JSON output schema (`segments` containing `date_range`, `summary`, `extracted_dates`, and `page_refs`).
 
 ## Picking a vision model
 
-- **Google Gemini (`gemini-3.5-flash-lite`)** is the default when you set `SUPERNOTE_GEMINI_API_KEY`. In our [30-page Supernote OCR Benchmark](../../evals/ocr/RESULTS.md), it hits 99.0% Word F1 in ~1.2 seconds per page for under `$0.001` per page, with high accuracy on Bullet Journal symbols and diagrams.
-- **Local models (Ollama, vLLM, llama.cpp, LM Studio)** work through the `openai` provider so your notes never leave your network.
-- **Apple Vision (`apple:vision-accurate`)** is available on macOS as an offline fallback for plain English prose, though it does not support prompts, diagrams, or Bullet Journal symbols.
-
-See the [Configuration Reference](../reference/configuration.md) for full provider settings, the [MCP Guide](./mcp.md) for agent setup, and the [Async Note Processing Pipeline](../architecture/note_processing_design.md) for internal queue details.
+See [Choosing an AI Provider](./ai_providers.md) for the full OCR and search benchmarks, local Ollama/vLLM examples, and API data-retention policies. For full provider settings, see the [Configuration Reference](../reference/configuration.md); for agent setup, see the [MCP Guide](./mcp.md); and for internal queue details, see the [Async Note Processing Pipeline](../architecture/note_processing_design.md).
