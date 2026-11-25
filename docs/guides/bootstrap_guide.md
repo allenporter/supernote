@@ -127,7 +127,7 @@ This caches your session in `~/.cache/supernote.pkl` so later `supernote cloud` 
 
 ### 3. Issue API keys for scripts and MCP
 
-For automation, `.ics` feeds, and MCP clients, create a revocable static API key (`sn_...`) instead of reusing your login password:
+For automation, `.ics` feeds, and MCP clients, create a revocable static API key (`sn_...`) instead of reusing your login password. You can create and revoke keys (and disconnect OAuth clients) directly in the Web UI under the top-right **Settings** gear icon → **Access & API Keys** (`#/settings`), or from the CLI:
 
 ```bash
 # Create a key (printed once; save it somewhere safe)

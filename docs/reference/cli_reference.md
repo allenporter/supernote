@@ -262,7 +262,7 @@ supernote cloud login alice@example.com --url http://127.0.0.1:8080
 
 ### `supernote cloud keys` (`create`, `list`, `revoke`)
 
-Create, list, and revoke static Bearer API keys (`sn_...`) for headless CLI usage, scripts, and Model Context Protocol (MCP) clients via `supernote.client.extended.ExtendedClient`. Note that creating or revoking keys requires an interactive login session (`supernote cloud login`) rather than an existing static API key.
+Create, list, and revoke static Bearer API keys (`sn_...`) for headless CLI usage, scripts, and Model Context Protocol (MCP) clients via `supernote.client.extended.ExtendedClient`. You can also manage API keys (and connected OAuth clients) from the Web UI under **Settings → Access & API Keys** (`#/settings`). Note that creating or revoking keys requires an interactive login session (`supernote cloud login` or a Web UI session) rather than an existing static API key.
 
 ```bash
 # Create a new static API key (optionally expiring after N days, 1-3650)
