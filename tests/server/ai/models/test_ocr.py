@@ -43,7 +43,8 @@ async def test_instrumented_concurrency_excludes_semaphore_queue_wait() -> None:
     call_1_inside = asyncio.Event()
     release_call_1 = asyncio.Event()
     call_count = 0
-    sum_before_call_2 = 0.0
+    call_1_enter = 0.0
+    call_1_exit = 0.0
 
     dur_labels = {
         "provider": "fake-gated",
@@ -55,18 +56,13 @@ async def test_instrumented_concurrency_excludes_semaphore_queue_wait() -> None:
 
     class GatedOcrModel(FakeOcrModel):
         async def extract_text(self, png_data: bytes, prompt: str) -> str:
-            nonlocal call_count, sum_before_call_2
+            nonlocal call_count, call_1_enter, call_1_exit
             call_count += 1
             if call_count == 1:
+                call_1_enter = time.monotonic()
                 call_1_inside.set()
                 await release_call_1.wait()
-            else:
-                sum_before_call_2 = (
-                    REGISTRY.get_sample_value(
-                        "supernote_ai_request_duration_seconds_sum", dur_labels
-                    )
-                    or 0.0
-                )
+                call_1_exit = time.monotonic()
             return await super().extract_text(png_data, prompt)
 
     inner = InstrumentedOcrModel(
@@ -79,6 +75,12 @@ async def test_instrumented_concurrency_excludes_semaphore_queue_wait() -> None:
     before_fail = REGISTRY.get_sample_value("supernote_ai_requests_total", fail_labels)
     assert before_ok is not None
     assert before_fail is not None
+    sum_before = (
+        REGISTRY.get_sample_value(
+            "supernote_ai_request_duration_seconds_sum", dur_labels
+        )
+        or 0.0
+    )
 
     task_1 = asyncio.create_task(wrapped.extract_text(b"png1", "prompt"))
     await call_1_inside.wait()
@@ -92,16 +94,19 @@ async def test_instrumented_concurrency_excludes_semaphore_queue_wait() -> None:
     await asyncio.gather(task_1, task_2)
     call_2_wall_time = time.monotonic() - call_2_start
 
-    sum_after_call_2 = (
+    sum_after = (
         REGISTRY.get_sample_value(
             "supernote_ai_request_duration_seconds_sum", dur_labels
         )
         or 0.0
     )
-    call_2_observed_latency = sum_after_call_2 - sum_before_call_2
+    # Subtract call 1's inner duration (a lower bound on call 1's observed latency)
+    # outside any timed section so Prometheus registry collection never inflates call 2.
+    call_1_min_duration = call_1_exit - call_1_enter
+    call_2_observed_upper_bound = (sum_after - sum_before) - call_1_min_duration
 
     assert call_2_wall_time >= queue_wait
-    assert call_2_observed_latency < queue_wait / 2
+    assert call_2_observed_upper_bound < queue_wait / 2
     assert (
         REGISTRY.get_sample_value("supernote_ai_requests_total", ok_labels)
         == before_ok + 2.0
