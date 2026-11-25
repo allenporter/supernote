@@ -111,28 +111,34 @@ class ImageConverter:
         """
         if not title.content:
             raise exceptions.DecoderException("title has no bitmap content")
-
         rect = title.metadata.rect or title.metadata.rect_original
+        if rect is None:
+            raise exceptions.DecoderException("title has no TITLERECT")
+
+        horizontal = self.note.pages[title.page_number].is_horizontal()
+        page_width, page_height = self.note.width, self.note.height
+        if horizontal:
+            page_width, page_height = page_height, page_width
+        # TITLERECT is untrusted file input and sets the decode buffer size, so
+        # bounding it by the page caps memory (a few KB of RLE can otherwise
+        # expand to hundreds of MB) and keeps crops from padding off-page.
+        if not (
+            rect.width > 0
+            and rect.height > 0
+            and rect.left >= 0
+            and rect.top >= 0
+            and rect.right <= page_width
+            and rect.bottom <= page_height
+        ):
+            raise exceptions.DecoderException(
+                f"TITLERECT {rect.to_wire()} outside page bounds {page_width}x{page_height}"
+            )
+
         decoder = self.find_decoder(
             title,
             highres_grayscale=self.note.supports_highres_grayscale(),
             default_protocol=schema.LayerProtocol.RATTA_RLE,
         )
-        horizontal = (
-            self.note.pages[title.page_number].is_horizontal()
-            if 0 <= title.page_number < self.note.total_pages
-            else False
-        )
-
-        if rect is None or rect.width <= 0 or rect.height <= 0:
-            full_img = self._create_image_from_decoder(
-                decoder,
-                title.content,
-                palette=self.palette,
-                horizontal=horizontal,
-            )
-            return self._whiten_transparent(full_img)
-
         try:
             img = self._create_image_from_decoder(
                 decoder,
@@ -141,15 +147,18 @@ class ImageConverter:
                 width=rect.width,
                 height=rect.height,
             )
-        except exceptions.DecoderException:
+        except exceptions.DecoderException as crop_err:
             # Legacy firmware (e.g. SN_FILE_VER_20220011) stores a full-page
             # RLE bitmap in TITLEBITMAP; decode at page size and crop to rect.
-            full_img = self._create_image_from_decoder(
-                decoder,
-                title.content,
-                palette=self.palette,
-                horizontal=horizontal,
-            )
+            try:
+                full_img = self._create_image_from_decoder(
+                    decoder,
+                    title.content,
+                    palette=self.palette,
+                    horizontal=horizontal,
+                )
+            except exceptions.DecoderException:
+                raise crop_err from None
             img = full_img.crop(rect.bbox)
 
         return self._whiten_transparent(img)
