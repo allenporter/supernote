@@ -19,6 +19,7 @@ Execute this workflow when reviewing documentation PRs, auditing existing guides
   - **1,000 ft**: `docs/reference/*.md`, `evals/*/RESULTS.md`, `api-spec/`
   - **Ground Level**: `docs/architecture/*.md`, `docs/architecture/adr/*.md` (keep `docs/CONTRIBUTING.md` at `docs/` root for GitHub auto-detection)
 - [ ] Flag any **altitude violations**: internal Python classes, SQL tables, or raw IR metrics in 30k/10k docs; marketing essays in 1k references; or duplicated benchmark/config tables that should link down to their canonical source.
+- [ ] Flag **AI writing tells**: bold-prefix bullet lists (`- **Catchy Label**: ...`) used for prose, SaaS buzzwords (*"What It Unlocks"*, *"seamless"*, *"effortlessly"*, *"human-first"*, *"robust"*, *"complete with..."*), clustered em dashes (`—`), or internal enum/class names leaked into introductory user prose. Rewrite into plain, conversational second-person prose.
 
 ### Step 2: Verify Code Parity & Build Health
 - [ ] **Component parity**: Confirm every domain in `BUILTIN_COMPONENTS` (`supernote/server/components/__init__.py`) is accurately represented in the Server Component Catalog (default-enabled status, dependencies, platforms).
