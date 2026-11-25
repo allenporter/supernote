@@ -123,7 +123,9 @@ class ScheduleClient:
 
     async def delete_group(self, group_id: str) -> None:
         """Delete a schedule group."""
-        await self._client.request("delete", f"/api/file/schedule/group/{group_id}")
+        await self._client.delete_json(
+            f"/api/file/schedule/group/{group_id}", BaseResponse
+        )
 
     async def create_task(
         self,
@@ -287,7 +289,9 @@ class ScheduleClient:
 
     async def delete_task(self, task_id: str) -> None:
         """Delete a schedule task."""
-        await self._client.request("delete", f"/api/file/schedule/task/{task_id}")
+        await self._client.delete_json(
+            f"/api/file/schedule/task/{task_id}", BaseResponse
+        )
 
     async def get_ical_feed(self, group_id: str | None = None) -> str:
         """Get the iCalendar (.ics) feed for the user's tasks.
@@ -302,7 +306,5 @@ class ScheduleClient:
         if group_id is not None:
             params["taskListId"] = group_id
 
-        resp = await self._client.request(
-            "get", "/api/schedule/feed.ics", params=params
-        )
+        resp = await self._client.get("/api/schedule/feed.ics", params=params)
         return await resp.text()
