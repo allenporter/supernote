@@ -79,6 +79,13 @@ The fields `handwriteInnerName` and `handwriteMD5` refer to binary stroke data s
 *   `handwriteInnerName`: The unique key in OSS where the handwriting file is located.
 *   `handwriteMD5`: Used to verify the integrity of the downloaded stroke data.
 
+### Rendering Handwriting (Extended)
+`POST /api/file/download/summary` returns the raw `.mark` stroke file. To get the ink rendered instead, call one of the server's extended endpoints with the same `{"id": <summaryId>}` body:
+*   `POST /api/extended/file/summary/to/pdf` -> `{"url": "<signed /api/oss/summary/pdf/{id} URL>"}`
+*   `POST /api/extended/file/summary/to/png` -> `{"pngPageVOList": [{"pageNo": 0, "url": "<signed /api/oss/summary/png/{id}/{pageNo} URL>"}]}`
+
+The summary must belong to the caller and have `handwriteInnerName` set, otherwise the endpoint returns `404`. Renders are cached in `CACHE_BUCKET` keyed by summary ID and `handwriteMD5`, so an edited comment re-renders and downloads never serve stale ink from a previous version. Static `sn_...` API keys are accepted, so automation clients (for example n8n) can fetch the ink without shell access. Python clients can use `SummaryClient.summary_to_pdf` / `SummaryClient.summary_to_png`.
+
 ### Timestamp Precision
 All `Time` fields (`creationTime`, `lastModifiedTime`, `createTime`, `updateTime`) follow the standard Supernote convention of using **Unix timestamps in milliseconds**.
 

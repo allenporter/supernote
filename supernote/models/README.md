@@ -250,6 +250,8 @@ Models in `supernote.models.extended` power the custom `/api/extended/*` endpoin
 * **OCR Page Transcripts** (`POST /api/extended/transcript`): `WebTranscriptRequestDTO` (stringified `file_id`, optional `start_index` / `end_index`) -> `WebTranscriptResponseVO` (`pages: list[PageTranscriptVO]`).
 * **Web Summaries, Structured Notebook Metadata & Note Cover Previews**:
   * `POST /api/extended/file/summary/list`: `WebSummaryListRequestDTO` -> `WebSummaryListVO`
+  * `POST /api/extended/file/summary/to/pdf`: `DownloadSummaryDTO` -> `PdfVO` (signed `GET /api/oss/summary/pdf/{id}` URL for the rendered handwriting)
+  * `POST /api/extended/file/summary/to/png`: `DownloadSummaryDTO` -> `PngVO` (signed `GET /api/oss/summary/png/{id}/{page_no}` URLs)
   * `POST /api/extended/file/note/cover`: `WebNoteCoverRequestDTO` -> `WebNoteCoverVO`
   * `POST /api/extended/file/note/metadata`: `WebNoteMetadataRequestDTO` -> `WebNoteMetadataVO` (`file_id`, `equipment`, `total_pages`, `keywords`, `titles: list[NoteTitleVO]`, `links: list[NoteLinkVO]`, `pages: list[NotePageMetadataVO]`)
 * **Static Bearer API Keys**:

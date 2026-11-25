@@ -16,7 +16,11 @@ from supernote.server.db.session import DatabaseSessionManager
 from supernote.server.services.blob import BlobStorage, LocalBlobStorage
 from supernote.server.services.integrity import _REMEDIATION_HINTS, IntegrityService
 from supernote.server.services.user import UserService
-from supernote.server.utils.paths import get_conversion_pdf_path, get_page_png_path
+from supernote.server.utils.paths import (
+    get_conversion_pdf_path,
+    get_page_png_path,
+    get_summary_handwriting_prefix,
+)
 
 
 @pytest.fixture
@@ -674,3 +678,57 @@ async def test_verify_full_disk_two_way_checks(
         "999999/pages/P1.png",
         stale_selection,
     }
+
+
+async def test_verify_full_disk_summary_renders(
+    integrity_service: IntegrityService,
+    blob_storage: LocalBlobStorage,
+    test_user_id: int,
+    db_session: AsyncSession,
+) -> None:
+    """Verify cached summary handwriting renders are referenced only by their active SummaryDO version."""
+    hw_bytes = b"handwriting-strokes"
+    hw_key = f"hw-{uuid.uuid4()}"
+    hw_md5 = hashlib.md5(hw_bytes).hexdigest()
+    await blob_storage.put(USER_DATA_BUCKET, hw_key, hw_bytes)
+    summary = SummaryDO(
+        user_id=test_user_id,
+        unique_identifier=str(uuid.uuid4()),
+        is_summary_group=False,
+        handwrite_inner_name=hw_key,
+        handwrite_md5=hw_md5,
+    )
+    deleted_summary = SummaryDO(
+        user_id=test_user_id,
+        unique_identifier=str(uuid.uuid4()),
+        is_summary_group=False,
+        handwrite_inner_name="deleted-hw",
+        handwrite_md5=hw_md5,
+        is_deleted=True,
+    )
+    db_session.add_all([summary, deleted_summary])
+    await db_session.commit()
+
+    prefix = get_summary_handwriting_prefix(test_user_id, summary.id, hw_md5)
+    for key in (f"{prefix}.pdf", f"{prefix}_page_0.png", f"{prefix}_page_1.png"):
+        await blob_storage.put(CACHE_BUCKET, key, b"render")
+
+    clean_report = await integrity_service.verify_full_disk()
+    assert clean_report.issues == []
+
+    stale_key = (
+        f"{get_summary_handwriting_prefix(test_user_id, summary.id, 'stale')}.pdf"
+    )
+    deleted_key = (
+        get_summary_handwriting_prefix(test_user_id, deleted_summary.id, hw_md5)
+        + "_page_0.png"
+    )
+    await blob_storage.put(CACHE_BUCKET, stale_key, b"stale")
+    await blob_storage.put(CACHE_BUCKET, deleted_key, b"deleted")
+
+    dirty_report = await integrity_service.verify_full_disk()
+    assert {
+        i.file_name
+        for i in dirty_report.issues
+        if i.issue_type == IntegrityIssueType.UNREFERENCED_BLOB
+    } == {stale_key, deleted_key}

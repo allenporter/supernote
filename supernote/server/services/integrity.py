@@ -32,6 +32,8 @@ from supernote.server.utils.paths import (
     get_conversion_pdf_path,
     get_full_conversion_pdf_path,
     get_page_png_path,
+    get_summary_handwriting_prefix,
+    get_summary_handwriting_prefix_of,
     is_valid_page_id,
 )
 
@@ -364,8 +366,11 @@ class IntegrityService:
         disk_cache_keys = await self.blob_storage.list_blobs(CACHE_BUCKET)
         for key in disk_cache_keys:
             full_export_key = get_full_conversion_pdf_path(key)
-            if key not in referenced_cache_keys and (
-                full_export_key not in referenced_cache_keys
+            summary_prefix = get_summary_handwriting_prefix_of(key)
+            if (
+                key not in referenced_cache_keys
+                and full_export_key not in referenced_cache_keys
+                and summary_prefix not in referenced_cache_keys
             ):
                 report.scanned += 1
                 detail = f"Unreferenced cache blob in {CACHE_BUCKET}: {key}"
@@ -959,7 +964,7 @@ class IntegrityService:
         return file_keys | summary_keys
 
     async def _query_referenced_cache_keys(self, session: AsyncSession) -> set[str]:
-        """Return all logical blob keys in CACHE_BUCKET referenced by active notes and pages."""
+        """Return logical CACHE_BUCKET keys (and summary render prefixes) referenced by active rows."""
         referenced: set[str] = set()
 
         page_stmt = select(NotePageContentDO.file_id, NotePageContentDO.page_id).join(
@@ -1000,5 +1005,16 @@ class IntegrityService:
         for uid, fid, md5 in (await session.execute(conv_stmt)).all():
             if md5:
                 referenced.add(get_conversion_pdf_path(uid, fid, md5))
+
+        summary_stmt = select(
+            SummaryDO.user_id, SummaryDO.id, SummaryDO.handwrite_md5
+        ).where(
+            SummaryDO.is_deleted.is_(False),
+            SummaryDO.handwrite_inner_name.is_not(None),
+            SummaryDO.handwrite_md5.is_not(None),
+        )
+        for uid, sid, md5 in (await session.execute(summary_stmt)).all():
+            if md5 and is_valid_page_id(md5):
+                referenced.add(get_summary_handwriting_prefix(uid, sid, md5))
 
         return referenced

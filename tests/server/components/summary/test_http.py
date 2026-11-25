@@ -1,9 +1,11 @@
 import math
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from aiohttp.test_utils import TestClient
 
+from supernote.client.client import Client
 from supernote.client.exceptions import ApiException
 from supernote.client.extended import ExtendedClient
 from supernote.client.summary import SummaryClient
@@ -20,11 +22,17 @@ from supernote.models.summary import (
 from supernote.models.user import UserRegisterDTO
 from supernote.server.components.summary import SUMMARY_SERVICE_KEY
 from supernote.server.components.summary.service import DEFAULT_SUMMARY_PAGE_SIZE
+from supernote.server.constants import CACHE_BUCKET, USER_DATA_BUCKET
 from supernote.server.exceptions import SupernoteError
 from supernote.server.keys import (
+    BLOB_STORAGE_KEY,
+    CONVERSION_SERVICE_KEY,
     URL_SIGNER_KEY,
     USER_SERVICE_KEY,
 )
+from tests.fixtures.server import TEST_USERNAME
+
+DIGEST_MARK = "schaefer-dev/garmin_connect_20260016.pdf.mark"
 
 
 async def test_summary_tags_crud(summary_client: SummaryClient) -> None:
@@ -834,3 +842,200 @@ async def test_summary_tag_wire_ids_serialized_as_strings(
     ).json()
     assert query_tags["summaryTagDOList"][0]["id"] == add_tag["id"]
     assert isinstance(query_tags["summaryTagDOList"][0]["id"], str)
+
+
+async def _add_handwritten_summary(
+    client: TestClient,
+    summary_client: SummaryClient,
+    test_data_dir: Path,
+    handwrite_md5: str = "hwmd5-v1",
+) -> int:
+    """Store a real `.mark` blob in USER_DATA_BUCKET and create a summary pointing at it."""
+    inner_name = "digest_comment.mark"
+    await client.app[BLOB_STORAGE_KEY].put(
+        USER_DATA_BUCKET, inner_name, (test_data_dir / DIGEST_MARK).read_bytes()
+    )
+    add_response = await summary_client.add_summary(
+        AddSummaryDTO(
+            content="Digest with handwritten comment",
+            handwrite_inner_name=inner_name,
+            handwrite_md5=handwrite_md5,
+        )
+    )
+    assert add_response.id is not None
+    return add_response.id
+
+
+async def test_summary_to_pdf_and_png(
+    client: TestClient,
+    summary_client: SummaryClient,
+    authenticated_client: Client,
+    test_data_dir: Path,
+) -> None:
+    summary_id = await _add_handwritten_summary(client, summary_client, test_data_dir)
+
+    pdf = await summary_client.summary_to_pdf(summary_id)
+    assert pdf.url is not None
+    assert f"/api/oss/summary/pdf/{summary_id}?" in pdf.url
+    assert (await authenticated_client.get_content(pdf.url)).startswith(b"%PDF")
+
+    png = await summary_client.summary_to_png(summary_id)
+    assert [page.page_no for page in png.png_page_vo_list] == [0]
+    png_bytes = await authenticated_client.get_content(png.png_page_vo_list[0].url)
+    assert png_bytes.startswith(b"\x89PNG")
+
+
+@pytest.mark.parametrize(
+    "path", ["/api/extended/file/summary/to/pdf", "/api/extended/file/summary/to/png"]
+)
+async def test_summary_render_without_handwriting(
+    client: TestClient,
+    summary_client: SummaryClient,
+    auth_headers: dict[str, str],
+    path: str,
+) -> None:
+    add_response = await summary_client.add_summary(
+        AddSummaryDTO(content="Text-only digest")
+    )
+
+    resp = await client.post(path, json={"id": add_response.id}, headers=auth_headers)
+    assert resp.status == 404
+    assert (await resp.json())["errorMsg"] == "Handwriting data not found"
+
+
+@pytest.mark.parametrize(
+    "path", ["/api/extended/file/summary/to/pdf", "/api/extended/file/summary/to/png"]
+)
+async def test_summary_render_other_users_summary(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    path: str,
+) -> None:
+    other_user = "other@example.com"
+    await client.app[USER_SERVICE_KEY].register(
+        UserRegisterDTO(email=other_user, password="c" * 32)
+    )
+    other_summary = await client.app[SUMMARY_SERVICE_KEY].add_summary(
+        other_user,
+        AddSummaryDTO(
+            content="Not yours",
+            handwrite_inner_name="digest_comment.mark",
+            handwrite_md5="hwmd5-v1",
+        ),
+    )
+
+    resp = await client.post(path, json={"id": other_summary.id}, headers=auth_headers)
+    assert resp.status == 404
+
+
+async def test_summary_render_cache_keyed_by_handwrite_md5(
+    client: TestClient,
+    summary_client: SummaryClient,
+    authenticated_client: Client,
+    test_data_dir: Path,
+) -> None:
+    summary_id = await _add_handwritten_summary(client, summary_client, test_data_dir)
+    conversion_service = client.app[CONVERSION_SERVICE_KEY]
+    summary_service = client.app[SUMMARY_SERVICE_KEY]
+
+    pdf = await summary_client.summary_to_pdf(summary_id)
+    assert pdf.url is not None
+    summary_v1 = await summary_service.get_summary(TEST_USERNAME, summary_id)
+    stale = await conversion_service.get_summary_pdf(TEST_USERNAME, summary_v1)
+    assert stale is not None
+    await client.app[BLOB_STORAGE_KEY].put(
+        CACHE_BUCKET, stale.storage_key, b"stale render"
+    )
+    assert await authenticated_client.get_content(pdf.url) == b"stale render"
+
+    await summary_client.update_summary(
+        UpdateSummaryDTO(id=summary_id, handwrite_md5="hwmd5-v2")
+    )
+    summary_v2 = await summary_service.get_summary(TEST_USERNAME, summary_id)
+    assert await conversion_service.get_summary_pdf(TEST_USERNAME, summary_v2) is None
+    with pytest.raises(ApiException):
+        await authenticated_client.get_content(pdf.url)
+
+    fresh = await summary_client.summary_to_pdf(summary_id)
+    assert fresh.url is not None
+    assert (await authenticated_client.get_content(fresh.url)).startswith(b"%PDF")
+
+
+async def test_summary_to_pdf_with_static_api_key(
+    client: TestClient,
+    summary_client: SummaryClient,
+    test_data_dir: Path,
+) -> None:
+    summary_id = await _add_handwritten_summary(client, summary_client, test_data_dir)
+    user_service = client.app[USER_SERVICE_KEY]
+    user_id = await user_service.get_user_id(TEST_USERNAME)
+    raw_api_key, _ = await user_service.create_api_key(user_id, "n8n")
+    assert raw_api_key.startswith("sn_")
+
+    resp = await client.post(
+        "/api/extended/file/summary/to/pdf",
+        json={"id": summary_id},
+        headers={"Authorization": f"Bearer {raw_api_key}"},
+    )
+    assert resp.status == 200
+    url = (await resp.json())["url"]
+
+    download = await client.get(url[url.index("/api/oss/") :])
+    assert download.status == 200
+    assert (await download.read()).startswith(b"%PDF")
+
+
+async def test_summary_png_out_of_range_page(
+    client: TestClient,
+    summary_client: SummaryClient,
+    authenticated_client: Client,
+    test_data_dir: Path,
+) -> None:
+    summary_id = await _add_handwritten_summary(client, summary_client, test_data_dir)
+    await summary_client.summary_to_png(summary_id)
+
+    signed_path = await client.app[URL_SIGNER_KEY].sign(
+        f"/api/oss/summary/png/{summary_id}/99", user=TEST_USERNAME, single_use=False
+    )
+    resp = await client.get(signed_path)
+    assert resp.status == 404
+
+
+@pytest.mark.parametrize("path", ["/api/oss/summary/pdf/1", "/api/oss/summary/png/1/0"])
+async def test_summary_render_download_unsigned(client: TestClient, path: str) -> None:
+    resp = await client.get(path)
+    assert resp.status == 403
+    resp = await client.get(f"{path}?signature=bogus")
+    assert resp.status == 403
+
+
+@pytest.mark.parametrize(
+    "path", ["/api/extended/file/summary/to/pdf", "/api/extended/file/summary/to/png"]
+)
+@pytest.mark.parametrize("body", [b"not json", b"{}"])
+async def test_summary_render_invalid_request(
+    client: TestClient, auth_headers: dict[str, str], path: str, body: bytes
+) -> None:
+    resp = await client.post(
+        path,
+        data=body,
+        headers={**auth_headers, "Content-Type": "application/json"},
+    )
+    assert resp.status == 400
+
+
+@pytest.mark.parametrize(
+    "path", ["/api/extended/file/summary/to/pdf", "/api/extended/file/summary/to/png"]
+)
+async def test_summary_render_unsafe_handwrite_md5(
+    client: TestClient,
+    summary_client: SummaryClient,
+    auth_headers: dict[str, str],
+    test_data_dir: Path,
+    path: str,
+) -> None:
+    summary_id = await _add_handwritten_summary(
+        client, summary_client, test_data_dir, handwrite_md5="../escape"
+    )
+    resp = await client.post(path, json={"id": summary_id}, headers=auth_headers)
+    assert resp.status == 400

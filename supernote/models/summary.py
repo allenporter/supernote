@@ -767,6 +767,8 @@ class DownloadSummaryDTO(DataClassJSONMixin):
 
     Used by:
         /api/file/download/summary (POST)
+        /api/extended/file/summary/to/pdf (POST)
+        /api/extended/file/summary/to/png (POST)
     """
 
     id: int

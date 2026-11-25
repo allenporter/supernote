@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from supernote.models.summary import SummaryItem
 from supernote.server.components.processor import ProcessorService
 from supernote.server.components.processor.page_hashing import PageHashingModule
 from supernote.server.components.processor.png_conversion import (
@@ -234,3 +235,76 @@ async def test_conversion_service_validation_errors(
 
     with pytest.raises(FileNotFound, match="no content"):
         await conversion_service.convert_note_to_png(user_email, 5004)
+
+
+DIGEST_MARK = "schaefer-dev/garmin_connect_20260016.pdf.mark"
+
+
+async def test_convert_summary_to_pdf_and_png(
+    conversion_service: ConversionService,
+    blob_storage: BlobStorage,
+    test_user_id: int,
+    test_data_dir: Path,
+) -> None:
+    user_email = "test@example.com"
+    summary = SummaryItem(
+        id=7001, handwrite_inner_name="digest.mark", handwrite_md5="hwmd5"
+    )
+    await blob_storage.put(
+        USER_DATA_BUCKET, "digest.mark", (test_data_dir / DIGEST_MARK).read_bytes()
+    )
+
+    assert await conversion_service.get_summary_pdf(user_email, summary) is None
+    assert await conversion_service.get_summary_png_page(user_email, summary, 0) is None
+
+    await conversion_service.convert_summary_to_pdf(user_email, summary)
+    pdf_blob = await conversion_service.get_summary_pdf(user_email, summary)
+    assert pdf_blob == ConvertedBlob(
+        storage_key=f"conversions/{test_user_id}/summary_7001/handwrite_hwmd5.pdf",
+        file_name="summary_7001.pdf",
+    )
+    assert (await _read(blob_storage, pdf_blob.storage_key)).startswith(b"%PDF")
+
+    assert await conversion_service.convert_summary_to_png(user_email, summary) == [0]
+    png_blob = await conversion_service.get_summary_png_page(user_email, summary, 0)
+    assert png_blob is not None
+    assert (await _read(blob_storage, png_blob.storage_key)).startswith(b"\x89PNG")
+    assert await conversion_service.get_summary_png_page(user_email, summary, 1) is None
+
+    # Cached renders are served without reading the source `.mark` blob again.
+    await blob_storage.delete(USER_DATA_BUCKET, "digest.mark")
+    await conversion_service.convert_summary_to_pdf(user_email, summary)
+    assert await conversion_service.convert_summary_to_png(user_email, summary) == [0]
+
+
+async def test_convert_summary_validation_errors(
+    conversion_service: ConversionService,
+    test_user_id: int,
+) -> None:
+    user_email = "test@example.com"
+    no_handwriting = SummaryItem(id=7002)
+    no_md5 = SummaryItem(id=7003, handwrite_inner_name="digest.mark")
+    unsafe_md5 = SummaryItem(
+        id=7004, handwrite_inner_name="digest.mark", handwrite_md5="../escape"
+    )
+    missing_blob = SummaryItem(
+        id=7005, handwrite_inner_name="missing.mark", handwrite_md5="hwmd5"
+    )
+
+    for convert in (
+        conversion_service.convert_summary_to_pdf,
+        conversion_service.convert_summary_to_png,
+    ):
+        with pytest.raises(FileNotFound, match="Handwriting data not found"):
+            await convert(user_email, no_handwriting)
+        with pytest.raises(FileError, match="missing handwriting MD5"):
+            await convert(user_email, no_md5)
+        with pytest.raises(FileError, match="Invalid handwrite_md5"):
+            await convert(user_email, unsafe_md5)
+        with pytest.raises(FileNotFound, match="Handwriting data not found"):
+            await convert(user_email, missing_blob)
+
+    with pytest.raises(FileError, match="missing handwriting MD5"):
+        await conversion_service.get_summary_pdf(user_email, no_md5)
+    with pytest.raises(FileError, match="Invalid handwrite_md5"):
+        await conversion_service.get_summary_png_page(user_email, unsafe_md5, 0)

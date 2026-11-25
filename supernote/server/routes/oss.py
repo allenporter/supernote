@@ -280,7 +280,7 @@ def _build_download_headers(
     return headers
 
 
-async def _stream_blob_response(
+async def stream_blob_response(
     request: web.Request,
     blob_storage: BlobStorage,
     bucket: str,
@@ -421,7 +421,7 @@ async def handle_oss_download(request: web.Request) -> web.StreamResponse:
         file_size = metadata.size
         file_name = Path(storage_key).name
 
-    return await _stream_blob_response(
+    return await stream_blob_response(
         request=request,
         blob_storage=file_service.blob_storage,
         bucket=USER_DATA_BUCKET,
@@ -481,7 +481,7 @@ async def handle_oss_png_download(request: web.Request) -> web.StreamResponse:
             status=HTTPStatus.NOT_FOUND,
         )
 
-    return await _stream_blob_response(
+    return await stream_blob_response(
         request=request,
         blob_storage=blob_storage,
         bucket=CACHE_BUCKET,
@@ -546,7 +546,7 @@ async def handle_oss_pdf_download(request: web.Request) -> web.StreamResponse:
             status=HTTPStatus.NOT_FOUND,
         )
 
-    return await _stream_blob_response(
+    return await stream_blob_response(
         request=request,
         blob_storage=blob_storage,
         bucket=CACHE_BUCKET,
