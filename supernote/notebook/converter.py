@@ -102,6 +102,67 @@ class ImageConverter:
             converted_img = self._make_transparent(converted_img)
         return converted_img
 
+    def convert_title(self, title: fileformat.Title) -> Image.Image:
+        """Decode a notebook `Title`'s `<TITLEBITMAP>` into a cropped image.
+
+        Supports both modern cropped title bitmaps (sized to `<TITLERECT>`) and
+        legacy full-page title bitmaps (decoded at page dimensions and cropped
+        to `<TITLERECT>`).
+        """
+        if not title.content:
+            raise exceptions.DecoderException("title has no bitmap content")
+        rect = title.metadata.rect or title.metadata.rect_original
+        if rect is None:
+            raise exceptions.DecoderException("title has no TITLERECT")
+
+        horizontal = self.note.pages[title.page_number].is_horizontal()
+        page_width, page_height = self.note.width, self.note.height
+        if horizontal:
+            page_width, page_height = page_height, page_width
+        # TITLERECT is untrusted file input and sets the decode buffer size, so
+        # bounding it by the page caps memory (a few KB of RLE can otherwise
+        # expand to hundreds of MB) and keeps crops from padding off-page.
+        if not (
+            rect.width > 0
+            and rect.height > 0
+            and rect.left >= 0
+            and rect.top >= 0
+            and rect.right <= page_width
+            and rect.bottom <= page_height
+        ):
+            raise exceptions.DecoderException(
+                f"TITLERECT {rect.to_wire()} outside page bounds {page_width}x{page_height}"
+            )
+
+        decoder = self.find_decoder(
+            title,
+            highres_grayscale=self.note.supports_highres_grayscale(),
+            default_protocol=schema.LayerProtocol.RATTA_RLE,
+        )
+        try:
+            img = self._create_image_from_decoder(
+                decoder,
+                title.content,
+                palette=self.palette,
+                width=rect.width,
+                height=rect.height,
+            )
+        except exceptions.DecoderException as crop_err:
+            # Legacy firmware (e.g. SN_FILE_VER_20220011) stores a full-page
+            # RLE bitmap in TITLEBITMAP; decode at page size and crop to rect.
+            try:
+                full_img = self._create_image_from_decoder(
+                    decoder,
+                    title.content,
+                    palette=self.palette,
+                    horizontal=horizontal,
+                )
+            except exceptions.DecoderException:
+                raise crop_err from None
+            img = full_img.crop(rect.bbox)
+
+        return self._whiten_transparent(img)
+
     def _convert_nonlayered_page(
         self, page, palette=None, visibility_overlay=None, highres_grayscale=False
     ):
@@ -204,10 +265,17 @@ class ImageConverter:
         return Image.composite(transparent_img, img, mask)
 
     def _create_image_from_decoder(
-        self, decoder, binary, palette=None, blank_hint=False, horizontal=False
+        self,
+        decoder,
+        binary,
+        palette=None,
+        blank_hint=False,
+        horizontal=False,
+        width=None,
+        height=None,
     ):
-        page_width = self.note.width
-        page_height = self.note.height
+        page_width = self.note.width if width is None else width
+        page_height = self.note.height if height is None else height
         bitmap, size, bpp = decoder.decode(
             binary,
             page_width,
@@ -235,7 +303,7 @@ class ImageConverter:
 
     @staticmethod
     def _resolve_protocol(
-        target: fileformat.Page | fileformat.Layer,
+        target: fileformat.Page | fileformat.Layer | fileformat.Title,
         default_protocol: str | None = None,
     ) -> str | None:
         if isinstance(target, fileformat.Layer):
@@ -257,7 +325,7 @@ class ImageConverter:
         highres_grayscale=False,
         default_protocol: str | None = None,
     ):
-        """Return the bitmap decoder for `page` (or `Layer`), falling back to `default_protocol` when `<LAYERPROTOCOL>` is omitted."""
+        """Return the bitmap decoder for `page` (or `Layer` / `Title`), falling back to `default_protocol` when omitted."""
         protocol = self._resolve_protocol(page, default_protocol)
         if protocol == schema.LayerProtocol.SN_ASA_COMPRESS:
             return Decoder.FlateDecoder()

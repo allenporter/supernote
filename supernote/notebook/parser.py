@@ -24,6 +24,7 @@ policies. See `supernote.guides.notebook_spec` for details.
 
 import os
 import re
+from collections.abc import Sequence
 from typing import Protocol
 
 from . import exceptions, fileformat, schema
@@ -105,9 +106,7 @@ def load(
             content = _get_content_at_address(stream, keyword.metadata.site_address)
             keyword.content = content
         # store title data to notebook object
-        for title in note.titles:
-            content = _get_content_at_address(stream, title.metadata.bitmap_address)
-            title.content = content
+        load_title_bitmaps(stream, note.titles)
         # store link data to notebook object
         for link in note.links:
             content = _get_content_at_address(stream, link.metadata.bitmap_address)
@@ -164,6 +163,16 @@ def load_notebook(
     """
     with open(file_name, "rb") as f:
         return load(f, metadata, policy, page_number=page_number)
+
+
+def load_title_bitmaps(stream: FileObj, titles: Sequence[fileformat.Title]) -> None:
+    """Populate `Title.content` for each title by reading its `<TITLEBITMAP>` block.
+
+    Useful after `parse_metadata()` when title preview bitmaps are needed without
+    loading full-page layer bitmaps.
+    """
+    for title in titles:
+        title.content = _get_content_at_address(stream, title.metadata.bitmap_address)
 
 
 def _get_content_at_address(fobj: FileObj, address: int) -> bytes | None:

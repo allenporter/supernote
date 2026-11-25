@@ -649,3 +649,101 @@ def test_single_page_load_and_convert() -> None:
 
     with pytest.raises(ValueError, match="loaded with only page_number=3"):
         single_converter.convert(0)
+
+
+HEADING_NOTE_PATH = (
+    TEST_DATA_DIR / "philips" / "heading-n5-20260016-backgrounds-marker.note"
+)
+LEGACY_TITLE_NOTE_PATH = TEST_DATA_DIR / "philips" / "test.note"
+
+
+def _title_png_bytes(img: Image.Image) -> bytes:
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", compress_level=1)
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("note_path", "expected_titles"),
+    [
+        # Modern firmware (2026 N5): TITLEBITMAP is cropped to TITLERECT.
+        (HEADING_NOTE_PATH, 4),
+        # Legacy firmware (SN_FILE_VER_20220011): TITLEBITMAP is a full page.
+        (LEGACY_TITLE_NOTE_PATH, 2),
+    ],
+    ids=lambda v: v.name if isinstance(v, Path) else None,
+)
+def test_convert_title_snapshots(
+    note_path: Path, expected_titles: int, snapshot
+) -> None:
+    notebook = get_cached_notebook(str(note_path))
+    converter = ImageConverter(notebook)
+
+    assert len(notebook.titles) == expected_titles
+    for idx, title in enumerate(notebook.titles):
+        assert title.metadata.rect is not None
+        img = converter.convert_title(title)
+
+        assert img.size == (title.metadata.rect.width, title.metadata.rect.height)
+        assert img.mode == "L"
+        assert _title_png_bytes(img) == snapshot(
+            name=f"title_{idx}", extension_class=VisualPngSnapshotExtension
+        )
+
+
+def test_convert_title_raises_when_bitmap_missing() -> None:
+    converter = ImageConverter(get_cached_notebook(str(HEADING_NOTE_PATH)))
+    empty_title = fileformat.Title({"TITLERECT": "0,0,100,40"}, content=None)
+
+    with pytest.raises(DecoderException, match="no bitmap content"):
+        converter.convert_title(empty_title)
+
+
+def test_convert_title_raises_when_rect_missing() -> None:
+    notebook = get_cached_notebook(str(LEGACY_TITLE_NOTE_PATH))
+    converter = ImageConverter(notebook)
+    rectless_title = fileformat.Title(
+        {"TITLEPROTOCOL": "RATTA_RLE"},
+        content=notebook.titles[0].content,
+        page_number=0,
+    )
+
+    with pytest.raises(DecoderException, match="no TITLERECT"):
+        converter.convert_title(rectless_title)
+
+
+@pytest.mark.parametrize(
+    "rect_wire",
+    [
+        "0,0,16384,16384",  # oversized: would expand a tiny RLE payload to ~268 MB
+        "1300,1800,400,400",  # extends past the bottom-right page edge
+        "-10,0,100,40",  # negative origin
+        "0,0,0,40",  # zero width
+    ],
+)
+def test_convert_title_rejects_rect_outside_page(rect_wire: str) -> None:
+    notebook = get_cached_notebook(str(LEGACY_TITLE_NOTE_PATH))
+    converter = ImageConverter(notebook)
+    # 0x61/0xFF pairs each expand to 0x4000 black pixels.
+    bomb_payload = bytes([0x61, 0xFF]) * 16384
+    title = fileformat.Title(
+        {"TITLERECT": rect_wire, "TITLEPROTOCOL": "RATTA_RLE"},
+        content=bomb_payload,
+        page_number=0,
+    )
+
+    with pytest.raises(DecoderException, match="outside page bounds"):
+        converter.convert_title(title)
+
+
+def test_convert_title_corrupt_crop_reports_crop_error() -> None:
+    """When both cropped and full-page decodes fail, surface the cropped-size error."""
+    converter = ImageConverter(get_cached_notebook(str(LEGACY_TITLE_NOTE_PATH)))
+    title = fileformat.Title(
+        {"TITLERECT": "0,0,10,10", "TITLEPROTOCOL": "RATTA_RLE"},
+        content=bytes([0x61, 0x05]),
+        page_number=0,
+    )
+
+    with pytest.raises(DecoderException, match="expected = 100$"):
+        converter.convert_title(title)
