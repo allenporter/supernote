@@ -175,6 +175,8 @@ async def _verify_signed_user(
     signed_query_keys: tuple[str, ...] = (),
 ) -> str:
     """Verify a signed cache-download URL and return the signed user email."""
+    # TODO: Embed and verify numeric `user_id` instead of user email in UrlSigner
+    # tokens to avoid leaking email in signed query params and extra DB lookups.
     url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
     payload = await url_signer.verify(
         request.path_qs, consume=False, signed_query_keys=signed_query_keys
