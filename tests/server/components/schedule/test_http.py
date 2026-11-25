@@ -5,7 +5,7 @@ from aiohttp.test_utils import TestClient
 
 from supernote.client.auth import AbstractAuth
 from supernote.client.client import Client
-from supernote.client.exceptions import BadRequestException
+from supernote.client.exceptions import BadRequestException, NotFoundException
 from supernote.client.schedule import ScheduleClient
 from supernote.models.base import BooleanEnum
 from supernote.models.schedule import (
@@ -1251,3 +1251,70 @@ async def test_list_tasks_since_includes_tasks_at_cursor(
     returned_ids = {t.task_id for t in delta.schedule_task}
     assert returned_ids == {at_update_id, at_sort_id, at_planer_sort_id}
     assert before_id not in returned_ids
+
+
+async def test_delete_missing_group_raises_not_found(
+    authenticated_client: Client,
+) -> None:
+    """Verify delete_group maps HTTP 404 to NotFoundException."""
+    schedule = ScheduleClient(authenticated_client)
+    with pytest.raises(NotFoundException):
+        await schedule.delete_group("nonexistent-group")
+
+
+async def test_delete_missing_task_raises_not_found(
+    authenticated_client: Client,
+) -> None:
+    """Verify delete_task maps HTTP 404 to NotFoundException."""
+    schedule = ScheduleClient(authenticated_client)
+    with pytest.raises(NotFoundException):
+        await schedule.delete_task("nonexistent-task")
+
+
+class _StaleOnceAuth(AbstractAuth):
+    """Auth provider that serves an invalid token until reactive refresh runs."""
+
+    def __init__(self, valid_token: str) -> None:
+        self._token = "stale-token"
+        self._valid_token = valid_token
+        self.refresh_calls: list[str] = []
+
+    async def async_get_access_token(self) -> str:
+        return self._token
+
+    async def async_refresh_access_token(self, failed_token: str) -> bool:
+        self.refresh_calls.append(failed_token)
+        self._token = self._valid_token
+        return True
+
+
+@pytest.mark.parametrize("operation", ["delete_group", "delete_task", "get_ical_feed"])
+async def test_delete_and_ical_refresh_and_retry_on_401(
+    authenticated_client: Client,
+    operation: str,
+) -> None:
+    """Verify delete_group, delete_task, and get_ical_feed refresh and retry on 401."""
+    setup_schedule = ScheduleClient(authenticated_client)
+    group = await setup_schedule.create_group("Retry Group")
+    assert group.task_list_id is not None
+    task = await setup_schedule.create_task(group.task_list_id, "Retry Task")
+    assert task.task_id is not None
+
+    base_auth = authenticated_client.get_auth()
+    assert base_auth is not None
+    valid_token = await base_auth.async_get_access_token()
+    stale_auth = _StaleOnceAuth(valid_token)
+    schedule = ScheduleClient(authenticated_client.with_auth(stale_auth))
+
+    if operation == "delete_group":
+        await schedule.delete_group(group.task_list_id)
+        assert [g async for g in setup_schedule.list_groups()] == []
+    elif operation == "delete_task":
+        await schedule.delete_task(task.task_id)
+        assert [t async for t in setup_schedule.list_tasks(group.task_list_id)] == []
+    else:
+        ics = await schedule.get_ical_feed(group_id=group.task_list_id)
+        assert "BEGIN:VCALENDAR" in ics
+        assert "Retry Task" in ics
+
+    assert stale_auth.refresh_calls == ["stale-token"]
