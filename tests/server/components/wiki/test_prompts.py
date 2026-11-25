@@ -6,7 +6,9 @@ import json
 
 import pytest
 
+from supernote.models.wiki import WikiPageDTO
 from supernote.server.components.wiki.prompts import (
+    build_compile_prompt,
     get_compile_json_schema,
     get_lint_json_schema,
     parse_compile_plan,
@@ -114,3 +116,38 @@ def test_sanitize_xml_payload_and_single_pass_template_rendering() -> None:
         {"a": "{{b}}", "b": json.dumps({"secret": 1})},
     )
     assert rendered == 'A={{b}} B={"secret": 1}'
+
+
+def test_build_compile_prompt_prioritizes_synthesized_candidates_and_injects_budget() -> (
+    None
+):
+    def _page(idx: int, kind: str, slug: str, update_time: int) -> WikiPageDTO:
+        return WikiPageDTO(
+            page_id=idx,
+            slug=slug,
+            title=slug,
+            page_kind=kind,
+            summary="s",
+            body_md="body",
+            claims=[],
+            edit_policy="auto",
+            last_author_kind="compiler",
+            version=1,
+            create_time=update_time,
+            update_time=update_time,
+        )
+
+    # 16 newer source_digest pages must not crowd out index/project pages in candidate_pages.
+    pages = [
+        _page(i, "source_digest", f"sources/n-{i}", 1000 + i) for i in range(1, 17)
+    ] + [
+        _page(100, "index", "index", 100),
+        _page(101, "project", "projects/aurora", 200),
+    ]
+    prompt = build_compile_prompt(pages, [], {}, max_pages_per_batch=10)
+    assert "up to 10 pages per batch" in prompt
+    candidates_section = prompt.split("<candidate_pages>", maxsplit=1)[1].split(
+        "</candidate_pages>", maxsplit=1
+    )[0]
+    assert '"slug": "index"' in candidates_section
+    assert '"slug": "projects/aurora"' in candidates_section

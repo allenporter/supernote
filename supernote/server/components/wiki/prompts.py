@@ -400,14 +400,33 @@ def render_prompt_template(template: str, values: dict[str, str]) -> str:
     )
 
 
+_CANDIDATE_KIND_PRIORITY: dict[str, int] = {
+    "index": 0,
+    "project": 1,
+    "entity": 2,
+    "topic": 3,
+    "source_digest": 4,
+    "log": 5,
+}
+
+
 def build_compile_prompt(
     all_pages: Sequence[WikiPageDTO],
     diff_payload: list[dict[str, Any]],
     linked_context: dict[str, Any],
+    *,
+    max_pages_per_batch: int = 5,
 ) -> str:
     """Render `PromptId.WIKI_COMPILE` with sanitized index, candidates, diff, and context."""
     compact_index = "\n".join(
         f"- [[{p.slug}]] ({p.page_kind}): {p.title} — {p.summary}" for p in all_pages
+    )
+    prioritized_pages = sorted(
+        all_pages,
+        key=lambda p: (
+            _CANDIDATE_KIND_PRIORITY.get(p.page_kind, 4),
+            -p.update_time,
+        ),
     )
     candidate_pages = [
         {
@@ -419,12 +438,13 @@ def build_compile_prompt(
             "aliases": p.aliases,
             "body_md": p.body_md[:2000],
         }
-        for p in all_pages[:10]
+        for p in prioritized_pages[:15]
     ]
     template = PROMPT_LOADER.get_prompt(PromptId.WIKI_COMPILE)
     return render_prompt_template(
         template,
         {
+            "max_pages_per_batch": str(max(1, max_pages_per_batch)),
             "compact_index_md": sanitize_xml_payload(compact_index),
             "candidate_pages_json": sanitize_xml_payload(json.dumps(candidate_pages)),
             "diff_events_json": sanitize_xml_payload(json.dumps(diff_payload)),
