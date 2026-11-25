@@ -10,11 +10,9 @@ Mounts onto the main `aiohttp` application via `async_setup_http`:
 
 from __future__ import annotations
 
-import json
 import logging
 
 from aiohttp import web
-from mashumaro.exceptions import InvalidFieldValue, MissingField
 
 from supernote.models.base import (
     BaseResponse,
@@ -32,9 +30,13 @@ from supernote.models.extended import (
     WebNoteMetadataVO,
 )
 from supernote.models.system import QueueStatusVO
-from supernote.server.components.http import HttpRegistrar
+from supernote.server.components.http import (
+    HttpRegistrar,
+    parse_json_dto,
+    parse_json_object,
+)
 from supernote.server.core import ServerCore
-from supernote.server.exceptions import SupernoteError
+from supernote.server.exceptions import InvalidInputError, SupernoteError
 from supernote.server.keys import (
     REQUEST_USER_KEY,
     USER_SERVICE_KEY,
@@ -51,16 +53,6 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
-
-_PARSE_ERRORS = (
-    json.JSONDecodeError,
-    ValueError,
-    TypeError,
-    KeyError,
-    AttributeError,
-    MissingField,
-    InvalidFieldValue,
-)
 
 
 @routes.get("/api/extended/system/tasks")
@@ -96,10 +88,9 @@ async def handle_retry_system_tasks(request: web.Request) -> web.Response:
     """Clear failed task checkpoints for the authenticated user (or a specific file) and re-enqueue."""
     user_email = request[REQUEST_USER_KEY]
     try:
-        data = await request.json() if request.can_read_body else {}
-        req_dto = RetrySystemTasksDTO.from_dict(data)
-    except _PARSE_ERRORS as err:
-        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
+        req_dto = await parse_json_dto(request, RetrySystemTasksDTO, allow_empty=True)
+    except InvalidInputError as err:
+        return web.json_response({"error": err.message}, status=err.status_code)
 
     user_service: UserService = request.app[USER_SERVICE_KEY]
     processor_service: ProcessorService = request.app[PROCESSOR_SERVICE_KEY]
@@ -125,10 +116,9 @@ async def handle_file_processing_status(request: web.Request) -> web.Response:
     """Return aggregated processing status for a list of files."""
     user_email = request[REQUEST_USER_KEY]
     try:
-        data = await request.json()
-        req_dto = FileProcessingStatusDTO.from_dict(data)
-    except _PARSE_ERRORS as err:
-        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
+        req_dto = await parse_json_dto(request, FileProcessingStatusDTO)
+    except InvalidInputError as err:
+        return web.json_response({"error": err.message}, status=err.status_code)
 
     user_service: UserService = request.app[USER_SERVICE_KEY]
     processor_service: ProcessorService = request.app[PROCESSOR_SERVICE_KEY]
@@ -155,10 +145,9 @@ async def handle_extended_note_metadata(request: web.Request) -> web.Response:
     """Return structured notebook and per-page metadata for an active `.note` file."""
     user_email = request[REQUEST_USER_KEY]
     try:
-        data = await request.json()
-        req_dto = WebNoteMetadataRequestDTO.from_dict(data)
-    except _PARSE_ERRORS as err:
-        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
+        req_dto = await parse_json_dto(request, WebNoteMetadataRequestDTO)
+    except InvalidInputError as err:
+        return web.json_response({"error": err.message}, status=err.status_code)
 
     user_service: UserService = request.app[USER_SERVICE_KEY]
     processor_service: ProcessorService = request.app[PROCESSOR_SERVICE_KEY]
@@ -221,17 +210,9 @@ async def handle_queue_status(request: web.Request) -> web.Response:
 async def handle_reprocess(request: web.Request) -> web.Response:
     """Clear and trigger reprocessing of note tasks (Admin only)."""
     try:
-        req_data = await request.json()
-    except json.JSONDecodeError as err:
-        return web.json_response(
-            create_error_response(f"Invalid Request: {err}").to_dict(),
-            status=400,
-        )
-    if not isinstance(req_data, dict):
-        return web.json_response(
-            create_error_response("Invalid request body").to_dict(),
-            status=400,
-        )
+        req_data = await parse_json_object(request)
+    except InvalidInputError as err:
+        return err.to_response()
     task_type = req_data.get("task_type", "summary")
     file_id = req_data.get("file_id")
     cascade = req_data.get("cascade", False)

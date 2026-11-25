@@ -6,20 +6,18 @@ Mounts `POST /api/extended/search` onto the main `aiohttp` application via
 
 from __future__ import annotations
 
-import json
 import logging
 
 from aiohttp import web
-from mashumaro.exceptions import InvalidFieldValue, MissingField
 
 from supernote.models.extended import (
     SearchResultVO,
     WebSearchRequestDTO,
     WebSearchResponseVO,
 )
-from supernote.server.components.http import HttpRegistrar
+from supernote.server.components.http import HttpRegistrar, parse_json_dto
 from supernote.server.core import ServerCore
-from supernote.server.exceptions import SupernoteError
+from supernote.server.exceptions import InvalidInputError, SupernoteError
 from supernote.server.keys import REQUEST_USER_KEY, USER_SERVICE_KEY
 from supernote.server.services.user import UserService
 
@@ -32,25 +30,15 @@ __all__ = [
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
 
-_PARSE_ERRORS = (
-    json.JSONDecodeError,
-    ValueError,
-    TypeError,
-    KeyError,
-    MissingField,
-    InvalidFieldValue,
-)
-
 
 @routes.post("/api/extended/search")
 async def handle_extended_search(request: web.Request) -> web.Response:
     """Serve hybrid `#keyword`, transcript, and semantic search (`POST /api/extended/search`)."""
     user_email = request[REQUEST_USER_KEY]
     try:
-        data = await request.json()
-        req_dto = WebSearchRequestDTO.from_dict(data)
-    except _PARSE_ERRORS as err:
-        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
+        req_dto = await parse_json_dto(request, WebSearchRequestDTO)
+    except InvalidInputError as err:
+        return web.json_response({"error": err.message}, status=err.status_code)
 
     user_service: UserService = request.app[USER_SERVICE_KEY]
     search_service: SearchService = request.app[SEARCH_SERVICE_KEY]

@@ -6,20 +6,18 @@ Mounts `POST /api/extended/transcript` onto the main `aiohttp` application via
 
 from __future__ import annotations
 
-import json
 import logging
 
 from aiohttp import web
-from mashumaro.exceptions import InvalidFieldValue, MissingField
 
 from supernote.models.extended import (
     PageTranscriptVO,
     WebTranscriptRequestDTO,
     WebTranscriptResponseVO,
 )
-from supernote.server.components.http import HttpRegistrar
+from supernote.server.components.http import HttpRegistrar, parse_json_dto
 from supernote.server.core import ServerCore
-from supernote.server.exceptions import SupernoteError
+from supernote.server.exceptions import InvalidInputError, SupernoteError
 from supernote.server.keys import REQUEST_USER_KEY, USER_SERVICE_KEY
 from supernote.server.services.user import UserService
 
@@ -32,25 +30,15 @@ __all__ = [
 logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
 
-_PARSE_ERRORS = (
-    json.JSONDecodeError,
-    ValueError,
-    TypeError,
-    KeyError,
-    MissingField,
-    InvalidFieldValue,
-)
-
 
 @routes.post("/api/extended/transcript")
 async def handle_extended_transcript(request: web.Request) -> web.Response:
     """Serve structured per-page notebook transcripts (`POST /api/extended/transcript`)."""
     user_email = request[REQUEST_USER_KEY]
     try:
-        data = await request.json()
-        req_dto = WebTranscriptRequestDTO.from_dict(data)
-    except _PARSE_ERRORS as err:
-        return web.json_response({"error": f"Invalid Request: {err}"}, status=400)
+        req_dto = await parse_json_dto(request, WebTranscriptRequestDTO)
+    except InvalidInputError as err:
+        return web.json_response({"error": err.message}, status=err.status_code)
 
     user_service: UserService = request.app[USER_SERVICE_KEY]
     transcript_service: TranscriptService = request.app[TRANSCRIPT_SERVICE_KEY]
