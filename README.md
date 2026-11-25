@@ -30,8 +30,14 @@ Handwriting recognition on e-ink hardware drains battery and struggles with dens
 - **Executive Summaries**: Synthesizes multi-page notebooks into scannable summaries with key takeaways.
 - **Concept Search**: Vectorizes content so you can search across years of handwritten notebooks by meaning (`"Where did I sketch the backyard drainage plan?"`), not just filenames.
 
+### Hybrid LLM Wiki, Health Lint & Obsidian Export
+Enable the opt-in **LLM Wiki** (`wiki.enabled: true` / `SUPERNOTE_WIKI_ENABLED=true`) to compile incremental diffs from your handwritten notebooks and tasks into a persistent, interlinked Markdown knowledge base:
+- **Graph Navigation & Provenance**: Browse `projects/`, `entities/`, `topics/`, and `sources/` pages with clickable `[[wikilinks]]`, automatic backlinks, aliases, and explicit source citations (`note_page`, `schedule_task`).
+- **Human-First Editing & Lint Triage**: Edits you make in the Web UI automatically promote a page to `protected_prose` so background compiler runs never overwrite your prose, while structural and semantic lint passes flag stale sources, contradictions, and OCR alias merge proposals for one-click review.
+- **Portable Obsidian `.zip` Export**: Download your entire wiki at any time as an Obsidian-compatible ZIP archive with YAML frontmatter and `[[wikilinks]]`.
+
 ### Built-In MCP Server & Static Bearer API Keys (`sn_...`)
-Out of the box, the server hosts a spec-compliant **[Model Context Protocol (MCP)](docs/mcp.md)** server (`list_notebooks`, `search_notebook_chunks`, `get_notebook_transcript`) supporting both **OAuth 2.1 with Client ID Metadata Documents** for interactive desktop agents (Claude Desktop, Cursor) and revocable **Static Bearer API Keys (`sn_...`)** for headless scripts and CLI automation.
+Out of the box, the server hosts a spec-compliant **[Model Context Protocol (MCP)](docs/mcp.md)** server (`list_notebooks`, `search_notebook_chunks`, `get_notebook_transcript`, schedule task CRUD, and 8 LLM Wiki tools when enabled) supporting both **OAuth 2.1 with Client ID Metadata Documents** for interactive desktop agents (Claude Desktop, Cursor) and revocable **Static Bearer API Keys (`sn_...`)** for headless scripts and CLI automation.
 
 ### Filename & Page-Style Driven Custom AI Prompts
 Drop custom Markdown prompt templates into your `prompts_dir` (`ocr/daily/prompt.md`, `summary/meeting_notes/prompt.md`, or `ocr/style_cornell/prompt.md`), and the server automatically routes matching notebooks (by filename stem or page stationery style) through your custom instructions while injecting native device page keywords (`PAGE_KEYWORDS`). See **[AI Pipeline, Custom Prompts & MCP Server](docs/mcp.md)** for full prompt routing details.
@@ -78,18 +84,63 @@ While the official Supernote Private Cloud by Ratta provides a production-grade 
 | **Core Sync** | Robust & Validated | 100% OpenAPI Compliant | 100% OpenAPI Compliant |
 | **Memory Footprint** | High (~2 GB+ RAM required) | **Low (~135 MB flat RAM)** | **Low (~160 MB idle / ~310 MB active peak)** |
 | **Stack & Database** | Multi-container (Java + Redis + MariaDB) | Python / `asyncio` + single SQLite file | Python / `asyncio` + single SQLite file |
-| **Web UI & Tasks** | Built-in Web UI | Disabled (`web_enabled: false`) | Editorial Web UI + `.ics` Calendar Feeds |
-| **AI Analysis** | Basic OCR (Device-side) | None | Optional: AI Transcriptions & Synthesis (Gemini or Local Models) |
-| **Search** | Path / Filename | Path / Filename | Optional: Cross-Notebook Semantic Concept Search |
-| **AI Agent Access (MCP)** | None | Disabled (`mcp_enabled: false`) | Built-in OAuth 2.1 & Static API Key MCP Server |
+| **Web UI & Tasks** | Built-in Web UI | Disabled (`web_enabled: false`) | 4-Tab Editorial Web UI (Files, Digests, Tasks & Schedule, LLM Wiki) + `.ics` Feeds |
+| **AI Analysis** | Basic OCR (Device-side) | None | Optional: AI Transcriptions, Digests & Incremental LLM Wiki (Gemini or Local Models) |
+| **Search** | Path / Filename | Path / Filename | Optional: Cross-Notebook Semantic Concept Search & Wiki Graph Search |
+| **AI Agent Access (MCP)** | None | Disabled (`mcp_enabled: false`) | Built-in OAuth 2.1 & Static API Key MCP Server (Notebooks, Tasks & Wiki) |
+
+---
+
+## User Journeys & Web UI Tour
+
+Open Private Cloud organizes your synced Supernote workspace around four everyday workflows in a single-page editorial Web UI (plus mobile support and `Cmd/Ctrl+K` global search).
+
+### 1. Browse Synced Folders & Handwritten Notebooks (`Files`)
+Sync from your Supernote tablet and immediately browse your folder hierarchy alongside rendered handwritten `.note` cover thumbnails, grid/list views, upload, folder management, and Recycle Bin recovery.
 
 <p align="center">
-  <img src="docs/static-assets/note-synthesis-1.jpg" alt="Note Synthesis View" width="400">
-  <img src="docs/static-assets/note-synthesis-2.jpg" alt="Notebook Explorer" width="400">
+  <img src="docs/static-assets/web-files-explorer.png" alt="Files and Notebook Explorer with handwritten .note cover thumbnails" width="840">
 </p>
 
+### 2. Inspect Handwritten Ink Side-by-Side with AI Transcripts
+Click any notebook to open the full-resolution page viewer alongside its Bullet Journal-aware Markdown OCR transcript and AI summaries—complete with one-click copy, page navigation, zoom, and download.
+
 <p align="center">
-  <img src="docs/static-assets/tasks-dashboard.png" alt="Tasks & Schedule Dashboard" width="800">
+  <img src="docs/static-assets/web-notebook-viewer.png" alt="Handwritten Notebook Viewer side-by-side with AI Markdown OCR Transcript" width="840">
+</p>
+
+### 3. Review AI Summaries & Reading Highlights (`Digests`)
+Filter automatically generated AI Summaries and tablet reading annotations by category, source notebook, or tags, add inline notes, and jump directly back to the source file.
+
+<p align="center">
+  <img src="docs/static-assets/web-digests.png" alt="Digests and Annotations browser with categories, tags, and source links" width="840">
+</p>
+
+### 4. Manage Tasks & Subscribe via `.ics` Calendar Feeds (`Tasks & Schedule`)
+Track To-Do lists synced with your Supernote tablet—complete with priorities, due dates, and completion states—and subscribe to the live RFC 5545 `.ics` (`VTODO`) feed in Apple Reminders, Google Calendar, Outlook, or Home Assistant.
+
+<p align="center">
+  <img src="docs/static-assets/web-tasks-dashboard.png" alt="Tasks and Schedule Dashboard with task lists, priorities, due dates, and iCal feed export" width="840">
+</p>
+
+### 5. Compile & Curate Your Personal Knowledge Graph (`LLM Wiki`)
+Enable `wiki.enabled: true` to compile incremental diffs from your notebooks and tasks into interlinked Markdown pages with clickable `[[wikilinks]]`, backlinks, aliases, provenance citations, and one-click **Obsidian `.zip` export**.
+
+<p align="center">
+  <img src="docs/static-assets/web-wiki-reader.png" alt="LLM Wiki Reader with clickable wikilinks, backlinks, provenance sources, and Obsidian export" width="840">
+</p>
+
+Open the **Lint** triage panel to resolve or dismiss stale sources, contradictions, and OCR alias merge proposals. Any page you edit in the Web UI is automatically marked `protected_prose` so background compiler runs preserve your writing.
+
+<p align="center">
+  <img src="docs/static-assets/web-wiki-lint.png" alt="LLM Wiki Lint Triage drawer and human-protected wiki page" width="840">
+</p>
+
+### 6. Check Your Workspace on Mobile
+Every view adapts cleanly to phone viewports so you can read notebooks, check tasks, or navigate your wiki on the go.
+
+<p align="center">
+  <img src="docs/static-assets/web-mobile.png" alt="Responsive Mobile Web UI showing the LLM Wiki on a phone screen" width="320">
 </p>
 
 ---
@@ -193,8 +244,7 @@ supernote cloud search "What were my project goals for February?"
 </p>
 
 <p align="center">
-  <img src="docs/static-assets/admin-processing-status.jpg" alt="Admin Task Monitor" width="450">
-  <img src="docs/static-assets/mobile-friendly.jpg" alt="Mobile View" width="250">
+  <img src="docs/static-assets/admin-processing-status.jpg" alt="Admin Task Monitor" width="520">
 </p>
 
 ---
