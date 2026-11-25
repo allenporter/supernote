@@ -6,15 +6,18 @@ The **Open Private Cloud for Supernote** server is configured via a YAML configu
 
 ## Configuration Resolution & Priority
 
-When `supernote.server.config.ServerConfig.load` runs at server startup:
+When `supernote.server.config.ServerConfig.load` and `supernote.server.components.config.service.ConfigService` resolve configuration at startup, settings follow four priority tiers (`env > yaml > database > default`):
 
-1. **Config File Discovery**:
-   - Checks `--config-dir` CLI flag, or `SUPERNOTE_CONFIG_DIR` environment variable (defaults to `config` locally, `/data/config` in Docker).
-   - Reads `<config_dir>/config.yaml` if it exists; otherwise uses built-in defaults plus any `SUPERNOTE_*` environment variables.
-2. **Environment Variable Overrides**:
-   - Any `SUPERNOTE_*` environment variable overrides the corresponding value from `config.yaml`.
-3. **Database Fallbacks**:
+1. **Environment Variables (`env`)**:
+   - Any `SUPERNOTE_*` environment variable overrides `config.yaml`, database overrides, and built-in defaults, and pins the affected component as read-only (`readOnly: true`).
+2. **YAML Configuration File (`yaml`)**:
+   - Checks `--config-dir` CLI flag, or `SUPERNOTE_CONFIG_DIR` environment variable (defaults to `config` locally, `/data/config` in Docker), and reads `<config_dir>/config.yaml` if present.
+   - Top-level `<domain>:` sections in `config.yaml` (such as `webhooks:`, `wiki:`, `mcp:`, `metrics:`, `web_ui:`) configure the corresponding vertical component domain and take precedence over database overrides. The server never auto-writes a default `config.yaml` on first boot, so unconfigured components remain editable via the database tier.
+3. **Database Overrides (`database`) & Generated Secrets**:
+   - Components not pinned by `env` or `yaml` can be configured dynamically via `PUT /api/extended/system/components/{domain}` (persisted under `component_config:<domain>` in `CoordinationService`).
    - If `auth.secret_key` (`SUPERNOTE_JWT_SECRET`) is not provided via environment variable or `config.yaml`, `supernote.server.services.user.UserService` automatically generates and persists a random secret key inside the SQLite coordination store (`storage/system/supernote.db`) so tokens survive restarts without manual secret management.
+4. **Built-in Defaults (`default`)**:
+   - Any setting not supplied by `env`, `yaml`, or `database` falls back to the component's default configuration in `BUILTIN_COMPONENTS` (`supernote.server.components`).
 
 > [!NOTE]
 > Boolean environment variables accept `"true"`, `"1"`, `"yes"`, or `"on"` (case-insensitive) as `True`, and any other value as `False`.
