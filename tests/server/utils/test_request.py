@@ -1,4 +1,4 @@
-"""Unit tests for `supernote.server.components.http.request`."""
+"""Unit tests for `supernote.server.utils.request`."""
 
 from __future__ import annotations
 
@@ -12,13 +12,13 @@ from mashumaro.config import BaseConfig
 from mashumaro.mixins.json import DataClassJSONMixin
 
 from supernote.models.base import ErrorCode
-from supernote.server.components.http import (
+from supernote.server.exceptions import InvalidInputError
+from supernote.server.utils.request import (
     parse_dict_dto,
     parse_json_dto,
     parse_json_object,
     parse_query_dto,
 )
-from supernote.server.exceptions import InvalidInputError
 
 
 @dataclass

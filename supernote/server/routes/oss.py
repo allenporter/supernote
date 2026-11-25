@@ -21,7 +21,7 @@ from aiohttp import BodyPartReader, web
 from supernote.models.base import create_error_response
 from supernote.models.system import FileChunkParams, FileChunkVO, UploadFileVO
 from supernote.server.constants import USER_DATA_BUCKET
-from supernote.server.exceptions import SupernoteError
+from supernote.server.exceptions import InvalidInputError, SupernoteError
 from supernote.server.keys import (
     BLOB_STORAGE_KEY,
     FILE_SERVICE_KEY,
@@ -35,6 +35,7 @@ from supernote.server.metrics import (
 from supernote.server.services.blob import STREAM_CHUNK_SIZE, BlobStorage
 from supernote.server.services.file import FileService
 from supernote.server.utils.paths import get_file_chunk_path
+from supernote.server.utils.request import parse_query_dto
 from supernote.server.utils.url_signer import UrlSigner
 
 from .decorators import public_route
@@ -126,10 +127,9 @@ async def handle_oss_upload_part(request: web.Request) -> web.Response:
     url_signer: UrlSigner = request.app[URL_SIGNER_KEY]
     blob_storage: BlobStorage = request.app[BLOB_STORAGE_KEY]
 
-    query_dict = dict(request.query)
     try:
-        params = FileChunkParams.from_dict(query_dict)
-    except ValueError:
+        params = parse_query_dto(request, FileChunkParams)
+    except InvalidInputError:
         return web.json_response(
             create_error_response("Invalid param types", "E400").to_dict(), status=400
         )

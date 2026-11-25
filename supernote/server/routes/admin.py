@@ -8,16 +8,16 @@ and Web UI admin dashboard:
 """
 
 from aiohttp import web
-from mashumaro.exceptions import InvalidFieldValue, MissingField
 
 from supernote.models.base import (
     BaseResponse,
     create_error_response,
 )
 from supernote.models.user import UpdateUserQuotaDTO, UserRegisterDTO
-from supernote.server.exceptions import SupernoteError
+from supernote.server.exceptions import InvalidInputError, SupernoteError
 from supernote.server.keys import USER_SERVICE_KEY
 from supernote.server.services.user import UserService
+from supernote.server.utils.request import parse_json_dto, parse_json_object
 
 from .decorators import require_admin
 
@@ -28,10 +28,9 @@ routes = web.RouteTableDef()
 @require_admin
 async def handle_create_user(request: web.Request) -> web.Response:
     """Create a new user (Admin only)."""
-    req_data = await request.json()
     try:
-        dto = UserRegisterDTO.from_dict(req_data)
-    except (MissingField, ValueError):
+        dto = await parse_json_dto(request, UserRegisterDTO)
+    except InvalidInputError:
         return web.json_response(
             create_error_response("Invalid request format").to_dict(),
             status=400,
@@ -49,7 +48,10 @@ async def handle_create_user(request: web.Request) -> web.Response:
 @require_admin
 async def handle_admin_update_password(request: web.Request) -> web.Response:
     """Update any user's password (Admin only)."""
-    req_data = await request.json()
+    try:
+        req_data = await parse_json_object(request)
+    except InvalidInputError as err:
+        return err.to_response()
     # We reuse UpdatePasswordDTO but only look at the email and
     # new password fields.
     email = req_data.get("email")
@@ -74,10 +76,9 @@ async def handle_admin_update_password(request: web.Request) -> web.Response:
 @require_admin
 async def handle_admin_update_quota(request: web.Request) -> web.Response:
     """Update a user's storage quota in bytes (Admin only)."""
-    req_data = await request.json()
     try:
-        dto = UpdateUserQuotaDTO.from_dict(req_data)
-    except (MissingField, InvalidFieldValue, ValueError, TypeError):
+        dto = await parse_json_dto(request, UpdateUserQuotaDTO)
+    except InvalidInputError:
         return web.json_response(
             create_error_response("Invalid request format").to_dict(),
             status=400,
